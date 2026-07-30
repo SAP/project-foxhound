@@ -416,12 +416,12 @@ class PLDHashTable {
   constexpr PLDHashTable(const PLDHashTableOps* aOps, uint32_t aEntrySize,
                          uint32_t aLength = kDefaultInitialLength)
       : mOps(aOps),
-        mHashShift(HashShift(aEntrySize, aLength)),
-        mEntrySize(static_cast<uint8_t>(aEntrySize)) {
-    // An entry size greater than 0xff is unlikely, but let's check anyway.
+        mEntrySize(static_cast<uint16_t>(aEntrySize)),
+        mHashShift(HashShift(aEntrySize, aLength)) {
+    // An entry size greater than 0xffff is unlikely, but let's check anyway.
     // If you hit this, your hashtable would waste lots of space for unused
     // entries and you should change your hash table's entries to pointers.
-    if (aEntrySize > std::numeric_limits<uint8_t>::max()) {
+    if (aEntrySize > std::numeric_limits<uint16_t>::max()) {
       MOZ_CRASH("Entry size is too large");
     }
   }
