@@ -481,8 +481,6 @@ class nsTStringRepr {
   float ToFloatAllowTrailingChars(nsresult* aErrorCode) const;
 
  protected:
-  nsTStringRepr() = delete;  // Never instantiate directly
-
   nsTStringRepr(char_type* aData, size_type aLength,
                           DataFlags aDataFlags, ClassFlags aClassFlags,
                           const StringTaint& aStringTaint)
