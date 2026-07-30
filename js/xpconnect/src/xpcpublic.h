@@ -329,6 +329,26 @@ class XPCStringConvert {
     return true;
   }
 
+  static inline bool StringLiteralToJSVal(JSContext* cx,
+                                          const char16_t* literal,
+                                          uint32_t length,
+                                          JS::MutableHandle<JS::Value> rval) {
+    return StringLiteralToJSVal(cx, literal, length, EmptyTaint, rval);
+  }
+
+  static inline bool StringLiteralToJSVal(JSContext* cx,
+                                          const JS::Latin1Char* literal,
+                                          uint32_t length,
+                                          JS::MutableHandle<JS::Value> rval) {
+    return StringLiteralToJSVal(cx, literal, length, EmptyTaint, rval);
+  }
+
+  static inline bool UTF8StringLiteralToJSVal(
+      JSContext* cx, const JS::UTF8Chars& chars,
+      JS::MutableHandle<JS::Value> rval) {
+    return UTF8StringLiteralToJSVal(cx, chars, EmptyTaint, rval);
+  }
+
  private:
   static MOZ_ALWAYS_INLINE bool MaybeGetExternalStringChars(
       JSString* str, const JSExternalStringCallbacks** callbacks,
@@ -473,13 +493,14 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
   }
   if (readable.IsLiteral()) {
     return XPCStringConvert::StringLiteralToJSVal(cx, readable.BeginReading(),
-                                                  length, vp);
+                                                  length, readable.Taint(), vp);
   }
   // blech, have to copy.
   JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
   if (!str) {
     return false;
   }
+  JS_SetStringTaint(cx, str, readable.Taint());
   vp.setString(str);
   return true;
 }
@@ -494,7 +515,7 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
   if (latin1.IsLiteral()) {
     return XPCStringConvert::StringLiteralToJSVal(
         cx, reinterpret_cast<const JS::Latin1Char*>(latin1.BeginReading()),
-        length, vp);
+        length, EmptyTaint, vp);
   }
   JSString* str = JS_NewStringCopyN(cx, latin1.BeginReading(), length);
   if (!str) {
@@ -514,7 +535,7 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
   }
   if (utf8.IsLiteral()) {
     return XPCStringConvert::UTF8StringLiteralToJSVal(
-        cx, JS::UTF8Chars(utf8.BeginReading(), length), vp);
+        cx, JS::UTF8Chars(utf8.BeginReading(), length), EmptyTaint, vp);
   }
   JSString* str =
       JS_NewStringCopyUTF8N(cx, JS::UTF8Chars(utf8.BeginReading(), length));
@@ -529,33 +550,6 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
     JSContext* cx, const nsAString& str, JS::MutableHandle<JS::Value> rval) {
   // From the T_ASTRING case in XPCConvert::NativeData2JS.
   if (str.IsVoid()) {
-    rval.setNull();
-    return true;
-  }
-  return NonVoidStringToJsval(cx, str, rval);
-}
-
-/**
- * As above, but for mozilla::dom::DOMString.
- */
-inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
-                                 JS::MutableHandle<JS::Value> rval) {
-  if (str.IsEmpty()) {
-    rval.set(JS_GetEmptyStringValue(cx));
-    return true;
-  }
-  SafeStringTaint taint(str.Taint());
-  if (!NonVoidStringToJsval(cx, static_cast<const nsAString&>(str), rval)) {
-    return false;
-  }
-  JS_SetTaint(cx, rval, taint);
-  return true;
-}
-
-MOZ_ALWAYS_INLINE
-bool StringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
-                   JS::MutableHandle<JS::Value> rval) {
-  if (str.IsNull()) {
     rval.setNull();
     return true;
   }
