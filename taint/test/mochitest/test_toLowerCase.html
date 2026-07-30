@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Test toLowerCase (see
+      https://github.com/SAP/project-foxhound/issues/361)
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      function test(str) {
+        const s = String.tainted(str);
+        const t = s.toLowerCase();
+        SimpleTest.is(s.taint[0].flow.length, 1);
+        SimpleTest.is(t.taint[0].flow.length, 2);
+      }
+
+      add_task(async function test_toLowerCase() {
+        test("hello");
+        test("HELLO");
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>

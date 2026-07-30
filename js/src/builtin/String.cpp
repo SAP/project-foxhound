@@ -154,7 +154,16 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   }
   // We store the string as argument for a manual taint operation. This way it's easy to see what
   // the original value of a manually tainted string was for debugging/testing.
-  TaintOperation op = TaintOperation(source.c_str(), TaintLocationFromContext(cx), { taintarg(cx, str) });
+  // Every parameter passed after the source name is additionally stored as a string in the
+  // arguments vector, allowing arbitrary custom source attributes to be attached to the operation.
+  std::vector<std::u16string> arguments;
+  arguments.push_back(taintarg(cx, str));
+  for (unsigned i = 2; i < args.length(); i++) {
+    RootedValue arg(cx, args[i]);
+    arguments.push_back(taintarg(cx, arg, true));
+  }
+
+  TaintOperation op = TaintOperation(source.c_str(), TaintLocationFromContext(cx), std::move(arguments));
   op.setSource();
 
   JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
@@ -1167,16 +1176,11 @@ static size_t ToLowerCaseLength(const char16_t* chars, size_t startIndex,
 }
 
 template <typename CharT>
-static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
+static JSLinearString* ToLowerCaseInternal(JSContext* cx, JSLinearString* str) {
   // Unlike toUpperCase, toLowerCase has the nice invariant that if the
   // input is a Latin-1 string, the output is also a Latin-1 string.
 
   StringChars<CharT> newChars(cx);
-  // Foxhound: cache the taint up here to prevent GC issues
-  SafeStringTaint taint(str->taint());
-  if (taint.hasTaint()) {
-    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
-  }
 
   const size_t length = str->length();
   size_t resultLength;
@@ -1229,11 +1233,7 @@ static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     }
 
     // If no character needs to change, return the input string.
-    // Foxhound: disabled. We need to return a new string here (so we can correctly
-    // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
-    // allocate a new string here.
     if (i == length) {
-      str->setTaint(cx, taint);
       return str;
     }
 
@@ -1264,12 +1264,25 @@ static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     }
   }
 
-  // Foxhound: Add taint operation to all taint ranges of the input string.
   JSLinearString* res = newChars.template toStringDontDeflate<CanGC>(cx, resultLength);
-  if (res && taint.hasTaint()) {
-    res->setTaint(cx, taint);
-  }
 
+  return res;
+}
+
+template <typename CharT>
+static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
+  JSLinearString* res = ToLowerCaseInternal<CharT>(cx, str);
+  if (res && str->isTainted()) {
+    if (res == str) {
+      res = NewDependentString(cx, str, 0, str->length());
+      if (!res) {
+        return nullptr;
+      }
+    }
+    SafeStringTaint taint(str->taint());
+    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
+    res->setTaint(taint);
+  }
   return res;
 }
 
@@ -2007,6 +2020,16 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   if (!str) {
     return false;
   }
+
+  if (str->isTainted()) {
+    JSString* dep = NewDependentString(cx, str, 0, str->length());
+    if (!dep) {
+      return false;
+    }
+    str = dep;
+  }
+
+  using NormalizationForm = mozilla::intl::String::NormalizationForm;
 
   NormalizationForm form;
   if (!args.hasDefined(0)) {

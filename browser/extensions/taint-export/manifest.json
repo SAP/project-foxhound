@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Foxhound Taint Exporter",
   "version": "0.0.1",
-  "description": "Export any taint flows detected by Foxhound to an external service.",
+  "description": "Export any taint flows detected by Foxhound to an external server. The export URL is defined by the tainting.export.url config in about:config",
   "author": "Thomas Barber, Souphiane Bensalim",
 
   "browser_specific_settings": {

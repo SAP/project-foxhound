@@ -3,12 +3,19 @@
     "namespace": "tainting",
     "description": "Foxhound Taint Export Extension",
     "allowedContexts": ["content", "devtools"],
-    "defaultContexts": ["content", "devtools"],    
+    "defaultContexts": ["content", "devtools"],
     "functions": [
       {
         "name": "getTaintExportUrl",
         "type": "function",
         "description": "Returns the value of the 'tainting.export.url' preference",
+        "parameters": [],
+        "async": true
+      },
+      {
+        "name": "getTaintExportSingleMode",
+        "type": "function",
+        "description": "Returns the value of the 'tainting.export.single' preference for legacy single-request mode",
         "parameters": [],
         "async": true
       }
