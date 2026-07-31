@@ -128,13 +128,12 @@ class Request final : public FetchBody<Request>, public nsWrapperCache {
   using FetchBody::GetInitialURL;
 
   void GetInitialURL(nsACString& aInitialURL) {
-    nsTArray<nsCString> aURLList;
-    mRequest->GetURLListWithoutFragment(aURLList);
-    if (aURLList.IsEmpty()) {
+    const auto& urlList = mRequest->GetURLListWithoutFragment();
+    if (urlList.IsEmpty()) {
       aInitialURL = EmptyCString();
       return;
     }
-    aInitialURL = aURLList[0];
+    Unused << urlList[0]->GetSpec(aInitialURL);
   }
 
  private:

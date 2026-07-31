@@ -140,13 +140,12 @@ class Response final : public FetchBody<Response>, public nsWrapperCache {
   using FetchBody::GetInitialURL;
 
   void GetInitialURL(nsACString& aInitialURL) {
-    nsTArray<nsCString> aURLList;
-    mInternalResponse->GetURLList(aURLList);
-    if (aURLList.IsEmpty()) {
+    const auto& urlList = mInternalResponse->GetURLList();
+    if (urlList.IsEmpty()) {
       aInitialURL = EmptyCString();
       return;
     }
-    aInitialURL = aURLList[0];
+    Unused << urlList[0]->GetSpec(aInitialURL);
   }
 
  private:
