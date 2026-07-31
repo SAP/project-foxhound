@@ -8,3 +8,5 @@ PLAYWRIGHT_VERSION="v1.62.0"
 RUST_VERSION="1.90.0"
 # The current firefox version can be found here: browser/config/version.txt
 FIREFOX_VERSION=$(cat browser/config/version.txt)
+# Firefox Upstream Commit
+FIREFOX_UPSTREAM_COMMIT=f1b6c0f86b96b7e0688c26f65803576f27cdaf88

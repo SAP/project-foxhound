@@ -55,3 +55,31 @@ You can find the review identifier by inspecting the commit log with:
 - Never put `DONTBUILD` (or `CLOSED TREE`) in the `-m` message of `mach try fuzzy` / `mach try compare` when you want builds to actually run. The Gecko decision task scans the message and on `DONTBUILD` strips every task from the graph: the decision task itself succeeds (Treeherder shows green) but no builds are scheduled.
 - When doing Android and Desktop front-end-only changes, use the special `./mach build faster` to skip all C++/Rust compilation.
 - Conversely, for C/C++/Obj-C/Rust only changes you can use the special `./mach build binaries` to skip all front-end-related tasks.
+
+## Project Foxhound
+
+### Background 
+Project Foxhound is an instrumented fork of the Firefox browser which enables dynamic taint tracking of data flows through Spidermonkey and the DOM.
+
+Foxhound is regularly updated against the Firefox code base here. The latest upstream merge can be found in .PLAYWRIGHT_VERSION with variable name FIREFOX_UPSTREAM_COMMIT
+
+When coding, compare the additiona to Firefox base to control additional instrumentation code.
+
+### Coding Approach
+Make minimal changes to Firefox code when adding Foxhound-specific logic. Firefox has been extensively tested, the issue is likely to be in Foxhound instrumentation.
+
+### Bugfixing
+When fixing issues, you should:
+
+ - First try to fix issues in the Foxhound instrumentation code
+ - If changes or additions are required in the Firefox code, make sure it is kept to a minimum.
+
+### Merging
+
+Periodically, Firefox release branch code is merged into the Foxhound main branch to keep Foxhound up to date.
+
+This usually results in multiple conflicts in files due to instrumentation code. When resolving merge conflicts, make sure you:
+
+  - Keep the Foxhound taint-propagation logic
+  - Minimize changes to Firefox code
+  - Always refer to the upstream firefox commit
