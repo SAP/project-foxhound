@@ -133,7 +133,7 @@ class Request final : public FetchBody<Request>, public nsWrapperCache {
       aInitialURL = EmptyCString();
       return;
     }
-    Unused << urlList[0]->GetSpec(aInitialURL);
+    (void)urlList[0]->GetSpec(aInitialURL);
   }
 
  private:

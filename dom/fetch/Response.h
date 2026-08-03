@@ -145,7 +145,7 @@ class Response final : public FetchBody<Response>, public nsWrapperCache {
       aInitialURL = EmptyCString();
       return;
     }
-    Unused << urlList[0]->GetSpec(aInitialURL);
+    (void)urlList[0]->GetSpec(aInitialURL);
   }
 
  private:
