@@ -426,16 +426,17 @@ NS_IMETHODIMP
 ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                     nsISupports* aContext, nsresult aStatus,
                                     uint32_t aDataLength,
-                                    const uint8_t* aData) {
+                                    const uint8_t* aData,
+                                    const StringTaint* aTaint) {
   nsCOMPtr<nsIRequest> channelRequest;
   aLoader->GetRequest(getter_AddRefs(channelRequest));
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(channelRequest);
 
 #ifndef NIGHTLY_BUILD
-  return DoOnStreamComplete(channel, aStatus, aDataLength, aData);
+  return DoOnStreamComplete(channel, aStatus, aDataLength, aData, aTaint);
 #else
   if (!mResourceHasher) {
-    return DoOnStreamComplete(channel, aStatus, aDataLength, aData);
+    return DoOnStreamComplete(channel, aStatus, aDataLength, aData, aTaint);
   }
 
   nsresult rv = mResourceHasher->Update(aData, aDataLength);
@@ -471,7 +472,7 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
       GetCurrentSerialEventTarget(), __func__,
       [self = RefPtr{this}, channel, integrity = RefPtr{integrity},
        computedHash = nsCString(computedHash), aStatus, aDataLength,
-       aData](bool) {
+       aData, aTaint](bool) {
         MOZ_LOG_FMT(gWaictLog, LogLevel::Debug,
                     "ScriptLoadHandler::OnStreamComplete: WaitForManifestLoad "
                     "promise resolved");
@@ -489,14 +490,14 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
           MOZ_LOG_FMT(gWaictLog, LogLevel::Warning,
                       "ScriptLoadHandler::OnStreamComplete: Wrong script hash");
           self->DoOnStreamComplete(channel, NS_ERROR_FAILURE, aDataLength,
-                                   data.get());
+                                   data.get(), aTaint);
           return;
         }
 
         MOZ_LOG_FMT(
             gWaictLog, LogLevel::Debug,
             "ScriptLoadHandler::OnStreamComplete: Correct script hash :)");
-        self->DoOnStreamComplete(channel, aStatus, aDataLength, data.get());
+        self->DoOnStreamComplete(channel, aStatus, aDataLength, data.get(), aTaint);
       },
       [](bool) {
         MOZ_ASSERT_UNREACHABLE(
