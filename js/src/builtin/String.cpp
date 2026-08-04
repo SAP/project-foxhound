@@ -2029,8 +2029,6 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     str = dep;
   }
 
-  using NormalizationForm = mozilla::intl::String::NormalizationForm;
-
   NormalizationForm form;
   if (!args.hasDefined(0)) {
     // Step 3.
