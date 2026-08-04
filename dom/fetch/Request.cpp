@@ -383,7 +383,10 @@ SafeRefPtr<Request> Request::Constructor(
 
   // Foxhound:
   nsCString cUrl;
-  request->GetURL(cUrl);
+  nsCOMPtr<nsIURI> requestUrl = request->GetURL();
+  if (requestUrl) {
+    requestUrl->GetSpec(cUrl);
+  }
   nsString url = NS_ConvertUTF8toUTF16(cUrl);
 
   RefPtr<InternalHeaders> requestHeaders = request->Headers();
