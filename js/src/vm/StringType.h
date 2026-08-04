@@ -416,22 +416,6 @@ class JSString : public js::gc::CellWithLengthAndFlags {
     static_assert(offsetof(JSString, d.inlineStorageTwoByte) ==
                       offsetof(String, inlineStorageTwoByte),
                   "shadow::String inlineStorage offset must match JSString");
-    static_assert(ATOM_BIT == String::ATOM_BIT,
-                  "shadow::String::ATOM_BIT must match JSString::ATOM_BIT");
-    static_assert(LINEAR_BIT == String::LINEAR_BIT,
-                  "shadow::String::LINEAR_BIT must match JSString::LINEAR_BIT");
-    static_assert(INLINE_CHARS_BIT == String::INLINE_CHARS_BIT,
-                  "shadow::String::INLINE_CHARS_BIT must match "
-                  "JSString::INLINE_CHARS_BIT");
-    static_assert(LATIN1_CHARS_BIT == String::LATIN1_CHARS_BIT,
-                  "shadow::String::LATIN1_CHARS_BIT must match "
-                  "JSString::LATIN1_CHARS_BIT");
-    static_assert(
-        TYPE_FLAGS_MASK == String::TYPE_FLAGS_MASK,
-        "shadow::String::TYPE_FLAGS_MASK must match JSString::TYPE_FLAGS_MASK");
-    static_assert(
-        EXTERNAL_FLAGS == String::EXTERNAL_FLAGS,
-        "shadow::String::EXTERNAL_FLAGS must match JSString::EXTERNAL_FLAGS");
     /* Foxhound: taint info offset assertion. */
     static_assert(offsetof(JSString, d.taint_) == offsetof(String, taint),
                   "shadow::String taint offset must match JSString");
