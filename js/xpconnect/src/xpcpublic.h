@@ -488,19 +488,27 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
                                                const nsAString& readable,
                                                JS::MutableHandleValue vp) {
   uint32_t length = readable.Length();
-  if (auto* buf = readable.GetStringBuffer()) {
-    return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp);
-  }
   if (readable.IsLiteral()) {
     return XPCStringConvert::StringLiteralToJSVal(cx, readable.BeginReading(),
                                                   length, readable.Taint(), vp);
+  }
+  if (auto* buf = readable.GetStringBuffer()) {
+    if (!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp)) {
+      return false;
+    }
+    if (readable.isTainted()) {
+      JS_SetTaint(cx, vp, readable.Taint());
+    }
+    return true;
   }
   // blech, have to copy.
   JSString* str = JS_NewUCStringCopyN(cx, readable.BeginReading(), length);
   if (!str) {
     return false;
   }
-  JS_SetStringTaint(cx, str, readable.Taint());
+  if (readable.isTainted()) {
+    JS_SetStringTaint(cx, str, readable.Taint());
+  }
   vp.setString(str);
   return true;
 }
@@ -509,17 +517,26 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
 [[nodiscard]] inline bool NonVoidLatin1StringToJsval(
     JSContext* cx, const nsACString& latin1, JS::MutableHandleValue vp) {
   uint32_t length = latin1.Length();
-  if (auto* buf = latin1.GetStringBuffer()) {
-    return XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp);
-  }
   if (latin1.IsLiteral()) {
     return XPCStringConvert::StringLiteralToJSVal(
         cx, reinterpret_cast<const JS::Latin1Char*>(latin1.BeginReading()),
-        length, EmptyTaint, vp);
+        length, latin1.Taint(), vp);
+  }
+  if (auto* buf = latin1.GetStringBuffer()) {
+    if (!XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp)) {
+      return false;
+    }
+    if (latin1.isTainted()) {
+      JS_SetTaint(cx, vp, latin1.Taint());
+    }
+    return true;
   }
   JSString* str = JS_NewStringCopyN(cx, latin1.BeginReading(), length);
   if (!str) {
     return false;
+  }
+  if (latin1.isTainted()) {
+    JS_SetStringTaint(cx, str, latin1.Taint());
   }
   vp.setString(str);
   return true;
@@ -530,17 +547,26 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
                                                    const nsACString& utf8,
                                                    JS::MutableHandleValue vp) {
   uint32_t length = utf8.Length();
-  if (auto* buf = utf8.GetStringBuffer()) {
-    return XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp);
-  }
   if (utf8.IsLiteral()) {
     return XPCStringConvert::UTF8StringLiteralToJSVal(
-        cx, JS::UTF8Chars(utf8.BeginReading(), length), EmptyTaint, vp);
+        cx, JS::UTF8Chars(utf8.BeginReading(), length), utf8.Taint(), vp);
+  }
+  if (auto* buf = utf8.GetStringBuffer()) {
+    if (!XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp)) {
+      return false;
+    }
+    if (utf8.isTainted()) {
+      JS_SetTaint(cx, vp, utf8.Taint());
+    }
+    return true;
   }
   JSString* str =
       JS_NewStringCopyUTF8N(cx, JS::UTF8Chars(utf8.BeginReading(), length));
   if (!str) {
     return false;
+  }
+  if (utf8.isTainted()) {
+    JS_SetStringTaint(cx, str, utf8.Taint());
   }
   vp.setString(str);
   return true;
@@ -555,12 +581,6 @@ bool Base64Decode(JSContext* cx, JS::Handle<JS::Value> val,
   }
   return NonVoidStringToJsval(cx, str, rval);
 }
-
-/**
- * As above, but for nsACString with latin-1 (non-UTF8) content.
- */
-[[nodiscard]] bool NonVoidLatin1StringToJsval(
-    JSContext* cx, const nsACString& str, JS::MutableHandle<JS::Value> rval);
 
 [[nodiscard]] MOZ_ALWAYS_INLINE bool Latin1StringToJsval(
     JSContext* cx, const nsACString& str, JS::MutableHandle<JS::Value> rval) {
