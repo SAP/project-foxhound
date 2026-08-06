@@ -36,7 +36,7 @@ mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
   #endif
   nsDependentCSubstring taint;
   return mBgChild->RecvOnTransportAndData(NS_OK, NS_NET_STATUS_RECEIVING_FROM,
-                                          offset, count, data, taint, true,
+                                          offset, data, taint, true,
                                           aOnDataAvailableStartTime);
 }
 
