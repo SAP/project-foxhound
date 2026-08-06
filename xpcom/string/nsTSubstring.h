@@ -1373,7 +1373,10 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
    * any of its member variables.  in other words, this function acts
    * like a destructor.
    */
-  void Finalize() { ReleaseData(this->mData, this->mDataFlags); }
+  void Finalize() {
+    this->mTaint.clear();
+    ReleaseData(this->mData, this->mDataFlags);
+  }
 
  public:
   StringTaint& Taint() { return base_string_type::mTaint; }

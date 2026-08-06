@@ -253,15 +253,6 @@ void nsTSubstring<T>::FinishBulkWriteImpl(size_type aLength) {
 }
 
 template <typename T>
-void nsTSubstring<T>::Finalize() {
-  // Foxhound: clear taint.
-  this->mTaint.clear();
-  ReleaseData(this->mData, this->mDataFlags);
-  // this->mData, this->mLength, and this->mDataFlags are purposefully left
-  // dangling
-}
-
-template <typename T>
 
 bool nsTSubstring<T>::ReplacePrep(index_type aCutStart, size_type aCutLength,
                                   size_type aNewLength) {
