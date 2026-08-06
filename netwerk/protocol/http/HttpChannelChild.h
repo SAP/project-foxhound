@@ -444,7 +444,7 @@ class HttpChannelChild final : public PHttpChannelChild,
                       const nsHttpHeaderArray& aRequestHeaders,
                       const HttpChannelOnStartRequestArgs& aArgs);
   void OnTransportAndData(const nsresult& channelStatus, const nsresult& status,
-                          const uint64_t& offset, const uint32_t& count,
+                          const uint64_t& offset,
                           const nsACString& data, const nsACString& taint);
   void OnStopRequest(const nsresult& channelStatus,
                      const ResourceTimingStructArgs& timing,

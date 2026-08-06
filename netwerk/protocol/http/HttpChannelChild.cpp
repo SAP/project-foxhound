@@ -640,7 +640,7 @@ void HttpChannelChild::DoOnStartRequest(nsIRequest* aRequest) {
 
 void HttpChannelChild::ProcessOnTransportAndData(
     const nsresult& aChannelStatus, const nsresult& aTransportStatus,
-    const uint64_t& aOffset, const uint32_t& aCount, const nsACString& aData,
+    const uint64_t& aOffset, const nsACString& aData,
     const nsACString& aTaint,
     const TimeStamp& aOnDataAvailableStartTime) {
   LOG(("HttpChannelChild::ProcessOnTransportAndData [this=%p]\n", this));
@@ -650,18 +650,17 @@ void HttpChannelChild::ProcessOnTransportAndData(
         return self->GetODATarget();
       },
       [self = UnsafePtr<HttpChannelChild>(this), aChannelStatus,
-       aTransportStatus, aOffset, aCount, aData = nsCString(aData), aTaint = nsCString(aTaint),
+       aTransportStatus, aOffset, aData = nsCString(aData), aTaint = nsCString(aTaint),
        aOnDataAvailableStartTime]() {
         self->mOnDataAvailableStartTime = aOnDataAvailableStartTime;
         self->OnTransportAndData(aChannelStatus, aTransportStatus, aOffset,
-                                 aCount, aData, aTaint);
+                                 aData, aTaint);
       }));
 }
 
 void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
                                           const nsresult& aTransportStatus,
                                           const uint64_t& aOffset,
-                                          const uint32_t& aCount,
                                           const nsACString& aData,
                                           const nsACString& aTaint) {
   LOG(("HttpChannelChild::OnTransportAndData [this=%p]\n", this));
@@ -725,7 +724,7 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
   SafeStringTaint taint(ParseStringTaintForE2E(taintData));
   nsresult rv =
       NS_NewByteInputStream(getter_AddRefs(stringStream),
-                            Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND, taint);
+                            Span(aData).To(aData.Length()), NS_ASSIGNMENT_DEPEND, taint);
   if (NS_FAILED(rv)) {
     CancelWithReason(rv, "HttpChannelChild NS_NewByteInputStream failed"_ns);
     return;
