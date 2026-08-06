@@ -2260,7 +2260,7 @@ charsetloop_end:;
     }
     return nsHtml5Portability::newStringFromBuffer(buffer, start, end - start,
                                                    attributeValue.Taint().safeSubTaint(start, end),
-                                                   tb, false);
+                                                   tb, nullptr);
   }
   return nullptr;
 }
