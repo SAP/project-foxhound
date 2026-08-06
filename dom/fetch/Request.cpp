@@ -430,6 +430,8 @@ SafeRefPtr<Request> Request::Constructor(
         ReportTaintSink(entry.mValue, "fetch.header(value)", url);
       }
       headers = new InternalHeaders(*requestHeaders);
+    } else {
+      headers = new InternalHeaders(*requestHeaders);
     }
     requestHeaders->Clear();
     requestHeaders->Fill(*headers, aRv);
