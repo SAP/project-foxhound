@@ -251,18 +251,18 @@ namespace mozilla::dom {
 // bucket sizes.
 // Foxhound - originally ASSERT_NODE_SIZE(Element, 128, 80);
 // We needed to add additional 8 bytes for taint operations
-ASSERT_NODE_SIZE(Element, 136, 84);
-ASSERT_NODE_SIZE(HTMLDivElement, 136, 84);
-ASSERT_NODE_SIZE(HTMLElement, 136, 84);
-ASSERT_NODE_SIZE(HTMLParagraphElement, 136, 84);
-ASSERT_NODE_SIZE(HTMLPreElement, 136, 84);
-ASSERT_NODE_SIZE(HTMLSpanElement, 136, 84);
-ASSERT_NODE_SIZE(HTMLTableCellElement, 136, 84);
+ASSERT_NODE_SIZE(Element, 144, 84);
+ASSERT_NODE_SIZE(HTMLDivElement, 144, 84);
+ASSERT_NODE_SIZE(HTMLElement, 144, 84);
+ASSERT_NODE_SIZE(HTMLParagraphElement, 144, 84);
+ASSERT_NODE_SIZE(HTMLPreElement, 144, 84);
+ASSERT_NODE_SIZE(HTMLSpanElement, 144, 84);
+ASSERT_NODE_SIZE(HTMLTableCellElement, 144, 84);
 // Foxhound:
 // Original: ASSERT_NODE_SIZE(Text, 120, 64);
 // Text is now a taintable string, so contains an
 // additional pointer (ie 120 + 8 or 64 + 4 bytes)
-ASSERT_NODE_SIZE(Text, 128, 84);
+ASSERT_NODE_SIZE(Text, 136, 84);
 
 #undef ASSERT_NODE_SIZE
 #undef EXTRA_DOM_NODE_BYTES
