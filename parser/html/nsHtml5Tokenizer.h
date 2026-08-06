@@ -381,15 +381,15 @@ class nsHtml5Tokenizer {
     if (digitAtom) {
       return digitAtom;
     }
-    bool maybeAtomize = false;
+    nsHtml5AtomTable* maybeInterner = nullptr;
     if (!newAttributesEachTime) {
       if (attributeName == nsHtml5AttributeName::ATTR_CLASS ||
           attributeName == nsHtml5AttributeName::ATTR_TYPE) {
-        maybeAtomize = true;
+        maybeInterner = interner;
       }
     }
     nsHtml5String str = nsHtml5Portability::newStringFromBuffer(
-        strBuf, 0, strBufLen, strBufTaint, tokenHandler, maybeAtomize);
+        strBuf, 0, strBufLen, strBufTaint, tokenHandler, maybeInterner);
     clearStrBufAfterUse();
     return str;
   }

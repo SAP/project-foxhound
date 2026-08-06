@@ -17,13 +17,15 @@ nsAtom* nsHtml5Portability::newLocalNameFromBuffer(char16_t* buf,
 
 nsHtml5String nsHtml5Portability::newStringFromBuffer(
     char16_t* buf, int32_t offset, int32_t length, const StringTaint& taint,
-    nsHtml5TreeBuilder* treeBuilder, bool maybeAtomize) {
+    nsHtml5TreeBuilder* treeBuilder, nsHtml5AtomTable* interner) {
   if (!length) {
     return nsHtml5String::EmptyString();
   }
-  if (maybeAtomize && !taint.hasTaint()) {
-    return nsHtml5String::FromAtom(
-        NS_AtomizeMainThread(nsDependentSubstring(buf + offset, length)));
+  if (interner && !taint.hasTaint()) {
+    MOZ_ASSERT(!offset);
+    RefPtr<nsAtom> atom =
+        interner->GetAtom(nsDependentSubstring(buf, buf + length));
+    return nsHtml5String::FromAtom(atom.forget());
   }
   return nsHtml5String::FromBuffer(buf + offset, length, taint, treeBuilder);
 }
