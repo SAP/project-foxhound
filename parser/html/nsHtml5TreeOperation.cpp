@@ -485,7 +485,7 @@ nsresult nsHtml5TreeOperation::AddAttributes(nsIContent* aNode,
         (localName != nsGkAtoms::nonce)) {
       // If value is already an atom, use it directly to avoid string
       // allocation.
-      nsAtom* valAtom = val.MaybeAsAtom();
+      nsAtom* valAtom = val.MaybeAsUntaintedAtom();
       if (valAtom) {
         node->SetAttr(kNameSpaceID_None, localName, nullptr, valAtom, nullptr,
                       true);
@@ -517,7 +517,7 @@ void nsHtml5TreeOperation::SetHTMLElementAttributes(
     nsHtml5String& val = entry.ValueRef();
     nsAtom* localName = entry.NameHTML();
     if (localName == nsGkAtoms::_class) {
-      nsAtom* klass = val.MaybeAsAtom();
+      nsAtom* klass = val.MaybeAsUntaintedAtom();
       if (klass) {
         aElement->SetClassAttrFromParser(klass);
         continue;
@@ -525,7 +525,7 @@ void nsHtml5TreeOperation::SetHTMLElementAttributes(
     }
 
     // If value is already an atom, use it directly to avoid string allocation.
-    nsAtom* valAtom = val.MaybeAsAtom();
+    nsAtom* valAtom = val.MaybeAsUntaintedAtom();
     if (valAtom) {
       aElement->SetAttr(kNameSpaceID_None, localName, nullptr, valAtom, nullptr,
                         false);
@@ -700,7 +700,7 @@ nsIContent* nsHtml5TreeOperation::CreateSVGElement(
     nsHtml5String& val = entry.ValueRef();
     auto triple = entry.NameSVG();
     if (triple.mLocal == nsGkAtoms::_class) {
-      nsAtom* klass = val.MaybeAsAtom();
+      nsAtom* klass = val.MaybeAsUntaintedAtom();
       if (klass) {
         newContent->SetClassAttrFromParser(klass);
         continue;
@@ -708,7 +708,7 @@ nsIContent* nsHtml5TreeOperation::CreateSVGElement(
     }
 
     // If value is already an atom, use it directly to avoid string allocation.
-    nsAtom* valAtom = val.MaybeAsAtom();
+    nsAtom* valAtom = val.MaybeAsUntaintedAtom();
     if (valAtom) {
       newContent->SetAttr(triple.mNamespace, triple.mLocal, triple.mPrefix,
                           valAtom, nullptr, false);
@@ -771,7 +771,7 @@ nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
     nsHtml5String& val = entry.ValueRef();
     auto triple = entry.NameMathML();
     if (triple.mLocal == nsGkAtoms::_class) {
-      nsAtom* klass = val.MaybeAsAtom();
+      nsAtom* klass = val.MaybeAsUntaintedAtom();
       if (klass) {
         newContent->SetClassAttrFromParser(klass);
         continue;
@@ -779,7 +779,7 @@ nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
     }
 
     // If value is already an atom, use it directly to avoid string allocation.
-    nsAtom* valAtom = val.MaybeAsAtom();
+    nsAtom* valAtom = val.MaybeAsUntaintedAtom();
     if (valAtom) {
       newContent->SetAttr(triple.mNamespace, triple.mLocal, triple.mPrefix,
                           valAtom, nullptr, false);

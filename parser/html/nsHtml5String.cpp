@@ -16,6 +16,7 @@ void nsHtml5String::ToString(nsAString& aString) {
       return;
     case eAtom:
       AsAtom()->ToString(aString);
+      aString.AssignTaint(mTaint);
       return;
     case eEmpty:
       aString.Truncate();
@@ -36,6 +37,7 @@ void nsHtml5String::MoveToString(nsAString& aString) {
     case eAtom: {
       nsAtom* atom = AsAtom();
       atom->ToString(aString);
+      aString.AssignTaint(mTaint);
       atom->Release();
     } break;
     case eEmpty:
@@ -108,7 +110,7 @@ nsHtml5String nsHtml5String::Clone() {
     default:
       break;
   }
-  return nsHtml5String(mBits);
+  return nsHtml5String(mBits, mTaint);
 }
 
 void nsHtml5String::Release() {
@@ -206,6 +208,13 @@ nsHtml5String nsHtml5String::FromString(const nsAString& aString) {
 // static
 nsHtml5String nsHtml5String::FromAtom(already_AddRefed<nsAtom> aAtom) {
   return nsHtml5String(reinterpret_cast<uintptr_t>(aAtom.take()) | eAtom);
+}
+
+// static
+nsHtml5String nsHtml5String::FromAtom(already_AddRefed<nsAtom> aAtom,
+                                      const StringTaint& aTaint) {
+  return nsHtml5String(reinterpret_cast<uintptr_t>(aAtom.take()) | eAtom,
+                       aTaint);
 }
 
 // static

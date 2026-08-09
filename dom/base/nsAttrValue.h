@@ -497,6 +497,11 @@ class nsAttrValue {
   // Foxhound: In case we have a attribute based on a tainted atom, this retrieves the taint
   StringTaint GetAtomTaint() const;
 
+  // Foxhound: atoms cannot carry taint themselves, so when an atom-typed
+  // attribute value originates from a tainted string the taint is stored
+  // alongside it here.
+  void SetAtomTaint(const StringTaint& aTaint);
+
  private:
   // These have to be the same as in ValueType
   enum ValueBaseType {

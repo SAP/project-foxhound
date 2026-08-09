@@ -21,11 +21,11 @@ nsHtml5String nsHtml5Portability::newStringFromBuffer(
   if (!length) {
     return nsHtml5String::EmptyString();
   }
-  if (interner && !taint.hasTaint()) {
+  if (interner) {
     MOZ_ASSERT(!offset);
     RefPtr<nsAtom> atom =
         interner->GetAtom(nsDependentSubstring(buf, buf + length));
-    return nsHtml5String::FromAtom(atom.forget());
+    return nsHtml5String::FromAtom(atom.forget(), taint);
   }
   return nsHtml5String::FromBuffer(buf + offset, length, taint, treeBuilder);
 }

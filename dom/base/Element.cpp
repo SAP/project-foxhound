@@ -3825,6 +3825,11 @@ nsresult Element::SetNoNameSpaceAttrOnNewlyCreatedElement(
   // https://bugzilla.mozilla.org/show_bug.cgi?id=2043161 .
 
   if (aValue.IsAtom()) {
+    // Foxhound: the parser hands atom-typed values over as bare atoms, which
+    // cannot carry taint themselves, so keep it on the nsAttrValue. Must be
+    // read before ForgetAtom() below.
+    const SafeStringTaint valueTaint(aValue.Taint());
+
     if (NS_IS_ATOM_ARRAY_ATTRIBUTE(namePtr) ||
         NS_IS_ATOM_ARRAY_ATTRIBUTE_HTML(namePtr) ||
         (namePtr == nsGkAtoms::_for && IsHTMLElement(nsGkAtoms::output))) {
@@ -3886,6 +3891,9 @@ nsresult Element::SetNoNameSpaceAttrOnNewlyCreatedElement(
       if (valueAtom) {
         value.SetToAssumeUnset(valueAtom.forget());
       }  // else `ParseAttribute` already set `value` above.
+    }
+    if (valueTaint.hasTaint()) {
+      value.SetAtomTaint(valueTaint);
     }
   } else {
     if (namePtr == nsGkAtoms::style) {

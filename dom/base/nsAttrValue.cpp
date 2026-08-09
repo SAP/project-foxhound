@@ -632,6 +632,11 @@ void nsAttrValue::ToString(nsAString& aResult) const {
     cont = GetMiscContainer();
 
     if (cont->GetString(aResult)) {
+      // Foxhound: the cached serialization is shared between elements, so any
+      // taint for it lives on this nsAttrValue rather than in the container.
+      if (mTaint.hasTaint()) {
+        aResult.AssignTaint(mTaint);
+      }
       return;
     }
   }
@@ -1546,6 +1551,10 @@ nsAtom* nsAttrValue::GetStoredAtom() const {
 
 StringTaint nsAttrValue::GetAtomTaint() const {
   return mTaint;
+}
+
+void nsAttrValue::SetAtomTaint(const StringTaint& aTaint) {
+  mTaint = aTaint;
 }
 
 mozilla::StringBuffer* nsAttrValue::GetStoredStringBuffer() const {

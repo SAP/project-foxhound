@@ -377,19 +377,23 @@ class nsHtml5Tokenizer {
 
  protected:
   inline nsHtml5String strBufToString() {
+    nsHtml5String str = nsHtml5Portability::newStringFromBuffer(
+        strBuf, 0, strBufLen, strBufTaint, tokenHandler, nullptr);
+    clearStrBufAfterUse();
+    return str;
+  }
+
+  // Element::SetNoNameSpaceAttrOnNewlyCreatedElement relies on every
+  // isUseAtom() attribute value reaching it as an atom, so this decision
+  // must stay identical to upstream. Taint rides along with the atom.
+  inline nsHtml5String strBufToAttributeValueString() {
     nsHtml5String digitAtom = TryAtomizeForSingleDigit();
     if (digitAtom) {
       return digitAtom;
     }
-    nsHtml5AtomTable* maybeInterner = nullptr;
-    if (!newAttributesEachTime) {
-      if (attributeName == nsHtml5AttributeName::ATTR_CLASS ||
-          attributeName == nsHtml5AttributeName::ATTR_TYPE) {
-        maybeInterner = interner;
-      }
-    }
     nsHtml5String str = nsHtml5Portability::newStringFromBuffer(
-        strBuf, 0, strBufLen, strBufTaint, tokenHandler, maybeInterner);
+        strBuf, 0, strBufLen, strBufTaint, tokenHandler,
+        attributeName->isUseAtom() ? interner : nullptr);
     clearStrBufAfterUse();
     return str;
   }

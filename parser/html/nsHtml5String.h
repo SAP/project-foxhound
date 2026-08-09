@@ -122,6 +122,18 @@ class nsHtml5String final {
     return nullptr;
   }
 
+  /**
+   * Foxhound: like MaybeAsAtom(), but for callers that can only hand the bare
+   * nsAtom* onwards and would therefore drop the taint. Those fall back to the
+   * string representation, which carries the taint in its StringBuffer.
+   */
+  inline nsAtom* MaybeAsUntaintedAtom() {
+    if (IsAtom() && !mTaint.hasTaint()) {
+      return AsAtom();
+    }
+    return nullptr;
+  }
+
   inline const StringTaint& Taint() {
     switch (GetKind()) {
       case eStringBuffer:
@@ -162,6 +174,9 @@ class nsHtml5String final {
   static nsHtml5String FromString(const nsAString& aString);
 
   static nsHtml5String FromAtom(already_AddRefed<nsAtom> aAtom);
+
+  static nsHtml5String FromAtom(already_AddRefed<nsAtom> aAtom,
+                                const StringTaint& aTaint);
 
   static nsHtml5String FromStaticAtom(nsStaticAtom* aAtom);
 
