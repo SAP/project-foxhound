@@ -127,7 +127,7 @@ nsHtml5String nsHtml5Tokenizer::TryAtomizeForSingleDigit() {
         nsGkAtoms::_4, nsGkAtoms::_5, nsGkAtoms::_6, nsGkAtoms::_7,
         nsGkAtoms::_8, nsGkAtoms::_9};
     nsAtom* atom = digitAtoms[strBuf[0] - '0'];
-    nsHtml5String result = nsHtml5String::FromAtom(do_AddRef(atom));
+    nsHtml5String result = nsHtml5String::FromAtom(do_AddRef(atom), strBufTaint);
     clearStrBufAfterUse();
     return result;
   }
