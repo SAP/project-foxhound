@@ -2271,6 +2271,7 @@ class nsHtml5Tokenizer {
             }
             bool earlyBreak = (c == ';' && charRefBufMark == charRefBufLen);
             charRefBufLen = 0;
+            charRefTaint.clear();
             if (!(returnState & DATA_AND_RCDATA_MASK)) {
               cstart = earlyBreak ? pos + 1 : pos;
             }
@@ -2379,7 +2380,10 @@ class nsHtml5Tokenizer {
         }
         case HANDLE_NCR_VALUE: {
           charRefBufLen = 0;
+          // Foxhound: handleNcrValue still reads charRefTaint, so it is only
+          // cleared once the reference has been emitted.
           handleNcrValue(returnState);
+          charRefTaint.clear();
           state = P::transition(mViewSource.get(), returnState, reconsume, pos);
           NS_HTML5_CONTINUE(stateloop);
         }

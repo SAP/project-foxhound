@@ -239,6 +239,7 @@ void nsHtml5Tokenizer::emitOrAppendCharRefBuf(int32_t returnState) {
     if (charRefBufLen > 0) {
       tokenHandler->characters(charRefBuf, charRefTaint, 0, charRefBufLen);
       charRefBufLen = 0;
+      charRefTaint.clear();
     }
   }
 }
@@ -518,31 +519,35 @@ void nsHtml5Tokenizer::bogusDoctypeWithoutQuirks() {
 }
 
 void nsHtml5Tokenizer::handleNcrValue(int32_t returnState) {
+  // Foxhound: the numeric reference that produced `value` was accumulated in
+  // charRefBuf, so its taint is charRefTaint. As on the named reference path,
+  // for sane input charRefTaint is either fully tainted or not tainted at all,
+  // so it can be reused directly as the taint of the character it decodes to.
   if (value <= 0xFFFF) {
     if (value >= 0x80 && value <= 0x9f) {
       errNcrInC1Range();
       char16_t* val = nsHtml5NamedCharacters::WINDOWS_1252[value - 0x80];
-      emitOrAppendOne(val, EmptyTaint, returnState);
+      emitOrAppendOne(val, charRefTaint, returnState);
     } else if (value == 0x0) {
       errNcrZero();
-      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, EmptyTaint,
+      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, charRefTaint,
                       returnState);
     } else if ((value & 0xF800) == 0xD800) {
       errNcrSurrogate();
-      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, EmptyTaint,
+      emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, charRefTaint,
                       returnState);
     } else {
       char16_t ch = (char16_t)value;
       bmpChar[0] = ch;
-      emitOrAppendOne(bmpChar, EmptyTaint, returnState);
+      emitOrAppendOne(bmpChar, charRefTaint, returnState);
     }
   } else if (value <= 0x10FFFF) {
     astralChar[0] = (char16_t)(nsHtml5Tokenizer::LEAD_OFFSET + (value >> 10));
     astralChar[1] = (char16_t)(0xDC00 + (value & 0x3FF));
-    emitOrAppendTwo(astralChar, EmptyTaint, returnState);
+    emitOrAppendTwo(astralChar, charRefTaint, returnState);
   } else {
     errNcrOutOfRange();
-    emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, EmptyTaint,
+    emitOrAppendOne(nsHtml5Tokenizer::REPLACEMENT_CHARACTER, charRefTaint,
                     returnState);
   }
 }
@@ -826,6 +831,7 @@ eofloop:
             }
           }
           charRefBufLen = 0;
+          charRefTaint.clear();
           state = returnState;
           NS_HTML5_CONTINUE(eofloop);
         }
