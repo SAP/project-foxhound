@@ -704,7 +704,11 @@ void StringTaint::set(uint32_t index, const TaintFlow& flow) {
     append(TaintRange(index, index + 1, flow));
   } else {
     clearAt(index);
-    insert(index, StringTaint(TaintRange(index, index + 1, flow)));
+    // insert() offsets the given ranges by |index|, so the range has to start
+    // at zero. SafeStringTaint so the temporary releases its range vector;
+    // a plain StringTaint has a trivial destructor and would leak it.
+    SafeStringTaint single(TaintRange(0, 1, flow));
+    insert(index, single);
   }
   CHECK_RANGES(ranges_);
 }
@@ -798,7 +802,7 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end,
       }
       // Non-overlap at the end of the range
       if (end < current->end()) {
-        ranges->emplace_back(current->end(), end, current->flow());
+        ranges->emplace_back(end, current->end(), current->flow());
       }
     }
 
