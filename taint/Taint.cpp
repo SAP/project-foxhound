@@ -381,7 +381,13 @@ bool TaintRange::operator<(const TaintRange& other) const {
   return this->end() < other.begin();
 }
 
-bool TaintRange::operator<(uint32_t index) const { return this->end() < index; }
+// A half open range [begin, end) sorts before an index when it ends at or
+// before it. Using < here made lower_bound stop on the range ending exactly
+// at the index, so at() reported no taint on every boundary between two
+// adjacent ranges.
+bool TaintRange::operator<(uint32_t index) const {
+  return this->end() <= index;
+}
 
 bool TaintRange::operator>(uint32_t index) const {
   return this->begin() > index;
