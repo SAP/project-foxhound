@@ -188,18 +188,23 @@ TaintNode::TaintNode(TaintOperation&& operation) noexcept
 }
 
 void TaintNode::addref() {
-  if (refcount_ == 0xffffffff) {
+  // Relaxed is sufficient: taking a new reference implies the caller already
+  // holds one, so no other thread can destroy the node concurrently.
+  uint32_t prev = refcount_.fetch_add(1, std::memory_order_relaxed);
+  if (prev == 0xffffffff) {
     MOZ_CRASH("TaintNode refcount overflow");
   }
-
-  ++refcount_;
 }
 
 void TaintNode::release() {
   MOZ_ASSERT(refcount_ > 0);
 
-  --refcount_;
-  if (refcount_ == 0) {
+  // The decrement and the zero test must be a single atomic operation,
+  // otherwise two threads dropping the last two references can both observe
+  // zero and double free. Release/acquire pairing ensures all prior writes
+  // are visible to the thread that runs the destructor.
+  if (refcount_.fetch_sub(1, std::memory_order_release) == 1) {
+    std::atomic_thread_fence(std::memory_order_acquire);
     delete this;
   }
 }
