@@ -470,7 +470,9 @@ static bool Escape(JSContext* cx, const CharT* chars, uint32_t length,
             outTaint->append(TaintRange(ti, ni, current->flow()));
             current++;
         }
-        if (i == current->begin()) {
+        // Advancing past the last range leaves current at end(), so it has to
+        // be rechecked before it is dereferenced again, as Unescape does.
+        if (current != inTaint.end() && i == current->begin()) {
             ti = ni;
         }
     }
