@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +34,6 @@ class ProfilerParent final : public PProfilerParent {
   static mozilla::ipc::Endpoint<PProfilerChild> CreateForProcess(
       base::ProcessId aOtherPid);
 
-#ifdef MOZ_GECKO_PROFILER
   using SingleProcessProfilePromise =
       MozPromise<IPCProfileAndAdditionalInformation, ResponseRejectReason,
                  true>;
@@ -108,7 +105,6 @@ class ProfilerParent final : public PProfilerParent {
   nsTArray<MozPromiseHolder<SingleProcessProfilePromise>>
       mPendingRequestedProfiles;
   bool mDestroyed;
-#endif  // MOZ_GECKO_PROFILER
 
  private:
   virtual ~ProfilerParent();

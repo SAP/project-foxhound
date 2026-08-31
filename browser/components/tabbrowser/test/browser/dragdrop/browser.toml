@@ -1,0 +1,16 @@
+[DEFAULT]
+support-files = [
+  "head.js"
+]
+
+["browser_drag_horizontal_overflow.js"]
+
+["browser_drag_multiselected_splitview.js"]
+
+["browser_drag_splitview.js"]
+
+["browser_drag_to_pin.js"]
+
+["browser_drop_link_splitview_unselected.js"]
+
+["browser_move_unpinned_not_overflowing.js"]

@@ -18,6 +18,7 @@ add_setup(async function () {
 add_task(
   async function test_full_page_translations_panel_recent_language_memory_with_multiple_windows_and_multiple_tabs() {
     const window1 = window;
+    await focusWindow(window1);
     const {
       runInPage: runInEsEnPage,
       cleanup: cleanupWindow1,
@@ -68,7 +69,7 @@ add_task(
 
     info("Opening a tab for es-fa in window 2");
 
-    const window2 = await BrowserTestUtils.openNewBrowserWindow();
+    const window2 = await openNewFocusedBrowserWindow();
     const { runInPage: runInEsFaPage, cleanup: cleanupWindow2 } =
       await loadTestPage({
         win: window2,

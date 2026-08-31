@@ -14,7 +14,8 @@ To keep us safe when you want to remove strings from nightly:
 ```xml
     <string name="onboarding_close" moz:removedIn="93" tools:ignore="UnusedResources">Close</string>
 ```
-Example commit https://github.com/mozilla-mobile/focus-android/pull/6291/files
+
+Example commit <https://github.com/mozilla-mobile/focus-android/pull/6291/files>
 
 ## When to remove an unused string and how
 

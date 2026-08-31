@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
-
 // Copyright (c) 2011, 2013 Google Inc.
 // All rights reserved.
 //
@@ -58,7 +55,7 @@ Module::Module(const string& name, const string& os, const string& architecture,
                const string& id)
     : name_(name), os_(os), architecture_(architecture), id_(id) {}
 
-Module::~Module() {}
+Module::~Module() = default;
 
 ////////////////////////////////////////////////////////////////
 // UniqueString

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,34 +5,47 @@
 #ifndef DOM_SVG_SVGPATHSEGUTILS_H_
 #define DOM_SVG_SVGPATHSEGUTILS_H_
 
+#include "mozilla/Span.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Rect.h"
-#include "mozilla/Span.h"
 
 namespace mozilla {
-template <typename Angle, typename LP>
+
+// Position
+template <typename H, typename V>
+struct StyleGenericPosition;
+
+// Command Endpoint
+template <typename Position, typename LP>
+struct StyleCommandEndPoint;
+template <typename T>
+using StyleEndPoint = StyleCommandEndPoint<StyleGenericPosition<T, T>, T>;
+
+// Control Point
+template <typename Position, typename LP>
+struct StyleControlPoint;
+template <typename T>
+using StyleCurveControlPoint = StyleControlPoint<StyleGenericPosition<T, T>, T>;
+
+// Shape Command
+template <typename Angle, typename Position, typename LP>
 struct StyleGenericShapeCommand;
-using StylePathCommand = StyleGenericShapeCommand<float, float>;
+using StylePathCommand =
+    StyleGenericShapeCommand<float, StyleGenericPosition<float, float>, float>;
 
 /**
  * Code that works with path segments can use an instance of this class to
  * store/provide information about the start of the current subpath and the
  * last path segment (if any).
  */
-struct SVGPathTraversalState {
+struct MOZ_STACK_CLASS SVGPathTraversalState {
   using Point = gfx::Point;
 
-  enum TraversalMode { eUpdateAll, eUpdateOnlyStartAndCurrentPos };
+  enum class TraversalMode { UpdateAll, UpdateOnlyStartAndCurrentPos };
 
-  SVGPathTraversalState()
-      : start(0.0, 0.0),
-        pos(0.0, 0.0),
-        cp1(0.0, 0.0),
-        cp2(0.0, 0.0),
-        length(0.0),
-        mode(eUpdateAll) {}
-
-  bool ShouldUpdateLengthAndControlPoints() { return mode == eUpdateAll; }
+  bool ShouldUpdateLengthAndControlPoints() const {
+    return mode == TraversalMode::UpdateAll;
+  }
 
   Point start;  // start point of current sub path (reset each moveto)
 
@@ -48,9 +59,11 @@ struct SVGPathTraversalState {
               // bezier curve then this is set to the absolute position of
               // its second control point, otherwise it's set to pos
 
-  float length;  // accumulated path length
+  // accumulated path length
+  float length = 0.0f;
 
-  TraversalMode mode;  // indicates what to track while traversing a path
+  // indicates what to track while traversing a path
+  TraversalMode mode = TraversalMode::UpdateAll;
 };
 
 /**
@@ -77,21 +90,22 @@ class SVGPathSegUtils {
    */
   static void TraversePathSegment(const StylePathCommand&,
                                   SVGPathTraversalState&);
-};
 
-/// Detect whether the path represents a rectangle (for both filling AND
-/// stroking) and if so returns it.
-///
-/// This is typically useful for google slides which has many of these rectangle
-/// shaped paths. It handles the same scenarios as skia's
-/// SkPathPriv::IsRectContour which it is inspired from, including zero-length
-/// edges and multiple points on edges of the rectangle, and doesn't attempt to
-/// detect flat curves (that could easily be added but the expectation is that
-/// since skia doesn't fast path it we're not likely to run into it in
-/// practice).
-///
-/// We could implement something similar for polygons.
-Maybe<gfx::Rect> SVGPathToAxisAlignedRect(Span<const StylePathCommand>);
+  /// Detect whether the path represents a rectangle (for both filling AND
+  /// stroking) and if so returns it.
+  ///
+  /// This is typically useful for google slides which has many of these
+  /// rectangle shaped paths. It handles the same scenarios as skia's
+  /// SkPathPriv::IsRectContour which it is inspired from, including zero-length
+  /// edges and multiple points on edges of the rectangle, and doesn't attempt
+  /// to detect flat curves (that could easily be added but the expectation is
+  /// that since skia doesn't fast path it we're not likely to run into it in
+  /// practice).
+  ///
+  /// We could implement something similar for polygons.
+  static Maybe<gfx::Rect> SVGPathToAxisAlignedRect(
+      Span<const StylePathCommand>);
+};
 
 }  // namespace mozilla
 

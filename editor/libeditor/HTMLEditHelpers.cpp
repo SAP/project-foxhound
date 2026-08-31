@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +14,11 @@
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsRange.h"
+
+// from vs/Windows Kits/10/.../rpcndr.h
+#ifdef small
+#  undef small
+#endif
 
 class nsISupports;
 
@@ -136,9 +140,10 @@ bool EditorInlineStyle::IsRepresentedBy(const nsIContent& aContent) const {
     return !mAttribute || element.HasAttr(mAttribute);
   }
   // Special case for linking or naming an <a> element.
-  if ((mHTMLProperty == nsGkAtoms::href && HTMLEditUtils::IsLink(&element)) ||
+  if ((mHTMLProperty == nsGkAtoms::href &&
+       HTMLEditUtils::IsHyperlinkElement(element)) ||
       (mHTMLProperty == nsGkAtoms::name &&
-       HTMLEditUtils::IsNamedAnchor(&element))) {
+       HTMLEditUtils::IsNamedAnchorElement(element))) {
     return true;
   }
   // If the style is font size, it's also represented by <big> or <small>.

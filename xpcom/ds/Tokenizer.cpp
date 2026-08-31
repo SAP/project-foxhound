@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -184,8 +182,8 @@ bool TTokenizer<TChar>::CheckPhrase(const typename base::TAString& aPhrase) {
       }
 
       typename base::Token t1, t2;
-      Unused << Next(t1);
-      Unused << pattern.Next(t2);
+      (void)Next(t1);
+      (void)pattern.Next(t2);
       if (t1.Type() == t2.Type() && t1.Fragment().Equals(t2.Fragment())) {
         continue;
       }
@@ -785,7 +783,8 @@ TChar TokenizerBase<TChar>::Token::AsChar() const {
 }
 
 template <typename TChar>
-auto TokenizerBase<TChar>::Token::AsString() const -> TDependentSubstring {
+auto TokenizerBase<TChar>::Token::AsString() const
+    -> const TDependentSubstring& {
   MOZ_ASSERT(mType == TOKEN_WORD);
   return mWord;
 }

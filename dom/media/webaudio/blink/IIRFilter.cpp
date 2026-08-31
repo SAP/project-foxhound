@@ -4,13 +4,12 @@
 
 #include "IIRFilter.h"
 
-#include "DenormalDisabler.h"
-#include "fdlibm.h"
-#include "mozilla/FloatingPoint.h"
-
 #include <mozilla/Assertions.h>
 
 #include <complex>
+
+#include "DenormalDisabler.h"
+#include "fdlibm.h"
 
 namespace blink {
 

@@ -23,6 +23,4 @@ declare global {
     instanceId: string;
     optionalPermissions: string[];
   }
-
-  type Values<T> = T[keyof T];
 }

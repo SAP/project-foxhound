@@ -168,10 +168,7 @@ add_task(async function test_extension_page_sameprocess_navigation() {
     );
   });
 
-  if (
-    Services.appinfo.sessionHistoryInParent &&
-    WebExtensionPolicy.isExtensionProcess
-  ) {
+  if (WebExtensionPolicy.isExtensionProcess) {
     // When the extension are running in the main process while the webpages run
     // in a separate child process, the extension page doesn't enter the BFCache
     // because nsFrameLoader::changeRemotenessCommon bails out due to retainPaint
@@ -296,7 +293,7 @@ add_task(async function test_extension_page_context_navigated_to_web_page() {
     // https://searchfox.org/mozilla-central/rev/24c1cdc33ccce692612276cd0d3e9a44f6c22fd3/dom/base/nsFrameLoaderOwner.cpp#185-196
     // ).
     equal(active, undefined, "extension page context should not exist anymore");
-  } else if (Services.appinfo.sessionHistoryInParent) {
+  } else {
     // When SHIP is enabled and the extensions runs in their own child extension
     // process, the BFCache is managed entirely from the parent process and the
     // extension page is expected to be able to enter the BFCache.
@@ -305,10 +302,6 @@ add_task(async function test_extension_page_context_navigated_to_web_page() {
       false,
       "extension page context is expected to be inactive while moved into the BFCache"
     );
-  } else {
-    // With the extension running in a separate child process but fission disabled,
-    // we expect the extension page to don't enter the BFCache.
-    equal(active, undefined, "extension page context should not exist anymore");
   }
 
   if (active === false) {

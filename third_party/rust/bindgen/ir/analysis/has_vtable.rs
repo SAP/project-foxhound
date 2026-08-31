@@ -9,9 +9,10 @@ use std::cmp;
 use std::ops;
 
 /// The result of the `HasVtableAnalysis` for an individual item.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub(crate) enum HasVtableResult {
     /// The item does not have a vtable pointer.
+    #[default]
     No,
 
     /// The item has a vtable and the actual vtable pointer is within this item.
@@ -20,12 +21,6 @@ pub(crate) enum HasVtableResult {
     /// The item has a vtable, but the actual vtable pointer is in a base
     /// member.
     BaseHasVtable,
-}
-
-impl Default for HasVtableResult {
-    fn default() -> Self {
-        HasVtableResult::No
-    }
 }
 
 impl HasVtableResult {
@@ -45,7 +40,7 @@ impl ops::BitOr for HasVtableResult {
 
 impl ops::BitOrAssign for HasVtableResult {
     fn bitor_assign(&mut self, rhs: HasVtableResult) {
-        *self = self.join(rhs)
+        *self = self.join(rhs);
     }
 }
 
@@ -77,7 +72,7 @@ pub(crate) struct HasVtableAnalysis<'ctx> {
     dependencies: HashMap<ItemId, Vec<ItemId>>,
 }
 
-impl<'ctx> HasVtableAnalysis<'ctx> {
+impl HasVtableAnalysis<'_> {
     fn consider_edge(kind: EdgeKind) -> bool {
         // These are the only edges that can affect whether a type has a
         // vtable or not.
@@ -123,9 +118,9 @@ impl<'ctx> HasVtableAnalysis<'ctx> {
         let from = from.into();
         let to = to.into();
 
-        match self.have_vtable.get(&from).cloned() {
+        match self.have_vtable.get(&from) {
             None => ConstrainResult::Same,
-            Some(r) => self.insert(to, r),
+            Some(r) => self.insert(to, *r),
         }
     }
 }
@@ -147,16 +142,15 @@ impl<'ctx> MonotoneFramework for HasVtableAnalysis<'ctx> {
     }
 
     fn initial_worklist(&self) -> Vec<ItemId> {
-        self.ctx.allowlisted_items().iter().cloned().collect()
+        self.ctx.allowlisted_items().iter().copied().collect()
     }
 
     fn constrain(&mut self, id: ItemId) -> ConstrainResult {
-        trace!("constrain {:?}", id);
+        trace!("constrain {id:?}");
 
         let item = self.ctx.resolve_item(id);
-        let ty = match item.as_type() {
-            None => return ConstrainResult::Same,
-            Some(ty) => ty,
+        let Some(ty) = item.as_type() else {
+            return ConstrainResult::Same;
         };
 
         // TODO #851: figure out a way to handle deriving from template type parameters.
@@ -181,7 +175,7 @@ impl<'ctx> MonotoneFramework for HasVtableAnalysis<'ctx> {
                 }
 
                 let bases_has_vtable = info.base_members().iter().any(|base| {
-                    trace!("    comp has a base with a vtable: {:?}", base);
+                    trace!("    comp has a base with a vtable: {base:?}");
                     self.have_vtable.contains_key(&base.ty.into())
                 });
                 if bases_has_vtable {
@@ -205,7 +199,7 @@ impl<'ctx> MonotoneFramework for HasVtableAnalysis<'ctx> {
     {
         if let Some(edges) = self.dependencies.get(&id) {
             for item in edges {
-                trace!("enqueue {:?} into worklist", item);
+                trace!("enqueue {item:?} into worklist");
                 f(*item);
             }
         }
@@ -228,7 +222,7 @@ impl<'ctx> From<HasVtableAnalysis<'ctx>> for HashMap<ItemId, HasVtableResult> {
 /// vtable during codegen.
 ///
 /// This is not for _computing_ whether the thing has a vtable, it is for
-/// looking up the results of the HasVtableAnalysis's computations for a
+/// looking up the results of the `HasVtableAnalysis`'s computations for a
 /// specific thing.
 pub(crate) trait HasVtable {
     /// Return `true` if this thing has vtable, `false` otherwise.

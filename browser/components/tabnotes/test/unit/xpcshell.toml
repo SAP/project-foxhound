@@ -1,0 +1,15 @@
+[DEFAULT]
+prefs = [
+  "browser.tabs.notes.enabled=true",
+]
+head = "head.js"
+
+["test_json_ld.js"]
+
+["test_link_rel_canonical.js"]
+
+["test_meta_og_url.js"]
+
+["test_pick_canonical_url.js"]
+
+["test_tab_notes.js"]

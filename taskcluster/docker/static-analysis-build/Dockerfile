@@ -9,7 +9,6 @@ ENV XZ_OPT=-T0
 
 RUN apt-get update && \
     apt-get install \
-      autoconf2.13 \
       automake \
       bison \
       bzip2 \
@@ -28,7 +27,6 @@ RUN apt-get update && \
       nasm \
       opam \
       patch \
-      p7zip-full \
       procps \
       python3-dev \
       rsync \

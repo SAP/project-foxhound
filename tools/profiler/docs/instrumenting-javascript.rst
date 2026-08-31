@@ -26,18 +26,16 @@ If you have access to ChromeUtils, then adding a marker is relatively easily.
   ChromeUtils.addProfilerMarker("MarkerName");
 
   // Add a duration marker, representing a span of time.
-  const startTime = Cu.now();
+  const startTime = ChromeUtils.now();
   doWork();
   ChromeUtils.addProfilerMarker("MarkerName", startTime);
 
   // Add a duration marker, representing a span of time, with some additional tex
-  const startTime = Cu.now();
+  const startTime = ChromeUtils.now();
   doWork();
   ChromeUtils.addProfilerMarker("MarkerName", startTime, "Details about this event");
 
-  // Add an instant marker, with some additional tex
-  const startTime = Cu.now();
-  doWork();
+  // Add an instant marker, with some additional text
   ChromeUtils.addProfilerMarker("MarkerName", undefined, "Details about this event");
 
 Markers in Content Code

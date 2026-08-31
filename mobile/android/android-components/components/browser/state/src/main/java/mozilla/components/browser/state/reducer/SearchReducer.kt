@@ -18,10 +18,14 @@ internal object SearchReducer {
             is SearchAction.RefreshSearchEnginesAction -> state // This is handled in [RegionMiddleware].
             is SearchAction.ApplicationSearchEnginesLoaded -> state.setApplicationEngines(action)
             is SearchAction.SetSearchEnginesAction -> state.setSearchEngines(action)
+            is SearchAction.SearchConfigurationAvailabilityChanged ->
+                state.setNewSearchConfigurationAvailability(action)
             is SearchAction.SetRegionAction -> state.setRegion(action)
             is SearchAction.UpdateCustomSearchEngineAction -> state.updateCustomSearchEngine(action)
             is SearchAction.RemoveCustomSearchEngineAction -> state.removeSearchEngine(action)
             is SearchAction.SelectSearchEngineAction -> state.selectSearchEngine(action)
+            is SearchAction.SelectPrivateSearchEngineAction -> state.selectPrivateSearchEngine(action)
+            is SearchAction.ClearPrivateSearchEngineAction -> state.clearPrivateSearchEngine()
             is SearchAction.ShowSearchEngineAction -> state.maybeShowSearchEngine(action)
             is SearchAction.HideSearchEngineAction -> state.hideSearchEngine(action)
             is SearchAction.AddAdditionalSearchEngineAction -> state.addAdditionalSearchEngine(action)
@@ -52,16 +56,28 @@ private fun BrowserState.setSearchEngines(
             customSearchEngines = action.customSearchEngines,
             userSelectedSearchEngineId = action.userSelectedSearchEngineId,
             userSelectedSearchEngineName = action.userSelectedSearchEngineName,
+            userSelectedPrivateSearchEngineId = action.userSelectedPrivateSearchEngineId,
+            userSelectedPrivateSearchEngineName = action.userSelectedPrivateSearchEngineName,
             regionDefaultSearchEngineId = action.regionDefaultSearchEngineId,
             hiddenSearchEngines = action.hiddenSearchEngines,
             disabledSearchEngineIds = action.disabledSearchEngineIds,
             additionalSearchEngines = action.additionalSearchEngines,
             additionalAvailableSearchEngines = action.additionalAvailableSearchEngines,
             regionSearchEnginesOrder = action.regionSearchEnginesOrder,
+            searchEnvironmentId = action.searchEnginesConfigurationId,
+            isNewSearchConfigurationAvailable = false,
             complete = true,
         ),
     )
 }
+
+private fun BrowserState.setNewSearchConfigurationAvailability(
+    action: SearchAction.SearchConfigurationAvailabilityChanged,
+) = copy(
+    search = search.copy(
+        isNewSearchConfigurationAvailable = action.isNewSearchConfigurationAvailable,
+    ),
+)
 
 private fun BrowserState.setRegion(
     action: SearchAction.SetRegionAction,
@@ -111,6 +127,26 @@ private fun BrowserState.selectSearchEngine(
         search = search.copy(
             userSelectedSearchEngineId = action.searchEngineId,
             userSelectedSearchEngineName = action.searchEngineName,
+        ),
+    )
+}
+
+private fun BrowserState.selectPrivateSearchEngine(
+    action: SearchAction.SelectPrivateSearchEngineAction,
+): BrowserState {
+    return copy(
+        search = search.copy(
+            userSelectedPrivateSearchEngineId = action.searchEngineId,
+            userSelectedPrivateSearchEngineName = action.searchEngineName,
+        ),
+    )
+}
+
+private fun BrowserState.clearPrivateSearchEngine(): BrowserState {
+    return copy(
+        search = search.copy(
+            userSelectedPrivateSearchEngineId = null,
+            userSelectedPrivateSearchEngineName = null,
         ),
     )
 }

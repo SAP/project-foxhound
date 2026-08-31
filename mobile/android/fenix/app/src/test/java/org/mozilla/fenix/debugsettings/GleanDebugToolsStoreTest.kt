@@ -275,6 +275,7 @@ class GleanDebugToolsStoreTest {
         logPingsToConsoleEnabled = logPingsToConsoleEnabled ?: false,
         pingType = pingType,
         debugViewTag = debugViewTag ?: "",
+        pingTypes = listOf("metrics", "crash"),
     )
 
     class FakeGleanDebugToolsStorage(

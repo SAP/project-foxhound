@@ -27,7 +27,7 @@ async function clickEnableToggle(card) {
   let isDisabled = card.addon.userDisabled;
   let addonEvent = isDisabled ? "onEnabled" : "onDisabled";
   let addonStateChanged = AddonTestUtils.promiseAddonEvent(addonEvent);
-  let win = card.ownerGlobal;
+  let win = card.documentGlobal;
   let button = card.querySelector(".extension-enable-button");
 
   // Centre the button since "start" could be behind the sticky header.
@@ -40,7 +40,7 @@ async function clickEnableToggle(card) {
 }
 
 function mouseOver(el) {
-  let win = el.ownerGlobal;
+  let win = el.documentGlobal;
   el.scrollIntoView({ block: "center" });
   EventUtils.synthesizeMouseAtCenter(el, { type: "mousemove" }, win);
   return waitForAnimationFrame(win);
@@ -130,7 +130,9 @@ add_task(async function testReordering() {
   info("Opening a more options menu");
   let panel = cardThree.querySelector("panel-list");
   EventUtils.synthesizeMouseAtCenter(
-    cardThree.querySelector('[action="more-options"]'),
+    AboutAddonsTestUtils.getAddonCardMoreOptionsButton(win, {
+      addonCard: cardThree,
+    }),
     {},
     win
   );
@@ -180,7 +182,7 @@ add_task(async function testReordering() {
   assertInSection(cardThree, "enabled", "cardThree is still in enabled");
 
   transitionsEnded = waitForTransitionEnd(cardOne, cardThree);
-  win.document.querySelector('[action="page-options"]').focus();
+  AboutAddonsTestUtils.getPageOptionsButton(win).focus();
   await transitionsEnded;
   assertInSection(
     cardOne,

@@ -12,11 +12,11 @@ import mozilla.components.browser.storage.sync.TabEntry
 import mozilla.components.concept.sync.DeviceCapability
 import mozilla.components.concept.sync.DeviceType
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mozilla.fenix.tabstray.ext.toComposeList
 import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsListItem
 import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsListSupportedFeature
+import kotlin.test.assertIs
 
 class SyncedDeviceTabsTest {
     private val noTabDevice = SyncedDeviceTabs(
@@ -116,9 +116,9 @@ class SyncedDeviceTabsTest {
         val listData = syncedDeviceList.toComposeList()
 
         assertEquals(2, listData.count())
-        assertTrue(listData[0] is SyncedTabsListItem.DeviceSection)
+        assertIs<SyncedTabsListItem.DeviceSection>(listData[0])
         assertEquals(oneTabDeviceWithoutCapabilities.tabs.size, (listData[0] as SyncedTabsListItem.DeviceSection).tabs.size)
-        assertTrue(listData[1] is SyncedTabsListItem.DeviceSection)
+        assertIs<SyncedTabsListItem.DeviceSection>(listData[1])
         assertEquals(twoTabDevice.tabs.size, (listData[1] as SyncedTabsListItem.DeviceSection).tabs.size)
     }
 
@@ -128,7 +128,7 @@ class SyncedDeviceTabsTest {
         val listData = syncedDeviceList.toComposeList()
 
         assertEquals(1, listData.count())
-        assertTrue(listData[0] is SyncedTabsListItem.DeviceSection)
+        assertIs<SyncedTabsListItem.DeviceSection>(listData[0])
         assertEquals(0, (listData[0] as SyncedTabsListItem.DeviceSection).tabs.size)
     }
 

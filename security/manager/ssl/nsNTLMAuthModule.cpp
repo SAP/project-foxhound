@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +15,6 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
@@ -486,7 +484,6 @@ static nsresult GenerateType3Msg(const nsString& domain,
                                  uint32_t inLen, void** outBuf,
                                  uint32_t* outLen) {
   // inBuf contains Type-2 msg (the challenge) from server
-  MOZ_ASSERT(NS_IsMainThread());
   nsresult rv;
   Type2Msg msg{};
 
@@ -560,10 +557,10 @@ static nsresult GenerateType3Msg(const nsString& domain,
   // get workstation name
   // (do not use local machine's hostname after bug 1046421)
   //
-  rv = mozilla::Preferences::GetCString("network.generic-ntlm-auth.workstation",
-                                        hostBuf);
-  if (NS_FAILED(rv)) {
-    return rv;
+  {
+    const auto prefLock =
+        mozilla::StaticPrefs::network_generic_ntlm_auth_workstation();
+    hostBuf = *prefLock;
   }
 
   if (unicode) {

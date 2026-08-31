@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -274,7 +272,9 @@ TEST_F(APZCTransformNotificationTester,
   MockFunction<void(std::string checkPointName)> check;
   {
     InSequence s;
+
     EXPECT_CALL(check, Call("Pan Start"));
+
     EXPECT_CALL(
         *mcc,
         NotifyAPZStateChange(
@@ -305,6 +305,10 @@ TEST_F(APZCTransformNotificationTester,
 
     EXPECT_CALL(check, Call("Done"));
   }
+
+  // Scroll somewhere into the middle of the scroll range, so that we have
+  // lots of space to scroll in both directions.
+  mRootApzc->GetFrameMetrics().SetVisualScrollOffset(CSSPoint(250, 250));
 
   check.Call("Pan Start");
   QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID);

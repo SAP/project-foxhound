@@ -15,16 +15,25 @@ import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.recentlyclosed.RecentlyClosedTabsStorage
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.RecentlyClosedTabs
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.share.ShareSource
+import org.mozilla.fenix.components.usecases.ShareUseCases
+import org.mozilla.fenix.ext.openToBrowser
 
 @Suppress("TooManyFunctions")
 interface RecentlyClosedController {
-    fun handleOpen(tab: TabState, mode: BrowsingMode? = null)
-    fun handleOpen(tabs: Set<TabState>, mode: BrowsingMode? = null)
+    /**
+     * [TabState] to get the state of the tab.
+     */
+    fun handleOpen(tab: TabState)
+
+    /**
+     * [TabState] to get the state of the tabs.
+     */
+    fun handleOpen(tabs: Set<TabState>)
     fun handleDelete(tab: TabState)
     fun handleDelete(tabs: Set<TabState>)
     fun handleShare(tabs: Set<TabState>)
@@ -37,27 +46,28 @@ interface RecentlyClosedController {
 
 @Suppress("TooManyFunctions", "LongParameterList")
 class DefaultRecentlyClosedController(
+    private val appStore: AppStore,
     private val navController: NavController,
     private val browserStore: BrowserStore,
     private val recentlyClosedStore: RecentlyClosedFragmentStore,
     private val recentlyClosedTabsStorage: RecentlyClosedTabsStorage,
     private val tabsUseCases: TabsUseCases,
-    private val activity: HomeActivity,
+    private val shareUseCases: ShareUseCases,
     private val lifecycleScope: CoroutineScope,
-    private val openToBrowser: (url: String, mode: BrowsingMode?) -> Unit,
+    private val openToBrowser: (url: String) -> Unit,
 ) : RecentlyClosedController {
-    override fun handleOpen(tab: TabState, mode: BrowsingMode?) {
-        openToBrowser(tab.url, mode)
+    override fun handleOpen(tab: TabState) {
+        openToBrowser(tab.url)
     }
 
-    override fun handleOpen(tabs: Set<TabState>, mode: BrowsingMode?) {
-        if (mode == BrowsingMode.Normal) {
+    override fun handleOpen(tabs: Set<TabState>) {
+        if (appStore.state.mode == BrowsingMode.Normal) {
             RecentlyClosedTabs.menuOpenInNormalTab.record(NoExtras())
-        } else if (mode == BrowsingMode.Private) {
+        } else if (appStore.state.mode == BrowsingMode.Private) {
             RecentlyClosedTabs.menuOpenInPrivateTab.record(NoExtras())
         }
         recentlyClosedStore.dispatch(RecentlyClosedFragmentAction.DeselectAll)
-        tabs.forEach { tab -> handleOpen(tab, mode) }
+        tabs.forEach { handleOpen(it) }
     }
 
     override fun handleSelect(tab: TabState) {
@@ -97,11 +107,18 @@ class DefaultRecentlyClosedController(
 
     override fun handleShare(tabs: Set<TabState>) {
         RecentlyClosedTabs.menuShare.record(NoExtras())
+
         val shareData = tabs.map { ShareData(url = it.url, title = it.title) }
-        navController.navigate(
-            RecentlyClosedFragmentDirections.actionGlobalShareFragment(
-                data = shareData.toTypedArray(),
-            ),
+        shareUseCases.shareItems(
+            items = shareData,
+            source = ShareSource.RECENTLY_CLOSED,
+            navigateToShareFragment = {
+                navController.navigate(
+                    RecentlyClosedFragmentDirections.actionGlobalShareFragment(
+                        data = shareData.toTypedArray(),
+                    ),
+                )
+            },
         )
     }
 
@@ -120,18 +137,13 @@ class DefaultRecentlyClosedController(
     override fun handleRestore(item: TabState) {
         lifecycleScope.launch {
             RecentlyClosedTabs.openTab.record(NoExtras())
-            val currentBrowsingMode = activity.browsingModeManager.mode
-
-            if (currentBrowsingMode == BrowsingMode.Normal) {
+            val isPrivate = appStore.state.mode.isPrivate
+            if (!isPrivate) {
                 tabsUseCases.restore(item, recentlyClosedTabsStorage.engineStateStorage())
-                browserStore.dispatch(
-                    RecentlyClosedAction.RemoveClosedTabAction(item),
-                )
-                activity.openToBrowser(
-                    from = BrowserDirection.FromRecentlyClosed,
-                )
+                browserStore.dispatch(RecentlyClosedAction.RemoveClosedTabAction(item))
+                navController.openToBrowser()
             } else {
-                handleOpen(item, currentBrowsingMode)
+                handleOpen(item)
             }
         }
     }

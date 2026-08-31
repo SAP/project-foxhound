@@ -11,8 +11,8 @@ use thin_vec::ThinVec;
 
 mod storage;
 use storage::get_key_path;
-use storage::get_storage_key;
 use storage::get_storage_path;
+use storage::{generate_storage_key, read_storage_key};
 
 // Access the platform state for the given storage prefix
 pub fn state_access(
@@ -24,9 +24,28 @@ pub fn state_access(
     };
 
     let db_path = get_storage_path(storage_prefix);
-    let Ok(db_key) = get_storage_key(storage_prefix) else {
-        log::error!("Failed to get storage key");
-        return Err(NS_ERROR_FAILURE);
+    let key_path = get_key_path(storage_prefix);
+    let db_exists = std::path::Path::new(&db_path).exists();
+
+    let db_key = match read_storage_key(&key_path) {
+        Ok(Some(key)) => key,
+        Ok(None) if db_exists => {
+            log::error!(
+                "Storage database exists but key file is missing; refusing to generate a new key"
+            );
+            return Err(NS_ERROR_FAILURE);
+        }
+        Ok(None) => match generate_storage_key(&key_path) {
+            Ok(key) => key,
+            Err(e) => {
+                log::error!("Failed to generate storage key: {:?}", e);
+                return Err(NS_ERROR_FAILURE);
+            }
+        },
+        Err(e) => {
+            log::error!("Failed to read storage key: {:?}", e);
+            return Err(NS_ERROR_FAILURE);
+        }
     };
 
     mls_platform_api::state_access(&db_path, &db_key).map_err(|e| {

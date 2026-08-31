@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef include_dom_media_ipc_RemoteDecoderChild_h
 #define include_dom_media_ipc_RemoteDecoderChild_h
 
+#include "mozilla/EnumeratedArray.h"
 #include "mozilla/PRemoteDecoderChild.h"
 #include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/ShmemRecycleAllocator.h"
@@ -21,7 +20,7 @@ class RemoteDecoderChild : public ShmemRecycleAllocator<RemoteDecoderChild>,
   friend class PRemoteDecoderChild;
 
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderChild);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderChild, final);
 
   explicit RemoteDecoderChild(RemoteMediaIn aLocation);
 
@@ -42,10 +41,15 @@ class RemoteDecoderChild : public ShmemRecycleAllocator<RemoteDecoderChild>,
   void SetSeekThreshold(const media::TimeUnit& aTime);
   MediaDataDecoder::ConversionRequired NeedsConversion() const;
   bool ShouldDecoderAlwaysBeRecycled() const;
-  void DestroyIPDL();
+  using DecodeProperties =
+      EnumeratedArray<MediaDataDecoder::PropertyName,
+                      Maybe<MediaDataDecoder::PropertyValue>,
+                      MediaDataDecoder::sPropertyNameCount>;
+  const DecodeProperties& GetDecodeProperties() const {
+    return mDecodeProperties;
+  }
 
-  // Called from IPDL when our actor has been destroyed
-  void IPDLActorDestroyed();
+  void DestroyIPDL();
 
   RemoteMediaManagerChild* GetManager();
 
@@ -53,10 +57,11 @@ class RemoteDecoderChild : public ShmemRecycleAllocator<RemoteDecoderChild>,
   virtual ~RemoteDecoderChild();
   void AssertOnManagerThread() const;
 
+  nsresult GetCrashedErrorCode() const;
+
   virtual MediaResult ProcessOutput(DecodedOutputIPDL&& aDecodedData) = 0;
   virtual void RecordShutdownTelemetry(bool aForAbnormalShutdown) {}
 
-  RefPtr<RemoteDecoderChild> mIPDLSelfRef;
   MediaDataDecoder::DecodedData mDecodedData;
   const RemoteMediaIn mLocation;
 
@@ -79,6 +84,7 @@ class RemoteDecoderChild : public ShmemRecycleAllocator<RemoteDecoderChild>,
   MediaDataDecoder::ConversionRequired mConversion =
       MediaDataDecoder::ConversionRequired::kNeedNone;
   bool mShouldDecoderAlwaysBeRecycled = false;
+  DecodeProperties mDecodeProperties;
 };
 
 }  // namespace mozilla

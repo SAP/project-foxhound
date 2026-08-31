@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,20 +6,18 @@
 #define mozilla_dom_Fetch_h
 
 #include "mozilla/Attributes.h"
-#include "nsCOMPtr.h"
-#include "nsError.h"
-#include "nsProxyRelease.h"
-#include "nsString.h"
-
-#include "mozilla/DebugOnly.h"
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/BodyConsumer.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/FetchStreamReader.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultReaderBinding.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/workerinternals/RuntimeService.h"
+#include "nsCOMPtr.h"
+#include "nsError.h"
+#include "nsProxyRelease.h"
+#include "nsString.h"
 
 class nsIGlobalObject;
 class nsIEventTarget;
@@ -177,7 +173,7 @@ class FetchBody : public FetchBodyBase, public AbortFollower {
 
   void GetMimeType(nsACString& aMimeType, nsACString& aMixedCaseMimeType);
 
-  const nsACString& BodyBlobURISpec() const;
+  BlobImpl* BodyBlobImpl() const;
 
   const nsAString& BodyLocalPath() const;
 
@@ -192,6 +188,14 @@ class FetchBody : public FetchBodyBase, public AbortFollower {
                                   FetchStreamReader** aStreamReader,
                                   nsIInputStream** aInputStream,
                                   ErrorResult& aRv);
+
+  // After clone() clones the underlying nsIInputStream, an unread native
+  // ReadableStream reflector may still point at the original stream, which
+  // clone() can have replaced (for non-cloneable bodies it is now consumed by
+  // the cloning copy). Repoint such a reflector at the current body stream so
+  // the original stream is not read from two places. No-op when there is no
+  // reflector or it is not a native unread stream.
+  void MaybeRebindReadableStreamBody();
 
   // Utility public methods accessed by various runnables.
 
@@ -231,13 +235,13 @@ class FetchBody : public FetchBodyBase, public AbortFollower {
   void GetInitialURL(nsACString& aInitialURL);
 
  protected:
-  nsCOMPtr<nsIGlobalObject> mOwner;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
 
   // This is the Reader used to retrieve data from the body. This needs to be
   // traversed by subclasses.
   RefPtr<FetchStreamReader> mFetchStreamReader;
 
-  explicit FetchBody(nsIGlobalObject* aOwner);
+  explicit FetchBody(nsIGlobalObject* aGlobal);
 
   virtual ~FetchBody();
 
@@ -273,7 +277,7 @@ class EmptyBody final : public FetchBody<EmptyBody> {
       const nsACString& aMixedCaseMimeType, const nsACString& aInitialURL,
       ErrorResult& aRv);
 
-  nsIGlobalObject* GetParentObject() const { return mOwner; }
+  nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
   AbortSignalImpl* GetSignalImpl() const override { return mAbortSignalImpl; }
   AbortSignalImpl* GetSignalImplToConsumeBody() const final { return nullptr; }
@@ -289,9 +293,9 @@ class EmptyBody final : public FetchBody<EmptyBody> {
 
   void GetBody(nsIInputStream** aStream, int64_t* aBodyLength = nullptr);
 
-  using FetchBody::BodyBlobURISpec;
+  using FetchBody::BodyBlobImpl;
 
-  const nsACString& BodyBlobURISpec() const { return EmptyCString(); }
+  BlobImpl* BodyBlobImpl() const { return nullptr; }
 
   using FetchBody::BodyLocalPath;
 

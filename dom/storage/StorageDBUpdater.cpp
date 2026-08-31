@@ -1,21 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LocalStorageManager.h"
 #include "StorageUtils.h"
-
 #include "mozIStorageBindingParams.h"
-#include "mozIStorageValueArray.h"
-#include "mozIStorageFunction.h"
-#include "mozilla/BasePrincipal.h"
-#include "nsVariant.h"
-#include "mozilla/Tokenizer.h"
 #include "mozIStorageConnection.h"
+#include "mozIStorageFunction.h"
+#include "mozIStorageValueArray.h"
 #include "mozStorageHelper.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/StorageOriginAttributes.h"
+#include "mozilla/Tokenizer.h"
+#include "nsVariant.h"
 
 // Current version of the database schema
 #define CURRENT_SCHEMA_VERSION 2
@@ -148,8 +145,9 @@ class GetOriginParticular final : public mozIStorageFunction {
   explicit GetOriginParticular(EParticular aParticular)
       : mParticular(aParticular) {}
 
- private:
   GetOriginParticular() = delete;
+
+ private:
   ~GetOriginParticular() = default;
 
   EParticular mParticular;

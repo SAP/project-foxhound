@@ -15,12 +15,12 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <span>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/scoped_refptr.h"
 #include "api/units/data_rate.h"
 #include "api/units/data_size.h"
@@ -86,7 +86,7 @@ class Av1Decoder : public DecodedImageCallback {
     }
   }
 
-  ~Av1Decoder() {
+  ~Av1Decoder() override {
     if (raw_out_file_) {
       fclose(raw_out_file_);
     }
@@ -98,7 +98,7 @@ class Av1Decoder : public DecodedImageCallback {
     return 0;
   }
 
-  VideoFrame Decode(rtc::ArrayView<uint8_t> bitstream_data) {
+  VideoFrame Decode(std::span<uint8_t> bitstream_data) {
     EncodedImage img;
     img.SetEncodedData(EncodedImageBuffer::Create(bitstream_data.data(),
                                                   bitstream_data.size()));
@@ -127,7 +127,7 @@ class FrameEncoderSettingsBuilder {
   FrameEncoderSettingsBuilder() {
     class IgnoredOutput : public VideoEncoderInterface::FrameOutput {
      public:
-      rtc::ArrayView<uint8_t> GetBitstreamOutputBuffer(DataSize size) override {
+      std::span<uint8_t> GetBitstreamOutputBuffer(DataSize size) override {
         unread_.resize(size.bytes());
         return unread_;
       }
@@ -172,7 +172,7 @@ class FrameEncoderSettingsBuilder {
   }
 
   FrameEncoderSettingsBuilder& Res(int width, int height) {
-    frame_encode_settings_.resolution = {width, height};
+    frame_encode_settings_.resolution = {.width = width, .height = height};
     return *this;
   }
 
@@ -203,9 +203,9 @@ class FrameEncoderSettingsBuilder {
  private:
   struct FrameOut : public VideoEncoderInterface::FrameOutput {
     explicit FrameOut(EncOut& e) : eo(e) {}
-    rtc::ArrayView<uint8_t> GetBitstreamOutputBuffer(DataSize size) override {
+    std::span<uint8_t> GetBitstreamOutputBuffer(DataSize size) override {
       eo.bitstream.resize(size.bytes());
-      return rtc::ArrayView<uint8_t>(eo.bitstream);
+      return std::span<uint8_t>(eo.bitstream);
     }
     void EncodeComplete(const EncodeResult& encode_result) override {
       eo.res = encode_result;
@@ -256,12 +256,12 @@ MATCHER(HasBitstreamAndMetaData, "") {
   return !arg.bitstream.empty() && std::holds_alternative<EncodedData>(arg.res);
 }
 
-double Psnr(const rtc::scoped_refptr<I420BufferInterface>& ref_buffer,
+double Psnr(const scoped_refptr<I420BufferInterface>& ref_buffer,
             const VideoFrame& decoded_frame) {
   return I420PSNR(*ref_buffer, *decoded_frame.video_frame_buffer()->ToI420());
 }
 
-static constexpr VideoEncoderFactoryInterface::StaticEncoderSettings
+constexpr VideoEncoderFactoryInterface::StaticEncoderSettings
     kCbrEncoderSettings{
         .max_encode_dimensions = {.width = 1920, .height = 1080},
         .encoding_format = {.sub_sampling = EncodingFormat::SubSampling::k420,
@@ -273,7 +273,7 @@ static constexpr VideoEncoderFactoryInterface::StaticEncoderSettings
         .max_number_of_threads = 1,
     };
 
-static constexpr VideoEncoderFactoryInterface::StaticEncoderSettings
+constexpr VideoEncoderFactoryInterface::StaticEncoderSettings
     kCqpEncoderSettings{
         .max_encode_dimensions = {.width = 1920, .height = 1080},
         .encoding_format = {.sub_sampling = EncodingFormat::SubSampling::k420,
@@ -282,8 +282,8 @@ static constexpr VideoEncoderFactoryInterface::StaticEncoderSettings
         .max_number_of_threads = 1,
     };
 
-static constexpr Cbr kCbr{.duration = TimeDelta::Millis(100),
-                          .target_bitrate = DataRate::KilobitsPerSec(1000)};
+constexpr Cbr kCbr{.duration = TimeDelta::Millis(100),
+                   .target_bitrate = DataRate::KilobitsPerSec(1000)};
 
 TEST(LibaomAv1EncoderFactory, CodecName) {
   EXPECT_THAT(LibaomAv1EncoderFactory().CodecName(), Eq("AV1"));
@@ -348,17 +348,17 @@ TEST(LibaomAv1Encoder, ResolutionSwitching) {
   auto frame_reader = CreateFrameReader();
   auto enc = LibaomAv1EncoderFactory().CreateEncoder(kCbrEncoderSettings, {});
 
-  rtc::scoped_refptr<I420Buffer> in0 = frame_reader->PullFrame();
+  scoped_refptr<I420Buffer> in0 = frame_reader->PullFrame();
   EncOut tu0;
   enc->Encode(in0, {.presentation_timestamp = Timestamp::Millis(0)},
               ToVec({Fb().Rate(kCbr).Res(320, 180).Upd(0).Key().Out(tu0)}));
 
-  rtc::scoped_refptr<I420Buffer> in1 = frame_reader->PullFrame();
+  scoped_refptr<I420Buffer> in1 = frame_reader->PullFrame();
   EncOut tu1;
   enc->Encode(in1, {.presentation_timestamp = Timestamp::Millis(100)},
               ToVec({Fb().Rate(kCbr).Res(640, 360).Ref({0}).Out(tu1)}));
 
-  rtc::scoped_refptr<I420Buffer> in2 = frame_reader->PullFrame();
+  scoped_refptr<I420Buffer> in2 = frame_reader->PullFrame();
   EncOut tu2;
   enc->Encode(in2, {.presentation_timestamp = Timestamp::Millis(200)},
               ToVec({Fb().Rate(kCbr).Res(160, 90).Ref({0}).Out(tu2)}));
@@ -383,23 +383,23 @@ TEST(LibaomAv1Encoder, InputResolutionSwitching) {
   auto frame_reader = CreateFrameReader();
   auto enc = LibaomAv1EncoderFactory().CreateEncoder(kCbrEncoderSettings, {});
 
-  rtc::scoped_refptr<I420Buffer> in0 = frame_reader->PullFrame();
+  scoped_refptr<I420Buffer> in0 = frame_reader->PullFrame();
   EncOut tu0;
   enc->Encode(in0, {.presentation_timestamp = Timestamp::Millis(0)},
               ToVec({Fb().Rate(kCbr).Res(160, 90).Upd(0).Key().Out(tu0)}));
 
-  rtc::scoped_refptr<I420Buffer> in1 = frame_reader->PullFrame(
+  scoped_refptr<I420Buffer> in1 = frame_reader->PullFrame(
       /*frame_num=*/nullptr,
-      /*resolution=*/{320, 180},
-      /*framerate_scale=*/{1, 1});
+      /*resolution=*/{.width = 320, .height = 180},
+      /*framerate_scale=*/{.num = 1, .den = 1});
   EncOut tu1;
   enc->Encode(in1, {.presentation_timestamp = Timestamp::Millis(100)},
               ToVec({Fb().Rate(kCbr).Res(160, 90).Ref({0}).Out(tu1)}));
 
-  rtc::scoped_refptr<I420Buffer> in2 = frame_reader->PullFrame(
+  scoped_refptr<I420Buffer> in2 = frame_reader->PullFrame(
       /*frame_num=*/nullptr,
-      /*resolution=*/{160, 90},
-      /*framerate_scale=*/{1, 1});
+      /*resolution=*/{.width = 160, .height = 90},
+      /*framerate_scale=*/{.num = 1, .den = 1});
   EncOut tu2;
   enc->Encode(in2, {.presentation_timestamp = Timestamp::Millis(200)},
               ToVec({Fb().Rate(kCbr).Res(160, 90).Ref({0}).Out(tu2)}));
@@ -446,7 +446,7 @@ TEST(LibaomAv1Encoder, TempoSpatial) {
               ToVec({Fb().Rate(k20Fps).Res(640, 360).S(2).Ref({2}).Upd(2).Out(
                   tu1_s2)}));
 
-  rtc::scoped_refptr<I420Buffer> frame = frame_reader->PullFrame();
+  scoped_refptr<I420Buffer> frame = frame_reader->PullFrame();
   EncOut tu2_s0;
   EncOut tu2_s1;
   EncOut tu2_s2;
@@ -468,7 +468,7 @@ TEST(LibaomAv1Encoder, TempoSpatial) {
 
   VideoFrame f = dec.Decode(tu2_s2.bitstream);
   EXPECT_THAT(Resolution(f), ResolutionIs(640, 360));
-  EXPECT_THAT(Psnr(frame, f), Gt(40));
+  EXPECT_THAT(Psnr(frame, f), Gt(39));
 }
 
 TEST(DISABLED_LibaomAv1Encoder, InvertedTempoSpatial) {
@@ -491,7 +491,7 @@ TEST(DISABLED_LibaomAv1Encoder, InvertedTempoSpatial) {
 
   EncOut tu2_s0;
   EncOut tu2_s1;
-  rtc::scoped_refptr<I420Buffer> frame = frame_reader->PullFrame();
+  scoped_refptr<I420Buffer> frame = frame_reader->PullFrame();
   enc->Encode(
       frame, {.presentation_timestamp = Timestamp::Millis(200)},
       ToVec(
@@ -531,7 +531,7 @@ TEST(LibaomAv1Encoder, SkipMidLayer) {
   EncOut tu2_s0;
   EncOut tu2_s1;
   EncOut tu2_s2;
-  rtc::scoped_refptr<I420Buffer> frame = frame_reader->PullFrame();
+  scoped_refptr<I420Buffer> frame = frame_reader->PullFrame();
   enc->Encode(
       frame, {.presentation_timestamp = Timestamp::Millis(200)},
       ToVec(
@@ -734,24 +734,40 @@ TEST(LibaomAv1Encoder, S3T1) {
 }
 
 TEST(LibaomAv1Encoder, HigherEffortLevelYieldsHigherQualityFrames) {
-  auto frame_in = CreateFrameReader()->PullFrame();
+  constexpr int kNumFrames = 10;
+  std::vector<scoped_refptr<I420Buffer>> input_frames;
+  auto frame_reader = CreateFrameReader();
+  for (int i = 0; i < kNumFrames; ++i) {
+    input_frames.push_back(frame_reader->PullFrame());
+  }
   std::pair<int, int> effort_range = LibaomAv1EncoderFactory()
                                          .GetEncoderCapabilities()
                                          .performance.min_max_effort_level;
-  // Cbr rc{.duration = TimeDelta::Millis(100),
-  //       .target_bitrate = DataRate::KilobitsPerSec(100)};
   std::optional<double> psnr_last;
-  Av1Decoder dec;
-
   for (int i = effort_range.first; i <= effort_range.second; ++i) {
+    Av1Decoder dec;
+    double psnr_sum = 0;
     auto enc = LibaomAv1EncoderFactory().CreateEncoder(kCbrEncoderSettings, {});
-    EncOut tu0;
-    enc->Encode(
-        frame_in, {.presentation_timestamp = Timestamp::Millis(0)},
-        ToVec({Fb().Rate(kCbr).Res(640, 360).Upd(0).Key().Effort(i).Out(tu0)}));
-    double psnr = Psnr(frame_in, dec.Decode(tu0.bitstream));
-    EXPECT_THAT(psnr, Gt(psnr_last));
-    psnr_last = psnr;
+    for (int tu = 0; tu < kNumFrames; ++tu) {
+      EncOut out;
+      if (tu == 0) {
+        enc->Encode(
+            input_frames[tu], {.presentation_timestamp = Timestamp::Millis(0)},
+            ToVec({Fb().Rate(kCbr).Res(640, 360).Upd(0).Key().Effort(i).Out(
+                out)}));
+      } else {
+        enc->Encode(
+            input_frames[tu],
+            {.presentation_timestamp = Timestamp::Millis(100 * tu)},
+            ToVec({Fb().Rate(kCbr).Res(640, 360).Ref({0}).Upd(0).Effort(i).Out(
+                out)}));
+      }
+      psnr_sum += Psnr(input_frames[tu], dec.Decode(out.bitstream));
+    }
+    double avg_psnr = psnr_sum / kNumFrames;
+    RTC_LOG(LS_WARNING) << "PSNR for effort " << i << ": " << avg_psnr;
+    EXPECT_THAT(avg_psnr, Gt(psnr_last));
+    psnr_last = avg_psnr;
   }
 }
 

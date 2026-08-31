@@ -1,0 +1,18 @@
+{
+  "label": "kaigetsu.staysee.jp",
+  "bugs": {
+    "1902415": {
+      "issue": "unsupported-warning",
+      "matches": ["*://kaigetsu.staysee.jp/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": ".loginFooter__desc__browser { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

@@ -1,24 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGImageElement.h"
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/gfx/2D.h"
-#include "nsCOMPtr.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
+#include "SVGGeometryProperty.h"
 #include "imgINotificationObserver.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/SVGImageElementBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/gfx/2D.h"
+#include "nsCOMPtr.h"
 #include "nsContentUtils.h"
-#include "SVGGeometryProperty.h"
+#include "nsIURIWithSizeOf.h"
+#include "nsNetUtil.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Image)
 
@@ -33,13 +30,13 @@ JSObject* SVGImageElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGImageElement::sLengthInfo[4] = {
     {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 SVGElement::StringInfo SVGImageElement::sStringInfo[2] = {
@@ -58,7 +55,7 @@ NS_IMPL_ISUPPORTS_INHERITED(SVGImageElement, SVGImageElementBase,
 namespace SVGT = SVGGeometryProperty::Tags;
 
 SVGImageElement::SVGImageElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGImageElementBase(std::move(aNodeInfo)) {
   // We start out broken
   AddStatesSilently(ElementState::BROKEN);
@@ -66,7 +63,7 @@ SVGImageElement::SVGImageElement(
 
 SVGImageElement::~SVGImageElement() { nsImageLoadingContent::Destroy(); }
 
-nsCSSPropertyID SVGImageElement::GetCSSPropertyIdForAttrEnum(
+NonCustomCSSPropertyId SVGImageElement::GetCSSPropertyIdForAttrEnum(
     uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case ATTR_X:
@@ -122,7 +119,8 @@ SVGImageElement::PreserveAspectRatio() {
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGImageElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
@@ -335,6 +333,20 @@ void SVGImageElement::DidAnimateAttribute(int32_t aNameSpaceID,
     QueueImageTask(mSrcURI, /* aAlwaysLoad = */ true, /* aNotify = */ true);
   }
   SVGImageElementBase::DidAnimateAttribute(aNameSpaceID, aAttribute);
+}
+
+void SVGImageElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                             size_t* aNodeSize) const {
+  SVGElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
+
+  // It is okay to include the size of mSrcURI here even though it might have
+  // strong references from elsewhere because the URI was created for this
+  // object, in nsImageLoadingContent::StringToURI(). Only objects that created
+  // their own URI will call nsIURIWithSizeOf::SizeOfIncludingThis().
+  if (mSrcURI) {
+    *aNodeSize += SizeOfIncludingThisIfURIWithSizeOf(
+        mSrcURI, aSizes.mState.mMallocSizeOf);
+  }
 }
 
 }  // namespace mozilla::dom

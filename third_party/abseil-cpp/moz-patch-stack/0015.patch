@@ -1,0 +1,27 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Mon, 21 Jul 2025 15:50:00 -0500
+Subject: Bug 1978462 - disable absl nullability specifiers since libwebrtc has
+ too many warnings. r?ng!
+
+There are too many places in libwebrtc that are not yet marked
+with nullability type specifiers.  We need to disable them until
+that is fixed upstream.
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f3b19b7999b3271ca5858d587673e3eb43525c32
+---
+ abseil-cpp/absl/base/nullability.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/abseil-cpp/absl/base/nullability.h b/abseil-cpp/absl/base/nullability.h
+index d11da5793b3..af684f09460 100644
+--- a/abseil-cpp/absl/base/nullability.h
++++ b/abseil-cpp/absl/base/nullability.h
+@@ -221,7 +221,8 @@
+ #define ABSL_POINTERS_DEFAULT_NONNULL
+ 
+ #if defined(__clang__) && !defined(__OBJC__) && \
+-    ABSL_HAVE_FEATURE(nullability_on_classes)
++    ABSL_HAVE_FEATURE(nullability_on_classes) && \
++    0 // mozilla - stop warnings in libwebrtc for "missing a nullability type specifier"
+ // absl_nonnull (default with `ABSL_POINTERS_DEFAULT_NONNULL`)
+ //
+ // The indicated pointer is never null. It is the responsibility of the provider

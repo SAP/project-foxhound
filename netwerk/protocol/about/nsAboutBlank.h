@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAboutBlank_h__
-#define nsAboutBlank_h__
+#ifndef nsAboutBlank_h_
+#define nsAboutBlank_h_
 
 #include "nsIAboutModule.h"
 
@@ -29,4 +28,4 @@ class nsAboutBlank : public nsIAboutModule {
    0x11d3,                                    \
    {0x8c, 0xd0, 0x00, 0x60, 0xb0, 0xfc, 0x14, 0xa3}}
 
-#endif  // nsAboutBlank_h__
+#endif  // nsAboutBlank_h_

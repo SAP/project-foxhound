@@ -5,14 +5,12 @@
 package mozilla.components.lib.crash
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.lib.crash.db.toBreadcrumb
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -20,6 +18,7 @@ import org.junit.runner.RunWith
 import org.mockito.Mockito.spy
 import java.lang.Thread.sleep
 import java.util.Date
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class BreadcrumbTest {

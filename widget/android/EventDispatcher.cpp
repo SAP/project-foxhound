@@ -1,6 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: set sw=2 ts=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -14,8 +12,8 @@
 #include "js/String.h"              // JS::StringHasLatin1Chars
 #include "js/Warnings.h"            // JS::WarnUTF8
 #include "xpcpublic.h"
+#include "jsapi.h"
 
-#include "mozilla/fallible.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/java/EventCallbackWrappers.h"
@@ -226,10 +224,11 @@ nsresult UnboxValue(JSContext* aCx, const jni::Object::LocalRef& aData,
              aData.IsInstanceOf<jni::Short>()) {
     aOut.setInt32(java::sdk::Number::Ref::From(aData)->IntValue());
   } else if (aData.IsInstanceOf<jni::Double>()) {
-    aOut.setNumber(Java2Native<double>(aData, aData.Env()));
+    aOut.set(JS_NumberValue(Java2Native<double>(aData, aData.Env())));
   } else if (aData.IsInstanceOf<jni::Float>() ||
              aData.IsInstanceOf<jni::Long>()) {
-    aOut.setNumber(java::sdk::Number::Ref::From(aData)->DoubleValue());
+    aOut.set(
+        JS_NumberValue(java::sdk::Number::Ref::From(aData)->DoubleValue()));
   } else if (aData.IsInstanceOf<jni::String>()) {
     return UnboxString(aCx, aData, aOut);
   } else if (aData.IsInstanceOf<jni::Character>()) {
@@ -251,8 +250,7 @@ nsresult UnboxValue(JSContext* aCx, const jni::Object::LocalRef& aData,
   } else if (aData.IsInstanceOf<jni::DoubleArray>()) {
     return UnboxArrayPrimitive<
         double, jdouble, jdoubleArray, &JNIEnv::GetDoubleArrayElements,
-        &JNIEnv::ReleaseDoubleArrayElements, &JS::DoubleValue>(aCx, aData,
-                                                               aOut);
+        &JNIEnv::ReleaseDoubleArrayElements, &JS_NumberValue>(aCx, aData, aOut);
 
   } else if (aData.IsInstanceOf<StringArray>()) {
     return UnboxArrayObject<&UnboxString>(aCx, aData, aOut);

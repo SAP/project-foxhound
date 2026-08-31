@@ -1,5 +1,3 @@
-# -*- Mode: python; python-indent: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -25,6 +23,9 @@ LOCAL_INCLUDES += [
     # Need this for safe_sprintf.h used by SandboxLogging.h,
     # but it has to be after ipc/chromium/src.
     "/security/sandbox/chromium",
+    "/security/sandbox/chromium-shim",
+    "/security/sandbox/chromium-shim/base/allocator/partition_allocator/src",
+    "/security/sandbox/chromium/base/allocator/partition_allocator/src",
     "/security/sandbox/linux",
 ]
 

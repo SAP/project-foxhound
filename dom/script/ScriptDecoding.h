@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +7,16 @@
 #ifndef mozilla_dom_ScriptDecoding_h
 #define mozilla_dom_ScriptDecoding_h
 
+#include <stddef.h>  // size_t
+#include <stdint.h>  // uint8_t, uint32_t
+
+#include <type_traits>  // std::is_same
+
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/CheckedInt.h"  // mozilla::CheckedInt
 #include "mozilla/Encoding.h"    // mozilla::Decoder
 #include "mozilla/Span.h"        // mozilla::Span
 #include "mozilla/UniquePtr.h"   // mozilla::UniquePtr
-
-#include <stddef.h>     // size_t
-#include <stdint.h>     // uint8_t, uint32_t
-#include <type_traits>  // std::is_same
 
 namespace mozilla::dom {
 

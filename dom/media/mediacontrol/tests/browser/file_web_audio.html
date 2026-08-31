@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Web Audio audibility page</title>
+</head>
+<body>
+<button id="start">start</button>
+<script>
+let ac;
+let osc;
+let gain;
+
+// Triggered from the test by clicking the button (which also synthesizes a
+// user gesture so the AudioContext is allowed to start without autoplay
+// rejection).
+document.getElementById("start").addEventListener("click", () => {
+  ac = new AudioContext();
+  osc = ac.createOscillator();
+  gain = ac.createGain();
+  gain.gain.value = 0.05;
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  osc.start();
+});
+
+// Expose state to the test.
+window.getAudioContextState = () => ac && ac.state;
+window.waitForAudioContextState = expected =>
+  new Promise(resolve => {
+    if (!ac) {
+      resolve(null);
+      return;
+    }
+    if (ac.state === expected) {
+      resolve(ac.state);
+      return;
+    }
+    ac.addEventListener("statechange", function listener() {
+      if (ac.state === expected) {
+        ac.removeEventListener("statechange", listener);
+        resolve(ac.state);
+      }
+    });
+  });
+window.resumeAudioContext = () => ac && ac.resume();
+</script>
+</body>
+</html>

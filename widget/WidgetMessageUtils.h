@@ -7,13 +7,15 @@
 
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/DimensionRequest.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/NativeKeyBindingsType.h"
 #include "mozilla/widget/ThemeChangeKind.h"
 #include "nsIClipboard.h"
 #include "nsIWidget.h"
-#include "nsStyleConsts.h"
 
 namespace IPC {
 
@@ -21,6 +23,14 @@ template <>
 struct ParamTraits<mozilla::widget::ThemeChangeKind>
     : public BitFlagsEnumSerializer<mozilla::widget::ThemeChangeKind,
                                     mozilla::widget::ThemeChangeKind::AllBits> {
+};
+
+template <>
+struct ParamTraits<mozilla::HapticFeedbackType>
+    : public ContiguousEnumSerializer<mozilla::HapticFeedbackType,
+                                      mozilla::HapticFeedbackType(0),
+                                      mozilla::HapticFeedbackType::End> {
+  using IdType = std::underlying_type_t<mozilla::HapticFeedbackType>;
 };
 
 template <>
@@ -40,6 +50,12 @@ struct ParamTraits<mozilla::LookAndFeel::ColorID>
 };
 
 template <>
+struct ParamTraits<mozilla::ColorScheme>
+    : ContiguousEnumSerializerInclusive<mozilla::ColorScheme,
+                                        mozilla::ColorScheme::Light,
+                                        mozilla::ColorScheme::Dark> {};
+
+template <>
 struct ParamTraits<mozilla::widget::TransparencyMode>
     : ContiguousEnumSerializerInclusive<
           mozilla::widget::TransparencyMode,
@@ -47,20 +63,46 @@ struct ParamTraits<mozilla::widget::TransparencyMode>
           mozilla::widget::TransparencyMode::Transparent> {};
 
 template <>
+struct ParamTraits<nsIWidget::NativePointerLockMode>
+    : ContiguousEnumSerializerInclusive<
+          nsIWidget::NativePointerLockMode,
+          nsIWidget::NativePointerLockMode::Regular,
+          nsIWidget::NativePointerLockMode::Unadjusted> {};
+
+template <>
+struct ParamTraits<nsIWidget::NativeMouseMessage>
+    : ContiguousEnumSerializerInclusive<
+          nsIWidget::NativeMouseMessage,
+          nsIWidget::NativeMouseMessage::ButtonDown,
+          nsIWidget::NativeMouseMessage::LeaveWindow> {};
+
+template <>
+struct ParamTraits<nsIWidget::NativeModifiers>
+    : BitFlagsEnumSerializer<nsIWidget::NativeModifiers,
+                             nsIWidget::NativeModifiers::ALL_BITS> {};
+
+template <>
+struct ParamTraits<mozilla::MouseButton>
+    : ContiguousEnumSerializerInclusive<mozilla::MouseButton,
+                                        mozilla::MouseButton::eNotPressed,
+                                        mozilla::MouseButton::eEraser> {};
+
+template <>
 struct ParamTraits<nsCursor>
     : ContiguousEnumSerializer<nsCursor, eCursor_standard, eCursorCount> {};
 
 template <>
-struct ParamTraits<nsIWidget::TouchpadGesturePhase>
+struct MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    ParamTraits<nsIWidget::TouchpadGesturePhase>
     : ContiguousEnumSerializerInclusive<
           nsIWidget::TouchpadGesturePhase,
           nsIWidget::TouchpadGesturePhase::PHASE_BEGIN,
           nsIWidget::TouchpadGesturePhase::PHASE_END> {};
 
 template <>
-struct ParamTraits<nsIWidget::TouchPointerState>
-    : public BitFlagsEnumSerializer<nsIWidget::TouchPointerState,
-                                    nsIWidget::TouchPointerState::ALL_BITS> {};
+struct ParamTraits<TouchPointerState>
+    : public BitFlagsEnumSerializer<TouchPointerState,
+                                    TouchPointerState::ALL_BITS> {};
 
 template <>
 struct ParamTraits<mozilla::DimensionKind>
@@ -77,6 +119,13 @@ struct ParamTraits<nsIClipboard::ClipboardType>
     : public ContiguousEnumSerializerInclusive<
           nsIClipboard::ClipboardType, nsIClipboard::kSelectionClipboard,
           nsIClipboard::kSelectionCache> {};
+
+template <>
+struct ParamTraits<mozilla::NativeKeyBindingsType>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::NativeKeyBindingsType,
+          mozilla::NativeKeyBindingsType::SingleLineEditor,
+          mozilla::kHighestNativeKeyBindingsType> {};
 
 }  // namespace IPC
 

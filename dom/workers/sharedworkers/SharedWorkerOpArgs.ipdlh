@@ -37,6 +37,17 @@ struct SharedWorkerRemoveWindowIDOpArgs
   uint64_t windowID;
 };
 
+struct SharedWorkerSetLocaleOverrideOpArgs
+{
+  nsCString languageOverride;
+  nsString[] languages;
+};
+
+struct SharedWorkerUpdateTimezoneOverrideOpArgs
+{
+  nsString timezoneOverride;
+};
+
 union SharedWorkerOpArgs {
   SharedWorkerSuspendOpArgs;
   SharedWorkerResumeOpArgs;
@@ -46,6 +57,8 @@ union SharedWorkerOpArgs {
   SharedWorkerPortIdentifierOpArgs;
   SharedWorkerAddWindowIDOpArgs;
   SharedWorkerRemoveWindowIDOpArgs;
+  SharedWorkerSetLocaleOverrideOpArgs;
+  SharedWorkerUpdateTimezoneOverrideOpArgs;
 };
 
 } // namespace dom

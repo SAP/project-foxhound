@@ -1,19 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGAnimatedPreserveAspectRatio.h"
 
+#include "SMILEnumType.h"
+#include "SVGAttrTearoffTable.h"
 #include "mozAutoDocUpdate.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/dom/SVGAnimatedPreserveAspectRatioBinding.h"
-#include "SMILEnumType.h"
-#include "SVGAttrTearoffTable.h"
 
 using namespace mozilla::dom;
 
@@ -47,15 +44,13 @@ class MOZ_RAII AutoChangePreserveAspectRatioNotifier {
     MOZ_ASSERT(mSVGElement, "Expecting non-null element");
     if (mDoSetAttr) {
       mUpdateBatch.emplace(aSVGElement->GetComposedDoc(), true);
-      mEmptyOrOldValue =
-          mSVGElement->WillChangePreserveAspectRatio(mUpdateBatch.ref());
+      mSVGElement->WillChangePreserveAspectRatio(mUpdateBatch.ref());
     }
   }
 
   ~AutoChangePreserveAspectRatioNotifier() {
     if (mDoSetAttr) {
-      mSVGElement->DidChangePreserveAspectRatio(mEmptyOrOldValue,
-                                                mUpdateBatch.ref());
+      mSVGElement->DidChangePreserveAspectRatio(mUpdateBatch.ref());
     }
     if (mPreserveAspectRatio->mIsAnimated) {
       mSVGElement->AnimationNeedsResample();
@@ -66,18 +61,17 @@ class MOZ_RAII AutoChangePreserveAspectRatioNotifier {
   SVGAnimatedPreserveAspectRatio* const mPreserveAspectRatio;
   SVGElement* const mSVGElement;
   Maybe<mozAutoDocUpdate> mUpdateBatch;
-  nsAttrValue mEmptyOrOldValue;
   bool mDoSetAttr;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedPreserveAspectRatio,
-                                         DOMSVGAnimatedPreserveAspectRatio>
+constinit static SVGAttrTearoffTable<SVGAnimatedPreserveAspectRatio,
+                                     DOMSVGAnimatedPreserveAspectRatio>
     sSVGAnimatedPAspectRatioTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedPreserveAspectRatio,
-                                         DOMSVGPreserveAspectRatio>
+constinit static SVGAttrTearoffTable<SVGAnimatedPreserveAspectRatio,
+                                     DOMSVGPreserveAspectRatio>
     sBaseSVGPAspectRatioTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedPreserveAspectRatio,
-                                         DOMSVGPreserveAspectRatio>
+constinit static SVGAttrTearoffTable<SVGAnimatedPreserveAspectRatio,
+                                     DOMSVGPreserveAspectRatio>
     sAnimSVGPAspectRatioTearoffTable;
 
 already_AddRefed<DOMSVGPreserveAspectRatio>
@@ -189,9 +183,9 @@ DOMSVGAnimatedPreserveAspectRatio::~DOMSVGAnimatedPreserveAspectRatio() {
   sSVGAnimatedPAspectRatioTearoffTable.RemoveTearoff(mVal);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedPreserveAspectRatio::ToSMILAttr(
+std::unique_ptr<SMILAttr> SVGAnimatedPreserveAspectRatio::ToSMILAttr(
     SVGElement* aSVGElement) {
-  return MakeUnique<SMILPreserveAspectRatio>(this, aSVGElement);
+  return std::make_unique<SMILPreserveAspectRatio>(this, aSVGElement);
 }
 
 // typedef for inner class, to make function signatures shorter below:
@@ -207,7 +201,7 @@ nsresult SMILPreserveAspectRatio::ValueFromString(
 
   SMILValue val(SMILEnumType::Singleton());
   val.mU.mUint = PackPreserveAspectRatio(par);
-  aValue = val;
+  aValue = std::move(val);
   return NS_OK;
 }
 

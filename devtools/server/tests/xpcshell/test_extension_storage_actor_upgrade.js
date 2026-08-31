@@ -21,6 +21,11 @@ const {
   shutdown,
   startupExtension,
 } = require("resource://test/webextension-helpers.js");
+const {
+  SEPARATOR_GUID,
+} = require("resource://devtools/server/actors/resources/storage/index.js");
+const getExtensionStorageUniqueKey = (area, name) =>
+  name + SEPARATOR_GUID + area;
 
 const l10n = new Localization(["devtools/client/storage.ftl"], true);
 const sessionString = l10n.formatValueSync("storage-expires-session");
@@ -110,6 +115,7 @@ add_task(async function test_panel_live_reload() {
     data,
     [
       {
+        uniqueKey: getExtensionStorageUniqueKey("local", "a"),
         area: "local",
         name: "a",
         value: { str: "123" },

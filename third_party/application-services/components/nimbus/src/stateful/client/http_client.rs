@@ -1,0 +1,46 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+//! This is a simple HTTP client that uses viaduct to retrieve experiment data from the server.
+//! Currently configured to use Kinto and the old schema, although that would change once we start
+//! working on the real Nimbus schema.
+//!
+//! In the future we might replace this with a more fully-feature Remote Settings client, such as:
+//!
+//!   https://github.com/mozilla-services/remote-settings-client
+//!   Issue: https://github.com/mozilla/application-services/issues/3475
+//!
+//! But the simple subset implemented here meets our needs for now.
+
+use std::sync::Arc;
+
+use remote_settings::{RemoteSettingsClient, RemoteSettingsError};
+use serde_json::json;
+
+use crate::NimbusError;
+use crate::error::Result;
+use crate::schema::parse_experiments;
+use crate::stateful::client::{Experiment, SettingsClient};
+
+impl SettingsClient for Arc<RemoteSettingsClient> {
+    fn get_experiments_metadata(&self) -> Result<String> {
+        unimplemented!();
+    }
+
+    fn fetch_experiments(&self) -> Result<Vec<Experiment>> {
+        self.sync()?;
+
+        let records = self.get_records(false).ok_or(RemoteSettingsError::Other {
+            reason: "Unable to fetch experiment records".to_owned(),
+        })?;
+        let wrapped_data = json!({ "data": records });
+        let resp = serde_json::to_string(&wrapped_data).map_err(|e| {
+            NimbusError::JSONError(
+                "SettingsClient::fetch_experiments resp = serde_json::to_string".to_owned(),
+                e.to_string(),
+            )
+        })?;
+        parse_experiments(&resp)
+    }
+}

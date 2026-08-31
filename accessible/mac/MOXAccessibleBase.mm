@@ -1,9 +1,10 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#import <Accessibility/Accessibility.h>
 
 #import "MOXAccessibleBase.h"
 
@@ -75,6 +76,10 @@ mozilla::LogModule* GetMacAccessibilityLog() {
 
 - (id)representedView {
   return nil;
+}
+
+- (BOOL)hasMozAccessible {
+  return YES;
 }
 
 - (BOOL)isRoot {
@@ -388,6 +393,12 @@ mozilla::LogModule* GetMacAccessibilityLog() {
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
+- (id)accessibilityCustomActions {
+  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+  return [self moxCustomActions];
+  NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
 - (BOOL)isAccessibilityElement {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
@@ -407,6 +418,12 @@ mozilla::LogModule* GetMacAccessibilityLog() {
 
 - (BOOL)accessibilityNotifiesWhenDestroyed {
   return YES;
+}
+
+#pragma mark - AXCustomContentProvider protocol
+
+- (NSArray*)accessibilityCustomContent {
+  return [self moxCustomContent];
 }
 
 #pragma mark - MOXAccessible protocol
@@ -476,6 +493,14 @@ mozilla::LogModule* GetMacAccessibilityLog() {
   NSArray* allChildren = [self moxChildren];
 
   for (MOXAccessibleBase* nativeChild in allChildren) {
+    if ([nativeChild hasRepresentedView]) {
+      // If the child has a represented view, we want to skip it in the
+      // accessibility hierarchy since the represented view will be a native
+      // accessible that represents this child and will be connected to the
+      // native parent directly.
+      continue;
+    }
+
     if ([nativeChild moxIgnoreWithParent:self]) {
       // If this child should be ignored get its unignored children.
       // This will in turn recurse to any unignored descendants if the
@@ -495,6 +520,13 @@ mozilla::LogModule* GetMacAccessibilityLog() {
 }
 
 - (id<mozAccessible>)moxUnignoredParent {
+  if ([self hasRepresentedView]) {
+    // If this accessible has a represented NSView, use it to climb up to the
+    // native parent.
+    return [[self representedView]
+        accessibilityAttributeValue:NSAccessibilityParentAttribute];
+  }
+
   id<mozAccessible> nativeParent = [self moxParent];
   if (!nativeParent) {
     return nil;
@@ -526,6 +558,10 @@ mozilla::LogModule* GetMacAccessibilityLog() {
 }
 
 - (BOOL)moxIsLiveRegion {
+  return NO;
+}
+
+- (BOOL)moxIsTextField {
   return NO;
 }
 
@@ -571,6 +607,14 @@ mozilla::LogModule* GetMacAccessibilityLog() {
     }
   }
 
+  return nil;
+}
+
+- (NSArray*)moxCustomContent {
+  return nil;
+}
+
+- (NSArray*)moxCustomActions {
   return nil;
 }
 

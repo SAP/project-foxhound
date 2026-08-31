@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,8 @@
 #ifndef mozilla_mscom_AgileReference_h
 #define mozilla_mscom_AgileReference_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
-#include "mozilla/Unused.h"
 #include "nsDebug.h"
 #include "nsISupportsImpl.h"
 
@@ -72,7 +68,7 @@ class AgileReference final {
   explicit AgileReference(InterfaceT* aObject) {
     HRESULT const hr = detail::AgileReference_CreateImpl(
         mAgileRef, __uuidof(InterfaceT), aObject);
-    Unused << NS_WARN_IF(FAILED(hr));
+    (void)NS_WARN_IF(FAILED(hr));
   }
   explicit AgileReference(RefPtr<InterfaceT> const& aObject)
       : AgileReference(aObject.get()) {}

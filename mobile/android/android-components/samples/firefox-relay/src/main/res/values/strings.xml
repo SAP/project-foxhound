@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<resources>
+    <string name="app_name" translatable="false">Relay Android Demo</string>
+    <string name="sign_in_webview" translatable="false">FxA sign in: webview</string>
+    <!-- %1$s is the account's display name. -->
+    <string name="signed_in" translatable="false">Signed in: %1$s</string>
+    <string name="log_out" translatable="false">FxA Log Out</string>
+    <string name="relay_addresses" translatable="false">Relay Addresses</string>
+    <string name="logged_out" translatable="false">Logged out!</string>
+</resources>

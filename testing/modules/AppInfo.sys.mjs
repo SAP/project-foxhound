@@ -50,7 +50,6 @@ export var newAppInfo = function (options = {}) {
     uniqueProcessID: origRuntime.uniqueProcessID,
 
     fissionAutostart: origRuntime.fissionAutostart,
-    sessionHistoryInParent: origRuntime.sessionHistoryInParent,
     browserTabsRemoteAutostart: origRuntime.browserTabsRemoteAutostart,
     get maxWebProcessCount() {
       return origRuntime.maxWebProcessCount;

@@ -1,0 +1,17 @@
+{
+  "label": "eksiseyler.com",
+  "bugs": {
+    "1855014": {
+      "issue": "broken-images",
+      "matches": ["*://eksiseyler.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["bug1855014-eksiseyler.com.js"]
+      }
+    }
+  ]
+}

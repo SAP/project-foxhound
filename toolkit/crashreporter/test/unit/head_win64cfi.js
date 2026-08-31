@@ -75,7 +75,7 @@ function stackFrameToString(frameIndex, frame) {
     frame.module_index >= 0 &&
     frame.module_index < gModules.length
   ) {
-    let base = gModules[frame.module_index].base_addr;
+    let base = gModules[frame.module_index].base_address;
     moduleOffset = getModuleOffset(base, ip);
     filename = gModules[frame.module_index].filename;
 
@@ -114,11 +114,12 @@ function dumpStackFrames(frames, maxFrames) {
 //
 // expected is { symbol: "", trust: "" }
 function assertStack(stack, expected) {
-  for (let i = 0; i < stack.length; ++i) {
-    if (i >= expected.length) {
-      ok("Top stack frames were expected");
-      return;
-    }
+  Assert.greaterOrEqual(
+    stack.length,
+    expected.length,
+    "stack has at least as many frames as expected"
+  );
+  for (let i = 0; i < expected.length; ++i) {
     let frame = stack[i];
     let expectedFrame = expected[i];
     let dumpThisFrame = function () {
@@ -137,45 +138,41 @@ function assertStack(stack, expected) {
         // A "!" prefix on the frame trust matching is a logical "not".
         if (frame.trust === expectedFrame.trust.substring(1)) {
           dumpThisFrame();
-          info("Expected frame trust matched when it should not have.");
-          ok(false);
+          Assert.ok(false, "expected frame trust does not match");
         }
       } else if (frame.trust !== expectedFrame.trust) {
         dumpThisFrame();
-        info("Expected frame trust did not match.");
-        ok(false);
+        Assert.ok(false, "expected frame trust matches");
       }
     }
 
     if (expectedFrame.symbol) {
-      if (typeof frame.module_index === "undefined") {
-        // Without a module_index, it happened in an unknown module. Currently
-        // you can't specify an expected "unknown" module.
-        info("Unknown symbol in unknown module.");
-        ok(false);
-      }
+      // Without a module_index, it happened in an unknown module. Currently
+      // you can't specify an expected "unknown" module.
+      Assert.notEqual(
+        typeof frame.module_index,
+        "undefined",
+        "module index exists"
+      );
       if (frame.module_index < 0 || frame.module_index >= gModules.length) {
         dumpThisFrame();
-        info("Unknown module.");
-        ok(false);
+        Assert.ok(false, "module exists");
         return;
       }
-      let base = gModules[frame.module_index].base_addr;
+      let base = gModules[frame.module_index].base_address;
       let moduleOffset = getModuleOffset(base, frame.ip);
       let filename = gModules[frame.module_index].filename;
       if (filename == "testcrasher.dll") {
         let nearestSym = findNearestTestCrasherSymbol(moduleOffset);
         if (nearestSym === null) {
           dumpThisFrame();
-          info("Unknown symbol.");
-          ok(false);
+          Assert.ok(false, "symbol exists at offset");
           return;
         }
 
         if (nearestSym.symbol !== expectedFrame.symbol) {
           dumpThisFrame();
-          info("Mismatching symbol.");
-          ok(false);
+          Assert.ok(false, "expected symbol matches");
         }
       }
     }
@@ -200,8 +197,8 @@ async function do_x64CFITest(how, expectedStack) {
     extra = await IOUtils.readJSON(extraFile.path);
 
     initTestCrasherSymbols();
-    let stackTraces = extra.StackTraces;
-    let crashingThreadIndex = stackTraces.crash_info.crashing_thread;
+    let stackTraces = JSON.parse(extra.StackTraces);
+    let crashingThreadIndex = stackTraces.crash_thread;
     gModules = stackTraces.modules;
     let crashingFrames = stackTraces.threads[crashingThreadIndex].frames;
 

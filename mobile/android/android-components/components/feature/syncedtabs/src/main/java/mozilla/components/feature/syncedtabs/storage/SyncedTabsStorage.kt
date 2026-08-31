@@ -5,7 +5,9 @@
 package mozilla.components.feature.syncedtabs.storage
 
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.debounce
@@ -23,7 +25,7 @@ import mozilla.components.concept.sync.Device
 import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
-import mozilla.components.service.fxa.manager.ext.withConstellation
+import mozilla.components.service.fxa.manager.ext.withConstellationIfExists
 import mozilla.components.service.fxa.sync.SyncReason
 
 /**
@@ -41,6 +43,7 @@ class SyncedTabsStorage(
     private val tabsStorage: RemoteTabsStorage,
     private val maxActiveTime: Long,
     private val debounceMillis: Long = 1000L,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : SyncedTabsProvider {
     private var scope: CoroutineScope? = null
 
@@ -49,7 +52,7 @@ class SyncedTabsStorage(
      */
     @OptIn(FlowPreview::class)
     fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = dispatcher) { flow ->
             flow.distinctUntilChangedBy { it.toSyncTabState() }
                 .map { state ->
                     // TO-DO: https://github.com/mozilla-mobile/android-components/issues/5179
@@ -99,7 +102,7 @@ class SyncedTabsStorage(
      */
     @VisibleForTesting
     internal fun syncClients(): List<Device>? {
-        accountManager.withConstellation {
+        accountManager.withConstellationIfExists {
             return state()?.otherDevices
         }
         return null

@@ -18,24 +18,11 @@ add_task(async function () {
   // before the test begins.
   Cu.forceShrinkingGC();
 
-  let hud, node;
-  if (isFissionEnabled()) {
-    // When fission is enabled, we might miss the early message emitted while the target
-    // is being switched, so here we directly open the "real" test URI. See Bug 1614291.
-    hud = await openNewTabAndConsole(TEST_URI);
-    info("Wait for the 'foobar' message to be logged by the frame");
-    node = await waitFor(() => findConsoleAPIMessage(hud, "foobar"));
-  } else {
-    hud = await openNewTabAndConsole(
-      "data:text/html;charset=utf8,<!DOCTYPE html><p>hello"
-    );
-    info(
-      "Navigate and wait for the 'foobar' message to be logged by the frame"
-    );
-    const onMessage = waitForMessageByType(hud, "foobar", ".console-api");
-    await navigateTo(TEST_URI);
-    ({ node } = await onMessage);
-  }
+  // When fission is enabled, we might miss the early message emitted while the target
+  // is being switched, so here we directly open the "real" test URI. See Bug 1614291.
+  const hud = await openNewTabAndConsole(TEST_URI);
+  info("Wait for the 'foobar' message to be logged by the frame");
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "foobar"));
 
   const objectInspectors = [...node.querySelectorAll(".tree")];
   is(
@@ -54,9 +41,10 @@ add_task(async function () {
   // |  bug: 869003
   // |  hello: "world!"
   // |  ▶︎ <prototype>: Object { … }
+  // |  ▶︎ <global>: Window https://example.org/…
 
   const oi1Nodes = oi1.querySelectorAll(".node");
-  is(oi1Nodes.length, 4, "There is the expected number of nodes in the tree");
+  is(oi1Nodes.length, 5, "There is the expected number of nodes in the tree");
   ok(oi1.textContent.includes("bug: 869003"), "Expected content");
   ok(oi1.textContent.includes('hello: "world!"'), "Expected content");
 
@@ -73,9 +61,10 @@ add_task(async function () {
   // |  name: "func"
   // |  ▶︎ prototype: Object { … }
   // |  ▶︎ <prototype>: function ()
+  // |  ▶︎ <global>
 
   const oi2Nodes = oi2.querySelectorAll(".node");
-  is(oi2Nodes.length, 9, "There is the expected number of nodes in the tree");
+  is(oi2Nodes.length, 10, "There is the expected number of nodes in the tree");
   ok(oi2.textContent.includes("arguments: null"), "Expected content");
   ok(oi2.textContent.includes("bug: 869003"), "Expected content");
   ok(oi2.textContent.includes("caller: null"), "Expected content");
@@ -98,7 +87,7 @@ add_task(async function () {
 
   info("Highlight the node by moving the cursor on it");
   const onNodeHighlight = highlighter.waitForHighlighterShown();
-
+  elementNode.scrollIntoView();
   EventUtils.synthesizeMouseAtCenter(elementNode, { type: "mousemove" }, view);
 
   const { highlighter: activeHighlighter } = await onNodeHighlight;

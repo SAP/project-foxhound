@@ -1,0 +1,15 @@
+{
+  "label": "eslatam.trygalaxy.com",
+  "bugs": {
+    "1898895": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://eslatam.trygalaxy.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

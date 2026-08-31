@@ -68,7 +68,6 @@ async function run(startNode, startOffset, endNode, endOffset, expectedValue, ex
 add_task(async function runTests() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["dom.shadowdom.selection_across_boundary.enabled", true],
       ["ui.dragThresholdX", 4], // bug 1873142
       ["ui.dragThresholdY", 4], // bug 1873142
     ],

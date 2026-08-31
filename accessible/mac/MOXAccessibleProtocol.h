@@ -1,9 +1,11 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef ACCESSIBLE_MAC_MOXACCESSIBLEPROTOCOL_H_
+#define ACCESSIBLE_MAC_MOXACCESSIBLEPROTOCOL_H_
 
 @protocol MOXTextMarkerSupport;
 @protocol mozAccessible;
@@ -24,6 +26,9 @@
 // The deepest descendant of the accessible subtree that has the focus.
 // Forwarded from accessibilityFocusedUIElement.
 - (id _Nullable)moxFocusedUIElement;
+
+// Retrieve a list of custom actions.
+- (NSArray* _Nullable)moxCustomActions;
 
 // Sends a notification to any observing assistive applications.
 - (void)moxPostNotification:(NSString* _Nonnull)notification;
@@ -60,6 +65,8 @@
 
 // Return true if this accessible is a live region
 - (BOOL)moxIsLiveRegion;
+
+- (BOOL)moxIsTextField;
 
 // Find the nearest ancestor that returns true with the given block function
 - (id<MOXAccessible> _Nullable)moxFindAncestor:
@@ -198,6 +205,12 @@
 
 // AXMaxValue
 - (id _Nullable)moxMaxValue;
+
+// AXBrailleRoleDescription
+- (NSString* _Nullable)moxARIABrailleRoleDescription;
+
+// AXBrailleLabel
+- (NSString* _Nullable)moxARIABrailleLabel;
 
 // Webkit also implements the following:
 // // AXCaretBrowsingEnabled
@@ -346,6 +359,9 @@
 
 // AXKeyShortcutsValue
 - (NSString* _Nullable)moxKeyShortcutsValue;
+
+// AXCustomContent
+- (NSArray* _Nullable)moxCustomContent;
 
 // AXMozDebugDescription
 - (NSString* _Nullable)moxMozDebugDescription;
@@ -548,3 +564,5 @@
 - (void)moxSetSelectedTextMarkerRange:(id _Nullable)textMarkerRange;
 
 @end
+
+#endif  // ACCESSIBLE_MAC_MOXACCESSIBLEPROTOCOL_H_

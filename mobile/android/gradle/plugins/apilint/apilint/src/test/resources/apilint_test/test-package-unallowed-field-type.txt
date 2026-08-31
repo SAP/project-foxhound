@@ -1,0 +1,6 @@
+package test {
+  public class TestClass {
+    field public not_allowed.TestFieldType fieldBadType;
+  }
+}
+

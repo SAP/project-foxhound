@@ -50,7 +50,7 @@ abstract class Client {
      * @param request The [Request] for the data URI.
      * @return The generated [Response] including the decoded bytes as body.
      */
-    @Suppress("ComplexMethod", "TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught")
     protected fun fetchDataUri(request: Request): Response {
         if (!request.isDataUri()) {
             throw IOException("Not a data URI")

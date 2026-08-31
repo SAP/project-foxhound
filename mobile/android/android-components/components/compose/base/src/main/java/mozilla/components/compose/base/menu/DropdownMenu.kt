@@ -18,17 +18,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,20 +46,19 @@ import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.menu.MenuItem.FixedItem.Level
 import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.text.Text
 import mozilla.components.compose.base.text.value
 import mozilla.components.compose.base.theme.AcornTheme
-import mozilla.components.ui.icons.R
 import androidx.compose.material3.DropdownMenu as MaterialDropdownMenu
 import androidx.compose.material3.DropdownMenuItem as MaterialDropdownMenuItem
+import mozilla.components.ui.icons.R as iconsR
 
 private val MenuItemHeight = 48.dp
-private val ItemHorizontalSpaceBetween = 16.dp
-private val defaultMenuShape = RoundedCornerShape(8.dp)
+private val MenuMinWidth = 112.dp
+private val MenuMaxWidth = 280.dp
 
 /**
  * A dropdown menu that displays a list of [MenuItem]s. The menu can be expanded or collapsed and
@@ -67,6 +67,7 @@ private val defaultMenuShape = RoundedCornerShape(8.dp)
  * @param menuItems the list of [MenuItem]s to display in the menu.
  * @param expanded whether or not the menu is expanded.
  * @param modifier [Modifier] to be applied to the menu.
+ * @param headerText optional [Text] to be displayed as a header at the top of the menu.
  * @param offset [DpOffset] from the original anchor position of the menu.
  * @param scrollState [ScrollState] used by the menu's content for vertical scrolling.
  * @param onDismissRequest Invoked when the user requests to dismiss the menu, such as by tapping
@@ -77,37 +78,78 @@ fun DropdownMenu(
     menuItems: List<MenuItem>,
     expanded: Boolean,
     modifier: Modifier = Modifier,
+    headerText: Text? = null,
     offset: DpOffset = DpOffset(0.dp, 0.dp),
     scrollState: ScrollState = rememberScrollState(),
     onDismissRequest: () -> Unit,
 ) {
-    MaterialTheme(shapes = MaterialTheme.shapes.copy(medium = defaultMenuShape)) {
-        MaterialDropdownMenu(
-            expanded = expanded,
+    MaterialDropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier
+            .widthIn(MenuMinWidth, MenuMaxWidth),
+        offset = offset,
+        scrollState = scrollState,
+        containerColor = MaterialTheme.colorScheme.surfaceBright,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Spacer(modifier = Modifier.height(height = AcornTheme.layout.space.static100))
+
+        headerText?.let { header ->
+            HeaderMenuItemContent(text = header)
+        }
+
+        DropdownMenuContent(
+            menuItems = menuItems,
             onDismissRequest = onDismissRequest,
-            offset = offset,
-            scrollState = scrollState,
-            modifier = modifier.background(AcornTheme.colors.layer2),
-        ) {
-            DropdownMenuContent(
-                menuItems = menuItems,
-                onDismissRequest = onDismissRequest,
-            )
+        )
+        Spacer(modifier = Modifier.height(height = AcornTheme.layout.space.static100))
+        val density = LocalDensity.current
 
-            val density = LocalDensity.current
-
-            LaunchedEffect(Unit) {
-                if (expanded) {
-                    menuItems.indexOfFirst {
-                        it is MenuItem.CheckableItem && it.isChecked
-                    }.takeIf { it != -1 }?.let { index ->
-                        val scrollPosition = with(density) { MenuItemHeight.toPx() * index }.toInt()
-                        scrollState.scrollTo(scrollPosition)
-                    }
+        LaunchedEffect(Unit) {
+            if (expanded) {
+                menuItems.indexOfFirst {
+                    it is MenuItem.CheckableItem && it.isChecked
+                }.takeIf { it != -1 }?.let { index ->
+                    val scrollPosition = with(density) { MenuItemHeight.toPx() * index }.toInt()
+                    scrollState.scrollTo(scrollPosition)
                 }
             }
         }
     }
+}
+
+/**
+ * Supporting text should differ from the primary text
+ * only in the case of an enabled, default item.
+ * For 'Disabled' and 'Critical' menu items, the text should match.
+ */
+@Composable
+@ReadOnlyComposable
+private fun MenuItem.FixedItem.supportingTextColor(): Color {
+    return if (this.enabled && this.level == Level.Default) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        Color.Unspecified
+    }
+}
+
+@Composable
+private fun HeaderMenuItemContent(
+    text: Text,
+) {
+    Text(
+        text = text.value,
+        style = AcornTheme.typography.caption,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AcornTheme.layout.space.static150)
+            .padding(
+                bottom = AcornTheme.layout.space.static100,
+                top = AcornTheme.layout.space.static50,
+            ),
+    )
 }
 
 @Composable
@@ -118,55 +160,53 @@ private fun DropdownMenuContent(
     menuItems.forEach {
         when (it) {
             is MenuItem.FixedItem -> {
-                CompositionLocalProvider(LocalLevelColor provides it.level) {
-                    when (it) {
-                        is MenuItem.TextItem -> FlexibleDropdownMenuItem(
-                            onClick = {
-                                onDismissRequest()
-                                it.onClick()
-                            },
-                            modifier = Modifier
-                                .testTag(it.testTag),
-                            content = {
-                                TextMenuItemContent(item = it)
-                            },
-                        )
+                when (it) {
+                    is MenuItem.TextItem -> FlexibleDropdownMenuItem(
+                        onClick = {
+                            onDismissRequest()
+                            it.onClick()
+                        },
+                        enabled = it.enabled,
+                        modifier = Modifier.testTag(it.testTag),
+                        level = it.level,
+                        content = { TextMenuItemContent(item = it) },
+                    )
 
-                        is MenuItem.IconItem -> FlexibleDropdownMenuItem(
-                            onClick = {
-                                onDismissRequest()
-                                it.onClick()
-                            },
-                            modifier = Modifier
-                                .testTag(it.testTag),
-                            content = {
-                                IconMenuItemContent(item = it)
-                            },
-                        )
+                    is MenuItem.IconItem -> FlexibleDropdownMenuItem(
+                        onClick = {
+                            onDismissRequest()
+                            it.onClick()
+                        },
+                        enabled = it.enabled,
+                        modifier = Modifier.testTag(it.testTag),
+                        level = it.level,
+                        content = { IconMenuItemContent(item = it) },
+                    )
 
-                        is MenuItem.CheckableItem -> FlexibleDropdownMenuItem(
-                            modifier = Modifier
-                                .selectable(
+                    is MenuItem.CheckableItem -> FlexibleDropdownMenuItem(
+                        onClick = {
+                            onDismissRequest()
+                            it.onClick()
+                        },
+                        enabled = it.enabled,
+                        modifier = Modifier
+                            .thenConditional(
+                                Modifier.selectable(
                                     selected = it.isChecked,
                                     role = Role.Button,
                                     onClick = {
                                         onDismissRequest()
                                         it.onClick()
                                     },
-                                )
-                                .testTag(it.testTag)
-                                .thenConditional(
-                                    modifier = Modifier.semantics { traversalIndex = -1f },
-                                ) { it.isChecked },
-                            onClick = {
-                                onDismissRequest()
-                                it.onClick()
-                            },
-                            content = {
-                                CheckableMenuItemContent(item = it)
-                            },
-                        )
-                    }
+                                ),
+                            ) { it.enabled }
+                            .testTag(it.testTag)
+                            .thenConditional(
+                                Modifier.semantics { traversalIndex = -1f },
+                            ) { it.isChecked },
+                        level = it.level,
+                        content = { CheckableMenuItemContent(item = it) },
+                    )
                 }
             }
 
@@ -177,7 +217,7 @@ private fun DropdownMenuContent(
                 },
             )
 
-            is MenuItem.Divider -> Divider()
+            is MenuItem.Divider -> HorizontalDivider()
         }
     }
 }
@@ -186,7 +226,11 @@ private fun DropdownMenuContent(
 private fun TextMenuItemContent(
     item: MenuItem.TextItem,
 ) {
-    MenuItemText(item.text)
+    MenuItemText(
+        text = item.text,
+        supportingText = item.supportingText,
+        supportingTextColor = item.supportingTextColor(),
+    )
 }
 
 @Composable
@@ -195,15 +239,18 @@ private fun CheckableMenuItemContent(
 ) {
     if (item.isChecked) {
         Icon(
-            painter = painterResource(R.drawable.mozac_ic_checkmark_24),
-            tint = AcornTheme.levelColors.iconPrimary,
+            painter = painterResource(iconsR.drawable.mozac_ic_checkmark_24),
             contentDescription = null,
         )
     } else {
         Spacer(modifier = Modifier.size(24.dp))
     }
 
-    MenuItemText(item.text)
+    MenuItemText(
+        text = item.text,
+        supportingText = item.supportingText,
+        supportingTextColor = item.supportingTextColor(),
+    )
 }
 
 @Composable
@@ -212,11 +259,14 @@ private fun IconMenuItemContent(
 ) {
     Icon(
         painter = painterResource(item.drawableRes),
-        tint = AcornTheme.levelColors.iconPrimary,
         contentDescription = null,
     )
 
-    MenuItemText(item.text)
+    MenuItemText(
+        text = item.text,
+        supportingText = item.supportingText,
+        supportingTextColor = item.supportingTextColor(),
+    )
 }
 
 @Composable
@@ -224,81 +274,61 @@ private fun FlexibleDropdownMenuItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    contentPadding: PaddingValues = MenuDefaults.DropdownMenuItemContentPadding,
+    contentPadding: PaddingValues = PaddingValues(all = AcornTheme.layout.space.static150),
     interactionSource: MutableInteractionSource? = null,
+    level: Level = Level.Default,
     content: @Composable () -> Unit,
 ) {
     MaterialDropdownMenuItem(
         onClick = onClick,
         modifier = modifier
-            .height(MenuItemHeight)
             .semantics(mergeDescendants = true) {},
         enabled = enabled,
         contentPadding = contentPadding,
         interactionSource = interactionSource,
         text = {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(ItemHorizontalSpaceBetween),
+                horizontalArrangement = Arrangement.spacedBy(AcornTheme.layout.space.static150),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 content()
             }
         },
+        colors = when (level) {
+            Level.Default -> MenuDefaults.itemColors()
+            Level.Critical -> MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
+        },
     )
 }
 
 @Composable
-private fun MenuItemText(text: Text) {
-    Text(
-        text = text.value,
-        color = AcornTheme.levelColors.textPrimary,
-        style = AcornTheme.typography.subtitle1,
-    )
-}
+private fun MenuItemText(
+    text: Text,
+    supportingText: Text? = null,
+    supportingTextColor: Color,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = text.value,
+            style = AcornTheme.typography.body1,
+        )
 
-/**
- * A subset of the color palette that is used to style a UI element based on their level.
- *
- * @property textPrimary The primary text color.
- * @property iconPrimary The primary icon color.
- */
-private data class LevelColors(
-    val textPrimary: Color,
-    val iconPrimary: Color,
-)
-
-/**
- * CompositionLocal that provides the current level of importance.
- */
-private val LocalLevelColor = compositionLocalOf { Level.Default }
-
-/**
- * Returns the [LevelColors] based on the current level of importance.
- */
-private val AcornTheme.levelColors: LevelColors
-    @Composable
-    get() {
-        val current = LocalLevelColor.current
-        return when (current) {
-            Level.Default -> {
-                LevelColors(
-                    textPrimary = colors.textPrimary,
-                    iconPrimary = colors.iconPrimary,
-                )
-            }
-
-            Level.Critical -> {
-                LevelColors(
-                    textPrimary = colors.textCritical,
-                    iconPrimary = colors.iconCritical,
-                )
-            }
+        supportingText?.let {
+            Text(
+                text = it.value,
+                color = supportingTextColor,
+                style = AcornTheme.typography.body2,
+            )
         }
     }
+}
 
 private data class MenuPreviewParameter(
     val itemType: ItemType,
     val menuItems: List<MenuItem>,
+    val headerText: Text? = null,
 ) {
     enum class ItemType {
         TEXT_ITEMS,
@@ -311,6 +341,7 @@ private val menuPreviewParameters by lazy {
     listOf(
         MenuPreviewParameter(
             itemType = MenuPreviewParameter.ItemType.TEXT_ITEMS,
+            headerText = Text.String("Header Label"),
             menuItems = listOf(
                 MenuItem.TextItem(
                     text = Text.String("Text Item 1"),
@@ -319,6 +350,7 @@ private val menuPreviewParameters by lazy {
                 MenuItem.TextItem(
                     text = Text.String("Text Item 1"),
                     onClick = {},
+                    supportingText = Text.String("Supporting text"),
                 ),
             ),
         ),
@@ -329,11 +361,13 @@ private val menuPreviewParameters by lazy {
                     text = Text.String("Checkable Item 1"),
                     isChecked = true,
                     onClick = {},
+                    supportingText = Text.String("Supporting text"),
                 ),
                 MenuItem.CheckableItem(
                     text = Text.String("Checkable Item 2"),
                     isChecked = false,
                     onClick = {},
+                    supportingText = Text.String("Supporting text"),
                 ),
             ),
         ),
@@ -342,19 +376,21 @@ private val menuPreviewParameters by lazy {
             menuItems = listOf(
                 MenuItem.IconItem(
                     text = Text.String("Delete"),
-                    drawableRes = R.drawable.mozac_ic_delete_24,
+                    drawableRes = iconsR.drawable.mozac_ic_delete_24,
                     level = Level.Critical,
                     onClick = {},
+                    supportingText = Text.String("Supporting text"),
                 ),
                 MenuItem.IconItem(
                     text = Text.String("Have a cookie!"),
-                    drawableRes = R.drawable.mozac_ic_cookies_24,
+                    drawableRes = iconsR.drawable.mozac_ic_cookies_24,
                     onClick = {},
+                    supportingText = Text.String("Supporting text"),
                 ),
                 MenuItem.Divider,
                 MenuItem.IconItem(
                     text = Text.String("What's new"),
-                    drawableRes = R.drawable.mozac_ic_whats_new_24,
+                    drawableRes = iconsR.drawable.mozac_ic_whats_new_24,
                     onClick = {},
                 ),
             ),
@@ -369,23 +405,25 @@ private fun DropdownMenuPreview() {
     AcornTheme {
         Column(
             modifier = Modifier
-                .background(color = AcornTheme.colors.layer1)
+                .verticalScroll(rememberScrollState())
+                .background(color = MaterialTheme.colorScheme.background)
                 .fillMaxSize()
                 .padding(AcornTheme.layout.space.dynamic400),
-            verticalArrangement = Arrangement.spacedBy(AcornTheme.layout.space.dynamic400),
+            verticalArrangement = Arrangement.spacedBy(AcornTheme.layout.space.dynamic200),
         ) {
             Text(
                 text = "Click buttons to expand dropdown menu",
                 style = AcornTheme.typography.body1,
-                color = AcornTheme.colors.textPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             Text(
                 text = """
                     The menu items along with checkable state should be hoisted in feature logic and simply passed to the DropdownMenu composable. The mapping is done here in the composable as an example, try to do that outside the composables.
+                    Note: the menu does not show consistently when ran in an interactive preview. For best results, deploy the preview to a device.
                 """.trimIndent(),
                 style = AcornTheme.typography.caption,
-                color = AcornTheme.colors.textPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             menuPreviewParameters.forEach {
@@ -393,7 +431,7 @@ private fun DropdownMenuPreview() {
                     var expanded by remember { mutableStateOf(false) }
                     val text by remember { mutableStateOf(it.itemType.name.replace("_", " ")) }
 
-                    PrimaryButton(
+                    FilledButton(
                         text = text,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -402,39 +440,90 @@ private fun DropdownMenuPreview() {
                     DropdownMenu(
                         menuItems = it.menuItems,
                         expanded = expanded,
+                        headerText = it.headerText,
                         onDismissRequest = { expanded = false },
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.size(AcornTheme.layout.space.dynamic400))
-
             Text(
                 text = "Dropdown menu items",
                 style = AcornTheme.typography.body1,
-                color = AcornTheme.colors.textPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             Column(
-                modifier = Modifier.background(color = AcornTheme.colors.layer2),
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
             ) {
                 val menuItems: List<MenuItem> by remember {
                     mutableStateOf(menuPreviewParameters.map { it.menuItems.first() })
                 }
 
-                DropdownMenuContent(menuItems) { }
+                DropdownMenuContent(menuItems, onDismissRequest = {})
             }
 
-            Spacer(modifier = Modifier.size(AcornTheme.layout.space.dynamic400))
+            Text(
+                text = "Dropdown menu items with dividers",
+                style = AcornTheme.typography.body1,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+
+            Column(
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
+            ) {
+                val menuItems: List<MenuItem> = remember {
+                    val dividerList = mutableListOf<MenuItem>()
+                    menuPreviewParameters.forEach {
+                        dividerList.add(it.menuItems.first())
+                        dividerList.add(MenuItem.Divider)
+                    }
+                    dividerList
+                }
+
+                DropdownMenuContent(menuItems, onDismissRequest = {})
+            }
+
+            Text(
+                text = "Disabled menu items",
+                style = AcornTheme.typography.body1,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+
+            Column(
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
+            ) {
+                val disabledMenuItems: List<MenuItem> = remember {
+                    menuPreviewParameters.map { it.menuItems.first() }.map { item ->
+                        when (item) {
+                            is MenuItem.TextItem ->
+                                item.copy(enabled = false)
+
+                            is MenuItem.IconItem ->
+                                item.copy(enabled = false)
+
+                            is MenuItem.CheckableItem ->
+                                item.copy(enabled = false)
+
+                            is MenuItem.CustomMenuItem ->
+                                item
+
+                            is MenuItem.Divider ->
+                                item
+                        }
+                    }
+                }
+
+                DropdownMenuContent(disabledMenuItems, onDismissRequest = {})
+            }
 
             Text(
                 text = "Checkable menu item usage",
                 style = AcornTheme.typography.body1,
-                color = AcornTheme.colors.textPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             Column(
-                modifier = Modifier.background(color = AcornTheme.colors.layer2),
+                modifier = Modifier.background(color = MaterialTheme.colorScheme.surfaceBright),
             ) {
                 var isChecked by remember { mutableStateOf(true) }
 

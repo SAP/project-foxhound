@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "zlib.h"
 #include "ScriptLoadRequest.h"
 #include "ScriptLoader.h"
 #include "mozilla/PerfStats.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/Vector.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/Vector.h"
+#include "zlib.h"
 
 using namespace mozilla;
 
@@ -136,6 +134,13 @@ bool ScriptBytecodeDecompress(Vector<uint8_t>& aCompressedBytecodeBuf,
   AUTO_PROFILER_MARKER_UNTYPED("ScriptBytecodeDecompress", JS, {});
   PerfStats::AutoMetricRecording<PerfStats::Metric::JSBC_Decompression>
       autoRecording;
+
+  if (aBytecodeOffset > aCompressedBytecodeBuf.length() ||
+      aCompressedBytecodeBuf.length() - aBytecodeOffset <
+          sizeof(ScriptBytecodeCompressedDataLayout::UncompressedLengthType)) {
+    LOG(("ScriptLoadRequest: compressed buffer is corrupted and too short"));
+    return false;
+  }
 
   ScriptBytecodeDataLayout uncompressedLayout(aBytecodeBufOut, aBytecodeOffset);
   ScriptBytecodeCompressedDataLayout compressedLayout(

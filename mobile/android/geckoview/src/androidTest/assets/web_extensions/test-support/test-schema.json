@@ -253,13 +253,6 @@
         "description": "Clears the sites on the HSTS list.",
         "parameters": []
       },
-      {
-        "name": "isSessionHistoryInParentRunning",
-        "type": "function",
-        "async": true,
-        "description": "Checks if session history in parent (SHIP) is running.",
-        "parameters": []
-      },
 
       {
         "name": "isFissionRunning",
@@ -354,6 +347,69 @@
             "minItems": 1,
             "items": { "type": "string" },
             "name": "typeNames"
+          }
+        ]
+      },
+
+      {
+        "name": "teardownAlertsService",
+        "type": "function",
+        "async": true,
+        "description": "Triggers teardown on Alerts Service so that it can clear all notification information.",
+        "parameters": []
+      },
+
+      {
+        "name": "notifyUserGestureActivation",
+        "type": "function",
+        "async": true,
+        "description": "Invokes document.notifyUserGestureActivation to simulate user gesture activation.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
+      },
+
+      {
+        "name": "saveTrackingDBEvents",
+        "type": "function",
+        "async": true,
+        "description": "Seeds the tracking protection database with the given JSON-serialized content blocking log.",
+        "parameters": [
+          {
+            "name": "logJson",
+            "type": "string"
+          }
+        ]
+      },
+
+      {
+        "name": "clearTrackingDB",
+        "type": "function",
+        "async": true,
+        "description": "Removes all entries from the tracking protection database.",
+        "parameters": []
+      },
+
+      {
+        "name": "addVirtualAuthenticator",
+        "type": "function",
+        "async": true,
+        "description": "Adds a virtual WebAuthn authenticator via nsIWebAuthnService.",
+        "parameters": []
+      },
+
+      {
+        "name": "removeVirtualAuthenticator",
+        "type": "function",
+        "async": true,
+        "description": "Removes a virtual WebAuthn authenticator via nsIWebAuthnService.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "authenticatorId"
           }
         ]
       }

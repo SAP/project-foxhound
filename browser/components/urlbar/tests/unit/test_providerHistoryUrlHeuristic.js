@@ -36,7 +36,7 @@ add_task(async function test_after_clear_history() {
         title: "VISIT",
         iconUri: "page-icon:https://example.com/",
         heuristic: true,
-        providerName: "HistoryUrlHeuristic",
+        providerName: "UrlbarProviderHistoryUrlHeuristic",
       }),
       makeBookmarkResult(before, {
         uri: "https://example.com/",
@@ -56,7 +56,7 @@ add_task(async function test_after_clear_history() {
         title: "BOOKMARK",
         iconUri: "page-icon:https://example.com/",
         heuristic: true,
-        providerName: "HistoryUrlHeuristic",
+        providerName: "UrlbarProviderHistoryUrlHeuristic",
       }),
       makeBookmarkResult(after, {
         uri: "https://example.com/",
@@ -82,7 +82,7 @@ add_task(async function test_basic() {
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
           heuristic: true,
-          providerName: "HistoryUrlHeuristic",
+          providerName: "UrlbarProviderHistoryUrlHeuristic",
         }),
       ],
     },
@@ -94,7 +94,7 @@ add_task(async function test_basic() {
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
           heuristic: true,
-          providerName: "HistoryUrlHeuristic",
+          providerName: "UrlbarProviderHistoryUrlHeuristic",
         }),
       ],
     },
@@ -106,13 +106,13 @@ add_task(async function test_basic() {
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
           heuristic: true,
-          providerName: "HistoryUrlHeuristic",
+          providerName: "UrlbarProviderHistoryUrlHeuristic",
         }),
         makeVisitResult(context, {
           uri: "https://example.com/",
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
-          providerName: "Places",
+          providerName: "UrlbarProviderPlaces",
         }),
       ],
     },
@@ -124,13 +124,13 @@ add_task(async function test_basic() {
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
           heuristic: true,
-          providerName: "HistoryUrlHeuristic",
+          providerName: "UrlbarProviderHistoryUrlHeuristic",
         }),
         makeVisitResult(context, {
           uri: "https://example.com/",
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
-          providerName: "Places",
+          providerName: "UrlbarProviderPlaces",
         }),
       ],
     },
@@ -142,7 +142,7 @@ add_task(async function test_basic() {
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
           heuristic: true,
-          providerName: "HistoryUrlHeuristic",
+          providerName: "UrlbarProviderHistoryUrlHeuristic",
         }),
       ],
     },
@@ -154,7 +154,7 @@ add_task(async function test_basic() {
           title: "Example COM",
           iconUri: "page-icon:https://example.com/",
           heuristic: true,
-          providerName: "HistoryUrlHeuristic",
+          providerName: "UrlbarProviderHistoryUrlHeuristic",
         }),
       ],
     },
@@ -172,6 +172,42 @@ add_task(async function test_basic() {
   await PlacesUtils.history.clear();
 });
 
+add_task(async function test_hash_collision() {
+  // Verify the provider doesn't return a result when the only url_hash match
+  // is a collision (a different URL whose hash happens to equal the typed URL's
+  // hash).
+  const testURL = "https://example.com/";
+  const collidingURL = "https://unrelated.mozilla.org/";
+  await PlacesTestUtils.addVisits([
+    { uri: collidingURL, title: "Colliding Page" },
+  ]);
+
+  // Artificially corrupt url_hash to simulate a real-world hash collision.
+  await PlacesUtils.withConnectionWrapper("test_hash_collision", async db => {
+    await db.execute(
+      `UPDATE moz_places SET url_hash = hash(:testURL) WHERE url = :collidingURL`,
+      { testURL, collidingURL }
+    );
+  });
+
+  const context = createContext(testURL, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        uri: testURL,
+        title: testURL,
+        iconUri: "page-icon:https://example.com/",
+        heuristic: true,
+        providerName: "UrlbarProviderHeuristicFallback",
+      }),
+    ],
+  });
+
+  await PlacesUtils.history.clear();
+});
+
 add_task(async function test_null_title() {
   await PlacesTestUtils.addVisits([{ uri: "https://example.com/", title: "" }]);
 
@@ -182,10 +218,10 @@ add_task(async function test_null_title() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "https://example.com/",
-        fallbackTitle: "https://example.com/",
+        title: "https://example.com/",
         iconUri: "page-icon:https://example.com/",
         heuristic: true,
-        providerName: "HeuristicFallback",
+        providerName: "UrlbarProviderHeuristicFallback",
       }),
     ],
   });
@@ -208,10 +244,10 @@ add_task(async function test_over_max_length_text() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri,
-        fallbackTitle: uri,
+        title: uri,
         iconUri: "page-icon:https://example.com/",
         heuristic: true,
-        providerName: "HeuristicFallback",
+        providerName: "UrlbarProviderHeuristicFallback",
       }),
     ],
   });
@@ -232,9 +268,9 @@ add_task(async function test_unsupported_protocol() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "about:robots",
-        fallbackTitle: "about:robots",
+        title: "about:robots",
         heuristic: true,
-        providerName: "HeuristicFallback",
+        providerName: "UrlbarProviderHeuristicFallback",
       }),
       makeBookmarkResult(context, {
         uri: "about:robots",
@@ -246,7 +282,7 @@ add_task(async function test_unsupported_protocol() {
         title: "about:robots",
         iconUri: "page-icon:about:robots",
         tags: null,
-        providerName: "AboutPages",
+        providerName: "UrlbarProviderAboutPages",
       }),
     ],
   });

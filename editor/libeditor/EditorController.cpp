@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,19 +10,13 @@
 #include "nsDebug.h"
 #include "nsError.h"
 
-class nsIControllerCommand;
-
 namespace mozilla {
 
-#define NS_REGISTER_COMMAND(_cmdClass, _cmdName)                       \
-  {                                                                    \
-    aCommandTable->RegisterCommand(                                    \
-        _cmdName,                                                      \
-        static_cast<nsIControllerCommand*>(_cmdClass::GetInstance())); \
-  }
+#define NS_REGISTER_COMMAND(_cmdClass, _cmdName) \
+  aCommandTable->RegisterCommand(_cmdName ""_ns, _cmdClass::GetInstance());
 
 // static
-nsresult EditorController::RegisterEditingCommands(
+void EditorController::RegisterEditingCommands(
     nsControllerCommandTable* aCommandTable) {
   // now register all our commands
   // These are commands that will be used in text widgets, and in composer
@@ -55,12 +48,10 @@ nsresult EditorController::RegisterEditingCommands(
   NS_REGISTER_COMMAND(InsertParagraphCommand, "cmd_insertParagraph");
   NS_REGISTER_COMMAND(InsertLineBreakCommand, "cmd_insertLineBreak");
   NS_REGISTER_COMMAND(PasteQuotationCommand, "cmd_pasteQuote");
-
-  return NS_OK;
 }
 
 // static
-nsresult EditorController::RegisterEditorCommands(
+void EditorController::RegisterEditorCommands(
     nsControllerCommandTable* aCommandTable) {
   // These are commands that will be used in text widgets only.
 
@@ -82,6 +73,10 @@ nsresult EditorController::RegisterEditorCommands(
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_endLine");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectBeginLine");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectEndLine");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_beginParagraph");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_endParagraph");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectBeginParagraph");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectEndParagraph");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_wordPrevious");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_wordNext");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectWordPrevious");
@@ -102,6 +97,8 @@ nsresult EditorController::RegisterEditorCommands(
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveRight2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveUp2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveDown2");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveLeft3");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_moveRight3");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectLeft");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectRight");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectUp");
@@ -110,8 +107,8 @@ nsresult EditorController::RegisterEditorCommands(
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectRight2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectUp2");
   NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectDown2");
-
-  return NS_OK;
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectLeft3");
+  NS_REGISTER_COMMAND(SelectionMoveCommands, "cmd_selectRight3");
 }
 
 // static

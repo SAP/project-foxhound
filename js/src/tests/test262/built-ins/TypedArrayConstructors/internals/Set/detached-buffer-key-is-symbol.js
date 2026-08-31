@@ -27,6 +27,6 @@ testWithTypedArrayConstructors(function(TA) {
     'Reflect.set(sample, "Symbol(\\"1\\")", "test262") must return true'
   );
   assert.sameValue(sample[s], "test262", 'The value of sample[s] is "test262"');
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

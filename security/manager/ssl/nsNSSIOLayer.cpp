@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,13 +12,11 @@
 #include "NSSCertDBTrustDomain.h"
 #include "NSSErrorsService.h"
 #include "NSSSocketControl.h"
-#include "PSMRunnable.h"
 #include "SSLServerCertVerification.h"
 #include "ScopedNSSTypes.h"
 #include "TLSClientAuthCertSelection.h"
 #include "keyhi.h"
 #include "mozilla/Base64.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
@@ -31,6 +28,7 @@
 #include "mozilla/psm/IPCClientCertsChild.h"
 #include "mozilla/psm/mozilla_abridged_certs_generated.h"
 #include "mozilla/psm/PIPCClientCertsChild.h"
+#include "mozilla/psm/EnabledSignatureSchemes.h"
 #include "mozpkix/pkixnss.h"
 #include "mozpkix/pkixtypes.h"
 #include "mozpkix/pkixutil.h"
@@ -443,19 +441,6 @@ bool retryDueToTLSIntolerance(PRErrorCode err, NSSSocketControl* socketInfo) {
     return true;
   }
 
-  if (!socketInfo->IsPreliminaryHandshakeDone() &&
-      !socketInfo->HasTls13HandshakeSecrets() && socketInfo->SentMlkemShare()) {
-    nsAutoCString errorName;
-    const char* prErrorName = PR_ErrorToName(err);
-    if (prErrorName) {
-      errorName.AppendASCII(prErrorName);
-    }
-    mozilla::glean::tls::xyber_intolerance_reason.Get(errorName).Add(1);
-    // Don't record version intolerance if we sent mlkem768x25519, just force a
-    // retry.
-    return true;
-  }
-
   SSLVersionRange range = socketInfo->GetTLSVersionRange();
 
   if (err == SSL_ERROR_UNSUPPORTED_VERSION &&
@@ -760,7 +745,7 @@ static int16_t nsSSLIOLayerPoll(PRFileDesc* fd, int16_t in_flags,
                : "[%p] poll SSL socket using lower %d\n",
            fd, (int)in_flags));
 
-  socketInfo->MaybeDispatchSelectClientAuthCertificate();
+  socketInfo->MaybeSelectClientAuthCertificate();
 
   // We want the handshake to continue during certificate validation, so we
   // don't need to do anything special here. libssl automatically blocks when
@@ -981,10 +966,22 @@ void nsSSLIOLayerHelpers::GlobalCleanup() {
   MOZ_ASSERT(NS_IsMainThread(), "Not on main thread");
 
   if (gPrivateSSLIOLayerHelpers) {
+    Preferences::RemoveObserver(gPrivateSSLIOLayerHelpers,
+                                "security.tls.version.fallback-limit");
+#ifdef DEBUG
+    gPrivateSSLIOLayerHelpers->mRegisteredPrefObservers = false;
+#endif
     gPrivateSSLIOLayerHelpers = nullptr;
   }
 
   if (gPublicSSLIOLayerHelpers) {
+    Preferences::RemoveObserver(gPublicSSLIOLayerHelpers,
+                                "security.tls.version.fallback-limit");
+    Preferences::RemoveObserver(gPublicSSLIOLayerHelpers,
+                                "security.tls.insecure_fallback_hosts");
+#ifdef DEBUG
+    gPublicSSLIOLayerHelpers->mRegisteredPrefObservers = false;
+#endif
     gPublicSSLIOLayerHelpers = nullptr;
   }
 }
@@ -1014,8 +1011,10 @@ static int32_t PlaintextRecv(PRFileDesc* fd, void* buf, int32_t amount,
 }
 
 nsSSLIOLayerHelpers::~nsSSLIOLayerHelpers() {
-  Preferences::RemoveObserver(this, "security.tls.version.fallback-limit");
-  Preferences::RemoveObserver(this, "security.tls.insecure_fallback_hosts");
+  // Pref observers must have been removed before destruction, since the
+  // destructor may run off the main thread.
+  MOZ_ASSERT(!mRegisteredPrefObservers,
+             "Pref observers should have been removed before destruction");
 }
 
 template <typename R, R return_value, typename... Args>
@@ -1096,6 +1095,9 @@ nsresult nsSSLIOLayerHelpers::Init() {
   if (NS_IsMainThread()) {
     initInsecureFallbackSites();
 
+#ifdef DEBUG
+    mRegisteredPrefObservers = true;
+#endif
     Preferences::AddStrongObserver(this, "security.tls.version.fallback-limit");
     if (isPublic()) {
       // Changes to the allowlist on the public side will update the pref.
@@ -1215,7 +1217,7 @@ void nsSSLIOLayerHelpers::removeInsecureFallbackSite(const nsACString& hostname,
   if (!isPublic()) {
     return;
   }
-  RefPtr<Runnable> runnable = new FallbackPrefRemover(hostname);
+  RefPtr runnable = MakeRefPtr<FallbackPrefRemover>(hostname);
   if (NS_IsMainThread()) {
     runnable->Run();
   } else {
@@ -1259,14 +1261,8 @@ static PRFileDesc* nsSSLIOLayerImportFD(PRFileDesc* fd,
   if (!sslSock) {
     return nullptr;
   }
-  if (SSL_SetPKCS11PinArg(sslSock, infoObject) != SECSuccess) {
-    return nullptr;
-  }
   if (SSL_HandshakeCallback(sslSock, HandshakeCallback, infoObject) !=
       SECSuccess) {
-    return nullptr;
-  }
-  if (SSL_SecretCallback(sslSock, SecretCallback, infoObject) != SECSuccess) {
     return nullptr;
   }
   if (SSL_SetCanFalseStartCallback(sslSock, CanFalseStartCallback,
@@ -1298,22 +1294,12 @@ static PRFileDesc* nsSSLIOLayerImportFD(PRFileDesc* fd,
   return sslSock;
 }
 
-// Please change getSignatureName in nsNSSCallbacks.cpp when changing the list
-// here. See NOTE at SSL_SignatureSchemePrefSet call site.
 static const SSLSignatureScheme sEnabledSignatureSchemes[] = {
-    ssl_sig_ecdsa_secp256r1_sha256,
-    ssl_sig_ecdsa_secp384r1_sha384,
-    ssl_sig_ecdsa_secp521r1_sha512,
-    ssl_sig_rsa_pss_sha256,
-    ssl_sig_rsa_pss_sha384,
-    ssl_sig_rsa_pss_sha512,
-    ssl_sig_rsa_pkcs1_sha256,
-    ssl_sig_rsa_pkcs1_sha384,
-    ssl_sig_rsa_pkcs1_sha512,
-#if !defined(EARLY_BETA_OR_EARLIER)
-    ssl_sig_ecdsa_sha1,
-#endif
-    ssl_sig_rsa_pkcs1_sha1,
+#define SCHEME(NAME, _) NAME,
+
+    FOR_EACH_ENABLED_SIGNATURE_SCHEME(SCHEME)
+
+#undef SCHEME
 };
 
 enum CertificateCompressionAlgorithms {
@@ -1603,9 +1589,7 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   unsigned int additional_shares =
       StaticPrefs::security_tls_client_hello_send_p256_keyshare();
   if (StaticPrefs::security_tls_enable_kyber() &&
-      range.max >= SSL_LIBRARY_VERSION_TLS_1_3 &&
-      !(infoObject->GetProviderFlags() &
-        (nsISocketProvider::BE_CONSERVATIVE | nsISocketProvider::IS_RETRY))) {
+      range.max >= SSL_LIBRARY_VERSION_TLS_1_3) {
     const SSLNamedGroup namedGroups[] = {
         ssl_grp_kem_mlkem768x25519, ssl_grp_ec_curve25519, ssl_grp_ec_secp256r1,
         ssl_grp_ec_secp384r1,       ssl_grp_ec_secp521r1,  ssl_grp_ffdhe_2048,
@@ -1615,7 +1599,6 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
       return NS_ERROR_FAILURE;
     }
     additional_shares += 1;
-    infoObject->WillSendMlkemShare();
   } else {
     const SSLNamedGroup namedGroups[] = {
         ssl_grp_ec_curve25519, ssl_grp_ec_secp256r1, ssl_grp_ec_secp384r1,
@@ -1672,12 +1655,6 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     }
   }
 
-  // NOTE: Should this list ever include ssl_sig_rsa_pss_pss_sha* (or should
-  // it become possible to enable this scheme via a pref), it is required
-  // to test that a Delegated Credential containing a small-modulus RSA-PSS SPKI
-  // is properly rejected. NSS will not advertise PKCS1 or RSAE schemes (which
-  // the |ssl_sig_rsa_pss_*| defines alias, meaning we will not currently accept
-  // any RSA DC.
   if (SECSuccess !=
       SSL_SignatureSchemePrefSet(fd, sEnabledSignatureSchemes,
                                  std::size(sEnabledSignatureSchemes))) {

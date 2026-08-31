@@ -1,0 +1,4 @@
+[DEFAULT]
+subsuite = "webcompat"
+
+["runtests.py"]

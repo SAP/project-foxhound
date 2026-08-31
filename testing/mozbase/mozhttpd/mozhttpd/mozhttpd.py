@@ -77,9 +77,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
     def _try_handler(self, method):
         if self.log_requests:
-            self.request_log.append(
-                {"method": method, "path": self.request.path, "time": time.time()}
-            )
+            self.request_log.append({
+                "method": method,
+                "path": self.request.path,
+                "time": time.time(),
+            })
 
         handlers = [
             handler for handler in self.urlhandlers if handler["method"] == method

@@ -127,30 +127,6 @@ function TypedArraySpeciesConstructor(obj) {
 
 // ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
 // 22.2.3.5.1 Runtime Semantics: ValidateTypedArray ( O )
-function ValidateTypedArray(obj) {
-  if (IsObject(obj)) {
-    /* Steps 3-5 (non-wrapped typed arrays). */
-    if (IsTypedArray(obj)) {
-      // EnsureAttachedArrayBuffer throws for detached array buffers.
-      EnsureAttachedArrayBuffer(obj);
-      return;
-    }
-
-    /* Steps 3-5 (wrapped typed arrays). */
-    if (IsPossiblyWrappedTypedArray(obj)) {
-      if (PossiblyWrappedTypedArrayHasDetachedBuffer(obj)) {
-        ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
-      }
-      return;
-    }
-  }
-
-  /* Steps 1-2. */
-  ThrowTypeError(JSMSG_NON_TYPED_ARRAY_RETURNED);
-}
-
-// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
-// 22.2.3.5.1 Runtime Semantics: ValidateTypedArray ( O )
 function ValidateWritableTypedArray(obj) {
   if (IsObject(obj)) {
     /* Steps 3-5 (non-wrapped typed arrays). */
@@ -202,55 +178,6 @@ function TypedArrayCreateWithLength(constructor, length) {
 }
 
 // ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
-// 22.2.4.6 TypedArrayCreate ( constructor, argumentList )
-function TypedArrayCreateWithBuffer(constructor, buffer, byteOffset, length) {
-  // Step 1.
-  var newTypedArray = constructContentFunction(
-    constructor,
-    constructor,
-    buffer,
-    byteOffset,
-    length
-  );
-
-  // Step 2.
-  ValidateTypedArray(newTypedArray);
-
-  // We also need to make sure the length is in-bounds. This is checked by
-  // calling PossiblyWrappedTypedArrayLength, which throws for out-of-bounds.
-  PossiblyWrappedTypedArrayLength(newTypedArray);
-
-  // Step 3 (not applicable).
-
-  // Step 4.
-  return newTypedArray;
-}
-
-// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
-// 22.2.4.6 TypedArrayCreate ( constructor, argumentList )
-function TypedArrayCreateWithResizableBuffer(constructor, buffer, byteOffset) {
-  // Step 1.
-  var newTypedArray = constructContentFunction(
-    constructor,
-    constructor,
-    buffer,
-    byteOffset
-  );
-
-  // Step 2.
-  ValidateTypedArray(newTypedArray);
-
-  // We also need to make sure the length is in-bounds. This is checked by
-  // calling PossiblyWrappedTypedArrayLength, which throws for out-of-bounds.
-  PossiblyWrappedTypedArrayLength(newTypedArray);
-
-  // Step 3 (not applicable).
-
-  // Step 4.
-  return newTypedArray;
-}
-
-// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
 // 22.2.4.7 TypedArraySpeciesCreate ( exemplar, argumentList )
 function TypedArraySpeciesCreateWithLength(exemplar, length) {
   // Step 1 (omitted).
@@ -260,39 +187,6 @@ function TypedArraySpeciesCreateWithLength(exemplar, length) {
 
   // Step 4.
   return TypedArrayCreateWithLength(C, length);
-}
-
-// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
-// 22.2.4.7 TypedArraySpeciesCreate ( exemplar, argumentList )
-function TypedArraySpeciesCreateWithBuffer(
-  exemplar,
-  buffer,
-  byteOffset,
-  length
-) {
-  // Step 1 (omitted).
-
-  // Steps 2-3.
-  var C = TypedArraySpeciesConstructor(exemplar);
-
-  // Step 4.
-  return TypedArrayCreateWithBuffer(C, buffer, byteOffset, length);
-}
-
-// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
-// 22.2.4.7 TypedArraySpeciesCreate ( exemplar, argumentList )
-function TypedArraySpeciesCreateWithResizableBuffer(
-  exemplar,
-  buffer,
-  byteOffset
-) {
-  // Step 1 (omitted).
-
-  // Steps 2-3.
-  var C = TypedArraySpeciesConstructor(exemplar);
-
-  // Step 4.
-  return TypedArrayCreateWithResizableBuffer(C, buffer, byteOffset);
 }
 
 // ES6 draft rev30 (2014/12/24) 22.2.3.6 %TypedArray%.prototype.entries()
@@ -320,7 +214,7 @@ function TypedArrayEntries() {
   PossiblyWrappedTypedArrayLength(O);
 
   // Step 7.
-  return CreateArrayIterator(O, ITEM_KIND_KEY_AND_VALUE);
+  RETURN_ARRAY_ITERATOR(O, ITEM_KIND_KEY_AND_VALUE);
 }
 
 // ES2021 draft rev 190d474c3d8728653fbf8a5a37db1de34b9c1472
@@ -562,7 +456,7 @@ function TypedArrayKeys() {
   PossiblyWrappedTypedArrayLength(O);
 
   // Step 3.
-  return CreateArrayIterator(O, ITEM_KIND_KEY);
+  RETURN_ARRAY_ITERATOR(O, ITEM_KIND_KEY);
 }
 
 // ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
@@ -714,79 +608,6 @@ function TypedArrayReduceRight(callbackfn /*, initialValue*/) {
   return accumulator;
 }
 
-// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
-// 22.2.3.24 %TypedArray%.prototype.slice ( start, end )
-function TypedArraySlice(start, end) {
-  // Step 1.
-  var O = this;
-
-  // Step 2.
-  if (!IsObject(O) || !IsTypedArray(O)) {
-    return callFunction(
-      CallTypedArrayMethodIfWrapped,
-      O,
-      start,
-      end,
-      "TypedArraySlice"
-    );
-  }
-
-  EnsureAttachedArrayBuffer(O);
-
-  // Step 3.
-  var len = TypedArrayLength(O);
-
-  // Step 4.
-  var relativeStart = ToInteger(start);
-
-  // Step 5.
-  var k =
-    relativeStart < 0
-      ? std_Math_max(len + relativeStart, 0)
-      : std_Math_min(relativeStart, len);
-
-  // Step 6.
-  var relativeEnd = end === undefined ? len : ToInteger(end);
-
-  // Step 7.
-  var final =
-    relativeEnd < 0
-      ? std_Math_max(len + relativeEnd, 0)
-      : std_Math_min(relativeEnd, len);
-
-  // Step 8.
-  var count = std_Math_max(final - k, 0);
-
-  // Step 9.
-  var A = TypedArraySpeciesCreateWithLength(O, count);
-
-  // Steps 14-15.
-  if (count > 0) {
-    // Steps 10-13, 15.
-    var sliced = TypedArrayBitwiseSlice(O, A, k, count);
-
-    // Step 14.
-    if (!sliced) {
-      // Adjust |final| in case |O| has been resized.
-      //
-      // https://tc39.es/proposal-resizablearraybuffer/#sec-%typedarray%.prototype.slice
-      final = std_Math_min(final, TypedArrayLength(O));
-
-      // Step 14.a.
-      var n = 0;
-
-      // Step 14.b.
-      while (k < final) {
-        // Steps 14.b.i-v.
-        A[n++] = O[k++];
-      }
-    }
-  }
-
-  // Step 16.
-  return A;
-}
-
 // ES2021 draft rev 190d474c3d8728653fbf8a5a37db1de34b9c1472
 // Plus <https://github.com/tc39/ecma262/pull/2221>
 // 22.2.3.25 %TypedArray%.prototype.some ( callbackfn [ , thisArg ] )
@@ -917,81 +738,6 @@ function TypedArrayToLocaleString(locales = undefined, options = undefined) {
 
   // Step 10.
   return R;
-}
-
-// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
-// 22.2.3.27 %TypedArray%.prototype.subarray ( begin, end )
-function TypedArraySubarray(begin, end) {
-  // Step 1.
-  var obj = this;
-
-  // Steps 2-3.
-  // This function is not generic.
-  if (!IsObject(obj) || !IsTypedArray(obj)) {
-    return callFunction(
-      CallTypedArrayMethodIfWrapped,
-      this,
-      begin,
-      end,
-      "TypedArraySubarray"
-    );
-  }
-
-  // Step 4.
-  var buffer = ViewedArrayBufferIfReified(obj);
-  if (buffer === null) {
-    buffer = TypedArrayBuffer(obj);
-  }
-
-  // Step 5.
-  var srcLength = TypedArrayLengthZeroOnOutOfBounds(obj);
-
-  // Step 13 (Reordered because otherwise it'd be observable that we reset
-  // the byteOffset to zero when the underlying array buffer gets detached).
-  var srcByteOffset = TypedArrayByteOffset(obj);
-
-  // Step 6.
-  var relativeBegin = ToInteger(begin);
-
-  // Step 7.
-  var beginIndex =
-    relativeBegin < 0
-      ? std_Math_max(srcLength + relativeBegin, 0)
-      : std_Math_min(relativeBegin, srcLength);
-
-  // Steps 11-12. (Reordered)
-  var elementSize = TypedArrayElementSize(obj);
-
-  // Step 14. (Reordered)
-  var beginByteOffset = srcByteOffset + beginIndex * elementSize;
-
-  if (end === undefined && TypedArrayIsAutoLength(obj)) {
-    return TypedArraySpeciesCreateWithResizableBuffer(
-      obj,
-      buffer,
-      beginByteOffset
-    );
-  }
-
-  // Step 8.
-  var relativeEnd = end === undefined ? srcLength : ToInteger(end);
-
-  // Step 9.
-  var endIndex =
-    relativeEnd < 0
-      ? std_Math_max(srcLength + relativeEnd, 0)
-      : std_Math_min(relativeEnd, srcLength);
-
-  // Step 10.
-  var newLength = std_Math_max(endIndex - beginIndex, 0);
-
-  // Steps 15-16.
-  return TypedArraySpeciesCreateWithBuffer(
-    obj,
-    buffer,
-    beginByteOffset,
-    newLength
-  );
 }
 
 // https://tc39.es/proposal-relative-indexing-method
@@ -1133,7 +879,7 @@ function $TypedArrayValues() {
   PossiblyWrappedTypedArrayLength(O);
 
   // Step 7.
-  return CreateArrayIterator(O, ITEM_KIND_VALUE);
+  RETURN_ARRAY_ITERATOR(O, ITEM_KIND_VALUE);
 }
 SetCanonicalName($TypedArrayValues, "values");
 

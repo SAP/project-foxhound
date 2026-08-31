@@ -30,4 +30,4 @@ When your code breaks on an XHR request, the right hand pane will have two addit
 Inline variable preview
 ***********************
 
-New in Firefox 71, the :ref:`source pane <debugger_ui_tour_source_pane>` now gives you an instant preview of the variables on each line of code you've stepped through. See :ref:`Set a breakpoint > Inline variable preview <debugger-how-to-set-a-breakpoint-variable-preview>` for more information.
+The :ref:`source pane <debugger_ui_tour_source_pane>` gives you an instant preview of the variables on each line of code you've stepped through. See :ref:`Set a breakpoint > Inline variable preview <debugger-how-to-set-a-breakpoint-variable-preview>` for more information.

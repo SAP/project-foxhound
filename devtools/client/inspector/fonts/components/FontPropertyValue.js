@@ -14,7 +14,7 @@ const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-t
 
 const {
   toFixed,
-} = require("resource://devtools/client/inspector/fonts/utils/font-utils.js");
+} = require("resource://devtools/shared/inspector/font-utils.js");
 
 class FontPropertyValue extends PureComponent {
   static get propTypes() {
@@ -90,23 +90,13 @@ class FontPropertyValue extends PureComponent {
    * Given a `prop` key found on the component's props, check the matching `propLabel`.
    * If `propLabel` is true, return the `prop` value; Otherwise, return null.
    *
-   * @param {String} prop
+   * @param {string} prop
    *        Key found on the component's props.
-   * @return {Number|null}
+   * @return {number | null}
    */
   getPropLabel(prop) {
     const label = this.props[`${prop}Label`];
-    let labelValue;
-
-    // If the prop is a number, we round it
-    if (typeof this.props[prop] === "number") {
-      // Decimal count used to limit numbers in labels.
-      const decimals = Math.abs(Math.log10(this.props.step));
-      labelValue = toFixed(this.props[prop], decimals);
-    } else {
-      labelValue = this.props[prop];
-    }
-    return label ? labelValue : null;
+    return label ? this.props[prop] : null;
   }
 
   /**
@@ -114,9 +104,9 @@ class FontPropertyValue extends PureComponent {
    * Ensure it is a number and that it does not go outside the min/max limits, unless
    * allowed by the `allowOverflow` and `allowUnderflow` props.
    *
-   * @param  {Number} value
+   * @param  {number} value
    *         Numeric value
-   * @return {Boolean}
+   * @return {boolean}
    *         Whether the value conforms to the components contraints.
    */
   isValueValid(value) {
@@ -173,6 +163,7 @@ class FontPropertyValue extends PureComponent {
    *
    * Number inputs in Firefox can't be trusted to filter out non-digit characters,
    * therefore we must implement our own validation.
+   *
    * @see https://bugzilla.mozilla.org/show_bug.cgi?id=1398528
    *
    * @param {Event} e
@@ -225,11 +216,14 @@ class FontPropertyValue extends PureComponent {
       e.target.select();
     }
 
+    const initialValue =
+      this.props.value !== null ? this.props.value : this.props.defaultValue;
     this.setState(prevState => {
       return {
         ...prevState,
         interactive: true,
-        initialValue: this.props.value,
+        initialValue,
+        value: initialValue,
       };
     });
   }
@@ -263,7 +257,7 @@ class FontPropertyValue extends PureComponent {
    * state instead of from props to prevent jittering during continous dragging of the
    * range input thumb or incrementing from the number input.
    *
-   * @param {Boolean} isInteractive
+   * @param {boolean} isInteractive
    *        Whether to mark the interactive state on or off.
    */
   toggleInteractiveState(isInteractive) {
@@ -284,7 +278,7 @@ class FontPropertyValue extends PureComponent {
    *
    * @see this.onBlur() for logic reconciling the internal state with props.
    *
-   * @param {Number} value
+   * @param {number} value
    *        Numeric property value.
    */
   updateValue(value) {

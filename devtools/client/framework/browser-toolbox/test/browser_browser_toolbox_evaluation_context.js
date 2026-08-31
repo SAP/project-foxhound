@@ -19,8 +19,6 @@ requestLongerTimeout(4);
 add_task(async function () {
   // Forces the Browser Toolbox to open on the console by default
   await pushPref("devtools.browsertoolbox.panel", "webconsole");
-  // Force EFT to have targets for all WindowGlobals
-  await pushPref("devtools.every-frame-target.enabled", true);
   // Enable Multiprocess Browser Toolbox
   await pushPref("devtools.browsertoolbox.scope", "everything");
 
@@ -44,8 +42,8 @@ add_task(async function () {
   const decodedTabURI = decodeURI(tab.linkedBrowser.currentURI.spec);
 
   await ToolboxTask.spawn(
-    [tabProcessID, isFissionEnabled(), decodedTabURI],
-    async (processID, _isFissionEnabled, tabURI) => {
+    [tabProcessID, decodedTabURI],
+    async (processID, tabURI) => {
       /* global gToolbox */
       const { hud } = await gToolbox.getPanel("webconsole");
 
@@ -66,9 +64,7 @@ add_task(async function () {
 
       const labelTexts = getContextLabels(gToolbox);
 
-      const expectedTitle = _isFissionEnabled
-        ? `(pid ${processID}) https://example.com`
-        : `(pid ${processID}) web`;
+      const expectedTitle = `(pid ${processID}) https://example.com`;
       ok(
         labelTexts.includes(expectedTitle),
         `${processID} content process visible in the execution context (${labelTexts})`

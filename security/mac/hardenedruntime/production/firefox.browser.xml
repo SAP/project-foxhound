@@ -18,6 +18,9 @@
     <!-- Firefox needs to access the camera on sites the user allows -->
     <key>com.apple.security.device.camera</key><true/>
 
+    <!-- For WebSerial devices over USB -->
+    <key>com.apple.security.device.usb</key><true/>
+
     <!-- Firefox needs to access the location on sites the user allows -->
     <key>com.apple.security.personal-information.location</key><true/>
 

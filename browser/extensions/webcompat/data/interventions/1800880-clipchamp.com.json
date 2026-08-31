@@ -1,0 +1,15 @@
+{
+  "label": "clipchamp.com",
+  "bugs": {
+    "1800880": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.clipchamp.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

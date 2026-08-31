@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -82,8 +81,8 @@ const BEHAVIOR_REJECT = Ci.nsICookieService.BEHAVIOR_REJECT;
 const BEHAVIOR_LIMIT_FOREIGN = Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
 const BEHAVIOR_REJECT_FOREIGN = Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
 const BEHAVIOR_REJECT_TRACKER = Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
-const BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN =
-  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+const BEHAVIOR_PARTITION_FOREIGN =
+  Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN;
 
 let originalRequestLongerTimeout = requestLongerTimeout;
 // eslint-disable-next-line no-global-assign
@@ -159,6 +158,7 @@ function setCookieBehaviorPref(cookieBehavior, runInPrivateWindow) {
 
 /**
  * Wait for the exception list service to initialize.
+ *
  * @param {string} [urlPattern] - The URL pattern to wait for to be present.
  * Pass null to wait for all entries to be removed.
  */
@@ -182,6 +182,7 @@ async function waitForExceptionListServiceSynced(urlPattern) {
 
 /**
  * Wait for a content blocking event to occur.
+ *
  * @param {Window} win - The window to listen for the event on.
  * @returns {Promise} A promise that resolves when the event occurs.
  */
@@ -201,12 +202,13 @@ async function waitForContentBlockingEvent(win) {
 
 /**
  * Dispatch a RemoteSettings "sync" event.
+ *
  * @param {string} collectionName - The remote setting collection name
- * @param {Object} data - The event's data payload.
- * @param {Object} [data.created] - Records that were created.
- * @param {Object} [data.updated] - Records that were updated.
- * @param {Object} [data.deleted] - Records that were removed.
- * @param {Object} [data.current] - The current list of records.
+ * @param {object} data - The event's data payload.
+ * @param {object} [data.created] - Records that were created.
+ * @param {object} [data.updated] - Records that were updated.
+ * @param {object} [data.deleted] - Records that were removed.
+ * @param {object} [data.current] - The current list of records.
  */
 async function remoteSettingsSync(
   collectionName,
@@ -225,9 +227,10 @@ async function remoteSettingsSync(
 
 /**
  * Set exceptions via RemoteSettings.
- * @param {Object[]} entries - The entries to set. If empty, the exceptions will be cleared.
- * @param {Object} db - The Remote Settings collections database.
- * @param {Object} collectionName The remote setting collection name
+ *
+ * @param {object[]} entries - The entries to set. If empty, the exceptions will be cleared.
+ * @param {object} db - The Remote Settings collections database.
+ * @param {object} collectionName The remote setting collection name
  */
 async function setExceptions(entries, db, collectionName) {
   info("Set exceptions via RemoteSettings");

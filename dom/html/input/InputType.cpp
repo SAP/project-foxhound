@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,18 +6,17 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Likely.h"
-#include "nsIFormControl.h"
 #include "mozilla/dom/ButtonInputTypes.h"
 #include "mozilla/dom/CheckableInputTypes.h"
 #include "mozilla/dom/ColorInputType.h"
 #include "mozilla/dom/DateTimeInputTypes.h"
 #include "mozilla/dom/FileInputType.h"
-#include "mozilla/dom/HiddenInputType.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/HiddenInputType.h"
 #include "mozilla/dom/NumericInputTypes.h"
 #include "mozilla/dom/SingleLineTextInputTypes.h"
-
 #include "nsContentUtils.h"
+#include "nsIFormControl.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -166,7 +163,7 @@ nsresult InputType::GetValidationMessage(
       strTextLength.AppendInt(textLength);
 
       return nsContentUtils::FormatMaybeLocalizedString(
-          aValidationMessage, nsContentUtils::eDOM_PROPERTIES,
+          aValidationMessage, PropertiesFile::DOM_PROPERTIES,
           "FormValidationTextTooLong", mInputElement->OwnerDoc(), strMaxLength,
           strTextLength);
     }
@@ -180,7 +177,7 @@ nsresult InputType::GetValidationMessage(
       strTextLength.AppendInt(textLength);
 
       return nsContentUtils::FormatMaybeLocalizedString(
-          aValidationMessage, nsContentUtils::eDOM_PROPERTIES,
+          aValidationMessage, PropertiesFile::DOM_PROPERTIES,
           "FormValidationTextTooShort", mInputElement->OwnerDoc(), strMinLength,
           strTextLength);
     }
@@ -195,7 +192,7 @@ nsresult InputType::GetValidationMessage(
 
       if (title.IsEmpty()) {
         return nsContentUtils::GetMaybeLocalizedString(
-            nsContentUtils::eDOM_PROPERTIES, "FormValidationPatternMismatch",
+            PropertiesFile::DOM_PROPERTIES, "FormValidationPatternMismatch",
             mInputElement->OwnerDoc(), aValidationMessage);
       }
 
@@ -205,7 +202,7 @@ nsresult InputType::GetValidationMessage(
             nsIConstraintValidation::sContentSpecifiedMaxLengthMessage);
       }
       return nsContentUtils::FormatMaybeLocalizedString(
-          aValidationMessage, nsContentUtils::eDOM_PROPERTIES,
+          aValidationMessage, PropertiesFile::DOM_PROPERTIES,
           "FormValidationPatternMismatchWithTitle", mInputElement->OwnerDoc(),
           title);
     }
@@ -238,12 +235,12 @@ nsresult InputType::GetValidationMessage(
 
         if (valueLowStr.Equals(valueHighStr)) {
           return nsContentUtils::FormatMaybeLocalizedString(
-              aValidationMessage, nsContentUtils::eDOM_PROPERTIES,
+              aValidationMessage, PropertiesFile::DOM_PROPERTIES,
               "FormValidationStepMismatchOneValue", mInputElement->OwnerDoc(),
               valueLowStr);
         }
         return nsContentUtils::FormatMaybeLocalizedString(
-            aValidationMessage, nsContentUtils::eDOM_PROPERTIES,
+            aValidationMessage, PropertiesFile::DOM_PROPERTIES,
             "FormValidationStepMismatch", mInputElement->OwnerDoc(),
             valueLowStr, valueHighStr);
       }
@@ -252,7 +249,7 @@ nsresult InputType::GetValidationMessage(
       ConvertNumberToString(valueLow, Localized::Yes, valueLowStr);
 
       return nsContentUtils::FormatMaybeLocalizedString(
-          aValidationMessage, nsContentUtils::eDOM_PROPERTIES,
+          aValidationMessage, PropertiesFile::DOM_PROPERTIES,
           "FormValidationStepMismatchOneValue", mInputElement->OwnerDoc(),
           valueLowStr);
     }
@@ -266,7 +263,7 @@ nsresult InputType::GetValidationMessage(
 
 nsresult InputType::GetValueMissingMessage(nsAString& aMessage) {
   return nsContentUtils::GetMaybeLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationValueMissing",
+      PropertiesFile::DOM_PROPERTIES, "FormValidationValueMissing",
       mInputElement->OwnerDoc(), aMessage);
 }
 
@@ -286,7 +283,7 @@ nsresult InputType::GetBadInputMessage(nsAString& aMessage) {
   return NS_ERROR_UNEXPECTED;
 }
 
-auto InputType::ConvertStringToNumber(const nsAString& aValue) const
+auto InputType::ConvertStringToNumber(const nsAString& aValue, Localized) const
     -> StringToNumberResult {
   NS_WARNING("InputType::ConvertStringToNumber called");
   return {};

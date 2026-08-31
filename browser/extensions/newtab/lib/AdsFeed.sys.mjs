@@ -168,7 +168,8 @@ export class AdsFeed {
   /**
    * Normalize new Unified Ads API response into
    * previous Contile ads response
-   * @param {array} - Array of UAPI placement objects ("newtab_tile_1", etc.)
+   *
+   * @param {Array} - Array of UAPI placement objects ("newtab_tile_1", etc.)
    * @returns {object} - Object containing array of formatted UAPI objects to match legacy Contile system
    */
   _normalizeTileData(data) {
@@ -200,6 +201,7 @@ export class AdsFeed {
 
   /**
    * Return object of supported ad types to query from MARS API from the AdsFeed file
+   *
    * @returns {object}
    */
   getSupportedAdTypes() {
@@ -218,6 +220,7 @@ export class AdsFeed {
   /**
    * Get ads data either from cache or from API and
    * broadcast the data via at.ADS_UPDATE_{DATA_TYPE} event
+   *
    * @param {boolean} isStartup=false - This is only used for reporting
    * and is passed to the update functions meta attribute
    * @returns {void}
@@ -266,7 +269,8 @@ export class AdsFeed {
   /**
    * Fetch data from the Mozilla Ad Routing Service (MARS) unified ads API
    * This function is designed to get whichever ads types are needed (tiles, spocs)
-   * @param {array} supportedAdTypes
+   *
+   * @param {Array} supportedAdTypes
    * @returns {object} Response object containing ad information from MARS
    */
   async fetchData(supportedAdTypes) {
@@ -342,6 +346,8 @@ export class AdsFeed {
       placements.push(...spocPlacements);
     }
 
+    const adsBackendConfig = state.Prefs.values?.adsBackendConfig || {};
+
     let fetchPromise;
 
     const controller = new AbortController();
@@ -352,10 +358,11 @@ export class AdsFeed {
       headers,
       body: JSON.stringify({
         context_id: await lazy.ContextId.request(),
+        flags: adsBackendConfig,
         placements,
         blocks: blockedSponsors.split(","),
-        credentials: "omit",
       }),
+      credentials: "omit",
       signal,
     };
 
@@ -418,6 +425,7 @@ export class AdsFeed {
 
   /**
    * Init function that runs only from onAction at.INIT call.
+   *
    * @param {boolean} isStartup=false
    * @returns {void}
    */
@@ -429,6 +437,7 @@ export class AdsFeed {
 
   /**
    * Sets cached data and dispatches at.ADS_UPDATE_{DATA_TYPE} event to update store with new ads data
+   *
    * @param {boolean} isStartup
    * @returns {void}
    */
@@ -530,7 +539,8 @@ export class AdsFeed {
       case at.PREF_CHANGED:
         await this.onPrefChangedAction(action);
         break;
-      case at.DISCOVERY_STREAM_CONFIG_CHANGE: // Event emitted from ASDevTools "Reset Cache" button
+      case at.DISCOVERY_STREAM_CONFIG_CHANGE:
+      case at.DISCOVERY_STREAM_DEV_REFRESH_CACHE: // Event emitted from ASDevTools "Refresh Cache" button
       case at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE: // Event emitted from ASDevTools "Expire Cache" button
         // Clear cache
         await this.resetAdsFeed();

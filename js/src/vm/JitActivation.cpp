@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -62,6 +60,23 @@ js::jit::JitActivation::~JitActivation() {
   // Rematerialized frames must have been removed by either the bailout code or
   // the exception handler.
   MOZ_ASSERT_IF(rematerializedFrames_, rematerializedFrames_->empty());
+}
+
+void js::jit::JitActivation::trace(JSTracer* trc) {
+  traceCommon(trc);
+
+  TraceJitFrames(trc, this);
+
+  if (rematerializedFrames_) {
+    for (auto iter = rematerializedFrames_->iter(); !iter.done(); iter.next()) {
+      iter.get().value().trace(trc);
+    }
+  }
+
+  for (RInstructionResults* it = ionRecovery_.begin(); it != ionRecovery_.end();
+       it++) {
+    it->trace(trc);
+  }
 }
 
 void js::jit::JitActivation::setBailoutData(
@@ -178,16 +193,6 @@ void js::jit::JitActivation::removeRematerializedFramesFromDebugger(
   }
 }
 
-void js::jit::JitActivation::traceRematerializedFrames(JSTracer* trc) {
-  if (!rematerializedFrames_) {
-    return;
-  }
-  for (RematerializedFrameTable::Enum e(*rematerializedFrames_); !e.empty();
-       e.popFront()) {
-    e.front().value().trace(trc);
-  }
-}
-
 bool js::jit::JitActivation::registerIonFrameRecovery(
     RInstructionResults&& results) {
   // Check that there is no entry in the vector yet.
@@ -218,13 +223,6 @@ void js::jit::JitActivation::removeIonFrameRecovery(JitFrameLayout* fp) {
   }
 
   ionRecovery_.erase(elem);
-}
-
-void js::jit::JitActivation::traceIonRecovery(JSTracer* trc) {
-  for (RInstructionResults* it = ionRecovery_.begin(); it != ionRecovery_.end();
-       it++) {
-    it->trace(trc);
-  }
 }
 
 void js::jit::JitActivation::startWasmTrap(wasm::Trap trap,
@@ -270,8 +268,9 @@ void js::jit::JitActivation::startWasmTrap(wasm::Trap trap,
 }
 
 void js::jit::JitActivation::finishWasmTrap() {
+  MOZ_ASSERT(hasWasmExitFP());
   MOZ_ASSERT(isWasmTrapping());
-  packedExitFP_ = nullptr;
   wasmTrapData_.reset();
+  packedExitFP_ = nullptr;
   MOZ_ASSERT(!isWasmTrapping());
 }

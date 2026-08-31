@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,14 +8,13 @@
 #include "ClientManagerService.h"
 #include "ClientSourceOpParent.h"
 #include "ClientValidation.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/PClientManagerParent.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -34,7 +31,7 @@ mozilla::ipc::IPCResult ClientSourceParent::RecvWorkerSyncPing() {
 }
 
 IPCResult ClientSourceParent::RecvTeardown() {
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -52,7 +49,7 @@ IPCResult ClientSourceParent::RecvExecutionReady(
   mExecutionReady = true;
 
   for (ClientHandleParent* handle : mHandleList) {
-    Unused << handle->SendExecutionReady(mClientInfo.ToIPC());
+    (void)handle->SendExecutionReady(mClientInfo.ToIPC());
   }
 
   mExecutionReadyPromise.ResolveIfExists(true, __func__);
@@ -127,7 +124,7 @@ void ClientSourceParent::ActorDestroy(ActorDestroyReason aReason) {
   for (ClientHandleParent* handle : mHandleList.Clone()) {
     // This should trigger DetachHandle() to be called removing
     // the entry from the mHandleList.
-    Unused << ClientHandleParent::Send__delete__(handle);
+    (void)ClientHandleParent::Send__delete__(handle);
   }
   MOZ_DIAGNOSTIC_ASSERT(mHandleList.IsEmpty());
 }
@@ -147,11 +144,11 @@ bool ClientSourceParent::DeallocPClientSourceOpParent(
 
 ClientSourceParent::ClientSourceParent(
     const ClientSourceConstructorArgs& aArgs,
-    const Maybe<ContentParentId>& aContentParentId)
+    ThreadsafeContentParentHandle* aContentParentHandle)
     : mClientInfo(aArgs.id(), aArgs.agentClusterId(), aArgs.type(),
                   aArgs.principalInfo(), aArgs.creationTime(), aArgs.url(),
                   aArgs.frameType()),
-      mContentParentId(aContentParentId),
+      mContentParentHandle(aContentParentHandle),
       mService(ClientManagerService::GetOrCreateInstance()),
       mExecutionReady(false),
       mFrozen(false) {}
@@ -166,7 +163,10 @@ IPCResult ClientSourceParent::Init() {
   // Ensure the principal is reasonable before adding ourself to the service.
   // Since we validate the principal on the child side as well, any failure
   // here is treated as fatal.
-  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(mClientInfo.PrincipalInfo()))) {
+  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(
+          mClientInfo.PrincipalInfo(),
+          mContentParentHandle ? mContentParentHandle->GetRemoteType()
+                               : NOT_REMOTE_TYPE))) {
     mService->ForgetFutureSource(mClientInfo.ToIPC());
     return IPC_FAIL(Manager(), "Invalid PrincipalInfo!");
   }
@@ -232,7 +232,7 @@ RefPtr<ClientOpPromise> ClientSourceParent::StartOp(
   // Constructor failure will reject the promise via ActorDestroy().
   ClientSourceOpParent* actor =
       new ClientSourceOpParent(std::move(aArgs), promise);
-  Unused << SendPClientSourceOpConstructor(actor, actor->Args());
+  (void)SendPClientSourceOpConstructor(actor, actor->Args());
 
   return promise;
 }

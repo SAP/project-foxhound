@@ -12,11 +12,6 @@
   display: none;
 }
 
-.PanelUI-fxa-menu-section-title,
-.PanelUI-remotetabs-clientcontainer > label[itemtype="client"] {
-  padding-inline-start: 10px;
-}
-
 .PanelUI-remotetabs-notabsforclient-label {
   margin-inline-start: 19px;
   font-size: 13px;
@@ -33,7 +28,7 @@
 
 .panel-button {
   appearance: none;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   color: var(--button-text-color);
   background-color: var(--button-background-color);
   padding: 2px 6px;

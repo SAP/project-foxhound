@@ -1,0 +1,27 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_capability_filter.js"]
+
+["browser_ignore_invalid_capability.js"]
+
+["browser_notifications_do_not_disturb.js"]
+
+["browser_permissions_about_hidden.js"]
+
+["browser_permissions_checkPermissionsWereAdded.js"]
+
+["browser_permissions_dialog.js"]
+
+["browser_permissions_dialog_default_perm.js"]
+
+["browser_permissions_urlFieldHidden.js"]
+
+["browser_pip_settings.js"]

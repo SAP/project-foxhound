@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<style>
+:root {
+  --child-width: 300px;
+}
+.scrollable {
+  overflow: scroll;
+  height: 100px;
+  width: 100px;
+  border: 2px solid black;
+}
+.scrollable::before {
+  display: block;
+  content: "content";
+  height: 300px;
+  width: var(--child-width);
+}
+</style>
+<div class="scrollable"></div>
+<div class="scrollable"></div>
+<div class="scrollable"></div>
+<script>
+document.addEventListener('MozReftestInvalidate', () => {
+  document.documentElement.style.setProperty("--child-width", "0px");
+  document.documentElement.classList.remove("reftest-wait");
+});
+</script>
+</html>

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +18,7 @@ const BASE = "http://localhost:" + PORT;
 var test;
 var tests = [];
 
-/** *******************
+/*********************
  * UTILITY FUNCTIONS *
  *********************/
 
@@ -36,7 +34,7 @@ function skipCache(ch) {
   ch.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
 }
 
-/** ******************
+/********************
  * DEFINE THE TESTS *
  ********************/
 
@@ -119,7 +117,7 @@ function setupTests(throwing) {
   //     after the two sets will almost certainly fail.
 }
 
-/** ***************
+/*****************
  * ADD THE TESTS *
  *****************/
 
@@ -225,7 +223,7 @@ function onStop(ch, status, data) {
 test = new Test(BASE + "/script.html", setupFileMapping, onStart, onStop);
 tests.push(test);
 
-/** ***************
+/*****************
  * RUN THE TESTS *
  *****************/
 

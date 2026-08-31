@@ -4,7 +4,7 @@
 
 package mozilla.components.feature.pwa.ext
 
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.concept.engine.manifest.Size
@@ -162,7 +162,7 @@ private fun createTestSession(
 
     return tab.copy(
         content = tab.content.copy(
-            securityInfo = SecurityInfoState(secure = secure),
+            securityInfo = SecurityInfo.from(secure),
             webAppManifest = manifest,
         ),
     )

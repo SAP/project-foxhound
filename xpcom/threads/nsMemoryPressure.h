@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMemoryPressure_h__
-#define nsMemoryPressure_h__
+#ifndef nsMemoryPressure_h_
+#define nsMemoryPressure_h_
 
 #include "nscore.h"
 
@@ -74,4 +72,4 @@ void NS_NotifyOfEventualMemoryPressure(MemoryPressureState aState);
  */
 nsresult NS_NotifyOfMemoryPressure(MemoryPressureState aState);
 
-#endif  // nsMemoryPressure_h__
+#endif  // nsMemoryPressure_h_

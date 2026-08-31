@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,27 +7,9 @@
 #include <utility>
 
 #include "ServiceWorkerOpPromise.h"
+#include "ServiceWorkerShutdownState.h"
 #include "js/Exception.h"  // JS::ExceptionStack, JS::StealPendingExceptionStack
 #include "jsapi.h"
-
-#include "mozilla/dom/CookieStore.h"
-#include "mozilla/dom/PushSubscriptionChangeEvent.h"
-#include "mozilla/dom/PushSubscriptionChangeEventBinding.h"
-#include "nsCOMPtr.h"
-#include "nsContentUtils.h"
-#include "nsDebug.h"
-#include "nsError.h"
-#include "nsINamed.h"
-#include "nsIPushErrorReporter.h"
-#include "nsISupportsImpl.h"
-#include "nsITimer.h"
-#include "nsIURI.h"
-#include "nsServiceManagerUtils.h"
-#include "nsTArray.h"
-#include "nsThreadUtils.h"
-
-#include "ServiceWorkerCloneData.h"
-#include "ServiceWorkerShutdownState.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
@@ -37,9 +17,9 @@
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Client.h"
+#include "mozilla/dom/CookieStore.h"
 #include "mozilla/dom/ExtendableCookieChangeEvent.h"
 #include "mozilla/dom/ExtendableMessageEventBinding.h"
 #include "mozilla/dom/FetchEventBinding.h"
@@ -50,9 +30,11 @@
 #include "mozilla/dom/Notification.h"
 #include "mozilla/dom/NotificationEvent.h"
 #include "mozilla/dom/NotificationEventBinding.h"
-#include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/PushEventBinding.h"
+#include "mozilla/dom/PushSubscriptionChangeEvent.h"
+#include "mozilla/dom/PushSubscriptionChangeEventBinding.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerNonLifeCycleOpControllerChild.h"
 #include "mozilla/dom/RemoteWorkerService.h"
@@ -68,6 +50,18 @@
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/extensions/ExtensionBrowser.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsINamed.h"
+#include "nsIPushErrorReporter.h"
+#include "nsISupportsImpl.h"
+#include "nsITimer.h"
+#include "nsIURI.h"
+#include "nsServiceManagerUtils.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom {
 
@@ -307,12 +301,12 @@ class ServiceWorkerOp::ServiceWorkerOpRunnable final
     // creation fail.
     if (!aWorkerPrivate->GlobalScope() ||
         aWorkerPrivate->GlobalScope()->IsDying()) {
-      Unused << Cancel();
+      (void)Cancel();
       return true;
     }
 
     bool rv = mOwner->Exec(aCx, aWorkerPrivate);
-    Unused << NS_WARN_IF(!rv);
+    (void)NS_WARN_IF(!rv);
     mOwner = nullptr;
 
     return rv;
@@ -490,7 +484,7 @@ ServiceWorkerOp::ServiceWorkerOp(
 }
 
 ServiceWorkerOp::~ServiceWorkerOp() {
-  Unused << NS_WARN_IF(!mPromiseHolder.IsEmpty());
+  (void)NS_WARN_IF(!mPromiseHolder.IsEmpty());
   mPromiseHolder.RejectIfExists(NS_ERROR_DOM_ABORT_ERR, __func__);
 }
 
@@ -599,7 +593,7 @@ class UpdateServiceWorkerStateOp final : public ServiceWorkerOp {
       MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
 
       if (mOwner) {
-        Unused << mOwner->Exec(aCx, aWorkerPrivate);
+        (void)mOwner->Exec(aCx, aWorkerPrivate);
         mOwner = nullptr;
       }
 
@@ -862,7 +856,7 @@ class PushEventOp final : public ExtendableEventOp {
 
           if (reporter) {
             nsresult rv = reporter->ReportDeliveryError(messageId, error);
-            Unused << NS_WARN_IF(NS_FAILED(rv));
+            (void)NS_WARN_IF(NS_FAILED(rv));
           }
         });
 
@@ -1100,11 +1094,7 @@ class MessageEventOp final : public ExtendableEventOp {
 
   MessageEventOp(ServiceWorkerOpArgs&& aArgs,
                  std::function<void(const ServiceWorkerOpResult&)>&& aCallback)
-      : ExtendableEventOp(std::move(aArgs), std::move(aCallback)),
-        mData(new ServiceWorkerCloneData()) {
-    mData->CopyFromClonedMessageData(
-        mArgs.get_ServiceWorkerMessageEventOpArgs().clonedData());
-  }
+      : ExtendableEventOp(std::move(aArgs), std::move(aCallback)) {}
 
  private:
   ~MessageEventOp() = default;
@@ -1115,21 +1105,25 @@ class MessageEventOp final : public ExtendableEventOp {
     MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
     MOZ_ASSERT(!mPromiseHolder.IsEmpty());
 
+    ServiceWorkerMessageEventOpArgs& args =
+        mArgs.get_ServiceWorkerMessageEventOpArgs();
+
     JS::Rooted<JS::Value> messageData(aCx);
     nsCOMPtr<nsIGlobalObject> sgo = aWorkerPrivate->GlobalScope();
     ErrorResult rv;
-    if (!mData->IsErrorMessageData()) {
-      mData->Read(aCx, &messageData, rv);
+
+    if (args.clonedData()) {
+      args.clonedData()->Read(aCx, &messageData, rv);
     }
 
     // If mData is an error message data, then it means that it failed to
     // serialize on the caller side because it contains a shared memory object.
     // If deserialization fails, we will fire a messageerror event.
-    const bool deserializationFailed =
-        rv.Failed() || mData->IsErrorMessageData();
+    const bool deserializationFailed = rv.Failed() || !args.clonedData();
 
     Sequence<OwningNonNull<MessagePort>> ports;
-    if (!mData->TakeTransferredPortsAsSequence(ports)) {
+    if (args.clonedData() &&
+        !args.clonedData()->TakeTransferredPortsAsSequence(ports)) {
       RejectAll(NS_ERROR_FAILURE);
       rv.SuppressException();
       return false;
@@ -1147,8 +1141,7 @@ class MessageEventOp final : public ExtendableEventOp {
       init.mPorts = std::move(ports);
     }
 
-    PostMessageSource& ipcSource =
-        mArgs.get_ServiceWorkerMessageEventOpArgs().source();
+    PostMessageSource& ipcSource = args.source();
     nsCString originSource;
     switch (ipcSource.type()) {
       case PostMessageSource::TClientInfoAndState:
@@ -1210,8 +1203,6 @@ class MessageEventOp final : public ExtendableEventOp {
 
     return !DispatchFailed(rv2);
   }
-
-  RefPtr<ServiceWorkerCloneData> mData;
 };
 
 class UpdateIsOnContentBlockingAllowListOp final : public ExtendableEventOp {
@@ -1519,8 +1510,8 @@ void FetchEventOp::AsyncLog(const nsCString& aScriptSpec, uint32_t aLineNumber,
           return;
         }
 
-        Unused << self->mActor->SendAsyncLog(spec, line, column, messageName,
-                                             params);
+        (void)self->mActor->SendAsyncLog(spec, line, column, messageName,
+                                         params);
       });
 
   MOZ_ALWAYS_SUCCEEDS(
@@ -1528,14 +1519,14 @@ void FetchEventOp::AsyncLog(const nsCString& aScriptSpec, uint32_t aLineNumber,
 }
 
 void FetchEventOp::GetRequestURL(nsAString& aOutRequestURL) {
-  nsTArray<nsCString>& urls =
+  nsTArray<NotNull<RefPtr<nsIURI>>>& urls =
       mArgs.get_ParentToChildServiceWorkerFetchEventOpArgs()
           .common()
           .internalRequest()
           .urlList();
   MOZ_ASSERT(!urls.IsEmpty());
 
-  CopyUTF8toUTF16(urls.LastElement(), aOutRequestURL);
+  CopyUTF8toUTF16(urls.LastElement()->GetSpecOrDefault(), aOutRequestURL);
 }
 
 void FetchEventOp::ResolvedCallback(JSContext* aCx,
@@ -1655,7 +1646,7 @@ void FetchEventOp::ResolvedCallback(JSContext* aCx,
   // responses always have a URL does not break.
   if (NS_WARN_IF((response->Type() == ResponseType::Opaque ||
                   response->Type() == ResponseType::Cors) &&
-                 ir->GetUnfilteredURL().IsEmpty())) {
+                 !ir->GetUnfilteredURL())) {
     MOZ_DIAGNOSTIC_CRASH("Cors or opaque Response without a URL");
     return;
   }
@@ -1665,7 +1656,8 @@ void FetchEventOp::ResolvedCallback(JSContext* aCx,
     // XXXtt: Will have a pref to enable the quirk response in bug 1419684.
     // The variadic template provided by StringArrayAppender requires exactly
     // an nsString.
-    NS_ConvertUTF8toUTF16 responseURL(ir->GetUnfilteredURL());
+    NS_ConvertUTF8toUTF16 responseURL(
+        ir->GetUnfilteredURL()->GetSpecOrDefault());
     autoCancel.SetCancelMessage("CorsResponseForSameOriginRequest"_ns,
                                 requestURL, responseURL);
     return;
@@ -1691,18 +1683,20 @@ void FetchEventOp::ResolvedCallback(JSContext* aCx,
 
   autoCancel.Reset();
 
+  ChildToParentSynthesizeResponseArgs synthesizeResponseArgs;
+  synthesizeResponseArgs.closure() = mRespondWithClosure.ref();
+  synthesizeResponseArgs.timeStamps() =
+      FetchEventTimeStamps(mFetchHandlerStart, mFetchHandlerFinish);
+  ir->ToChildToParentInternalResponse(
+      &synthesizeResponseArgs.internalResponse());
+
   // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm Step 26: If
   // eventHandled is not null, then resolve eventHandled.
-  //
-  // mRespondWithPromiseHolder will resolve a MozPromise that will resolve on
-  // the worker owner's thread, so it's fine to resolve the mHandled promise now
-  // because content will not interfere with respondWith getting the Response to
-  // where it's going.
   mHandled->MaybeResolveWithUndefined();
+
   mRespondWithPromiseHolder.Resolve(
-      FetchEventRespondWithResult(std::make_tuple(
-          std::move(ir), mRespondWithClosure.ref(),
-          FetchEventTimeStamps(mFetchHandlerStart, mFetchHandlerFinish))),
+      FetchEventRespondWithResult(
+          std::make_pair(std::move(ir), std::move(synthesizeResponseArgs))),
       __func__);
 }
 
@@ -1865,10 +1859,14 @@ nsresult FetchEventOp::DispatchFetchEvent(JSContext* aCx,
             GetCurrentSerialEventTarget(), __func__,
             [self, globalObjectAsSupports](
                 SafeRefPtr<InternalResponse>&& aPreloadResponse) {
-              self->mPreloadResponse->MaybeResolve(
-                  MakeRefPtr<Response>(globalObjectAsSupports,
-                                       std::move(aPreloadResponse), nullptr));
+              // let's complete the promise holder before MaybeResolve
               self->mPreloadResponseAvailablePromiseRequestHolder.Complete();
+              RefPtr<Promise> preloadResponse = self->mPreloadResponse;
+              if (preloadResponse) {
+                preloadResponse->MaybeResolve(
+                    MakeRefPtr<Response>(globalObjectAsSupports,
+                                         std::move(aPreloadResponse), nullptr));
+              }
             },
             [self](int) {
               self->mPreloadResponseAvailablePromiseRequestHolder.Complete();
@@ -1907,10 +1905,14 @@ nsresult FetchEventOp::DispatchFetchEvent(JSContext* aCx,
         ->Then(
             GetCurrentSerialEventTarget(), __func__,
             [self, globalObjectAsSupports](ResponseEndArgs&& aArgs) {
-              if (aArgs.endReason() == FetchDriverObserver::eAborted) {
-                self->mPreloadResponse->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
-              }
+              // let's complete the promise holder before MaybeReject
               self->mPreloadResponseEndPromiseRequestHolder.Complete();
+              if (aArgs.endReason() == FetchDriverObserver::eAborted) {
+                RefPtr<Promise> preloadResponse = self->mPreloadResponse;
+                if (preloadResponse) {
+                  preloadResponse->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+                }
+              }
             },
             [self](int) {
               self->mPreloadResponseEndPromiseRequestHolder.Complete();

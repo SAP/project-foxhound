@@ -47,7 +47,7 @@ add_task(async function testHorizontalScrolling() {
   await selectSource(dbg, "horizontal-scroll.js");
   const editor = getCMEditor(dbg);
 
-  const global = editor.codeMirror.contentDOM.ownerGlobal;
+  const global = editor.codeMirror.contentDOM.documentGlobal;
   const font = new global.FontFace(
     "Ahem",
     "url(chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/examples/Ahem.ttf)"

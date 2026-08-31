@@ -6,7 +6,14 @@
 <body onload='testLoaded()'>
 <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
+<!--
+  Note: This test should be replaced by
+  test_multipleimportMaps.html when the pref
+  "dom.multiple_import_maps.enabled" is turned on.
+-->
+
 <script>
+// eslint-disable-next-line no-unused-vars
 let gotMsg = false;
 let console = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
 let listener = {
@@ -39,20 +46,30 @@ console.registerListener(listener);
 </script>
 
 <script>
+  /* global gotMsg */
   SimpleTest.waitForExplicitFinish();
 
   let hasError = false;
+  // eslint-disable-next-line no-unused-vars
   function importMapError1() {
     ok(false, "The first import map should be accepted.");
   }
+  // eslint-disable-next-line no-unused-vars
   function importMapError2() {
     hasError = true;
   }
 
+  // If the multiple import maps is supported, the import map will be accepted,
+  // otherwise it is ignored.
+  const pref = SpecialPowers.getBoolPref("dom.multiple_import_maps.enabled");
+  const onerrorExpected = !pref;
+  const msgExpected = !pref;
+
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
     import("./module_simpleExport.mjs").then((ns) => {
       ok(ns.x == 84, 'Check simple imported value result: ' + ns.x);
-      ok(hasError, "onerror of the import map should be called.");
+      ok(hasError == onerrorExpected , "onerror of the import map should be called.");
       ok(gotMsg, "Should have got the console warning.");
     }).catch((e) => {
       ok(false, "throws " + e);

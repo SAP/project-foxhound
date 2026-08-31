@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.settings.biometric
 
-import android.os.Build.VERSION_CODES.LOLLIPOP_MR1
-import android.os.Build.VERSION_CODES.M
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
@@ -21,7 +19,6 @@ import mozilla.components.support.test.robolectric.createAddedTestFragment
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -30,7 +27,7 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.settings.biometric.ext.isEnrolled
 import org.mozilla.fenix.settings.biometric.ext.isHardwareAvailable
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class BiometricPromptFeatureTest {
@@ -44,13 +41,6 @@ class BiometricPromptFeatureTest {
         manager = mockk()
     }
 
-    @Config(sdk = [LOLLIPOP_MR1])
-    @Test
-    fun `canUseFeature checks for SDK compatible`() {
-        assertFalse(BiometricPromptFeature.canUseFeature(manager))
-    }
-
-    @Config(sdk = [M])
     @Test
     fun `canUseFeature checks for hardware capabilities`() {
         every { manager.canAuthenticate(any()) } returns BIOMETRIC_SUCCESS
@@ -107,8 +97,10 @@ class BiometricPromptFeatureTest {
 
     @Test
     fun `promptCallback fires feature callbacks`() {
-        val authSuccess: () -> Unit = mockk(relaxed = true)
-        val authFailure: () -> Unit = mockk(relaxed = true)
+        var authSuccessCount = 0
+        var authFailureCount = 0
+        val authSuccess: () -> Unit = { authSuccessCount++ }
+        val authFailure: () -> Unit = { authFailureCount++ }
         val feature = BiometricPromptFeature(testContext, fragment, authFailure, authSuccess)
         val callback = feature.PromptCallback()
         val prompt = BiometricPrompt(fragment, callback)
@@ -117,14 +109,14 @@ class BiometricPromptFeatureTest {
 
         callback.onAuthenticationError(0, "")
 
-        verify { authFailure.invoke() }
+        assertEquals(1, authFailureCount)
 
         callback.onAuthenticationFailed()
 
-        verify { authFailure.invoke() }
+        assertEquals(2, authFailureCount)
 
         callback.onAuthenticationSucceeded(mockk())
 
-        verify { authSuccess.invoke() }
+        assertEquals(1, authSuccessCount)
     }
 }

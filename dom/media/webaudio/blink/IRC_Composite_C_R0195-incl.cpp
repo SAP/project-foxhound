@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,8 +15,6 @@
  * equally spaced azimuths for the left ear, ordered clockwise from in front
  * the listener.
  */
-
-#include "mozilla/ArrayUtils.h"
 
 const int16_t irc_composite_c_r0195_p315[][256] =
     {/* IRC_Composite_C_R0195_T000_P315.wav */

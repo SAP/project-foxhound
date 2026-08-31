@@ -1,0 +1,40 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import '../../styles/multistage';
+
+// Suppress fullscreen sizing when rendered inline in about:newtab.
+.onboardingContainer {
+  height: auto;
+
+  .screen[pos='center'] {
+    background-color: unset;
+    overflow: unset;
+  }
+}
+
+// Override screen_style inline sizing so the component flows naturally
+// within the page layout.
+.section-main {
+  display: flex;
+  flex: 1;
+  margin: unset !important; /* stylelint-disable-line declaration-no-important */
+}
+
+.section-secondary {
+  flex: 1;
+}
+
+.multistage-newtab-wrapper {
+  position: relative;
+  max-width: 904px; /* stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens */
+  margin-inline: auto;
+
+  > moz-button {
+    position: absolute;
+    inset-block-start: var(--space-medium);
+    inset-inline-end: var(--space-medium);
+    z-index: 999;
+  }
+}

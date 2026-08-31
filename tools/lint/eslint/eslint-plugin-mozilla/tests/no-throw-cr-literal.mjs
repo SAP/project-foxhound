@@ -18,7 +18,7 @@ function invalidCode(code, output, messageId) {
   return {
     code,
     output,
-    errors: [{ messageId, type: "ThrowStatement" }],
+    errors: [{ messageId }],
   };
 }
 

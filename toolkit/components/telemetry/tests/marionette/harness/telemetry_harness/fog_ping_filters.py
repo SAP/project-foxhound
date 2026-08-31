@@ -14,11 +14,11 @@ class FOGDocTypePingFilter(FOGPingFilter):
     """Ping filter that accepts FOG pings that match the doc-type."""
 
     def __init__(self, doc_type):
-        super(FOGDocTypePingFilter, self).__init__()
+        super().__init__()
         self.doc_type = doc_type
 
     def __call__(self, ping):
-        if not super(FOGDocTypePingFilter, self).__call__(ping):
+        if not super().__call__(ping):
             return False
 
         # Verify that the given ping was submitted to the URL for the doc_type

@@ -85,9 +85,14 @@ async function forwardToTRR(request, response) {
   }
 }
 
+let trrServer;
 add_setup(async function setup() {
-  h2Port = trr_test_setup();
+  trr_test_setup();
   runningOHTTPTests = true;
+
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
 
   if (mozinfo.socketprocess_networking) {
     Services.dns; // Needed to trigger socket process.
@@ -130,6 +135,9 @@ add_setup(async function setup() {
     await new Promise(resolve => {
       httpServer.stop(resolve);
     });
+    if (trrServer) {
+      await trrServer.stop();
+    }
   });
 });
 
@@ -246,7 +254,7 @@ add_task(async function retryConfigOnConnectivityChange() {
   );
   [, status] = await configPromise;
   equal(status, "success");
-
+  Services.dns.clearCache(true);
   await new TRRDNSListener("example3.com", "2.2.2.2");
 
   // Now check that we also reload a missing config if a TRR confirmation fails.

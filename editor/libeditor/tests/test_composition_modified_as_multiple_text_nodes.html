@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Testing composition change result after splitting the `Text` containing the composition string</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(() => {
+  const editingHost = document.querySelector("[contenteditable]");
+  editingHost.focus();
+
+  // Test for bug 2018817
+  getSelection().collapse(editingHost.firstChild, "AB".length);
+  synthesizeCompositionChange({
+    composition: {
+      string: "CDEFG",
+      clauses: [
+        { length: 5, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+      ],
+    },
+    caret: { start: 5, length: 0 },
+  });
+  editingHost.firstChild.splitText(4); // ABCD|EFG
+  editingHost.insertBefore(document.createTextNode("12345"), editingHost.lastChild); // ABCD|12345|EFG
+  synthesizeCompositionChange({
+    composition: {
+      string: "X",
+      clauses: [
+        { length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+      ],
+    },
+    caret: { start: 1, length: 0 },
+  });
+  is(
+    editingHost.innerHTML,
+    "ABCD12345EFG".replace("CD123", "X"),
+    "The original composition string range should be replaced with the new composition string"
+  );
+  synthesizeComposition({ type: "compositioncommitasis" });
+  is(
+    editingHost.innerHTML,
+    "ABCD12345EFG".replace("CD123", "X"),
+    "The composition should be committed as-is"
+  );
+
+
+  {
+    const desc = "Splitting the Text containing the composition at start of the composition (end of line)";
+    editingHost.innerHTML = "0123";
+    getSelection().collapse(editingHost.firstChild, 4);
+    synthesizeCompositionChange({
+      composition: {
+        string: "ABCD",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    editingHost.firstChild.splitText(4); // 0123|ABCD
+    synthesizeCompositionChange({
+      composition: {
+        string: "EFGH",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH",
+      `${desc}: shouldn't break the further composition change`
+    );
+    synthesizeComposition({ type: "compositioncommitasis" });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH",
+      `${desc}: should commit composition after a composition change after splitting Text`
+    );
+    document.execCommand("undo");
+    is(
+      editingHost.innerHTML,
+      "0123",
+      `${desc}: undo after committing composition should delete only the committed string`
+    );
+  }
+
+  {
+    const desc = "Splitting the Text containing the composition before the composition (end of line)";
+    editingHost.innerHTML = "0123";
+    getSelection().collapse(editingHost.firstChild, 4);
+    synthesizeCompositionChange({
+      composition: {
+        string: "ABCD",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    editingHost.firstChild.splitText(3); // 012|3ABCD
+    synthesizeCompositionChange({
+      composition: {
+        string: "EFGH",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH",
+      `${desc}: shouldn't break the further composition change`
+    );
+    synthesizeComposition({ type: "compositioncommitasis" });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH",
+      `${desc}: should commit composition after a composition change after splitting Text`
+    );
+    document.execCommand("undo");
+    is(
+      editingHost.innerHTML,
+      "0123",
+      `${desc}: undo after committing composition should delete only the committed string`
+    );
+  }
+
+  {
+    const desc = "Splitting the Text containing the composition at start of the composition (middle of line)";
+    editingHost.innerHTML = "01234567";
+    getSelection().collapse(editingHost.firstChild, 4);
+    synthesizeCompositionChange({
+      composition: {
+        string: "ABCD",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    editingHost.firstChild.splitText(4); // 0123|ABCD4567
+    synthesizeCompositionChange({
+      composition: {
+        string: "EFGH",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH4567",
+      `${desc}: shouldn't break the further composition change`
+    );
+    synthesizeComposition({ type: "compositioncommitasis" });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH4567",
+      `${desc}: should commit composition after a composition change after splitting Text`
+    );
+    document.execCommand("undo");
+    is(
+      editingHost.innerHTML,
+      "01234567",
+      `${desc}: undo after committing composition should delete only the committed string`
+    );
+  }
+
+  {
+    const desc = "Splitting the Text containing the composition before the composition (middle of line)";
+    editingHost.innerHTML = "01234567";
+    getSelection().collapse(editingHost.firstChild, 4);
+    synthesizeCompositionChange({
+      composition: {
+        string: "ABCD",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    editingHost.firstChild.splitText(3); // 012|3ABCD4567
+    synthesizeCompositionChange({
+      composition: {
+        string: "EFGH",
+        clauses: [
+          { length: 4, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+        ],
+      },
+      caret: { start: 4, length: 0 },
+    });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH4567",
+      `${desc}: shouldn't break the further composition change`
+    );
+    synthesizeComposition({ type: "compositioncommitasis" });
+    is(
+      editingHost.innerHTML,
+      "0123EFGH4567",
+      `${desc}: should commit composition after a composition change after splitting Text`
+    );
+    document.execCommand("undo");
+    is(
+      editingHost.innerHTML,
+      "01234567",
+      `${desc}: undo after committing composition should delete only the committed string`
+    );
+  }
+
+  SimpleTest.finish();
+});
+</script>
+</head>
+<body>
+<div contenteditable>AB</div>
+</body>
+</html>

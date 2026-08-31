@@ -243,7 +243,7 @@ function eventRecordingMiddleware(store) {
           runtime_id: getCurrentRuntimeIdForTelemetry(store),
         });
         break;
-      case TELEMETRY_RECORD:
+      case TELEMETRY_RECORD: {
         const { method, details } = action;
         if (method) {
           recordEvent(method, details);
@@ -253,6 +253,7 @@ function eventRecordingMiddleware(store) {
           );
         }
         break;
+      }
       case UPDATE_CONNECTION_PROMPT_SETTING_SUCCESS:
         recordEvent("update_conn_prompt", {
           prompt_enabled: `${action.connectionPromptEnabled}`,

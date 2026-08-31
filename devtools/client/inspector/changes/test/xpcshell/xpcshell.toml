@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 tags = "devtools"
 firefox-appdir = "browser"
 head = "head.js"

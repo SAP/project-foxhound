@@ -62,17 +62,17 @@ add_setup(async function () {
   });
 
   // Install the test engine.
-  let oldDefaultEngine = await Services.search.getDefault();
+  let oldDefaultEngine = await SearchService.getDefault();
   registerCleanupFunction(async () => {
-    Services.search.setDefault(
+    SearchService.setDefault(
       oldDefaultEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
     Services.prefs.clearUserPref(PRIVATE_SEARCH_PREF);
     Services.prefs.clearUserPref(TAIL_SUGGESTIONS_PREF);
     Services.prefs.clearUserPref(SUGGEST_ENABLED_PREF);
   });
-  Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UNKNOWN);
+  SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
   Services.prefs.setBoolPref(PRIVATE_SEARCH_PREF, false);
   Services.prefs.setBoolPref(TAIL_SUGGESTIONS_PREF, true);
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
@@ -84,8 +84,8 @@ add_setup(async function () {
  */
 add_task(async function normal_suggestions_provider() {
   let engine = await addTestSuggestionsEngine();
-  let tailEngine = await Services.search.getDefault();
-  Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UNKNOWN);
+  let tailEngine = await SearchService.getDefault();
+  SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
   const query = "hello world";
   let context = createContext(query, { isPrivate: false });
@@ -107,10 +107,7 @@ add_task(async function normal_suggestions_provider() {
     ],
   });
 
-  Services.search.setDefault(
-    tailEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  SearchService.setDefault(tailEngine, SearchService.CHANGE_REASON.UNKNOWN);
   await cleanUpSuggestions();
 });
 
@@ -353,6 +350,50 @@ add_task(async function limit_results() {
       }),
     ],
   });
+  await cleanUpSuggestions();
+});
+
+/**
+ * Tests that tail suggestions are not suppressed by an AI chat result.
+ */
+add_task(async function ai_chat_does_not_suppress_tail() {
+  let aiChatResult = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.AI_CHAT,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    suggestedIndex: 1,
+    payload: {
+      icon: "chrome://browser/content/aiwindow/assets/ask-icon.svg",
+      query: "what time is it in t",
+      title: "what time is it in t",
+    },
+  });
+  let provider = registerBasicTestProvider([aiChatResult]);
+
+  const query = "what time is it in t";
+  let context = createContext(query, { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        heuristic: true,
+      }),
+      aiChatResult,
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        suggestion: query + "oronto",
+        tail: "toronto",
+      }),
+      makeSearchResult(context, {
+        engineName: TAIL_SUGGESTIONS_ENGINE_NAME,
+        suggestion: query + "unisia",
+        tail: "tunisia",
+      }),
+    ],
+  });
+
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.unregisterProvider(provider);
   await cleanUpSuggestions();
 });
 

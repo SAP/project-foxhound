@@ -4,14 +4,12 @@
 
 package mozilla.components.concept.fetch
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ClientTest {
-    @ExperimentalCoroutinesApi
     @Test
     fun `Async request with coroutines`() = runTest {
         val client = TestClient(responseBody = Response.Body("Hello World".byteInputStream()))

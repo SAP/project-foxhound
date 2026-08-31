@@ -717,7 +717,7 @@ export class BookmarkValidator {
             itemType = "bookmark";
           }
           break;
-        case lazy.PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER:
+        case lazy.PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER: {
           let isLivemark = false;
           if (treeNode.annos) {
             for (let anno of treeNode.annos) {
@@ -732,6 +732,7 @@ export class BookmarkValidator {
           }
           itemType = isLivemark ? "livemark" : "folder";
           break;
+        }
         case lazy.PlacesUtils.TYPE_X_MOZ_PLACE_SEPARATOR:
           itemType = "separator";
           break;

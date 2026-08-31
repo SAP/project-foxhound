@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGFEDisplacementMapElement.h"
-#include "mozilla/dom/SVGFEDisplacementMapElementBinding.h"
+
 #include "mozilla/SVGFilterInstance.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGFEDisplacementMapElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEDisplacementMap)
 
@@ -26,15 +25,15 @@ SVGElement::NumberInfo SVGFEDisplacementMapElement::sNumberInfo[1] = {
 };
 
 SVGEnumMapping SVGFEDisplacementMapElement::sChannelMap[] = {
-    {nsGkAtoms::R, SVG_CHANNEL_R},
-    {nsGkAtoms::G, SVG_CHANNEL_G},
-    {nsGkAtoms::B, SVG_CHANNEL_B},
-    {nsGkAtoms::A, SVG_CHANNEL_A},
+    {nsGkAtoms::R, uint8_t(SVGChannel::R)},
+    {nsGkAtoms::G, uint8_t(SVGChannel::G)},
+    {nsGkAtoms::B, uint8_t(SVGChannel::B)},
+    {nsGkAtoms::A, uint8_t(SVGChannel::A)},
     {nullptr, 0}};
 
 SVGElement::EnumInfo SVGFEDisplacementMapElement::sEnumInfo[2] = {
-    {nsGkAtoms::xChannelSelector, sChannelMap, SVG_CHANNEL_A},
-    {nsGkAtoms::yChannelSelector, sChannelMap, SVG_CHANNEL_A}};
+    {nsGkAtoms::xChannelSelector, sChannelMap, uint8_t(SVGChannel::A)},
+    {nsGkAtoms::yChannelSelector, sChannelMap, uint8_t(SVGChannel::A)}};
 
 SVGElement::StringInfo SVGFEDisplacementMapElement::sStringInfo[3] = {
     {nsGkAtoms::result, kNameSpaceID_None, true},
@@ -82,14 +81,12 @@ FilterPrimitiveDescription SVGFEDisplacementMapElement::GetPrimitiveDescription(
     return FilterPrimitiveDescription(AsVariant(std::move(atts)));
   }
 
-  float scale = aInstance->GetPrimitiveNumber(SVGContentUtils::XY,
+  float scale = aInstance->GetPrimitiveNumber(SVGLength::Axis::XY,
                                               &mNumberAttributes[SCALE]);
-  uint32_t xChannel = mEnumAttributes[CHANNEL_X].GetAnimValue();
-  uint32_t yChannel = mEnumAttributes[CHANNEL_Y].GetAnimValue();
   DisplacementMapAttributes atts;
   atts.mScale = scale;
-  atts.mXChannel = xChannel;
-  atts.mYChannel = yChannel;
+  atts.mXChannel = SVGChannel(mEnumAttributes[CHANNEL_X].GetAnimValue());
+  atts.mYChannel = SVGChannel(mEnumAttributes[CHANNEL_Y].GetAnimValue());
   return FilterPrimitiveDescription(AsVariant(std::move(atts)));
 }
 

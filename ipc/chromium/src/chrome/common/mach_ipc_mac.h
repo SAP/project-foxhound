@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -10,9 +8,12 @@
 #include <mach/mach.h>
 #include <mach/message.h>
 #include <sys/types.h>
+#ifdef XP_MACOSX
+#  include <vector>
+#endif
 
 #include "mozilla/Maybe.h"
-#include "mozilla/Result.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/ipc/LaunchError.h"
 
@@ -44,16 +45,19 @@ kern_return_t MachReceivePortSendRight(
 // the parent process.
 bool MachChildProcessCheckIn(
     const char* bootstrap_service_name, mach_msg_timeout_t timeout,
-    std::vector<mozilla::UniqueMachSendRight>& send_rights);
+    std::vector<mozilla::UniqueMachSendRight>& send_rights,
+    std::vector<mozilla::UniqueMachReceiveRight>& receive_rights);
 
 //==============================================================================
 // Called by MacProcessLauncher to transfer ports to the child process, and
 // acquire the child process task port.
-mozilla::Result<mozilla::Ok, mozilla::ipc::LaunchError>
-MachHandleProcessCheckIn(
-    mach_port_t endpoint, pid_t child_pid, mach_msg_timeout_t timeout,
-    const std::vector<mozilla::UniqueMachSendRight>& send_rights,
-    task_t* child_task);
+using MachHandleProcessCheckInPromise =
+    mozilla::MozPromise<task_t, mozilla::ipc::LaunchError, true>;
+RefPtr<MachHandleProcessCheckInPromise> MachHandleProcessCheckIn(
+    mozilla::UniqueMachReceiveRight endpoint, pid_t child_pid,
+    mozilla::TimeDuration timeout,
+    std::vector<mozilla::UniqueMachSendRight> send_rights,
+    std::vector<mozilla::UniqueMachReceiveRight> receive_rights);
 #endif
 
 #endif  // BASE_MACH_IPC_MAC_H_

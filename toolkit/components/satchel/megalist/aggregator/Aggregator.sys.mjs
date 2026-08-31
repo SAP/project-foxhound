@@ -105,6 +105,12 @@ export class Aggregator {
       discardChangesConfirmed() {
         aggregator.forEachViewModel(vm => vm.discardChangesConfirmed());
       },
+
+      setPrimaryPasswordAuthenticated(isAuthenticated) {
+        aggregator.forEachViewModel(vm =>
+          vm.setPrimaryPasswordAuthenticated(isAuthenticated)
+        );
+      },
     };
   }
 }

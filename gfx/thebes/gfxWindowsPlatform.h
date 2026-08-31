@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,7 +18,6 @@
 #include "nsTArray.h"
 
 #include "mozilla/Mutex.h"
-#include "mozilla/RefPtr.h"
 
 #include <windows.h>
 #include <objbase.h>
@@ -103,22 +101,11 @@ class gfxWindowsPlatform final : public gfxPlatform {
   virtual already_AddRefed<gfxASurface> CreateOffscreenSurface(
       const IntSize& aSize, gfxImageFormat aFormat) override;
 
-  bool IsDirect2DBackend();
-
   /**
    * Updates render mode with relation to the current preferences and
    * available devices.
    */
   void UpdateRenderMode();
-
-  /**
-   * Verifies a D2D device is present and working, will attempt to create one
-   * it is non-functional or non-existant.
-   *
-   * \param aAttemptForce Attempt to force D2D cairo device creation by using
-   * cairo device creation routines.
-   */
-  void VerifyD2DDevice(bool aAttemptForce);
 
   void GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
                               FontPresentation aPresentation,
@@ -202,14 +189,11 @@ class gfxWindowsPlatform final : public gfxPlatform {
 
   void InitializeDevices();
   void InitializeD3D11();
-  void InitializeD2D();
   bool InitDWriteSupport();
-  void InitGPUProcessSupport();
 
   void InitializeConfig();
   void InitializeD3D9Config();
   void InitializeD3D11Config();
-  void InitializeD2DConfig();
   void InitializeDirectDrawConfig();
 
   void RecordStartupTelemetry();

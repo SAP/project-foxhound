@@ -1,0 +1,213 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tests for extensions-late-startup deferral on applink navigation</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+
+<script class="testbody" type="text/javascript">
+
+// Test _maybeDeferForApplink fires immediately when no applink is pending.
+add_task(async function test_defer_no_applink_fires_immediately() {
+  const result = await SpecialPowers.spawnChrome([], function() {
+    const mm = Services.wm.getMostRecentWindow("navigator:geckoview")?.moduleManager;
+    if (!mm) {
+      throw new Error("No geckoview moduleManager");
+    }
+    const saved = mm._applinkNavigation;
+    mm._applinkNavigation = null;
+
+    let notified = false;
+    mm._maybeDeferForApplink(() => {
+      notified = true;
+    });
+
+    mm._applinkNavigation = saved;
+    return { notified };
+  });
+
+  ok(result.notified,
+    "_maybeDeferForApplink should fire immediately when no applink");
+});
+
+// Test _maybeDeferForApplink defers when an applink navigation is pending,
+// and fires after the applink promise resolves.
+add_task(async function test_defer_applink_waits_for_resolve() {
+  const result = await SpecialPowers.spawnChrome([], async function() {
+    const mm = Services.wm.getMostRecentWindow("navigator:geckoview")?.moduleManager;
+    if (!mm) {
+      throw new Error("No geckoview moduleManager");
+    }
+    const saved = mm._applinkNavigation;
+    mm._applinkNavigation = Promise.withResolvers();
+
+    let notified = false;
+    const { promise: notifyPromise, resolve: notifyResolve } =
+      Promise.withResolvers();
+
+    // Use a long timeout so it won't fire during the test; we want to
+    // confirm the notification fires only because we resolve the promise.
+    mm._maybeDeferForApplink(() => {
+      notified = true;
+      notifyResolve();
+    }, 10000);
+
+    const notifiedBeforeResolve = notified;
+
+    mm._applinkNavigation.resolve();
+    await notifyPromise;
+
+    mm._applinkNavigation = saved;
+    return { notifiedBeforeResolve, notifiedAfterResolve: notified };
+  });
+
+  ok(!result.notifiedBeforeResolve,
+    "_maybeDeferForApplink should NOT fire while applink is pending");
+  ok(result.notifiedAfterResolve,
+    "_maybeDeferForApplink should fire after applink resolves");
+});
+
+// Test _maybeDeferForApplink timeout fallback fires even if applink
+// promise never resolves.
+add_task(async function test_defer_timeout_fallback() {
+  const result = await SpecialPowers.spawnChrome([], async function() {
+    const win = Services.wm.getMostRecentWindow("navigator:geckoview");
+    const mm = win?.moduleManager;
+    if (!mm) {
+      throw new Error("No geckoview moduleManager");
+    }
+
+    const saved = mm._applinkNavigation;
+    mm._applinkNavigation = Promise.withResolvers();
+
+    let notified = false;
+    const TIMEOUT_MS = 50;
+    mm._maybeDeferForApplink(() => {
+      notified = true;
+    }, TIMEOUT_MS);
+
+    const notifiedBeforeTimeout = notified;
+
+    await new Promise(resolve => win.setTimeout(resolve, TIMEOUT_MS + 50));
+    await new Promise(resolve =>
+      Services.tm.idleDispatchToMainThread(resolve)
+    );
+
+    mm._applinkNavigation = saved;
+    return { notifiedBeforeTimeout, notifiedAfterTimeout: notified };
+  });
+
+  ok(!result.notifiedBeforeTimeout,
+    "_maybeDeferForApplink should NOT fire before timeout");
+  ok(result.notifiedAfterTimeout,
+    "_maybeDeferForApplink should fire after timeout even if applink never resolves");
+});
+
+// Test that LoadUri without appLinkLaunchType does not set _applinkNavigation
+add_task(async function test_loadUri_no_applink() {
+  const result = await SpecialPowers.spawnChrome([], function() {
+    const win = Services.wm.getMostRecentWindow("navigator:geckoview");
+    const mm = win?.moduleManager;
+    if (!mm) {
+      throw new Error("No geckoview moduleManager");
+    }
+
+    const navModule = mm._modules.get("GeckoViewNavigation")?._impl;
+    if (!navModule) {
+      throw new Error("GeckoViewNavigation not found");
+    }
+
+    mm._applinkNavigation = null;
+    navModule.onEvent("GeckoView:LoadUri", {
+      uri: "http://mochi.test:8888/",
+      flags: 0,
+    });
+    const promiseWasSet = mm._applinkNavigation !== null;
+    win.browser?.stop();
+
+    return { promiseWasSet };
+  });
+
+  ok(!result.promiseWasSet,
+    "LoadUri without appLinkLaunchType should NOT set _applinkNavigation");
+});
+
+// Test that LoadUri WITH appLinkLaunchType sets _applinkNavigation
+// and that pageshow resolves it.
+add_task(async function test_pageshow_resolves_applink() {
+  const result = await SpecialPowers.spawnChrome([], async function() {
+    const win = Services.wm.getMostRecentWindow("navigator:geckoview");
+    const mm = win?.moduleManager;
+    if (!mm) {
+      throw new Error("No geckoview moduleManager");
+    }
+
+    const navModule = mm._modules.get("GeckoViewNavigation")?._impl;
+    if (!navModule) {
+      throw new Error("GeckoViewNavigation not found");
+    }
+
+    const progressInfo = mm._modules.get("GeckoViewProgress");
+    if (!progressInfo) {
+      throw new Error("GeckoViewProgress not found");
+    }
+
+    mm._applinkNavigation = null;
+    const wasEnabled = progressInfo._enabled;
+    if (!wasEnabled) {
+      progressInfo.enabled = true;
+    }
+
+    try {
+      navModule.onEvent("GeckoView:LoadUri", {
+        uri: "http://mochi.test:8888/",
+        flags: 0,
+        appLinkLaunchType: 1,
+      });
+      win.browser?.stop();
+
+      if (!mm._applinkNavigation) {
+        throw new Error("_applinkNavigation not set after applink LoadUri");
+      }
+
+      const hasResolve = typeof mm._applinkNavigation.resolve === "function";
+      const hasPromise = typeof mm._applinkNavigation.promise?.then === "function";
+
+      let promiseResolved = false;
+      mm._applinkNavigation.promise.then(() => {
+        promiseResolved = true;
+      });
+
+      progressInfo._impl.receiveMessage({ name: "pageshow", data: {} });
+      await Promise.resolve();
+
+      return {
+        hasResolve,
+        hasPromise,
+        promiseResolved,
+        promiseCleared: mm._applinkNavigation === null,
+      };
+    } finally {
+      if (!wasEnabled) {
+        progressInfo.enabled = false;
+      }
+      if (mm._applinkNavigation) {
+        mm._applinkNavigation.resolve();
+        mm._applinkNavigation = null;
+      }
+    }
+  });
+
+  ok(result.hasResolve, "_applinkNavigation should have resolve function");
+  ok(result.hasPromise, "_applinkNavigation should have promise property");
+  ok(result.promiseResolved, "promise should be resolved after pageshow");
+  ok(result.promiseCleared, "_applinkNavigation should be cleared after pageshow");
+});
+
+</script>
+</body>
+</html>

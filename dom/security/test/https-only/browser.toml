@@ -18,6 +18,9 @@ support-files = ["file_console_logging.html"]
 ["browser_cors_mixedcontent.js"]
 support-files = ["file_cors_mixedcontent.html"]
 
+["browser_extension_exemption.js"]
+support-files = ["file_cors.sjs"]
+
 ["browser_hsts_host.js"]
 support-files = [
   "hsts_headers.sjs",
@@ -34,8 +37,8 @@ support-files = ["file_iframe_buttons.html"]
 
 ["browser_iframe_test.js"]
 skip-if = [
-  "os == 'linux' && bits == 64", # Bug 1735565
-  "os == 'win' && bits == 64", # Bug 1735565
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1735565
+  "os == 'win' && arch == 'x86_64'", # Bug 1735565
 ]
 support-files = ["file_iframe_test.sjs"]
 
@@ -50,6 +53,9 @@ support-files = ["file_save_as.html"]
 
 ["browser_schemeless.js"]
 
+["browser_status_code.js"]
+support-files = ["file_status_code.sjs"]
+
 ["browser_triggering_principal_exemption.js"]
 
 ["browser_upgrade_exceptions.js"]
@@ -60,7 +66,9 @@ support-files = ["file_save_as.html"]
 support-files = ["file_user_gesture.sjs"]
 
 ["browser_websocket_exceptions.js"]
-skip-if = ["os == 'android'"] # WebSocket tests are not supported on Android Yet. Bug 1566168.
+skip-if = [
+  "os == 'android'", # WebSocket tests are not supported on Android Yet. Bug 1566168.
+]
 support-files = [
   "file_websocket_exceptions.html",
   "file_websocket_exceptions_iframe.html",

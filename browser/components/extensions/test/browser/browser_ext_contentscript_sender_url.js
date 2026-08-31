@@ -1,10 +1,14 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 const FILE_URL = Services.io.newFileURI(
   new FileUtils.File(getTestFilePath("file_dummy.html"))
 ).spec;
+
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.webextensions.fileSchemeAccess.requireOptIn", false]],
+  });
+});
 
 add_task(async function test_sender_url() {
   let extension = ExtensionTestUtils.loadExtension({
@@ -43,15 +47,15 @@ add_task(async function test_sender_url() {
     set: [["fission.bfcacheInParent", false]],
   });
 
-  function awaitNewTab() {
-    return BrowserTestUtils.waitForLocationChange(gBrowser, "about:newtab");
+  function awaitAboutPage() {
+    return BrowserTestUtils.waitForLocationChange(gBrowser, "about:robots");
   }
 
   await extension.startup();
 
   await BrowserTestUtils.withNewTab({ gBrowser }, async browser => {
-    let newTab = awaitNewTab();
-    BrowserTestUtils.startLoadingURIString(browser, "about:newtab");
+    let newTab = awaitAboutPage();
+    BrowserTestUtils.startLoadingURIString(browser, "about:robots");
     await newTab;
 
     BrowserTestUtils.startLoadingURIString(browser, image);
@@ -61,7 +65,7 @@ add_task(async function test_sender_url() {
     let origin = await extension.awaitMessage("sender.origin");
     is(origin, "http://mochi.test:8888", `Correct sender.origin: ${origin}`);
 
-    let wentBack = awaitNewTab();
+    let wentBack = awaitAboutPage();
     await browser.goBack();
     await wentBack;
 

@@ -92,13 +92,21 @@ web_app:
     description: >
       The user unpinned the web app from their taskbar using Firefox.
     extra_keys:
+      removal_result:
+        description: >
+          Error message from the cleanup process, i.e. deleting the shortcut
+          and icon, or 'Success' if it succeeds.
+        type: string
       result:
-        description: Error code from the unpinning process.
+        description: >
+          Error message from the unpinning process, or 'Success' if it succeeds.
         type: string
     bugs:
       - https://bugzilla.mozilla.org/1966476
+      - https://bugzilla.mozilla.org/1990892
     data_reviews:
       - https://phabricator.services.mozilla.com/D254733
+      - https://phabricator.services.mozilla.com/D266221
     notification_emails:
       - nrishel@mozilla.com
     expires: never
@@ -112,6 +120,21 @@ web_app:
       - https://bugzilla.mozilla.org/1966476
     data_reviews:
       - https://phabricator.services.mozilla.com/D254733
+    notification_emails:
+      - nrishel@mozilla.com
+    expires: never
+
+  installed_web_app_count:
+    type: quantity
+    unit: web apps
+    description: >
+      Count of currently installed web apps. Note that Firefox does not detect
+      unpinning or deleting the shortcut outside of Firefox, so this could
+      include web apps that the user has no way to access; see bug 1990342.
+    bugs:
+      - bugzilla.mozilla.org/show_bug.cgi?id=1986557
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D265682
     notification_emails:
       - nrishel@mozilla.com
     expires: never

@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,9 +93,8 @@ void SharedSurface_EGLImage::ProducerReleaseImpl() {
   if (egl->IsExtensionSupported(EGLExtension::KHR_fence_sync) &&
       gl->IsExtensionSupported(GLContext::OES_EGL_sync)) {
     if (mSync) {
-      MOZ_RELEASE_ASSERT(false, "GFX: Non-recycleable should not Fence twice.");
       MOZ_ALWAYS_TRUE(egl->fDestroySync(mSync));
-      mSync = 0;
+      mSync = nullptr;
     }
 
     mSync = egl->fCreateSync(LOCAL_EGL_SYNC_FENCE, nullptr);

@@ -22,7 +22,7 @@ other than the caller. It uses a few criteria to decide this including:
 
 Part of this handling may include running the content through a registered stream
 converter to convert the content type from one to another. This is done through
-the `stream converter service <https://searchfox.org/mozilla-central/source/netwerk/streamconv>`_.
+the :searchfox:`stream converter service <netwerk/streamconv>`.
 When this happens a new ``nsDocumentOpenInfo`` is created to handle the new content
 in the same way as the current content.
 
@@ -43,4 +43,4 @@ flags passed to the loader service):
 
 For the most part the process ends at step 1 because nsDocShell passes a ``nsDSURIContentListener``
 for the ``nsIURIContentListener`` consulted first and it accepts most of the
-`web content types <https://searchfox.org/mozilla-central/source/layout/build/components.conf>`_.
+:searchfox:`web content types <layout/build/components.conf>`.

@@ -563,7 +563,7 @@ GMPWrapper.prototype = {
     // Delay this in case the user changes his mind and doesn't want to
     // enable EME after all.
     lazy.setTimeout(() => {
-      if (!this.appDisabled) {
+      if (!this.appDisabled && !Services.startup.shuttingDown) {
         let gmpInstallManager = new lazy.GMPInstallManager();
         // We don't really care about the results, if someone is interested
         // they can check the log.

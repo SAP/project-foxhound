@@ -42,10 +42,10 @@ Filing / Managing Bugs
    This is not always possible, but attention to this, especially when
    filing from crash-stats, is helpful.
 -  It is _ok_ to link security bugs to non-security bugs with Blocks,
-   Depends, Regressions, or See Also. Users with the editbugs permission
-   will be able to see the reference, but not view a restricted bug or
-   its summary. Users without the permission will not be able to see the link.
-   For critical severity bugs where even that seems problematic, consider
+   Depends, Regressed By, Regressions, or See Also. Users with the editbugs
+   permission will be able to see the reference, but not view a restricted bug
+   or its summary. Users without the permission will not be able to see the
+   link. For critical severity bugs where even that seems problematic, consider
    mentioning the bug in a comment on the security bug instead. We can always
    fill in the links later after the fix has shipped.
 

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -114,8 +113,7 @@ imgRequestProxy::imgRequestProxy()
       mListenerIsStrongRef(false),
       mDecodeRequested(false),
       mPendingNotify(false),
-      mValidating(false),
-      mHadListener(false) {
+      mValidating(false) {
   /* member initializers and constructor code */
   LOG_FUNC(gImgLog, "imgRequestProxy::imgRequestProxy");
 }
@@ -161,7 +159,6 @@ nsresult imgRequestProxy::Init(imgRequest* aOwner, nsILoadGroup* aLoadGroup,
   // that call might well want to release it if the imgRequest has
   // already seen OnStopRequest.
   if (mListener) {
-    mHadListener = true;
     mListenerIsStrongRef = true;
     NS_ADDREF(mListener);
   }
@@ -755,8 +752,8 @@ imgRequestProxy::GetFileName(nsACString& aFileName) {
   return NS_OK;
 }
 
-imgRequestProxy* imgRequestProxy::NewClonedProxy() {
-  return new imgRequestProxy();
+already_AddRefed<imgRequestProxy> imgRequestProxy::NewClonedProxy() {
+  return mozilla::MakeAndAddRef<imgRequestProxy>();
 }
 
 NS_IMETHODIMP
@@ -876,17 +873,8 @@ imgRequestProxy::GetImagePrincipal(nsIPrincipal** aPrincipal) {
 
 NS_IMETHODIMP
 imgRequestProxy::GetHadCrossOriginRedirects(bool* aHadCrossOriginRedirects) {
-  *aHadCrossOriginRedirects = false;
-
-  nsCOMPtr<nsITimedChannel> timedChannel = TimedChannel();
-  if (timedChannel) {
-    bool allRedirectsSameOrigin = false;
-    *aHadCrossOriginRedirects =
-        NS_SUCCEEDED(
-            timedChannel->GetAllRedirectsSameOrigin(&allRedirectsSameOrigin)) &&
-        !allRedirectsSameOrigin;
-  }
-
+  *aHadCrossOriginRedirects =
+      GetOwner() ? GetOwner()->HadCrossOriginRedirects() : false;
   return NS_OK;
 }
 
@@ -1106,9 +1094,9 @@ already_AddRefed<imgRequestProxy> imgRequestProxy::GetStaticRequest(
   bool hadCrossOriginRedirects = true;
   GetHadCrossOriginRedirects(&hadCrossOriginRedirects);
   nsCOMPtr<nsIPrincipal> triggeringPrincipal = GetTriggeringPrincipal();
-  RefPtr<imgRequestProxy> req =
-      new imgRequestProxyStatic(frozenImage, currentPrincipal,
-                                triggeringPrincipal, hadCrossOriginRedirects);
+  auto req = MakeRefPtr<imgRequestProxyStatic>(frozenImage, currentPrincipal,
+                                               triggeringPrincipal,
+                                               hadCrossOriginRedirects);
   req->Init(nullptr, nullptr, mURI, nullptr);
 
   return req.forget();
@@ -1260,7 +1248,7 @@ imgRequestProxyStatic::GetHadCrossOriginRedirects(
   return NS_OK;
 }
 
-imgRequestProxy* imgRequestProxyStatic::NewClonedProxy() {
+already_AddRefed<imgRequestProxy> imgRequestProxyStatic::NewClonedProxy() {
   nsCOMPtr<nsIPrincipal> currentPrincipal;
   GetImagePrincipal(getter_AddRefs(currentPrincipal));
   nsCOMPtr<nsIPrincipal> triggeringPrincipal;
@@ -1268,6 +1256,6 @@ imgRequestProxy* imgRequestProxyStatic::NewClonedProxy() {
   bool hadCrossOriginRedirects = true;
   GetHadCrossOriginRedirects(&hadCrossOriginRedirects);
   RefPtr<mozilla::image::Image> image = GetImage();
-  return new imgRequestProxyStatic(image, currentPrincipal, triggeringPrincipal,
-                                   hadCrossOriginRedirects);
+  return mozilla::MakeAndAddRef<imgRequestProxyStatic>(
+      image, currentPrincipal, triggeringPrincipal, hadCrossOriginRedirects);
 }

@@ -8,6 +8,10 @@ with Files("**"):
     BUG_COMPONENT = ("Testing", "Marionette Client and Harness")
 
 with Files("harness/**"):
-    SCHEDULES.exclusive = ["marionette", "firefox-ui"]
+    SCHEDULES.exclusive = [
+        "firefox-ui",
+        "marionette-integration",
+        "marionette-unittest",
+    ]
 
 SPHINX_PYTHON_PACKAGE_DIRS += ["client/marionette_driver"]

@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(TA => {
     array.join(0);
     throw new Test262Error('join completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

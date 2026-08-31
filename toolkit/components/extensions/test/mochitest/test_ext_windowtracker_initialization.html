@@ -1,0 +1,127 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Testing extension internals: WindowTracker</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+"use strict";
+
+// Tests that WindowTracker can detect browser windows even if the open
+// register was registered before it was fully initialized.
+//
+// Regression test for https://bugzilla.mozilla.org/show_bug.cgi?id=2004525
+add_task(async function test_WindowTracker_and_incomplete_windows() {
+  // This extension serves two purposes:
+  // - A way to open and close a browser window.
+  // - Ensuring that ExtensionParent.apiManager.global.windowTracker exists,
+  //   (via ext-browser.js on desktop, or ext-android.js on Android), so that
+  //   we can interact with it below.
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: { name: "Extension that opens new browser window" },
+    background() {
+      // About the use of browser.windows vs browser.tabs below:
+      // browser.windows not supported on Android (bug 1584252), but for the
+      // purpose of this test, we can use browser.tabs.create/remove instead,
+      // because each tab is currently rendered in one geckoview.xhtml window.
+
+      let winPromise;
+      browser.test.onMessage.addListener(async msg => {
+        if (msg === "openBrowserWindow") {
+          if (browser.windows) {
+            winPromise = browser.windows.create({ url: "/manifest.json" });
+          } else {
+            winPromise = browser.tabs.create({ url: "/manifest.json" });
+          }
+        } else if (msg === "closeBrowserWindow") {
+          let win = await winPromise;
+          if (browser.windows) {
+            await browser.windows.remove(win.id);
+          } else {
+            await browser.tabs.remove(win.id);
+          }
+          browser.test.sendMessage("closedBrowserWindow");
+        }
+      });
+    },
+  });
+  await extension.startup();
+
+  // This is a very elaborate setup to deterministically peek into incomplete
+  // windows. In practice this is most likely to happen on browser startup,
+  // when there is a race between extension framework initialization and
+  // session restore, and general slowness such that the window initialization
+  // can take a little bit longer.
+  const chromeScript = SpecialPowers.loadChromeScript(() => {
+    const { ExtensionParent } = ChromeUtils.importESModule(
+      "resource://gre/modules/ExtensionParent.sys.mjs"
+    );
+
+    // The real WindowTracker has state that we cannot easily shake off.
+    // To test our behavior of interest, create a new WindowTracker instance.
+    const WindowTracker =
+      ExtensionParent.apiManager.global.windowTracker.constructor;
+    const windowTracker = new WindowTracker();
+    const topWindowObserver = win => {
+      // Sanity check, to see if the conditions from bug 2004525 are met.
+      Assert.equal(win.location.href, "about:blank", "Initial URL");
+      Assert.equal(win.document.readyState, "complete", "Initial readyState");
+      Assert.ok(
+        win.document.isUncommittedInitialDocument,
+        "Is initial (uncommitted) about:blank"
+      );
+      Assert.ok(
+        ![...windowTracker.browserWindows()].includes(win),
+        "windowTracker.browserWindows() does not include incomplete windows"
+      );
+      // Regression test for bug 2004525: This assertion used to fail.
+      Assert.ok(
+        [...windowTracker.browserWindows(true)].includes(win),
+        "windowTracker.browserWindows(true) includes incomplete windows"
+      );
+      // Regression test for bug 2004525: This listener used to not fire.
+      windowTracker.addOpenListener(openListener);
+    };
+    const openListener = win => {
+      Assert.ok(
+        [...windowTracker.browserWindows()].includes(win),
+        "windowTracker.browserWindows() includes window from addOpenListener"
+      );
+      windowTracker.removeOpenListener(openListener);
+      this.sendAsyncMessage("windowChecked");
+    };
+    Services.obs.addObserver(topWindowObserver, "toplevel-window-ready");
+    this.addMessageListener("cleanup", () => {
+      Services.obs.removeObserver(topWindowObserver, "toplevel-window-ready");
+      windowTracker.removeOpenListener(openListener);
+    });
+    this.sendAsyncMessage("setup");
+  });
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => {
+    await chromeScript.sendQuery("cleanup");
+    chromeScript.destroy();
+  });
+  await chromeScript.promiseOneMessage("setup");
+  const windowCheckedPromise = chromeScript.promiseOneMessage("windowChecked");
+
+  info("Opening new browser window");
+  extension.sendMessage("openBrowserWindow");
+
+  info("Waiting for windowTracker checks to complete");
+  await windowCheckedPromise;
+
+  extension.sendMessage("closeBrowserWindow");
+  await extension.awaitMessage("closedBrowserWindow");
+
+  await extension.unload();
+});
+
+</script>
+
+</body>
+</html>

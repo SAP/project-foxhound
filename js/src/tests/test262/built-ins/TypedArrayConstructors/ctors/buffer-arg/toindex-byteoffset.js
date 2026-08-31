@@ -83,6 +83,6 @@ testWithTypedArrayConstructors(function(TA) {
       new TA(buffer, true);
     }, "1 modulo elementSize ≠ 0, throws a RangeError");
   }
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

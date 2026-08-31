@@ -212,6 +212,7 @@ security:
       Expected values are:
         - chromeuri - chrome:// file
         - resourceuri - resource:// file
+        - mozsrcuri - moz-src:// file
         - datauri - a data URI
         - bloburi - a blob URI
         - abouturi - an about URI
@@ -265,11 +266,14 @@ security:
   csp_violation_internal_page:
     type: event
     description: >
-      Information about Content-Security-Policy violations that happen in internal pages like chrome://
+      Information about Content-Security-Policy violations that happen in
+      internal pages like chrome:// or the pdf.js viewer.
     bugs:
       - https://bugzil.la/1942622
+      - https://bugzil.la/1960363
     data_reviews:
       - https://bugzil.la/1942622
+      - https://bugzil.la/1960363
     notification_emails:
       - tschuster@mozilla.com
       - freddy@mozilla.com
@@ -321,8 +325,12 @@ security:
       sample:
         description: >
           The same as SecurityPolicyViolationEvent's sample.
-          (Only for violations from chrome:)
+          (Only for violations from chrome: or the pdf.js viewer)
         type: string
+      baseline:
+        description: >
+          The violation was triggered by the kBaselineChromeCSP.
+        type: boolean
 
 
   eval_usage_parent_process:
@@ -378,6 +386,7 @@ security:
       security.javascriptLoad#parentProcess.
     bugs:
       - https://bugzil.la/1582512
+      - https://bugzil.la/1983112
     data_reviews:
       - https://bugzil.la/1582512
     notification_emails:
@@ -396,7 +405,6 @@ security:
         description: >
           Information about the filename that was requested to be loaded
         type: string
-    telemetry_mirror: Security_Javascriptload_Parentprocess
 
   https_only_mode_upgrade_time:
     type: labeled_timing_distribution

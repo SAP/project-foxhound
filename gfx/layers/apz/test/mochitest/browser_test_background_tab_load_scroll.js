@@ -37,7 +37,7 @@ add_task(async function test_main() {
     });
   }
 
-  async function checkScrollPosInContent(browser, iter, num) {
+  async function checkScrollPosInContent(browser, iter, reload) {
     let visualScrollPos = await SpecialPowers.spawn(browser, [], function () {
       const offsetX = {};
       const offsetY = {};
@@ -61,10 +61,14 @@ add_task(async function test_main() {
         scrollPos +
         " (" +
         iter +
-        "," +
-        num +
+        (reload ? reload : "") +
         ")"
     );
+
+    // After reload, the scroll position should be doubled since the target
+    // document calls `scrollBy(0, 10000)` after restoring the previous scroll
+    // position `(0, 10000)`.
+    is(scrollPos, 10000 * (reload === "reload" ? 2 : 1));
   }
 
   for (let i = 0; i < 5; i++) {
@@ -88,7 +92,7 @@ add_task(async function test_main() {
 
     await waitForApzInContent(browser);
 
-    await checkScrollPosInContent(browser, i, 1);
+    await checkScrollPosInContent(browser, i);
 
     await BrowserTestUtils.switchTab(gBrowser, blankTab);
 
@@ -103,7 +107,7 @@ add_task(async function test_main() {
 
     await waitForApzInContent(browser);
 
-    await checkScrollPosInContent(browser, i, 2);
+    await checkScrollPosInContent(browser, i, "reload");
 
     // Cleanup
     let tabClosed = BrowserTestUtils.waitForTabClosing(backgroundTab);

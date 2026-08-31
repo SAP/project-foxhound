@@ -5,11 +5,27 @@
 <script>
   SimpleTest.waitForExplicitFinish();
 
+  let count = 0;
+  function maybeFinish() {
+    count++;
+    if (count == 2) {
+      SimpleTest.finish();
+    }
+  }
+
+  // eslint-disable-next-line no-unused-vars
   async function testLoaded() {
+
     await import("./404.js").catch((error) => {
       ok(error instanceof TypeError, "Should be a TypeError.");
       ok(error.message.match(/404.js/), "Should have the filename.");
-      SimpleTest.finish();
+      maybeFinish();
+    });
+
+    await import("./import_404.mjs").catch((error) => {
+      ok(error instanceof TypeError, "Should be a TypeError.");
+      ok(error.message.match(/404.js/), "Should have the filename from sub-modules");
+      maybeFinish();
     });
   }
 </script>

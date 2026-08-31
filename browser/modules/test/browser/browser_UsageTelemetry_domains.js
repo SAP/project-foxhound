@@ -15,8 +15,8 @@ Services.obs.notifyObservers(null, TELEMETRY_SUBSESSION_TOPIC);
  * @param {xul:browser} browser
  *        A xul:browser.
  *
- * @return {Promise}
- * @resolves When navigating to a non-error page.
+ * @returns {Promise<void>}
+ *   Resolves when a non-error page has been navigated to.
  */
 function browserLocationChanged(browser) {
   return new Promise(resolve => {

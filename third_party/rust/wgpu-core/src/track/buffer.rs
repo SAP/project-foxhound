@@ -31,10 +31,6 @@ impl ResourceUses for BufferUses {
         Self::bits(&self)
     }
 
-    fn all_ordered(self) -> bool {
-        Self::ORDERED.contains(self)
-    }
-
     fn any_exclusive(self) -> bool {
         self.intersects(Self::EXCLUSIVE)
     }
@@ -61,13 +57,9 @@ impl BufferBindGroupState {
             .sort_unstable_by_key(|(b, _)| b.tracker_index());
     }
 
-    /// Returns a list of all buffers tracked. May contain duplicates.
-    pub fn used_tracker_indices(&self) -> impl Iterator<Item = TrackerIndex> + '_ {
-        self.buffers
-            .iter()
-            .map(|(b, _)| b.tracker_index())
-            .collect::<Vec<_>>()
-            .into_iter()
+    /// Returns an iterator over the tracked buffers. May contain duplicates.
+    pub fn used_resources(&self) -> impl Iterator<Item = &Arc<Buffer>> {
+        self.buffers.iter().map(|(b, _)| b)
     }
 
     /// Adds the given resource with the given state.
@@ -81,6 +73,7 @@ impl BufferBindGroupState {
 pub(crate) struct BufferUsageScope {
     state: Vec<BufferUses>,
     metadata: ResourceMetadata<Arc<Buffer>>,
+    ordered_uses_mask: BufferUses,
 }
 
 impl Default for BufferUsageScope {
@@ -88,6 +81,7 @@ impl Default for BufferUsageScope {
         Self {
             state: Vec::new(),
             metadata: ResourceMetadata::new(),
+            ordered_uses_mask: BufferUses::empty(),
         }
     }
 }
@@ -109,6 +103,10 @@ impl BufferUsageScope {
     pub fn set_size(&mut self, size: usize) {
         self.state.resize(size, BufferUses::empty());
         self.metadata.set_size(size);
+    }
+
+    pub fn set_ordered_uses_mask(&mut self, ordered_uses_mask: BufferUses) {
+        self.ordered_uses_mask = ordered_uses_mask;
     }
 
     /// Extend the vectors to let the given index be valid.
@@ -261,6 +259,22 @@ impl BufferUsageScope {
             )
         }
     }
+
+    /// Removes the indicated usage from the scope.
+    ///
+    /// Note that multiple uses of the same type get merged. It is only
+    /// safe to remove a usage if you are certain you aren't going to
+    /// erase another usage you don't know about.
+    pub fn remove_usage(&mut self, buffer: &Buffer, usage: BufferUses) {
+        let index = buffer.tracker_index().as_usize();
+        if self.metadata.contains(index) {
+            // SAFETY: If the buffer is part of this usage scope, then the index
+            // is in range.
+            unsafe {
+                *self.state.get_unchecked_mut(index) &= !usage;
+            }
+        }
+    }
 }
 
 /// Stores all buffer state within a command buffer.
@@ -271,10 +285,12 @@ pub(crate) struct BufferTracker {
     metadata: ResourceMetadata<Arc<Buffer>>,
 
     temp: Vec<PendingTransition<BufferUses>>,
+
+    ordered_uses_mask: BufferUses,
 }
 
 impl BufferTracker {
-    pub fn new() -> Self {
+    pub fn new(ordered_uses_mask: BufferUses) -> Self {
         Self {
             start: Vec::new(),
             end: Vec::new(),
@@ -282,6 +298,8 @@ impl BufferTracker {
             metadata: ResourceMetadata::new(),
 
             temp: Vec::new(),
+
+            ordered_uses_mask,
         }
     }
 
@@ -443,11 +461,11 @@ impl BufferTracker {
     /// a given iterator of ids as a source of which IDs to look at.
     /// All the IDs must have first been added to the usage scope.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// [`Self::set_size`] must be called with the maximum possible Buffer ID before this
-    /// method is called.
-    pub unsafe fn set_and_remove_from_usage_scope_sparse(
+    /// If a resource identified by `index_source` is not found in the usage
+    /// scope.
+    pub fn set_and_remove_from_usage_scope_sparse(
         &mut self,
         scope: &mut BufferUsageScope,
         index_source: impl IntoIterator<Item = TrackerIndex>,
@@ -465,6 +483,9 @@ impl BufferTracker {
             if unsafe { !scope.metadata.contains_unchecked(index) } {
                 continue;
             }
+
+            // SAFETY: we checked that the index is in bounds for the scope, and
+            // called `set_size` to ensure it is valid for `self`.
             unsafe {
                 self.insert_or_barrier_update(
                     index,
@@ -527,7 +548,15 @@ impl BufferTracker {
 
         let update_state_provider =
             end_state_provider.unwrap_or_else(|| start_state_provider.clone());
-        unsafe { barrier(&mut self.end, index, start_state_provider, &mut self.temp) };
+        unsafe {
+            barrier(
+                &mut self.end,
+                index,
+                start_state_provider,
+                &mut self.temp,
+                self.ordered_uses_mask,
+            )
+        };
 
         unsafe { update(&mut self.end, index, update_state_provider) };
     }
@@ -538,14 +567,16 @@ pub(crate) struct DeviceBufferTracker {
     current_states: Vec<BufferUses>,
     metadata: ResourceMetadata<Weak<Buffer>>,
     temp: Vec<PendingTransition<BufferUses>>,
+    ordered_uses_mask: BufferUses,
 }
 
 impl DeviceBufferTracker {
-    pub fn new() -> Self {
+    pub fn new(ordered_uses_mask: BufferUses) -> Self {
         Self {
             current_states: Vec::new(),
             metadata: ResourceMetadata::new(),
             temp: Vec::new(),
+            ordered_uses_mask,
         }
     }
 
@@ -613,6 +644,7 @@ impl DeviceBufferTracker {
                 index,
                 start_state_provider.clone(),
                 &mut self.temp,
+                self.ordered_uses_mask,
             )
         };
         unsafe { update(&mut self.current_states, index, start_state_provider) };
@@ -646,6 +678,7 @@ impl DeviceBufferTracker {
                     index,
                     start_state_provider,
                     &mut self.temp,
+                    self.ordered_uses_mask,
                 )
             };
             unsafe { update(&mut self.current_states, index, end_state_provider) };
@@ -746,11 +779,12 @@ unsafe fn barrier(
     index: usize,
     state_provider: BufferStateProvider<'_>,
     barriers: &mut Vec<PendingTransition<BufferUses>>,
+    ordered_uses_mask: BufferUses,
 ) {
     let current_state = unsafe { *current_states.get_unchecked(index) };
     let new_state = unsafe { state_provider.get_state(index) };
 
-    if skip_barrier(current_state, new_state) {
+    if skip_barrier(current_state, ordered_uses_mask, new_state) {
         return;
     }
 

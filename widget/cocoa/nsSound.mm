@@ -1,20 +1,14 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsSound.h"
-#include "nsContentUtils.h"
 #include "nsObjCExceptions.h"
-#include "nsNetUtil.h"
-#include "nsCOMPtr.h"
-#include "nsIURL.h"
-#include "nsString.h"
 
 #import <Cocoa/Cocoa.h>
 
-NS_IMPL_ISUPPORTS(nsSound, nsISound, nsIStreamLoaderObserver)
+NS_IMPL_ISUPPORTS(nsSound, nsISound)
 
 nsSound::nsSound() {}
 
@@ -28,37 +22,6 @@ nsSound::Beep() {
   return NS_OK;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-NS_IMETHODIMP
-nsSound::OnStreamComplete(nsIStreamLoader* aLoader, nsISupports* context,
-                          nsresult aStatus, uint32_t dataLen,
-                          const uint8_t* data) {
-  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
-
-  NSData* value = [NSData dataWithBytes:data length:dataLen];
-
-  NSSound* sound = [[NSSound alloc] initWithData:value];
-
-  [sound play];
-
-  [sound autorelease];
-
-  return NS_OK;
-
-  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-NS_IMETHODIMP
-nsSound::Play(nsIURL* aURL) {
-  nsCOMPtr<nsIURI> uri(aURL);
-  nsCOMPtr<nsIStreamLoader> loader;
-  return NS_NewStreamLoader(
-      getter_AddRefs(loader), uri,
-      this,  // aObserver
-      nsContentUtils::GetSystemPrincipal(),
-      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-      nsIContentPolicy::TYPE_OTHER);
 }
 
 NS_IMETHODIMP

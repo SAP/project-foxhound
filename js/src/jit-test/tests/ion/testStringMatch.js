@@ -37,24 +37,6 @@ function testMod(apply, unapply) {
     }
   }
 }
-testMod(() => {
-  String.prototype[Symbol.match] = () => ["mod"];
-}, () => {
-  delete String.prototype[Symbol.match];
-});
-testMod(() => {
-  Object.prototype[Symbol.match] = () => ["mod"];
-}, () => {
-  delete Object.prototype[Symbol.match];
-});
-
-testMod(() => {
-  Object.setPrototypeOf(String.prototype, {
-    [Symbol.match]: () => ["mod"]
-  });
-}, () => {
-  Object.setPrototypeOf(String.prototype, Object.prototype);
-});
 
 var orig_exec = RegExp.prototype.exec;
 testMod(() => {

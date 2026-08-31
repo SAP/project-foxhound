@@ -1,0 +1,9 @@
+# Any copyright is dedicated to the Public Domain.
+# http://creativecommons.org/publicdomain/zero/1.0/
+
+GENERATED_FILES += ["consumer.c"]
+
+consumer = GENERATED_FILES["consumer.c"]
+consumer.script = "generate-consumer.py"
+consumer.inputs = ["input-data"]
+consumer.extra_deps = ["source-extra", "!/producer/producer.c"]

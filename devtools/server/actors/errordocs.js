@@ -31,10 +31,14 @@ loader.lazyGetter(this, "supportBaseURL", () => {
   return url;
 });
 
+const { getMdnLinkParams } = ChromeUtils.importESModule(
+  "resource://devtools/shared/mdn.mjs",
+  { global: "contextual" }
+);
+
 const baseErrorURL =
   "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/";
-const params =
-  "?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default";
+const params = "?" + getMdnLinkParams("firefox-console-errors");
 
 const ErrorDocs = {
   JSMSG_READ_ONLY: "Read-only",
@@ -162,8 +166,7 @@ const ErrorCategories = {
 
 const baseCorsErrorUrl =
   "https://developer.mozilla.org/docs/Web/HTTP/Guides/CORS/Errors/";
-const corsParams =
-  "?utm_source=devtools&utm_medium=firefox-cors-errors&utm_campaign=default";
+const corsParams = "?" + getMdnLinkParams("firefox-cors-errors");
 const CorsErrorDocs = {
   CORSDisabled: "CORSDisabled",
   CORSDidNotSucceed2: "CORSDidNotSucceed",
@@ -185,7 +188,7 @@ const CorsErrorDocs = {
 const baseStorageAccessPolicyErrorUrl =
   "https://developer.mozilla.org/docs/Web/Privacy/Guides/Storage_Access_Policy/Errors/";
 const storageAccessPolicyParams =
-  "?utm_source=devtools&utm_medium=firefox-cookie-errors&utm_campaign=default";
+  "?" + getMdnLinkParams("firefox-cookie-errors");
 const StorageAccessPolicyErrorDocs = {
   cookieBlockedPermission: "CookieBlockedByPermission",
   cookieBlockedTracker: "CookieBlockedTracker",

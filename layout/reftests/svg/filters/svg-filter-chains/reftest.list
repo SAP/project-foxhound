@@ -5,8 +5,8 @@ fuzzy-if(Android13&&aarch64&&swgl,128-128,10000-10000) == clip-input.svg clip-in
 == clip-original-SourceGraphic.svg clip-original-SourceGraphic-ref.svg
 fuzzy-if(!useDrawSnapshot&&!Android,0-1,0-10000) == clip-output.svg clip-output-ref.svg
 fuzzy(0-5,0-20300) fuzzy-if(Android&&device&&!swgl,5-5,21751-21751) fuzzy-if(gfxSVGFE,0-9,0-1000000) == default-subregion.svg default-subregion-ref.svg
-fuzzy-if(!useDrawSnapshot&&!Android,1-1,40000-40000) == different-FillPaint-filter-regions.svg different-FillPaint-filter-regions-ref.svg
-fuzzy-if(!useDrawSnapshot&&!Android,1-1,40000-40000) == different-StrokePaint-filter-regions.svg different-StrokePaint-filter-regions-ref.svg
+== different-FillPaint-filter-regions.svg different-FillPaint-filter-regions-ref.svg
+== different-StrokePaint-filter-regions.svg different-StrokePaint-filter-regions-ref.svg
 fuzzy-if(!useDrawSnapshot&&!Android,0-1,0-10000) == dont-clip-previous-primitives.svg dont-clip-previous-primitives-ref.svg
 fuzzy-if(!useDrawSnapshot&&!Android,0-1,0-10000) == intersecting-filter-regions.svg intersecting-filter-regions-ref.svg
 fuzzy(0-9,0-13180) fuzzy-if(gfxSVGFE,0-9,0-1000000) == long-chain.svg simple-chain-ref.svg

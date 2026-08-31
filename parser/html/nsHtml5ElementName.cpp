@@ -63,6 +63,17 @@ nsHtml5ElementName::~nsHtml5ElementName() {
 }
 
 nsHtml5ElementName* nsHtml5ElementName::ELT_ANNOTATION_XML = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_DIV = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_IMG = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_SPAN = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_LI = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_UL = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_A = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_P = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_LABEL = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_INPUT = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_BUTTON = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_STRONG = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_BIG = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_BDI = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_BDO = nullptr;
@@ -70,14 +81,11 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_COL = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_DEL = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_DFN = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_DIR = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_DIV = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_IMG = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_INS = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_KBD = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_MAP = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_NAV = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_PRE = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_A = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_B = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_RTC = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SUB = nullptr;
@@ -90,7 +98,6 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_G = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_WBR = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_XMP = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_I = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_P = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_Q = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_S = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_U = nullptr;
@@ -156,7 +163,6 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_FEFUNCG = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_FEDIFFUSELIGHTING = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_FESPECULARLIGHTING = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_LISTING = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_STRONG = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_ALTGLYPH = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_CLIPPATH = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_MGLYPH = nullptr;
@@ -167,7 +173,6 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_TH = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SEARCH = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SWITCH = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_TEXTPATH = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_LI = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_MI = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_LINK = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_MARK = nullptr;
@@ -177,8 +182,6 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_TRACK = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_DL = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_HTML = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_OL = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_LABEL = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_UL = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SMALL = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SYMBOL = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_ALTGLYPHITEM = nullptr;
@@ -188,7 +191,6 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_EM = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_FORM = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_PARAM = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_ANIMATEMOTION = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_BUTTON = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_CAPTION = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_FIGCAPTION = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_MN = nullptr;
@@ -197,7 +199,6 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_MAIN = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_OPTION = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_POLYGON = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_PATTERN = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_SPAN = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SECTION = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_TSPAN = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_AUDIO = nullptr;
@@ -244,7 +245,6 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_FESPOTLIGHT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_FEPOINTLIGHT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_FEDISTANTLIGHT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_FONT = nullptr;
-nsHtml5ElementName* nsHtml5ElementName::ELT_INPUT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_LINEARGRADIENT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_MTEXT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_NOSCRIPT = nullptr;
@@ -256,6 +256,7 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_TT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_RECT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_RADIALGRADIENT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SELECT = nullptr;
+nsHtml5ElementName* nsHtml5ElementName::ELT_SELECTEDCONTENT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SLOT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SCRIPT = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_TFOOT = nullptr;
@@ -270,43 +271,41 @@ nsHtml5ElementName* nsHtml5ElementName::ELT_FEMORPHOLOGY = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_RUBY = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_SUMMARY = nullptr;
 nsHtml5ElementName* nsHtml5ElementName::ELT_TBODY = nullptr;
-nsHtml5ElementName** nsHtml5ElementName::ELEMENT_NAMES = 0;
+nsHtml5ElementName** nsHtml5ElementName::ELEMENT_NAMES = nullptr;
 static int32_t const ELEMENT_HASHES_DATA[] = {
-    1900845386, 1748359220, 2001349720, 876609538,  1798686984, 1971465813,
-    2007781534, 59768833,   1730965751, 1756474198, 1864368130, 1938817026,
-    1988763672, 2005324101, 2060065124, 52490899,   62390273,   1682547543,
-    1740181637, 1749905526, 1766992520, 1807599880, 1881498736, 1907661127,
-    1967128578, 1982935782, 1999397992, 2001392798, 2006329158, 2008851557,
-    2085266636, 51961587,   57206291,   60352339,   67108865,   943718402,
-    1699324759, 1733890180, 1747814436, 1749715159, 1752979652, 1757146773,
-    1783388498, 1805502724, 1854228692, 1873281026, 1889085973, 1905563974,
-    1925844629, 1963982850, 1967795958, 1973420034, 1983633431, 1998585858,
-    2001309869, 2001392795, 2003183333, 2005925890, 2006974466, 2008325940,
-    2021937364, 2068523856, 2092255447, 51435587,   52486755,   55110883,
-    58773795,   60345171,   61395251,   62973651,   68681729,   910163970,
-    1679960596, 1686491348, 1715310660, 1733054663, 1737099991, 1747176599,
-    1748100148, 1749656156, 1749801286, 1751288021, 1755076808, 1756625221,
-    1757268168, 1783210839, 1790207270, 1803929812, 1806805526, 1818755074,
-    1854245076, 1870135298, 1874102998, 1881669634, 1898753862, 1903302038,
-    1906135367, 1914900309, 1934172497, 1941178676, 1965334268, 1967788867,
-    1968836118, 1971938532, 1982173479, 1983533124, 1986527234, 1990037800,
+    1914900309, 1749715159, 2001349720, 943718402,  1805647874, 1971465813,
+    2008125638, 60347747,   1733890180, 1757146773, 1881498736, 1967128578,
+    1988763672, 2005719336, 2060065124, 55110883,   63438849,   1699324759,
+    1747814436, 1752979652, 1783388498, 1854245076, 1902641154, 1941178676,
+    1967795958, 1982935782, 1999397992, 2001392798, 2006896969, 2008851557,
+    2085266636, 51961587,   58773795,   61925907,   876609538,  1682547543,
+    1730965751, 1740181637, 1748359220, 1749905526, 1756474198, 1766992520,
+    1803876550, 1818755074, 1870135298, 1889085973, 1906087319, 1934172497,
+    1965334268, 1967788867, 1968836118, 1973420034, 1983633431, 1998585858,
+    2001309869, 2001392795, 2004635806, 2006028454, 2007601444, 2008325940,
+    2021937364, 2068523856, 2092255447, 51435587,   52486755,   57206291,
+    59821379,   60354131,   62450211,   68681729,   910163970,  1679960596,
+    1686491348, 1715310660, 1733054663, 1737099991, 1747176599, 1748100148,
+    1749656156, 1749801286, 1751288021, 1755076808, 1756625221, 1757268168,
+    1783210839, 1797585096, 1803929861, 1806806678, 1854228692, 1864368130,
+    1874102998, 1881669634, 1899272519, 1904412884, 1907661127, 1925844629,
+    1938817026, 1963982850, 1966223078, 1967760215, 1967795910, 1968053806,
+    1971461414, 1971938532, 1982173479, 1983533124, 1986527234, 1990037800,
     1998724870, 2000525512, 2001349704, 2001349736, 2001392796, 2001495140,
-    2004635806, 2005719336, 2006028454, 2006896969, 2007601444, 2008125638,
+    2005324101, 2005925890, 2006329158, 2006974466, 2007781534, 2008305999,
     2008340774, 2008994116, 2051837468, 2068523853, 2083120164, 2091479332,
-    2092557349, 51434643,   51438659,   52485715,   52488851,   55104723,
-    56151587,   57733651,   59244545,   59821379,   60347747,   60354131,
-    61925907,   62450211,   63438849,   67633153,   69730305,   893386754,
-    926941186,  960495618,  1681770564, 1686489160, 1689922072, 1703936002,
-    1730150402, 1732381397, 1733076167, 1736200310, 1738539010, 1747048757,
-    1747306711, 1747838298, 1748225318, 1749395095, 1749673195, 1749723735,
-    1749813541, 1749932347, 1751386406, 1753362711, 1755148615, 1756600614,
-    1757137429, 1757157700, 1763839627, 1782357526, 1783388497, 1786534215,
-    1797585096, 1803876550, 1803929861, 1805647874, 1806806678, 1818230786,
-    1853642948, 1854228698, 1857653029, 1868312196, 1870268949, 1874053333,
-    1881288348, 1881613047, 1884120164, 1898223949, 1899272519, 1902641154,
-    1904412884, 1906087319, 1907435316, 1907959605, 1919418370, 1932928296,
-    1935549734, 1939219752, 1941221172, 1965115924, 1966223078, 1967760215,
-    1967795910, 1968053806, 1971461414};
+    2092557349, 51434643,   51438659,   52485715,   52488851,   56151587,
+    57733651,   59768833,   60345171,   60352339,   61395251,   62390273,
+    62973651,   67633153,   69730305,   893386754,  926941186,  960495618,
+    1681770564, 1686489160, 1689922072, 1703936002, 1730150402, 1732381397,
+    1733076167, 1736200310, 1738539010, 1747048757, 1747306711, 1747838298,
+    1748225318, 1749395095, 1749673195, 1749723735, 1749813541, 1749932347,
+    1751386406, 1753362711, 1755148615, 1756600614, 1757137429, 1757157700,
+    1763839627, 1782357526, 1783388497, 1786534215, 1798686984, 1803929812,
+    1805502724, 1806805526, 1807599880, 1853642948, 1854228698, 1857653029,
+    1868312196, 1874053333, 1881288348, 1881613047, 1884120164, 1898223949,
+    1900845386, 1903302038, 1905563974, 1906135367, 1907959605, 1919418370,
+    1932928296, 1935549734, 1939219752, 1941221172, 1965115924};
 staticJArray<int32_t, int32_t> nsHtml5ElementName::ELEMENT_HASHES = {
     ELEMENT_HASHES_DATA, std::size(ELEMENT_HASHES_DATA)};
 void nsHtml5ElementName::initializeStatics() {
@@ -314,6 +313,45 @@ void nsHtml5ElementName::initializeStatics() {
       nsGkAtoms::annotation_xml, nsGkAtoms::annotation_xml,
       NS_NewHTMLUnknownElement, NS_NewSVGUnknownElement,
       nsHtml5TreeBuilder::ANNOTATION_XML | SCOPING_AS_MATHML);
+  ELT_DIV = new nsHtml5ElementName(
+      nsGkAtoms::div, nsGkAtoms::div, NS_NewHTMLDivElement,
+      NS_NewSVGUnknownElement,
+      nsHtml5TreeBuilder::DIV_OR_BLOCKQUOTE_OR_CENTER_OR_MENU | SPECIAL);
+  ELT_IMG = new nsHtml5ElementName(
+      nsGkAtoms::img, nsGkAtoms::img, NS_NewHTMLImageElement,
+      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::IMG | SPECIAL);
+  ELT_SPAN = new nsHtml5ElementName(
+      nsGkAtoms::span, nsGkAtoms::span, NS_NewHTMLSpanElement,
+      NS_NewSVGUnknownElement,
+      nsHtml5TreeBuilder::RUBY_OR_SPAN_OR_SUB_OR_SUP_OR_VAR);
+  ELT_LI = new nsHtml5ElementName(
+      nsGkAtoms::li, nsGkAtoms::li, NS_NewHTMLLIElement,
+      NS_NewSVGUnknownElement,
+      nsHtml5TreeBuilder::LI | SPECIAL | OPTIONAL_END_TAG);
+  ELT_UL = new nsHtml5ElementName(
+      nsGkAtoms::ul, nsGkAtoms::ul, NS_NewHTMLSharedListElement,
+      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::UL_OR_OL_OR_DL | SPECIAL);
+  ELT_A = new nsHtml5ElementName(nsGkAtoms::a, nsGkAtoms::a,
+                                 NS_NewHTMLAnchorElement, NS_NewSVGAElement,
+                                 nsHtml5TreeBuilder::A);
+  ELT_P = new nsHtml5ElementName(
+      nsGkAtoms::p, nsGkAtoms::p, NS_NewHTMLParagraphElement,
+      NS_NewSVGUnknownElement,
+      nsHtml5TreeBuilder::P | SPECIAL | OPTIONAL_END_TAG);
+  ELT_LABEL = new nsHtml5ElementName(
+      nsGkAtoms::label, nsGkAtoms::label, NS_NewHTMLLabelElement,
+      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::OTHER);
+  ELT_INPUT = new nsHtml5ElementName(
+      nsGkAtoms::input, nsGkAtoms::input, NS_NewHTMLInputElement,
+      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::INPUT | SPECIAL);
+  ELT_BUTTON = new nsHtml5ElementName(
+      nsGkAtoms::button, nsGkAtoms::button, NS_NewHTMLButtonElement,
+      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::BUTTON | SPECIAL);
+  ELT_STRONG = new nsHtml5ElementName(
+      nsGkAtoms::strong, nsGkAtoms::strong, NS_NewHTMLElement,
+      NS_NewSVGUnknownElement,
+      nsHtml5TreeBuilder::
+          B_OR_BIG_OR_CODE_OR_EM_OR_I_OR_S_OR_SMALL_OR_STRIKE_OR_STRONG_OR_TT_OR_U);
   ELT_BIG = new nsHtml5ElementName(
       nsGkAtoms::big, nsGkAtoms::big, NS_NewHTMLElement,
       NS_NewSVGUnknownElement,
@@ -340,13 +378,6 @@ void nsHtml5ElementName::initializeStatics() {
       nsHtml5TreeBuilder::
               ADDRESS_OR_ARTICLE_OR_ASIDE_OR_DETAILS_OR_DIALOG_OR_DIR_OR_FIGCAPTION_OR_FIGURE_OR_FOOTER_OR_HEADER_OR_HGROUP_OR_MAIN_OR_NAV_OR_SEARCH_OR_SECTION_OR_SUMMARY |
           SPECIAL);
-  ELT_DIV = new nsHtml5ElementName(
-      nsGkAtoms::div, nsGkAtoms::div, NS_NewHTMLDivElement,
-      NS_NewSVGUnknownElement,
-      nsHtml5TreeBuilder::DIV_OR_BLOCKQUOTE_OR_CENTER_OR_MENU | SPECIAL);
-  ELT_IMG = new nsHtml5ElementName(
-      nsGkAtoms::img, nsGkAtoms::img, NS_NewHTMLImageElement,
-      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::IMG | SPECIAL);
   ELT_INS = new nsHtml5ElementName(
       nsGkAtoms::ins, nsGkAtoms::ins, NS_NewHTMLModElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::OTHER);
@@ -365,9 +396,6 @@ void nsHtml5ElementName::initializeStatics() {
   ELT_PRE = new nsHtml5ElementName(
       nsGkAtoms::pre, nsGkAtoms::pre, NS_NewHTMLPreElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::PRE_OR_LISTING | SPECIAL);
-  ELT_A = new nsHtml5ElementName(nsGkAtoms::a, nsGkAtoms::a,
-                                 NS_NewHTMLAnchorElement, NS_NewSVGAElement,
-                                 nsHtml5TreeBuilder::A);
   ELT_B = new nsHtml5ElementName(
       nsGkAtoms::b, nsGkAtoms::b, NS_NewHTMLElement, NS_NewSVGUnknownElement,
       nsHtml5TreeBuilder::
@@ -410,10 +438,6 @@ void nsHtml5ElementName::initializeStatics() {
       nsGkAtoms::i, nsGkAtoms::i, NS_NewHTMLElement, NS_NewSVGUnknownElement,
       nsHtml5TreeBuilder::
           B_OR_BIG_OR_CODE_OR_EM_OR_I_OR_S_OR_SMALL_OR_STRIKE_OR_STRONG_OR_TT_OR_U);
-  ELT_P = new nsHtml5ElementName(
-      nsGkAtoms::p, nsGkAtoms::p, NS_NewHTMLParagraphElement,
-      NS_NewSVGUnknownElement,
-      nsHtml5TreeBuilder::P | SPECIAL | OPTIONAL_END_TAG);
   ELT_Q = new nsHtml5ElementName(
       nsGkAtoms::q, nsGkAtoms::q, NS_NewHTMLSharedElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::OTHER);
@@ -647,11 +671,6 @@ void nsHtml5ElementName::initializeStatics() {
   ELT_LISTING = new nsHtml5ElementName(
       nsGkAtoms::listing, nsGkAtoms::listing, NS_NewHTMLPreElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::PRE_OR_LISTING | SPECIAL);
-  ELT_STRONG = new nsHtml5ElementName(
-      nsGkAtoms::strong, nsGkAtoms::strong, NS_NewHTMLElement,
-      NS_NewSVGUnknownElement,
-      nsHtml5TreeBuilder::
-          B_OR_BIG_OR_CODE_OR_EM_OR_I_OR_S_OR_SMALL_OR_STRIKE_OR_STRONG_OR_TT_OR_U);
   ELT_ALTGLYPH = new nsHtml5ElementName(
       nsGkAtoms::altglyph, nsGkAtoms::altGlyph, NS_NewHTMLUnknownElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::OTHER);
@@ -686,10 +705,6 @@ void nsHtml5ElementName::initializeStatics() {
   ELT_TEXTPATH = new nsHtml5ElementName(
       nsGkAtoms::textpath, nsGkAtoms::textPath, NS_NewHTMLUnknownElement,
       NS_NewSVGTextPathElement, nsHtml5TreeBuilder::OTHER);
-  ELT_LI = new nsHtml5ElementName(
-      nsGkAtoms::li, nsGkAtoms::li, NS_NewHTMLLIElement,
-      NS_NewSVGUnknownElement,
-      nsHtml5TreeBuilder::LI | SPECIAL | OPTIONAL_END_TAG);
   ELT_MI = new nsHtml5ElementName(
       nsGkAtoms::mi, nsGkAtoms::mi, NS_NewHTMLUnknownElement,
       NS_NewSVGUnknownElement,
@@ -720,12 +735,6 @@ void nsHtml5ElementName::initializeStatics() {
       nsHtml5TreeBuilder::HTML | SPECIAL | SCOPING | OPTIONAL_END_TAG);
   ELT_OL = new nsHtml5ElementName(
       nsGkAtoms::ol, nsGkAtoms::ol, NS_NewHTMLSharedListElement,
-      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::UL_OR_OL_OR_DL | SPECIAL);
-  ELT_LABEL = new nsHtml5ElementName(
-      nsGkAtoms::label, nsGkAtoms::label, NS_NewHTMLLabelElement,
-      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::OTHER);
-  ELT_UL = new nsHtml5ElementName(
-      nsGkAtoms::ul, nsGkAtoms::ul, NS_NewHTMLSharedListElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::UL_OR_OL_OR_DL | SPECIAL);
   ELT_SMALL = new nsHtml5ElementName(
       nsGkAtoms::small, nsGkAtoms::small, NS_NewHTMLElement,
@@ -761,9 +770,6 @@ void nsHtml5ElementName::initializeStatics() {
       nsGkAtoms::animatemotion, nsGkAtoms::animateMotion,
       NS_NewHTMLUnknownElement, NS_NewSVGAnimateMotionElement,
       nsHtml5TreeBuilder::OTHER);
-  ELT_BUTTON = new nsHtml5ElementName(
-      nsGkAtoms::button, nsGkAtoms::button, NS_NewHTMLButtonElement,
-      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::BUTTON | SPECIAL);
   ELT_CAPTION = new nsHtml5ElementName(
       nsGkAtoms::caption, nsGkAtoms::caption, NS_NewHTMLTableCaptionElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::CAPTION | SPECIAL | SCOPING);
@@ -795,10 +801,6 @@ void nsHtml5ElementName::initializeStatics() {
   ELT_PATTERN = new nsHtml5ElementName(
       nsGkAtoms::pattern, nsGkAtoms::pattern, NS_NewHTMLUnknownElement,
       NS_NewSVGPatternElement, nsHtml5TreeBuilder::OTHER);
-  ELT_SPAN = new nsHtml5ElementName(
-      nsGkAtoms::span, nsGkAtoms::span, NS_NewHTMLSpanElement,
-      NS_NewSVGUnknownElement,
-      nsHtml5TreeBuilder::RUBY_OR_SPAN_OR_SUB_OR_SUP_OR_VAR);
   ELT_SECTION = new nsHtml5ElementName(
       nsGkAtoms::section, nsGkAtoms::section, NS_NewHTMLElement,
       NS_NewSVGUnknownElement,
@@ -969,9 +971,6 @@ void nsHtml5ElementName::initializeStatics() {
   ELT_FONT = new nsHtml5ElementName(
       nsGkAtoms::font, nsGkAtoms::font, NS_NewHTMLFontElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::FONT);
-  ELT_INPUT = new nsHtml5ElementName(
-      nsGkAtoms::input, nsGkAtoms::input, NS_NewHTMLInputElement,
-      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::INPUT | SPECIAL);
   ELT_LINEARGRADIENT = new nsHtml5ElementName(
       nsGkAtoms::lineargradient, nsGkAtoms::linearGradient,
       NS_NewHTMLUnknownElement, NS_NewSVGLinearGradientElement,
@@ -1008,7 +1007,11 @@ void nsHtml5ElementName::initializeStatics() {
       nsHtml5TreeBuilder::OTHER);
   ELT_SELECT = new nsHtml5ElementName(
       nsGkAtoms::select, nsGkAtoms::select, NS_NewHTMLSelectElement,
-      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::SELECT | SPECIAL);
+      NS_NewSVGUnknownElement, nsHtml5TreeBuilder::SELECT | SPECIAL | SCOPING);
+  ELT_SELECTEDCONTENT = new nsHtml5ElementName(
+      nsGkAtoms::selectedcontent, nsGkAtoms::selectedcontent,
+      NS_NewHTMLSelectedContentElement, NS_NewSVGUnknownElement,
+      nsHtml5TreeBuilder::OTHER);
   ELT_SLOT = new nsHtml5ElementName(
       nsGkAtoms::slot, nsGkAtoms::slot, NS_NewHTMLSlotElement,
       NS_NewSVGUnknownElement, nsHtml5TreeBuilder::OTHER);
@@ -1065,110 +1068,110 @@ void nsHtml5ElementName::initializeStatics() {
       NS_NewSVGUnknownElement,
       nsHtml5TreeBuilder::TBODY_OR_THEAD_OR_TFOOT | SPECIAL | FOSTER_PARENTING |
           OPTIONAL_END_TAG);
-  ELEMENT_NAMES = new nsHtml5ElementName*[207];
-  ELEMENT_NAMES[0] = ELT_FIGCAPTION;
-  ELEMENT_NAMES[1] = ELT_CITE;
+  ELEMENT_NAMES = new nsHtml5ElementName*[197];
+  ELEMENT_NAMES[0] = ELT_AUDIO;
+  ELEMENT_NAMES[1] = ELT_FEIMAGE;
   ELEMENT_NAMES[2] = ELT_FRAMESET;
-  ELEMENT_NAMES[3] = ELT_H1;
-  ELEMENT_NAMES[4] = ELT_CLIPPATH;
+  ELEMENT_NAMES[3] = ELT_H5;
+  ELEMENT_NAMES[4] = ELT_TH;
   ELEMENT_NAMES[5] = ELT_METER;
-  ELEMENT_NAMES[6] = ELT_RADIALGRADIENT;
-  ELEMENT_NAMES[7] = ELT_B;
-  ELEMENT_NAMES[8] = ELT_BGSOUND;
-  ELEMENT_NAMES[9] = ELT_SOURCE;
-  ELEMENT_NAMES[10] = ELT_DL;
-  ELEMENT_NAMES[11] = ELT_RP;
+  ELEMENT_NAMES[6] = ELT_SELECT;
+  ELEMENT_NAMES[7] = ELT_SVG;
+  ELEMENT_NAMES[8] = ELT_HEAD;
+  ELEMENT_NAMES[9] = ELT_TITLE;
+  ELEMENT_NAMES[10] = ELT_ANIMATETRANSFORM;
+  ELEMENT_NAMES[11] = ELT_HR;
   ELEMENT_NAMES[12] = ELT_NOFRAMES;
-  ELEMENT_NAMES[13] = ELT_MTEXT;
+  ELEMENT_NAMES[13] = ELT_NOSCRIPT;
   ELEMENT_NAMES[14] = ELT_VIEW;
-  ELEMENT_NAMES[15] = ELT_DIV;
-  ELEMENT_NAMES[16] = ELT_G;
-  ELEMENT_NAMES[17] = ELT_FEFUNCA;
-  ELEMENT_NAMES[18] = ELT_THEAD;
-  ELEMENT_NAMES[19] = ELT_FIGURE;
-  ELEMENT_NAMES[20] = ELT_GLYPHREF;
-  ELEMENT_NAMES[21] = ELT_TEXTPATH;
-  ELEMENT_NAMES[22] = ELT_ANIMATETRANSFORM;
-  ELEMENT_NAMES[23] = ELT_SECTION;
-  ELEMENT_NAMES[24] = ELT_HR;
+  ELEMENT_NAMES[15] = ELT_INS;
+  ELEMENT_NAMES[16] = ELT_I;
+  ELEMENT_NAMES[17] = ELT_FEFUNCB;
+  ELEMENT_NAMES[18] = ELT_BASE;
+  ELEMENT_NAMES[19] = ELT_LINE;
+  ELEMENT_NAMES[20] = ELT_FESPECULARLIGHTING;
+  ELEMENT_NAMES[21] = ELT_MASK;
+  ELEMENT_NAMES[22] = ELT_MN;
+  ELEMENT_NAMES[23] = ELT_SAMP;
+  ELEMENT_NAMES[24] = ELT_FOOTER;
   ELEMENT_NAMES[25] = ELT_CANVAS;
   ELEMENT_NAMES[26] = ELT_BASEFONT;
   ELEMENT_NAMES[27] = ELT_FEDISTANTLIGHT;
-  ELEMENT_NAMES[28] = ELT_OUTPUT;
+  ELEMENT_NAMES[28] = ELT_PLAINTEXT;
   ELEMENT_NAMES[29] = ELT_TFOOT;
   ELEMENT_NAMES[30] = ELT_FEMORPHOLOGY;
   ELEMENT_NAMES[31] = ELT_COL;
-  ELEMENT_NAMES[32] = ELT_MAP;
-  ELEMENT_NAMES[33] = ELT_SUP;
-  ELEMENT_NAMES[34] = ELT_P;
-  ELEMENT_NAMES[35] = ELT_H5;
-  ELEMENT_NAMES[36] = ELT_FEFUNCB;
-  ELEMENT_NAMES[37] = ELT_HEAD;
-  ELEMENT_NAMES[38] = ELT_BASE;
-  ELEMENT_NAMES[39] = ELT_FEIMAGE;
-  ELEMENT_NAMES[40] = ELT_LINE;
-  ELEMENT_NAMES[41] = ELT_TITLE;
-  ELEMENT_NAMES[42] = ELT_FESPECULARLIGHTING;
-  ELEMENT_NAMES[43] = ELT_PATH;
-  ELEMENT_NAMES[44] = ELT_MARK;
-  ELEMENT_NAMES[45] = ELT_UL;
-  ELEMENT_NAMES[46] = ELT_PARAM;
-  ELEMENT_NAMES[47] = ELT_OPTION;
-  ELEMENT_NAMES[48] = ELT_VIDEO;
-  ELEMENT_NAMES[49] = ELT_BR;
-  ELEMENT_NAMES[50] = ELT_FOOTER;
+  ELEMENT_NAMES[32] = ELT_PRE;
+  ELEMENT_NAMES[33] = ELT_VAR;
+  ELEMENT_NAMES[34] = ELT_H1;
+  ELEMENT_NAMES[35] = ELT_FEFUNCA;
+  ELEMENT_NAMES[36] = ELT_BGSOUND;
+  ELEMENT_NAMES[37] = ELT_THEAD;
+  ELEMENT_NAMES[38] = ELT_CITE;
+  ELEMENT_NAMES[39] = ELT_FIGURE;
+  ELEMENT_NAMES[40] = ELT_SOURCE;
+  ELEMENT_NAMES[41] = ELT_GLYPHREF;
+  ELEMENT_NAMES[42] = ELT_MGLYPH;
+  ELEMENT_NAMES[43] = ELT_MI;
+  ELEMENT_NAMES[44] = ELT_OL;
+  ELEMENT_NAMES[45] = ELT_PARAM;
+  ELEMENT_NAMES[46] = ELT_POLYGON;
+  ELEMENT_NAMES[47] = ELT_FEDISPLACEMENTMAP;
+  ELEMENT_NAMES[48] = ELT_ANIMATECOLOR;
+  ELEMENT_NAMES[49] = ELT_FECOMPONENTTRANSFER;
+  ELEMENT_NAMES[50] = ELT_HEADER;
   ELEMENT_NAMES[51] = ELT_TR;
   ELEMENT_NAMES[52] = ELT_DETAILS;
   ELEMENT_NAMES[53] = ELT_DT;
   ELEMENT_NAMES[54] = ELT_FOREIGNOBJECT;
   ELEMENT_NAMES[55] = ELT_FESPOTLIGHT;
-  ELEMENT_NAMES[56] = ELT_INPUT;
-  ELEMENT_NAMES[57] = ELT_RT;
-  ELEMENT_NAMES[58] = ELT_TT;
+  ELEMENT_NAMES[56] = ELT_LINEARGRADIENT;
+  ELEMENT_NAMES[57] = ELT_OBJECT;
+  ELEMENT_NAMES[58] = ELT_RECT;
   ELEMENT_NAMES[59] = ELT_SLOT;
   ELEMENT_NAMES[60] = ELT_MENU;
   ELEMENT_NAMES[61] = ELT_FECONVOLVEMATRIX;
   ELEMENT_NAMES[62] = ELT_SUMMARY;
   ELEMENT_NAMES[63] = ELT_BDI;
   ELEMENT_NAMES[64] = ELT_DFN;
-  ELEMENT_NAMES[65] = ELT_INS;
-  ELEMENT_NAMES[66] = ELT_PRE;
-  ELEMENT_NAMES[67] = ELT_SUB;
-  ELEMENT_NAMES[68] = ELT_USE;
-  ELEMENT_NAMES[69] = ELT_XMP;
-  ELEMENT_NAMES[70] = ELT_S;
-  ELEMENT_NAMES[71] = ELT_H3;
-  ELEMENT_NAMES[72] = ELT_AREA;
-  ELEMENT_NAMES[73] = ELT_META;
-  ELEMENT_NAMES[74] = ELT_DESC;
-  ELEMENT_NAMES[75] = ELT_FEBLEND;
-  ELEMENT_NAMES[76] = ELT_NOEMBED;
-  ELEMENT_NAMES[77] = ELT_ARTICLE;
-  ELEMENT_NAMES[78] = ELT_CODE;
-  ELEMENT_NAMES[79] = ELT_FETURBULENCE;
-  ELEMENT_NAMES[80] = ELT_FETILE;
-  ELEMENT_NAMES[81] = ELT_IMAGE;
-  ELEMENT_NAMES[82] = ELT_POLYLINE;
-  ELEMENT_NAMES[83] = ELT_STYLE;
-  ELEMENT_NAMES[84] = ELT_TEMPLATE;
-  ELEMENT_NAMES[85] = ELT_FEFUNCG;
-  ELEMENT_NAMES[86] = ELT_STRONG;
-  ELEMENT_NAMES[87] = ELT_MATH;
-  ELEMENT_NAMES[88] = ELT_SEARCH;
-  ELEMENT_NAMES[89] = ELT_MI;
-  ELEMENT_NAMES[90] = ELT_MASK;
-  ELEMENT_NAMES[91] = ELT_OL;
-  ELEMENT_NAMES[92] = ELT_SYMBOL;
-  ELEMENT_NAMES[93] = ELT_EM;
-  ELEMENT_NAMES[94] = ELT_BUTTON;
-  ELEMENT_NAMES[95] = ELT_KEYGEN;
-  ELEMENT_NAMES[96] = ELT_PATTERN;
-  ELEMENT_NAMES[97] = ELT_AUDIO;
-  ELEMENT_NAMES[98] = ELT_FEDISPLACEMENTMAP;
-  ELEMENT_NAMES[99] = ELT_SAMP;
-  ELEMENT_NAMES[100] = ELT_ANIMATECOLOR;
-  ELEMENT_NAMES[101] = ELT_FECOMPONENTTRANSFER;
-  ELEMENT_NAMES[102] = ELT_HEADER;
+  ELEMENT_NAMES[65] = ELT_MAP;
+  ELEMENT_NAMES[66] = ELT_RTC;
+  ELEMENT_NAMES[67] = ELT_SET;
+  ELEMENT_NAMES[68] = ELT_WBR;
+  ELEMENT_NAMES[69] = ELT_S;
+  ELEMENT_NAMES[70] = ELT_H3;
+  ELEMENT_NAMES[71] = ELT_AREA;
+  ELEMENT_NAMES[72] = ELT_META;
+  ELEMENT_NAMES[73] = ELT_DESC;
+  ELEMENT_NAMES[74] = ELT_FEBLEND;
+  ELEMENT_NAMES[75] = ELT_NOEMBED;
+  ELEMENT_NAMES[76] = ELT_ARTICLE;
+  ELEMENT_NAMES[77] = ELT_CODE;
+  ELEMENT_NAMES[78] = ELT_FETURBULENCE;
+  ELEMENT_NAMES[79] = ELT_FETILE;
+  ELEMENT_NAMES[80] = ELT_IMAGE;
+  ELEMENT_NAMES[81] = ELT_POLYLINE;
+  ELEMENT_NAMES[82] = ELT_STYLE;
+  ELEMENT_NAMES[83] = ELT_TEMPLATE;
+  ELEMENT_NAMES[84] = ELT_FEFUNCG;
+  ELEMENT_NAMES[85] = ELT_ALTGLYPH;
+  ELEMENT_NAMES[86] = ELT_MPATH;
+  ELEMENT_NAMES[87] = ELT_SWITCH;
+  ELEMENT_NAMES[88] = ELT_MARK;
+  ELEMENT_NAMES[89] = ELT_DL;
+  ELEMENT_NAMES[90] = ELT_SYMBOL;
+  ELEMENT_NAMES[91] = ELT_EM;
+  ELEMENT_NAMES[92] = ELT_CAPTION;
+  ELEMENT_NAMES[93] = ELT_MAIN;
+  ELEMENT_NAMES[94] = ELT_SECTION;
+  ELEMENT_NAMES[95] = ELT_VIDEO;
+  ELEMENT_NAMES[96] = ELT_RP;
+  ELEMENT_NAMES[97] = ELT_BR;
+  ELEMENT_NAMES[98] = ELT_CENTER;
+  ELEMENT_NAMES[99] = ELT_FEFUNCR;
+  ELEMENT_NAMES[100] = ELT_FILTER;
+  ELEMENT_NAMES[101] = ELT_FEGAUSSIANBLUR;
+  ELEMENT_NAMES[102] = ELT_MARKER;
   ELEMENT_NAMES[103] = ELT_NOBR;
   ELEMENT_NAMES[104] = ELT_ADDRESS;
   ELEMENT_NAMES[105] = ELT_DEFS;
@@ -1180,12 +1183,12 @@ void nsHtml5ElementName::initializeStatics() {
   ELEMENT_NAMES[111] = ELT_FEOFFSET;
   ELEMENT_NAMES[112] = ELT_FEPOINTLIGHT;
   ELEMENT_NAMES[113] = ELT_FONT;
-  ELEMENT_NAMES[114] = ELT_LINEARGRADIENT;
-  ELEMENT_NAMES[115] = ELT_NOSCRIPT;
-  ELEMENT_NAMES[116] = ELT_OBJECT;
-  ELEMENT_NAMES[117] = ELT_PLAINTEXT;
-  ELEMENT_NAMES[118] = ELT_RECT;
-  ELEMENT_NAMES[119] = ELT_SELECT;
+  ELEMENT_NAMES[114] = ELT_MTEXT;
+  ELEMENT_NAMES[115] = ELT_RT;
+  ELEMENT_NAMES[116] = ELT_OUTPUT;
+  ELEMENT_NAMES[117] = ELT_TT;
+  ELEMENT_NAMES[118] = ELT_RADIALGRADIENT;
+  ELEMENT_NAMES[119] = ELT_SELECTEDCONTENT;
   ELEMENT_NAMES[120] = ELT_SCRIPT;
   ELEMENT_NAMES[121] = ELT_TEXT;
   ELEMENT_NAMES[122] = ELT_FEDROPSHADOW;
@@ -1197,86 +1200,87 @@ void nsHtml5ElementName::initializeStatics() {
   ELEMENT_NAMES[128] = ELT_BDO;
   ELEMENT_NAMES[129] = ELT_DEL;
   ELEMENT_NAMES[130] = ELT_DIR;
-  ELEMENT_NAMES[131] = ELT_IMG;
-  ELEMENT_NAMES[132] = ELT_KBD;
-  ELEMENT_NAMES[133] = ELT_NAV;
-  ELEMENT_NAMES[134] = ELT_A;
-  ELEMENT_NAMES[135] = ELT_RTC;
-  ELEMENT_NAMES[136] = ELT_SVG;
-  ELEMENT_NAMES[137] = ELT_SET;
-  ELEMENT_NAMES[138] = ELT_VAR;
-  ELEMENT_NAMES[139] = ELT_WBR;
-  ELEMENT_NAMES[140] = ELT_I;
-  ELEMENT_NAMES[141] = ELT_Q;
-  ELEMENT_NAMES[142] = ELT_U;
-  ELEMENT_NAMES[143] = ELT_H2;
-  ELEMENT_NAMES[144] = ELT_H4;
-  ELEMENT_NAMES[145] = ELT_H6;
-  ELEMENT_NAMES[146] = ELT_DATA;
-  ELEMENT_NAMES[147] = ELT_METADATA;
-  ELEMENT_NAMES[148] = ELT_TEXTAREA;
-  ELEMENT_NAMES[149] = ELT_RB;
-  ELEMENT_NAMES[150] = ELT_DD;
-  ELEMENT_NAMES[151] = ELT_EMBED;
-  ELEMENT_NAMES[152] = ELT_FEFLOOD;
-  ELEMENT_NAMES[153] = ELT_LEGEND;
-  ELEMENT_NAMES[154] = ELT_TD;
-  ELEMENT_NAMES[155] = ELT_ASIDE;
-  ELEMENT_NAMES[156] = ELT_ANIMATE;
-  ELEMENT_NAMES[157] = ELT_BLOCKQUOTE;
-  ELEMENT_NAMES[158] = ELT_CIRCLE;
-  ELEMENT_NAMES[159] = ELT_ELLIPSE;
-  ELEMENT_NAMES[160] = ELT_FEMERGENODE;
-  ELEMENT_NAMES[161] = ELT_FEMERGE;
-  ELEMENT_NAMES[162] = ELT_FRAME;
-  ELEMENT_NAMES[163] = ELT_FECOMPOSITE;
-  ELEMENT_NAMES[164] = ELT_IFRAME;
-  ELEMENT_NAMES[165] = ELT_MARQUEE;
-  ELEMENT_NAMES[166] = ELT_PICTURE;
-  ELEMENT_NAMES[167] = ELT_STRIKE;
-  ELEMENT_NAMES[168] = ELT_TABLE;
-  ELEMENT_NAMES[169] = ELT_TIME;
-  ELEMENT_NAMES[170] = ELT_ALTGLYPHDEF;
-  ELEMENT_NAMES[171] = ELT_DIALOG;
-  ELEMENT_NAMES[172] = ELT_FEDIFFUSELIGHTING;
-  ELEMENT_NAMES[173] = ELT_LISTING;
-  ELEMENT_NAMES[174] = ELT_ALTGLYPH;
-  ELEMENT_NAMES[175] = ELT_MGLYPH;
-  ELEMENT_NAMES[176] = ELT_MPATH;
-  ELEMENT_NAMES[177] = ELT_TH;
-  ELEMENT_NAMES[178] = ELT_SWITCH;
-  ELEMENT_NAMES[179] = ELT_LI;
-  ELEMENT_NAMES[180] = ELT_LINK;
-  ELEMENT_NAMES[181] = ELT_MALIGNMARK;
-  ELEMENT_NAMES[182] = ELT_TRACK;
-  ELEMENT_NAMES[183] = ELT_HTML;
-  ELEMENT_NAMES[184] = ELT_LABEL;
-  ELEMENT_NAMES[185] = ELT_SMALL;
-  ELEMENT_NAMES[186] = ELT_ALTGLYPHITEM;
-  ELEMENT_NAMES[187] = ELT_ACRONYM;
-  ELEMENT_NAMES[188] = ELT_FORM;
-  ELEMENT_NAMES[189] = ELT_ANIMATEMOTION;
-  ELEMENT_NAMES[190] = ELT_CAPTION;
-  ELEMENT_NAMES[191] = ELT_MN;
-  ELEMENT_NAMES[192] = ELT_MAIN;
-  ELEMENT_NAMES[193] = ELT_POLYGON;
-  ELEMENT_NAMES[194] = ELT_SPAN;
-  ELEMENT_NAMES[195] = ELT_TSPAN;
-  ELEMENT_NAMES[196] = ELT_MO;
-  ELEMENT_NAMES[197] = ELT_COLGROUP;
-  ELEMENT_NAMES[198] = ELT_HGROUP;
-  ELEMENT_NAMES[199] = ELT_OPTGROUP;
-  ELEMENT_NAMES[200] = ELT_STOP;
-  ELEMENT_NAMES[201] = ELT_ABBR;
-  ELEMENT_NAMES[202] = ELT_CENTER;
-  ELEMENT_NAMES[203] = ELT_FEFUNCR;
-  ELEMENT_NAMES[204] = ELT_FILTER;
-  ELEMENT_NAMES[205] = ELT_FEGAUSSIANBLUR;
-  ELEMENT_NAMES[206] = ELT_MARKER;
+  ELEMENT_NAMES[131] = ELT_KBD;
+  ELEMENT_NAMES[132] = ELT_NAV;
+  ELEMENT_NAMES[133] = ELT_B;
+  ELEMENT_NAMES[134] = ELT_SUB;
+  ELEMENT_NAMES[135] = ELT_SUP;
+  ELEMENT_NAMES[136] = ELT_USE;
+  ELEMENT_NAMES[137] = ELT_G;
+  ELEMENT_NAMES[138] = ELT_XMP;
+  ELEMENT_NAMES[139] = ELT_Q;
+  ELEMENT_NAMES[140] = ELT_U;
+  ELEMENT_NAMES[141] = ELT_H2;
+  ELEMENT_NAMES[142] = ELT_H4;
+  ELEMENT_NAMES[143] = ELT_H6;
+  ELEMENT_NAMES[144] = ELT_DATA;
+  ELEMENT_NAMES[145] = ELT_METADATA;
+  ELEMENT_NAMES[146] = ELT_TEXTAREA;
+  ELEMENT_NAMES[147] = ELT_RB;
+  ELEMENT_NAMES[148] = ELT_DD;
+  ELEMENT_NAMES[149] = ELT_EMBED;
+  ELEMENT_NAMES[150] = ELT_FEFLOOD;
+  ELEMENT_NAMES[151] = ELT_LEGEND;
+  ELEMENT_NAMES[152] = ELT_TD;
+  ELEMENT_NAMES[153] = ELT_ASIDE;
+  ELEMENT_NAMES[154] = ELT_ANIMATE;
+  ELEMENT_NAMES[155] = ELT_BLOCKQUOTE;
+  ELEMENT_NAMES[156] = ELT_CIRCLE;
+  ELEMENT_NAMES[157] = ELT_ELLIPSE;
+  ELEMENT_NAMES[158] = ELT_FEMERGENODE;
+  ELEMENT_NAMES[159] = ELT_FEMERGE;
+  ELEMENT_NAMES[160] = ELT_FRAME;
+  ELEMENT_NAMES[161] = ELT_FECOMPOSITE;
+  ELEMENT_NAMES[162] = ELT_IFRAME;
+  ELEMENT_NAMES[163] = ELT_MARQUEE;
+  ELEMENT_NAMES[164] = ELT_PICTURE;
+  ELEMENT_NAMES[165] = ELT_STRIKE;
+  ELEMENT_NAMES[166] = ELT_TABLE;
+  ELEMENT_NAMES[167] = ELT_TIME;
+  ELEMENT_NAMES[168] = ELT_ALTGLYPHDEF;
+  ELEMENT_NAMES[169] = ELT_DIALOG;
+  ELEMENT_NAMES[170] = ELT_FEDIFFUSELIGHTING;
+  ELEMENT_NAMES[171] = ELT_LISTING;
+  ELEMENT_NAMES[172] = ELT_CLIPPATH;
+  ELEMENT_NAMES[173] = ELT_MATH;
+  ELEMENT_NAMES[174] = ELT_PATH;
+  ELEMENT_NAMES[175] = ELT_SEARCH;
+  ELEMENT_NAMES[176] = ELT_TEXTPATH;
+  ELEMENT_NAMES[177] = ELT_LINK;
+  ELEMENT_NAMES[178] = ELT_MALIGNMARK;
+  ELEMENT_NAMES[179] = ELT_TRACK;
+  ELEMENT_NAMES[180] = ELT_HTML;
+  ELEMENT_NAMES[181] = ELT_SMALL;
+  ELEMENT_NAMES[182] = ELT_ALTGLYPHITEM;
+  ELEMENT_NAMES[183] = ELT_ACRONYM;
+  ELEMENT_NAMES[184] = ELT_FORM;
+  ELEMENT_NAMES[185] = ELT_ANIMATEMOTION;
+  ELEMENT_NAMES[186] = ELT_FIGCAPTION;
+  ELEMENT_NAMES[187] = ELT_KEYGEN;
+  ELEMENT_NAMES[188] = ELT_OPTION;
+  ELEMENT_NAMES[189] = ELT_PATTERN;
+  ELEMENT_NAMES[190] = ELT_TSPAN;
+  ELEMENT_NAMES[191] = ELT_MO;
+  ELEMENT_NAMES[192] = ELT_COLGROUP;
+  ELEMENT_NAMES[193] = ELT_HGROUP;
+  ELEMENT_NAMES[194] = ELT_OPTGROUP;
+  ELEMENT_NAMES[195] = ELT_STOP;
+  ELEMENT_NAMES[196] = ELT_ABBR;
 }
 
 void nsHtml5ElementName::releaseStatics() {
   delete ELT_ANNOTATION_XML;
+  delete ELT_DIV;
+  delete ELT_IMG;
+  delete ELT_SPAN;
+  delete ELT_LI;
+  delete ELT_UL;
+  delete ELT_A;
+  delete ELT_P;
+  delete ELT_LABEL;
+  delete ELT_INPUT;
+  delete ELT_BUTTON;
+  delete ELT_STRONG;
   delete ELT_BIG;
   delete ELT_BDI;
   delete ELT_BDO;
@@ -1284,14 +1288,11 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_DEL;
   delete ELT_DFN;
   delete ELT_DIR;
-  delete ELT_DIV;
-  delete ELT_IMG;
   delete ELT_INS;
   delete ELT_KBD;
   delete ELT_MAP;
   delete ELT_NAV;
   delete ELT_PRE;
-  delete ELT_A;
   delete ELT_B;
   delete ELT_RTC;
   delete ELT_SUB;
@@ -1304,7 +1305,6 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_WBR;
   delete ELT_XMP;
   delete ELT_I;
-  delete ELT_P;
   delete ELT_Q;
   delete ELT_S;
   delete ELT_U;
@@ -1370,7 +1370,6 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_FEDIFFUSELIGHTING;
   delete ELT_FESPECULARLIGHTING;
   delete ELT_LISTING;
-  delete ELT_STRONG;
   delete ELT_ALTGLYPH;
   delete ELT_CLIPPATH;
   delete ELT_MGLYPH;
@@ -1381,7 +1380,6 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_SEARCH;
   delete ELT_SWITCH;
   delete ELT_TEXTPATH;
-  delete ELT_LI;
   delete ELT_MI;
   delete ELT_LINK;
   delete ELT_MARK;
@@ -1391,8 +1389,6 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_DL;
   delete ELT_HTML;
   delete ELT_OL;
-  delete ELT_LABEL;
-  delete ELT_UL;
   delete ELT_SMALL;
   delete ELT_SYMBOL;
   delete ELT_ALTGLYPHITEM;
@@ -1402,7 +1398,6 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_FORM;
   delete ELT_PARAM;
   delete ELT_ANIMATEMOTION;
-  delete ELT_BUTTON;
   delete ELT_CAPTION;
   delete ELT_FIGCAPTION;
   delete ELT_MN;
@@ -1411,7 +1406,6 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_OPTION;
   delete ELT_POLYGON;
   delete ELT_PATTERN;
-  delete ELT_SPAN;
   delete ELT_SECTION;
   delete ELT_TSPAN;
   delete ELT_AUDIO;
@@ -1458,7 +1452,6 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_FEPOINTLIGHT;
   delete ELT_FEDISTANTLIGHT;
   delete ELT_FONT;
-  delete ELT_INPUT;
   delete ELT_LINEARGRADIENT;
   delete ELT_MTEXT;
   delete ELT_NOSCRIPT;
@@ -1470,6 +1463,7 @@ void nsHtml5ElementName::releaseStatics() {
   delete ELT_RECT;
   delete ELT_RADIALGRADIENT;
   delete ELT_SELECT;
+  delete ELT_SELECTEDCONTENT;
   delete ELT_SLOT;
   delete ELT_SCRIPT;
   delete ELT_TFOOT;

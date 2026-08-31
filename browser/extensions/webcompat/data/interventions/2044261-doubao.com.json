@@ -1,0 +1,21 @@
+{
+  "label": "doubao.com",
+  "bugs": {
+    "2044261": {
+      "issue": "unsupported-warning",
+      "matches": ["*://*.doubao.com/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": ".not-compatible__announce { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": {
+        "all_frames": true,
+        "which": ["hide_browser_notice"]
+      }
+    }
+  ]
+}

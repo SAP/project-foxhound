@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -12,10 +12,22 @@ includes: [temporalHelpers.js]
 const instance = new Temporal.PlainTime(12, 34, 56, 987, 654, 321);
 
 const validStrings = [
+  "12:34:56.987654321+00",
   "12:34:56.987654321+00:00",
+  "12:34:56.987654321+00:00:00,0",
+  "12:34:56.987654321+00:00:00.000000000",
+  "12:34:56.987654321+0000",
+  "12:34:56.987654321+000000,0",
+  "12:34:56.987654321+000000.000000000",
   "12:34:56.987654321+00:00[UTC]",
   "12:34:56.987654321+00:00[!UTC]",
+  "12:34:56.987654321+01[Europe/Vienna]",
   "12:34:56.987654321-02:30[America/St_Johns]",
+  "12:34:56.987654321-02:30:00,0[America/St_Johns]",
+  "12:34:56.987654321-02:30:00.000000000[America/St_Johns]",
+  "12:34:56.987654321-0230[America/St_Johns]",
+  "12:34:56.987654321-023000,0[America/St_Johns]",
+  "12:34:56.987654321-023000.000000000[America/St_Johns]",
   "1976-11-18T12:34:56.987654321+00:00",
   "1976-11-18T12:34:56.987654321+00:00[UTC]",
   "1976-11-18T12:34:56.987654321+00:00[!UTC]",

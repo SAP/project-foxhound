@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsWifiMonitor__
-#define __nsWifiMonitor__
+#ifndef _nsWifiMonitor_
+#define _nsWifiMonitor_
 
 #include "nsIWifiMonitor.h"
 #include "nsCOMPtr.h"
@@ -17,7 +17,6 @@
 #include "mozilla/Logging.h"
 #include "nsIObserver.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Monitor.h"
 #include "WifiScanner.h"
 #include "nsTHashMap.h"

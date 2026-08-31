@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerParent.h"
 
-#include "ServiceWorkerCloneData.h"
 #include "ServiceWorkerProxy.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientState.h"
@@ -30,12 +27,8 @@ IPCResult ServiceWorkerParent::RecvTeardown() {
 }
 
 IPCResult ServiceWorkerParent::RecvPostMessage(
-    const ClonedOrErrorMessageData& aClonedData,
-    const PostMessageSource& aSource) {
-  RefPtr<ServiceWorkerCloneData> data = new ServiceWorkerCloneData();
-  data->CopyFromClonedMessageData(aClonedData);
-
-  mProxy->PostMessage(std::move(data), aSource);
+    StructuredCloneData* aData, const PostMessageSource& aSource) {
+  mProxy->PostMessage(aData, aSource);
 
   return IPC_OK();
 }
@@ -55,7 +48,7 @@ void ServiceWorkerParent::MaybeSendDelete() {
     return;
   }
   mDeleteSent = true;
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
 }
 
 }  // namespace mozilla::dom

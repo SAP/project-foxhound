@@ -1,0 +1,12 @@
+[package]
+name = "test-host-program-output-category"
+version = "0.1.0"
+authors = [
+  "The Mozilla Project Developers",
+]
+
+[[bin]]
+name = "test-host-program-output-category"
+
+[dependencies]
+mozilla-central-workspace-hack = { version = "0.1", features = ["test-host-program-output-category"], optional = true }

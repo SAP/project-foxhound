@@ -5,13 +5,6 @@ Services.scriptloader.loadSubScript(
 
 const TEST_URL_PATH = `https://example.org${DIRECTORY_PATH}form_basic_signup.html`;
 
-const setupRelayScenario = async scenarioName => {
-  await SpecialPowers.pushPrefEnv({
-    set: [["signon.firefoxRelay.feature", scenarioName]],
-  });
-  Services.telemetry.clearEvents();
-};
-
 const collectRelayTelemeryEvent = sameFlow => {
   const collectedEvents = TelemetryTestUtils.getEvents(
     { category: "relay_integration" },
@@ -100,10 +93,16 @@ add_task(async function test_pref_toggle() {
       url: "about:preferences#privacy",
     },
     async _browser => {
-      const relayIntegrationCheckbox = content.document.querySelector(
-        "checkbox#relayIntegration"
-      );
+      const relayIntegrationCheckbox = Services.prefs.getBoolPref(
+        "browser.settings-redesign.enabled",
+        false
+      )
+        ? content.document.querySelector("moz-checkbox#relayIntegration")
+        : content.document.querySelector("checkbox#relayIntegration");
       relayIntegrationCheckbox.click();
+      if (relayIntegrationCheckbox.updateComplete) {
+        await relayIntegrationCheckbox.updateComplete;
+      }
       relayIntegrationCheckbox.click();
       await assertEvents([
         { object: "pref_change", method: "disabled" },
@@ -137,7 +136,7 @@ add_task(async function test_popup_option_optin_enabled() {
       await notificationShown;
 
       notificationPopup
-        .querySelector("button.popup-notification-primary-button")
+        .querySelector("moz-button.popup-notification-primary-button")
         .click();
 
       await Promise.all([
@@ -207,7 +206,7 @@ add_task(async function test_popup_option_optin_postponed() {
       await notificationShown;
 
       notificationPopup
-        .querySelector("button.popup-notification-secondary-button")
+        .querySelector("moz-button.popup-notification-secondary-button")
         .click();
 
       await notificationHidden;
@@ -263,7 +262,8 @@ add_task(async function test_popup_option_optin_disabled() {
 
 add_task(async function test_popup_option_fillusername() {
   await setupRelayScenario("enabled");
-  const rsSandbox = await stubRemoteSettingsAllowList();
+  const rsAllowSandbox = await stubRemoteSettingsAllowList();
+  const rsDenySandbox = await stubRemoteSettingsDenyList();
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -284,7 +284,8 @@ add_task(async function test_popup_option_fillusername() {
       ]);
     }
   );
-  rsSandbox.restore();
+  rsAllowSandbox.restore();
+  rsDenySandbox.restore();
 });
 
 add_task(async function test_fillusername_free_tier_limit() {
@@ -416,7 +417,7 @@ add_task(async function test_auth_token_error() {
       await notificationShown;
 
       notificationPopup
-        .querySelector("button.popup-notification-primary-button")
+        .querySelector("moz-button.popup-notification-primary-button")
         .click();
 
       await notificationHidden;

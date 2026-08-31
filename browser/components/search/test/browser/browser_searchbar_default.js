@@ -43,24 +43,24 @@ add_setup(async function () {
     ],
   });
 
-  let originalEngine = await Services.search.getDefault();
-  let originalPrivateEngine = await Services.search.getDefaultPrivate();
+  let originalEngine = await SearchService.getDefault();
+  let originalPrivateEngine = await SearchService.getDefaultPrivate();
 
-  let engineDefault = Services.search.getEngineByName("MozSearch1");
-  await Services.search.setDefault(
+  let engineDefault = SearchService.getEngineByName("MozSearch1");
+  await SearchService.setDefault(
     engineDefault,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 
   registerCleanupFunction(async function () {
     gCUITestUtils.removeSearchBar();
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       originalEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
-    await Services.search.setDefaultPrivate(
+    await SearchService.setDefaultPrivate(
       originalPrivateEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
   });
 });
@@ -114,9 +114,9 @@ add_task(async function test_default_search_private_no_separate() {
     set: [["browser.search.separatePrivateDefault", true]],
   });
 
-  await Services.search.setDefaultPrivate(
-    Services.search.getEngineByName("MozSearch2"),
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  await SearchService.setDefaultPrivate(
+    SearchService.getEngineByName("MozSearch2"),
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 
   const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
@@ -188,7 +188,7 @@ add_task(async function test_form_history_delete() {
   EventUtils.synthesizeKey("KEY_ArrowDown");
 
   let initialEntriesLength = searchPopup.richlistbox.itemChildren.filter(
-    child => !child.getAttribute("collapsed")
+    child => !child.hasAttribute("collapsed")
   ).length;
 
   Assert.equal(initialEntriesLength, 2, "Should have two items in the popup");
@@ -216,7 +216,7 @@ add_task(async function test_form_history_delete() {
   await TestUtils.waitForCondition(
     () =>
       searchPopup.richlistbox.itemChildren.filter(
-        child => !child.getAttribute("collapsed")
+        child => !child.hasAttribute("collapsed")
       ).length ==
       initialEntriesLength - 1,
     "Should reduced the entries in the listbox"
@@ -234,7 +234,7 @@ add_task(async function test_form_history_delete() {
   );
   Assert.equal(
     searchPopup.richlistbox.itemChildren.filter(
-      child => !child.getAttribute("collapsed")
+      child => !child.hasAttribute("collapsed")
     ).length,
     initialEntriesLength - 1,
     "Should have reduced the number of autocomplete results by 1"

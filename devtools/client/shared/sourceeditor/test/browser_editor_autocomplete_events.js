@@ -129,7 +129,7 @@ async function testMouse(ed, win) {
 
   info("Waiting for popup to be opened");
   await popupOpened;
-  ed.getAutocompletionPopup()._list.children[2].click();
+  ed.getAutocompletionPopup().list.children[2].click();
   is(ed.getText(), "#baz", "Editor text has been updated");
 }
 

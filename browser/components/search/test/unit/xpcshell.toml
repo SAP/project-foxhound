@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 support-files = [
   "../../../../../services/settings/dumps/main/search-config-v2.json",
 ]

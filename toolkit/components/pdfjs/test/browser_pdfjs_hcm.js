@@ -6,8 +6,9 @@ const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
 
 /**
  * Get the first and last pixels on the drawn canvas.
- * @param {Object} browser
- * @returns {Object}
+ *
+ * @param {object} browser
+ * @returns {object}
  */
 async function getFirstLastPixels(browser) {
   return SpecialPowers.spawn(browser, [], async function () {

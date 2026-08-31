@@ -24,19 +24,20 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "swm",
   "@mozilla.org/serviceworkers/manager;1",
-  "nsIServiceWorkerManager"
+  Ci.nsIServiceWorkerManager
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "PushService",
   "@mozilla.org/push/Service;1",
-  "nsIPushService"
+  Ci.nsIPushService
 );
 
 class ServiceWorkerRegistrationActor extends Actor {
   /**
    * Create the ServiceWorkerRegistrationActor
+   *
    * @param DevToolsServerConnection conn
    *   The server connection.
    * @param ServiceWorkerRegistrationInfo registration

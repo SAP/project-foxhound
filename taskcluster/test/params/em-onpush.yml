@@ -1,0 +1,202 @@
+android_perftest_backstop: false
+app_version: 153.0a1
+backstop: false
+base_ref: ''
+base_repository: https://github.com/mozilla/enterprise-firefox
+base_rev: 1647002c9c52a131713913111dc30cd296d2d573
+build_date: 1779807116
+build_number: 1
+do_not_optimize: []
+dontbuild: false
+enable_always_target:
+  - docker-image
+existing_tasks: {}
+files_changed:
+  - testing/enterprise/test_felt_browser_access_connector.py
+filters:
+  - target_tasks_method
+head_ref: refs/heads/enterprise-main
+head_repository: https://github.com/mozilla/enterprise-firefox
+head_rev: 8e57364545b4b31f9dd82dd6c5a5e6106032a315
+head_tag: ''
+hg_branch: null
+level: '3'
+moz_build_date: '20260526145156'
+next_version: null
+optimize_strategies: null
+optimize_target_tasks: true
+owner: user@example.com
+phabricator_diff: null
+project: enterprise-firefox
+pushdate: 0
+pushlog_id: '0'
+release_enable_emefree: false
+release_enable_partner_attribution: false
+release_enable_partner_repack: false
+release_eta: ''
+release_history: {}
+release_partner_build_number: 1
+release_partner_config:
+  enterprise-repack-mac-notarization:
+    hosted:
+      pilotProd:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+      pilotStage:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+    moz:
+      prodGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+      stageGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+  enterprise-repack-mac-signing:
+    hosted:
+      pilotProd:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+      pilotStage:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+    moz:
+      prodGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+      stageGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - macosx64-enterprise-shippable
+  enterprise-repack-repackage:
+    hosted:
+      pilotProd:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+          - macosx64-enterprise-shippable
+          - win64-enterprise-shippable
+      pilotStage:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+          - macosx64-enterprise-shippable
+          - win64-enterprise-shippable
+    moz:
+      prodGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+          - macosx64-enterprise-shippable
+          - win64-enterprise-shippable
+      stageGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+          - macosx64-enterprise-shippable
+          - win64-enterprise-shippable
+  repackage-deb:
+    hosted:
+      pilotProd:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+      pilotStage:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+    moz:
+      prodGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+      stageGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - linux64-enterprise-shippable
+          - linux64-aarch64-enterprise-shippable
+  repackage-msi:
+    hosted:
+      pilotProd:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - win64-enterprise-shippable
+      pilotStage:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - win64-enterprise-shippable
+    moz:
+      prodGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - win64-enterprise-shippable
+      stageGCP:
+        locales:
+          - en-US
+          - fr
+        platforms:
+          - win64-enterprise-shippable
+release_partners:
+  - moz
+  - hosted
+release_product: firefox-enterprise
+release_type: nightly-enterprise
+repository_type: git
+target_tasks_method: enterprise_firefox_with_tests_tasks
+tasks_for: github-push
+test_manifest_loader: default
+try_mode: null
+try_task_config: {}
+version: 153.0a1

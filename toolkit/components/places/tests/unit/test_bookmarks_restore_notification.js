@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,10 +44,10 @@ async function addBookmarks() {
 /**
  * Creates an file in the profile directory.
  *
- * @param  aBasename
- *         e.g., "foo.txt" in the path /some/long/path/foo.txt
- * @return {Promise}
- * @resolves to an OS.File path
+ * @param {string} aBasename
+ *   e.g., "foo.txt" in the path /some/long/path/foo.txt
+ * @returns {Promise<string>}
+ *   The path of the file.
  */
 async function promiseFile(aBasename) {
   let path = PathUtils.join(PathUtils.profileDir, aBasename);
@@ -63,7 +61,7 @@ async function promiseFile(aBasename) {
  * Register observers via promiseTopicObserved helper.
  *
  * @param  {boolean} expectSuccess pass true when expect a success notification
- * @return {Promise[]}
+ * @returns {Promise[]}
  */
 function registerObservers(expectSuccess) {
   let promiseBegin = promiseTopicObserved(NSIOBSERVER_TOPIC_BEGIN);
@@ -114,6 +112,8 @@ async function checkObservers(expectPromises, expectedData) {
 
 /**
  * Run after every test cases.
+ *
+ * @param {string} file
  */
 async function teardown(file) {
   // On restore failed, file may not exist, so wrap in try-catch.

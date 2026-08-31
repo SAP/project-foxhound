@@ -5,22 +5,22 @@
 /**
  * Tells if a given Source Actor is registered in the redux store
  *
- * @param {Object} state
- * @param {String} sourceActorId
+ * @param {object} state
+ * @param {string} sourceActorId
  *        Source Actor ID
- * @return {Boolean}
+ * @return {boolean}
  */
 export function hasSourceActor(state, sourceActorId) {
   return state.sourceActors.mutableSourceActors.has(sourceActorId);
 }
 
 /**
- * Get the Source Actor object. See create.js:createSourceActor()
+ * Get the Source Actor object. See create.js:createScriptSourceActor()
  *
- * @param {Object} state
- * @param {String} sourceActorId
+ * @param {object} state
+ * @param {string} sourceActorId
  *        Source Actor ID
- * @return {Object}
+ * @return {object}
  *        The Source Actor object (if registered)
  */
 export function getSourceActor(state, sourceActorId) {
@@ -30,10 +30,10 @@ export function getSourceActor(state, sourceActorId) {
 /**
  * Reports if the Source Actor relates to a valid source map / original source.
  *
- * @param {Object} state
- * @param {String} sourceActorId
+ * @param {object} state
+ * @param {string} sourceActorId
  *        Source Actor ID
- * @return {Boolean}
+ * @return {boolean}
  *        True if it has a valid source map/original object.
  */
 export function isSourceActorWithSourceMap(state, sourceActorId) {
@@ -50,12 +50,12 @@ export function getSourceMapResolvedURL(state, sourceActorId) {
 
 // Used by threads selectors
 /**
- * Get all Source Actor objects for a given thread. See create.js:createSourceActor()
+ * Get all Source Actor objects for a given thread. See create.js:createScriptSourceActor()
  *
- * @param {Object} state
- * @param {Array<String>} threadActorIDs
+ * @param {object} state
+ * @param {Array<string>} threadActorIDs
  *        List of Thread IDs
- * @return {Array<Object>}
+ * @return {Array<object>}
  */
 export function getSourceActorsForThread(state, threadActorIDs) {
   if (!Array.isArray(threadActorIDs)) {
@@ -73,8 +73,8 @@ export function getSourceActorsForThread(state, threadActorIDs) {
 /**
  * Get the list of all breakable lines for a given source actor.
  *
- * @param {Object} state
- * @param {String} sourceActorId
+ * @param {object} state
+ * @param {string} sourceActorId
  *        Source Actor ID
  * @return {Promise<Array<Number>> | <Array<Number> | null}
  *        - null when the breakable lines have not been requested yet
@@ -92,15 +92,15 @@ export function getSourceActorBreakableLines(state, sourceActorId) {
  * This is typically used to fetch the breakable lines of HTML sources
  * which are made of multiple source actors (one per inline script).
  *
- * @param {Object} state
- * @param {Array<String>} sourceActors
+ * @param {object} state
+ * @param {Array<string>} sourceActors
  *        List of Source Actors
- * @param {Boolean} isHTML
+ * @param {boolean} isHTML
  *        True, if we are fetching the breakable lines for an HTML source.
  *        For them, we have to aggregate the lines of each source actors.
  *        Otherwise, we might still have many source actors, but one per thread.
  *        In this case, we simply return the first source actor to have the lines ready.
- * @return {Array<Number>}
+ * @return {Array<number>}
  *        List of all the breakable lines.
  */
 export function getBreakableLinesForSourceActors(state, sourceActors, isHTML) {

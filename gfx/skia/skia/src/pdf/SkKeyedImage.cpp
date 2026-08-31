@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -39,7 +39,7 @@ SkKeyedImage::SkKeyedImage(const SkBitmap& bm) : fImage(bm.asImage()) {
 SkKeyedImage SkKeyedImage::subset(SkIRect subset) const {
     SkKeyedImage img;
     if (fImage && subset.intersect(fImage->bounds())) {
-        img.fImage = fImage->makeSubset(nullptr, subset);
+        img.fImage = fImage->makeSubset(nullptr, subset, {});
         if (img.fImage) {
             img.fKey = {subset.makeOffset(fKey.fSubset.topLeft()), fKey.fID};
         }

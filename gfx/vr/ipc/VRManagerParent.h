@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,12 +27,16 @@ class VRManagerParent final : public PVRManagerParent {
 
  public:
   explicit VRManagerParent(ipc::EndpointProcInfo aChildProcess,
-                           dom::ContentParentId aChildId, bool aIsContentChild);
+                           dom::ContentParentId aChildId, uint32_t aNamespace,
+                           bool aIsContentChild);
 
-  static already_AddRefed<VRManagerParent> CreateSameProcess();
-  static bool CreateForGPUProcess(Endpoint<PVRManagerParent>&& aEndpoint);
+  static already_AddRefed<VRManagerParent> CreateSameProcess(
+      uint32_t aNamespace);
+  static bool CreateForGPUProcess(Endpoint<PVRManagerParent>&& aEndpoint,
+                                  uint32_t aNamespace);
   static bool CreateForContent(Endpoint<PVRManagerParent>&& aEndpoint,
-                               dom::ContentParentId aChildId);
+                               dom::ContentParentId aChildId,
+                               uint32_t aNamespace);
   static void Shutdown();
 
   bool IsSameProcess() const;
@@ -46,9 +48,8 @@ class VRManagerParent final : public PVRManagerParent {
  protected:
   ~VRManagerParent();
 
-  PVRLayerParent* AllocPVRLayerParent(const uint32_t& aDisplayID,
-                                      const uint32_t& aGroup);
-  bool DeallocPVRLayerParent(PVRLayerParent* actor);
+  already_AddRefed<PVRLayerParent> AllocPVRLayerParent(
+      const uint32_t& aDisplayID, const uint32_t& aGroup);
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
@@ -89,6 +90,7 @@ class VRManagerParent final : public PVRManagerParent {
   // Keep the VRManager alive, until we have destroyed ourselves.
   RefPtr<VRManager> mVRManagerHolder;
   dom::ContentParentId mChildId;
+  uint32_t mNamespace;
   bool mHaveEventListener;
   bool mHaveControllerListener;
   bool mIsContentChild;

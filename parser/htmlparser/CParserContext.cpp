@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #include "nsAtom.h"
 #include "CParserContext.h"
 #include "prenv.h"
-#include "nsIHTMLContentSink.h"
 #include "nsMimeTypes.h"
 
 CParserContext::CParserContext(nsIURI* aURI, eParserCommands aCommand)
@@ -15,7 +12,6 @@ CParserContext::CParserContext(nsIURI* aURI, eParserCommands aCommand)
       mDTDMode(eDTDMode_autodetect),
       mDocType(eUnknown),
       mStreamListenerState(eNone),
-      mContextType(eCTURL),
       mParserCommand(aCommand),
       mMultipart(true),
       mCopyUnused(false) {
@@ -29,7 +25,6 @@ CParserContext::CParserContext(const nsAString& aBuffer,
       mDTDMode(eDTDMode_full_standards),
       mDocType(eXML),
       mStreamListenerState(aLastBuffer ? eOnStop : eOnDataAvail),
-      mContextType(eCTString),
       mParserCommand(aCommand),
       mMultipart(!aLastBuffer),
       mCopyUnused(aLastBuffer) {

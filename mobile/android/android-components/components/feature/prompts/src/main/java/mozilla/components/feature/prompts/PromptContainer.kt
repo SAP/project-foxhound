@@ -27,7 +27,10 @@ internal sealed class PromptContainer {
     /**
      * Returns a localized string.
      */
-    abstract fun getString(@StringRes res: Int, vararg objects: Any): String
+    abstract fun getString(
+        @StringRes res: Int,
+        vararg objects: Any,
+    ): String
 
     internal class Activity(
         private val activity: android.app.Activity,

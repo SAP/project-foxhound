@@ -135,7 +135,6 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   MESSAGE_TYPE_HASH: () => (/* binding */ MESSAGE_TYPE_HASH),
 /* harmony export */   MESSAGE_TYPE_LIST: () => (/* binding */ MESSAGE_TYPE_LIST)
 /* harmony export */ });
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -155,6 +154,8 @@ const MESSAGE_TYPE_LIST = [
   "TOAST_NOTIFICATION_TELEMETRY",
   "MENU_MESSAGE_TELEMETRY",
   "NEWTAB_MESSAGE_TELEMETRY",
+  "SMART_WINDOW_PROMO_TELEMETRY",
+  "ACTION_ONLY_TELEMETRY",
   "AS_ROUTER_TELEMETRY_USER_EVENT",
 
   // Admin types
@@ -177,6 +178,8 @@ const MESSAGE_TYPE_LIST = [
   "RESET_MESSAGE_STATE",
   "RESET_SCREEN_IMPRESSIONS",
   "EDIT_STATE",
+  "AW_EVALUATE_SCREEN_TARGETING",
+  "AW_ADD_SCREEN_IMPRESSION",
 ];
 
 const MESSAGE_TYPE_HASH = MESSAGE_TYPE_LIST.reduce((hash, value) => {
@@ -604,6 +607,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
       collapsedMessages: [],
       modifiedMessages: [],
       messageBlockList: [],
+      multiProfileMessageBlocklist: [],
       evaluationStatus: {},
       stringTargetingParameters: null,
       newStringTargetingParameters: null,
@@ -919,7 +923,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
     const isBlockedByGroup = this.state.groups.filter(group => msg.groups.includes(group.id)).some(group => !group.enabled);
     const msgProvider = this.state.providers.find(provider => provider.id === msg.provider) || {};
     const isProviderExcluded = msgProvider.exclude && msgProvider.exclude.includes(msg.id);
-    const isMessageBlocked = this.state.messageBlockList.includes(msg.id) || this.state.messageBlockList.includes(msg.campaign);
+    const isMessageBlocked = this.state.messageBlockList.includes(msg.id) || this.state.messageBlockList.includes(msg.campaign) || this.state.multiProfileMessageBlocklist.includes(msg.id);
     const isBlocked = isMessageBlocked || isBlockedByGroup || isProviderExcluded;
     const impressions = this.state.messageImpressions[msg.id] ? this.state.messageImpressions[msg.id].length : 0;
     const isCollapsed = this.state.collapsedMessages.includes(msg.id);

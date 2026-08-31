@@ -1,0 +1,15 @@
+{
+  "label": "www.av-connection.dk",
+  "bugs": {
+    "2032348": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://www.av-connection.dk/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

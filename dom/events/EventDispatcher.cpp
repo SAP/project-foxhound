@@ -1,22 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Assertions.h"
-#include "nsPresContext.h"
-#include "nsContentUtils.h"
-#include "nsDocShell.h"
-#include "nsError.h"
+#include "mozilla/EventDispatcher.h"
+
+#include <fmt/format.h>
+
 #include <new>
-#include "nsIContent.h"
-#include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
-#include "nsINode.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsPIDOMWindow.h"
-#include "nsRefreshDriver.h"
+
 #include "AnimationEvent.h"
 #include "BeforeUnloadEvent.h"
 #include "ClipboardEvent.h"
@@ -25,28 +16,37 @@
 #include "DeviceMotionEvent.h"
 #include "DragEvent.h"
 #include "KeyboardEvent.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
+#include "mozilla/EventListenerManager.h"
+#include "mozilla/MiscEvents.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/TouchEvents.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CloseEvent.h"
 #include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/DeviceOrientationEvent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/FocusEvent.h"
 #include "mozilla/dom/HashChangeEvent.h"
 #include "mozilla/dom/InputEvent.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MouseScrollEvent.h"
-#include "mozilla/dom/MutationEvent.h"
 #include "mozilla/dom/NotifyPaintEvent.h"
 #include "mozilla/dom/PageTransitionEvent.h"
 #include "mozilla/dom/PerformanceEventTiming.h"
 #include "mozilla/dom/PerformanceMainThread.h"
 #include "mozilla/dom/PointerEvent.h"
 #include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ScrollAreaEvent.h"
 #include "mozilla/dom/SimpleGestureEvent.h"
-#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/TextEvent.h"
 #include "mozilla/dom/TimeEvent.h"
@@ -55,18 +55,18 @@
 #include "mozilla/dom/WheelEvent.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/XULCommandEvent.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/EventListenerManager.h"
-#include "mozilla/InternalMutationEvent.h"
 #include "mozilla/ipc/MessageChannel.h"
-#include "mozilla/MiscEvents.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/TouchEvents.h"
-#include "mozilla/Unused.h"
+#include "nsContentUtils.h"
+#include "nsDocShell.h"
+#include "nsError.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
+#include "nsINode.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
+#include "nsPresContext.h"
+#include "nsRefreshDriver.h"
 
 namespace mozilla {
 
@@ -116,7 +116,7 @@ static bool IsEventTargetChrome(EventTarget* aEventTarget,
       retVal.swap(*aDocument);
     }
   } else if (nsCOMPtr<nsIScriptObjectPrincipal> sop =
-                 do_QueryInterface(aEventTarget->GetOwnerGlobal())) {
+                 do_QueryInterface(aEventTarget->GetRelevantGlobal())) {
     isChrome = sop->GetPrincipal()->IsSystemPrincipal();
   }
   return isChrome;
@@ -331,7 +331,7 @@ class EventTargetChainItem {
    * Copies mItemFlags and mItemData to aVisitor.
    * Calls PreHandleEvent for those items which called SetWantsPreHandleEvent.
    */
-  void PreHandleEvent(EventChainVisitor& aVisitor);
+  MOZ_CAN_RUN_SCRIPT void PreHandleEvent(EventChainVisitor& aVisitor);
 
   /**
    * If the current item in the event target chain has an event listener
@@ -459,7 +459,7 @@ void EventTargetChainItem::PreHandleEvent(EventChainVisitor& aVisitor) {
   }
   aVisitor.mItemFlags = mItemFlags;
   aVisitor.mItemData = mItemData;
-  Unused << mTarget->PreHandleEvent(aVisitor);
+  (void)mTarget->PreHandleEvent(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
   MOZ_ASSERT(mItemData == aVisitor.mItemData);
 }
@@ -777,7 +777,8 @@ static void DescribeEventTargetForProfilerMarker(const EventTarget* aTarget,
   if (node) {
     if (node->IsElement()) {
       nsAutoString nodeDescription;
-      node->AsElement()->Describe(nodeDescription, true);
+      node->AsElement()->Describe(nodeDescription,
+                                  Element::DescriptionKind::IdAndClass);
       aDescription = NS_ConvertUTF16toUTF8(nodeDescription);
     } else if (node->IsDocument()) {
       aDescription.AssignLiteral("document");
@@ -823,17 +824,83 @@ static bool IsUncancelableIfOnlyPassiveListeners(const WidgetEvent* aEvent) {
   return !(XRE_IsParentProcess() && BrowserParent::GetFrom(target));
 }
 
+static void AssertWindowRootInTheFocusBlurChain(
+    const nsTArray<EventTargetChainItem>& aChain, const WidgetEvent* aEvent,
+    const EventTarget* aTarget) {
+#ifdef DEBUG
+  if (!aEvent->IsTrusted()) [[unlikely]] {
+    return;
+  }
+  if (aEvent->mMessage != eFocus && aEvent->mMessage != eBlur) [[likely]] {
+    return;
+  }
+  const nsINode* const targetNode = nsINode::FromEventTargetOrNull(aTarget);
+  if (!targetNode || !targetNode->IsInComposedDoc() ||
+      // FYI: This may hit in test_bug446483.html
+      (targetNode->IsDocument() && !targetNode->AsDocument()->GetWindow()))
+      [[unlikely]] {
+    return;
+  }
+  // If nsWindowRoot is not in the chain, we cannot maintain the selection
+  // before dispatching eFocus/eBlur.
+  for (const auto& item : Reversed(aChain)) {
+    if (item.WantsPreHandleEvent()) {
+      if (nsCOMPtr<nsPIWindowRoot> windowRoot =
+              do_QueryInterface(item.CurrentTarget())) {
+        return;
+      }
+    }
+  }
+  nsAutoCString chain;
+  for (const auto& item : aChain) {
+    chain.AppendLiteral("\n- ");
+    if (!item.CurrentTarget()) {
+      chain.AppendLiteral("nullptr");
+      continue;
+    }
+    if (nsINode* node = nsINode::FromEventTarget(item.CurrentTarget())) {
+      chain.Append(nsDependentCString(ToString(*node).c_str()));
+      continue;
+    }
+    if (nsCOMPtr<mozIDOMWindowProxy> win =
+            do_QueryInterface(item.CurrentTarget())) {
+      chain.AppendLiteral("window");
+      continue;
+    }
+    if (nsCOMPtr<nsPIWindowRoot> winRoot =
+            do_QueryInterface(item.CurrentTarget())) {
+      chain.AppendLiteral("window root");
+      continue;
+    }
+    chain.AppendLiteral("unknown EventTarget");
+  }
+  NS_ASSERTION(false,
+               fmt::format("{} should be handled by PreHandleEvent() of a "
+                           "nsWindowRoot\nThe chain:{}\n",
+                           ToChar(aEvent->mMessage), chain.get())
+                   .c_str());
+#endif
+}
+
 struct DOMEventMarker : public BaseMarkerType<DOMEventMarker> {
   static constexpr const char* Name = "DOMEvent";
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"target", MS::InputType::CString, "Event Target", MS::Format::String,
-       MS::PayloadFlags::Searchable},
+      {
+          "target",
+          MS::InputType::CString,
+          "Event Target",
+          MS::Format::String,
+      },
       {"latency", MS::InputType::TimeDuration, "Latency", MS::Format::Duration,
        MS::PayloadFlags::None},
-      {"eventType", MS::InputType::String, "Event Type", MS::Format::String,
-       MS::PayloadFlags::Searchable}};
+      {
+          "eventType",
+          MS::InputType::String,
+          "Event Type",
+          MS::Format::String,
+      }};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable,
@@ -867,7 +934,15 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
                                    nsTArray<EventTarget*>* aTargets) {
   AUTO_PROFILER_LABEL_HOT("EventDispatcher::Dispatch", OTHER);
 
-  NS_ASSERTION(aEvent, "Trying to dispatch without WidgetEvent!");
+  MOZ_ASSERT(aEvent, "Trying to dispatch without WidgetEvent!");
+  NS_WARNING_ASSERTION(
+      !aEvent->IsTrusted() || aEvent->IsAllowedToDispatchDOMEvent(),
+      fmt::format("aEvent={{ IsTrusted()={}, mMessage={}, mClass={} }}",
+                  TrueOrFalse(aEvent->IsTrusted()), ToChar(aEvent->mMessage),
+                  ToChar(aEvent->mClass))
+          .c_str());
+  MOZ_ASSERT_IF(aEvent->IsTrusted(), aEvent->IsAllowedToDispatchDOMEvent());
+
   NS_ENSURE_TRUE(!aEvent->mFlags.mIsBeingDispatched,
                  NS_ERROR_DOM_INVALID_STATE_ERR);
   NS_ASSERTION(!aTargets || !aEvent->mMessage, "Wrong parameters!");
@@ -901,6 +976,25 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
       }
     }
   }
+
+  // Track the current event timing entry so that modal dialog code can call
+  // RecordModalFallbackTime() to stamp the fallback time on the right entry.
+  // The previous entry is saved and restored via ScopeExit to handle nested
+  // event dispatch and early returns.
+  RefPtr<PerformanceMainThread> perfMainThread;
+  RefPtr<PerformanceEventTiming> prevEventTimingEntry;
+  if (eventTimingEntry) {
+    perfMainThread = aPresContext->GetPerformanceMainThread();
+    if (perfMainThread) {
+      prevEventTimingEntry = perfMainThread->GetCurrentEventTimingEntry();
+      perfMainThread->SetCurrentEventTimingEntry(eventTimingEntry);
+    }
+  }
+  auto restoreEventTimingEntry = MakeScopeExit([&]() {
+    if (perfMainThread) {
+      perfMainThread->SetCurrentEventTimingEntry(prevEventTimingEntry);
+    }
+  });
 
   bool retargeted = false;
 
@@ -961,7 +1055,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
       if (global || hasHadScriptHandlingObject) {
         warn(nsContentUtils::IsChromeDoc(doc));
       }
-    } else if (nsCOMPtr<nsIGlobalObject> global = target->GetOwnerGlobal()) {
+    } else if (nsCOMPtr<nsIGlobalObject> global = target->GetRelevantGlobal()) {
       warn(global->PrincipalOrNull()->IsSystemPrincipal());
     }
   }
@@ -1035,7 +1129,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
 
   bool clearTargets = false;
 
-  nsCOMPtr<nsIContent> content =
+  nsIContent* content =
       nsIContent::FromEventTargetOrNull(aEvent->mOriginalTarget);
 
   const bool isInAnon = content && content->ChromeOnlyAccessForEvents();
@@ -1064,9 +1158,14 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
     targetEtci = MayRetargetToChromeIfCanNotHandleEvent(
         chain, preVisitor, targetEtci, nullptr, content);
   }
+
+  // Ensure no one will use the pointer after this point.
+  content = nullptr;
+
   if (!preVisitor.mCanHandle) {
     // The original target and chrome target (mAutomaticChromeDispatch=true)
     // can not handle the event but we still have to call their PreHandleEvent.
+    AssertWindowRootInTheFocusBlurChain(chain, aEvent, target);
     for (uint32_t i = 0; i < chain.Length(); ++i) {
       chain[i].PreHandleEvent(preVisitor);
     }
@@ -1189,6 +1288,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
         }
       } else {
         // Event target chain is created. PreHandle the chain.
+        AssertWindowRootInTheFocusBlurChain(chain, aEvent, target);
         for (uint32_t i = 0; i < chain.Length(); ++i) {
           chain[i].PreHandleEvent(preVisitor);
         }
@@ -1234,7 +1334,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
               "EventDispatcher::Dispatch", OTHER, typeStr);
 
           MarkerInnerWindowId innerWindowId;
-          if (nsIGlobalObject* global = aEvent->mTarget->GetOwnerGlobal()) {
+          if (nsIGlobalObject* global = aEvent->mTarget->GetRelevantGlobal()) {
             if (nsPIDOMWindowInner* inner = global->GetAsInnerWindow()) {
               innerWindowId = MarkerInnerWindowId{inner->WindowID()};
             }
@@ -1414,9 +1514,6 @@ nsresult EventDispatcher::DispatchDOMEvent(EventTarget* aTarget,
     const nsAString& aEventType, CallerType aCallerType) {
   if (aEvent) {
     switch (aEvent->mClass) {
-      case eMutationEventClass:
-        return NS_NewDOMMutationEvent(aOwner, aPresContext,
-                                      aEvent->AsMutationEvent());
       case eGUIEventClass:
       case eScrollPortEventClass:
       case eUIEventClass:
@@ -1500,10 +1597,6 @@ nsresult EventDispatcher::DispatchDOMEvent(EventTarget* aTarget,
       return NS_NewDOMCompositionEvent(aOwner, aPresContext, nullptr);
     }
     return NS_NewDOMTextEvent(aOwner, aPresContext, nullptr);
-  }
-  if (aEventType.LowerCaseEqualsLiteral("mutationevent") ||
-      aEventType.LowerCaseEqualsLiteral("mutationevents")) {
-    return NS_NewDOMMutationEvent(aOwner, aPresContext, nullptr);
   }
   if (aEventType.LowerCaseEqualsLiteral("deviceorientationevent")) {
     DeviceOrientationEventInit init;

@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGArcConverter.h"
+
+#include "mozilla/gfx/Matrix.h"
 
 using namespace mozilla::gfx;
 
@@ -24,8 +24,7 @@ SVGArcConverter::SVGArcConverter(const Point& from, const Point& to,
                                  bool largeArcFlag, bool sweepFlag) {
   MOZ_ASSERT(radii.x != 0.0f && radii.y != 0.0f, "Bad radii");
 
-  const double radPerDeg = M_PI / 180.0;
-  mSegIndex = 0;
+  mTo = to;
 
   if (from == to) {
     mNumSegs = 0;
@@ -34,11 +33,11 @@ SVGArcConverter::SVGArcConverter(const Point& from, const Point& to,
 
   // Convert to center parameterization as shown in
   // http://www.w3.org/TR/SVG/implnote.html
-  mRx = fabs(radii.x);
-  mRy = fabs(radii.y);
+  mRx = std::abs(radii.x);
+  mRy = std::abs(radii.y);
 
-  mSinPhi = sin(angle * radPerDeg);
-  mCosPhi = cos(angle * radPerDeg);
+  mSinPhi = sin(angle * kRadPerDegree);
+  mCosPhi = cos(angle * kRadPerDegree);
 
   double x1dash =
       mCosPhi * (from.x - to.x) / 2.0 + mSinPhi * (from.y - to.y) / 2.0;
@@ -85,16 +84,39 @@ SVGArcConverter::SVGArcConverter(const Point& from, const Point& to,
     dtheta += 2.0 * M_PI;
 
   // Convert into cubic bezier segments <= 90deg
-  mNumSegs = static_cast<int>(ceil(fabs(dtheta / (M_PI / 2.0))));
+  mNumSegs = static_cast<int>(ceil(std::abs(dtheta / (M_PI / 2.0))));
   mDelta = dtheta / mNumSegs;
   mT = 8.0 / 3.0 * sin(mDelta / 4.0) * sin(mDelta / 4.0) / sin(mDelta / 2.0);
 
   mFrom = from;
+
+  if (std::abs(dtheta) < 1e-8) {
+    // If the angle dtheta is extremely small, then the resulting portion of the
+    // arc is indistinguishable from a line.
+    // In this situation we are likely dealing with quantities that are large or
+    // small enough (depending on what inputs caused the dtheta to end up this
+    // way) to hit floating point precision issues, so it is safer to special
+    // case this. The threshold may need some adjustments. For reference, skia
+    // handles this case the same way:
+    // https://searchfox.org/firefox-main/rev/d0ff31da7cb418d2d86b0d83fecd7114395e5d46/gfx/skia/skia/src/core/SkPath.cpp#1323
+    mFallBackToSingleLine = true;
+    mNumSegs = 1;
+  }
 }
 
 bool SVGArcConverter::GetNextSegment(Point* cp1, Point* cp2, Point* to) {
   if (mSegIndex == mNumSegs) {
     return false;
+  }
+
+  if (mFallBackToSingleLine) {
+    Point ctrl = (mFrom + mTo) * 0.5;
+    *cp1 = ctrl;
+    *cp2 = ctrl;
+    *to = mTo;
+    mSegIndex = 1;
+    mFallBackToSingleLine = false;
+    return true;
   }
 
   double cosTheta1 = cos(mTheta);
@@ -103,9 +125,16 @@ bool SVGArcConverter::GetNextSegment(Point* cp1, Point* cp2, Point* to) {
   double cosTheta2 = cos(theta2);
   double sinTheta2 = sin(theta2);
 
-  // a) calculate endpoint of the segment:
-  to->x = mCosPhi * mRx * cosTheta2 - mSinPhi * mRy * sinTheta2 + mC.x;
-  to->y = mSinPhi * mRx * cosTheta2 + mCosPhi * mRy * sinTheta2 + mC.y;
+  if (mSegIndex + 1 == mNumSegs) {
+    // Always set the last segment's `to` endpoint to the exact end of the
+    // arc. This prevents precision issues from "leaking" into the next path
+    // element.
+    *to = mTo;
+  } else {
+    // a) calculate endpoint of the segment:
+    to->x = mCosPhi * mRx * cosTheta2 - mSinPhi * mRy * sinTheta2 + mC.x;
+    to->y = mSinPhi * mRx * cosTheta2 + mCosPhi * mRy * sinTheta2 + mC.y;
+  }
 
   // b) calculate gradients at start/end points of segment:
   cp1->x =

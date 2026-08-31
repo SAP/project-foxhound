@@ -67,7 +67,7 @@ class BrowserGestureDetectorTest {
     }
 
     @Test
-    fun `Detector's handleTouchEvent returns false if the event was not handled`() {
+    fun `Detector's onTouch returns false if the event was not handled`() {
         val detector = BrowserGestureDetector(testContext, mock())
         val unhandledEvent = TestUtils.getMotionEvent(ACTION_DOWN)
 
@@ -81,7 +81,7 @@ class BrowserGestureDetectorTest {
     }
 
     @Test
-    fun `Detector's handleTouchEvent returns true if the event was handled`() {
+    fun `Detector's onTouch returns true if the event was handled`() {
         val detector = BrowserGestureDetector(testContext, mock())
         val downEvent = TestUtils.getMotionEvent(ACTION_DOWN)
         val moveEvent = TestUtils.getMotionEvent(ACTION_MOVE, 0f, 0f, previousEvent = downEvent)

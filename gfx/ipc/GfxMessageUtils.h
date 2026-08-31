@@ -1,24 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __GFXMESSAGEUTILS_H__
-#define __GFXMESSAGEUTILS_H__
+#ifndef GFXMESSAGEUTILS_H_
+#define GFXMESSAGEUTILS_H_
 
+#include "DriverCrashGuard.h"
 #include "FilterSupport.h"
 #include "ImageTypes.h"
 #include "RegionBuilder.h"
 #include "chrome/common/ipc_message_utils.h"
 #include "gfxFeature.h"
-#include "gfxFontUtils.h"
 #include "gfxFallback.h"
 #include "gfxPoint.h"
 #include "gfxRect.h"
+#include "gfxSparseBitSet.h"
 #include "gfxTelemetry.h"
 #include "gfxTypes.h"
 #include "ipc/EnumSerializer.h"
+#include "mozilla/EnumTypeTraits.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/gfx/CrossProcessPaint.h"
 #include "mozilla/gfx/FileHandleWrapper.h"
@@ -28,9 +28,7 @@
 #include "SharedFontList.h"
 #include "nsRect.h"
 #include "nsRegion.h"
-#include "mozilla/Array.h"
 #include "mozilla/ipc/FileDescriptor.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/ShmemMessageUtils.h"
@@ -49,30 +47,8 @@ typedef gfxImageFormat PixelFormat;
 
 namespace IPC {
 
-template <>
-struct ParamTraits<mozilla::gfx::Matrix> {
-  typedef mozilla::gfx::Matrix paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam._11);
-    WriteParam(aWriter, aParam._12);
-    WriteParam(aWriter, aParam._21);
-    WriteParam(aWriter, aParam._22);
-    WriteParam(aWriter, aParam._31);
-    WriteParam(aWriter, aParam._32);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (ReadParam(aReader, &aResult->_11) &&
-        ReadParam(aReader, &aResult->_12) &&
-        ReadParam(aReader, &aResult->_21) &&
-        ReadParam(aReader, &aResult->_22) &&
-        ReadParam(aReader, &aResult->_31) && ReadParam(aReader, &aResult->_32))
-      return true;
-
-    return false;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::Matrix, _11, _12, _21, _22, _31,
+                                  _32);
 
 template <class SourceUnits, class TargetUnits, class T>
 struct ParamTraits<mozilla::gfx::Matrix4x4Typed<SourceUnits, TargetUnits, T>> {
@@ -108,77 +84,13 @@ struct ParamTraits<mozilla::gfx::Matrix4x4Typed<SourceUnits, TargetUnits, T>> {
   }
 };
 
-template <>
-struct ParamTraits<mozilla::gfx::Matrix5x4> {
-  typedef mozilla::gfx::Matrix5x4 paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::Matrix5x4, _11, _12, _13, _14,
+                                  _21, _22, _23, _24, _31, _32, _33, _34, _41,
+                                  _42, _43, _44, _51, _52, _53, _54);
 
-  static void Write(MessageWriter* writer, const paramType& param) {
-#define Wr(_f) WriteParam(writer, param._f)
-    Wr(_11);
-    Wr(_12);
-    Wr(_13);
-    Wr(_14);
-    Wr(_21);
-    Wr(_22);
-    Wr(_23);
-    Wr(_24);
-    Wr(_31);
-    Wr(_32);
-    Wr(_33);
-    Wr(_34);
-    Wr(_41);
-    Wr(_42);
-    Wr(_43);
-    Wr(_44);
-    Wr(_51);
-    Wr(_52);
-    Wr(_53);
-    Wr(_54);
-#undef Wr
-  }
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(gfxPoint, x.value, y.value);
 
-  static bool Read(MessageReader* reader, paramType* result) {
-#define Rd(_f) ReadParam(reader, &result->_f)
-    return (Rd(_11) && Rd(_12) && Rd(_13) && Rd(_14) && Rd(_21) && Rd(_22) &&
-            Rd(_23) && Rd(_24) && Rd(_31) && Rd(_32) && Rd(_33) && Rd(_34) &&
-            Rd(_41) && Rd(_42) && Rd(_43) && Rd(_44) && Rd(_51) && Rd(_52) &&
-            Rd(_53) && Rd(_54));
-#undef Rd
-  }
-};
-
-template <>
-struct ParamTraits<gfxPoint> {
-  typedef gfxPoint paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.x.value);
-    WriteParam(aWriter, aParam.y.value);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return (ReadParam(aReader, &aResult->x.value) &&
-            ReadParam(aReader, &aResult->y.value));
-  }
-};
-
-template <>
-struct ParamTraits<gfxSize> {
-  typedef gfxSize paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.width);
-    WriteParam(aWriter, aParam.height);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (ReadParam(aReader, &aResult->width) &&
-        ReadParam(aReader, &aResult->height))
-      return true;
-
-    return false;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(gfxSize, width, height);
 
 template <>
 struct ParamTraits<gfxRect> {
@@ -205,9 +117,25 @@ struct ParamTraits<gfxRect> {
 };
 
 template <>
+struct ParamTraits<mozilla::gfx::CrashGuardType>
+    : public ContiguousEnumSerializer<mozilla::gfx::CrashGuardType,
+                                      mozilla::gfx::CrashGuardType::D3D11Layers,
+                                      mozilla::gfx::CrashGuardType::NUM_TYPES> {
+};
+
+struct gfxContentTypeValidator {
+  using IntegralType = std::underlying_type_t<gfxContentType>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    return e == IntegralType(gfxContentType::COLOR) ||
+           e == IntegralType(gfxContentType::ALPHA) ||
+           e == IntegralType(gfxContentType::COLOR_ALPHA);
+  }
+};
+
+template <>
 struct ParamTraits<gfxContentType>
-    : public ContiguousEnumSerializer<gfxContentType, gfxContentType::COLOR,
-                                      gfxContentType::SENTINEL> {};
+    : EnumSerializer<gfxContentType, gfxContentTypeValidator> {};
 
 template <>
 struct ParamTraits<gfxSurfaceType>
@@ -259,54 +187,44 @@ struct ParamTraits<mozilla::gfx::ColorSpace>
                                       mozilla::gfx::ColorSpace::SRGB,
                                       mozilla::gfx::ColorSpace::Max> {};
 
+template <typename E>
+using GfxEnumSerializer =
+    ContiguousEnumSerializerInclusive<E, mozilla::ContiguousEnumValues<E>::min,
+                                      mozilla::ContiguousEnumValues<E>::max>;
+
+template <>
+struct ParamTraits<mozilla::gfx::SVGMorphologyOperator>
+    : public GfxEnumSerializer<mozilla::gfx::SVGMorphologyOperator> {};
+template <>
+struct ParamTraits<mozilla::gfx::SVGFEColorMatrixType>
+    : public GfxEnumSerializer<mozilla::gfx::SVGFEColorMatrixType> {};
+template <>
+struct ParamTraits<mozilla::gfx::SVGFEComponentTransferType>
+    : public GfxEnumSerializer<mozilla::gfx::SVGFEComponentTransferType> {};
+template <>
+struct ParamTraits<mozilla::gfx::SVGFEBlendMode>
+    : public GfxEnumSerializer<mozilla::gfx::SVGFEBlendMode> {};
+template <>
+struct ParamTraits<mozilla::gfx::SVGEdgeMode>
+    : public GfxEnumSerializer<mozilla::gfx::SVGEdgeMode> {};
+template <>
+struct ParamTraits<mozilla::gfx::SVGChannel>
+    : public GfxEnumSerializer<mozilla::gfx::SVGChannel> {};
+template <>
+struct ParamTraits<mozilla::gfx::SVGTurbulenceType>
+    : public GfxEnumSerializer<mozilla::gfx::SVGTurbulenceType> {};
+template <>
+struct ParamTraits<mozilla::gfx::SVGFECompositeOperator>
+    : public GfxEnumSerializer<mozilla::gfx::SVGFECompositeOperator> {};
+
 template <>
 struct ParamTraits<mozilla::gfx::CompositionOp>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::gfx::CompositionOp, mozilla::gfx::CompositionOp::OP_OVER,
-          mozilla::gfx::CompositionOp::OP_COUNT> {};
+    : public ContiguousEnumSerializer<mozilla::gfx::CompositionOp,
+                                      mozilla::gfx::CompositionOp::OP_CLEAR,
+                                      mozilla::gfx::CompositionOp::OP_COUNT> {};
 
-/*
-template <>
-struct ParamTraits<mozilla::PixelFormat>
-  : public EnumSerializer<mozilla::PixelFormat,
-                          SurfaceFormat::A8R8G8B8_UINT32,
-                          SurfaceFormat::UNKNOWN>
-{};
-*/
-
-template <>
-struct ParamTraits<mozilla::gfx::sRGBColor> {
-  typedef mozilla::gfx::sRGBColor paramType;
-
-  static void Write(MessageWriter* writer, const paramType& param) {
-    WriteParam(writer, param.r);
-    WriteParam(writer, param.g);
-    WriteParam(writer, param.b);
-    WriteParam(writer, param.a);
-  }
-
-  static bool Read(MessageReader* reader, paramType* result) {
-    return (ReadParam(reader, &result->r) && ReadParam(reader, &result->g) &&
-            ReadParam(reader, &result->b) && ReadParam(reader, &result->a));
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::DeviceColor> {
-  typedef mozilla::gfx::DeviceColor paramType;
-
-  static void Write(MessageWriter* writer, const paramType& param) {
-    WriteParam(writer, param.r);
-    WriteParam(writer, param.g);
-    WriteParam(writer, param.b);
-    WriteParam(writer, param.a);
-  }
-
-  static bool Read(MessageReader* reader, paramType* result) {
-    return (ReadParam(reader, &result->r) && ReadParam(reader, &result->g) &&
-            ReadParam(reader, &result->b) && ReadParam(reader, &result->a));
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::sRGBColor, r, g, b, a);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::DeviceColor, r, g, b, a);
 
 template <>
 struct ParamTraits<nsPoint> {
@@ -589,22 +507,29 @@ struct ParamTraits<mozilla::gfx::IntRectTyped<T>> {
 };
 
 template <>
-struct ParamTraits<mozilla::gfx::Margin> {
-  typedef mozilla::gfx::Margin paramType;
+struct ParamTraits<mozilla::gfx::RectCornerRadii> {
+  typedef mozilla::gfx::RectCornerRadii paramType;
 
   static void Write(MessageWriter* writer, const paramType& param) {
-    WriteParam(writer, param.top);
-    WriteParam(writer, param.right);
-    WriteParam(writer, param.bottom);
-    WriteParam(writer, param.left);
+    for (const auto& i : param.radii) {
+      WriteParam(writer, i);
+    }
   }
 
   static bool Read(MessageReader* reader, paramType* result) {
-    return (
-        ReadParam(reader, &result->top) && ReadParam(reader, &result->right) &&
-        ReadParam(reader, &result->bottom) && ReadParam(reader, &result->left));
+    for (auto& i : result->radii) {
+      if (!ReadParam(reader, &i)) {
+        return false;
+      }
+    }
+    return true;
   }
 };
+
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::RoundedRect, rect, corners);
+
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::Margin, top, right, bottom,
+                                  left);
 
 template <class T>
 struct ParamTraits<mozilla::gfx::MarginTyped<T>> {
@@ -669,10 +594,26 @@ template <>
 struct ParamTraits<nsRegion>
     : RegionParamTraits<nsRegion, nsRect, nsRegion::RectIterator> {};
 
+struct GeckoProcessTypeValidator {
+  using IntegralType = std::underlying_type_t<GeckoProcessType>;
+
+  static bool IsLegalValue(const IntegralType e) {
+#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, proc_typename, \
+                           process_bin_type, procinfo_typename,               \
+                           webidl_typename, allcaps_name)                     \
+  if (e == IntegralType(GeckoProcessType::GeckoProcessType_##enum_name)) {    \
+    return true;                                                              \
+  }
+#include "mozilla/GeckoProcessTypes.h"
+#undef GECKO_PROCESS_TYPE
+
+    return false;
+  }
+};
+
 template <>
 struct ParamTraits<GeckoProcessType>
-    : public ContiguousEnumSerializer<
-          GeckoProcessType, GeckoProcessType_Default, GeckoProcessType_End> {};
+    : EnumSerializer<GeckoProcessType, GeckoProcessTypeValidator> {};
 
 template <>
 struct ParamTraits<mozilla::gfx::SurfaceFormat>
@@ -718,6 +659,17 @@ struct ParamTraits<mozilla::gfx::ColorSpace2>
           mozilla::gfx::ColorSpace2, mozilla::gfx::ColorSpace2::_First,
           mozilla::gfx::ColorSpace2::_Last> {};
 
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::Chromaticity, x, y);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::Smpte2086Metadata,
+                                  displayPrimaryRed, displayPrimaryGreen,
+                                  displayPrimaryBlue, whitePoint, maxLuminance,
+                                  minLuminance);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::ContentLightLevel,
+                                  maxContentLightLevel,
+                                  maxFrameAverageLightLevel);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::HDRMetadata, mSmpte2086,
+                                  mContentLightLevel);
+
 template <>
 struct ParamTraits<mozilla::StereoMode>
     : public ContiguousEnumSerializer<mozilla::StereoMode,
@@ -751,240 +703,30 @@ struct ParamTraits<mozilla::gfx::ImplicitlyCopyableFloatArray>
   typedef mozilla::gfx::ImplicitlyCopyableFloatArray paramType;
 };
 
-template <>
-struct ParamTraits<mozilla::gfx::EmptyAttributes> {
-  typedef mozilla::gfx::EmptyAttributes paramType;
+DEFINE_IPC_SERIALIZER_WITHOUT_FIELDS(mozilla::gfx::EmptyAttributes);
+DEFINE_IPC_SERIALIZER_WITHOUT_FIELDS(mozilla::gfx::MergeAttributes);
+DEFINE_IPC_SERIALIZER_WITHOUT_FIELDS(mozilla::gfx::ToAlphaAttributes);
+DEFINE_IPC_SERIALIZER_WITHOUT_FIELDS(mozilla::gfx::TileAttributes);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {}
-
-  static bool Read(MessageReader* aReader, paramType* aResult) { return true; }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::MergeAttributes> {
-  typedef mozilla::gfx::MergeAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {}
-
-  static bool Read(MessageReader* aReader, paramType* aResult) { return true; }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::ToAlphaAttributes> {
-  typedef mozilla::gfx::ToAlphaAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {}
-
-  static bool Read(MessageReader* aReader, paramType* aResult) { return true; }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::TileAttributes> {
-  typedef mozilla::gfx::TileAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {}
-
-  static bool Read(MessageReader* aReader, paramType* aResult) { return true; }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::BlendAttributes> {
-  typedef mozilla::gfx::BlendAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mBlendMode);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mBlendMode);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::MorphologyAttributes> {
-  typedef mozilla::gfx::MorphologyAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mOperator);
-    WriteParam(aWriter, aParam.mRadii);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mOperator) ||
-        !ReadParam(aReader, &aResult->mRadii)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::FloodAttributes> {
-  typedef mozilla::gfx::FloodAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mColor);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mColor)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::OpacityAttributes> {
-  typedef mozilla::gfx::OpacityAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mOpacity);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mOpacity)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::OffsetAttributes> {
-  typedef mozilla::gfx::OffsetAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mValue);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mValue)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::DisplacementMapAttributes> {
-  typedef mozilla::gfx::DisplacementMapAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mScale);
-    WriteParam(aWriter, aParam.mXChannel);
-    WriteParam(aWriter, aParam.mYChannel);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mScale) ||
-        !ReadParam(aReader, &aResult->mXChannel) ||
-        !ReadParam(aReader, &aResult->mYChannel)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::TurbulenceAttributes> {
-  typedef mozilla::gfx::TurbulenceAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mOffset);
-    WriteParam(aWriter, aParam.mBaseFrequency);
-    WriteParam(aWriter, aParam.mSeed);
-    WriteParam(aWriter, aParam.mOctaves);
-    WriteParam(aWriter, aParam.mStitchable);
-    WriteParam(aWriter, aParam.mType);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mOffset) ||
-        !ReadParam(aReader, &aResult->mBaseFrequency) ||
-        !ReadParam(aReader, &aResult->mSeed) ||
-        !ReadParam(aReader, &aResult->mOctaves) ||
-        !ReadParam(aReader, &aResult->mStitchable) ||
-        !ReadParam(aReader, &aResult->mType)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::ImageAttributes> {
-  typedef mozilla::gfx::ImageAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mFilter);
-    WriteParam(aWriter, aParam.mInputIndex);
-    WriteParam(aWriter, aParam.mTransform);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mFilter) ||
-        !ReadParam(aReader, &aResult->mInputIndex) ||
-        !ReadParam(aReader, &aResult->mTransform)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::GaussianBlurAttributes> {
-  typedef mozilla::gfx::GaussianBlurAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mStdDeviation);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mStdDeviation)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::DropShadowAttributes> {
-  typedef mozilla::gfx::DropShadowAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mStdDeviation);
-    WriteParam(aWriter, aParam.mOffset);
-    WriteParam(aWriter, aParam.mColor);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mStdDeviation) ||
-        !ReadParam(aReader, &aResult->mOffset) ||
-        !ReadParam(aReader, &aResult->mColor)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::ColorMatrixAttributes> {
-  typedef mozilla::gfx::ColorMatrixAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mType);
-    WriteParam(aWriter, aParam.mValues);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mType) ||
-        !ReadParam(aReader, &aResult->mValues)) {
-      return false;
-    }
-    return true;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::BlendAttributes, mBlendMode);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::MorphologyAttributes, mOperator,
+                                  mRadii);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::FloodAttributes, mColor);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::OpacityAttributes, mOpacity);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::OffsetAttributes, mValue);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::DisplacementMapAttributes,
+                                  mScale, mXChannel, mYChannel);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::TurbulenceAttributes, mOffset,
+                                  mBaseFrequency, mSeed, mOctaves, mStitchable,
+                                  mType);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::ImageAttributes, mFilter,
+                                  mInputIndex, mTransform);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::GaussianBlurAttributes,
+                                  mStdDeviation);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::DropShadowAttributes,
+                                  mStdDeviation, mOffset, mColor);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::ColorMatrixAttributes, mType,
+                                  mValues);
 
 template <>
 struct ParamTraits<mozilla::gfx::ComponentTransferAttributes> {
@@ -1014,160 +756,31 @@ struct ParamTraits<mozilla::gfx::ComponentTransferAttributes> {
   }
 };
 
-template <>
-struct ParamTraits<mozilla::gfx::ConvolveMatrixAttributes> {
-  typedef mozilla::gfx::ConvolveMatrixAttributes paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::ConvolveMatrixAttributes,
+                                  mKernelSize, mKernelMatrix, mDivisor, mBias,
+                                  mTarget, mEdgeMode, mKernelUnitLength,
+                                  mPreserveAlpha);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::DiffuseLightingAttributes,
+                                  mLightType, mLightValues, mSurfaceScale,
+                                  mKernelUnitLength, mColor, mLightingConstant,
+                                  mSpecularExponent);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::SpecularLightingAttributes,
+                                  mLightType, mLightValues, mSurfaceScale,
+                                  mKernelUnitLength, mColor, mLightingConstant,
+                                  mSpecularExponent);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::CompositeAttributes, mOperator,
+                                  mCoefficients);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mKernelSize);
-    WriteParam(aWriter, aParam.mKernelMatrix);
-    WriteParam(aWriter, aParam.mDivisor);
-    WriteParam(aWriter, aParam.mBias);
-    WriteParam(aWriter, aParam.mTarget);
-    WriteParam(aWriter, aParam.mEdgeMode);
-    WriteParam(aWriter, aParam.mKernelUnitLength);
-    WriteParam(aWriter, aParam.mPreserveAlpha);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mKernelSize) ||
-        !ReadParam(aReader, &aResult->mKernelMatrix) ||
-        !ReadParam(aReader, &aResult->mDivisor) ||
-        !ReadParam(aReader, &aResult->mBias) ||
-        !ReadParam(aReader, &aResult->mTarget) ||
-        !ReadParam(aReader, &aResult->mEdgeMode) ||
-        !ReadParam(aReader, &aResult->mKernelUnitLength) ||
-        !ReadParam(aReader, &aResult->mPreserveAlpha)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::DiffuseLightingAttributes> {
-  typedef mozilla::gfx::DiffuseLightingAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mLightType);
-    WriteParam(aWriter, aParam.mLightValues);
-    WriteParam(aWriter, aParam.mSurfaceScale);
-    WriteParam(aWriter, aParam.mKernelUnitLength);
-    WriteParam(aWriter, aParam.mColor);
-    WriteParam(aWriter, aParam.mLightingConstant);
-    WriteParam(aWriter, aParam.mSpecularExponent);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mLightType) ||
-        !ReadParam(aReader, &aResult->mLightValues) ||
-        !ReadParam(aReader, &aResult->mSurfaceScale) ||
-        !ReadParam(aReader, &aResult->mKernelUnitLength) ||
-        !ReadParam(aReader, &aResult->mColor) ||
-        !ReadParam(aReader, &aResult->mLightingConstant) ||
-        !ReadParam(aReader, &aResult->mSpecularExponent)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::SpecularLightingAttributes> {
-  typedef mozilla::gfx::SpecularLightingAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mLightType);
-    WriteParam(aWriter, aParam.mLightValues);
-    WriteParam(aWriter, aParam.mSurfaceScale);
-    WriteParam(aWriter, aParam.mKernelUnitLength);
-    WriteParam(aWriter, aParam.mColor);
-    WriteParam(aWriter, aParam.mLightingConstant);
-    WriteParam(aWriter, aParam.mSpecularExponent);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mLightType) ||
-        !ReadParam(aReader, &aResult->mLightValues) ||
-        !ReadParam(aReader, &aResult->mSurfaceScale) ||
-        !ReadParam(aReader, &aResult->mKernelUnitLength) ||
-        !ReadParam(aReader, &aResult->mColor) ||
-        !ReadParam(aReader, &aResult->mLightingConstant) ||
-        !ReadParam(aReader, &aResult->mSpecularExponent)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::CompositeAttributes> {
-  typedef mozilla::gfx::CompositeAttributes paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mOperator);
-    WriteParam(aWriter, aParam.mCoefficients);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mOperator) ||
-        !ReadParam(aReader, &aResult->mCoefficients)) {
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::gfx::Glyph> {
-  typedef mozilla::gfx::Glyph paramType;
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mIndex);
-    WriteParam(aWriter, aParam.mPosition);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return (ReadParam(aReader, &aResult->mIndex) &&
-            ReadParam(aReader, &aResult->mPosition));
-  }
-};
-
-template <typename T, size_t Length>
-struct ParamTraits<mozilla::Array<T, Length>> {
-  typedef mozilla::Array<T, Length> paramType;
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    for (size_t i = 0; i < Length; i++) {
-      WriteParam(aWriter, aParam[i]);
-    }
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    for (size_t i = 0; i < Length; i++) {
-      if (!ReadParam<T>(aReader, &aResult->operator[](i))) {
-        return false;
-      }
-    }
-    return true;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::Glyph, mIndex, mPosition);
 
 template <>
 struct ParamTraits<mozilla::SideBits>
     : public BitFlagsEnumSerializer<mozilla::SideBits,
                                     mozilla::SideBits::eAll> {};
 
-template <>
-struct ParamTraits<gfxSparseBitSet> {
-  typedef gfxSparseBitSet paramType;
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mBlockIndex);
-    WriteParam(aWriter, aParam.mBlocks);
-  }
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mBlockIndex) &&
-           ReadParam(aReader, &aResult->mBlocks);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(gfxSparseBitSet, mBlockIndex, mBlocks);
+
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(gfxSparseBitSet::BlockIndex, mIndex);
 
 template <>
 struct ParamTraits<gfxSparseBitSet::Block> {
@@ -1187,36 +800,24 @@ struct ParamTraits<FontVisibility>
                                       FontVisibility::Count> {};
 
 template <>
-struct ParamTraits<mozilla::fontlist::Pointer> {
-  typedef mozilla::fontlist::Pointer paramType;
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    uint32_t v = aParam.mBlockAndOffset;
-    WriteParam(aWriter, v);
-  }
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    uint32_t v;
-    if (ReadParam(aReader, &v)) {
-      aResult->mBlockAndOffset.store(v);
-      return true;
-    }
-    return false;
-  }
+struct ParamTraits<mozilla::gfx::CrossProcessPaintFlags>
+    : public BitFlagsEnumSerializer<mozilla::gfx::CrossProcessPaintFlags,
+                                    mozilla::gfx::kAllCrossProcessPaintFlags> {
 };
 
-}  // namespace IPC
-
-namespace mozilla {
-namespace ipc {
-
 template <>
-struct IPDLParamTraits<gfx::PaintFragment> {
+struct ParamTraits<mozilla::gfx::PaintFragment> {
   typedef mozilla::gfx::PaintFragment paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    paramType&& aParam) {
-    Shmem shmem;
+  static void Write(IPC::MessageWriter* aWriter, paramType&& aParam) {
+    if (!aWriter->GetActor()) {
+      aWriter->FatalError("Need an actor");
+      return;
+    }
+
+    mozilla::ipc::Shmem shmem;
     if (aParam.mSize.IsEmpty() ||
-        !aActor->AllocShmem(aParam.mRecording.mLen, &shmem)) {
-      WriteParam(aWriter, gfx::IntSize(0, 0));
+        !aWriter->GetActor()->AllocShmem(aParam.mRecording.mLen, &shmem)) {
+      WriteParam(aWriter, mozilla::gfx::IntSize(0, 0));
       return;
     }
 
@@ -1224,57 +825,59 @@ struct IPDLParamTraits<gfx::PaintFragment> {
            aParam.mRecording.mLen);
 
     WriteParam(aWriter, aParam.mSize);
-    WriteIPDLParam(aWriter, aActor, std::move(shmem));
+    WriteParam(aWriter, std::move(shmem));
     WriteParam(aWriter, aParam.mDependencies);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
+  static bool Read(IPC::MessageReader* aReader, paramType* aResult) {
+    if (!aReader->GetActor()) {
+      return false;
+    }
     if (!ReadParam(aReader, &aResult->mSize)) {
       return false;
     }
     if (aResult->mSize.IsEmpty()) {
       return true;
     }
-    Shmem shmem;
-    if (!ReadIPDLParam(aReader, aActor, &shmem) ||
+    mozilla::ipc::Shmem shmem;
+    if (!ReadParam(aReader, &shmem) ||
         !ReadParam(aReader, &aResult->mDependencies)) {
-      aActor->DeallocShmem(shmem);
+      aReader->GetActor()->DeallocShmem(shmem);
       return false;
     }
 
     if (!aResult->mRecording.Allocate(shmem.Size<uint8_t>())) {
       aResult->mSize.SizeTo(0, 0);
-      aActor->DeallocShmem(shmem);
+      aReader->GetActor()->DeallocShmem(shmem);
       return true;
     }
 
     memcpy(aResult->mRecording.mData, shmem.get<uint8_t>(),
            shmem.Size<uint8_t>());
-    aActor->DeallocShmem(shmem);
+    aReader->GetActor()->DeallocShmem(shmem);
     return true;
   }
 };
 
 template <>
-struct IPDLParamTraits<gfx::FileHandleWrapper*> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    gfx::FileHandleWrapper* aParam) {
+struct ParamTraits<mozilla::gfx::FileHandleWrapper*> {
+  static void Write(MessageWriter* aWriter,
+                    mozilla::gfx::FileHandleWrapper* aParam) {
     if (!aParam) {
-      WriteIPDLParam(aWriter, aActor, false);
+      WriteParam(aWriter, false);
       return;
     }
-    WriteIPDLParam(aWriter, aActor, true);
+    WriteParam(aWriter, true);
 
     mozilla::ipc::FileDescriptor desc(aParam->GetHandle());
-    WriteIPDLParam(aWriter, aActor, desc);
+    WriteParam(aWriter, desc);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   RefPtr<gfx::FileHandleWrapper>* aResult) {
+  static bool Read(MessageReader* aReader,
+                   RefPtr<mozilla::gfx::FileHandleWrapper>* aResult) {
     *aResult = nullptr;
     bool notnull = false;
-    if (!ReadIPDLParam(aReader, aActor, &notnull)) {
+    if (!ReadParam(aReader, &notnull)) {
       return false;
     }
 
@@ -1283,17 +886,16 @@ struct IPDLParamTraits<gfx::FileHandleWrapper*> {
     }
 
     mozilla::ipc::FileDescriptor desc;
-    if (!ReadIPDLParam(aReader, aActor, &desc)) {
+    if (!ReadParam(aReader, &desc)) {
       return false;
     }
-    auto wrapper =
-        MakeRefPtr<gfx::FileHandleWrapper>(desc.TakePlatformHandle());
+    auto wrapper = mozilla::MakeRefPtr<mozilla::gfx::FileHandleWrapper>(
+        desc.TakePlatformHandle());
     *aResult = std::move(wrapper);
     return true;
   }
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
-#endif /* __GFXMESSAGEUTILS_H__ */
+#endif /* GFXMESSAGEUTILS_H_ */

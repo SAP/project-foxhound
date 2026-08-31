@@ -375,6 +375,8 @@ $schema: moz://mozilla.org/schemas/glean/tags/1-0-0
   description: The Bugzilla component which applies to this object.
 'Firefox :: Settings UI':
   description: The Bugzilla component which applies to this object.
+'Firefox :: Sharing':
+  description: The Bugzilla component which applies to this object.
 'Firefox :: Shell Integration':
   description: The Bugzilla component which applies to this object.
 'Firefox :: Sidebar':

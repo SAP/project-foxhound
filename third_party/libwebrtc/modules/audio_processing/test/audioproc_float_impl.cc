@@ -28,8 +28,9 @@
 #include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/audio/echo_canceller3_config.h"
-#include "api/audio/echo_canceller3_factory.h"
 #include "api/audio/echo_detector_creator.h"
+#include "api/audio/neural_residual_echo_estimator.h"
+#include "api/audio/neural_residual_echo_estimator_creator.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/field_trials.h"
@@ -40,6 +41,8 @@
 #include "modules/audio_processing/test/echo_canceller3_config_json.h"
 #include "modules/audio_processing/test/wav_based_simulator.h"
 #include "rtc_base/checks.h"
+#include "third_party/tflite/src/tensorflow/lite/kernels/register.h"
+#include "third_party/tflite/src/tensorflow/lite/model_builder.h"
 
 constexpr int kParameterNotSpecifiedValue = -10000;
 
@@ -78,10 +81,6 @@ ABSL_FLAG(int,
           aec,
           kParameterNotSpecifiedValue,
           "Activate (1) or deactivate (0) the echo canceller");
-ABSL_FLAG(int,
-          aecm,
-          kParameterNotSpecifiedValue,
-          "Activate (1) or deactivate (0) the mobile echo controller");
 ABSL_FLAG(int,
           ed,
           kParameterNotSpecifiedValue,
@@ -133,6 +132,11 @@ ABSL_FLAG(bool,
           false,
           "Activate all of the default components (will be overridden by any "
           "other settings)");
+ABSL_FLAG(int,
+          use_adaptive_stereo_downmixing_for_aec,
+          kParameterNotSpecifiedValue,
+          "Activate (1) or deactivate (0) adaptive downmixing for stereo "
+          "microphones when aec is active");
 ABSL_FLAG(int,
           analog_agc_use_digital_adaptive_controller,
           kParameterNotSpecifiedValue,
@@ -337,6 +341,12 @@ ABSL_FLAG(std::string,
           "E.g. running with --force_fieldtrials=WebRTC-FooFeature/Enable/"
           " will assign the group Enable to field trial WebRTC-FooFeature.");
 
+ABSL_FLAG(std::string,
+          ree_model,
+          "",
+          "When running with a neural residual echo estimator, the path to the "
+          "model binary.");
+
 namespace webrtc {
 namespace test {
 namespace {
@@ -390,7 +400,6 @@ SimulationSettings CreateSettings() {
     settings.use_agc2 = false;
     settings.use_pre_amplifier = false;
     settings.use_aec = true;
-    settings.use_aecm = false;
     settings.use_ed = false;
   }
   SetSettingIfSpecified(absl::GetFlag(FLAGS_dump_input),
@@ -416,7 +425,6 @@ SimulationSettings CreateSettings() {
   SetSettingIfSpecified(absl::GetFlag(FLAGS_reverse_output_sample_rate_hz),
                         &settings.reverse_output_sample_rate_hz);
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_aec), &settings.use_aec);
-  SetSettingIfFlagSet(absl::GetFlag(FLAGS_aecm), &settings.use_aecm);
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_ed), &settings.use_ed);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_ed_graph),
                         &settings.ed_graph_output_filename);
@@ -492,6 +500,9 @@ SimulationSettings CreateSettings() {
   settings.report_performance = absl::GetFlag(FLAGS_performance_report);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_performance_report_output_file),
                         &settings.performance_report_output_filename);
+  SetSettingIfFlagSet(
+      absl::GetFlag(FLAGS_use_adaptive_stereo_downmixing_for_aec),
+      &settings.use_adaptive_stereo_downmixing_for_aec);
   settings.use_verbose_logging = absl::GetFlag(FLAGS_verbose);
   settings.use_quiet_output = absl::GetFlag(FLAGS_quiet);
   settings.report_bitexactness = absl::GetFlag(FLAGS_bitexactness_report);
@@ -534,6 +545,8 @@ SimulationSettings CreateSettings() {
 
   SetSettingIfSpecified(absl::GetFlag(FLAGS_init_to_process),
                         &settings.init_to_process);
+  SetSettingIfSpecified(absl::GetFlag(FLAGS_ree_model),
+                        &settings.neural_echo_residual_estimator_model);
 
   return settings;
 }
@@ -552,11 +565,6 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
         "Error: The aec dump file cannot be specified "
         "together with input wav files!\n");
 
-    ReportConditionalErrorAndExit(
-        !!settings.aec_dump_input_string,
-        "Error: The aec dump input string cannot be specified "
-        "together with input wav files!\n");
-
     ReportConditionalErrorAndExit(!!settings.artificial_nearend_filename,
                                   "Error: The artificial nearend cannot be "
                                   "specified together with input wav files!\n");
@@ -572,24 +580,14 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
         "must be specified if the reverse output wav filename is specified!\n");
   } else {
     ReportConditionalErrorAndExit(
-        !settings.aec_dump_input_filename && !settings.aec_dump_input_string,
-        "Error: Either the aec dump input file, the wav "
-        "input file or the aec dump input string must be specified!\n");
-    ReportConditionalErrorAndExit(
-        settings.aec_dump_input_filename && settings.aec_dump_input_string,
-        "Error: The aec dump input file cannot be specified together with the "
-        "aec dump input string!\n");
+        !settings.aec_dump_input_filename,
+        "Error: The aec dump input file must be specified!\n");
   }
 
   ReportConditionalErrorAndExit(settings.use_aec && !(*settings.use_aec) &&
                                     settings.linear_aec_output_filename,
                                 "Error: The linear AEC ouput filename cannot "
                                 "be specified without the AEC being active");
-
-  ReportConditionalErrorAndExit(
-      settings.use_aec && *settings.use_aec && settings.use_aecm &&
-          *settings.use_aecm,
-      "Error: The AEC and the AECM cannot be activated at the same time!\n");
 
   ReportConditionalErrorAndExit(
       settings.output_sample_rate_hz && *settings.output_sample_rate_hz <= 0,
@@ -779,30 +777,39 @@ EchoCanceller3Config ReadAec3ConfigFromJsonFile(absl::string_view filename) {
 }
 
 void SetDependencies(const SimulationSettings& settings,
-                     BuiltinAudioProcessingBuilder& builder) {
-  // Create and set an EchoCanceller3Factory if needed.
-  if (settings.use_aec && *settings.use_aec) {
-    EchoCanceller3Config cfg;
-    if (settings.aec_settings_filename) {
-      if (settings.use_verbose_logging) {
-        std::cout << "Reading AEC Parameters from JSON input." << std::endl;
-      }
-      cfg = ReadAec3ConfigFromJsonFile(*settings.aec_settings_filename);
-    }
-
-    if (settings.linear_aec_output_filename) {
-      cfg.filter.export_linear_aec_output = true;
-    }
-
-    if (settings.print_aec_parameter_values) {
-      if (!settings.use_quiet_output) {
-        std::cout << "AEC settings:" << std::endl;
-      }
-      std::cout << Aec3ConfigToJsonString(cfg) << std::endl;
-    }
-
-    builder.SetEchoControlFactory(std::make_unique<EchoCanceller3Factory>(cfg));
+                     BuiltinAudioProcessingBuilder& builder,
+                     AudioProcessingBuilderState& builder_state) {
+  EchoCanceller3Config aec3_config;
+  if (settings.neural_echo_residual_estimator_model) {
+    tflite::ops::builtin::BuiltinOpResolver op_resolver;
+    builder_state.model = tflite::FlatBufferModel::BuildFromFile(
+        (*settings.neural_echo_residual_estimator_model).c_str());
+    RTC_CHECK(builder_state.model);
+    std::unique_ptr<NeuralResidualEchoEstimator> estimator =
+        CreateNeuralResidualEchoEstimator(builder_state.model.get(),
+                                          &op_resolver);
+    RTC_CHECK(estimator);
+    builder.SetNeuralResidualEchoEstimator(std::move(estimator));
   }
+
+  if (settings.aec_settings_filename) {
+    if (settings.use_verbose_logging) {
+      std::cout << "Reading AEC Parameters from JSON input." << std::endl;
+    }
+    aec3_config = ReadAec3ConfigFromJsonFile(*settings.aec_settings_filename);
+  }
+
+  if (settings.linear_aec_output_filename) {
+    aec3_config.filter.export_linear_aec_output = true;
+  }
+
+  if (settings.print_aec_parameter_values) {
+    if (!settings.use_quiet_output) {
+      std::cout << "AEC settings:" << std::endl;
+    }
+    std::cout << Aec3ConfigToJsonString(aec3_config) << std::endl;
+  }
+  builder.SetEchoCancellerConfig(aec3_config, std::nullopt);
 
   if (settings.use_ed && *settings.use_ed) {
     builder.SetEchoDetector(CreateEchoDetector());
@@ -810,7 +817,7 @@ void SetDependencies(const SimulationSettings& settings,
 }
 
 int RunSimulation(
-    absl::Nonnull<std::unique_ptr<AudioProcessingBuilderInterface>> ap_builder,
+    absl_nonnull std::unique_ptr<AudioProcessingBuilderInterface> ap_builder,
     bool builtin_builder_provided,
     int argc,
     char* argv[]) {
@@ -824,9 +831,11 @@ int RunSimulation(
 
   SimulationSettings settings = CreateSettings();
   PerformBasicParameterSanityChecks(settings);
+  AudioProcessingBuilderState ap_builder_state;
   if (builtin_builder_provided) {
     SetDependencies(settings,
-                    static_cast<BuiltinAudioProcessingBuilder&>(*ap_builder));
+                    static_cast<BuiltinAudioProcessingBuilder&>(*ap_builder),
+                    ap_builder_state);
   } else {
     CheckSettingsForBuiltinBuilderAreUnused(settings);
   }
@@ -834,7 +843,7 @@ int RunSimulation(
   RTC_CHECK(audio_processing);
 
   std::unique_ptr<AudioProcessingSimulator> processor;
-  if (settings.aec_dump_input_filename || settings.aec_dump_input_string) {
+  if (settings.aec_dump_input_filename) {
     processor = std::make_unique<AecDumpBasedSimulator>(
         settings, std::move(audio_processing));
   } else {
@@ -869,7 +878,7 @@ int RunSimulation(
 }  // namespace
 
 int AudioprocFloatImpl(
-    absl::Nonnull<std::unique_ptr<BuiltinAudioProcessingBuilder>> ap_builder,
+    absl_nonnull std::unique_ptr<BuiltinAudioProcessingBuilder> ap_builder,
     int argc,
     char* argv[]) {
   return RunSimulation(std::move(ap_builder), /*builtin_builder_provided=*/true,
@@ -877,7 +886,7 @@ int AudioprocFloatImpl(
 }
 
 int AudioprocFloatImpl(
-    absl::Nonnull<std::unique_ptr<AudioProcessingBuilderInterface>> ap_builder,
+    absl_nonnull std::unique_ptr<AudioProcessingBuilderInterface> ap_builder,
     int argc,
     char* argv[]) {
   return RunSimulation(std::move(ap_builder),

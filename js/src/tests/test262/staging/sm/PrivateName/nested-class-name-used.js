@@ -2,9 +2,6 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 description: |
   pending
 esid: pending
@@ -32,12 +29,9 @@ class A {
   }
 };
 
-a = new A;
-try {
+var a = new A;
+assert.throws(TypeError, function() {
   a.g();
-} catch (e) {
-  assert.sameValue(e instanceof TypeError, true);
-}
-
+});
 
 reportCompare(0, 0);

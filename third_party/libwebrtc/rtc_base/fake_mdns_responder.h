@@ -11,8 +11,8 @@
 #ifndef RTC_BASE_FAKE_MDNS_RESPONDER_H_
 #define RTC_BASE_FAKE_MDNS_RESPONDER_H_
 
+#include <cstdint>
 #include <map>
-#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
@@ -28,7 +28,7 @@ namespace webrtc {
 class FakeMdnsResponder : public MdnsResponderInterface {
  public:
   explicit FakeMdnsResponder(Thread* thread) : thread_(thread) {}
-  ~FakeMdnsResponder() = default;
+  ~FakeMdnsResponder() override = default;
 
   void CreateNameForAddress(const IPAddress& addr,
                             NameCreatedCallback callback) override {

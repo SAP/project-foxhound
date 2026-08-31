@@ -2,7 +2,7 @@
 Inspecting server-sent events
 =============================
 
-`Server-sent events <https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events>`_ allow for an inversion of the traditional client-initiated web request model, with a server sending new data to a web page at any time by pushing messages. From Firefox 82 onwards, you can inspect server-sent events and their message contents using the :doc:`Network Monitor <../index>`. This article shows you how.
+`Server-sent events <https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events>`_ allow for an inversion of the traditional client-initiated web request model, with a server sending new data to a web page at any time by pushing messages. You can inspect server-sent events and their message contents using the :doc:`Network Monitor <../index>`. This article shows you how.
 
 Inspecting the SSE network activity
 ***********************************

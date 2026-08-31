@@ -59,17 +59,7 @@ fi
 
 # Logic for macosx64
 if [[ $(uname -s) == "Darwin" ]]; then
-  # Modify the config with fetched sdk path
-  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX15.4.sdk"
-
-  # Avoid mixing up the system python and toolchain python in the
-  # python path configuration
-  # https://bugs.python.org/issue22490
-  unset __PYVENV_LAUNCHER__
-
-  # Set the SDK path for build, which is technically a higher version
-  # than what is associated with the current OS version (10.15).
-  # This should work as long as MACOSX_DEPLOYMENT_TARGET is set correctly
+  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX26.5.sdk"
   CONFIG=$(echo $CONFIG mac_sdk_path='"'$MACOS_SYSROOT'"')
 
   # Ensure we don't use ARM64 profdata with this unique sub string
@@ -94,8 +84,8 @@ if [[ $(uname -o) == "Msys" ]]; then
   # Setup some environment variables for chromium build scripts
   export DEPOT_TOOLS_WIN_TOOLCHAIN=0
   export GYP_MSVS_OVERRIDE_PATH="$MOZ_FETCHES_DIR/VS"
-  export GYP_MSVS_VERSION=2022
-  export vs2022_install="$MOZ_FETCHES_DIR/VS"
+  export GYP_MSVS_VERSION=2026
+  export vs2026_install="$MOZ_FETCHES_DIR/VS"
   export WINDOWSSDKDIR="$MOZ_FETCHES_DIR/VS/Windows Kits/10"
   export DEPOT_TOOLS_UPDATE=1
   export GCLIENT_PY3=1
@@ -111,7 +101,9 @@ if [[ $(uname -o) == "Msys" ]]; then
   pushd "$WINDOWSSDKDIR"
   mkdir -p Debuggers/x64/
   popd
-  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.40.33807/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
+  MSVC_REDIST_VERSION=$(ls "$MOZ_FETCHES_DIR/VS/VC/Redist/MSVC" | grep -E '^[0-9]' | sort -V | tail -1)
+  [[ -n "$MSVC_REDIST_VERSION" ]] || { echo "ERROR: no numeric MSVC redist version found"; exit 1; }
+  mv "$MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/$MSVC_REDIST_VERSION/x64"/Microsoft.VC*.CRT/* chrome_dll/system32/
   mv "$WINDOWSSDKDIR/App Certification Kit/"* "$WINDOWSSDKDIR"/Debuggers/x64/
   export WINDIR="$PWD/chrome_dll"
 
@@ -150,6 +142,11 @@ if [[ $(uname -o) == "Msys" ]]; then
   # This is ok because we are not doing any development here and don't need
   # the development history, but this file is still needed to proceed.
   python3 build/util/lastchange.py -o build/util/LASTCHANGE
+
+  # Override the SDK version hardcoded upstream to match our fetched Windows SDK.
+  echo "Using Windows SDK version: ${SDK_VERSION}"
+  sed -i "s/SDK_VERSION = '[0-9.]*'/SDK_VERSION = '${SDK_VERSION}'/" build/vs_toolchain.py
+  sed -i "s/SDK_VERSION = '[0-9.]*'/SDK_VERSION = '${SDK_VERSION}'/" build/toolchain/win/setup_toolchain.py
 fi
 
 if [[ $(uname -s) == "Linux" ]] || [[ $(uname -s) == "Darwin" ]]; then
@@ -194,6 +191,15 @@ fi
 CONFIG=$(echo $CONFIG pgo_data_path='"'$PGO_FILE'"')
 
 # Set up then build chrome
+if [[ $(uname -s) == "Darwin" ]]; then
+  # Bug 2045375: build/config/mac/BUILD.gn's sdk_inputs action declares SDK
+  # files as outputs so RBE remote workers can access them. We don't use RBE,
+  # and GN rejects the action when mac_sdk_path is outside root_build_dir.
+  sed -i '' 's/if (use_system_xcode && current_toolchain == default_toolchain)/if (false)/' build/config/mac/BUILD.gn
+  grep -q 'use_system_xcode && current_toolchain == default_toolchain' build/config/mac/BUILD.gn && \
+    { echo "ERROR: sdk_inputs patch failed - upstream BUILD.gn may have changed"; exit 1; }
+fi
+
 gn gen out/Default --args="$CONFIG"
 autoninja -C out/Default $FINAL_BIN
 
@@ -221,3 +227,12 @@ tar -c chromium | python3 $GECKO_PATH/taskcluster/scripts/misc/zstdpy > $ARTIFAC
 
 mkdir -p $UPLOAD_DIR
 mv "$ARTIFACT_NAME" "$UPLOAD_DIR"
+
+if [ "$IS_ANDROID" = true ]; then
+  # Package up symbols (lib.unstripped) from android build separately.
+  SYM_ARTIFACT="car_android_symbols.tar.zst"
+  SYM_DIR="src/out/Default/lib.unstripped"
+  tar -C "$(dirname "$SYM_DIR")" -c "$(basename "$SYM_DIR")" \
+    | python3 "$GECKO_PATH/taskcluster/scripts/misc/zstdpy" > "$SYM_ARTIFACT"
+  mv "$SYM_ARTIFACT" "$UPLOAD_DIR"
+fi

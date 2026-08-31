@@ -1,42 +1,38 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "StorageDBThread.h"
 
+#include "GeckoProfiler.h"
+#include "LocalStorageCache.h"
+#include "LocalStorageManager.h"
 #include "StorageCommon.h"
 #include "StorageDBUpdater.h"
 #include "StorageUtils.h"
-#include "LocalStorageCache.h"
-#include "LocalStorageManager.h"
-
-#include "nsComponentManagerUtils.h"
-#include "nsDirectoryServiceUtils.h"
-#include "nsAppDirectoryServiceDefs.h"
-#include "nsThreadUtils.h"
-#include "nsProxyRelease.h"
+#include "mozIStorageBindingParams.h"
+#include "mozIStorageFunction.h"
+#include "mozIStorageService.h"
+#include "mozIStorageValueArray.h"
 #include "mozStorageCID.h"
 #include "mozStorageHelper.h"
-#include "mozIStorageService.h"
-#include "mozIStorageBindingParams.h"
-#include "mozIStorageValueArray.h"
-#include "mozIStorageFunction.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/glean/DomStorageMetrics.h"
-#include "mozilla/ipc/BackgroundParent.h"
-#include "nsIObserverService.h"
-#include "nsThread.h"
-#include "nsThreadManager.h"
-#include "nsVariant.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/OriginAttributes.h"
-#include "mozilla/ThreadEventQueue.h"
 #include "mozilla/Services.h"
+#include "mozilla/ThreadEventQueue.h"
 #include "mozilla/Tokenizer.h"
-#include "GeckoProfiler.h"
+#include "mozilla/ipc/BackgroundParent.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsComponentManagerUtils.h"
+#include "nsDirectoryServiceUtils.h"
+#include "nsIObserverService.h"
+#include "nsProxyRelease.h"
+#include "nsThread.h"
+#include "nsThreadManager.h"
+#include "nsThreadUtils.h"
+#include "nsVariant.h"
 
 // How long we collect write oprerations
 // before they are flushed to the database
@@ -249,8 +245,6 @@ nsresult StorageDBThread::Shutdown() {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  auto timer = glean::localdomstorage::shutdown_database.Measure();
-
   {
     MonitorAutoLock monitor(mThreadObserver->GetMonitor());
 
@@ -407,7 +401,7 @@ void StorageDBThread::SetDefaultPriority() {
 void StorageDBThread::ThreadFunc(void* aArg) {
   {
     auto queue = MakeRefPtr<ThreadEventQueue>(MakeUnique<EventQueue>());
-    Unused << nsThreadManager::get().CreateCurrentThread(queue);
+    (void)nsThreadManager::get().CreateCurrentThread(queue);
   }
 
   AUTO_PROFILER_REGISTER_THREAD("localStorage DB");
@@ -801,9 +795,9 @@ class OriginAttrsPatternMatchSQLFunction final : public mozIStorageFunction {
   explicit OriginAttrsPatternMatchSQLFunction(
       OriginAttributesPattern const& aPattern)
       : mPattern(aPattern) {}
+  OriginAttrsPatternMatchSQLFunction() = delete;
 
  private:
-  OriginAttrsPatternMatchSQLFunction() = delete;
   ~OriginAttrsPatternMatchSQLFunction() = default;
 
   OriginAttributesPattern mPattern;

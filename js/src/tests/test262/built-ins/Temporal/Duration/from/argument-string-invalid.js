@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -25,7 +25,30 @@ const tests = [
   "+PT",
   "P1Y1M1W1DT1H1M1.01Sjunk",
   "P-1Y1M",
-  "P1Y-1M"
+  "P1Y-1M",
+  "P2H",
+  "P2.5M",
+  "P2,5M",
+  "P2S",
+  "PT2.H3M",
+  "PT2,H3M",
+  "PT2.H3S",
+  "PT2,H3S",
+  "PT2.H0.5M",
+  "PT2,H0,5M",
+  "PT2.H0.5S",
+  "PT2,H0,5S",
+  "PT2H3.2M3S",
+  "PT2H3,2M3S",
+  "PT2H3.2M0.3S",
+  "PT2H3,2M0,3S",
+  "PT.1H",
+  "PT,1H",
+  "PT.1M",
+  "PT,1M",
+  "PT.1S",
+  "PT,1S",
+  "",
 ];
 
 for (const input of tests) {

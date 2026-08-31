@@ -105,7 +105,7 @@ async function web_controlled_about_blank_helper(id_to_click) {
     info("Waiting for the navigation to a dummy page to complete.");
     await loaded;
 
-    identityIconImageURL = popupWindow.gBrowser.ownerGlobal
+    identityIconImageURL = popupWindow.gBrowser.documentGlobal
       .getComputedStyle(identityIcon)
       .getPropertyValue("list-style-image");
     is(

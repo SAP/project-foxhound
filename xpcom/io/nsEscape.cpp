@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +7,6 @@
 
 #include "nsEscape.h"
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/BinarySearch.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/TextUtils.h"
 #include "nsTArray.h"
@@ -385,6 +381,13 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
          (c >= 0x20 && c < 0x7f && ignoreAscii)) &&
         !(c == ':' && colon) && !(c == ' ' && spaces)) {
       if (writing) {
+        // Foxhound: propagate taint for the copied (non-escaped) character.
+        // Without this, esc_AlwaysCopy callers (e.g. nsStandardURL segment
+        // encoding) drop taint for every character that isn't percent-encoded.
+        if (aTaint.at(i)) {
+          tempTaint.append(
+              TaintRange(tempBufferPos, tempBufferPos + 1, *aTaint.at(i)));
+        }
         tempBuffer[tempBufferPos++] = c;
       }
     } else { /* do the escape magic */

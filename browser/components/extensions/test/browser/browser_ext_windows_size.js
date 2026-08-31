@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 "use strict";
 
@@ -83,7 +81,7 @@ add_task(async function testWindowCreate() {
       }
 
       try {
-        let geom = { left: 100, top: 100, width: 500, height: 300 };
+        let geom = { left: 100, top: 100, width: 550, height: 300 };
 
         let window = await browser.windows.create(geom);
         windowId = window.id;

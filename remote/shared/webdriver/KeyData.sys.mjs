@@ -286,7 +286,7 @@ const KEY_DATA = {
 const lazy = {};
 
 ChromeUtils.defineLazyGetter(lazy, "SHIFT_DATA", () => {
-  // Initalize the shift mapping
+  // Initialize the shift mapping
   const shiftData = new Map();
   const byCode = new Map();
   for (let [key, props] of Object.entries(KEY_DATA)) {

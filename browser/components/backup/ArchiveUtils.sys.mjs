@@ -50,7 +50,7 @@ export const ArchiveUtils = {
    * @type {number}
    */
   get SCHEMA_VERSION() {
-    return 1;
+    return 2;
   },
 
   /**

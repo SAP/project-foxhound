@@ -370,7 +370,6 @@ function startTest() {
 function grabFeatures() {
   var x = document.createElement('iframe');
   x.src = "about:blank";
-  document.body.appendChild(x);
   function setupFeatures(w) {
     for (var name of ["getBoxQuads", "convertQuadFromNode", "convertRectFromNode", "convertPointFromNode"]) {
       w.Text.prototype[name] = x.contentWindow.Text.prototype[name];
@@ -386,6 +385,7 @@ function grabFeatures() {
     setupFeatures(f1.contentWindow);
     runTest();
   };
+  document.body.appendChild(x);
 }
 
 function runTest() {

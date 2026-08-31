@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,9 @@
 #ifndef mozilla_dom_CookieStoreParent_h
 #define mozilla_dom_CookieStoreParent_h
 
-#include "mozilla/dom/PCookieStoreParent.h"
-#include "mozilla/dom/ContentParent.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/PCookieStoreParent.h"
 
 namespace mozilla::dom {
 
@@ -21,7 +19,7 @@ class CookieStoreParent final : public PCookieStoreParent {
  public:
   using GetRequestPromise =
       MozPromise<CopyableTArray<CookieStruct>, nsresult, true>;
-  using SetDeleteRequestPromise = MozPromise<bool, nsresult, true>;
+  using SetDeleteRequestPromise = MozPromise<bool, bool, true>;
   using GetSubscriptionsRequestPromise =
       MozPromise<CopyableTArray<CookieSubscription>, nsresult, true>;
   using SubscribeOrUnsubscribeRequestPromise = MozPromise<bool, nsresult, true>;
@@ -72,7 +70,7 @@ class CookieStoreParent final : public PCookieStoreParent {
   mozilla::ipc::IPCResult RecvClose();
 
   void GetRequestOnMainThread(
-      const RefPtr<nsIURI> aCookieURI,
+      ThreadsafeContentParentHandle* aParent, const RefPtr<nsIURI> aCookieURI,
       const OriginAttributes& aOriginAttributes,
       const Maybe<OriginAttributes>& aPartitionedOriginAttributes,
       bool aThirdPartyContext, bool aPartitionForeign, bool aUsingStorageAccess,
@@ -80,16 +78,22 @@ class CookieStoreParent final : public PCookieStoreParent {
       const nsACString& aPath, bool aOnlyFirstMatch,
       nsTArray<CookieStruct>& aResults);
 
+  enum SetReturnType {
+    eFailure,
+    eSilentFailure,
+    eSuccess,
+  };
+
   // Returns true if a cookie notification has been generated while completing
   // the operation.
-  bool SetRequestOnMainThread(
+  SetReturnType SetRequestOnMainThread(
       ThreadsafeContentParentHandle* aParent, const RefPtr<nsIURI> aCookieURI,
       const nsAString& aDomain, const OriginAttributes& aOriginAttributes,
       bool aThirdPartyContext, bool aPartitionForeign, bool aUsingStorageAccess,
       bool aIsOn3PCBExceptionList, const nsAString& aName,
       const nsAString& aValue, bool aSession, int64_t aExpires,
       const nsAString& aPath, int32_t aSameSite, bool aPartitioned,
-      const nsID& aOperationID);
+      const nsID& aOperationID, bool& aWaitForNotification);
 
   // Returns true if a cookie notification has been generated while completing
   // the operation.

@@ -1,33 +1,32 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/VideoDecoder.h"
-#include "mozilla/dom/VideoDecoderBinding.h"
 
 #include "DecoderTraits.h"
+#include "DecoderTypes.h"
 #include "GPUVideoImage.h"
 #include "H264.h"
 #include "ImageContainer.h"
 #include "MediaContainerType.h"
 #include "MediaData.h"
 #include "VideoUtils.h"
+#include "WebCodecsUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/EncodedVideoChunk.h"
 #include "mozilla/dom/EncodedVideoChunkBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
+#include "mozilla/dom/VideoDecoderBinding.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/dom/WebCodecsUtils.h"
 #include "nsPrintfCString.h"
-#include "nsReadableUtils.h"
 
 #ifdef XP_MACOSX
 #  include "MacIOSurfaceImage.h"
@@ -44,7 +43,7 @@ namespace mozilla::dom {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -100,7 +99,7 @@ RefPtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
     const VideoDecoderConfig& aConfig) {
   nsCString errorMessage;
   if (!VideoDecoderTraits::Validate(aConfig, errorMessage)) {
-    LOGE("Failed to create VideoDecoderConfigInternal: %s", errorMessage.get());
+    LOGE("Failed to create VideoDecoderConfigInternal: {}", errorMessage.get());
     return nullptr;
   }
 
@@ -110,7 +109,7 @@ RefPtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
     if (rv.isErr()) {  // Invalid description data.
       LOGE(
           "Failed to create VideoDecoderConfigInternal due to invalid "
-          "description data. Error: 0x%08" PRIx32,
+          "description data. Error: 0x{:08x}",
           static_cast<uint32_t>(rv.unwrapErr()));
       return nullptr;
     }
@@ -574,7 +573,7 @@ bool VideoDecoderTraits::IsSupported(
 /* static */
 Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
     const VideoDecoderConfigInternal& aConfig) {
-  LOG("Create a VideoInfo from %s config", aConfig.ToString().get());
+  LOG("Create a VideoInfo from {} config", aConfig.ToString().get());
 
   nsTArray<UniquePtr<TrackInfo>> tracks = GetTracksInfo(aConfig);
   if (tracks.Length() != 1 || tracks[0]->GetType() != TrackInfo::kVideoTrack) {
@@ -640,7 +639,7 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
       if (vi->mColorPrimaries.isSome()) {
         if (vi->mColorPrimaries.value() != primaries) {
           LOG("Conflict between decoder config and codec string, keeping codec "
-              "string primaries of %d",
+              "string primaries of {}",
               static_cast<int>(primaries));
         }
       } else {
@@ -648,11 +647,11 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
       }
     }
     if (colorSpace.mTransfer.isSome()) {
-      auto primaries = ToTransferFunction(colorSpace.mTransfer.value());
+      auto transferFunction = ToTransferFunction(colorSpace.mTransfer.value());
       if (vi->mTransferFunction.isSome()) {
-        if (vi->mTransferFunction.value() != primaries) {
+        if (vi->mTransferFunction.value() != transferFunction) {
           LOG("Conflict between decoder config and codec string, keeping codec "
-              "string transfer function of %d",
+              "string transfer function of {}",
               static_cast<int>(vi->mTransferFunction.value()));
         }
       } else {
@@ -664,7 +663,7 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
 
   if (aConfig.mDescription) {
     if (!aConfig.mDescription->IsEmpty()) {
-      LOG("The given config has %zu bytes of description data",
+      LOG("The given config has {} bytes of description data",
           aConfig.mDescription->Length());
       if (vi->mExtraData) {
         LOGW("The default extra data is overwritten");
@@ -679,7 +678,7 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
       if (H264::DecodeSPSFromExtraData(vi->mExtraData.get(), spsdata) &&
           spsdata.pic_width > 0 && spsdata.pic_height > 0 &&
           H264::EnsureSPSIsSane(spsdata)) {
-        LOG("H264 sps data - pic size: %d x %d, display size: %d x %d",
+        LOG("H264 sps data - pic size: {} x {}, display size: {} x {}",
             spsdata.pic_width, spsdata.pic_height, spsdata.display_width,
             spsdata.display_height);
 
@@ -703,7 +702,7 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
     vi->mExtraData = new MediaByteBuffer();
   }
 
-  LOG("Created a VideoInfo for decoder - %s", vi->ToString().get());
+  LOG("Created a VideoInfo for decoder - {}", vi->ToString().get());
 
   return track;
 }
@@ -715,7 +714,7 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
   Maybe<nsString> codec = ParseCodecString(aConfig.mCodec);
   if (!codec || codec->IsEmpty()) {
     aErrorMessage.AssignLiteral("Invalid codec string");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -723,13 +722,13 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
     aErrorMessage.AppendPrintf(
         "Missing coded %s",
         aConfig.mCodedWidth.WasPassed() ? "height" : "width");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
   if (aConfig.mCodedWidth.WasPassed() &&
       (aConfig.mCodedWidth.Value() == 0 || aConfig.mCodedHeight.Value() == 0)) {
     aErrorMessage.AssignLiteral("codedWidth and/or codedHeight can't be zero");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -738,7 +737,7 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
     aErrorMessage.AppendPrintf(
         "Missing display aspect %s",
         aConfig.mDisplayAspectWidth.WasPassed() ? "height" : "width");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
   if (aConfig.mDisplayAspectWidth.WasPassed() &&
@@ -746,7 +745,7 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
        aConfig.mDisplayAspectHeight.Value() == 0)) {
     aErrorMessage.AssignLiteral(
         "display aspect width and height cannot be zero");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -762,7 +761,7 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
 
   if (detached) {
     aErrorMessage.AssignLiteral("description is detached.");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -797,10 +796,10 @@ VideoDecoder::VideoDecoder(nsIGlobalObject* aParent,
                       std::move(aOutputCallback)) {
   MOZ_ASSERT(mErrorCallback);
   MOZ_ASSERT(mOutputCallback);
-  LOG("VideoDecoder %p ctor", this);
+  LOG("VideoDecoder {} ctor", fmt::ptr(this));
 }
 
-VideoDecoder::~VideoDecoder() { LOG("VideoDecoder %p dtor", this); }
+VideoDecoder::~VideoDecoder() { LOG("VideoDecoder {} dtor", fmt::ptr(this)); }
 
 JSObject* VideoDecoder::WrapObject(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
@@ -830,7 +829,7 @@ already_AddRefed<VideoDecoder> VideoDecoder::Constructor(
 already_AddRefed<Promise> VideoDecoder::IsConfigSupported(
     const GlobalObject& aGlobal, const VideoDecoderConfig& aConfig,
     ErrorResult& aRv) {
-  LOG("VideoDecoder::IsConfigSupported, config: %s",
+  LOG("VideoDecoder::IsConfigSupported, config: {}",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get());
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
@@ -861,7 +860,11 @@ already_AddRefed<Promise> VideoDecoder::IsConfigSupported(
     return p.forget();
   }
 
-  bool canDecode = CanDecode(config);
+  // This is incomplete and will be implemented fully in bug 1967793
+  auto configInternal = VideoDecoderConfigInternal::Create(aConfig);
+  ApplyResistFingerprintingIfNeeded(configInternal, global);
+
+  bool canDecode = CanDecode(*configInternal);
   RootedDictionary<VideoDecoderSupport> s(aGlobal.Context());
   s.mConfig.Construct(std::move(config));
   s.mSupported.Construct(canDecode);
@@ -895,10 +898,9 @@ already_AddRefed<MediaRawData> VideoDecoder::InputDataToMediaRawData(
   }
 
   LOGV(
-      "EncodedVideoChunkData %p converted to %zu-byte MediaRawData - time: "
-      "%" PRIi64 "us, timecode: %" PRIi64 "us, duration: %" PRIi64
-      "us, key-frame: %s, has extra data: %s",
-      aData.get(), sample->Size(), sample->mTime.ToMicroseconds(),
+      "EncodedVideoChunkData {} converted to {}-byte MediaRawData - time: "
+      "{}us, timecode: {}us, duration: {}us, key-frame: {}, has extra data: {}",
+      fmt::ptr(aData.get()), sample->Size(), sample->mTime.ToMicroseconds(),
       sample->mTimecode.ToMicroseconds(), sample->mDuration.ToMicroseconds(),
       sample->mKeyframe ? "yes" : "no", sample->mExtraData ? "yes" : "no");
 

@@ -167,8 +167,7 @@ def update_application_services(revision):
     json = get_as_nightly_json(f"revision.{revision}")
     target_as_version = json["version"]
     log.info(
-        f"Target app-services {as_channel.capitalize()} version "
-        f"is {target_as_version}"
+        f"Target app-services {as_channel.capitalize()} version is {target_as_version}"
     )
 
     if compare_as_versions(current_as_version, target_as_version) >= 0:

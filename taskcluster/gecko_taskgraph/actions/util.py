@@ -3,17 +3,17 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import concurrent.futures as futures
 import copy
 import logging
 import os
 import re
+from concurrent import futures
 from functools import reduce
 
 import jsone
 import requests
-from requests.exceptions import HTTPError
 from slugid import nice as slugid
+from taskcluster.exceptions import TaskclusterRestFailure
 from taskgraph import create
 from taskgraph.optimize.base import optimize_task_graph
 from taskgraph.taskgraph import TaskGraph
@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 INDEX_TMPL = "gecko.v2.{}.pushlog-id.{}.decision"
 PUSHLOG_TMPL = "{}/json-pushes?version=2&startID={}&endID={}"
+CHUNK_SIZE = 25
+MAX_WINDOW_SIZE = 100
 
 
 def _tags_within_context(tags, context=[]):
@@ -148,6 +150,38 @@ def get_parameters(decision_task_id):
     return get_artifact(decision_task_id, "public/parameters.yml")
 
 
+def get_label_to_taskid(project, push_id):
+    decision_task_id = get_decision_task_id(project, push_id)
+    return get_artifact(decision_task_id, "public/label-to-taskid.json")
+
+
+def get_pushes_in_gap(parameters, label):
+    end_id = int(parameters["pushlog_id"]) - 1
+    gap_pushes: list[str] = []
+
+    for _ in range(MAX_WINDOW_SIZE // CHUNK_SIZE):
+        pushes = get_pushes(
+            project=parameters["head_repository"], end_id=end_id, depth=CHUNK_SIZE
+        )
+        if not pushes:
+            break
+
+        for push_id in reversed(pushes):
+            try:
+                label_map = get_label_to_taskid(parameters["project"], push_id)
+            except Exception:
+                logger.warning(f"Could not fetch labels for push {push_id}, skipping")
+                gap_pushes.append(push_id)
+                continue
+            if label in label_map:
+                return list(reversed(gap_pushes))
+            gap_pushes.append(push_id)
+
+        end_id = int(pushes[0]) - 1
+
+    return list(reversed(gap_pushes))
+
+
 def get_tasks_with_downstream(labels, full_task_graph, label_to_taskid):
     # Used to gather tasks when downstream tasks need to run as well
     return full_task_graph.graph.transitive_closure(
@@ -177,10 +211,10 @@ def fetch_graph_and_labels(parameters, graph_config):
             try:
                 run_label_to_id = get_artifact(task_id, "public/label-to-taskid.json")
                 label_to_taskid.update(run_label_to_id)
-                for label, task_id in run_label_to_id.items():
-                    label_to_taskids.setdefault(label, []).append(task_id)
-            except HTTPError as e:
-                if e.response.status_code != 404:
+                for label, existing_task_id in run_label_to_id.items():
+                    label_to_taskids.setdefault(label, []).append(existing_task_id)
+            except TaskclusterRestFailure as e:
+                if e.status_code != 404:
                     raise
                 logger.debug(f"No label-to-taskid.json found for {task_id}: {e}")
 
@@ -200,10 +234,10 @@ def fetch_graph_and_labels(parameters, graph_config):
             try:
                 run_label_to_id = get_artifact(task_id, "public/label-to-taskid.json")
                 label_to_taskid.update(run_label_to_id)
-                for label, task_id in run_label_to_id.items():
-                    label_to_taskids.setdefault(label, []).append(task_id)
-            except HTTPError as e:
-                if e.response.status_code != 404:
+                for label, existing_task_id in run_label_to_id.items():
+                    label_to_taskids.setdefault(label, []).append(existing_task_id)
+            except TaskclusterRestFailure as e:
+                if e.status_code != 404:
                     raise
                 logger.debug(f"No label-to-taskid.json found for {task_id}: {e}")
 

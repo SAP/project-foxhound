@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+        SimpleTest.waitForExplicitFinish();
+
+
+        let labels
+        document.addEventListener("DOMContentLoaded", async () => {
+            let meter = document.createElementNS("http://www.w3.org/1999/xhtml", "meter")
+            labels = meter.labels
+            meter = undefined
+            SpecialPowers.DOMWindowUtils.garbageCollect();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            labels.item((3038899643 % labels.length || 0))
+            ok(true, "Test passes if there is no use after free")
+            SimpleTest.finish()
+        })
+    </script>
+</head>
+</html>

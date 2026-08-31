@@ -1,35 +1,33 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XRSession.h"
 
-#include "mozilla/dom/XRSessionEvent.h"
-#include "mozilla/dom/XRInputSourceEvent.h"
+#include "VRDisplayClient.h"
+#include "VRDisplayPresentation.h"
+#include "VRLayerChild.h"
+#include "XRBoundedReferenceSpace.h"
+#include "XRFrame.h"
+#include "XRInputSourceArray.h"
+#include "XRNativeOrigin.h"
+#include "XRNativeOriginFixed.h"
+#include "XRNativeOriginLocal.h"
+#include "XRNativeOriginLocalFloor.h"
+#include "XRNativeOriginViewer.h"
+#include "XRRenderState.h"
+#include "XRSystem.h"
+#include "XRView.h"
+#include "XRViewerPose.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Promise.h"
-#include "XRSystem.h"
-#include "XRRenderState.h"
-#include "XRBoundedReferenceSpace.h"
-#include "XRFrame.h"
-#include "XRNativeOrigin.h"
-#include "XRNativeOriginFixed.h"
-#include "XRNativeOriginViewer.h"
-#include "XRNativeOriginLocal.h"
-#include "XRNativeOriginLocalFloor.h"
-#include "XRView.h"
-#include "XRViewerPose.h"
-#include "VRLayerChild.h"
-#include "XRInputSourceArray.h"
+#include "mozilla/dom/XRInputSourceEvent.h"
+#include "mozilla/dom/XRSessionEvent.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIObserverService.h"
 #include "nsISupportsPrimitives.h"
 #include "nsRefreshDriver.h"
-#include "VRDisplayClient.h"
-#include "VRDisplayPresentation.h"
 
 /**
  * Maximum instances of XRFrame and XRViewerPose objects
@@ -299,7 +297,7 @@ void XRSession::WillRefresh(mozilla::TimeStamp aTime) {
   // Inline sessions are driven by nsRefreshDriver directly,
   // unlike immersive sessions, which are driven VRDisplayClient.
   if (!IsImmersive() && !mXRSystem->HasActiveImmersiveSession()) {
-    if (nsIGlobalObject* global = GetOwnerGlobal()) {
+    if (nsIGlobalObject* global = GetRelevantGlobal()) {
       if (JSObject* obj = global->GetGlobalJSObject()) {
         js::NotifyAnimationActivity(obj);
       }

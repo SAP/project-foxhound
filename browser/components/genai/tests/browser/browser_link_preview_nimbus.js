@@ -9,61 +9,6 @@ const { NimbusTestUtils } = ChromeUtils.importESModule(
 );
 
 /**
- * Test nimbus experiment sets link preview enabled prefs.
- */
-add_task(async function test_nimbus_link_preview() {
-  is(
-    Services.prefs.getBoolPref("browser.ml.linkPreview.enabled"),
-    false,
-    "default false"
-  );
-  is(LinkPreview.canShowLegacy, false, "not legacy yet");
-  is(
-    Services.prefs.prefHasUserValue("browser.ml.linkPreview.labs"),
-    false,
-    "not yet enrolled in labs"
-  );
-
-  let cleanup = await NimbusTestUtils.enrollWithFeatureConfig({
-    featureId: "linkPreviews",
-    value: { enabled: true },
-  });
-
-  ok(
-    Services.prefs.getBoolPref("browser.ml.linkPreview.enabled"),
-    "nimbus setPref enabled"
-  );
-  ok(LinkPreview.canShowLegacy, "now legacy");
-  is(
-    Services.prefs.getIntPref("browser.ml.linkPreview.labs"),
-    LABS_STATE.ENROLLED,
-    "indicates enrolled in labs"
-  );
-
-  await cleanup();
-
-  ok(
-    Services.prefs.getBoolPref("browser.ml.linkPreview.enabled"),
-    "still enabled"
-  );
-  ok(LinkPreview.canShowLegacy, "still legacy");
-  is(
-    Services.prefs.getIntPref("browser.ml.linkPreview.labs"),
-    LABS_STATE.ROLLOUT_ENDED,
-    "transitioned from labs"
-  );
-
-  ok(
-    Services.prefs.getStringPref("browser.ml.linkPreview.nimbus"),
-    "nimbus slug set"
-  );
-
-  Services.prefs.clearUserPref("browser.ml.linkPreview.enabled");
-  Services.prefs.clearUserPref("browser.ml.linkPreview.labs");
-  Services.prefs.clearUserPref("browser.ml.linkPreview.nimbus");
-});
-
-/**
  * Check that enrolling into linkPreviews experiments sets user prefs.
  */
 add_task(async function test_nimbus_user_prefs() {

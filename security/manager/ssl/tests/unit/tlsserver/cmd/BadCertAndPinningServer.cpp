@@ -88,6 +88,7 @@ const BadCertAndPinningHost sBadCertAndPinningHosts[] = {
     {"b.pinning.example.com", "default-ee"},
     {"not-preloaded.example.com", "default-ee"},
     {"ee.example.com", "default-ee"},
+    {"requireclientauth.example.com", "default-ee"},
     {nullptr, nullptr}};
 
 int32_t DoSNISocketConfigBySubjectCN(PRFileDesc* aFd,
@@ -131,6 +132,14 @@ int32_t DoSNISocketConfig(PRFileDesc* aFd, const SECItem* aSrvNameArr,
   if (SECSuccess != ConfigSecureServerWithNamedCert(aFd, host->mCertName, &cert,
                                                     &certKEA, nullptr)) {
     return SSL_SNI_SEND_ALERT;
+  }
+
+  const char* kRequireClientAuthHostname = "requireclientauth.example.com";
+  if (strncmp(host->mHostName, kRequireClientAuthHostname,
+              std::string::traits_type::length(kRequireClientAuthHostname)) ==
+      0) {
+    (void)SSL_OptionSet(aFd, SSL_REQUEST_CERTIFICATE, true);
+    (void)SSL_OptionSet(aFd, SSL_REQUIRE_CERTIFICATE, SSL_REQUIRE_ALWAYS);
   }
 
   return 0;

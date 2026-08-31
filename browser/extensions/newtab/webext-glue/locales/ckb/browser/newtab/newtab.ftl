@@ -9,6 +9,38 @@ newtab-page-title = بازدەری نوێ
 newtab-settings-button =
     .title = پەڕەی بازدەری نوێ بە دڵی خۆت لێبکە
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = بازدەری نوێ
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ڕیز
+           *[other] { $num } ڕیز
+        }
+home-restore-defaults-srd =
+    .label = بنەرەتی بهێنەوە
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = بەستەری خوازراو...
+home-mode-choice-blank-srd =
+    .label = پەڕەی بۆش
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = چیرۆکی سپۆنسەرکراو
+home-prefs-highlights-option-visited-pages-srd =
+    .label = پەڕەی سەردانکراو
+home-prefs-highlights-options-bookmarks-srd =
+    .label = دڵخوازەکان
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = دوواترین داگرتن
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = گەڕان
     .aria-label = گەڕان
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = بزوێنەری گەڕان زیادبکە
 newtab-topsites-add-shortcut-header = قەدبڕی نوێ
@@ -85,9 +117,6 @@ newtab-menu-save-to-pocket = پاشەکەوتکردن لە { -pocket-brand-name 
 newtab-menu-delete-pocket = سڕینەوە لە { -pocket-brand-name }
 newtab-menu-archive-pocket = ئەرشیف کردن لە { -pocket-brand-name }
 newtab-menu-show-privacy-info = سپۆنسەرەکانمان و تایبەتێتی تۆ
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -189,69 +218,8 @@ newtab-pocket-learn-more = زیاتر بزانە
 newtab-pocket-cta-button = بەدەستهێنانی { -pocket-brand-name }
 newtab-pocket-cta-text = چیرۆکە دڵخوازەکانت پاشەکەوت بکە لە { -pocket-brand-name }، مێشکت پڕ بکە لە خوێندنەوەی دڵڕفێن.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = ئوپس! هەڵەیەک ڕوویدا لە کاتی بارکردنی ئەم ناوەڕۆکە.
 newtab-error-fallback-refresh-link = پەڕە نوێبکەرەوە بۆ هەوڵدانێکی تر.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

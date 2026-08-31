@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/frame-script */
-
 "use strict";
 
 /* global addEventListener */
@@ -92,6 +90,7 @@ try {
       };
       const actor = new WindowGlobalTargetActor(conn, {
         docShell,
+        ignoreSubFrames: false,
         isTopLevelTarget: true,
         // This is only used when server target switching is off and we create
         // the target from TabDescriptor. So all config attributes are false.

@@ -1,0 +1,15 @@
+{
+  "label": "hexagame.io",
+  "bugs": {
+    "1898951": {
+      "issue": "unsupported-warning",
+      "matches": ["*://hexagame.io/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "hide_alerts": ["chrome"]
+    }
+  ]
+}

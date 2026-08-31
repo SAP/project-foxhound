@@ -3,10 +3,8 @@
 # so that if later the same url is retrieved, the entry from the cache will be
 # returned.
 
-pushd "$(dirname "$0")" &>/dev/null || exit
-cache_dir="$(pwd)/cache"
-popd &>/dev/null || exit
-retry="$MY_DIR/../../../../mach python -m redo.cmd -s 1 -a 3"
+cache_dir="${WORKSPACE_DIR:-$PWD}/update-verify-cache"
+retry="python3 -m redo.cmd -s 1 -a 3"
 
 # Deletes all files in the cache directory
 # We don't support folders or .dot(hidden) files

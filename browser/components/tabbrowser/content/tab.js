@@ -27,6 +27,7 @@
             <html:img class="tab-icon-image" role="presentation" decoding="sync" />
             <image class="tab-sharing-icon-overlay" role="presentation"/>
             <image class="tab-icon-overlay" role="presentation"/>
+            <image class="tab-note-icon-overlay" role="presentation"/>
           </stack>
           <html:moz-button type="icon ghost" size="small" class="tab-audio-button" tabindex="-1"></html:moz-button>
           <vbox class="tab-label-container"
@@ -34,10 +35,8 @@
                 pack="center"
                 flex="1">
             <label class="tab-text tab-label" role="presentation"/>
-            <hbox class="tab-secondary-label">
-              <label class="tab-icon-sound-label tab-icon-sound-pip-label" data-l10n-id="browser-tab-audio-pip" role="presentation"/>
-            </hbox>
           </vbox>
+          <image class="tab-note-icon" role="presentation"/>
           <image class="tab-close-button close-icon" role="button" data-l10n-id="tabbrowser-close-tabs-button" data-l10n-args='{"tabCount": 1}' keyNav="false"/>
         </hbox>
       </stack>
@@ -61,6 +60,7 @@
 
       this._hover = false;
       this._selectedOnFirstMouseDown = false;
+      this._noteIconHover = false;
 
       /**
        * Describes how the tab ended up in this mute state. May be any of:
@@ -72,17 +72,13 @@
        */
       this.muteReason = undefined;
 
-      this.mOverCloseButton = false;
-
-      this.mCorrespondingMenuitem = null;
-
       this.closing = false;
     }
 
     static get inheritedAttributes() {
       return {
         ".tab-background":
-          "selected=visuallyselected,fadein,multiselected,dragover-createGroup",
+          "selected=visuallyselected,fadein,multiselected,dragover-groupTarget",
         ".tab-group-line": "selected=visuallyselected,multiselected",
         ".tab-loading-burst": "pinned,bursting,notselectedsinceload",
         ".tab-content":
@@ -94,7 +90,7 @@
         ".tab-icon-pending":
           "fadein,pinned,busy,progress,selected=visuallyselected,pendingicon",
         ".tab-icon-image":
-          "src=image,triggeringprincipal=iconloadingprincipal,requestcontextid,fadein,pinned,selected=visuallyselected,busy,crashed,sharing,pictureinpicture,pending,discarded",
+          "src=image,requestcontextid,fadein,pinned,selected=visuallyselected,busy,crashed,sharing,pictureinpicture,pending,discarded",
         ".tab-sharing-icon-overlay": "sharing,selected=visuallyselected,pinned",
         ".tab-icon-overlay":
           "sharing,pictureinpicture,crashed,busy,soundplaying,soundplaying-scheduledremoval,pinned,muted,blocked,selected=visuallyselected,activemedia-blocked",
@@ -104,8 +100,6 @@
           "pinned,selected=visuallyselected,labeldirection",
         ".tab-label":
           "text=label,accesskey,fadein,pinned,selected=visuallyselected,attention",
-        ".tab-label-container .tab-secondary-label":
-          "pinned,blocked,selected=visuallyselected,pictureinpicture",
         ".tab-close-button": "fadein,pinned,selected=visuallyselected",
       };
     }
@@ -113,6 +107,7 @@
     #lastGroup;
     connectedCallback() {
       this.#updateOnTabGrouped();
+      this.#updateOnTabSplit();
       this.#lastGroup = this.group;
 
       this.initialize();
@@ -120,6 +115,7 @@
 
     disconnectedCallback() {
       this.#updateOnTabUngrouped();
+      this.#updateOnTabUnsplit();
     }
 
     initialize() {
@@ -153,7 +149,7 @@
         throw new Error("Tab is not visible, so does not have an elementIndex");
       }
       // Make sure the index is up to date.
-      this.container.ariaFocusableItems;
+      this.container.dragAndDropElements;
       return this.#elementIndex;
     }
 
@@ -225,7 +221,9 @@
 
     get visible() {
       return (
-        this.isOpen && !this.hidden && (!this.group?.collapsed || this.selected)
+        this.isOpen &&
+        !this.hidden &&
+        (!this.group || this.group.isTabVisibleInGroup(this))
       );
     }
 
@@ -273,6 +271,14 @@
       gBrowser._tabAttrModified(this, ["undiscardable"]);
     }
 
+    get animationsEnabled() {
+      return this.style.transition == "";
+    }
+
+    set animationsEnabled(val) {
+      this.style.transition = val ? "" : "none";
+    }
+
     get isEmpty() {
       // Determines if a tab is "empty", usually used in the context of determining
       // if it's ok to close the tab.
@@ -314,7 +320,7 @@
      */
     get lastSeenActive() {
       const isForegroundWindow =
-        this.ownerGlobal ==
+        this.documentGlobal ==
         BrowserWindowTracker.getTopWindow({ allowPopups: true });
       // the timestamp for the selected tab in the active window is always now
       if (isForegroundWindow && this.selected) {
@@ -373,11 +379,37 @@
       return this.querySelector(".tab-close-button");
     }
 
+    get noteIcon() {
+      return this.querySelector(".tab-note-icon");
+    }
+
+    get noteIconOverlay() {
+      return this.querySelector(".tab-note-icon-overlay");
+    }
+
     get group() {
-      if (this.parentElement?.tagName == "tab-group") {
+      return this.closest("tab-group");
+    }
+
+    get splitview() {
+      if (this.parentElement?.tagName == "tab-split-view-wrapper") {
         return this.parentElement;
       }
       return null;
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    get hasTabNote() {
+      return this.hasAttribute("tab-note");
+    }
+
+    /**
+     * @param {boolean} val
+     */
+    set hasTabNote(val) {
+      this.toggleAttribute("tab-note", val);
     }
 
     updateLastAccessed(aDate) {
@@ -407,18 +439,36 @@
     }
 
     on_mouseover(event) {
-      if (event.target.classList.contains("tab-close-button")) {
-        this.mOverCloseButton = true;
-      }
-
       if (!this.visible) {
         return;
       }
 
-      let tabToWarm = this.mOverCloseButton
+      let tabToWarm = event.target.classList.contains("tab-close-button")
         ? gBrowser._findTabToBlurTo(this)
         : this;
       gBrowser.warmupTab(tabToWarm);
+
+      if (this.hasTabNote) {
+        const noteIcon = this.noteIcon;
+        const noteIconOverlay = this.noteIconOverlay;
+        const isOverNoteIcon =
+          (noteIcon && noteIcon.contains(event.target)) ||
+          (noteIconOverlay && noteIconOverlay.contains(event.target));
+
+        if (isOverNoteIcon && !this._noteIconHover) {
+          this._noteIconHover = true;
+          this.dispatchEvent(
+            new CustomEvent("TabNoteIconHoverStart", {
+              bubbles: true,
+              detail: {
+                noteIconElement: noteIcon?.contains(event.target)
+                  ? noteIcon
+                  : noteIconOverlay,
+              },
+            })
+          );
+        }
+      }
 
       // If the previous target wasn't part of this tab then this is a mouseenter event.
       if (!this.contains(event.relatedTarget)) {
@@ -427,8 +477,22 @@
     }
 
     on_mouseout(event) {
-      if (event.target.classList.contains("tab-close-button")) {
-        this.mOverCloseButton = false;
+      if (this._noteIconHover) {
+        const noteIcon = this.noteIcon;
+        const noteIconOverlay = this.noteIconOverlay;
+        const stillOverNoteIcon =
+          (noteIcon && noteIcon.contains(event.relatedTarget)) ||
+          (noteIconOverlay && noteIconOverlay.contains(event.relatedTarget));
+
+        if (!stillOverNoteIcon) {
+          this._noteIconHover = false;
+          this.dispatchEvent(
+            new CustomEvent("TabNoteIconHoverEnd", {
+              bubbles: true,
+              detail: { returningToTab: this.contains(event.relatedTarget) },
+            })
+          );
+        }
       }
 
       // If the new target is not part of this tab then this is a mouseleave event.
@@ -446,7 +510,7 @@
       if (event.eventPhase == Event.CAPTURING_PHASE) {
         this.style.MozUserFocus = "";
       } else if (
-        this.mOverCloseButton ||
+        event.target.classList?.contains("tab-close-button") ||
         gSharedTabWarning.willShowSharedTabWarning(this)
       ) {
         event.stopPropagation();
@@ -501,6 +565,11 @@
             gBrowser.addToMultiSelectedTabs(this);
             gBrowser.lastMultiSelectedTab = this;
           }
+        } else if (
+          event.altKey &&
+          Services.prefs.getBoolPref("browser.tabs.splitView.enabled", false)
+        ) {
+          eventMaySelectTab = false;
         } else if (!this.selected && this.multiselected) {
           gBrowser.lockClearMultiSelectionOnce();
         }
@@ -525,6 +594,27 @@
 
     on_click(event) {
       if (event.button != 0) {
+        return;
+      }
+
+      if (event.altKey) {
+        if (
+          !event.target.classList.contains("tab-close-button") &&
+          !event.target.classList.contains("tab-icon-overlay") &&
+          !event.target.classList.contains("tab-audio-button") &&
+          !this.selected &&
+          !gBrowser.selectedTab.hidden &&
+          Services.prefs.getBoolPref("browser.tabs.splitView.enabled", false) &&
+          !this.splitview &&
+          !gBrowser.selectedTab.splitview &&
+          !this.pinned &&
+          !gBrowser.selectedTab.pinned
+        ) {
+          gBrowser.addTabSplitView([gBrowser.selectedTab, this], {
+            insertBefore: gBrowser.selectedTab,
+            trigger: "alt_click",
+          });
+        }
         return;
       }
 
@@ -765,6 +855,53 @@
         // given tab is "2 of 7" in the group, for example.
         this.removeAttribute("aria-posinset");
         this.removeAttribute("aria-setsize");
+      }
+    }
+
+    #updateOnTabSplit() {
+      if (this.splitview) {
+        this.setAttribute("aria-level", 2);
+      }
+    }
+
+    #updateOnTabUnsplit() {
+      if (!this.splitview) {
+        this.setAttribute("aria-level", 1);
+        // `posinset` and `setsize` only need to be set explicitly
+        // on split view tabs so that a11y tools can tell users that a
+        // given tab is "1 of 2" in the split view, for example.
+        this.removeAttribute("aria-posinset");
+        this.removeAttribute("aria-setsize");
+        this.removeAttribute("aria-label");
+      }
+    }
+
+    /**
+     * Set `aria-label` for this tab to indicate that it's in a Split View,
+     * along with its position within the Split View.
+     *
+     * @param {number} index
+     *   The index of this tab in the Split View.
+     */
+    updateSplitViewAriaLabel(index) {
+      let l10nId = "";
+      switch (index) {
+        case 0:
+          l10nId = window.RTL_UI
+            ? "tabbrowser-tab-label-tab-split-view-right"
+            : "tabbrowser-tab-label-tab-split-view-left";
+          break;
+        case 1:
+          l10nId = window.RTL_UI
+            ? "tabbrowser-tab-label-tab-split-view-left"
+            : "tabbrowser-tab-label-tab-split-view-right";
+          break;
+      }
+      if (l10nId) {
+        const ariaLabel = gBrowser.tabLocalization.formatValueSync(l10nId, {
+          label: this.getAttribute("label"),
+        });
+        this.setAttribute("aria-label", ariaLabel);
       }
     }
   }

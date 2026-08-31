@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,6 @@
 #include "gfxPlatform.h"            // for gfxPlatform
 #include "gfxRect.h"                // for gfxRect
 #include "gfxUtils.h"               // for gfxUtils, etc
-#include "mozilla/ArrayUtils.h"     // for ArrayLength
 #include "mozilla/Preferences.h"    // for Preferences
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_gfx.h"
@@ -102,7 +99,6 @@ class AsyncReadbackBufferOGL final : public AsyncReadbackBuffer {
 
   void Bind() const {
     mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, mBufferHandle);
-    mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
   }
 
  protected:
@@ -156,7 +152,7 @@ bool AsyncReadbackBufferOGL::MapAndCopyInto(DataSourceSurface* aSurface,
     return false;
   }
 
-  int32_t srcStride = mSize.width * 4;  // Bind() sets an alignment of 1
+  int32_t srcStride = mSize.width * 4;
   DataSourceSurface::ScopedMap map(aSurface, DataSourceSurface::WRITE);
   uint8_t* destData = map.GetData();
   int32_t destStride = map.GetStride();
@@ -193,16 +189,14 @@ CompositorOGL::CompositorOGL(widget::CompositorWidget* aWidget,
       mTriangleVBO(0),
       mPreviousFrameDoneSync(nullptr),
       mThisFrameDoneSync(nullptr),
-      mHasBGRA(0),
+      mHasBGRA(false),
       mUseExternalSurfaceSize(aUseExternalSurfaceSize),
       mFrameInProgress(false),
       mDestroyed(false),
       mViewportSize(0, 0) {
-  if (aWidget->GetNativeLayerRoot()) {
-    // We can only render into native layers, our GLContext won't have a usable
-    // default framebuffer.
-    mCanRenderToDefaultFramebuffer = false;
-  }
+  // If we render into native layers, our GLContext won't have a usable default
+  // framebuffer.
+  mCanRenderToDefaultFramebuffer = !aWidget->GetNativeLayerRoot();
   MOZ_COUNT_CTOR(CompositorOGL);
 }
 
@@ -422,8 +416,7 @@ bool CompositorOGL::Initialize(nsCString* const out_failureReason) {
     mGLContext->fGenFramebuffers(1, &testFBO);
     GLuint testTexture = 0;
 
-    for (uint32_t i = 0; i < std::size(textureTargets); i++) {
-      GLenum target = textureTargets[i];
+    for (unsigned int target : textureTargets) {
       if (!target) continue;
 
       mGLContext->fGenTextures(1, &testTexture);
@@ -676,8 +669,9 @@ bool CompositorOGL::ReadbackRenderTarget(CompositingRenderTarget* aSource,
   ScopedPackState scopedPackState(mGLContext);
   static_cast<AsyncReadbackBufferOGL*>(aDest)->Bind();
 
+  mGLContext->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
   mGLContext->fReadPixels(0, 0, size.width, size.height, LOCAL_GL_RGBA,
-                          LOCAL_GL_UNSIGNED_BYTE, 0);
+                          LOCAL_GL_UNSIGNED_BYTE, nullptr);
 
   if (previousTarget != aSource) {
     SetRenderTarget(previousTarget);
@@ -747,11 +741,8 @@ Maybe<IntRect> CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
     mWidgetSize = LayoutDeviceIntSize::FromUnknownSize(rect.Size());
 #ifdef MOZ_WAYLAND
     if (mWidget && mWidget->AsGTK()) {
-      // Wayland only check we have correct window size to avoid
-      // rendering artifacts.
-      if (!mWidget->AsGTK()->SetEGLNativeWindowSize(mWidgetSize)) {
-        return Nothing();
-      }
+      // Set correct window size to avoid rendering artifacts.
+      mWidget->AsGTK()->SetEGLNativeWindowSize(mWidgetSize);
     }
 #endif
   } else {
@@ -839,67 +830,6 @@ void CompositorOGL::CreateFBOWithTexture(const gfx::IntRect& aRect,
   mGLContext->fGenFramebuffers(1, aFBO);
 }
 
-// Should be called after calls to fReadPixels or fCopyTexImage2D, and other
-// GL read calls.
-static void WorkAroundAppleIntelHD3000GraphicsGLDriverBug(GLContext* aGL) {
-#ifdef XP_MACOSX
-  if (aGL->WorkAroundDriverBugs() &&
-      aGL->Renderer() == GLRenderer::IntelHD3000) {
-    // Work around a bug in the Apple Intel HD Graphics 3000 driver (bug
-    // 1586627, filed with Apple as FB7379358). This bug has been found present
-    // on 10.9.3 and on 10.13.6, so it likely affects all shipped versions of
-    // this driver. (macOS 10.14 does not support this GPU.)
-    // The bug manifests as follows: Reading from a framebuffer puts that
-    // framebuffer into a state such that deleting that framebuffer can break
-    // other framebuffers in certain cases. More specifically, if you have two
-    // framebuffers A and B, the following sequence of events breaks subsequent
-    // drawing to B:
-    //  1. A becomes "most recently read-from framebuffer".
-    //  2. B is drawn to.
-    //  3. A is deleted, and other GL state (such as GL_SCISSOR enabled state)
-    //     is touched.
-    //  4. B is drawn to again.
-    // Now all draws to framebuffer B, including the draw from step 4, will
-    // render at the wrong position and upside down.
-    //
-    // When AfterGLReadCall() is called, the currently bound framebuffer is the
-    // framebuffer that has been read from most recently. So in the presence of
-    // this bug, deleting this framebuffer has now become dangerous. We work
-    // around the bug by creating a new short-lived framebuffer, making that new
-    // framebuffer the most recently read-from framebuffer (using
-    // glCopyTexImage2D), and then deleting it under controlled circumstances.
-    // This deletion is not affected by the bug because our deletion call is not
-    // interleaved with draw calls to another framebuffer and a touching of the
-    // GL scissor enabled state.
-
-    ScopedTexture texForReading(aGL);
-    {
-      // Initialize a 1x1 texture.
-      ScopedBindTexture autoBindTexForReading(aGL, texForReading);
-      aGL->fTexImage2D(LOCAL_GL_TEXTURE_2D, 0, LOCAL_GL_RGBA, 1, 1, 0,
-                       LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, nullptr);
-      aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER,
-                          LOCAL_GL_LINEAR);
-      aGL->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER,
-                          LOCAL_GL_LINEAR);
-    }
-    // Make a framebuffer around the texture.
-    ScopedFramebufferForTexture autoFBForReading(aGL, texForReading);
-    if (autoFBForReading.IsComplete()) {
-      // "Read" from the framebuffer, by initializing a new texture using
-      // glCopyTexImage2D. This flips the bad bit on autoFBForReading.FB().
-      ScopedBindFramebuffer autoFB(aGL, autoFBForReading.FB());
-      ScopedTexture texReadingDest(aGL);
-      ScopedBindTexture autoBindTexReadingDest(aGL, texReadingDest);
-      aGL->fCopyTexImage2D(LOCAL_GL_TEXTURE_2D, 0, LOCAL_GL_RGBA, 0, 0, 1, 1,
-                           0);
-    }
-    // When autoFBForReading goes out of scope, the "poisoned" framebuffer is
-    // deleted, and the bad state seems to go away along with it.
-  }
-#endif
-}
-
 GLuint CompositorOGL::CreateTexture(const IntRect& aRect, bool aCopyFromSource,
                                     GLuint aSourceFrameBuffer,
                                     IntSize* aAllocSize) {
@@ -944,7 +874,6 @@ GLuint CompositorOGL::CreateTexture(const IntRect& aRect, bool aCopyFromSource,
       mGLContext->fCopyTexImage2D(mFBOTextureTarget, 0, LOCAL_GL_RGBA,
                                   clampedRect.X(), FlipY(clampedRect.YMost()),
                                   clampedRectWidth, clampedRectHeight, 0);
-      WorkAroundAppleIntelHD3000GraphicsGLDriverBug(mGLContext);
     } else {
       // Curses, incompatible formats.  Take a slow path.
 
@@ -955,7 +884,6 @@ GLuint CompositorOGL::CreateTexture(const IntRect& aRect, bool aCopyFromSource,
       mGLContext->fReadPixels(clampedRect.X(), clampedRect.Y(),
                               clampedRectWidth, clampedRectHeight,
                               LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, buf.get());
-      WorkAroundAppleIntelHD3000GraphicsGLDriverBug(mGLContext);
       mGLContext->fTexImage2D(mFBOTextureTarget, 0, LOCAL_GL_RGBA,
                               clampedRectWidth, clampedRectHeight, 0,
                               LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, buf.get());
@@ -1479,7 +1407,7 @@ void WriteSnapshotToDumpFile_internal(T* aObj, DataSourceSurface* aSurf) {
   } else {
     nsCString uri = gfxUtils::GetAsDataURI(aSurf);
     nsPrintfCString string(R"(array["%s-%)" PRIu64 R"("]="%s";\n)",
-                           aObj->Name(), uint64_t(aObj), uri.BeginReading());
+                           aObj->Name(), uint64_t(aObj), uri.get());
     fprintf_stderr(gfxUtils::sDumpPaintFile, "%s", string.get());
   }
 }
@@ -1566,7 +1494,7 @@ void CompositorOGL::InsertFrameDoneSync() {
   const auto& egl = gle->mEgl;
 
   EGLSync sync = nullptr;
-  if (AndroidHardwareBufferApi::Get()) {
+  if (AndroidHardwareBufferManager::Get()) {
     sync = egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
   }
   if (sync) {

@@ -165,9 +165,10 @@ const tests = [
     async openPanel() {
       // Select partial string that doesn't complete to a URL.
       this._expectedSelectedText = gURLBar.value.substring(0, 5);
-      await selectWithMouseDrag(
+      await UrlbarTestUtils.selectWithMouseDrag(
         getTextWidth(gURLBar.value[0]) / 2 - 1,
-        getTextWidth(gURLBar.value.substring(0, 5)) + 1
+        getTextWidth(gURLBar.value.substring(0, 5)) + 1,
+        window
       );
     },
     get selection() {
@@ -189,9 +190,10 @@ const tests = [
       let endOfHost =
         gURLBar.value.indexOf(uri.displayHost) + uri.displayHost.length;
       this._expectedSelectedText = gURLBar.value.substring(0, endOfHost);
-      await selectWithMouseDrag(
+      await UrlbarTestUtils.selectWithMouseDrag(
         getTextWidth(gURLBar.value[0]) / 2 - 1,
-        getTextWidth(this._expectedSelectedText)
+        getTextWidth(this._expectedSelectedText),
+        window
       );
     },
     get selection() {
@@ -206,9 +208,10 @@ const tests = [
     description: "Test Drag Selection from the last character",
     async openPanel() {
       this._expectedSelectedText = gURLBar.value.substring(-5);
-      await selectWithMouseDrag(
+      await UrlbarTestUtils.selectWithMouseDrag(
         getTextWidth(gURLBar.value) + 1,
-        getTextWidth(this._expectedSelectedText)
+        getTextWidth(this._expectedSelectedText),
+        window
       );
     },
     get selection() {
@@ -222,9 +225,10 @@ const tests = [
     description: "Test Drag Selection in the middle of the string",
     async openPanel() {
       this._expectedSelectedText = gURLBar.value.substring(5, 10);
-      await selectWithMouseDrag(
+      await UrlbarTestUtils.selectWithMouseDrag(
         getTextWidth(gURLBar.value.substring(0, 5)) + 1,
-        getTextWidth(gURLBar.value.substring(0, 10)) + 1
+        getTextWidth(gURLBar.value.substring(0, 10)) + 1,
+        window
       );
     },
     get selection() {
@@ -237,8 +241,9 @@ const tests = [
     async openPanel() {
       let wordBoundaryIndex = gURLBar.value.search(/\btest/);
       this._expectedSelectedText = "test";
-      await selectWithDoubleClick(
-        getTextWidth(gURLBar.value.substring(0, wordBoundaryIndex))
+      await UrlbarTestUtils.selectWithDoubleClick(
+        getTextWidth(gURLBar.value.substring(0, wordBoundaryIndex)),
+        window
       );
     },
     get selection() {

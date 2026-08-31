@@ -1,0 +1,22 @@
+<html>
+<head>
+<title></title>
+
+<script type="text/javascript">
+
+var scriptItem = "untouched";
+
+</script>
+
+<!-- Try loading from a malware javascript URI -->
+<script type="text/javascript" src="http://malware.example.com/tests/toolkit/components/url-classifier/tests/mochitest/evil.js"></script>
+
+<!-- Try loading from an uwanted software css URI -->
+<link rel="stylesheet" type="text/css" href="http://unwanted.example.com/tests/toolkit/components/url-classifier/tests/mochitest/evil.css"></link>
+
+<body>
+<div id="title"></div>
+<div id="styleCheck">STYLE EVIL</div>
+
+</body>
+</html>

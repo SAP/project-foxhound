@@ -166,9 +166,9 @@ function performAccessKey(browser, key) {
           return false; // ignore window and document focus events
         }
 
-        event.target.ownerGlobal._sent = true;
-        let focusedElement = event.target.ownerGlobal.document.activeElement;
-        event.target.ownerGlobal._oldFocusedElement = focusedElement;
+        event.target.documentGlobal._sent = true;
+        let focusedElement = event.target.documentGlobal.document.activeElement;
+        event.target.documentGlobal._oldFocusedElement = focusedElement;
         focusedElement.blur();
         return true;
       }
@@ -180,7 +180,7 @@ function performAccessKey(browser, key) {
       () => {},
       { capture: true },
       event => {
-        event.target.ownerGlobal._sent = false;
+        event.target.documentGlobal._sent = false;
         return true;
       }
     );
@@ -191,10 +191,11 @@ function performAccessKey(browser, key) {
       callback,
       {},
       event => {
-        if (!event.target.ownerGlobal._sent) {
-          event.target.ownerGlobal._sent = true;
-          let focusedElement = event.target.ownerGlobal.document.activeElement;
-          event.target.ownerGlobal._oldFocusedElement = focusedElement;
+        if (!event.target.documentGlobal._sent) {
+          event.target.documentGlobal._sent = true;
+          let focusedElement =
+            event.target.documentGlobal.document.activeElement;
+          event.target.documentGlobal._oldFocusedElement = focusedElement;
           focusedElement.blur();
           return true;
         }

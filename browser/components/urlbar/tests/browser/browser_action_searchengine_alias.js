@@ -11,7 +11,7 @@ add_task(async function () {
     { keyword: "moz" },
     { setAsDefault: true }
   );
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,

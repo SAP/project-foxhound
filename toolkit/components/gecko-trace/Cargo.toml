@@ -1,0 +1,25 @@
+[package]
+name = "gecko-trace"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# TODO: Make these be workspace dependencies
+anyhow = "1.0.0"
+cstr = "0.2.0"
+firefox-on-glean = { path = "../glean/api" }
+hex = "0.4.0"
+log = "0.4.0"
+mozbuild = { path = "../../../build/rust/mozbuild/" }
+nserror = { path = "../../../xpcom/rust/nserror/" }
+once_cell = "*"
+prost = { version = "0.13.5", default-features = false, features = [
+  "prost-derive",
+] }
+xpcom = { path = "../../../xpcom/rust/xpcom/" }
+moz_task = { path = "../../../xpcom/rust/moz_task/" }
+
+[lib]
+# Doc-test has a problem with some doc comment syntax in
+# third_party/opentelemetry-cpp/third_party/opentelemetry-proto/opentelemetry.proto.trace.v1.rs
+doctest = false

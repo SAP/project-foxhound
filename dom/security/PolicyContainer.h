@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PolicyContainer_h___
-#define PolicyContainer_h___
-
-#include "nsIPolicyContainer.h"
+#ifndef PolicyContainer_h_
+#define PolicyContainer_h_
 
 #include "nsCOMPtr.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIIntegrityPolicy.h"
+#include "nsILoadInfo.h"
+#include "nsIPolicyContainer.h"
 
 namespace mozilla::ipc {
 class PolicyContainerArgs;
@@ -19,7 +17,8 @@ class PolicyContainerArgs;
 
 namespace mozilla::dom {
 class Document;
-}
+class IntegrityPolicyWAICT;
+}  // namespace mozilla::dom
 
 #define NS_POLICYCONTAINER_CONTRACTID "@mozilla.org/policycontainer;1"
 
@@ -38,7 +37,7 @@ class PolicyContainer : public nsIPolicyContainer {
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSIPOLICYCONTAINER
 
-  PolicyContainer() = default;
+  PolicyContainer();
 
   static void ToArgs(const PolicyContainer* aPolicy,
                      mozilla::ipc::PolicyContainerArgs& aArgs);
@@ -61,23 +60,40 @@ class PolicyContainer : public nsIPolicyContainer {
                      const PolicyContainer* aOtherContainer);
 
   // == CSP ==
-  nsIContentSecurityPolicy* CSP() const;
+  nsIContentSecurityPolicy* GetCSP() const;
   void SetCSP(nsIContentSecurityPolicy* aPolicy);
   static nsIContentSecurityPolicy* GetCSP(
       const nsIPolicyContainer* aPolicyContainer);
 
   // == Integrity Policy ==
-  nsIIntegrityPolicy* IntegrityPolicy() const;
+  nsIIntegrityPolicy* GetIntegrityPolicy() const;
   void SetIntegrityPolicy(nsIIntegrityPolicy* aPolicy);
   static nsIIntegrityPolicy* GetIntegrityPolicy(
       const nsIPolicyContainer* aPolicyContainer);
 
+  // == WAICT Integrity Policy ===
+  // TODO(Bug 2017658): Support WAICT in workers
+  mozilla::dom::IntegrityPolicyWAICT* GetIntegrityPolicyWAICT() const;
+  void SetIntegrityPolicyWAICT(mozilla::dom::IntegrityPolicyWAICT* aPolicy);
+  static mozilla::dom::IntegrityPolicyWAICT* GetIntegrityPolicyWAICT(
+      const nsIPolicyContainer* aPolicyContainer);
+
+  // == IP Address Space ==
+  // Stored per
+  // https://wicg.github.io/local-network-access/#integration-with-html to allow
+  // worker contexts (which have no browsing context) to perform Local Network
+  // Access checks against their parent document's address space.
+  nsILoadInfo::IPAddressSpace GetIPAddressSpace() const;
+  void SetIPAddressSpace(nsILoadInfo::IPAddressSpace aIPAddressSpace);
+
  private:
   nsCOMPtr<nsIContentSecurityPolicy> mCSP;
   nsCOMPtr<nsIIntegrityPolicy> mIntegrityPolicy;
+  RefPtr<mozilla::dom::IntegrityPolicyWAICT> mIntegrityPolicyWAICT;
+  nsILoadInfo::IPAddressSpace mIPAddressSpace = nsILoadInfo::Unknown;
 
  protected:
   virtual ~PolicyContainer();
 };
 
-#endif /* PolicyContainer_h___ */
+#endif /* PolicyContainer_h_ */

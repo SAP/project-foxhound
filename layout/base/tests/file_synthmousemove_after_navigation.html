@@ -1,0 +1,66 @@
+<!doctype html>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { background: white; }
+  body:hover { background: red; }
+</style>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<script>
+async function runTest() {
+  const isReloaded = sessionStorage.getItem("bug2038491_reloaded") === "true";
+
+  if (!isReloaded) {
+    // First load: synthesize a real mouse move at a known position so the
+    // root PresShell records the mouse state, then reload to drop that
+    // PresShell.
+    synthesizeMouse(document.body, 100, 100, { type: "mousemove" });
+
+    // Wait one paint tick so the synth move propagates and :hover is applied.
+    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => requestAnimationFrame(r));
+
+    const bg = getComputedStyle(document.body).backgroundColor;
+    if (bg !== "rgb(255, 0, 0)") {
+      opener.reportResult(
+        false,
+        `Setup: body should be red (hovered) after initial mouse move, got ${bg}`
+      );
+      window.close();
+      return;
+    }
+
+    sessionStorage.setItem("bug2038491_reloaded", "true");
+    location.reload();
+    return;
+  }
+
+  // Second load: the new root PresShell has no per-PresShell mouse state.
+  // PointerEventHandler::sLastMouseInfo still holds the cached position from
+  // before the reload, with a dead weak ref to the old PresShell. The fix
+  // for bug 2038491 lets PresShell::SynthesizeMouseMove claim that orphaned
+  // state. PresShell::UnsuppressAndInvalidate calls SynthesizeMouseMove
+  // when painting unsuppresses; with the fix in place a synthetic eMouseMove
+  // dispatches and re-evaluates :hover on the new document.
+
+  // Give the refresh driver several ticks to dispatch the synthetic mouse
+  // move.
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => requestAnimationFrame(r));
+  }
+
+  const bg = getComputedStyle(document.body).backgroundColor;
+  const passed = bg === "rgb(255, 0, 0)";
+  sessionStorage.removeItem("bug2038491_reloaded");
+  opener.reportResult(
+    passed,
+    passed
+      ? "body is red (hovered) after navigation without a fresh mouse move"
+      : `body should be red (hovered) after navigation, got ${bg}`
+  );
+  window.close();
+}
+
+SimpleTest.waitForFocus(runTest);
+</script>
+<body></body>

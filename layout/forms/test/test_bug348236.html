@@ -32,13 +32,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=348236
 <pre id="test">
 <script type="text/javascript">
 
-  /** Test for Bug 348236 **/
+  /** Test for Bug 348236 */
 
 SimpleTest.waitForExplicitFinish()
 addLoadEvent(function test() {
 
     var
-        WinUtils = SpecialPowers.getDOMWindowUtils(window),
+        wrappedWindow = SpecialPowers.wrap(window),
         sec = netscape.security,
         eSelect = $("eSelect"),
         timeout = 0 // Choose a larger value like 500 ms if you want to see what's happening.
@@ -62,7 +62,7 @@ addLoadEvent(function test() {
             // Move the mouse over option 3.
             let option3 = document.getElementById("option3");
             let rect = option3.getBoundingClientRect();
-            WinUtils.sendMouseEvent("mousemove", rect.left + 4, rect.top + 4, 0, 0, 0, true)
+            wrappedWindow.synthesizeMouseEvent("mousemove", rect.left + 4, rect.top + 4, {}, { ignoreRootScrollFrame: true });
             setTimeout(cont2, timeout)
         }
         function cont2() {
@@ -77,8 +77,8 @@ addLoadEvent(function test() {
             // Simulate click on area to the left of the select.
             eSelect.addEventListener("click", clickListener, true)
             selectGotClick = false
-            WinUtils.sendMouseEvent("mousedown", 320, 0, 0, 0, 0, true)
-            WinUtils.sendMouseEvent("mouseup", 320, 0, 0, 0, 0, true)
+            wrappedWindow.synthesizeMouseEvent("mousedown", 320, 0, { clickCount: 0 }, { ignoreRootScrollFrame: true });
+            wrappedWindow.synthesizeMouseEvent("mouseup", 320, 0, { clickCount: 0 }, { ignoreRootScrollFrame: true });
             setTimeout(cont4, timeout)
         }
         function cont4() {

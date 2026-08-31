@@ -16,45 +16,32 @@
           src="../../events.js"></script>
 
   <script type="application/javascript">
-    // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    function changeIframeSrc(aIdentifier, aURL, aTitle) {
-      this.DOMNode = getNode(aIdentifier);
-
-      function getIframeDoc() {
-        return getAccessible(getNode(aIdentifier).contentDocument);
-      }
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, getAccessible(this.DOMNode)),
-        new asyncInvokerChecker(EVENT_DOCUMENT_LOAD_COMPLETE, getIframeDoc),
-      ];
-
-      this.invoke = () => (this.DOMNode.src = aURL);
-
-      this.finalCheck = () =>
-        testAccessibleTree(this.DOMNode, {
-          role: ROLE_INTERNAL_FRAME,
-          children: [
-            {
-              role: ROLE_DOCUMENT,
-              name: aTitle,
-            },
-          ],
-        });
-
-      this.getID = () => `change iframe src on ${aURL}`;
+    async function changeIframeSrc(aIdentifier, aURL, aTitle) {
+      const domNode = getNode(aIdentifier);
+      const evts = waitForEvents([
+        [EVENT_REORDER, getAccessible(domNode)],
+        [EVENT_DOCUMENT_LOAD_COMPLETE, e => {
+          let doc = e.accessible.QueryInterface(Ci.nsIAccessibleDocument);
+          return doc.URL == aURL;
+        }]
+      ]);
+      domNode.src = aURL;
+      await evts;
+      testAccessibleTree(domNode, {
+        role: ROLE_INTERNAL_FRAME,
+        children: [
+          {
+            role: ROLE_DOCUMENT,
+            name: aTitle,
+          },
+        ],
+      });
     }
 
-    // //////////////////////////////////////////////////////////////////////////
-    // Do tests
-
-    function doTests() {
-      const gQueue = new eventQueue();
-      gQueue.push(new changeIframeSrc("iframe", "about:license", "Licenses"));
-      gQueue.push(new changeIframeSrc("iframe", "about:buildconfig", "Build Configuration"));
-      gQueue.invoke(); // Will call SimpleTest.finish();
+    async function doTests() {
+      await changeIframeSrc("iframe", "about:license", "Licenses");
+      await changeIframeSrc("iframe", "about:buildconfig", "Build Configuration");
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

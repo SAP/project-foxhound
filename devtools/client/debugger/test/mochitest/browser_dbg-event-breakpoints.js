@@ -5,7 +5,6 @@
 "use strict";
 
 add_task(async function () {
-  await pushPref("dom.element.commandfor.enabled", true);
   await pushPref("dom.events.textevent.enabled", true);
   await pushPref("dom.closewatcher.enabled", true);
 
@@ -255,6 +254,12 @@ add_task(async function () {
   await assertPausedAtSourceAndLine(dbg, eventBreakpointsSource.id, 82);
   await resume(dbg);
   await onReload;
+  // The reload function waits for the sources to be available, but it doesn't
+  // wait for the breakpoint checkboxes to be restored, and they're done
+  // asynchronously.
+  // Wait for the checkbox state, so that the next toggle unchecks it as a
+  // cleanup.
+  await waitForEventBreakpointChecked(dbg, "Load", "event.load.beforeunload");
   await toggleEventBreakpoint(dbg, "Load", "event.load.beforeunload");
 
   info(`Check that breakpoint can be set on "unload" event`);
@@ -264,6 +269,7 @@ add_task(async function () {
   await assertPausedAtSourceAndLine(dbg, eventBreakpointsSource.id, 87);
   await resume(dbg);
   await onReload;
+  await waitForEventBreakpointChecked(dbg, "Load", "event.load.unload");
   await toggleEventBreakpoint(dbg, "Load", "event.load.unload");
 });
 
@@ -307,68 +313,6 @@ add_task(async function () {
   is(mouseGroupCheckbox.indeterminate, false);
   is(timerGroupCheckbox.checked, true);
 });
-
-function getEventListenersPanel(dbg) {
-  return findElementWithSelector(dbg, ".event-listeners-pane .event-listeners");
-}
-
-async function toggleEventBreakpoint(
-  dbg,
-  eventBreakpointGroup,
-  eventBreakpointName
-) {
-  const eventCheckbox = await getEventBreakpointCheckbox(
-    dbg,
-    eventBreakpointGroup,
-    eventBreakpointName
-  );
-  eventCheckbox.scrollIntoView();
-  info(`Toggle ${eventBreakpointName} breakpoint`);
-  const onEventListenersUpdate = waitForDispatch(
-    dbg.store,
-    "UPDATE_EVENT_LISTENERS"
-  );
-  const checked = eventCheckbox.checked;
-  eventCheckbox.click();
-  await onEventListenersUpdate;
-
-  info("Wait for the event breakpoint checkbox to be toggled");
-  // Wait for he UI to be toggled, otherwise, the reducer may not be fully updated
-  await waitFor(() => {
-    return eventCheckbox.checked == !checked;
-  });
-}
-
-async function getEventBreakpointCheckbox(
-  dbg,
-  eventBreakpointGroup,
-  eventBreakpointName
-) {
-  if (!getEventListenersPanel(dbg)) {
-    // Event listeners panel is collapsed, expand it
-    findElementWithSelector(
-      dbg,
-      `.event-listeners-pane ._header .header-label`
-    ).click();
-    await waitFor(() => getEventListenersPanel(dbg));
-  }
-
-  const groupCheckbox = findElementWithSelector(
-    dbg,
-    `input[value="${eventBreakpointGroup}"]`
-  );
-  const groupEl = groupCheckbox.closest(".event-listener-group");
-  let groupEventsUl = groupEl.querySelector("ul");
-  if (!groupEventsUl) {
-    info(
-      `Expand ${eventBreakpointGroup} and wait for the sub list to be displayed`
-    );
-    groupEl.querySelector(".event-listener-expand").click();
-    groupEventsUl = await waitFor(() => groupEl.querySelector("ul"));
-  }
-
-  return findElementWithSelector(dbg, `input[value="${eventBreakpointName}"]`);
-}
 
 async function invokeOnElement(selector, action) {
   await SpecialPowers.focus(gBrowser.selectedBrowser);

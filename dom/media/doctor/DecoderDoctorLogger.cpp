@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,6 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -31,6 +28,7 @@ void DecoderDoctorLogger::Init() {
   }
 }
 
+#ifndef RELEASE_OR_BETA
 // First DDLogShutdowner sets sLogState to scShutdown, to prevent further
 // logging.
 struct DDLogShutdowner {
@@ -54,6 +52,7 @@ struct DDLogDeleter {
   }
 };
 static StaticAutoPtr<DDLogDeleter> sDDLogDeleter;
+#endif
 
 /* static */
 void DecoderDoctorLogger::PanicInternal(const char* aReason, bool aDontBlock) {
@@ -148,13 +147,13 @@ bool DecoderDoctorLogger::EnsureLogIsEnabled() {
 }
 
 /* static */
-void DecoderDoctorLogger::EnableLogging() { Unused << EnsureLogIsEnabled(); }
+void DecoderDoctorLogger::EnableLogging() { (void)EnsureLogIsEnabled(); }
 
 /* static */ RefPtr<DecoderDoctorLogger::LogMessagesPromise>
 DecoderDoctorLogger::RetrieveMessages(
     const dom::HTMLMediaElement* aMediaElement) {
   if (MOZ_UNLIKELY(!EnsureLogIsEnabled())) {
-    DDL_WARN("Request (for %p) but there are no logs", aMediaElement);
+    DDL_WARN("Request (for {}) but there are no logs", fmt::ptr(aMediaElement));
     return DecoderDoctorLogger::LogMessagesPromise::CreateAndReject(
         NS_ERROR_DOM_MEDIA_ABORT_ERR, __func__);
   }

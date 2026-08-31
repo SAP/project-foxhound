@@ -3,7 +3,7 @@
 
 "use strict";
 const { ShellService } = ChromeUtils.importESModule(
-  "resource:///modules/ShellService.sys.mjs"
+  "moz-src:///browser/components/shell/ShellService.sys.mjs"
 );
 
 add_task(async function test_default_browser_check() {

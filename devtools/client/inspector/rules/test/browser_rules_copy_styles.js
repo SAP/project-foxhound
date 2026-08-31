@@ -17,7 +17,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
   const data = [
     {
@@ -101,6 +101,27 @@ add_task(async function () {
         "\tfont-size: 12px;[\\r\\n]+" +
         "\tborder-color: #00F !important;[\\r\\n]+" +
         '\t--var: "\\*/";[\\r\\n]+' +
+        "}",
+      visible: {
+        copyLocation: false,
+        copyDeclaration: true,
+        copyPropertyName: true,
+        copyPropertyValue: false,
+        copySelector: false,
+        copyRule: true,
+      },
+    },
+    {
+      desc: "Test Copy Rule with hidden unused variables",
+      node: getRuleViewRuleEditorAt(view, 2).rule.textProps[0].editor.nameSpan,
+      menuItemLabel: "styleinspector.contextmenu.copyRule",
+      expectedPattern:
+        ":where\\(#testid\\) {[\\r\\n]+" +
+        "\tcolor: gold;[\\r\\n]+" +
+        Array.from({ length: 13 }, (_, i) => {
+          return `\t--unused-${i + 1}: ${i + 1};[\\r\\n]+`;
+        }).join("") +
+        "\tbackground-color: tomato;[\\r\\n]+" +
         "}",
       visible: {
         copyLocation: false,
@@ -341,7 +362,7 @@ async function checkCopyStyle(
 }
 
 async function disableProperty(view, index) {
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   const textProp = ruleEditor.rule.textProps[index];
   await togglePropStatus(view, textProp);
 }

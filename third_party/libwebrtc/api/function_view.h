@@ -29,7 +29,7 @@
 //
 // Example use:
 //
-//   void SomeFunction(rtc::FunctionView<int(int)> index_transform);
+//   void SomeFunction(webrtc::FunctionView<int(int)> index_transform);
 //   ...
 //   SomeFunction([](int i) { return 2 * i + 1; });
 //
@@ -128,10 +128,5 @@ class FunctionView<RetT(ArgT...)> final {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::FunctionView;
-}  // namespace rtc
 
 #endif  // API_FUNCTION_VIEW_H_

@@ -1,110 +1,35 @@
-#![allow(clippy::let_unit_value)] // `let () =` being used to constrain result type
-
 use alloc::borrow::ToOwned as _;
-use core::mem::ManuallyDrop;
-use core::ptr::NonNull;
 
-use core_graphics_types::{
-    base::CGFloat,
-    geometry::{CGRect, CGSize},
+use objc2::{
+    available,
+    rc::{autoreleasepool, Retained},
+    runtime::ProtocolObject,
+    ClassType, Message,
 };
-use metal::{foreign_types::ForeignType, MTLTextureType};
-use objc::{
-    class, msg_send,
-    rc::{autoreleasepool, StrongPtr},
-    runtime::{Object, BOOL, NO, YES},
-    sel, sel_impl,
-};
+use objc2_core_foundation::CGSize;
+use objc2_foundation::NSObjectProtocol;
+use objc2_metal::MTLTextureType;
+use objc2_quartz_core::{CAMetalDrawable, CAMetalLayer};
 use parking_lot::{Mutex, RwLock};
 
-use crate::metal::layer_observer::new_observer_layer;
-
-#[link(name = "QuartzCore", kind = "framework")]
-extern "C" {}
+use super::OsFeatures;
 
 impl super::Surface {
-    fn new(layer: metal::MetalLayer) -> Self {
+    pub fn new(layer: Retained<CAMetalLayer>) -> Self {
         Self {
             render_layer: Mutex::new(layer),
             swapchain_format: RwLock::new(None),
             extent: RwLock::new(wgt::Extent3d::default()),
-            present_with_transaction: false,
         }
     }
 
-    /// If not called on the main thread, this will panic.
-    #[allow(clippy::transmute_ptr_to_ref)]
-    pub unsafe fn from_view(view: NonNull<Object>) -> Self {
-        let layer = unsafe { Self::get_metal_layer(view) };
-        let layer = ManuallyDrop::new(layer);
-        // SAFETY: The layer is an initialized instance of `CAMetalLayer`, and
-        // we transfer the retain count to `MetalLayer` using `ManuallyDrop`.
-        let layer = unsafe { metal::MetalLayer::from_ptr(layer.cast()) };
-        Self::new(layer)
+    pub fn from_layer(layer: &CAMetalLayer) -> Self {
+        assert!(layer.isKindOfClass(CAMetalLayer::class()));
+        Self::new(layer.retain())
     }
 
-    pub unsafe fn from_layer(layer: &metal::MetalLayerRef) -> Self {
-        let class = class!(CAMetalLayer);
-        let proper_kind: BOOL = msg_send![layer, isKindOfClass: class];
-        assert_eq!(proper_kind, YES);
-        Self::new(layer.to_owned())
-    }
-
-    /// Get or create a new `CAMetalLayer` associated with the given `NSView`
-    /// or `UIView`.
-    ///
-    /// # Panics
-    ///
-    /// If called from a thread that is not the main thread, this will panic.
-    ///
-    /// # Safety
-    ///
-    /// The `view` must be a valid instance of `NSView` or `UIView`.
-    pub(crate) unsafe fn get_metal_layer(view: NonNull<Object>) -> StrongPtr {
-        let is_main_thread: BOOL = msg_send![class!(NSThread), isMainThread];
-        if is_main_thread == NO {
-            panic!("get_metal_layer cannot be called in non-ui thread.");
-        }
-
-        // Ensure that the view is layer-backed.
-        // Views are always layer-backed in UIKit.
-        #[cfg(target_os = "macos")]
-        let () = msg_send![view.as_ptr(), setWantsLayer: YES];
-
-        let root_layer: *mut Object = msg_send![view.as_ptr(), layer];
-        // `-[NSView layer]` can return `NULL`, while `-[UIView layer]` should
-        // always be available.
-        assert!(!root_layer.is_null(), "failed making the view layer-backed");
-
-        // NOTE: We explicitly do not touch properties such as
-        // `layerContentsPlacement`, `needsDisplayOnBoundsChange` and
-        // `contentsGravity` etc. on the root layer, both since we would like
-        // to give the user full control over them, and because the default
-        // values suit us pretty well (especially the contents placement being
-        // `NSViewLayerContentsRedrawDuringViewResize`, which allows the view
-        // to receive `drawRect:`/`updateLayer` calls).
-
-        let is_metal_layer: BOOL = msg_send![root_layer, isKindOfClass: class!(CAMetalLayer)];
-        if is_metal_layer == YES {
-            // The view has a `CAMetalLayer` as the root layer, which can
-            // happen for example if user overwrote `-[NSView layerClass]` or
-            // the view is `MTKView`.
-            //
-            // This is easily handled: We take "ownership" over the layer, and
-            // render directly into that; after all, the user passed a view
-            // with an explicit Metal layer to us, so this is very likely what
-            // they expect us to do.
-            unsafe { StrongPtr::retain(root_layer) }
-        } else {
-            // The view does not have a `CAMetalLayer` as the root layer (this
-            // is the default for most views).
-            //
-            // This case is trickier! We cannot use the existing layer with
-            // Metal, so we must do something else. There are a few options,
-            // we do the same as outlined in:
-            // https://docs.rs/raw-window-metal/1.1.0/raw_window_metal/#reasoning-behind-creating-a-sublayer
-            unsafe { new_observer_layer(root_layer) }
-        }
+    pub fn render_layer(&self) -> &Mutex<Retained<CAMetalLayer>> {
+        &self.render_layer
     }
 
     /// Gets the current dimensions of the `Surface`.
@@ -115,11 +40,10 @@ impl super::Surface {
     /// of sync. This is sound, as these properties are accessed atomically.
     /// See: <https://github.com/gfx-rs/wgpu/pull/7692>
     pub(super) fn dimensions(&self) -> wgt::Extent3d {
-        let (size, scale): (CGSize, CGFloat) = unsafe {
-            let render_layer_borrow = self.render_layer.lock();
-            let render_layer = render_layer_borrow.as_ref();
-            let bounds: CGRect = msg_send![render_layer, bounds];
-            let contents_scale: CGFloat = msg_send![render_layer, contentsScale];
+        let (size, scale) = {
+            let render_layer = self.render_layer.lock();
+            let bounds = render_layer.bounds();
+            let contents_scale = render_layer.contentsScale();
             (bounds.size, contents_scale)
         };
 
@@ -139,9 +63,9 @@ impl crate::Surface for super::Surface {
         device: &super::Device,
         config: &crate::SurfaceConfiguration,
     ) -> Result<(), crate::SurfaceError> {
-        log::debug!("build swapchain {:?}", config);
+        log::debug!("build swapchain {config:?}");
 
-        let caps = &device.shared.private_caps;
+        let caps = &device.shared.private_texture_format_caps;
         *self.swapchain_format.write() = Some(config.format);
         *self.extent.write() = config.extent;
 
@@ -152,34 +76,35 @@ impl crate::Surface for super::Surface {
             wgt::PresentMode::Immediate => false,
             m => unreachable!("Unsupported present mode: {m:?}"),
         };
-        let drawable_size = CGSize::new(config.extent.width as f64, config.extent.height as f64);
+        // CGFloat is f64 on 64-bit, f32 on 32-bit (arm64_32/ILP32)
+        let drawable_size = CGSize::new(config.extent.width as _, config.extent.height as _);
 
         match config.composite_alpha_mode {
-            wgt::CompositeAlphaMode::Opaque => render_layer.set_opaque(true),
-            wgt::CompositeAlphaMode::PostMultiplied => render_layer.set_opaque(false),
+            wgt::CompositeAlphaMode::Opaque => render_layer.setOpaque(true),
+            wgt::CompositeAlphaMode::PostMultiplied => render_layer.setOpaque(false),
             _ => (),
         }
 
-        let device_raw = device.shared.device.lock();
-        render_layer.set_device(&device_raw);
-        render_layer.set_pixel_format(caps.map_format(config.format));
-        render_layer.set_framebuffer_only(framebuffer_only);
-        render_layer.set_presents_with_transaction(self.present_with_transaction);
+        let device_raw = &device.shared.device;
+        render_layer.setDevice(Some(device_raw));
+        render_layer.setPixelFormat(caps.map_format(config.format));
+        render_layer.setFramebufferOnly(framebuffer_only);
         // opt-in to Metal EDR
         // EDR potentially more power used in display and more bandwidth, memory footprint.
         let wants_edr = config.format == wgt::TextureFormat::Rgba16Float;
-        if wants_edr != render_layer.wants_extended_dynamic_range_content() {
-            render_layer.set_wants_extended_dynamic_range_content(wants_edr);
+        if wants_edr != render_layer.wantsExtendedDynamicRangeContent() {
+            render_layer.setWantsExtendedDynamicRangeContent(wants_edr);
         }
 
         // this gets ignored on iOS for certain OS/device combinations (iphone5s iOS 10.3)
-        render_layer.set_maximum_drawable_count(config.maximum_frame_latency as u64 + 1);
-        render_layer.set_drawable_size(drawable_size);
-        if caps.can_set_next_drawable_timeout {
-            let () = msg_send![*render_layer, setAllowsNextDrawableTimeout:false];
+        render_layer.setMaximumDrawableCount(config.maximum_frame_latency as usize + 1);
+        render_layer.setDrawableSize(drawable_size);
+        // https://developer.apple.com/documentation/quartzcore/cametallayer/allowsnextdrawabletimeout
+        if available!(macos = 10.13, ios = 11.0, tvos = 11.0, visionos = 1.0) {
+            render_layer.setAllowsNextDrawableTimeout(false);
         }
-        if caps.can_set_display_sync {
-            let () = msg_send![*render_layer, setDisplaySyncEnabled: display_sync];
+        if OsFeatures::display_sync() {
+            render_layer.setDisplaySyncEnabled(display_sync);
         }
 
         Ok(())
@@ -191,17 +116,55 @@ impl crate::Surface for super::Surface {
 
     unsafe fn acquire_texture(
         &self,
-        _timeout_ms: Option<core::time::Duration>, //TODO
+        _timeout: Option<core::time::Duration>, // TODO
         _fence: &super::Fence,
-    ) -> Result<Option<crate::AcquiredSurfaceTexture<super::Api>>, crate::SurfaceError> {
+    ) -> Result<crate::AcquiredSurfaceTexture<super::Api>, crate::SurfaceError> {
         let render_layer = self.render_layer.lock();
-        let (drawable, texture) = match autoreleasepool(|| {
+
+        #[cfg(target_os = "macos")]
+        {
+            // Workaround for https://github.com/gfx-rs/wgpu/issues/8309
+            // When the window is occluded on macOS, presented drawables get stuck waiting
+            // for vsync. Check the window's occlusion state and skip acquisition if
+            // the window is not visible - this avoids a 1-second hang in nextDrawable().
+            use objc2::rc::Retained;
+            use objc2::runtime::NSObject;
+            use objc2_quartz_core::CALayer;
+
+            // The CAMetalLayer is typically a sublayer, so we need to traverse up
+            // to find the root layer whose delegate is the NSView.
+            let mut current_layer: Option<Retained<CALayer>> =
+                Some(Retained::into_super(render_layer.clone()));
+
+            while let Some(layer) = current_layer {
+                if let Some(delegate) = layer.delegate() {
+                    // Found a layer with a delegate - this should be the NSView
+                    let window: Option<Retained<NSObject>> =
+                        unsafe { objc2::msg_send![&*delegate, window] };
+
+                    if let Some(window) = window {
+                        const NS_WINDOW_OCCLUSION_STATE_VISIBLE: usize = 1 << 1;
+                        let occlusion_state: usize =
+                            unsafe { objc2::msg_send![&*window, occlusionState] };
+                        let is_visible = (occlusion_state & NS_WINDOW_OCCLUSION_STATE_VISIBLE) != 0;
+
+                        if !is_visible {
+                            return Err(crate::SurfaceError::Occluded);
+                        }
+                    }
+                    break;
+                }
+                current_layer = layer.superlayer();
+            }
+        }
+
+        let (drawable, texture) = match autoreleasepool(|_| {
             render_layer
-                .next_drawable()
+                .nextDrawable()
                 .map(|drawable| (drawable.to_owned(), drawable.texture().to_owned()))
         }) {
             Some(pair) => pair,
-            None => return Ok(None),
+            None => return Err(crate::SurfaceError::Timeout),
         };
 
         let swapchain_format = self.swapchain_format.read().unwrap();
@@ -210,7 +173,7 @@ impl crate::Surface for super::Surface {
             texture: super::Texture {
                 raw: texture,
                 format: swapchain_format,
-                raw_type: MTLTextureType::D2,
+                raw_type: MTLTextureType::Type2D,
                 array_layers: 1,
                 mip_levels: 1,
                 copy_size: crate::CopyExtent {
@@ -219,14 +182,14 @@ impl crate::Surface for super::Surface {
                     depth: 1,
                 },
             },
-            drawable,
-            present_with_transaction: self.present_with_transaction,
+            drawable: ProtocolObject::from_retained(drawable),
+            present_with_transaction: render_layer.presentsWithTransaction(),
         };
 
-        Ok(Some(crate::AcquiredSurfaceTexture {
+        Ok(crate::AcquiredSurfaceTexture {
             texture: suf_texture,
             suboptimal: false,
-        }))
+        })
     }
 
     unsafe fn discard_texture(&self, _texture: super::SurfaceTexture) {}

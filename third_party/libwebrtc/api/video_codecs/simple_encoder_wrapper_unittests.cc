@@ -50,7 +50,7 @@ TEST(SimpleEncoderWrapper, SupportedSvcModesOnlyL1T1) {
       .buffer_space_type =
           PredictionConstraints::BufferSpaceType::kSingleKeyframe,
       .max_spatial_layers = 1,
-      .scaling_factors = {{1, 1}},
+      .scaling_factors = {{.numerator = 1, .denominator = 1}},
   };
 
   EXPECT_THAT(SimpleEncoderWrapper::SupportedWebrtcSvcModes(constraints),
@@ -65,7 +65,8 @@ TEST(SimpleEncoderWrapper, SupportedSvcModesUpToL1T3) {
       .buffer_space_type =
           PredictionConstraints::BufferSpaceType::kSingleKeyframe,
       .max_spatial_layers = 1,
-      .scaling_factors = {{1, 1}, {1, 2}},
+      .scaling_factors = {{.numerator = 1, .denominator = 1},
+                          {.numerator = 1, .denominator = 2}},
   };
 
   EXPECT_THAT(SimpleEncoderWrapper::SupportedWebrtcSvcModes(constraints),
@@ -80,7 +81,8 @@ TEST(SimpleEncoderWrapper, SupportedSvcModesUpToL3T3Key) {
       .buffer_space_type =
           PredictionConstraints::BufferSpaceType::kSingleKeyframe,
       .max_spatial_layers = 3,
-      .scaling_factors = {{1, 1}, {1, 2}},
+      .scaling_factors = {{.numerator = 1, .denominator = 1},
+                          {.numerator = 1, .denominator = 2}},
   };
 
   EXPECT_THAT(
@@ -99,7 +101,8 @@ TEST(SimpleEncoderWrapper, SupportedSvcModesUpToS3T3) {
       .buffer_space_type =
           PredictionConstraints::BufferSpaceType::kMultiInstance,
       .max_spatial_layers = 3,
-      .scaling_factors = {{1, 1}, {1, 2}},
+      .scaling_factors = {{.numerator = 1, .denominator = 1},
+                          {.numerator = 1, .denominator = 2}},
   };
 
   EXPECT_THAT(SimpleEncoderWrapper::SupportedWebrtcSvcModes(constraints),
@@ -115,7 +118,9 @@ TEST(SimpleEncoderWrapper, SupportedSvcModesUpToL3T3KeyWithHScaling) {
       .buffer_space_type =
           PredictionConstraints::BufferSpaceType::kSingleKeyframe,
       .max_spatial_layers = 3,
-      .scaling_factors = {{1, 1}, {1, 2}, {2, 3}},
+      .scaling_factors = {{.numerator = 1, .denominator = 1},
+                          {.numerator = 1, .denominator = 2},
+                          {.numerator = 2, .denominator = 3}},
   };
 
   EXPECT_THAT(
@@ -133,7 +138,7 @@ TEST(SimpleEncoderWrapper, SupportedSvcModesUpToL3T3KeyWithHScaling) {
 // implementation for testing, but hey, this is just a PoC.
 TEST(SimpleEncoderWrapper, EncodeL1T1) {
   auto encoder = LibaomAv1EncoderFactory().CreateEncoder(
-      {.max_encode_dimensions = {1080, 720},
+      {.max_encode_dimensions = {.width = 1080, .height = 720},
        .encoding_format = {.sub_sampling = EncodingFormat::k420,
                            .bit_depth = 8},
        .rc_mode = VideoEncoderFactoryInterface::StaticEncoderSettings::Cqp(),
@@ -177,7 +182,7 @@ TEST(SimpleEncoderWrapper, EncodeL1T1) {
 
 TEST(SimpleEncoderWrapper, EncodeL2T2_KEY) {
   auto encoder = LibaomAv1EncoderFactory().CreateEncoder(
-      {.max_encode_dimensions = {1080, 720},
+      {.max_encode_dimensions = {.width = 1080, .height = 720},
        .encoding_format = {.sub_sampling = EncodingFormat::k420,
                            .bit_depth = 8},
        .rc_mode = VideoEncoderFactoryInterface::StaticEncoderSettings::Cqp(),
@@ -237,7 +242,7 @@ TEST(SimpleEncoderWrapper, EncodeL2T2_KEY) {
 
 TEST(SimpleEncoderWrapper, EncodeL1T3ForceKeyframe) {
   auto encoder = LibaomAv1EncoderFactory().CreateEncoder(
-      {.max_encode_dimensions = {1080, 720},
+      {.max_encode_dimensions = {.width = 1080, .height = 720},
        .encoding_format = {.sub_sampling = EncodingFormat::k420,
                            .bit_depth = 8},
        .rc_mode = VideoEncoderFactoryInterface::StaticEncoderSettings::Cqp(),

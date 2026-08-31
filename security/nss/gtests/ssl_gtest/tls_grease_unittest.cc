@@ -131,10 +131,35 @@ TEST_P(GreasePresenceAbsenceTestAllVersions, ClientGreaseKeyShare) {
 
   auto ch1 =
       MakeTlsFilter<TlsExtensionCapture>(client_, ssl_tls13_key_share_xtn);
+  // filters only work with particular groups
+  server_->ConfigNamedGroups(kNonPQDHEGroups);
+  client_->ConfigNamedGroups(kNonPQDHEGroups);
   Connect();
   EXPECT_TRUE((version_ >= SSL_LIBRARY_VERSION_TLS_1_3) == ch1->captured());
 
-  checkGreasePresence(1, 0, ch1->extension());
+  // Parse the key_share extension structurally: only count GREASE values in
+  // the group ID fields. Scanning the raw buffer with countGreaseInBuffer
+  // would spuriously count GREASE patterns in the random key_exchange bytes.
+  size_t greaseCount = 0;
+  if (ch1->captured()) {
+    TlsParser extParser(ch1->extension());
+    DataBuffer keyShares;
+    ASSERT_TRUE(extParser.ReadVariable(&keyShares, 2));
+    TlsParser shareParser(keyShares);
+    while (shareParser.remaining()) {
+      uint32_t group;
+      DataBuffer keyExchange;
+      ASSERT_TRUE(shareParser.Read(&group, 2));
+      ASSERT_TRUE(shareParser.ReadVariable(&keyExchange, 2));
+      for (uint16_t greaseVal : kTlsGreaseValues) {
+        if (static_cast<uint16_t>(group) == greaseVal) {
+          greaseCount++;
+        }
+      }
+    }
+  }
+  size_t expected = expectGrease() ? size_t(1) : size_t(0);
+  EXPECT_EQ(expected, greaseCount);
 }
 
 TEST_P(GreasePresenceAbsenceTestAllVersions, ClientGreaseSigAlg) {
@@ -412,7 +437,7 @@ TEST_F(TlsConnectStreamTls13, GreasePsk) {
 
   Connect();
   SendReceive();
-  CheckKeys(ssl_kea_ecdh, ssl_grp_ec_curve25519, ssl_auth_psk, ssl_sig_none);
+  CheckKeys(ssl_auth_psk, ssl_sig_none);
 }
 
 // Test that ECH and GREASE work together successfully

@@ -50,8 +50,13 @@ async function test() {
 
   document.getElementById("content").removeChild(div);
 
-  // <textarea> element
+  // Create a scrollable and overflowed in the viewport <textarea> element
   let textarea = document.createElement("textarea");
+  textarea.style.overflow = "scroll";
+  textarea.style.height = "150vh";
+  // The textarea row is 200 so that "150vh / 100" is a reasonable font-size
+  // to overflow the area.
+  textarea.style.fontSize = "calc(150vh / 100)";
   textarea.rows = 200;
   for (let i = 0; i < 200; i++) {
     textarea.value += "foo\n";
@@ -76,11 +81,17 @@ async function test() {
   window.scrollTo(0, 0);
   await waitToClearOutAnyPotentialScrolls(window);
   is(0, window.scrollY, "scroll position is reset");
+  const scrollTopInTextArea = textarea.scrollTop;
+  const scrollLeftInTextArea = textarea.scrollLeft;
   scrollendPromise = promiseScrollend();
   utils.zoomToFocusedInput();
   await scrollendPromise;
   await promiseApzFlushedRepaints();
   ok(prevY < window.scrollY, "scroll position is visibile position of caret");
+  isfuzzy(textarea.scrollTop, scrollTopInTextArea, 2,
+     "textarea's scrollTop is unchanged");
+  isfuzzy(textarea.scrollLeft, scrollLeftInTextArea, 2,
+     "textarea's scrollLeft is unchanged");
 
   document.getElementById("content").removeChild(textarea);
 }

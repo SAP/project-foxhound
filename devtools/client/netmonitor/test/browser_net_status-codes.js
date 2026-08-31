@@ -65,9 +65,9 @@ add_task(async function () {
       details: {
         status: 303,
         statusText: "See Other",
-        type: "plain",
+        type: "plain (redirect)",
         fullMimeType: "text/plain; charset=utf-8",
-        size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 22),
+        size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 0),
         time: true,
       },
     },

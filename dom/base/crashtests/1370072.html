@@ -1,18 +1,30 @@
 <script>
+let nLoads = 0;
+
 function start() {
-	o1=document.createElement('iframe');
-	o1.addEventListener('load',fun0);
-	document.body.appendChild(o1);
+	ifr = document.createElement('iframe');
+	ifr.addEventListener('load', onLoad);
+	document.body.appendChild(ifr);
 }
-function fun0() {
-	o5=o1.contentDocument;
-	o52=function() {let x=o5.querySelectorAll('*:not([id])');return x[x.length-1]}();
-	o1.contentWindow.onresize=fun1;
-	o1.height='5px';
-	o52.clientTop;
+
+function onLoad() {
+	if (++nLoads > 3) {
+		// Limit recursion depth, bug 1971796
+		return;
+	}
+	doc = ifr.contentDocument;
+	// el will be body
+	el = function() {
+		let elements = doc.querySelectorAll('*:not([id])');
+		return elements[elements.length-1]
+	}();
+	ifr.contentWindow.onresize = onResize;
+	ifr.height = '5px';
+	el.clientTop;
 }
-function fun1() {
-	document.documentElement.appendChild(o1);
+
+function onResize() {
+	document.documentElement.appendChild(ifr);
 }
 </script>
 <body onload="start()"></body>

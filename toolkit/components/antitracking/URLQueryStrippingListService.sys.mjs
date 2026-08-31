@@ -69,7 +69,11 @@ function combineAndParseLists(mainList, arrOfLists) {
       if (Object.hasOwn(mainList, key)) {
         mainList[key].queryParams.push(...additionalList[key].queryParams);
 
-        mainList[key].topLevelSites.push(...additionalList[key].topLevelSites);
+        // Ensure empty origins in global rules function as intended
+        mainList[key].origins ??= [];
+        additionalList[key].origins ??= [];
+
+        mainList[key].origins.push(...additionalList[key].origins);
       } else {
         mainList[key] = additionalList[key];
       }
@@ -77,18 +81,19 @@ function combineAndParseLists(mainList, arrOfLists) {
   });
 
   for (let key in mainList) {
-    mainList[key].queryParams = mainList[key].queryParams.map(param =>
+    mainList[key].queryParams = (mainList[key].queryParams ?? []).map(param =>
       param.toLowerCase()
     );
 
-    mainList[key].topLevelSites = mainList[key].topLevelSites.map(param =>
-      param.toLowerCase()
+    // Origins can be missing for global rules (isGlobal: true) and for any bad input.
+    mainList[key].origins = (mainList[key].origins ?? []).map(origin =>
+      origin.toLowerCase()
     );
 
-    // Removes duplicates topLevelSites
-    mainList[key].topLevelSites = [...new Set(mainList[key].topLevelSites)];
+    // Removes duplicate origins
+    mainList[key].origins = [...new Set(mainList[key].origins)];
 
-    // Removes duplicates queryParams
+    // Removes duplicate queryParams
     mainList[key].queryParams = [...new Set(mainList[key].queryParams)];
   }
 
@@ -435,10 +440,11 @@ export class URLQueryStrippingListService {
       case "xpcom-shutdown":
         this.#shutdown();
         break;
-      case "nsPref:changed":
+      case "nsPref:changed": {
         let prefValue = Services.prefs.getStringPref(data, "");
         this._onPrefUpdate(data, prefValue);
         break;
+      }
       default:
         console.error(`Unexpected event ${topic}`);
     }

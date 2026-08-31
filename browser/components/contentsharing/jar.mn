@@ -1,0 +1,12 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+browser.jar:
+    content/browser/contentsharing/contentsharing.schema.json           (contentsharing.schema.json)
+    content/browser/contentsharing/contentSharingModal.xhtml            (content/contentSharingModal.xhtml)
+    content/browser/contentsharing/content-sharing-icon.svg               (content/content-sharing-icon.svg)
+    content/browser/contentsharing/content-sharing-modal.css               (content/content-sharing-modal.css)
+    content/browser/contentsharing/content-sharing-modal.mjs               (content/content-sharing-modal.mjs)
+    content/browser/contentsharing/background-light.svg                 (content/background-light.svg)
+    content/browser/contentsharing/background-dark.svg                  (content/background-dark.svg)

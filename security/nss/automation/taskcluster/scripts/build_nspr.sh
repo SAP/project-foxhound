@@ -5,10 +5,12 @@ set -v -e -x
 source $(dirname $0)/tools.sh
 
 # Clone NSPR if needed.
-hg_clone https://hg.mozilla.org/projects/nspr nspr default
+if [ ! -d nspr ]; then
+  git clone https://github.com/mozilla/nspr nspr
+fi
 
 pushd nspr
-hg revert --all
+git checkout -- .
 if [[ -f ../nss/nspr.patch && "$ALLOW_NSPR_PATCH" == "1" ]]; then
   cat ../nss/nspr.patch | patch -p1
 fi

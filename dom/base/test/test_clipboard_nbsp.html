@@ -84,7 +84,7 @@ async function clipboardTextForElementId(aDomId, aExpectedString) {
   return copiedText;
 }
 
-/** Test for Bug 359303 **/
+/** Test for Bug 359303 */
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(async function() {
   let iValue = await clipboardTextForElementId("input-with-non-breaking-spaces", "Input");

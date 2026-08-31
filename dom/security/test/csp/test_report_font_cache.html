@@ -18,7 +18,6 @@ function reportListener(msg) {
     switch (blocked) {
       case "Ahem.ttf?report_font_cache-1":
         ok(!reportedFont1, "should not have already reported Test Font 1");
-        ok(!reportedFont3, "should not have reported Test Font 3 before Test Font 1");
         reportedFont1 = true;
         break;
       case "Ahem.ttf?report_font_cache-2":

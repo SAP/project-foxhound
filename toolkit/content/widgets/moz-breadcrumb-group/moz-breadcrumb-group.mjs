@@ -19,17 +19,19 @@ export class MozBreadcrumb extends MozLitElement {
   static properties = {
     href: { type: String },
     label: { type: String, fluent: true },
+    heading: { type: String, fluent: true },
     ariaCurrent: { attribute: "aria-current", type: String },
   };
 
   constructor() {
     super();
     this.label = "";
+    this.heading = "";
     this.href = "";
   }
 
   render() {
-    const labelTemplate = this.label || html`<slot></slot>`;
+    const labelTemplate = this.label || this.heading || html`<slot></slot>`;
     return html`
       <link
         rel="stylesheet"

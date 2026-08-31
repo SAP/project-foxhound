@@ -12,6 +12,18 @@ from dataclasses import dataclass, field
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
 
+CLIPPY_FIX_ARGS = ("--fix", "--allow-no-vcs")
+
+
+def get_clippy_driver_flags(config):
+    """Build clippy driver flags (-W/-D) from the warn/deny lists in clippy.yml."""
+    flags = []
+    for lint in config.get("warn", []):
+        flags.extend(["-W", f"clippy::{lint}"])
+    for lint in config.get("deny", []):
+        flags.extend(["-D", f"clippy::{lint}"])
+    return flags
+
 
 def in_sorted_list(l, x):
     i = bisect.bisect_left(l, x)
@@ -25,9 +37,9 @@ def handle_clippy_msg(config, line, log, base_path, files, lint_results):
             p = detail["target"]["src_path"]
             detail = detail["message"]
             if "level" in detail:
-                if (
-                    detail["level"] == "error" or detail["level"] == "failure-note"
-                ) and not detail["code"]:
+                if (detail["level"] in {"error", "failure-note"}) and not detail[
+                    "code"
+                ]:
                     log.debug(
                         "Error outside of clippy."
                         "This means that the build failed. Therefore, skipping this"
@@ -67,6 +79,36 @@ def handle_clippy_msg(config, line, log, base_path, files, lint_results):
         # Could not parse the message.
         # It is usually cargo info like "Finished `release` profile", etc
         return
+
+
+def check_clippy_ran(completed_proc, crate_name, log):
+    """Raise if clippy failed to execute (e.g. build environment not set up)."""
+    if completed_proc.returncode == 0:
+        return
+
+    def is_valid_json(line):
+        try:
+            json.loads(line)
+            return True
+        except json.JSONDecodeError:
+            return False
+
+    has_cargo_json = any(
+        is_valid_json(line) for line in completed_proc.stdout.splitlines()
+    )
+    if not has_cargo_json:
+        output = completed_proc.stderr.strip() or completed_proc.stdout.strip()
+        log.error(
+            "clippy failed to execute for crate '%s' (exit code %d):\n%s",
+            crate_name,
+            completed_proc.returncode,
+            output,
+        )
+        raise RuntimeError(
+            f"Failed to run clippy on '{crate_name}' "
+            f"(exit code {completed_proc.returncode}). "
+            "Ensure the build environment is set up correctly."
+        )
 
 
 def group_paths(paths, config, root):
@@ -114,11 +156,18 @@ def lint(paths, config, log, root, substs=None, fix=None, **_lintargs):
 
     cargo_bin = substs.get("CARGO", "cargo")
 
+    errors = []
     for path_group in group_paths(paths, config, root):
-        if path_group.crate_name == "gkrust":
-            lint_gkrust(path_group, config, log, fix, root, lint_results)
-        else:
-            lint_crate(path_group, config, log, fix, root, cargo_bin, lint_results)
+        try:
+            if path_group.crate_name == "gkrust":
+                lint_gkrust(path_group, config, log, fix, root, lint_results)
+            else:
+                lint_crate(path_group, config, log, fix, root, cargo_bin, lint_results)
+        except RuntimeError as e:
+            errors.append(str(e))
+
+    if errors:
+        raise RuntimeError("\n".join(errors))
 
     return lint_results
 
@@ -130,11 +179,8 @@ def lint_gkrust(path_group, config, log, fix, root, lint_results):
     This crate contains a lot of dependencies and many of them are legacy code at this point.
     Use a conservative approach to linting:
       * Filter out log messages that don't belong to the specified paths
-      * Don't support the `--fix` flag, since that could apply changes to paths that weren't
-        specified.
+      * Support the `--fix` flag with path filtering to apply changes only to specified paths.
     """
-    if fix:
-        log.warn("Clippy linting does not support --fix for the gkrust crate")
     paths = list(expand_exclusions(path_group.paths, config, root))
     paths.sort()
     # gkrust depends on things from the mach environment, so we need to run `./mach cargo` instead
@@ -147,18 +193,36 @@ def lint_gkrust(path_group, config, log, fix, root, lint_results):
         "--log-no-times",
         "cargo",
         "clippy",
-        "--",
-        "--message-format=json",
     ]
+    if fix:
+        clippy_args.extend(CLIPPY_FIX_ARGS)
+    # --keep-going lets cargo check independent crates even after one fails,
+    # so a single broken crate doesn't hide warnings in everything downstream.
+    clippy_args.extend(["--", "--keep-going", "--message-format=json"])
+    driver_flags = get_clippy_driver_flags(config)
+    # MOZ_RUST_DEFAULT_FLAGS sets `-Dwarnings` (warnings-as-errors), which
+    # promotes any clippy warning to a hard error and stops cargo at the first
+    # offending crate. For linting we want to surface every warning across
+    # every included crate, so demote it back to warn-level (last `-W/-D` wins
+    # for the same lint group, and extra_rustflags is appended after the
+    # defaults).
+    flags = ["-W", "warnings"] + driver_flags
+    env = os.environ.copy()
+    env["extra_rustflags"] = " ".join(flags)
     log.debug("Run clippy with = {}".format(" ".join(clippy_args)))
     completed_proc = subprocess.run(
         clippy_args,
         check=False,  # non-zero exit codes are not unexpected
-        stdout=subprocess.PIPE,
+        capture_output=True,
         text=True,
+        env=env,
     )
+    check_clippy_ran(completed_proc, "gkrust", log)
     for l in completed_proc.stdout.splitlines():
         handle_clippy_msg(config, l, log, root, paths, lint_results)
+
+    if fix and completed_proc.returncode == 0:
+        lint_results["fixed"] += 1
 
 
 def lint_crate(path_group, config, log, fix, root, cargo_bin, lint_results):
@@ -167,14 +231,8 @@ def lint_crate(path_group, config, log, fix, root, cargo_bin, lint_results):
 
     These are newer and more self-contained, so we can use a more aggressive approach to linting:
       * Print out all clippy errors for the crate.
-      * Don't support the `--fix` flag, but print out the command the user can manually run.
+      * Support the `--fix` flag to automatically apply fixes.
     """
-    if fix:
-        log.warn(
-            f"Clippy linting does not support --fix for the gkrust crate, "
-            f"run `cargo clippy -p {path_group.crate_name}` manually"
-        )
-        fix = False
     clippy_args = [
         cargo_bin,
         "clippy",
@@ -183,14 +241,21 @@ def lint_crate(path_group, config, log, fix, root, cargo_bin, lint_results):
         "--message-format=json",
     ]
     if fix:
-        clippy_args.extend(["--fix", "--allow-dirty"])
+        clippy_args.extend([*CLIPPY_FIX_ARGS, "--allow-dirty"])
+    driver_flags = get_clippy_driver_flags(config)
+    if driver_flags:
+        clippy_args.extend(["--"] + driver_flags)
     log.debug("Run clippy with = {}".format(" ".join(clippy_args)))
     completed_proc = subprocess.run(
         clippy_args,
         check=False,  # non-zero exit codes are not unexpected
-        stdout=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
+    check_clippy_ran(completed_proc, path_group.crate_name, log)
 
     for l in completed_proc.stdout.splitlines():
         handle_clippy_msg(config, l, log, root, None, lint_results)
+
+    if fix and completed_proc.returncode == 0:
+        lint_results["fixed"] += 1

@@ -556,10 +556,14 @@ interface Toolbar : ScrollableToolbar {
      *
      * This simple class extension is used so that we can filter for it elsewhere.
      */
-    class RegistrableDomainColorSpan(@ColorInt color: Int) : ForegroundColorSpan(color)
+    class RegistrableDomainColorSpan(
+        @ColorInt color: Int,
+    ) : ForegroundColorSpan(color)
 }
 
-private fun AppCompatImageButton.setTintResource(@ColorRes tintColorResource: Int) {
+private fun AppCompatImageButton.setTintResource(
+    @ColorRes tintColorResource: Int,
+) {
     if (tintColorResource != NO_ID) {
         imageTintList = AppCompatResources.getColorStateList(context, tintColorResource)
     }

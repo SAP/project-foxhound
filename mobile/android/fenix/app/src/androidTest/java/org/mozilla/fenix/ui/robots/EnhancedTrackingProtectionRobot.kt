@@ -7,6 +7,7 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers
@@ -41,7 +42,7 @@ class EnhancedTrackingProtectionRobot {
     fun verifyEnhancedTrackingProtectionSheetStatus(status: String, state: Boolean) {
         mDevice.waitNotNull(Until.findObjects(By.text("Protections are $status for this site")))
         Log.i(TAG, "verifyEnhancedTrackingProtectionSheetStatus: Trying to check ETP toggle is checked: $state")
-        onView(ViewMatchers.withResourceName("switch_widget")).check(
+        onView(ViewMatchers.withResourceName("switchWidget")).check(
             matches(
                 isChecked(
                     state,
@@ -49,20 +50,6 @@ class EnhancedTrackingProtectionRobot {
             ),
         )
         Log.i(TAG, "verifyEnhancedTrackingProtectionSheetStatus: Verified ETP toggle is checked: $state")
-    }
-
-    fun verifyETPSwitchVisibility(visible: Boolean) {
-        if (visible) {
-            Log.i(TAG, "verifyETPSwitchVisibility: Trying to verify ETP toggle is displayed")
-            enhancedTrackingProtectionSwitch()
-                .check(matches(isDisplayed()))
-            Log.i(TAG, "verifyETPSwitchVisibility: Verified ETP toggle is displayed")
-        } else {
-            Log.i(TAG, "verifyETPSwitchVisibility: Trying to verify ETP toggle is not displayed")
-            enhancedTrackingProtectionSwitch()
-                .check(matches(not(isDisplayed())))
-            Log.i(TAG, "verifyETPSwitchVisibility: Verified ETP toggle is not displayed")
-        }
     }
 
     fun verifyCrossSiteCookiesBlocked(isBlocked: Boolean) {
@@ -234,14 +221,14 @@ class EnhancedTrackingProtectionRobot {
             return Transition()
         }
 
-        fun closeEnhancedTrackingProtectionSheet(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun closeEnhancedTrackingProtectionSheet(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             // Back out of the Enhanced Tracking Protection sheet
             Log.i(TAG, "closeEnhancedTrackingProtectionSheet: Trying to click device back button")
             mDevice.pressBack()
             Log.i(TAG, "closeEnhancedTrackingProtectionSheet: Clicked device back button")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun toggleEnhancedTrackingProtectionFromSheet(interact: EnhancedTrackingProtectionRobot.() -> Unit): Transition {
@@ -291,7 +278,7 @@ private fun pageSecurityIndicator() =
     mDevice.findObject(UiSelector().resourceId("$packageName:id/mozac_browser_toolbar_site_info_indicator"))
 
 private fun enhancedTrackingProtectionSwitch() =
-    onView(ViewMatchers.withResourceName("switch_widget"))
+    onView(ViewMatchers.withResourceName("switchWidget"))
 
 private fun trackingProtectionSettingsButton() =
     onView(withId(R.id.protection_settings)).inRoot(RootMatchers.isDialog()).check(

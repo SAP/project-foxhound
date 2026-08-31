@@ -18,7 +18,7 @@ const kDownloadAutohideCheckboxId = "downloads-button-autohide-checkbox";
 const kDownloadAutohidePanelId = "downloads-button-autohide-panel";
 const kDownloadAutoHidePref = "browser.download.autohideButton";
 
-import { CustomizableUI } from "resource:///modules/CustomizableUI.sys.mjs";
+import { CustomizableUI } from "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
@@ -26,7 +26,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  DragPositionManager: "resource:///modules/DragPositionManager.sys.mjs",
+  DragPositionManager:
+    "moz-src:///browser/components/customizableui/DragPositionManager.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 ChromeUtils.defineLazyGetter(lazy, "gWidgetsBundle", function () {
@@ -38,7 +39,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gTouchBarUpdater",
   "@mozilla.org/widget/touchbarupdater;1",
-  "nsITouchBarUpdater"
+  Ci.nsITouchBarUpdater
 );
 
 let gDebug;
@@ -59,7 +60,7 @@ var gDraggingInToolbars;
 var gTab;
 
 function closeGlobalTab() {
-  let win = gTab.ownerGlobal;
+  let win = gTab.documentGlobal;
   if (win.gBrowser.browsers.length == 1) {
     win.BrowserCommands.openTab();
   }
@@ -86,7 +87,7 @@ var gTabsProgressListener = {
 
 function unregisterGlobalTab() {
   gTab.removeEventListener("TabClose", unregisterGlobalTab);
-  let win = gTab.ownerGlobal;
+  let win = gTab.documentGlobal;
   win.removeEventListener("unload", unregisterGlobalTab);
   win.gBrowser.removeTabsProgressListener(gTabsProgressListener);
 
@@ -355,7 +356,7 @@ export class CustomizeMode {
       gTab.linkedBrowser.stop();
     }
 
-    let win = gTab.ownerGlobal;
+    let win = gTab.documentGlobal;
 
     win.gBrowser.setTabTitle(gTab);
     win.gBrowser.setIcon(gTab, "chrome://browser/skin/customize.svg");
@@ -439,10 +440,10 @@ export class CustomizeMode {
     if (!gTab.selected) {
       // This will force another .enter() to be called via the
       // onlocationchange handler of the tabbrowser, so we return early.
-      gTab.ownerGlobal.gBrowser.selectedTab = gTab;
+      gTab.documentGlobal.gBrowser.selectedTab = gTab;
       return;
     }
-    gTab.ownerGlobal.focus();
+    gTab.documentGlobal.focus();
     if (gTab.ownerDocument != this.#document) {
       return;
     }
@@ -511,7 +512,7 @@ export class CustomizeMode {
       this.#document.documentElement.toggleAttribute("customizing", true);
 
       let customizableToolbars = document.querySelectorAll(
-        "toolbar[customizable=true]:not([autohide=true], [collapsed=true])"
+        "toolbar[customizable=true]:not([autohide], [collapsed])"
       );
       for (let toolbar of customizableToolbars) {
         toolbar.toggleAttribute("customizing", true);
@@ -667,7 +668,7 @@ export class CustomizeMode {
       this._previousPanelContextMenuParent.appendChild(panelContextMenu);
 
       let customizableToolbars = document.querySelectorAll(
-        "toolbar[customizable=true]:not([autohide=true])"
+        "toolbar[customizable=true]:not([autohide])"
       );
       for (let toolbar of customizableToolbars) {
         toolbar.removeAttribute("customizing");
@@ -833,7 +834,7 @@ export class CustomizeMode {
       this.#window.requestAnimationFrame(() => {
         this.#window.requestAnimationFrame(() => {
           animationNode.classList.add("animate-out");
-          animationNode.ownerGlobal.gNavToolbox.addEventListener(
+          animationNode.documentGlobal.gNavToolbox.addEventListener(
             "customizationending",
             cleanupCustomizationExit
           );
@@ -1147,7 +1148,7 @@ export class CustomizeMode {
     for (let command of this.#document.querySelectorAll("command")) {
       if (!command.id || !this.#enabledCommands.has(command.id)) {
         if (shouldBeDisabled) {
-          if (command.getAttribute("disabled") != "true") {
+          if (!command.hasAttribute("disabled")) {
             command.setAttribute("disabled", true);
           } else {
             command.setAttribute("wasdisabled", true);
@@ -1351,7 +1352,7 @@ export class CustomizeMode {
       aNode.removeAttribute("observes");
     }
 
-    if (aNode.getAttribute("checked") == "true") {
+    if (aNode.hasAttribute("checked")) {
       wrapper.setAttribute("itemchecked", "true");
       aNode.removeAttribute("checked");
     }
@@ -1481,7 +1482,7 @@ export class CustomizeMode {
 
       // XXX Bug 309953 - toolbarbuttons aren't in sync with their commands after customizing
       let command = this.$(commandID);
-      if (command && command.hasAttribute("disabled")) {
+      if (command?.hasAttribute("disabled")) {
         toolbarItem.setAttribute("disabled", command.getAttribute("disabled"));
       }
     }
@@ -1791,7 +1792,7 @@ export class CustomizeMode {
    *   case of an overflowable toolbar).
    */
   onWidgetBeforeDOMChange(aNodeToChange, aSecondaryNode, aContainer) {
-    if (aContainer.ownerGlobal != this.#window || this.resetting) {
+    if (aContainer.documentGlobal != this.#window || this.resetting) {
       return;
     }
     // If we get called for widgets that aren't in the window yet, they might not have
@@ -1817,7 +1818,7 @@ export class CustomizeMode {
    *   case of an overflowable toolbar).
    */
   onWidgetAfterDOMChange(aNodeToChange, aSecondaryNode, aContainer) {
-    if (aContainer.ownerGlobal != this.#window || this.resetting) {
+    if (aContainer.documentGlobal != this.#window || this.resetting) {
       return;
     }
     // If the node is still attached to the container, wrap it again:
@@ -3065,7 +3066,7 @@ export class CustomizeMode {
     let mozSourceNode = aEvent.dataTransfer.mozSourceNode;
     // mozSourceNode is null in the dragStart event handler or if
     // the drag event originated in an external application.
-    return !mozSourceNode || mozSourceNode.ownerGlobal != this.#window;
+    return !mozSourceNode || mozSourceNode.documentGlobal != this.#window;
   }
 
   /**
@@ -3095,7 +3096,7 @@ export class CustomizeMode {
     if (aDraggedOverItem.getAttribute("dragover") != aValue) {
       aDraggedOverItem.setAttribute("dragover", aValue);
 
-      let window = aDraggedOverItem.ownerGlobal;
+      let window = aDraggedOverItem.documentGlobal;
       let draggedItem = window.document.getElementById(aDraggedItemId);
       if (aPlace == "palette") {
         // We mostly delegate the complexity of grid placeholder effects to
@@ -3506,7 +3507,7 @@ export class CustomizeMode {
     doc.getElementById("customizationPanelItemContextMenuPin").hidden =
       inPermanentArea;
 
-    doc.ownerGlobal.MozXULElement.insertFTLIfNeeded(
+    doc.documentGlobal.MozXULElement.insertFTLIfNeeded(
       "browser/toolbarContextMenu.ftl"
     );
     event.target.querySelectorAll("[data-lazy-l10n-id]").forEach(el => {

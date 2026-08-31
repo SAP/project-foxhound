@@ -139,6 +139,58 @@ tasks:
         treeherder:
             symbol: tlsfuzzer
 
+    tlsinterop-gnutls:
+        description: tlsinterop-gnutls tests
+        from-deps:
+            kinds:
+                - build
+            with-attributes:
+                build_platform:
+                    - linux32
+                    - linux32-make
+                    - linux64
+                    - linux64-make
+                    - linux64-asan
+                nspr: [false]
+                dbm: [false]
+                cc: [false]
+                modular: [false]
+                fuzz: [false]
+        worker:
+            docker-image: {in-tree: tlsinterop}
+            env:
+                TC_PARENT_TASK_ID: {task-reference: "<build>"}
+                NSS_CYCLES: standard
+                NSS_TESTS: tlsinterop-gnutls
+        treeherder:
+            symbol: tlsinterop-gnutls
+
+    tlsinterop-openssl:
+        description: tlsinterop-openssl tests
+        from-deps:
+            kinds:
+                - build
+            with-attributes:
+                build_platform:
+                    - linux32
+                    - linux32-make
+                    - linux64
+                    - linux64-make
+                    - linux64-asan
+                nspr: [false]
+                dbm: [false]
+                cc: [false]
+                modular: [false]
+                fuzz: [false]
+        worker:
+            docker-image: {in-tree: tlsinterop}
+            env:
+                TC_PARENT_TASK_ID: {task-reference: "<build>"}
+                NSS_CYCLES: standard
+                NSS_TESTS: tlsinterop-openssl
+        treeherder:
+            symbol: tlsinterop-openssl
+
     mpi:
         description: MPI tests
         treeherder:
@@ -233,20 +285,6 @@ tasks:
             env:
                 TC_PARENT_TASK_ID: {task-reference: "<certs>"}
                 NSS_TESTS: policy
-
-    crmf:
-        description: CRMF tests
-        from-deps:
-            kinds: [certs]
-            with-attributes:
-                dbm: [false]
-                make-fips: [false]
-        treeherder:
-            symbol: CRMF
-        worker:
-            env:
-                TC_PARENT_TASK_ID: {task-reference: "<certs>"}
-                NSS_TESTS: crmf
 
     db:
         description: DB tests

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,13 +13,11 @@
 #ifndef mozilla_dom_CharacterData_h
 #define mozilla_dom_CharacterData_h
 
-#include "mozilla/Attributes.h"
+#include "CharacterDataBuffer.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsError.h"
 #include "nsIContent.h"
 #include "nsIMutationObserver.h"
-
-#include "nsTextFragment.h"
-#include "nsError.h"
-#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla::dom {
 class Element;
@@ -89,7 +85,7 @@ class CharacterData : public nsIContent {
 
   NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
-  explicit CharacterData(already_AddRefed<dom::NodeInfo>&& aNodeInfo);
+  explicit CharacterData(already_AddRefed<dom::NodeInfo> aNodeInfo);
 
   void MarkAsMaybeModifiedFrequently() {
     SetFlags(NS_MAYBE_MODIFIED_FREQUENTLY);
@@ -103,27 +99,31 @@ class CharacterData : public nsIContent {
   NS_IMPL_FROMNODE_HELPER(CharacterData, IsCharacterData())
 
   void GetNodeValueInternal(nsAString& aNodeValue) override;
-  void SetNodeValueInternal(const nsAString& aNodeValue,
-                            ErrorResult& aError) override;
+  void SetNodeValueInternal(
+      const nsAString& aNodeValue, ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript) override;
 
   void GetTextContentInternal(nsAString& aTextContent, OOMReporter&) final {
     GetNodeValue(aTextContent);
   }
 
-  void SetTextContentInternal(const nsAString& aTextContent,
-                              nsIPrincipal* aSubjectPrincipal,
-                              ErrorResult& aError) final;
+  void SetTextContentInternal(
+      const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+      ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript) final;
 
   // Implementation for nsIContent
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
   void UnbindFromTree(UnbindContext&) override;
 
-  const nsTextFragment* GetText() override { return &mText; }
+  const CharacterDataBuffer* GetCharacterDataBuffer() const override {
+    return &mBuffer;
+  }
   uint32_t TextLength() const final { return TextDataLength(); }
 
-  const nsTextFragment& TextFragment() const { return mText; }
-  uint32_t TextDataLength() const { return mText.GetLength(); }
+  const CharacterDataBuffer& DataBuffer() const { return mBuffer; }
+  uint32_t TextDataLength() const { return mBuffer.GetLength(); }
 
   void GetTextForTaintCheck(nsAString& aStr) override { GetData(aStr); }
 
@@ -148,16 +148,26 @@ class CharacterData : public nsIContent {
   bool ThreadSafeTextIsOnlyWhitespace() const final;
 
   /**
+   * Check if all text before the given offset is whitespace.
+   */
+  bool TextStartsWithOnlyWhitespace(uint32_t aOffset) const;
+
+  /**
+   * Check if all text at or after the given offset is whitespace.
+   */
+  bool TextEndsWithOnlyWhitespace(uint32_t aOffset) const;
+
+  /**
    * Append the text content to aResult.
    */
-  void AppendTextTo(nsAString& aResult) const { mText.AppendTo(aResult); }
+  void AppendTextTo(nsAString& aResult) const { mBuffer.AppendTo(aResult); }
 
   /**
    * Append the text content to aResult.
    */
   [[nodiscard]] bool AppendTextTo(nsAString& aResult,
                                   const fallible_t& aFallible) const {
-    return mText.AppendTo(aResult, aFallible);
+    return mBuffer.AppendTo(aResult, aFallible);
   }
 
   void SaveSubtreeState() final {}
@@ -183,15 +193,44 @@ class CharacterData : public nsIContent {
 
   // WebIDL API
   void GetData(nsAString& aData) const;
-  virtual void SetData(const nsAString& aData, ErrorResult& rv);
+  void SetData(const nsAString& aData, ErrorResult& rv) {
+    SetDataInternal(aData, MutationEffectOnScript::DropTrustWorthiness, rv);
+  }
+  virtual void SetDataInternal(const nsAString& aData,
+                               MutationEffectOnScript aMutationEffectOnScript,
+                               ErrorResult& rv);
   // nsINode::Length() returns the right thing for our length attribute
   void SubstringData(uint32_t aStart, uint32_t aCount, nsAString& aReturn,
                      ErrorResult& rv);
-  void AppendData(const nsAString& aData, ErrorResult& rv);
-  void InsertData(uint32_t aOffset, const nsAString& aData, ErrorResult& rv);
-  void DeleteData(uint32_t aOffset, uint32_t aCount, ErrorResult& rv);
+  void AppendData(const nsAString& aData, ErrorResult& rv) {
+    AppendDataInternal(aData, MutationEffectOnScript::DropTrustWorthiness, rv);
+  }
+  void AppendDataInternal(const nsAString& aData,
+                          MutationEffectOnScript aMutationEffectOnScript,
+                          ErrorResult& rv);
+  void InsertData(uint32_t aOffset, const nsAString& aData, ErrorResult& rv) {
+    InsertDataInternal(aOffset, aData,
+                       MutationEffectOnScript::DropTrustWorthiness, rv);
+  }
+  void InsertDataInternal(uint32_t aOffset, const nsAString& aData,
+                          MutationEffectOnScript aMutationEffectOnScript,
+                          ErrorResult& rv);
+  void DeleteData(uint32_t aOffset, uint32_t aCount, ErrorResult& rv) {
+    DeleteDataInternal(aOffset, aCount,
+                       MutationEffectOnScript::DropTrustWorthiness, rv);
+  }
+  void DeleteDataInternal(uint32_t aOffset, uint32_t aCount,
+                          MutationEffectOnScript aMutationEffectOnScript,
+                          ErrorResult& rv);
   void ReplaceData(uint32_t aOffset, uint32_t aCount, const nsAString& aData,
-                   ErrorResult& rv);
+                   ErrorResult& rv) {
+    ReplaceDataInternal(aOffset, aCount, aData,
+                        MutationEffectOnScript::DropTrustWorthiness, rv);
+  }
+  void ReplaceDataInternal(uint32_t aOffset, uint32_t aCount,
+                           const nsAString& aData,
+                           MutationEffectOnScript aMutationEffectOnScript,
+                           ErrorResult& rv);
 
   //----------------------------------------
 
@@ -202,7 +241,7 @@ class CharacterData : public nsIContent {
    * Compare two CharacterData nodes for text equality.
    */
   [[nodiscard]] bool TextEquals(const CharacterData* aOther) const {
-    return mText.TextEquals(aOther->mText);
+    return mBuffer.BufferEquals(aOther->mBuffer);
   }
 
  protected:
@@ -214,6 +253,8 @@ class CharacterData : public nsIContent {
       uint32_t aOffset, uint32_t aCount, const char16_t* aBuffer,
       uint32_t aLength, bool aNotify,
       const StringTaint& aTaint,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness,
       CharacterDataChangeInfo::Details* aDetails = nullptr);
 
   /**
@@ -227,10 +268,13 @@ class CharacterData : public nsIContent {
   virtual already_AddRefed<CharacterData> CloneDataNode(
       dom::NodeInfo* aNodeInfo, bool aCloneText) const = 0;
 
-  nsTextFragment mText;
+  CharacterDataBuffer mBuffer;
 
  private:
   already_AddRefed<nsAtom> GetCurrentValueAtom();
+
+  bool CheckTextIsOnlyWhitespace(uint32_t aStartOffset,
+                                 uint32_t aEndOffset) const;
 };
 
 }  // namespace mozilla::dom

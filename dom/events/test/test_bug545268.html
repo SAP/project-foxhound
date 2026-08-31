@@ -19,9 +19,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=545268
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 545268
-    Like the test for bug 493251, but we test that suppressing events in
-    a parent window stops the events from reaching the child window. */
+/**
+ * Test for Bug 545268
+ * Like the test for bug 493251, but we test that suppressing events in
+ * a parent window stops the events from reaching the child window.
+ */
 
   var win;
   var subwin;
@@ -83,15 +85,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=545268
     is(keyPress, 2, "Wrong number events (14)");
     is(keyUp, 2, "Wrong number events (15)");
 
-    utils.sendMouseEvent("mousedown", 5, 5, 0, 1, 0);
-    utils.sendMouseEvent("mouseup", 5, 5, 0, 1, 0);
+    synthesizeMouseAtPoint(5, 5, {}, win);
     is(mouseDown, 1, "Wrong number events (16)");
     is(mouseUp, 1, "Wrong number events (17)");
     is(mouseClick, 1, "Wrong number events (18)");
 
     utils.suppressEventHandling(true);
-    utils.sendMouseEvent("mousedown", 5, 5, 0, 1, 0);
-    utils.sendMouseEvent("mouseup", 5, 5, 0, 1, 0);
+    synthesizeMouseAtPoint(5, 5, {}, win);
     utils.suppressEventHandling(false);
     is(mouseDown, 1, "Wrong number events (19)");
     is(mouseUp, 1, "Wrong number events (20)");
@@ -102,9 +102,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=545268
 
   function continueTest3() {
     var utils = SpecialPowers.getDOMWindowUtils(win);
-    utils.sendMouseEvent("mousedown", 5, 5, 0, 1, 0);
+    synthesizeMouseAtPoint(5, 5, { type: "mousedown" }, win);
     utils.suppressEventHandling(true);
-    utils.sendMouseEvent("mouseup", 5, 5, 0, 1, 0);
+    synthesizeMouseAtPoint(5, 5, { type: "mouseup" }, win);
     utils.suppressEventHandling(false);
     setTimeout(continueTest4, 1000);
   }

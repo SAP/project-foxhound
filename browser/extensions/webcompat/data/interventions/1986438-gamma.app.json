@@ -1,0 +1,20 @@
+{
+  "label": "gamma.app",
+  "bugs": {
+    "1986438": {
+      "issue": "unsupported-warning",
+      "matches": ["*://gamma.app/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "hide_messages": [
+        {
+          "container": ".chakra-alert",
+          "message": "Chrome"
+        }
+      ]
+    }
+  ]
+}

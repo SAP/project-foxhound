@@ -38,12 +38,12 @@ class CompareParser(BaseTryParser):
         if vcs.branch:
             current_revision_ref = vcs.branch
         else:
-            current_revision_ref = vcs.head_ref
+            current_revision_ref = vcs.head_rev
 
         return compare_commit, current_revision_ref
 
 
-def run(compare_commit=None, **kwargs):
+def run(metrics, compare_commit=None, **kwargs):
     vcs = get_repository_object(build.topsrcdir)
     compare_commit, current_revision_ref = CompareParser.get_revisions_to_run(
         vcs, compare_commit
@@ -53,12 +53,12 @@ def run(compare_commit=None, **kwargs):
     print("********************************************")
 
     try:
-        fuzzy_run(**kwargs)
+        fuzzy_run(metrics, **kwargs)
         print("********************************************")
         print("*    The base commit can be found above    *")
         print("********************************************")
         vcs.update(compare_commit)
-        again_run()
+        again_run(metrics)
         print("*****************************************")
         print("* The compare commit can be found above *")
         print("*****************************************")

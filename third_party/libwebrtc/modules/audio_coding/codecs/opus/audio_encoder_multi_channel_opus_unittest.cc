@@ -10,7 +10,15 @@
 
 #include "api/audio_codecs/opus/audio_encoder_multi_channel_opus.h"
 
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/audio_codecs/audio_format.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 using ::testing::NiceMock;
@@ -116,7 +124,7 @@ TEST(AudioEncoderMultiOpusTest, CreateFromValidConfig) {
                                     {{"channel_mapping", "1,255,0"},
                                      {"coupled_streams", "1"},
                                      {"num_streams", "1"}});
-    const std::optional<AudioEncoderMultiChannelOpus::Config> encoder_config =
+    std::optional<AudioEncoderMultiChannelOpus::Config> encoder_config =
         AudioEncoderMultiChannelOpus::SdpToConfig(sdp_format);
     ASSERT_TRUE(encoder_config.has_value());
 
@@ -126,8 +134,8 @@ TEST(AudioEncoderMultiOpusTest, CreateFromValidConfig) {
     EXPECT_TRUE(encoder_config->IsOk());
 
     const std::unique_ptr<AudioEncoder> opus_encoder =
-        AudioEncoderMultiChannelOpus::MakeAudioEncoder(*encoder_config,
-                                                       kOpusPayloadType);
+        AudioEncoderMultiChannelOpus::MakeAudioEncoder(
+            std::move(*encoder_config), kOpusPayloadType);
 
     // Creating an encoder from a valid config should work.
     EXPECT_TRUE(opus_encoder);
@@ -141,13 +149,13 @@ TEST(AudioEncoderMultiOpusTest, AdvertisedCodecsCanBeCreated) {
   EXPECT_FALSE(specs.empty());
 
   for (const AudioCodecSpec& spec : specs) {
-    const std::optional<AudioEncoderMultiChannelOpus::Config> encoder_config =
+    std::optional<AudioEncoderMultiChannelOpus::Config> encoder_config =
         AudioEncoderMultiChannelOpus::SdpToConfig(spec.format);
     ASSERT_TRUE(encoder_config.has_value());
 
     const std::unique_ptr<AudioEncoder> opus_encoder =
-        AudioEncoderMultiChannelOpus::MakeAudioEncoder(*encoder_config,
-                                                       kOpusPayloadType);
+        AudioEncoderMultiChannelOpus::MakeAudioEncoder(
+            std::move(*encoder_config), kOpusPayloadType);
 
     EXPECT_TRUE(opus_encoder);
   }

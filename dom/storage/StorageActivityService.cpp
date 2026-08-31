@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "StorageActivityService.h"
 
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
@@ -99,7 +97,7 @@ void StorageActivityService::SendActivity(const nsACString& aOrigin) {
       });
 
   if (NS_IsMainThread()) {
-    Unused << r->Run();
+    (void)r->Run();
   } else {
     NS_DispatchToMainThread(r.forget());
   }
@@ -188,6 +186,11 @@ void StorageActivityService::SendActivityToParent(nsIPrincipal* aPrincipal) {
   nsresult rv =
       mozilla::ipc::PrincipalToPrincipalInfo(aPrincipal, &principalInfo);
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  if (!::mozilla::ipc::BackgroundChild::ValidatePrincipal(aPrincipal, {})) {
+    MOZ_ASSERT_UNREACHABLE("ValidatePrincipal failure in SendActivityToParent");
     return;
   }
 
@@ -285,7 +288,14 @@ StorageActivityService::MoveOriginInTime(nsIPrincipal* aPrincipal,
 
 NS_IMETHODIMP
 StorageActivityService::TestOnlyReset() {
+  const bool shouldRemoveObserver = mActivities.Count() > 0;
   mActivities.Clear();
+  if (shouldRemoveObserver) {
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+      obs->RemoveObserver(this, OBSERVER_TOPIC_IDLE_DAILY);
+    }
+  }
   return NS_OK;
 }
 

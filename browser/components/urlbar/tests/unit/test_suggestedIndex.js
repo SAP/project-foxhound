@@ -531,35 +531,30 @@ async function doSuggestedIndexTest({
   let results = [];
   for (let i = 0; i < resultCount; i++) {
     results.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        resultSpan: spansByIndex[results.length],
+        payload: {
           url: "http://example.com/" + i,
-        }
-      )
+        },
+      })
     );
   }
 
   // Make the suggested-index results.
   for (let suggestedIndex of suggestedIndexes) {
     results.push(
-      Object.assign(
-        new UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.HISTORY,
-          {
-            url: "http://example.com/si " + suggestedIndex,
-          }
-        ),
-        { suggestedIndex }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        suggestedIndex,
+        resultSpan: spansByIndex[results.length],
+        payload: {
+          url: "http://example.com/si " + suggestedIndex,
+        },
+      })
     );
-  }
-
-  // Set resultSpan on each result as indicated by spansByIndex.
-  for (let [index, span] of Object.entries(spansByIndex)) {
-    results[index].resultSpan = span;
   }
 
   // Set up the provider, etc.
@@ -570,7 +565,10 @@ async function doSuggestedIndexTest({
 
   // Finally, search and check the results.
   let expectedResults = expected.map(i => results[i]);
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    controller
+  );
   Assert.deepEqual(context.results, expectedResults);
 }
 

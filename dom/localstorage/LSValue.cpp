@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,10 @@
 #include "mozilla/dom/LSValue.h"
 
 #include "mozIStorageStatement.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/dom/SnappyUtils.h"
 #include "mozilla/fallible.h"
-#include "mozilla/TextUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
 
@@ -185,7 +184,7 @@ nsresult LSValue::InitFromStatement(mozIStorageStatement* aStatement,
     return rv;
   }
 
-  mBuffer = buffer;
+  mBuffer = std::move(buffer);
   mUTF16Length = static_cast<uint32_t>(utf16Length);
   mConversionType = static_cast<decltype(mConversionType)>(conversionType);
   mCompressionType = static_cast<decltype(mCompressionType)>(compressionType);

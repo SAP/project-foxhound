@@ -34,6 +34,7 @@ import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.arch.lifecycle.addObservers
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 import mozilla.components.support.locale.ActivityContextWrapper
+import mozilla.components.support.utils.DefaultDownloadFileUtils
 import mozilla.components.support.utils.ext.requestInPlacePermissions
 import org.mozilla.samples.browser.databinding.FragmentBrowserBinding
 import org.mozilla.samples.browser.downloads.DownloadService
@@ -144,6 +145,9 @@ abstract class BaseBrowserFragment : Fragment(), UserInteractionHandler, Activit
                         )
                     }
                 },
+                downloadFileUtils = DefaultDownloadFileUtils(
+                    context = requireContext(),
+                ),
             ),
             owner = this,
             view = binding.root,
@@ -207,6 +211,8 @@ abstract class BaseBrowserFragment : Fragment(), UserInteractionHandler, Activit
                     persistentStorage = SitePermissionsRules.Action.ASK_TO_ALLOW,
                     mediaKeySystemAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
                     crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
                 ),
                 onNeedToRequestPermissions = { permissions ->
                     requestInPlacePermissions(REQUEST_KEY_SITE_PERMISSIONS, permissions) { result ->

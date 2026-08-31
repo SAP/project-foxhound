@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html class=reftest-wait>
+<title>View Transition - Large snapshot with smaller snapshot area</title>
+<link rel="help" href="https://drafts.csswg.org/css-view-transitions-1/">
+<link rel="match" href="large-snapshot-smaller-area-ref.html">
+
+<style>
+    #gridContainer {
+        display: grid;
+        gap: 150px;
+    }
+
+    .gridItem {
+        width: 350px;
+        height: 350px;
+        background-color: blue;
+    }
+    html::view-transition-group(root) { animation-duration: 300s; }
+</style>
+
+<body>
+    <!--This should not be blurry.-->
+    <div id="gridContainer"></div>
+</body>
+
+<script>
+    function takeScreenshot() {
+        document.documentElement.removeAttribute("class");
+    }
+
+    async function runTest() {
+        const gridContainer = document.getElementById('gridContainer');
+
+        gridSize = 20;
+        gridContainer.style.gridTemplateColumns = `repeat(${gridSize}, 350px)`;
+        for (let i = 0; i < gridSize * gridSize; i++) {
+            const div = document.createElement('div');
+            div.classList.add('gridItem');
+            gridContainer.appendChild(div);
+        }
+
+        requestAnimationFrame(() => {
+            document.startViewTransition(() => {
+                requestAnimationFrame(() => requestAnimationFrame(() =>
+                  requestAnimationFrame(() => requestAnimationFrame(takeScreenshot))
+                ));
+            });
+        });
+    }
+
+
+    onload = () => requestAnimationFrame(() => requestAnimationFrame(runTest));
+
+</script>
+
+</html>

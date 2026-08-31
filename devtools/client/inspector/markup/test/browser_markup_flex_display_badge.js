@@ -125,7 +125,7 @@ add_task(async function () {
   onCheckboxChange = waitUntilState(store, state => state.flexbox.highlighted);
 
   flexDisplayBadge.focus();
-  EventUtils.synthesizeKey("VK_RETURN", {}, flexDisplayBadge.ownerGlobal);
+  EventUtils.synthesizeKey("VK_RETURN", {}, flexDisplayBadge.documentGlobal);
   await onHighlighterShown;
   await onCheckboxChange;
 
@@ -146,7 +146,7 @@ add_task(async function () {
   info("Toggling OFF the flexbox highlighter from the keyboard.");
   onHighlighterHidden = waitForHighlighterTypeHidden(HIGHLIGHTER_TYPE);
   onCheckboxChange = waitUntilState(store, state => !state.flexbox.highlighted);
-  EventUtils.synthesizeKey("VK_RETURN", {}, flexDisplayBadge.ownerGlobal);
+  EventUtils.synthesizeKey("VK_RETURN", {}, flexDisplayBadge.documentGlobal);
   await onHighlighterHidden;
   await onCheckboxChange;
 

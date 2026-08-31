@@ -12,7 +12,7 @@ const TEST_URL = `data:text/html,<!DOCTYPE html>
   </html>`;
 
 const TOOL_ID = "test-toolbox-tool";
-var toolbox;
+var gToolbox;
 
 function test() {
   addTab(TEST_URL).then(async tab => {
@@ -33,8 +33,8 @@ var waitForToolInstanceDestroyed = new Promise(resolve => {
   resolveToolInstanceDestroyed = resolve;
 });
 
-function toolboxRegister(aToolbox) {
-  toolbox = aToolbox;
+function toolboxRegister(toolbox) {
+  gToolbox = toolbox;
 
   waitForToolInstanceBuild = new Promise(resolve => {
     resolveToolInstanceBuild = resolve;
@@ -42,7 +42,7 @@ function toolboxRegister(aToolbox) {
 
   info("add per-toolbox tool in the opened toolbox.");
 
-  toolbox.addAdditionalTool({
+  gToolbox.addAdditionalTool({
     id: TOOL_ID,
     // The size of the label can make the test fail if it's too long.
     // See ok(tab, ...) assert below and Bug 1596345.
@@ -70,12 +70,12 @@ function testToolRegistered() {
     "per-toolbox tool is not registered globally"
   );
   ok(
-    toolbox.hasAdditionalTool(TOOL_ID),
+    gToolbox.hasAdditionalTool(TOOL_ID),
     "per-toolbox tool registered to the specific toolbox"
   );
 
   // Test that the tool appeared in the UI.
-  const doc = toolbox.doc;
+  const doc = gToolbox.doc;
   const tab = getToolboxTab(doc, TOOL_ID);
 
   ok(tab, "new tool's tab exists in toolbox UI");
@@ -107,19 +107,19 @@ function getAllBrowserWindows() {
 
 function testUnregister() {
   info("remove per-toolbox tool in the opened toolbox.");
-  toolbox.removeAdditionalTool(TOOL_ID);
+  gToolbox.removeAdditionalTool(TOOL_ID);
 
   Promise.all([waitForToolInstanceDestroyed]).then(toolboxToolUnregistered);
 }
 
 function toolboxToolUnregistered() {
   ok(
-    !toolbox.hasAdditionalTool(TOOL_ID),
+    !gToolbox.hasAdditionalTool(TOOL_ID),
     "per-toolbox tool unregistered from the specific toolbox"
   );
 
   // test that it disappeared from the UI
-  const doc = toolbox.doc;
+  const doc = gToolbox.doc;
   const tab = getToolboxTab(doc, TOOL_ID);
   ok(!tab, "tool's tab was removed from the toolbox UI");
 
@@ -130,8 +130,8 @@ function toolboxToolUnregistered() {
 }
 
 function cleanup() {
-  toolbox.destroy().then(() => {
-    toolbox = null;
+  gToolbox.destroy().then(() => {
+    gToolbox = null;
     gBrowser.removeCurrentTab();
     finish();
   });

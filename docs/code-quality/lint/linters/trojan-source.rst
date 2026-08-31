@@ -30,5 +30,5 @@ This linter is enabled on most of the code base on C/C++, Python and Rust.
 Sources
 -------
 
-* `Configuration (YAML) <https://searchfox.org/mozilla-central/source/tools/lint/trojan-source.yml>`_
-* `Source <https://searchfox.org/mozilla-central/source/tools/lint/trojan-source/__init__.py>`_
+* :searchfox:`Configuration (YAML) <tools/lint/trojan-source.yml>`
+* :searchfox:`Source (Rust) <tools/lint/mozcheck/src/trojan_source.rs>`

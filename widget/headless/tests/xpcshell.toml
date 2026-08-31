@@ -1,6 +1,7 @@
 [DEFAULT]
 run-if = [
-  "os == 'linux'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
   "os == 'win'",
 ]
 headless = true

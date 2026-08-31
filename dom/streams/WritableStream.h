@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,7 +13,6 @@
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/WritableStreamDefaultController.h"
 #include "mozilla/dom/WritableStreamDefaultWriter.h"
-
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
@@ -89,13 +86,15 @@ class WritableStream : public nsISupports, public nsWrapperCache {
   WriterState State() const { return mState; }
   void SetState(const WriterState& aState) { mState = aState; }
 
-  JS::Value StoredError() const { return mStoredError; }
+  void GetStoredError(JSContext* aCx, JS::MutableHandle<JS::Value> aStoredError,
+                      ErrorResult& aRv) const;
+  JS::Value UnsafeStoredError() const { return mStoredError; }
   void SetStoredError(JS::Handle<JS::Value> aStoredError) {
     mStoredError = aStoredError;
   }
 
   void AppendWriteRequest(RefPtr<Promise>& aRequest) {
-    mWriteRequests.AppendElement(aRequest);
+    mWriteRequests.Push(RefPtr<Promise>(aRequest));
   }
 
   // CreateWritableStream
@@ -192,6 +191,10 @@ class WritableStream : public nsISupports, public nsWrapperCache {
                                       JS::Handle<JS::Value> aError,
                                       ErrorResult& aRv);
 
+  // https://streams.spec.whatwg.org/#writablestream-abort
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> AbortNative(
+      JSContext* aCx, JS::Handle<JS::Value> aReason, ErrorResult& aRv);
+
   // IDL layer functions
 
   nsIGlobalObject* GetParentObject() const { return mGlobal; }
@@ -238,31 +241,10 @@ class WritableStream : public nsISupports, public nsWrapperCache {
   WriterState mState = WriterState::Writable;
   JS::Heap<JS::Value> mStoredError;
   RefPtr<WritableStreamDefaultWriter> mWriter;
-  nsTArray<RefPtr<Promise>> mWriteRequests;
+  mozilla::Queue<RefPtr<Promise>> mWriteRequests;
 
   HoldDropJSObjectsCaller mHoldDropCaller;
 };
-
-namespace streams_abstract {
-
-inline bool IsWritableStreamLocked(WritableStream* aStream) {
-  return aStream->Locked();
-}
-
-MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> WritableStreamAbort(
-    JSContext* aCx, WritableStream* aStream, JS::Handle<JS::Value> aReason,
-    ErrorResult& aRv);
-
-MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> WritableStreamClose(
-    JSContext* aCx, WritableStream* aStream, ErrorResult& aRv);
-
-already_AddRefed<Promise> WritableStreamAddWriteRequest(
-    WritableStream* aStream);
-
-already_AddRefed<WritableStreamDefaultWriter>
-AcquireWritableStreamDefaultWriter(WritableStream* aStream, ErrorResult& aRv);
-
-}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

@@ -2,12 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheFile__h__
-#define CacheFile__h__
+#ifndef CacheFile_h_
+#define CacheFile_h_
 
 #include "CacheFileChunk.h"
 #include "CacheFileIOManager.h"
 #include "CacheFileMetadata.h"
+#include "Dictionary.h"
 #include "nsRefPtrHashtable.h"
 #include "nsClassHashtable.h"
 #include "mozilla/Mutex.h"
@@ -125,6 +126,8 @@ class MOZ_CAPABILITY("mutex") CacheFile final
   bool IsWriteInProgress();
   bool EntryWouldExceedLimit(int64_t aOffset, int64_t aSize, bool aIsAltData);
 
+  void SetDictionary(DictionaryCacheEntry* aDict);
+
   // Memory reporting
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -201,6 +204,10 @@ class MOZ_CAPABILITY("mutex") CacheFile final
 
   nsresult InitIndexEntry();
 
+  // Marks a new disk-backed entry as encrypted and assigns its stable per-file
+  // salt when disk cache encryption is enabled. No-op otherwise.
+  void SetupEncryption() MOZ_REQUIRES(this);
+
   bool mOpeningFile MOZ_GUARDED_BY(this){false};
   bool mReady MOZ_GUARDED_BY(this){false};
   bool mMemoryOnly MOZ_GUARDED_BY(this){false};
@@ -224,6 +231,8 @@ class MOZ_CAPABILITY("mutex") CacheFile final
   nsCString mKey MOZ_GUARDED_BY(this);
   nsCString mAltDataType
       MOZ_GUARDED_BY(this);  // The type of the saved alt-data. May be empty.
+
+  RefPtr<DictionaryCacheEntry> mDict MOZ_GUARDED_BY(this);
 
   RefPtr<CacheFileHandle> mHandle MOZ_GUARDED_BY(this);
   RefPtr<CacheFileMetadata> mMetadata MOZ_GUARDED_BY(this);

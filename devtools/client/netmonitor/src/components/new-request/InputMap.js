@@ -27,7 +27,7 @@ const REMOVE_ITEM = L10N.getStr("netmonitor.custom.removeItem");
 
 /**
  * Editable name and value list component with optional form to add new items
- **/
+ */
 class InputMap extends Component {
   static get propTypes() {
     return {

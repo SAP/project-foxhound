@@ -102,7 +102,7 @@ add_task(async function simple_navigation() {
       );
       let windowContext = await dialogAppeared;
 
-      is(windowContext, browser.ownerGlobal, "got the right windowContext");
+      is(windowContext, browser.documentGlobal, "got the right windowContext");
     }
   );
 });
@@ -126,7 +126,7 @@ add_task(async function accel_navigation() {
       );
 
       let windowContext = await dialogAppeared;
-      is(windowContext, browser.ownerGlobal, "got the right windowContext");
+      is(windowContext, browser.documentGlobal, "got the right windowContext");
       let [tab, closingPromise] = await tabOpened;
       await closingPromise;
       is(tab.linkedBrowser, null, "tab was opened and closed");
@@ -149,7 +149,7 @@ async function testNewTab(browser) {
   await BrowserTestUtils.synthesizeMouseAtCenter("#target_blank", {}, browser);
 
   let windowContext = await dialogAppeared;
-  is(windowContext, browser.ownerGlobal, "got the right windowContext");
+  is(windowContext, browser.documentGlobal, "got the right windowContext");
   let [tab, closingPromise] = await tabOpened;
   await closingPromise;
   is(tab.linkedBrowser, null, "tab was opened and closed");
@@ -187,7 +187,7 @@ add_task(async function target_blank_no_opener() {
       );
 
       let windowContext = await dialogAppeared;
-      is(windowContext, browser.ownerGlobal, "got the right windowContext");
+      is(windowContext, browser.documentGlobal, "got the right windowContext");
       let [tab, closingPromise] = await tabOpened;
       await closingPromise;
       is(tab.linkedBrowser, null, "tab was opened and closed");
@@ -216,7 +216,7 @@ add_task(async function open_in_new_tab_no_opener() {
       );
 
       let windowContext = await dialogAppeared;
-      is(windowContext, browser.ownerGlobal, "got the right windowContext");
+      is(windowContext, browser.documentGlobal, "got the right windowContext");
       let [tab, closingPromise] = await tabOpened;
       await closingPromise;
       is(tab.linkedBrowser, null, "tab was opened and closed");
@@ -245,7 +245,7 @@ add_task(async function new_window() {
       fetch(SJS_URL + "?finish");
 
       let windowContext = await dialogAppeared;
-      is(windowContext, browser.ownerGlobal, "got the right windowContext");
+      is(windowContext, browser.documentGlobal, "got the right windowContext");
 
       // The window should close on its own. If not, this test will time out.
       await BrowserTestUtils.domWindowClosed(win);

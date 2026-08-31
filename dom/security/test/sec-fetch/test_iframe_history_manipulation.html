@@ -17,7 +17,6 @@ let testCounter = 0;
 let testFrame;
 
 var script = SpecialPowers.loadChromeScript(() => {
-  /* eslint-env mozilla/chrome-script */
   Services.obs.addObserver(function onExamResp(subject) {
     let channel = subject.QueryInterface(Ci.nsIHttpChannel);
     info("request observed: " + channel.URI.spec);
@@ -78,7 +77,7 @@ SimpleTest.waitForExplicitFinish();
 
 testFrame = document.createElement('iframe');
 testFrame.src = `https://example.org/${REQUEST_PATH}?test`;
-document.body.appendChild(testFrame);
+onload = () => setTimeout(() => document.body.appendChild(testFrame), 0);
 
 </script>
 </body>

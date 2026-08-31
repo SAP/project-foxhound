@@ -37,9 +37,9 @@ add_task(async function testSlowLoadingFrame() {
   info("Wait for the loading iframe to be ready to test");
   await TestUtils.waitForCondition(async () => {
     try {
-      return await ContentTask.spawn(gBrowser.selectedBrowser, {}, () => {
+      return await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
         const iframe = content.document.querySelector("iframe");
-        return (
+        return !!(
           iframe?.contentDocument.readyState === "loading" &&
           iframe.contentDocument.getElementById("inframe")
         );
@@ -109,8 +109,10 @@ add_task(async function testSlowLoadingDocument() {
   info("Wait for the #start div to be available in the document");
   await TestUtils.waitForCondition(async () => {
     try {
-      return await ContentTask.spawn(gBrowser.selectedBrowser, {}, () =>
-        content.document.getElementById("start")
+      return await SpecialPowers.spawn(
+        gBrowser.selectedBrowser,
+        [],
+        () => !!content.document.getElementById("start")
       );
     } catch (e) {
       return false;

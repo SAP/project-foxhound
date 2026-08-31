@@ -1,6 +1,9 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  CONTAINER_COLORS: "resource://gre/modules/ContextualIdentityService.sys.mjs",
+  CONTAINER_COLOR_ALIASES:
+    "resource://gre/modules/ContextualIdentityService.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
   ExtensionPreferencesManager:
@@ -46,6 +49,114 @@ add_task(async function test_contextualIdentities_without_permissions() {
   await extension.startup();
   await extension.awaitFinish("contextualIdentities_without_permission");
   await extension.unload();
+});
+
+add_task(async function test_contextualIdentities_supported_colors_and_icons() {
+  // Pin the pref so the expected color codes below are deterministic.
+  Services.prefs.setBoolPref("browser.nova.enabled", false);
+
+  // The API must expose exactly the palette the service considers supported,
+  // in the same order, so it can't silently drift from the source of truth.
+  const expectedColors = ContextualIdentityService.containerColors.map(
+    name => ({
+      color: name,
+      colorCode: ContextualIdentityService.getContainerColorCode(name),
+    })
+  );
+  const expectedIcons = ContextualIdentityService.containerIcons.map(name => ({
+    icon: name,
+    iconUrl: ContextualIdentityService.getContainerIconURL(name),
+  }));
+
+  async function background(expected) {
+    let colors = await browser.contextualIdentities.getSupportedColors();
+    browser.test.assertEq(
+      JSON.stringify(expected.colors),
+      JSON.stringify(colors),
+      "getSupportedColors mirrors the colors supported by the browser"
+    );
+
+    let icons = await browser.contextualIdentities.getSupportedIcons();
+    browser.test.assertEq(
+      JSON.stringify(expected.icons),
+      JSON.stringify(icons),
+      "getSupportedIcons mirrors the icons supported by the browser"
+    );
+
+    // Shape checks that don't depend on the values computed in the parent, so a
+    // service returning a well-formed object with garbage values is caught too.
+    const hexMatch = /^#[0-9a-f]{6}$/;
+    for (let entry of colors) {
+      browser.test.assertTrue(
+        hexMatch.test(entry.colorCode),
+        `colorCode for ${entry.color} is a hex value (${entry.colorCode})`
+      );
+    }
+    const iconMatch = /^resource:\/\/usercontext-content\/[a-z]+[.]svg$/;
+    for (let entry of icons) {
+      browser.test.assertTrue(
+        iconMatch.test(entry.iconUrl),
+        `iconUrl for ${entry.icon} has the expected shape (${entry.iconUrl})`
+      );
+
+      // An extension must actually be able to load the icon, so check the URL
+      // resolves to a decodable image of the expected size.
+      const img = new Image();
+      img.src = entry.iconUrl;
+      try {
+        await img.decode();
+      } catch (e) {
+        browser.test.fail(`Failed to load image: ${img.src} - ${e}`);
+      }
+      browser.test.assertEq(
+        32,
+        img.naturalWidth,
+        `Expected width for ${entry.icon}`
+      );
+      browser.test.assertEq(
+        32,
+        img.naturalHeight,
+        `Expected height for ${entry.icon}`
+      );
+    }
+
+    // Independent anchors with known values, so a totally broken source of
+    // truth can't make the equality checks above trivially pass.
+    browser.test.assertTrue(
+      colors.some(c => c.color === "blue" && c.colorCode === "#37adff"),
+      "blue is exposed with its expected color code"
+    );
+    browser.test.assertTrue(
+      icons.some(
+        i =>
+          i.icon === "fingerprint" &&
+          i.iconUrl === "resource://usercontext-content/fingerprint.svg"
+      ),
+      "fingerprint is exposed with its expected icon url"
+    );
+
+    browser.test.notifyPass("contextualIdentities_supported");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    background: `(${background})(${JSON.stringify({
+      colors: expectedColors,
+      icons: expectedIcons,
+    })})`,
+    manifest: {
+      browser_specific_settings: {
+        gecko: { id: "supported@thing.com" },
+      },
+      permissions: ["contextualIdentities"],
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("contextualIdentities_supported");
+  await extension.unload();
+
+  Services.prefs.clearUserPref("browser.nova.enabled");
 });
 
 add_task(async function test_contextualIdentity_events() {
@@ -212,6 +323,18 @@ add_task(async function test_contextualIdentity_with_permissions() {
       browser.contextualIdentities.query({}),
       "Contextual identities are currently disabled",
       "Throws when containers are disabled"
+    );
+
+    await browser.test.assertRejects(
+      browser.contextualIdentities.getSupportedColors(),
+      "Contextual identities are currently disabled",
+      "getSupportedColors throws when containers are disabled"
+    );
+
+    await browser.test.assertRejects(
+      browser.contextualIdentities.getSupportedIcons(),
+      "Contextual identities are currently disabled",
+      "getSupportedIcons throws when containers are disabled"
     );
 
     await listenForMessage("containers-state-change", true);
@@ -604,3 +727,170 @@ add_task(
     await extension.unload();
   }
 );
+
+add_task(async function test_contextualIdentity_color_api_names() {
+  // Every color name accepted by the API, see
+  // https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/contextualIdentities/ContextualIdentity#color
+  const inputColors = [
+    // Colors since inception of contextualIdentities:
+    "blue",
+    "turquoise",
+    "green",
+    "yellow",
+    "orange",
+    "red",
+    "pink",
+    "purple",
+    "toolbar",
+    // New colors in version 153:
+    "cyan",
+    "violet",
+    "gray",
+  ];
+
+  // Inputs that resolve to a different name. Inputs not listed here are
+  // expected to be returned unchanged.
+  const RENAMED_COLORS = {
+    turquoise: "cyan",
+    toolbar: "gray",
+  };
+
+  // Forward coverage: every internal color name and alias must be listed
+  // above, so this test has to be updated whenever the set of names changes.
+  for (let { name } of CONTAINER_COLORS) {
+    ok(
+      inputColors.includes(name),
+      `internal color "${name}" is covered by the API test`
+    );
+  }
+  for (let legacy of Object.keys(CONTAINER_COLOR_ALIASES)) {
+    ok(
+      inputColors.includes(legacy),
+      `internal alias "${legacy}" is covered by the API test`
+    );
+  }
+
+  let expectations = inputColors.map(input => [
+    input,
+    RENAMED_COLORS[input] ?? input,
+  ]);
+
+  async function background(colorExpectations) {
+    let { cookieStoreId } = await browser.contextualIdentities.create({
+      name: "color-api",
+      color: "blue",
+      icon: "circle",
+    });
+
+    for (let [input, expected] of colorExpectations) {
+      let updated = await browser.contextualIdentities.update(cookieStoreId, {
+        color: input,
+      });
+      browser.test.assertEq(
+        expected,
+        updated.color,
+        `update() with "${input}" returns "${expected}"`
+      );
+
+      let fetched = await browser.contextualIdentities.get(cookieStoreId);
+      browser.test.assertEq(
+        expected,
+        fetched.color,
+        `get() after "${input}" returns "${expected}"`
+      );
+    }
+
+    await browser.contextualIdentities.remove(cookieStoreId);
+    browser.test.notifyPass("color-api-names");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    background: `(${background})(${JSON.stringify(expectations)})`,
+    manifest: {
+      browser_specific_settings: { gecko: { id: "color-api@mozilla.org" } },
+      permissions: ["contextualIdentities"],
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("color-api-names");
+  await extension.unload();
+});
+
+add_task(async function test_contextualIdentity_color_aliases_api() {
+  Services.prefs.setBoolPref("browser.nova.enabled", false);
+
+  async function background() {
+    function setNova(value) {
+      return new Promise(resolve => {
+        browser.test.onMessage.addListener(function listener(msg) {
+          if (msg === "nova-updated") {
+            browser.test.onMessage.removeListener(listener);
+            resolve();
+          }
+        });
+        browser.test.sendMessage("set-nova", value);
+      });
+    }
+
+    let cyan = await browser.contextualIdentities.create({
+      name: "alias-cyan",
+      color: "turquoise",
+      icon: "circle",
+    });
+    browser.test.assertEq("cyan", cyan.color, "turquoise is returned as cyan");
+    browser.test.assertEq(
+      "#00c79a",
+      cyan.colorCode,
+      "nova off: cyan returns the legacy code"
+    );
+
+    let gray = await browser.contextualIdentities.create({
+      name: "alias-gray",
+      color: "red",
+      icon: "circle",
+    });
+    gray = await browser.contextualIdentities.update(gray.cookieStoreId, {
+      name: "alias-gray",
+      color: "toolbar",
+      icon: "circle",
+    });
+    browser.test.assertEq("gray", gray.color, "toolbar is returned as gray");
+
+    await setNova(true);
+
+    cyan = await browser.contextualIdentities.get(cyan.cookieStoreId);
+    browser.test.assertEq("cyan", cyan.color, "name stays cyan with nova on");
+    browser.test.assertEq(
+      "#4cc4e1",
+      cyan.colorCode,
+      "nova on: the same container returns the refreshed code"
+    );
+
+    await browser.contextualIdentities.remove(cyan.cookieStoreId);
+    await browser.contextualIdentities.remove(gray.cookieStoreId);
+
+    browser.test.notifyPass("color-aliases");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    background,
+    manifest: {
+      browser_specific_settings: { gecko: { id: "color-aliases@mozilla.org" } },
+      permissions: ["contextualIdentities"],
+    },
+  });
+
+  extension.onMessage("set-nova", value => {
+    Services.prefs.setBoolPref("browser.nova.enabled", value);
+    extension.sendMessage("nova-updated");
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("color-aliases");
+  await extension.unload();
+
+  Services.prefs.clearUserPref("browser.nova.enabled");
+});

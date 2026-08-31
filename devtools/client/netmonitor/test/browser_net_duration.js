@@ -18,7 +18,8 @@ add_task(async function () {
   );
   store.dispatch(Actions.batchEnable(false));
 
-  let waitForPending = waitForNetworkEvents(monitor, 1, {
+  const waitForFullRequest = waitForNetworkEvents(monitor, 1);
+  const waitForPartialPending = waitForNetworkEvents(monitor, 1, {
     expectedPayloadReady: 0,
     expectedEventTimings: 0,
   });
@@ -29,17 +30,22 @@ add_task(async function () {
       method: "GET",
     },
   ]);
-  await waitForPending;
+  // Wait for the first request to be partially retrieve
+  await waitForPartialPending;
   const pendingArr = getDurations();
 
-  waitForPending = waitForNetworkEvents(monitor, 1);
+  const waitForRequest = waitForNetworkEvents(monitor, 1);
   performRequestsInContent([
     {
       url: "sjs_long-polling-server.sjs?unblock",
       method: "GET",
     },
   ]);
-  await waitForPending;
+  // Wait for the full retrieval of the second request
+  await waitForRequest;
+  // Also wait for full retrieval of the first request which has been unblocked by the second
+  await waitForFullRequest;
+
   const resolvedArr = getDurations();
 
   is(pendingArr[0], "", "Duration should be listed as '' until resolved.");

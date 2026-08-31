@@ -25,7 +25,7 @@ import org.mockito.Mockito.verify
 class SessionSuggestionProviderTest {
     @Test
     fun `Provider returns empty list when text is empty`() = runTest {
-        val provider = SessionSuggestionProvider(mock(), mock(), switchToTabDescription = "Switch to tab")
+        val provider = SessionSuggestionProvider(BrowserStore(), mock(), switchToTabDescription = "Switch to tab")
 
         val suggestions = provider.onInputChanged("")
         assertTrue(suggestions.isEmpty())
@@ -47,9 +47,9 @@ class SessionSuggestionProviderTest {
             assertTrue(suggestions.isEmpty())
         }
 
-        store.dispatch(TabListAction.AddTabAction(tab1)).join()
-        store.dispatch(TabListAction.AddTabAction(tab2)).join()
-        store.dispatch(TabListAction.AddTabAction(tab3)).join()
+        store.dispatch(TabListAction.AddTabAction(tab1))
+        store.dispatch(TabListAction.AddTabAction(tab2))
+        store.dispatch(TabListAction.AddTabAction(tab3))
 
         run {
             val suggestions = provider.onInputChanged("Example")
@@ -59,7 +59,7 @@ class SessionSuggestionProviderTest {
             assertEquals("Switch to tab", suggestions[0].description)
         }
 
-        store.dispatch(TabListAction.AddTabAction(tab4)).join()
+        store.dispatch(TabListAction.AddTabAction(tab4))
 
         run {
             val suggestions = provider.onInputChanged("Example")
@@ -81,8 +81,8 @@ class SessionSuggestionProviderTest {
             val tab2 = createTab("https://www.mozilla.org/example/of/content")
 
             val provider = SessionSuggestionProvider(store, mock(), switchToTabDescription = "Switch to tab")
-            store.dispatch(TabListAction.AddTabAction(tab1)).join()
-            store.dispatch(TabListAction.AddTabAction(tab2)).join()
+            store.dispatch(TabListAction.AddTabAction(tab1))
+            store.dispatch(TabListAction.AddTabAction(tab2))
 
             run {
                 val suggestions = provider.onInputChanged("mozilla ")
@@ -105,8 +105,8 @@ class SessionSuggestionProviderTest {
             val tab2 = createTab("https://www.mozilla.org/example/of/content")
 
             val provider = SessionSuggestionProvider(store, mock(), switchToTabDescription = "Switch to tab")
-            store.dispatch(TabListAction.AddTabAction(tab1)).join()
-            store.dispatch(TabListAction.AddTabAction(tab2)).join()
+            store.dispatch(TabListAction.AddTabAction(tab1))
+            store.dispatch(TabListAction.AddTabAction(tab2))
 
             run {
                 val suggestions = provider.onInputChanged(" mozilla")
@@ -128,7 +128,7 @@ class SessionSuggestionProviderTest {
             val tab1 = createTab("https://www.mozilla.org/example/of/content")
 
             val provider = SessionSuggestionProvider(store, mock(), switchToTabDescription = "Switch to tab")
-            store.dispatch(TabListAction.AddTabAction(tab1)).join()
+            store.dispatch(TabListAction.AddTabAction(tab1))
 
             run {
                 val suggestions = provider.onInputChanged("mozilla example content")
@@ -147,7 +147,7 @@ class SessionSuggestionProviderTest {
             val tab1 = createTab("https://www.mozilla.org/example/of/content")
 
             val provider = SessionSuggestionProvider(store, mock(), switchToTabDescription = "Switch to tab")
-            store.dispatch(TabListAction.AddTabAction(tab1)).join()
+            store.dispatch(TabListAction.AddTabAction(tab1))
 
             run {
                 val suggestions = provider.onInputChanged("mozilla example test")
@@ -249,7 +249,9 @@ class SessionSuggestionProviderTest {
         val useCase: TabsUseCases.SelectTabUseCase = mock()
 
         val provider = SessionSuggestionProvider(
-            store, useCase, excludeSelectedSession = true,
+            store,
+            useCase,
+            excludeSelectedSession = true,
             switchToTabDescription = "Switch to tab",
         )
         val suggestions = provider.onInputChanged("org")
@@ -403,9 +405,9 @@ class SessionSuggestionProviderTest {
             assertTrue(suggestions.isEmpty())
         }
 
-        store.dispatch(TabListAction.AddTabAction(tab1)).join()
-        store.dispatch(TabListAction.AddTabAction(tab2)).join()
-        store.dispatch(TabListAction.AddTabAction(tab3)).join()
+        store.dispatch(TabListAction.AddTabAction(tab1))
+        store.dispatch(TabListAction.AddTabAction(tab2))
+        store.dispatch(TabListAction.AddTabAction(tab3))
 
         run {
             val suggestions = provider.onInputChanged("Mozilla")

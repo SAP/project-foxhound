@@ -5,7 +5,6 @@
 #ifndef mozilla_widget_HeadlessClipboardData_h
 #define mozilla_widget_HeadlessClipboardData_h
 
-#include "mozilla/RefPtr.h"
 #include "nsString.h"
 
 namespace mozilla {

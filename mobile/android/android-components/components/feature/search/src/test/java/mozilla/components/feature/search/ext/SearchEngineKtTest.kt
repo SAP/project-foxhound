@@ -11,11 +11,11 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.SearchState
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class SearchEngineKtTest {

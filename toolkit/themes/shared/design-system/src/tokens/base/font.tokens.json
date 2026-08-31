@@ -1,0 +1,105 @@
+{
+  "size": {
+    "root": {
+      "value": {
+        "brand": {
+          "default": "15px"
+        },
+        "platform": {
+          "default": "unset"
+        }
+      }
+    },
+    "xsmall": {
+      "value": {
+        "brand": {
+          "default": "0.733rem",
+          "comment": "11px / Note this token is to be used in rare cases because its hard to read. Please consult with the Design Systems and A11y teams for case-by-case feedback."
+        },
+        "platform": {
+          "default": "unset"
+        }
+      }
+    },
+    "small": {
+      "value": {
+        "brand": {
+          "default": "0.867rem",
+          "comment": "13px"
+        },
+        "platform": {
+          "default": "unset"
+        }
+      }
+    },
+    "large": {
+      "value": {
+        "brand": {
+          "default": "1.133rem",
+          "comment": "17px"
+        },
+        "platform": {
+          "default": "unset"
+        }
+      }
+    },
+    "xlarge": {
+      "value": {
+        "brand": {
+          "default": "1.467rem",
+          "comment": "22px"
+        },
+        "platform": {
+          "default": "unset"
+        }
+      }
+    },
+    "xxlarge": {
+      "value": {
+        "brand": {
+          "default": "1.6rem",
+          "comment": "24px"
+        },
+        "platform": {
+          "default": "unset"
+        }
+      }
+    },
+    "xxxlarge": {
+      "value": {
+        "brand": {
+          "default": "2.2rem",
+          "comment": "33px"
+        },
+        "platform": {
+          "default": "unset"
+        }
+      }
+    },
+    "heading": {
+      "xlarge": {
+        "value": "{font.size.xxlarge}"
+      },
+      "large": {
+        "value": "{font.size.xlarge}"
+      },
+      "medium": {
+        "value": "{font.size.large}"
+      }
+    }
+  },
+  "weight": {
+    "@base": {
+      "value": "normal"
+    },
+    "semibold": {
+      "value": 600
+    },
+    "bold": {
+      "value": 700
+    },
+    "heading": {
+      "value": "{font.weight.semibold}"
+    }
+  }
+}

@@ -263,6 +263,10 @@ function test_load_shelllink() {
   // lnk files should not resolve to their targets
   dump("*** test_load_shelllink\n");
   let file = do_get_file("data/system_root.lnk", false);
+  // The test's support-file may be installed as an OS-level symlink in the
+  // objdir; normalize so that nsFileChannel doesn't follow that symlink and
+  // we're actually exercising .lnk handling rather than POSIX symlinks.
+  file.normalize();
   var chan = new_file_channel(file);
 
   // The original URI path should be the same as the URI path

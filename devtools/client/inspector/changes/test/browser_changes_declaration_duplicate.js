@@ -16,7 +16,7 @@ const TEST_URI = `
 add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
-  const { document: doc, store } = selectChangesView(inspector);
+  const { document: doc, store } = await selectChangesView(inspector);
 
   await selectNode("div", inspector);
   await testAddDuplicateDeclarations(ruleView, store, doc);
@@ -65,10 +65,10 @@ async function testChangeDuplicateDeclarations(ruleView, store, doc) {
   info("Wait for the change to be tracked");
   await onTrackChange;
 
-  await waitFor(
-    () => getAddedDeclarations(doc).length == 2,
-    "Two declarations were tracked as added"
-  );
+  await waitFor(() => {
+    const decls = getAddedDeclarations(doc);
+    return decls.length === 2 && decls[0].value != "red";
+  }, "First added declaration is no longer red");
   const addDecl = getAddedDeclarations(doc);
   is(addDecl[0].value, "black", "First declaration has changed property value");
   is(

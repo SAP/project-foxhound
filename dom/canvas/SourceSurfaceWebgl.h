@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,12 @@
 #ifndef MOZILLA_GFX_SOURCESURFACEWEBGL_H_
 #define MOZILLA_GFX_SOURCESURFACEWEBGL_H_
 
-#include "mozilla/gfx/2D.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/gfx/2D.h"
+
+namespace mozilla {
+class WebGLBuffer;
+}  // namespace mozilla
 
 namespace mozilla::gfx {
 
@@ -40,13 +42,17 @@ class SourceSurfaceWebgl : public DataSourceSurface {
 
   already_AddRefed<SourceSurface> ExtractSubrect(const IntRect& aRect) override;
 
+  bool ReadDataInto(uint8_t* aData, int32_t aStride) override;
+
  private:
   friend class DrawTargetWebgl;
   friend class SharedContextWebgl;
 
   explicit SourceSurfaceWebgl(const RefPtr<SharedContextWebgl>& aSharedContext);
 
-  bool EnsureData();
+  bool EnsureData(bool aForce = true, uint8_t* aData = nullptr,
+                  int32_t aStride = 0);
+  bool ForceReadFromPBO();
 
   void DrawTargetWillChange(bool aNeedHandle);
 
@@ -54,14 +60,18 @@ class SourceSurfaceWebgl : public DataSourceSurface {
 
   void SetHandle(TextureHandle* aHandle);
 
-  void OnUnlinkTexture(SharedContextWebgl* aContext);
+  void OnUnlinkTexture(SharedContextWebgl* aContext, TextureHandle* aHandle,
+                       bool aForce);
 
   DrawTargetWebgl* GetTarget() const { return mDT.get(); }
 
   SurfaceFormat mFormat = SurfaceFormat::UNKNOWN;
   IntSize mSize;
+  RefPtr<WebGLBuffer> mReadBuffer;
   // Any data that has been read back from the WebGL context for mapping.
   RefPtr<DataSourceSurface> mData;
+  // Whether the data is safe to modify
+  bool mOwnsData = true;
   // The draw target that currently owns the texture for this surface.
   WeakPtr<DrawTargetWebgl> mDT;
   // The actual shared context that any WebGL resources belong to.

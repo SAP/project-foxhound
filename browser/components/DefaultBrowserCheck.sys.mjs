@@ -128,7 +128,9 @@ export var DefaultBrowserCheck = {
    * @returns {boolean} True if the default browser check prompt will be shown.
    */
   async willCheckDefaultBrowser(isStartupCheck) {
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     let shellService = win.getShellService();
 
     // Perform default browser checking.
@@ -136,8 +138,21 @@ export var DefaultBrowserCheck = {
       return false;
     }
 
+    // We should never check if running under flatpak
+    // as flatpak can't allow default to be set.
+    // See browser/components/preferences/main.js:canCheck()
+    let runningUnderFlatpak = false;
+    if (Cc["@mozilla.org/gio-service;1"]) {
+      let gIOSvc = Cc["@mozilla.org/gio-service;1"].getService(
+        Ci.nsIGIOService
+      );
+      runningUnderFlatpak = gIOSvc.isRunningUnderFlatpak;
+    }
+
     let shouldCheck =
-      !AppConstants.DEBUG && shellService.shouldCheckDefaultBrowser;
+      !AppConstants.DEBUG &&
+      !runningUnderFlatpak &&
+      shellService.shouldCheckDefaultBrowser;
 
     // Even if we shouldn't check the default browser, we still continue when
     // isStartupCheck = true to set prefs and telemetry.

@@ -139,19 +139,32 @@ function writeExtraFile(dir, uuid, date, data) {
   writeCrashReportFile(dir, uuid, ".extra", date, JSON.stringify(data));
 }
 
+function writeIgnoreFile(dir, uuid, date) {
+  writeCrashReportFile(dir, uuid, ".dmp.ignore", date, "");
+}
+
 function writeMemoryReport(dir, uuid, date) {
   let data = "Let's pretend this is a memory report";
   writeCrashReportFile(dir, uuid, ".memory.json.gz", date, data);
 }
 
-function addPendingCrashreport(crD, date, extra, payload = "") {
+function addPendingCrashreport(
+  crD,
+  date,
+  extra,
+  payload = "",
+  ignored = false
+) {
   let pendingdir = crD.clone();
   pendingdir.append("pending");
   let uuid = generate_uuid();
   writeMinidumpFile(pendingdir, uuid, date, payload);
   writeExtraFile(pendingdir, uuid, date, extra);
   writeMemoryReport(pendingdir, uuid, date);
-  return { id: uuid, date, pending: true, extra };
+  if (ignored) {
+    writeIgnoreFile(pendingdir, uuid);
+  }
+  return { id: uuid, date, pending: true, ignored, extra };
 }
 
 function addIncompletePendingCrashreport(crD, date) {

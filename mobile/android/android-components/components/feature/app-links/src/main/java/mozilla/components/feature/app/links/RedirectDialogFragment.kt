@@ -4,15 +4,15 @@
 
 package mozilla.components.feature.app.links
 
-import androidx.fragment.app.DialogFragment
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 
 /**
  * This is a general representation of a dialog meant to be used in collaboration with [AppLinksInterceptor]
  * to show a dialog before an external link is opened.
- * If [SimpleRedirectDialogFragment] is not flexible enough for your use case you should inherit for this class.
+ *
  * Be mindful to call [onConfirmRedirect] when you want to open the linked app.
  */
-abstract class RedirectDialogFragment : DialogFragment() {
+abstract class RedirectDialogFragment : BottomSheetDialogFragment() {
 
     /**
      * A callback to trigger a redirect action. Call it when you are ready to open the linked app. For instance,
@@ -30,6 +30,12 @@ abstract class RedirectDialogFragment : DialogFragment() {
      * this callback must be called.
      */
     var onCancelRedirect: () -> Unit? = {}
+
+    /**
+     * A callback to trigger when the user dismisses the dialog without taking an explicit action,
+     * for example by tapping outside the dialog or pressing the back button.
+     */
+    var onDismissRedirect: () -> Unit = {}
 
     companion object {
         const val FRAGMENT_TAG = "SHOULD_OPEN_APP_LINK_PROMPT_DIALOG"

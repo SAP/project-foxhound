@@ -1,0 +1,16 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[DEFAULT]
+run-if = [
+  "http3",
+]
+prefs = [
+  "network.dns.localDomains=foo.example.com",
+  "network.webtransport.enabled=true",
+  "network.http.http3.enabled=true"
+]
+
+["test_webtransporteventservice_basic.html"]
+scheme = ["https"]

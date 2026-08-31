@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import subprocess
 import sys
 import unittest
 
@@ -13,6 +14,24 @@ from marionette_driver.errors import (
 )
 
 from marionette_harness import MarionetteTestCase
+
+
+def _is_macos_vm():
+    # Marionette's test harness runs in a venv with a pre-installed mozinfo
+    # that may not have the macos_vm flag from D302479; sysctl directly so the
+    # detection works regardless of which mozinfo is on PYTHONPATH.
+    if sys.platform != "darwin":
+        return False
+    try:
+        out = subprocess.check_output(
+            ["sysctl", "-n", "hw.model"], text=True, timeout=5
+        ).strip()
+        return out.startswith("VirtualMac")
+    except Exception:
+        return False
+
+
+_MACOS_VM = _is_macos_vm()
 
 
 class TestAccessibility(MarionetteTestCase):
@@ -121,6 +140,10 @@ class TestAccessibility(MarionetteTestCase):
         # No exception should be raised
         self.run_element_test(self.valid_elementIDs, lambda button: button.click())
 
+    @unittest.skipIf(
+        _MACOS_VM,
+        "Bug 2037084 - accessibility API depends on a real display",
+    )
     def test_click_raises_element_not_accessible(self):
         self.setup_accessibility()
         self.run_element_test(

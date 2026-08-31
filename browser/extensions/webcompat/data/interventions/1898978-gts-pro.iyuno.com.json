@@ -1,0 +1,15 @@
+{
+  "label": "gts-pro.iyuno.com",
+  "bugs": {
+    "1898978": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://gts-pro.iyuno.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

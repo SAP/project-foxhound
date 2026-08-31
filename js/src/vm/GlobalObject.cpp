@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -35,7 +33,6 @@
 #endif
 #include "builtin/FinalizationRegistryObject.h"
 #include "builtin/MapObject.h"
-#include "builtin/ShadowRealm.h"
 #include "builtin/Symbol.h"
 #ifdef JS_HAS_INTL_API
 #  include "builtin/temporal/Duration.h"
@@ -87,10 +84,13 @@ using namespace js;
 
 namespace js {
 
-extern const JSClass IntlClass;
 extern const JSClass JSONClass;
 extern const JSClass MathClass;
 extern const JSClass ReflectClass;
+
+namespace intl {
+extern const JSClass IntlClass;
+}
 
 }  // namespace js
 
@@ -180,6 +180,9 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
       return !wasm::HasSupport(cx);
 
     case JSProto_WasmModule:
+#ifdef ENABLE_WASM_COMPONENTS
+    case JSProto_WasmComponent:
+#endif
     case JSProto_WasmInstance:
     case JSProto_WasmMemory:
     case JSProto_WasmTable:
@@ -230,15 +233,15 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_AsyncIterator:
       return !IsAsyncIteratorHelpersEnabled();
 
-    case JSProto_ShadowRealm:
-      return !JS::Prefs::experimental_shadow_realms();
-
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSProto_SuppressedError:
     case JSProto_DisposableStack:
     case JSProto_AsyncDisposableStack:
       return !JS::Prefs::experimental_explicit_resource_management();
 #endif
+
+    case JSProto_AbstractModuleSource:
+      return !JS::Prefs::experimental_source_phase_imports();
 
     default:
       MOZ_CRASH("unexpected JSProtoKey");
@@ -435,8 +438,19 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
   // how standard protos are linked together and the properties we want to
   // enforce. Generally, it's fine if we don't watch for mutations on protos
   // until they get exposed to user code.
-  if (proto && !JSObject::setFlag(cx, proto, ObjectFlag::IsUsedAsPrototype)) {
+  if (proto && !JSObject::setIsUsedAsPrototype(cx, proto)) {
     return false;
+  }
+
+  if (ShouldUseObjectFuses() &&
+      JS::Prefs::objectfuse_for_js_builtin_ctors_protos()) {
+    if (proto &&
+        !NativeObject::setHasObjectFuse(cx, proto.as<NativeObject>())) {
+      return false;
+    }
+    if (!NativeObject::setHasObjectFuse(cx, ctor.as<NativeObject>())) {
+      return false;
+    }
   }
 
   if (!isObjectOrFunction) {
@@ -591,6 +605,9 @@ GlobalObject* GlobalObject::createInternal(JSContext* cx,
       ObjectFlag::QualifiedVarObj,
       ObjectFlag::GenerationCountedGlobal,
   };
+  if (ShouldUseObjectFuses() && JS::Prefs::objectfuse_for_global()) {
+    objectFlags.setFlag(ObjectFlag::HasObjectFuse);
+  }
 
   JSObject* obj =
       NewTenuredObjectWithGivenProto(cx, clasp, nullptr, objectFlags);
@@ -849,16 +866,6 @@ RegExpStatics* GlobalObject::getRegExpStatics(JSContext* cx,
   return global->regExpRealm().regExpStatics.get();
 }
 
-gc::FinalizationRegistryGlobalData*
-GlobalObject::getOrCreateFinalizationRegistryData() {
-  if (!data().finalizationRegistryData) {
-    data().finalizationRegistryData =
-        MakeUnique<gc::FinalizationRegistryGlobalData>(zone());
-  }
-
-  return maybeFinalizationRegistryData();
-}
-
 /* static */
 bool GlobalObject::createIntrinsicsHolder(JSContext* cx,
                                           Handle<GlobalObject*> global) {
@@ -1022,42 +1029,40 @@ GlobalObjectData::~GlobalObjectData() = default;
 
 void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
   for (auto& ctorWithProto : builtinConstructors) {
-    TraceNullableEdge(trc, &ctorWithProto.constructor, "global-builtin-ctor");
-    TraceNullableEdge(trc, &ctorWithProto.prototype,
-                      "global-builtin-ctor-proto");
+    TraceEdge(trc, &ctorWithProto.constructor, "global-builtin-ctor");
+    TraceEdge(trc, &ctorWithProto.prototype, "global-builtin-ctor-proto");
   }
 
   for (auto& proto : builtinProtos) {
-    TraceNullableEdge(trc, &proto, "global-builtin-proto");
+    TraceEdge(trc, &proto, "global-builtin-proto");
   }
 
-  TraceNullableEdge(trc, &emptyGlobalScope, "global-empty-scope");
+  TraceEdge(trc, &emptyGlobalScope, "global-empty-scope");
 
-  TraceNullableEdge(trc, &lexicalEnvironment, "global-lexical-env");
-  TraceNullableEdge(trc, &windowProxy, "global-window-proxy");
-  TraceNullableEdge(trc, &intrinsicsHolder, "global-intrinsics-holder");
-  TraceNullableEdge(trc, &computedIntrinsicsHolder,
-                    "global-computed-intrinsics-holder");
-  TraceNullableEdge(trc, &sourceURLsHolder, "global-source-urls");
-  TraceNullableEdge(trc, &realmKeyObject, "global-realm-key");
-  TraceNullableEdge(trc, &throwTypeError, "global-throw-type-error");
-  TraceNullableEdge(trc, &eval, "global-eval");
-  TraceNullableEdge(trc, &emptyIterator, "global-empty-iterator");
+  TraceEdge(trc, &lexicalEnvironment, "global-lexical-env");
+  TraceEdge(trc, &windowProxy, "global-window-proxy");
+  TraceEdge(trc, &intrinsicsHolder, "global-intrinsics-holder");
+  TraceEdge(trc, &computedIntrinsicsHolder,
+            "global-computed-intrinsics-holder");
+  TraceEdge(trc, &sourceURLsHolder, "global-source-urls");
+  TraceEdge(trc, &realmKeyObject, "global-realm-key");
+  TraceEdge(trc, &throwTypeError, "global-throw-type-error");
+  TraceEdge(trc, &eval, "global-eval");
+  TraceEdge(trc, &emptyIterator, "global-empty-iterator");
 
-  TraceNullableEdge(trc, &arrayShapeWithDefaultProto, "global-array-shape");
+  TraceEdge(trc, &arrayShapeWithDefaultProto, "global-array-shape");
 
   for (auto& shape : plainObjectShapesWithDefaultProto) {
-    TraceNullableEdge(trc, &shape, "global-plain-shape");
+    TraceEdge(trc, &shape, "global-plain-shape");
   }
 
-  TraceNullableEdge(trc, &functionShapeWithDefaultProto,
-                    "global-function-shape");
-  TraceNullableEdge(trc, &extendedFunctionShapeWithDefaultProto,
-                    "global-ext-function-shape");
+  TraceEdge(trc, &functionShapeWithDefaultProto, "global-function-shape");
+  TraceEdge(trc, &extendedFunctionShapeWithDefaultProto,
+            "global-ext-function-shape");
 
-  TraceNullableEdge(trc, &boundFunctionShapeWithDefaultProto,
-                    "global-bound-function-shape");
-  TraceNullableEdge(trc, &regExpShapeWithDefaultProto, "global-regexp-shape");
+  TraceEdge(trc, &boundFunctionShapeWithDefaultProto,
+            "global-bound-function-shape");
+  TraceEdge(trc, &regExpShapeWithDefaultProto, "global-regexp-shape");
 
   regExpRealm.trace(trc);
 
@@ -1065,23 +1070,15 @@ void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
   globalIntlData.trace(trc);
 #endif
 
-  TraceNullableEdge(trc, &mappedArgumentsTemplate, "mapped-arguments-template");
-  TraceNullableEdge(trc, &unmappedArgumentsTemplate,
-                    "unmapped-arguments-template");
+  TraceEdge(trc, &mappedArgumentsTemplate, "mapped-arguments-template");
+  TraceEdge(trc, &unmappedArgumentsTemplate, "unmapped-arguments-template");
 
-  TraceNullableEdge(trc, &mapObjectTemplate, "map-object-template");
-  TraceNullableEdge(trc, &setObjectTemplate, "set-object-template");
+  TraceEdge(trc, &mapObjectTemplate, "map-object-template");
+  TraceEdge(trc, &setObjectTemplate, "set-object-template");
 
-  TraceNullableEdge(trc, &iterResultTemplate, "iter-result-template_");
-  TraceNullableEdge(trc, &iterResultWithoutPrototypeTemplate,
-                    "iter-result-without-prototype-template");
+  TraceEdge(trc, &iterResultTemplate, "iter-result-template_");
 
-  TraceNullableEdge(trc, &selfHostingScriptSource,
-                    "self-hosting-script-source");
-
-  if (finalizationRegistryData) {
-    finalizationRegistryData->trace(trc);
-  }
+  TraceEdge(trc, &selfHostingScriptSource, "self-hosting-script-source");
 }
 
 void GlobalObjectData::addSizeOfIncludingThis(

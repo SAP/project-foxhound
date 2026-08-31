@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/devtools/AutoMemMap.h"
 
-#include "mozilla/Unused.h"
 #include "nsDebug.h"
 
 namespace mozilla {
@@ -14,17 +11,17 @@ namespace devtools {
 
 AutoMemMap::~AutoMemMap() {
   if (addr) {
-    Unused << NS_WARN_IF(PR_MemUnmap(addr, size()) != PR_SUCCESS);
+    (void)NS_WARN_IF(PR_MemUnmap(addr, size()) != PR_SUCCESS);
     addr = nullptr;
   }
 
   if (fileMap) {
-    Unused << NS_WARN_IF(PR_CloseFileMap(fileMap) != PR_SUCCESS);
+    (void)NS_WARN_IF(PR_CloseFileMap(fileMap) != PR_SUCCESS);
     fileMap = nullptr;
   }
 
   if (fd) {
-    Unused << NS_WARN_IF(PR_Close(fd) != PR_SUCCESS);
+    (void)NS_WARN_IF(PR_Close(fd) != PR_SUCCESS);
     fd = nullptr;
   }
 }

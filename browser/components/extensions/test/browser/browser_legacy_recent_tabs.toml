@@ -1,3 +1,4 @@
+# Keep the test list here in sync with browser-sessions.toml.
 [DEFAULT]
 #
 # This manifest lists tests that use cover the session API and recently-closed tabs behavior with the legacy pref values
@@ -10,7 +11,7 @@ prefs = [
 ]
 support-files = [
   "head.js",
-  "empty.xpi",
+  "204.sjs",
 ]
 
 ["browser_ext_sessions_forgetClosedTab.js"]

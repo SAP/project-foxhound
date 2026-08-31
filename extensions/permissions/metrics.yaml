@@ -42,3 +42,55 @@ permissions:
       - amarchesini@mozilla.com
     expires: never
     telemetry_mirror: h#DEFECTIVE_PERMISSIONS_SQL_REMOVED
+
+  unused_permission_age_at_expiry:
+    type: custom_distribution
+    range_min: 0
+    range_max: 730
+    bucket_count: 50
+    histogram_type: exponential
+    unit: days
+    description: >
+      Distribution of how long after the last site interaction a permission was
+      expired (currentTime - lastInteractionTime). Helps understand typical
+      permission lifetimes before expiration.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012554
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012554
+    notification_emails:
+      - emz@mozilla.com
+    expires: never
+
+  unused_permissions_expired_by_type:
+    type: labeled_counter
+    description: >
+      Count of permissions expired due to inactivity, broken down by
+      permission type (e.g. "desktop-notification", "geo"). Helps
+      identify which permission types are expired most often.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012554
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012554
+    notification_emails:
+      - emz@mozilla.com
+    expires: never
+
+  unused_permission_modified_age_at_expiry:
+    type: custom_distribution
+    range_min: 0
+    range_max: 730
+    bucket_count: 50
+    histogram_type: exponential
+    unit: days
+    description: >
+      Distribution of how long after the permission was last modified it was
+      expired (currentTime - modificationTime). Helps understand how old
+      permissions are when they get cleaned up.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012554
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012554
+    notification_emails:
+      - emz@mozilla.com
+    expires: never

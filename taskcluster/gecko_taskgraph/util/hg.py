@@ -3,11 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import functools
 import logging
 import subprocess
 
 import requests
-from mozbuild.util import memoize
 from redo import retry
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def find_hg_revision_push_info(repository, revision):
     }
 
 
-@memoize
+@functools.cache
 def get_push_data(repository, project, push_id_start, push_id_end):
     url = PUSHLOG_PUSHES_TMPL.format(
         repository=repository,
@@ -93,7 +93,7 @@ def get_push_data(repository, project, push_id_start, push_id_end):
     return None
 
 
-@memoize
+@functools.cache
 def get_json_pushchangedfiles(repository, revision):
     url = "{}/json-pushchangedfiles/{}".format(repository.rstrip("/"), revision)
     logger.debug("Querying version control for metadata: %s", url)

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +7,11 @@
 
 #include <windows.h>
 
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "Units.h"
+#include "mozilla/widget/WindowOcclusionState.h"
 
-class MockWinWidget : public nsBaseWidget {
+class MockWinWidget : public nsIWidget {
  public:
   static RefPtr<MockWinWidget> Create(DWORD aStyle, DWORD aExStyle,
                                       const LayoutDeviceIntRect& aRect);
@@ -34,36 +33,32 @@ class MockWinWidget : public nsBaseWidget {
 
   void* GetNativeData(uint32_t aDataType) override { return nullptr; }
 
-  virtual nsresult Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
-                          InitData* aInitData = nullptr) override {
+  nsresult Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
+                  const InitData&) override {
     return NS_OK;
   }
-  virtual nsresult Create(nsIWidget* aParent, const DesktopIntRect& aRect,
-                          InitData* aInitData = nullptr) override {
+  nsresult Create(nsIWidget* aParent, const DesktopIntRect& aRect,
+                  const InitData&) override {
     return NS_OK;
   }
-  virtual void Show(bool aState) override {}
-  virtual bool IsVisible() const override { return true; }
-  virtual void Move(double aX, double aY) override {}
-  virtual void Resize(double aWidth, double aHeight, bool aRepaint) override {}
-  virtual void Resize(double aX, double aY, double aWidth, double aHeight,
-                      bool aRepaint) override {}
+  void Show(bool aState) override {}
+  bool IsVisible() const override { return true; }
+  void Move(const DesktopPoint&) override {}
+  void Resize(const DesktopSize&, bool aRepaint) override {}
+  void Resize(const DesktopRect&, bool aRepaint) override {}
 
-  virtual void Enable(bool aState) override {}
-  virtual bool IsEnabled() const override { return true; }
-  virtual void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override {}
-  virtual void Invalidate(const LayoutDeviceIntRect& aRect) override {}
-  virtual nsresult SetTitle(const nsAString& title) override { return NS_OK; }
-  virtual LayoutDeviceIntPoint WidgetToScreenOffset() override {
+  void Enable(bool aState) override {}
+  bool IsEnabled() const override { return true; }
+  void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override {}
+  void Invalidate(const LayoutDeviceIntRect& aRect) override {}
+  nsresult SetTitle(const nsAString& title) override { return NS_OK; }
+  LayoutDeviceIntPoint WidgetToScreenOffset() override {
     return LayoutDeviceIntPoint(0, 0);
   }
-  virtual nsresult DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
-                                 nsEventStatus& aStatus) override {
-    return NS_OK;
-  }
-  virtual void SetInputContext(const InputContext& aContext,
-                               const InputContextAction& aAction) override {}
-  virtual InputContext GetInputContext() override { abort(); }
+  void SetInputContext(const InputContext& aContext,
+                       const InputContextAction& aAction) override {}
+  InputContext GetInputContext() override { abort(); }
+  LayoutDeviceIntRect GetBounds() override { return mBounds; }
 
  private:
   MockWinWidget();
@@ -73,6 +68,7 @@ class MockWinWidget : public nsBaseWidget {
                   const LayoutDeviceIntRect& aRect);
 
   HWND mWnd = 0;
+  LayoutDeviceIntRect mBounds;
 
   mozilla::widget::OcclusionState mExpectation =
       mozilla::widget::OcclusionState::UNKNOWN;

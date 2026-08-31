@@ -1,0 +1,19 @@
+{
+  "label": "mega.nz",
+  "bugs": {
+    "1904141": {
+      "issue": "broken-meetings",
+      "matches": ["https://mega.nz/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "only_channels": ["nightly"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["bug1913599-shim-createencodedstreams.js"]
+      }
+    }
+  ]
+}

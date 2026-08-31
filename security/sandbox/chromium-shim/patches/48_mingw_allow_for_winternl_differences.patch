@@ -1,0 +1,301 @@
+# User Bob Owen <bobowencode@gmail.com>
+This #ifs out various things that are already defined in mingw's winternl.h but
+not in the standard Windows one. It also renames _OBJECT_TYPE_INFORMATION::Name
+to TypeName and _OBJECT_NAME_INFORMATION::ObjectName to Name to match Windows
+documentation and mingw.
+
+diff --git a/sandbox/win/src/nt_internals.h b/sandbox/win/src/nt_internals.h
+--- a/sandbox/win/src/nt_internals.h
++++ b/sandbox/win/src/nt_internals.h
+@@ -35,57 +35,63 @@ typedef NTSTATUS(WINAPI* NtOpenFileFunct
+                                              IN POBJECT_ATTRIBUTES
+                                                  ObjectAttributes,
+                                              OUT PIO_STATUS_BLOCK IoStatusBlock,
+                                              IN ULONG ShareAccess,
+                                              IN ULONG OpenOptions);
+ 
+ typedef NTSTATUS(WINAPI* NtCloseFunction)(IN HANDLE Handle);
+ 
++#if !defined(__MINGW32__)
+ // Uses undocumented value not in FILE_INFORMATION_CLASS.
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wenum-constexpr-conversion"
+ constexpr auto FileRenameInformation = static_cast<FILE_INFORMATION_CLASS>(10);
+ #pragma clang diagnostic push
+ 
+ typedef struct _FILE_RENAME_INFORMATION {
+   BOOLEAN ReplaceIfExists;
+   HANDLE RootDirectory;
+   ULONG FileNameLength;
+   WCHAR FileName[1];
+ } FILE_RENAME_INFORMATION, *PFILE_RENAME_INFORMATION;
++#endif
+ 
+ typedef NTSTATUS(WINAPI* NtSetInformationFileFunction)(
+     IN HANDLE FileHandle,
+     OUT PIO_STATUS_BLOCK IoStatusBlock,
+     IN PVOID FileInformation,
+     IN ULONG Length,
+     IN FILE_INFORMATION_CLASS FileInformationClass);
+ 
++#if !defined(__MINGW32__)
+ typedef struct FILE_BASIC_INFORMATION {
+   LARGE_INTEGER CreationTime;
+   LARGE_INTEGER LastAccessTime;
+   LARGE_INTEGER LastWriteTime;
+   LARGE_INTEGER ChangeTime;
+   ULONG FileAttributes;
+ } FILE_BASIC_INFORMATION, *PFILE_BASIC_INFORMATION;
++#endif
+ 
+ typedef NTSTATUS(WINAPI* NtQueryAttributesFileFunction)(
+     IN POBJECT_ATTRIBUTES ObjectAttributes,
+     OUT PFILE_BASIC_INFORMATION FileAttributes);
+ 
++#if !defined(__MINGW32__)
+ typedef struct _FILE_NETWORK_OPEN_INFORMATION {
+   LARGE_INTEGER CreationTime;
+   LARGE_INTEGER LastAccessTime;
+   LARGE_INTEGER LastWriteTime;
+   LARGE_INTEGER ChangeTime;
+   LARGE_INTEGER AllocationSize;
+   LARGE_INTEGER EndOfFile;
+   ULONG FileAttributes;
+ } FILE_NETWORK_OPEN_INFORMATION, *PFILE_NETWORK_OPEN_INFORMATION;
++#endif
+ 
+ typedef NTSTATUS(WINAPI* NtQueryFullAttributesFileFunction)(
+     IN POBJECT_ATTRIBUTES ObjectAttributes,
+     OUT PFILE_NETWORK_OPEN_INFORMATION FileAttributes);
+ 
+ // -----------------------------------------------------------------------
+ // Sections
+ 
+@@ -148,18 +154,20 @@ typedef NTSTATUS(WINAPI* NtOpenThreadFun
+                                                IN PCLIENT_ID ClientId);
+ 
+ typedef NTSTATUS(WINAPI* NtOpenProcessFunction)(OUT PHANDLE ProcessHandle,
+                                                 IN ACCESS_MASK DesiredAccess,
+                                                 IN POBJECT_ATTRIBUTES
+                                                     ObjectAttributes,
+                                                 IN PCLIENT_ID ClientId);
+ 
++#if !defined(__MINGW32__)
+ // Provide ThreadImpersonationToken which is not in THREADINFOCLASS.
+ constexpr auto ThreadImpersonationToken = static_cast<THREADINFOCLASS>(5);
++#endif
+ 
+ typedef NTSTATUS(WINAPI* NtImpersonateAnonymousTokenFunction)(
+     IN HANDLE ThreadHandle);
+ 
+ typedef NTSTATUS(WINAPI* NtOpenSectionFunction)(
+     OUT PHANDLE SectionHandle, IN ACCESS_MASK DesiredAccess,
+     IN POBJECT_ATTRIBUTES ObjectAttributes);
+ 
+@@ -235,18 +243,20 @@ typedef NTSTATUS(WINAPI* NtOpenKeyFuncti
+ 
+ typedef NTSTATUS(WINAPI* NtOpenKeyExFunction)(
+     OUT PHANDLE KeyHandle, IN ACCESS_MASK DesiredAccess,
+     IN POBJECT_ATTRIBUTES ObjectAttributes, IN DWORD open_options);
+ 
+ // -----------------------------------------------------------------------
+ // Memory
+ 
++#if !defined(__MINGW32__)
+ // Don't really need this structure right now.
+ typedef PVOID PRTL_HEAP_PARAMETERS;
++#endif
+ 
+ typedef PVOID(WINAPI* RtlCreateHeapFunction)(IN ULONG Flags,
+                                              IN PVOID HeapBase OPTIONAL,
+                                              IN SIZE_T ReserveSize OPTIONAL,
+                                              IN SIZE_T CommitSize OPTIONAL,
+                                              IN PVOID Lock OPTIONAL,
+                                              IN PRTL_HEAP_PARAMETERS Parameters
+                                                  OPTIONAL);
+@@ -298,45 +308,48 @@ typedef NTSTATUS(WINAPI* NtProtectVirtua
+     IN OUT PVOID* BaseAddress,
+     IN OUT PSIZE_T ProtectSize,
+     IN ULONG NewProtect,
+     OUT PULONG OldProtect);
+ 
+ // -----------------------------------------------------------------------
+ // Objects
+ 
++#if !defined(__MINGW32__)
+ // Add some field not in OBJECT_INFORMATION_CLASS.
+ constexpr auto ObjectNameInformation = static_cast<OBJECT_INFORMATION_CLASS>(1);
++#endif
+ 
+ typedef enum _POOL_TYPE {
+   NonPagedPool,
+   PagedPool,
+   NonPagedPoolMustSucceed,
+   ReservedType,
+   NonPagedPoolCacheAligned,
+   PagedPoolCacheAligned,
+   NonPagedPoolCacheAlignedMustS
+ } POOL_TYPE;
+ 
++#if !defined(__MINGW32__)
+ typedef struct _OBJECT_BASIC_INFORMATION {
+   ULONG Attributes;
+   ACCESS_MASK GrantedAccess;
+   ULONG HandleCount;
+   ULONG PointerCount;
+   ULONG PagedPoolUsage;
+   ULONG NonPagedPoolUsage;
+   ULONG Reserved[3];
+   ULONG NameInformationLength;
+   ULONG TypeInformationLength;
+   ULONG SecurityDescriptorLength;
+   LARGE_INTEGER CreateTime;
+ } OBJECT_BASIC_INFORMATION, *POBJECT_BASIC_INFORMATION;
+ 
+ typedef struct _OBJECT_TYPE_INFORMATION {
+-  UNICODE_STRING Name;
++  UNICODE_STRING TypeName;
+   ULONG TotalNumberOfObjects;
+   ULONG TotalNumberOfHandles;
+   ULONG TotalPagedPoolUsage;
+   ULONG TotalNonPagedPoolUsage;
+   ULONG TotalNamePoolUsage;
+   ULONG TotalHandleTableUsage;
+   ULONG HighWaterNumberOfObjects;
+   ULONG HighWaterNumberOfHandles;
+@@ -351,18 +364,19 @@ typedef struct _OBJECT_TYPE_INFORMATION 
+   BOOLEAN MaintainHandleCount;
+   USHORT MaintainTypeList;
+   POOL_TYPE PoolType;
+   ULONG PagedPoolUsage;
+   ULONG NonPagedPoolUsage;
+ } OBJECT_TYPE_INFORMATION, *POBJECT_TYPE_INFORMATION;
+ 
+ typedef struct _OBJECT_NAME_INFORMATION {
+-  UNICODE_STRING ObjectName;
++  UNICODE_STRING Name;
+ } OBJECT_NAME_INFORMATION, *POBJECT_NAME_INFORMATION;
++#endif
+ 
+ typedef NTSTATUS(WINAPI* NtQueryObjectFunction)(
+     IN HANDLE Handle,
+     IN OBJECT_INFORMATION_CLASS ObjectInformationClass,
+     OUT PVOID ObjectInformation OPTIONAL,
+     IN ULONG ObjectInformationLength,
+     OUT PULONG ReturnLength OPTIONAL);
+ 
+diff --git a/sandbox/win/src/sandbox_nt_util.cc b/sandbox/win/src/sandbox_nt_util.cc
+--- a/sandbox/win/src/sandbox_nt_util.cc
++++ b/sandbox/win/src/sandbox_nt_util.cc
+@@ -396,24 +396,24 @@ NTSTATUS AllocAndGetFullPath(
+         ret = NtQueryObject(root, ObjectNameInformation, handle_name.get(),
+                             size, &size);
+       }
+ 
+       if (STATUS_SUCCESS != ret) break;
+ 
+       // Space for path + '\' + name + '\0'.
+       size_t name_length =
+-          handle_name->ObjectName.Length + (wcslen(path) + 2) * sizeof(wchar_t);
++          handle_name->Name.Length + (wcslen(path) + 2) * sizeof(wchar_t);
+       full_path->reset(new (NT_ALLOC) wchar_t[name_length / sizeof(wchar_t)]);
+       if (!*full_path) break;
+       wchar_t* off = full_path->get();
+-      ret = CopyData(off, handle_name->ObjectName.Buffer,
+-                     handle_name->ObjectName.Length);
++      ret = CopyData(off, handle_name->Name.Buffer,
++                     handle_name->Name.Length);
+       if (!NT_SUCCESS(ret)) break;
+-      off += handle_name->ObjectName.Length / sizeof(wchar_t);
++      off += handle_name->Name.Length / sizeof(wchar_t);
+       *off = L'\\';
+       off += 1;
+       ret = CopyData(off, path, wcslen(path) * sizeof(wchar_t));
+       if (!NT_SUCCESS(ret)) break;
+       off += wcslen(path);
+       *off = L'\0';
+     } while (false);
+   } __except (EXCEPTION_EXECUTE_HANDLER) {
+@@ -805,20 +805,20 @@ bool NtGetPathFromHandle(HANDLE handle,
+ 
+   // Query the name information a second time to get the name of the
+   // object referenced by the handle.
+   status = GetNtExports()->QueryObject(handle, ObjectNameInformation, name,
+                                        size, &size);
+ 
+   if (STATUS_SUCCESS != status)
+     return false;
+-  size_t num_path_wchars = (name->ObjectName.Length / sizeof(wchar_t)) + 1;
++  size_t num_path_wchars = (name->Name.Length / sizeof(wchar_t)) + 1;
+   path->reset(new (NT_ALLOC) wchar_t[num_path_wchars]);
+   status =
+-      CopyData(path->get(), name->ObjectName.Buffer, name->ObjectName.Length);
++      CopyData(path->get(), name->Name.Buffer, name->Name.Length);
+   path->get()[num_path_wchars - 1] = L'\0';
+   if (STATUS_SUCCESS != status)
+     return false;
+   return true;
+ }
+ 
+ CLIENT_ID GetCurrentClientId() {
+   return reinterpret_cast<PARTIAL_TEB*>(NtCurrentTeb())->ClientId;
+diff --git a/sandbox/win/src/signed_interception.cc b/sandbox/win/src/signed_interception.cc
+--- a/sandbox/win/src/signed_interception.cc
++++ b/sandbox/win/src/signed_interception.cc
+@@ -67,17 +67,17 @@ TargetNtCreateSection(NtCreateSectionFun
+         GetNtExports()->QueryObject(file_handle, ObjectNameInformation, path,
+                                     path_buffer_size, &out_buffer_size);
+ 
+     if (!NT_SUCCESS(status)) {
+       break;
+     }
+ 
+     CountedParameterSet<NameBased> params;
+-    params[NameBased::NAME] = ParamPickerMake(path->ObjectName.Buffer);
++    params[NameBased::NAME] = ParamPickerMake(path->Name.Buffer);
+ 
+     // Check if this will be sent to the broker.
+     if (!QueryBroker(IpcTag::NTCREATESECTION, params.GetBase()))
+       break;
+ 
+     if (!ValidParameter(section_handle, sizeof(HANDLE), WRITE))
+       break;
+ 
+diff --git a/sandbox/win/src/win_utils.cc b/sandbox/win/src/win_utils.cc
+--- a/sandbox/win/src/win_utils.cc
++++ b/sandbox/win/src/win_utils.cc
+@@ -453,30 +453,30 @@ absl::optional<std::wstring> GetNtPathFr
+ 
+ absl::optional<std::wstring> GetPathFromHandle(HANDLE handle) {
+   auto buffer = QueryObjectInformation(handle, ObjectNameInformation, 512);
+   if (!buffer)
+     return absl::nullopt;
+   OBJECT_NAME_INFORMATION* name =
+       reinterpret_cast<OBJECT_NAME_INFORMATION*>(buffer->data());
+   return std::wstring(
+-      name->ObjectName.Buffer,
+-      name->ObjectName.Length / sizeof(name->ObjectName.Buffer[0]));
++      name->Name.Buffer,
++      name->Name.Length / sizeof(name->Name.Buffer[0]));
+ }
+ 
+ absl::optional<std::wstring> GetTypeNameFromHandle(HANDLE handle) {
+   // No typename is currently longer than 32 characters on Windows 11, so use a
+   // hint of 128 bytes.
+   auto buffer = QueryObjectInformation(handle, ObjectTypeInformation, 128);
+   if (!buffer)
+     return absl::nullopt;
+   OBJECT_TYPE_INFORMATION* name =
+       reinterpret_cast<OBJECT_TYPE_INFORMATION*>(buffer->data());
+-  return std::wstring(name->Name.Buffer,
+-                      name->Name.Length / sizeof(name->Name.Buffer[0]));
++  return std::wstring(name->TypeName.Buffer,
++                      name->TypeName.Length / sizeof(name->TypeName.Buffer[0]));
+ }
+ 
+ bool CopyToChildMemory(HANDLE child,
+                        const void* local_buffer,
+                        size_t buffer_bytes,
+                        void** remote_buffer) {
+   DCHECK(remote_buffer);
+   if (0 == buffer_bytes) {

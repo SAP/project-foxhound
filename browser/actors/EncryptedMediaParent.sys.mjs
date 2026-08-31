@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -196,7 +195,7 @@ export class EncryptedMediaParent extends JSWindowActorParent {
 
     // Don't bother creating it if it's already there:
     if (
-      aBrowser.ownerGlobal.PopupNotifications.getNotification(
+      aBrowser.documentGlobal.PopupNotifications.getNotification(
         "drmContentPlaying",
         aBrowser
       )
@@ -243,7 +242,7 @@ export class EncryptedMediaParent extends JSWindowActorParent {
       label: manageLabel,
       accessKey: manageAccessKey,
       callback() {
-        aBrowser.ownerGlobal.openPreferences("general-drm");
+        aBrowser.documentGlobal.openPreferences("general-drm");
       },
       dismiss: true,
     };
@@ -265,7 +264,7 @@ export class EncryptedMediaParent extends JSWindowActorParent {
         "drm-content",
       hideClose: true,
     };
-    aBrowser.ownerGlobal.PopupNotifications.show(
+    aBrowser.documentGlobal.PopupNotifications.show(
       aBrowser,
       "drmContentPlaying",
       message,
@@ -280,7 +279,6 @@ export class EncryptedMediaParent extends JSWindowActorParent {
     let hasHardwareDecryption = false;
     let hasSoftwareClearlead = false;
     let hasHardwareClearlead = false;
-    let hasHdcp22Plus = false;
     let hasWMF = false;
 
     // Get CDM capabilities from the GMP process.
@@ -306,16 +304,12 @@ export class EncryptedMediaParent extends JSWindowActorParent {
           hasSoftwareClearlead = true;
         }
       }
-      if (info.isHDCP22Compatible) {
-        hasHdcp22Plus = true;
-      }
     }
     Glean.mediadrm.decryption.has_hardware_decryption.set(
       hasHardwareDecryption
     );
     Glean.mediadrm.decryption.has_hardware_clearlead.set(hasHardwareClearlead);
     Glean.mediadrm.decryption.has_software_clearlead.set(hasSoftwareClearlead);
-    Glean.mediadrm.decryption.has_hdcp22_plus.set(hasHdcp22Plus);
     Glean.mediadrm.decryption.has_wmf.set(hasWMF);
   }
 }

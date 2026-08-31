@@ -8,14 +8,14 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "touchBarUpdater",
   "@mozilla.org/widget/touchbarupdater;1",
-  "nsITouchBarUpdater"
+  Ci.nsITouchBarUpdater
 );
 
 // For accessing TouchBarHelper methods from static contexts in this file.
@@ -23,7 +23,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "touchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
-  "nsITouchBarHelper"
+  Ci.nsITouchBarHelper
 );
 
 /**
@@ -130,7 +130,7 @@ var gBuiltInInputs = {
   },
   Sidebar: {
     title: "open-sidebar",
-    image: "chrome://browser/skin/sidebars.svg",
+    image: "chrome://browser/skin/sidebar-collapsed.svg",
     type: kInputTypes.BUTTON,
     callback: () => {
       let win = lazy.BrowserWindowTracker.getTopWindow();
@@ -184,7 +184,7 @@ var gBuiltInInputs = {
             type: kInputTypes.BUTTON,
             callback: () =>
               lazy.touchBarHelper.insertRestrictionInUrlbar(
-                lazy.UrlbarTokenizer.RESTRICT.BOOKMARK
+                lazy.UrlbarShared.RESTRICT_TOKENS.BOOKMARK
               ),
           },
           OpenTabs: {
@@ -192,7 +192,7 @@ var gBuiltInInputs = {
             type: kInputTypes.BUTTON,
             callback: () =>
               lazy.touchBarHelper.insertRestrictionInUrlbar(
-                lazy.UrlbarTokenizer.RESTRICT.OPENPAGE
+                lazy.UrlbarShared.RESTRICT_TOKENS.OPENPAGE
               ),
           },
           History: {
@@ -200,7 +200,7 @@ var gBuiltInInputs = {
             type: kInputTypes.BUTTON,
             callback: () =>
               lazy.touchBarHelper.insertRestrictionInUrlbar(
-                lazy.UrlbarTokenizer.RESTRICT.HISTORY
+                lazy.UrlbarShared.RESTRICT_TOKENS.HISTORY
               ),
           },
           Tags: {
@@ -208,7 +208,7 @@ var gBuiltInInputs = {
             type: kInputTypes.BUTTON,
             callback: () =>
               lazy.touchBarHelper.insertRestrictionInUrlbar(
-                lazy.UrlbarTokenizer.RESTRICT.TAG
+                lazy.UrlbarShared.RESTRICT_TOKENS.TAG
               ),
           },
         },
@@ -256,16 +256,26 @@ export class TouchBarHelper {
     }
   }
 
+  get activeUrl() {
+    if (!TouchBarHelper.window) {
+      return "";
+    }
+    let tabbrowser = TouchBarHelper.window.gBrowser;
+    if (tabbrowser) {
+      return tabbrowser.selectedBrowser.currentURI.spec;
+    }
+    return "";
+  }
+
   get activeTitle() {
     if (!TouchBarHelper.window) {
       return "";
     }
-    let tabbrowser = TouchBarHelper.window.ownerGlobal.gBrowser;
-    let activeTitle;
+    let tabbrowser = TouchBarHelper.window.gBrowser;
     if (tabbrowser) {
-      activeTitle = tabbrowser.selectedBrowser.contentTitle;
+      return tabbrowser.selectedBrowser.contentTitle;
     }
-    return activeTitle;
+    return "";
   }
 
   get allItems() {
@@ -415,7 +425,7 @@ export class TouchBarHelper {
    *
    * @param {string} restrictionToken
    *        The restriction token to be inserted into the Urlbar. Preferably
-   *        sourced from UrlbarTokenizer.RESTRICT.
+   *        sourced from RESTRICT_TOKENS.
    */
   insertRestrictionInUrlbar(restrictionToken) {
     if (!TouchBarHelper.window) {
@@ -427,7 +437,9 @@ export class TouchBarHelper {
     ) {
       searchString = TouchBarHelper.window.gURLBar.lastSearchString.trimStart();
       if (
-        Object.values(lazy.UrlbarTokenizer.RESTRICT).includes(searchString[0])
+        Object.values(lazy.UrlbarShared.RESTRICT_TOKENS).includes(
+          searchString[0]
+        )
       ) {
         searchString = searchString.substring(1).trimStart();
       }
@@ -441,14 +453,13 @@ export class TouchBarHelper {
 
   observe(subject, topic, data) {
     switch (topic) {
-      case "touchbar-location-change":
+      case "touchbar-location-change": {
         let updatedInputs = ["Back", "Forward"];
         gBuiltInInputs.Back.disabled =
           !TouchBarHelper.window.gBrowser.canGoBack;
         gBuiltInInputs.Forward.disabled =
           !TouchBarHelper.window.gBrowser.canGoForward;
         if (subject.QueryInterface(Ci.nsIWebProgress)?.isTopLevel) {
-          this.activeUrl = data;
           // ReaderView button is disabled on every toplevel location change
           // since Reader View must determine if the new page can be Reader
           // Viewed.
@@ -457,6 +468,7 @@ export class TouchBarHelper {
         }
         this._updateTouchBarInputs(...updatedInputs);
         break;
+      }
       case "fullscreen-painted":
         if (TouchBarHelper.window.document.fullscreenElement) {
           gBuiltInInputs.OpenLocation.title = "touchbar-fullscreen-exit";

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -10,10 +8,10 @@
 #include <map>
 
 #include "api/frame_transformer_interface.h"
-#include "libwebrtcglue/FrameTransformerProxy.h"
-#include "nsISupportsImpl.h"
-#include "mozilla/Mutex.h"
 #include "jsapi/RTCRtpScriptTransformer.h"
+#include "libwebrtcglue/FrameTransformerProxy.h"
+#include "mozilla/Mutex.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 
@@ -41,13 +39,14 @@ class FrameTransformer : public webrtc::FrameTransformerInterface {
   // When libwebrtc uses the same callback for all ssrcs
   // (right now, this is used for audio, but we do not care in this class)
   void RegisterTransformedFrameCallback(
-      rtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback) override;
+      webrtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback)
+      override;
   void UnregisterTransformedFrameCallback() override;
 
   // When libwebrtc uses a different callback for each ssrc
   // (right now, this is used for video, but we do not care in this class)
   void RegisterTransformedFrameSinkCallback(
-      rtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback,
+      webrtc::scoped_refptr<webrtc::TransformedFrameCallback> aCallback,
       uint32_t aSsrc) override;
   void UnregisterTransformedFrameSinkCallback(uint32_t aSsrc) override;
 
@@ -57,9 +56,9 @@ class FrameTransformer : public webrtc::FrameTransformerInterface {
   const bool mVideo;
   Mutex mCallbacksMutex;
   // Written on a libwebrtc thread, read on the worker thread.
-  rtc::scoped_refptr<webrtc::TransformedFrameCallback> mCallback
+  webrtc::scoped_refptr<webrtc::TransformedFrameCallback> mCallback
       MOZ_GUARDED_BY(mCallbacksMutex);
-  std::map<uint32_t, rtc::scoped_refptr<webrtc::TransformedFrameCallback>>
+  std::map<uint32_t, webrtc::scoped_refptr<webrtc::TransformedFrameCallback>>
       mCallbacksBySsrc MOZ_GUARDED_BY(mCallbacksMutex);
 
   Mutex mProxyMutex;

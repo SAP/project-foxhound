@@ -1,0 +1,44 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bug 2037794 - Caret should be enabled if input is focused during a drag+drop operation</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<div id="source">source text</div>
+<input id="target">
+
+<script>
+const Ci = SpecialPowers.Ci;
+
+function isCaretVisible() {
+  return SpecialPowers.wrap(window).docShell
+        .QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsISelectionDisplay)
+        .QueryInterface(Ci.nsISelectionController)
+        .caretVisible;
+}
+const source = document.getElementById('source');
+const target = document.getElementById('target');
+
+add_task(async() => {
+  getSelection().selectAllChildren(source);
+  target.addEventListener('drop', () => {
+    target.focus();
+  }, {once: true});
+  await synthesizePlainDragAndDrop({
+    srcElement: source,
+    destElement: target
+  });
+  is(document.activeElement, target, '<input> should have been focused by drop event listener.');
+  is(target.value, 'source text', '<input> should contain dropped text.');
+  ok(isCaretVisible(), 'Caret should be visible, now that <input> is focused.');
+});
+</script>
+
+</body>
+</html>

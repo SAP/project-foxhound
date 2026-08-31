@@ -4,11 +4,14 @@
 
 "use strict";
 
-const l10n = require("resource://devtools/client/webconsole/utils/l10n.js");
+const l10n = require("resource://devtools/shared/webconsole/l10n.js");
 const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
 const {
   isSupportedByConsoleTable,
 } = require("resource://devtools/shared/webconsole/messages.js");
+const {
+  formatMessageParametersAndText,
+} = require("resource://devtools/shared/webconsole/formatMessageParametersAndText.sys.mjs");
 
 loader.lazyRequireGetter(
   this,
@@ -114,9 +117,9 @@ function prepareMessage(resource, idGenerator, persistLogs) {
 /**
  * Transforms a resource given its type.
  *
- * @param {Object} resource: This can be either a simple RDP packet or an object emitted
+ * @param {object} resource: This can be either a simple RDP packet or an object emitted
  *                           by the Resource API.
- * @param {Boolean} persistLogs: Value of the "Persist logs" setting
+ * @param {boolean} persistLogs: Value of the "Persist logs" setting
  */
 function transformResource(resource, persistLogs) {
   switch (resource.resourceType || resource.type) {
@@ -169,46 +172,40 @@ function transformConsoleAPICallResource(
   persistLogs,
   targetFront
 ) {
-  let { arguments: parameters, level: type, timer } = consoleMessageResource;
+  const { counter, timer } = consoleMessageResource;
+  let { level: type } = consoleMessageResource;
+  const { messageText, parameters } = formatMessageParametersAndText(
+    {
+      counter,
+      parameters: consoleMessageResource.arguments,
+      timer,
+      type,
+    },
+    persistLogs
+  );
+
   let level = getLevelFromType(type);
-  let messageText = null;
 
   // Special per-type conversion.
   switch (type) {
-    case "clear":
-      // We show a message to users when calls console.clear() is called.
-      parameters = [
-        l10n.getStr(persistLogs ? "preventedConsoleClear" : "consoleCleared"),
-      ];
-      break;
     case "count":
-    case "countReset":
+    case "countReset": {
       // Chrome RDP doesn't have a special type for count.
       type = MESSAGE_TYPE.LOG;
-      const { counter } = consoleMessageResource;
 
       if (!counter) {
         // We don't show anything if we don't have counter data.
         type = MESSAGE_TYPE.NULL_MESSAGE;
       } else if (counter.error) {
-        messageText = l10n.getFormatStr(counter.error, [counter.label]);
         level = MESSAGE_LEVEL.WARN;
-        parameters = null;
-      } else {
-        const label = counter.label
-          ? counter.label
-          : l10n.getStr("noCounterLabel");
-        messageText = `${label}: ${counter.count}`;
-        parameters = null;
       }
       break;
+    }
     case "timeStamp":
       type = MESSAGE_TYPE.NULL_MESSAGE;
       break;
     case "time":
-      parameters = null;
       if (timer && timer.error) {
-        messageText = l10n.getFormatStr(timer.error, [timer.name]);
         level = MESSAGE_LEVEL.WARN;
       } else {
         // We don't show anything for console.time calls to match Chrome's behaviour.
@@ -218,27 +215,8 @@ function transformConsoleAPICallResource(
     case "timeLog":
     case "timeEnd":
       if (timer && timer.error) {
-        parameters = null;
-        messageText = l10n.getFormatStr(timer.error, [timer.name]);
         level = MESSAGE_LEVEL.WARN;
-      } else if (timer) {
-        // We show the duration to users when calls console.timeLog/timeEnd is called,
-        // if corresponding console.time() was called before.
-        const duration = Math.round(timer.duration * 100) / 100;
-        if (type === "timeEnd") {
-          messageText = l10n.getFormatStr("console.timeEnd", [
-            timer.name,
-            duration,
-          ]);
-          parameters = null;
-        } else if (type === "timeLog") {
-          const [, ...rest] = parameters;
-          parameters = [
-            l10n.getFormatStr("timeLog", [timer.name, duration]),
-            ...rest,
-          ];
-        }
-      } else {
+      } else if (!timer) {
         // If the `timer` property does not exists, we don't output anything.
         type = MESSAGE_TYPE.NULL_MESSAGE;
       }
@@ -252,19 +230,12 @@ function transformConsoleAPICallResource(
       break;
     case "group":
       type = MESSAGE_TYPE.START_GROUP;
-      if (parameters.length === 0) {
-        parameters = [l10n.getStr("noGroupLabel")];
-      }
       break;
     case "groupCollapsed":
       type = MESSAGE_TYPE.START_GROUP_COLLAPSED;
-      if (parameters.length === 0) {
-        parameters = [l10n.getStr("noGroupLabel")];
-      }
       break;
     case "groupEnd":
       type = MESSAGE_TYPE.END_GROUP;
-      parameters = null;
       break;
     case "dirxml":
       // Handle console.dirxml calls as simple console.log
@@ -276,6 +247,7 @@ function transformConsoleAPICallResource(
     ? {
         source: consoleMessageResource.filename,
         sourceId: consoleMessageResource.sourceId,
+        // Both line and column are 1-based
         line: consoleMessageResource.lineNumber,
         column: consoleMessageResource.columnNumber,
       }
@@ -344,6 +316,7 @@ function transformPageErrorResource(pageErrorResource, override = {}) {
     ? {
         source: pageError.sourceName,
         sourceId: pageError.sourceId,
+        // Both line and column are 1-based
         line: pageError.lineNumber,
         column: pageError.columnNumber,
       }
@@ -622,7 +595,7 @@ function transformEvaluationResultPacket(packet) {
  *
  * @param {Message} message1
  * @param {Message} message2
- * @returns {Boolean}
+ * @returns {boolean}
  */
 // eslint-disable-next-line complexity
 function areMessagesSimilar(message1, message2) {
@@ -672,7 +645,7 @@ function areMessagesSimilar(message1, message2) {
  *
  * @param {Message} message1
  * @param {Message} message2
- * @returns {Boolean}
+ * @returns {boolean}
  */
 // eslint-disable-next-line complexity
 function areMessagesParametersSimilar(message1, message2) {
@@ -734,7 +707,7 @@ function areMessagesParametersSimilar(message1, message2) {
  *
  * @param {Message} message1
  * @param {Message} message2
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function areMessagesStacktracesSimilar(message1, message2) {
   const message1StackLength = message1.stacktrace?.length;
@@ -855,7 +828,7 @@ function createSimpleTableMessage(columns, items, timeStamp) {
  * The resource at “<URL>” was blocked because Enhanced Tracking Protection is enabled
  *
  * @param {ConsoleMessage} firstMessage
- * @returns {String} The computed label
+ * @returns {string} The computed label
  */
 function getWarningGroupLabel(firstMessage) {
   if (
@@ -881,9 +854,9 @@ function getWarningGroupLabel(firstMessage) {
  * Replace any URL in the provided text by the provided replacement text, or an empty
  * string.
  *
- * @param {String} text
- * @param {String} replacementText
- * @returns {String}
+ * @param {string} text
+ * @param {string} replacementText
+ * @returns {string}
  */
 function replaceURL(text, replacementText = "") {
   let result = "";
@@ -925,8 +898,9 @@ function replaceURL(text, replacementText = "") {
 
 /**
  * Get the warningGroup type in which the message could be in.
+ *
  * @param {ConsoleMessage} message
- * @returns {String|null} null if the message can't be part of a warningGroup.
+ * @returns {string | null} null if the message can't be part of a warningGroup.
  */
 function getWarningGroupType(message) {
   // We got report that this can be called with `undefined` (See Bug 1801462 and Bug 1810109).
@@ -972,7 +946,7 @@ function getWarningGroupType(message) {
  *
  * @param {ConsoleMessage} type: the message type, from MESSAGE_TYPE.
  * @param {Integer} innerWindowID: the message innerWindowID.
- * @returns {String}
+ * @returns {string}
  */
 function getParentWarningGroupMessageId(message) {
   const warningGroupType = getWarningGroupType(message);
@@ -985,8 +959,9 @@ function getParentWarningGroupMessageId(message) {
 
 /**
  * Returns true if the message is a warningGroup message (i.e. the "Header").
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isWarningGroup(message) {
   return (
@@ -1001,8 +976,9 @@ function isWarningGroup(message) {
 
 /**
  * Returns true if the message is an Enhanced Tracking Protection message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isEnhancedTrackingProtectionMessage(message) {
   const { category } = message;
@@ -1016,8 +992,9 @@ function isEnhancedTrackingProtectionMessage(message) {
 
 /**
  * Returns true if the message is a storage isolation message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isStorageIsolationMessage(message) {
   const { category } = message;
@@ -1026,8 +1003,9 @@ function isStorageIsolationMessage(message) {
 
 /**
  * Returns true if the message is a tracking protection message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isTrackingProtectionMessage(message) {
   const { category } = message;
@@ -1036,8 +1014,9 @@ function isTrackingProtectionMessage(message) {
 
 /**
  * Returns true if the message is a cookie message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isCookieMessage(message) {
   const { category } = message;
@@ -1051,8 +1030,9 @@ function isCookieMessage(message) {
 
 /**
  * Returns true if the message is a Content Security Policy (CSP) message.
+ *
  * @param {ConsoleMessage} message
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isCSPMessage(message) {
   const { category } = message;

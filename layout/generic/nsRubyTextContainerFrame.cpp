@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"
 #include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
@@ -147,7 +144,6 @@ void nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
       // Relative positioning hasn't happened yet.
       // So MovePositionBy should not be used here.
       child->SetPosition(rtcWM, pos, containerSize);
-      nsContainerFrame::PlaceFrameView(child);
     }
     aDesiredSize.SetSize(rtcWM, size);
   } else {
@@ -160,4 +156,30 @@ void nsRubyTextContainerFrame::Reflow(nsPresContext* aPresContext,
     nsLayoutUtils::SetBSizeFromFontMetrics(this, aDesiredSize, borderPadding,
                                            rtcWM, rtcWM);
   }
+}
+
+RubyMetrics nsRubyTextContainerFrame::RubyMetrics(
+    float aRubyMetricsFactor) const {
+  mozilla::RubyMetrics result;
+  WritingMode containerWM = GetWritingMode();
+  bool foundAnyFrames = false;
+  for (const auto* f : mFrames) {
+    WritingMode wm = f->GetWritingMode();
+    if (wm.IsOrthogonalTo(containerWM) || f->IsPlaceholderFrame()) {
+      continue;
+    }
+    mozilla::RubyMetrics m = f->RubyMetrics(aRubyMetricsFactor);
+    const LogicalMargin borderPadding = f->GetLogicalUsedBorderAndPadding(wm);
+    m.mAscent += borderPadding.BStart(wm);
+    m.mDescent += borderPadding.BEnd(wm);
+    const LogicalMargin margin = f->GetLogicalUsedMargin(wm);
+    m.mAscent += margin.BStart(wm);
+    m.mDescent += margin.BEnd(wm);
+    result.CombineWith(m);
+    foundAnyFrames = true;
+  }
+  if (!foundAnyFrames) {
+    result = nsIFrame::RubyMetrics(aRubyMetricsFactor);
+  }
+  return result;
 }

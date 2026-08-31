@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -72,11 +70,11 @@ class nsRefCountedHashtable
 
   template <typename U,
             typename = std::enable_if_t<std::is_base_of_v<PointeeType, U>>>
-  void InsertOrUpdate(KeyType aKey, already_AddRefed<U>&& aData);
+  void InsertOrUpdate(KeyType aKey, already_AddRefed<U> aData);
 
   template <typename U,
             typename = std::enable_if_t<std::is_base_of_v<PointeeType, U>>>
-  [[nodiscard]] bool InsertOrUpdate(KeyType aKey, already_AddRefed<U>&& aData,
+  [[nodiscard]] bool InsertOrUpdate(KeyType aKey, already_AddRefed<U> aData,
                                     const mozilla::fallible_t&);
 
   /**
@@ -202,7 +200,7 @@ bool nsRefCountedHashtable<KeyClass, PtrType>::InsertOrUpdate(
 template <class KeyClass, class PtrType>
 template <typename U, typename>
 void nsRefCountedHashtable<KeyClass, PtrType>::InsertOrUpdate(
-    KeyType aKey, already_AddRefed<U>&& aData) {
+    KeyType aKey, already_AddRefed<U> aData) {
   if (!InsertOrUpdate(aKey, std::move(aData), mozilla::fallible)) {
     NS_ABORT_OOM(this->mTable.EntrySize() * this->mTable.EntryCount());
   }
@@ -211,7 +209,7 @@ void nsRefCountedHashtable<KeyClass, PtrType>::InsertOrUpdate(
 template <class KeyClass, class PtrType>
 template <typename U, typename>
 bool nsRefCountedHashtable<KeyClass, PtrType>::InsertOrUpdate(
-    KeyType aKey, already_AddRefed<U>&& aData, const mozilla::fallible_t&) {
+    KeyType aKey, already_AddRefed<U> aData, const mozilla::fallible_t&) {
   typename base_type::EntryType* ent = this->PutEntry(aKey, mozilla::fallible);
 
   if (!ent) {

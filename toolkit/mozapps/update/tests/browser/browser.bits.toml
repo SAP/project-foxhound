@@ -1,5 +1,7 @@
 [DEFAULT]
-run-if = ["os == 'win' && !msix"] # "BITS is only available on Windows."
+run-if = [
+  "os == 'win' && !msix", # "BITS is only available on Windows."
+]
 dupe-manifest = true
 tags = "appupdate bits"
 head = "head.js"

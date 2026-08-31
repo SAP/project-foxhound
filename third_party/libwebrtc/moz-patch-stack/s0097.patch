@@ -1,0 +1,860 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Thu, 10 Oct 2024 13:42:00 +0000
+Subject: Bug 1921707 - point to new build directory location in
+ third_party/libwebrtc r=ng,webrtc-reviewers
+
+Ran:
+ack -l "\"//build/config" third_party/libwebrtc | xargs sed -i.bak -E 's/\"\/\/build\/config/\"\/\/chromium\/build\/config/'
+ack -l "\"//build/dot" third_party/libwebrtc | xargs sed -i.bak -E 's/\"\/\/build\/dot/\"\/\/chromium\/build\/dot/'
+ack -l "\"//build/mac" third_party/libwebrtc | xargs sed -i.bak -E 's/\"\/\/build\/mac/\"\/\/chromium\/build\/mac/'
+find third_party -name "*.bak" | xargs rm
+hg revert third_party/libwebrtc/moz-patch-stack
+
+Differential Revision: https://phabricator.services.mozilla.com/D224543
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a342f5eca8622c8b918d6119f74aff96cc8cf582
+---
+ .gn                                           |  4 +--
+ BUILD.gn                                      | 14 +++++-----
+ api/BUILD.gn                                  |  4 +--
+ api/audio/test/BUILD.gn                       |  4 +--
+ api/audio_codecs/BUILD.gn                     |  4 +--
+ api/audio_codecs/L16/BUILD.gn                 |  4 +--
+ api/audio_codecs/g711/BUILD.gn                |  4 +--
+ api/audio_codecs/g722/BUILD.gn                |  4 +--
+ api/audio_codecs/opus/BUILD.gn                |  4 +--
+ api/audio_codecs/test/BUILD.gn                |  4 +--
+ api/video/BUILD.gn                            |  4 +--
+ api/video_codecs/BUILD.gn                     |  4 +--
+ audio/BUILD.gn                                |  4 +--
+ common_audio/BUILD.gn                         |  4 +--
+ common_audio/third_party/ooura/BUILD.gn       |  2 +-
+ examples/BUILD.gn                             | 14 +++++-----
+ .../androidapp/third_party/autobanh/BUILD.gn  |  2 +-
+ examples/androidnativeapi/BUILD.gn            |  4 +--
+ examples/androidvoip/BUILD.gn                 |  4 +--
+ logging/BUILD.gn                              |  4 +--
+ media/BUILD.gn                                |  2 +-
+ modules/audio_device/BUILD.gn                 |  4 +--
+ modules/audio_processing/aec3/BUILD.gn        |  2 +-
+ modules/audio_processing/agc/BUILD.gn         |  2 +-
+ modules/audio_processing/agc2/BUILD.gn        |  2 +-
+ .../audio_processing/agc2/rnn_vad/BUILD.gn    |  8 +++---
+ modules/audio_processing/ns/BUILD.gn          |  2 +-
+ modules/desktop_capture/BUILD.gn              |  4 +--
+ modules/portal/BUILD.gn                       |  2 +-
+ modules/video_coding/BUILD.gn                 |  2 +-
+ pc/BUILD.gn                                   |  4 +--
+ rtc_base/BUILD.gn                             |  8 +++---
+ rtc_base/memory/BUILD.gn                      |  4 +--
+ rtc_base/synchronization/BUILD.gn             |  4 +--
+ rtc_base/system/BUILD.gn                      |  4 +--
+ rtc_tools/network_tester/BUILD.gn             |  4 +--
+ sdk/BUILD.gn                                  | 12 ++++----
+ system_wrappers/BUILD.gn                      |  4 +--
+ test/BUILD.gn                                 |  6 ++--
+ test/fuzzers/BUILD.gn                         |  4 +--
+ webrtc.gni                                    | 28 +++++++++----------
+ 41 files changed, 104 insertions(+), 104 deletions(-)
+
+diff --git a/.gn b/.gn
+index a97e2f18b4..e03aab02cf 100644
+--- a/.gn
++++ b/.gn
+@@ -6,10 +6,10 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+-import("//build/dotfile_settings.gni")
++import("//chromium/build/dotfile_settings.gni")
+ 
+ # The location of the build configuration file.
+-buildconfig = "//build/config/BUILDCONFIG.gn"
++buildconfig = "//chromium/build/config/BUILDCONFIG.gn"
+ 
+ # The python interpreter to use by default. On Windows, this will look
+ # for python3.exe and python3.bat.
+diff --git a/BUILD.gn b/BUILD.gn
+index 1dc60ce2c9..6bfd8518c9 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -21,15 +21,15 @@
+ # - visibility = [ ":*" ] - directory private.
+ # As a general guideline, only targets in api/ should have public visibility.
+ 
+-import("//build/config/linux/pkg_config.gni")
+-import("//build/config/sanitizers/sanitizers.gni")
++import("//chromium/build/config/linux/pkg_config.gni")
++import("//chromium/build/config/sanitizers/sanitizers.gni")
+ import("webrtc.gni")
+ if (rtc_enable_protobuf) {
+   import("//third_party/protobuf/proto_library.gni")
+ }
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+   import("//third_party/jni_zero/jni_zero.gni")
+ }
+ 
+@@ -529,7 +529,7 @@ if (!build_with_chromium) {
+     sources = []
+ 
+     complete_static_lib = true
+-    suppressed_configs += [ "//build/config/compiler:thin_archive" ]
++    suppressed_configs += [ "//chromium/build/config/compiler:thin_archive" ]
+     defines = []
+ 
+     deps = [
+@@ -836,7 +836,7 @@ rtc_static_library("dcsctp") {
+   visibility = [ "//:default" ]
+   sources = []
+   complete_static_lib = true
+-  suppressed_configs += [ "//build/config/compiler:thin_archive" ]
++  suppressed_configs += [ "//chromium/build/config/compiler:thin_archive" ]
+   defines = []
+   deps = [
+     "net/dcsctp/public:factory",
+@@ -874,7 +874,7 @@ group("poison_default_neural_residual_echo_estimator") {
+ if (!build_with_chromium) {
+   # Write debug logs to gn_logs.txt.
+   # This is also required for Siso builds.
+-  import("//build/gn_logs.gni")
++  import("//chromium/build/gn_logs.gni")
+   lines = [
+             "Generated during 'gn gen' by //BUILD.gn.",
+             "",
+diff --git a/api/BUILD.gn b/api/BUILD.gn
+index c0e331c03a..1ae59f3268 100644
+--- a/api/BUILD.gn
++++ b/api/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_source_set("call_api") {
+diff --git a/api/audio/test/BUILD.gn b/api/audio/test/BUILD.gn
+index edd3dcd701..c8cdec999b 100644
+--- a/api/audio/test/BUILD.gn
++++ b/api/audio/test/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ if (rtc_include_tests) {
+diff --git a/api/audio_codecs/BUILD.gn b/api/audio_codecs/BUILD.gn
+index b5e5b105cc..2a39ce7db7 100644
+--- a/api/audio_codecs/BUILD.gn
++++ b/api/audio_codecs/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("audio_codecs_api") {
+diff --git a/api/audio_codecs/L16/BUILD.gn b/api/audio_codecs/L16/BUILD.gn
+index 835524931f..ad232205e8 100644
+--- a/api/audio_codecs/L16/BUILD.gn
++++ b/api/audio_codecs/L16/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("audio_encoder_L16") {
+diff --git a/api/audio_codecs/g711/BUILD.gn b/api/audio_codecs/g711/BUILD.gn
+index cfe3511e7a..591baaa689 100644
+--- a/api/audio_codecs/g711/BUILD.gn
++++ b/api/audio_codecs/g711/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("audio_encoder_g711") {
+diff --git a/api/audio_codecs/g722/BUILD.gn b/api/audio_codecs/g722/BUILD.gn
+index 9c3c438d43..2b087726f1 100644
+--- a/api/audio_codecs/g722/BUILD.gn
++++ b/api/audio_codecs/g722/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_source_set("audio_encoder_g722_config") {
+diff --git a/api/audio_codecs/opus/BUILD.gn b/api/audio_codecs/opus/BUILD.gn
+index 12cca839b9..262265239a 100644
+--- a/api/audio_codecs/opus/BUILD.gn
++++ b/api/audio_codecs/opus/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("audio_encoder_opus_config") {
+diff --git a/api/audio_codecs/test/BUILD.gn b/api/audio_codecs/test/BUILD.gn
+index 40714b196e..2c6b39f59e 100644
+--- a/api/audio_codecs/test/BUILD.gn
++++ b/api/audio_codecs/test/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ if (rtc_include_tests) {
+diff --git a/api/video/BUILD.gn b/api/video/BUILD.gn
+index 83a9e385ee..2f4ac20759 100644
+--- a/api/video/BUILD.gn
++++ b/api/video/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("video_rtp_headers") {
+diff --git a/api/video_codecs/BUILD.gn b/api/video_codecs/BUILD.gn
+index 07d343db5d..ea1e89704a 100644
+--- a/api/video_codecs/BUILD.gn
++++ b/api/video_codecs/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("scalability_mode") {
+diff --git a/audio/BUILD.gn b/audio/BUILD.gn
+index b43ea2831e..79a80abec7 100644
+--- a/audio/BUILD.gn
++++ b/audio/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("audio") {
+diff --git a/common_audio/BUILD.gn b/common_audio/BUILD.gn
+index 4c0eadf51f..208cee76c4 100644
+--- a/common_audio/BUILD.gn
++++ b/common_audio/BUILD.gn
+@@ -287,7 +287,7 @@ if (rtc_build_with_neon) {
+ 
+     if (target_cpu != "arm64") {
+       # Enable compilation for the NEON instruction set.
+-      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++      suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+       cflags = [ "-mfpu=neon" ]
+     }
+ 
+@@ -310,7 +310,7 @@ if (rtc_build_with_neon) {
+ 
+     if (target_cpu != "arm64") {
+       # Enable compilation for the NEON instruction set.
+-      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++      suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+       cflags = [ "-mfpu=neon" ]
+     }
+ 
+diff --git a/common_audio/third_party/ooura/BUILD.gn b/common_audio/third_party/ooura/BUILD.gn
+index 589142b014..2ee80ded55 100644
+--- a/common_audio/third_party/ooura/BUILD.gn
++++ b/common_audio/third_party/ooura/BUILD.gn
+@@ -40,7 +40,7 @@ rtc_library("fft_size_128") {
+ 
+     if (target_cpu != "arm64") {
+       # Enable compilation for the NEON instruction set.
+-      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++      suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+       cflags += [ "-mfpu=neon" ]
+     }
+   }
+diff --git a/examples/BUILD.gn b/examples/BUILD.gn
+index 507b575764..dc182cf918 100644
+--- a/examples/BUILD.gn
++++ b/examples/BUILD.gn
+@@ -9,15 +9,15 @@
+ import("../webrtc.gni")
+ 
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+   import("//third_party/jni_zero/jni_zero.gni")
+ } else if (is_mac) {
+-  import("//build/config/mac/rules.gni")
++  import("//chromium/build/config/mac/rules.gni")
+ } else if (is_ios) {
+-  import("//build/config/ios/rules.gni")
++  import("//chromium/build/config/ios/rules.gni")
+ } else if (is_linux || is_chromeos) {
+-  import("//build/config/linux/pkg_config.gni")
++  import("//chromium/build/config/linux/pkg_config.gni")
+ }
+ 
+ group("examples") {
+@@ -630,7 +630,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
+           "../sdk:mediaconstraints_objc",
+           "../sdk:peerconnectionfactory_base_objc",
+           "../sdk:videocapture_objc",
+-          "//build/config/ios:xctest",
++          "//chromium/build/config/ios:xctest",
+           "//third_party/ocmock",
+         ]
+       }
+@@ -736,7 +736,7 @@ if (is_linux || is_chromeos || is_win) {
+         "peerconnection/client/main_wnd.cc",
+         "peerconnection/client/main_wnd.h",
+       ]
+-      configs += [ "//build/config/win:windowed" ]
++      configs += [ "//chromium/build/config/win:windowed" ]
+       deps += [
+         "../rtc_base:win32",
+         "../rtc_base:win32_socket_init",
+diff --git a/examples/androidapp/third_party/autobanh/BUILD.gn b/examples/androidapp/third_party/autobanh/BUILD.gn
+index b671239bae..e545b2cde3 100644
+--- a/examples/androidapp/third_party/autobanh/BUILD.gn
++++ b/examples/androidapp/third_party/autobanh/BUILD.gn
+@@ -7,7 +7,7 @@
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+ if (is_android) {
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/rules.gni")
+ 
+   android_java_prebuilt("autobanh_java") {
+     jar_path = "lib/autobanh.jar"
+diff --git a/examples/androidnativeapi/BUILD.gn b/examples/androidnativeapi/BUILD.gn
+index ff4458e79f..a9178d933c 100644
+--- a/examples/androidnativeapi/BUILD.gn
++++ b/examples/androidnativeapi/BUILD.gn
+@@ -41,8 +41,8 @@ if (is_android) {
+       "jni/onload.cc",
+     ]
+ 
+-    suppressed_configs += [ "//build/config/android:hide_all_but_jni_onload" ]
+-    configs += [ "//build/config/android:hide_all_but_jni" ]
++    suppressed_configs += [ "//chromium/build/config/android:hide_all_but_jni_onload" ]
++    configs += [ "//chromium/build/config/android:hide_all_but_jni" ]
+ 
+     deps = [
+       ":generated_jni",
+diff --git a/examples/androidvoip/BUILD.gn b/examples/androidvoip/BUILD.gn
+index c26d2b2b50..14a8e16c55 100644
+--- a/examples/androidvoip/BUILD.gn
++++ b/examples/androidvoip/BUILD.gn
+@@ -50,8 +50,8 @@ if (is_android) {
+       "jni/onload.cc",
+     ]
+ 
+-    suppressed_configs += [ "//build/config/android:hide_all_but_jni_onload" ]
+-    configs += [ "//build/config/android:hide_all_but_jni" ]
++    suppressed_configs += [ "//chromium/build/config/android:hide_all_but_jni_onload" ]
++    configs += [ "//chromium/build/config/android:hide_all_but_jni" ]
+ 
+     deps = [
+       ":generated_jni",
+diff --git a/logging/BUILD.gn b/logging/BUILD.gn
+index 40914333eb..e6cbd42d6b 100644
+--- a/logging/BUILD.gn
++++ b/logging/BUILD.gn
+@@ -11,8 +11,8 @@ if (rtc_enable_protobuf) {
+   import("//third_party/protobuf/proto_library.gni")
+ }
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ group("logging") {
+diff --git a/media/BUILD.gn b/media/BUILD.gn
+index f40a2a19b7..6e2a364636 100644
+--- a/media/BUILD.gn
++++ b/media/BUILD.gn
+@@ -6,7 +6,7 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+-import("//build/config/linux/pkg_config.gni")
++import("//chromium/build/config/linux/pkg_config.gni")
+ import("//libwebrtc/third_party/libaom/options.gni")
+ import("../webrtc.gni")
+ 
+diff --git a/modules/audio_device/BUILD.gn b/modules/audio_device/BUILD.gn
+index ceea41532c..010e02edbd 100644
+--- a/modules/audio_device/BUILD.gn
++++ b/modules/audio_device/BUILD.gn
+@@ -9,8 +9,8 @@
+ import("../../webrtc.gni")
+ 
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ config("audio_device_warnings_config") {
+diff --git a/modules/audio_processing/aec3/BUILD.gn b/modules/audio_processing/aec3/BUILD.gn
+index 59e30cbc24..6716cfb921 100644
+--- a/modules/audio_processing/aec3/BUILD.gn
++++ b/modules/audio_processing/aec3/BUILD.gn
+@@ -126,7 +126,7 @@ rtc_library("aec3") {
+ 
+   defines = []
+   if (rtc_build_with_neon && target_cpu != "arm64") {
+-    suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++    suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+     cflags = [ "-mfpu=neon" ]
+   }
+ 
+diff --git a/modules/audio_processing/agc/BUILD.gn b/modules/audio_processing/agc/BUILD.gn
+index a4eefcfcef..c1541203da 100644
+--- a/modules/audio_processing/agc/BUILD.gn
++++ b/modules/audio_processing/agc/BUILD.gn
+@@ -79,7 +79,7 @@ rtc_library("legacy_agc") {
+   if (rtc_build_with_neon) {
+     if (target_cpu != "arm64") {
+       # Enable compilation for the NEON instruction set.
+-      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++      suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+       cflags = [ "-mfpu=neon" ]
+     }
+   }
+diff --git a/modules/audio_processing/agc2/BUILD.gn b/modules/audio_processing/agc2/BUILD.gn
+index 0e3ee94a5a..845ddb785d 100644
+--- a/modules/audio_processing/agc2/BUILD.gn
++++ b/modules/audio_processing/agc2/BUILD.gn
+@@ -252,7 +252,7 @@ rtc_library("vad_wrapper") {
+ 
+   defines = []
+   if (rtc_build_with_neon && current_cpu != "arm64") {
+-    suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++    suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+     cflags = [ "-mfpu=neon" ]
+   }
+ 
+diff --git a/modules/audio_processing/agc2/rnn_vad/BUILD.gn b/modules/audio_processing/agc2/rnn_vad/BUILD.gn
+index 7bc30c90fc..98be95172e 100644
+--- a/modules/audio_processing/agc2/rnn_vad/BUILD.gn
++++ b/modules/audio_processing/agc2/rnn_vad/BUILD.gn
+@@ -19,7 +19,7 @@ rtc_library("rnn_vad") {
+ 
+   defines = []
+   if (rtc_build_with_neon && target_cpu != "arm64") {
+-    suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++    suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+     cflags = [ "-mfpu=neon" ]
+   }
+ 
+@@ -82,7 +82,7 @@ rtc_library("rnn_vad_layers") {
+ 
+   defines = []
+   if (rtc_build_with_neon && current_cpu != "arm64") {
+-    suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++    suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+     cflags = [ "-mfpu=neon" ]
+   }
+ 
+@@ -140,7 +140,7 @@ rtc_library("rnn_vad_pitch") {
+ 
+   defines = []
+   if (rtc_build_with_neon && current_cpu != "arm64") {
+-    suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++    suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+     cflags = [ "-mfpu=neon" ]
+   }
+ 
+@@ -253,7 +253,7 @@ if (rtc_include_tests) {
+ 
+     defines = []
+     if (rtc_build_with_neon && current_cpu != "arm64") {
+-      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++      suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+       cflags = [ "-mfpu=neon" ]
+     }
+ 
+diff --git a/modules/audio_processing/ns/BUILD.gn b/modules/audio_processing/ns/BUILD.gn
+index 55b7da56a5..255d2f1ab5 100644
+--- a/modules/audio_processing/ns/BUILD.gn
++++ b/modules/audio_processing/ns/BUILD.gn
+@@ -44,7 +44,7 @@ rtc_static_library("ns") {
+ 
+   defines = []
+   if (rtc_build_with_neon && target_cpu != "arm64") {
+-    suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
++    suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
+     cflags = [ "-mfpu=neon" ]
+   }
+ 
+diff --git a/modules/desktop_capture/BUILD.gn b/modules/desktop_capture/BUILD.gn
+index f263c47ab3..0794c3f9a7 100644
+--- a/modules/desktop_capture/BUILD.gn
++++ b/modules/desktop_capture/BUILD.gn
+@@ -6,8 +6,8 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+-import("//build/config/linux/gtk/gtk.gni")
+-import("//build/config/ui.gni")
++import("//chromium/build/config/linux/gtk/gtk.gni")
++import("//chromium/build/config/ui.gni")
+ import("../../webrtc.gni")
+ 
+ use_desktop_capture_differ_sse2 = target_cpu == "x86" || target_cpu == "x64"
+diff --git a/modules/portal/BUILD.gn b/modules/portal/BUILD.gn
+index 70466453f4..0a463c7619 100644
+--- a/modules/portal/BUILD.gn
++++ b/modules/portal/BUILD.gn
+@@ -6,7 +6,7 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+-import("//build/config/linux/pkg_config.gni")
++import("//chromium/build/config/linux/pkg_config.gni")
+ import("//tools/generate_stubs/rules.gni")
+ import("../../webrtc.gni")
+ 
+diff --git a/modules/video_coding/BUILD.gn b/modules/video_coding/BUILD.gn
+index b8f0a1fbee..2b399f4373 100644
+--- a/modules/video_coding/BUILD.gn
++++ b/modules/video_coding/BUILD.gn
+@@ -6,7 +6,7 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+-import("//build/config/linux/pkg_config.gni")
++import("//chromium/build/config/linux/pkg_config.gni")
+ import("//libwebrtc/third_party/libaom/options.gni")
+ import("../../webrtc.gni")
+ 
+diff --git a/pc/BUILD.gn b/pc/BUILD.gn
+index 1f0b54edee..269838bed8 100644
+--- a/pc/BUILD.gn
++++ b/pc/BUILD.gn
+@@ -30,8 +30,8 @@
+ 
+ import("../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ if (rtc_build_libsrtp) {
+diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
+index 7ae96d65f4..07630c1623 100644
+--- a/rtc_base/BUILD.gn
++++ b/rtc_base/BUILD.gn
+@@ -9,8 +9,8 @@
+ import("../webrtc.gni")
+ 
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_source_set("protobuf_utils") {
+@@ -1925,8 +1925,8 @@ if (!rtc_rusty_base64) {
+     ]
+   }
+ } else {
+-  import("//build/config/rust.gni")
+-  import("//build/rust/rust_static_library.gni")
++  import("//chromium/build/config/rust.gni")
++  import("//chromium/build/rust/rust_static_library.gni")
+ 
+   rust_static_library("base64_rust_bridge") {
+     allow_unsafe = true  # Needed for FFI with cxx crate.
+diff --git a/rtc_base/memory/BUILD.gn b/rtc_base/memory/BUILD.gn
+index 9682dae9fe..4aede9e8ba 100644
+--- a/rtc_base/memory/BUILD.gn
++++ b/rtc_base/memory/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("aligned_malloc") {
+diff --git a/rtc_base/synchronization/BUILD.gn b/rtc_base/synchronization/BUILD.gn
+index c1d924db9a..f91206a08f 100644
+--- a/rtc_base/synchronization/BUILD.gn
++++ b/rtc_base/synchronization/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_library("yield") {
+diff --git a/rtc_base/system/BUILD.gn b/rtc_base/system/BUILD.gn
+index af412f6890..51a0e6160c 100644
+--- a/rtc_base/system/BUILD.gn
++++ b/rtc_base/system/BUILD.gn
+@@ -8,8 +8,8 @@
+ 
+ import("../../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ rtc_source_set("arch") {
+diff --git a/rtc_tools/network_tester/BUILD.gn b/rtc_tools/network_tester/BUILD.gn
+index 9da8b4ef4c..9a89320eb2 100644
+--- a/rtc_tools/network_tester/BUILD.gn
++++ b/rtc_tools/network_tester/BUILD.gn
+@@ -189,8 +189,8 @@ if (is_android) {
+       "../../test:create_test_environment",
+     ]
+ 
+-    suppressed_configs += [ "//build/config/android:hide_all_but_jni_onload" ]
+-    configs += [ "//build/config/android:hide_all_but_jni" ]
++    suppressed_configs += [ "//chromium/build/config/android:hide_all_but_jni_onload" ]
++    configs += [ "//chromium/build/config/android:hide_all_but_jni" ]
+ 
+     output_extension = "so"
+   }
+diff --git a/sdk/BUILD.gn b/sdk/BUILD.gn
+index a4ba1541de..d6e6bba112 100644
+--- a/sdk/BUILD.gn
++++ b/sdk/BUILD.gn
+@@ -9,12 +9,12 @@
+ import("//third_party/libaom/options.gni")
+ import("../webrtc.gni")
+ if (is_ios) {
+-  import("//build/config/apple/mobile_config.gni")
+-  import("//build/config/ios/ios_sdk.gni")
+-  import("//build/config/ios/rules.gni")
++  import("//chromium/build/config/apple/mobile_config.gni")
++  import("//chromium/build/config/ios/ios_sdk.gni")
++  import("//chromium/build/config/ios/rules.gni")
+ }
+ if (is_mac) {
+-  import("//build/config/mac/rules.gni")
++  import("//chromium/build/config/mac/rules.gni")
+ }
+ 
+ rtc_library("media_constraints") {
+@@ -55,7 +55,7 @@ if (is_ios || is_mac) {
+     ]
+ 
+     if (use_clang_coverage) {
+-      configs = [ "//build/config/coverage:default_coverage" ]
++      configs = [ "//chromium/build/config/coverage:default_coverage" ]
+     }
+   }
+ 
+@@ -1286,7 +1286,7 @@ if (is_ios || is_mac) {
+           }
+ 
+           public_deps = [
+-            "//build/config/ios:xctest",
++            "//chromium/build/config/ios:xctest",
+             "//third_party/ocmock",
+           ]
+         }
+diff --git a/system_wrappers/BUILD.gn b/system_wrappers/BUILD.gn
+index a3e9a49204..6bb07f9740 100644
+--- a/system_wrappers/BUILD.gn
++++ b/system_wrappers/BUILD.gn
+@@ -7,8 +7,8 @@
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ import("../webrtc.gni")
+ 
+diff --git a/test/BUILD.gn b/test/BUILD.gn
+index 4fd594eb28..4dea9fb639 100644
+--- a/test/BUILD.gn
++++ b/test/BUILD.gn
+@@ -6,10 +6,10 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+-import("//build/config/ui.gni")
++import("//chromium/build/config/ui.gni")
+ import("../webrtc.gni")
+ if (is_android) {
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/rules.gni")
+   import("//third_party/jni_zero/jni_zero.gni")
+ }
+ 
+@@ -429,7 +429,7 @@ if (is_ios && !build_with_chromium) {
+     testonly = true
+     visibility = [ "*" ]
+     sources = [ "ios/google_test_runner.mm" ]
+-    configs += [ "//build/config/ios:xctest_config" ]
++    configs += [ "//chromium/build/config/ios:xctest_config" ]
+     frameworks = [ "UIKit.framework" ]
+     deps = [ ":google_test_runner_delegate" ]
+   }
+diff --git a/test/fuzzers/BUILD.gn b/test/fuzzers/BUILD.gn
+index f68cf156e6..7728a7e52a 100644
+--- a/test/fuzzers/BUILD.gn
++++ b/test/fuzzers/BUILD.gn
+@@ -6,7 +6,7 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+-import("//build/config/features.gni")
++import("//chromium/build/config/features.gni")
+ import("//testing/libfuzzer/fuzzer_test.gni")
+ import("../../webrtc.gni")
+ 
+@@ -81,7 +81,7 @@ template("webrtc_fuzzer_test") {
+     }
+ 
+     if (!build_with_chromium && is_clang) {
+-      suppressed_configs = [ "//build/config/clang:find_bad_constructs" ]
++      suppressed_configs = [ "//chromium/build/config/clang:find_bad_constructs" ]
+     }
+   }
+ }
+diff --git a/webrtc.gni b/webrtc.gni
+index 6525cc7143..eff3f0882e 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -5,12 +5,12 @@
+ # tree. An additional intellectual property rights grant can be found
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+-import("//build/config/arm.gni")
+-import("//build/config/features.gni")
+-import("//build/config/mips.gni")
+-import("//build/config/ozone.gni")
+-import("//build/config/sanitizers/sanitizers.gni")
+-import("//build/config/sysroot.gni")
++import("//chromium/build/config/arm.gni")
++import("//chromium/build/config/features.gni")
++import("//chromium/build/config/mips.gni")
++import("//chromium/build/config/ozone.gni")
++import("//chromium/build/config/sanitizers/sanitizers.gni")
++import("//chromium/build/config/sysroot.gni")
+ import("//build_overrides/build.gni")
+ 
+ if (!build_with_chromium && is_component_build) {
+@@ -28,20 +28,20 @@ if (!build_with_chromium && is_component_build) {
+ }
+ 
+ if (is_ios) {
+-  import("//build/config/ios/rules.gni")
++  import("//chromium/build/config/ios/rules.gni")
+ }
+ 
+ if (is_mac) {
+-  import("//build/config/mac/rules.gni")
++  import("//chromium/build/config/mac/rules.gni")
+ }
+ 
+ if (is_android) {
+-  import("//build/config/android/config.gni")
+-  import("//build/config/android/rules.gni")
++  import("//chromium/build/config/android/config.gni")
++  import("//chromium/build/config/android/rules.gni")
+ }
+ 
+ if (is_fuchsia) {
+-  import("//build/config/fuchsia/config.gni")
++  import("//chromium/build/config/fuchsia/config.gni")
+ }
+ 
+ if (build_with_chromium) {
+@@ -365,8 +365,8 @@ rtc_common_configs = [ webrtc_root + ":common_config" ]
+ 
+ if (is_mac || is_ios) {
+   if (filter_include(default_compiler_configs,
+-                     [ "//build/config/compiler:enable_arc" ]) == []) {
+-    rtc_common_configs += [ "//build/config/compiler:enable_arc" ]
++                     [ "//chromium/build/config/compiler:enable_arc" ]) == []) {
++    rtc_common_configs += [ "//chromium/build/config/compiler:enable_arc" ]
+   }
+ }
+ 
+@@ -384,7 +384,7 @@ rtc_common_inherited_config = webrtc_root + ":common_inherited_config"
+ # Common configs to remove or add in all rtc targets.
+ rtc_remove_configs = []
+ if (!build_with_chromium && is_clang) {
+-  rtc_remove_configs += [ "//build/config/clang:find_bad_constructs" ]
++  rtc_remove_configs += [ "//chromium/build/config/clang:find_bad_constructs" ]
+ }
+ rtc_add_configs = rtc_common_configs
+ rtc_prod_configs = [ webrtc_root + ":rtc_prod_config" ]

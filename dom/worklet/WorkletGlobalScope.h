@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #ifndef mozilla_dom_WorkletGlobalScope_h
 #define mozilla_dom_WorkletGlobalScope_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -60,7 +57,7 @@ class WorkletGlobalScope : public nsIGlobalObject, public nsWrapperCache {
   }
 
   nsISerialEventTarget* SerialEventTarget() const final;
-  nsresult Dispatch(already_AddRefed<nsIRunnable>&&) const final;
+  nsresult Dispatch(already_AddRefed<nsIRunnable>) const final;
 
   already_AddRefed<Console> GetConsole(JSContext* aCx, ErrorResult& aRv);
 
@@ -73,6 +70,8 @@ class WorkletGlobalScope : public nsIGlobalObject, public nsWrapperCache {
     TimeDuration duration = aTimeStamp - mCreationTimeStamp;
     return duration.ToMilliseconds();
   }
+
+  TimeStamp CreationTimeStamp() const { return mCreationTimeStamp; }
 
   void InitModuleLoader(loader::WorkletModuleLoader* aModuleLoader);
 

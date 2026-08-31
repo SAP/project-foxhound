@@ -80,7 +80,6 @@ add_task(async function test_translations_telemetry_manual_translation() {
         to_language: "en",
         auto_translate: false,
         document_language: "es",
-        top_preferred_language: "en-US",
         request_target: "full_page",
       },
     }
@@ -89,6 +88,24 @@ add_task(async function test_translations_telemetry_manual_translation() {
   await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
     expectedEventCount: 1,
   });
+
+  await TestTranslationsTelemetry.assertEvent(
+    Glean.translations.identifyPageLanguage,
+    {
+      expectedEventCount: 1,
+      assertForMostRecentEvent: {
+        html_lang_attribute: "es",
+        identified_language: "es",
+        lang_tags_match: true,
+        is_lang_attribute_valid: true,
+        extracted_code_units: 2132,
+        extraction_time: ms => 0 < ms,
+        identification_time: ms => 0 < ms,
+        total_time: ms => 0 < ms,
+        confident: true,
+      },
+    }
+  );
 
   await cleanup();
 });
@@ -143,7 +160,6 @@ add_task(async function test_translations_telemetry_auto_translation() {
         to_language: "en",
         auto_translate: true,
         document_language: "es",
-        top_preferred_language: "en-US",
         request_target: "full_page",
       },
     }
@@ -152,6 +168,24 @@ add_task(async function test_translations_telemetry_auto_translation() {
   await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
     expectedEventCount: 1,
   });
+
+  await TestTranslationsTelemetry.assertEvent(
+    Glean.translations.identifyPageLanguage,
+    {
+      expectedEventCount: 1,
+      assertForMostRecentEvent: {
+        html_lang_attribute: "es",
+        identified_language: "es",
+        lang_tags_match: true,
+        is_lang_attribute_valid: true,
+        extracted_code_units: 2132,
+        extraction_time: ms => 0 < ms,
+        identification_time: ms => 0 < ms,
+        total_time: ms => 0 < ms,
+        confident: true,
+      },
+    }
+  );
 
   await cleanup();
 });

@@ -10,21 +10,30 @@
 
 #include "modules/desktop_capture/linux/x11/screen_capturer_x11.h"
 
+#include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xfixes.h>
+#include <X11/extensions/Xrandr.h>
 #include <X11/extensions/damagewire.h>
+#include <X11/extensions/randr.h>
+// X11 creates a CurrentTime macro, which causes compilation errors when
+// including webrtc::Clock.
+#undef CurrentTime
 #include <dlfcn.h>
-#include <stdint.h>
-#include <string.h>
 
 #include <memory>
 #include <utility>
 
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "media/base/video_common.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/desktop_capture_types.h"
 #include "modules/desktop_capture/desktop_capturer.h"
 #include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/desktop_region.h"
 #include "modules/desktop_capture/linux/x11/x_server_pixel_buffer.h"
 #include "modules/desktop_capture/screen_capture_frame_queue.h"
 #include "modules/desktop_capture/screen_capturer_helper.h"
@@ -32,12 +41,12 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/sanitizer.h"
-#include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
-ScreenCapturerX11::ScreenCapturerX11() {
+ScreenCapturerX11::ScreenCapturerX11(const DesktopCaptureOptions& options)
+    : options_(options), clock_(options.clock()) {
   helper_.SetLogGridSize(4);
 }
 
@@ -56,7 +65,7 @@ ScreenCapturerX11::~ScreenCapturerX11() {
 
 bool ScreenCapturerX11::Init(const DesktopCaptureOptions& options) {
   TRACE_EVENT0("webrtc", "ScreenCapturerX11::Init");
-  options_ = options;
+  // options_ is already set in constructor.
 
   atom_cache_ = std::make_unique<XAtomCache>(display());
 
@@ -67,8 +76,8 @@ bool ScreenCapturerX11::Init(const DesktopCaptureOptions& options) {
     return false;
   }
 
-  gc_ = XCreateGC(display(), root_window_, 0, NULL);
-  if (gc_ == NULL) {
+  gc_ = XCreateGC(display(), root_window_, 0, nullptr);
+  if (gc_ == nullptr) {
     RTC_LOG(LS_ERROR) << "Unable to get graphics context";
     DeinitXlib();
     return false;
@@ -133,7 +142,7 @@ void ScreenCapturerX11::InitXDamage() {
   }
 
   // Create an XFixes server-side region to collate damage into.
-  damage_region_ = XFixesCreateRegion(display(), 0, 0);
+  damage_region_ = XFixesCreateRegion(display(), nullptr, 0);
   if (!damage_region_) {
     XDamageDestroy(display(), damage_handle_);
     RTC_LOG(LS_ERROR) << "Unable to create XFixes region.";
@@ -239,7 +248,7 @@ void ScreenCapturerX11::Start(Callback* callback) {
 
 void ScreenCapturerX11::CaptureFrame() {
   TRACE_EVENT0("webrtc", "ScreenCapturerX11::CaptureFrame");
-  int64_t capture_start_time_nanos = TimeNanos();
+  Timestamp capture_start_time = clock_.CurrentTime();
 
   queue_.MoveToNextFrame();
   if (queue_.current_frame() && queue_.current_frame()->IsShared()) {
@@ -264,7 +273,7 @@ void ScreenCapturerX11::CaptureFrame() {
   // may still be reading from them.
   if (!queue_.current_frame()) {
     std::unique_ptr<DesktopFrame> frame(
-        new BasicDesktopFrame(selected_monitor_rect_.size()));
+        new BasicDesktopFrame(selected_monitor_rect_.size(), FOURCC_ARGB));
 
     // We set the top-left of the frame so the mouse cursor will be composited
     // properly, and our frame buffer will not be overrun while blitting.
@@ -280,14 +289,13 @@ void ScreenCapturerX11::CaptureFrame() {
   }
 
   last_invalid_region_ = result->updated_region();
-  result->set_capture_time_ms((TimeNanos() - capture_start_time_nanos) /
-                              kNumNanosecsPerMillisec);
+  result->set_capture_time_ms((clock_.CurrentTime() - capture_start_time).ms());
   result->set_capturer_id(DesktopCapturerId::kX11CapturerLinux);
   callback_->OnCaptureResult(Result::SUCCESS, std::move(result));
 }
 
 bool ScreenCapturerX11::GetSourceList(SourceList* sources) {
-  RTC_DCHECK(sources->size() == 0);
+  RTC_DCHECK(sources->empty());
   if (!use_randr_) {
     sources->push_back({});
     return true;
@@ -302,7 +310,8 @@ bool ScreenCapturerX11::GetSourceList(SourceList* sources) {
     char* monitor_title = XGetAtomName(display(), m.name);
 
     // Note name is an X11 Atom used to id the monitor.
-    sources->push_back({static_cast<SourceId>(m.name), 0, monitor_title});
+    sources->push_back(
+        {.id = static_cast<SourceId>(m.name), .pid = 0, .title = monitor_title});
     XFree(monitor_title);
   }
 
@@ -506,8 +515,13 @@ std::unique_ptr<DesktopCapturer> ScreenCapturerX11::CreateRawScreenCapturer(
   if (!options.x_display())
     return nullptr;
 
-  std::unique_ptr<ScreenCapturerX11> capturer(new ScreenCapturerX11());
-  if (!capturer.get()->Init(options)) {
+  RTC_LOG(LS_INFO) << "ScreenCapturerX11::CreateRawScreenCapturer creates "
+                      "DesktopCapturer of type ScreenCapturerX11";
+  std::unique_ptr<ScreenCapturerX11> capturer(new ScreenCapturerX11(options));
+  if (!capturer->Init(options)) {
+    RTC_LOG(LS_INFO)
+        << "ScreenCapturerX11::CreateRawScreenCapturer "
+           "DesktopCapturer is null because it can not be initiated";
     return nullptr;
   }
 

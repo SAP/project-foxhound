@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">വീണ്ടും ശ്രമിക്കുക</string>
@@ -9,15 +16,15 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">സുരക്ഷിതമായ കണക്ഷന്‍ പരാജയപ്പെട്ടിരിക്കുന്നു</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>ലഭ്യമായ ഡേറ്റയുടെ ആധികാരികത ഉറപ്പാക്കുവാന്‍ സാധ്യമാകാത്തതിനാൽ, നിങ്ങള്‍ കാണുവാന്‍ ശ്രമിക്കുന്ന താള്‍ ഇപ്പോള്‍ ലഭ്യമല്ല.</li> <li>ഇതു് സംബന്ധിച്ചുള്ള വിവരങ്ങള്‍ ദയവായി വെബ്‍സൈറ്റ് ഉടമസ്ഥരെ അറിയിക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>ലഭ്യമായ ഡേറ്റയുടെ ആധികാരികത ഉറപ്പാക്കുവാന്‍ സാധ്യമാകാത്തതിനാൽ, നിങ്ങള്‍ കാണുവാന്‍ ശ്രമിക്കുന്ന താള്‍ ഇപ്പോള്‍ ലഭ്യമല്ല.</li>\n<li>ഇതു് സംബന്ധിച്ചുള്ള വിവരങ്ങള്‍ ദയവായി വെബ്‍സൈറ്റ് ഉടമസ്ഥരെ അറിയിക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">സുരക്ഷിതമായ കണക്ഷന്‍ പരാജയപ്പെട്ടു</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul> <li>ഇത്തിന്റെ കാരണം സെര്‍വറിന്റെ ക്രമീകരണത്തിലുള്ള പിശകോ അല്ലെങ്കില്‍ ആരെങ്കിലും ഈ സെര്‍വറാണെന്നു തെറ്റിദ്ധരിപ്പിയ്ക്കാന്‍ ശ്രമിയ്ക്കുന്നതോ ആണ്.</li> <li>നിങ്ങള്‍ ഇതിനു് മുമ്പു് ഈ സെര്‍വറിലേക്കു് വിജയകരമായി കണക്ട് ചെയ്തിട്ടുണ്ടെങ്കില്‍, ഇതു് വെറും ഒരു താല്‍ക്കാലിക പ്രശ്നമാവാം, അതുകൊണ്ടു് അല്പസമയം കഴിഞ്ഞ് ശ്രമിക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>ഇത്തിന്റെ കാരണം സെര്‍വറിന്റെ ക്രമീകരണത്തിലുള്ള പിശകോ അല്ലെങ്കില്‍ ആരെങ്കിലും ഈ സെര്‍വറാണെന്നു തെറ്റിദ്ധരിപ്പിയ്ക്കാന്‍ ശ്രമിയ്ക്കുന്നതോ ആണ്.</li>\n<li>നിങ്ങള്‍ ഇതിനു് മുമ്പു് ഈ സെര്‍വറിലേക്കു് വിജയകരമായി കണക്ട് ചെയ്തിട്ടുണ്ടെങ്കില്‍, ഇതു് വെറും ഒരു താല്‍ക്കാലിക പ്രശ്നമാവാം, അതുകൊണ്ടു് അല്പസമയം കഴിഞ്ഞ് ശ്രമിക്കുക.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">സങ്കീർണ്ണമായവ…</string>
   <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>ആരോ ആൾമാറാട്ടം നടത്താൻ ശ്രമിക്കുന്നതിനാൽ നിങ്ങൾ പോജിൽ തുടരരുത്.</label> <br><br> <label>വെബ്‌സൈറ്റുകൾ സർട്ടിഫിക്കറ്റുകൾ വഴി അവരുടെ ഐഡന്റിറ്റി തെളിയിക്കുന്നു. %1$s നെ<b>%2$s</b> വിശ്വസിയ്ക്കുന്നില്ല, കാരണം അതിന്റെ സർ‌ട്ടിഫിക്കറ്റ് നൽ‌കുന്നയാൾ‌ ഒന്നുകിൽ അജ്ഞാതനാണ് അല്ലെങ്കിൽ സർ‌ട്ടിഫിക്കറ്റ് സ്വയം ഒപ്പിട്ടതാണ്, അതുമല്ലെങ്കിൽ‌ സെർ‌വർ‌ ശരിയായ ഇന്റർ‌മീഡിയറ്റ് സർ‌ട്ടിഫിക്കറ്റുകൾ‌ അയയ്‌ക്കുന്നില്ല.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>ആരോ ആൾമാറാട്ടം നടത്താൻ ശ്രമിക്കുന്നതിനാൽ നിങ്ങൾ പോജിൽ തുടരരുത്.</label> <br><br>\n<label>വെബ്‌സൈറ്റുകൾ സർട്ടിഫിക്കറ്റുകൾ വഴി അവരുടെ ഐഡന്റിറ്റി തെളിയിക്കുന്നു. %1$s നെ<b>%2$s</b> വിശ്വസിയ്ക്കുന്നില്ല, കാരണം അതിന്റെ സർ‌ട്ടിഫിക്കറ്റ് നൽ‌കുന്നയാൾ‌ ഒന്നുകിൽ അജ്ഞാതനാണ് അല്ലെങ്കിൽ സർ‌ട്ടിഫിക്കറ്റ് സ്വയം ഒപ്പിട്ടതാണ്, അതുമല്ലെങ്കിൽ‌ സെർ‌വർ‌ ശരിയായ ഇന്റർ‌മീഡിയറ്റ് സർ‌ട്ടിഫിക്കറ്റുകൾ‌ അയയ്‌ക്കുന്നില്ല.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_back">തിരിച്ചു് (ശുപാൎശചെയ്തതു്)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
@@ -25,7 +32,7 @@
   <!-- The document title and heading of the error page shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">ഈ വെബ്സ്ഥാനത്തിനൊരു സുരക്ഷിതമായ സമ്പർക്കത്തിന്റെ ആവശ്യമുണ്ടു്.</string>
   <!-- The error message shown when a website uses HSTS. -->
-  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul> <li>താങ്ങൾ കാണാൻ ശ്രമിക്കുന്ന താൾ കാണിപ്പിക്കാൻ പറ്റത്തില്ല, കാരണം ഈ വെബ്സ്ഥാനത്തിനൊരു സുരക്ഷിതമായ സമ്പർക്കത്തിന്റെ ആവശ്യമുണ്ടു്.</li> <li>കുഴപ്പം മിക്കവാറും വെബ്സ്ഥാനത്തിലായിരിക്കും അതു് പരിഹരിക്കാനും താങ്ങൾക്കു് ഒന്നും ചെയ്യാൻ പറ്റില്ല</li> <li>താങ്ങൾക്കു് വേണമെങ്കിൽ ഈ വെബ്സ്ഥാനത്തിന്റെ അധികാരിയെ ഈ കുഴപ്പത്തെക്കുറിച്ചു് അറിയിക്കാം.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>താങ്ങൾ കാണാൻ ശ്രമിക്കുന്ന താൾ കാണിപ്പിക്കാൻ പറ്റത്തില്ല, കാരണം ഈ വെബ്സ്ഥാനത്തിനൊരു സുരക്ഷിതമായ സമ്പർക്കത്തിന്റെ ആവശ്യമുണ്ടു്.</li>\n<li>കുഴപ്പം മിക്കവാറും വെബ്സ്ഥാനത്തിലായിരിക്കും അതു് പരിഹരിക്കാനും താങ്ങൾക്കു് ഒന്നും ചെയ്യാൻ പറ്റില്ല</li>\n<li>താങ്ങൾക്കു് വേണമെങ്കിൽ ഈ വെബ്സ്ഥാനത്തിന്റെ അധികാരിയെ ഈ കുഴപ്പത്തെക്കുറിച്ചു് അറിയിക്കാം.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">കൂടുതൽ…</string>
   <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
@@ -35,15 +42,15 @@
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
   <string name="mozac_browser_errorpages_net_interrupt_title">കണക്ഷൻ തടസ്സപ്പെട്ടു</string>
   <!-- The error message shown when the user's network connection is interrupted while connecting to a website. -->
-  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p> അന്വേഷിയന്ത്രം വിജയകരമായി ബന്ധപ്പെട്ടു, പക്ഷേ വിവരങ്ങൾ കൈമാറുന്നതിനിടയിൽ സമ്പൎക്കം തടസ്സപ്പെട്ടു. ദയവായി വീണ്ടും ശ്രമിക്കുക.</p> <ul> <li>വെബിടം താൽ‌ക്കാലികമായി ലഭ്യമല്ല അല്ലെങ്കിൽ‌ വളരെ തിരക്കിലാണ്. കുറച്ചു് സമയത്തിന് ശേഷം വീണ്ടും ശ്രമിക്കുക.</li> <li>നിങ്ങൾക്ക് താളുകളൊന്നും കഴിയുന്നില്ലെങ്കിൽ നിങ്ങളുടെ ഉപകരണത്തിന്റെ ഡാറ്റയോ വൈഫൈ സമ്പൎക്കമോ പരിശോധിക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p> അന്വേഷിയന്ത്രം വിജയകരമായി ബന്ധപ്പെട്ടു, പക്ഷേ വിവരങ്ങൾ കൈമാറുന്നതിനിടയിൽ സമ്പൎക്കം തടസ്സപ്പെട്ടു. ദയവായി വീണ്ടും ശ്രമിക്കുക.</p>\n<ul>\n<li>വെബിടം താൽ‌ക്കാലികമായി ലഭ്യമല്ല അല്ലെങ്കിൽ‌ വളരെ തിരക്കിലാണ്. കുറച്ചു് സമയത്തിന് ശേഷം വീണ്ടും ശ്രമിക്കുക.</li>\n<li>നിങ്ങൾക്ക് താളുകളൊന്നും കഴിയുന്നില്ലെങ്കിൽ നിങ്ങളുടെ ഉപകരണത്തിന്റെ ഡാറ്റയോ വൈഫൈ സമ്പൎക്കമോ പരിശോധിക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website takes too long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_title">കണക്ഷന്റെ സമയം കഴിഞ്ഞിരിക്കുന്നു</string>
   <!-- The error message shown when a website took long to load. -->
-  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>ആവശ്യപ്പെട്ട സൈറ്റ് കണക്ഷനുള്ള മറുപടി നല്‍കിയിട്ടില്ല, ബ്രൌസര്‍ മറുപടിയ്ക്കായി കാത്തിരിക്കുന്നത് നിർത്തിയിരിയ്ക്കുന്നു.</p> <ul> <li>െസര്‍വര്‍ തിരക്കിലാണോ അതോ താല്‍ക്കാലികമായി പ്രവര്‍ത്തനരഹിതമാണോ? കുറച്ച് കഴിഞ്ഞ് ശ്രമിക്കൂ.</li> <li>നിങ്ങള്‍ക്ക് മറ്റ് സൈറ്റുകള്‍ തിരയുവാൻ സാധിയ്ക്കുന്നുണ്ടോ? കംപ്യൂട്ടറിന്റെ നെറ്റ്‌വര്‍ക്ക്കണക്ഷന്‍ പരിശോധിയ്ക്കൂ.</li> <li>നിങ്ങളുടെ കംപ്യൂട്ടര്‍ അല്ലെങ്കില്‍ നെറ്റ്‌വര്‍ക്ക് ഫയര്‍വോളോ പ്രോക്സിയോ ഉപയോഗിച്ച് സുരക്ഷിതമാക്കിയിട്ടുണ്ടോ? തെറ്റായ ക്രമീകരണങ്ങള്‍ തിരച്ചിലിന് തടസ്സമുണ്ടാക്കുന്നതാണ് .</li> <li>എന്നിട്ടും പ്രശ്നം ഉണ്ടോ? എങ്കില്‍ നെറ്റ്‌വര്‍ക്ക്അഡ്മിനിസ്ട്രേറ്റര്‍ അല്ലെങ്കില്‍ ഇന്റര്‍നെറ്റ് പ്രൊവൈഡറുമായി ബന്ധപ്പെടുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>ആവശ്യപ്പെട്ട സൈറ്റ് കണക്ഷനുള്ള മറുപടി നല്‍കിയിട്ടില്ല, ബ്രൌസര്‍ മറുപടിയ്ക്കായി കാത്തിരിക്കുന്നത് നിർത്തിയിരിയ്ക്കുന്നു.</p>\n<ul>\n<li>െസര്‍വര്‍ തിരക്കിലാണോ അതോ താല്‍ക്കാലികമായി പ്രവര്‍ത്തനരഹിതമാണോ? കുറച്ച് കഴിഞ്ഞ് ശ്രമിക്കൂ.</li>\n<li>നിങ്ങള്‍ക്ക് മറ്റ് സൈറ്റുകള്‍ തിരയുവാൻ സാധിയ്ക്കുന്നുണ്ടോ? കംപ്യൂട്ടറിന്റെ നെറ്റ്‌വര്‍ക്ക്കണക്ഷന്‍ പരിശോധിയ്ക്കൂ.</li>\n<li>നിങ്ങളുടെ കംപ്യൂട്ടര്‍ അല്ലെങ്കില്‍ നെറ്റ്‌വര്‍ക്ക് ഫയര്‍വോളോ പ്രോക്സിയോ ഉപയോഗിച്ച് സുരക്ഷിതമാക്കിയിട്ടുണ്ടോ? തെറ്റായ ക്രമീകരണങ്ങള്‍ തിരച്ചിലിന് തടസ്സമുണ്ടാക്കുന്നതാണ് .</li>\n<li>എന്നിട്ടും പ്രശ്നം ഉണ്ടോ? എങ്കില്‍ നെറ്റ്‌വര്‍ക്ക്അഡ്മിനിസ്ട്രേറ്റര്‍ അല്ലെങ്കില്‍ ഇന്റര്‍നെറ്റ് പ്രൊവൈഡറുമായി ബന്ധപ്പെടുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_title">ബന്ധിപ്പിക്കാൻ കഴിയുന്നില്ല</string>
   <!-- The error message shown when a website could not be reached. -->
-  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul> <li>ഈ സൈറ്റ് തിരക്കിലാണ് അല്ലെങ്കിൽ താത്കാലമായി ലഭ്യമല്ല. അല്പ സമയത്തിനു് ശേഷം വീണ്ടും ശ്രമിയ്ക്കൂ.</li> <li>ഒരു പേജും ലഭ്യമാക്കാനാവുന്നില്ലെങ്കില്‍, ഉപകരണത്തിന്റെ ഡേറ്റാ അല്ലെങ്കില്‍ വൈഫൈ കണക്ഷന്‍ പരിശോധിയ്ക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul>\n<li>ഈ സൈറ്റ് തിരക്കിലാണ് അല്ലെങ്കിൽ താത്കാലമായി ലഭ്യമല്ല. അല്പ സമയത്തിനു് ശേഷം വീണ്ടും ശ്രമിയ്ക്കൂ.</li>\n<li>ഒരു പേജും ലഭ്യമാക്കാനാവുന്നില്ലെങ്കില്‍, ഉപകരണത്തിന്റെ ഡേറ്റാ അല്ലെങ്കില്‍ വൈഫൈ കണക്ഷന്‍ പരിശോധിയ്ക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website responds in an unexpected way and the browser cannot continue. -->
   <string name="mozac_browser_errorpages_unknown_socket_type_title">സെര്‍വറില്‍ നിന്നും പ്രതീക്ഷിക്കാത്ത പ്രതികരണം</string>
   <!-- The error message shown when a website responds in an unexpected way and the browser cannot continue. -->
@@ -51,11 +58,11 @@
   <!-- The document title and heading of the error page shown when the browser gets stuck in an infinite loop when loading a website. -->
   <string name="mozac_browser_errorpages_redirect_loop_title">ഈ പേജ് ശരിയായി റീഡയറക്‌ട് ചെയ്യുന്നില്ല</string>
   <!-- The error message shown when the browser gets stuck in an infinite loop when loading a website. -->
-  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>ആവശ്യപ്പെട്ട താള്‍ ലഭ്യമാക്കുന്നതിനുള്ള ശ്രമം ബ്രൌസര്‍ നിര്‍ത്തിയിരിക്കുന്നു. താള്‍ റീഡയറക്‌ട് ചെയ്യുന്നത് ഒരിക്കലും അവസാനിക്കുന്നില്ല.</p> <ul> <li>ഈ താളിന് ആവശ്യമുള്ള കൂക്കികള്‍ നിങ്ങള്‍ നിര്‍ജ്ജീവമാക്കുകയോ ഇല്ലാതാക്കുകയോ ചെയ്തിട്ടുണ്ടോ?</li> <li>സൈറ്റിനുള്ള കുക്കികള്‍ അനുവദിച്ചിട്ടും പ്രശ്നം പരിഹരിക്കപ്പെട്ടില്ലയെങ്കിൽ അത് സെര്‍വറിന്റെ സജ്ജീകരണത്തിലുള്ള പിശക് ആകാം</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_redirect_loop_message"><![CDATA[<p>ആവശ്യപ്പെട്ട താള്‍ ലഭ്യമാക്കുന്നതിനുള്ള ശ്രമം ബ്രൌസര്‍ നിര്‍ത്തിയിരിക്കുന്നു. താള്‍ റീഡയറക്‌ട് ചെയ്യുന്നത് ഒരിക്കലും അവസാനിക്കുന്നില്ല.</p>\n<ul>\n<li>ഈ താളിന് ആവശ്യമുള്ള കൂക്കികള്‍ നിങ്ങള്‍ നിര്‍ജ്ജീവമാക്കുകയോ ഇല്ലാതാക്കുകയോ ചെയ്തിട്ടുണ്ടോ?</li>\n<li>സൈറ്റിനുള്ള കുക്കികള്‍ അനുവദിച്ചിട്ടും പ്രശ്നം പരിഹരിക്കപ്പെട്ടില്ലയെങ്കിൽ അത് സെര്‍വറിന്റെ സജ്ജീകരണത്തിലുള്ള പിശക് ആകാം</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
   <string name="mozac_browser_errorpages_offline_title">ഓഫ്‌ലൈൻ മോഡ്</string>
   <!-- The error message shown when a website cannot be loaded because the browser is in offline mode. -->
-  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>ബ്രൌസര്‍ ഓഫ്‌ലൈന്‍ മോഡില്‍ പ്രവര്‍ത്തിയ്ക്കുന്നതിനാല്‍ ആവശ്യപ്പെട്ട താളിലേയ്ക്കു് കണക്ട് ചെയ്യുവാന്‍ സാധിയ്ക്കന്നില്ല.</p> <ul> <li>കമ്പ്യൂട്ടര്‍ സജീവമായൊരു നെറ്റ്‌വര്‍ക്കിലേയ്ക്ക് കണക്ട് ചെയ്തിട്ടുണ്ടോ?</li> <li>വീണ്ടും ശ്രമിയ്ക്കുന്നതിനായി “വീണ്ടും ശ്രമിയ്ക്കുക” അമര്‍ത്തുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>ബ്രൌസര്‍ ഓഫ്‌ലൈന്‍ മോഡില്‍ പ്രവര്‍ത്തിയ്ക്കുന്നതിനാല്‍ ആവശ്യപ്പെട്ട താളിലേയ്ക്കു് കണക്ട് ചെയ്യുവാന്‍ സാധിയ്ക്കന്നില്ല.</p>\n<ul>\n<li>കമ്പ്യൂട്ടര്‍ സജീവമായൊരു നെറ്റ്‌വര്‍ക്കിലേയ്ക്ക് കണക്ട് ചെയ്തിട്ടുണ്ടോ?</li>\n<li>വീണ്ടും ശ്രമിയ്ക്കുന്നതിനായി “വീണ്ടും ശ്രമിയ്ക്കുക” അമര്‍ത്തുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser prevents loading a website on a restricted port. -->
   <string name="mozac_browser_errorpages_port_blocked_title">സുരക്ഷാ കാരണങ്ങളാല്‍ പോര്‍ട്ടിലേക്കു് പ്രവേശനം നിഷേധിച്ചിരിയ്ക്കുന്നു</string>
   <!-- The error message shown when the browser prevents loading a website on a restricted port. -->
@@ -63,25 +70,25 @@
   <!-- The document title and heading of the error page shown when the Internet connection is disrupted while loading a website. -->
   <string name="mozac_browser_errorpages_net_reset_title">കണക്ഷൻ പുനഃസജ്ജമാക്കിയതാണ്</string>
   <!-- The error message shown when the Internet connection is disrupted while loading a website. -->
-  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>കണക്ഷൻ നെഗോഷ്യേറ്റ് ചെയ്യുമ്പോൾ നെറ്റ്‌വർക്ക് തടസ്സപ്പെട്ടു. ദയവായി വീണ്ടും ശ്രമിക്കുക.</p> <ul> <li>സൈറ്റ് താൽ‌ക്കാലികമായി ലഭ്യമല്ല അല്ലെങ്കിൽ‌ തിരക്കിലാണ്. അല്പം കഴിഞ്ഞ് വീണ്ടും ശ്രമിക്കുക.</li> <li>നിങ്ങൾക്ക് താളുകളൊന്നും ലോഡുചെയ്യാൻ കഴിയുന്നില്ലെങ്കിൽ നിങ്ങളുടെ ഉപകരണത്തിന്റെ ഡാറ്റയോ വൈഫൈ കണക്ഷനോ പരിശോധിക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>കണക്ഷൻ നെഗോഷ്യേറ്റ് ചെയ്യുമ്പോൾ നെറ്റ്‌വർക്ക് തടസ്സപ്പെട്ടു. ദയവായി വീണ്ടും ശ്രമിക്കുക.</p>\n<ul>\n<li>സൈറ്റ് താൽ‌ക്കാലികമായി ലഭ്യമല്ല അല്ലെങ്കിൽ‌ തിരക്കിലാണ്. അല്പം കഴിഞ്ഞ് വീണ്ടും ശ്രമിക്കുക.</li>\n<li>നിങ്ങൾക്ക് താളുകളൊന്നും ലോഡുചെയ്യാൻ കഴിയുന്നില്ലെങ്കിൽ നിങ്ങളുടെ ഉപകരണത്തിന്റെ ഡാറ്റയോ വൈഫൈ കണക്ഷനോ പരിശോധിക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">സുരക്ഷിതമല്ലാത്ത ഫയല്‍ തരം</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>ദയവായി വെബ് സൈറ്റ് ഉടമകളെ ഈ പ്രശ്നം അറിയിയ്ക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>ദയവായി വെബ് സൈറ്റ് ഉടമകളെ ഈ പ്രശ്നം അറിയിയ്ക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">ഉള്ളടക്കത്തിന്റെ തകരാറ് മൂലമുള്ള പിശക്</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
-  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>ഡേറ്റാ അയയ്ക്കുന്നതിലെ പിശകു് കാരണം നിങ്ങള്‍ കാണുവാന്‍ ശ്രമിയ്ക്കുന്ന പേജ് ലഭ്യമല്ല.</p> <ul> <li>ഈ പ്രശ്നത്തെപ്പറ്റി ദയവായി വെബ്സൈറ്റിന്റെ ഉടമസ്ഥരെ അറിയിയ്ക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>ഡേറ്റാ അയയ്ക്കുന്നതിലെ പിശകു് കാരണം നിങ്ങള്‍ കാണുവാന്‍ ശ്രമിയ്ക്കുന്ന പേജ് ലഭ്യമല്ല.</p>\n<ul>\n<li>ഈ പ്രശ്നത്തെപ്പറ്റി ദയവായി വെബ്സൈറ്റിന്റെ ഉടമസ്ഥരെ അറിയിയ്ക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_content_crashed_title">ഉള്ളടക്കം തകർന്നു</string>
-  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>ഡേറ്റാ അയയ്ക്കുന്നതിലുള്ള പിശകു് കാരണം നിങ്ങള്‍ കാണുവാന്‍ ശ്രമിയ്ക്കുന്ന പേജ് ലഭ്യമല്ല.</p> <ul> <li>ഈ പ്രശ്നത്തെപ്പറ്റി ദയവായി വെബ്‍സൈറ്റ് ഉടമസ്ഥരെ അറിയിയ്ക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>ഡേറ്റാ അയയ്ക്കുന്നതിലുള്ള പിശകു് കാരണം നിങ്ങള്‍ കാണുവാന്‍ ശ്രമിയ്ക്കുന്ന പേജ് ലഭ്യമല്ല.</p>\n<ul>\n<li>ഈ പ്രശ്നത്തെപ്പറ്റി ദയവായി വെബ്‍സൈറ്റ് ഉടമസ്ഥരെ അറിയിയ്ക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_invalid_content_encoding_title">ഉള്ളടക്കം ഇഴചേ‌ർക്കലിൽ സംഭവിച്ചു</string>
-  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>നിങ്ങള്‍ ഇപ്പോള്‍ കാണുവാന്‍ ശ്രമിക്കുന്ന പോജ് ലഭ്യമല്ല. കാരണം അതു് തെറ്റായ ആല്ലെങ്കില്‍ പിന്തുണ ലഭ്യമല്ലാത്ത രീതിയിലുള്ള കംപ്രഷന്‍ ഉപയോഗിക്കുന്നു.</p> <ul> <li>ഇതു് സംബന്ധിച്ചുള്ള വിവരങ്ങള്‍ ദയവായി വെബ്‍സൈറ്റ് ഉടമസ്ഥരെ അറിയിക്കുക.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>നിങ്ങള്‍ ഇപ്പോള്‍ കാണുവാന്‍ ശ്രമിക്കുന്ന പോജ് ലഭ്യമല്ല. കാരണം അതു് തെറ്റായ ആല്ലെങ്കില്‍ പിന്തുണ ലഭ്യമല്ലാത്ത രീതിയിലുള്ള കംപ്രഷന്‍ ഉപയോഗിക്കുന്നു.</p>\n<ul>\n<li>ഇതു് സംബന്ധിച്ചുള്ള വിവരങ്ങള്‍ ദയവായി വെബ്‍സൈറ്റ് ഉടമസ്ഥരെ അറിയിക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">വിലാസം ലഭ്യമായില്ല</string>
   <!-- In the example, the two URLs in markup do not need to be translated. -->
-  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p> നൽകിയ വിലാസത്തിന്റെ ഹോസ്റ്റ് സെർവർ കണ്ടെത്താൻ ബ്രൗസറിന് കഴിഞ്ഞില്ല. </ p> <ul> <li>താഴെ കാണിച്ചിട്ടുള്ളത് പോലുള്ള പിശകുകൾ വിലാസം നൽകുന്നതിൽ പറ്റിയിട്ടുണ്ടോയെന്ന് പരിശോധിക്കുക \u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0<strong> www </strong> .example.com എന്നതിന് പകരം \u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0<strong> ww </strong> .example.com. </li> <li> താങ്കൾക്ക് പേജുകളൊന്നും ലോഡുചെയ്യാൻ കഴിയുന്നില്ലെങ്കിൽ, താങ്കളുടെ ഉപകരണത്തിന്റെ ഡാറ്റയോ വൈഫൈ കണക്ഷനോ പരിശോധിക്കുക.</ Li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>നൽകിയ വിലാസത്തിന്റെ ഹോസ്റ്റ് സെർവർ കണ്ടെത്താൻ ബ്രൗസറിന് കഴിഞ്ഞില്ല.</p>\n<ul>\n<li>താഴെ കാണിച്ചിട്ടുള്ളത് പോലുള്ള പിശകുകൾ വിലാസം നൽകുന്നതിൽ പറ്റിയിട്ടുണ്ടോയെന്ന് പരിശോധിക്കുക <strong> www </strong>.example.com എന്നതിന് പകരം <strong> ww</strong>.example.com.</li>\n<li>താങ്കൾക്ക് പേജുകളൊന്നും ലോഡുചെയ്യാൻ കഴിയുന്നില്ലെങ്കിൽ, താങ്കളുടെ ഉപകരണത്തിന്റെ ഡാറ്റയോ വൈഫൈ കണക്ഷനോ പരിശോധിക്കുക.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_no_internet_title_2">താങ്ങളുടെ അന്തരവല സമ്പർക്കത്തിൽ കുഴപ്പം ഉണ്ടു്</string>
   <!-- The main body text of this error page. It will be shown beneath the title -->
@@ -96,7 +103,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">ഈ വിലാസം സാധുവല്ല</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>വെബ് വിലാസങ്ങള്‍ സാധാരണ <strong>http://www.example.com/</strong> എന്ന രീതിയിലാണ് എഴുതുന്നത്:</li> <li>മുന്നോട്ടുള്ള സ്ലാഷ് ആണുപയോഗിക്കുന്നത് എന്നുറപ്പാക്കുക (അതായത്, <strong>/</strong>).</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>വെബ് വിലാസങ്ങള്‍ സാധാരണ <strong>http://www.example.com/</strong> എന്ന രീതിയിലാണ് എഴുതുന്നത്:</li>\n<li>മുന്നോട്ടുള്ള സ്ലാഷ് ആണുപയോഗിക്കുന്നത് എന്നുറപ്പാക്കുക (അതായത്, <strong>/</strong>).</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">അപരിചിതമായ പെരുമാറ്റച്ചട്ടം</string>
   <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>വിലാസം നൽകിയ പ്രോട്ടോകോൾ (ഉദാ. <q>wxyz://</q>) ബ്രൗസറിനു് തിരിച്ചറിയുവാന്‍ സാധിക്കുന്നില്ല, ആയതിനാൽ ബ്രൗസറിന് സൈറ്റിലേക്ക് ശരിയായി ബന്ധിപ്പിക്കാനാവുന്നില്ല</p><ul><li>നിങ്ങള്‍ മള്‍ട്ടിമീഡിയയോ അതോ മറ്റേതെങ്കിലും ടെക്സ്റ്റല്ലാത്ത സേവനങ്ങളോ ലഭ്യമാക്കാനാണോ ശ്രമിക്കുന്നത്? കൂടുതല്‍ ആവശ്യങ്ങൾ എന്തെല്ലാം എന്നറിയുന്നതിനായി സൈറ്റ് പരിശോധിക്കുക.</li><li>ചില പ്രോട്ടോക്കോളുകള്‍ക്ക്, അവയെ ബ്രൗസറിന് തിരിച്ചറിയാനാവുന്നതിന് തേര്‍ഡ്-പാര്‍ട്ടി സോഫ്റ്റ്‌വെയര്‍ അല്ലെങ്കില്‍ പ്ലഗിനുകൾ ആവശ്യമുണ്ടാകാം.</li></ul>]]></string>
@@ -128,6 +135,8 @@
   <string name="mozac_browser_errorpages_safe_phishing_uri_title">തെറ്റിദ്ധരിപ്പിക്കുന്ന സൈറ്റ്</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
   <string name="mozac_browser_errorpages_safe_phishing_uri_message"><![CDATA[<p>%1$s എന്നിടത്തുള്ള സൈറ്റ് ഒരു തെറ്റിദ്ധരിപ്പിക്കുന്ന സൈറ്റാണ് എന്ന് രേഖപ്പെടുത്തിയിട്ടുള്ളതിനാൽ താങ്കളുടെ സുരക്ഷാ ക്രമീകരണങ്ങളനുസരിച്ച് തടയപ്പെട്ടിരിക്കുന്നു.</p>]]></string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_title">താങ്ങളുടെ സുരക്ഷയ്ക്കായി വെബ്ബിടം തടഞ്ഞിരിക്കുന്നു</string>
   <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
   <string name="mozac_browser_errorpages_httpsonly_title">സൂക്ഷമമുള്ള വെബ്സ്ഥാനം ലഭ്യമല്ല</string>
   <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

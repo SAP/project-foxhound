@@ -16,7 +16,7 @@ async function test() {
   // Trigger a smooth scroll.
   document.scrollingElement.scrollTo({ top: 90000, behavior: "smooth" });
   // Need to wait for a scroll event here since with the very small
-  // layout.css.scroll-behavior.spring-constant value it's possible that the
+  // layout.css.scroll-snap.spring-constant value it's possible that the
   // scroll position hasn't yet been changed after a promiseApzFlushedRepaints
   // call.
   await waitForScrollEvent(window);
@@ -41,7 +41,10 @@ SimpleTest.waitForExplicitFinish();
 
 // Use a very small spring constant value for smooth scrolling so that the
 // smooth scrollling keeps running at least for a few seconds.
-pushPrefs([["layout.css.scroll-behavior.spring-constant", 1]])
+pushPrefs([
+  ["layout.css.scroll-snap.spring-constant", 1],
+  // This ensures scrollTo() uses scroll-snap physics settings.
+  ["layout.css.scroll-behavior.same-physics-as-user-input", false]])
 .then(waitUntilApzStable)
 .then(test)
 .then(SimpleTest.finish, SimpleTest.finishWithFailure);

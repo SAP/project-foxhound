@@ -1,11 +1,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-""" Installs dependencies at runtime to simplify deployment.
+"""Installs dependencies at runtime to simplify deployment.
 
 This module tries to make sure we have all dependencies installed on
 all our environments.
 """
+
 import os
 import subprocess
 import sys
@@ -23,7 +24,7 @@ def install_reqs():
     except Exception:
         # we're detecting here that this is running in Taskcluster
         # by checking for the presence of the mozfile directory
-        # that was decompressed from target.condprof.tests.tar.gz
+        # that was decompressed from target.condprof.tests.tar.zst
         run_in_ci = os.path.exists(os.path.join(TOPDIR, "mozfile"))
 
         # On Python 2 we only install what's required for condprof.client
@@ -43,19 +44,17 @@ def install_reqs():
                     if req.strip() != "" and not req.startswith("#")
                 ]
                 for req in reqs:
-                    subprocess.check_call(
-                        [
-                            sys.executable,
-                            "-m",
-                            "pip",
-                            "install",
-                            "--no-cache-dir",
-                            "--isolated",
-                            "--find-links",
-                            "https://pypi.pub.build.mozilla.org/pub/",
-                            req,
-                        ]
-                    )
+                    subprocess.check_call([
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "--no-cache-dir",
+                        "--isolated",
+                        "--find-links",
+                        "https://pypi.pub.build.mozilla.org/pub/",
+                        req,
+                    ])
 
         return True
 

@@ -1,0 +1,15 @@
+{
+  "label": "onvue.com",
+  "bugs": {
+    "1899057": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.onvue.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

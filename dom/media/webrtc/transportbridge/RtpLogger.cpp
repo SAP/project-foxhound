@@ -5,14 +5,15 @@
 // Original author: nohlmeier@mozilla.com
 
 #include "RtpLogger.h"
-#include "mozilla/Logging.h"
 
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+
+#include "mozilla/Logging.h"
 #ifdef _WIN32
-#  include <time.h>
 #  include <sys/timeb.h>
+#  include <time.h>
 #else
 #  include <sys/time.h>
 #endif
@@ -58,9 +59,8 @@ void RtpLogger::LogPacket(const MediaPacket& packet, bool input,
     for (size_t i = 0; i < packet.len(); ++i) {
       ss << " " << std::setw(2) << (int)packet.data()[i];
     }
-    MOZ_LOG(gRtpLoggerLog, LogLevel::Debug,
-            ("%s %s|>> %s", desc.c_str(),
-             (isRtp ? "RTP_PACKET" : "RTCP_PACKET"), ss.str().c_str()));
+    MOZ_LOG_FMT(gRtpLoggerLog, LogLevel::Debug, "{} {}|>> {}", desc.c_str(),
+                (isRtp ? "RTP_PACKET" : "RTCP_PACKET"), ss.str().c_str());
   }
 }
 

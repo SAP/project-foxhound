@@ -32,7 +32,7 @@ assertThrowsTypeError(() => new WeakRef());
 assertThrowsTypeError(() => new WeakRef(1));
 assertThrowsTypeError(() => new WeakRef(true));
 assertThrowsTypeError(() => new WeakRef("string"));
-assertThrowsTypeError(() => new WeakRef(Symbol()));
+assertThrowsTypeError(() => new WeakRef(Symbol.for("foo")));
 assertThrowsTypeError(() => new WeakRef(null));
 assertThrowsTypeError(() => new WeakRef(undefined));
 new WeakRef({});

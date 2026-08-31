@@ -1,0 +1,26 @@
+[DEFAULT]
+https_first_disabled = true
+tags = "devtools"
+subsuite = "devtools"
+skip-if = [
+  "http3",
+]
+support-files = [
+  "../head.js",
+]
+
+["browser_net_filter-01.js"]
+
+["browser_net_filter-02.js"]
+
+["browser_net_filter-03.js"]
+
+["browser_net_filter-04.js"]
+
+["browser_net_filter-autocomplete.js"]
+
+["browser_net_filter-flags.js"]
+
+["browser_net_filter-sts-search.js"]
+
+["browser_net_filter-value-preserved.js"]

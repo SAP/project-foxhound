@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,6 +15,12 @@
 
 class gfxFT2FontBase;
 
+namespace mozilla {
+namespace gfx {
+class FTUserFontData;
+}
+}  // namespace mozilla
+
 class gfxFT2FontEntryBase : public gfxFontEntry {
  public:
   explicit gfxFT2FontEntryBase(const nsACString& aName) : gfxFontEntry(aName) {}
@@ -25,6 +30,11 @@ class gfxFT2FontEntryBase : public gfxFontEntry {
   static bool FaceHasTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag);
   static nsresult CopyFaceTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag,
                                 nsTArray<uint8_t>&);
+
+  virtual mozilla::gfx::FTUserFontData* GetUserFontData() = 0;
+
+  size_t ComputedSizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) override;
 
  private:
   enum { kNumCmapCacheSlots = 256 };
@@ -70,6 +80,7 @@ class gfxFT2FontBase : public gfxFont {
                              const nsTArray<gfxFontVariation>& aVariations,
                              FT_Face aFTFace);
 
+  // Callers must always pair lock and unlock, regardless of return value.
   FT_Face LockFTFace() const;
   void UnlockFTFace() const;
 
@@ -142,8 +153,8 @@ class gfxFT2FontBase : public gfxFont {
     uint16_t mHeight;
   };
 
-  const GlyphMetrics& GetCachedGlyphMetrics(
-      uint16_t aGID, mozilla::gfx::IntRect* aBounds = nullptr);
+  GlyphMetrics GetCachedGlyphMetrics(uint16_t aGID,
+                                     mozilla::gfx::IntRect* aBounds = nullptr);
 
   mozilla::UniquePtr<nsTHashMap<nsUint32HashKey, GlyphMetrics>> mGlyphMetrics
       MOZ_GUARDED_BY(mLock);

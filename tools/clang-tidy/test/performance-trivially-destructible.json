@@ -1,0 +1,8 @@
+[
+  [
+    "warning",
+    "class 'Foo' can be made trivially destructible by defaulting the destructor on its first declaration",
+    "performance-trivially-destructible"
+  ],
+  { "reliability": "high" }
+]

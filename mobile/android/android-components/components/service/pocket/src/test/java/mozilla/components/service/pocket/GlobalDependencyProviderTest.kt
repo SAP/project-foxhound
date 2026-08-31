@@ -6,7 +6,6 @@ package mozilla.components.service.pocket
 
 import mozilla.components.service.pocket.mars.SponsoredContentsUseCases
 import mozilla.components.service.pocket.recommendations.ContentRecommendationsUseCases
-import mozilla.components.service.pocket.spocs.SpocsUseCases
 import mozilla.components.service.pocket.stories.PocketStoriesUseCases
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertNull
@@ -30,24 +29,6 @@ class GlobalDependencyProviderTest {
         GlobalDependencyProvider.RecommendedStories.reset()
 
         assertNull(GlobalDependencyProvider.RecommendedStories.useCases)
-    }
-
-    @Test
-    fun `GIVEN SponsoredStories WHEN initializing THEN store the provided arguments`() {
-        val useCases: SpocsUseCases = mock()
-
-        GlobalDependencyProvider.SponsoredStories.initialize(useCases)
-
-        assertSame(useCases, GlobalDependencyProvider.SponsoredStories.useCases)
-    }
-
-    @Test
-    fun `GIVEN SponsoredStories WHEN resetting THEN clear all current state`() {
-        GlobalDependencyProvider.SponsoredStories.initialize(mock())
-
-        GlobalDependencyProvider.SponsoredStories.reset()
-
-        assertNull(GlobalDependencyProvider.SponsoredStories.useCases)
     }
 
     @Test

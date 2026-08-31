@@ -1,37 +1,34 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileReader.h"
 
-#include "nsIGlobalObject.h"
-#include "nsITimer.h"
-
 #include "js/ArrayBuffer.h"  // JS::NewArrayBufferWithContents
 #include "mozilla/Base64.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileReaderBinding.h"
 #include "mozilla/dom/ProgressEvent.h"
-#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDOMJSUtils.h"
 #include "nsError.h"
+#include "nsIGlobalObject.h"
+#include "nsITimer.h"
 #include "nsNetUtil.h"
+#include "nsReadableUtils.h"
 #include "nsStreamUtils.h"
 #include "nsThreadUtils.h"
 #include "xpcpublic.h"
-#include "nsReadableUtils.h"
 
 namespace mozilla::dom {
 
@@ -225,8 +222,8 @@ void FileReader::OnLoadEndArrayBuffer() {
   JS_ClearPendingException(jsapi.cx());
 
   JS::Rooted<JSObject*> exceptionObject(cx, &exceptionValue.toObject());
-  JSErrorReport* er = JS_ErrorFromException(cx, exceptionObject);
-  if (!er || er->message()) {
+  JS::BorrowedErrorReport er(cx);
+  if (!JS_ErrorFromException(cx, exceptionObject, er) || er->message()) {
     FreeDataAndDispatchError(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
@@ -416,10 +413,15 @@ void FileReader::ReadFileContent(Blob& aBlob, const nsAString& aCharset,
   // Binary Format doesn't need a post-processing of the data. Everything is
   // written directly into mResult.
   if (mDataFormat != FILE_AS_BINARY) {
+    CheckedInt<size_t> size(mTotal);
+    if (!size.isValid()) {
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return;
+    }
     if (mDataFormat == FILE_AS_ARRAYBUFFER) {
-      mFileData = js_pod_malloc<char>(mTotal);
+      mFileData = js_pod_malloc<char>(size.value());
     } else {
-      mFileData = (char*)malloc(mTotal);
+      mFileData = (char*)malloc(size.value());
     }
 
     if (!mFileData) {

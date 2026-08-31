@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -83,7 +81,8 @@ class RenderCompositorANGLE final : public RenderCompositor {
 
   bool ShouldUseNativeCompositor() override;
 
-  bool ShouldUseLayerCompositor() override;
+  bool ShouldUseLayerCompositor() const override;
+  bool UseLayerCompositor() const override;
 
   // Interface for wr::Compositor
   void CompositorBeginFrame() override;
@@ -117,7 +116,6 @@ class RenderCompositorANGLE final : public RenderCompositor {
                   wr::ImageRendering aImageRendering,
                   wr::DeviceIntRect aRoundedClipRect,
                   wr::ClipRadius aClipRadius) override;
-  void EnableNativeCompositor(bool aEnable) override;
   bool EnableAsyncScreenshot() override;
   void GetCompositorCapabilities(CompositorCapabilities* aCaps) override;
   void GetWindowProperties(WindowProperties* aProperties) override;
@@ -136,7 +134,6 @@ class RenderCompositorANGLE final : public RenderCompositor {
 
  protected:
   bool UseCompositor() const;
-  bool UseLayerCompositor() const;
   bool RecreateNonNativeCompositorSwapChain();
   void InitializeUsePartialPresent();
   void InsertGraphicsCommandsFinishedWaitQuery(
@@ -180,8 +177,6 @@ class RenderCompositorANGLE final : public RenderCompositor {
   Maybe<LayoutDeviceIntSize> mBufferSize;
   bool mUsePartialPresent = false;
   bool mFullRender = false;
-  // Used to know a timing of disabling native compositor.
-  bool mDisablingNativeCompositor = false;
   bool mFirstPresent = true;
   // Wether we're currently using alpha.
   bool mSwapChainUsingAlpha = false;

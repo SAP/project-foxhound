@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -28,6 +26,7 @@ class JSONPrinter;
 
 class ArrayBufferViewObject;
 class AutoSetNewObjectMetadata;
+class FixedLengthTypedArrayObject;
 class WasmArrayRawBuffer;
 
 namespace wasm {
@@ -38,7 +37,7 @@ struct MemoryDesc;
 // of size `initialCommittedSize`.  Both arguments denote bytes and must be
 // multiples of the page size, with `initialCommittedSize` <= `mappedSize`.
 // Returns nullptr on failure.
-void* MapBufferMemory(wasm::AddressType, size_t mappedSize,
+void* MapBufferMemory(wasm::AddressType, wasm::PageSize, size_t mappedSize,
                       size_t initialCommittedSize);
 
 // Commit additional memory in an existing mapping.  `dataEnd` must be the
@@ -134,6 +133,7 @@ class ArrayBufferObjectMaybeShared;
 
 wasm::AddressType WasmArrayBufferAddressType(
     const ArrayBufferObjectMaybeShared* buf);
+wasm::PageSize WasmArrayBufferPageSize(const ArrayBufferObjectMaybeShared* buf);
 wasm::Pages WasmArrayBufferPages(const ArrayBufferObjectMaybeShared* buf);
 wasm::Pages WasmArrayBufferClampedMaxPages(
     const ArrayBufferObjectMaybeShared* buf);
@@ -158,6 +158,7 @@ class ArrayBufferObjectMaybeShared : public NativeObject {
   wasm::AddressType wasmAddressType() const {
     return WasmArrayBufferAddressType(this);
   }
+  wasm::PageSize wasmPageSize() const { return WasmArrayBufferPageSize(this); }
   wasm::Pages wasmPages() const { return WasmArrayBufferPages(this); }
   wasm::Pages wasmClampedMaxPages() const {
     return WasmArrayBufferClampedMaxPages(this);
@@ -474,12 +475,11 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   static bool class_constructor(JSContext* cx, unsigned argc, Value* vp);
 
-  static bool isOriginalByteLengthGetter(Native native) {
-    return native == byteLengthGetter;
-  }
-
   static ArrayBufferObject* createForContents(JSContext* cx, size_t nbytes,
                                               BufferContents contents);
+
+  static ArrayBufferObject* createFromTypedArrayMallocedElements(
+      JSContext* cx, Handle<FixedLengthTypedArrayObject*> tarray);
 
  protected:
   template <class ArrayBufferType>
@@ -634,6 +634,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   size_t wasmMappedSize() const;
 
   wasm::AddressType wasmAddressType() const;
+  wasm::PageSize wasmPageSize() const;
   wasm::Pages wasmPages() const;
   wasm::Pages wasmClampedMaxPages() const;
   mozilla::Maybe<wasm::Pages> wasmSourceMaxPages() const;
@@ -791,6 +792,7 @@ class ResizableArrayBufferObject : public ArrayBufferObject {
 
   // Resize this buffer.
   void resize(size_t newByteLength);
+  void notifyViewsAfterResize();
 
   static ResizableArrayBufferObject* copy(
       JSContext* cx, size_t newByteLength,
@@ -987,17 +989,19 @@ class MutableWrappedPtrOperations<InnerViewTable, Wrapper>
 
 class WasmArrayRawBuffer {
   wasm::AddressType addressType_;
+  wasm::PageSize pageSize_;
   wasm::Pages clampedMaxPages_;
   mozilla::Maybe<wasm::Pages> sourceMaxPages_;
   size_t mappedSize_;  // See comment on mappedSize().
   size_t length_;
 
  protected:
-  WasmArrayRawBuffer(wasm::AddressType addressType, uint8_t* buffer,
-                     wasm::Pages clampedMaxPages,
+  WasmArrayRawBuffer(wasm::AddressType addressType, wasm::PageSize pageSize,
+                     uint8_t* buffer, wasm::Pages clampedMaxPages,
                      const mozilla::Maybe<wasm::Pages>& sourceMaxPages,
                      size_t mappedSize, size_t length)
       : addressType_(addressType),
+        pageSize_(pageSize),
         clampedMaxPages_(clampedMaxPages),
         sourceMaxPages_(sourceMaxPages),
         mappedSize_(mappedSize),
@@ -1005,12 +1009,15 @@ class WasmArrayRawBuffer {
     // Assert that this WasmArrayRawBuffer was allocated in the correct place
     // relative to its data.
     MOZ_ASSERT(buffer == dataPointer());
+    MOZ_ASSERT(pageSize == clampedMaxPages.pageSize());
+    MOZ_ASSERT_IF(sourceMaxPages.isSome(),
+                  (pageSize == sourceMaxPages->pageSize()));
   }
 
  public:
   static WasmArrayRawBuffer* AllocateWasm(
-      wasm::AddressType addressType, wasm::Pages initialPages,
-      wasm::Pages clampedMaxPages,
+      wasm::AddressType addressType, wasm::PageSize pageSize,
+      wasm::Pages initialPages, wasm::Pages clampedMaxPages,
       const mozilla::Maybe<wasm::Pages>& sourceMaxPages,
       const mozilla::Maybe<size_t>& mappedSize);
   static void Release(void* mem);
@@ -1031,6 +1038,7 @@ class WasmArrayRawBuffer {
   }
 
   wasm::AddressType addressType() const { return addressType_; }
+  wasm::PageSize pageSize() const { return pageSize_; }
 
   uint8_t* basePointer() { return dataPointer() - gc::SystemPageSize(); }
 
@@ -1055,7 +1063,7 @@ class WasmArrayRawBuffer {
   size_t byteLength() const { return length_; }
 
   wasm::Pages pages() const {
-    return wasm::Pages::fromByteLengthExact(length_);
+    return wasm::Pages::fromByteLengthExact(length_, pageSize());
   }
 
   /*

@@ -2,16 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsContentAreaDragDrop.h"
 #include "RemoteDragStartData.h"
+
+#include "mozilla/dom/BlobImpl.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/IPCBlobUtils.h"
+#include "mozilla/ipc/ProtocolUtils.h"
+#include "nsContentAreaDragDrop.h"
 #include "nsContentUtils.h"
 #include "nsICookieJarSettings.h"
 #include "nsVariant.h"
-#include "mozilla/dom/BlobImpl.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/IPCBlobUtils.h"
-#include "mozilla/dom/DOMTypes.h"
-#include "mozilla/ipc/ProtocolUtils.h"
 
 using namespace mozilla::ipc;
 

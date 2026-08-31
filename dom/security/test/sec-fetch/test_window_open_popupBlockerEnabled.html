@@ -20,7 +20,6 @@ add_setup(async function () {
 
 add_task(async function() {
   var script = SpecialPowers.loadChromeScript(() => {
-    /* eslint-env mozilla/chrome-script */
     Services.obs.addObserver(function onExamResp(subject) {
     let channel = subject.QueryInterface(Ci.nsIHttpChannel);
       info("request observed: " + channel.URI.spec);

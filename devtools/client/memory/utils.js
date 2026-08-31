@@ -30,7 +30,7 @@ const {
  * used as a title.
  *
  * @param {Snapshot} snapshot
- * @return {String}
+ * @return {string}
  */
 exports.getSnapshotTitle = function (snapshot) {
   if (!snapshot.creationTime) {
@@ -68,7 +68,7 @@ function getCustomDisplaysHelper(pref) {
  * Returns custom displays defined in `devtools.memory.custom-census-displays`
  * pref.
  *
- * @return {Object}
+ * @return {object}
  */
 exports.getCustomCensusDisplays = function () {
   return getCustomDisplaysHelper(CUSTOM_CENSUS_DISPLAY_PREF);
@@ -78,7 +78,7 @@ exports.getCustomCensusDisplays = function () {
  * Returns custom displays defined in
  * `devtools.memory.custom-label-displays` pref.
  *
- * @return {Object}
+ * @return {object}
  */
 exports.getCustomLabelDisplays = function () {
   return getCustomDisplaysHelper(CUSTOM_LABEL_DISPLAY_PREF);
@@ -88,7 +88,7 @@ exports.getCustomLabelDisplays = function () {
  * Returns custom displays defined in
  * `devtools.memory.custom-tree-map-displays` pref.
  *
- * @return {Object}
+ * @return {object}
  */
 exports.getCustomTreeMapDisplays = function () {
   return getCustomDisplaysHelper(CUSTOM_TREE_MAP_DISPLAY_PREF);
@@ -99,7 +99,7 @@ exports.getCustomTreeMapDisplays = function () {
  * concise than `getStatusTextFull`.
  *
  * @param {snapshotState | diffingState} state
- * @return {String}
+ * @return {string}
  */
 // eslint-disable-next-line complexity
 exports.getStatusText = function (state) {
@@ -175,7 +175,7 @@ exports.getStatusText = function (state) {
  * more verbose than `getStatusText`.
  *
  * @param {snapshotState | diffingState} state
- * @return {String}
+ * @return {string}
  */
 // eslint-disable-next-line complexity
 exports.getStatusTextFull = function (state) {
@@ -250,7 +250,7 @@ exports.getStatusTextFull = function (state) {
  * Return true if the snapshot is in a diffable state, false otherwise.
  *
  * @param {snapshotModel} snapshot
- * @returns {Boolean}
+ * @returns {boolean}
  */
 exports.snapshotIsDiffable = function snapshotIsDiffable(snapshot) {
   return (
@@ -321,11 +321,11 @@ exports.createSnapshot = function createSnapshot(state) {
  * Return true if the census is up to date with regards to the current filtering
  * and requested display, false otherwise.
  *
- * @param {String} filter
+ * @param {string} filter
  * @param {censusDisplayModel} display
  * @param {censusModel} census
  *
- * @returns {Boolean}
+ * @returns {boolean}
  */
 exports.censusIsUpToDate = function (filter, display, census) {
   return (
@@ -340,8 +340,8 @@ exports.censusIsUpToDate = function (filter, display, census) {
  * Check to see if the snapshot is in a state that it can take a census.
  *
  * @param {SnapshotModel} A snapshot to check.
- * @param {Boolean} Assert that the snapshot must be in a ready state.
- * @returns {Boolean}
+ * @param {boolean} Assert that the snapshot must be in a ready state.
+ * @returns {boolean}
  */
 exports.canTakeCensus = function (snapshot) {
   return (
@@ -358,7 +358,7 @@ exports.canTakeCensus = function (snapshot) {
  * otherwise.
  *
  * @param {SnapshotModel} snapshot
- * @returns {Boolean}
+ * @returns {boolean}
  */
 exports.dominatorTreeIsComputed = function (snapshot) {
   return (
@@ -374,7 +374,7 @@ exports.dominatorTreeIsComputed = function (snapshot) {
  * census.
  *
  * @param {SnapshotModel} snapshot
- * @returns {Object|null} Either the census, or null if one hasn't completed
+ * @returns {object | null} Either the census, or null if one hasn't completed
  */
 exports.getSavedCensus = function (snapshot) {
   if (snapshot.treeMap && snapshot.treeMap.state === treeMapState.SAVED) {
@@ -391,7 +391,7 @@ exports.getSavedCensus = function (snapshot) {
  * snapshot represents.
  *
  * @param {CensusModel} census
- * @return {Object}
+ * @return {object}
  */
 exports.getSnapshotTotals = function (census) {
   let bytes = 0;
@@ -410,15 +410,15 @@ exports.getSnapshotTotals = function (census) {
  * Takes some configurations and opens up a file picker and returns
  * a promise to the chosen file if successful.
  *
- * @param {String} .title
+ * @param {string} .title
  *        The title displayed in the file picker window.
- * @param {Array<Array<String>>} .filters
+ * @param {Array<Array<string>>} .filters
  *        An array of filters to display in the file picker. Each filter in the array
  *        is a duple of two strings, one a name for the filter, and one the filter itself
  *        (like "*.json").
- * @param {String} .defaultName
+ * @param {string} .defaultName
  *        The default name chosen by the file picker window.
- * @param {String} .mode
+ * @param {string} .mode
  *        The mode that this filepicker should open in. Can be "open" or "save".
  * @return {Promise<?nsIFile>}
  *        The file selected by the user, or null, if cancelled.
@@ -458,8 +458,8 @@ exports.openFilePicker = function ({ title, filters, defaultName, mode }) {
  * Format the provided number with a space every 3 digits, and optionally
  * prefixed by its sign.
  *
- * @param {Number} number
- * @param {Boolean} showSign (defaults to false)
+ * @param {number} number
+ * @param {boolean} showSign (defaults to false)
  */
 exports.formatNumber = function (number, showSign = false) {
   const rounded = Math.round(number);
@@ -483,8 +483,8 @@ exports.formatNumber = function (number, showSign = false) {
  * Format the provided percentage following the same logic as formatNumber and
  * an additional % suffix.
  *
- * @param {Number} percent
- * @param {Boolean} showSign (defaults to false)
+ * @param {number} percent
+ * @param {boolean} showSign (defaults to false)
  */
 exports.formatPercent = function (percent, showSign = false) {
   return exports.L10N.getFormatStr(
@@ -497,11 +497,11 @@ exports.formatPercent = function (percent, showSign = false) {
  * Change an HSL color array with values ranged 0-1 to a properly formatted
  * ctx.fillStyle string.
  *
- * @param  {Number} h
+ * @param  {number} h
  *         hue values ranged between [0 - 1]
- * @param  {Number} s
+ * @param  {number} s
  *         hue values ranged between [0 - 1]
- * @param  {Number} l
+ * @param  {number} l
  *         hue values ranged between [0 - 1]
  * @return {type}
  */
@@ -516,11 +516,11 @@ exports.hslToStyle = function (h, s, l) {
 /**
  * Linearly interpolate between 2 numbers.
  *
- * @param {Number} a
- * @param {Number} b
- * @param {Number} t
+ * @param {number} a
+ * @param {number} b
+ * @param {number} t
  *        A value of 0 returns a, and 1 returns b
- * @return {Number}
+ * @return {number}
  */
 exports.lerp = function (a, b, t) {
   return a * (1 - t) + b * t;
@@ -529,9 +529,9 @@ exports.lerp = function (a, b, t) {
 /**
  * Format a number of bytes as human readable, e.g. 13434 => '13KiB'.
  *
- * @param  {Number} n
+ * @param  {number} n
  *         Number of bytes
- * @return {String}
+ * @return {string}
  */
 exports.formatAbbreviatedBytes = function (n) {
   if (n < BYTES) {

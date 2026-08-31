@@ -245,17 +245,13 @@ function testMarkerIntegrity(accDoc, expectedMarkerValues) {
   is(count, 0, "Iterated backward through all text markers");
 }
 
-// Run tests with old word segmenter
 addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["intl.icu4x.segmenter.enabled", false],
-      ["layout.word_select.stop_at_punctuation", true], // This is default
-    ],
+    set: [["layout.word_select.stop_at_punctuation", false]],
   });
 
   const expectedValues = await SpecialPowers.spawn(browser, [], async () => {
-    return content.wrappedJSObject.getExpected(false, true);
+    return content.wrappedJSObject.getExpected(false);
   });
 
   testMarkerIntegrity(accDoc, expectedValues);
@@ -263,35 +259,15 @@ addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
   await SpecialPowers.popPrefEnv();
 });
 
-// new UAX#14 segmenter without stop_at_punctuation.
 addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["intl.icu4x.segmenter.enabled", true],
-      ["layout.word_select.stop_at_punctuation", false],
-    ],
-  });
-
-  const expectedValues = await SpecialPowers.spawn(browser, [], async () => {
-    return content.wrappedJSObject.getExpected(true, false);
-  });
-
-  testMarkerIntegrity(accDoc, expectedValues);
-
-  await SpecialPowers.popPrefEnv();
-});
-
-// new UAX#14 segmenter with stop_at_punctuation
-addAccessibleTask("mac/doc_textmarker_test.html", async (browser, accDoc) => {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["intl.icu4x.segmenter.enabled", true],
       ["layout.word_select.stop_at_punctuation", true], // this is default
     ],
   });
 
   const expectedValues = await SpecialPowers.spawn(browser, [], async () => {
-    return content.wrappedJSObject.getExpected(true, true);
+    return content.wrappedJSObject.getExpected(true);
   });
 
   testMarkerIntegrity(accDoc, expectedValues);
@@ -423,4 +399,49 @@ addAccessibleTask(`<p id="p">hello world</p>`, async (browser, accDoc) => {
   );
 
   ok(bounds.origin && bounds.size, "Returned valid bounds");
+
+  // Test bounds of collapsed range.
+
+  let marker = macDoc.getParameterizedAttributeValue(
+    "AXStartTextMarkerForTextMarkerRange",
+    range
+  );
+
+  let collapsedRange = macDoc.getParameterizedAttributeValue(
+    "AXTextMarkerRangeForUnorderedTextMarkers",
+    [marker, marker]
+  );
+
+  let collapsedBounds = macDoc.getParameterizedAttributeValue(
+    "AXBoundsForTextMarkerRange",
+    collapsedRange
+  );
+
+  ok(
+    collapsedBounds.origin && collapsedBounds.size,
+    "Returned valid collapsed bounds"
+  );
+
+  let nextMarker = macDoc.getParameterizedAttributeValue(
+    "AXNextTextMarkerForTextMarker",
+    marker
+  );
+
+  range = macDoc.getParameterizedAttributeValue(
+    "AXTextMarkerRangeForUnorderedTextMarkers",
+    [marker, nextMarker]
+  );
+
+  is(stringForRange(macDoc, range), "h", "range is first letter");
+
+  bounds = macDoc.getParameterizedAttributeValue(
+    "AXBoundsForTextMarkerRange",
+    range
+  );
+
+  Assert.less(
+    collapsedBounds.size[0],
+    bounds.size[0],
+    "Collapsed range is smaller than character range"
+  );
 });

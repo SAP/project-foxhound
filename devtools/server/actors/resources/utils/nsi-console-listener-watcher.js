@@ -77,7 +77,7 @@ class nsIConsoleListenerWatcher {
    * Return false if the watcher shouldn't be created.
    *
    * @param {TargetActor} targetActor
-   * @return {Boolean}
+   * @return {boolean}
    */
   shouldHandleTarget() {
     return true;
@@ -89,7 +89,7 @@ class nsIConsoleListenerWatcher {
    *
    * @param {TargetActor} targetActor
    * @param {nsIScriptError|nsIConsoleMessage} message
-   * @return {Boolean}
+   * @return {boolean}
    */
   shouldHandleMessage() {
     throw new Error(

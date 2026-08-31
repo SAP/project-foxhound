@@ -21,7 +21,7 @@ body {
   margin-block: 2em 1em;
   font-size: large;
   text-align: start;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #copy-raw-data-to-clipboard,
@@ -83,12 +83,4 @@ td {
   width: 30%;
   white-space: nowrap;
   overflow: hidden;
-}
-
-#profile-row {
-  display: none;
-}
-
-#reset-box {
-  display: none;
 }

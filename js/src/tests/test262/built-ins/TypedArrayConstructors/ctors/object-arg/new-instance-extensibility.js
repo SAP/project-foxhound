@@ -40,6 +40,6 @@ testWithTypedArrayConstructors(function(TA) {
   var sample = new TA(obj);
 
   assert(Object.isExtensible(sample));
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

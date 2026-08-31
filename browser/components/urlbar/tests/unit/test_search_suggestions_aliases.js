@@ -191,7 +191,7 @@ add_task(async function tokenAlias_noTrailingSpace() {
           providesSearchMode: true,
           query: "",
           heuristic: false,
-          providerName: "TokenAliasEngines",
+          providerName: "UrlbarProviderTokenAliasEngines",
         }),
       ],
     });

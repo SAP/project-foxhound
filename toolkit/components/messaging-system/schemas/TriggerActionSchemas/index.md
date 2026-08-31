@@ -38,6 +38,7 @@ let patterns: string[];
 
 - [`openArticleURL`](#openarticleurl)
 - [`openBookmarkedURL`](#openbookmarkedurl)
+- [`userBookmarkFolderActivity`](#userbookmarkfolderactivity)
 - [`frequentVisits`](#frequentvisits)
 - [`openURL`](#openurl)
 - [`newSavedLogin`](#newsavedlogin)
@@ -63,6 +64,11 @@ let patterns: string[];
 - [`onSearch`](#onsearch)
 - [`sidebarToolOpened`](#sidebartoolopened)
 - [`elementClicked`](#elementclicked)
+- [`ipProtectionReady`](#ipprotectionready)
+- [`ipProtectionPanelClosed`](#ipprotectionpanelclosed)
+- [`ipProtectionBandwidthReset`](#ipprotectionbandwidthreset)
+- [`selectableProfilesUpdated`](#selectableprofilesupdated)
+- [`smartWindowNewTab`](#smartwindownewtab)
 
 ### `openArticleURL`
 
@@ -73,6 +79,12 @@ Happens when the user loads a Reader Mode compatible webpage.
 Happens when the user bookmarks or navigates to a bookmarked URL.
 
 Does not filter by host or patterns.
+
+### `userBookmarkFolderActivity`
+
+Happens when the user either creates a new bookmark folder or saves a bookmark
+into a user-created folder. Does not fire if the active window is a private
+window.
 
 ### `frequentVisits`
 
@@ -145,7 +157,7 @@ Provides a context of the number of pages loaded in the current browsing session
 Does not filter by host or patterns.
 
 The event it reports back is one of two things:
- * A combination of OR-ed [nsIWebProgressListener](https://searchfox.org/mozilla-central/source/uriloader/base/nsIWebProgressListener.idl) `STATE_BLOCKED_*` flags
+ * A combination of OR-ed [nsIWebProgressListener](https://searchfox.org/firefox-main/source/uriloader/base/nsIWebProgressListener.idl) `STATE_BLOCKED_*` flags
  * A string constant, such as [`"ContentBlockingMilestone"`](https://searchfox.org/mozilla-central/rev/8a2d8d26e25ef70c98c6036612aad534b76b9815/toolkit/components/antitracking/TrackingDBService.jsm#327-334)
 
 
@@ -232,6 +244,16 @@ Happens when the user closes n or more tabs in a session
 {
   trigger: { id: "nthTabClosed" },
   targeting: "currentTabsOpen >= 4"
+}
+```
+```js
+// The trigger also includes an optional action context variable
+// when a caller marks the tab.smartWindowActionSource before close.
+// Here, the message triggers when the close was attributed to a specific source
+// (e.g., "close_current_tab" set by a toolcall)
+{
+  trigger: { id: "nthTabClosed" },
+  targeting: "actionSource == 'close_current_tab'"
 }
 ```
 
@@ -372,7 +394,9 @@ Happens when a page action appears in the location bar. The specific page action
 ```js
 {
   trigger: { id: "pageActionInUrlbar" },
-  targeting: "pageAction == 'reader-mode-button'"
+  targeting: "pageAction == 'reader-mode-button'",
+  params: ["example.com"],
+  patterns: ["https://www.example.com/*"]
 }
 ```
 
@@ -382,7 +406,7 @@ Happens when the user uses the search feature in the awesome bar.
 
 The `isSuggestion` boolean context variable is available in targeting, and will evaluate to true if the search was initiated from a recommendation in the awesomebar.
 
-The `searchSource` string context variable is also available in targeting, and returns the search source. It will be one of four values: `urlbar-handoff` if one of the faux-search inputs were used (such as the one present on the newtab page), `urlbar-searchmode` if the user has selected a search engine, `urlbar-persisted` if the user has changed tabs or windows and come back to their search term in the URL bar, or `urlbar` if the user is doing a standard search by entering a term into the URL bar and pressing enter, or clicking on a search suggestion.
+The `searchSource` string context variable is also available in targeting, and returns the search source. It will be one of four values: `urlbar-handoff` if one of the faux-search inputs were used (such as the one present on the newtab page), `urlbar-searchmode` if the user has selected a search engine, `urlbar-persisted` if the user has changed tabs or windows and come back to their search term in the URL bar, `urlbar` if the user is doing a standard search by entering a term into the URL bar and pressing enter, or clicking on a search suggestion, or `searchbar` if the search was started from the separate search bar toolbar widget.
 
 The `isOneOff` boolean context variable is available in targeting, and will be true if one of the one-off search features (typically found at the bottom of the awesomebar's dropdown menu) is used.
 
@@ -421,5 +445,79 @@ The `elementId` string context variable is also available in targeting, and will
     params: ["element1-id", "element2-id"]
   },
   targeting: "elementId == 'element1-id'"
+}
+```
+
+### `ipProtectionReady`
+
+Fired once the IP protection widget is created and available. Used as a trigger for the IP protection feature introduction callout, which anchors to the widget.
+
+Targets users with the `browser.ipProtection.enabled` pref set to true, along with frequency caps.
+
+```js
+
+{
+  trigger: { "ipProtectionReady" },
+  targeting: "'browser.ipProtection.enabled' | preferenceValue && !(messageImpressions.IP_PROTECTION_INTRODUCTION_CALLOUT[messageImpressions.IP_PROTECTION_INTRODUCTION_CALLOUT | length - 1] < currentDate|date - (3600000 * 24))",
+
+}
+```
+
+### `ipProtectionPanelClosed`
+
+Fires on close of the IP Protection Panel. Can be used to trigger messages or actions after the user closes the IP protection panel.
+
+The `hasUsedSiteExceptions` boolean context variable is available in targeting, and will evaluate to true if the user has added a site to their exceptions list either in-panel or at about:settings.
+
+```js
+{
+  trigger: { id: "ipProtectionPanelClosed" },
+  targeting: "!hasUsedSiteExceptions",
+}
+```
+
+### `ipProtectionBandwidthReset`
+
+Fires when the IP protection bandwidth quota resets at the start of a new month.
+
+```js
+{
+  trigger: { id: "ipProtectionBandwidthReset" },
+  targeting: "'browser.ipProtection.userEnableCount' | preferenceValue > 0",
+}
+```
+
+### `selectableProfilesUpdated`
+
+Fires to keep multi-profile feature users informed of changes to data collection settings. Within a profile group, any update to these shared profile settings triggers this event for all other running remote profile instances.
+
+```js
+{
+  trigger: { id: "selectableProfilesUpdated" },
+  template: "infobar",
+  frequency: { lifetime: 1 }
+}
+```
+
+### `tabSwitch`
+
+Fires when the user switches between two tabs 2 times within one minute.
+A currentTabsOpen context variable is included to be used in the targeting
+
+```js
+{
+  trigger: { id: "tabSwitch" },
+  targeting: `!'browser.tab.splitview.hasUsed'|preferenceValue && currentTabsOpen >=5`
+}
+```
+
+### `smartWindowNewTab`
+
+Occurs every time a user opens a new Smart Window tab.
+
+```js
+{
+  trigger: { id: "smartWindowNewTab" },
+  targeting: "isAIWindow && 'browser.smartwindow.firstrun.hasCompleted' | preferenceValue",
 }
 ```

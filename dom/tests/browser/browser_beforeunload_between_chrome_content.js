@@ -4,24 +4,16 @@ const { PromptTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PromptTestUtils.sys.mjs"
 );
 
-function pageScript() {
-  window.addEventListener(
-    "beforeunload",
-    function (event) {
-      var str = "Leaving?";
-      event.returnValue = str;
-      return str;
-    },
-    true
-  );
-}
-
 function injectBeforeUnload(browser) {
-  return ContentTask.spawn(browser, null, async function () {
+  return SpecialPowers.spawn(browser, [], async function () {
     content.window.addEventListener(
       "beforeunload",
       function (event) {
-        sendAsyncMessage("Test:OnBeforeUnloadReceived");
+        content.document.dispatchEvent(
+          new content.CustomEvent("Test:OnBeforeUnloadReceived", {
+            bubbles: true,
+          })
+        );
         var str = "Leaving?";
         event.returnValue = str;
         return str;
@@ -48,18 +40,22 @@ SpecialPowers.pushPrefEnv({
  * Test navigation from a content page to a chrome page. Also check that only
  * one beforeunload event is fired.
  */
-/* global messageManager */
 add_task(async function () {
   let beforeUnloadCount = 0;
-  messageManager.addMessageListener("Test:OnBeforeUnloadReceived", function () {
-    beforeUnloadCount++;
-  });
-
   // Open a content page.
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
   let browser = tab.linkedBrowser;
 
   ok(browser.isRemoteBrowser, "Browser should be remote.");
+
+  let removeBeforeUnloadListener = BrowserTestUtils.addContentEventListener(
+    browser,
+    "Test:OnBeforeUnloadReceived",
+    () => {
+      beforeUnloadCount++;
+    },
+    { capture: true }
+  );
 
   await injectBeforeUnload(browser);
   // Navigate to a chrome page.
@@ -83,6 +79,7 @@ add_task(async function () {
   await Promise.all([dialogShown2, BrowserTestUtils.browserLoaded(browser)]);
   is(beforeUnloadCount, 2, "Should have received two beforeunload events.");
 
+  removeBeforeUnloadListener();
   BrowserTestUtils.removeTab(tab);
 });
 
@@ -92,9 +89,6 @@ add_task(async function () {
  */
 add_task(async function () {
   let beforeUnloadCount = 0;
-  messageManager.addMessageListener("Test:OnBeforeUnloadReceived", function () {
-    beforeUnloadCount++;
-  });
 
   // Open a chrome page.
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -104,11 +98,25 @@ add_task(async function () {
   let browser = tab.linkedBrowser;
 
   ok(!browser.isRemoteBrowser, "Browser should not be remote.");
-  await ContentTask.spawn(browser, null, async function () {
+
+  let removeBeforeUnloadListener = BrowserTestUtils.addContentEventListener(
+    browser,
+    "Test:OnBeforeUnloadReceived",
+    () => {
+      beforeUnloadCount++;
+    },
+    { capture: true }
+  );
+
+  await SpecialPowers.spawn(browser, [], async function () {
     content.window.addEventListener(
       "beforeunload",
       function (event) {
-        sendAsyncMessage("Test:OnBeforeUnloadReceived");
+        content.document.dispatchEvent(
+          new content.CustomEvent("Test:OnBeforeUnloadReceived", {
+            bubbles: true,
+          })
+        );
         var str = "Leaving?";
         event.returnValue = str;
         return str;
@@ -128,11 +136,15 @@ add_task(async function () {
   ok(gBrowser.webNavigation.canGoBack, "Should be able to go back.");
   gBrowser.goBack();
   await BrowserTestUtils.browserLoaded(browser);
-  await ContentTask.spawn(browser, null, async function () {
+  await SpecialPowers.spawn(browser, [], async function () {
     content.window.addEventListener(
       "beforeunload",
       function (event) {
-        sendAsyncMessage("Test:OnBeforeUnloadReceived");
+        content.document.dispatchEvent(
+          new content.CustomEvent("Test:OnBeforeUnloadReceived", {
+            bubbles: true,
+          })
+        );
         var str = "Leaving?";
         event.returnValue = str;
         return str;
@@ -148,5 +160,6 @@ add_task(async function () {
   await Promise.all([dialogShown2, BrowserTestUtils.browserLoaded(browser)]);
   is(beforeUnloadCount, 2, "Should have received two beforeunload events.");
 
+  removeBeforeUnloadListener();
   BrowserTestUtils.removeTab(tab);
 });

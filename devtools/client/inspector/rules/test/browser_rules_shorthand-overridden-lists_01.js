@@ -24,12 +24,8 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("div", inspector);
 
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
   const shorthandOverridden = rule.textProps[1].editor.shorthandOverridden;
 
-  is(
-    shorthandOverridden.children.length,
-    0,
-    "The shorthandOverridden list is empty"
-  );
+  ok(!shorthandOverridden, "The shorthandOverridden list wasn't created");
 });

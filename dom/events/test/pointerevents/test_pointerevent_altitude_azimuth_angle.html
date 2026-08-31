@@ -1,0 +1,59 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=2013990
+-->
+<head>
+<meta charset="utf-8">
+<title>Test for Bug 2013990</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<style>
+#target {
+  width: 200px;
+  height: 200px;
+  background-color: green;
+}
+</style>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=2013990">Mozilla Bug 2013990</a>
+<p id="display"></p>
+<div id="target"></div>
+<script type="text/javascript">
+
+/** Test for Bug 2013990 */
+add_task(async function test_pointer_touch_tiltX_tiltY() {
+  let promise = new Promise((resolve) => {
+    let target = document.getElementById("target");
+    target.addEventListener("pointerdown", (e) => {
+      is(e.tiltX, 45, "check tiltX");
+      is(e.tiltY, 0, "check tiltY");
+      is(e.altitudeAngle, Math.PI/4, "check computed altitudeAngle");
+      is(e.azimuthAngle, 0, "check computed azimuthAngle");
+      resolve(e);
+    }, { once: true });
+  });
+  synthesizeTouchAtCenter(target, { tiltX: 45, tiltY: 0 });
+  await promise;
+});
+
+add_task(async function test_pointer_touch_altitude_azimuth() {
+  let promise = new Promise((resolve) => {
+    let target = document.getElementById("target");
+    target.addEventListener("pointerdown", (e) => {
+      is(e.altitudeAngle, 1.2, "check altitudeAngle");
+      is(e.azimuthAngle, 6, "check azimuthAngle");
+      is(e.tiltX, 20, "check computed tiltX");
+      is(e.tiltY, -6, "check computed tiltY");
+      resolve(e);
+    }, { once: true });
+  });
+  synthesizeTouchAtCenter(target, { altitudeAngle: 1.2, azimuthAngle: 6 });
+  await promise;
+});
+
+</script>
+</body>
+</html>

@@ -20,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=402089
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 402089 **/
+/** Test for Bug 402089 */
 
 var cachedEvent = null;
 
@@ -52,10 +52,7 @@ function clickHandler(e) {
 
 function doTest() {
   window.addEventListener("click", clickHandler, true);
-  var utils = SpecialPowers.getDOMWindowUtils(window);
-  utils.sendMouseEvent("mousedown", 1, 1, 0, 1, 0);
-  utils.sendMouseEvent("mouseup", 1, 1, 0, 1, 0);
-
+  synthesizeMouseAtPoint(1, 1, {});
 }
 
 SimpleTest.waitForExplicitFinish();

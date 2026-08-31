@@ -11,12 +11,15 @@
 #ifndef PC_CODEC_VENDOR_H_
 #define PC_CODEC_VENDOR_H_
 
-#include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/base/nullability.h"
+#include "absl/strings/string_view.h"
 #include "api/field_trials_view.h"
 #include "api/rtc_error.h"
 #include "api/rtp_transceiver_direction.h"
+#include "api/sequence_checker.h"
 #include "call/payload_type.h"
 #include "media/base/codec.h"
 #include "media/base/codec_list.h"
@@ -24,8 +27,10 @@
 #include "pc/media_options.h"
 #include "pc/session_description.h"
 #include "pc/typed_codec_vendor.h"
+#include "rtc_base/system/no_unique_address.h"
+#include "rtc_base/thread_annotations.h"
 
-namespace cricket {
+namespace webrtc {
 
 // This class contains the functions required to compute the list of codecs
 // for SDP offer/answer. It is exposed to MediaSessionDescriptionFactory
@@ -34,61 +39,52 @@ namespace cricket {
 // TODO: bugs.webrtc.org/360058654 - complete the architectural changes
 // The list of things to be done:
 // - Make as much as possible private.
+// - Make state const where possible while updates related to threading are
+// being done.
+// - Remove test code from the implementation.
 // - Split object usage into four objects: sender/receiver/audio/video.
 // - Remove audio/video from the call names, merge code where possible.
 // - Make the class instances owned by transceivers, so that codec
 //   lists can differ per transceiver.
 // For cleanliness:
 // - Thread guard
+// For performance:
+// - Ensure that no blocking calls are made.
 class CodecVendor {
  public:
-  CodecVendor(MediaEngineInterface* media_engine,
+  // A null media_engine is permitted in order to allow unit testing where the
+  // codecs are explicitly set by the test.
+  // TODO: bugs.webrtc.org/360058654 - The tests can accomplish what they need
+  // by using the same interface as is used in production.
+  // Update the tests instead to supply a valid MediaEngineInterface object
+  // and rather test how CodecVendor works regularly.
+  CodecVendor(const MediaEngineInterface* absl_nullable media_engine,
               bool rtx_enabled,
-              const webrtc::FieldTrialsView& trials);
+              const FieldTrialsView& trials);
 
- public:
-  webrtc::RTCError GetCodecsForOffer(
-      const std::vector<const webrtc::ContentInfo*>& current_active_contents,
-      CodecList& audio_codecs,
-      CodecList& video_codecs) const;
-  webrtc::RTCError GetCodecsForAnswer(
-      const std::vector<const webrtc::ContentInfo*>& current_active_contents,
-      const webrtc::SessionDescription& remote_offer,
-      CodecList& audio_codecs,
-      CodecList& video_codecs) const;
-
-  webrtc::RTCErrorOr<std::vector<Codec>> GetNegotiatedCodecsForOffer(
+  RTCErrorOr<std::vector<Codec>> GetNegotiatedCodecsForOffer(
       const MediaDescriptionOptions& media_description_options,
       const MediaSessionOptions& session_options,
-      const webrtc::ContentInfo* current_content,
-      webrtc::PayloadTypeSuggester& pt_suggester,
-      const CodecList& codecs);
+      const ContentInfo* current_content,
+      PayloadTypeSuggester& pt_suggester);
 
-  webrtc::RTCErrorOr<Codecs> GetNegotiatedCodecsForAnswer(
+  RTCErrorOr<Codecs> GetNegotiatedCodecsForAnswer(
       const MediaDescriptionOptions& media_description_options,
       const MediaSessionOptions& session_options,
-      webrtc::RtpTransceiverDirection offer_rtd,
-      webrtc::RtpTransceiverDirection answer_rtd,
-      const webrtc::ContentInfo* current_content,
+      RtpTransceiverDirection offer_rtd,
+      RtpTransceiverDirection answer_rtd,
+      const ContentInfo* current_content,
       std::vector<Codec> codecs_from_offer,
-      webrtc::PayloadTypeSuggester& pt_suggester,
-      const CodecList& codecs);
+      PayloadTypeSuggester& pt_suggester);
+
+  // Function exposed for issues.webrtc.org/412904801
+  // Modify the video codecs to return on subsequent GetNegotiated* calls.
+  // The input is a vector of pairs of codecs.
+  // For each pair, the first element is the codec to be replaced,
+  // and the second element is the codec to replace it with.
+  void ModifyVideoCodecs(const std::vector<std::pair<Codec, Codec>>& changes);
 
   // Functions exposed for testing
-  void set_audio_codecs(const CodecList& send_codecs,
-                        const CodecList& recv_codecs);
-  void set_audio_codecs(const std::vector<Codec>& send_codecs,
-                        const std::vector<Codec>& recv_codecs) {
-    set_audio_codecs(CodecList::CreateFromTrustedData(send_codecs),
-                     CodecList::CreateFromTrustedData(recv_codecs));
-  }
-  void set_video_codecs(const CodecList& send_codecs,
-                        const CodecList& recv_codecs);
-  void set_video_codecs(const std::vector<Codec>& send_codecs,
-                        const std::vector<Codec>& recv_codecs) {
-    set_video_codecs(CodecList::CreateFromTrustedData(send_codecs),
-                     CodecList::CreateFromTrustedData(recv_codecs));
-  }
   CodecList audio_sendrecv_codecs() const;
   const CodecList& audio_send_codecs() const;
   const CodecList& audio_recv_codecs() const;
@@ -98,24 +94,29 @@ class CodecVendor {
 
  private:
   CodecList GetAudioCodecsForOffer(
-      const webrtc::RtpTransceiverDirection& direction) const;
+      const RtpTransceiverDirection& direction) const;
   CodecList GetAudioCodecsForAnswer(
-      const webrtc::RtpTransceiverDirection& offer,
-      const webrtc::RtpTransceiverDirection& answer) const;
+      const RtpTransceiverDirection& offer,
+      const RtpTransceiverDirection& answer) const;
   CodecList GetVideoCodecsForOffer(
-      const webrtc::RtpTransceiverDirection& direction) const;
+      const RtpTransceiverDirection& direction) const;
   CodecList GetVideoCodecsForAnswer(
-      const webrtc::RtpTransceiverDirection& offer,
-      const webrtc::RtpTransceiverDirection& answer) const;
+      const RtpTransceiverDirection& offer,
+      const RtpTransceiverDirection& answer) const;
 
-  CodecList all_video_codecs() const;
-  CodecList all_audio_codecs() const;
+  // Makes sure that modifications and reading data is done on the same thread
+  // and to makessure we consistently make calls to GetNegotiatedCodecsForOffer
+  // and GetNegotiatedCodecsForAnswer in the same calling context.
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker sequence_checker_;
 
-  TypedCodecVendor audio_send_codecs_;
-  TypedCodecVendor audio_recv_codecs_;
+  const TypedCodecVendor audio_send_codecs_;
+  const TypedCodecVendor audio_recv_codecs_;
 
-  TypedCodecVendor video_send_codecs_;
-  TypedCodecVendor video_recv_codecs_;
+  // TODO: bugs.webrtc.org/412904801 - Make const. In order to be able to do
+  // that, `ModifyVideoCodecs` needs to be removed. In the meantime, codec
+  // information must be read and modified on the same task queue.
+  TypedCodecVendor video_send_codecs_ RTC_GUARDED_BY(sequence_checker_);
+  TypedCodecVendor video_recv_codecs_ RTC_GUARDED_BY(sequence_checker_);
 };
 
 // A class to assist in looking up data for a codec mapping.
@@ -125,10 +126,20 @@ class CodecVendor {
 class CodecLookupHelper {
  public:
   virtual ~CodecLookupHelper() = default;
-  virtual webrtc::PayloadTypeSuggester* PayloadTypeSuggester() = 0;
-  virtual cricket::CodecVendor* CodecVendor(const std::string& mid) = 0;
+  virtual ::webrtc::PayloadTypeSuggester* PayloadTypeSuggester() = 0;
+  // Look up the codec vendor to use, depending on context.
+  // This call may get additional arguments in the future, to aid
+  // in selection of the correct context.
+  virtual CodecVendor* GetCodecVendor() = 0;
 };
 
-}  // namespace cricket
+// A helper function to merge codecs numbered in one PT numberspace
+// into a list numbered in another PT numberspace. Exposed for testing.
+RTCError MergeCodecsForTesting(const CodecList& reference_codecs,
+                               absl::string_view mid,
+                               CodecList& offered_codecs,
+                               PayloadTypeSuggester& pt_suggester);
+
+}  //  namespace webrtc
 
 #endif  // PC_CODEC_VENDOR_H_

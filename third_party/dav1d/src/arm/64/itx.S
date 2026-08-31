@@ -545,7 +545,7 @@ endfunc
         sqrshrn2        \o0\().8h, v17.4s, #12
 
 .ifc \o2, v17
-        mov             v17.16b,   v18.16b
+        mov             v17.16b, v18.16b
 .endif
 
         sqrshrn         \o1\().4h, v6.4s,  #12
@@ -1993,7 +1993,7 @@ function inv_dct32_odd_8h_x16_neon, export=1
 
         smull_smlal     v4,  v5,  v25, v27, v0.h[0], v0.h[0], .8h // -> t26a
         smull_smlsl     v6,  v7,  v25, v27, v0.h[0], v0.h[0], .8h // -> t21a
-        mov             v27.16b,  v22.16b         // t27
+        mov             v27.16b, v22.16b          // t27
         sqrshrn_sz      v26, v4,  v5,  #12, .8h   // t26a
 
         smull_smlsl     v24, v25, v21, v23, v0.h[0], v0.h[0], .8h // -> t22

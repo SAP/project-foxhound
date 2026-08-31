@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,10 @@
 #ifndef DOM_SVG_SVGANIMATEDLENGTHLIST_H_
 #define DOM_SVG_SVGANIMATEDLENGTHLIST_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
+#include <memory>
+
 #include "SVGLengthList.h"
+#include "mozilla/SMILAttr.h"
 
 namespace mozilla {
 
@@ -46,7 +44,7 @@ class SVGAnimatedLengthList {
   SVGAnimatedLengthList& operator=(const SVGAnimatedLengthList& aOther) {
     mBaseVal = aOther.mBaseVal;
     if (aOther.mAnimVal) {
-      mAnimVal = MakeUnique<SVGLengthList>(*aOther.mAnimVal);
+      mAnimVal = std::make_unique<SVGLengthList>(*aOther.mAnimVal);
     }
     return *this;
   }
@@ -75,9 +73,9 @@ class SVGAnimatedLengthList {
 
   bool IsAnimating() const { return !!mAnimVal; }
 
-  UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement,
-                                 uint8_t aAttrEnum, uint8_t aAxis,
-                                 bool aCanZeroPadList);
+  std::unique_ptr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement,
+                                       uint8_t aAttrEnum, SVGLength::Axis aAxis,
+                                       bool aCanZeroPadList);
 
  private:
   // mAnimVal is a pointer to allow us to determine if we're being animated or
@@ -86,13 +84,13 @@ class SVGAnimatedLengthList {
   // the empty string (<set to="">).
 
   SVGLengthList mBaseVal;
-  UniquePtr<SVGLengthList> mAnimVal;
+  std::unique_ptr<SVGLengthList> mAnimVal;
 
   struct SMILAnimatedLengthList : public SMILAttr {
    public:
     SMILAnimatedLengthList(SVGAnimatedLengthList* aVal,
                            dom::SVGElement* aSVGElement, uint8_t aAttrEnum,
-                           uint8_t aAxis, bool aCanZeroPadList)
+                           SVGLength::Axis aAxis, bool aCanZeroPadList)
         : mVal(aVal),
           mElement(aSVGElement),
           mAttrEnum(aAttrEnum),
@@ -105,7 +103,7 @@ class SVGAnimatedLengthList {
     SVGAnimatedLengthList* mVal;
     dom::SVGElement* mElement;
     uint8_t mAttrEnum;
-    uint8_t mAxis;
+    SVGLength::Axis mAxis;
     bool mCanZeroPadList;  // See SVGLengthListAndInfo::CanZeroPadList
 
     // SMILAttr methods

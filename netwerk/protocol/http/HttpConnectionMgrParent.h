@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpConnectionMgrParent_h__
-#define HttpConnectionMgrParent_h__
+#ifndef HttpConnectionMgrParent_h_
+#define HttpConnectionMgrParent_h_
 
 #include "HttpConnectionMgrShell.h"
 #include "mozilla/net/PHttpConnectionMgrParent.h"
@@ -32,12 +31,12 @@ class HttpConnectionMgrParent final : public PHttpConnectionMgrParent,
   virtual ~HttpConnectionMgrParent() = default;
 
   bool mShutDown{false};
-  static uint32_t sListenerId;
-  static StaticMutex sLock MOZ_UNANNOTATED;
+  static uint32_t sListenerId MOZ_GUARDED_BY(sLock);
+  static StaticMutex sLock;
   static nsTHashMap<uint32_t, nsCOMPtr<nsIHttpUpgradeListener>>
-      sHttpUpgradeListenerMap;
+      sHttpUpgradeListenerMap MOZ_GUARDED_BY(sLock);
 };
 
 }  // namespace mozilla::net
 
-#endif  // HttpConnectionMgrParent_h__
+#endif  // HttpConnectionMgrParent_h_

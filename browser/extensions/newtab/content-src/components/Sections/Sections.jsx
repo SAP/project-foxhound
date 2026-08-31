@@ -9,7 +9,6 @@ import { ComponentPerfTimer } from "content-src/components/ComponentPerfTimer/Co
 import { FluentOrText } from "content-src/components/FluentOrText/FluentOrText";
 import { connect } from "react-redux";
 import { MoreRecommendations } from "content-src/components/MoreRecommendations/MoreRecommendations";
-import { PocketLoggedInCta } from "content-src/components/PocketLoggedInCta/PocketLoggedInCta";
 import React from "react";
 import { TopSites } from "content-src/components/TopSites/TopSites";
 
@@ -91,17 +90,15 @@ export class Section extends React.PureComponent {
     }
   }
 
-  componentWillMount() {
-    this.sendNewTabRehydrated(this.props.initialized);
-  }
-
   componentDidMount() {
+    this.sendNewTabRehydrated(this.props.initialized);
     if (this.props.rows.length && !this.props.pref.collapsed) {
       this.sendImpressionStatsOrAddListener();
     }
   }
 
   componentDidUpdate(prevProps) {
+    this.sendNewTabRehydrated(this.props.initialized);
     const { props } = this;
     const isCollapsed = props.pref.collapsed;
     const wasCollapsed = prevProps.pref.collapsed;
@@ -116,10 +113,6 @@ export class Section extends React.PureComponent {
     ) {
       this.sendImpressionStatsOrAddListener();
     }
-  }
-
-  componentWillUpdate(nextProps) {
-    this.sendNewTabRehydrated(nextProps.initialized);
   }
 
   componentWillUnmount() {
@@ -166,7 +159,6 @@ export class Section extends React.PureComponent {
       eventSource,
       title,
       rows,
-      Pocket,
       emptyState,
       dispatch,
       compactCards,
@@ -188,13 +180,6 @@ export class Section extends React.PureComponent {
     const { numRows } = this;
     const maxCards = maxCardsPerRow * numRows;
     const maxCardsOnNarrow = CARDS_PER_ROW_DEFAULT * numRows;
-
-    const { pocketCta, isUserLoggedIn } = Pocket || {};
-    const { useCta } = pocketCta || {};
-
-    const shouldShowPocketCta =
-      id === "topstories" && useCta && isUserLoggedIn === false;
-
     const shouldShowReadMore = read_more_endpoint;
 
     const realRows = rows.slice(0, maxCards);
@@ -261,11 +246,7 @@ export class Section extends React.PureComponent {
           dispatch={this.props.dispatch}
           isWebExtension={this.props.isWebExtension}
         >
-          {!shouldShowEmptyState && (
-            <ul className="section-list" style={{ padding: 0 }}>
-              {cards}
-            </ul>
-          )}
+          {!shouldShowEmptyState && <ul className="section-list">{cards}</ul>}
           {shouldShowEmptyState && (
             <div className="section-empty-state">
               <div className="empty-state">
@@ -277,12 +258,6 @@ export class Section extends React.PureComponent {
           )}
           {id === "topstories" && (
             <div className="top-stories-bottom-container">
-              {shouldShowPocketCta && (
-                <div className="wrapper-cta">
-                  <PocketLoggedInCta />
-                </div>
-              )}
-
               <div className="wrapper-more-recommendations">
                 {shouldShowReadMore && (
                   <MoreRecommendations

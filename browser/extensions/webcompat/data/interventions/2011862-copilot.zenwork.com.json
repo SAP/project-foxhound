@@ -1,0 +1,18 @@
+{
+  "label": "copilot.zenwork.com",
+  "bugs": {
+    "2011862": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://copilot.zenwork.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["define_MozAppearance.js"]
+      }
+    }
+  ]
+}

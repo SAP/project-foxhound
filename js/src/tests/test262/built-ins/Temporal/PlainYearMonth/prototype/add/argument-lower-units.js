@@ -1,41 +1,40 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.plainyearmonth.prototype.add
-description: Using lower units in add() works
-includes: [temporalHelpers.js]
+description: Using lower units in add() throws
 features: [Temporal]
 ---*/
 
 const ym = Temporal.PlainYearMonth.from("2019-11");
 
 const tests = [
-  [{ days: 1 }, 2019, 11, "M11"],
-  [{ days: 29 }, 2019, 11, "M11"],
-  [{ hours: 1 }, 2019, 11, "M11"],
-  [{ minutes: 1 }, 2019, 11, "M11"],
-  [{ seconds: 1 }, 2019, 11, "M11"],
-  [{ milliseconds: 1 }, 2019, 11, "M11"],
-  [{ microseconds: 1 }, 2019, 11, "M11"],
-  [{ nanoseconds: 1 }, 2019, 11, "M11"],
-  [{ days: 30 }, 2019, 12, "M12"],
-  [{ days: 31 }, 2019, 12, "M12"],
-  [{ days: 60 }, 2019, 12, "M12"],
-  [{ days: 61 }, 2020, 1, "M01"],
-  [{ hours: 720 }, 2019, 12, "M12"],
-  [{ minutes: 43200 }, 2019, 12, "M12"],
-  [{ seconds: 2592000 }, 2019, 12, "M12"],
-  [{ milliseconds: 2592000_000 }, 2019, 12, "M12"],
-  [{ microseconds: 2592000_000_000 }, 2019, 12, "M12"],
-  [{ nanoseconds: 2592000_000_000_000 }, 2019, 12, "M12"],
+  { days: 1 },
+  { days: 29 },
+  { hours: 1 },
+  { minutes: 1 },
+  { seconds: 1 },
+  { milliseconds: 1 },
+  { microseconds: 1 },
+  { nanoseconds: 1 },
+  { days: 30 },
+  { days: 31 },
+  { days: 60 },
+  { days: 61 },
+  { hours: 720 },
+  { minutes: 43200 },
+  { seconds: 2592000 },
+  { milliseconds: 2592000_000 },
+  { microseconds: 2592000_000_000 },
+  { nanoseconds: 2592000_000_000_000 },
 ];
 
-for (const [argument, ...expected] of tests) {
-  TemporalHelpers.assertPlainYearMonth(ym.add(argument), ...expected, "no options");
-  TemporalHelpers.assertPlainYearMonth(ym.add(argument, { overflow: "constrain" }), ...expected, "constrain");
-  TemporalHelpers.assertPlainYearMonth(ym.add(argument, { overflow: "reject" }), ...expected, "reject");
+for (const argument of tests) {
+  assert.throws(RangeError, function () { ym.add(argument); }, "adding a unit lower than months should throw, no options");
+  assert.throws(RangeError, function () { ym.add(argument, { overflow: "constrain" }); }, "adding a unit lower than months should throw, constrain");
+  assert.throws(RangeError, function () { ym.add(argument, { overflow: "reject" }); }, "adding a unit lower than months should throw, reject");
 }
 
 reportCompare(0, 0);

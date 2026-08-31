@@ -23,6 +23,12 @@ interface DistributionSettings {
      * @param id A non-null string representing the distribution ID to store.
      */
     fun saveDistributionId(id: String)
+
+    /**
+     * Sets the marketing telemetry preferences to true.  This is required
+     * for skipping the marketing data sharing consent screen before starting Adjust.
+     */
+    fun setMarketingTelemetryPreferences()
 }
 
 /**
@@ -48,5 +54,10 @@ class DefaultDistributionSettings(
      */
     override fun saveDistributionId(id: String) {
         settings.distributionId = id
+    }
+
+    override fun setMarketingTelemetryPreferences() {
+        settings.isMarketingTelemetryEnabled = true
+        settings.hasMadeMarketingTelemetrySelection = true
     }
 }

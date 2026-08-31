@@ -33,6 +33,11 @@ public class GeneratableElementIterator implements Iterator<AnnotatableEntity> {
   private boolean mIterateEnumValues;
   private boolean mSkipCurrentEntry;
 
+  /**
+   * Constructor for GeneratableElementIterator.
+   *
+   * @param annotatedClass The annotated class to iterate over
+   */
   public GeneratableElementIterator(ClassWithOptions annotatedClass) {
     mClass = annotatedClass;
 
@@ -96,6 +101,11 @@ public class GeneratableElementIterator implements Iterator<AnnotatableEntity> {
     return count > 0 ? candidates : null;
   }
 
+  /**
+   * Gets the inner classes that should be generated.
+   *
+   * @return Array of inner classes with generation options
+   */
   public ClassWithOptions[] getInnerClasses() {
     final Class<?>[] candidates = getFilteredInnerClasses();
     if (candidates == null) {

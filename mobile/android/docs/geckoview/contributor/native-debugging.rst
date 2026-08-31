@@ -1,5 +1,3 @@
-.. -*- Mode: rst; fill-column: 80; -*-
-
 =====================
 Debugging Native Code
 =====================
@@ -155,7 +153,7 @@ process wait for a debugger, run:
 
 .. code:: shell
 
-   adb shell am set-debug-app -w --persistent org.mozilla.geckoview_example:gpu
+   adb shell am set-debug-app -w --persistent org.mozilla.geckoview_example:gpu_disable_art_image_
 
 
 Attaching a Java debugger to a waiting child process
@@ -168,7 +166,8 @@ debugger.
 
 Determining the correct process to attach to is a little tricky because
 the mapping from process ID (pid) to process name is not always clear.
-Gecko content child processes are suffixed ``:tab`` at this time.
+Gecko content child processes have names like ``:tab_disable_art_image_0``
+at this time.
 
 If you attach ``Dual`` debuggers to both the main process and a content
 child process, you will have four (4!) debug tabs to manage in Android

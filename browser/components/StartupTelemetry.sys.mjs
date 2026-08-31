@@ -12,8 +12,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OsEnvironment: "resource://gre/modules/OsEnvironment.sys.mjs",
+  WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
   PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   TelemetryReportingPolicy:
     "resource://gre/modules/TelemetryReportingPolicy.sys.mjs",
   UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
@@ -45,7 +46,7 @@ export let StartupTelemetry = {
     for (let task of tasks) {
       ChromeUtils.idleDispatch(async () => {
         if (!Services.startup.shuttingDown) {
-          let startTime = Cu.now();
+          let startTime = ChromeUtils.now();
           try {
             await task();
           } catch (ex) {
@@ -75,6 +76,8 @@ export let StartupTelemetry = {
       () => this.startupConditions(),
       () => this.httpsOnlyState(),
       () => this.globalPrivacyControl(),
+      () => this.aiControlBlocking(),
+      () => this.launchOnLoginState(),
     ];
     if (this._willUseExpensiveTelemetry) {
       tasks.push(() => lazy.PlacesDBUtils.telemetry());
@@ -86,6 +89,8 @@ export let StartupTelemetry = {
       );
     } else if (AppConstants.platform == "macosx") {
       tasks.push(() => this.macDockStatus());
+    } else if (AppConstants.platform == "linux") {
+      tasks.push(() => this.desktopEntryStatus());
     }
 
     this._runIdleTasks(tasks, "startupTelemetryIdleTask");
@@ -103,7 +108,6 @@ export let StartupTelemetry = {
   bestEffortIdleStartup() {
     let tasks = [
       () => this.primaryPasswordEnabled(),
-      () => this.trustObjectCount(),
       () => lazy.OsEnvironment.reportAllowedAppSources(),
     ];
     if (AppConstants.platform == "win" && this._willUseExpensiveTelemetry) {
@@ -359,6 +363,52 @@ export let StartupTelemetry = {
     _checkGPCPref();
   },
 
+  aiControlBlocking() {
+    const GLOBAL_AI_PREF = "browser.ai.control.default";
+    const AI_CONTROL_FEATURES = {
+      "browser.ai.control.translations": "translations",
+      "browser.ai.control.pdfjsAltText": "pdfjsAltText",
+      "browser.ai.control.smartTabGroups": "smartTabGroups",
+      "browser.ai.control.linkPreviewKeyPoints": "linkPreviewKeyPoints",
+      "browser.ai.control.sidebarChatbot": "sidebarChatbot",
+      "browser.ai.control.smartWindow": "smartWindow",
+    };
+    const _checkAiControlPrefs = async () => {
+      const globalIsBlocked =
+        Services.prefs.getStringPref(GLOBAL_AI_PREF, null) === "blocked";
+      Glean.browser.globalAiControlIsBlocking.set(globalIsBlocked);
+
+      for (let [pref, key] of Object.entries(AI_CONTROL_FEATURES)) {
+        let controlState = Services.prefs.getStringPref(pref, "");
+        let isBlocked =
+          controlState === "blocked" ||
+          (controlState == "default" && globalIsBlocked);
+        Glean.browser.aiControlIsBlocking[key].set(isBlocked);
+      }
+    };
+
+    Services.prefs.addObserver(GLOBAL_AI_PREF, _checkAiControlPrefs);
+    for (let pref in AI_CONTROL_FEATURES) {
+      Services.prefs.addObserver(pref, _checkAiControlPrefs);
+    }
+    _checkAiControlPrefs();
+    return () => {
+      Services.prefs.removeObserver(GLOBAL_AI_PREF, _checkAiControlPrefs);
+      for (let pref in AI_CONTROL_FEATURES) {
+        Services.prefs.removeObserver(pref, _checkAiControlPrefs);
+      }
+    };
+  },
+
+  // check if the launcher was used to open firefox
+  isUsingLauncher() {
+    if (Services.env.get("FIREFOX_LAUNCHED_BY_DESKTOP_LAUNCHER") == "TRUE") {
+      return true;
+    }
+
+    return false;
+  },
+
   async pinningStatus() {
     let shellService = Cc["@mozilla.org/browser/shell-service;1"].getService(
       Ci.nsIWindowsShellService
@@ -404,6 +454,8 @@ export let StartupTelemetry = {
         classification = "Autostart";
       } else if (shortcut) {
         classification = "OtherShortcut";
+      } else if (this.isUsingLauncher()) {
+        classification = "DesktopLauncher";
       } else {
         classification = "Other";
       }
@@ -427,6 +479,31 @@ export let StartupTelemetry = {
     });
   },
 
+  async launchOnLoginState() {
+    let state;
+    if (AppConstants.platform != "win") {
+      state = "not_supported";
+    } else {
+      try {
+        const enablementDetails =
+          await lazy.WindowsLaunchOnLogin.getLaunchOnLoginEnablementDetails();
+        if (enablementDetails.isEnabled) {
+          state = "enabled";
+        } else if (!enablementDetails.isSupported) {
+          state = "not_supported";
+        } else if (!enablementDetails.isAllowedByPolicy) {
+          state = "disabled_by_settings";
+        } else {
+          state = "disabled";
+        }
+      } catch (ex) {
+        console.error(ex);
+        state = "error";
+      }
+    }
+    Glean.osEnvironment.launchOnLoginState.set(state);
+  },
+
   macDockStatus() {
     // Report macOS Dock status
     Glean.osEnvironment.isKeptInDock.set(
@@ -434,6 +511,28 @@ export let StartupTelemetry = {
         Ci.nsIMacDockSupport
       ).isAppInDock
     );
+  },
+
+  desktopEntryStatus(gioServiceForTestingOnly) {
+    // Get it here so it can be mocked out.
+    let gioService =
+      gioServiceForTestingOnly ??
+      Cc["@mozilla.org/gio-service;1"].getService(Ci.nsIGIOService);
+    if (gioService.isRunningUnderFlatpak || gioService.isRunningUnderSnap) {
+      Glean.osEnvironment.desktopEntryExists.set("sandboxed");
+      return;
+    }
+
+    let labels = {
+      [Ci.nsIGNOMEShellService.DESKTOP_ENTRY_ABSENT]: "absent",
+      [Ci.nsIGNOMEShellService.DESKTOP_ENTRY_INVISIBLE]: "invisible",
+      [Ci.nsIGNOMEShellService.DESKTOP_ENTRY_VISIBLE]: "visible",
+    };
+    let status = lazy.ShellService.getDesktopEntryStatus(
+      lazy.ShellService.getGlibPrgname() + ".desktop"
+    );
+
+    Glean.osEnvironment.desktopEntryExists.set(labels[status] ?? "other");
   },
 
   sslKeylogFile() {
@@ -449,19 +548,10 @@ export let StartupTelemetry = {
   },
 
   primaryPasswordEnabled() {
-    let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
+    let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+      Ci.nsIPKCS11Token
     );
-    let token = tokenDB.getInternalKeyToken();
     Glean.primaryPassword.enabled.set(token.hasPassword);
-  },
-
-  trustObjectCount() {
-    let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-      Ci.nsIX509CertDB
-    );
-    // countTrustObjects also logs the number of trust objects for telemetry purposes
-    certdb.countTrustObjects();
   },
 
   pipEnabled() {

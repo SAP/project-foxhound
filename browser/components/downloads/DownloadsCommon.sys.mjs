@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80 filetype=javascript: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,9 +41,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   gClipboardHelper: [
     "@mozilla.org/widget/clipboardhelper;1",
-    "nsIClipboardHelper",
+    Ci.nsIClipboardHelper,
   ],
-  gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
+  gMIMEService: ["@mozilla.org/mime;1", Ci.nsIMIMEService],
 });
 
 ChromeUtils.defineLazyGetter(lazy, "DownloadsLogger", () => {
@@ -53,7 +51,7 @@ ChromeUtils.defineLazyGetter(lazy, "DownloadsLogger", () => {
     "resource://gre/modules/Console.sys.mjs"
   );
   let consoleOptions = {
-    maxLogLevelPref: "browser.download.loglevel",
+    maxLogLevelPref: "toolkit.download.loglevel",
     prefix: "Downloads",
   };
   return new ConsoleAPI(consoleOptions);
@@ -327,17 +325,6 @@ export var DownloadsCommon = {
    * Removes a Download object from both session and history downloads.
    */
   async deleteDownload(download) {
-    // Check hasBlockedData to avoid double counting if you click the X button
-    // in the Library view and then delete the download from the history.
-    if (
-      download.error?.becauseBlockedByReputationCheck &&
-      download.hasBlockedData
-    ) {
-      Glean.downloads.userActionOnBlockedDownload[
-        download.error.reputationCheckVerdict
-      ].accumulateSingleSample(1); // confirm block
-    }
-
     // Remove the associated history element first, if any, so that the views
     // that combine history and session downloads won't resurrect the history
     // download into the view just before it is deleted permanently.
@@ -348,7 +335,11 @@ export var DownloadsCommon = {
     }
     let list = await lazy.Downloads.getList(lazy.Downloads.ALL);
     await list.remove(download);
-    if (download.error?.becauseBlockedByContentAnalysis) {
+    if (download.hasBlockedData) {
+      // confirmBlock handles telemetry, content analysis response,
+      // file removal, and sets `deleted`.
+      await download.confirmBlock();
+    } else if (download.error?.becauseBlockedByContentAnalysis) {
       await download.respondToContentAnalysisWarnWithBlock();
     }
     await download.finalize(true);
@@ -579,11 +570,11 @@ export var DownloadsCommon = {
    * @param options.useSystemDefault
    *        Optional value indicating how to handle launching this download,
    *        this call only. Will override the associated mimeInfo.preferredAction
-   * @return {Promise}
-   * @resolves When the instruction to launch the file has been
-   *           successfully given to the operating system or handled internally
-   * @rejects  JavaScript exception if there was an error trying to launch
-   *           the file.
+   * @returns {Promise<void>}
+   *   Resolves when the instruction to launch the file has been successfully
+   *   given to the operating system or handled internally.
+   * @rejects
+   *   With a JavaScript exception if there was an error trying to launch the file.
    */
   async openDownload(download, options) {
     // some download objects got serialized and need reconstituting
@@ -663,12 +654,12 @@ export var DownloadsCommon = {
    *             - "chooseOpen" to offer "open" and "confirmBlock".
    *        }
    *
-   * @return {Promise}
-   * @resolves String representing the action that should be executed:
-   *            - "open" to allow the download and open the file.
-   *            - "unblock" to allow the download without opening the file.
-   *            - "confirmBlock" to delete the blocked data permanently.
-   *            - "cancel" to do nothing and cancel the operation.
+   * @returns {Promise<string>}
+   *   Resolves to a string representing the action that should be executed:
+   *   - "open" to allow the download and open the file.
+   *   - "unblock" to allow the download without opening the file.
+   *   - "confirmBlock" to delete the blocked data permanently.
+   *   - "cancel" to do nothing and cancel the operation.
    */
   async confirmUnblockDownload({
     verdict,
@@ -833,7 +824,7 @@ function DownloadsDataCtor({ isPrivate, isHistory, maxHistoryResults } = {}) {
     let list = await lazy.Downloads.getList(
       isPrivate ? lazy.Downloads.PRIVATE : lazy.Downloads.PUBLIC
     );
-    await list.addView(this);
+    list.addView(this);
     return list;
   })();
 }
@@ -987,6 +978,7 @@ DownloadsDataCtor.prototype = {
   /**
    * Displays a new or finished download notification in the most recent browser
    * window, if one is currently available with the required privacy type.
+   *
    * @param {string} aType
    *        Set to "start" for new downloads, "finish" for completed downloads,
    *        "error" for downloads that failed and need attention
@@ -1003,6 +995,7 @@ DownloadsDataCtor.prototype = {
     // Show the panel in the most recent browser window, if present.
     let browserWin = lazy.BrowserWindowTracker.getTopWindow({
       private: this._isPrivate,
+      allowFromInactiveWorkspace: true,
     });
     if (!browserWin) {
       return;
@@ -1184,7 +1177,7 @@ const DownloadsViewPrototype = {
    * @param download
    *        Download object that was just added.
    *
-   * @note Subclasses should override this and still call the base method.
+   * Note: Subclasses should override this and still call the base method.
    */
   onDownloadAdded(download) {
     this._oldDownloadStates.set(
@@ -1200,7 +1193,7 @@ const DownloadsViewPrototype = {
    *
    * The onDownloadChanged notification will always be sent afterwards.
    *
-   * @note Subclasses should override this.
+   * Note: Subclasses should override this.
    */
   onDownloadStateChanged() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
@@ -1213,7 +1206,7 @@ const DownloadsViewPrototype = {
    * Note that progress notification changes are throttled at the Downloads.sys.mjs
    * API level, and there is no throttling mechanism in the front-end.
    *
-   * @note Subclasses should override this and still call the base method.
+   * Note: Subclasses should override this and still call the base method.
    */
   onDownloadChanged(download) {
     let oldState = this._oldDownloadStates.get(download);
@@ -1232,7 +1225,7 @@ const DownloadsViewPrototype = {
    * @param download
    *        Download object that is being removed.
    *
-   * @note Subclasses should override this.
+   * Note: Subclasses should override this.
    */
   onDownloadRemoved(download) {
     this._oldDownloadStates.delete(download);
@@ -1242,7 +1235,7 @@ const DownloadsViewPrototype = {
    * Private function used to refresh the internal properties being sent to
    * each registered view.
    *
-   * @note Subclasses should override this.
+   * Note: Subclasses should override this.
    */
   _refreshProperties() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
@@ -1251,7 +1244,7 @@ const DownloadsViewPrototype = {
   /**
    * Private function used to refresh an individual view.
    *
-   * @note Subclasses should override this.
+   * Note: Subclasses should override this.
    */
   _updateView() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);

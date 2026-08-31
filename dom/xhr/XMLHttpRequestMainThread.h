@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,46 +9,49 @@
 #define mozilla_dom_XMLHttpRequestMainThread_h
 
 #include <bitset>
-#include "nsISupportsUtils.h"
-#include "nsIURI.h"
-#include "mozilla/dom/Document.h"
-#include "nsIStreamListener.h"
-#include "nsIChannelEventSink.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsIDOMEventListener.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIHttpHeaderVisitor.h"
-#include "nsIProgressEventSink.h"
-#include "nsJSUtils.h"
-#include "nsTArray.h"
-#include "nsITimer.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsISizeOfEventTarget.h"
-#include "nsIInputStream.h"
 #include "nsITaintawareInputStream.h"
+
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/NotNull.h"
-#include "mozilla/dom/MutableBlobStorage.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/BodyExtractor.h"
 #include "mozilla/dom/ClientInfo.h"
-#include "mozilla/dom/TypedArray.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/MimeType.h"
+#include "mozilla/dom/MutableBlobStorage.h"
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
+#include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/XMLHttpRequest.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 #include "mozilla/dom/XMLHttpRequestEventTarget.h"
 #include "mozilla/dom/XMLHttpRequestString.h"
-#include "mozilla/Encoding.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIChannelEventSink.h"
+#include "nsIDOMEventListener.h"
+#include "nsIHttpHeaderVisitor.h"
+#include "nsIInputStream.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIPrincipal.h"
+#include "nsIProgressEventSink.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsISizeOfEventTarget.h"
+#include "nsIStreamListener.h"
+#include "nsISupportsUtils.h"
+#include "nsITimer.h"
+#include "nsIURI.h"
+#include "nsJSUtils.h"
+#include "nsTArray.h"
 
 #ifdef Status
 /* Xlib headers insist on this for some reason... Nuke it because
@@ -91,6 +92,10 @@ class ArrayBufferBuilder {
 
   ArrayBufferBuilder();
 
+  ArrayBufferBuilder(const ArrayBufferBuilder&) = delete;
+  ArrayBufferBuilder& operator=(const ArrayBufferBuilder&) = delete;
+  ArrayBufferBuilder& operator=(const ArrayBufferBuilder&&) = delete;
+
   // Will truncate if aNewCap is < Length().
   bool SetCapacity(uint32_t aNewCap);
 
@@ -119,10 +124,6 @@ class ArrayBufferBuilder {
 
  private:
   ~ArrayBufferBuilder();
-
-  ArrayBufferBuilder(const ArrayBufferBuilder&) = delete;
-  ArrayBufferBuilder& operator=(const ArrayBufferBuilder&) = delete;
-  ArrayBufferBuilder& operator=(const ArrayBufferBuilder&&) = delete;
 
   bool SetCapacityInternal(uint32_t aNewCap, const MutexAutoLock& aProofOfLock)
       MOZ_REQUIRES(mMutex);
@@ -191,6 +192,7 @@ class XMLHttpRequestDoneNotifier;
 // Make sure that any non-DOM interfaces added here are also added to
 // nsXMLHttpRequestXPCOMifier.
 class XMLHttpRequestMainThread final : public XMLHttpRequest,
+                                       public SupportsWeakPtr,
                                        public nsIStreamListener,
                                        public nsIChannelEventSink,
                                        public nsIProgressEventSink,
@@ -234,6 +236,8 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   void SetClientInfoAndController(
       const ClientInfo& aClientInfo,
       const Maybe<ServiceWorkerDescriptor>& aController);
+
+  void SetAssociatedBrowsingContextID(uint64_t aId);
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -664,6 +668,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   Maybe<ClientInfo> mClientInfo;
   Maybe<ServiceWorkerDescriptor> mController;
+  uint64_t mAssociatedBrowsingContextID = 0;
 
   uint16_t mState;
 
@@ -731,6 +736,10 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   bool mIsSystem;
   bool mIsAnon;
+
+  // Prevent duplicate OnStopRequest calls due to the explicit
+  // OnStopRequest in the sync path of SendInternal
+  bool mAlreadyGotStopRequest;
 
   /**
    * Close the XMLHttpRequest's channels.
@@ -870,21 +879,18 @@ class nsXHRParseEndListener : public nsIDOMEventListener {
  public:
   NS_DECL_ISUPPORTS
   NS_IMETHOD HandleEvent(Event* event) override {
-    if (mXHR) {
-      mXHR->OnBodyParseEnd();
+    if (RefPtr<XMLHttpRequestMainThread> xhr = mXHR.get()) {
+      xhr->OnBodyParseEnd();
     }
-    mXHR = nullptr;
     return NS_OK;
   }
 
   explicit nsXHRParseEndListener(XMLHttpRequestMainThread* aXHR) : mXHR(aXHR) {}
 
-  void SetIsStale() { mXHR = nullptr; }
-
  private:
   virtual ~nsXHRParseEndListener() = default;
 
-  XMLHttpRequestMainThread* mXHR;
+  WeakPtr<XMLHttpRequestMainThread> mXHR;
 };
 
 }  // namespace dom

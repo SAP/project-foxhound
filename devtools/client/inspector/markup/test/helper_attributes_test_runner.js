@@ -12,8 +12,9 @@
  * new-attribute field and check that the given attributes have been created.
  * After each test has run, the markup-view's undo command will be called and
  * the test runner will check if all the new attributes are gone.
+ *
  * @param {Array} tests See runAddAttributesTest for the structure
- * @param {DOMNode|String} nodeOrSelector The node or node selector
+ * @param {DOMNode | string} nodeOrSelector The node or node selector
  * corresponding to an element on the current test page that has *no attributes*
  * when the test starts. It will be used to add and remove attributes.
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
@@ -35,10 +36,11 @@ function runAddAttributesTests(tests, nodeOrSelector, inspector) {
 /**
  * Run a single add-attribute test.
  * See runAddAttributesTests for a description.
- * @param {Object} test A test object should contain the following properties:
- *        - desc {String} a textual description for that test, to help when
+ *
+ * @param {object} test A test object should contain the following properties:
+ *        - desc {string} a textual description for that test, to help when
  *        reading logs
- *        - text {String} the string to be inserted into the new attribute field
+ *        - text {string} the string to be inserted into the new attribute field
  *        - expectedAttributes {Object} a key/value pair object that will be
  *        used to check the attributes on the test element
  *        - validate {Function} optional extra function that will be called
@@ -48,7 +50,7 @@ function runAddAttributesTests(tests, nodeOrSelector, inspector) {
  *          - {DOMNode} The element being tested
  *          - {MarkupContainer} The corresponding container in the markup-view
  *          - {InspectorPanel} The instance of the InspectorPanel opened
- * @param {String} selector The node selector corresponding to the test element
+ * @param {string} selector The node selector corresponding to the test element
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * opened
  */
@@ -86,6 +88,7 @@ async function runAddAttributesTest(test, selector, inspector) {
  * value to be set into it, and then check if the new attributes are correct.
  * After each test has run, the markup-view's undo and redo commands will be
  * called and the test runner will assert again that the attributes are correct.
+ *
  * @param {Array} tests See runEditAttributesTest for the structure
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * opened
@@ -106,7 +109,8 @@ function runEditAttributesTests(tests, inspector) {
 /**
  * Run a single edit-attribute test.
  * See runEditAttributesTests for a description.
- * @param {Object} test A test object should contain the following properties:
+ *
+ * @param {object} test A test object should contain the following properties:
  *        - desc {String} a textual description for that test, to help when
  *        reading logs
  *        - node {String} a css selector that will be used to select the node

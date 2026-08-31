@@ -1,10 +1,9 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 2; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GeckoViewStreamListener_h__
-#define GeckoViewStreamListener_h__
+#ifndef GeckoViewStreamListener_h_
+#define GeckoViewStreamListener_h_
 
 #include "nsIStreamListener.h"
 #include "nsIInterfaceRequestor.h"
@@ -30,8 +29,8 @@ class GeckoViewStreamListener : public nsIStreamListener,
 
   explicit GeckoViewStreamListener() {}
 
-  static std::tuple<jni::ByteArray::LocalRef, java::sdk::Boolean::LocalRef>
-  CertificateFromChannel(nsIChannel* aChannel);
+  static std::tuple<jni::ByteArray::LocalRef, bool> CertificateFromChannel(
+      nsIChannel* aChannel);
 
  protected:
   virtual ~GeckoViewStreamListener() {}
@@ -54,4 +53,4 @@ class GeckoViewStreamListener : public nsIStreamListener,
 
 }  // namespace mozilla
 
-#endif  // GeckoViewStreamListener_h__
+#endif  // GeckoViewStreamListener_h_

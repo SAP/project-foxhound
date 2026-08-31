@@ -1,0 +1,41 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Machine Learning: General")
+
+DIRS += [
+    "memories",
+]
+
+BROWSER_CHROME_MANIFESTS += [
+    "tests/browser/browser.toml",
+    "tests/browser_eval/eval.toml",
+]
+
+MOZ_SRC_FILES += [
+    "Chat.sys.mjs",
+    "ChatUtils.sys.mjs",
+    "ConversationSuggestions.sys.mjs",
+    "HistoryThumbnails.sys.mjs",
+    "IntentClassifier.sys.mjs",
+    "ManageTabs.sys.mjs",
+    "PreferencesNavMap.sys.mjs",
+    "PromptLoader.sys.mjs",
+    "PromptOptimizer.sys.mjs",
+    "SearchBrowsingHistory.sys.mjs",
+    "SearchBrowsingHistoryDomainBoost.sys.mjs",
+    "SecurityProperties.sys.mjs",
+    "SmartWindowNavigationInfo.sys.mjs",
+    "TelemetryManager.sys.mjs",
+    "TelemetryUtils.sys.mjs",
+    "TitleGeneration.sys.mjs",
+    "Tools.sys.mjs",
+    "Utils.sys.mjs",
+    "WCSMerinoClient.sys.mjs",
+]
+
+XPCSHELL_TESTS_MANIFESTS += [
+    "tests/xpcshell/xpcshell.toml",
+]

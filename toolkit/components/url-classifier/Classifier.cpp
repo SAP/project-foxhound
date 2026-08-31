@@ -1,4 +1,3 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,18 +8,21 @@
 #include "nsNetCID.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/glean/UrlClassifierMetrics.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Base64.h"
-#include "mozilla/Unused.h"
-#include "mozilla/UniquePtr.h"
 #include "nsUrlClassifierDBService.h"
 #include "nsUrlClassifierUtils.h"
+#include <bit>
 
 // MOZ_LOG=UrlClassifierDbService:5
 extern mozilla::LazyLogModule gUrlClassifierDbServiceLog;
@@ -43,6 +45,26 @@ extern mozilla::LazyLogModule gUrlClassifierDbServiceLog;
 
 namespace mozilla {
 namespace safebrowsing {
+
+// Static table for overriding the storage location of specific tables.
+// This is used for backward compatibility when tables need to be stored
+// in a different directory than their provider name would suggest.
+// For example, google5 tables are stored in "google4" directory because
+// both V4 and V5 share the same file format.
+struct TableLocationOverride {
+  nsLiteralCString mTableName;
+  nsLiteralCString mDirectoryName;
+};
+
+static const TableLocationOverride kTableLocationOverrides[] = {
+    {"goog-badbinurl-proto"_ns, "google4"_ns},
+    {"goog-downloadwhite-proto"_ns, "google4"_ns},
+    {"goog-phish-proto"_ns, "google4"_ns},
+    {"googpub-phish-proto"_ns, "google4"_ns},
+    {"goog-malware-proto"_ns, "google4"_ns},
+    {"goog-unwanted-proto"_ns, "google4"_ns},
+    {"goog-harmful-proto"_ns, "google4"_ns},
+};
 
 bool Classifier::OnUpdateThread() const {
   bool onthread = false;
@@ -86,14 +108,28 @@ nsresult Classifier::GetPrivateStoreDirectory(
     return NS_OK;
   }
 
+  // Determine the provider directory name for this table.
+  nsAutoCString providerDirectoryName;
+  for (const auto& override : kTableLocationOverrides) {
+    if (aTableName.Equals(override.mTableName)) {
+      providerDirectoryName.Assign(override.mDirectoryName);
+      break;
+    }
+  }
+
+  if (providerDirectoryName.IsEmpty()) {
+    // Default: use provider name as directory name
+    providerDirectoryName = aProvider;
+  }
+
   nsCOMPtr<nsIFile> providerDirectory;
 
   // Clone first since we are gonna create a new directory.
   nsresult rv = aRootStoreDirectory->Clone(getter_AddRefs(providerDirectory));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Append the provider name to the root store directory.
-  rv = providerDirectory->AppendNative(aProvider);
+  // Append the provider directory name to the root store directory.
+  rv = providerDirectory->AppendNative(providerDirectoryName);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Ensure existence of the provider directory.
@@ -120,6 +156,35 @@ nsresult Classifier::GetPrivateStoreDirectory(
   providerDirectory.forget(aPrivateStoreDirectory);
 
   return NS_OK;
+}
+
+static constexpr char kSafeBrowsingV5EnabledPrefName[] =
+    "browser.safebrowsing.provider.google5.enabled";
+static Maybe<bool> sIsV5Enabled;
+
+void SafeBrowsingV5EnabledPrefChangedCallback(const char* aPrefName, void*) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!strcmp(aPrefName, kSafeBrowsingV5EnabledPrefName));
+
+  sIsV5Enabled = Some(Preferences::GetBool(kSafeBrowsingV5EnabledPrefName));
+}
+
+// static
+bool Classifier::IsRealTimeModeEnabled() {
+  if (sIsV5Enabled.isNothing()) {
+    Preferences::RegisterCallbackAndCall(
+        SafeBrowsingV5EnabledPrefChangedCallback,
+        kSafeBrowsingV5EnabledPrefName);
+
+    RunOnShutdown([]() {
+      Preferences::UnregisterCallback(SafeBrowsingV5EnabledPrefChangedCallback,
+                                      kSafeBrowsingV5EnabledPrefName);
+    });
+  }
+
+  return StaticPrefs::browser_safebrowsing_realTime_enabled() &&
+         StaticPrefs::browser_safebrowsing_globalCache_enabled() &&
+         sIsV5Enabled.valueOr(false);
 }
 
 Classifier::Classifier()
@@ -291,7 +356,7 @@ nsresult Classifier::Open(nsIFile& aCacheDirectory) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = ClearLegacyFiles();
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   // Build the list of know urlclassifier lists
   // XXX: Disk IO potentially on the main thread during startup
@@ -472,7 +537,7 @@ nsresult Classifier::CheckURIFragments(
         urlIdx = i;
       }
     }
-    LOG(("Checking table %s, URL is %s", aTable.BeginReading(),
+    LOG(("Checking table %s, URL is %s", PromiseFlatCString(aTable).get(),
          aSpecFragments[urlIdx].get()));
   }
 
@@ -480,6 +545,8 @@ nsresult Classifier::CheckURIFragments(
   if (NS_WARN_IF(!cache)) {
     return NS_ERROR_FAILURE;
   }
+
+  bool hasAnyHit = false;
 
   // Now check each lookup fragment against the entries in the DB.
   for (uint32_t i = 0; i < aSpecFragments.Length(); i++) {
@@ -510,7 +577,15 @@ nsresult Classifier::CheckURIFragments(
       result->mTableName.Assign(cache->TableName());
       result->mPartialHashLength = confirmed ? COMPLETE_SIZE : matchLength;
       result->mProtocolV2 = LookupCache::Cast<LookupCacheV2>(cache);
+
+      hasAnyHit = true;
     }
+  }
+
+  if (hasAnyHit) {
+    glean::urlclassifier::lookup_hit.Get(aTable).Add(1);
+  } else {
+    glean::urlclassifier::lookup_miss.Get(aTable).Add(1);
   }
 
   return NS_OK;
@@ -978,11 +1053,11 @@ nsresult Classifier::RegenActiveTables() {
   nsTArray<nsCString> exts = {".vlpset"_ns, ".pset"_ns};
   nsTArray<nsCString> foundTables;
   nsresult rv = ScanStoreDir(mRootStoreDirectory, exts, foundTables);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   // We don't have test tables on disk, add Moz built-in entries here
   rv = AddMozEntries(foundTables);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   for (const auto& table : foundTables) {
     RefPtr<const LookupCache> lookupCache = GetLookupCache(table);
@@ -1228,7 +1303,7 @@ nsCString Classifier::GetProvider(const nsACString& aTableName) {
   nsCString provider;
   nsresult rv = urlUtil->GetProvider(aTableName, provider);
 
-  return NS_SUCCEEDED(rv) ? provider : ""_ns;
+  return NS_SUCCEEDED(rv) ? std::move(provider) : nsCString(""_ns);
 }
 
 /*
@@ -1560,7 +1635,7 @@ RefPtr<LookupCache> Classifier::GetLookupCache(const nsACString& aTable,
   if (rv == NS_ERROR_FILE_CORRUPTED) {
     // Remove all the on-disk data when the table's prefix file is corrupted.
     LOG(("Failed to get prefixes from file for table %s, delete on-disk data!",
-         aTable.BeginReading()));
+         PromiseFlatCString(aTable).get()));
 
     DeleteTables(mRootStoreDirectory, nsTArray<nsCString>{nsCString(aTable)});
   }
@@ -1624,7 +1699,7 @@ nsresult Classifier::ReadNoiseEntries(const Prefix& aPrefix,
     // In the case V4 little endian, we did swapping endian when converting from
     // char* to int, should revert endian to make sure we will send hex string
     // correctly See https://bugzilla.mozilla.org/show_bug.cgi?id=1283007#c23
-    if (!cacheV2 && !bool(MOZ_BIG_ENDIAN())) {
+    if (!cacheV2 && std::endian::native != std::endian::big) {
       hash = NativeEndian::swapFromBigEndian(hash);
     }
 

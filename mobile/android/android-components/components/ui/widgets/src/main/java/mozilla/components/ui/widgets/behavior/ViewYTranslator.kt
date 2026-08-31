@@ -6,6 +6,7 @@ package mozilla.components.ui.widgets.behavior
 
 import android.view.View
 import androidx.annotation.VisibleForTesting
+import mozilla.components.ui.widgets.behavior.DependencyGravity.Top
 
 /**
  * Helper class with methods for translating on the Y axis a top / bottom [View].
@@ -15,7 +16,7 @@ import androidx.annotation.VisibleForTesting
  *   - if place at the bottom it will be Y translated between 0 and [View.getHeight]
  *   - if place at the top it will be Y translated between -[View.getHeight] and 0
  */
-class ViewYTranslator(viewPosition: ViewPosition) {
+class ViewYTranslator(viewPosition: DependencyGravity) {
     @VisibleForTesting
     internal var strategy = getTranslationStrategy(viewPosition)
 
@@ -71,8 +72,8 @@ class ViewYTranslator(viewPosition: ViewPosition) {
     }
 
     @VisibleForTesting
-    internal fun getTranslationStrategy(viewPosition: ViewPosition): ViewYTranslationStrategy {
-        return if (viewPosition == ViewPosition.TOP) {
+    internal fun getTranslationStrategy(dependencyGravity: DependencyGravity): ViewYTranslationStrategy {
+        return if (dependencyGravity is Top) {
             TopViewBehaviorStrategy()
         } else {
             BottomViewBehaviorStrategy()

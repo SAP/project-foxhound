@@ -9,6 +9,9 @@ import android.view.View
 import androidx.annotation.StringRes
 import com.google.android.material.snackbar.Snackbar
 
+/**
+ * Utility class for view-related operations.
+ */
 object ViewUtils {
 
     private const val MENU_ITEM_ALPHA_ENABLED = 255
@@ -17,7 +20,11 @@ object ViewUtils {
     /**
      * Create a custom FocusSnackbar.
      */
-    fun showBrandedSnackbar(view: View?, @StringRes resId: Int, delayMillis: Int) {
+    fun showBrandedSnackbar(
+        view: View?,
+        @StringRes resId: Int,
+        delayMillis: Int,
+    ) {
         val context = view!!.context
         val snackbar = FocusSnackbar.make(view, Snackbar.LENGTH_LONG)
         snackbar.setText(context.getString(resId))

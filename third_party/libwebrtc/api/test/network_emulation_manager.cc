@@ -9,12 +9,17 @@
  */
 #include "api/test/network_emulation_manager.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/test/network_emulation/leaky_bucket_network_queue.h"
+#include "api/test/network_emulation/network_emulation_interfaces.h"
+#include "api/test/network_emulation/network_queue.h"
 #include "api/test/simulated_network.h"
 #include "api/units/data_rate.h"
 #include "rtc_base/checks.h"
@@ -51,6 +56,13 @@ NetworkEmulationManager::SimulatedNetworkNode::Builder&
 NetworkEmulationManager::SimulatedNetworkNode::Builder::config(
     BuiltInNetworkBehaviorConfig config) {
   config_ = config;
+  return *this;
+}
+
+NetworkEmulationManager::SimulatedNetworkNode::Builder&
+NetworkEmulationManager::SimulatedNetworkNode::Builder::queue_factory(
+    NetworkQueueFactory& queue_factory) {
+  queue_factory_ = &queue_factory;
   return *this;
 }
 
@@ -134,37 +146,39 @@ NetworkEmulationManager::SimulatedNetworkNode
 NetworkEmulationManager::SimulatedNetworkNode::Builder::Build(
     uint64_t random_seed) const {
   RTC_CHECK(net_);
-  return Build(net_, random_seed);
-}
-
-NetworkEmulationManager::SimulatedNetworkNode
-NetworkEmulationManager::SimulatedNetworkNode::Builder::Build(
-    NetworkEmulationManager* net,
-    uint64_t random_seed) const {
-  RTC_CHECK(net);
-  RTC_CHECK(net_ == nullptr || net_ == net);
-  SimulatedNetworkNode res;
-  auto behavior = std::make_unique<SimulatedNetwork>(config_, random_seed);
-  res.simulation = behavior.get();
-  res.node = net->CreateEmulatedNode(std::move(behavior));
-  return res;
+  std::unique_ptr<NetworkQueue> network_queue =
+      queue_factory_ ? queue_factory_->CreateQueue()
+                     : std::make_unique<LeakyBucketNetworkQueue>();
+  auto behavior = std::make_unique<SimulatedNetwork>(config_, random_seed,
+                                                     std::move(network_queue));
+  return SimulatedNetworkNode{
+      .simulation = behavior.get(),
+      .node = net_->CreateEmulatedNode(std::move(behavior))};
 }
 
 std::pair<EmulatedNetworkManagerInterface*, EmulatedNetworkManagerInterface*>
 NetworkEmulationManager::CreateEndpointPairWithTwoWayRoutes(
-    const BuiltInNetworkBehaviorConfig& config) {
+    const BuiltInNetworkBehaviorConfig& config,
+    int alice_interface_count,
+    int bob_interface_count) {
   auto* alice_node = CreateEmulatedNode(config);
   auto* bob_node = CreateEmulatedNode(config);
 
-  auto* alice_endpoint = CreateEndpoint(EmulatedEndpointConfig());
-  auto* bob_endpoint = CreateEndpoint(EmulatedEndpointConfig());
+  std::vector<EmulatedEndpoint*> alice_endpoints(
+      alice_interface_count, CreateEndpoint(EmulatedEndpointConfig()));
+  std::vector<EmulatedEndpoint*> bob_endpoints(
+      bob_interface_count, CreateEndpoint(EmulatedEndpointConfig()));
 
-  CreateRoute(alice_endpoint, {alice_node}, bob_endpoint);
-  CreateRoute(bob_endpoint, {bob_node}, alice_endpoint);
+  for (auto alice_endpoint : alice_endpoints) {
+    for (auto bob_endpoint : bob_endpoints) {
+      CreateRoute(alice_endpoint, {alice_node}, bob_endpoint);
+      CreateRoute(bob_endpoint, {bob_node}, alice_endpoint);
+    }
+  }
 
   return {
-      CreateEmulatedNetworkManagerInterface({alice_endpoint}),
-      CreateEmulatedNetworkManagerInterface({bob_endpoint}),
+      CreateEmulatedNetworkManagerInterface(alice_endpoints),
+      CreateEmulatedNetworkManagerInterface(bob_endpoints),
   };
 }
 }  // namespace webrtc

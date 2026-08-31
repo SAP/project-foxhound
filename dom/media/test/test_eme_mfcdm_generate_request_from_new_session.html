@@ -20,8 +20,6 @@ add_task(async function setupTestingPrefs() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["media.wmf.media-engine.enabled", 2],
-      // Our mock CDM doesn't implement 'IsTypeSupportedEx()', only 'IsTypeSupported()'
-      ["media.eme.playready.istypesupportedex", false],
       ["media.eme.wmf.use-mock-cdm-for-external-cdms", true],
     ],
   });

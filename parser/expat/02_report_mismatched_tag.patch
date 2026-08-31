@@ -1,17 +1,17 @@
 diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
 --- a/expat/lib/xmlparse.c
 +++ b/expat/lib/xmlparse.c
-@@ -764,6 +764,9 @@ struct XML_ParserStruct {
-   ACCOUNTING m_accounting;
+@@ -791,6 +791,9 @@ struct XML_ParserStruct {
    ENTITY_STATS m_entity_stats;
  #endif
+   XML_Bool m_reenter;
 +/* BEGIN MOZILLA CHANGE (Report opening tag of mismatched closing tag) */
 +  const XML_Char* m_mismatch;
 +/* END MOZILLA CHANGE */
  };
  
- #define MALLOC(parser, s) (parser->m_mem.malloc_fcn((s)))
-@@ -1189,6 +1192,10 @@ parserCreate(const XML_Char *encodingNam
+ #if XML_GE == 1
+@@ -1538,6 +1541,10 @@ parserCreate(const XML_Char *encodingName,
      parser->m_internalEncoding = XmlGetInternalEncoding();
    }
  
@@ -22,22 +22,7 @@ diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
    return parser;
  }
  
-@@ -2645,6 +2652,14 @@ XML_SetBillionLaughsAttackProtectionActi
- }
- #endif /* XML_GE == 1 */
- 
-+/* BEGIN MOZILLA CHANGE (Report opening tag of mismatched closing tag) */
-+const XML_Char * XMLCALL
-+MOZ_XML_GetMismatchedTag(XML_Parser parser)
-+{
-+  return parser->m_mismatch;
-+}
-+/* END MOZILLA CHANGE */
-+
- XML_Bool XMLCALL
- XML_SetReparseDeferralEnabled(XML_Parser parser, XML_Bool enabled) {
-   if (parser != NULL && (enabled == XML_TRUE || enabled == XML_FALSE)) {
-@@ -3117,6 +3132,33 @@ doContent(XML_Parser parser, int startTa
+@@ -3593,6 +3600,33 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
          len = XmlNameLength(enc, rawName);
          if (len != tag->rawNameLength
              || memcmp(tag->rawName, rawName, len) != 0) {

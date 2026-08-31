@@ -1,15 +1,14 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_SEQUENCE_CHECKER_H_
 #define BASE_SEQUENCE_CHECKER_H_
 
-#include "base/compiler_specific.h"
-#include "base/logging.h"
+#include "base/base_export.h"
+#include "base/dcheck_is_on.h"
+#include "base/macros/uniquify.h"
 #include "base/sequence_checker_impl.h"
-#include "base/strings/string_piece.h"
-#include "build/build_config.h"
 
 // SequenceChecker is a helper class used to help verify that some methods of a
 // class are called sequentially (for thread-safety). It supports thread safety
@@ -23,12 +22,18 @@
 // ThreadChecker should only be used for classes that are truly thread-affine
 // (use thread-local-storage or a third-party API that does).
 //
+// Debugging:
+//   If SequenceChecker::EnableStackLogging() is called beforehand, then when
+//   SequenceChecker fails, in addition to crashing with a stack trace of where
+//   the violation occurred, it will also dump a stack trace of where the
+//   checker was bound to a sequence.
+//
 // Usage:
 //   class MyClass {
 //    public:
 //     MyClass() {
-//       // It's sometimes useful to detach on construction for objects that are
-//       // constructed in one place and forever after used from another
+//       // Detaching on construction is necessary for objects that are
+//       // constructed on one sequence and forever after used from another
 //       // sequence.
 //       DETACH_FROM_SEQUENCE(my_sequence_checker_);
 //     }
@@ -64,26 +69,16 @@
 //     SEQUENCE_CHECKER(my_sequence_checker_);
 //   }
 
-#define SEQUENCE_CHECKER_INTERNAL_CONCAT2(a, b) a##b
-#define SEQUENCE_CHECKER_INTERNAL_CONCAT(a, b) \
-  SEQUENCE_CHECKER_INTERNAL_CONCAT2(a, b)
-#define SEQUENCE_CHECKER_INTERNAL_UID(prefix) \
-  SEQUENCE_CHECKER_INTERNAL_CONCAT(prefix, __LINE__)
-
 #if DCHECK_IS_ON()
 #define SEQUENCE_CHECKER(name) base::SequenceChecker name
-#define DCHECK_CALLED_ON_VALID_SEQUENCE(name, ...)                   \
-  base::ScopedValidateSequenceChecker SEQUENCE_CHECKER_INTERNAL_UID( \
-      scoped_validate_sequence_checker_)(name, ##__VA_ARGS__);
+#define DCHECK_CALLED_ON_VALID_SEQUENCE(name, ...)   \
+  base::ScopedValidateSequenceChecker BASE_UNIQUIFY( \
+      scoped_validate_sequence_checker_)(name, ##__VA_ARGS__)
 #define DETACH_FROM_SEQUENCE(name) (name).DetachFromSequence()
 #else  // DCHECK_IS_ON()
-#if __OBJC__ && defined(OS_IOS) && !HAS_FEATURE(objc_cxx_static_assert)
-// TODO(thakis): Remove this branch once Xcode's clang has clang r356148.
-#define SEQUENCE_CHECKER(name)
-#else
+// A no-op expansion that can be followed by a semicolon at class level.
 #define SEQUENCE_CHECKER(name) static_assert(true, "")
-#endif
-#define DCHECK_CALLED_ON_VALID_SEQUENCE(name, ...) EAT_STREAM_PARAMETERS
+#define DCHECK_CALLED_ON_VALID_SEQUENCE(name, ...) EAT_CHECK_STREAM_PARAMS()
 #define DETACH_FROM_SEQUENCE(name)
 #endif  // DCHECK_IS_ON()
 
@@ -93,10 +88,13 @@ namespace base {
 //
 // Note: You should almost always use the SequenceChecker class (through the
 // above macros) to get the right version for your build configuration.
-// Note: This is only a check, not a "lock". It is marked "LOCKABLE" only in
-// order to support thread_annotations.h.
-class LOCKABLE SequenceCheckerDoNothing {
+// Note: This is marked with "context" capability in order to support
+// thread_annotations.h.
+class THREAD_ANNOTATION_ATTRIBUTE__(capability("context"))
+    SequenceCheckerDoNothing {
  public:
+  static void EnableStackLogging() {}
+
   SequenceCheckerDoNothing() = default;
 
   // Moving between matching sequences is allowed to help classes with
@@ -104,39 +102,29 @@ class LOCKABLE SequenceCheckerDoNothing {
   SequenceCheckerDoNothing(SequenceCheckerDoNothing&& other) = default;
   SequenceCheckerDoNothing& operator=(SequenceCheckerDoNothing&& other) =
       default;
+  SequenceCheckerDoNothing(const SequenceCheckerDoNothing&) = delete;
+  SequenceCheckerDoNothing& operator=(const SequenceCheckerDoNothing&) = delete;
 
-  bool CalledOnValidSequence() const WARN_UNUSED_RESULT { return true; }
+  [[nodiscard]] bool CalledOnValidSequence(void* = nullptr) const {
+    return true;
+  }
   void DetachFromSequence() {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(SequenceCheckerDoNothing);
 };
 
 #if DCHECK_IS_ON()
-class SequenceChecker : public SequenceCheckerImpl {
-};
+using SequenceChecker = SequenceCheckerImpl;
 #else
-class SequenceChecker : public SequenceCheckerDoNothing {
-};
+using SequenceChecker = SequenceCheckerDoNothing;
 #endif  // DCHECK_IS_ON()
 
-class SCOPED_LOCKABLE ScopedValidateSequenceChecker {
+#if DCHECK_IS_ON()
+class BASE_EXPORT SCOPED_LOCKABLE ScopedValidateSequenceChecker {
  public:
   explicit ScopedValidateSequenceChecker(const SequenceChecker& checker)
-      EXCLUSIVE_LOCK_FUNCTION(checker) {
-    DCHECK(checker.CalledOnValidSequence());
-  }
-
-  explicit ScopedValidateSequenceChecker(const SequenceChecker& checker,
-                                         const StringPiece& msg)
-      EXCLUSIVE_LOCK_FUNCTION(checker) {
-    DCHECK(checker.CalledOnValidSequence()) << msg;
-  }
-
-  ~ScopedValidateSequenceChecker() UNLOCK_FUNCTION() {}
-
- private:
+      EXCLUSIVE_LOCK_FUNCTION(checker);
+  ~ScopedValidateSequenceChecker() UNLOCK_FUNCTION();
 };
+#endif
 
 }  // namespace base
 

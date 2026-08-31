@@ -44,11 +44,11 @@ add_task(async function testUpdateAutomaticallyButton() {
   ok(AddonManager.autoUpdateDefault, "Auto updates are default");
   ok(AddonManager.updateEnabled, "Updates are enabled");
 
-  toggleAutomaticButton.click();
+  await triggerPageOptionsAction(win, "set-update-automatically");
   ok(!AddonManager.autoUpdateDefault, "Auto updates are disabled");
   ok(AddonManager.updateEnabled, "Updates are enabled");
 
-  toggleAutomaticButton.click();
+  await triggerPageOptionsAction(win, "set-update-automatically");
   ok(AddonManager.autoUpdateDefault, "Auto updates are enabled again");
   ok(AddonManager.updateEnabled, "Updates are enabled");
 
@@ -66,9 +66,6 @@ add_task(async function testResetUpdateStates() {
   await extension.startup();
 
   let win = await loadInitialView("extension");
-  let resetStateButton = win.document.querySelector(
-    '#page-options [action="reset-update-states"]'
-  );
 
   info("Changing add-on update state");
   let addon = await AddonManager.getAddonByID(id);
@@ -84,7 +81,7 @@ add_task(async function testResetUpdateStates() {
   await setAddonUpdateState(AddonManager.AUTOUPDATE_DISABLE);
 
   let propertyChanged = AddonTestUtils.promiseAddonEvent("onPropertyChanged");
-  resetStateButton.click();
+  await triggerPageOptionsAction(win, "reset-update-states");
   await propertyChanged;
   is(
     addon.applyBackgroundUpdates,
@@ -95,7 +92,7 @@ add_task(async function testResetUpdateStates() {
   await setAddonUpdateState(AddonManager.AUTOUPDATE_ENABLE);
 
   propertyChanged = AddonTestUtils.promiseAddonEvent("onPropertyChanged");
-  resetStateButton.click();
+  await triggerPageOptionsAction(win, "reset-update-states");
   await propertyChanged;
   is(
     addon.applyBackgroundUpdates,
@@ -103,6 +100,9 @@ add_task(async function testResetUpdateStates() {
     "Add-on is reset to default updates again"
   );
 
+  let resetStateButton = win.document.querySelector(
+    '#page-options [action="reset-update-states"]'
+  );
   info("Check the label on the button as the global state changes");
   is(
     win.document.l10n.getAttributes(resetStateButton).id,

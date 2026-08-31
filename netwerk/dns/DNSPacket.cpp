@@ -5,8 +5,6 @@
 #include "DNSPacket.h"
 
 #include "DNS.h"
-#include "mozilla/EndianUtils.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
@@ -17,12 +15,15 @@ namespace mozilla {
 namespace net {
 
 static uint16_t get16bit(const unsigned char* aData, unsigned int index) {
-  return ((aData[index] << 8) | aData[index + 1]);
+  return (static_cast<uint16_t>(aData[index]) << 8) |
+         static_cast<uint16_t>(aData[index + 1]);
 }
 
 static uint32_t get32bit(const unsigned char* aData, unsigned int index) {
-  return (aData[index] << 24) | (aData[index + 1] << 16) |
-         (aData[index + 2] << 8) | aData[index + 3];
+  return (static_cast<uint32_t>(aData[index]) << 24) |
+         (static_cast<uint32_t>(aData[index + 1]) << 16) |
+         (static_cast<uint32_t>(aData[index + 2]) << 8) |
+         static_cast<uint32_t>(aData[index + 3]);
 }
 
 // https://datatracker.ietf.org/doc/html/rfc8914#name-defined-extended-dns-errors
@@ -52,13 +53,22 @@ nsresult DNSPacket::FillBuffer(
     return mStatus;
   }
 
+  if (static_cast<uint32_t>(response_length) > MAX_SIZE) {
+    LOG(("FillBuffer response len %d > MAX_SIZE %u", response_length,
+         MAX_SIZE));
+    mBodySize = 0;
+    mStatus = NS_ERROR_UNEXPECTED;
+    return mStatus;
+  }
+
   mBodySize = response_length;
   return NS_OK;
 }
 // static
 nsresult DNSPacket::ParseSvcParam(unsigned int svcbIndex, uint16_t key,
                                   SvcFieldValue& field, uint16_t length,
-                                  const unsigned char* aBuffer) {
+                                  const unsigned char* aBuffer,
+                                  bool aAllowRFC1918) {
   switch (key) {
     case SvcParamKeyMandatory: {
       if (length % 2 != 0) {
@@ -125,7 +135,9 @@ nsresult DNSPacket::ParseSvcParam(unsigned int svcbIndex, uint16_t key,
         addr.inet.family = AF_INET;
         addr.inet.port = 0;
         addr.inet.ip = ntohl(get32bit(aBuffer, svcbIndex));
-        ipv4array.AppendElement(addr);
+        if (aAllowRFC1918 || !addr.IsIPAddrLocal()) {
+          ipv4array.AppendElement(addr);
+        }
         length -= 4;
         svcbIndex += 4;
       }
@@ -153,7 +165,9 @@ nsresult DNSPacket::ParseSvcParam(unsigned int svcbIndex, uint16_t key,
         for (int i = 0; i < 16; i++, svcbIndex++) {
           addr.inet6.ip.u8[i] = aBuffer[svcbIndex];
         }
-        ipv6array.AppendElement(addr);
+        if (aAllowRFC1918 || !addr.IsIPAddrLocal()) {
+          ipv6array.AppendElement(addr);
+        }
         length -= 16;
         // no need to increase svcbIndex - we did it in the for above.
       }
@@ -293,15 +307,17 @@ nsresult DOHresp::Add(uint32_t TTL, unsigned char const* dns,
 
   // While the DNS packet might return individual TTLs for each address,
   // we can only return one value in the AddrInfo class so pick the
-  // lowest number.
-  if (mTtl < TTL) {
+  // lowest number. Seed from the first successful add (mAddresses
+  // empty means no record's TTL is in mTtl yet), otherwise take the
+  // running minimum. mTtl stays at 0 if no record is ever added so
+  // downstream callers that read it as a "don't cache" sentinel
+  // continue to work.
+  if (mAddresses.IsEmpty() || TTL < mTtl) {
     mTtl = TTL;
   }
 
   if (LOG_ENABLED()) {
-    char buf[128];
-    addr.ToStringBuffer(buf, sizeof(buf));
-    LOG(("DOHresp:Add %s\n", buf));
+    LOG(("DOHresp:Add %s\n", addr.ToString().get()));
   }
   mAddresses.AppendElement(addr);
   return NS_OK;
@@ -310,7 +326,7 @@ nsresult DOHresp::Add(uint32_t TTL, unsigned char const* dns,
 nsresult DNSPacket::OnDataAvailable(nsIRequest* aRequest,
                                     nsIInputStream* aInputStream,
                                     uint64_t aOffset, const uint32_t aCount) {
-  if (aCount + mBodySize > MAX_SIZE) {
+  if (aCount > MAX_SIZE - mBodySize) {
     LOG(("DNSPacket::OnDataAvailable:%d fail\n", __LINE__));
     return NS_ERROR_FAILURE;
   }
@@ -320,8 +336,7 @@ nsresult DNSPacket::OnDataAvailable(nsIRequest* aRequest,
   if (NS_FAILED(rv)) {
     return rv;
   }
-  MOZ_ASSERT(count == aCount);
-  mBodySize += aCount;
+  mBodySize += count;
   return NS_OK;
 }
 
@@ -488,7 +503,8 @@ nsresult DNSPacket::ParseHTTPS(uint16_t aRDLen, struct SVCB& aParsed,
                                unsigned int aIndex,
                                const unsigned char* aBuffer,
                                unsigned int aBodySize,
-                               const nsACString& aOriginHost) {
+                               const nsACString& aOriginHost,
+                               bool aAllowRFC1918) {
   int32_t lastSvcParamKey = -1;
   nsresult rv = NS_OK;
   unsigned int svcbIndex = aIndex;
@@ -552,7 +568,7 @@ nsresult DNSPacket::ParseHTTPS(uint16_t aRDLen, struct SVCB& aParsed,
       return NS_ERROR_UNEXPECTED;
     }
 
-    rv = ParseSvcParam(svcbIndex, key, value, len, aBuffer);
+    rv = ParseSvcParam(svcbIndex, key, value, len, aBuffer, aAllowRFC1918);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -564,8 +580,12 @@ nsresult DNSPacket::ParseHTTPS(uint16_t aRDLen, struct SVCB& aParsed,
       continue;
     }
 
-    if (value.mValue.is<SvcParamIpv4Hint>() ||
-        value.mValue.is<SvcParamIpv6Hint>()) {
+    if (value.mValue.is<SvcParamIpv4Hint>() &&
+        !value.mValue.as<SvcParamIpv4Hint>().mValue.IsEmpty()) {
+      aParsed.mHasIPHints = true;
+    }
+    if (value.mValue.is<SvcParamIpv6Hint>() &&
+        !value.mValue.as<SvcParamIpv6Hint>().mValue.IsEmpty()) {
       aParsed.mHasIPHints = true;
     }
     if (value.mValue.is<SvcParamEchConfig>()) {
@@ -618,7 +638,6 @@ nsresult DNSPacket::DecodeInternal(
   // 0000 0080 0004 5db8 d822
 
   unsigned int index = 12;
-  uint8_t length;
   nsAutoCString host;
   nsresult rv;
   uint16_t extendedError = UINT16_MAX;
@@ -626,6 +645,9 @@ nsresult DNSPacket::DecodeInternal(
   LOG(("doh decode %s %d bytes\n", aHost.get(), aLen));
 
   aCname.Truncate();
+
+  // Reset any type record accumulated by a previous decode of this packet.
+  aTypeResult = mozilla::AsVariant(Nothing());
 
   if (aLen < 12) {
     LOG(("TRR bad incoming DOH, eject!\n"));
@@ -641,26 +663,23 @@ nsresult DNSPacket::DecodeInternal(
   LOG(("TRR Decode %s RCODE %d\n", PromiseFlatCString(aHost).get(), rcode));
 
   uint16_t questionRecords = get16bit(aBuffer, 4);  // qdcount
-  // iterate over the single(?) host name in question
+  // iterate over the host name(s) in the question. Use GetQname so a
+  // server-side compression pointer (a label byte with the top two
+  // bits set, legal per RFC 1035 4.1.4) is followed instead of being
+  // treated as a 192-byte label, which would desync `index` and let
+  // the answer-section parsing below read at the wrong offset.
   while (questionRecords) {
-    do {
-      if (aLen < (index + 1)) {
-        LOG(("TRR Decode 1 index: %u size: %u", index, aLen));
-        return NS_ERROR_ILLEGAL_VALUE;
-      }
-      length = static_cast<uint8_t>(aBuffer[index]);
-      if (length) {
-        if (host.Length()) {
-          host.Append(".");
-        }
-        if (aLen < (index + 1 + length)) {
-          LOG(("TRR Decode 2 index: %u size: %u len: %u", index, aLen, length));
-          return NS_ERROR_ILLEGAL_VALUE;
-        }
-        host.Append(((char*)aBuffer) + index + 1, length);
-      }
-      index += 1 + length;  // skip length byte + label
-    } while (length);
+    nsAutoCString qname;
+    rv = GetQname(qname, index, aBuffer, mBodySize);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+    if (host.IsEmpty()) {
+      host = qname;
+    } else if (!qname.IsEmpty()) {
+      host.Append(".");
+      host.Append(qname);
+    }
     if (aLen < (index + 4)) {
       LOG(("TRR Decode 3 index: %u size: %u", index, aLen));
       return NS_ERROR_ILLEGAL_VALUE;
@@ -841,7 +860,7 @@ nsresult DNSPacket::DecodeInternal(
           }
 
           rv = ParseHTTPS(RDLENGTH, parsed, index, aBuffer, mBodySize,
-                          mOriginHost ? *mOriginHost : qname);
+                          mOriginHost ? *mOriginHost : qname, aAllowRFC1918);
           if (NS_FAILED(rv)) {
             return rv;
           }

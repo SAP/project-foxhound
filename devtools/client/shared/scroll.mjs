@@ -9,11 +9,11 @@
  *
  * @param {DOMNode} elem
  *        The element that needs to appear in the viewport.
- * @param {Boolean} centered
+ * @param {boolean} centered
  *        true if you want it centered, false if you want it to appear on the
  *        top of the viewport. It is true by default, and that is usually what
  *        you want.
- * @param {Boolean} smooth
+ * @param {boolean} smooth
  *        true if you want the scroll to happen smoothly, instead of instantly.
  *        It is false by default.
  */
@@ -74,7 +74,17 @@ function closestScrolledParent(node) {
     return null;
   }
 
-  if (node.scrollHeight > node.clientHeight) {
+  const window = node.ownerDocument?.defaultView || node.defaultView;
+  // Typically ignore Document when reaching the top-most element
+  const isElement = node instanceof window.HTMLElement;
+
+  // Ensure that the scrolled parent can actually scroll.
+  // In the debugger's scope panel, the "div.accordion" has scrollable content
+  // but "div.secondary-panes" is the parent element with overflow:auto
+  const overflowY = isElement ? window.getComputedStyle(node).overflowY : null;
+  const isScrollable = overflowY !== "visible" && overflowY !== "hidden";
+
+  if (isScrollable && node.scrollHeight > node.clientHeight) {
     return node;
   }
 
@@ -87,7 +97,7 @@ function closestScrolledParent(node) {
  * @param {DOMNode|undefined} element
  *        The item to be scrolled to.
  *
- * @param {Object|undefined} options
+ * @param {object | undefined} options
  *        An options object which can contain:
  *          - container: possible scrollable container. If it is not scrollable, we will
  *                       look it up.

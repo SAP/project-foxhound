@@ -18,6 +18,11 @@ ac_add_options --allow-insecure-gradle-repositories
 # Some dependencies may be conditionally-loaded (eg. semanticdb compiler plugins)
 ac_add_options --download-all-gradle-dependencies
 
+# `android-gradle-dependencies` runs with `--dry-run`, so we don't
+# need the _runtime_ `embedded-uniffi-bindgen` or `numbus-fml` dependencies.
+ac_add_options --without-embedded-uniffi-bindgen
+ac_add_options --without-nimbus-fml
+
 # From here on, just like ../android-arm/nightly.
 
 . "$topsrcdir/build/mozconfig.no-compile"
@@ -36,7 +41,6 @@ export MOZILLA_OFFICIAL=1
 # Disable Keyfile Loading (and checks) since dependency fetching doesn't need these keys.
 # This overrides the settings in the common android mozconfig
 ac_add_options --without-mozilla-api-keyfile
-ac_add_options --without-google-location-service-api-keyfile
 ac_add_options --without-google-safebrowsing-api-keyfile
 
 . "$topsrcdir/mobile/android/config/mozconfigs/common.override"

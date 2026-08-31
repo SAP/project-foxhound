@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,10 @@
 #include "nsISelectionDisplay.idl"
 
 %{C++
+
+#include <ostream>
+#include <string>
+
 using SelectionRegion = short;
 
 namespace mozilla {
@@ -14,7 +17,7 @@ namespace dom {
 class Selection;
 } // namespace dom
 
-struct ScrollAxis;
+struct AxisScrollParams;
 enum class ScrollFlags : uint8_t;
 enum class SelectionScrollMode : uint8_t;
 
@@ -213,7 +216,7 @@ interface nsISelectionController : nsISelectionDisplay
    *  the "point" of selection that is extended is considered the "focus" point.
    *  or the last point adjusted by the selection.
    *  @param aDirection
-   *  @param aAmount    character/line; word/lineBoundary
+   *  @param aAmount    0: character/line; 1: word/lineBoundary; 2: visual line edge
    *  @param aExtend    should it collapse the selection of extend it?
    */
   [can_run_script]
@@ -258,6 +261,17 @@ interface nsISelectionController : nsISelectionDisplay
    */
   [can_run_script]
   void intraLineMove(in boolean forward, in boolean extend);
+
+  /** ParagraphMove will move the selection to the beginning or end of the
+   *  current paragraph in the document.
+   *  this will also have the effect of collapsing the selection if the aExtend = false
+   *  the "point" of selection that is extended is considered the "focus" point.
+   *  or the last point adjusted by the selection.
+   *  @param aForward forward or backward if false
+   *  @param aExtend  should it collapse the selection of extend it?
+   */
+  [can_run_script]
+  void paragraphMove(in boolean forward, in boolean extend);
 
   /** PageMove will move the selection one page forward/backward in the document.
    *  this will also have the effect of collapsing the selection if the aExtend = false
@@ -306,7 +320,7 @@ interface nsISelectionController : nsISelectionDisplay
   // can run script depends on the SelectionScrollMode.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY inline nsresult ScrollSelectionIntoView(
     mozilla::SelectionType, SelectionRegion,
-    const mozilla::ScrollAxis& aVertical, const mozilla::ScrollAxis& aHorizontal,
+    const mozilla::AxisScrollParams& aVertical, const mozilla::AxisScrollParams& aHorizontal,
     mozilla::ScrollFlags, mozilla::SelectionScrollMode);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY inline nsresult ScrollSelectionIntoView(
     mozilla::SelectionType, SelectionRegion,
@@ -318,6 +332,7 @@ interface nsISelectionController : nsISelectionDisplay
 namespace mozilla {
 
 // SelectionType should be used in internal handling code as it is type safe.
+// NOTE: Maintain format_as() and operator<<() if you change this enum class.
 enum class SelectionType : RawSelectionType {
   eInvalid = -1,
   eNone = nsISelectionController::SELECTION_NONE,
@@ -358,6 +373,10 @@ constexpr bool IsValidRawSelectionType(RawSelectionType aRawSelectionType);
 constexpr SelectionType ToSelectionType(RawSelectionType aRawSelectionType);
 constexpr RawSelectionType ToRawSelectionType(SelectionType aSelectionType);
 constexpr SelectionTypeMask ToSelectionTypeMask(SelectionType aSelectionType);
+
+// These are defined in Selection.cpp.
+std::string format_as(SelectionType);
+std::ostream& operator<<(std::ostream&, SelectionType);
 
 } // namespace mozilla
 %}

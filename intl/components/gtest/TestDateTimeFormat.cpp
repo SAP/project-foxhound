@@ -7,6 +7,7 @@
 #include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/DateTimePart.h"
 #include "mozilla/intl/DateTimePatternGenerator.h"
+#include "mozilla/intl/Locale.h"
 #include "mozilla/Span.h"
 #include "TestBuffer.h"
 
@@ -108,21 +109,49 @@ TEST(IntlDateTimeFormat, Time_zone_IANA_identifier)
 
 TEST(IntlDateTimeFormat, GetAllowedHourCycles)
 {
-  auto allowed_en_US = DateTimeFormat::GetAllowedHourCycles(
-                           MakeStringSpan("en"), Some(MakeStringSpan("US")))
-                           .unwrap();
+  auto language = [](const char* s) {
+    LanguageSubtag result;
+    result.Set(MakeStringSpan(s));
+    return result;
+  };
+
+  auto region = [](const char* s) {
+    RegionSubtag result;
+    result.Set(MakeStringSpan(s));
+    return result;
+  };
+
+  auto allowed_en_US =
+      DateTimeFormat::GetAllowedHourCycles(language("en"), region("US"))
+          .unwrap();
 
   ASSERT_TRUE(allowed_en_US.length() == 2);
   ASSERT_EQ(allowed_en_US[0], DateTimeFormat::HourCycle::H12);
   ASSERT_EQ(allowed_en_US[1], DateTimeFormat::HourCycle::H23);
 
-  auto allowed_de =
-      DateTimeFormat::GetAllowedHourCycles(MakeStringSpan("de"), Nothing())
+  auto allowed_de_DE =
+      DateTimeFormat::GetAllowedHourCycles(language("de"), region("DE"))
           .unwrap();
 
-  ASSERT_TRUE(allowed_de.length() == 2);
-  ASSERT_EQ(allowed_de[0], DateTimeFormat::HourCycle::H23);
-  ASSERT_EQ(allowed_de[1], DateTimeFormat::HourCycle::H12);
+  ASSERT_TRUE(allowed_de_DE.length() == 2);
+  ASSERT_EQ(allowed_de_DE[0], DateTimeFormat::HourCycle::H23);
+  ASSERT_EQ(allowed_de_DE[1], DateTimeFormat::HourCycle::H12);
+
+  auto allowed_en_CA =
+      DateTimeFormat::GetAllowedHourCycles(language("en"), region("CA"))
+          .unwrap();
+
+  ASSERT_TRUE(allowed_en_CA.length() == 2);
+  ASSERT_EQ(allowed_en_CA[0], DateTimeFormat::HourCycle::H12);
+  ASSERT_EQ(allowed_en_CA[1], DateTimeFormat::HourCycle::H23);
+
+  auto allowed_fr_CA =
+      DateTimeFormat::GetAllowedHourCycles(language("fr"), region("CA"))
+          .unwrap();
+
+  ASSERT_TRUE(allowed_fr_CA.length() == 2);
+  ASSERT_EQ(allowed_fr_CA[0], DateTimeFormat::HourCycle::H23);
+  ASSERT_EQ(allowed_fr_CA[1], DateTimeFormat::HourCycle::H12);
 }
 
 TEST(IntlDateTimePatternGenerator, GetBestPattern)
@@ -234,7 +263,7 @@ TEST(IntlDateTimeFormat, ComponentsAll)
 
   TestBuffer<char16_t> buffer;
   ASSERT_TRUE(FormatComponents(buffer, components));
-  ASSERT_TRUE(buffer.verboseMatches(u"Mon, 9 23, 2002 AD, 20:07:30.000 GMT+3"));
+  ASSERT_TRUE(buffer.verboseMatches(u"Mon, 9/23/2002 AD, 20:07:30.000 GMT+3"));
 }
 
 TEST(IntlDateTimeFormat, ComponentsHour12Default)
@@ -277,17 +306,88 @@ TEST(IntlDateTimeFormat, ComponentsHour12DayPeriod)
   ASSERT_TRUE(buffer.verboseMatches(u"8:07 in the evening"));
 }
 
-const char* ToString(uint8_t b) { return "uint8_t"; }
-const char* ToString(bool b) { return b ? "true" : "false"; }
+static const char* ToString(uint8_t b) { return "uint8_t"; }
+static const char* ToString(bool b) { return b ? "true" : "false"; }
+
+static const char* ToString(DateTimeFormat::TimeZoneName aTimeZoneName) {
+  using TimeZoneName = DateTimeFormat::TimeZoneName;
+  switch (aTimeZoneName) {
+    case TimeZoneName::Long:
+      return "long";
+    case TimeZoneName::Short:
+      return "short";
+    case TimeZoneName::ShortOffset:
+      return "shortOffset";
+    case TimeZoneName::LongOffset:
+      return "longOffset";
+    case TimeZoneName::ShortGeneric:
+      return "shortGeneric";
+    case TimeZoneName::LongGeneric:
+      return "longGeneric";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::TimeZoneName");
+}
+
+static const char* ToString(DateTimeFormat::Month aMonth) {
+  using Month = DateTimeFormat::Month;
+  switch (aMonth) {
+    case Month::Numeric:
+      return "numeric";
+    case Month::TwoDigit:
+      return "2-digit";
+    case Month::Long:
+      return "long";
+    case Month::Short:
+      return "short";
+    case Month::Narrow:
+      return "narrow";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::Month");
+}
+
+static const char* ToString(DateTimeFormat::Text aText) {
+  using Text = DateTimeFormat::Text;
+  switch (aText) {
+    case Text::Long:
+      return "long";
+    case Text::Short:
+      return "short";
+    case Text::Narrow:
+      return "narrow";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::Text");
+}
+
+static const char* ToString(DateTimeFormat::Numeric aNumeric) {
+  using Numeric = DateTimeFormat::Numeric;
+  switch (aNumeric) {
+    case Numeric::Numeric:
+      return "numeric";
+    case Numeric::TwoDigit:
+      return "2-digit";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::Numeric");
+}
+
+static const char* ToString(DateTimeFormat::HourCycle aHourCycle) {
+  using HourCycle = DateTimeFormat::HourCycle;
+  switch (aHourCycle) {
+    case HourCycle::H11:
+      return "h11";
+    case HourCycle::H12:
+      return "h12";
+    case HourCycle::H23:
+      return "h23";
+    case HourCycle::H24:
+      return "h24";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::HourCycle");
+}
 
 template <typename T>
 const char* ToString(Maybe<T> option) {
   if (option) {
-    if constexpr (std::is_same_v<T, bool> || std::is_same_v<T, uint8_t>) {
-      return ToString(*option);
-    } else {
-      return DateTimeFormat::ToString(*option);
-    }
+    return ToString(*option);
   }
   return "Nothing";
 }
@@ -478,20 +578,19 @@ TEST(IntlDateTimeFormat, GetOriginalSkeleton)
 
 TEST(IntlDateTimeFormat, GetAvailableLocales)
 {
-  using namespace std::literals;
-
   int32_t english = 0;
   int32_t german = 0;
   int32_t chinese = 0;
 
   // Since this list is dependent on ICU, and may change between upgrades, only
   // test a subset of the available locales.
-  for (const char* locale : DateTimeFormat::GetAvailableLocales()) {
-    if (locale == "en"sv) {
+  for (mozilla::Span<const char> locale :
+       DateTimeFormat::GetAvailableLocales()) {
+    if (locale == mozilla::MakeStringSpan("en")) {
       english++;
-    } else if (locale == "de"sv) {
+    } else if (locale == mozilla::MakeStringSpan("de")) {
       german++;
-    } else if (locale == "zh"sv) {
+    } else if (locale == mozilla::MakeStringSpan("zh")) {
       chinese++;
     }
   }

@@ -10,6 +10,24 @@ $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
   - 'Core :: WebRTC'
 
+rtcpeerconnection:
+  count_rtcp_mux_policy_negotiate:
+    type: counter
+    description: >
+      The number of RTCPeerConnections created with rtcpMuxPolicy set to
+      "negotiate". This value was removed from the spec, and we would like
+      to track usage before removing it.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1339203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1339203
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - bcampen@mozilla.com
+      - webrtc-telemetry-alerts@mozilla.com
+    expires: never
+
 rtcrtpsender:
   count:
     type: counter
@@ -424,8 +442,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   cipher:
     type: labeled_counter
@@ -440,8 +459,29 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
+
+  key_exchange_algorithm:
+    type: custom_distribution
+    description: >
+      SSL Handshake Key Exchange Algorithm (null=0, rsa=1,
+      dh=2, ecdh=4, ecdh_hybrid=8)
+    range_min: 0
+    range_max: 16
+    bucket_count: 17
+    histogram_type: linear
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983029
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983029
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - webrtc-telemetry-alerts@mozilla.com
+      - seceng-telemetry@mozilla.com
+    expires: 158
 
   srtp_cipher:
     type: labeled_counter
@@ -456,8 +496,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   client_handshake_result:
     type: labeled_counter
@@ -473,8 +514,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   server_handshake_result:
     type: labeled_counter
@@ -490,8 +532,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   client_handshake_started_counter:
     type: counter
@@ -504,8 +547,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   server_handshake_started_counter:
     type: counter
@@ -518,8 +562,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
 webrtc.signaling:
   sdp_negotiated:

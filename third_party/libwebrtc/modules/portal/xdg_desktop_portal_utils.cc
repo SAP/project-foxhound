@@ -9,11 +9,18 @@
  */
 #include "modules/portal/xdg_desktop_portal_utils.h"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
+#include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
+#include "api/scoped_refptr.h"
+#include "modules/portal/portal_guard.h"
+#include "modules/portal/portal_request_response.h"
 #include "modules/portal/scoped_glib.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/strings/str_join.h"
 
 namespace webrtc {
 namespace xdg_portal {
@@ -50,39 +57,51 @@ RequestResponse RequestResponseFromPortalResponse(uint32_t portal_response) {
 
 std::string PrepareSignalHandle(absl::string_view token,
                                 GDBusConnection* connection) {
-  Scoped<char> sender(
-      g_strdup(g_dbus_connection_get_unique_name(connection) + 1));
-  for (int i = 0; sender.get()[i]; ++i) {
-    if (sender.get()[i] == '.') {
-      sender.get()[i] = '_';
-    }
+  const char* unique_name = g_dbus_connection_get_unique_name(connection);
+  if (unique_name == nullptr || *unique_name == '\0') {
+    return std::string();
   }
-  const char* handle =
-      g_strconcat(kDesktopRequestObjectPath, "/", sender.get(), "/",
-                  std::string(token).c_str(), /*end of varargs*/ nullptr);
-  return handle;
+
+  absl::string_view unique_name_sv = unique_name;
+  if (!unique_name_sv.empty()) {
+    unique_name_sv.remove_prefix(1);
+  }
+
+  std::string sender = absl::StrReplaceAll(unique_name_sv, {{".", "_"}});
+  std::vector<absl::string_view> parts = {kDesktopRequestObjectPath, sender,
+                                          token};
+  return webrtc::StrJoin(parts, "/");
+}
+
+bool UnsubscribeSignalHandler(GDBusConnection* connection, guint& signal_id) {
+  if (!signal_id)
+    return false;
+  g_dbus_connection_signal_unsubscribe(connection, signal_id);
+  signal_id = 0;
+  return true;
 }
 
 uint32_t SetupRequestResponseSignal(absl::string_view object_path,
                                     const GDBusSignalCallback callback,
-                                    gpointer user_data,
+                                    scoped_refptr<PortalGuard> guard,
                                     GDBusConnection* connection) {
   return g_dbus_connection_signal_subscribe(
       connection, kDesktopBusName, kRequestInterfaceName, "Response",
       std::string(object_path).c_str(), /*arg0=*/nullptr,
-      G_DBUS_SIGNAL_FLAGS_NO_MATCH_RULE, callback, user_data,
-      /*user_data_free_func=*/nullptr);
+      G_DBUS_SIGNAL_FLAGS_NO_MATCH_RULE, callback, guard->AddRefAndGet(),
+      portal_guard_release);
 }
 
 void RequestSessionProxy(absl::string_view interface_name,
                          const ProxyRequestCallback proxy_request_callback,
                          GCancellable* cancellable,
-                         gpointer user_data) {
+                         scoped_refptr<PortalGuard> guard) {
   g_dbus_proxy_new_for_bus(
       G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, /*info=*/nullptr,
       kDesktopBusName, kDesktopObjectPath, std::string(interface_name).c_str(),
       cancellable,
-      reinterpret_cast<GAsyncReadyCallback>(proxy_request_callback), user_data);
+      reinterpret_cast<GAsyncReadyCallback>(proxy_request_callback),
+      guard->AddRefAndGet());
 }
 
 void SetupSessionRequestHandlers(
@@ -94,7 +113,7 @@ void SetupSessionRequestHandlers(
     GCancellable* cancellable,
     std::string& portal_handle,
     guint& session_request_signal_id,
-    gpointer user_data) {
+    scoped_refptr<PortalGuard> guard) {
   GVariantBuilder builder;
   Scoped<char> variant_string;
 
@@ -113,7 +132,7 @@ void SetupSessionRequestHandlers(
 
   portal_handle = PrepareSignalHandle(variant_string.get(), connection);
   session_request_signal_id = SetupRequestResponseSignal(
-      portal_handle.c_str(), request_response_signale_handler, user_data,
+      portal_handle.c_str(), request_response_signale_handler, guard,
       connection);
 
   RTC_LOG(LS_INFO) << "Desktop session requested.";
@@ -121,7 +140,7 @@ void SetupSessionRequestHandlers(
       proxy, "CreateSession", g_variant_new("(a{sv})", &builder),
       G_DBUS_CALL_FLAGS_NONE, /*timeout=*/-1, cancellable,
       reinterpret_cast<GAsyncReadyCallback>(session_request_callback),
-      user_data);
+      guard->AddRefAndGet());
 }
 
 void StartSessionRequest(
@@ -134,7 +153,7 @@ void StartSessionRequest(
     GCancellable* cancellable,
     guint& start_request_signal_id,
     std::string& start_handle,
-    gpointer user_data) {
+    scoped_refptr<PortalGuard> guard) {
   GVariantBuilder builder;
   Scoped<char> variant_string;
 
@@ -147,7 +166,7 @@ void StartSessionRequest(
 
   start_handle = PrepareSignalHandle(variant_string.get(), connection);
   start_request_signal_id = SetupRequestResponseSignal(
-      start_handle.c_str(), signal_handler, user_data, connection);
+      start_handle.c_str(), signal_handler, guard, connection);
 
   // "Identifier for the application window", this is Wayland, so not "x11:...".
   const char parent_window[] = "";
@@ -159,7 +178,7 @@ void StartSessionRequest(
                     parent_window, &builder),
       G_DBUS_CALL_FLAGS_NONE, /*timeout=*/-1, cancellable,
       reinterpret_cast<GAsyncReadyCallback>(session_started_handler),
-      user_data);
+      guard->AddRefAndGet());
 }
 
 void TearDownSession(absl::string_view session_handle,

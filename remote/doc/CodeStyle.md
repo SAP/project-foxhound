@@ -35,7 +35,7 @@ The documentation can be built locally this way:
 % ./mach doc remote
 ```
 
-[remote/doc]: https://searchfox.org/mozilla-central/source/remote/doc
+[remote/doc]: https://searchfox.org/firefox-main/source/remote/doc
 
 ## Linting
 

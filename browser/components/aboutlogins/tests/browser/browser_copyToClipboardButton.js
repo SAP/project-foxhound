@@ -3,7 +3,10 @@
 
 add_task(async function test() {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.events.testing.asyncClipboard", true]],
+    set: [
+      ["dom.events.testing.asyncClipboard", true],
+      ["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""],
+    ],
   });
 
   await BrowserTestUtils.withNewTab(

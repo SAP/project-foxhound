@@ -1,0 +1,109 @@
+# HG changeset patch
+# User Bob Owen <bobowencode@gmail.com>
+Neuter DumpWithoutCrashing.
+
+This avoids bringing in more dependencies and we wouldn't have a way of
+processing these dumps within our current infrastructure.
+This also removes use of feature kNotReachedIsFatal.
+
+diff --git a/base/check.cc b/base/check.cc
+--- a/base/check.cc
++++ b/base/check.cc
+@@ -8,63 +8,73 @@
+ #include "base/debug/alias.h"
+ #include "base/debug/dump_without_crashing.h"
+ #include "base/feature_list.h"
+ #include "base/features.h"
+ #include "base/logging.h"
+ #include "base/thread_annotations.h"
+ #include "build/build_config.h"
+ 
++#if !defined(MOZ_SANDBOX)
+ #if !BUILDFLAG(IS_NACL)
+ #include "base/debug/crash_logging.h"
+ #endif  // !BUILDFLAG(IS_NACL)
++#endif
+ 
+ namespace logging {
+ 
+ namespace {
+ 
++#if !defined(MOZ_SANDBOX)
+ void DumpWithoutCrashing(LogMessage* log_message,
+                          const base::Location& location) {
+   // Copy the LogMessage message to stack memory to make sure it can be
+   // recovered in crash dumps. This is easier to recover in minidumps than crash
+   // keys during local debugging.
+   DEBUG_ALIAS_FOR_CSTR(log_message_str, log_message->BuildCrashString().c_str(),
+                        1024);
+ 
+   // Report from the same location at most once every 30 days (unless the
+   // process has died). This attempts to prevent us from flooding ourselves with
+   // repeat reports for the same bug.
+   base::debug::DumpWithoutCrashing(location, base::Days(30));
+ }
++#endif
+ 
+ void NotReachedDumpWithoutCrashing(LogMessage* log_message,
+                                    const base::Location& location) {
++#if !defined(MOZ_SANDBOX)
+ #if !BUILDFLAG(IS_NACL)
+   SCOPED_CRASH_KEY_STRING1024("Logging", "NOTREACHED_MESSAGE",
+                               log_message->BuildCrashString());
+ #endif  // !BUILDFLAG(IS_NACL)
+   DumpWithoutCrashing(log_message, location);
++#endif
+ }
+ 
+ void DCheckDumpWithoutCrashing(LogMessage* log_message,
+                                const base::Location& location) {
++#if !defined(MOZ_SANDBOX)
+ #if !BUILDFLAG(IS_NACL)
+   SCOPED_CRASH_KEY_STRING1024("Logging", "DCHECK_MESSAGE",
+                               log_message->BuildCrashString());
+ #endif  // !BUILDFLAG(IS_NACL)
+   DumpWithoutCrashing(log_message, location);
++#endif
+ }
+ 
+ void DumpWillBeCheckDumpWithoutCrashing(LogMessage* log_message,
+                                         const base::Location& location) {
++#if !defined(MOZ_SANDBOX)
+ #if !BUILDFLAG(IS_NACL)
+   SCOPED_CRASH_KEY_STRING1024("Logging", "DUMP_WILL_BE_CHECK_MESSAGE",
+                               log_message->BuildCrashString());
+ #endif  // !BUILDFLAG(IS_NACL)
+   DumpWithoutCrashing(log_message, location);
++#endif
+ }
+ 
+ class NotReachedLogMessage : public LogMessage {
+  public:
+   NotReachedLogMessage(const base::Location& location, LogSeverity severity)
+       : LogMessage(location.file_name(), location.line_number(), severity),
+         location_(location) {}
+   ~NotReachedLogMessage() override {
+@@ -281,21 +291,23 @@ CheckError::~CheckError() {
+   // LOG(FATAL) is [[noreturn]] and can't be overridden.
+   if (is_fatal) {
+     base::ImmediateCrash();
+   }
+ }
+ 
+ NotReachedError NotReachedError::NotReached(const base::Location& location) {
+   const LogSeverity severity = []() {
++#if !defined(MOZ_SANDBOX)
+     // NOTREACHED() instances may be hit before base::FeatureList is enabled.
+     if (base::FeatureList::GetInstance() &&
+         base::FeatureList::IsEnabled(base::features::kNotReachedIsFatal)) {
+       return LOGGING_FATAL;
+     }
++#endif
+     return DCHECK_IS_ON() ? LOGGING_DCHECK : LOGGING_ERROR;
+   }();
+   auto* const log_message = new NotReachedLogMessage(location, severity);
+ 
+   // TODO(pbos): Consider a better message for NotReached(), this is here to
+   // match existing behavior + test expectations.
+   log_message->stream() << "Check failed: false. ";
+   return NotReachedError(log_message);

@@ -4,6 +4,9 @@
 const { LinkPreview } = ChromeUtils.importESModule(
   "moz-src:///browser/components/genai/LinkPreview.sys.mjs"
 );
+const { MLUninstallService } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/Utils.sys.mjs"
+);
 const { Region } = ChromeUtils.importESModule(
   "resource://gre/modules/Region.sys.mjs"
 );
@@ -26,6 +29,7 @@ const TEST_LINK_URL = "https://example.com";
 
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("browser.ml.linkPreview.onboardingTimes");
+  Services.prefs.clearUserPref("browser.ml.linkPreview.supportedLocales");
 });
 
 /**
@@ -107,7 +111,10 @@ add_task(async function test_skip_generate_if_non_eng() {
  */
 add_task(async function test_link_preview_with_shift_alt_key_event() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.ml.linkPreview.enabled", true]],
+    set: [
+      ["browser.ml.linkPreview.enabled", true],
+      ["browser.ml.linkPreview.shift", true],
+    ],
   });
 
   let stub = sinon.stub(LinkPreview, "_maybeLinkPreview");
@@ -222,6 +229,10 @@ add_task(async function test_link_preview_with_long_press() {
  * Tests that regular typing prevents link preview.
  */
 add_task(async function test_link_preview_with_typing() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.linkPreview.shift", true]],
+  });
+
   const stub = sinon.stub(LinkPreview, "renderLinkPreviewPanel");
 
   XULBrowserWindow.setOverLink(TEST_LINK_URL, {});
@@ -284,6 +295,10 @@ add_task(async function test_link_preview_with_typing() {
  * Tests that certain behaviors do not trigger unexpectedly.
  */
 add_task(async function test_link_preview_no_trigger() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.linkPreview.shift", true]],
+  });
+
   const stub = sinon.stub(LinkPreview, "renderLinkPreviewPanel");
 
   LinkPreview.keyboardComboActive = true;
@@ -404,6 +419,27 @@ add_task(async function test_fetch_page_data() {
     result.urlComponents.filename,
     "readableEn.html",
     "url filename should be correct"
+  );
+});
+
+/**
+ * Test that Shift-JIS encoding is handled correctly.
+ */
+add_task(async function test_fetch_shift_jis() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.linkPreview.enabled", true]],
+  });
+  const actor =
+    window.browsingContext.currentWindowContext.getActor("LinkPreview");
+  const result = await actor.fetchPageData(
+    "https://example.com/browser/browser/components/genai/tests/browser/data/encodingWithShiftJIS.html"
+  );
+
+  ok(!result.error, "should not have an error");
+  is(
+    result.rawMetaInfo["html:title"],
+    "Shift-JIS テスト",
+    "title should be correct"
   );
 });
 
@@ -732,13 +768,8 @@ add_task(async function test_link_preview_error_rendered() {
   ok(ogErrorEl1, "og-error-message shown with isMissingDataErrorState = true");
   is(
     ogErrorEl1.getAttribute("data-l10n-id"),
-    "link-preview-generation-error-missing-data",
+    "link-preview-generation-error-missing-data-v2",
     "Correct fluent ID for missing data error"
-  );
-  is(
-    ogErrorEl1.textContent.trim(),
-    "We can’t generate key points for this webpage.",
-    "Correct localized message for missing data error"
   );
 
   // Switch to a "generation error"
@@ -777,7 +808,7 @@ add_task(async function test_link_preview_error_rendered() {
 
 /**
  * Test that settings icon is correctly rendered in the link preview card.
-//  */
+ */
 add_task(async function test_link_preview_settings_icon_rendered() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.ml.linkPreview.enabled", true]],
@@ -907,4 +938,90 @@ add_task(async function test_toggle_expand_collapse() {
   panel.remove();
   generateStub.restore();
   LinkPreview.keyboardComboActive = false;
+});
+
+/**
+ * Test that the Link Preview feature does not generate key points in unsupported locales.
+ */
+add_task(async function test_no_key_points_in_unsupported_locale() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.linkPreview.enabled", true],
+      ["browser.ml.linkPreview.optin", true],
+    ],
+  });
+
+  const localeStub = sinon
+    .stub(LinkPreview, "_isLocaleSupported")
+    .returns(false);
+  const generateStub = sinon.stub(LinkPreviewModel, "generateTextAI");
+
+  LinkPreview.keyboardComboActive = true;
+  XULBrowserWindow.setOverLink(
+    "https://example.com/browser/browser/components/genai/tests/browser/data/readableEn.html",
+    {}
+  );
+
+  let panel = await TestUtils.waitForCondition(() =>
+    document.getElementById("link-preview-panel")
+  );
+  await BrowserTestUtils.waitForEvent(panel, "popupshown");
+
+  const card = panel.querySelector("link-preview-card");
+  ok(card, "Card created for link preview");
+
+  is(
+    generateStub.callCount,
+    0,
+    "generateTextAI should not be called when locale is not supported"
+  );
+  ok(!LinkPreview.canShowKeyPoints, "should not show key points");
+
+  panel.remove();
+  LinkPreview.keyboardComboActive = false;
+  localeStub.restore();
+  generateStub.restore();
+});
+
+/**
+ * Test that the Link Preview feature does generate key points in supported locales.
+ */
+add_task(async function test_key_points_in_supported_locale() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.linkPreview.enabled", true],
+      ["browser.ml.linkPreview.optin", true],
+    ],
+  });
+
+  const localeStub = sinon
+    .stub(LinkPreview, "_isLocaleSupported")
+    .returns(true);
+  const generateStub = sinon.stub(LinkPreviewModel, "generateTextAI");
+
+  LinkPreview.keyboardComboActive = true;
+  XULBrowserWindow.setOverLink(
+    "https://example.com/browser/browser/components/genai/tests/browser/data/readableEn.html",
+    {}
+  );
+
+  let panel = await TestUtils.waitForCondition(() =>
+    document.getElementById("link-preview-panel")
+  );
+  await BrowserTestUtils.waitForEvent(panel, "popupshown");
+
+  const card = panel.querySelector("link-preview-card");
+  ok(card, "Card created for link preview");
+
+  is(
+    generateStub.callCount,
+    1,
+    "generateTextAI should be called when locale is supported"
+  );
+  ok(LinkPreview.canShowKeyPoints, "should show key points");
+
+  panel.remove();
+  LinkPreview.keyboardComboActive = false;
+  localeStub.restore();
+  generateStub.restore();
 });

@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import functools
 import os
 from pathlib import Path, PurePath
 
@@ -10,7 +11,6 @@ import sphinx.ext.apidoc
 import yaml
 from mozbuild.base import MozbuildObject
 from mozbuild.frontend.reader import BuildReader
-from mozbuild.util import memoize
 from mozpack.copier import FileCopier
 from mozpack.files import FileFinder
 from mozpack.manifests import InstallManifest
@@ -23,7 +23,7 @@ MAIN_DOC_PATH = Path(build.topsrcdir) / "docs"
 logger = sphinx.util.logging.getLogger(__name__)
 
 
-@memoize
+@functools.cache
 def read_build_config(docdir):
     """Read the active build config and return the relevant doc paths.
 
@@ -32,8 +32,9 @@ def read_build_config(docdir):
     trees = {}
     python_package_dirs = set()
 
+    docdir = Path(docdir)
     is_main = docdir == MAIN_DOC_PATH
-    relevant_mozbuild_path = None if is_main else docdir
+    relevant_mozbuild_path = None if is_main else str(docdir)
 
     # Reading the Sphinx variables doesn't require a full build context.
     # Only define the parts we need.
@@ -50,24 +51,26 @@ def read_build_config(docdir):
             # If we're building a subtree, only process that specific subtree.
             # topsrcdir always uses POSIX-style path, normalize it for proper comparison.
             absdir = os.path.normpath(os.path.join(build.topsrcdir, reldir, value))
-            if not is_main and absdir not in (docdir, MAIN_DOC_PATH):
+            if not is_main and absdir not in (str(docdir), str(MAIN_DOC_PATH)):
                 # allow subpaths of absdir (i.e. docdir = <absdir>/sub/path/)
-                if docdir.startswith(absdir):
-                    key = os.path.join(key, docdir.split(f"{key}/")[-1])
+                if str(docdir).startswith(absdir):
+                    tree_key = os.path.join(key, str(docdir).split(f"{key}/")[-1])
                 else:
                     continue
-
-            assert key
-            if key.startswith("/"):
-                key = key[1:]
             else:
-                key = os.path.normpath(os.path.join(reldir, key))
+                tree_key = key
 
-            if key in trees:
+            assert tree_key
+            if tree_key.startswith("/"):
+                tree_key = tree_key[1:]
+            else:
+                tree_key = os.path.normpath(os.path.join(reldir, tree_key))
+
+            if tree_key in trees:
                 raise Exception(
-                    "%s has already been registered as a destination." % key
+                    f"{tree_key} has already been registered as a destination."
                 )
-            trees[key] = os.path.join(reldir, value)
+            trees[tree_key] = os.path.join(reldir, value)
 
         if name == "SPHINX_PYTHON_PACKAGE_DIRS":
             python_package_dirs.add(os.path.join(reldir, value))
@@ -96,10 +99,10 @@ class _SphinxManager:
             logger.info("Python/JS API documentation generation will be skipped")
             app.config["extensions"].remove("sphinx.ext.autodoc")
             app.config["extensions"].remove("sphinx_js")
-        self.staging_dir = os.path.join(app.outdir, "_staging")
+        self.staging_dir = os.path.join(os.fspath(app.outdir), "_staging")
 
         logger.info("Reading Sphinx metadata from build configuration")
-        self.trees, self.python_package_dirs = read_build_config(app.srcdir)
+        self.trees, self.python_package_dirs = read_build_config(os.fspath(app.srcdir))
 
         logger.info("Staging static documentation")
         self._synchronize_docs(app)
@@ -136,7 +139,9 @@ class _SphinxManager:
         m = InstallManifest()
 
         with open(os.path.join(MAIN_DOC_PATH, "config.yml")) as fh:
-            tree_config = yaml.safe_load(fh)["categories"]
+            config = yaml.safe_load(fh)
+            tree_config = config["categories"]
+            exclude_patterns = config.get("exclude_patterns", [])
 
         m.add_link(self.conf_py_path, "conf.py")
 
@@ -147,6 +152,11 @@ class _SphinxManager:
                     source_path = os.path.normpath(os.path.join(root, f))
                     rel_source = source_path[len(source_dir) + 1 :]
                     target = os.path.normpath(os.path.join(dest, rel_source))
+
+                    # Skip files matching exclude patterns
+                    if any(pattern in source_path for pattern in exclude_patterns):
+                        continue
+
                     m.add_link(source_path, target)
 
         copier = FileCopier()
@@ -172,7 +182,7 @@ class _SphinxManager:
             return True
 
         def format_paths(paths):
-            source_doc = ["%s/index" % p for p in paths]
+            source_doc = [f"{p}/index" for p in paths]
             return "\n   ".join(source_doc)
 
         toplevel_trees = {k: v for k, v in self.trees.items() if is_toplevel(k)}
@@ -186,12 +196,10 @@ class _SphinxManager:
         # tree (Bug 1557020). The page is no longer referenced within the index
         # tree, thus we shall check categorisation only if complete tree is being rebuilt.
         if app.srcdir == self.topsrcdir:
-            indexes = set(
-                [
-                    os.path.normpath(os.path.join(p, "index"))
-                    for p in toplevel_trees.keys()
-                ]
-            )
+            indexes = set([
+                os.path.normpath(os.path.join(p, "index"))
+                for p in toplevel_trees.keys()
+            ])
             # Format categories like indexes
             cats = "\n".join(CATEGORIES.values()).split("\n")
             # Remove heading spaces

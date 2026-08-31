@@ -17,8 +17,8 @@ import mozilla.components.lib.jexl.ast.UnaryExpression
 import mozilla.components.lib.jexl.grammar.Grammar
 import mozilla.components.lib.jexl.lexer.Lexer
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class ParserTest {
 

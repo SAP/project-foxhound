@@ -74,11 +74,11 @@ mod avrt_lib {
     use windows_sys::{
         core::PCWSTR,
         s, w,
-        Win32::Foundation::{BOOL, FALSE, HANDLE, WIN32_ERROR},
+        Win32::Foundation::{FALSE, HANDLE, WIN32_ERROR},
     };
 
     type AvSetMmThreadCharacteristicsWFn = unsafe extern "system" fn(PCWSTR, *mut u32) -> HANDLE;
-    type AvRevertMmThreadCharacteristicsFn = unsafe extern "system" fn(HANDLE) -> BOOL;
+    type AvRevertMmThreadCharacteristicsFn = unsafe extern "system" fn(HANDLE) -> i32;
 
     #[derive(Debug)]
     pub(super) struct AvRtLibrary {
@@ -94,14 +94,16 @@ mod avrt_lib {
         pub(super) fn try_new() -> Result<Self, WIN32_ERROR> {
             let module = OwnedLibrary::try_new(w!("avrt.dll"))?;
             let av_set_mm_thread_characteristics_w = unsafe {
-                std::mem::transmute::<_, AvSetMmThreadCharacteristicsWFn>(
-                    module.get_proc(s!("AvSetMmThreadCharacteristicsW"))?,
-                )
+                std::mem::transmute::<
+                    unsafe extern "system" fn() -> isize,
+                    AvSetMmThreadCharacteristicsWFn,
+                >(module.get_proc(s!("AvSetMmThreadCharacteristicsW"))?)
             };
             let av_revert_mm_thread_characteristics = unsafe {
-                std::mem::transmute::<_, AvRevertMmThreadCharacteristicsFn>(
-                    module.get_proc(s!("AvRevertMmThreadCharacteristics"))?,
-                )
+                std::mem::transmute::<
+                    unsafe extern "system" fn() -> isize,
+                    AvRevertMmThreadCharacteristicsFn,
+                >(module.get_proc(s!("AvRevertMmThreadCharacteristics"))?)
             };
             Ok(Self {
                 module,
@@ -135,7 +137,7 @@ mod avrt_lib {
             let task_handle = unsafe {
                 (self.av_set_mm_thread_characteristics_w)(task_name, &mut mmcss_task_index)
             };
-            win32_error_if(task_handle == 0)?;
+            win32_error_if(task_handle.is_null())?;
             Ok((mmcss_task_index, task_handle))
         }
 
@@ -172,7 +174,7 @@ mod win32_utils {
     impl OwnedLibrary {
         pub(super) fn try_new(lib_file_name: PCWSTR) -> Result<Self, WIN32_ERROR> {
             let module = unsafe { LoadLibraryW(lib_file_name) };
-            win32_error_if(module == 0)?;
+            win32_error_if(module.is_null())?;
             Ok(Self(module))
         }
 
@@ -191,6 +193,9 @@ mod win32_utils {
             Ok(proc.unwrap())
         }
     }
+
+    unsafe impl Send for OwnedLibrary {}
+    unsafe impl Sync for OwnedLibrary {}
 
     impl Drop for OwnedLibrary {
         fn drop(&mut self) {

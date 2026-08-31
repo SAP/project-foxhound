@@ -60,3 +60,107 @@ add_task(async function testPlayPause() {
   info(`remove tab`);
   await tab.close();
 });
+
+add_task(async function testSetVolume() {
+  info(`open page and start media`);
+  const tab = await createLoadedTabWrapper(PAGE);
+  await playMedia(tab, testVideoId);
+
+  info(`pressing 'setvolume' key with volume 0.5`);
+  MediaControlService.generateMediaControlKey("setvolume", 0.5);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [testVideoId], async Id => {
+    const video = content.document.getElementById(Id);
+    await new Promise(r => {
+      if (video.volume === 0.5) {
+        r();
+      } else {
+        video.addEventListener("volumechange", r, { once: true });
+      }
+    });
+    is(video.volume, 0.5, "Volume should be 0.5");
+  });
+
+  info(`pressing 'setvolume' key with volume -0.5`);
+  MediaControlService.generateMediaControlKey("setvolume", -0.5);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [testVideoId], async Id => {
+    const video = content.document.getElementById(Id);
+    await new Promise(r => content.window.setTimeout(r, 100));
+    is(
+      video.volume,
+      0.0,
+      "Volume should be 0.0 (clamped because setvolume < 0.0)"
+    );
+  });
+
+  info(`pressing 'setvolume' key with volume 1.5`);
+  MediaControlService.generateMediaControlKey("setvolume", 1.5);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [testVideoId], async Id => {
+    const video = content.document.getElementById(Id);
+    await new Promise(r => content.window.setTimeout(r, 100));
+    is(
+      video.volume,
+      1.0,
+      "Volume should be 1.0 (clamped because setvolume > 1.0)"
+    );
+  });
+
+  info(`pressing 'setvolume' key with volume 0.0`);
+  MediaControlService.generateMediaControlKey("setvolume", 0.0);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [testVideoId], async Id => {
+    const video = content.document.getElementById(Id);
+    await new Promise(r => {
+      if (video.volume === 0.0) {
+        r();
+      } else {
+        video.addEventListener("volumechange", r, { once: true });
+      }
+    });
+    is(video.volume, 0.0, "Volume should be 0.0");
+  });
+
+  info(`remove tab`);
+  await tab.close();
+});
+
+add_task(async function testMute() {
+  info(`open page and start media`);
+  const tab = await createLoadedTabWrapper(PAGE);
+  await playMedia(tab, testVideoId);
+
+  info(`pressing 'mute' key`);
+  MediaControlService.generateMediaControlKey("mute");
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [testVideoId], async Id => {
+    const video = content.document.getElementById(Id);
+    await new Promise(r => {
+      if (video.muted) {
+        r();
+      } else {
+        video.addEventListener("volumechange", r, { once: true });
+      }
+    });
+    is(video.muted, true, "Media should be muted");
+  });
+
+  info(`pressing 'unmute' key`);
+  MediaControlService.generateMediaControlKey("unmute");
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [testVideoId], async Id => {
+    const video = content.document.getElementById(Id);
+    await new Promise(r => {
+      if (!video.muted) {
+        r();
+      } else {
+        video.addEventListener("volumechange", r, { once: true });
+      }
+    });
+    is(video.muted, false, "Media should be unmuted");
+  });
+
+  info(`remove tab`);
+  await tab.close();
+});

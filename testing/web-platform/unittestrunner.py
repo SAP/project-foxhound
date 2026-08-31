@@ -12,15 +12,16 @@ import sys
 here = os.path.abspath(os.path.dirname(__file__))
 
 local_requirements = {
-    b"mozinfo": "testing/mozbase/mozinfo",
-    b"mozlog": "testing/mozbase/mozlog",
-    b"mozdebug": "testing/mozbase/mozdebug",
     b"marionette_driver": "testing/marionette/client/",
-    b"mozprofile": "testing/mozbase/mozprofile",
-    b"mozprocess": "testing/mozbase/mozprocess",
     b"mozcrash": "testing/mozbase/mozcrash",
-    b"mozrunner": "testing/mozbase/mozrunner",
+    b"mozdebug": "testing/mozbase/mozdebug",
+    b"mozinfo": "testing/mozbase/mozinfo",
     b"mozleak": "testing/mozbase/mozleak",
+    b"mozlog": "testing/mozbase/mozlog",
+    b"mozprocess": "testing/mozbase/mozprocess",
+    b"mozprofile": "testing/mozbase/mozprofile",
+    b"mozrunner": "testing/mozbase/mozrunner",
+    b"mozshellutil": "testing/mozbase/mozshellutil",
     b"mozversion": "testing/mozbase/mozversion",
 }
 

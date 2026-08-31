@@ -3,10 +3,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-import unittest.mock as mock
 from argparse import Namespace
 from collections import defaultdict
 from textwrap import dedent
+from unittest import mock
 
 import mozunit
 import pytest
@@ -158,12 +158,10 @@ def test_mult_entry(prepareRunTests, create_manifest):
     with mock.patch("os.makedirs") as mock_os_makedirs:
         md = prepareRunTests(**options)
         assert mock_os_makedirs.call_count == 2
-        mock_os_makedirs.assert_has_calls(
-            [
-                mock.call(".snap_firefox_current_real"),
-                mock.call(".snap_firefox_current_real2"),
-            ]
-        )
+        mock_os_makedirs.assert_has_calls([
+            mock.call(".snap_firefox_current_real"),
+            mock.call(".snap_firefox_current_real2"),
+        ])
 
         opts = mock.Mock(pidFile="")  # so cleanup() does not check it
         with mock.patch("os.path.exists") as mock_os_path_exists, mock.patch(
@@ -172,22 +170,18 @@ def test_mult_entry(prepareRunTests, create_manifest):
             md.cleanup(opts, False)
 
             assert mock_os_path_exists.call_count == 2
-            mock_os_path_exists.assert_has_calls(
-                [
-                    mock.call(".snap_firefox_current_real"),
-                    mock.call().__bool__(),
-                    mock.call(".snap_firefox_current_real2"),
-                    mock.call().__bool__(),
-                ]
-            )
+            mock_os_path_exists.assert_has_calls([
+                mock.call(".snap_firefox_current_real"),
+                mock.call().__bool__(),
+                mock.call(".snap_firefox_current_real2"),
+                mock.call().__bool__(),
+            ])
 
             assert mock_os_makedirs.call_count == 2
-            mock_shutil_rmtree.assert_has_calls(
-                [
-                    mock.call(".snap_firefox_current_real"),
-                    mock.call(".snap_firefox_current_real2"),
-                ]
-            )
+            mock_shutil_rmtree.assert_has_calls([
+                mock.call(".snap_firefox_current_real"),
+                mock.call(".snap_firefox_current_real2"),
+            ])
 
 
 def test_mult_entry_one_already_exists(prepareRunTests, create_manifest):
@@ -206,12 +200,10 @@ def test_mult_entry_one_already_exists(prepareRunTests, create_manifest):
         with pytest.raises(FileExistsError):
             _ = prepareRunTests(**options)
         assert mock_os_path_exists.call_count == 2
-        mock_os_path_exists.assert_has_calls(
-            [
-                mock.call(".snap_firefox_current_real"),
-                mock.call(".snap_firefox_current_real2"),
-            ]
-        )
+        mock_os_path_exists.assert_has_calls([
+            mock.call(".snap_firefox_current_real"),
+            mock.call(".snap_firefox_current_real2"),
+        ])
         mock_os_makedirs.assert_not_called()
 
 

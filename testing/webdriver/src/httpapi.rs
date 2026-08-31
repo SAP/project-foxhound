@@ -311,18 +311,23 @@ pub fn standard_routes<U: WebDriverExtensionRoute>() -> Vec<(Method, &'static st
         (Method::POST, "/session/{sessionId}/print", Route::Print),
         (
             Method::POST,
-            "/session/{sessionId}/webauthn/authenticator",
-            Route::WebAuthnAddVirtualAuthenticator,
+            "/session/{sessionId}/privacy",
+            Route::GPCSetGlobalPrivacyControl,
         ),
         (
-            Method::DELETE,
-            "/session/{sessionId}/webauthn/authenticator/{authenticatorId}",
-            Route::WebAuthnRemoveVirtualAuthenticator,
+            Method::GET,
+            "/session/{sessionId}/privacy",
+            Route::GPCGetGlobalPrivacyControl,
         ),
         (
             Method::POST,
             "/session/{sessionId}/webauthn/authenticator/{authenticatorId}/credential",
             Route::WebAuthnAddCredential,
+        ),
+        (
+            Method::POST,
+            "/session/{sessionId}/webauthn/authenticator",
+            Route::WebAuthnAddVirtualAuthenticator,
         ),
         (
             Method::GET,
@@ -331,13 +336,18 @@ pub fn standard_routes<U: WebDriverExtensionRoute>() -> Vec<(Method, &'static st
         ),
         (
             Method::DELETE,
+            "/session/{sessionId}/webauthn/authenticator/{authenticatorId}/credentials",
+            Route::WebAuthnRemoveAllCredentials,
+        ),
+        (
+            Method::DELETE,
             "/session/{sessionId}/webauthn/authenticator/{authenticatorId}/credentials/{credentialId}",
             Route::WebAuthnRemoveCredential,
         ),
         (
             Method::DELETE,
-            "/session/{sessionId}/webauthn/authenticator/{authenticatorId}/credentials",
-            Route::WebAuthnRemoveAllCredentials,
+            "/session/{sessionId}/webauthn/authenticator/{authenticatorId}",
+            Route::WebAuthnRemoveVirtualAuthenticator,
         ),
         (
             Method::POST,
@@ -418,12 +428,14 @@ pub enum Route<U: WebDriverExtensionRoute> {
     SetPermission,
     Status,
     Extension(U),
-    WebAuthnAddVirtualAuthenticator,
-    WebAuthnRemoveVirtualAuthenticator,
+    GPCGetGlobalPrivacyControl,
+    GPCSetGlobalPrivacyControl,
     WebAuthnAddCredential,
+    WebAuthnAddVirtualAuthenticator,
     WebAuthnGetCredentials,
-    WebAuthnRemoveCredential,
     WebAuthnRemoveAllCredentials,
+    WebAuthnRemoveCredential,
+    WebAuthnRemoveVirtualAuthenticator,
     WebAuthnSetUserVerified,
 }
 

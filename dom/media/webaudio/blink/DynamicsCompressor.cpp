@@ -27,10 +27,9 @@
  */
 
 #include "DynamicsCompressor.h"
+
 #include "AlignmentUtils.h"
 #include "AudioBlock.h"
-
-#include <cmath>
 #include "AudioNodeEngine.h"
 #include "nsDebug.h"
 

@@ -1,0 +1,22 @@
+[DEFAULT]
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+  "../head.js",
+]
+tags = "os_integration"
+
+["browser_application_xml_handle_internally_xul.js"]
+
+["browser_applications_selection_xul.js"]
+
+["browser_change_app_handler_xul.js"]
+run-if = [
+  "os == 'win'", # Windows-specific handler application selection dialog
+]
+
+["browser_filetype_dialog_xul.js"]
+
+["browser_pdf_disabled_xul.js"]

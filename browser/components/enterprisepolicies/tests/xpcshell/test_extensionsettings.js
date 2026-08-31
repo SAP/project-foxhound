@@ -2,11 +2,14 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
+const { AddonManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/AddonManager.sys.mjs"
+);
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-const { AddonManager } = ChromeUtils.importESModule(
-  "resource://gre/modules/AddonManager.sys.mjs"
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
 );
 
 AddonTestUtils.init(this);
@@ -117,6 +120,48 @@ add_task(async function test_extensionsettings() {
   );
 });
 
+add_task(async function test_force_installed_updates_disabled() {
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "force@mozilla.com": {
+          installation_mode: "force_installed",
+          install_url: "https://example.com/test.xpi",
+        },
+        "force_explicit@mozilla.com": {
+          installation_mode: "force_installed",
+          install_url: "https://example.com/test.xpi",
+          updates_disabled: true,
+        },
+        "normal@mozilla.com": {
+          installation_mode: "normal_installed",
+          install_url: "https://example.com/test.xpi",
+        },
+      },
+    },
+  });
+
+  equal(
+    Services.policies.getExtensionSettings("force@mozilla.com")
+      .updates_disabled,
+    false,
+    "force_installed with no updates_disabled should default to false"
+  );
+  equal(
+    Services.policies.getExtensionSettings("force_explicit@mozilla.com")
+      .updates_disabled,
+    true,
+    "force_installed with explicit updates_disabled: true should be respected"
+  );
+  ok(
+    !(
+      "updates_disabled" in
+      Services.policies.getExtensionSettings("normal@mozilla.com")
+    ),
+    "non-force_installed should not synthesize updates_disabled"
+  );
+});
+
 add_task(async function test_addon_blocked() {
   await setupPolicyEngineWithJson({
     policies: {
@@ -159,7 +204,7 @@ add_task(async function test_addon_allowed() {
   await assertManagementAPIInstallType(install.addon.id, "normal");
   equal(install.addon.appDisabled, false, "Addon should not be disabled");
   equal(
-    install.addon.isInstalledByEnterprisePolicy,
+    Services.policies.isAddonRequiredByPolicy(install.addon.id),
     false,
     "Addon should NOT be marked as installed by enterprise policy"
   );
@@ -219,6 +264,121 @@ add_task(async function test_addon_forceinstalled() {
   );
   await assertManagementAPIInstallType(addon.id, "admin");
 
+  await addon.uninstall();
+});
+
+add_task(async function test_addon_uninstalled_by_allowed_types() {
+  let install = await AddonManager.getInstallForURL(
+    BASE_URL + "/policy_test.xpi"
+  );
+  await install.install();
+  notEqual(install.addon, null, "Addon should not be null");
+
+  await Promise.all([
+    AddonTestUtils.promiseAddonEvent("onUninstalled"),
+    setupPolicyEngineWithJson({
+      policies: {
+        ExtensionSettings: {
+          "*": {
+            allowed_types: ["theme"],
+          },
+        },
+      },
+    }),
+  ]);
+  let addon = await AddonManager.getAddonByID(addonID);
+  equal(
+    addon,
+    null,
+    "Addon should be uninstalled due to allowed_types restriction"
+  );
+});
+
+add_task(async function test_addon_allowed_exempted_from_allowed_types() {
+  let install = await AddonManager.getInstallForURL(
+    BASE_URL + "/policy_test.xpi"
+  );
+  await install.install();
+  notEqual(install.addon, null, "Addon should not be null");
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        [addonID]: {
+          installation_mode: "allowed",
+        },
+        "*": {
+          allowed_types: ["theme"],
+        },
+      },
+    },
+  });
+  let addon = await AddonManager.getAddonByID(addonID);
+  notEqual(
+    addon,
+    null,
+    "Explicitly allowed addon should survive allowed_types restriction"
+  );
+  await addon.uninstall();
+});
+
+add_task(async function test_allowed_types_blocks_new_install() {
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          allowed_types: ["theme"],
+        },
+      },
+    },
+  });
+  let install = await AddonManager.getInstallForURL(
+    BASE_URL + "/policy_test.xpi"
+  );
+  await install.install();
+  notEqual(install.addon, null, "Addon should not be null");
+  equal(
+    install.addon.appDisabled,
+    true,
+    "Addon should be disabled due to allowed_types restriction"
+  );
+  await install.addon.uninstall();
+});
+
+add_task(async function test_allowed_type_survives_allowed_types() {
+  let themeFile = AddonTestUtils.createTempWebExtensionFile({
+    manifest: {
+      browser_specific_settings: {
+        gecko: {
+          id: themeID,
+        },
+      },
+      theme: {},
+    },
+  });
+  server.registerFile("/data/policy_theme_survives.xpi", themeFile);
+
+  let install = await AddonManager.getInstallForURL(
+    BASE_URL + "/policy_theme_survives.xpi"
+  );
+  await install.install();
+  notEqual(install.addon, null, "Theme should be installed");
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          allowed_types: ["theme"],
+        },
+      },
+    },
+  });
+  let addon = await AddonManager.getAddonByID(themeID);
+  notEqual(
+    addon,
+    null,
+    "Theme should survive allowed_types: ['theme'] restriction"
+  );
   await addon.uninstall();
 });
 
@@ -682,4 +842,414 @@ add_task(async function test_private_browsing() {
     message:
       "incognito 'not_allowed' extensions should NOT have access to private browser",
   });
+});
+
+add_task(
+  {
+    // Allow insecure (http) update URLs in this test.
+    pref_set: [
+      ["extensions.checkUpdateSecurity", false],
+      // Fake default url where we expect the background update check requests
+      // to be directed to when there isn't an update_url override provided
+      // through the enterprise policies settings.
+      ["extensions.update.background.url", `${BASE_URL}/default_update.json`],
+    ],
+  },
+  async function test_update_url_policy() {
+    const XPI_FROM_DEFAULT_UPDATE_URL = `${BASE_URL}/policy_updating_from_default.xpi`;
+    const XPI_FROM_POLICIES_UPDATE_URL = `${BASE_URL}/policy_updating_from_policies.xpi`;
+
+    const defaultFakeUpdates = [
+      {
+        version: "2.0",
+        update_link: XPI_FROM_DEFAULT_UPDATE_URL,
+      },
+    ];
+    const policiesFakeUpdates = [
+      {
+        version: "2.0",
+        update_link: XPI_FROM_POLICIES_UPDATE_URL,
+      },
+    ];
+
+    let defaultUpdateURLHit = false;
+    let policiesUpdateURLHit = false;
+
+    server.registerPathHandler(
+      "/data/default_update.json",
+      (request, response) => {
+        defaultUpdateURLHit = true;
+        response.setHeader("Content-Type", "application/json");
+        response.write(
+          JSON.stringify({
+            addons: {
+              [addonID]: {
+                updates: defaultFakeUpdates,
+              },
+            },
+          })
+        );
+      }
+    );
+
+    server.registerPathHandler(
+      "/data/policy_update.json",
+      (request, response) => {
+        policiesUpdateURLHit = true;
+        response.setHeader("Content-Type", "application/json");
+        response.write(
+          JSON.stringify({
+            addons: {
+              [addonID]: {
+                updates: policiesFakeUpdates,
+              },
+            },
+          })
+        );
+      }
+    );
+
+    const verifyAddonUpdateCheck = async (expected, msg) => {
+      defaultUpdateURLHit = false;
+      policiesUpdateURLHit = false;
+
+      // Trigger the update check.
+      const updateFound = await AddonTestUtils.promiseFindAddonUpdates(addon);
+
+      Assert.ok(
+        updateFound?.updateAvailable,
+        "Got an add-on update as expected"
+      );
+
+      const actual = {
+        defaultUpdateURLHit,
+        policiesUpdateURLHit,
+        update_link: updateFound?.updateAvailable?.sourceURI.spec,
+      };
+      Assert.deepEqual(actual, expected, msg);
+      await updateFound?.updateAvailable?.cancel();
+    };
+
+    let install = await AddonManager.getInstallForURL(
+      BASE_URL + "/policy_test.xpi"
+    );
+    await install.install();
+    let addon = await AddonManager.getAddonByID(addonID);
+    Assert.notEqual(addon, null, "Addon should be installed");
+
+    info(
+      "Verify add-on update checks default update url before enterprise policies data is set"
+    );
+    // Sanity check (the default add-ons update url is used by default).
+    await verifyAddonUpdateCheck(
+      {
+        defaultUpdateURLHit: true,
+        policiesUpdateURLHit: false,
+        update_link: XPI_FROM_DEFAULT_UPDATE_URL,
+      },
+      "Expect addon update check to have been initially requested on the default update url"
+    );
+
+    info(
+      "Verify add-on update checks default update url on invalid update url in enterprise policies data"
+    );
+    let stopConsoleListener = TestUtils.listenForConsoleMessages();
+    await setupPolicyEngineWithJson({
+      policies: {
+        ExtensionSettings: {
+          [addonID]: {
+            update_url: "not-a-valid-url",
+          },
+        },
+      },
+    });
+    const messages = await stopConsoleListener();
+    const updateURLValidationError = messages.find(
+      msg =>
+        msg.level == "error" &&
+        msg.arguments[0].includes(
+          `Ignoring parameter "not-a-valid-url" - scheme (http or https) must be specified`
+        )
+    );
+    Assert.ok(
+      updateURLValidationError,
+      "Got expected JsonSchemaValidator error for the invalid update_url"
+    );
+
+    await verifyAddonUpdateCheck(
+      {
+        defaultUpdateURLHit: true,
+        policiesUpdateURLHit: false,
+        update_link: XPI_FROM_DEFAULT_UPDATE_URL,
+      },
+      "Expect addon update check to be requested on the default update url on invalid policies update_url"
+    );
+
+    info(
+      "Verify add-on update checks policy overridden update url after enterprise policies data is set"
+    );
+    await setupPolicyEngineWithJson({
+      policies: {
+        ExtensionSettings: {
+          [addonID]: {
+            update_url: `${BASE_URL}/policy_update.json`,
+          },
+        },
+      },
+    });
+    await verifyAddonUpdateCheck(
+      {
+        defaultUpdateURLHit: false,
+        policiesUpdateURLHit: true,
+        update_link: XPI_FROM_POLICIES_UPDATE_URL,
+      },
+      "Expect addon update check hits the custom update url set in the policies data"
+    );
+
+    info(
+      "Verify add-on update checks default update url after enterprise policies update_url is removed"
+    );
+    await setupPolicyEngineWithJson({
+      policies: {
+        ExtensionSettings: {
+          [addonID]: {
+            // Override the addonID setting with a new non-empty object
+            // without the update_url set (an empty object would
+            // not update the settings loaded in the previous step
+            // of this same test).
+            installation_mode: "allowed",
+          },
+        },
+      },
+    });
+    await verifyAddonUpdateCheck(
+      {
+        defaultUpdateURLHit: true,
+        policiesUpdateURLHit: false,
+        update_link: XPI_FROM_DEFAULT_UPDATE_URL,
+      },
+      "Expect addon update check hits the default update url after policies data removal"
+    );
+
+    await addon.uninstall();
+  }
+);
+
+add_task(async function test_runtime_blocked_hosts() {
+  const { setEnterpriseGuards } = ChromeUtils.importESModule(
+    "resource://gre/modules/ExtensionPermissions.sys.mjs"
+  );
+  const globalId = "guarded-global@test";
+  const perExtId = "guarded-per-ext@test";
+
+  let extGlobal = ExtensionTestUtils.loadExtension({
+    manifest: {
+      browser_specific_settings: { gecko: { id: globalId } },
+      host_permissions: ["<all_urls>"],
+    },
+    useAddonManager: "temporary",
+  });
+  let extPerExt = ExtensionTestUtils.loadExtension({
+    manifest: {
+      browser_specific_settings: { gecko: { id: perExtId } },
+      host_permissions: ["<all_urls>"],
+    },
+    useAddonManager: "temporary",
+  });
+  await extGlobal.startup();
+  await extPerExt.startup();
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          runtime_blocked_hosts: ["*://*.blocked.example"],
+          runtime_allowed_hosts: ["*://allowed.blocked.example"],
+        },
+        [perExtId]: {
+          runtime_blocked_hosts: ["*://*.per-ext.example"],
+        },
+      },
+    },
+  });
+
+  let globalPolicy = WebExtensionPolicy.getByID(globalId);
+  let perExtPolicy = WebExtensionPolicy.getByID(perExtId);
+
+  equal(globalPolicy.guardSets.length, 1, "global guard applied to extGlobal");
+  equal(
+    perExtPolicy.guardSets.length,
+    1,
+    "per-extension guard applied to extPerExt"
+  );
+
+  ok(
+    !globalPolicy.canAccessURI(
+      Services.io.newURI("https://sub.blocked.example/")
+    ),
+    "global runtime_blocked_hosts denies matching URL"
+  );
+  ok(
+    globalPolicy.canAccessURI(
+      Services.io.newURI("https://allowed.blocked.example/")
+    ),
+    "runtime_allowed_hosts carves out exception"
+  );
+  ok(
+    globalPolicy.canAccessURI(Services.io.newURI("https://other.example/")),
+    "global runtime_blocked_hosts does not affect unrelated URL"
+  );
+
+  ok(
+    !perExtPolicy.canAccessURI(
+      Services.io.newURI("https://sub.per-ext.example/")
+    ),
+    "per-extension runtime_blocked_hosts denies matching URL"
+  );
+  ok(
+    perExtPolicy.canAccessURI(
+      Services.io.newURI("https://sub.blocked.example/")
+    ),
+    "per-extension entry overrides global (global block does not apply)"
+  );
+
+  await extGlobal.unload();
+  await extPerExt.unload();
+  setEnterpriseGuards({});
+});
+
+add_task(async function test_runtime_blocked_hosts_all_urls() {
+  const { setEnterpriseGuards } = ChromeUtils.importESModule(
+    "resource://gre/modules/ExtensionPermissions.sys.mjs"
+  );
+  const id = "guarded-all-urls@test";
+  let ext = ExtensionTestUtils.loadExtension({
+    manifest: {
+      browser_specific_settings: { gecko: { id } },
+      host_permissions: ["<all_urls>"],
+    },
+    useAddonManager: "temporary",
+  });
+  await ext.startup();
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          runtime_blocked_hosts: ["<all_urls>"],
+          runtime_allowed_hosts: ["*://carveout.example"],
+        },
+      },
+    },
+  });
+
+  let policy = WebExtensionPolicy.getByID(id);
+  equal(policy.guardSets.length, 1, "guard applied for <all_urls> deny");
+  ok(
+    !policy.canAccessURI(Services.io.newURI("https://blocked.example/")),
+    "<all_urls> denies arbitrary URL"
+  );
+  ok(
+    policy.canAccessURI(Services.io.newURI("https://carveout.example/")),
+    "runtime_allowed_hosts carves out exception from <all_urls>"
+  );
+
+  await ext.unload();
+  setEnterpriseGuards({});
+});
+
+add_task(async function test_runtime_blocked_hosts_invalid_pattern() {
+  const { setEnterpriseGuards } = ChromeUtils.importESModule(
+    "resource://gre/modules/ExtensionPermissions.sys.mjs"
+  );
+  const id = "guarded-invalid@test";
+  let ext = ExtensionTestUtils.loadExtension({
+    manifest: {
+      browser_specific_settings: { gecko: { id } },
+      host_permissions: ["<all_urls>"],
+    },
+    useAddonManager: "temporary",
+  });
+  await ext.startup();
+
+  let stopConsoleListener = TestUtils.listenForConsoleMessages();
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          runtime_blocked_hosts: ["*://*.example.com/*"],
+        },
+      },
+    },
+  });
+  let messages = await stopConsoleListener();
+
+  let policy = WebExtensionPolicy.getByID(id);
+  equal(
+    policy.guardSets.length,
+    0,
+    "guards not applied when policy contains pattern with path"
+  );
+
+  ok(
+    messages.some(
+      m =>
+        m.level == "error" &&
+        m.arguments[0].includes("Host pattern must not include a path")
+    ),
+    "Got expected error message for invalid host pattern"
+  );
+
+  await ext.unload();
+  setEnterpriseGuards({});
+});
+
+add_task(async function test_runtime_blocked_hosts_malformed_pattern() {
+  const { setEnterpriseGuards } = ChromeUtils.importESModule(
+    "resource://gre/modules/ExtensionPermissions.sys.mjs"
+  );
+  const id = "guarded-malformed@test";
+  let ext = ExtensionTestUtils.loadExtension({
+    manifest: {
+      browser_specific_settings: { gecko: { id } },
+      host_permissions: ["<all_urls>"],
+    },
+    useAddonManager: "temporary",
+  });
+  await ext.startup();
+
+  let stopConsoleListener = TestUtils.listenForConsoleMessages();
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          // Passes the no-path regex but the scheme is not permitted,
+          // so MatchPatternSet rejects it.
+          runtime_blocked_hosts: ["bogus://example.com"],
+        },
+      },
+    },
+  });
+  let messages = await stopConsoleListener();
+
+  let policy = WebExtensionPolicy.getByID(id);
+  equal(
+    policy.guardSets.length,
+    0,
+    "guards not applied when policy contains malformed pattern"
+  );
+
+  ok(
+    messages.some(
+      m =>
+        m.level == "error" &&
+        m.arguments[0].includes(
+          "Invalid runtime_blocked_hosts/runtime_allowed_hosts"
+        )
+    ),
+    "Got expected error message for malformed pattern"
+  );
+
+  await ext.unload();
+  setEnterpriseGuards({});
 });

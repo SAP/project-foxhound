@@ -4,7 +4,7 @@
 add_task(async function test_open_tab_row_navigation() {
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
 
     await navigateToViewAndWait(document, "opentabs");
     const openTabs = document.querySelector("view-opentabs[name=opentabs]");
@@ -64,7 +64,7 @@ add_task(async function test_open_tab_row_navigation() {
 add_task(async function test_focus_moves_after_unmute() {
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     await navigateToViewAndWait(document, "opentabs");
     let openTabs = document.querySelector("view-opentabs[name=opentabs]");
     await openTabs.updateComplete;
@@ -175,7 +175,7 @@ add_task(async function test_open_tab_row_with_sound_navigation() {
   );
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
 
     await navigateToViewAndWait(document, "opentabs");
     const openTabs = document.querySelector("view-opentabs[name=opentabs]");
@@ -277,7 +277,7 @@ add_task(async function test_open_tab_row_with_sound_mute_and_unmute() {
   );
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
 
     await navigateToViewAndWait(document, "opentabs");
     const openTabs = document.querySelector("view-opentabs[name=opentabs]");

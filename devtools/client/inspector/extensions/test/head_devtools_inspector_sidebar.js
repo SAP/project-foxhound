@@ -70,7 +70,10 @@ async function testSetExtensionPageSidebarPanel(panelDoc, expectedURL) {
 
   const iframeWindow = panelDoc.querySelector(selector).contentWindow;
   await TestUtils.waitForCondition(() => {
-    return iframeWindow.document.readyState === "complete";
+    return (
+      iframeWindow.document.readyState === "complete" &&
+      iframeWindow.location.href != "about:blank"
+    );
   }, "Wait for the extension page iframe to complete to load");
 
   is(

@@ -286,7 +286,7 @@ add_task(async function test_last_visit_property() {
   console.log(historyResults.map(r => r.result.providerName));
   Assert.equal(
     historyResults[0].result.providerName,
-    "InputHistory",
+    "UrlbarProviderInputHistory",
     "First history result is from InputHistoryProvider"
   );
   Assert.ok(

@@ -40,6 +40,7 @@ impl Waker {
         // The epoll emulation on some illumos systems currently requires
         // the pipe buffer to be completely empty for an edge-triggered
         // wakeup on the pipe read side.
+        // See https://www.illumos.org/issues/13436.
         #[cfg(target_os = "illumos")]
         self.empty();
 
@@ -59,6 +60,17 @@ impl Waker {
     #[allow(dead_code)] // Only used by the `poll(2)` implementation.
     pub(crate) fn ack_and_reset(&self) {
         self.empty();
+    }
+
+    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
+    pub(crate) fn fd(&self) -> Option<RawFd> {
+        Some(self.as_raw_fd())
+    }
+
+    /// Only ever `true` for the `single_threaded.rs` implementation.
+    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
+    pub(crate) fn woken(&self) -> bool {
+        false
     }
 
     /// Empty the pipe's buffer, only need to call this if `wake` fails.

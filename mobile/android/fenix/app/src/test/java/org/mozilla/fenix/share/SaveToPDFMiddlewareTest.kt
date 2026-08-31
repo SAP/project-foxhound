@@ -9,17 +9,18 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.EngineAction
+import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -35,6 +36,7 @@ import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.geckoview.GeckoSession
 import org.robolectric.RobolectricTestRunner
 import java.io.IOException
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class SaveToPDFMiddlewareTest {
@@ -43,25 +45,24 @@ class SaveToPDFMiddlewareTest {
     @get:Rule
     val gleanTestRule = FenixGleanTestRule(testContext)
 
-    @get:Rule
-    val mainCoroutineTestRule = MainCoroutineRule()
-
     // Only ERROR_PRINT_SETTINGS_SERVICE_NOT_AVAILABLE is available for testing
     class MockGeckoPrintException : GeckoSession.GeckoPrintException()
 
     private lateinit var middleware: SaveToPDFMiddleware
+    private val testDispatcher = StandardTestDispatcher()
+    private val scope = CoroutineScope(testDispatcher)
 
     @Before
     fun setup() {
         every { testContext.recordEventInNimbus(any()) } just Runs
-        middleware = SaveToPDFMiddleware(context = testContext)
+        middleware = SaveToPDFMiddleware(context = testContext, scope)
         appStore = mockk(relaxed = true)
         every { testContext.components.appStore } returns appStore
     }
 
     @Test
     fun `GIVEN a save to pdf request WHEN it fails unexpectedly THEN unknown failure telemetry is sent AND a snackbar error is shown`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val exceptionToThrow = RuntimeException("reader save to pdf failed")
             val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
                 every {
@@ -85,13 +86,12 @@ class SaveToPDFMiddlewareTest {
             browserStore.dispatch(
                 EngineAction.SaveToPdfExceptionAction("14", exceptionToThrow),
             )
-            browserStore.waitUntilIdle()
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfFailure.testGetValue()?.firstOrNull()
             assertNotNull(response)
-            val reason = response?.extra?.get("reason")
+            val reason = response.extra?.get("reason")
             assertEquals("unknown", reason)
-            val source = response?.extra?.get("source")
+            val source = response.extra?.get("source")
             assertEquals("unknown", source)
             verify {
                 appStore.dispatch(
@@ -106,7 +106,7 @@ class SaveToPDFMiddlewareTest {
 
     @Test
     fun `GIVEN a save to pdf request WHEN it fails due to io THEN io failure telemetry is sent AND a snackbar error is shown`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val exceptionToThrow = IOException()
             val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
                 every {
@@ -128,13 +128,12 @@ class SaveToPDFMiddlewareTest {
                 ),
             )
             browserStore.dispatch(EngineAction.SaveToPdfExceptionAction("14", exceptionToThrow))
-            browserStore.waitUntilIdle()
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfFailure.testGetValue()?.firstOrNull()
             assertNotNull(response)
-            val reason = response?.extra?.get("reason")
+            val reason = response.extra?.get("reason")
             assertEquals("io_error", reason)
-            val source = response?.extra?.get("source")
+            val source = response.extra?.get("source")
             assertEquals("unknown", source)
             verify {
                 appStore.dispatch(
@@ -149,7 +148,7 @@ class SaveToPDFMiddlewareTest {
 
     @Test
     fun `GIVEN a save to pdf request WHEN it fails due to print exception THEN print exception failure telemetry is sent AND a snackbar error is shown`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val exceptionToThrow = MockGeckoPrintException()
             val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
                 every {
@@ -171,13 +170,12 @@ class SaveToPDFMiddlewareTest {
                 ),
             )
             browserStore.dispatch(EngineAction.SaveToPdfExceptionAction("14", exceptionToThrow))
-            browserStore.waitUntilIdle()
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfFailure.testGetValue()?.firstOrNull()
             assertNotNull(response)
-            val reason = response?.extra?.get("reason")
+            val reason = response.extra?.get("reason")
             assertEquals("no_settings_service", reason)
-            val source = response?.extra?.get("source")
+            val source = response.extra?.get("source")
             assertEquals("unknown", source)
             verify {
                 appStore.dispatch(
@@ -192,7 +190,7 @@ class SaveToPDFMiddlewareTest {
 
     @Test
     fun `GIVEN a save to pdf request WHEN it completes THEN completed telemetry is sent`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
                 every {
                     checkForPdfViewer(any(), any())
@@ -213,26 +211,31 @@ class SaveToPDFMiddlewareTest {
                 ),
             )
             browserStore.dispatch(EngineAction.SaveToPdfCompleteAction("14"))
-            browserStore.waitUntilIdle()
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfCompleted.testGetValue()
             assertNotNull(response)
-            val source = response?.firstOrNull()?.extra?.get("source")
+            val source = response.firstOrNull()?.extra?.get("source")
             assertEquals("non-pdf", source)
         }
 
     @Test
     fun `GIVEN a save to pdf request WHEN it the action begins THEN tapped telemetry is sent`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
                 every {
                     checkForPdfViewer(any(), any())
                 } answers {
                     firstArg<(Boolean) -> Unit>().invoke(false)
                 }
+
+                every { requestPdfToDownload() } just Runs
             }
+            val engineMiddleware = EngineMiddleware.create(
+                mockk<Engine>(),
+                this,
+            )
             val browserStore = BrowserStore(
-                middleware = listOf(middleware),
+                middleware = listOf(middleware) + engineMiddleware,
                 initialState = BrowserState(
                     tabs = listOf(
                         createTab(
@@ -244,16 +247,15 @@ class SaveToPDFMiddlewareTest {
                 ),
             )
             browserStore.dispatch(EngineAction.SaveToPdfAction("14"))
-            browserStore.waitUntilIdle()
             testScheduler.advanceUntilIdle()
             val response = Events.saveToPdfTapped.testGetValue()
             assertNotNull(response)
-            val source = response?.firstOrNull()?.extra?.get("source")
+            val source = response.firstOrNull()?.extra?.get("source")
             assertEquals("non-pdf", source)
         }
 
     @Test
-    fun `GIVEN a save as pdf exception THEN should calculate the correct failure reason for telemetry`() = runTestOnMain {
+    fun `GIVEN a save as pdf exception THEN should calculate the correct failure reason for telemetry`() = runTest(testDispatcher) {
         val noSettingsService = middleware.telemetryErrorReason(MockGeckoPrintException())
         assertEquals("no_settings_service", noSettingsService)
         val ioException = middleware.telemetryErrorReason(IOException())
@@ -263,14 +265,14 @@ class SaveToPDFMiddlewareTest {
     }
 
     @Test
-    fun `GIVEN a save as pdf page type THEN should calculate the correct page source for telemetry`() = runTestOnMain {
+    fun `GIVEN a save as pdf page type THEN should calculate the correct page source for telemetry`() = runTest(testDispatcher) {
         assertEquals("pdf", middleware.telemetrySource(isPdfViewer = true))
         assertEquals("non-pdf", middleware.telemetrySource(isPdfViewer = false))
         assertEquals("unknown", middleware.telemetrySource(isPdfViewer = null))
     }
 
     @Test
-    fun `GIVEN a print request WHEN it fails unexpectedly THEN unknown failure telemetry is sent AND a snackbar error is shown`() = runTestOnMain {
+    fun `GIVEN a print request WHEN it fails unexpectedly THEN unknown failure telemetry is sent AND a snackbar error is shown`() = runTest(testDispatcher) {
         val exceptionToThrow = RuntimeException("No Print Spooler")
         val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
             every {
@@ -294,13 +296,12 @@ class SaveToPDFMiddlewareTest {
         browserStore.dispatch(
             EngineAction.PrintContentExceptionAction("14", true, exceptionToThrow),
         )
-        browserStore.waitUntilIdle()
         testScheduler.advanceUntilIdle()
         val response = Events.printFailure.testGetValue()?.firstOrNull()
         assertNotNull(response)
-        val reason = response?.extra?.get("reason")
+        val reason = response.extra?.get("reason")
         assertEquals("unknown", reason)
-        val source = response?.extra?.get("source")
+        val source = response.extra?.get("source")
         assertEquals("unknown", source)
         verify {
             appStore.dispatch(
@@ -314,7 +315,7 @@ class SaveToPDFMiddlewareTest {
     }
 
     @Test
-    fun `GIVEN a print request WHEN it fails due to print exception THEN print exception failure telemetry is sent AND a snackbar error is shown`() = runTestOnMain {
+    fun `GIVEN a print request WHEN it fails due to print exception THEN print exception failure telemetry is sent AND a snackbar error is shown`() = runTest(testDispatcher) {
         val exceptionToThrow = MockGeckoPrintException()
         val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
             every {
@@ -336,13 +337,12 @@ class SaveToPDFMiddlewareTest {
             ),
         )
         browserStore.dispatch(EngineAction.PrintContentExceptionAction("14", true, exceptionToThrow))
-        browserStore.waitUntilIdle()
         testScheduler.advanceUntilIdle()
         val response = Events.printFailure.testGetValue()?.firstOrNull()
         assertNotNull(response)
-        val reason = response?.extra?.get("reason")
+        val reason = response.extra?.get("reason")
         assertEquals("no_settings_service", reason)
-        val source = response?.extra?.get("source")
+        val source = response.extra?.get("source")
         assertEquals("unknown", source)
         verify {
             appStore.dispatch(
@@ -356,7 +356,7 @@ class SaveToPDFMiddlewareTest {
     }
 
     @Test
-    fun `GIVEN a print request WHEN it completes THEN completed telemetry is sent`() = runTestOnMain {
+    fun `GIVEN a print request WHEN it completes THEN completed telemetry is sent`() = runTest(testDispatcher) {
         val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
             every {
                 checkForPdfViewer(any(), any())
@@ -377,25 +377,30 @@ class SaveToPDFMiddlewareTest {
             ),
         )
         browserStore.dispatch(EngineAction.PrintContentCompletedAction("14"))
-        browserStore.waitUntilIdle()
         testScheduler.advanceUntilIdle()
         val response = Events.printCompleted.testGetValue()
         assertNotNull(response)
-        val source = response?.firstOrNull()?.extra?.get("source")
+        val source = response.firstOrNull()?.extra?.get("source")
         assertEquals("pdf", source)
     }
 
     @Test
-    fun `GIVEN a print request WHEN it the action begins THEN tapped telemetry is sent`() = runTestOnMain {
+    fun `GIVEN a print request WHEN it the action begins THEN tapped telemetry is sent`() = runTest(testDispatcher) {
         val mockEngineSession: EngineSession = mockk<EngineSession>().apply {
             every {
                 checkForPdfViewer(any(), any())
             } answers {
                 firstArg<(Boolean) -> Unit>().invoke(false)
             }
+
+            every { requestPrintContent() } just Runs
         }
+        val engineMiddleware = EngineMiddleware.create(
+            mockk<Engine>(),
+            this,
+        )
         val browserStore = BrowserStore(
-            middleware = listOf(middleware),
+            middleware = listOf(middleware) + engineMiddleware,
             initialState = BrowserState(
                 tabs = listOf(
                     createTab(
@@ -407,11 +412,10 @@ class SaveToPDFMiddlewareTest {
             ),
         )
         browserStore.dispatch(EngineAction.PrintContentAction("14"))
-        browserStore.waitUntilIdle()
         testScheduler.advanceUntilIdle()
         val response = Events.printTapped.testGetValue()
         assertNotNull(response)
-        val source = response?.firstOrNull()?.extra?.get("source")
+        val source = response.firstOrNull()?.extra?.get("source")
         assertEquals("non-pdf", source)
         verify { testContext.recordEventInNimbus("print_tapped") }
     }

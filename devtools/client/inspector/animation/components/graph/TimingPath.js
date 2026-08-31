@@ -17,7 +17,7 @@ class TimingPath extends PureComponent {
   /**
    * Render a graph of given parameters and return as <path> element list.
    *
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -148,7 +148,7 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> element to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -171,11 +171,11 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> element to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
-   * @param {Number} mainIterationStartTime
+   * @param {number} mainIterationStartTime
    *        Start time of main iteration.
-   * @param {Number} firstSectionCount
+   * @param {number} firstSectionCount
    *        Iteration count of first section.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -203,13 +203,13 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> elements to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
-   * @param {Number} mainIterationStartTime
+   * @param {number} mainIterationStartTime
    *        Starting time of main iteration.
-   * @param {Number} firstSectionCount
+   * @param {number} firstSectionCount
    *        Iteration count of first section.
-   * @param {Number} middleSectionCount
+   * @param {number} middleSectionCount
    *        Iteration count of middle section.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -243,15 +243,15 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> elements to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
-   * @param {Number} mainIterationStartTime
+   * @param {number} mainIterationStartTime
    *        Starting time of main iteration.
-   * @param {Number} firstSectionCount
+   * @param {number} firstSectionCount
    *        Iteration count of first section.
-   * @param {Number} middleSectionCount
+   * @param {number} middleSectionCount
    *        Iteration count of middle section.
-   * @param {Number} lastSectionCount
+   * @param {number} lastSectionCount
    *        Iteration count of last section.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -283,11 +283,11 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> elements to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
-   * @param {Number} mainIterationStartTime
+   * @param {number} mainIterationStartTime
    *        Starting time of main iteration.
-   * @param {Number} firstSectionCount
+   * @param {number} firstSectionCount
    *        Iteration count of first section.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -359,9 +359,9 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> elements to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
-   * @param {Number} mainIterationStartTime
+   * @param {number} mainIterationStartTime
    *        Starting time of main iteration.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -383,11 +383,11 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> element to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
-   * @param {Number} mainIterationStartTime
+   * @param {number} mainIterationStartTime
    *        Starting time of main iteration.
-   * @param {Number} iterationCount
+   * @param {number} iterationCount
    *        Iteration count of whole animation.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.
@@ -416,11 +416,11 @@ class TimingPath extends PureComponent {
    *
    * @param {Array} pathList
    *        Add rendered <path> element to this array.
-   * @param {Object} state
+   * @param {object} state
    *        State of animation.
-   * @param {Number} mainIterationStartTime
+   * @param {number} mainIterationStartTime
    *        Starting time of main iteration.
-   * @param {Number} iterationCount
+   * @param {number} iterationCount
    *        Iteration count of whole animation.
    * @param {SummaryGraphHelper} helper
    *        Instance of SummaryGraphHelper.

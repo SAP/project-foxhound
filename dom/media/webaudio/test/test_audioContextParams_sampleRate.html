@@ -38,7 +38,7 @@ runTest(async () => {
   })
   osc_ac1.stop();
 
-  // Same test using a  new AudioContext of different sample rate.
+  // Same test using a new AudioContext of different sample rate.
   const rate2 = 1500;
   const ac2 = new AudioContext({sampleRate: 48000});
   const dest_ac2 = ac2.createMediaStreamDestination();
@@ -60,9 +60,9 @@ runTest(async () => {
   })
   osc_ac2.stop();
 
-  // Two AudioContexts with different sample rate cannot communicate.
-  mustThrowWith("Connect nodes with different sample rate", "NotSupportedError",
-                () => ac2.createMediaStreamSource(dest_ac1.stream));
+  // Two AudioContexts with different sample rate can communicate.
+  ac2.createMediaStreamSource(dest_ac1.stream);
+  ok(true, "Connect nodes with the different sample rate is ok");
 
   // Two AudioContext with the same sample rate can communicate.
   const ac3 = new AudioContext({sampleRate: 48000});

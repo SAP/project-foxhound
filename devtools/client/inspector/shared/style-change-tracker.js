@@ -17,8 +17,9 @@ const WalkerEventListener = require("resource://devtools/client/inspector/shared
  * - window resize, because they may cause media query changes and therefore also
  *   different CSS rules to apply to the current node.
  */
-class InspectorStyleChangeTracker {
+class InspectorStyleChangeTracker extends EventEmitter {
   constructor(inspector) {
+    super();
     this.selection = inspector.selection;
 
     this.onMutations = this.onMutations.bind(this);
@@ -28,8 +29,6 @@ class InspectorStyleChangeTracker {
       mutations: this.onMutations,
       resize: this.onResized,
     });
-
-    EventEmitter.decorate(this);
   }
 
   destroy() {
@@ -64,9 +63,11 @@ class InspectorStyleChangeTracker {
       // walker.children, so don't attempt to check the previous or next element siblings.
       // It's good enough to know that one sibling changed.
       let parent = currentNode.parentNode();
-      const siblings = parent.treeChildren();
-      if (siblings.includes(mutationTarget)) {
-        return true;
+      if (parent) {
+        const siblings = parent.treeChildren();
+        if (siblings.includes(mutationTarget)) {
+          return true;
+        }
       }
 
       // Is the mutation on one of the current selected node's parents?

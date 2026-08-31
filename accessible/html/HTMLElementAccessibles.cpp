@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,15 +41,14 @@ ENameValueFlag HTMLBRAccessible::NativeName(nsString& aName) const {
 ////////////////////////////////////////////////////////////////////////////////
 
 ENameValueFlag HTMLLabelAccessible::NativeName(nsString& aName) const {
-  nsTextEquivUtils::GetNameFromSubtree(this, aName);
-  return aName.IsEmpty() ? eNameOK : eNameFromSubtree;
+  return eNameOK;
 }
 
 Relation HTMLLabelAccessible::RelationByType(RelationType aType) const {
   Relation rel = AccessibleWrap::RelationByType(aType);
   if (aType == RelationType::LABEL_FOR) {
     dom::HTMLLabelElement* label = dom::HTMLLabelElement::FromNode(mContent);
-    rel.AppendTarget(mDoc, label->GetControl());
+    rel.AppendTarget(mDoc, label->GetLabeledElementInternal());
   }
 
   return rel;
@@ -58,7 +56,7 @@ Relation HTMLLabelAccessible::RelationByType(RelationType aType) const {
 
 void HTMLLabelAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType,
+                                              AttrModType aModType,
                                               const nsAttrValue* aOldValue,
                                               uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -97,7 +95,7 @@ Relation HTMLOutputAccessible::RelationByType(RelationType aType) const {
 
 void HTMLOutputAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                                nsAtom* aAttribute,
-                                               int32_t aModType,
+                                               AttrModType aModType,
                                                const nsAttrValue* aOldValue,
                                                uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -256,4 +254,40 @@ role HTMLAsideAccessible::NativeRole() const {
 
 role HTMLSectionAccessible::NativeRole() const {
   return NameIsEmpty() ? roles::SECTION : roles::REGION;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// HTMLAbbreviationAccessible
+////////////////////////////////////////////////////////////////////////////////
+
+ENameValueFlag HTMLAbbreviationAccessible::NativeName(nsString& aName) const {
+  if (mContent->AsElement()->GetAttr(nsGkAtoms::title, aName)) {
+    // "title" tag takes priority
+    return eNameOK;
+  }
+
+  return HyperTextAccessible::NativeName(aName);
+}
+
+void HTMLAbbreviationAccessible::DOMAttributeChanged(
+    int32_t aNameSpaceID, nsAtom* aAttribute, AttrModType aModType,
+    const nsAttrValue* aOldValue, uint64_t aOldState) {
+  if (aAttribute == nsGkAtoms::title) {
+    nsAutoString name;
+    ARIAName(name);
+    if (name.IsEmpty()) {
+      mDoc->FireDelayedEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, this);
+      return;
+    }
+
+    if (!mContent->AsElement()->HasAttr(nsGkAtoms::aria_describedby)) {
+      mDoc->FireDelayedEvent(nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE,
+                             this);
+    }
+
+    return;
+  }
+
+  HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
+                                           aOldValue, aOldState);
 }

@@ -22,14 +22,14 @@ class FxaAccountManagerKtTest {
         val account: OAuthAccount = mock()
         val constellation: DeviceConstellation = mock()
 
-        accountManager.withConstellation(block)
+        accountManager.withConstellationIfExists(block)
 
         verify(block, never()).invoke(constellation)
 
         `when`(accountManager.authenticatedAccount()).thenReturn(account)
         `when`(account.deviceConstellation()).thenReturn(constellation)
 
-        accountManager.withConstellation(block)
+        accountManager.withConstellationIfExists(block)
 
         verify(block).invoke(constellation)
     }

@@ -11,14 +11,8 @@
 #      partial to have unnecessary updates.
 # - Only decompress the target complete mar once
 # - Separate this script into a python module with multiple files (ie: download, validation, diffing)
-# - Implement caching of diffs. (Keeping in mind SCCACHE needs to
-#      move away from AWS)
-#      https://bugzilla.mozilla.org/show_bug.cgi?id=1842209
-# - Writing of the manifest file could be done at the very end
-#      instead of multiple writes
-# - Check file signature
-# - Check ALLOWED_URL_PREFIXES
-# - Check mar channel ids
+# - Implement caching of diffs. https://bugzilla.mozilla.org/show_bug.cgi?id=1842209
+# - Writing of the manifest file could be done at the very end instead of multiple writes
 
 import argparse
 import configparser
@@ -38,7 +32,8 @@ import urllib.request
 from concurrent.futures import ProcessPoolExecutor
 from tempfile import NamedTemporaryFile
 
-# import multiprocessing
+from mardor.reader import MarReader
+from mardor.signing import get_keysize
 
 # Additional flags for XZ compression
 BCJ_OPTIONS = {
@@ -47,6 +42,24 @@ BCJ_OPTIONS = {
     "aarch64": [],
     "macos-x86_64-aarch64": [],
 }
+ROOT_URL = os.environ.get(
+    "TASKCLUSTER_ROOT_URL", "https://firefox-ci-tc.services.mozilla.com"
+)
+QUEUE_PREFIX = f"{ROOT_URL}/api/queue/"
+ALLOWED_URL_PREFIXES = (
+    "http://download.cdn.mozilla.net/pub/mozilla.org/firefox/nightly/",
+    "http://download.cdn.mozilla.net/pub/firefox/nightly/",
+    "http://ftp.mozilla.org/",
+    "http://download.mozilla.org/",
+    "https://archive.mozilla.org/",
+    "http://archive.mozilla.org/",
+    QUEUE_PREFIX,
+)
+STAGING_URL_PREFIXES = (
+    # TODO: Update release_history to force stage urls as https. https://bugzilla.mozilla.org/show_bug.cgi?id=2010915
+    "http://ftp.stage.mozaws.net/",
+    "https://ftp.stage.mozaws.net/",
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -71,12 +84,96 @@ def xz_compression_options(arch):
 
 
 # Copied from scriptworker
-def get_hash(path):
-    h = hashlib.new("sha512")
+def get_hash(path, algo="sha512"):
+    h = hashlib.new(algo)
     with open(path, "rb") as f:
         for chunk in iter(functools.partial(f.read, 4096), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _hash_dir(directory):
+    """Return {rel_path: sha256_hex} for every file under directory."""
+    result = {}
+    for root, _, filenames in os.walk(directory):
+        for filename in filenames:
+            abs_path = os.path.join(root, filename)
+            rel_path = os.path.relpath(abs_path, directory)
+            result[rel_path] = get_hash(abs_path, "sha256")
+    return result
+
+
+def _extract_cache_mar(patch_cache_dir, target_mar, workdir):
+    """Extract the cached partial mar matching target_mar's basename into
+    workdir/cache_extracted. Returns the extracted dir on success, or None
+    if the cached mar is missing or extraction fails."""
+    dest_mar_basename = os.path.basename(target_mar)
+    cached_mar = os.path.join(patch_cache_dir, dest_mar_basename)
+    if not os.path.exists(cached_mar):
+        log(
+            f"Cached mar not found: {cached_mar}",
+            "_extract_cache_mar",
+        )
+        return None
+    cache_extracted_dir = os.path.join(workdir, "cache_extracted")
+    try:
+        mar_extract(cached_mar, cache_extracted_dir)
+    except Exception as e:
+        log(
+            f"Failed to extract cached mar {cached_mar}: {e}",
+            "_extract_cache_mar",
+        )
+        return None
+    return cache_extracted_dir
+
+
+def _maybe_use_cached_file(
+    cache_entry,
+    rel_path,
+    local_from_sha,
+    local_to_sha,
+    cache_extracted_dir,
+    partials_dir,
+    manifest_file,
+):
+    """Reuse a precomputed patch/full file from a previously-built partial mar
+    when the (from, to) sha256 pair for rel_path matches a cache entry.
+    Returns the archivefile name on hit, None on miss."""
+    if local_from_sha is None or local_to_sha is None:
+        return None
+    expected_from = cache_entry.get("from_mar_files", {}).get(rel_path)
+    expected_to = cache_entry.get("to_mar_files", {}).get(rel_path)
+    if expected_from != local_from_sha or expected_to != local_to_sha:
+        return None
+
+    src_patch = os.path.join(cache_extracted_dir, f"{rel_path}.patch")
+    src_full = os.path.join(cache_extracted_dir, rel_path)
+    try:
+        if os.path.exists(src_patch):
+            dest = os.path.join(partials_dir, f"{rel_path}.patch")
+            os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+            shutil.copy2(src_patch, dest)
+            make_patch_instruction(rel_path, manifest_file)
+            log(f"Cache hit (patch): {rel_path}", "_maybe_use_cached_file")
+            return f"{rel_path}.patch"
+        if os.path.exists(src_full):
+            # The cached partial mar stored the full file (not a .patch)
+            # likely because the patch was bigger than the file itself. Reuse
+            # that decision so we don't re-run the diff just to throw it away.
+            dest = os.path.join(partials_dir, rel_path)
+            os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+            shutil.copy2(src_full, dest)
+            make_add_instruction(rel_path, manifest_file)
+            log(f"Cache hit (add): {rel_path}", "_maybe_use_cached_file")
+            return rel_path
+    except OSError as e:
+        log(f"Cache copy failed for {rel_path}: {e}", "_maybe_use_cached_file")
+        return None
+    log(
+        f"Cache hashes match but file missing in upstream mar: {rel_path}",
+        "_maybe_use_cached_file",
+    )
+    return None
 
 
 # The thread-safety of this function should be ok, given that each thread only reads it's own from_mar
@@ -164,7 +261,7 @@ def check_for_add_if_not_update(filename):
 
 def make_patch_instruction(filename, manifest):
     with open(manifest, "a") as manifest_file:
-        manifest_file.write(f'patch "{filename}"\n')
+        manifest_file.write(f'patch "{filename}.patch" "{filename}"\n')
 
 
 def add_remove_instructions(remove_array, manifest):
@@ -187,6 +284,24 @@ def append_remove_instructions(newdir, manifest):
         with open(manifest, "a") as manifest_file:
             for file in removed_files:
                 manifest_file.write(f'remove "{file.strip()}"\n')
+
+
+def validate_mar_channel_id(mar_path, mar_channel_id):
+    """Validate MAR has correct channel id"""
+    channel_ids = set(mar_channel_id.split(","))
+
+    product_info = MarReader(open(mar_path, "rb")).productinfo
+    if not isinstance(product_info, tuple):
+        raise Exception(f"Malformed product info in mar: {mar_path}")
+
+    found_channel_ids = set(product_info[1].split(","))
+    if not found_channel_ids.issubset(channel_ids):
+        raise Exception(
+            f"MAR_CHANNEL_ID mismatch, {product_info[1]} not in {channel_ids}"
+        )
+
+    log(f"Validated {mar_path}: channel {product_info[1]} in {mar_channel_id}")
+    return True
 
 
 def mar_extract(source_mar, destination):
@@ -218,17 +333,12 @@ def create_patch(from_file, to_file, destination_patch):
     """Create a patch between 2 xz compressed files"""
     log(f"{from_file} -> {destination_patch}", "create_patch")
 
-    with (
-        NamedTemporaryFile() as from_fd,
-        NamedTemporaryFile() as to_fd,
-        NamedTemporaryFile() as patch_fd,
-    ):
+    with NamedTemporaryFile() as from_fd, NamedTemporaryFile() as to_fd, NamedTemporaryFile() as patch_fd:
         xz_cmd(("--decompress",), from_file, from_fd.name)
 
         # TODO: Potentially don't decompress to_mar files once per thread?
         xz_cmd(("--decompress",), to_file, to_fd.name)
 
-        # args = f"zucchini -gen '{from_fd.name}' '{to_fd.name}' '{patch_fd.name}'"
         args = ["zucchini", "-gen", from_fd.name, to_fd.name, patch_fd.name]
         try:
             subprocess.run(args, check=True)
@@ -236,13 +346,27 @@ def create_patch(from_file, to_file, destination_patch):
             log(f"Zucchini failed to create patch:\n{e.stderr}", "create_patch")
             raise Exception(f"Zucchini exited with code: {e.returncode}")
 
-        xz_cmd(("--compress", "-9", "-e", "-c"), patch_fd.name, destination_patch)
+        xz_cmd(("--compress", "-7", "-e", "-c"), patch_fd.name, destination_patch)
 
 
-def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=None):
+def make_partial(
+    from_mar_url,
+    to_mar_dir,
+    target_mar,
+    mar_channel_id,
+    workdir,
+    signing_cert,
+    arch="",
+    force=None,
+    staging=False,
+    compute_hashes=False,
+    cache_entry=None,
+    to_hashes=None,
+    patch_cache_dir=None,
+):
     # Download from_mar
     from_mar = os.path.join(workdir, "from.mar")
-    download_file(from_mar_url, from_mar)
+    download_file(from_mar_url, from_mar, staging, signing_cert)
 
     requested_forced_updates = force or []
     # MacOS firefox binary is always forced update
@@ -262,11 +386,18 @@ def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=N
     )
     log(f"Processing from_mar: {from_version}", "make_partial")
 
+    from_hashes = _hash_dir(from_mar_dir) if compute_hashes else None
+
+    # Extract upstream enUS partial mar once for cache reuse
+    cache_extracted_dir = None
+    if cache_entry is not None and patch_cache_dir is not None:
+        cache_extracted_dir = _extract_cache_mar(patch_cache_dir, target_mar, workdir)
+
     partials_dir = os.path.abspath(os.path.join(workdir, "partials"))
     os.makedirs(partials_dir, exist_ok=True)
 
     # List files and directories
-    oldfiles, olddirs = list_files_and_dirs(from_mar_dir)
+    oldfiles, _ = list_files_and_dirs(from_mar_dir)
     newfiles, newdirs = list_files_and_dirs(to_mar_dir)
 
     for newdir in newdirs:
@@ -279,7 +410,7 @@ def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=N
         os.path.join(to_mar_dir, "Contents/Resources/precomplete")
     ):
         log("precomplete file is missing!", "make_partial")
-        return 1
+        raise Exception("precomplete file is missing!")
 
     # Create update manifest
     with open(manifest_file, "w") as manifest_fd:
@@ -290,6 +421,9 @@ def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=N
     # Process files for patching
     # Note: these files are already XZ compressed
     for rel_path in oldfiles:
+        # updatev3.manifest is the partial manifest, not a patch[able] file
+        if rel_path == "updatev3.manifest":
+            continue
         new_file_abs = os.path.join(to_mar_dir, rel_path)
         old_file_abs = os.path.join(from_mar_dir, rel_path)
 
@@ -303,28 +437,41 @@ def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=N
                 make_add_instruction(rel_path, manifest_file)
                 shutil.copy2(new_file_abs, patch_file)
                 archivefiles.append(rel_path)
-            elif (
-                # TODO: !!! This check will always trigger if we switch XZ options!
-                subprocess.run(
-                    ("diff", old_file_abs, new_file_abs),
-                    check=False,
-                ).returncode
-                != 0
-            ):
-                # Check for smaller patch or full file size and choose the smaller of the two to package
-                create_patch(old_file_abs, new_file_abs, f"{patch_file}.patch")
-                if (
-                    os.stat(f"{patch_file}.patch").st_size
-                    > os.stat(new_file_abs).st_size
+            else:
+                cache_archive = None
+                if cache_extracted_dir is not None and cache_entry is not None:
+                    cache_archive = _maybe_use_cached_file(
+                        cache_entry,
+                        rel_path,
+                        from_hashes[rel_path],
+                        to_hashes[rel_path],
+                        cache_extracted_dir,
+                        partials_dir,
+                        manifest_file,
+                    )
+                if cache_archive is not None:
+                    archivefiles.append(cache_archive)
+                elif (
+                    # TODO: !!! This check will always trigger if we switch XZ options!
+                    subprocess.run(
+                        ("diff", old_file_abs, new_file_abs),
+                        check=False,
+                    ).returncode
+                    != 0
                 ):
-                    make_add_instruction(rel_path, manifest_file)
-                    os.unlink(f"{patch_file}.patch")
-                    shutil.copy2(new_file_abs, patch_file)
-                    archivefiles.append(rel_path)
-                else:
-                    make_patch_instruction(patch_file, manifest_file)
-                    path_relpath = os.path.relpath(patch_file, partials_dir)
-                    archivefiles.append(f"{path_relpath}.patch")
+                    # Check for smaller patch or full file size and choose the smaller of the two to package
+                    create_patch(old_file_abs, new_file_abs, f"{patch_file}.patch")
+                    if (
+                        os.stat(f"{patch_file}.patch").st_size
+                        > os.stat(new_file_abs).st_size
+                    ):
+                        make_add_instruction(rel_path, manifest_file)
+                        os.unlink(f"{patch_file}.patch")
+                        shutil.copy2(new_file_abs, patch_file)
+                        archivefiles.append(rel_path)
+                    else:
+                        make_patch_instruction(rel_path, manifest_file)
+                        archivefiles.append(f"{rel_path}.patch")
 
         else:
             remove_array.append(rel_path)
@@ -349,12 +496,9 @@ def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=N
     xz_cmd(xz_compression_options(arch), manifest_file, compressed_manifest)
     archivefiles.append("updatev3.manifest")
 
-    # Use
-    mar_channel_id = os.environ.get("MAR_CHANNEL_ID", "unknown")
     version = get_option_from_compressed(
         to_mar_dir, "application.ini", "App", "Version"
     )
-    # from_version = get_option_from_compressed(from_mar_dir, "application.ini", "App", "Version")
 
     log(f"Archive files: {' '.join(archivefiles)}", "make_partial")
 
@@ -375,7 +519,7 @@ def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=N
         log(f"Error creating mar:\n{e.stderr}")
         raise Exception(f"Mar exited with code {e.returncode}")
 
-    return {
+    mar_manifest = {
         "MAR_CHANNEL_ID": mar_channel_id,
         "appName": get_option_from_compressed(
             from_mar_dir, filename="application.ini", section="App", option="Name"
@@ -389,16 +533,35 @@ def make_partial(from_mar_url, to_mar_dir, target_mar, workdir, arch="", force=N
         "size": os.path.getsize(target_mar),
         "from_mar": from_mar_url,
     }
+    return mar_manifest, from_hashes
 
 
-def download_file(url, save_path):
+def validate_url(url, allow_staging):
+    allowed_url_prefixes = ALLOWED_URL_PREFIXES
+    if allow_staging:
+        allowed_url_prefixes += STAGING_URL_PREFIXES
+    if not url.startswith(allowed_url_prefixes):
+        raise Exception(f"URL not allowed: {url}")
+
+
+def verify_signature(path, signing_cert):
+    with open(path, "rb") as fd:
+        m = MarReader(fd)
+        if not m.verify(verify_key=signing_cert):
+            raise Exception(f"MAR Signature invalid: {path}")
+
+
+def download_file(url, save_path, allow_staging, signing_cert=None):
     """
     Downloads a file from a given URL and saves it to disk.
+    Validates URL before proceeding with download.
 
     Args:
     url (str): The URL to download the file from.
     save_path (str): The path (including filename) where the file should be saved.
+    allow_staging (bool): Allows staging URLs
     """
+    validate_url(url, allow_staging)
     try:
         # Download the file and save it to the specified path
         urllib.request.urlretrieve(url, save_path)
@@ -410,25 +573,55 @@ def download_file(url, save_path):
         log(f"An unexpected error occurred: {url} -> {e}", "download_file")
         raise Exception("Failed to download file.")
 
+    if signing_cert:
+        verify_signature(save_path, signing_cert)
+
 
 def process_single(
     update_number,
     from_mar_url,
     to_mar_dir,
     target_mar,
+    mar_channel_id,
     workdir,
+    signing_cert,
     arch,
     force,
+    staging,
+    previousVersion=None,
+    compute_hashes=False,
+    cache_entry=None,
+    to_hashes=None,
+    patch_cache_dir=None,
 ):
     try:
-        mar_manifest = make_partial(
-            from_mar_url, to_mar_dir, target_mar, workdir, arch, force
+        mar_manifest, from_hashes = make_partial(
+            from_mar_url=from_mar_url,
+            to_mar_dir=to_mar_dir,
+            target_mar=target_mar,
+            mar_channel_id=mar_channel_id,
+            workdir=workdir,
+            signing_cert=signing_cert,
+            arch=arch,
+            force=force,
+            staging=staging,
+            compute_hashes=compute_hashes,
+            cache_entry=cache_entry,
+            to_hashes=to_hashes,
+            patch_cache_dir=patch_cache_dir,
         )
         mar_manifest["update_number"] = update_number
-        return None, mar_manifest
+        if previousVersion:
+            mar_manifest["previousVersion"] = previousVersion
+        # Validate the created mar has valid channel id
+        if validate_mar_channel_id(target_mar, mar_channel_id):
+            return None, mar_manifest, from_hashes
+        else:
+            # Since we still want to capture the manifest, we return the exception without raising it
+            return Exception("Invalid partial MAR id!"), mar_manifest, from_hashes
     except Exception as e:
         log(traceback.format_exc(), "process_single")
-        return e, None
+        return e, None, None
 
 
 def main():
@@ -436,11 +629,17 @@ def main():
         description="Generate incremental update packages with zucchini."
     )
     parser.add_argument(
-        "--from_url", help="Complete mar URLs", action="append", required=True
+        "--from-mars-json",
+        help="JSON data of complete mar URLs",
+        action="store",
+        required=True,
     )
-    parser.add_argument("--to_mar", help="To complete mar", required=True)
     parser.add_argument(
-        "--to_mar_url",
+        "--branch", help="Project branch", action="store", required=True
+    )
+    parser.add_argument("--to-mar", help="To complete mar", required=True)
+    parser.add_argument(
+        "--to-mar-url",
         help="To mar URL. Only used for filling the manifest.json file.",
         action="store",
         required=False,
@@ -448,7 +647,21 @@ def main():
     )
     parser.add_argument("--target", help="Target partial mar location", required=True)
     parser.add_argument(
+        "--cert-path",
+        help="Certificate path",
+        type=argparse.FileType("rb"),
+        required=False,
+    )
+    parser.add_argument(
+        "--allow-staging-urls",
+        help="Allows downloading from staging URLs",
+        action="store_true",
+    )
+    parser.add_argument(
         "--workdir", help="Work directory", action="store", required=True
+    )
+    parser.add_argument(
+        "--mar-channel-id", help="MAR channel ID", action="store", default="unknown"
     )
     parser.add_argument("--locale", help="Build locale", action="store", required=True)
     parser.add_argument(
@@ -463,10 +676,27 @@ def main():
         help="Clobber this file in the installation. Must be a path to a file to clobber in the partial update.",
         action="append",
     )
+    parser.add_argument(
+        "--generate-hashes",
+        help="Write a hashes.json file alongside manifest.json with per-file sha256 metadata. Used by downstream l10n tasks for cache reuse.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--patch-cache-dir",
+        help="Directory containing an upstream hashes.json plus the cached partial mars. When set, per-file diffs are reused from the upstream cache when (from, to) sha256 hashes match.",
+        action="store",
+        default=None,
+    )
 
     args = parser.parse_args()
 
     base_workdir = os.path.abspath(args.workdir)
+
+    if args.cert_path:
+        signing_cert = args.cert_path.read()
+        assert get_keysize(signing_cert) == 4096
+    else:
+        signing_cert = None
 
     # Multithread one partial per CPU
     cpus = os.cpu_count()  # This isn't optimal, but will do for now
@@ -480,6 +710,28 @@ def main():
     to_mar_dir = os.path.join(base_workdir, "to_mar")
     mar_extract(args.to_mar, to_mar_dir)
 
+    # Note: we can't validate "from mar" channels. See bug 1543662 for details.
+    # Validate to_mar channel id
+    if not validate_mar_channel_id(args.to_mar, args.mar_channel_id):
+        log("Invalid MAR channel id in to-mar!", "main")
+        raise Exception("Invalid MAR channel id in to-mar!")
+
+    cache_index = {}
+    if args.patch_cache_dir:
+        cache_path = os.path.join(args.patch_cache_dir, "hashes.json")
+        try:
+            with open(cache_path) as fd:
+                cache_index = json.load(fd)
+            log(f"Loaded patch cache index from {cache_path}", "main")
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            log(
+                f"Could not load patch cache index from {cache_path}: {e}; cache disabled.",
+                "main",
+            )
+
+    compute_hashes = args.generate_hashes or bool(args.patch_cache_dir)
+    to_hashes = _hash_dir(to_mar_dir) if compute_hashes else None
+
     futures = []
     futures_result = []
 
@@ -487,23 +739,46 @@ def main():
         if not f.cancelled():
             futures_result.append(f.result())
         else:
-            futures_result.append(("Cancelled", None))
+            futures_result.append(("Cancelled", None, None))
 
     with ProcessPoolExecutor(cpus) as executor:
-        # TODO: should the update_number come from the task payload?
-        for update_number, from_url in enumerate(args.from_url):
-            process_workdir = os.path.join(base_workdir, str(update_number))
+        from_data = json.loads(args.from_mars_json)
+        assert isinstance(from_data, list), (
+            "Param --from-mars-json should be a JSON list."
+        )
+
+        for from_data_index in range(len(from_data)):
+            source_data = from_data[from_data_index]
+            update_number = source_data["update_number"]
+            process_workdir = os.path.join(base_workdir, str(from_data_index))
             os.makedirs(process_workdir, exist_ok=True)
-            target_mar = os.path.join(target, f"target.partial-{update_number}.mar")
+
+            target_mar = os.path.join(target, source_data["dest_mar"])
+
+            cache_entry = cache_index.get(source_data["dest_mar"])
+            if args.patch_cache_dir and cache_entry is None:
+                log(
+                    f"No upstream cache entry for {source_data['dest_mar']}; cache disabled for this partial.",
+                    "main",
+                )
+
             future = executor.submit(
                 process_single,
-                update_number,
-                from_url,
-                to_mar_dir,
-                target_mar,
-                process_workdir,
-                args.arch,
-                args.force,
+                update_number=update_number,
+                from_mar_url=source_data["url"],
+                to_mar_dir=to_mar_dir,
+                target_mar=target_mar,
+                mar_channel_id=args.mar_channel_id,
+                workdir=process_workdir,
+                signing_cert=signing_cert,
+                arch=args.arch,
+                force=args.force,
+                staging=args.allow_staging_urls,
+                previousVersion=source_data.get("previousVersion"),
+                compute_hashes=compute_hashes,
+                cache_entry=cache_entry,
+                to_hashes=to_hashes,
+                patch_cache_dir=args.patch_cache_dir,
             )
             future.add_done_callback(future_cb)
             futures.append(future)
@@ -519,11 +794,12 @@ def main():
             section="Build",
             option="SourceRepository",
         ),
+        "branch": args.branch,
         "revision": get_option_from_compressed(
             to_mar_dir, filename="platform.ini", section="Build", option="SourceStamp"
         ),
         "version": get_option_from_compressed(
-            to_mar_dir, filename="platform.ini", section="Build", option="SourceStamp"
+            to_mar_dir, filename="application.ini", section="App", option="Version"
         ),
         "to_buildid": get_option_from_compressed(
             to_mar_dir, filename="application.ini", section="App", option="BuildID"
@@ -535,22 +811,34 @@ def main():
 
     errd = False
     results = []
-    for error, manifest in futures_result:
+    hashes_output = {}
+    for error, manifest, from_hashes in futures_result:
         if manifest:
             manifest.update(to_mar_info)
             results.append(manifest)
+            if args.generate_hashes and from_hashes is not None:
+                hashes_output[manifest["mar"]] = {
+                    "from_mar_files": from_hashes,
+                    "to_mar_files": to_hashes,
+                }
         else:
             errd = True
             log("Process raised an exception!", "main")
             print(error)
-    if errd:
-        sys.exit(1)
 
     # Write final task manifest
     with open(os.path.join(target, "manifest.json"), "w") as fd:
         fd.write(json.dumps(results))
 
     log("Finished writing final manifest.", "main")
+
+    if args.generate_hashes:
+        with open(os.path.join(target, "hashes.json"), "w") as fd:
+            fd.write(json.dumps(hashes_output))
+        log("Finished writing hashes.json.", "main")
+
+    if errd:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

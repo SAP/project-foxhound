@@ -21,13 +21,12 @@ async function testAddTextInFilter(inspector, view) {
 
   info("Check that the correct rules are visible");
   is(
-    getRuleViewRuleEditor(view, 0).rule.selectorText,
+    getRuleViewRuleEditorAt(view, 0).rule.selectorText,
     "element",
     "First rule is inline element."
   );
 
-  const ruleEditor = getRuleViewRuleEditor(view, 2, 0);
-
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   is(ruleEditor.rule.domRule.keyText, "20%", "Second rule is 20%.");
   ok(
     ruleEditor.selectorText.classList.contains("ruleview-highlight"),

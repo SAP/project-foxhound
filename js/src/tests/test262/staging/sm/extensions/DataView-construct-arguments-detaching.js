@@ -4,25 +4,13 @@
  */
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
+includes: [detachArrayBuffer.js]
 description: |
-  pending
+  new DataView(...) shouldn't misbehave horribly if index-argument conversion detaches the ArrayBuffer to be viewed
+info: bugzilla.mozilla.org/show_bug.cgi?id=991981
 esid: pending
+features: [host-gc-required]
 ---*/
-var gTestfile = "DataView-construct-arguments-detaching.js";
-//-----------------------------------------------------------------------------
-var BUGNUMBER = 991981;
-var summary =
-  "new DataView(...) shouldn't misbehave horribly if index-argument " +
-  "conversion detaches the ArrayBuffer to be viewed";
-
-print(BUGNUMBER + ": " + summary);
-
-/**************
- * BEGIN TEST *
- **************/
 
 function testByteOffset()
 {
@@ -32,22 +20,15 @@ function testByteOffset()
     {
       valueOf: function()
       {
-        $262.detachArrayBuffer(ab);
+        $DETACHBUFFER(ab);
         $262.gc();
         return 0x800;
       }
     };
 
-  var ok = false;
-  try
-  {
+  assert.throws(TypeError, function() {
     new DataView(ab, start);
-  }
-  catch (e)
-  {
-    ok = true;
-  }
-  assert.sameValue(ok, true, "byteOffset weirdness should have thrown");
+  }, "byteOffset weirdness should have thrown");
   assert.sameValue(ab.byteLength, 0, "detaching should work for byteOffset weirdness");
 }
 testByteOffset();
@@ -60,28 +41,17 @@ function testByteLength()
     {
       valueOf: function()
       {
-        $262.detachArrayBuffer(ab);
+        $DETACHBUFFER(ab);
         $262.gc();
         return 0x800;
       }
     };
 
-  var ok = false;
-  try
-  {
+  assert.throws(TypeError, function() {
     new DataView(ab, 0x800, len);
-  }
-  catch (e)
-  {
-    ok = true;
-  }
-  assert.sameValue(ok, true, "byteLength weirdness should have thrown");
+  }, "byteLength weirdness should have thrown");
   assert.sameValue(ab.byteLength, 0, "detaching should work for byteLength weirdness");
 }
 testByteLength();
-
-/******************************************************************************/
-
-print("Tests complete");
 
 reportCompare(0, 0);

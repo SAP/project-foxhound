@@ -78,6 +78,42 @@ add_task(async function testDetectLanguage() {
   await extension.unload();
 });
 
+add_task(async function testDetectLanguage_discarded_tab() {
+  if (navigator.userAgent.includes("Android")) {
+    // TODO bug 1402338: Remove skip if tabs.discard is supported.
+    todo(false, "tabs.discard not supported on Android (bug 1402338).");
+    return;
+  }
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["tabs"],
+      host_permissions: ["<all_urls>"],
+      granted_host_permissions: true
+    },
+
+    background: async function() {
+      const tab = await browser.tabs.create({
+        url: "https://example.com/?immediately_discarded",
+        discarded: true,
+      });
+
+      // TODO bug 2036556: Fix error message.
+      await browser.test.assertRejects(
+        browser.tabs.detectLanguage(tab.id),
+        "An unexpected error occurred",
+        "captureTab should reject discarded tab"
+      );
+
+      await browser.tabs.remove(tab.id);
+
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
 
 </script>
 

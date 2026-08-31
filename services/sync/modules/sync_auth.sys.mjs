@@ -7,7 +7,7 @@ import { Log } from "resource://gre/modules/Log.sys.mjs";
 
 import { Async } from "resource://services-common/async.sys.mjs";
 import { TokenServerClient } from "resource://services-common/tokenserverclient.sys.mjs";
-import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
+import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 import { Svc, Utils } from "resource://services-sync/util.sys.mjs";
 
 import {
@@ -470,6 +470,7 @@ SyncAuthManager.prototype = {
 
   /**
    * Exchanges an OAuth access_token for a TokenServer token.
+   *
    * @returns {Promise}
    * @private
    */

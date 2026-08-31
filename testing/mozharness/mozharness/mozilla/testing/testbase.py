@@ -8,9 +8,9 @@ import json
 import os
 import platform
 import ssl
-
-from six.moves import urllib
-from six.moves.urllib.parse import ParseResult, urlparse
+import urllib.parse
+import urllib.request
+from urllib.parse import ParseResult, urlparse
 
 from mozharness.base.errors import BaseErrorList
 from mozharness.base.log import FATAL, WARNING
@@ -22,7 +22,6 @@ from mozharness.base.python import (
 from mozharness.lib.python.authentication import get_credentials
 from mozharness.mozilla.automation import TBPL_WARNING, AutomationMixin
 from mozharness.mozilla.structuredlog import StructuredOutputParser
-from mozharness.mozilla.testing.try_tools import TryToolsMixin, try_config_options
 from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
 from mozharness.mozilla.testing.verify_tools import (
     VerifyToolsMixin,
@@ -42,7 +41,7 @@ INSTALLER_SUFFIXES = (
     ".zip",  # Windows
 )
 
-# https://searchfox.org/mozilla-central/source/testing/config/tooltool-manifests
+# https://searchfox.org/firefox-main/source/testing/config/tooltool-manifests
 TOOLTOOL_PLATFORM_DIR = {
     "linux": "linux32",
     "linux64": "linux64",
@@ -137,9 +136,17 @@ testing_config_options = (
                 "help": "Instruct the test harness to terminate on failure and restart where it left off",
             },
         ],
+        [
+            ["--restart-between-tests"],
+            {
+                "action": "store_true",
+                "default": False,
+                "dest": "restartBetweenTests",
+                "help": "Restart the browser between each test to identify tests with undocumented dependencies",
+            },
+        ],
     ]
     + copy.deepcopy(virtualenv_config_options)
-    + copy.deepcopy(try_config_options)
     + copy.deepcopy(verify_config_options)
 )
 
@@ -150,7 +157,6 @@ class TestingMixin(
     AutomationMixin,
     ResourceMonitoringMixin,
     TooltoolMixin,
-    TryToolsMixin,
     VerifyToolsMixin,
 ):
     """
@@ -334,17 +340,16 @@ class TestingMixin(
         # URLs to the right place and enable http authentication
         if "developer_config.py" in self.config["config_files"]:
             return _urlopen_basic_auth(url, **kwargs)
+        # windows certificates need to be refreshed (https://bugs.python.org/issue36011)
+        elif self.platform_name() in ("win64",) and platform.architecture()[0] in (
+            "x64",
+        ):
+            if self.ssl_context is None:
+                self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+                self.ssl_context.load_default_certs()
+            return urllib.request.urlopen(url, context=self.ssl_context, **kwargs)
         else:
-            # windows certificates need to be refreshed (https://bugs.python.org/issue36011)
-            if self.platform_name() in ("win64",) and platform.architecture()[0] in (
-                "x64",
-            ):
-                if self.ssl_context is None:
-                    self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-                    self.ssl_context.load_default_certs()
-                return urllib.request.urlopen(url, context=self.ssl_context, **kwargs)
-            else:
-                return urllib.request.urlopen(url, **kwargs)
+            return urllib.request.urlopen(url, **kwargs)
 
     def _query_binary_version(self, regex, cmd):
         output = self.get_output_from_command(cmd, silent=False)
@@ -479,14 +484,8 @@ You can set this by specifying --test-url URL
         self.download_unpack(self.test_url, test_install_dir, extract_dirs=extract_dirs)
 
     def structured_output(self, suite_category):
-        """Defines whether structured logging is in use in this configuration. This
-        may need to be replaced with data from a different config at the resolution
-        of bug 1070041 and related bugs.
-        """
-        return (
-            "structured_suites" in self.config
-            and suite_category in self.config["structured_suites"]
-        )
+        unstructured_suites = self.config.get("unstructured_suites", [])
+        return suite_category not in unstructured_suites
 
     def get_test_output_parser(
         self,
@@ -768,7 +767,7 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?"""
             self._run_cmd_checks(c.get("postflight_run_cmd_suites", []))
 
     def query_abs_dirs(self):
-        abs_dirs = super(TestingMixin, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         if "MOZ_FETCHES_DIR" in os.environ:
             abs_dirs["abs_fetches_dir"] = os.environ["MOZ_FETCHES_DIR"]
         return abs_dirs

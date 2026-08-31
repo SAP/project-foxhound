@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,10 @@
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsCOMPtr.h"
 #include "nsCSSRendering.h"
-#include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
 #include "nsPresContext.h"
 #include "nsStyleConsts.h"
@@ -28,35 +27,46 @@ void nsTableColGroupFrame::SetIsSynthetic() {
   AddStateBits(COLGROUP_SYNTHETIC_BIT);
 }
 
-void nsTableColGroupFrame::ResetColIndices(nsIFrame* aFirstColGroup,
-                                           int32_t aFirstColIndex,
-                                           nsIFrame* aStartColFrame) {
-  nsTableColGroupFrame* colGroupFrame = (nsTableColGroupFrame*)aFirstColGroup;
+static void ResetColIndexOfGroup(nsTableColGroupFrame* aGroup,
+                                 int32_t aFirstColIndex,
+                                 nsIFrame* aStartColFrame, int32_t& aCurIndex) {
+  // reset the starting col index for the first cg only if we should reset
+  // the whole colgroup (aStartColFrame defaults to nullptr) or if
+  // aFirstColIndex is smaller than the existing starting col index
+  if (aCurIndex != aFirstColIndex ||
+      aCurIndex < aGroup->GetStartColumnIndex() || !aStartColFrame) {
+    aGroup->SetStartColumnIndex(aCurIndex);
+  }
+  nsIFrame* colFrame = aStartColFrame;
+  if (!colFrame || aCurIndex != aFirstColIndex) {
+    colFrame = aGroup->PrincipalChildList().FirstChild();
+  }
+  while (colFrame) {
+    if (colFrame->IsTableColFrame()) {
+      ((nsTableColFrame*)colFrame)->SetColIndex(aCurIndex);
+      aCurIndex++;
+    }
+    colFrame = colFrame->GetNextSibling();
+  }
+}
+
+void nsTableColGroupFrame::ResetColIndices(
+    nsIFrame* aFirstFrame, nsTableColGroupFrame* aSyntheticColGroup,
+    int32_t aFirstColIndex, nsIFrame* aStartColFrame) {
   int32_t colIndex = aFirstColIndex;
-  while (colGroupFrame) {
-    if (colGroupFrame->IsTableColGroupFrame()) {
-      // reset the starting col index for the first cg only if we should reset
-      // the whole colgroup (aStartColFrame defaults to nullptr) or if
-      // aFirstColIndex is smaller than the existing starting col index
-      if ((colIndex != aFirstColIndex) ||
-          (colIndex < colGroupFrame->GetStartColumnIndex()) ||
-          !aStartColFrame) {
-        colGroupFrame->SetStartColumnIndex(colIndex);
-      }
-      nsIFrame* colFrame = aStartColFrame;
-      if (!colFrame || (colIndex != aFirstColIndex)) {
-        colFrame = colGroupFrame->PrincipalChildList().FirstChild();
-      }
-      while (colFrame) {
-        if (colFrame->IsTableColFrame()) {
-          ((nsTableColFrame*)colFrame)->SetColIndex(colIndex);
-          colIndex++;
-        }
-        colFrame = colFrame->GetNextSibling();
+  for (nsIFrame* cur = aFirstFrame; cur; cur = cur->GetNextSibling()) {
+    if (nsTableColGroupFrame* colGroupFrame = do_QueryFrame(cur)) {
+      if (colGroupFrame->IsSynthetic()) {
+        MOZ_ASSERT(colGroupFrame == aSyntheticColGroup);
+      } else {
+        ResetColIndexOfGroup(colGroupFrame, aFirstColIndex, aStartColFrame,
+                             colIndex);
       }
     }
-    colGroupFrame =
-        static_cast<nsTableColGroupFrame*>(colGroupFrame->GetNextSibling());
+  }
+  if (aSyntheticColGroup) {
+    ResetColIndexOfGroup(aSyntheticColGroup, aFirstColIndex, aStartColFrame,
+                         colIndex);
   }
 }
 
@@ -93,27 +103,11 @@ nsresult nsTableColGroupFrame::AddColsToTable(int32_t aFirstColIndex,
   // colgroup that come after the first inserted colframe, but there could
   // be other colgroups following this one and their colframes need
   // correct colindices too.
-  if (aResetSubsequentColIndices && GetNextSibling()) {
-    ResetColIndices(GetNextSibling(), colIndex);
+  if (aResetSubsequentColIndices && !IsSynthetic()) {
+    ResetColIndices(GetNextSibling(), GetSyntheticColGroup(), colIndex);
   }
 
   return NS_OK;
-}
-
-nsTableColGroupFrame* nsTableColGroupFrame::GetLastRealColGroup(
-    nsTableFrame* aTableFrame) {
-  const nsFrameList& colGroups = aTableFrame->GetColGroups();
-
-  auto lastColGroup = static_cast<nsTableColGroupFrame*>(colGroups.LastChild());
-  if (!lastColGroup) {
-    return nullptr;
-  }
-
-  if (!lastColGroup->IsSynthetic()) {
-    return lastColGroup;
-  }
-
-  return static_cast<nsTableColGroupFrame*>(lastColGroup->GetPrevSibling());
 }
 
 // don't set mColCount here, it is done in AddColsToTable
@@ -246,6 +240,10 @@ void nsTableColGroupFrame::InsertColsReflow(int32_t aColIndex,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
 }
 
+nsTableColGroupFrame* nsTableColGroupFrame::GetSyntheticColGroup() const {
+  return GetTableFrame()->GetSyntheticColGroup();
+}
+
 void nsTableColGroupFrame::RemoveChild(DestroyContext& aContext,
                                        nsTableColFrame& aChild,
                                        bool aResetSubsequentColIndices) {
@@ -259,12 +257,9 @@ void nsTableColGroupFrame::RemoveChild(DestroyContext& aContext,
   mColCount--;
   if (aResetSubsequentColIndices) {
     if (nextChild) {  // reset inside this and all following colgroups
-      ResetColIndices(this, colIndex, nextChild);
-    } else {
-      nsIFrame* nextGroup = GetNextSibling();
-      if (nextGroup) {  // reset next and all following colgroups
-        ResetColIndices(nextGroup, colIndex);
-      }
+      ResetColIndices(this, GetSyntheticColGroup(), colIndex, nextChild);
+    } else if (!IsSynthetic()) {
+      ResetColIndices(GetNextSibling(), GetSyntheticColGroup(), colIndex);
     }
   }
 
@@ -301,7 +296,7 @@ void nsTableColGroupFrame::RemoveFrame(DestroyContext& aContext,
     RemoveChild(aContext, *colFrame, true);
 
     nsTableFrame* tableFrame = GetTableFrame();
-    tableFrame->RemoveCol(this, colIndex, true, true);
+    tableFrame->RemoveCol(colIndex, true, true);
     if (mFrames.IsEmpty() && contentRemoval && !IsSynthetic()) {
       tableFrame->AppendAnonymousColFrames(this, GetSpan(),
                                            eColAnonymousColGroup, true);
@@ -335,10 +330,7 @@ void nsTableColGroupFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsTableColGroupFrame");
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_ASSERTION(nullptr != mContent, "bad state -- null content for frame");
-
-  const nsStyleVisibility* groupVis = StyleVisibility();
-  bool collapseGroup = StyleVisibility::Collapse == groupVis->mVisible;
-  if (collapseGroup) {
+  if (StyleVisibility()->mVisible == StyleVisibility::Collapse) {
     GetTableFrame()->SetNeedToCollapse(true);
   }
 
@@ -367,8 +359,7 @@ void nsTableColGroupFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // "All css properties of table-column and table-column-group boxes are
   // ignored, except when explicitly specified by this specification."
   // CSS outlines and box-shadows fall into this category, so we skip them
-  // on these boxes.
-  MOZ_ASSERT_UNREACHABLE("Colgroups don't paint themselves");
+  // on these boxes. Colgroup backgrounds are drawn by nsTableFrame.
 }
 
 nsTableColFrame* nsTableColGroupFrame::GetFirstColumn() {
@@ -405,6 +396,9 @@ nsTableColGroupFrame* NS_NewTableColGroupFrame(PresShell* aPresShell,
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTableColGroupFrame)
+NS_QUERYFRAME_HEAD(nsTableColGroupFrame)
+  NS_QUERYFRAME_ENTRY(nsTableColGroupFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 void nsTableColGroupFrame::InvalidateFrame(uint32_t aDisplayItemKey,
                                            bool aRebuildDisplayItems) {

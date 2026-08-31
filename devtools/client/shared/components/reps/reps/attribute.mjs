@@ -9,8 +9,8 @@ import {
   appendRTLClassNameIfNeeded,
   getGripType,
   wrapRender,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { rep as StringRep } from "resource://devtools/client/shared/components/reps/reps/string.mjs";
+} from "./rep-utils.mjs";
+import { rep as StringRep } from "./string.mjs";
 
 /**
  * Renders DOM attribute

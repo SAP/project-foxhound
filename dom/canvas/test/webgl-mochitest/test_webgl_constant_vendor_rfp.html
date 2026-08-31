@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>WebGL Constant Vendor with RFP - WebGLRenderInfo takes precedence</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script>
+/* global SimpleTest SpecialPowers */
+SimpleTest.waitForExplicitFinish();
+document.addEventListener("DOMContentLoaded", async function() {
+  // Enable RFP - WebGLRenderInfo should take precedence over WebGLVendorConstant
+  await SpecialPowers.pushPrefEnv({
+    set: [
+	["privacy.resistFingerprinting", true],
+	["privacy.fingerprintingProtection", true],
+	["privacy.fingerprintingProtection.overrides", "+WebGLVendorConstant"],
+    ]
+  });
+
+  let canvas = document.body.appendChild(document.createElement("canvas"));
+  if (!canvas) {
+    SimpleTest.ok(false, "Cannot create canvas");
+    SimpleTest.finish();
+    return;
+  }
+
+  let gl = canvas.getContext("webgl");
+  if (!gl) {
+    SimpleTest.ok(false, "Cannot get WebGL context");
+    SimpleTest.finish();
+    return;
+  }
+
+  // Try to get the WEBGL_debug_renderer_info extension
+  let ext = gl.getExtension("WEBGL_debug_renderer_info");
+  if (!ext) {
+    SimpleTest.ok(false, "WEBGL_debug_renderer_info extension should be available with RFP");
+    SimpleTest.finish();
+    return;
+  }
+
+  // With RFP enabled, WebGLRenderInfo takes precedence over WebGLVendorConstant
+  // The vendor should be "Mozilla"
+  let vendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL);
+  SimpleTest.is(vendor, "Mozilla", "UNMASKED_VENDOR_WEBGL should be 'Mozilla' with RFP enabled (WebGLRenderInfo precedence)");
+
+  // Also check renderer for completeness
+  let renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+  SimpleTest.is(renderer, "Mozilla", "UNMASKED_RENDERER_WEBGL should be 'Mozilla' with RFP enabled");
+
+  SimpleTest.finish();
+});
+</script>

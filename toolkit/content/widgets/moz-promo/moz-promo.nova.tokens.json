@@ -1,0 +1,30 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": "{background.color.box.info}"
+      },
+      "vibrant": {
+        "value": {
+          "light": "{color.violet-desaturated.10}",
+          "dark": "{color.violet-desaturated.70}",
+          "forcedColors": "Canvas"
+        }
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "@base": {
+        "value": {
+          "light": "rgba(24, 14, 48, 0.12)",
+          "dark": "rgba(242, 240, 248, 0.12)",
+          "forcedColors": "CanvasText"
+        }
+      },
+      "vibrant": {
+        "value": "{promo.border.color.@base}"
+      }
+    }
+  }
+}

@@ -74,7 +74,7 @@ add_task(async function () {
   await selectTreeItem(["cookies", "https://example.org"]);
   const thirdPartyPartitionedId = getCookieId(
     "fooThirdPartyPartitioned",
-    "example.org",
+    MAIN_DOMAIN,
     "/",
     "(https,example.com)"
   );

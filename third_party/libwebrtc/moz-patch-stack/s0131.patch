@@ -1,0 +1,23 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Mon, 6 Apr 2026 14:37:00 -0500
+Subject: Bug 2029247 - (fix-0fc5aeecfb) base-toolchains build fix
+
+Upstream was assigning a -2 to a uint16_t.
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f5dfd2e6901c9d79ee528bf3801ded81b6dd65c9
+---
+ rtc_base/network_constants.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rtc_base/network_constants.h b/rtc_base/network_constants.h
+index 0b7ae9d567..8df31b683b 100644
+--- a/rtc_base/network_constants.h
++++ b/rtc_base/network_constants.h
+@@ -40,7 +40,7 @@ constexpr uint16_t kNetworkCostVpn = 1;
+ 
+ // Add -2 to the network cost when using network slicing so that e.g. premium 5G
+ // slice is preferred over regular 5G, everything else being equal.
+-constexpr uint16_t kNetworkCostSlice = -2;
++constexpr int16_t kNetworkCostSlice = -2;
+ 
+ // Aliases for correct wrap-around with network slice cost.
+ constexpr uint16_t kNetworkCostCellular5GSlice =  // 248

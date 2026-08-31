@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,17 +7,17 @@
  */
 
 #include "mozilla/dom/DocumentFragment.h"
+
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentFragmentBinding.h"
 #include "mozilla/dom/Element.h"  // for NS_IMPL_ELEMENT_CLONE
 #include "mozilla/dom/NodeInfo.h"
-#include "nsNodeInfoManager.h"
-#include "nsError.h"
-#include "nsGkAtoms.h"
-#include "nsDOMString.h"
 #include "nsContentUtils.h"  // for NS_INTERFACE_MAP_ENTRY_TEAROFF
-#include "mozilla/dom/DocumentFragmentBinding.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "nsNodeInfoManager.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/IntegerPrintfMacros.h"
 
 namespace mozilla::dom {
 

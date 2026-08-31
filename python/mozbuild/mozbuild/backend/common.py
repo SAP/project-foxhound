@@ -31,6 +31,7 @@ from mozbuild.frontend.data import (
     HostLibrary,
     HostSources,
     IPDLCollection,
+    JsShellArchive,
     LocalizedFiles,
     LocalizedPreprocessedFiles,
     SandboxedWasmLibrary,
@@ -162,9 +163,9 @@ class CommonBackend(BuildBackend):
             return False
 
         elif isinstance(obj, SandboxedWasmLibrary):
-            self._handle_generated_sources(
-                [mozpath.join(obj.relobjdir, f"{obj.basename}.h")]
-            )
+            self._handle_generated_sources([
+                mozpath.join(obj.relobjdir, f"{obj.basename}.h")
+            ])
             return False
 
         elif isinstance(obj, (Sources, HostSources)):
@@ -203,15 +204,24 @@ class CommonBackend(BuildBackend):
                 for f in files:
                     basename = FinalTargetPreprocessedFiles.get_obj_basename(f)
                     relpath = mozpath.join(obj.install_target, path, basename)
-                    self._handle_generated_sources(
-                        [ObjDirPath(obj._context, "!/" + relpath).full_path]
-                    )
+                    self._handle_generated_sources([
+                        ObjDirPath(obj._context, "!/" + relpath).full_path
+                    ])
             return False
+
+        elif isinstance(obj, JsShellArchive):
+            self._process_js_shell_archive(obj)
 
         else:
             return False
 
         return True
+
+    def _process_js_shell_archive(self, obj):
+        manifest_path = mozpath.join(self.environment.topobjdir, "jsshell-archive.list")
+        with self._write_file(manifest_path) as fh:
+            for f in obj.files:
+                fh.write(f.target_basename + "\n")
 
     def consume_finished(self):
         if len(self._idl_manager.modules):
@@ -455,9 +465,13 @@ class CommonBackend(BuildBackend):
                 "#undef INITGUID\n"
                 "#endif"
             )
-            f.write(
-                "\n".join(includeTemplate % {"cppfile": s} for s in source_filenames)
-            )
+            for s in source_filenames:
+                # Prefer a relative path to make the output not depend on the sourcedir.
+                # This makes caching across worktrees possible.
+                if os.path.isabs(s):
+                    s = mozpath.relpath(s, output_directory)
+                f.write(includeTemplate % {"cppfile": s})
+                f.write("\n")
 
     def _write_unified_files(
         self, unified_source_mapping, output_directory, poison_windows_h=False
@@ -576,11 +590,10 @@ class CommonBackend(BuildBackend):
                         localized_files_pp[path] += [src]
                     else:
                         files_pp[path] += [src]
+                elif e.is_locale:
+                    localized_files[path] += [src]
                 else:
-                    if e.is_locale:
-                        localized_files[path] += [src]
-                    else:
-                        files[path] += [src]
+                    files[path] += [src]
 
             if files:
                 self.consume_object(FinalTargetFiles(jar_context, files))

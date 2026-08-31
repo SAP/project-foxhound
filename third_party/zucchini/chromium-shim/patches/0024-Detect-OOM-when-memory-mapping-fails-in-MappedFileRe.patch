@@ -1,0 +1,180 @@
+Detect OOM when memory mapping fails in MappedFileReader/MappedFileWriter
+
+When CreateFileMapping/MapViewOfFile (Windows) or mmap (POSIX) fail due
+to memory pressure, the error was reported as a generic "Can't map file
+to memory" with no way to distinguish OOM from other mapping failures.
+
+Add an is_oom() method to both MappedFileReader and MappedFileWriter
+that checks GetLastError() (ERROR_NOT_ENOUGH_MEMORY,
+ERROR_COMMITMENT_LIMIT) or errno (ENOMEM) immediately after the mapping
+failure. This allows the caller (moz_zucchini.cc) to report a specific
+out-of-memory status code instead of a generic read/write error.
+---
+ base/files/memory_mapped_file.h        |  8 +++++++-
+ base/files/memory_mapped_file_posix.cc |  4 ++++
+ base/files/memory_mapped_file_win.cc   | 20 +++++++++++++++++++
+ components/zucchini/mapped_file.cc     |  6 ++++++
+ components/zucchini/mapped_file.h      | 12 +++++++++++
+ 5 files changed, 49 insertions(+), 1 deletion(-)
+
+diff --git a/third_party/zucchini/chromium/base/files/memory_mapped_file.h b/third_party/zucchini/chromium/base/files/memory_mapped_file.h
+index 44ee14dec8f5..767f9db2a269 100644
+--- a/third_party/zucchini/chromium/base/files/memory_mapped_file.h
++++ b/third_party/zucchini/chromium/base/files/memory_mapped_file.h
+@@ -115,10 +115,12 @@ class BASE_EXPORT MemoryMappedFile {
+   bool IsValid() const;
+ 
+ #if defined(MOZ_ZUCCHINI)
++  bool is_mapping_oom() const { return is_mapping_oom_; }
++
+   // Flushes memory-mapped changes to disk. Returns true on success, false on
+   // error. Must be called before unmapping if changes need to be persisted.
+   bool Flush();
+-#endif  // MOZ_ZUCCHINI
++#endif  // defined(MOZ_ZUCCHINI)
+ 
+  private:
+   // Given the arbitrarily aligned memory region [start, size], returns the
+@@ -154,6 +156,10 @@ class BASE_EXPORT MemoryMappedFile {
+ #if BUILDFLAG(IS_WIN)
+   win::ScopedHandle file_mapping_;
+ #endif
++
++#if defined(MOZ_ZUCCHINI)
++  bool is_mapping_oom_ = false;
++#endif  // defined(MOZ_ZUCCHINI)
+ };
+ 
+ }  // namespace base
+diff --git a/third_party/zucchini/chromium/base/files/memory_mapped_file_posix.cc b/third_party/zucchini/chromium/base/files/memory_mapped_file_posix.cc
+index e6f624cc9eaa..0c2cc1ac3e1c 100644
+--- a/third_party/zucchini/chromium/base/files/memory_mapped_file_posix.cc
++++ b/third_party/zucchini/chromium/base/files/memory_mapped_file_posix.cc
+@@ -4,6 +4,9 @@
+ 
+ #include "base/files/memory_mapped_file.h"
+ 
++#if defined(MOZ_ZUCCHINI)
++#include <cerrno>
++#endif  // defined(MOZ_ZUCCHINI)
+ #include <fcntl.h>
+ #include <stddef.h>
+ #include <stdint.h>
+@@ -92,6 +95,7 @@ bool MemoryMappedFile::MapFileRegionToMemory(
+     data_ = data;
+   }
+   else {
++    is_mapping_oom_ = errno == ENOMEM;
+ #else
+   data_ = static_cast<uint8_t*>(mmap(nullptr, map_size, flags, MAP_SHARED,
+                                      file_.GetPlatformFile(), map_start));
+diff --git a/third_party/zucchini/chromium/base/files/memory_mapped_file_win.cc b/third_party/zucchini/chromium/base/files/memory_mapped_file_win.cc
+index 777b32358f86..ad887e2d216b 100644
+--- a/third_party/zucchini/chromium/base/files/memory_mapped_file_win.cc
++++ b/third_party/zucchini/chromium/base/files/memory_mapped_file_win.cc
+@@ -89,8 +89,18 @@ bool MemoryMappedFile::MapFileRegionToMemory(
+ 
+   file_mapping_.Set(::CreateFileMapping(file_.GetPlatformFile(), NULL, flags,
+                                         size.HighPart, size.LowPart, NULL));
++#if defined(MOZ_ZUCCHINI)
++  if (!file_mapping_.is_valid()) {
++    DWORD last_error = ::GetLastError();
++    is_mapping_oom_ = last_error == ERROR_NOT_ENOUGH_MEMORY ||
++                      last_error == ERROR_OUTOFMEMORY ||
++                      last_error == ERROR_COMMITMENT_LIMIT;
++    return false;
++  }
++#else
+   if (!file_mapping_.is_valid())
+     return false;
++#endif  // defined(MOZ_ZUCCHINI)
+ 
+   ULARGE_INTEGER map_start = {};
+   SIZE_T map_size = 0;
+@@ -131,8 +141,18 @@ bool MemoryMappedFile::MapFileRegionToMemory(
+       ::MapViewOfFile(file_mapping_.get(),
+                       (flags & PAGE_READONLY) ? FILE_MAP_READ : FILE_MAP_WRITE,
+                       map_start.HighPart, map_start.LowPart, map_size));
++#if defined(MOZ_ZUCCHINI)
++  if (data_ == nullptr) {
++    DWORD last_error = ::GetLastError();
++    is_mapping_oom_ = last_error == ERROR_NOT_ENOUGH_MEMORY ||
++                      last_error == ERROR_OUTOFMEMORY ||
++                      last_error == ERROR_COMMITMENT_LIMIT;
++    return false;
++  }
++#else
+   if (data_ == nullptr)
+     return false;
++#endif  // defined(MOZ_ZUCCHINI)
+   data_ += data_offset;
+   return true;
+ }
+diff --git a/third_party/zucchini/chromium/components/zucchini/mapped_file.cc b/third_party/zucchini/chromium/components/zucchini/mapped_file.cc
+index 0e786aabf15f..0563877873ad 100644
+--- a/third_party/zucchini/chromium/components/zucchini/mapped_file.cc
++++ b/third_party/zucchini/chromium/components/zucchini/mapped_file.cc
+@@ -18,6 +18,9 @@ MappedFileReader::MappedFileReader(base::File file) {
+   }
+   if (!buffer_.Initialize(std::move(file))) {
+     error_ = "Can't map file to memory.";
++#if defined(MOZ_ZUCCHINI)
++    error_is_oom_ = buffer_.is_mapping_oom();
++#endif  // defined(MOZ_ZUCCHINI)
+   }
+ }
+ 
+@@ -56,6 +59,9 @@ MappedFileWriter::MappedFileWriter(const base::FilePath& file_path,
+                                   base::MemoryMappedFile::READ_WRITE_EXTEND);
+   if (!is_ok) {
+     error_ = "Can't map file to memory.";
++#if defined(MOZ_ZUCCHINI)
++    error_is_oom_ = buffer_.is_mapping_oom();
++#endif  // defined(MOZ_ZUCCHINI)
+   }
+ }
+ 
+diff --git a/third_party/zucchini/chromium/components/zucchini/mapped_file.h b/third_party/zucchini/chromium/components/zucchini/mapped_file.h
+index ed7d0f97217b..f6927dc15b0e 100644
+--- a/third_party/zucchini/chromium/components/zucchini/mapped_file.h
++++ b/third_party/zucchini/chromium/components/zucchini/mapped_file.h
+@@ -32,10 +32,16 @@ class MappedFileReader {
+ 
+   bool HasError() { return !error_.empty() || !buffer_.IsValid(); }
+   const std::string& error() { return error_; }
++#if defined(MOZ_ZUCCHINI)
++  bool error_is_oom() const { return error_is_oom_; }
++#endif  // defined(MOZ_ZUCCHINI)
+ 
+  private:
+   std::string error_;
+   base::MemoryMappedFile buffer_;
++#if defined(MOZ_ZUCCHINI)
++  bool error_is_oom_ = false;
++#endif  // defined(MOZ_ZUCCHINI)
+ };
+ 
+ // A file writer wrapper. The target file is deleted on destruction unless
+@@ -69,6 +75,9 @@ class MappedFileWriter {
+ 
+   bool HasError() { return !error_.empty() || !buffer_.IsValid(); }
+   const std::string& error() { return error_; }
++#if defined(MOZ_ZUCCHINI)
++  bool error_is_oom() const { return error_is_oom_; }
++#endif  // defined(MOZ_ZUCCHINI)
+ 
+   // Indicates that the file should not be deleted on destruction. Returns true
+   // iff the operation succeeds.
+@@ -92,6 +101,9 @@ class MappedFileWriter {
+   base::File file_handle_;
+   base::MemoryMappedFile buffer_;
+   OnCloseDeleteBehavior delete_behavior_;
++#if defined(MOZ_ZUCCHINI)
++  bool error_is_oom_ = false;
++#endif  // defined(MOZ_ZUCCHINI)
+ };
+ 
+ }  // namespace zucchini
+-- 
+2.49.0.windows.1
+

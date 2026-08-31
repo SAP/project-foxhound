@@ -10,7 +10,6 @@ import mozilla.components.service.nimbus.messaging.MessageData
 import mozilla.components.service.nimbus.messaging.MessageSurfaceId
 import mozilla.components.service.nimbus.messaging.StyleData
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,6 +20,7 @@ import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.AppStoreReducer
 import org.mozilla.fenix.messaging.FenixMessageSurfaceId
 import org.mozilla.fenix.messaging.MessagingState
+import kotlin.test.assertNotNull
 
 class MessagingReducerTest {
 

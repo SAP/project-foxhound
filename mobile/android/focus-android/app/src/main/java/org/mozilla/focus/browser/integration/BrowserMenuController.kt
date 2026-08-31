@@ -17,33 +17,76 @@ import org.mozilla.focus.GleanMetrics.BrowserMenu
 import org.mozilla.focus.GleanMetrics.CustomTabsToolbar
 import org.mozilla.focus.GleanMetrics.Shortcuts
 import org.mozilla.focus.ext.titleOrDomain
-import org.mozilla.focus.menu.ToolbarMenu
+import org.mozilla.focus.menu.ToolbarMenu // Assuming ToolbarMenu.FocusMenuItem is defined here
 import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.AppStore
 import org.mozilla.focus.state.Screen
 
-@Suppress("LongParameterList")
+/**
+ * Data class holding the callback functions for actions triggered from the browser menu.
+ */
+data class BrowserMenuCallbacks(
+    val shareCallback: () -> Unit,
+    val requestDesktopCallback: (isChecked: Boolean) -> Unit,
+    val addToHomeScreenCallback: () -> Unit,
+    val showFindInPageCallback: () -> Unit,
+    val openInCallback: () -> Unit,
+    val openInBrowser: () -> Unit,
+    val showShortcutAddedSnackBar: () -> Unit,
+)
+
+/**
+ * Manages the interactions and logic for the browser menu.
+ *
+ * @param sessionUseCases Use cases for managing browser sessions.
+ * @param appStore The main application store for dispatching actions.
+ * @param store The browser store for accessing session state.
+ * @param topSitesUseCases Use cases for managing top sites (shortcuts).
+ * @param currentTabId The ID of the currently active tab.
+ * @param callbacks Callbacks for browser menu actions.
+ * @param coroutineScope The coroutine scope for launching asynchronous operations.
+ */
 class BrowserMenuController(
     private val sessionUseCases: SessionUseCases,
     private val appStore: AppStore,
     private val store: BrowserStore,
     private val topSitesUseCases: TopSitesUseCases,
     private val currentTabId: String,
-    private val shareCallback: () -> Unit,
-    private val requestDesktopCallback: (isChecked: Boolean) -> Unit,
-    private val addToHomeScreenCallback: () -> Unit,
-    private val showFindInPageCallback: () -> Unit,
-    private val openInCallback: () -> Unit,
-    private val openInBrowser: () -> Unit,
-    private val showShortcutAddedSnackBar: () -> Unit,
+    private val callbacks: BrowserMenuCallbacks,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) {
     @VisibleForTesting
     private val currentTab: SessionState?
         get() = store.state.findTabOrCustomTabOrSelectedTab(currentTabId)
 
-    @Suppress("ComplexMethod")
-    fun handleMenuInteraction(item: ToolbarMenu.Item) {
+    /**
+     * Defines constant string values used for telemetry reporting related to browser menu actions.
+     */
+    private object TelemetryActions {
+        const val BACK = "back"
+        const val FORWARD = "forward"
+        const val RELOAD = "reload"
+        const val STOP = "stop"
+        const val SHARE = "share"
+        const val FIND_IN_PAGE = "find_in_page"
+        const val DESKTOP_VIEW_ON = "desktop_view_on"
+        const val DESKTOP_VIEW_OFF = "desktop_view_off"
+        const val ADD_TO_HOME_SCREEN = "add_to_home_screen"
+        const val OPEN_IN_APP = "open_in_app"
+        const val SETTINGS = "settings"
+        const val OPEN_IN_BROWSER = "open_in_browser"
+        const val REMOVED_FROM_BROWSER_MENU = "removed_from_browser_menu"
+    }
+
+    /**
+     * Handles the interaction with a menu item from the toolbar.
+     *
+     * This function triggers telemetry recording for the interaction and then performs the
+     * corresponding action based on the type of menu item selected.
+     *
+     * @param item The [ToolbarMenu.FocusMenuItem] that was interacted with.
+     */
+    fun handleMenuInteraction(item: ToolbarMenu.FocusMenuItem) {
         recordBrowserMenuTelemetry(item)
 
         when (item) {
@@ -59,18 +102,19 @@ class BrowserMenuController(
             is ToolbarMenu.Item.Stop, ToolbarMenu.CustomTabItem.Stop -> sessionUseCases.stopLoading(
                 currentTabId,
             )
-            is ToolbarMenu.Item.Share -> shareCallback()
-            is ToolbarMenu.Item.FindInPage, ToolbarMenu.CustomTabItem.FindInPage -> showFindInPageCallback()
+            is ToolbarMenu.Item.Share -> callbacks.shareCallback()
+            is ToolbarMenu.Item.FindInPage, ToolbarMenu.CustomTabItem.FindInPage -> callbacks.showFindInPageCallback()
             is ToolbarMenu.Item.AddToShortcuts -> {
                 addToShortcuts()
-                showShortcutAddedSnackBar()
+                callbacks.showShortcutAddedSnackBar()
             }
             is ToolbarMenu.Item.RemoveFromShortcuts -> removeFromShortcuts()
-            is ToolbarMenu.Item.RequestDesktop -> requestDesktopCallback(item.isChecked)
-            is ToolbarMenu.CustomTabItem.RequestDesktop -> requestDesktopCallback(item.isChecked)
-            is ToolbarMenu.Item.AddToHomeScreen, ToolbarMenu.CustomTabItem.AddToHomeScreen -> addToHomeScreenCallback()
-            is ToolbarMenu.CustomTabItem.OpenInBrowser -> openInBrowser()
-            is ToolbarMenu.Item.OpenInApp, ToolbarMenu.CustomTabItem.OpenInApp -> openInCallback()
+            is ToolbarMenu.Item.RequestDesktop -> callbacks.requestDesktopCallback(item.isChecked)
+            is ToolbarMenu.CustomTabItem.RequestDesktop -> callbacks.requestDesktopCallback(item.isChecked)
+            is ToolbarMenu.Item.AddToHomeScreen, ToolbarMenu.CustomTabItem.AddToHomeScreen ->
+                callbacks.addToHomeScreenCallback()
+            is ToolbarMenu.CustomTabItem.OpenInBrowser -> callbacks.openInBrowser()
+            is ToolbarMenu.Item.OpenInApp, ToolbarMenu.CustomTabItem.OpenInApp -> callbacks.openInCallback()
             is ToolbarMenu.Item.Settings -> appStore.dispatch(AppAction.OpenSettings(page = Screen.Settings.Page.Start))
         }
     }
@@ -111,97 +155,137 @@ class BrowserMenuController(
         }
     }
 
-    @Suppress("LongMethod")
+    /**
+     * Records telemetry data for a browser menu interaction.
+     *
+     * This function determines whether the interaction occurred in a regular tab or a custom tab
+     * and calls the appropriate telemetry recording function.
+     *
+     * @param item The [ToolbarMenu.FocusMenuItem] that was interacted with.
+     */
     @VisibleForTesting
-    internal fun recordBrowserMenuTelemetry(item: ToolbarMenu.Item) {
+    internal fun recordBrowserMenuTelemetry(item: ToolbarMenu.FocusMenuItem) {
         when (item) {
-            is ToolbarMenu.Item.Back -> BrowserMenu.navigationToolbarAction.record(
-                BrowserMenu.NavigationToolbarActionExtra("back"),
+            is ToolbarMenu.Item -> recordTabBrowserMenuTelemetry(item)
+            is ToolbarMenu.CustomTabItem -> recordCustomTabBrowserMenuTelemetry(item)
+        }
+    }
+
+    /**
+     * Records telemetry for actions performed within the tab browser menu.
+     *
+     * This function maps each [ToolbarMenu.Item] to its corresponding telemetry event and records it.
+     * The telemetry data helps in understanding user interaction with the browser menu features.
+     *
+     * @param item The specific [ToolbarMenu.Item] that was interacted with.
+     */
+    private fun recordTabBrowserMenuTelemetry(item: ToolbarMenu.Item) {
+        when (item) {
+            ToolbarMenu.Item.Back -> BrowserMenu.navigationToolbarAction.record(
+                BrowserMenu.NavigationToolbarActionExtra(TelemetryActions.BACK),
             )
-            is ToolbarMenu.Item.Forward -> BrowserMenu.navigationToolbarAction.record(
-                BrowserMenu.NavigationToolbarActionExtra("forward"),
+
+            ToolbarMenu.Item.Forward -> BrowserMenu.navigationToolbarAction.record(
+                BrowserMenu.NavigationToolbarActionExtra(TelemetryActions.FORWARD),
             )
-            is ToolbarMenu.Item.Reload -> {
+
+            ToolbarMenu.Item.Reload -> {
                 BrowserMenu.navigationToolbarAction.record(
-                    BrowserMenu.NavigationToolbarActionExtra("reload"),
+                    BrowserMenu.NavigationToolbarActionExtra(TelemetryActions.RELOAD),
                 )
             }
-            is ToolbarMenu.Item.Stop -> BrowserMenu.navigationToolbarAction.record(
-                BrowserMenu.NavigationToolbarActionExtra("stop"),
+
+            ToolbarMenu.Item.Stop -> BrowserMenu.navigationToolbarAction.record(
+                BrowserMenu.NavigationToolbarActionExtra(TelemetryActions.STOP),
             )
-            is ToolbarMenu.Item.Share -> BrowserMenu.navigationToolbarAction.record(
-                BrowserMenu.NavigationToolbarActionExtra("share"),
+
+            ToolbarMenu.Item.Share -> BrowserMenu.navigationToolbarAction.record(
+                BrowserMenu.NavigationToolbarActionExtra(TelemetryActions.SHARE),
             )
-            is ToolbarMenu.Item.FindInPage -> BrowserMenu.browserMenuAction.record(
-                BrowserMenu.BrowserMenuActionExtra("find_in_page"),
+
+            ToolbarMenu.Item.FindInPage -> BrowserMenu.browserMenuAction.record(
+                BrowserMenu.BrowserMenuActionExtra(TelemetryActions.FIND_IN_PAGE),
             )
-            is ToolbarMenu.Item.AddToShortcuts ->
+
+            ToolbarMenu.Item.AddToShortcuts ->
                 Shortcuts.shortcutAddedCounter.add()
-            is ToolbarMenu.Item.RemoveFromShortcuts ->
-                Shortcuts.shortcutRemovedCounter["removed_from_browser_menu"].add()
+
+            ToolbarMenu.Item.RemoveFromShortcuts ->
+                Shortcuts.shortcutRemovedCounter[TelemetryActions.REMOVED_FROM_BROWSER_MENU].add()
+
+            ToolbarMenu.Item.AddToHomeScreen -> BrowserMenu.browserMenuAction.record(
+                BrowserMenu.BrowserMenuActionExtra(TelemetryActions.ADD_TO_HOME_SCREEN),
+            )
+
+            ToolbarMenu.Item.OpenInApp -> BrowserMenu.browserMenuAction.record(
+                BrowserMenu.BrowserMenuActionExtra(TelemetryActions.OPEN_IN_APP),
+            )
+
+            ToolbarMenu.Item.Settings -> BrowserMenu.browserMenuAction.record(
+                BrowserMenu.BrowserMenuActionExtra(TelemetryActions.SETTINGS),
+            )
 
             is ToolbarMenu.Item.RequestDesktop -> {
-                if (item.isChecked) {
-                    BrowserMenu.browserMenuAction.record(
-                        BrowserMenu.BrowserMenuActionExtra("desktop_view_on"),
-                    )
-                } else {
-                    BrowserMenu.browserMenuAction.record(
-                        BrowserMenu.BrowserMenuActionExtra("desktop_view_off"),
-                    )
-                }
+                val action =
+                    if (item.isChecked) TelemetryActions.DESKTOP_VIEW_ON else TelemetryActions.DESKTOP_VIEW_OFF
+                BrowserMenu.browserMenuAction.record(
+                    BrowserMenu.BrowserMenuActionExtra(action),
+                )
             }
-            is ToolbarMenu.Item.AddToHomeScreen -> BrowserMenu.browserMenuAction.record(
-                BrowserMenu.BrowserMenuActionExtra("add_to_home_screen"),
-            )
+        }
+    }
 
-            is ToolbarMenu.Item.OpenInApp -> BrowserMenu.browserMenuAction.record(
-                BrowserMenu.BrowserMenuActionExtra("open_in_app"),
-            )
-            is ToolbarMenu.Item.Settings -> BrowserMenu.browserMenuAction.record(
-                BrowserMenu.BrowserMenuActionExtra("settings"),
-            )
-
-            // custom tabs
+    /**
+     * Records telemetry data for actions performed within a custom tab's browser menu.
+     *
+     * This function maps each `CustomTabItem` to its corresponding telemetry action and records it
+     * using the `CustomTabsToolbar` telemetry service. This helps in tracking user engagement
+     * with different features available in the custom tab menu.
+     *
+     * @param item The [ToolbarMenu.CustomTabItem] representing the action taken by the user.
+     */
+    private fun recordCustomTabBrowserMenuTelemetry(item: ToolbarMenu.CustomTabItem) {
+        when (item) {
             ToolbarMenu.CustomTabItem.Back -> CustomTabsToolbar.navigationToolbarAction.record(
-                CustomTabsToolbar.NavigationToolbarActionExtra("back"),
+                CustomTabsToolbar.NavigationToolbarActionExtra(TelemetryActions.BACK),
             )
+
             ToolbarMenu.CustomTabItem.Forward -> CustomTabsToolbar.navigationToolbarAction.record(
-                CustomTabsToolbar.NavigationToolbarActionExtra("forward"),
+                CustomTabsToolbar.NavigationToolbarActionExtra(TelemetryActions.FORWARD),
             )
+
             ToolbarMenu.CustomTabItem.Stop -> CustomTabsToolbar.navigationToolbarAction.record(
-                CustomTabsToolbar.NavigationToolbarActionExtra("stop"),
+                CustomTabsToolbar.NavigationToolbarActionExtra(TelemetryActions.STOP),
             )
 
             ToolbarMenu.CustomTabItem.Reload -> {
                 CustomTabsToolbar.navigationToolbarAction.record(
-                    CustomTabsToolbar.NavigationToolbarActionExtra("reload"),
+                    CustomTabsToolbar.NavigationToolbarActionExtra(TelemetryActions.RELOAD),
                 )
             }
 
             ToolbarMenu.CustomTabItem.AddToHomeScreen -> CustomTabsToolbar.browserMenuAction.record(
-                CustomTabsToolbar.BrowserMenuActionExtra("add_to_home_screen"),
+                CustomTabsToolbar.BrowserMenuActionExtra(TelemetryActions.ADD_TO_HOME_SCREEN),
             )
+
             ToolbarMenu.CustomTabItem.OpenInApp -> CustomTabsToolbar.browserMenuAction.record(
-                CustomTabsToolbar.BrowserMenuActionExtra("open_in_app"),
+                CustomTabsToolbar.BrowserMenuActionExtra(TelemetryActions.OPEN_IN_APP),
             )
+
             ToolbarMenu.CustomTabItem.OpenInBrowser -> CustomTabsToolbar.browserMenuAction.record(
-                CustomTabsToolbar.BrowserMenuActionExtra("open_in_browser"),
+                CustomTabsToolbar.BrowserMenuActionExtra(TelemetryActions.OPEN_IN_BROWSER),
             )
 
             ToolbarMenu.CustomTabItem.FindInPage -> CustomTabsToolbar.browserMenuAction.record(
-                CustomTabsToolbar.BrowserMenuActionExtra("find_in_page"),
+                CustomTabsToolbar.BrowserMenuActionExtra(TelemetryActions.FIND_IN_PAGE),
             )
+
             is ToolbarMenu.CustomTabItem.RequestDesktop -> {
-                if (item.isChecked) {
-                    CustomTabsToolbar.browserMenuAction.record(
-                        CustomTabsToolbar.BrowserMenuActionExtra("desktop_view_on"),
-                    )
-                } else {
-                    CustomTabsToolbar.browserMenuAction.record(
-                        CustomTabsToolbar.BrowserMenuActionExtra("desktop_view_off"),
-                    )
-                }
+                val action =
+                    if (item.isChecked) TelemetryActions.DESKTOP_VIEW_ON else TelemetryActions.DESKTOP_VIEW_OFF
+                CustomTabsToolbar.browserMenuAction.record(
+                    CustomTabsToolbar.BrowserMenuActionExtra(action),
+                )
             }
         }
     }

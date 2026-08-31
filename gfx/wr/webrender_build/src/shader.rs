@@ -195,8 +195,8 @@ pub fn build_shader_prefix_string<F: FnMut(&str)>(
     // detect which platform we're targeting
     let is_macos = match std::env::var("CARGO_CFG_TARGET_OS") {
         Ok(os) => os == "macos",
-        // if this is not called from build.rs (e.g. the gpu_cache_update shader or
-        // if the optimized shader pref is disabled) we want to use the runtime value
+        // if this is not called from build.rs (e.g. if the optimized shader
+        // pref is disabled) we want to use the runtime value
         Err(_) => cfg!(target_os = "macos"),
     };
     let is_android = match std::env::var("CARGO_CFG_TARGET_OS") {

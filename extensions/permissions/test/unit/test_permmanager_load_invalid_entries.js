@@ -230,9 +230,9 @@ function run_test() {
   // Let's do something in order to be sure the DB is read.
   Assert.greater(pm.all.length, 0);
 
-  // The schema should be upgraded to 11, and a 'modificationTime' column should
-  // exist with all records having a value of 0.
-  Assert.equal(connection.schemaVersion, 12);
+  // The schema should be upgraded to current version, and a 'modificationTime'
+  // column should exist with all records having a value of 0.
+  Assert.equal(connection.schemaVersion, 13);
 
   let select = connection.createStatement(
     "SELECT modificationTime FROM moz_perms"

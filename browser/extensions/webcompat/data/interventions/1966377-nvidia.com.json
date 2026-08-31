@@ -1,0 +1,18 @@
+{
+  "label": "nvidia.com",
+  "bugs": {
+    "1966377": {
+      "issue": "broken-layout",
+      "matches": ["*://*.nvidia.com/*"]
+    }
+  },
+  "css": {
+    "fix_overflowing_layout": ".nv-carousel-home .cmp-carousel[data-cmp-scroll-width] .cmp-carousel__content:after { max-width: 100%; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": ["fix_overflowing_layout"]
+    }
+  ]
+}

@@ -663,7 +663,6 @@ function enumCustomStateSetEntries(objectActor, depth) {
   // We also need to waive Xrays on the result of the call to `values` as we don't have
   // Xrays to Iterator objects (see Bug 1023984)
   const values = Array.from(
-    // eslint-disable-next-line no-undef
     waiveXrays(CustomStateSet.prototype.values.call(waiveXrays(rawObj)))
   );
 

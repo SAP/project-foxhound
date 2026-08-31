@@ -25,10 +25,10 @@
 #ifndef DenormalDisabler_h
 #define DenormalDisabler_h
 
-#include <cmath>
-#include <cinttypes>
-#include <cstring>
 #include <float.h>
+
+#include <cmath>
+#include <cstring>
 
 namespace WebCore {
 

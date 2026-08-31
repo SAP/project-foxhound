@@ -20,11 +20,4 @@ interface nsIWebPageDescriptor : nsISupports
   * @throws NS_ERROR_FAILURE - NS_ERROR_INVALID_POINTER
   */
   void loadPageAsViewSource(in nsIDocShell otherDocShell, in AString aURL);
-
-
- /**
-  * Retrieves the page descriptor for the curent document.
-  * @note, currentDescriptor is currently always an nsISHEntry object or null.
-  */
-  readonly attribute nsISupports currentDescriptor;
 };

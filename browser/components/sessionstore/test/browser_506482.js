@@ -4,7 +4,7 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 function test() {
-  /** Test for Bug 506482 **/
+  /** Test for Bug 506482 */
 
   // test setup
   waitForExplicitFinish();

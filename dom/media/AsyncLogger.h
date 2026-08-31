@@ -9,15 +9,13 @@
 
 #include <atomic>
 #include <thread>
-#include <cinttypes>
-#include "mozilla/ArrayUtils.h"
+
+#include "GeckoProfiler.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BaseProfilerMarkerTypes.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TimeStamp.h"
-#include "GeckoProfiler.h"
-#include "mozilla/dom/MPSCQueue.h"
+#include "mozilla/dom/UnboundedMPSCQueue.h"
 
 #if defined(_WIN32)
 #  include <process.h>
@@ -44,9 +42,15 @@ class MOZ_STACK_CLASS StringWriter {
     size_t toCopy = strlen(aString);
     bool truncated = false;
 
-    if (toCopy > Available()) {
+    size_t availableBytes = Available();
+    if (availableBytes == 0) {
+      // Treat nothing written as truncated
+      return true;
+    }
+
+    if (toCopy >= availableBytes) {
       truncated = true;
-      toCopy = Available() - 1;
+      toCopy = availableBytes - 1;
     }
 
     memcpy(&(mMemory[mWriteIndex]), aString, toCopy);
@@ -59,7 +63,7 @@ class MOZ_STACK_CLASS StringWriter {
 
  private:
   size_t Available() {
-    MOZ_ASSERT(mLength > mWriteIndex);
+    MOZ_ASSERT(mLength >= mWriteIndex);
     return mLength - mWriteIndex;
   }
 
@@ -131,31 +135,43 @@ class AsyncLogger {
   // The goal here is to make it easy on the allocator. We pack a pointer in the
   // message struct, and we still want to do power of two allocations to
   // minimize allocator slop.
-  static_assert(sizeof(MPSCQueue<TracePayload>::Message) == PAYLOAD_TOTAL_SIZE,
-                "MPSCQueue internal allocations has an unexpected size.");
+  static_assert(
+      sizeof(UnboundedMPSCQueue<TracePayload>::Message) == PAYLOAD_TOTAL_SIZE,
+      "UnboundedMPSCQueue internal allocations has an unexpected size.");
 
-  explicit AsyncLogger() : mThread(nullptr), mRunning(false) {}
+  explicit AsyncLogger() : mRunning(false) {}
+
+  ~AsyncLogger() { Stop(); }
 
   void Start() {
-    MOZ_ASSERT(!mRunning, "Double calls to AsyncLogger::Start");
-    mRunning = true;
+    MOZ_ASSERT(!mRunning.load(std::memory_order_acquire),
+               "Double calls to AsyncLogger::Start");
+    MOZ_ASSERT(!mThread.joinable(),
+               "AsyncLogger thread must be joined before restart");
+    mRunning.store(true, std::memory_order_release);
     Run();
   }
 
   void Stop() {
-    if (mRunning) {
-      mRunning = false;
+    mRunning.store(false, std::memory_order_release);
+    while (mActiveLogs.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+    if (mThread.joinable()) {
+      MOZ_ASSERT(std::this_thread::get_id() != mThread.get_id(),
+                 "AsyncLogger cannot join its own thread");
+      mThread.join();
     }
   }
 
   // Log something that has a beginning and an end
   void Log(const char* aName, const char* aCategory, const char* aComment,
            TracingPhase aPhase) {
-    if (!Enabled()) {
+    if (!BeginLogging()) {
       return;
     }
 
-    auto* msg = new MPSCQueue<TracePayload>::Message();
+    auto* msg = new UnboundedMPSCQueue<TracePayload>::Message();
 
     msg->data.mTID = profiler_current_thread_id();
     msg->data.mPhase = aPhase;
@@ -176,32 +192,48 @@ class AsyncLogger {
       msg->data.mCommentStart = 0;
     }
     mMessageQueueProfiler.Push(msg);
+    EndLogging();
   }
 
   // Log something that has a beginning and a duration
   void LogDuration(const char* aName, const char* aCategory, uint64_t aDuration,
                    uint64_t aFrames, uint64_t aSampleRate) {
-    if (Enabled()) {
-      auto* msg = new MPSCQueue<TracePayload>::Message();
-      msg->data.mTID = profiler_current_thread_id();
-      msg->data.mPhase = TracingPhase::COMPLETE;
-      msg->data.mTimestamp = TimeStamp::Now();
-      msg->data.mDurationUs =
-          (static_cast<double>(aFrames) / aSampleRate) * 1e6;
-      size_t len = std::min(strlen(aName), std::size(msg->data.mName));
-      memcpy(msg->data.mName, aName, len);
-      msg->data.mName[len] = 0;
-      mMessageQueueProfiler.Push(msg);
+    if (!BeginLogging()) {
+      return;
     }
+
+    auto* msg = new UnboundedMPSCQueue<TracePayload>::Message();
+    msg->data.mTID = profiler_current_thread_id();
+    msg->data.mPhase = TracingPhase::COMPLETE;
+    msg->data.mTimestamp = TimeStamp::Now();
+    msg->data.mDurationUs = (static_cast<double>(aFrames) / aSampleRate) * 1e6;
+    StringWriter writer(msg->data.mName, std::size(msg->data.mName));
+    size_t unused;
+    writer.AppendCString(aName, &unused);
+    mMessageQueueProfiler.Push(msg);
+    EndLogging();
   }
 
-  bool Enabled() { return mRunning; }
+  bool Enabled() { return mRunning.load(std::memory_order_acquire); }
 
  private:
+  bool BeginLogging() {
+    if (!mRunning.load(std::memory_order_acquire)) {
+      return false;
+    }
+    mActiveLogs.fetch_add(1, std::memory_order_acq_rel);
+    if (mRunning.load(std::memory_order_acquire)) {
+      return true;
+    }
+    mActiveLogs.fetch_sub(1, std::memory_order_acq_rel);
+    return false;
+  }
+
+  void EndLogging() { mActiveLogs.fetch_sub(1, std::memory_order_release); }
+
   void Run() {
-    mThread.reset(new std::thread([this]() {
-      AUTO_PROFILER_REGISTER_THREAD("AsyncLogger");
-      while (mRunning) {
+    mThread = std::thread([this]() {
+      for (;;) {
         {
           struct TracingMarkerWithComment {
             static constexpr Span<const char> MarkerTypeName() {
@@ -216,10 +248,8 @@ class AsyncLogger {
               using MS = MarkerSchema;
               MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
               schema.SetChartLabel("{marker.data.name}");
-              schema.SetTableLabel("{marker.name} - {marker.data.name}");
-              schema.AddKeyLabelFormatSearchable("name", "Comment",
-                                                 MS::Format::String,
-                                                 MS::Searchable::Searchable);
+              schema.SetTableLabel("{marker.data.name}");
+              schema.AddKeyLabelFormat("name", "Comment", MS::Format::String);
               return schema;
             }
           };
@@ -239,7 +269,7 @@ class AsyncLogger {
           };
 
           TracePayload message;
-          while (mMessageQueueProfiler.Pop(&message) && mRunning) {
+          while (mMessageQueueProfiler.Pop(&message)) {
             if (message.mPhase != TracingPhase::COMPLETE) {
               if (!message.mCommentStart) {
                 profiler_add_marker(
@@ -277,11 +307,12 @@ class AsyncLogger {
             }
           }
         }
+        if (!mRunning.load(std::memory_order_acquire)) {
+          break;
+        }
         Sleep();
       }
-    }));
-    // cleanup is done via mRunning
-    mThread->detach();
+    });
   }
 
   uint64_t NowInUs() {
@@ -291,8 +322,9 @@ class AsyncLogger {
 
   void Sleep() { std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
 
-  std::unique_ptr<std::thread> mThread;
-  MPSCQueue<TracePayload> mMessageQueueProfiler;
+  std::thread mThread;
+  UnboundedMPSCQueue<TracePayload> mMessageQueueProfiler;
+  std::atomic<uint32_t> mActiveLogs{0};
   std::atomic<bool> mRunning;
 };
 

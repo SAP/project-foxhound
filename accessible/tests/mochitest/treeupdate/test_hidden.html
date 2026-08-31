@@ -18,88 +18,25 @@
 
   <script type="application/javascript">
 
-    // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-    // //////////////////////////////////////////////////////////////////////////
+    async function doTest() {
+      let tree = { SECTION: [ { ENTRY: [] } ] };
+      testAccessibleTree("container", tree);
 
-    /**
-     * Set @hidden attribute
-     */
-    function setHiddenAttr(aContainerID, aChildID) {
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, getNode(aContainerID)),
-      ];
+      let reordered = waitForEvent(EVENT_REORDER, getNode("container"));
+      getNode("child").setAttribute("hidden", "true");
+      await reordered;
 
-      this.invoke = function setHiddenAttr_invoke() {
-        var tree =
-          { SECTION: [
-              { ENTRY: [
-              ] },
-          ] };
-        testAccessibleTree(aContainerID, tree);
+      tree = { SECTION: [] };
+      testAccessibleTree("container", tree);
 
-        getNode(aChildID).setAttribute("hidden", "true");
-      };
+      reordered = waitForEvent(EVENT_REORDER, getNode("container"));
+      getNode("child").removeAttribute("hidden");
+      await reordered;
 
-      this.finalCheck = function setHiddenAttr_finalCheck() {
-        var tree =
-          { SECTION: [
-          ] };
-        testAccessibleTree(aContainerID, tree);
-      };
+      tree = { SECTION: [ { ENTRY: [] } ] };
+      testAccessibleTree("container", tree);
 
-      this.getID = function setHiddenAttr_getID() {
-        return "Set @hidden attribute on input and test accessible tree for div";
-      };
-    }
-
-    /**
-     * Remove @hidden attribute
-     */
-    function removeHiddenAttr(aContainerID, aChildID) {
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, getNode(aContainerID)),
-      ];
-
-      this.invoke = function removeHiddenAttr_invoke() {
-        var tree =
-          { SECTION: [
-          ] };
-        testAccessibleTree(aContainerID, tree);
-
-        getNode(aChildID).removeAttribute("hidden");
-      };
-
-      this.finalCheck = function removeHiddenAttr_finalCheck() {
-        var tree =
-          { SECTION: [
-              { ENTRY: [
-              ] },
-          ] };
-        testAccessibleTree(aContainerID, tree);
-      };
-
-      this.getID = function removeHiddenAttr_getID() {
-        return "Remove @hidden attribute on input and test accessible tree for div";
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Test
-    // //////////////////////////////////////////////////////////////////////////
-
-    // gA11yEventDumpID = "eventdump"; // debug stuff
-    // gA11yEventDumpToConsole = true;
-
-    var gQueue = null;
-
-    function doTest() {
-      gQueue = new eventQueue();
-
-      gQueue.push(new setHiddenAttr("container", "child"));
-      gQueue.push(new removeHiddenAttr("container", "child"));
-
-      gQueue.invoke(); // SimpleTest.finish() will be called in the end
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

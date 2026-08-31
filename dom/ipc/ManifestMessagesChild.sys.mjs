@@ -48,7 +48,8 @@ export class ManifestMessagesChild extends JSWindowActorChild {
   /**
    * Asynchronously obtains a web manifest from this window by using the
    * ManifestObtainer and returns the result.
-   * @param {Object} checkConformance True if spec conformance messages should be collected.
+   *
+   * @param {object} checkConformance True if spec conformance messages should be collected.
    */
   async obtainManifest(options) {
     const { checkConformance } = options;
@@ -69,13 +70,14 @@ export class ManifestMessagesChild extends JSWindowActorChild {
    * Given a manifest and an expected icon size, ask ManifestIcons
    * to fetch the appropriate icon and send along result
    */
-  async fetchIcon({ data: { manifest, iconSize } }) {
+  async fetchIcon({ data: { manifest, iconSize, purposes } }) {
     const response = makeMsgResponse();
     try {
       response.result = await lazy.ManifestIcons.contentFetchIcon(
         this.contentWindow,
         manifest,
-        iconSize
+        iconSize,
+        purposes
       );
       response.success = true;
     } catch (err) {
@@ -89,8 +91,9 @@ export class ManifestMessagesChild extends JSWindowActorChild {
  * Utility function to Serializes an JS Error, so it can be transferred over
  * the message channel.
  * FIX ME: https://bugzilla.mozilla.org/show_bug.cgi?id=1172586
+ *
  * @param  {Error} aError The error to serialize.
- * @return {Object} The serialized object.
+ * @return {object} The serialized object.
  */
 function serializeError(aError) {
   const clone = {

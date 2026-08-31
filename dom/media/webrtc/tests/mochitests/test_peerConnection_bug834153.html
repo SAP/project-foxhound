@@ -17,7 +17,7 @@
 
     return pc1.createOffer({ offerToReceiveAudio: true }).then(offer => {
       // The whole point of this test is not to wait for the
-      // setRemoteDescription call to succesfully complete, so we
+      // setRemoteDescription call to successfully complete, so we
       // don't wait for it to succeed.
       pc2.setRemoteDescription(offer);
       return pc2.createAnswer();

@@ -4,73 +4,70 @@
 
 package org.mozilla.fenix.search
 
-import androidx.annotation.VisibleForTesting
-import androidx.lifecycle.Lifecycle.State.RESUMED
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.Mode
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
-import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.ext.flow
-import org.mozilla.fenix.search.SearchFragmentAction.EnvironmentCleared
-import org.mozilla.fenix.search.SearchFragmentAction.EnvironmentRehydrated
+import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
+import org.mozilla.fenix.search.SearchFragmentAction.Init
 import org.mozilla.fenix.search.SearchFragmentAction.SearchStarted
-import org.mozilla.fenix.search.SearchFragmentStore.Environment
-import mozilla.components.lib.state.Action as MVIAction
 
 /**
  * [SearchFragmentStore] [Middleware] to synchronize search related details from [BrowserToolbarStore].
  *
  * @param toolbarStore The [BrowserToolbarStore] to sync from.
+ * @param browsingModeManager [BrowsingModeManager] for querying the current browsing mode.
+ * @param scope [CoroutineScope] used for running long running operations in background.
+ * @param browserStore The [BrowserStore] to sync from.
  */
 class BrowserToolbarToFenixSearchMapperMiddleware(
     private val toolbarStore: BrowserToolbarStore,
+    private val browsingModeManager: BrowsingModeManager,
+    private val scope: CoroutineScope,
+    private val browserStore: BrowserStore? = null,
 ) : Middleware<SearchFragmentState, SearchFragmentAction> {
-    @VisibleForTesting
-    internal var environment: Environment? = null
     private var syncSearchStartedJob: Job? = null
     private var syncSearchQueryJob: Job? = null
 
     override fun invoke(
-        context: MiddlewareContext<SearchFragmentState, SearchFragmentAction>,
+        store: Store<SearchFragmentState, SearchFragmentAction>,
         next: (SearchFragmentAction) -> Unit,
         action: SearchFragmentAction,
     ) {
-        if (action is EnvironmentRehydrated) {
-            environment = action.environment
+        next(action)
 
-            syncSearchStatus(context.store)
+        if (action is Init) {
+            syncSearchStatus(store)
 
             if (toolbarStore.state.isEditMode()) {
-                syncUserQuery(context.store)
+                syncUserQuery(store)
             }
-        } else if (action is EnvironmentCleared) {
-            environment = null
         }
-
-        next(action)
     }
 
     private fun syncSearchStatus(store: Store<SearchFragmentState, SearchFragmentAction>) {
-        syncSearchStartedJob?.cancel()
-        syncSearchStartedJob = toolbarStore.observeWhileActive {
-            distinctUntilChangedBy { it.mode }
+        syncSearchStartedJob = scope.launch {
+            toolbarStore.flow()
+                .distinctUntilChangedBy { it.mode }
                 .collect {
                     if (it.mode == Mode.EDIT) {
+                        val editState = toolbarStore.state.editState
                         store.dispatch(
                             SearchStarted(
                                 selectedSearchEngine = null,
                                 isUserSelected = true,
-                                inPrivateMode = environment?.browsingModeManager?.mode?.isPrivate == true,
+                                inPrivateMode = browsingModeManager.mode.isPrivate,
+                                searchStartedForCurrentUrl = editState.isQueryPrefilled &&
+                                    browserStore?.state?.selectedTab?.content?.url == editState.query.current,
                             ),
                         )
 
@@ -84,26 +81,26 @@ class BrowserToolbarToFenixSearchMapperMiddleware(
 
     private fun syncUserQuery(store: Store<SearchFragmentState, SearchFragmentAction>) {
         syncSearchQueryJob?.cancel()
-        syncSearchQueryJob = toolbarStore.observeWhileActive {
-            map { it.editState.query }
+        syncSearchQueryJob = scope.launch {
+            toolbarStore.flow()
+                .map { it.editState.query }
                 .distinctUntilChanged()
                 .collect { query ->
-                    store.dispatch(SearchFragmentAction.UpdateQuery(query))
+                    val isSearchStartedForCurrentUrl = store.state.searchStartedForCurrentUrl
+                    val isQueryPrefilled = toolbarStore.state.editState.isQueryPrefilled
+                    store.dispatch(
+                        SearchFragmentAction.UpdateQuery(
+                            when (isSearchStartedForCurrentUrl && isQueryPrefilled) {
+                                true -> "" // consider a prefilled query for the current URL as not entered by user
+                                false -> query.current
+                            },
+                        ),
+                    )
                 }
         }
     }
 
     private fun stopSyncingUserQuery() {
         syncSearchQueryJob?.cancel()
-    }
-
-    private inline fun <S : State, A : MVIAction> Store<S, A>.observeWhileActive(
-        crossinline observe: suspend (Flow<S>.() -> Unit),
-    ): Job? = environment?.viewLifecycleOwner?.run {
-        lifecycleScope.launch {
-            repeatOnLifecycle(RESUMED) {
-                flow().observe()
-            }
-        }
     }
 }

@@ -95,16 +95,19 @@ function focusInChild(event) {
   // Stop the shim code from seeing this event process.
   event.stopImmediatePropagation();
 
+  let window;
   var id;
   if (event.target instanceof Ci.nsIDOMWindow) {
     id = getWindowDocId(event.originalTarget) + "-window";
+    window = event.target;
   } else if (event.target.nodeType == event.target.DOCUMENT_NODE) {
     id = getWindowDocId(event.originalTarget) + "-document";
+    window = event.target.documentGlobal;
   } else {
     id = event.originalTarget.id;
+    window = event.target.documentGlobal;
   }
 
-  let window = event.target.ownerGlobal;
   if (!window._eventsOccurred) {
     window._eventsOccurred = [];
   }
@@ -126,8 +129,14 @@ add_task(async function () {
   tab2 = BrowserTestUtils.addTab(gBrowser);
   browser2 = gBrowser.getBrowserForTab(tab2);
 
-  await promiseTabLoadEvent(tab1, "data:text/html," + escape(testPage1));
-  await promiseTabLoadEvent(tab2, "data:text/html," + escape(testPage2));
+  await BrowserTestUtils.loadURIString({
+    browser: tab1.linkedBrowser,
+    uriString: "data:text/html," + escape(testPage1),
+  });
+  await BrowserTestUtils.loadURIString({
+    browser: tab2.linkedBrowser,
+    uriString: "data:text/html," + escape(testPage2),
+  });
 
   gURLBar.focus();
   await SimpleTest.promiseFocus();
@@ -511,7 +520,10 @@ add_task(async function () {
     "focus button"
   );
 
-  await promiseTabLoadEvent(tab1, "data:text/html," + escape(testPage3));
+  await BrowserTestUtils.loadURIString({
+    browser: tab1.linkedBrowser,
+    uriString: "data:text/html," + escape(testPage3),
+  });
 
   // now go back again
   gURLBar.focus();

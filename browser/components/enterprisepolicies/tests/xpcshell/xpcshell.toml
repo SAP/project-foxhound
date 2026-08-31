@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 firefox-appdir = "browser"
 head = "head.js"
 support-files = [
@@ -32,10 +35,22 @@ support-files = [
 
 ["test_extensionsettings.js"]
 
+["test_extensionsettings_blocked_permissions.js"]
+
+["test_extensionsettings_install_without_url.js"]
+
+["test_import_enterprise_roots.js"]
+
+["test_local_network_access.js"]
+
 ["test_macosparser_unflatten.js"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_permissions.js"]
+
+["test_policy_descriptions.js"]
 
 ["test_policy_search_engine.js"]
 
@@ -50,8 +65,16 @@ support-files = ["config_popups_cookies_addons.json"]
 
 ["test_runOnce_helper.js"]
 
+["test_security_devices.js"]
+
 ["test_simple_pref_policies.js"]
+
+["test_sitepolicies.js"]
 
 ["test_sorted_alphabetically.js"]
 
 ["test_telemetry.js"]
+
+["test_webserial.js"]
+
+["test_websitefilter.js"]

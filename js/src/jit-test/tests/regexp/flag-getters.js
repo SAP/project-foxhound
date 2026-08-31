@@ -10,6 +10,16 @@ function testGlobal() {
 }
 for (let i = 0; i < 2; ++i) testGlobal();
 
+function testHasIndices() {
+  const xs = [/a/, /b/d];
+
+  for (let i = 0; i < 200; ++i) {
+    let x = xs[i & 1];
+    assertEq(x.hasIndices, !!(i & 1));
+  }
+}
+for (let i = 0; i < 2; ++i) testHasIndices();
+
 function testIgnoreCase() {
   const xs = [/a/, /b/i];
 
@@ -49,6 +59,16 @@ function testUnicode() {
   }
 }
 for (let i = 0; i < 2; ++i) testUnicode();
+
+function testUnicodeSets() {
+  const xs = [/a/, /b/v];
+
+  for (let i = 0; i < 200; ++i) {
+    let x = xs[i & 1];
+    assertEq(x.unicodeSets, !!(i & 1));
+  }
+}
+for (let i = 0; i < 2; ++i) testUnicodeSets();
 
 function testSticky() {
   const xs = [/a/, /b/y];

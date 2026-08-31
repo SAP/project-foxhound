@@ -1,0 +1,79 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    description: "samply toolchain build"
+    attributes:
+        local-toolchain: true
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 1800
+        env:
+            FETCH: samply/samply
+    run:
+        script: build-rust-based-toolchain.sh
+        toolchain-artifact: public/build/samply.tar.zst
+    fetches:
+        fetch:
+            - samply
+
+linux64-samply:
+    description: "samply toolchain build for x86_64 Linux"
+    treeherder:
+        symbol: TL(samply)
+    run:
+        arguments: ['x86_64-unknown-linux-gnu']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust
+            - sysroot-x86_64-linux-gnu
+
+linux64-aarch64-samply:
+    description: "samply toolchain build for aarch64 Linux"
+    treeherder:
+        symbol: TLA64(samply)
+    run:
+        arguments: ['aarch64-unknown-linux-gnu']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust
+            - sysroot-aarch64-linux-gnu
+
+macosx64-samply:
+    description: "samply toolchain build for x86_64 macOS"
+    treeherder:
+        symbol: TM(samply)
+    run:
+        arguments: ['x86_64-apple-darwin']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-macos
+            - macosx64-sdk-toolchain
+
+macosx64-aarch64-samply:
+    description: "samply toolchain build for aarch64 macOS"
+    treeherder:
+        symbol: TMA64(samply)
+    run:
+        arguments: ['aarch64-apple-darwin']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-macos
+            - macosx64-sdk-toolchain
+
+win64-samply:
+    description: "samply toolchain build for Windows"
+    treeherder:
+        symbol: TW64(samply)
+    run:
+        arguments: ['x86_64-pc-windows-msvc']
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-windows
+            - vs-toolchain

@@ -29,24 +29,25 @@
     <TextView
         android:id="@+id/title"
         android:layout_width="0dp"
-        android:layout_marginStart="@dimen/radio_button_preference_title_margins"
         android:layout_height="wrap_content"
-        android:gravity="center|start"
+        android:layout_marginStart="@dimen/radio_button_preference_title_margins"
         android:layout_marginEnd="@dimen/radio_button_preference_title_margins"
-        tools:text="@tools:sample/lorem"
+        android:gravity="center|start"
         android:textAlignment="viewStart"
-        android:textAppearance="?android:attr/textAppearanceListItem"
-        app:layout_constraintTop_toTopOf="@id/radio_button"
+        android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+        android:textStyle="normal"
+        app:layout_constraintBottom_toBottomOf="@id/radio_button"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/radio_button"
-        app:layout_constraintBottom_toBottomOf="@id/radio_button"/>
+        app:layout_constraintTop_toTopOf="@id/radio_button"
+        tools:text="@tools:sample/lorem" />
 
     <TextView
         android:id="@+id/widget_summary"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:textAlignment="viewStart"
-        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
         android:textColor="?android:attr/textColorSecondary"
         tools:text="@tools:sample/lorem"
         app:layout_constraintBottom_toBottomOf="parent"

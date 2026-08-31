@@ -1,44 +1,42 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLFormSubmission.h"
+
+#include <tuple>
+
 #include "HTMLFormElement.h"
 #include "HTMLFormSubmissionConstants.h"
-#include "nsCOMPtr.h"
-#include "nsComponentManagerUtils.h"
-#include "nsGkAtoms.h"
-#include "nsIFormControl.h"
-#include "nsError.h"
-#include "nsGenericHTMLElement.h"
-#include "nsAttrValueInlines.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsStringStream.h"
-#include "nsIURI.h"
-#include "nsIURIMutator.h"
-#include "nsIURL.h"
-#include "nsNetUtil.h"
-#include "nsLinebreakConverter.h"
-#include "nsEscape.h"
-#include "nsUnicharUtils.h"
-#include "nsIMultiplexInputStream.h"
-#include "nsIMIMEInputStream.h"
-#include "nsIScriptError.h"
-#include "nsCExternalHandlerService.h"
-#include "nsContentUtils.h"
-
-#include "mozilla/dom/Document.h"
+#include "mozilla/RandomNum.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/Directory.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/RandomNum.h"
-
-#include <tuple>
+#include "nsAttrValueInlines.h"
+#include "nsCExternalHandlerService.h"
+#include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsError.h"
+#include "nsEscape.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsIFormControl.h"
+#include "nsIMIMEInputStream.h"
+#include "nsIMultiplexInputStream.h"
+#include "nsIScriptError.h"
+#include "nsIURI.h"
+#include "nsIURIMutator.h"
+#include "nsIURL.h"
+#include "nsLinebreakConverter.h"
+#include "nsNetUtil.h"
+#include "nsStringStream.h"
+#include "nsUnicharUtils.h"
 
 namespace mozilla::dom {
 
@@ -47,7 +45,7 @@ namespace {
 void SendJSWarning(Document* aDocument, const char* aWarningName,
                    const nsTArray<nsString>& aWarningArgs) {
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "HTML"_ns,
-                                  aDocument, nsContentUtils::eFORMS_PROPERTIES,
+                                  aDocument, PropertiesFile::FORMS_PROPERTIES,
                                   aWarningName, aWarningArgs);
 }
 
@@ -88,6 +86,7 @@ class FSURLEncoded : public EncodingFormSubmission {
       : EncodingFormSubmission(aActionURL, aTarget, aEncoding, aSubmitter),
         mMethod(aMethod),
         mDocument(aDocument),
+        mSubmitter(aSubmitter),
         mWarnedFileControl(false) {}
 
   virtual nsresult AddNameValuePair(const nsAString& aName,
@@ -102,6 +101,8 @@ class FSURLEncoded : public EncodingFormSubmission {
   virtual nsresult GetEncodedSubmission(nsIURI* aURI,
                                         nsIInputStream** aPostDataStream,
                                         nsCOMPtr<nsIURI>& aOutURI) override;
+
+  Element* GetSubmitterElement() const override { return mSubmitter; }
 
  protected:
   /**
@@ -126,6 +127,9 @@ class FSURLEncoded : public EncodingFormSubmission {
 
   /** The document whose URI to use when reporting errors */
   nsCOMPtr<Document> mDocument;
+
+  /** Submitter element. */
+  RefPtr<Element> mSubmitter;
 
   /** Whether or not we have warned about a file control not being submitted */
   bool mWarnedFileControl;
@@ -217,12 +221,12 @@ void HandleMailtoSubject(nsCString& aPath) {
     // Get the default subject
     nsAutoString brandName;
     nsresult rv = nsContentUtils::GetLocalizedString(
-        nsContentUtils::eBRAND_PROPERTIES, "brandShortName", brandName);
+        PropertiesFile::BRAND_PROPERTIES, "brandShortName", brandName);
     if (NS_FAILED(rv)) return;
     nsAutoString subjectStr;
-    rv = nsContentUtils::FormatLocalizedString(
-        subjectStr, nsContentUtils::eFORMS_PROPERTIES, "DefaultFormSubject",
-        brandName);
+    rv = nsContentUtils::FormatLocalizedString(subjectStr,
+                                               PropertiesFile::FORMS_PROPERTIES,
+                                               "DefaultFormSubject", brandName);
     if (NS_FAILED(rv)) return;
     aPath.AppendLiteral("subject=");
     nsCString subjectStrEscaped;
@@ -418,7 +422,7 @@ nsresult FSMultipartFormData::AddNameBlobPair(const nsAString& aName,
     file->GetRelativePath(relativePath);
     if (StaticPrefs::dom_webkitBlink_dirPicker_enabled() &&
         !relativePath.IsEmpty()) {
-      filename16 = relativePath;
+      filename16 = std::move(relativePath);
     }
 
     if (filename16.IsEmpty()) {
@@ -464,7 +468,7 @@ nsresult FSMultipartFormData::AddNameBlobPair(const nsAString& aName,
                                    fileStream.forget(), 8192);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    fileStream = bufferedStream;
+    fileStream = std::move(bufferedStream);
   }
 
   AddDataChunk(nameStr, filename, contentType, fileStream, size);
@@ -491,7 +495,7 @@ nsresult FSMultipartFormData::AddNameDirectoryPair(const nsAString& aName,
   if (NS_WARN_IF(error.Failed())) {
     error.SuppressException();
   } else {
-    dirname16 = path;
+    dirname16 = std::move(path);
   }
 
   if (dirname16.IsEmpty()) {
@@ -695,6 +699,10 @@ HTMLFormSubmission::HTMLFormSubmission(
       mEncoding(aEncoding),
       mInitiatedFromUserInput(UserActivation::IsHandlingUserInput()) {
   MOZ_COUNT_CTOR(HTMLFormSubmission);
+}
+
+Element* HTMLFormSubmission::GetSubmitterElement() const {
+  return mFormData ? mFormData->GetSubmitterElement() : nullptr;
 }
 
 EncodingFormSubmission::EncodingFormSubmission(

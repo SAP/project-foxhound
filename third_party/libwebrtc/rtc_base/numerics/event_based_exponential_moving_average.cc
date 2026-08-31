@@ -13,8 +13,11 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 
 #include "rtc_base/checks.h"
+
+namespace webrtc {
 
 namespace {
 
@@ -23,8 +26,6 @@ namespace {
 constexpr double ninetyfive_percent_confidence = 1.96;
 
 }  // namespace
-
-namespace webrtc {
 
 // `half_time` specifies how much weight will be given to old samples,
 // a sample gets exponentially less weight so that it's 50%
@@ -35,7 +36,7 @@ EventBasedExponentialMovingAverage::EventBasedExponentialMovingAverage(
 }
 
 void EventBasedExponentialMovingAverage::SetHalfTime(int half_time) {
-  tau_ = static_cast<double>(half_time) / log(2);
+  tau_ = static_cast<double>(half_time) / std::numbers::ln2;
   Reset();
 }
 

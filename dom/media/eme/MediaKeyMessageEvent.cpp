@@ -1,20 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MediaKeyMessageEvent.h"
-#include "mozilla/dom/MediaKeyMessageEventBinding.h"
+
 #include "js/ArrayBuffer.h"
 #include "js/RootingAPI.h"
 #include "jsfriendapi.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/MediaKeyMessageEventBinding.h"
+#include "mozilla/dom/MediaKeys.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrimitiveConversions.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsContentUtils.h"
-#include "mozilla/dom/MediaKeys.h"
 
 namespace mozilla::dom {
 
@@ -31,7 +30,8 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(MediaKeyMessageEvent, Event)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(MediaKeyMessageEvent, Event)
-  mozilla::DropJSObjects(tmp);
+  tmp->mMessage = nullptr;
+  tmp->mRawMessage.Clear();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaKeyMessageEvent)

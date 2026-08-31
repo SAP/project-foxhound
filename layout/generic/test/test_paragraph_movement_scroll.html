@@ -1,0 +1,83 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset='utf-8'/>
+    <title>Paragraph-movement should scroll a horizontally overflowing input</title>
+    <!-- Any copyright is dedicated to the Public Domain.
+         http://creativecommons.org/publicdomain/zero/1.0/ -->
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  </head>
+  <body>
+    <input id="input" type="text" style="width: 100px; font-family: monospace;"
+      value="The quick brown fox jumps over the lazy dog, then jumps back again to verify scrolling behavior in a long URL-like value.">
+
+    <script type="text/javascript">
+      SimpleTest.waitForExplicitFinish();
+
+      // Selection::ScrollIntoView defaults to async (posted via the refresh
+      // driver), so poll until scrollLeft matches the expected predicate.
+      function waitForScrollLeft(input, predicate, label) {
+        return SimpleTest.promiseWaitForCondition(
+          () => predicate(input.scrollLeft), label);
+      }
+
+      async function runTest() {
+        let input = document.getElementById("input");
+        input.focus();
+
+        let controller = input.editor.selectionController;
+        ok(controller, "Precondition: input has a selection controller");
+
+        // Move caret to the end so the input is scrolled all the way right.
+        input.setSelectionRange(input.value.length, input.value.length);
+        // setSelectionRange does not always update scrollLeft on its own; the
+        // following ensures the end of the value is in view.
+        input.scrollLeft = input.scrollWidth;
+        await waitForScrollLeft(
+          input, x => x > 0,
+          "Precondition: input must be horizontally scrollable; if the value " +
+          "now fits in the visible width the test setup is wrong");
+        ok(input.scrollLeft > 0,
+           "Precondition: input is scrolled horizontally (scrollLeft=" +
+           input.scrollLeft + ")");
+
+        // Move to the beginning of the paragraph. For a single-line input the
+        // entire value is one paragraph, so this must move the caret to offset 0
+        // AND scroll back to the start of the value.
+        controller.paragraphMove(false, false);
+
+        await waitForScrollLeft(
+          input, x => x === 0,
+          "paragraphMove(begin): input should be scrolled to the start " +
+          "(regression guard for bug 2041228)");
+
+        is(input.selectionStart, 0,
+           "paragraphMove(begin): selectionStart should be 0");
+        is(input.selectionEnd, 0,
+           "paragraphMove(begin): selectionEnd should be 0");
+        is(input.scrollLeft, 0,
+           "paragraphMove(begin): scrollLeft should be 0");
+
+        // Move to the end of the paragraph. Caret must return to the end of the
+        // value AND the input must scroll to show it.
+        controller.paragraphMove(true, false);
+
+        await waitForScrollLeft(
+          input, x => x > 0,
+          "paragraphMove(end): input should be scrolled to show the end");
+
+        is(input.selectionStart, input.value.length,
+           "paragraphMove(end): selectionStart should be at end of value");
+        is(input.selectionEnd, input.value.length,
+           "paragraphMove(end): selectionEnd should be at end of value");
+        ok(input.scrollLeft > 0,
+           "paragraphMove(end): scrollLeft should be > 0 (scrollLeft=" +
+           input.scrollLeft + ")");
+
+        SimpleTest.finish();
+      }
+
+      SimpleTest.waitForFocus(runTest);
+    </script>
+  </body>
+</html>

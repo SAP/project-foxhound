@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,11 @@
 #ifndef GMPChild_h_
 #define GMPChild_h_
 
-#include "mozilla/gmp/PGMPChild.h"
-#include "GMPTimerChild.h"
-#include "GMPStorageChild.h"
 #include "GMPLoader.h"
+#include "GMPStorageChild.h"
+#include "GMPTimerChild.h"
 #include "gmp-entrypoints.h"
+#include "mozilla/gmp/PGMPChild.h"
 #include "prlink.h"
 
 namespace mozilla {
@@ -55,12 +54,6 @@ class GMPChild : public PGMPChild {
 
   mozilla::ipc::IPCResult RecvStartPlugin(const nsString& aAdapter);
   mozilla::ipc::IPCResult RecvPreloadLibs(const nsCString& aLibs);
-
-  PGMPTimerChild* AllocPGMPTimerChild();
-  bool DeallocPGMPTimerChild(PGMPTimerChild* aActor);
-
-  PGMPStorageChild* AllocPGMPStorageChild();
-  bool DeallocPGMPStorageChild(PGMPStorageChild* aActor);
 
   void GMPContentChildActorDestroy(GMPContentChild* aGMPContentChild);
 

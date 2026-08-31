@@ -52,7 +52,7 @@ extension to run tests against it.
 There are two utility functions in head.js, getIncognitoWindow and
 startIncognitoMonitorExtension, which are useful for some basic testing.
 
-Example: `browser_ext_windows_events.js <https://searchfox.org/mozilla-central/rev/78cd247b5d7a08832f87d786541d3e2204842e8e/browser/components/extensions/test/browser/browser_ext_windows_events.js>`_
+Example: :searchfox:`browser_ext_windows_events.js <mozilla-central/rev/78cd247b5d7a08832f87d786541d3e2204842e8e:browser/components/extensions/test/browser/browser_ext_windows_events.js>`
 
 Testing API Calls
 -----------------
@@ -62,7 +62,7 @@ an ID of a window or tab, use getIncognitoWindow.  In most cases, the
 API call should throw an exception when the window is not accessible.
 There are some cases where API calls explicitly do not throw.
 
-Example: `browser_ext_windows_incognito.js <https://searchfox.org/mozilla-central/rev/78cd247b5d7a08832f87d786541d3e2204842e8e/browser/components/extensions/test/browser/browser_ext_windows_incognito.js>`_
+Example: :searchfox:`browser_ext_windows_incognito.js <mozilla-central/rev/78cd247b5d7a08832f87d786541d3e2204842e8e:browser/components/extensions/test/browser/browser_ext_windows_incognito.js>`
 
 Privateness of window vs. tab
 -----------------------------

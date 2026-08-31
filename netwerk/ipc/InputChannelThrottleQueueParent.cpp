@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set ts=4 sw=4 sts=4 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,7 +42,7 @@ InputChannelThrottleQueueParent::Release(void) {
   // we are done with this ThrottleQueue. We should send a delete message
   // to delete the InputChannelThrottleQueueChild in socket process.
   if (count == 1 && CanSend()) {
-    mozilla::Unused << Send__delete__(this);
+    (void)Send__delete__(this);
     return 1;
   }
   return count;
@@ -85,7 +83,7 @@ InputChannelThrottleQueueParent::Init(uint32_t aMeanBytesPerSecond,
        maxBytesPerSecond(mMaxBytesPerSecond)] {
         RefPtr<SocketProcessParent> socketParent =
             SocketProcessParent::GetSingleton();
-        Unused << socketParent->SendPInputChannelThrottleQueueConstructor(
+        (void)socketParent->SendPInputChannelThrottleQueueConstructor(
             self, meanBytesPerSecond, maxBytesPerSecond);
       });
 

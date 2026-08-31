@@ -1,5 +1,5 @@
 aiohappyeyeballs>=2.5.0
-aiosignal>=1.1.2
+aiosignal>=1.4.0
 attrs>=17.3.0
 frozenlist>=1.1.1
 multidict<7.0,>=4.5
@@ -13,7 +13,10 @@ async-timeout<6.0,>=4.0
 aiodns>=3.3.0
 
 [speedups:platform_python_implementation != "CPython"]
-brotlicffi
+brotlicffi>=1.2
 
 [speedups:platform_python_implementation == "CPython"]
-Brotli
+Brotli>=1.2
+
+[speedups:platform_python_implementation == "CPython" and python_version < "3.14"]
+backports.zstd

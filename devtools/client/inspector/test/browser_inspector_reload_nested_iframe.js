@@ -8,7 +8,7 @@
 
 const NESTED_IFRAME_URL = `https://example.com/document-builder.sjs?html=${encodeURIComponent(
   "<h3>second level iframe</h3>"
-)}&delay=500`;
+)}&delay=100`;
 
 const TEST_URI = `data:text/html;charset=utf-8,
   <h1>Top-level</h1>

@@ -15,8 +15,8 @@ add_task(async function () {
   info("Starting test... ");
 
   const onNetworkEvents = waitForNetworkEvents(monitor, 2);
-  await reloadBrowser();
-  await ContentTask.spawn(tab.linkedBrowser, null, () => {
+  await reloadSelectedTab();
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.wrappedJSObject.fetch("data:text/plain,some_text");
   });
   await onNetworkEvents;

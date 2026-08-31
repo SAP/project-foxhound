@@ -3,12 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 // @ts-nocheck Defer for now.
 
-const { nsIHttpActivityObserver, nsISocketTransport } = Ci;
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ExtensionDNR: "resource://gre/modules/ExtensionDNR.sys.mjs",
+  ExtensionDocumentId: "resource://gre/modules/ExtensionDocumentId.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   SecurityInfo: "resource://gre/modules/SecurityInfo.sys.mjs",
@@ -340,6 +339,8 @@ const OPTIONAL_PROPERTIES = [
   "urlClassification",
   "requestSize",
   "responseSize",
+  "documentId",
+  "parentDocumentId",
 ];
 
 function serializeRequestData(eventName) {
@@ -429,6 +430,7 @@ var ChannelEventSink = {
       HttpObserverManager.onChannelReplaced(oldChannel, newChannel);
     } catch (e) {
       // we don't wanna throw: it would abort the redirection
+      Cu.reportError(e);
     }
   },
 
@@ -630,7 +632,6 @@ HttpObserverManager = {
   beforeConnectInitialized: false,
   examineInitialized: false,
   redirectInitialized: false,
-  activityInitialized: false,
   needTracing: false,
   hasRedirects: false,
 
@@ -654,19 +655,19 @@ HttpObserverManager = {
     return wrapper;
   },
 
-  get activityDistributor() {
-    return Cc["@mozilla.org/network/http-activity-distributor;1"].getService(
-      Ci.nsIHttpActivityDistributor
-    );
-  },
-
   // This method is called whenever webRequest listeners are added or removed.
   // It reconciles the set of listeners with underlying observers, event
   // handlers, etc. by adding new low-level handlers for any newly added
   // webRequest listeners and removing those that are no longer needed if
   // there are no more listeners for corresponding webRequest events.
   addOrRemove() {
-    let needOpening = this.listeners.onBeforeRequest.size || this.dnrActive;
+    // onErrorOccurred needs http-on-modify-request so the ChannelWrapper is
+    // created at channel start, before any failure that would prevent
+    // http-on-examine-response from firing (e.g. pre-header connection failure).
+    let needOpening =
+      this.listeners.onBeforeRequest.size ||
+      this.listeners.onErrorOccurred.size ||
+      this.dnrActive;
     let needBeforeConnect =
       this.listeners.onBeforeSendHeaders.size ||
       this.listeners.onSendHeaders.size ||
@@ -727,15 +728,6 @@ HttpObserverManager = {
       this.redirectInitialized = false;
       ChannelEventSink.unregister();
     }
-
-    let needActivity = this.listeners.onErrorOccurred.size;
-    if (needActivity && !this.activityInitialized) {
-      this.activityInitialized = true;
-      this.activityDistributor.addObserver(this);
-    } else if (!needActivity && this.activityInitialized) {
-      this.activityInitialized = false;
-      this.activityDistributor.removeObserver(this);
-    }
   },
 
   addListener(kind, callback, opts) {
@@ -772,65 +764,6 @@ HttpObserverManager = {
     }
   },
 
-  // We map activity values with tentative error names, e.g. "STATUS_RESOLVING" => "NS_ERROR_NET_ON_RESOLVING".
-  get activityErrorsMap() {
-    let prefix = /^(?:ACTIVITY_SUBTYPE_|STATUS_)/;
-    let map = new Map();
-    for (let iface of [nsIHttpActivityObserver, nsISocketTransport]) {
-      for (let c of Object.keys(iface).filter(name => prefix.test(name))) {
-        map.set(iface[c], c.replace(prefix, "NS_ERROR_NET_ON_"));
-      }
-    }
-    delete this.activityErrorsMap;
-    this.activityErrorsMap = map;
-    return this.activityErrorsMap;
-  },
-  GOOD_LAST_ACTIVITY: nsIHttpActivityObserver.ACTIVITY_SUBTYPE_RESPONSE_HEADER,
-  observeActivity(
-    nativeChannel,
-    activityType,
-    activitySubtype /* , aTimestamp, aExtraSizeData, aExtraStringData */
-  ) {
-    // Sometimes we get a NullHttpChannel, which implements
-    // nsIHttpChannel but not nsIChannel.
-    if (!(nativeChannel instanceof Ci.nsIChannel)) {
-      return;
-    }
-    let channel = this.getWrapper(nativeChannel);
-
-    let lastActivity = channel.lastActivity || 0;
-    if (
-      activitySubtype ===
-        nsIHttpActivityObserver.ACTIVITY_SUBTYPE_RESPONSE_COMPLETE &&
-      lastActivity &&
-      lastActivity !== this.GOOD_LAST_ACTIVITY
-    ) {
-      // Since the channel's security info is assigned in onStartRequest and
-      // errorCheck is called in ChannelWrapper::onStartRequest, we should check
-      // the errorString after onStartRequest to make sure errors have a chance
-      // to be processed before we fall back to a generic error string.
-      channel.addEventListener(
-        "start",
-        () => {
-          if (!channel.errorString) {
-            this.runChannelListener(channel, "onErrorOccurred", {
-              error:
-                this.activityErrorsMap.get(lastActivity) ||
-                `NS_ERROR_NET_UNKNOWN_${lastActivity}`,
-            });
-          }
-        },
-        { once: true }
-      );
-    } else if (
-      lastActivity !== this.GOOD_LAST_ACTIVITY &&
-      lastActivity !==
-        nsIHttpActivityObserver.ACTIVITY_SUBTYPE_TRANSACTION_CLOSE
-    ) {
-      channel.lastActivity = activitySubtype;
-    }
-  },
-
   getRequestData(channel, extraData) {
     let originAttributes = channel.loadInfo?.originAttributes;
     let cos = channel.channel.QueryInterface(Ci.nsIClassOfService);
@@ -850,6 +783,12 @@ HttpObserverManager = {
       tabId: this.getBrowserData(channel).tabId,
       frameId: channel.frameId,
       parentFrameId: channel.parentFrameId,
+      documentId: lazy.ExtensionDocumentId.getDocumentId(
+        channel.documentInnerWindowId
+      ),
+      parentDocumentId: lazy.ExtensionDocumentId.getDocumentId(
+        channel.parentDocumentInnerWindowId
+      ),
 
       frameAncestors: channel.frameAncestors || undefined,
 
@@ -1057,7 +996,7 @@ HttpObserverManager = {
     // recorded with an empty marker text (and so without url, chan id and
     // the supenders addon ids).
     let markerText = "";
-    if (Services.profiler?.IsActive()) {
+    if (Services.profiler.IsActive()) {
       const suspenders = handlerResults
         .filter(({ result }) => isThenable(result))
         .map(({ opts }) => opts.addonId)

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -12,10 +10,8 @@
 #include <windows.h>
 #include <shlobj.h>
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ModuleVersionInfo.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WinDllServices.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "nsReadableUtils.h"
@@ -57,7 +53,7 @@ static Vector<nsString> GetKeyboardLayoutDlls() {
         strTempSize) {
       nsString ws(strTemp, ((strTempSize + 1) / sizeof(wchar_t)) - 1);
       ToLowerCase(ws);  // To facilitate case-insensitive searches
-      Unused << result.emplaceBack(std::move(ws));
+      (void)result.emplaceBack(std::move(ws));
     }
   }
 }

@@ -46,7 +46,7 @@ async function toggleAndCheckStates(walker, animations, selectors, playState) {
       await animations.playSome(players);
     }
 
-    info("Getting the AnimationPlayerFront for node " + selector);
+    info("Getting the AnimationFront for node " + selector);
     const player = players[0];
     await checkPlayState(player, selector, playState);
   }

@@ -1,0 +1,314 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-self: center;
+  align-items: center;
+  justify-items: center;
+  width: 100%;
+  --smartbar-width: 100%;
+}
+
+:host([classic-mode]) {
+  background-color: var(--background-color-canvas);
+}
+
+/* Fullpage: browser collapsed (0 height) until chat starts, showing prompts and smartbar */
+:host([mode="fullpage"]) {
+  grid-template-areas:
+    "browser"
+    "."
+    "heading"
+    "smartbar"
+    "prompts"
+    "topsites"
+    "."
+    "footer";
+  grid-template-rows: 0 1fr auto auto auto auto 1fr auto;
+  align-content: stretch;
+}
+
+:host([mode="sidebar"]) {
+  grid-template-areas:
+    "browser"
+    "prompts"
+    "smartbar"
+    "disclaimer";
+  grid-template-rows: 1fr auto auto auto;
+  --smartbar-width: calc(100% - var(--space-large));
+}
+
+:host([mode="sidebar"]) .smartbar-glow {
+  display: none;
+}
+
+/* Expands browser to full height and removes prompts from grid when chat starts */
+:host(.chat-active) {
+  grid-template-areas:
+    "browser"
+    "smartbar"
+    "disclaimer";
+  grid-template-rows: 1fr auto auto;
+}
+
+:host([mode="fullpage"].chat-active) {
+  grid-template-areas:
+    "browser"
+    "prompts"
+    "smartbar"
+    "disclaimer";
+  grid-template-rows: 1fr auto auto auto;
+
+  & .fullpage-header:not([hidden]) {
+    display: flex;
+  }
+}
+
+:host([mode="sidebar"].chat-active) {
+  grid-template-areas:
+    "browser"
+    "smartbar"
+    "disclaimer";
+  grid-template-rows: 1fr auto auto;
+}
+
+#browser-container {
+  display: contents;
+  width: 100%;
+}
+
+#aichat-browser {
+  grid-area: browser;
+  width: 100%;
+  height: 100%;
+}
+
+#smartbar-wrapper {
+  grid-area: smartbar;
+  height: var(--smartbar-height, auto);
+  margin-block-end: var(--space-small);
+  /* smartbar max width must be the same as the child context (ai-window-content.css) container */
+  max-width: var(--smartwindow-content-max-width);
+  position: relative;
+  width: var(--smartbar-width);
+}
+
+#ai-window-smartbar {
+  /* make smartbar fill the #smartbar-wrapper */
+  --smartbar-max-width: var(--smartwindow-content-max-width);
+
+  position: absolute;
+  z-index: 1;
+}
+
+.disclaimer {
+  --disclaimer-text-color: light-dark(var(--color-gray-60), var(--color-gray-30));
+  color: var(--disclaimer-text-color);
+  font-size: var(--font-size-small);
+  grid-area: disclaimer;
+  margin-block-end: var(--space-small);
+  user-select: none;
+}
+
+/* These colors are duplicated from `.message-assistant a` styles in
+ * `ai-chat-message.css` to ensure the disclaimer links have the same color
+ *  and behavior as assistant message links, even outside of the chat message
+ * context. We can consider centralizing these styles if we find more use cases
+ * for assistant-styled links outside of chat messages and the disclaimer.
+ */
+.disclaimer a {
+  --smartwindow-assistant-link-color: light-dark(var(--color-violet-50), var(--color-violet-20));
+  --smartwindow-assistant-link-color-hover: light-dark(var(--color-violet-90), var(--color-violet-50));
+  --smartwindow-assistant-link-color-visited: light-dark(var(--color-violet-70), var(--color-violet-40));
+  --smartwindow-assistant-link-color-active: light-dark(var(--color-violet-90), var(--color-violet-50));
+  --smartwindow-assistant-accent-color-focus: light-dark(var(--color-violet-70), var(--color-violet-40));
+  color: var(--smartwindow-assistant-link-color);
+}
+
+.disclaimer a:visited {
+  color: var(--smartwindow-assistant-link-color-visited);
+}
+
+.disclaimer a:hover {
+  color: var(--smartwindow-assistant-link-color-hover);
+}
+
+.disclaimer a:active {
+  color: var(--smartwindow-assistant-link-color-active);
+}
+
+.disclaimer a:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  accent-color: var(--smartwindow-assistant-accent-color-focus);
+}
+
+:host([mode="fullpage"]) #ai-window-smartbar {
+  top: 0;
+}
+
+:host([mode="sidebar"]) #ai-window-smartbar {
+  bottom: 0;
+}
+
+#smartbar-slot {
+  display: contents;
+}
+
+smartwindow-prompts {
+  grid-area: prompts;
+  width: 100%;
+}
+
+.chat-header {
+  box-sizing: border-box;
+  justify-content: flex-end;
+  padding-block: var(--space-small);
+  padding-inline: var(--space-small) var(--space-large);
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.sidebar-header {
+  display: flex;
+  gap: var(--space-small);
+  grid-area: sidebar-header;
+}
+
+.fullpage-header {
+  display: none;
+  grid-area: fullpage-header;
+}
+
+moz-button.new-chat-icon-button,
+moz-button.close-sidebar-button {
+  --button-border-radius: var(--border-radius-circle);
+
+  @media not (forced-colors) {
+    --button-background-color-ghost: light-dark(var(--color-white), var(--color-black-alpha-30));
+    --button-background-color-ghost-hover: light-dark(var(--color-violet-20), color-mix(in srgb, currentColor 11%, transparent));
+    --button-background-color-ghost-active: light-dark(var(--color-violet-30), color-mix(in srgb, currentColor 17%, transparent));
+    --button-text-color-ghost: light-dark(var(--color-violet-90), var(--color-violet-0));
+
+    @media -moz-pref("browser.nova.enabled") {
+      --button-icon-fill: light-dark(var(--color-violet-desaturated-60), var(--color-violet-desaturated-40));
+      --button-background-color-ghost: light-dark(var(--color-white), var(--color-gray-70));
+      --button-background-color-ghost-hover: var(--button-background-color-ghost);
+      --button-background-color-ghost-active: var(--button-background-color-ghost);
+      --button-background-color-ghost-selected: var(--button-background-color-ghost);
+    }
+  }
+
+  &::part(button) {
+    backdrop-filter: blur(12px);
+    box-shadow: var(--box-shadow-level-1);
+  }
+
+  @media -moz-pref("browser.nova.enabled") and (not (forced-colors)) {
+    &::part(button) {
+      --nova-border-gradient: linear-gradient(
+        180deg,
+        transparent 35%,
+        color-mix(in srgb, var(--color-violet-40) 30%, transparent) 80%,
+        color-mix(in srgb, var(--color-violet-40) 50%, transparent) 100%
+      );
+      border: var(--border-width) solid transparent;
+      background:
+        image(var(--button-background-color-ghost)) padding-box,
+        var(--nova-border-gradient) border-box;
+    }
+
+    &:is(:hover, :active)::part(button) {
+      --nova-border-gradient: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--color-violet-40) 10%, transparent) 5%,
+        color-mix(in srgb, var(--color-violet-40) 30%, transparent) 20%,
+        color-mix(in srgb, var(--color-violet-40) 40%, transparent) 40%,
+        color-mix(in srgb, var(--color-violet-40) 90%, transparent) 100%
+      );
+    }
+  }
+}
+
+moz-button.close-sidebar-button {
+  --icon-size: calc(var(--icon-size-xsmall) - 2px);
+}
+
+#smartbar-toggle-button:not([hidden]) {
+  display: flex;
+  justify-self: center;
+  align-self: center;
+  --icon-size: var(--icon-size-medium);
+}
+
+#smartbar-toggle-button {
+  --smartbar-button-border-color: light-dark(
+    color-mix(in srgb, var(--color-purple-70) 15%, transparent),
+    color-mix(in srgb, var(--color-violet-30) 25%, transparent)
+  );
+  --smartbar-button-background-color: light-dark(
+    color-mix(in srgb, var(--color-purple-40) 20%, transparent),
+    color-mix(in srgb, var(--color-violet-80) 30%, transparent)
+  );
+  --smartbar-button-text-color: light-dark(var(--color-gray-100), var(--color-white));
+}
+
+#smartbar-toggle-button::part(button) {
+  display: flex;
+  padding: calc(var(--space-medium) + var(--space-xxsmall)) var(--space-large);
+  border-radius: var(--border-radius-circle);
+  border: var(--border-width) solid var(--smartbar-button-border-color);
+  background: var(--smartbar-button-background-color);
+  box-shadow: var(--box-shadow-level-2);
+}
+
+#smartbar-toggle-button::part(moz-button-label) {
+  color: var(--smartbar-button-text-color);
+  font-size: var(--button-font-size);
+  font-weight: var(--font-weight);
+}
+
+smartwindow-heading {
+  grid-area: heading;
+
+  :host(.chat-active) & {
+    display: none;
+  }
+}
+
+smartwindow-topsites {
+  grid-area: topsites;
+  width: 100%;
+
+  :host(.chat-active) & {
+    display: none;
+  }
+}
+
+smartwindow-footer {
+  grid-area: footer;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+smartwindow-promo {
+  grid-area: footer;
+  max-width: 580px;
+  margin-block-end: calc(var(--space-small) + 20px);
+}
+
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}

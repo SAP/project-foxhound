@@ -67,7 +67,10 @@ internal sealed class MimeType(
 
             val photoUri = getUri(context, "${context.packageName}.feature.prompts.fileprovider", photoFile)
 
-            return intent.apply { putExtra(EXTRA_OUTPUT, photoUri) }.addCaptureHint(request.captureMode)
+            return intent.apply {
+                putExtra(EXTRA_OUTPUT, photoUri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }.addCaptureHint(request.captureMode)
         }
     }
 
@@ -138,7 +141,7 @@ internal sealed class MimeType(
      * there will not be a match.
      */
     open fun matches(mimeTypes: Array<out String>) =
-        mimeTypes.isNotEmpty() && mimeTypes.any { it.startsWith(type) }
+        mimeTypes.isEmpty() || mimeTypes.any { it.startsWith(type) }
 
     open fun shouldCapture(mimeTypes: Array<out String>, capture: File.FacingMode) =
         capture != File.FacingMode.NONE &&

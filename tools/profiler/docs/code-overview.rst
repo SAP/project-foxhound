@@ -162,70 +162,70 @@ Directories
 
 * Non-Profiler supporting code
 
-  * `mfbt <https://searchfox.org/mozilla-central/source/mfbt>`_ - Mostly
+  * :searchfox:`mfbt` - Mostly
     replacements for C++ std library facilities.
 
-  * `mozglue/misc <https://searchfox.org/mozilla-central/source/mozglue/misc>`_
+  * :searchfox:`mozglue/misc`
 
-    * `PlatformMutex.h <https://searchfox.org/mozilla-central/source/mozglue/misc/PlatformMutex.h>`_ -
+    * :searchfox:`PlatformMutex.h <mozglue/misc/PlatformMutex.h>` -
       Mutex base classes.
-    * `StackWalk.h <https://searchfox.org/mozilla-central/source/mozglue/misc/StackWalk.h>`_ -
+    * :searchfox:`StackWalk.h <mozglue/misc/StackWalk.h>` -
       Stack-walking functions.
-    * `TimeStamp.h <https://searchfox.org/mozilla-central/source/mozglue/misc/TimeStamp.h>`_ -
+    * :searchfox:`TimeStamp.h <mozglue/misc/TimeStamp.h>` -
       Timestamps and time durations.
 
-  * `xpcom <https://searchfox.org/mozilla-central/source/xpcom>`_
+  * :searchfox:`xpcom`
 
-    * `ds <https://searchfox.org/mozilla-central/source/xpcom/ds>`_ -
+    * :searchfox:`ds <xpcom/ds>` -
       Data structures like arrays, strings.
 
-    * `threads <https://searchfox.org/mozilla-central/source/xpcom/threads>`_ -
+    * :searchfox:`threads <xpcom/threads>` -
       Threading functions.
 
 * Profiler back-end
 
-  * `mozglue/baseprofiler <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler>`_ -
+  * :searchfox:`mozglue/baseprofiler` -
     Base Profiler code, usable from anywhere in Firefox. Because it lives in
     mozglue, it's loaded right at the beginning, so it's possible to start the
     profiler very early, even before Firefox loads its big&heavy "xul" library.
 
-    * `baseprofiler's public <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/public>`_ -
+    * :searchfox:`baseprofiler's public <mozglue/baseprofiler/public>` -
       Public headers, may be #included from anywhere.
-    * `baseprofiler's core <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/core>`_ -
+    * :searchfox:`baseprofiler's core <mozglue/baseprofiler/core>` -
       Main implementation code.
-    * `baseprofiler's lul <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/lul>`_ -
+    * :searchfox:`baseprofiler's lul <mozglue/baseprofiler/lul>` -
       Special stack-walking code for Linux.
-    * `../tests/TestBaseProfiler.cpp <https://searchfox.org/mozilla-central/source/mozglue/tests/TestBaseProfiler.cpp>`_ -
+    * :searchfox:`../tests/TestBaseProfiler.cpp <mozglue/tests/TestBaseProfiler.cpp>` -
       Unit tests.
 
-  * `tools/profiler <https://searchfox.org/mozilla-central/source/tools/profiler>`_ -
+  * :searchfox:`tools/profiler` -
     Gecko Profiler code, only usable from the xul library. That library is
     loaded a short time after Firefox starts, so the Gecko Profiler is not able
     to profile the early phase of the application, Base Profiler handles that,
     and can pass its collected data to the Gecko Profiler when the latter
     starts.
 
-    * `public <https://searchfox.org/mozilla-central/source/tools/profiler/public>`_ -
+    * :searchfox:`public <tools/profiler/public>` -
       Public headers, may be #included from most libxul code.
-    * `core <https://searchfox.org/mozilla-central/source/tools/profiler/core>`_ -
+    * :searchfox:`core <tools/profiler/core>` -
       Main implementation code.
-    * `gecko <https://searchfox.org/mozilla-central/source/tools/profiler/gecko>`_ -
+    * :searchfox:`gecko <tools/profiler/gecko>` -
       Control from JS, and multi-process/IPC code.
-    * `lul <https://searchfox.org/mozilla-central/source/tools/profiler/lul>`_ -
+    * :searchfox:`lul <tools/profiler/lul>` -
       Special stack-walking code for Linux.
-    * `rust-api <https://searchfox.org/mozilla-central/source/tools/profiler/rust-api>`_,
-      `rust-helper <https://searchfox.org/mozilla-central/source/tools/profiler/rust-helper>`_
-    * `tests <https://searchfox.org/mozilla-central/source/tools/profiler/tests>`_
+    * :searchfox:`rust-api <tools/profiler/rust-api>`,
+      :searchfox:`rust-helper <tools/profiler/rust-helper>`
+    * :searchfox:`tests <tools/profiler/tests>`
 
-  * `devtools/client/performance-new <https://searchfox.org/mozilla-central/source/devtools/client/performance-new>`_,
-    `devtools/shared/performance-new <https://searchfox.org/mozilla-central/source/devtools/shared/performance-new>`_ -
+  * :searchfox:`devtools/client/performance-new`,
+    :searchfox:`devtools/shared/performance-new` -
     Middleware code for about:profiling and devtools panel functionality.
 
   * js, starting with
-    `js/src/vm/GeckoProfiler.h <https://searchfox.org/mozilla-central/source/js/src/vm/GeckoProfiler.h>`_ -
+    :searchfox:`js/src/vm/GeckoProfiler.h` -
     JavaScript engine support, mostly to capture JS stacks.
 
-  * `toolkit/components/extensions/schemas/geckoProfiler.json <https://searchfox.org/mozilla-central/source/toolkit/components/extensions/schemas/geckoProfiler.json>`_ -
+  * :searchfox:`toolkit/components/extensions/schemas/geckoProfiler.json` -
     File that needs to be updated when Profiler features change.
 
 * Profiler front-end
@@ -240,7 +240,7 @@ Headers
 *******
 
 The most central public header is
-`GeckoProfiler.h <https://searchfox.org/mozilla-central/source/tools/profiler/public/GeckoProfiler.h>`_,
+:searchfox:`GeckoProfiler.h <tools/profiler/public/GeckoProfiler.h>`,
 from which almost everything else can be found, it can be a good starting point
 for exploration.
 It includes other headers, which together contain important top-level macros and
@@ -251,34 +251,17 @@ To better separate areas of functionality, and to hopefully reduce compilation
 times, parts of it have been split into smaller headers, and this work will
 continue, see `bug 1681416 <https://bugzilla.mozilla.org/show_bug.cgi?id=1681416>`_.
 
-MOZ_GECKO_PROFILER and Macros
-=============================
+Platform support
+================
 
 Mozilla officially supports the Profiler on `tier-1 platforms
 <https://firefox-source-docs.mozilla.org/contributing/build/supported.html>`_:
 Windows, macos, Linux and Android.
-There is also some code running on tier 2-3 platforms (e.g., for FreeBSD), but
+There is also some code (markers recording) running on tier 2-3 platforms (e.g., for FreeBSD), but
 the team at Mozilla is not obligated to maintain it; we do try to keep it
 running, and some external contributors are keeping an eye on it and provide
 patches when things do break.
 
-To reduce the burden on unsupported platforms, a lot of the Profilers code is
-only compiled when ``MOZ_GECKO_PROFILER`` is #defined. This means that some
-public functions may not always be declared or implemented, and should be
-surrounded by guards like ``#ifdef MOZ_GECKO_PROFILER``.
-
-Some commonly-used functions offer an empty definition in the
-non-``MOZ_GECKO_PROFILER`` case, so these functions may be called from anywhere
-without guard.
-
-Other functions have associated macros that can always be used, and resolve to
-nothing on unsupported platforms. E.g.,
-``PROFILER_REGISTER_THREAD`` calls ``profiler_register_thread`` where supported,
-otherwise does nothing.
-
-WIP note: There is an effort to eventually get rid of ``MOZ_GECKO_PROFILER`` and
-its associated macros, see
-`bug 1635350 <https://bugzilla.mozilla.org/show_bug.cgi?id=1635350>`_.
 
 RAII "Auto" macros and classes
 ==============================
@@ -290,7 +273,7 @@ that some action always eventually happens, is called
 `RAII <https://en.cppreference.com/w/cpp/language/raii>`_ in C++, with the
 common prefix "auto".
 
-E.g.: In ``MOZ_GECKO_PROFILER`` builds,
+E.g.:
 `AUTO_PROFILER_INIT <https://searchfox.org/mozilla-central/search?q=AUTO_PROFILER_INIT>`_
 instantiates an
 `AutoProfilerInit <https://searchfox.org/mozilla-central/search?q=symbol:T_mozilla%3A%3AAutoProfilerInit>`_
@@ -337,7 +320,7 @@ Locking
 =======
 The locking primitives in PlatformMutex.h are not supposed to be used as-is, but
 through a user-accessible implementation. For the Profilers, this is in
-`BaseProfilerDetail.h <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/public/BaseProfilerDetail.h>`_.
+:searchfox:`BaseProfilerDetail.h <mozglue/baseprofiler/public/BaseProfilerDetail.h>`.
 
 In addition to the usual ``Lock``, ``TryLock``, and ``Unlock`` functions,
 `BaseProfilerMutex <https://searchfox.org/mozilla-central/search?q=BaseProfilerMutex>`_
@@ -466,7 +449,7 @@ information under ProfilerThreadRegistrationData below).
 ThreadRegistrationData and accessors
 ====================================
 
-`The ProfilerThreadRegistrationData.h header <https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerThreadRegistrationData.h>`_
+:searchfox:`The ProfilerThreadRegistrationData.h header <tools/profiler/public/ProfilerThreadRegistrationData.h>`
 contains a hierarchy of classes that encapsulate all the thread-related data.
 
 ``ThreadRegistrationData`` contains all the actual data members, including:
@@ -530,7 +513,7 @@ ProfilerThreadState.h functions
 ===============================
 
 The
-`ProfilerThreadState.h <https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerThreadState.h>`_
+:searchfox:`ProfilerThreadState.h <tools/profiler/public/ProfilerThreadState.h>`
 header provides a few helpful functions related to threads, including:
 
 * ``profiler_is_active_and_thread_is_registered``
@@ -625,7 +608,7 @@ The following sessions give more technical details.
 leb128iterator.h
 ================
 
-`This utility header <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/public/leb128iterator.h>`_
+:searchfox:`This utility header <mozglue/baseprofiler/public/leb128iterator.h>`
 contains some functions to read and write unsigned "LEB128" numbers
 (`LEB128 on wikipedia <https://en.wikipedia.org/wiki/LEB128>`_).
 
@@ -769,7 +752,7 @@ uses a ``ProfileChunkedBuffer`` to store data, and handles the different kinds
 of entries that the Profilers want to read/write.
 
 Each entry starts with a tag identifying a kind. These kinds can be found in
-`ProfileBufferEntryKinds.h <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/public/ProfileBufferEntryKinds.h>`_.
+:searchfox:`ProfileBufferEntryKinds.h <mozglue/baseprofiler/public/ProfileBufferEntryKinds.h>`.
 
 There are "legacy" kinds, which are small fixed-length entries, such as:
 Categories, labels, frame information, counters, etc. These can be stored in
@@ -977,7 +960,7 @@ parameter, and also a pointer to the function that can capture the stack
 latter one knows about JS).
 
 From here, we enter the land of
-`BaseProfilerMarkersDetail.h <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/public/BaseProfilerMarkersDetail.h>`_,
+:searchfox:`BaseProfilerMarkersDetail.h <mozglue/baseprofiler/public/BaseProfilerMarkersDetail.h>`,
 which employs some heavy template techniques, in order to most efficiently
 serialize the given marker payload arguments, in order to make them
 deserializable when outputting the final JSON. In previous implementations, for
@@ -1038,7 +1021,7 @@ Deconstructing this mouthful of an template:
   variadic function to write all the marker data, that is:
 
   * The entry kind that must be at the beginning of every buffer entry, in this
-    case `ProfileBufferEntryKind::Marker <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/public/ProfileBufferEntryKinds.h#78>`_.
+    case :searchfox:`ProfileBufferEntryKind::Marker <mozglue/baseprofiler/public/ProfileBufferEntryKinds.h#78>`.
   * The common marker data (options first, name, category, deserialization tag).
   * Then all the marker-type-specific arguments. Note that the C++ types
     are those extracted from the deserialization function, so we know that
@@ -1061,7 +1044,7 @@ See https://firefox-source-docs.mozilla.org/tools/profiler/instrumenting-javascr
 Adding Markers from Java
 ========================
 
-See https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/ProfilerController.java
+See :searchfox:`mobile/android/geckoview/src/main/java/org/mozilla/geckoview/ProfilerController.java`
 
 *************
 Profiling Log
@@ -1354,12 +1337,12 @@ IPC (Inter-Process Communication)
 See https://firefox-source-docs.mozilla.org/ipc/.
 
 As a quick summary, some message-passing function-like declarations live in
-`PProfiler.ipdl <https://searchfox.org/mozilla-central/source/tools/profiler/gecko/PProfiler.ipdl>`_,
+:searchfox:`PProfiler.ipdl <tools/profiler/gecko/PProfiler.ipdl>`,
 and corresponding ``SendX`` and ``RecvX`` C++ functions are respectively
 generated in
-`PProfilerParent.h <https://searchfox.org/mozilla-central/source/__GENERATED__/ipc/ipdl/_ipdlheaders/mozilla/PProfilerParent.h>`_,
+:searchfox:`PProfilerParent.h <__GENERATED__/ipc/ipdl/_ipdlheaders/mozilla/PProfilerParent.h>`,
 and virtually declared (for user implementation) in
-`PProfilerChild.h <https://searchfox.org/mozilla-central/source/__GENERATED__/ipc/ipdl/_ipdlheaders/mozilla/PProfilerChild.h>`_.
+:searchfox:`PProfilerChild.h <__GENERATED__/ipc/ipdl/_ipdlheaders/mozilla/PProfilerChild.h>`.
 
 During Profiling
 ================
@@ -1370,7 +1353,7 @@ Exit profiles
 One IPC message that is not in PProfiler.ipdl, is
 `ShutdownProfile <https://searchfox.org/mozilla-central/search?q=ShutdownProfile%28&path=&case=false&regexp=false>`_
 in
-`PContent.ipdl <https://searchfox.org/mozilla-central/source/dom/ipc/PContent.ipdl>`_.
+:searchfox:`PContent.ipdl <dom/ipc/PContent.ipdl>`.
 
 It's called from
 `ContentChild::ShutdownInternal <https://searchfox.org/mozilla-central/search?q=symbol:_ZN7mozilla3dom12ContentChild16ShutdownInternalEv>`_,

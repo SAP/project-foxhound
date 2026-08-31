@@ -34,6 +34,12 @@
 
         let input = colorInput.shadowRoot.querySelector("input");
         is(input.value, "#ffffff", "color input has the correct initial value");
+        let wrapper = colorInput.shadowRoot.querySelector("label");
+        is(
+          wrapper.title,
+          input.value,
+          "color input has a title attribute set to its value."
+        );
       });
       add_task(async function testMozInputColorEvents() {
         const colorInput = document.querySelector("moz-input-color");

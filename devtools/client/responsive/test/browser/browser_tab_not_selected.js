@@ -28,11 +28,20 @@ addRDMTask(
     gBrowser.selectedTab = tab1;
 
     info("Try to update the DPI");
+
+    // The click on the device pixel ratio select is intermittently flagged as
+    // not accessible. See Bug 1849028 for a11y issues in DevTools tests.
+    AccessibilityUtils.setEnv({
+      focusableRule: false,
+    });
+
     await selectDevicePixelRatio(ui, 2);
     const dppx = await waitForDevicePixelRatio(ui, 2, {
       waitForTargetConfiguration: true,
     });
     is(dppx, 2, "Content has expected devicePixelRatio");
+
+    AccessibilityUtils.resetEnv();
 
     const clientClosed = waitForClientClose(ui);
     await removeTab(tab2);

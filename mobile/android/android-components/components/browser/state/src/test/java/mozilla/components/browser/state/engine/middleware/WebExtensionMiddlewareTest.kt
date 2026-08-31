@@ -10,7 +10,6 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -37,19 +36,19 @@ class WebExtensionMiddlewareTest {
 
         val engineSession1: EngineSession = mock()
         val engineSession2: EngineSession = mock()
-        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1)).joinBlocking()
-        store.dispatch(EngineAction.LinkEngineSessionAction("2", engineSession2)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1))
+        store.dispatch(EngineAction.LinkEngineSessionAction("2", engineSession2))
 
         assertNull(store.state.activeWebExtensionTabId)
         verify(engineSession1, never()).markActiveForWebExtensions(anyBoolean())
         verify(engineSession2, never()).markActiveForWebExtensions(anyBoolean())
 
-        store.dispatch(TabListAction.SelectTabAction("1")).joinBlocking()
+        store.dispatch(TabListAction.SelectTabAction("1"))
         assertEquals("1", store.state.activeWebExtensionTabId)
         verify(engineSession1).markActiveForWebExtensions(true)
         verify(engineSession2, never()).markActiveForWebExtensions(anyBoolean())
 
-        store.dispatch(TabListAction.SelectTabAction("2")).joinBlocking()
+        store.dispatch(TabListAction.SelectTabAction("2"))
         assertEquals("2", store.state.activeWebExtensionTabId)
         verify(engineSession1).markActiveForWebExtensions(false)
         verify(engineSession2).markActiveForWebExtensions(true)
@@ -76,7 +75,7 @@ class WebExtensionMiddlewareTest {
         verify(engineSession1, never()).markActiveForWebExtensions(anyBoolean())
         verify(engineSession2, never()).markActiveForWebExtensions(anyBoolean())
 
-        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1))
         assertEquals("1", store.state.activeWebExtensionTabId)
         verify(engineSession1).markActiveForWebExtensions(true)
         verify(engineSession2, never()).markActiveForWebExtensions(anyBoolean())
@@ -97,11 +96,11 @@ class WebExtensionMiddlewareTest {
         )
 
         val engineSession1: EngineSession = mock()
-        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1))
         assertEquals("1", store.state.activeWebExtensionTabId)
         verify(engineSession1).markActiveForWebExtensions(true)
 
-        store.dispatch(EngineAction.UnlinkEngineSessionAction("1")).joinBlocking()
+        store.dispatch(EngineAction.UnlinkEngineSessionAction("1"))
         verify(engineSession1).markActiveForWebExtensions(false)
     }
 
@@ -121,14 +120,14 @@ class WebExtensionMiddlewareTest {
 
         val engineSession1: EngineSession = mock()
         val engineSession2: EngineSession = mock()
-        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1)).joinBlocking()
-        store.dispatch(EngineAction.LinkEngineSessionAction("2", engineSession2)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction("1", engineSession1))
+        store.dispatch(EngineAction.LinkEngineSessionAction("2", engineSession2))
 
-        store.dispatch(TabListAction.SelectTabAction("1")).joinBlocking()
+        store.dispatch(TabListAction.SelectTabAction("1"))
         assertEquals("1", store.state.activeWebExtensionTabId)
         verify(engineSession2, never()).markActiveForWebExtensions(anyBoolean())
 
-        store.dispatch(TabListAction.RemoveTabAction("1")).joinBlocking()
+        store.dispatch(TabListAction.RemoveTabAction("1"))
         assertEquals("2", store.state.activeWebExtensionTabId)
         verify(engineSession2).markActiveForWebExtensions(true)
     }

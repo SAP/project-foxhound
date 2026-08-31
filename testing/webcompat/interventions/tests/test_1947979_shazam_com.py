@@ -17,6 +17,7 @@ async def is_scrollbar_visible(client):
     )
 
 
+@pytest.mark.enable_webkit_scrollbar
 @pytest.mark.skip_platforms("android")
 @pytest.mark.need_visible_scrollbars
 @pytest.mark.asyncio
@@ -25,6 +26,7 @@ async def test_enabled(client):
     assert not await is_scrollbar_visible(client)
 
 
+@pytest.mark.disable_webkit_scrollbar
 @pytest.mark.skip_platforms("android")
 @pytest.mark.need_visible_scrollbars
 @pytest.mark.asyncio

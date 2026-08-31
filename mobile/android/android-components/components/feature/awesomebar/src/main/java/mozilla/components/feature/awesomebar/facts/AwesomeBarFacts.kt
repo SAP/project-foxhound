@@ -20,6 +20,7 @@ class AwesomeBarFacts {
         const val BOOKMARK_SUGGESTION_CLICKED = "bookmark_suggestion_clicked"
         const val CLIPBOARD_SUGGESTION_CLICKED = "clipboard_suggestion_clicked"
         const val HISTORY_SUGGESTION_CLICKED = "history_suggestion_clicked"
+        const val HISTORY_SUGGESTION_REMOVED = "history_suggestion_removed"
         const val SEARCH_ACTION_CLICKED = "search_action_clicked"
         const val SEARCH_SUGGESTION_CLICKED = "search_suggestion_clicked"
         const val TRENDING_SEARCH_SUGGESTION_CLICKED = "trending_search_suggestion_clicked"
@@ -27,10 +28,12 @@ class AwesomeBarFacts {
         const val RECENT_SEARCH_SUGGESTION_CLICKED = "recent_search_suggestion_clicked"
         const val OPENED_TAB_SUGGESTION_CLICKED = "opened_tab_suggestion_clicked"
         const val SEARCH_TERM_SUGGESTION_CLICKED = "search_term_suggestion_clicked"
+        const val OPTIMIZED_SUGGESTION_CARD_CLICKED = "optimized_suggestion_card_clicked"
 
         const val TRENDING_SEARCH_SUGGESTIONS_DISPLAYED = "trending_search_suggestions_displayed"
         const val TOP_SITE_SUGGESTIONS_DISPLAYED = "top_site_suggestions_displayed"
         const val RECENT_SEARCH_SUGGESTIONS_DISPLAYED = "recent_search_suggestions_displayed"
+        const val OPTIMIZED_SUGGESTION_CARD_DISPLAYED = "optimized_suggestion_card_displayed"
     }
 }
 
@@ -67,6 +70,13 @@ internal fun emitHistorySuggestionClickedFact() {
     emitAwesomebarFact(
         Action.INTERACTION,
         AwesomeBarFacts.Items.HISTORY_SUGGESTION_CLICKED,
+    )
+}
+
+internal fun emitHistorySuggestionRemovedFact() {
+    emitAwesomebarFact(
+        Action.INTERACTION,
+        AwesomeBarFacts.Items.HISTORY_SUGGESTION_REMOVED,
     )
 }
 
@@ -155,5 +165,29 @@ internal fun emitRecentSearchSuggestionsDisplayedFact(
         Action.INTERACTION,
         AwesomeBarFacts.Items.RECENT_SEARCH_SUGGESTIONS_DISPLAYED,
         numberOfSuggestions.toString(),
+    )
+}
+
+internal fun emitOptimizedSuggestionCardDisplayedFact(
+    cardType: SuggestionCardType,
+    extra: String? = null,
+) {
+    emitAwesomebarFact(
+        Action.DISPLAY,
+        AwesomeBarFacts.Items.OPTIMIZED_SUGGESTION_CARD_DISPLAYED,
+        cardType.value,
+        extra?.let { mapOf("extra" to it) },
+    )
+}
+
+internal fun emitOptimizedSuggestionCardClickedFact(
+    cardType: SuggestionCardType,
+    extra: String? = null,
+) {
+    emitAwesomebarFact(
+        Action.INTERACTION,
+        AwesomeBarFacts.Items.OPTIMIZED_SUGGESTION_CARD_CLICKED,
+        cardType.value,
+        extra?.let { mapOf("extra" to it) },
     )
 }

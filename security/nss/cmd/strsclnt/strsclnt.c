@@ -168,14 +168,27 @@ Usage(void)
             "       -J enable signature schemes\n"
             "          This takes a comma separated list of signature schemes in preference\n"
             "          order.\n"
-            "          Possible values are:\n"
-            "          rsa_pkcs1_sha1, rsa_pkcs1_sha256, rsa_pkcs1_sha384, rsa_pkcs1_sha512,\n"
-            "          ecdsa_sha1, ecdsa_secp256r1_sha256, ecdsa_secp384r1_sha384,\n"
-            "          ecdsa_secp521r1_sha512,\n"
-            "          rsa_pss_rsae_sha256, rsa_pss_rsae_sha384, rsa_pss_rsae_sha512,\n"
-            "          rsa_pss_pss_sha256, rsa_pss_pss_sha384, rsa_pss_pss_sha512,\n"
-            "          dsa_sha1, dsa_sha256, dsa_sha384, dsa_sha512\n",
+            "          Possible values are",
             progName);
+    char comma = ':';
+    const char *schemeName;
+    int total = SECU_MAX_COL_LEN;
+    for (size_t i = 0; (schemeName = SECU_SignatureSchemeGetNextScheme(i)) != NULL; i++) {
+        int len = strlen(schemeName);
+        /* 2 represents a comma and a space */
+        if ((total + len + 2) > SECU_MAX_COL_LEN) {
+            fprintf(stderr, "%c\n          %s", comma, schemeName);
+            /* 10 represents 10 spaces */
+            total = len + 10;
+        } else {
+            fprintf(stderr, "%c %s", comma, schemeName);
+            /* 2 represents a comma and a space */
+            total += len + 2;
+        }
+        comma = ',';
+    }
+    fprintf(stderr, "\n");
+
     exit(1);
 }
 
@@ -298,10 +311,14 @@ printSecurityInfo(PRFileDesc *fd)
                     channel.isFIPS ? " FIPS" : "");
             FPRINTF(stderr,
                     "strsclnt: Server Auth: %d-bit %s, Key Exchange: %d-bit %s\n"
-                    "          Compression: %s\n",
+                    "          Key Exchange Group:%s\n"
+                    "          Compression: %s\n"
+                    "          Signature Scheme: %s\n",
                     channel.authKeyBits, suite.authAlgorithmName,
                     channel.keaKeyBits, suite.keaTypeName,
-                    channel.compressionMethodName);
+                    SECU_NamedGroupToGroupName(channel.keaGroup),
+                    channel.compressionMethodName,
+                    SECU_SignatureSchemeName(channel.signatureScheme));
         }
     }
 
@@ -1075,29 +1092,53 @@ client_main(
     if (status == PR_SUCCESS) {
         addr.inet.port = PR_htons(port);
     } else {
-        /* Lookup host */
-        PRAddrInfo *addrInfo;
-        void *enumPtr = NULL;
+        PRBool gotLoopbackIP = PR_FALSE;
+        /* Avoid a DNS lookup for loopback names: the name may not resolve on
+         * all platforms (e.g. Windows lacks localhost.localdomain in its
+         * hosts file by default). */
+        if (!strcmp(hostName, "localhost") ||
+            !strcmp(hostName, "localhost.localdomain")) {
+            if (allowIPv4 && allowIPv6) {
+                /* Both families allowed: let NSPR pick the preferred one. */
+                if (PR_GetPrefLoopbackAddrInfo(&addr, port) != PR_FAILURE) {
+                    gotLoopbackIP = PR_TRUE;
+                }
+            }
+            if (!gotLoopbackIP && (allowIPv4 || allowIPv6)) {
+                /* Only one family requested, or PR_GetPrefLoopbackAddrInfo
+                 * failed: set the loopback address directly. */
+                if (PR_StringToNetAddr(allowIPv6 && !allowIPv4 ? "::1" : "127.0.0.1",
+                                       &addr) == PR_SUCCESS) {
+                    addr.inet.port = PR_htons(port);
+                    gotLoopbackIP = PR_TRUE;
+                }
+            }
+        }
+        if (!gotLoopbackIP) {
+            /* Lookup host */
+            PRAddrInfo *addrInfo;
+            void *enumPtr = NULL;
 
-        addrInfo = PR_GetAddrInfoByName(hostName, PR_AF_UNSPEC,
-                                        PR_AI_ADDRCONFIG | PR_AI_NOCANONNAME);
-        if (!addrInfo) {
-            SECU_PrintError(progName, "error looking up host");
-            return;
-        }
-        for (;;) {
-            enumPtr = PR_EnumerateAddrInfo(enumPtr, addrInfo, port, &addr);
-            if (enumPtr == NULL)
-                break;
-            if (addr.raw.family == PR_AF_INET && allowIPv4)
-                break;
-            if (addr.raw.family == PR_AF_INET6 && allowIPv6)
-                break;
-        }
-        PR_FreeAddrInfo(addrInfo);
-        if (enumPtr == NULL) {
-            SECU_PrintError(progName, "error looking up host address");
-            return;
+            addrInfo = PR_GetAddrInfoByName(hostName, PR_AF_UNSPEC,
+                                            PR_AI_ADDRCONFIG | PR_AI_NOCANONNAME);
+            if (!addrInfo) {
+                SECU_PrintError(progName, "error looking up host");
+                return;
+            }
+            for (;;) {
+                enumPtr = PR_EnumerateAddrInfo(enumPtr, addrInfo, port, &addr);
+                if (enumPtr == NULL)
+                    break;
+                if (addr.raw.family == PR_AF_INET && allowIPv4)
+                    break;
+                if (addr.raw.family == PR_AF_INET6 && allowIPv6)
+                    break;
+            }
+            PR_FreeAddrInfo(addrInfo);
+            if (enumPtr == NULL) {
+                SECU_PrintError(progName, "error looking up host address");
+                return;
+            }
         }
     }
 

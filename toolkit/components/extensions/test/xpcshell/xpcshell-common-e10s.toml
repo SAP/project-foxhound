@@ -1,5 +1,7 @@
 [DEFAULT]
 
+["test_ext_webRequest_StreamFilter_redirect_race.js"]
+
 ["test_ext_webRequest_eventPage_StreamFilter.js"]
 
 ["test_ext_webRequest_filterResponseData.js"]
@@ -7,6 +9,7 @@
 ["test_ext_webRequest_redirect_StreamFilter.js"]
 
 ["test_ext_webRequest_responseBody.js"]
+requesttimeoutfactor = 2  # Slow on Linux and Android debug
 
 ["test_ext_webRequest_startup_StreamFilter.js"]
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,6 +46,17 @@ class HitTestInfoManager {
    */
   bool ProcessItem(nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
                    nsDisplayListBuilder* aDisplayListBuilder);
+
+  /**
+   * Process an item which cannot create WebRender commands and needs to be
+   * pushed as an image instead (WebRenderCommandBuilder::PushItemAsImage).
+   * Such items need to produce, in addition to the image, a hit test item
+   * with the eIrregularArea flag set, so that the compositor knows to defer
+   * to the main thread for more detailed hit test information.
+   */
+  void ProcessItemAsImage(nsDisplayItem* aItem, const wr::LayoutRect& aRect,
+                          wr::DisplayListBuilder& aBuilder,
+                          nsDisplayListBuilder* aDisplayListBuilder);
 
  private:
   bool Update(const nsRect& aArea, const gfx::CompositorHitTestInfo& aFlags,

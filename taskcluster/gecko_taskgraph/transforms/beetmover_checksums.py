@@ -5,14 +5,15 @@
 Transform the checksums signing task into an actual task description.
 """
 
+from typing import Optional
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.schema import Schema
 from taskgraph.util.treeherder import replace_group
-from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
-from gecko_taskgraph.transforms.task import task_description_schema
+from gecko_taskgraph.transforms.task import TaskDescriptionSchema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_artifact_map,
@@ -21,18 +22,18 @@ from gecko_taskgraph.util.scriptworker import (
     get_beetmover_bucket_scope,
 )
 
-beetmover_checksums_description_schema = Schema(
-    {
-        Required("attributes"): {str: object},
-        Required("dependencies"): task_description_schema["dependencies"],
-        Optional("label"): str,
-        Optional("treeherder"): task_description_schema["treeherder"],
-        Optional("locale"): str,
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+
+class BeetmoverChecksumsDescriptionSchema(Schema, kw_only=True):
+    attributes: TaskDescriptionSchema.__annotations__["attributes"]  # noqa: F821
+    dependencies: TaskDescriptionSchema.__annotations__["dependencies"]  # noqa: F821
+    label: Optional[str] = None
+    treeherder: TaskDescriptionSchema.__annotations__["treeherder"] = None
+    locale: Optional[str] = None
+    shipping_phase: TaskDescriptionSchema.__annotations__["shipping_phase"] = None
+    shipping_product: TaskDescriptionSchema.__annotations__["shipping_product"] = None
+    task_from: TaskDescriptionSchema.__annotations__["task_from"] = None
+    run_on_repo_type: TaskDescriptionSchema.__annotations__["run_on_repo_type"] = None
+
 
 transforms = TransformSequence()
 
@@ -45,7 +46,7 @@ def remove_name(config, jobs):
         yield job
 
 
-transforms.add_validate(beetmover_checksums_description_schema)
+transforms.add_validate(BeetmoverChecksumsDescriptionSchema)
 
 
 @transforms.add
@@ -61,7 +62,8 @@ def make_beetmover_checksums_description(config, jobs):
             replace_group(dep_job.task["extra"]["treeherder"]["symbol"], "BMcs"),
         )
         dep_th_platform = (
-            dep_job.task.get("extra", {})
+            dep_job.task
+            .get("extra", {})
             .get("treeherder", {})
             .get("machine", {})
             .get("platform", "")
@@ -108,6 +110,7 @@ def make_beetmover_checksums_description(config, jobs):
             "dependencies": job["dependencies"],
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
             "extra": extra,
         }

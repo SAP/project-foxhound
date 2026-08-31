@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,9 +62,7 @@ uint64_t XULMenuitemAccessible::NativeState() const {
     state |= states::CHECKABLE;
 
     // Checked?
-    if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                           nsGkAtoms::checked, nsGkAtoms::_true,
-                                           eCaseMatters)) {
+    if (mContent->AsElement()->GetBoolAttr(nsGkAtoms::checked)) {
       state |= states::CHECKED;
     }
   }
@@ -130,8 +127,8 @@ ENameValueFlag XULMenuitemAccessible::NativeName(nsString& aName) const {
   return eNameOK;
 }
 
-ENameValueFlag XULMenuitemAccessible::Name(nsString& aName) const {
-  ENameValueFlag flag = AccessibleWrap::Name(aName);
+ENameValueFlag XULMenuitemAccessible::DirectName(nsString& aName) const {
+  ENameValueFlag flag = AccessibleWrap::DirectName(aName);
   if (!aName.IsEmpty()) {
     // We can't handle this in NativeName() because some menuitems use
     // aria-label rather than label, and aria-label is returned by
@@ -146,8 +143,11 @@ ENameValueFlag XULMenuitemAccessible::Name(nsString& aName) const {
   return flag;
 }
 
-void XULMenuitemAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag XULMenuitemAccessible::Description(
+    nsString& aDescription) const {
   mContent->AsElement()->GetAttr(nsGkAtoms::description, aDescription);
+
+  return eDescriptionOK;
 }
 
 KeyBinding XULMenuitemAccessible::AccessKey() const {

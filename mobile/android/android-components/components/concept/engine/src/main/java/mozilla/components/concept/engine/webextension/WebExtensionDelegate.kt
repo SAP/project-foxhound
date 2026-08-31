@@ -111,6 +111,15 @@ interface WebExtensionDelegate {
     ): EngineSession? = null
 
     /**
+     * Invoked when an extension wants to open its options page.
+     *
+     * @param extension The [WebExtension] that wants to open its options page.
+     */
+    fun onOpenOptionsPage(
+        extension: WebExtension,
+    ) = Unit
+
+    /**
      * Invoked during installation of a [WebExtension] to confirm the required permissions.
      *
      * @param extension the extension being installed. The required permissions can be accessed using

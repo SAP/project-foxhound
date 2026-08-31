@@ -11,12 +11,22 @@
 #include "modules/audio_processing/test/test_utils.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/audio/audio_view.h"
+#include "common_audio/channel_buffer.h"
+#include "common_audio/include/audio_util.h"
+#include "common_audio/wav_file.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/system/arch.h"
 
 namespace webrtc {
 
@@ -103,25 +113,6 @@ void ChannelBufferWavWriter::Write(const ChannelBuffer<float>& buffer) {
   file_->WriteSamples(&interleaved_[0], interleaved_.size());
 }
 
-ChannelBufferVectorWriter::ChannelBufferVectorWriter(std::vector<float>* output)
-    : output_(output) {
-  RTC_DCHECK(output_);
-}
-
-ChannelBufferVectorWriter::~ChannelBufferVectorWriter() = default;
-
-void ChannelBufferVectorWriter::Write(const ChannelBuffer<float>& buffer) {
-  // Account for sample rate changes throughout a simulation.
-  interleaved_buffer_.resize(buffer.size());
-  InterleavedView<float> view(&interleaved_buffer_[0], buffer.num_frames(),
-                              buffer.num_channels());
-  Interleave(buffer.channels(), buffer.num_frames(), buffer.num_channels(),
-             view);
-  size_t old_size = output_->size();
-  output_->resize(old_size + interleaved_buffer_.size());
-  FloatToFloatS16(interleaved_buffer_.data(), interleaved_buffer_.size(),
-                  output_->data() + old_size);
-}
 
 FILE* OpenFile(absl::string_view filename, absl::string_view mode) {
   std::string filename_str(filename);

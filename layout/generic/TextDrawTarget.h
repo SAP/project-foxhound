@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -246,6 +244,22 @@ class TextDrawTarget : public DrawTarget {
     mBuilder.PushRect(rect, ClipRect(), mBackfaceVisible, false, false, color);
   }
 
+  void AppendSelectionRoundRect(const LayoutDeviceRect& aRect,
+                                const DeviceColor& aColor,
+                                const nsRectCornerRadii& aRadii,
+                                int32_t aAppUnitsPerDevPixel) {
+    auto rect = wr::ToLayoutRect(aRect);
+    auto color = wr::ToColorF(aColor);
+    wr::BorderSide side = {color, wr::BorderStyle::Solid};
+    const wr::BorderSide sides[4] = {side, side, side, side};
+    float h = aRect.width * 0.6f;
+    float v = aRect.height * 0.6f;
+    wr::LayoutSideOffsets widths = {v, h, v, h};
+    auto wrRadius = wr::ToBorderRadius(aRadii, aAppUnitsPerDevPixel);
+    mBuilder.PushBorder(rect, ClipRect(), mBackfaceVisible, widths, {sides, 4},
+                        wrRadius);
+  }
+
   // This function is basically designed to slide into the decoration drawing
   // code of nsCSSRendering with minimum disruption, to minimize the
   // chances of implementation drift. As such, it mostly looks like a call
@@ -330,7 +344,12 @@ class TextDrawTarget : public DrawTarget {
   Maybe<wr::ImageKey> DefineImage(const IntSize& aSize, uint32_t aStride,
                                   SurfaceFormat aFormat, const uint8_t* aData) {
     wr::ImageKey key = mManager->WrBridge()->GetNextImageKey();
-    wr::ImageDescriptor desc(aSize, aStride, aFormat);
+    auto format = wr::SurfaceFormatToImageFormat(aFormat);
+    if (NS_WARN_IF(!format)) {
+      return Nothing();
+    }
+    wr::ImageDescriptor desc(aSize, aStride, *format,
+                             wr::ToOpacityType(aFormat));
     Range<uint8_t> bytes(const_cast<uint8_t*>(aData), aStride * aSize.height);
     if (mResources->AddImage(key, desc, bytes)) {
       return Some(key);
@@ -481,7 +500,8 @@ class TextDrawTarget : public DrawTarget {
                                {color, wr::BorderStyle::Solid},
                                {color, wr::BorderStyle::Solid},
                                {color, wr::BorderStyle::Solid}};
-    wr::BorderRadius radius = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
+    wr::BorderRadius radius = {{0, 0}, {0, 0}, {0, 0}, {0, 0},
+                               1.0f,   1.0f,   1.0f,   1.0f};
     LayoutDeviceRect rect = LayoutDeviceRect::FromUnknownRect(aRect);
     rect.Inflate(aStrokeOptions.mLineWidth / 2);
     if (!rect.Intersects(GeckoClipRect())) {

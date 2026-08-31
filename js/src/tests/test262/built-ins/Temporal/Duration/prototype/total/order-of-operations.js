@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -32,6 +32,32 @@ const instance = new Temporal.Duration(0, 0, 0, 0, 2400);
 instance.total(createOptionsObserver({ unit: "nanoseconds" }));
 assert.compareArray(actual, expected, "order of operations");
 actual.splice(0); // clear
+
+// Check fast path for temporal objects.
+function checkTemporalObject(object) {
+  ["year", "month", "monthCode", "day", "hour", "minute", "second", "millisecond", "microsecond", "nanosecond"].forEach((property) => {
+    Object.defineProperty(object, property, {
+      get() {
+        throw new Test262Error(`should not get ${property}`);
+      }});
+  });
+}
+
+// basic order of operations, with relativeTo a Temporal object
+const pd = new Temporal.PlainDate(2026, 3, 6);
+checkTemporalObject(pd);
+instance.total(createOptionsObserver({ unit: "nanoseconds", relativeTo: pd }));
+assert.compareArray(actual, expected,
+  "relativeTo PlainDate should not read property bag fields");
+actual.splice(0); // clear
+
+const zdt = new Temporal.ZonedDateTime(1772751600000000000n, "UTC");
+checkTemporalObject(zdt);
+instance.total(createOptionsObserver({ unit: "nanoseconds", relativeTo: zdt }));
+assert.compareArray(actual, expected,
+  "relativeTo ZonedDateTime should not read property bag fields");
+actual.splice(0); // clear
+
 
 const expectedOpsForPlainRelativeTo = [
   // ToRelativeTemporalObject

@@ -10,11 +10,11 @@ import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertIs
 
 @RunWith(RobolectricTestRunner::class)
 class TranslationsDialogReducerTest {
@@ -144,7 +144,7 @@ class TranslationsDialogReducerTest {
             ),
         )
 
-        assertTrue(updatedState.error is TranslationError.LanguageNotSupportedError)
+        assertIs<TranslationError.LanguageNotSupportedError>(updatedState.error)
         assertNull(updatedState.positiveButtonType)
         assertEquals(updatedState.documentLangDisplayName, "German")
 
@@ -157,7 +157,7 @@ class TranslationsDialogReducerTest {
             ),
         )
 
-        assertTrue(updatedStateTwo.error is TranslationError.CouldNotLoadLanguagesError)
+        assertIs<TranslationError.CouldNotLoadLanguagesError>(updatedStateTwo.error)
         assertNull(updatedStateTwo.positiveButtonType)
     }
 

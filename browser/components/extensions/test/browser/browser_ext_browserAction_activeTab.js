@@ -97,11 +97,7 @@ add_task(async function test_middle_click_with_activeTab_and_popup() {
   });
 
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(
-    gURLBar.textbox,
-    { type: "mouseover" },
-    window
-  );
+  EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mouseover" }, window);
 
   await extension.startup();
   await extension.awaitMessage("ready");

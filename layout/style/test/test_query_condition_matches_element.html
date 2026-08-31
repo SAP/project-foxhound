@@ -1,0 +1,189 @@
+<!doctype html>
+<title>Test for CSSContainerRule::QueryConditionMatchesElement</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+<style>
+@container my-container (min-width: 0px),
+           my-container (height > 0px),
+           my-container,
+           my-container (width > 200px),
+           my-container (height > 200px),
+           unknown-container,
+           unsupported-func(foo: bar),
+           style(--x),
+           style(--x: peachpuff),
+           my-container style(--x: peachpuff),
+           my-container style(--x: red),
+           style(--y),
+           style(--y: springgreen),
+           ftr style(--y: springgreen),
+           ftr style(--y: blue),
+           my-container style(--y),
+           style(--z > 10px),
+           style(--z < 10px),
+           my-container style(var(--z, 40px) > 20px),
+           ftr style(var(--z, 40px) > 20px)
+{
+  div {
+    outline: 2px solid hotpink;
+  }
+}
+
+section {
+  width: 100px;
+  height: 100px;
+  background-color: gold;
+  margin: 10px;
+}
+
+section:has(.inside-container) {
+  container-type: size;
+  container-name: my-container;
+  --x: peachpuff;
+}
+
+footer {
+  container-type: inline-size;
+  container-name: ftr;
+  --x: red;
+  --y: springgreen;
+  --z: 13px;
+}
+</style>
+
+<section>
+  <div class="inside-container">IN</div>
+  <footer>
+    <div class="inside-container">IN FOOTER</div>
+  </footer>
+</section>
+<div class="outside-container">OUT</div>
+
+<script>
+  const sheet = document.querySelector("style").sheet;
+  const outsideContainerEl = document.querySelector(".outside-container");
+  const insideContainerEl = document.querySelector(".inside-container");
+  const insideFooterContainerEl = document.querySelector("footer .inside-container");
+  const cssContainerRule = SpecialPowers.wrap(sheet.cssRules[0]);
+  // build an array of the conditions text for logging
+  const conditions = Array.from(cssContainerRule.conditions).map(({name, query}) =>
+    `${name ? name : ""}${query ? (name ? " " : "") + query: ""}`)
+
+  // Container query selection requires up-to-date layout information.
+  document.body.getBoundingClientRect();
+
+  const test = (el, conditionIndex, expected) =>
+    is(
+      cssContainerRule.queryConditionMatchesElement(el, conditionIndex),
+      expected,
+      `"${conditions[conditionIndex]}" ${expected ? "matches" : "does not match"} for ${el.outerHTML}`
+    );
+
+
+  let idx = 0;
+  // "my-container (min-width: 0px)"
+  test(insideContainerEl, idx++, true);
+  // "my-container (height > 0px)"
+  test(insideContainerEl, idx++, true);
+  // "my-container"
+  test(insideContainerEl, idx++, true);
+  // "my-container (width > 200px)": not matching as the container (section) is only 100px wide
+  test(insideContainerEl, idx++, false);
+  // "my-container (height > 200px)": not matching as the container (section) is only 100px tall
+  test(insideContainerEl, idx++, false);
+  // "unknown-container": not matching as there's not container with such name
+  test(insideContainerEl, idx++, false);
+  // "unsupported-func(foo: bar)": not matching as the function isn't supported in Firefox
+  test(insideContainerEl, idx++, false);
+  // "style(--x)": matches, --x is defined in an container
+  test(insideContainerEl, idx++, true);
+  // "style(--x: peachpuff)": matches, --x is "peachpuff" in container
+  test(insideContainerEl, idx++, true);
+  // "my-container style(--x: peachpuff)": matches, --x is "peachpuff" in my-container
+  test(insideContainerEl, idx++, true);
+  // "my-container style(--x: red)": does not match, --x is "peachpuff" in my-container, not red
+  test(insideContainerEl, idx++, false);
+  // "style(--y)": does not match, there's no variable --y defined in container
+  test(insideContainerEl, idx++, false);
+  // "style(--y: springgreen)": does not match, there's no variable --y defined in container
+  test(insideContainerEl, idx++, false);
+  // "ftr style(--y: springgreen)": does not match, there's no ftr container
+  test(insideContainerEl, idx++, false);
+  // "ftr style(--y: blue)": does not match, there's no ftr container
+  test(insideContainerEl, idx++, false);
+  // "my-container style(--y)": does not match, there's no variable --y defined in my-container
+  test(insideContainerEl, idx++, false);
+  // "style(--z > 10px)": does not match, there's no variable --z defined in my-container
+  test(insideContainerEl, idx++, false);
+  // "style(--z < 10px)": does not match, there's no variable --z defined in my-container
+  test(insideContainerEl, idx++, false);
+  // "my-container style(var(--z, 40px) > 20px)": matches, there's no variable --z defined
+  // in my-container, but the condition is using a fallback value
+  test(insideContainerEl, idx++, true);
+  // "ftr style(var(--z, 40px) > 20px)": does not match, there's no ftr container
+  test(insideContainerEl, idx++, false);
+
+  // sanity check to make sure we went over all the conditions
+  is(
+    idx,
+    // no need to remove 1, as we want the last call to `test` to use `idx++`
+    conditions.length,
+    "checked all the conditions"
+  );
+
+  idx = 0;
+  // "my-container (min-width: 0px)"
+  test(insideFooterContainerEl, idx++, true);
+  // "my-container (height > 0px)"
+  test(insideFooterContainerEl, idx++, true);
+  // "my-container"
+  test(insideFooterContainerEl, idx++, true);
+  // "my-container (width > 200px)": not matching as the container (section) is only 100px wide
+  test(insideFooterContainerEl, idx++, false);
+  // "my-container (height > 200px)": not matching as the container (section) is only 100px tall
+  test(insideFooterContainerEl, idx++, false);
+  // "unknown-container": not matching as there's not container with such name
+  test(insideFooterContainerEl, idx++, false);
+  // "unsupported-func(foo: bar)": not matching as the function isn't supported in Firefox
+  test(insideFooterContainerEl, idx++, false);
+  // "style(--x)": matches, --x is defined in container
+  test(insideFooterContainerEl, idx++, true);
+  // "style(--x: peachpuff)": does not match, --x is "red" in the closest container
+  test(insideFooterContainerEl, idx++, false);
+  // "my-container style(--x: peachpuff)": matches, --x is "peachpuff" in my-container
+  test(insideFooterContainerEl, idx++, true);
+  // "my-container style(--x: red)": does not match, --x is "peachpuff" in my-container, not red
+  test(insideFooterContainerEl, idx++, false);
+  // "style(--y)": matches, there's a --y defined in container
+  test(insideFooterContainerEl, idx++, true);
+  // "style(--y: springgreen)": matches, --y is "springgreen" in container
+  test(insideFooterContainerEl, idx++, true);
+  // "ftr style(--y: springgreen)": matches, --y is "springgreen" in ftr container
+  test(insideFooterContainerEl, idx++, true);
+  // "ftr style(--y: blue)": does not match, --y is "springgreen" in ftr container
+  test(insideFooterContainerEl, idx++, false);
+  // "my-container style(--y)": does not match, there's no variable --y defined in my-container
+  test(insideFooterContainerEl, idx++, false);
+  // "style(--z > 10px)": matches, --z is 13px
+  test(insideFooterContainerEl, idx++, true);
+  // "style(--z < 10px)": does not match, --z is 13px
+  test(insideFooterContainerEl, idx++, false);
+  // "my-container style(var(--z, 40px) > 20px)": matches, there's no variable --z defined
+  // in my-container, but the condition is using a fallback value
+  test(insideFooterContainerEl, idx++, true);
+  // "ftr style(var(--z, 40px) > 20px)": does not match, --z is defined in ftr and is 13px
+  test(insideFooterContainerEl, idx++, false);
+
+  // sanity check to make sure we went over all the conditions
+  is(
+    idx,
+    // no need to remove 1, as we want the last call to `test` to use `idx++`
+    conditions.length,
+    "checked all the conditions"
+  );
+
+  // conditions are never matching for element which are not in a container
+  for (let i = 0; i < conditions.length; i++) {
+    test(outsideContainerEl, i, false);
+  }
+</script>

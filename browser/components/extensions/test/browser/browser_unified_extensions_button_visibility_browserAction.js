@@ -59,6 +59,80 @@ add_task(async function test_show_via_browserAction_openPopup() {
   await SpecialPowers.popPrefEnv();
 });
 
+add_task(async function test_openPopup_rejects_if_panel_is_showing() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.openPopupWithoutUserGesture.enabled", true],
+      // Restore default value of the pref to enable this test to click on the
+      // Extensions Button to show the Extensions Panel.
+      ["extensions.unifiedExtensions.button.always_visible", true],
+    ],
+  });
+  resetExtensionsButtonTelemetry();
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  const extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      browser_action: { default_popup: "popup.html" },
+    },
+    files: { "popup.html": "Dummy popup panel content here" },
+    background() {
+      browser.test.onMessage.addListener(async msg => {
+        browser.test.assertEq("open_action_popup_panel", msg, "Expected msg");
+        try {
+          await browser.browserAction.openPopup();
+          browser.test.sendMessage("openPopup_result", "Promise_resolved_ok");
+        } catch (e) {
+          browser.test.sendMessage("openPopup_result", "Error: " + e.message);
+        }
+      });
+    },
+  });
+  await extension.startup();
+
+  await openExtensionsPanel(win);
+
+  info("openPopup() should still be rejected after opening Extensions Panel");
+  extension.sendMessage("open_action_popup_panel");
+  is(
+    await extension.awaitMessage("openPopup_result"),
+    "Error: openPopup() cannot be called while another panel is open",
+    "openPopup() should reject when Extensions Panel is open"
+  );
+
+  const button = getUnifiedExtensionsItem(extension.id, win).querySelector(
+    ".unified-extensions-item-action-button"
+  );
+  const popupPromise = awaitExtensionPanel(extension, win);
+  button.click(); // This opens the browser_action popup panel.
+  await popupPromise;
+
+  info("openPopup() should still be rejected after clicking on extension item");
+  extension.sendMessage("open_action_popup_panel");
+  is(
+    await extension.awaitMessage("openPopup_result"),
+    "Error: openPopup() cannot be called while another panel is open",
+    "openPopup() should reject when action popup is opened via Extensions Panel"
+  );
+
+  await closeBrowserAction(extension, win);
+
+  const popupShownPromise = awaitExtensionPanel(extension, win);
+  extension.sendMessage("open_action_popup_panel");
+  is(
+    await extension.awaitMessage("openPopup_result"),
+    "Promise_resolved_ok",
+    "openPopup() succeeds when popup was closed before"
+  );
+  await popupShownPromise;
+  await closeBrowserAction(extension, win);
+
+  await extension.unload();
+  await BrowserTestUtils.closeWindow(win);
+
+  await SpecialPowers.popPrefEnv();
+});
+
 // Test that the button can be shown via the _execute_browser_action command in
 // the commands API, triggered via a user shortcut without any other extension
 // API calls. Notably, the anount of processing (and time) between triggering a

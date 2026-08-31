@@ -1,14 +1,10 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <windows.h>
-#include <ras.h>
 #include <wininet.h>
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Attributes.h"
 #include "nsISystemProxySettings.h"
 #include "mozilla/Components.h"
 #include "mozilla/ProfilerLabels.h"
@@ -17,31 +13,26 @@
 #include "nsThreadUtils.h"
 #include "prnetdb.h"
 #include "ProxyUtils.h"
-
-class nsWindowsSystemProxySettings final : public nsISystemProxySettings {
- public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSISYSTEMPROXYSETTINGS
-
-  nsWindowsSystemProxySettings() {};
-
- private:
-  ~nsWindowsSystemProxySettings() {};
-
-  bool MatchOverride(const nsACString& aHost);
-  bool PatternMatch(const nsACString& aHost, const nsACString& aOverride);
-};
+#include "nsWindowsSystemProxySettings.h"
 
 NS_IMPL_ISUPPORTS(nsWindowsSystemProxySettings, nsISystemProxySettings)
 
-NS_IMETHODIMP
-nsWindowsSystemProxySettings::GetMainThreadOnly(bool* aMainThreadOnly) {
+NS_IMETHODIMP nsWindowsSystemProxySettings::GetMainThreadOnly(
+    bool* aMainThreadOnly) {
   // bug 1366133: if you change this to main thread only, please handle
   // nsProtocolProxyService::Resolve_Internal carefully to avoid hang on main
   // thread.
   *aMainThreadOnly = false;
   return NS_OK;
 }
+
+nsWindowsSystemProxySettings::nsWindowsSystemProxySettings(
+    mozilla::toolkit::system::WindowsInternetFunctionsWrapper* aFunctions)
+    : mFunctions(aFunctions) {
+  mFunctions->Init();
+}
+
+nsWindowsSystemProxySettings::~nsWindowsSystemProxySettings() {}
 
 static void SetProxyResult(const char* aType, const nsACString& aHostPort,
                            nsACString& aResult) {
@@ -51,45 +42,7 @@ static void SetProxyResult(const char* aType, const nsACString& aHostPort,
 }
 
 static void SetProxyResultDirect(nsACString& aResult) {
-  // For whatever reason, a proxy is not to be used.
   aResult.AssignLiteral("DIRECT");
-}
-
-static nsresult ReadInternetOption(uint32_t aOption, uint32_t& aFlags,
-                                   nsAString& aValue) {
-  // Bug 1366133: InternetGetConnectedStateExW() may cause hangs
-  MOZ_ASSERT(!NS_IsMainThread());
-
-  DWORD connFlags = 0;
-  WCHAR connName[RAS_MaxEntryName + 1];
-  MOZ_SEH_TRY {
-    InternetGetConnectedStateExW(&connFlags, connName, std::size(connName), 0);
-  }
-  MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { return NS_ERROR_FAILURE; }
-
-  INTERNET_PER_CONN_OPTIONW options[2];
-  options[0].dwOption = INTERNET_PER_CONN_FLAGS_UI;
-  options[1].dwOption = aOption;
-
-  INTERNET_PER_CONN_OPTION_LISTW list;
-  list.dwSize = sizeof(INTERNET_PER_CONN_OPTION_LISTW);
-  list.pszConnection =
-      connFlags & INTERNET_CONNECTION_MODEM ? connName : nullptr;
-  list.dwOptionCount = std::size(options);
-  list.dwOptionError = 0;
-  list.pOptions = options;
-
-  unsigned long size = sizeof(INTERNET_PER_CONN_OPTION_LISTW);
-  if (!InternetQueryOptionW(nullptr, INTERNET_OPTION_PER_CONNECTION_OPTION,
-                            &list, &size)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  aFlags = options[0].Value.dwValue;
-  aValue.Assign(options[1].Value.pszValue);
-  GlobalFree(options[1].Value.pszValue);
-
-  return NS_OK;
 }
 
 bool nsWindowsSystemProxySettings::MatchOverride(const nsACString& aHost) {
@@ -97,7 +50,8 @@ bool nsWindowsSystemProxySettings::MatchOverride(const nsACString& aHost) {
   uint32_t flags = 0;
   nsAutoString buf;
 
-  rv = ReadInternetOption(INTERNET_PER_CONN_PROXY_BYPASS, flags, buf);
+  rv = mFunctions->ReadInternetOption(INTERNET_PER_CONN_PROXY_BYPASS, flags,
+                                      buf);
   if (NS_FAILED(rv)) return false;
 
   NS_ConvertUTF16toUTF8 cbuf(buf);
@@ -154,7 +108,8 @@ nsresult nsWindowsSystemProxySettings::GetPACURI(nsACString& aResult) {
   uint32_t flags = 0;
   nsAutoString buf;
 
-  rv = ReadInternetOption(INTERNET_PER_CONN_AUTOCONFIG_URL, flags, buf);
+  rv = mFunctions->ReadInternetOption(INTERNET_PER_CONN_AUTOCONFIG_URL, flags,
+                                      buf);
   if (!(flags & PROXY_TYPE_AUTO_PROXY_URL)) {
     aResult.Truncate();
     return rv;
@@ -180,7 +135,16 @@ nsresult nsWindowsSystemProxySettings::GetProxyForURI(const nsACString& aSpec,
   uint32_t flags = 0;
   nsAutoString buf;
 
-  rv = ReadInternetOption(INTERNET_PER_CONN_PROXY_SERVER, flags, buf);
+  rv = mozilla::toolkit::system::GetProxyFromEnvironment(aScheme, aHost, aPort,
+                                                         aResult);
+  // GetProxyFromEnvironment has already formatted and set the proxy result
+  // string in |aResult|.
+  if (NS_SUCCEEDED(rv) && !aResult.IsEmpty()) {
+    return NS_OK;
+  }
+
+  rv = mFunctions->ReadInternetOption(INTERNET_PER_CONN_PROXY_SERVER, flags,
+                                      buf);
   if (NS_FAILED(rv) || !(flags & PROXY_TYPE_PROXY)) {
     SetProxyResultDirect(aResult);
     return NS_OK;
@@ -253,11 +217,22 @@ NS_IMETHODIMP nsWindowsSystemProxySettings::GetSystemWPADSetting(
   uint32_t flags = 0;
   nsAutoString buf;
 
-  rv = ReadInternetOption(INTERNET_PER_CONN_AUTOCONFIG_URL, flags, buf);
+  rv = mFunctions->ReadInternetOption(INTERNET_PER_CONN_AUTOCONFIG_URL, flags,
+                                      buf);
   *aSystemWPADSetting =
       (flags & (PROXY_TYPE_AUTO_PROXY_URL | PROXY_TYPE_AUTO_DETECT)) ==
       PROXY_TYPE_AUTO_DETECT;
   return rv;
+}
+
+NS_IMETHODIMP nsWindowsSystemProxySettings::GetSystemProxyDirect(
+    bool* aResult) {
+  uint32_t flags = mFunctions->GetCachedFlags();
+  *aResult = flags != UINT32_MAX &&
+             !(flags & (PROXY_TYPE_PROXY | PROXY_TYPE_AUTO_PROXY_URL |
+                        PROXY_TYPE_AUTO_DETECT)) &&
+             !mozilla::toolkit::system::HasProxyEnvVars();
+  return NS_OK;
 }
 
 NS_IMPL_COMPONENT_FACTORY(nsWindowsSystemProxySettings) {

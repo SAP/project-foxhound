@@ -9,7 +9,9 @@ add_task(async function () {
       ["security.allow_unsafe_parent_loads", true],
       ["layout.css.backdrop-filter.enabled", true],
       ["layout.css.relative-color-syntax.enabled", true],
+      ["layout.css.color-mix-multi-color.enabled", true],
       ["dom.security.html_serialization_escape_lt_gt", true],
+      ["layout.css.attr.enabled", true],
     ],
   });
   await addTab("about:blank");
@@ -39,6 +41,8 @@ async function performTest() {
   testParseColorVariable(doc, parser);
   testParseFontFamily(doc, parser);
   testParseLightDark(doc, parser);
+  testParseAttr(doc, parser);
+  testParseFunctionsForCssExplainers(doc, parser);
 
   host.destroy();
 }
@@ -66,31 +70,37 @@ function makeColorTest(name, value, segments) {
     if (typeof segment === "string") {
       result.expected += segment;
     } else {
-      const buttonAttributes = {
-        class: COLOR_TEST_CLASS,
-        style: `background-color:${segment.name}`,
-        tabindex: 0,
-        role: "button",
-      };
-      if (segment.colorFunction) {
-        buttonAttributes["data-color-function"] = segment.colorFunction;
-      }
-      const buttonAttrString = Object.entries(buttonAttributes)
-        .map(([attr, v]) => `${attr}="${v}"`)
-        .join(" ");
-
-      // prettier-ignore
-      result.expected +=
-        `<span data-color="${segment.name}" class="color-swatch-container">` +
-          `<span ${buttonAttrString}></span>`+
-          `<span>${segment.name}</span>` +
-        `</span>`;
+      result.expected += getColorMarkup({
+        color: segment.name,
+        colorFunction: segment.colorFunction,
+      });
     }
   }
 
-  result.desc = "Testing " + name + ": " + value;
-
   return result;
+}
+
+function getColorMarkup({ color, colorFunction, content }) {
+  const buttonAttributes = {
+    class: COLOR_TEST_CLASS,
+    style: `background-color:${color}`,
+    tabindex: 0,
+    role: "button",
+  };
+  if (colorFunction) {
+    buttonAttributes["data-color-function"] = colorFunction;
+  }
+  const buttonAttrString = Object.entries(buttonAttributes)
+    .map(([attr, v]) => `${attr}="${v}"`)
+    .join(" ");
+
+  // prettier-ignore
+  return (
+    `<span data-color="${color}" class="color-swatch-container">` +
+      `<span ${buttonAttrString}></span>` +
+      `<span>${content ?? color}</span>` +
+    `</span>`
+  );
 }
 
 function testParseCssProperty(doc, parser) {
@@ -236,28 +246,66 @@ function testParseCssProperty(doc, parser) {
       { name: "#f06" },
     ]),
 
-    makeColorTest("color", "color-mix(in srgb, red, blue)", [
-      "color-mix(in srgb, ",
-      { name: "red", colorFunction: "color-mix" },
-      ", ",
-      { name: "blue", colorFunction: "color-mix" },
-      ")",
-    ]),
+    {
+      name: "color",
+      value: "color-mix(in srgb, red, blue)",
+      expected: getColorMarkup({
+        color: "color-mix(in srgb, red, blue)",
+        content:
+          `color-mix(in srgb, ` +
+          // we have a nested color spans for the color-mix() params, `red` and `blue`
+          getColorMarkup({ color: "red", colorFunction: "color-mix" }) +
+          `, ` +
+          getColorMarkup({ color: "blue", colorFunction: "color-mix" }) +
+          `)`,
+      }),
+    },
 
-    makeColorTest(
-      "background-image",
-      "linear-gradient(to top, color-mix(in srgb, #008000, rgba(255, 255, 0, 0.9)), blue)",
-      [
-        "linear-gradient(to top, ",
-        "color-mix(in srgb, ",
-        { name: "#008000", colorFunction: "color-mix" },
-        ", ",
-        { name: "rgba(255, 255, 0, 0.9)", colorFunction: "color-mix" },
-        "), ",
-        { name: "blue", colorFunction: "linear-gradient" },
+    {
+      name: "background-image",
+      value:
+        "linear-gradient(to top, color-mix(in srgb, #008000, rgba(255, 255, 0, 0.9)), blue, contrast-color(#abc))",
+      expected:
+        `linear-gradient(to top, ` +
+        // first we have a nested color span for resulting color of color-mix()
+        getColorMarkup({
+          color: "color-mix(in srgb, #008000, rgba(255, 255, 0, 0.9))",
+          colorFunction: "linear-gradient",
+          content:
+            `color-mix(in srgb, ` +
+            // we have a nested color spans for the color-mix() params, `#008000` and `rgba(255, 255, 0, 0.9)`
+            getColorMarkup({ color: "#008000", colorFunction: "color-mix" }) +
+            `, ` +
+            getColorMarkup({
+              color: "rgba(255, 255, 0, 0.9)",
+              colorFunction: "color-mix",
+            }) +
+            // closing the `color-mix()` function
+            `)`,
+        }) +
+        ", " +
+        // second param for the gradient, `blue`
+        getColorMarkup({
+          color: "blue",
+          colorFunction: "linear-gradient",
+        }) +
+        ", " +
+        // third param for the gradient, a `contrast-color()`
+        getColorMarkup({
+          color: "contrast-color(#abc)",
+          colorFunction: "linear-gradient",
+          content:
+            `contrast-color(` +
+            getColorMarkup({
+              // we have a nested color spans for the contrast-color() param, `#abc`
+              color: "#abc",
+              colorFunction: "contrast-color",
+            }) +
+            `)`,
+        }) +
+        // closing the `linear-gradient()` function
         ")",
-      ]
-    ),
+    },
 
     makeColorTest("color", "light-dark(red, blue)", [
       "light-dark(",
@@ -282,41 +330,120 @@ function testParseCssProperty(doc, parser) {
       ]
     ),
 
-    makeColorTest("color", "rgb(from gold r g b)", [
-      { name: "rgb(from gold r g b)" },
-    ]),
+    {
+      name: "color",
+      value: "rgb(from gold r g b)",
+      expected: getColorMarkup({
+        color: "rgb(from gold r g b)",
+        // we have a nested color span for the `gold` after `from`
+        content: `rgb(from ${getColorMarkup({ color: "gold", colorFunction: "rgb" })} r g b)`,
+      }),
+    },
 
-    makeColorTest("color", "color(from hsl(0 100% 50%) xyz x y 0.5)", [
-      { name: "color(from hsl(0 100% 50%) xyz x y 0.5)" },
-    ]),
+    {
+      name: "color",
+      value: "color(from hsl(0 100% 50%) xyz x y 0.5)",
+      expected: getColorMarkup({
+        color: "color(from hsl(0 100% 50%) xyz x y 0.5)",
+        // we have a nested color span for the inner `hsl()` after `from`
+        content:
+          `color(from ` +
+          getColorMarkup({ color: "hsl(0 100% 50%)", colorFunction: "color" }) +
+          ` xyz x y 0.5)`,
+      }),
+    },
 
-    makeColorTest(
-      "color",
-      "oklab(from red calc(l - 1) calc(a * 2) calc(b + 3) / alpha)",
-      [{ name: "oklab(from red calc(l - 1) calc(a * 2) calc(b + 3) / alpha)" }]
-    ),
+    {
+      name: "color",
+      value: "oklab(from red calc(l - 1) calc(a * 2) calc(b + 3) / alpha)",
+      expected: getColorMarkup({
+        color: "oklab(from red calc(l - 1) calc(a * 2) calc(b + 3) / alpha)",
+        // we have a nested color span for the inner `red` after `from`
+        content:
+          `oklab(from ` +
+          getColorMarkup({ color: "red", colorFunction: "oklab" }) +
+          ` calc(l - 1) calc(a * 2) calc(b + 3) / alpha)`,
+      }),
+    },
 
-    makeColorTest(
-      "color",
-      "rgb(from color-mix(in lch, plum 40%, pink) r g b)",
-      [{ name: "rgb(from color-mix(in lch, plum 40%, pink) r g b)" }]
-    ),
+    {
+      name: "color",
+      value: "rgb(from color-mix(in lch, plum 40%, pink) r g b)",
+      expected: getColorMarkup({
+        color: "rgb(from color-mix(in lch, plum 40%, pink) r g b)",
+        content:
+          `rgb(from ` +
+          // we have a nested color span for the inner `color-mix()` after `from`
+          getColorMarkup({
+            color: "color-mix(in lch, plum 40%, pink)",
+            colorFunction: "rgb",
+            content:
+              `color-mix(in lch, ` +
+              // and we have nested colors representing the color-mix color params (plum and pink)
+              getColorMarkup({ color: "plum", colorFunction: "color-mix" }) +
+              ` 40%, ` +
+              getColorMarkup({ color: "pink", colorFunction: "color-mix" }) +
+              `)`,
+          }) +
+          ` r g b)`,
+      }),
+    },
 
-    makeColorTest("color", "rgb(from rgb(from gold r g b) r g b)", [
-      { name: "rgb(from rgb(from gold r g b) r g b)" },
-    ]),
+    {
+      name: "color",
+      value: "rgb(from rgb(from gold r g b) r g b)",
+      expected: getColorMarkup({
+        color: "rgb(from rgb(from gold r g b) r g b)",
+        content:
+          `rgb(from ` +
+          // we have a nested color span for the inner `rgb()` after `from`
+          getColorMarkup({
+            color: "rgb(from gold r g b)",
+            colorFunction: "rgb",
+            content:
+              `rgb(from ` +
+              // we have a nested color span for `gold` after `from`
+              getColorMarkup({ color: "gold", colorFunction: "rgb" }) +
+              ` r g b)`,
+          }) +
+          ` r g b)`,
+      }),
+    },
 
-    makeColorTest(
-      "background-image",
-      "linear-gradient(to right, #F60 10%, rgb(from gold r g b))",
-      [
-        "linear-gradient(to right, ",
-        { name: "#F60", colorFunction: "linear-gradient" },
-        " 10%, ",
-        { name: "rgb(from gold r g b)", colorFunction: "linear-gradient" },
+    {
+      name: "background-image",
+      value: `image(rgb(255 0 0 / 0.5)), url("bg-image.png")`,
+      expected:
+        `image(` +
+        getColorMarkup({
+          color: "rgb(255 0 0 / 0.5)",
+          colorFunction: "image",
+        }) +
+        `), url("bg-image.png")`,
+    },
+
+    {
+      name: "background-image",
+      value: "linear-gradient(to right, #F60 10%, rgb(from gold r g b))",
+      expected:
+        `linear-gradient(to right, ` +
+        getColorMarkup({ color: "#F60", colorFunction: "linear-gradient" }) +
+        " 10%, " +
+        getColorMarkup({
+          color: "rgb(from gold r g b)",
+          colorFunction: "linear-gradient",
+          content:
+            `rgb(from ` +
+            // nested color span for `gold` after `from`
+            getColorMarkup({
+              color: "gold",
+              colorFunction: "rgb",
+            }) +
+            " r g b)",
+        }) +
+        // closing linear-gradient()
         ")",
-      ]
-    ),
+    },
 
     {
       desc: "--a: (min-width:680px)",
@@ -354,13 +481,88 @@ function testParseCssProperty(doc, parser) {
         colorSwatchReadOnly: true,
       },
     },
+
+    {
+      name: "color",
+      value: "contrast-color(red)",
+      expected: getColorMarkup({
+        color: "contrast-color(red)",
+        content:
+          "contrast-color(" +
+          // color span for the `color()` param, `red`
+          getColorMarkup({ color: "red", colorFunction: "contrast-color" }) +
+          ")",
+      }),
+    },
+
+    {
+      name: "color",
+      value: "color-mix(in srgb, red, contrast-color(hsl(0 100 200)))",
+      expected: getColorMarkup({
+        color: "color-mix(in srgb, red, contrast-color(hsl(0 100 200)))",
+        content:
+          "color-mix(in srgb, " +
+          // color span for the `color-mix()` param, `red`
+          getColorMarkup({ color: "red", colorFunction: "color-mix" }) +
+          ", " +
+          // color span for the resulting color of `contrast-color()`
+          getColorMarkup({
+            color: "contrast-color(hsl(0 100 200))",
+            colorFunction: "color-mix",
+            content:
+              "contrast-color(" +
+              // color span for the `color()` param, `hsl(0 100 200)`
+              getColorMarkup({
+                color: "hsl(0 100 200)",
+                colorFunction: "contrast-color",
+              }) +
+              ")",
+          }) +
+          // closing `color-mix()`
+          ")",
+      }),
+    },
+
+    {
+      name: "color",
+      value: "color-mix(in srgb, red, blue, green)",
+      expected: getColorMarkup({
+        color: "color-mix(in srgb, red, blue, green)",
+        content:
+          "color-mix(in srgb, " +
+          // color span for the first `color-mix()` param, `red`
+          getColorMarkup({ color: "red", colorFunction: "color-mix" }) +
+          ", " +
+          // color span for the second `color-mix()` param, `blue`
+          getColorMarkup({ color: "blue", colorFunction: "color-mix" }) +
+          ", " +
+          // color span for the third `color-mix()` param, `green`
+          getColorMarkup({ color: "green", colorFunction: "color-mix" }) +
+          // closing `color-mix()
+          ")",
+      }),
+    },
+
+    {
+      name: "color",
+      value: "color-mix(in srgb, red)",
+      expected: getColorMarkup({
+        color: "color-mix(in srgb, red)",
+        content:
+          "color-mix(in srgb, " +
+          // color span for the first `color-mix()` param, `red`
+          getColorMarkup({ color: "red", colorFunction: "color-mix" }) +
+          // closing `color-mix()
+          ")",
+      }),
+    },
   ];
 
   const target = doc.querySelector("div");
   ok(target, "captain, we have the div");
 
   for (const test of tests) {
-    info(test.desc);
+    info(`Testing "${test.name}: ${test.value}"`);
 
     const frag = parser.parseCssProperty(test.name, test.value, {
       colorSwatchClass: COLOR_TEST_CLASS,
@@ -372,7 +574,7 @@ function testParseCssProperty(doc, parser) {
     is(
       target.innerHTML,
       test.expected,
-      "CSS property correctly parsed for " + test.name + ": " + test.value
+      `CSS property correctly parsed for "${test.name}: ${test.value}"`
     );
 
     target.innerHTML = "";
@@ -453,6 +655,7 @@ function testParseURL(doc, parser) {
     },
   ];
 
+  const target = doc.querySelector("div");
   for (const test of tests) {
     const url = test.leader + "something.jpg" + test.trailer;
     const frag = parser.parseCssProperty("background", url, {
@@ -460,8 +663,7 @@ function testParseURL(doc, parser) {
       baseURI: test.baseURI,
     });
 
-    const target = doc.querySelector("div");
-    target.appendChild(frag);
+    target.replaceChildren(frag);
 
     const expectedTrailer = test.expectedTrailer || test.trailer;
 
@@ -472,9 +674,36 @@ function testParseURL(doc, parser) {
       expectedTrailer;
 
     is(target.innerHTML, expected, test.desc);
-
-    target.innerHTML = "";
   }
+
+  info("Check that long URLs get the class for visual truncation");
+  const LONG_URL = `something.jpg?${"a".repeat(5000)}`;
+  target.replaceChildren(
+    parser.parseCssProperty("background", `url(${LONG_URL})`, {
+      urlClass: "test-urlclass",
+    })
+  );
+  is(
+    target.innerHTML,
+    // prettier-ignore
+    `url(` +
+    `<a target="_blank" class="test-urlclass propertyvalue-long-text" href="${LONG_URL}">` +
+    LONG_URL +
+    `</a>` +
+    `)`,
+    "long url is wrapped in an element with a specific class"
+  );
+
+  target.replaceChildren(
+    parser.parseCssProperty("background", `url(${LONG_URL})`, {})
+  );
+  is(
+    target.innerHTML,
+    `<span class="propertyvalue-long-text">url(${LONG_URL})</span>`,
+    "long url is wrapped in an element with a specific class, even when urlClass option is not set"
+  );
+
+  target.innerHTML = "";
 }
 
 function testParseFilter(doc, parser) {
@@ -520,146 +749,723 @@ function testParseShape(doc, parser) {
 
   const tests = [
     {
-      desc: "Polygon shape",
+      desc: "simple polygon()",
+      definition: "polygon(0px 0px, 10px 10px, 10px 20px)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `polygon(` +
+            `<span class="inspector-shape-point" data-point="0">` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="x">0px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="y">0px</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="1">` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="x">10px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="y">10px</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="2">` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="x">10px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="y">20px</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "simple polygon() with extra spaces",
+      definition: "polygon( 0px 0px , 10px 10px , 10px 20px )",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `polygon( ` +
+            `<span class="inspector-shape-point" data-point="0">` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="x">0px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="y">0px</span>` +
+            `</span>` +
+            ` , ` +
+            `<span class="inspector-shape-point" data-point="1">` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="x">10px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="y">10px</span>` +
+            `</span>` +
+            ` , ` +
+            `<span class="inspector-shape-point" data-point="2">` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="x">10px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="y">20px</span>` +
+            `</span>` +
+            ` )` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "polygon() with fill rule",
+      definition: "polygon(nonzero, 0px 0px, 10px 10px, 10px 20px)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `polygon(nonzero, ` +
+            `<span class="inspector-shape-point" data-point="0">` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="x">0px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="y">0px</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="1">` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="x">10px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="y">10px</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="2">` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="x">10px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="y">20px</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "complex polygon()",
       definition:
         "polygon(evenodd, 0px 0px, 10%200px,30%30% , calc(250px - 10px) 0 ,\n " +
         "12em var(--variable), 100% 100%) margin-box",
-      spanCount: 18,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `polygon(` +
+            `evenodd, ` +
+            `<span class="inspector-shape-point" data-point="0">` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="x">0px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="y">0px</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="1">` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="x">10%</span>` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="y">200px</span>` +
+            `</span>` +
+            `,` +
+            `<span class="inspector-shape-point" data-point="2">` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="x">30%</span>` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="y">30%</span>` +
+            `</span>` +
+            ` , ` +
+            `<span class="inspector-shape-point" data-point="3">` +
+              `<span class="inspector-shape-point" data-point="3" data-pair="x">calc(250px - 10px)</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="3" data-pair="y">0</span>` +
+            `</span>` +
+            ` ,\n ` +
+            `<span class="inspector-shape-point" data-point="4">` +
+              `<span class="inspector-shape-point" data-point="4" data-pair="x">12em</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="4" data-pair="y">var(--variable)</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="5">` +
+              `<span class="inspector-shape-point" data-point="5" data-pair="x">100%</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="5" data-pair="y">100%</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>` +
+        ` margin-box`,
     },
     {
-      desc: "POLYGON()",
+      desc: "complex POLYGON()",
       definition:
         "POLYGON(evenodd, 0px 0px, 10%200px,30%30% , calc(250px - 10px) 0 ,\n " +
         "12em var(--variable), 100% 100%) margin-box",
-      spanCount: 18,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `POLYGON(` +
+            `evenodd, ` +
+            `<span class="inspector-shape-point" data-point="0">` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="x">0px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="0" data-pair="y">0px</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="1">` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="x">10%</span>` +
+              `<span class="inspector-shape-point" data-point="1" data-pair="y">200px</span>` +
+            `</span>` +
+            `,` +
+            `<span class="inspector-shape-point" data-point="2">` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="x">30%</span>` +
+              `<span class="inspector-shape-point" data-point="2" data-pair="y">30%</span>` +
+            `</span>` +
+            ` , ` +
+            `<span class="inspector-shape-point" data-point="3">` +
+              `<span class="inspector-shape-point" data-point="3" data-pair="x">calc(250px - 10px)</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="3" data-pair="y">0</span>` +
+            `</span>` +
+            ` ,\n ` +
+            `<span class="inspector-shape-point" data-point="4">` +
+              `<span class="inspector-shape-point" data-point="4" data-pair="x">12em</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="4" data-pair="y">var(--variable)</span>` +
+            `</span>` +
+            `, ` +
+            `<span class="inspector-shape-point" data-point="5">` +
+              `<span class="inspector-shape-point" data-point="5" data-pair="x">100%</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="5" data-pair="y">100%</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>` +
+        ` margin-box`,
     },
     {
       desc: "Invalid polygon shape",
       definition: "polygon(0px 0px 100px 20px, 20% 20%)",
-      spanCount: 0,
+      markup: "polygon(0px 0px 100px 20px, 20% 20%)",
     },
     {
       desc: "Circle shape with all arguments",
       definition: "circle(25% at\n 30% 200px) border-box",
-      spanCount: 4,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `<span class="inspector-shape-point" data-point="radius">25%</span>` +
+            ` at\n ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">30%</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">200px</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>` +
+        ` border-box`,
     },
     {
       desc: "Circle shape with only one center",
       definition: "circle(25em at 40%)",
-      spanCount: 3,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `<span class="inspector-shape-point" data-point="radius">25em</span>` +
+            ` at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">40%</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Circle shape with no radius",
       definition: "circle(at 30% 40%)",
-      spanCount: 3,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">30%</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">40%</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Circle shape with no radius and keyword position",
+      definition: "circle(at right center)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">right</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">center</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Circle shape with no radius and 4 positions",
+      definition: "circle(at left 10px top 15px)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">left</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center">10px</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">top</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center">15px</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Circle shape with no center",
       definition: "circle(12em)",
-      spanCount: 1,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `<span class="inspector-shape-point" data-point="radius">12em</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Circle shape with no center and keyword radius size",
+      definition: "circle(farthest-side)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `<span class="inspector-shape-point" data-point="radius">farthest-side</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Circle shape with no center and computed radius size",
+      definition: "circle(calc(10% + 12em))",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `<span class="inspector-shape-point" data-point="radius">calc(10% + 12em)</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Circle shape with computed position",
+      definition: "circle(25% at calc(30% + 1px) calc(200px - 10%))",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `<span class="inspector-shape-point" data-point="radius">25%</span>` +
+            ` at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">calc(30% + 1px)</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">calc(200px - 10%)</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Circle shape with no arguments",
       definition: "circle()",
-      spanCount: 0,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle()` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Circle shape with no space before at",
       definition: "circle(25%at 30% 30%)",
-      spanCount: 4,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `circle(` +
+            `<span class="inspector-shape-point" data-point="radius">25%</span>` +
+            `at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">30%</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">30%</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "CIRCLE",
       definition: "CIRCLE(12em)",
-      spanCount: 1,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `CIRCLE(` +
+            `<span class="inspector-shape-point" data-point="radius">12em</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Invalid circle shape",
       definition: "circle(25%at30%30%)",
-      spanCount: 0,
+      markup: "circle(25%at30%30%)",
     },
     {
       desc: "Ellipse shape with all arguments",
       definition: "ellipse(200px 10em at 25% 120px) content-box",
-      spanCount: 5,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ellipse(` +
+            `<span class="inspector-shape-point" data-point="rx">200px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point" data-point="ry">10em</span>` +
+            ` at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">25%</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">120px</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>` +
+        ` content-box`,
     },
     {
       desc: "Ellipse shape with only one center",
       definition: "ellipse(200px 10% at 120px)",
-      spanCount: 4,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ellipse(` +
+            `<span class="inspector-shape-point" data-point="rx">200px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point" data-point="ry">10%</span>` +
+            ` at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">120px</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Ellipse shape with no radius",
       definition: "ellipse(at 25% 120px)",
-      spanCount: 3,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ellipse(` +
+            `at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">25%</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">120px</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Ellipse shape with no center",
       definition: "ellipse(200px\n10em)",
-      spanCount: 2,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ellipse(` +
+            `<span class="inspector-shape-point" data-point="rx">200px</span>` +
+            `\n` +
+            `<span class="inspector-shape-point" data-point="ry">10em</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Ellipse shape with no center and keyword radii",
+      definition: "ellipse(farthest-side closest-side)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ellipse(` +
+            `<span class="inspector-shape-point" data-point="rx">farthest-side</span>` +
+            ` ` +
+            `<span class="inspector-shape-point" data-point="ry">closest-side</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Ellipse shape with computed position and radiis",
+      definition:
+        "ellipse(calc(25% + 1px) calc(50% - 2px) at calc(30% + 1px) calc(200px - 10%))",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ellipse(` +
+            `<span class="inspector-shape-point" data-point="rx">calc(25% + 1px)</span>` +
+            ` ` +
+            `<span class="inspector-shape-point" data-point="ry">calc(50% - 2px)</span>` +
+            ` at ` +
+            `<span class="inspector-shape-point" data-point="center">` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="x">calc(30% + 1px)</span>` +
+              ` ` +
+              `<span class="inspector-shape-point" data-point="center" data-pair="y">calc(200px - 10%)</span>` +
+            `</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Ellipse shape with no arguments",
       definition: "ellipse()",
-      spanCount: 0,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ellipse()` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "ELLIPSE()",
       definition: "ELLIPSE(200px 10em)",
-      spanCount: 2,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `ELLIPSE(` +
+            `<span class="inspector-shape-point" data-point="rx">200px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point" data-point="ry">10em</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Invalid ellipse shape",
       definition: "ellipse(200px100px at 30$ 20%)",
-      spanCount: 0,
+      markup: "ellipse(200px100px at 30$ 20%)",
     },
     {
       desc: "Inset shape with 4 arguments",
       definition: "inset(200px 100px\n 30%15%)",
-      spanCount: 4,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `inset(` +
+            `<span class="inspector-shape-point top">200px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point right">100px</span>` +
+            `\n ` +
+            `<span class="inspector-shape-point bottom">30%</span>` +
+            `<span class="inspector-shape-point left">15%</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Inset shape with 3 arguments",
       definition: "inset(200px 100px 15%)",
-      spanCount: 3,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `inset(` +
+            `<span class="inspector-shape-point top">200px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point right left">100px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point bottom">15%</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Inset shape with 2 arguments",
       definition: "inset(200px 100px)",
-      spanCount: 2,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `inset(` +
+            `<span class="inspector-shape-point top bottom">200px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point right left">100px</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Inset shape with 1 argument",
       definition: "inset(200px)",
-      spanCount: 1,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `inset(` +
+            `<span class="inspector-shape-point top right bottom left">200px</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "Inset shape with 0 arguments",
       definition: "inset()",
-      spanCount: 0,
+      markup: "inset()",
     },
     {
       desc: "INSET()",
       definition: "INSET(200px)",
-      spanCount: 1,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `INSET(` +
+            `<span class="inspector-shape-point top right bottom left">200px</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
     {
       desc: "offset-path property with inset shape value",
       property: "offset-path",
       definition: "inset(200px)",
-      spanCount: 1,
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `inset(` +
+            `<span class="inspector-shape-point top right bottom left">200px</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Inset shape with nested function",
+      definition: "inset(200px calc(100px + 10%) 15%)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `inset(` +
+            `<span class="inspector-shape-point top">200px</span>` +
+            ` ` +
+            `<span class="inspector-shape-point right left">calc(100px + 10%)</span>` +
+            ` ` +
+            `<span class="inspector-shape-point bottom">15%</span>` +
+            `)` +
+          `</span>` +
+        `</span>`,
+    },
+    {
+      desc: "Inset shape with round keyword",
+      definition: "inset(4rem round 1rem 2rem 3rem 4rem)",
+      markup:
+        // prettier-ignore
+        `<span>` +
+          `<button class="inspector-shape-swatch"></button>` +
+          `<span class="inspector-shape">` +
+            `inset(` +
+            `<span class="inspector-shape-point top right bottom left">4rem</span>` +
+            ` round 1rem 2rem 3rem 4rem` +
+            `)` +
+          `</span>` +
+        `</span>`,
     },
   ];
 
-  for (const { desc, definition, property = "clip-path", spanCount } of tests) {
+  for (const { desc, definition, property = "clip-path", markup } of tests) {
     info(desc);
     const frag = parser.parseCssProperty(property, definition, {
       shapeClass: "inspector-shape",
+      shapeSwatchClass: "inspector-shape-swatch",
     });
-    const spans = frag.querySelectorAll(".inspector-shape-point");
-    is(spans.length, spanCount, desc + " span count");
-    is(frag.textContent, definition, desc + " text content");
+    const el = frag.ownerDocument.createElement("span");
+    el.append(frag);
+    is(el.innerHTML, markup, desc + " markup");
+    is(el.textContent, definition, desc + " text content");
+
+    const swatchlessFrag = parser.parseCssProperty(property, definition, {
+      shapeClass: "inspector-shape",
+    });
+    is(
+      swatchlessFrag.querySelector("button"),
+      null,
+      `${desc} does not have a swatch button when shapeSwatchClass option is not passed`
+    );
   }
+}
+
+function getJumpToVariableButton(varName) {
+  return `<button class="ruleview-variable-link jump-definition" data-variable-name="${varName}" title="Jump to variable definition"></button>`;
 }
 
 function testParseVariable(doc, parser) {
@@ -671,7 +1477,7 @@ function testParseVariable(doc, parser) {
         // prettier-ignore
         '<span data-color="chartreuse">' +
           "<span>var(" +
-            '<span data-variable="chartreuse">--seen</span>)' +
+            `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>)` +
           "</span>" +
         "</span>",
     },
@@ -683,7 +1489,7 @@ function testParseVariable(doc, parser) {
       expected:
         // prettier-ignore
         "<span>var(" +
-          '<span data-variable="var(--base)" data-variable-computed="1em">--seen</span>)' +
+          `<span data-variable="var(--base)" data-variable-computed="1em">--seen${getJumpToVariableButton("--seen")}</span>)` +
         "</span>",
     },
     {
@@ -702,7 +1508,8 @@ function testParseVariable(doc, parser) {
         // prettier-ignore
         '<span data-color="chartreuse">' +
           "<span>var(" +
-            '<span data-variable="chartreuse">--seen</span>,' +
+            `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>` +
+            `,` +
             '<span class="unmatched-class"> ' +
               '<span data-color="seagreen">' +
                 "<span>seagreen</span>" +
@@ -716,35 +1523,44 @@ function testParseVariable(doc, parser) {
       variables: { "--seen": "chartreuse" },
       expected:
         // prettier-ignore
-        "<span>var(" +
-          '<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>,' +
-          "<span> " +
-            '<span data-color="chartreuse">' +
-              "<span>var(" +
-                '<span data-variable="chartreuse">--seen</span>)' +
+        `<span data-color=" chartreuse">` +
+          "<span>var(" +
+            '<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>'+
+            ',' +
+            "<span> " +
+              '<span data-color="chartreuse">' +
+                "<span>var(" +
+                  `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>)` +
+                "</span>" +
               "</span>" +
-            "</span>" +
-          "</span>)" +
+            "</span>)" +
+          "</span>" +
         "</span>",
     },
     {
-      text: "color-mix(in sgrb, var(--x), purple)",
+      text: "color-mix(in srgb, var(--x), purple)",
       variables: { "--x": "yellow" },
       expected:
         // prettier-ignore
-        `color-mix(in sgrb, ` +
-        `<span data-color="yellow" class="color-swatch-container">` +
-          `<span class="test-class" style="background-color:yellow" tabindex="0" role="button" data-color-function="color-mix">` +
+        `<span data-color=\"color-mix(in srgb, yellow, purple)\" class=\"color-swatch-container\">` +
+          `<span class=\"test-class\" style=\"background-color:color-mix(in srgb, yellow, purple)\" tabindex=\"0\" role=\"button\"></span>` +
+          `<span>` +
+            `color-mix(in srgb, ` +
+            `<span data-color="yellow" class="color-swatch-container">` +
+              `<span class="test-class" style="background-color:yellow" tabindex="0" role="button" data-color-function="color-mix">` +
+              `</span>` +
+              `<span>var(<span data-variable="yellow">--x${getJumpToVariableButton("--x")}</span>)</span>` +
+            `</span>` +
+            `, ` +
+            `<span data-color="purple" class="color-swatch-container">` +
+              `<span class="test-class" style="background-color:purple" tabindex="0" role="button" data-color-function="color-mix">` +
+              `</span>` +
+              `<span>purple</span>` +
+            `</span>` +
+            // closing `color-mix()`
+            `)` +
           `</span>` +
-          `<span>var(<span data-variable="yellow">--x</span>)</span>` +
-        `</span>` +
-        `, ` +
-        `<span data-color="purple" class="color-swatch-container">` +
-          `<span class="test-class" style="background-color:purple" tabindex="0" role="button" data-color-function="color-mix">` +
-          `</span>` +
-          `<span>purple</span>` +
-        `</span>` +
-        `)`,
+        `</span>`,
       parserExtraOptions: {
         colorSwatchClass: COLOR_TEST_CLASS,
       },
@@ -758,13 +1574,13 @@ function testParseVariable(doc, parser) {
         `<span data-color="yellow" class="color-swatch-container">` +
           `<span class="test-class" style="background-color:yellow" tabindex="0" role="button" data-color-function="light-dark">` +
           `</span>` +
-          `<span>var(<span data-variable="yellow">--light</span>)</span>` +
+          `<span>var(<span data-variable="yellow">--light${getJumpToVariableButton("--light")}</span>)</span>` +
         `</span>` +
         `, ` +
         `<span data-color="gold" class="color-swatch-container">` +
           `<span class="test-class" style="background-color:gold" tabindex="0" role="button" data-color-function="light-dark">` +
           `</span>` +
-          `<span>var(<span data-variable="gold">--dark</span>)</span>` +
+          `<span>var(<span data-variable="gold">--dark${getJumpToVariableButton("--dark")}</span>)</span>` +
         `</span>` +
         `)`,
       parserExtraOptions: {
@@ -781,7 +1597,8 @@ function testParseVariable(doc, parser) {
         '1px solid ' +
         '<span data-color="chartreuse">' +
           "<span>var(" +
-            '<span data-variable="chartreuse">--seen</span>,' +
+            `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>` +
+            `,` +
             '<span class="unmatched-class"> ' +
               '<span data-color="seagreen">' +
                 "<span>seagreen</span>" +
@@ -798,13 +1615,16 @@ function testParseVariable(doc, parser) {
       expected:
         // prettier-ignore
         `1px solid ` +
-        `<span>var(` +
-          `<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>,` +
-          `<span> ` +
-            `<span data-color="seagreen">` +
-              `<span>seagreen</span>` +
-            `</span>` +
-          `</span>)` +
+        `<span data-color=" seagreen">` +
+          `<span>var(` +
+            `<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>` +
+            `,` +
+            `<span> ` +
+              `<span data-color="seagreen">` +
+                `<span>seagreen</span>` +
+              `</span>` +
+            `</span>)` +
+          `</span>` +
         `</span>`,
     },
     {
@@ -815,10 +1635,10 @@ function testParseVariable(doc, parser) {
         '<span data-color="rgba(255, 0, 0, 0.5)">' +
           "<span>rgba("+
             "<span>" +
-              'var(<span data-variable="255">--r</span>)' +
+              `var(<span data-variable="255">--r${getJumpToVariableButton("--r")}</span>)` +
             "</span>, 0, 0, " +
             "<span>" +
-              'var(<span data-variable="0.5">--a</span>)' +
+              `var(<span data-variable="0.5">--a${getJumpToVariableButton("--a")}</span>)` +
             "</span>" +
           ")</span>" +
         "</span>",
@@ -831,12 +1651,15 @@ function testParseVariable(doc, parser) {
         '<span data-color="rgba(from red r g 0 / calc(0.8 * 0.5))">' +
           "<span>rgba("+
             "from " +
-            "<span>" +
-              'var(<span data-variable="red">--base</span>)' +
-            "</span> r g 0 / " +
+            `<span data-color="red">` +
+              "<span>" +
+                `var(<span data-variable="red">--base${getJumpToVariableButton("--base")}</span>)` +
+              "</span>" +
+            "</span>" +
+            " r g 0 / " +
             "calc(" +
             "<span>" +
-              'var(<span data-variable="0.8">--a</span>)' +
+              `var(<span data-variable="0.8">--a${getJumpToVariableButton("--a")}</span>)` +
             "</span>" +
             " * 0.5)" +
           ")</span>" +
@@ -850,7 +1673,8 @@ function testParseVariable(doc, parser) {
         '<span data-color="rgb( 255, 0, 0)">' +
           "<span>rgb("+
             "<span>var(" +
-              `<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>,` +
+              `<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>` +
+              `,` +
               `<span> 255</span>` +
             ")</span>, 0, 0" +
           ")</span>" +
@@ -893,7 +1717,7 @@ function testParseVariable(doc, parser) {
               'data-registered-property-initial-value="hotpink" ' +
               'data-registered-property-syntax="&lt;color&gt;" ' +
               'data-registered-property-inherits="true"' +
-            '>--registered</span>)' +
+            `>--registered${getJumpToVariableButton("--registered")}</span>)` +
           "</span>" +
         "</span>",
     },
@@ -916,7 +1740,7 @@ function testParseVariable(doc, parser) {
               'data-variable="chartreuse" ' +
               'data-registered-property-syntax="*" ' +
               'data-registered-property-inherits="false"' +
-            '>--registered-universal</span>)' +
+            `>--registered-universal${getJumpToVariableButton("--registered-universal")}</span>)` +
           "</span>" +
         "</span>",
     },
@@ -928,8 +1752,7 @@ function testParseVariable(doc, parser) {
       parserExtraOptions: {
         isDarkColorScheme: false,
       },
-      expected:
-        '<span>var(<span data-variable="light-dark(red, blue)">--x</span>)</span>',
+      expected: `<span>var(<span data-variable="light-dark(red, blue)">--x${getJumpToVariableButton("--x")}</span>)</span>`,
     },
     {
       text: "var(--x)",
@@ -943,7 +1766,23 @@ function testParseVariable(doc, parser) {
         // prettier-ignore
         '<span data-color="color-mix(in srgb, red 50%, blue)">' +
           '<span>var(' +
-            '<span data-variable="color-mix(in srgb, red 50%, blue)">--x</span>' +
+            `<span data-variable="color-mix(in srgb, red 50%, blue)">--x${getJumpToVariableButton("--x")}</span>` +
+          ')</span>' +
+        '</span>',
+    },
+    {
+      text: "var(--x)",
+      variables: {
+        "--x": "contrast-color(blue)",
+      },
+      parserExtraOptions: {
+        isDarkColorScheme: false,
+      },
+      expected:
+        // prettier-ignore
+        '<span data-color="contrast-color(blue)">' +
+          '<span>var(' +
+            `<span data-variable="contrast-color(blue)">--x${getJumpToVariableButton("--x")}</span>` +
           ')</span>' +
         '</span>',
     },
@@ -955,7 +1794,7 @@ function testParseVariable(doc, parser) {
       expected:
         // prettier-ignore
         "<span>var(" +
-          '<span data-variable="var(--empty)" data-variable-computed="">--refers-empty</span>)' +
+          `<span data-variable="var(--empty)" data-variable-computed="">--refers-empty${getJumpToVariableButton("--refers-empty")}</span>)` +
         "</span>",
     },
     {
@@ -970,7 +1809,7 @@ function testParseVariable(doc, parser) {
             `hsl(50, 70%, ` +
             `<span>` +
               `var(` +
-                `<span data-variable="40%">--foo</span>` +
+                `<span data-variable="40%">--foo${getJumpToVariableButton("--foo")}</span>` +
               `)` +
             `</span>)` +
           `</span>` +
@@ -987,7 +1826,7 @@ function testParseVariable(doc, parser) {
         `<span data-color="hsl(50, 70%, 40%)">` +
           `<span>` +
             `var(` +
-              `<span data-variable="hsl(50, 70%, var(--foo))" data-variable-computed="hsl(50, 70%, 40%)">--bar</span>` +
+              `<span data-variable="hsl(50, 70%, var(--foo))" data-variable-computed="hsl(50, 70%, 40%)">--bar${getJumpToVariableButton("--bar")}</span>` +
             `)` +
           `</span>` +
         `</span>`,
@@ -1005,7 +1844,7 @@ function testParseVariable(doc, parser) {
         `<span data-color="hsl(10, 100%, 50%)">` +
           `<span>` +
             `var(` +
-              `<span data-variable="hsl(10, 100%, var(--fur))" data-variable-computed="hsl(10, 100%, 50%)">--primary</span>` +
+              `<span data-variable="hsl(10, 100%, var(--fur))" data-variable-computed="hsl(10, 100%, 50%)">--primary${getJumpToVariableButton("--primary")}</span>` +
             `)` +
           `</span>` +
         `</span>`,
@@ -1024,16 +1863,55 @@ function testParseVariable(doc, parser) {
           `<span>oklch(` +
             `<span>` +
               `var(` +
-                `<span data-variable="var(--baz)" data-variable-computed="10">--fur</span>` +
+                `<span data-variable="var(--baz)" data-variable-computed="10">--fur${getJumpToVariableButton("--fur")}</span>` +
               `)` +
             `</span>` +
             ` 20 ` +
             `<span>` +
               `var(` +
-                `<span data-variable="30">--boo</span>` +
+                `<span data-variable="30">--boo${getJumpToVariableButton("--boo")}</span>` +
               `)` +
             `</span>` +
           `)</span>` +
+        `</span>`,
+    },
+    {
+      text: "var(--x)",
+      variables: {
+        "--x": "10px",
+      },
+      parserExtraOptions: {
+        showJumpToVariableButton: false,
+      },
+      // This shouldn't have a Jump to variable button
+      expected: `<span>var(<span data-variable="10px">--x</span>)</span>`,
+    },
+    {
+      // var() with spaces between params/parenthesis
+      text: "var(  --foo  ,  500px  )",
+      variables: { "--foo": "1px" },
+      expected:
+        // prettier-ignore
+        `<span>` +
+          `var(  ` +
+            `<span data-variable="1px">--foo${getJumpToVariableButton("--foo")}</span>` +
+            `  ,` +
+            `<span class="unmatched-class">  500px</span>` +
+          `  )` +
+        `</span>`,
+    },
+    {
+      // multiline var()
+      text: "var(\n--foo, 500px\n)",
+      variables: { "--foo": "1px" },
+      expected:
+        // prettier-ignore
+        `<span>` +
+          `var(\n` +
+            `<span data-variable="1px">--foo${getJumpToVariableButton("--foo")}</span>` +
+            `,` +
+            `<span class="unmatched-class"> 500px</span>` +
+          `\n)` +
         `</span>`,
     },
   ];
@@ -1197,7 +2075,7 @@ function testParseFontFamily(doc, parser) {
     {
       desc: "Fonts with extra whitespace",
       definition: " Open  Sans  ",
-      families: ["Open Sans"],
+      families: ["Open  Sans"],
     },
   ];
 
@@ -1210,7 +2088,7 @@ function testParseFontFamily(doc, parser) {
     {
       desc: "Whitespace between fonts",
       definition: "Arial ,  Helvetica,   sans-serif",
-      output: "Arial , Helvetica, sans-serif",
+      output: "Arial ,  Helvetica,   sans-serif",
     },
     {
       desc: "Whitespace before first font trimmed",
@@ -1225,7 +2103,7 @@ function testParseFontFamily(doc, parser) {
     {
       desc: "Whitespace between quoted fonts",
       definition: "'Arial' ,  \"Helvetica\" ",
-      output: "'Arial' , \"Helvetica\"",
+      output: "'Arial' ,  \"Helvetica\"",
     },
     {
       desc: "Whitespace within font preserved",
@@ -1257,7 +2135,7 @@ function testParseFontFamily(doc, parser) {
   info("Test font-family with custom properties");
   const frag = parser.parseCssProperty(
     "font-family",
-    "var(--family, Georgia, serif)",
+    "MonoLisa, var(--family, Georgia black, 'Helvetica Neue', serif), monospace !important",
     {
       getVariableData: () => ({}),
       unmatchedClass: "unmatched-class",
@@ -1269,17 +2147,24 @@ function testParseFontFamily(doc, parser) {
   is(
     target.innerHTML,
     // prettier-ignore
+    `<span class="ruleview-font-family">MonoLisa</span>` +
+    `, ` +
     `<span>var(` +
       `<span class="unmatched-class" data-variable="--family is not set">` +
         `--family` +
       `</span>` +
       `,` +
       `<span> ` +
-        `<span class="ruleview-font-family">Georgia</span>` +
+        `<span class="ruleview-font-family">Georgia black</span>` +
+        `, ` +
+        `'<span class="ruleview-font-family">Helvetica Neue</span>'` +
         `, ` +
         `<span class="ruleview-font-family">serif</span>` +
       `</span>)` +
-    `</span>`,
+    `</span>` +
+    `, ` +
+    `<span class="ruleview-font-family">monospace</span>` +
+    ` !important`,
     "Got expected output for font-family with custom properties"
   );
 }
@@ -1453,13 +2338,13 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>var(` +
-              `<span data-variable="red">--x</span>` +
+              `<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>` +
             `)</span>` +
           `</span>, ` +
           `<span data-color="blue" class="color-swatch-container unmatched-class">` +
             `<span class="test-class" style="background-color:blue" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>var(` +
-              `<span data-variable="blue">--y</span>` +
+              `<span data-variable="blue">--y${getJumpToVariableButton("--y")}</span>` +
             `)</span>` +
           `</span>` +
         `)`,
@@ -1480,7 +2365,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>,` +
           `<span class="unmatched-class">notacolor</span>` +
@@ -1503,7 +2388,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>` +
         `)`,
@@ -1522,7 +2407,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>  ,  ` +
           `<span class="unmatched-class">notacolor</span>  ` +
@@ -1543,7 +2428,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>  ` +
         `)`,
@@ -1561,7 +2446,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>` +
         `)`,
@@ -1579,7 +2464,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>` +
         `)`,
@@ -1597,7 +2482,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>,a,b` +
         `)`,
@@ -1615,9 +2500,99 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>,a,b` +
+        `)`,
+    },
+    {
+      message:
+        "in light mode with images, the second parameter gets the unmatched class",
+      propertyName: "background-image",
+      propertyValue: `light-dark(url("a.png"), url("b.png"))`,
+      isDarkColorScheme: false,
+      expected: `light-dark(url("a.png"), <span class="unmatched-class">url("b.png")</span>)`,
+    },
+    {
+      message:
+        "in dark mode with images, the first parameter gets the unmatched class",
+      propertyName: "background-image",
+      propertyValue: `light-dark(url("a.png"), url("b.png"))`,
+      isDarkColorScheme: true,
+      expected: `light-dark(<span class="unmatched-class">url("a.png")</span>, url("b.png"))`,
+    },
+    {
+      message:
+        "in light mode with gradients, the second parameter gets the unmatched class",
+      propertyName: "background-image",
+      propertyValue:
+        "light-dark(linear-gradient(white, blue), linear-gradient(black, red))",
+      isDarkColorScheme: false,
+      expected:
+        // prettier-ignore
+        `light-dark(` +
+          `linear-gradient(` +
+            `<span data-color="white" class="color-swatch-container">` +
+              `<span class="test-class" style="background-color:white" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+              `<span>white</span>` +
+            `</span>` +
+            `, ` +
+            `<span data-color="blue" class="color-swatch-container">` +
+              `<span class="test-class" style="background-color:blue" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+              `<span>blue</span>` +
+            `</span>` +
+          `)` +
+          `, ` +
+          `<span class="unmatched-class">` +
+            `linear-gradient(` +
+              `<span data-color="black" class="color-swatch-container">` +
+                `<span class="test-class" style="background-color:black" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+                `<span>black</span>` +
+              `</span>` +
+              `, ` +
+              `<span data-color="red" class="color-swatch-container">` +
+                `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+                `<span>red</span>` +
+              `</span>` +
+            `)` +
+          `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "in dark mode with gradients, the first parameter gets the unmatched class",
+      propertyName: "background-image",
+      propertyValue:
+        "light-dark(linear-gradient(white, blue), linear-gradient(black, red))",
+      isDarkColorScheme: true,
+      expected:
+        // prettier-ignore
+        `light-dark(` +
+          `<span class="unmatched-class">` +
+            `linear-gradient(` +
+              `<span data-color="white" class="color-swatch-container">` +
+                `<span class="test-class" style="background-color:white" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+                `<span>white</span>` +
+              `</span>` +
+              `, ` +
+              `<span data-color="blue" class="color-swatch-container">` +
+                `<span class="test-class" style="background-color:blue" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+                `<span>blue</span>` +
+              `</span>` +
+            `)` +
+          `</span>` +
+          `, ` +
+          `linear-gradient(` +
+            `<span data-color="black" class="color-swatch-container">` +
+              `<span class="test-class" style="background-color:black" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+              `<span>black</span>` +
+            `</span>` +
+            `, ` +
+            `<span data-color="red" class="color-swatch-container">` +
+              `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="linear-gradient"></span>` +
+              `<span>red</span>` +
+            `</span>` +
+          `)` +
         `)`,
     },
   ];
@@ -1646,4 +2621,702 @@ function testParseLightDark(doc, parser) {
     is(target.innerHTML, test.expected, test.message);
     target.innerHTML = "";
   }
+}
+
+function testParseAttr(doc, parser) {
+  const TESTS = [
+    {
+      message:
+        "Not passing getAttributeValue doesn't add unmatched classes to attribute name",
+      propertyValue: "attr(unknown)",
+      attributes: {},
+      getAttributeValue: null,
+      expected: `attr(unknown)`,
+    },
+    {
+      message:
+        "Passing known attribute doesn't add unmatched classes to attribute name",
+      propertyValue: "attr(data-x)",
+      attributes: { "data-x": "" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;&quot;">data-x</span>` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Passing unknown attribute adds unmatched classes to attribute name",
+      propertyValue: "attr(data-x)",
+      attributes: {},
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Passing unknown attribute adds unmatched classes to attribute name, not to fallback",
+      propertyValue: `attr(data-x, "fallback")`,
+      attributes: {},
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">"fallback"</span>` +
+        `)`,
+    },
+    {
+      message: "Passing known attribute adds unmatched classes to fallback",
+      propertyValue: `attr(data-x, "fallback")`,
+      attributes: { "data-x": "" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;&quot;">data-x</span>` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">"fallback"</span>` +
+        `)`,
+    },
+    {
+      message: "Checking attr() + spaces",
+      propertyValue: `attr(  data-x  ,  "fallback"  )`,
+      attributes: { "data-x": "" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+          `  ` +
+          `<span class="inspector-attr-param">` +
+            `<span class="inspector-attr-name" data-attribute="&quot;&quot;">data-x</span>` +
+          `</span>` +
+          `  ,  ` +
+          `<span class="inspector-attr-fallback unmatched-class">"fallback"</span>` +
+        `  )`,
+    },
+    {
+      message: "Modern attr() with known attribute and simple type",
+      propertyValue: "attr(data-x raw-string)",
+      attributes: { "data-x": "x" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;x&quot;">data-x</span>` +
+          ` raw-string` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with known attribute and type()",
+      propertyName: "width",
+      propertyValue: "attr(data-x type(<length> | <percentage>))",
+      attributes: { "data-x": "10px" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;10px&quot;">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with unknown attribute and simple type",
+      propertyValue: "attr(data-x raw-string)",
+      attributes: {},
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` raw-string` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with unknown attribute and type()",
+      propertyValue: "attr(data-x type(<length> | <percentage>))",
+      attributes: {},
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with known attribute, simple type and simple fallback",
+      propertyValue: `attr(data-x raw-string, "fallback")`,
+      attributes: { "data-x": "12" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;12&quot;">data-x</span>` +
+          ` raw-string` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">"fallback"</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with known attribute, type() and simple fallback",
+      propertyName: "width",
+      propertyValue: `attr(data-x type(<length> | <percentage>), "fallback")`,
+      attributes: { "data-x": "10%" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;10%&quot;">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">"fallback"</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with unknown attribute, simple type and simple fallback",
+      propertyValue: `attr(data-x raw-string, "fallback")`,
+      attributes: {},
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` raw-string` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">"fallback"</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with unknown attribute, type() and simple fallback",
+      propertyValue: `attr(data-x type(<length> | <percentage>), "fallback")`,
+      attributes: {},
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">"fallback"</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with known attribute, simple type and nested attr() fallback",
+      propertyValue: `attr(data-x raw-string, attr(data-y, "fallback"))`,
+      attributes: { "data-x": "x", "data-y": "y" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;x&quot;">data-x</span>` +
+          ` raw-string` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">` +
+          `attr(` +
+          `<span class="inspector-attr-param">` +
+            `<span class="inspector-attr-name" data-attribute="&quot;y&quot;">data-y</span>` +
+          `</span>` +
+          `, ` +
+          `<span class="inspector-attr-fallback unmatched-class">"fallback"</span>` +
+          `)` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with known attribute, type() and nested attr() fallback",
+      propertyValue: `attr(data-x type(<length> | <percentage>), attr(data-y, 300px))`,
+      attributes: { "data-x": "20em" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;20em&quot;">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">` +
+          `attr(` +
+          `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-y is not set">` +
+            `<span class="inspector-attr-name">data-y</span>` +
+          `</span>` +
+          `, ` +
+          `<span class="inspector-attr-fallback">300px</span>` +
+          `)` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with unknown attribute, simple type and nested attr() fallback",
+      propertyValue: `attr(data-x raw-string, attr(data-y, "fallback"))`,
+      attributes: { "data-y": "y" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` raw-string` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">` +
+          `attr(` +
+          `<span class="inspector-attr-param">` +
+            `<span class="inspector-attr-name" data-attribute="&quot;y&quot;">data-y</span>` +
+          `</span>` +
+          `, ` +
+          `<span class="inspector-attr-fallback unmatched-class">"fallback"</span>` +
+          `)` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with unknown attribute, type() and nested attr() fallback",
+      propertyValue: `attr(data-x type(<length> | <percentage>), attr(data-y, 99%))`,
+      attributes: {},
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-x is not set">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">` +
+          `attr(` +
+          `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute data-y is not set">` +
+            `<span class="inspector-attr-name">data-y</span>` +
+          `</span>` +
+          `, ` +
+          `<span class="inspector-attr-fallback">99%</span>` +
+          `)` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with `number` attr type and value matching type",
+      propertyName: "line-height",
+      propertyValue: `attr(data-x number, 2)`,
+      attributes: { "data-x": "3" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;3&quot;">data-x</span>` +
+          ` number` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">2</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with `number` attr type and value not matching type",
+      propertyName: "line-height",
+      propertyValue: `attr(data-x number, 2)`,
+      attributes: { "data-x": "x" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute value (&quot;x&quot;) is not a valid numeric value">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` number` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">2</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with `deg` attr type and value matching type",
+      propertyName: "rotate",
+      propertyValue: `attr(data-x deg, 90deg)`,
+      attributes: { "data-x": "1.5" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;1.5&quot;">data-x</span>` +
+          ` deg` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">` +
+          `<span data-angle="90deg"><span>90deg</span></span>` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with `deg` attr type and value not matching type",
+      propertyName: "rotate",
+      propertyValue: `attr(data-x deg, 90deg)`,
+      attributes: { "data-x": "x" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute value (&quot;x&quot;) is not a valid numeric value">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` deg` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">` +
+          `<span data-angle="90deg"><span>90deg</span></span>` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with `%` attr type and value matching type",
+      propertyName: "height",
+      propertyValue: `attr(data-x %, 50%)`,
+      attributes: { "data-x": "99" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;99&quot;">data-x</span>` +
+          ` %` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">50%</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with `%` attr type and value not matching type",
+      propertyName: "height",
+      propertyValue: `attr(data-x %, 50%)`,
+      attributes: { "data-x": "20%" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute value (&quot;20%&quot;) is not a valid numeric value">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` %` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">50%</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with `type(<color>)` attr type and value matching type",
+      propertyName: "color",
+      propertyValue: `attr(data-x type(<color>), hotpink)`,
+      attributes: { "data-x": "tomato" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;tomato&quot;">data-x</span>` +
+          ` type(&lt;color&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">` +
+          `<span data-color="hotpink"><span>hotpink</span></span>` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with `type(<color>)` attr type and value not matching type",
+      propertyName: "color",
+      propertyValue: `attr(data-x type(<color>), hotpink)`,
+      attributes: { "data-x": "uwu" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute value (&quot;uwu&quot;) does not match expected &quot;&lt;color&gt;&quot; syntax">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` type(&lt;color&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">` +
+          `<span data-color="hotpink"><span>hotpink</span></span>` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with `type(<length> | <percentage>)` attr type and a length value",
+      propertyName: "width",
+      propertyValue: `attr(data-x type(<length> | <percentage>), 33px)`,
+      attributes: { "data-x": "42em" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;42em&quot;">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">33px</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with `type(<length> | <percentage>)` attr type and a percentage value",
+      propertyName: "width",
+      propertyValue: `attr(data-x type(<length> | <percentage>), 33px)`,
+      attributes: { "data-x": "42%" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;42%&quot;">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">33px</span>` +
+        `)`,
+    },
+    {
+      message:
+        "Modern attr() with `type(<length> | <percentage>)` attr type and value not matching type",
+      propertyName: "width",
+      propertyValue: `attr(data-x type(<length> | <percentage>), 33px)`,
+      attributes: { "data-x": "42" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param unmatched-class" data-attribute="Attribute value (&quot;42&quot;) does not match expected &quot;&lt;length&gt; | &lt;percentage&gt;&quot; syntax">` +
+          `<span class="inspector-attr-name">data-x</span>` +
+          ` type(&lt;length&gt; | &lt;percentage&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback">33px</span>` +
+        `)`,
+    },
+    {
+      message: "Modern attr() with `type(<custom-ident>)` attr type",
+      propertyName: "position-anchor",
+      propertyValue: `attr(data-x type(<custom-ident>), match-parent)`,
+      attributes: { "data-x": "--my-anchor" },
+      // prettier-ignore
+      expected:
+        `attr(` +
+        `<span class="inspector-attr-param">` +
+          `<span class="inspector-attr-name" data-attribute="&quot;--my-anchor&quot;">data-x</span>` +
+          ` type(&lt;custom-ident&gt;)` +
+        `</span>` +
+        `, ` +
+        `<span class="inspector-attr-fallback unmatched-class">match-parent</span>` +
+        `)`,
+    },
+  ];
+
+  for (const test of TESTS) {
+    const frag = parser.parseCssProperty(
+      test.propertyName || "content",
+      test.propertyValue,
+      {
+        unmatchedClass: "unmatched-class",
+        getAttributeValue:
+          "getAttributeValue" in test
+            ? test.getAttributeValue
+            : attrName => test.attributes[attrName] ?? null,
+      }
+    );
+
+    const target = doc.querySelector("div");
+    target.appendChild(frag);
+
+    is(target.innerHTML, test.expected, test.message);
+    target.innerHTML = "";
+  }
+}
+
+function testParseFunctionsForCssExplainers(doc, parser) {
+  const TESTS = [
+    {
+      message:
+        "No custom elements and attributes when cssExplainersEnabled is false",
+      propertyName: "width",
+      propertyValue: "calc(10px + 1em)",
+      cssExplainersEnabled: false,
+      expected: `calc(10px + 1em)`,
+    },
+    {
+      message:
+        "No custom elements and attributes when parsing a function that isn't supported",
+      propertyName: "content",
+      propertyValue: "counter(count, decimal)",
+      cssExplainersEnabled: true,
+      expected: `counter(count, decimal)`,
+    },
+    {
+      message: "Custom elements and attributes when parsing calc()",
+      propertyName: "width",
+      propertyValue: "calc(10px + 1em)",
+      cssExplainersEnabled: true,
+      // prettier-ignore
+      expected:
+        `<span data-function-expression="calc(10px + 1em)">` +
+          `<span class="css-explainers-function-name">calc</span>` +
+          `(10px + 1em)` +
+        `</span>`,
+    },
+    {
+      message: "Custom elements and attributes when parsing nested functions",
+      propertyName: "transform",
+      propertyValue: "translateY(calc(10px + round(up, sin(40deg)) * 1px))",
+      cssExplainersEnabled: true,
+      // prettier-ignore
+      expected:
+        `translateY(` +
+        `<span data-function-expression="calc(10px + round(up, sin(40deg)) * 1px)">` +
+          `<span class="css-explainers-function-name">calc</span>` +
+          `(` +
+            `10px + ` +
+            `<span data-function-expression="round(up, sin(40deg))">` +
+              `<span class="css-explainers-function-name">round</span>` +
+              `(` +
+                `up, ` +
+                `<span data-function-expression="sin(40deg)">` +
+                  `<span class="css-explainers-function-name">sin</span>` +
+                  `(` +
+                    `<span data-angle="40deg">` +
+                      `<span>40deg</span>` +
+                    `</span>` +
+                  `)` +
+                `</span>` +
+              `)` +
+            `</span>` +
+            ` * 1px` +
+          `)` +
+        `</span>` +
+        `)`,
+    },
+    {
+      message: "Custom elements and attributes when using var() and attr()",
+      propertyName: "width",
+      propertyValue: "calc(var(--x, attr(data-x px, 16px)))",
+      cssExplainersEnabled: true,
+      attributes: { "data-x": "20" },
+      // prettier-ignore
+      expected:
+        `<span data-function-expression="calc(var(--x, attr(data-x px, 16px)))">` +
+          `<span class="css-explainers-function-name">calc</span>` +
+          `(` +
+            `<span data-function-expression="var(--x, attr(data-x px, 16px))">` +
+              `<span>` +
+                `<span class="css-explainers-function-name">var</span>` +
+                `(` +
+                `<span data-variable="--x is not set">--x</span>` +
+                `,` +
+                `<span>` +
+                  ` ` +
+                  `<span data-function-expression="attr(data-x px, 16px)">` +
+                    `<span class="css-explainers-function-name">attr</span>` +
+                    `(` +
+                      `<span class="inspector-attr-param">` +
+                        `<span class="inspector-attr-name" data-attribute="&quot;20&quot;">data-x</span>` +
+                        ` px` +
+                      `</span>` +
+                      `, ` +
+                      `<span class="inspector-attr-fallback null">16px</span>` +
+                    `)` +
+                  `</span>` +
+                `</span>` +
+                `)` +
+              `</span>` +
+            `</span>` +
+          `)` +
+        `</span>`,
+    },
+    {
+      message: "Custom elements and attributes when using parenthesis block",
+      propertyName: "opacity",
+      propertyValue: "calc(1 - (var(--x) - 0.8rem))",
+      cssExplainersEnabled: true,
+      variables: { "--x": "2em" },
+      expected:
+        // prettier-ignore
+        `<span data-function-expression="calc(1 - (var(--x) - 0.8rem))">` +
+          `<span class="css-explainers-function-name">calc</span>` +
+          `(` +
+          `1 - (` +
+          `<span data-function-expression="var(--x)">` +
+            `<span>` +
+              `<span class="css-explainers-function-name">var</span>` +
+              `(` +
+              `<span data-variable="2em">` +
+                `--x` +
+                `<button class="ruleview-variable-link jump-definition" data-variable-name="--x" title="Jump to variable definition"></button>` +
+              `</span>` +
+              `)` +
+            `</span>` +
+          `</span>` +
+          ` - 0.8rem` +
+          `)` +
+          `)` +
+        `</span>`,
+    },
+    {
+      message:
+        "No data-function-expression attribute when a nested function isn't supported",
+      propertyName: "width",
+      propertyValue:
+        "calc(10px + anchor-size(--my-anchor width, calc(50% + 10vw)))",
+      cssExplainersEnabled: true,
+      // prettier-ignore
+      expected:
+        `<span class="css-explainers-function-name">calc</span>(` +
+          `10px + ` +
+          `anchor-size(` +
+            `--my-anchor width, ` +
+            `<span data-function-expression="calc(50% + 10vw)">` +
+              `<span class="css-explainers-function-name">calc</span>` +
+              `(50% + 10vw)` +
+            `</span>` +
+          `)` +
+        `)`,
+    },
+  ];
+
+  const target = doc.querySelector("div");
+  for (const test of TESTS) {
+    const frag = parser.parseCssProperty(
+      test.propertyName,
+      test.propertyValue,
+      {
+        cssExplainersEnabled: test.cssExplainersEnabled,
+        getAttributeValue:
+          "getAttributeValue" in test
+            ? test.getAttributeValue
+            : attrName => test.attributes[attrName] ?? null,
+        getVariableData: varName => {
+          if (typeof test.variables?.[varName] === "string") {
+            return { value: test.variables[varName] };
+          }
+
+          return test.variables?.[varName] || {};
+        },
+      }
+    );
+
+    target.replaceChildren(frag);
+
+    is(target.innerHTML, test.expected, test.message);
+  }
+  target.innerHTML = "";
 }

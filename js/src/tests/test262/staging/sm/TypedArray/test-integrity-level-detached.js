@@ -2,9 +2,7 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js, sm/non262-TypedArray-shell.js]
-flags:
-  - noStrict
+includes: [detachArrayBuffer.js]
 description: |
   pending
 esid: pending
@@ -16,7 +14,7 @@ const NON_INLINE_STORAGE = 1024;
 class DetachedInt32Array extends Int32Array {
     constructor(...args) {
         super(...args);
-        $262.detachArrayBuffer(this.buffer);
+        $DETACHBUFFER(this.buffer);
     }
 }
 

@@ -39,7 +39,7 @@ class TestManifestParser(unittest.TestCase):
         )
 
         # Ensure that capitalization and order aren't an issue:
-        lines = ['["%s"]' % test["name"] for test in tests]
+        lines = [f'["{test["name"]}"]' for test in tests]
         self.assertEqual(lines, open(mozmill_example).read().strip().splitlines())
 
         # Show how you select subsets of tests:
@@ -50,14 +50,11 @@ class TestManifestParser(unittest.TestCase):
         self.assertEqual(
             len(restart_tests), len(parser.get(manifest=mozmill_restart_example))
         )
-        self.assertFalse(
-            [
-                test
-                for test in restart_tests
-                if test["manifest"]
-                != os.path.join(here, "mozmill-restart-example.toml")
-            ]
-        )
+        self.assertFalse([
+            test
+            for test in restart_tests
+            if test["manifest"] != os.path.join(here, "mozmill-restart-example.toml")
+        ])
         self.assertEqual(
             parser.get("name", tags=["foo"]),
             [
@@ -92,13 +89,11 @@ class TestManifestParser(unittest.TestCase):
 
         # The including manifest is always reported as a part of the generated test object.
         self.assertTrue(
-            all(
-                [
-                    t["ancestor_manifest"] == "include-example.toml"
-                    for t in parser.tests
-                    if t["name"] != "fleem"
-                ]
-            )
+            all([
+                t["ancestor_manifest"] == "include-example.toml"
+                for t in parser.tests
+                if t["name"] != "fleem"
+            ])
         )
 
         # The manifests should be there too:
@@ -172,13 +167,11 @@ yellow = submarine"""  # noqa
 
         # The including manifest is always reported as a part of the generated test object.
         self.assertTrue(
-            all(
-                [
-                    t["ancestor_manifest"] == "include-example.toml"
-                    for t in parser.tests
-                    if t["name"] != "fleem"
-                ]
-            )
+            all([
+                t["ancestor_manifest"] == "include-example.toml"
+                for t in parser.tests
+                if t["name"] != "fleem"
+            ])
         )
 
         # The manifests should be there too:
@@ -350,7 +343,7 @@ yellow = submarine
             parser,
             parser.tests[3],
             parser.tests[2],
-            "%s%s" % (include_output, included_output),
+            include_output + included_output,
             True,
         )
 
@@ -377,7 +370,7 @@ yellow = submarine
             parser,
             parser.tests[0],
             parser.tests[3],
-            "%s%s" % (included_output, include_output),
+            included_output + include_output,
             True,
         )
 
@@ -540,7 +533,7 @@ yellow = submarine
         parser = ManifestParser(use_toml=True)
         manifest = os.path.join(here, "broken-skip-if.toml")
         with self.assertRaisesRegex(
-            Exception, "Should not assign in skip-if condition for DEFAULT"
+            Exception, "Should not assign in skip-if list condition for DEFAULT"
         ):
             parser.read(manifest)
 
@@ -610,6 +603,16 @@ yellow = submarine
         condition = "apple_catalina"
         bug = "Bug 200"
         manifestparser.toml.add_skip_if(manifest, filename, condition, bug)
+        condition = "os == 'android' && os_version == '14' && ccov"
+        bug = "Bug 99999"
+        (additional_comment, carryover, bug_reference) = (
+            manifestparser.toml.add_skip_if(
+                manifest, filename, condition, bug, None, True
+            )
+        )
+        assert not additional_comment
+        assert carryover
+        assert bug_reference == "Bug 100, will be carried over"
 
         filename = "bug_3.js"
         assert filename in manifest
@@ -626,7 +629,7 @@ yellow = submarine
         # Should simplify exising conditions
         filename = "test_simplify_linux.js"
         assert filename in manifest
-        condition = "os == 'linux'"
+        condition = "os == 'win'"
         manifestparser.toml.add_skip_if(manifest, filename, condition)
 
         manifest_str = manifestparser.toml.alphabetize_toml_str(manifest)
@@ -657,7 +660,7 @@ yellow = submarine
         manifest = parser.source_documents[before_path]
 
         manifestparser.toml.remove_skip_if(
-            manifest, os_name="linux", os_version="18.04"
+            manifest, os_name="linux", os_version="22.04"
         )
 
         manifest_str = manifestparser.toml.alphabetize_toml_str(manifest)
@@ -670,7 +673,7 @@ yellow = submarine
         manifest = parser.source_documents[before_path]
 
         manifestparser.toml.remove_skip_if(
-            manifest, os_name="linux", os_version="18.04", processor="x86"
+            manifest, os_name="linux", os_version="22.04", processor="x86"
         )
 
         manifest_str = manifestparser.toml.alphabetize_toml_str(manifest)
@@ -683,7 +686,7 @@ yellow = submarine
         manifest = parser.source_documents[before_path]
 
         manifestparser.toml.remove_skip_if(
-            manifest, os_name="unknown", os_version="18.04", processor="x86"
+            manifest, os_name="unknown", os_version="22.04", processor="x86"
         )
 
         manifest_str = manifestparser.toml.alphabetize_toml_str(manifest)

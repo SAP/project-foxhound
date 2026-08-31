@@ -1,18 +1,14 @@
-/* -*- Mode: Java; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
-import android.annotation.TargetApi;
 import android.content.ClipData;
 import android.content.ClipDescription;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Point;
-import android.os.Build;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.DragEvent;
@@ -21,7 +17,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import org.mozilla.gecko.annotation.WrapForJNI;
 
-@TargetApi(Build.VERSION_CODES.N)
 public class GeckoDragAndDrop {
   private static final String LOGTAG = "GeckoDragAndDrop";
   private static final boolean DEBUG = false;

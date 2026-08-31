@@ -12,6 +12,8 @@ const { NetUtil } = ChromeUtils.importESModule(
 );
 
 const BUILTIN_NEWTAB_ENABLED_PREF = "browser.newtabpage.enabled";
+const NEWTAB_SELF_LOADING_PREF =
+  "browser.newtabpage.activity-stream.selfLoading.enabled";
 const ABOUT_HOME_URI = Services.io.newURI("about:home");
 const ABOUT_NEWTAB_URI = Services.io.newURI("about:newtab");
 const BLANK_TAB_URI = Services.io.newURI(
@@ -117,4 +119,25 @@ add_task(async function test_parent_newChannel() {
   );
 
   Services.prefs.clearUserPref(BUILTIN_NEWTAB_ENABLED_PREF);
+});
+
+/**
+ * Test that defaultURL returns the correct prerendered HTML file based on
+ * the selfLoading.enabled pref.
+ */
+add_task(async function test_defaultURL_selfLoading() {
+  Services.prefs.setBoolPref(NEWTAB_SELF_LOADING_PREF, false);
+  Assert.ok(
+    PARENT_INSTANCE.defaultURL.endsWith("-noscripts.html"),
+    "With selfLoading disabled, defaultURL should use the noscripts variant"
+  );
+
+  Services.prefs.setBoolPref(NEWTAB_SELF_LOADING_PREF, true);
+  Assert.equal(
+    PARENT_INSTANCE.defaultURL,
+    "resource://newtab/prerendered/activity-stream.html",
+    "With selfLoading enabled, defaultURL should use the standard variant"
+  );
+
+  Services.prefs.clearUserPref(NEWTAB_SELF_LOADING_PREF);
 });

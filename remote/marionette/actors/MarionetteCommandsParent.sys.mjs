@@ -57,13 +57,18 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
     });
   }
 
-  toBrowserWindowCoordinates(position, _context) {
-    return this.sendQuery(
+  async toBrowserWindowCoordinates(position, _context) {
+    const chromeWindow = this.manager.browsingContext.topChromeWindow;
+    const dpr = chromeWindow.devicePixelRatio;
+
+    const val = await this.sendQuery(
       "MarionetteCommandsParent:_toBrowserWindowCoordinates",
       {
         position,
       }
     );
+
+    return [val.x / dpr, val.y / dpr];
   }
 
   async sendQuery(name, serializedValue) {
@@ -188,10 +193,35 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
     });
   }
 
+  generateTestReport(messageBody, messageGroup) {
+    return this.sendQuery("MarionetteCommandsParent:generateTestReport", {
+      message: messageBody,
+      group: messageGroup,
+    });
+  }
+
   async getShadowRoot(webEl) {
     return this.sendQuery("MarionetteCommandsParent:getShadowRoot", {
       elem: webEl,
     });
+  }
+
+  async getAccessibilityPropertiesForAccessibilityNode(id) {
+    return this.sendQuery(
+      "MarionetteCommandsParent:getAccessibilityPropertiesForAccessibilityNode",
+      {
+        id,
+      }
+    );
+  }
+
+  async getAccessibilityPropertiesForElement(webEl) {
+    return this.sendQuery(
+      "MarionetteCommandsParent:getAccessibilityPropertiesForElement",
+      {
+        elem: webEl,
+      }
+    );
   }
 
   async getActiveElement() {
@@ -449,7 +479,6 @@ export function getMarionetteCommandsActorProxy(browsingContextFn) {
 export function registerCommandsActor(sessionId) {
   try {
     ChromeUtils.registerWindowActor("MarionetteCommands", {
-      kind: "JSWindowActor",
       parent: {
         esModuleURI:
           "chrome://remote/content/marionette/actors/MarionetteCommandsParent.sys.mjs",

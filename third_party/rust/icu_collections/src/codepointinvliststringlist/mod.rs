@@ -173,6 +173,15 @@ impl<'data> CodePointInversionListAndStringList<'data> {
         self.str_list.binary_search(s).is_ok()
     }
 
+    /// See [`Self::contains_str`]
+    pub fn contains_utf8(&self, s: &[u8]) -> bool {
+        if let Ok(well_formed) = core::str::from_utf8(s) {
+            self.contains_str(well_formed)
+        } else {
+            false
+        }
+    }
+
     ///
     /// # Examples
     /// ```
@@ -231,6 +240,7 @@ impl<'data> CodePointInversionListAndStringList<'data> {
 }
 
 #[cfg(feature = "alloc")]
+/// ✨ *Enabled with the `alloc` Cargo feature.*
 impl<'a> FromIterator<&'a str> for CodePointInversionListAndStringList<'_> {
     fn from_iter<I>(it: I) -> Self
     where
@@ -266,6 +276,7 @@ impl<'a> FromIterator<&'a str> for CodePointInversionListAndStringList<'_> {
 
 /// Custom Errors for [`CodePointInversionListAndStringList`].
 #[derive(Display, Debug)]
+#[allow(clippy::exhaustive_enums)] // todo, missed in 2.0
 pub enum InvalidStringList {
     /// A string in the string list had an invalid length
     #[cfg_attr(feature = "alloc", displaydoc("Invalid string length for string: {0}"))]

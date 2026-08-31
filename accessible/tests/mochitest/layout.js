@@ -366,7 +366,7 @@ function getBoundsForDOMElm(aID) {
     height = rect.height;
   }
 
-  var elmWindow = elm.ownerGlobal;
+  var elmWindow = elm.documentGlobal;
   return CSSToDevicePixels(
     elmWindow,
     x + elmWindow.mozInnerScreenX,

@@ -10,6 +10,10 @@
 
 #include "common_video/h264/pps_parser.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
 #include <vector>
 
 #include "common_video/h264/h264_common.h"
@@ -22,21 +26,21 @@ namespace webrtc {
 
 namespace {
 // Contains enough of the image slice to contain slice QP.
-const uint8_t kH264BitstreamChunk[] = {
+constexpr uint8_t kH264BitstreamChunk[] = {
     0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x80, 0x20, 0xda, 0x01, 0x40, 0x16,
     0xe8, 0x06, 0xd0, 0xa1, 0x35, 0x00, 0x00, 0x00, 0x01, 0x68, 0xce, 0x06,
     0xe2, 0x00, 0x00, 0x00, 0x01, 0x65, 0xb8, 0x40, 0xf0, 0x8c, 0x03, 0xf2,
     0x75, 0x67, 0xad, 0x41, 0x64, 0x24, 0x0e, 0xa0, 0xb2, 0x12, 0x1e, 0xf8,
 };
-const size_t kPpsBufferMaxSize = 256;
-const uint32_t kIgnored = 0;
+constexpr size_t kPpsBufferMaxSize = 256;
+constexpr uint32_t kIgnored = 0;
 }  // namespace
 
 void WritePps(const PpsParser::PpsState& pps,
               int slice_group_map_type,
               int num_slice_groups,
               int pic_size_in_map_units,
-              rtc::Buffer* out_buffer) {
+              Buffer* out_buffer) {
   uint8_t data[kPpsBufferMaxSize] = {0};
   BitBufferWriter bit_buffer(data, kPpsBufferMaxSize);
 
@@ -134,7 +138,7 @@ void WritePps(const PpsParser::PpsState& pps,
     bit_buffer.GetCurrentOffset(&byte_offset, &bit_offset);
   }
 
-  H264::WriteRbsp(rtc::MakeArrayView(data, byte_offset), out_buffer);
+  H264::WriteRbsp(std::span(data, byte_offset), out_buffer);
 }
 
 class PpsParserTest : public ::testing::Test {
@@ -195,7 +199,7 @@ class PpsParserTest : public ::testing::Test {
   }
 
   PpsParser::PpsState generated_pps_;
-  rtc::Buffer buffer_;
+  Buffer buffer_;
   std::optional<PpsParser::PpsState> parsed_pps_;
 };
 
@@ -219,7 +223,7 @@ TEST_F(PpsParserTest, MaxPps) {
 }
 
 TEST_F(PpsParserTest, ParseSliceHeader) {
-  rtc::ArrayView<const uint8_t> chunk(kH264BitstreamChunk);
+  std::span<const uint8_t> chunk(kH264BitstreamChunk);
   std::vector<H264::NaluIndex> nalu_indices = H264::FindNaluIndices(chunk);
   EXPECT_EQ(nalu_indices.size(), 3ull);
   for (const auto& index : nalu_indices) {
@@ -228,7 +232,7 @@ TEST_F(PpsParserTest, ParseSliceHeader) {
     if (nalu_type == H264::NaluType::kIdr) {
       // Skip NAL type header and parse slice header.
       std::optional<PpsParser::SliceHeader> slice_header =
-          PpsParser::ParseSliceHeader(chunk.subview(
+          PpsParser::ParseSliceHeader(chunk.subspan(
               index.payload_start_offset + 1, index.payload_size - 1));
       ASSERT_TRUE(slice_header.has_value());
       EXPECT_EQ(slice_header->first_mb_in_slice, 0u);

@@ -10,9 +10,8 @@
 #ifndef NET_DCSCTP_PUBLIC_DCSCTP_OPTIONS_H_
 #define NET_DCSCTP_PUBLIC_DCSCTP_OPTIONS_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 
 #include "net/dcsctp/public/types.h"
@@ -85,6 +84,12 @@ struct DcSctpOptions {
   // will be larger than this due to other allocations and overhead if the
   // buffer is fully utilized.
   size_t max_receiver_window_buffer_size = 5 * 1024 * 1024;
+
+  // Enables receive pull mode - `DcSctpCallbacks::OnMessageReady` will be
+  // called when there are messages ready to be read instead of
+  // `DcSctpCallbacks::OnMessageReceived`.  It is up to the
+  // caller to call `DcSctpSocket::GetNextMessage()` to receive the messages.
+  bool enable_receive_pull_mode = false;
 
   // Send queue total size limit. It will not be possible to queue more data if
   // the queue size is larger than this number.

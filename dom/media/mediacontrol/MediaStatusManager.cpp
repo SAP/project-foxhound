@@ -24,9 +24,9 @@ extern mozilla::LazyLogModule gMediaControlLog;
 
 // avoid redefined macro in unified build
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("MediaStatusManager=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                            \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, \
+              "MediaStatusManager={}, " msg, fmt::ptr(this), ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -49,15 +49,15 @@ MediaStatusManager::MediaStatusManager(uint64_t aBrowsingContextId)
                         "MediaStatusManager only runs on Chrome process!");
 }
 
-void MediaStatusManager::NotifyMediaAudibleChanged(uint64_t aBrowsingContextId,
-                                                   MediaAudibleState aState) {
-  Maybe<uint64_t> oldAudioFocusOwnerId =
-      mPlaybackStatusDelegate.GetAudioFocusOwnerContextId();
-  mPlaybackStatusDelegate.UpdateMediaAudibleState(aBrowsingContextId, aState);
-  Maybe<uint64_t> newAudioFocusOwnerId =
-      mPlaybackStatusDelegate.GetAudioFocusOwnerContextId();
-  if (oldAudioFocusOwnerId != newAudioFocusOwnerId) {
-    HandleAudioFocusOwnerChanged(newAudioFocusOwnerId);
+void MediaStatusManager::NotifyMediaAudibleChanged(
+    uint64_t aBrowsingContextId, MediaAudibleState aState, ControlType aType,
+    AudioSessionType aSessionType) {
+  const bool ownerChanged = mPlaybackStatusDelegate.UpdateMediaAudibleState(
+      aBrowsingContextId, aState, aType, aSessionType);
+  if (ownerChanged) {
+    Maybe<uint64_t> newOwner =
+        mPlaybackStatusDelegate.GetActiveAudibleControllableContextId();
+    HandleActiveAudibleControllableContextChanged(newOwner);
   }
 }
 
@@ -66,12 +66,14 @@ void MediaStatusManager::NotifySessionCreated(uint64_t aBrowsingContextId) {
       aBrowsingContextId, [&](auto&& entry) {
         if (entry) return false;
 
-        LOG("Session %" PRIu64 " has been created", aBrowsingContextId);
+        LOG("Session {} has been created", aBrowsingContextId);
         entry.Insert(MediaSessionInfo::EmptyInfo());
         return true;
       });
 
-  if (created && IsSessionOwningAudioFocus(aBrowsingContextId)) {
+  if (created &&
+      mPlaybackStatusDelegate.GetActiveAudibleControllableContextId() ==
+          Some(aBrowsingContextId)) {
     // This can't be done from within the WithEntryHandle functor, since it
     // accesses mMediaSessionInfoMap.
     SetActiveMediaSessionContextId(aBrowsingContextId);
@@ -80,7 +82,7 @@ void MediaStatusManager::NotifySessionCreated(uint64_t aBrowsingContextId) {
 
 void MediaStatusManager::NotifySessionDestroyed(uint64_t aBrowsingContextId) {
   if (mMediaSessionInfoMap.Remove(aBrowsingContextId)) {
-    LOG("Session %" PRIu64 " has been destroyed", aBrowsingContextId);
+    LOG("Session {} has been destroyed", aBrowsingContextId);
 
     if (mActiveMediaSessionContextId &&
         *mActiveMediaSessionContextId == aBrowsingContextId) {
@@ -96,10 +98,10 @@ void MediaStatusManager::UpdateMetadata(
     return;
   }
   if (IsMetadataEmpty(aMetadata)) {
-    LOG("Reset metadata for session %" PRIu64, aBrowsingContextId);
+    LOG("Reset metadata for session {}", aBrowsingContextId);
     info->mMetadata.reset();
   } else {
-    LOG("Update metadata for session %" PRIu64 " title=%s artist=%s album=%s",
+    LOG("Update metadata for session {} title={} artist={} album={}",
         aBrowsingContextId, NS_ConvertUTF16toUTF8((*aMetadata).mTitle).get(),
         NS_ConvertUTF16toUTF8(aMetadata->mArtist).get(),
         NS_ConvertUTF16toUTF8(aMetadata->mAlbum).get());
@@ -109,8 +111,7 @@ void MediaStatusManager::UpdateMetadata(
   // session.
   if (mActiveMediaSessionContextId &&
       *mActiveMediaSessionContextId == aBrowsingContextId) {
-    LOG("Notify metadata change for active session %" PRIu64,
-        aBrowsingContextId);
+    LOG("Notify metadata change for active session {}", aBrowsingContextId);
     mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
   }
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
@@ -121,22 +122,23 @@ void MediaStatusManager::UpdateMetadata(
   }
 }
 
-void MediaStatusManager::HandleAudioFocusOwnerChanged(
+void MediaStatusManager::HandleActiveAudibleControllableContextChanged(
     Maybe<uint64_t>& aBrowsingContextId) {
-  // No one is holding the audio focus.
+  // No context currently qualifies; there is no active media session.
   if (!aBrowsingContextId) {
-    LOG("No one is owning audio focus");
+    LOG("No active audible controllable context");
     return ClearActiveMediaSessionContextIdIfNeeded();
   }
 
-  // This owner of audio focus doesn't have media session, so we should deactive
-  // the active session because the active session must own the audio focus.
+  // The qualifying context has no MediaSession registered; the active media
+  // session cannot be derived from it.
   if (!mMediaSessionInfoMap.Contains(*aBrowsingContextId)) {
-    LOG("The owner of audio focus doesn't have media session");
+    LOG("The active audible controllable context has no media session");
     return ClearActiveMediaSessionContextIdIfNeeded();
   }
 
-  // This owner has media session so it should become an active session context.
+  // The qualifying context has a MediaSession; promote it to the active
+  // media session.
   SetActiveMediaSessionContextId(*aBrowsingContextId);
 }
 
@@ -144,13 +146,13 @@ void MediaStatusManager::SetActiveMediaSessionContextId(
     uint64_t aBrowsingContextId) {
   if (mActiveMediaSessionContextId &&
       *mActiveMediaSessionContextId == aBrowsingContextId) {
-    LOG("Active session context %" PRIu64 " keeps unchanged",
+    LOG("Active session context {} keeps unchanged",
         *mActiveMediaSessionContextId);
     return;
   }
   mActiveMediaSessionContextId = Some(aBrowsingContextId);
   StoreMediaSessionContextIdOnWindowContext();
-  LOG("context %" PRIu64 " becomes active session context",
+  LOG("context {} becomes active session context",
       *mActiveMediaSessionContextId);
   mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
   mSupportedActionsChangedEvent.Notify(GetSupportedActions());
@@ -183,17 +185,9 @@ void MediaStatusManager::StoreMediaSessionContextIdOnWindowContext() {
   RefPtr<CanonicalBrowsingContext> bc =
       CanonicalBrowsingContext::Get(mTopLevelBrowsingContextId);
   if (bc && bc->GetTopWindowContext()) {
-    Unused << bc->GetTopWindowContext()->SetActiveMediaSessionContextId(
+    (void)bc->GetTopWindowContext()->SetActiveMediaSessionContextId(
         mActiveMediaSessionContextId);
   }
-}
-
-bool MediaStatusManager::IsSessionOwningAudioFocus(
-    uint64_t aBrowsingContextId) const {
-  Maybe<uint64_t> audioFocusContextId =
-      mPlaybackStatusDelegate.GetAudioFocusOwnerContextId();
-  return audioFocusContextId ? *audioFocusContextId == aBrowsingContextId
-                             : false;
 }
 
 MediaMetadataBase MediaStatusManager::CreateDefaultMetadata() const {
@@ -202,7 +196,7 @@ MediaMetadataBase MediaStatusManager::CreateDefaultMetadata() const {
   metadata.mUrl = GetUrl();
   metadata.mArtwork.AppendElement()->mSrc = GetDefaultFaviconURL();
 
-  LOG("Default media metadata, title=%s, album src=%s",
+  LOG("Default media metadata, title={}, album src={}",
       NS_ConvertUTF16toUTF8(metadata.mTitle).get(),
       NS_ConvertUTF16toUTF8(metadata.mArtwork[0].mSrc).get());
   return metadata;
@@ -296,7 +290,7 @@ void MediaStatusManager::SetDeclaredPlaybackState(
   if (!info) {
     return;
   }
-  LOG("SetDeclaredPlaybackState from %s to %s",
+  LOG("SetDeclaredPlaybackState from {} to {}",
       ToMediaSessionPlaybackStateStr(info->mDeclaredPlaybackState),
       ToMediaSessionPlaybackStateStr(aState));
   info->mDeclaredPlaybackState = aState;
@@ -314,8 +308,8 @@ MediaSessionPlaybackState MediaStatusManager::GetCurrentDeclaredPlaybackState()
 
 void MediaStatusManager::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
                                                     MediaPlaybackState aState) {
-  LOG("UpdateMediaPlaybackState %s for context %" PRIu64,
-      EnumValueToString(aState), aBrowsingContextId);
+  LOG("UpdateMediaPlaybackState {} for context {}", EnumValueToString(aState),
+      aBrowsingContextId);
   const bool oldPlaying = mPlaybackStatusDelegate.IsPlaying();
   mPlaybackStatusDelegate.UpdateMediaPlaybackState(aBrowsingContextId, aState);
 
@@ -336,7 +330,7 @@ void MediaStatusManager::SetGuessedPlayState(MediaSessionPlaybackState aState) {
   if (aState == mGuessedPlaybackState) {
     return;
   }
-  LOG("SetGuessedPlayState : '%s'", ToMediaSessionPlaybackStateStr(aState));
+  LOG("SetGuessedPlayState : '{}'", ToMediaSessionPlaybackStateStr(aState));
   mGuessedPlaybackState = aState;
   UpdateActualPlaybackState();
 }
@@ -352,7 +346,7 @@ void MediaStatusManager::UpdateActualPlaybackState() {
     return;
   }
   mActualPlaybackState = newState;
-  LOG("UpdateActualPlaybackState : '%s'",
+  LOG("UpdateActualPlaybackState : '{}'",
       ToMediaSessionPlaybackStateStr(mActualPlaybackState));
   mPlaybackStateChangedEvent.Notify(mActualPlaybackState);
 }
@@ -364,11 +358,11 @@ void MediaStatusManager::EnableAction(uint64_t aBrowsingContextId,
     return;
   }
   if (info->IsActionSupported(aAction)) {
-    LOG("Action '%s' has already been enabled for context %" PRIu64,
+    LOG("Action '{}' has already been enabled for context {}",
         GetEnumString(aAction).get(), aBrowsingContextId);
     return;
   }
-  LOG("Enable action %s for context %" PRIu64, GetEnumString(aAction).get(),
+  LOG("Enable action {} for context {}", GetEnumString(aAction).get(),
       aBrowsingContextId);
   info->EnableAction(aAction);
   NotifySupportedKeysChangedIfNeeded(aBrowsingContextId);
@@ -381,11 +375,11 @@ void MediaStatusManager::DisableAction(uint64_t aBrowsingContextId,
     return;
   }
   if (!info->IsActionSupported(aAction)) {
-    LOG("Action '%s' hasn't been enabled yet for context %" PRIu64,
+    LOG("Action '{}' hasn't been enabled yet for context {}",
         GetEnumString(aAction).get(), aBrowsingContextId);
     return;
   }
-  LOG("Disable action %s for context %" PRIu64, GetEnumString(aAction).get(),
+  LOG("Disable action {} for context {}", GetEnumString(aAction).get(),
       aBrowsingContextId);
   info->DisableAction(aAction);
   NotifySupportedKeysChangedIfNeeded(aBrowsingContextId);
@@ -395,7 +389,7 @@ void MediaStatusManager::UpdatePositionState(
     uint64_t aBrowsingContextId, const Maybe<PositionState>& aState) {
   auto info = mMediaSessionInfoMap.Lookup(aBrowsingContextId);
   if (info) {
-    LOG("Update position state for context %" PRIu64, aBrowsingContextId);
+    LOG("Update position state for context {}", aBrowsingContextId);
     info->mPositionState = aState;
   }
 
@@ -514,6 +508,9 @@ bool MediaStatusManager::IsInPrivateBrowsing() const {
   if (!element) {
     return false;
   }
+  if (StaticPrefs::media_privatebrowsing_metadata_enabled()) {
+    return false;
+  }
   return element->OwnerDoc()->IsInPrivateBrowsing();
 }
 
@@ -531,6 +528,15 @@ bool MediaStatusManager::IsMediaPlaying() const {
 
 bool MediaStatusManager::IsAnyMediaBeingControlled() const {
   return mPlaybackStatusDelegate.IsAnyMediaBeingControlled();
+}
+
+AudioSessionType MediaStatusManager::EffectiveTypeForBc(
+    uint64_t aBrowsingContextId) const {
+  return mPlaybackStatusDelegate.EffectiveTypeForBc(aBrowsingContextId);
+}
+
+bool MediaStatusManager::IsBcAudible(uint64_t aBrowsingContextId) const {
+  return mPlaybackStatusDelegate.IsBcAudible(aBrowsingContextId);
 }
 
 void MediaStatusManager::NotifyPageTitleChanged() {

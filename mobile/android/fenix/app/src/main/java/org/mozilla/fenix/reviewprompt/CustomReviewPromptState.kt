@@ -9,14 +9,15 @@ import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
-import mozilla.components.lib.state.UiStore
 import org.mozilla.fenix.reviewprompt.ui.CustomReviewPrompt
 
-/** [Store] for holding [CustomReviewPromptState] and applying [CustomReviewPromptAction]s. */
+/**
+ * [Store] for holding [CustomReviewPromptState] and applying [CustomReviewPromptAction]s.
+ */
 class CustomReviewPromptStore(
     initialState: CustomReviewPromptState,
     middleware: List<Middleware<CustomReviewPromptState, CustomReviewPromptAction>> = emptyList(),
-) : UiStore<CustomReviewPromptState, CustomReviewPromptAction>(
+) : Store<CustomReviewPromptState, CustomReviewPromptAction>(
     initialState = initialState,
     reducer = ::reduceCustomReviewPromptActions,
     middleware = middleware,
@@ -24,36 +25,58 @@ class CustomReviewPromptStore(
     val navigationEvents = MutableSharedFlow<CustomReviewPromptNavigationEvent>()
 }
 
-/** Available steps the [CustomReviewPrompt] can be showing. */
+/**
+ * Available steps the [CustomReviewPrompt] can be showing.
+ */
 enum class CustomReviewPromptState : State {
-    /** Initial state with positive and negative buttons to rate the experience. */
+    /**
+     * Initial state with positive and negative buttons to rate the experience.
+     */
     PrePrompt,
 
-    /** Positive state with a button to leave a Play Store rating. */
+    /**
+     * Positive state with a button to leave a Play Store rating.
+     */
     Rate,
 
-    /** Negative state with a button to leave feedback. */
+    /**
+     * Negative state with a button to leave feedback.
+     */
     Feedback,
 }
 
-/** [Action]s to dispatch to [CustomReviewPromptStore] to modify [CustomReviewPromptState]. */
+/**
+ * [Action]s to dispatch to [CustomReviewPromptStore] to modify [CustomReviewPromptState].
+ */
 sealed class CustomReviewPromptAction : Action {
-    /** Dispatched when the negative button in the pre-prompt is clicked. */
+    /**
+     * Dispatched when the negative button in the pre-prompt is clicked.
+     */
     data object NegativePrePromptButtonClicked : CustomReviewPromptAction()
 
-    /** Dispatched when the positive button in the pre-prompt is clicked. */
+    /**
+     * Dispatched when the positive button in the pre-prompt is clicked.
+     */
     data object PositivePrePromptButtonClicked : CustomReviewPromptAction()
 
-    /** Dispatched when the rate on Play Store button is clicked. */
+    /**
+     * Dispatched when the rate on Play Store button is clicked.
+     */
     data object RateButtonClicked : CustomReviewPromptAction()
 
-    /** Dispatched when the leave feedback button is clicked. */
+    /**
+     * Dispatched when the leave feedback button is clicked.
+     */
     data object LeaveFeedbackButtonClicked : CustomReviewPromptAction()
 
-    /** Dispatched when the custom review prompt is shown to the user. */
+    /**
+     * Dispatched when the custom review prompt is shown to the user.
+     */
     data object Displayed : CustomReviewPromptAction()
 
-    /** Dispatched when the custom review prompt is dismissed. */
+    /**
+     * Dispatched when the custom review prompt is dismissed.
+     */
     data object Dismissed : CustomReviewPromptAction()
 }
 

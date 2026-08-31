@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,9 +11,9 @@
 #include "Intervals.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/IntegerPrintfMacros.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla::media {
@@ -42,13 +40,12 @@ static const int64_t NSECS_PER_S = 1000000000;
 namespace media {
 
 #ifndef PROCESS_DECODE_LOG
-#  define PROCESS_DECODE_LOG(sample)                                   \
-    MOZ_LOG(sPDMLog, mozilla::LogLevel::Verbose,                       \
-            ("ProcessDecode: mDuration=%" PRIu64 "µs ; mTime=%" PRIu64 \
-             "µs ; mTimecode=%" PRIu64 "µs",                           \
-             (sample)->mDuration.ToMicroseconds(),                     \
-             (sample)->mTime.ToMicroseconds(),                         \
-             (sample)->mTimecode.ToMicroseconds()))
+#  define PROCESS_DECODE_LOG(sample)                                           \
+    MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Verbose,                           \
+                "ProcessDecode: mDuration={}µs ; mTime={}µs ; mTimecode={}µs", \
+                (sample)->mDuration.ToMicroseconds(),                          \
+                (sample)->mTime.ToMicroseconds(),                              \
+                (sample)->mTimecode.ToMicroseconds())
 #endif  // PROCESS_DECODE_LOG
 
 // TimeUnit is a class that represents a time value, that can be negative or
@@ -233,10 +230,15 @@ class TimeUnit final {
     double approx = static_cast<double>(mTicks.value()) *
                     static_cast<double>(aTargetBase) /
                     static_cast<double>(mBase);
+    if (approx < static_cast<double>(INT64_MIN) ||
+        approx > static_cast<double>(INT64_MAX)) {
+      aOutError = 1.0;
+      return TimeUnit::Invalid();
+    }
+    double rounded = RoundingPolicy::policy(approx);
     double integer;
     aOutError = modf(approx, &integer);
-    return TimeUnit(AssertedCast<int64_t>(RoundingPolicy::policy(approx)),
-                    aTargetBase);
+    return TimeUnit(mozilla::AssertedCast<int64_t>(rounded), aTargetBase);
   }
 
   bool IsValid() const;

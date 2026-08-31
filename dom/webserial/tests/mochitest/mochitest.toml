@@ -1,0 +1,62 @@
+[DEFAULT]
+skip-if = [
+  "os == 'android'", # WebSerial not supported on Android
+  "xorigin", # WebSerial is not allowed from a cross-origin iframe
+]
+support-files = [
+  "serial_worker.js",
+  "serial_worker_access.js",
+  "serial_worker_disconnect.js",
+  "serial_worker_forget.js",
+  "serial_worker_hotplug.js",
+  "serial_worker_open.js",
+  "serial_worker_reconnect.js",
+  "serial_worker_stream_transfer.js",
+  "serial_worker_main_forget.js",
+  "serial_worker_forget_and_signal.js",
+  "serial_worker_wait_and_getports.js",
+  "serial_test_utils.js",
+]
+scheme = "https"
+prefs = [
+  "dom.webserial.enabled=true",
+  "dom.webserial.gated=false",
+  "dom.webserial.testing.enabled=true",
+]
+
+["test_serial_api.html"]
+
+["test_serial_buffer_size.html"]
+
+["test_serial_errors.html"]
+
+["test_serial_events.html"]
+
+["test_serial_hotplug.html"]
+
+["test_serial_insecurecontext.html"]
+scheme = "http"
+
+["test_serial_lifecycle.html"]
+
+["test_serial_port_info.html"]
+
+["test_serial_security.html"]
+
+["test_serial_signals.html"]
+
+["test_serial_stream_transfer.html"]
+
+["test_serial_streams.html"]
+
+["test_serial_worker_cross_forget.html"]
+
+["test_serial_worker_disconnect.html"]
+
+["test_serial_worker_hotplug.html"]
+
+["test_serial_worker_main_forget.html"]
+
+["test_serial_worker_reconnect.html"]
+
+["test_serial_workers.html"]

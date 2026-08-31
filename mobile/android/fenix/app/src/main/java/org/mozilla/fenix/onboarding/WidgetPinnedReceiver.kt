@@ -10,10 +10,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import mozilla.components.support.utils.PendingIntentUtils
 import org.mozilla.fenix.onboarding.view.OnboardingScreen
 
 /**
@@ -23,8 +21,6 @@ import org.mozilla.fenix.onboarding.view.OnboardingScreen
 class WidgetPinnedReceiver : BroadcastReceiver() {
 
     companion object {
-        const val ACTION = "org.mozilla.fenix.onboarding.WidgetPinnedReceiver.PIN_SEARCH_WIDGET_SUCCESS"
-
         /**
          * Prepare success callback for when requesting to pin Search Widget.
          */
@@ -37,7 +33,7 @@ class WidgetPinnedReceiver : BroadcastReceiver() {
                 context,
                 0,
                 callbackIntent,
-                PendingIntentUtils.defaultFlags or PendingIntent.FLAG_UPDATE_CURRENT,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         }
     }
@@ -64,20 +60,12 @@ class WidgetPinnedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (context == null || intent == null) {
             return
-        } else if (intent.action == ACTION) {
-            // Returned to fragment, go to next page and update button behavior.
-            WidgetPinnedState.widgetPinned()
         }
 
         val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
 
-        if (widgetId == -1) {
-            // No widget id received.
-            return
-        } else {
-            // Callback from system, widget pinned successfully, update compose now.
-            val updateIntent = Intent(ACTION)
-            LocalBroadcastManager.getInstance(context).sendBroadcast(updateIntent)
+        if (widgetId != -1) {
+            WidgetPinnedState.widgetPinned()
         }
     }
 }

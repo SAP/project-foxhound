@@ -1,0 +1,37 @@
+From 8e4789150a58704b56686573d93863b7a9104059 Mon Sep 17 00:00:00 2001
+From: Michael Froman <mfroman@mozilla.com>
+Date: Fri, 7 Nov 2025 12:13:00 -0600
+Subject: Bug 1997515 - remove hardening settings from
+ third_party/chromium/build r?ng!
+
+In bug 1974813 we updated the third_party/chromium/build directory which
+added hardening settings to the moz.build files under libwebrtc (and
+abseil-cpp) but we really should be getting these settings from
+build/moz.configure/toolchain.configure.  We currently see warnings
+during (at least) builds on macOS due to conflicting settings.
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d9db1d783e13f2c288c4f195830851ab2ee27209
+---
+ config/compiler/BUILD.gn | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/config/compiler/BUILD.gn b/config/compiler/BUILD.gn
+index a59a5df6e..c4c706052 100644
+--- a/config/compiler/BUILD.gn
++++ b/config/compiler/BUILD.gn
+@@ -1099,6 +1099,8 @@ config("disallow_unstable_features") {
+ }
+ 
+ config("libcxx_hardening") {
++# Mozilla - these settings come from third_party/chromium/build/config/compiler/BUILD.gn
++if (false) {
+   # Normally, this would be defined in the `runtime_library` config but NaCl
+   # saigo libc++ does not use the custom hermetic libc++. Unfortunately, there
+   # isn't really a better config to add this define for the define to
+@@ -1119,6 +1121,7 @@ config("libcxx_hardening") {
+     defines += [ "_GLIBCXX_ASSERTIONS=1" ]
+   }
+ }
++}
+ 
+ # The BUILDCONFIG file sets this config on targets by default, which means when
+ # building with ThinLTO, no optimization is performed in the link step.

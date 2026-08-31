@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,7 @@
 #define DOM_MEDIA_WEBRTC_JSAPI_DEFAULTCODECPREFERENCES_H_
 
 #include "jsep/JsepCodecDescription.h"
-#include "mozilla/Preferences.h"
+#include "nsTArrayForwardDeclare.h"
 
 namespace mozilla {
 
@@ -17,6 +15,21 @@ enum class OverrideRtxPreference {
   OverrideWithEnabled,
   OverrideWithDisabled,
 };
+
+void EnumerateDefaultVideoCodecs(
+    nsTArray<UniquePtr<JsepCodecDescription>>& aSupportedCodecs,
+    const OverrideRtxPreference aOverrideRtxPreference);
+
+void EnumerateDefaultVideoCodecs(
+    nsTArray<UniquePtr<JsepCodecDescription>>& aSupportedCodecs,
+    const JsepCodecPreferences& aPrefs);
+
+void EnumerateDefaultAudioCodecs(
+    nsTArray<UniquePtr<JsepCodecDescription>>& aSupportedCodecs);
+
+void EnumerateDefaultAudioCodecs(
+    nsTArray<UniquePtr<JsepCodecDescription>>& aSupportedCodecs,
+    const JsepCodecPreferences& aPrefs);
 
 class DefaultCodecPreferences final : public JsepCodecPreferences {
  public:
@@ -37,19 +50,19 @@ class DefaultCodecPreferences final : public JsepCodecPreferences {
 
   bool H264BaselineDisabled() const override { return mH264BaselineDisabled; }
 
-  int32_t H264Level() const override { return mH264Level; }
+  uint8_t H264Level() const override { return mH264Level; }
 
-  int32_t H264MaxBr() const override { return mH264MaxBr; }
+  uint32_t H264MaxBr() const override { return mH264MaxBr; }
 
-  int32_t H264MaxMbps() const override { return mH264MaxMbps; }
+  uint32_t H264MaxMbps() const override { return mH264MaxMbps; }
 
   bool VP9Enabled() const override { return mVP9Enabled; }
 
   bool VP9Preferred() const override { return mVP9Preferred; }
 
-  int32_t VP8MaxFs() const override { return mVP8MaxFs; }
+  uint32_t VP8MaxFs() const override { return mVP8MaxFs; }
 
-  int32_t VP8MaxFr() const override { return mVP8MaxFr; }
+  uint32_t VP8MaxFr() const override { return mVP8MaxFr; }
 
   bool UseTmmbr() const override { return mUseTmmbr; }
 
@@ -63,6 +76,8 @@ class DefaultCodecPreferences final : public JsepCodecPreferences {
   }
 
   bool UseTransportCC() const override { return mUseTransportCC; }
+
+  bool UseAudioTransportCC() const override { return mUseAudioTransportCC; }
 
   bool UseAudioFec() const override { return mUseAudioFec; }
 
@@ -80,110 +95,35 @@ class DefaultCodecPreferences final : public JsepCodecPreferences {
 
   static bool SendingH264PacketizationModeZeroSupportedStatic();
 
-  static constexpr bool kDefaultH264BaselineDisabled = false;
-  static bool H264BaselineDisabledStatic() {
-    return Preferences::GetBool("media.navigator.video.disable_h264_baseline",
-                                kDefaultH264BaselineDisabled);
-  }
+  static bool H264BaselineDisabledStatic();
 
-  // minimum suggested for WebRTC spec
-  static constexpr int32_t kDefaultH264Level = 31;
-  static int32_t H264LevelStatic() {
-    auto value = Preferences::GetInt("media.navigator.video.h264.level",
-                                     kDefaultH264Level);
-    if (value < 0) {
-      return kDefaultH264Level;
-    }
-    return value & 0xFF;
-  }
+  static uint8_t H264LevelStatic();
 
-  static constexpr int32_t kDefaultH264MaxBr = 0;  // Unlimited
-  static int32_t H264MaxBrStatic() {
-    const auto maxBr = Preferences::GetInt("media.navigator.video.h264.max_br",
-                                           kDefaultH264MaxBr);
-    if (maxBr < 0) {
-      return kDefaultH264MaxBr;
-    }
-    return maxBr;
-  }
+  static uint32_t H264MaxBrStatic();
 
-  static constexpr int32_t kDefaultH264MaxMbps = 0;  // Unlimited
-  static int32_t H264MaxMbpsStatic() {
-    const auto maxMbps = Preferences::GetInt(
-        "media.navigator.video.h264.max_mbps", kDefaultH264MaxMbps);
-    if (maxMbps < 0) {
-      return kDefaultH264MaxMbps;
-    }
-    return maxMbps;
-  }
+  static uint32_t H264MaxMbpsStatic();
 
-  static constexpr bool kDefaultVP9Enabled = true;
-  static bool VP9EnabledStatic() {
-    return Preferences::GetBool("media.peerconnection.video.vp9_enabled",
-                                kDefaultVP9Enabled);
-  }
+  static bool VP9EnabledStatic();
 
-  static constexpr bool kDefaultVP9Preferred = false;
-  static bool VP9PreferredStatic() {
-    return Preferences::GetBool("media.peerconnection.video.vp9_preferred",
-                                kDefaultVP9Preferred);
-  }
+  static bool VP9PreferredStatic();
 
-  static constexpr int32_t kDefaultVP8MaxFs = 12288;  // Enough for 2048x1536
-  static int32_t VP8MaxFsStatic() {
-    auto value =
-        Preferences::GetInt("media.navigator.video.max_fs", kDefaultVP8MaxFs);
-    if (value <= 0) {
-      return kDefaultVP8MaxFs;
-    }
-    return value;
-  }
+  static uint32_t VP8MaxFsStatic();
 
-  static constexpr int32_t kDefaultVP8MaxFr = 60;
-  static int32_t VP8MaxFrStatic() {
-    auto value =
-        Preferences::GetInt("media.navigator.video.max_fr", kDefaultVP8MaxFr);
-    if (value <= kDefaultVP8MaxFr) {
-      return 60;
-    }
-    return value;
-  }
+  static uint32_t VP8MaxFrStatic();
 
-  static constexpr bool kDefaultUseTmmbr = false;
-  static bool UseTmmbrStatic() {
-    return Preferences::GetBool("media.navigator.video.use_tmmbr",
-                                kDefaultUseTmmbr);
-  }
+  static bool UseTmmbrStatic();
 
-  static constexpr bool kDefaultUseRemb = true;
-  static bool UseRembStatic() {
-    return Preferences::GetBool("media.navigator.video.use_remb",
-                                kDefaultUseRemb);
-  }
+  static bool UseRembStatic();
 
-  static constexpr bool kDefaultUseRtx = true;
-  static bool UseRtxStatic() {
-    return Preferences::GetBool("media.peerconnection.video.use_rtx",
-                                kDefaultUseRtx);
-  }
+  static bool UseRtxStatic();
 
-  static constexpr bool kDefaultUseTransportCC = true;
-  static bool UseTransportCCStatic() {
-    return Preferences::GetBool("media.navigator.video.use_transport_cc",
-                                kDefaultUseTransportCC);
-  }
+  static bool UseTransportCCStatic();
 
-  static constexpr bool kDefaultUseAudioFec = true;
-  static bool UseAudioFecStatic() {
-    return Preferences::GetBool("media.navigator.audio.use_fec",
-                                kDefaultUseAudioFec);
-  }
+  static bool UseAudioTransportCCStatic();
 
-  static constexpr bool kDefaultRedUlpfecEnabled = true;
-  static bool RedUlpfecEnabledStatic() {
-    return Preferences::GetBool("media.navigator.video.red_ulpfec_enabled",
-                                kDefaultRedUlpfecEnabled);
-  }
+  static bool UseAudioFecStatic();
+
+  static bool RedUlpfecEnabledStatic();
 
   // This is to accommodate the behavior of
   // RTCRtpTransceiver::SetCodecPreferences
@@ -198,17 +138,18 @@ class DefaultCodecPreferences final : public JsepCodecPreferences {
   const bool mSendingH264PacketizationModeZeroSupported =
       SendingH264PacketizationModeZeroSupportedStatic();
   const bool mH264BaselineDisabled = H264BaselineDisabledStatic();
-  const int32_t mH264Level = H264LevelStatic();
-  const int32_t mH264MaxBr = H264MaxBrStatic();
-  const int32_t mH264MaxMbps = H264MaxMbpsStatic();
+  const uint8_t mH264Level = H264LevelStatic();
+  const uint32_t mH264MaxBr = H264MaxBrStatic();
+  const uint32_t mH264MaxMbps = H264MaxMbpsStatic();
   const bool mVP9Enabled = VP9EnabledStatic();
   const bool mVP9Preferred = VP9PreferredStatic();
-  const int32_t mVP8MaxFs = VP8MaxFsStatic();
-  const int32_t mVP8MaxFr = VP8MaxFrStatic();
+  const uint32_t mVP8MaxFs = VP8MaxFsStatic();
+  const uint32_t mVP8MaxFr = VP8MaxFrStatic();
   const bool mUseTmmbr = UseTmmbrStatic();
   const bool mUseRemb = UseRembStatic();
   const bool mUseRtx = UseRtxStatic();
   const bool mUseTransportCC = UseTransportCCStatic();
+  const bool mUseAudioTransportCC = UseAudioTransportCCStatic();
   const bool mUseAudioFec = UseAudioFecStatic();
   const bool mRedUlpfecEnabled = RedUlpfecEnabledStatic();
 };

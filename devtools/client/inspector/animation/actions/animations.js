@@ -9,7 +9,7 @@ const {
   UPDATE_DETAIL_VISIBILITY,
   UPDATE_ELEMENT_PICKER_ENABLED,
   UPDATE_HIGHLIGHTED_NODE,
-  UPDATE_PLAYBACK_RATES,
+  UPDATE_PLAYBACK_RATE_MULTIPLIER,
   UPDATE_SELECTED_ANIMATION,
   UPDATE_SIDEBAR_SIZE,
 } = require("resource://devtools/client/inspector/animation/actions/index.js");
@@ -56,11 +56,12 @@ module.exports = {
   },
 
   /**
-   * Update the playback rates.
+   * Update the playback rate multiplier.
    */
-  updatePlaybackRates() {
+  updatePlaybackRateMultiplier(playBackRateMultiplier) {
     return {
-      type: UPDATE_PLAYBACK_RATES,
+      type: UPDATE_PLAYBACK_RATE_MULTIPLIER,
+      playBackRateMultiplier,
     };
   },
 

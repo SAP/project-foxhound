@@ -23,11 +23,10 @@ import mozilla.components.concept.engine.media.RecordingDevice
 import mozilla.components.feature.media.R
 import mozilla.components.feature.media.notification.MediaNotificationChannel
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.android.OnPermissionGranted
 import mozilla.components.support.base.ids.SharedIdsHelper
-import mozilla.components.support.utils.PendingIntentUtils
 import mozilla.components.support.utils.ThreadUtils
 import mozilla.components.support.utils.ext.registerReceiverCompat
 import mozilla.components.ui.icons.R as iconsR
@@ -50,7 +49,7 @@ class RecordingDevicesMiddleware(
     private var isShowingNotification: Boolean = false
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
@@ -63,15 +62,15 @@ class RecordingDevicesMiddleware(
             action is TabListAction ||
             action is CustomTabListAction
         ) {
-            process(context, false)
+            process(store, false)
         }
     }
 
     private fun process(
-        middlewareContext: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         isReminder: Boolean,
     ) {
-        val devices = middlewareContext.state.tabs
+        val devices = store.state.tabs
             .map { tab -> tab.content.recordingDevices }
             .flatten()
             .filter { device -> device.status == RecordingDevice.Status.RECORDING }
@@ -92,7 +91,7 @@ class RecordingDevicesMiddleware(
             isReminder,
             processRecordingState = {
                 isShowingNotification = false
-                process(middlewareContext, true)
+                process(store, true)
             },
         )
     }
@@ -143,14 +142,14 @@ class RecordingDevicesMiddleware(
             context,
             SharedIdsHelper.getIdForTag(context, PENDING_INTENT_TAG),
             intent,
-            PendingIntentUtils.defaultFlags or PendingIntent.FLAG_UPDATE_CURRENT,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
         val dismissPendingIntent = PendingIntent.getBroadcast(
             context,
             0,
             Intent(ACTION_RECORDING_DEVICES_NOTIFICATION_DISMISSED),
-            PendingIntentUtils.defaultFlags,
+            PendingIntent.FLAG_IMMUTABLE,
         )
 
         val broadcastReceiver = NotificationDismissedReceiver(processRecordingState)

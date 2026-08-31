@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 var g = newGlobal();
 
 var tag = "de-Latn-AT-1996-u-ca-gregory-nu-latn-co-phonebk-kf-false-kn-hc-h23";
@@ -11,10 +9,14 @@ for (var [key, {get, value = get}] of Object.entries(Object.getOwnPropertyDescri
         if (key !== "constructor") {
             var expectedValue = value.call(locale);
 
-            if (typeof expectedValue === "string" || typeof expectedValue === "boolean") {
+            if (expectedValue === undefined || typeof expectedValue === "string" || typeof expectedValue === "boolean") {
                 assertEq(value.call(ccwLocale), expectedValue, key);
             } else if (expectedValue instanceof Intl.Locale) {
                 assertEq(value.call(ccwLocale).toString(), expectedValue.toString(), key);
+            } else if (expectedValue instanceof Array) {
+                assertEq(value.call(ccwLocale).toString(), expectedValue.toString(), key);
+            } else if (expectedValue instanceof Object) {
+                assertEq(JSON.stringify(value.call(ccwLocale)), JSON.stringify(expectedValue), key);
             } else {
                 throw new Error("unexpected result value");
             }

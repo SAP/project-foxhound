@@ -1,0 +1,18 @@
+{
+  "label": "hiskin.care",
+  "bugs": {
+    "1966585": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://hiskin.care/*"]
+    }
+  },
+  "css": {
+    "unhide_missing_content": "body { height: 100%; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["unhide_missing_content"]
+    }
+  ]
+}

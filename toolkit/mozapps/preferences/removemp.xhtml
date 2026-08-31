@@ -13,6 +13,10 @@
 >
   <dialog id="removemp">
     <script src="chrome://mozapps/content/preferences/removemp.js" />
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-input-password.mjs"
+    />
 
     <linkset>
       <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
@@ -24,25 +28,30 @@
       />
     </linkset>
 
-    <vbox id="warnings">
-      <description
-        data-l10n-id="remove-primary-password-warning1"
-      ></description>
-      <description
+    <description id="warnings">
+      <html:span data-l10n-id="remove-primary-password-warning1"></html:span>
+      <html:span
         class="header"
         data-l10n-id="remove-primary-password-warning2"
-      ></description>
-    </vbox>
+      ></html:span>
+    </description>
 
     <separator class="thin" />
 
     <groupbox>
-      <label data-l10n-id="remove-info" />
+      <label data-l10n-id="remove-primary-password-info" />
 
-      <hbox align="center">
-        <label control="password" data-l10n-id="remove-password-old-password" />
-        <html:input id="password" type="password" aria-describedby="warnings" />
-      </hbox>
+      <html:div
+        id="password-container"
+        class="container"
+        style="margin-block-start: var(--space-small)"
+      >
+        <html:moz-input-password
+          id="password"
+          data-l10n-id="remove-password-old"
+          aria-describedby="warnings"
+        ></html:moz-input-password>
+      </html:div>
     </groupbox>
 
     <separator />

@@ -207,13 +207,18 @@
             </box>
           </html:div>
         </box>
-        <radio value="2" data-l10n-id="connection-proxy-autotype" />
+        <radio
+          id="networkProxyAutoType"
+          value="2"
+          data-l10n-id="connection-proxy-autotype"
+        />
         <hbox class="indent" flex="1" align="center">
           <html:input
             id="networkProxyAutoconfigURL"
             type="text"
             style="flex: 1"
             preference="network.proxy.autoconfig_url"
+            aria-labelledby="networkProxyAutoType"
           />
           <button
             id="autoReload"
@@ -229,14 +234,14 @@
       id="networkProxyNone"
       preference="network.proxy.no_proxies_on"
       rows="2"
+      aria-describedby="networkProxyNoneExample networkProxyNoneLocalhost"
     />
     <label
-      control="networkProxyNone"
+      id="networkProxyNoneExample"
       data-l10n-id="connection-proxy-noproxy-desc"
     />
     <label
       id="networkProxyNoneLocalhost"
-      control="networkProxyNone"
       data-l10n-id="connection-proxy-noproxy-localhost-desc-2"
     />
     <separator class="thin" />

@@ -9,7 +9,6 @@ const ElementEditor = require("resource://devtools/client/inspector/markup/views
 const {
   ELEMENT_NODE,
 } = require("resource://devtools/shared/dom-node-constants.js");
-const { extend } = require("resource://devtools/shared/extend.js");
 
 loader.lazyRequireGetter(
   this,
@@ -35,30 +34,26 @@ const PREVIEW_MAX_DIM_PREF = "devtools.inspector.imagePreviewTooltipSize";
  * An implementation of MarkupContainer for Elements that can contain
  * child nodes.
  * Allows editing of tag name, attributes, expanding / collapsing.
- *
- * @param  {MarkupView} markupView
- *         The markup view that owns this container.
- * @param  {NodeFront} node
- *         The node to display.
  */
-function MarkupElementContainer(markupView, node) {
-  MarkupContainer.prototype.initialize.call(
-    this,
-    markupView,
-    node,
-    "elementcontainer"
-  );
+class MarkupElementContainer extends MarkupContainer {
+  /**
+   * @param  {MarkupView} markupView
+   *         The markup view that owns this container.
+   * @param  {NodeFront} node
+   *         The node to display.
+   */
+  constructor(markupView, node) {
+    super();
+    this.initialize(markupView, node, "elementcontainer");
 
-  if (node.nodeType === ELEMENT_NODE) {
-    this.editor = new ElementEditor(this, node);
-  } else {
-    throw new Error("Invalid node for MarkupElementContainer");
+    if (node.nodeType === ELEMENT_NODE) {
+      this.editor = new ElementEditor(this, node);
+    } else {
+      throw new Error("Invalid node for MarkupElementContainer");
+    }
+
+    this.tagLine.appendChild(this.editor.elt);
   }
-
-  this.tagLine.appendChild(this.editor.elt);
-}
-
-MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
   onContainerClick(event) {
     if (!event.target.hasAttribute("data-event")) {
       return;
@@ -66,7 +61,7 @@ MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
 
     event.target.setAttribute("aria-pressed", "true");
     this._buildEventTooltipContent(event.target);
-  },
+  }
 
   async _buildEventTooltipContent(target) {
     const tooltip = this.markup.eventDetailsTooltip;
@@ -122,7 +117,7 @@ MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
     }
     tooltip.show(target);
     tooltip.focus();
-  },
+  }
 
   /**
    * Generates the an image preview for this Element. The element must be an
@@ -160,7 +155,7 @@ MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
     }.bind(this)();
 
     return this.tooltipDataPromise;
-  },
+  }
 
   /**
    * Executed by MarkupView._isImagePreviewTarget which is itself called when
@@ -201,7 +196,7 @@ MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
       setBrokenImageTooltip(tooltip, this.markup.doc);
     }
     return true;
-  },
+  }
 
   copyImageDataUri() {
     // We need to send again a request to gettooltipData even if one was sent
@@ -211,31 +206,31 @@ MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
         clipboardHelper.copyString(str);
       });
     });
-  },
+  }
 
   setInlineTextChild(inlineTextChild) {
     this.inlineTextChild = inlineTextChild;
     this.editor.updateTextEditor();
-  },
+  }
 
   clearInlineTextChild() {
     this.inlineTextChild = undefined;
     this.editor.updateTextEditor();
-  },
+  }
 
   /**
    * Trigger new attribute field for input.
    */
   addAttribute() {
     this.editor.newAttr.editMode();
-  },
+  }
 
   /**
    * Trigger attribute field for editing.
    */
   editAttribute(attrName) {
     this.editor.attrElements.get(attrName).editMode();
-  },
+  }
 
   /**
    * Remove attribute from container.
@@ -254,7 +249,7 @@ MarkupElementContainer.prototype = extend(MarkupContainer.prototype, {
         undoMods.apply();
       }
     );
-  },
-});
+  }
+}
 
 module.exports = MarkupElementContainer;

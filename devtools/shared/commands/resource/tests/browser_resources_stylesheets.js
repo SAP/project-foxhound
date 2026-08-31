@@ -35,7 +35,8 @@ const EXISTING_RESOURCES = [
   {
     styleText: "",
     href: null,
-    nodeHref: null,
+    nodeHref:
+      "https://example.com/browser/devtools/shared/commands/resource/tests/style_document.html",
     isNew: false,
     disabled: false,
     constructed: true,
@@ -97,7 +98,8 @@ const ADDITIONAL_INLINE_RESOURCE = {
 const ADDITIONAL_CONSTRUCTED_RESOURCE = {
   styleText: "",
   href: null,
-  nodeHref: null,
+  nodeHref:
+    "https://example.com/browser/devtools/shared/commands/resource/tests/style_document.html",
   isNew: false,
   disabled: false,
   constructed: true,
@@ -181,9 +183,9 @@ async function testResourceAvailableDestroyedFeature() {
   );
 
   info("Check whether ResourceCommand gets additonal stylesheet");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     tab.linkedBrowser,
-    ADDITIONAL_INLINE_RESOURCE.styleText,
+    [ADDITIONAL_INLINE_RESOURCE.styleText],
     text => {
       const document = content.document;
       const stylesheet = document.createElement("style");
@@ -201,7 +203,7 @@ async function testResourceAvailableDestroyedFeature() {
   );
 
   info("Check whether ResourceCommand gets additonal constructed stylesheet");
-  await ContentTask.spawn(tab.linkedBrowser, null, () => {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     const document = content.document;
     const s = new content.CSSStyleSheet();
     // We use the different number of rules to meaningfully differentiate
@@ -238,7 +240,7 @@ async function testResourceAvailableDestroyedFeature() {
   is(destroyedResources.length, 0, "There was no removed stylesheets yet");
 
   info("Remove inline stylesheet added in the test");
-  await ContentTask.spawn(tab.linkedBrowser, null, () => {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.document.querySelector("#inline-from-test").remove();
   });
   await waitUntil(() => destroyedResources.length === 1);
@@ -247,7 +249,7 @@ async function testResourceAvailableDestroyedFeature() {
   });
 
   info("Remove existing top-level inline stylesheet");
-  await ContentTask.spawn(tab.linkedBrowser, null, () => {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.document.querySelector("style").remove();
   });
   await waitUntil(() => destroyedResources.length === 2);
@@ -259,7 +261,7 @@ async function testResourceAvailableDestroyedFeature() {
   });
 
   info("Remove existing top-level <link> stylesheet");
-  await ContentTask.spawn(tab.linkedBrowser, null, () => {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.document.querySelector("link").remove();
   });
   await waitUntil(() => destroyedResources.length === 3);
@@ -354,9 +356,9 @@ async function testResourceUpdateFeature() {
   );
 
   // Check whether the actual stylesheet is updated correctly.
-  const styleSheetDisabled = await ContentTask.spawn(
+  const styleSheetDisabled = await SpecialPowers.spawn(
     tab.linkedBrowser,
-    null,
+    [],
     () => {
       const document = content.document;
       const stylesheet = document.styleSheets[0];
@@ -442,7 +444,7 @@ async function testNestedResourceUpdateFeature() {
   info("Check nested resource update feature of the ResourceCommand");
 
   const tab = await addTab(STYLE_TEST_URL);
-  const win = tab.ownerGlobal;
+  const win = tab.documentGlobal;
 
   const { innerWidth: originalWindowWidth, innerHeight: originalWindowHeight } =
     win;
@@ -598,7 +600,7 @@ function findMatchingExpectedResource(resource) {
 }
 
 async function getStyleSheetResult(tab) {
-  const result = await ContentTask.spawn(tab.linkedBrowser, null, () => {
+  const result = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     const document = content.document;
     const stylesheet = document.styleSheets[0];
     let ruleCount = 0;
@@ -728,7 +730,7 @@ function assertDestroyed(resource, expected) {
 }
 
 function getResourceTimingCount(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, [], () => {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     return content.performance.getEntriesByType("resource").length;
   });
 }

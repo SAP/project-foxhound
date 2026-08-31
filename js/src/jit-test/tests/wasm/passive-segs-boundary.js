@@ -191,10 +191,20 @@ mem_test_nofail(
 mem_test("data.drop 1",
          "data.drop 1");
 
-// drop, then init
+// drop, then init (fails src bounds check)
 mem_test("data.drop 1",
          "(memory.init 1 (i32.const 1234) (i32.const 1) (i32.const 1))",
          WebAssembly.RuntimeError, /index out of bounds/);
+
+// drop, then init with zero length but failed dst bounds check
+mem_test("data.drop 1",
+         "(memory.init 1 (i32.const 99999) (i32.const 0) (i32.const 0))",
+         WebAssembly.RuntimeError, /index out of bounds/);
+
+// drop, then init with all zero (passes bounds checks)
+mem_test_nofail(
+    "data.drop 1",
+    "(memory.init 1 (i32.const 0) (i32.const 0) (i32.const 0))");
 
 // init: seg ix is valid passive, but length to copy > len of seg
 mem_test("",

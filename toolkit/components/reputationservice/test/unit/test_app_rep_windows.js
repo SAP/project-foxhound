@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -56,8 +54,8 @@ function readFileToString(aFilename) {
  * @param aOnTargetChangeFn
  *        Optional callback invoked with the target file name when it changes.
  *
- * @return {Promise}
- * @resolves When onSaveComplete is called with a success code.
+ * @returns {Promise<void>}
+ *   Resolves when onSaveComplete is called with a success code.
  * @rejects With an exception, if onSaveComplete is called with a failure code.
  */
 function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
@@ -89,8 +87,8 @@ function promiseSaverComplete(aSaver, aOnTargetChangeFn) {
  * @param aCloseWhenDone
  *        If true, the output stream will be closed when the copy finishes.
  *
- * @return {Promise}
- * @resolves When the copy completes with a success code.
+ * @returns {Promise<void>}
+ *   Resolves when the copy completes with a success code.
  * @rejects With an exception, if the copy fails.
  */
 function promiseCopyToSaver(aSourceString, aSaverOutputStream, aCloseWhenDone) {
@@ -300,7 +298,9 @@ function waitForUpdates() {
     streamUpdater.downloadUpdates(
       "goog-downloadwhite-digest256",
       "goog-downloadwhite-digest256;\n",
+      "",
       true,
+      "test",
       "http://localhost:4444/downloads",
       updateSuccess,
       handleError,

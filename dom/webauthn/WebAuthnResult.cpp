@@ -2,13 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "AuthrsBridge_ffi.h"
 #include "WebAuthnResult.h"
-#include "nsIWebAuthnAttObj.h"
+
+#include "AuthrsBridge_ffi.h"
 #include "nsCOMPtr.h"
+#include "nsIWebAuthnAttObj.h"
 #include "nsString.h"
 
 #ifdef MOZ_WIDGET_ANDROID
+
+#  include "mozilla/jni/Conversions.h"
+
 namespace mozilla::jni {
 
 template <>
@@ -51,6 +55,13 @@ NS_IMETHODIMP
 WebAuthnRegisterResult::GetAttestationObject(
     nsTArray<uint8_t>& aAttestationObject) {
   aAttestationObject.Assign(mAttestationObject);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebAuthnRegisterResult::GetAttestationConsentPromptShown(
+    bool* aAttestationConsentPromptShown) {
+  *aAttestationConsentPromptShown = mAttestationConsentPromptShown;
   return NS_OK;
 }
 
@@ -150,7 +161,7 @@ WebAuthnRegisterResult::HasIdentifyingAttestation(
                                                     /* anonymize */ false,
                                                     getter_AddRefs(attObj));
   if (NS_SUCCEEDED(rv)) {
-    Unused << attObj->IsIdentifying(&isIdentifying);
+    (void)attObj->IsIdentifying(&isIdentifying);
   }
 
   *aHasIdentifyingAttestation = isIdentifying;

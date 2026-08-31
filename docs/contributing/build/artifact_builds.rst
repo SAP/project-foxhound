@@ -138,10 +138,12 @@ Things that are supported
    properties and FTL files.
 -  Modifying Android Java code, resources, and strings.
 -  Running mochitests and xpcshell tests.
--  Modifying ``Scalars.yaml`` to add Scalar Telemetry (since {{
-   Bug("1425909") }}, except artifact builds on try).
--  Modifying ``Events.yaml`` to add Event Telemetry (since {{
-   Bug("1448945") }}, except artifact builds on try).
+-  Modifying ``Scalars.yaml`` to add Scalar Telemetry (since `Bug 1425909
+   <https://bugzilla.mozilla.org/show_bug.cgi?id=1425909>`__, except artifact
+   builds on try).
+-  Modifying ``Events.yaml`` to add Event Telemetry (since `Bug 1448945
+   <https://bugzilla.mozilla.org/show_bug.cgi?id=1448945>`__, except artifact
+   builds on try).
 
 Essentially everything updated by ``mach build faster`` should work with
 artifact builds.

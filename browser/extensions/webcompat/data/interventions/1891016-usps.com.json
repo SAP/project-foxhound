@@ -1,0 +1,18 @@
+{
+  "label": "usps.com",
+  "bugs": {
+    "1891016": {
+      "issue": "broken-interactive-elements",
+      "matches": ["https://*.usps.com/*"]
+    }
+  },
+  "css": {
+    "fix_terms_and_conditions_checkboxes": ".mrc-custom-checkbox-container input { margin-left: -3rem; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix_terms_and_conditions_checkboxes"]
+    }
+  ]
+}

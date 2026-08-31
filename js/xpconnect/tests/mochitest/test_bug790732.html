@@ -29,9 +29,6 @@ async function doTest() {
   is(Ci.nsIDOMKeyEvent, KeyEvent);
   is(Ci.nsIDOMMouseEvent, MouseEvent);
   is(Ci.nsIDOMMouseScrollEvent, MouseScrollEvent);
-  if (SpecialPowers.getBoolPref("dom.mutation_events.enabled")) {
-    is(Ci.nsIDOMMutationEvent, MutationEvent);
-  }
   is(Ci.nsIDOMUIEvent, UIEvent);
   is(Ci.nsIDOMHTMLMediaElement, HTMLMediaElement);
   is(Ci.nsIDOMRange, Range);

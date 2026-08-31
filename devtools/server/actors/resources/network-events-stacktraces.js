@@ -39,6 +39,7 @@ class NetworkEventStackTracesWatcher {
     this.targetActor = targetActor;
 
     Services.obs.addObserver(this, "http-on-opening-request");
+    Services.obs.addObserver(this, "http-on-resource-cache-response");
     Services.obs.addObserver(this, "document-on-opening-request");
     Services.obs.addObserver(this, "network-monitor-alternate-stack");
     ChannelEventSinkFactory.getService().registerCollector(this);
@@ -57,6 +58,7 @@ class NetworkEventStackTracesWatcher {
   destroy() {
     this.clear();
     Services.obs.removeObserver(this, "http-on-opening-request");
+    Services.obs.removeObserver(this, "http-on-resource-cache-response");
     Services.obs.removeObserver(this, "document-on-opening-request");
     Services.obs.removeObserver(this, "network-monitor-alternate-stack");
     ChannelEventSinkFactory.getService().unregisterCollector(this);
@@ -132,6 +134,7 @@ class NetworkEventStackTracesWatcher {
     const stacktrace = [];
     switch (topic) {
       case "http-on-opening-request":
+      case "http-on-resource-cache-response":
       case "document-on-opening-request": {
         // The channel is being opened on the main thread, associate the current
         // stack with it.
@@ -189,12 +192,22 @@ class NetworkEventStackTracesWatcher {
   }
 
   _setStackTrace(resourceId, stacktrace) {
-    this.stacktraces.set(resourceId, stacktrace);
+    const isBrowserToolBox = this.targetActor.sessionContext.type == "all";
+
+    const filteredStacktrace = isBrowserToolBox
+      ? stacktrace
+      : lazy.NetworkUtils.removeChromeFrames(stacktrace);
+
+    this.stacktraces.set(resourceId, filteredStacktrace);
+
+    const stacktraceAvailable =
+      filteredStacktrace && !!filteredStacktrace.length;
+
     this.onStackTraceAvailable([
       {
         resourceId,
-        stacktraceAvailable: stacktrace && !!stacktrace.length,
-        lastFrame: stacktrace && stacktrace.length ? stacktrace[0] : undefined,
+        stacktraceAvailable,
+        lastFrame: stacktraceAvailable ? filteredStacktrace[0] : undefined,
       },
     ]);
   }

@@ -10,30 +10,27 @@
 #ifndef NET_DCSCTP_SOCKET_STREAM_RESET_HANDLER_H_
 #define NET_DCSCTP_SOCKET_STREAM_RESET_HANDLER_H_
 
-#include <cstdint>
 #include <memory>
 #include <optional>
-#include <string>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "absl/functional/bind_front.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/units/time_delta.h"
 #include "net/dcsctp/common/internal_types.h"
+#include "net/dcsctp/common/sequence_numbers.h"
 #include "net/dcsctp/packet/chunk/reconfig_chunk.h"
-#include "net/dcsctp/packet/parameter/incoming_ssn_reset_request_parameter.h"
-#include "net/dcsctp/packet/parameter/outgoing_ssn_reset_request_parameter.h"
+#include "net/dcsctp/packet/parameter/parameter.h"
 #include "net/dcsctp/packet/parameter/reconfiguration_response_parameter.h"
-#include "net/dcsctp/packet/sctp_packet.h"
-#include "net/dcsctp/public/dcsctp_socket.h"
+#include "net/dcsctp/public/dcsctp_handover_state.h"
+#include "net/dcsctp/public/types.h"
 #include "net/dcsctp/rx/data_tracker.h"
 #include "net/dcsctp/rx/reassembly_queue.h"
 #include "net/dcsctp/socket/context.h"
 #include "net/dcsctp/timer/timer.h"
 #include "net/dcsctp/tx/retransmission_queue.h"
-#include "rtc_base/containers/flat_set.h"
 
 namespace dcsctp {
 
@@ -100,7 +97,7 @@ class StreamResetHandler {
   // time and also multiple times. It will enqueue requests that can't be
   // directly fulfilled, and will asynchronously process them when any ongoing
   // request has completed.
-  void ResetStreams(rtc::ArrayView<const StreamID> outgoing_streams);
+  void ResetStreams(std::span<const StreamID> outgoing_streams);
 
   // Creates a Reset Streams request that must be sent if returned. Will start
   // the reconfig timer. Will return std::nullopt if there is no need to
@@ -117,6 +114,13 @@ class StreamResetHandler {
 
  private:
   using UnwrappedReconfigRequestSn = UnwrappedSequenceNumber<ReconfigRequestSN>;
+
+  enum class ReqSeqNbrValidationResult {
+    kValid,
+    kRetransmission,
+    kBadSequenceNumber,
+  };
+
   // Represents a stream request operation. There can only be one ongoing at
   // any time, and a sent request may either succeed, fail or result in the
   // receiver signaling that it can't process it right now, and then it will be
@@ -159,6 +163,9 @@ class StreamResetHandler {
       req_seq_nbr_ = new_req_seq_nbr;
     }
 
+    void set_deferred(bool is_deferred) { is_deferred_ = is_deferred; }
+    bool is_deferred() const { return is_deferred_; }
+
    private:
     // If this is set, this request has been sent. If it's not set, the request
     // has been prepared, but has not yet been sent. This is typically used when
@@ -170,6 +177,9 @@ class StreamResetHandler {
     TSN sender_last_assigned_tsn_;
     // The streams that are to be reset in this request.
     const std::vector<StreamID> streams_;
+    // If the request is deferred (received "In Progress"), the next timeout
+    // should not be treated as a timeout.
+    bool is_deferred_ = false;
   };
 
   // Called to validate an incoming RE-CONFIG chunk.
@@ -185,12 +195,9 @@ class StreamResetHandler {
   // must have been created prior.
   ReConfigChunk MakeReconfigChunk();
 
-  // Called to validate the `req_seq_nbr`, that it's the next in sequence. If it
-  // fails to validate, and returns false, it will also add a response to
-  // `responses`.
-  bool ValidateReqSeqNbr(
-      UnwrappedReconfigRequestSn req_seq_nbr,
-      std::vector<ReconfigurationResponseParameter>& responses);
+  // Called to validate the `req_seq_nbr`, that it's the next in sequence.
+  ReqSeqNbrValidationResult ValidateReqSeqNbr(
+      UnwrappedReconfigRequestSn req_seq_nbr);
 
   // Called when this socket receives an outgoing stream reset request. It might
   // either be performed straight away, or have to be deferred, and the result

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MicrosoftEntraSSOUtils_h__
-#define MicrosoftEntraSSOUtils_h__
+#ifndef MicrosoftEntraSSOUtils_h_
+#define MicrosoftEntraSSOUtils_h_
 
 #include "ErrorList.h"  // For nsresult
 #include "nsHttpChannel.h"
@@ -20,4 +20,4 @@ nsresult AddMicrosoftEntraSSO(nsHttpChannel* aChannel,
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // MicrosoftEntraSSOUtils_h__
+#endif  // MicrosoftEntraSSOUtils_h_

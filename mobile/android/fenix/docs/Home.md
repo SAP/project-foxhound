@@ -26,6 +26,7 @@ Firefox for Android is the first step in building a better mobile browser: one t
 * [Mozilla Community Participation Guidelines](https://www.mozilla.org/en-US/about/governance/policies/participation/)
 
 ## Communication
+
 * External: [#fenix](https://chat.mozilla.org/#/room/#fenix:mozilla.org) on [Element](https://wiki.mozilla.org/Matrix)
 * External: [Firefox on Android discourse](https://discourse.mozilla.org/c/firefox-android/468)
 * Internal: Find us on slack #mobile-android-team

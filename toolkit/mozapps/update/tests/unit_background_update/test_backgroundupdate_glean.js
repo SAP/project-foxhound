@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,7 +14,7 @@ const { NimbusTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
 
-const { maybeSubmitBackgroundUpdatePing } = ChromeUtils.importESModule(
+const { Actions } = ChromeUtils.importESModule(
   "resource://gre/modules/backgroundtasks/BackgroundTask_backgroundupdate.sys.mjs"
 );
 
@@ -26,7 +24,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "UpdateService",
   "@mozilla.org/updates/update-service;1",
-  "nsIApplicationUpdateService"
+  Ci.nsIApplicationUpdateService
 );
 
 add_setup(function test_setup() {
@@ -94,7 +92,7 @@ add_task(async function test_record_update_environment() {
   });
 
   // There's nothing async in this function atm, but it's annotated async, so..
-  await maybeSubmitBackgroundUpdatePing();
+  await Actions.maybeSubmitBackgroundUpdatePing();
 
   ok(pingSubmitted, "'background-update' ping was submitted");
 });
@@ -109,7 +107,8 @@ async function do_readTargeting(content, beforeNextSubmitCallback) {
 
   let profile = profileService.createUniqueProfile(
     file,
-    "test_default_profile"
+    "test_default_profile",
+    "tests"
   );
 
   let targetingSnapshot = profile.rootDir.clone();
@@ -135,7 +134,7 @@ async function do_readTargeting(content, beforeNextSubmitCallback) {
   });
 
   // There's nothing async in this function atm, but it's annotated async, so..
-  await maybeSubmitBackgroundUpdatePing();
+  await Actions.maybeSubmitBackgroundUpdatePing();
 
   ok(pingSubmitted, "'background-update' ping was submitted");
 }

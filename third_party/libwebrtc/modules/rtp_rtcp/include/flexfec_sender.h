@@ -11,15 +11,20 @@
 #ifndef MODULES_RTP_RTCP_INCLUDE_FLEXFEC_SENDER_H_
 #define MODULES_RTP_RTCP_INCLUDE_FLEXFEC_SENDER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/rtp_parameters.h"
+#include "api/units/data_rate.h"
 #include "api/units/timestamp.h"
+#include "modules/include/module_fec_types.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_header_extension_size.h"
@@ -28,6 +33,7 @@
 #include "rtc_base/bitrate_tracker.h"
 #include "rtc_base/random.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -44,9 +50,9 @@ class FlexfecSender : public VideoFecGenerator {
                 uint32_t protected_media_ssrc,
                 absl::string_view mid,
                 const std::vector<RtpExtension>& rtp_header_extensions,
-                rtc::ArrayView<const RtpExtensionSize> extension_sizes,
+                std::span<const RtpExtensionSize> extension_sizes,
                 const RtpState* rtp_state);
-  ~FlexfecSender();
+  ~FlexfecSender() override;
 
   FecType GetFecType() const override {
     return VideoFecGenerator::FecType::kFlexFec;

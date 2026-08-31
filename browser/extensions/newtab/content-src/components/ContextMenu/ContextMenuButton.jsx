@@ -52,7 +52,8 @@ export class ContextMenuButton extends React.PureComponent {
     return (
       <React.Fragment>
         <button
-          aria-haspopup="true"
+          aria-haspopup="menu"
+          aria-expanded={showContextMenu}
           data-l10n-id={tooltip}
           data-l10n-args={tooltipArgs ? JSON.stringify(tooltipArgs) : null}
           className="context-menu-button icon"

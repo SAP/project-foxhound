@@ -39,11 +39,11 @@ internal class SpeculativeSessionFactory {
         clear()
 
         speculativeEngineSession = SpeculativeEngineSession.create(
-            this,
-            runtime,
-            private,
-            contextId,
-            defaultSettings,
+            factory = this,
+            runtime = runtime,
+            private = private,
+            contextId = contextId,
+            defaultSettings = defaultSettings,
         )
     }
 
@@ -127,7 +127,12 @@ internal class SpeculativeEngineSession constructor(
             contextId: String?,
             defaultSettings: Settings?,
         ): SpeculativeEngineSession {
-            val engineSession = GeckoEngineSession(runtime, private, defaultSettings, contextId)
+            val engineSession = GeckoEngineSession(
+                runtime = runtime,
+                privateMode = private,
+                defaultSettings = defaultSettings,
+                contextId = contextId,
+            )
             val observer = SpeculativeSessionObserver(factory)
             engineSession.register(observer)
 
@@ -142,7 +147,6 @@ internal class SpeculativeEngineSession constructor(
  */
 internal class SpeculativeSessionObserver(
     private val factory: SpeculativeSessionFactory,
-
 ) : EngineSession.Observer {
     override fun onCrash() {
         factory.clear()

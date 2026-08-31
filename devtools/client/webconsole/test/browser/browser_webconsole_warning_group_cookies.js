@@ -10,7 +10,7 @@ const TEST_FILE =
   "browser/devtools/client/webconsole/test/browser/test-warning-groups.html";
 const COOKIE_GROUP = "Cookie warnings";
 
-pushPref("devtools.webconsole.groupWarningMessages", true);
+pushPref("devtools.webconsole.groupSimilarMessages", true);
 pushPref("network.cookie.sameSite.laxByDefaultWarningsForBeta", true);
 
 async function cleanUp() {

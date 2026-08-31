@@ -1,18 +1,15 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
 import android.content.Context;
-import android.os.Build;
 import android.provider.Settings.Secure;
 import android.view.View;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import java.util.Collection;
-import java.util.Locale;
 
 public final class InputMethods {
   public static final String METHOD_ANDROID_LATINIME = "com.android.inputmethod.latin/.LatinIME";
@@ -100,14 +97,4 @@ public final class InputMethods {
     final String inputMethod = getCurrentInputMethod(context);
     return METHOD_SONY.equals(inputMethod);
   }
-
-  // Workaround for bug 1818268 - Unexpected crash on Galaxy J7
-  public static boolean dontOverrideCommitText() {
-    return Build.VERSION.SDK_INT == 23
-        && Build.MANUFACTURER.toLowerCase(Locale.ROOT).equals("samsung")
-        && Build.MODEL.startsWith("SM-J700F");
-  }
-
-  // TODO: Replace usages by definition in EditorInfoCompat once available (bug 1385726).
-  public static final int IME_FLAG_NO_PERSONALIZED_LEARNING = 0x1000000;
 }

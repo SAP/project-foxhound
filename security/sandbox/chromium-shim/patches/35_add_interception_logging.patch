@@ -30,27 +30,27 @@ diff --git a/sandbox/win/src/filesystem_interception.cc b/sandbox/win/src/filesy
  namespace sandbox {
  
  NTSTATUS WINAPI TargetNtCreateFile(NtCreateFileFunction orig_CreateFile,
-@@ -37,16 +38,20 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCre
-   // Check if the process can open it first.
+@@ -75,16 +76,20 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCre
    NTSTATUS status = orig_CreateFile(
        file, desired_access, object_attributes, io_status, allocation_size,
        file_attributes, sharing, disposition, options, ea_buffer, ea_length);
    if (STATUS_ACCESS_DENIED != status &&
-       STATUS_NETWORK_OPEN_RESTRICTION != status)
+       STATUS_NETWORK_OPEN_RESTRICTION != status) {
      return status;
+   }
  
 +  mozilla::sandboxing::LogBlocked("NtCreateFile",
 +                                  object_attributes->ObjectName->Buffer,
 +                                  object_attributes->ObjectName->Length);
 +
    // We don't trust that the IPC can work this early.
-   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
+   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled()) {
      return status;
+   }
  
    do {
-     if (!ValidParameter(file, sizeof(HANDLE), WRITE))
+     if (!ValidParameter(file, sizeof(HANDLE), WRITE)) {
        break;
-     if (!ValidParameter(io_status, sizeof(IO_STATUS_BLOCK), WRITE))
 @@ -96,16 +101,19 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCre
  
      __try {
@@ -227,11 +227,10 @@ diff --git a/sandbox/win/src/filesystem_interception.cc b/sandbox/win/src/filesy
  }
  
  }  // namespace sandbox
-diff --git a/sandbox/win/src/named_pipe_interception.cc b/sandbox/win/src/named_pipe_interception.cc
---- a/sandbox/win/src/named_pipe_interception.cc
-+++ b/sandbox/win/src/named_pipe_interception.cc
-@@ -7,16 +7,17 @@
- #include "sandbox/win/src/crosscall_client.h"
+diff --git a/sandbox/win/src/process_thread_interception.cc b/sandbox/win/src/process_thread_interception.cc
+--- a/sandbox/win/src/process_thread_interception.cc
++++ b/sandbox/win/src/process_thread_interception.cc
+@@ -10,16 +10,17 @@
  #include "sandbox/win/src/ipc_tags.h"
  #include "sandbox/win/src/policy_params.h"
  #include "sandbox/win/src/policy_target.h"
@@ -239,55 +238,91 @@ diff --git a/sandbox/win/src/named_pipe_interception.cc b/sandbox/win/src/named_
  #include "sandbox/win/src/sandbox_nt_util.h"
  #include "sandbox/win/src/sharedmem_ipc_client.h"
  #include "sandbox/win/src/target_services.h"
+ #include "third_party/abseil-cpp/absl/types/optional.h"
 +#include "mozilla/sandboxing/sandboxLogging.h"
  
  namespace sandbox {
  
- HANDLE WINAPI
- TargetCreateNamedPipeW(CreateNamedPipeWFunction orig_CreateNamedPipeW,
-                        LPCWSTR pipe_name,
-                        DWORD open_mode,
-                        DWORD pipe_mode,
-@@ -26,16 +27,18 @@ TargetCreateNamedPipeW(CreateNamedPipeWF
-                        DWORD default_timeout,
-                        LPSECURITY_ATTRIBUTES security_attributes) {
-   HANDLE pipe = orig_CreateNamedPipeW(
-       pipe_name, open_mode, pipe_mode, max_instance, out_buffer_size,
-       in_buffer_size, default_timeout, security_attributes);
-   if (INVALID_HANDLE_VALUE != pipe)
-     return pipe;
+ namespace {
  
-+  mozilla::sandboxing::LogBlocked("CreateNamedPipeW", pipe_name);
-+
-   // We don't trust that the IPC can work this early.
-   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-     return INVALID_HANDLE_VALUE;
+ NTSTATUS DuplicateObject(HANDLE handle,
+                          ACCESS_MASK desired_access,
+                          PHANDLE out_handle) {
+@@ -59,16 +60,17 @@ CallNtOpenProcessTokenEx(NTSTATUS status,
+                                   HANDLE process,
+                                   ACCESS_MASK desired_access,
+                                   ULONG handle_attributes,
+                                   PHANDLE token) {
+   if (NT_SUCCESS(status)) {
+     return status;
+   }
  
-   DWORD original_error = ::GetLastError();
++  mozilla::sandboxing::LogBlocked("NtOpenProcessToken(Ex)");
+   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled()) {
+     return status;
+   }
  
-   // We don't support specific Security Attributes.
-   if (security_attributes)
-@@ -61,16 +64,17 @@ TargetCreateNamedPipeW(CreateNamedPipeWF
-     if (SBOX_ALL_OK != code)
-       break;
+   if (CURRENT_PROCESS != process ||
+       !ValidParameter(token, sizeof(HANDLE), WRITE)) {
+     return status;
+   }
+@@ -92,16 +94,17 @@ CallNtOpenProcessTokenEx(NTSTATUS status,
  
-     ::SetLastError(answer.win32_result);
+   __try {
+     // Write the output parameters.
+     *token = answer.handle;
+   } __except (EXCEPTION_EXECUTE_HANDLER) {
+     return status;
+   }
  
-     if (ERROR_SUCCESS != answer.win32_result)
-       return INVALID_HANDLE_VALUE;
- 
-+    mozilla::sandboxing::LogAllowed("CreateNamedPipeW", pipe_name);
-     return answer.handle;
-   } while (false);
- 
-   ::SetLastError(original_error);
-   return INVALID_HANDLE_VALUE;
++    mozilla::sandboxing::LogAllowed("NtOpenProcessTokenEx");
+   return answer.nt_status;
  }
  
- }  // namespace sandbox
-diff --git a/sandbox/win/src/process_thread_interception.cc b/sandbox/win/src/process_thread_interception.cc
---- a/sandbox/win/src/process_thread_interception.cc
-+++ b/sandbox/win/src/process_thread_interception.cc
+ }  // namespace
+ 
+ // Hooks NtOpenThread and proxy the call to the broker if it's trying to
+ // open a thread in the same process.
+ NTSTATUS WINAPI TargetNtOpenThread(NtOpenThreadFunction orig_OpenThread,
+@@ -110,16 +113,17 @@ NTSTATUS WINAPI TargetNtOpenThread(NtOpe
+                                    POBJECT_ATTRIBUTES object_attributes,
+                                    PCLIENT_ID client_id) {
+   NTSTATUS status =
+       orig_OpenThread(thread, desired_access, object_attributes, client_id);
+   if (NT_SUCCESS(status)) {
+     return status;
+   }
+ 
++  mozilla::sandboxing::LogBlocked("NtOpenThread");
+   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled()) {
+     return status;
+   }
+ 
+   if (!ValidParameter(thread, sizeof(HANDLE), WRITE) ||
+       !ValidObjectAttributes(object_attributes)) {
+     return status;
+   }
+@@ -162,16 +166,17 @@ NTSTATUS WINAPI TargetNtOpenThread(NtOpe
+ 
+   __try {
+     // Write the output parameters.
+     *thread = answer.handle;
+   } __except (EXCEPTION_EXECUTE_HANDLER) {
+     return status;
+   }
+ 
++  mozilla::sandboxing::LogAllowed("NtOpenThread");
+   return answer.nt_status;
+ }
+ 
+ // Hooks NtOpenProcess and duplicates the current process handle if opening the
+ // current process.
+ NTSTATUS WINAPI TargetNtOpenProcess(NtOpenProcessFunction orig_OpenProcess,
+                                     PHANDLE process,
+                                     ACCESS_MASK desired_access,
+diff --git a/sandbox/win/src/signed_interception.cc b/sandbox/win/src/signed_interception.cc
+--- a/sandbox/win/src/signed_interception.cc
++++ b/sandbox/win/src/signed_interception.cc
 @@ -10,16 +10,17 @@
  #include "sandbox/win/src/crosscall_client.h"
  #include "sandbox/win/src/ipc_tags.h"
@@ -301,338 +336,12 @@ diff --git a/sandbox/win/src/process_thread_interception.cc b/sandbox/win/src/pr
  
  namespace sandbox {
  
- SANDBOX_INTERCEPT NtExports g_nt;
- 
- // Hooks NtOpenThread and proxy the call to the broker if it's trying to
- // open a thread in the same process.
- NTSTATUS WINAPI TargetNtOpenThread(NtOpenThreadFunction orig_OpenThread,
-@@ -27,16 +28,17 @@ NTSTATUS WINAPI TargetNtOpenThread(NtOpe
-                                    ACCESS_MASK desired_access,
-                                    POBJECT_ATTRIBUTES object_attributes,
-                                    PCLIENT_ID client_id) {
-   NTSTATUS status =
-       orig_OpenThread(thread, desired_access, object_attributes, client_id);
-   if (NT_SUCCESS(status))
-     return status;
- 
-+  mozilla::sandboxing::LogBlocked("NtOpenThread");
-   do {
-     if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-       break;
-     if (!client_id)
-       break;
- 
-     uint32_t thread_id = 0;
-     bool should_break = false;
-@@ -91,16 +93,17 @@ NTSTATUS WINAPI TargetNtOpenThread(NtOpe
- 
-     __try {
-       // Write the output parameters.
-       *thread = answer.handle;
-     } __except (EXCEPTION_EXECUTE_HANDLER) {
-       break;
-     }
- 
-+    mozilla::sandboxing::LogAllowed("NtOpenThread");
-     return answer.nt_status;
-   } while (false);
- 
-   return status;
- }
- 
- // Hooks NtOpenProcess and proxy the call to the broker if it's trying to
- // open the current process.
-@@ -176,16 +179,17 @@ NTSTATUS WINAPI
- TargetNtOpenProcessToken(NtOpenProcessTokenFunction orig_OpenProcessToken,
-                          HANDLE process,
-                          ACCESS_MASK desired_access,
-                          PHANDLE token) {
-   NTSTATUS status = orig_OpenProcessToken(process, desired_access, token);
-   if (NT_SUCCESS(status))
-     return status;
- 
-+  mozilla::sandboxing::LogBlocked("NtOpenProcessToken");
-   do {
-     if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-       break;
- 
-     if (CURRENT_PROCESS != process)
-       break;
- 
-     if (!ValidParameter(token, sizeof(HANDLE), WRITE))
-@@ -207,16 +211,17 @@ TargetNtOpenProcessToken(NtOpenProcessTo
- 
-     __try {
-       // Write the output parameters.
-       *token = answer.handle;
-     } __except (EXCEPTION_EXECUTE_HANDLER) {
-       break;
-     }
- 
-+    mozilla::sandboxing::LogAllowed("NtOpenProcessToken");
-     return answer.nt_status;
-   } while (false);
- 
-   return status;
- }
- 
- NTSTATUS WINAPI
- TargetNtOpenProcessTokenEx(NtOpenProcessTokenExFunction orig_OpenProcessTokenEx,
-@@ -224,16 +229,17 @@ TargetNtOpenProcessTokenEx(NtOpenProcess
-                            ACCESS_MASK desired_access,
-                            ULONG handle_attributes,
-                            PHANDLE token) {
-   NTSTATUS status = orig_OpenProcessTokenEx(process, desired_access,
-                                             handle_attributes, token);
-   if (NT_SUCCESS(status))
-     return status;
- 
-+  mozilla::sandboxing::LogBlocked("NtOpenProcessTokenEx");
-   do {
-     if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-       break;
- 
-     if (CURRENT_PROCESS != process)
-       break;
- 
-     if (!ValidParameter(token, sizeof(HANDLE), WRITE))
-@@ -255,16 +261,17 @@ TargetNtOpenProcessTokenEx(NtOpenProcess
- 
-     __try {
-       // Write the output parameters.
-       *token = answer.handle;
-     } __except (EXCEPTION_EXECUTE_HANDLER) {
-       break;
-     }
- 
-+    mozilla::sandboxing::LogAllowed("NtOpenProcessTokenEx");
-     return answer.nt_status;
-   } while (false);
- 
-   return status;
- }
- 
- BOOL WINAPI TargetCreateProcessW(CreateProcessWFunction orig_CreateProcessW,
-                                  LPCWSTR application_name,
-@@ -280,16 +287,18 @@ BOOL WINAPI TargetCreateProcessW(CreateP
-   if (SandboxFactory::GetTargetServices()->GetState()->IsCsrssConnected() &&
-       orig_CreateProcessW(application_name, command_line, process_attributes,
-                           thread_attributes, inherit_handles, flags,
-                           environment, current_directory, startup_info,
-                           process_information)) {
-     return true;
-   }
- 
-+  mozilla::sandboxing::LogBlocked("CreateProcessW", application_name);
-+
-   // We don't trust that the IPC can work this early.
-   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-     return false;
- 
-   // Don't call GetLastError before InitCalled() succeeds because kernel32 may
-   // not be mapped yet.
-   DWORD original_error = ::GetLastError();
- 
-@@ -320,16 +329,17 @@ BOOL WINAPI TargetCreateProcessW(CreateP
-                   cur_dir, current_directory, proc_info, &answer);
-     if (SBOX_ALL_OK != code)
-       break;
- 
-     ::SetLastError(answer.win32_result);
-     if (ERROR_SUCCESS != answer.win32_result)
-       return false;
- 
-+    mozilla::sandboxing::LogAllowed("CreateProcessW", application_name);
-     return true;
-   } while (false);
- 
-   ::SetLastError(original_error);
-   return false;
- }
- 
- BOOL WINAPI TargetCreateProcessA(CreateProcessAFunction orig_CreateProcessA,
-@@ -346,16 +356,18 @@ BOOL WINAPI TargetCreateProcessA(CreateP
-   if (SandboxFactory::GetTargetServices()->GetState()->IsCsrssConnected() &&
-       orig_CreateProcessA(application_name, command_line, process_attributes,
-                           thread_attributes, inherit_handles, flags,
-                           environment, current_directory, startup_info,
-                           process_information)) {
-     return true;
-   }
- 
-+  mozilla::sandboxing::LogBlocked("CreateProcessA", application_name);
-+
-   // We don't trust that the IPC can work this early.
-   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-     return false;
- 
-   // Don't call GetLastError before InitCalled() succeeds because kernel32 may
-   // not be mapped yet.
-   DWORD original_error = ::GetLastError();
- 
-@@ -420,16 +432,17 @@ BOOL WINAPI TargetCreateProcessA(CreateP
- 
-     if (SBOX_ALL_OK != code)
-       break;
- 
-     ::SetLastError(answer.win32_result);
-     if (ERROR_SUCCESS != answer.win32_result)
-       return false;
- 
-+    mozilla::sandboxing::LogAllowed("CreateProcessA", application_name);
-     return true;
-   } while (false);
- 
-   ::SetLastError(original_error);
-   return false;
- }
- 
- HANDLE WINAPI TargetCreateThread(CreateThreadFunction orig_CreateThread,
-diff --git a/sandbox/win/src/registry_interception.cc b/sandbox/win/src/registry_interception.cc
---- a/sandbox/win/src/registry_interception.cc
-+++ b/sandbox/win/src/registry_interception.cc
-@@ -9,16 +9,17 @@
- #include "sandbox/win/src/crosscall_client.h"
- #include "sandbox/win/src/ipc_tags.h"
- #include "sandbox/win/src/policy_params.h"
- #include "sandbox/win/src/policy_target.h"
- #include "sandbox/win/src/sandbox_factory.h"
- #include "sandbox/win/src/sandbox_nt_util.h"
- #include "sandbox/win/src/sharedmem_ipc_client.h"
- #include "sandbox/win/src/target_services.h"
-+#include "mozilla/sandboxing/sandboxLogging.h"
- 
- namespace sandbox {
- 
- NTSTATUS WINAPI TargetNtCreateKey(NtCreateKeyFunction orig_CreateKey,
-                                   PHANDLE key,
-                                   ACCESS_MASK desired_access,
-                                   POBJECT_ATTRIBUTES object_attributes,
-                                   ULONG title_index,
-@@ -27,16 +28,22 @@ NTSTATUS WINAPI TargetNtCreateKey(NtCrea
-                                   PULONG disposition) {
-   // Check if the process can create it first.
-   NTSTATUS status =
-       orig_CreateKey(key, desired_access, object_attributes, title_index,
-                      class_name, create_options, disposition);
-   if (NT_SUCCESS(status))
-     return status;
- 
-+  if (STATUS_OBJECT_NAME_NOT_FOUND != status) {
-+    mozilla::sandboxing::LogBlocked("NtCreateKey",
-+                                    object_attributes->ObjectName->Buffer,
-+                                    object_attributes->ObjectName->Length);
-+  }
-+
-   // We don't trust that the IPC can work this early.
-   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-     return status;
- 
-   do {
-     if (!ValidParameter(key, sizeof(HANDLE), WRITE))
-       break;
- 
-@@ -114,16 +121,19 @@ NTSTATUS WINAPI TargetNtCreateKey(NtCrea
- 
-       if (disposition)
-         *disposition = answer.extended[0].unsigned_int;
- 
-       status = answer.nt_status;
-     } __except (EXCEPTION_EXECUTE_HANDLER) {
-       break;
-     }
-+    mozilla::sandboxing::LogAllowed("NtCreateKey",
-+                                    object_attributes->ObjectName->Buffer,
-+                                    object_attributes->ObjectName->Length);
-   } while (false);
- 
-   return status;
- }
- 
- NTSTATUS WINAPI CommonNtOpenKey(NTSTATUS status,
-                                 PHANDLE key,
-                                 ACCESS_MASK desired_access,
-@@ -193,30 +203,39 @@ NTSTATUS WINAPI CommonNtOpenKey(NTSTATUS
-       break;
- 
-     __try {
-       *key = answer.handle;
-       status = answer.nt_status;
-     } __except (EXCEPTION_EXECUTE_HANDLER) {
-       break;
-     }
-+    mozilla::sandboxing::LogAllowed("NtOpenKey[Ex]",
-+                                    object_attributes->ObjectName->Buffer,
-+                                    object_attributes->ObjectName->Length);
-   } while (false);
- 
-   return status;
- }
- 
- NTSTATUS WINAPI TargetNtOpenKey(NtOpenKeyFunction orig_OpenKey,
-                                 PHANDLE key,
-                                 ACCESS_MASK desired_access,
-                                 POBJECT_ATTRIBUTES object_attributes) {
-   // Check if the process can open it first.
-   NTSTATUS status = orig_OpenKey(key, desired_access, object_attributes);
-   if (NT_SUCCESS(status))
-     return status;
- 
-+  if (STATUS_OBJECT_NAME_NOT_FOUND != status) {
-+    mozilla::sandboxing::LogBlocked("NtOpenKey",
-+                                    object_attributes->ObjectName->Buffer,
-+                                    object_attributes->ObjectName->Length);
-+  }
-+
-   return CommonNtOpenKey(status, key, desired_access, object_attributes);
- }
- 
- NTSTATUS WINAPI TargetNtOpenKeyEx(NtOpenKeyExFunction orig_OpenKeyEx,
-                                   PHANDLE key,
-                                   ACCESS_MASK desired_access,
-                                   POBJECT_ATTRIBUTES object_attributes,
-                                   ULONG open_options) {
-@@ -225,12 +244,18 @@ NTSTATUS WINAPI TargetNtOpenKeyEx(NtOpen
-       orig_OpenKeyEx(key, desired_access, object_attributes, open_options);
- 
-   // We do not support open_options at this time. The 2 current known values
-   // are REG_OPTION_CREATE_LINK, to open a symbolic link, and
-   // REG_OPTION_BACKUP_RESTORE to open the key with special privileges.
-   if (NT_SUCCESS(status) || open_options != 0)
-     return status;
- 
-+  if (STATUS_OBJECT_NAME_NOT_FOUND != status) {
-+    mozilla::sandboxing::LogBlocked("NtOpenKeyEx",
-+                                    object_attributes->ObjectName->Buffer,
-+                                    object_attributes->ObjectName->Length);
-+  }
-+
-   return CommonNtOpenKey(status, key, desired_access, object_attributes);
- }
- 
- }  // namespace sandbox
-diff --git a/sandbox/win/src/signed_interception.cc b/sandbox/win/src/signed_interception.cc
---- a/sandbox/win/src/signed_interception.cc
-+++ b/sandbox/win/src/signed_interception.cc
-@@ -9,16 +9,17 @@
- #include "sandbox/win/src/crosscall_client.h"
- #include "sandbox/win/src/ipc_tags.h"
- #include "sandbox/win/src/policy_params.h"
- #include "sandbox/win/src/policy_target.h"
- #include "sandbox/win/src/sandbox_factory.h"
- #include "sandbox/win/src/sandbox_nt_util.h"
- #include "sandbox/win/src/sharedmem_ipc_client.h"
- #include "sandbox/win/src/target_services.h"
-+#include "mozilla/sandboxing/sandboxLogging.h"
- 
- namespace sandbox {
- 
+ // Note that this shim may be called before the heap is available, we must get
+ // as far as |QueryBroker| without using the heap, for example when AppVerifier
+ // is enabled.
  NTSTATUS WINAPI
  TargetNtCreateSection(NtCreateSectionFunction orig_CreateSection,
-                       PHANDLE section_handle,
-                       ACCESS_MASK desired_access,
-                       POBJECT_ATTRIBUTES object_attributes,
-@@ -37,16 +38,18 @@ TargetNtCreateSection(NtCreateSectionFun
+@@ -38,16 +39,18 @@ TargetNtCreateSection(NtCreateSectionFun
        break;
      if (maximum_size)
        break;
@@ -648,10 +357,10 @@ diff --git a/sandbox/win/src/signed_interception.cc b/sandbox/win/src/signed_int
      if (!memory)
        break;
  
-     std::unique_ptr<wchar_t, NtAllocDeleter> path;
- 
-     if (!NtGetPathFromHandle(file_handle, &path))
-@@ -73,16 +76,17 @@ TargetNtCreateSection(NtCreateSectionFun
+     // As mentioned at the top of the function, we need to use the stack here
+     // because the heap may not be available.
+     constexpr ULONG path_buffer_size =
+@@ -90,16 +93,17 @@ TargetNtCreateSection(NtCreateSectionFun
      if (code != SBOX_ALL_OK)
        break;
  
@@ -669,101 +378,3 @@ diff --git a/sandbox/win/src/signed_interception.cc b/sandbox/win/src/signed_int
  
    // Fall back to the original API in all failure cases.
    return orig_CreateSection(section_handle, desired_access, object_attributes,
-diff --git a/sandbox/win/src/sync_interception.cc b/sandbox/win/src/sync_interception.cc
---- a/sandbox/win/src/sync_interception.cc
-+++ b/sandbox/win/src/sync_interception.cc
-@@ -9,16 +9,17 @@
- #include "sandbox/win/src/crosscall_client.h"
- #include "sandbox/win/src/ipc_tags.h"
- #include "sandbox/win/src/policy_params.h"
- #include "sandbox/win/src/policy_target.h"
- #include "sandbox/win/src/sandbox_factory.h"
- #include "sandbox/win/src/sandbox_nt_util.h"
- #include "sandbox/win/src/sharedmem_ipc_client.h"
- #include "sandbox/win/src/target_services.h"
-+#include "mozilla/sandboxing/sandboxLogging.h"
- 
- namespace sandbox {
- 
- ResultCode ProxyCreateEvent(LPCWSTR name,
-                             uint32_t initial_state,
-                             EVENT_TYPE event_type,
-                             void* ipc_memory,
-                             CrossCallReturn* answer) {
-@@ -59,16 +60,20 @@ NTSTATUS WINAPI TargetNtCreateEvent(NtCr
-                                     EVENT_TYPE event_type,
-                                     BOOLEAN initial_state) {
-   NTSTATUS status =
-       orig_CreateEvent(event_handle, desired_access, object_attributes,
-                        event_type, initial_state);
-   if (status != STATUS_ACCESS_DENIED || !object_attributes)
-     return status;
- 
-+  mozilla::sandboxing::LogBlocked("NtCreatEvent",
-+                                  object_attributes->ObjectName->Buffer,
-+                                  object_attributes->ObjectName->Length);
-+
-   // We don't trust that the IPC can work this early.
-   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-     return status;
- 
-   do {
-     if (!ValidParameter(event_handle, sizeof(HANDLE), WRITE))
-       break;
- 
-@@ -97,30 +102,37 @@ NTSTATUS WINAPI TargetNtCreateEvent(NtCr
-       break;
-     }
-     __try {
-       *event_handle = answer.handle;
-       status = STATUS_SUCCESS;
-     } __except (EXCEPTION_EXECUTE_HANDLER) {
-       break;
-     }
-+    mozilla::sandboxing::LogAllowed("NtCreateEvent",
-+                                    object_attributes->ObjectName->Buffer,
-+                                    object_attributes->ObjectName->Length);
-   } while (false);
- 
-   return status;
- }
- 
- NTSTATUS WINAPI TargetNtOpenEvent(NtOpenEventFunction orig_OpenEvent,
-                                   PHANDLE event_handle,
-                                   ACCESS_MASK desired_access,
-                                   POBJECT_ATTRIBUTES object_attributes) {
-   NTSTATUS status =
-       orig_OpenEvent(event_handle, desired_access, object_attributes);
-   if (status != STATUS_ACCESS_DENIED || !object_attributes)
-     return status;
- 
-+  mozilla::sandboxing::LogBlocked("NtOpenEvent",
-+                                  object_attributes->ObjectName->Buffer,
-+                                  object_attributes->ObjectName->Length);
-+
-   // We don't trust that the IPC can work this early.
-   if (!SandboxFactory::GetTargetServices()->GetState()->InitCalled())
-     return status;
- 
-   do {
-     if (!ValidParameter(event_handle, sizeof(HANDLE), WRITE))
-       break;
- 
-@@ -149,14 +161,17 @@ NTSTATUS WINAPI TargetNtOpenEvent(NtOpen
-       break;
-     }
-     __try {
-       *event_handle = answer.handle;
-       status = STATUS_SUCCESS;
-     } __except (EXCEPTION_EXECUTE_HANDLER) {
-       break;
-     }
-+    mozilla::sandboxing::LogAllowed("NtOpenEvent",
-+                                    object_attributes->ObjectName->Buffer,
-+                                    object_attributes->ObjectName->Length);
-   } while (false);
- 
-   return status;
- }
- 
- }  // namespace sandbox

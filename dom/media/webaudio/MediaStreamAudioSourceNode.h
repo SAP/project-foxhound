@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -75,7 +73,7 @@ class MediaStreamAudioSourceNode
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
   // Attaches to aTrack so that its audio content will be used as input.
-  void AttachToTrack(const RefPtr<MediaStreamTrack>& aTrack, ErrorResult& aRv);
+  void AttachToTrack(AudioStreamTrack* aTrack);
 
   // Detaches from the currently attached track if there is one.
   void DetachFromTrack();
@@ -137,7 +135,7 @@ class MediaStreamAudioSourceNode
   RefPtr<DOMMediaStream> mInputStream;
 
   // On construction we set this to the first audio track of mInputStream.
-  RefPtr<MediaStreamTrack> mInputTrack;
+  RefPtr<AudioStreamTrack> mInputTrack;
   RefPtr<TrackListener> mListener;
 };
 

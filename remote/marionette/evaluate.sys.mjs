@@ -47,7 +47,7 @@ export const evaluate = {};
  * to provide the line number in the origin script file on the local end.
  *
  * @param {nsISandbox} sb
- *     Sandbox the script will be evaluted in.
+ *     Sandbox the script will be evaluated in.
  * @param {string} script
  *     Script to evaluate.
  * @param {Array.<?>=} args
@@ -151,7 +151,7 @@ evaluate.sandbox = function (
   });
 
   // This block is mainly for async scripts, which escape the inner promise
-  // when calling resolve() on their own. The timeout promise will be re-used
+  // when calling resolve() on their own. The timeout promise will be reused
   // to break out after the initially setup timeout.
   return Promise.race([promise, timeoutPromise])
     .catch(err => {
@@ -169,7 +169,7 @@ evaluate.sandbox = function (
 
 /**
  * `Cu.isDeadWrapper` does not return true for a dead sandbox that
- * was assosciated with and extension popup.  This provides a way to
+ * was associated with and extension popup.  This provides a way to
  * still test for a dead object.
  *
  * @param {object} obj

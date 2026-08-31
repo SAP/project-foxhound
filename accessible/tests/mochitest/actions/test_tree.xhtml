@@ -24,27 +24,9 @@
 
   <script type="application/javascript">
   <![CDATA[
-    ////////////////////////////////////////////////////////////////////////////
-    // Accessible tree testers
+    /* global testAction */
 
-    function stateFocusChecker(aAcc, aStates)
-    {
-      this.__proto__ = new focusChecker(aAcc);
-
-      this.check = function focusChecker_check()
-      {
-        var states = aStates ? aStates : 0;
-        testStates(this.target, STATE_FOCUSED | STATE_SELECTED | states);
-      }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Test
-
-    // gA11yEventDumpID = "debug";
-    //gA11yEventDumpToConsole = true; // debug
-
-    function doTest()
+    async function doTest()
     {
       var treeNode = getNode("tree");
 
@@ -54,42 +36,37 @@
       var expandedTreeItem = tree.getChildAt(2);
       var collapsedTreeItem = tree.getChildAt(5);
 
-      var actions = [
-        {
-          ID: expandedTreeItem,
-          actionName: "activate",
-          actionIndex: 0,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          eventSeq: [
-            new stateFocusChecker(expandedTreeItem, STATE_EXPANDED)
-          ]
-        },
-        {
-          ID: collapsedTreeItem,
-          actionName: "expand",
-          actionIndex: 1,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          checkOnClickEvent: function check()
-          {
-            testStates(this.ID, STATE_EXPANDED);
-          }
-        },
-        {
-          ID: collapsedTreeItem,
-          actionName: "collapse",
-          actionIndex: 1,
-          events: CLICK_EVENTS,
-          targetID: treeBodyNode,
-          checkOnClickEvent: function check()
-          {
-            testStates(this.ID, STATE_COLLAPSED);
-          }
-        }
-      ];
+      await testAction({
+        id: expandedTreeItem,
+        actionName: "activate",
+        actionIndex: 0,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode,
+        eventSeq: [
+          [EVENT_FOCUS, expandedTreeItem,
+           () => testStates(expandedTreeItem, STATE_FOCUSED | STATE_SELECTED | STATE_EXPANDED)]
+        ]
+      });
 
-      testActions(actions); // Will call SimpleTest.finish();
+      await testAction({
+        id: collapsedTreeItem,
+        actionName: "expand",
+        actionIndex: 1,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode
+      });
+      testStates(collapsedTreeItem, STATE_EXPANDED);
+
+      await testAction({
+        id: collapsedTreeItem,
+        actionName: "collapse",
+        actionIndex: 1,
+        events: CLICK_EVENTS,
+        targetId: treeBodyNode
+      });
+      testStates(collapsedTreeItem, STATE_COLLAPSED);
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

@@ -1,0 +1,15 @@
+{
+  "label": "gmbinder.com",
+  "bugs": {
+    "1898638": {
+      "issue": "unsupported-warning",
+      "matches": ["*://*.gmbinder.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

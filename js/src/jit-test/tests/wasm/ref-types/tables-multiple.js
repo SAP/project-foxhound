@@ -235,6 +235,26 @@ assertEq(tbl.length, 5);
 ins.exports.t2.grow(3);
 assertEq(ins.exports.size(), 4);
 
+// - table.copy must correctly handle overlapping ranges within the same table
+//   (including when the same table is imported twice)
+
+var tbl = new WebAssembly.Table({initial: 16, element: "externref"});
+for (let i = 0; i < 16; i++) {
+  tbl.set(i, i);
+}
+var ins = wasmEvalText(
+    `(module
+      (table $a (import "" "t1") 0 externref)
+      (table $b (import "" "t2") 0 externref)
+      (func (export "copy") (param $dst i32) (param $src i32) (param $len i32)
+        (table.copy $a $b (local.get $dst) (local.get $src) (local.get $len))))`,
+    {"": {t1: tbl, t2: tbl}});
+ins.exports.copy(5, 0, 10);
+var expected = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15];
+for (let i = 0; i < 16; i++) {
+  assertEq(tbl.get(i), expected[i]);
+}
+
 // - table.init on tables other than table 0
 
 var ins = wasmEvalText(

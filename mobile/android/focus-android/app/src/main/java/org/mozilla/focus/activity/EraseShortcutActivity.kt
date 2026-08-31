@@ -10,6 +10,9 @@ import mozilla.components.browser.state.selector.privateTabs
 import org.mozilla.focus.GleanMetrics.AppShortcuts
 import org.mozilla.focus.ext.components
 
+/**
+ * Shortcut activity that erases all data and finishes.
+ */
 class EraseShortcutActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

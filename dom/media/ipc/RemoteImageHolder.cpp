@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,12 +76,36 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
   if (sdBuffer.desc().type() == BufferDescriptor::TYCbCrDescriptor) {
     const YCbCrDescriptor& descriptor = sdBuffer.desc().get_YCbCrDescriptor();
 
-    size_t descriptorSize = ImageDataSerializer::ComputeYCbCrBufferSize(
-        descriptor.ySize(), descriptor.yStride(), descriptor.cbCrSize(),
-        descriptor.cbCrStride(), descriptor.yOffset(), descriptor.cbOffset(),
-        descriptor.crOffset());
-    if (NS_WARN_IF(descriptorSize > bufferSize)) {
-      MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
+    Maybe<size_t> descriptorSize = ImageDataSerializer::ComputeYCbCrBufferSize(
+        descriptor.display(), descriptor.ySize(), descriptor.yStride(),
+        descriptor.cbCrSize(), descriptor.cbCrStride(), descriptor.yOffset(),
+        descriptor.cbOffset(), descriptor.crOffset(), descriptor.colorDepth(),
+        descriptor.chromaSubsampling());
+    if (NS_WARN_IF(descriptorSize.isNothing() ||
+                   descriptorSize.value() > bufferSize)) {
+      // Skip assertion during gtests.
+      if (!PR_GetEnv("MOZ_RUN_GTEST")) {
+        MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
+      }
+      return nullptr;
+    }
+
+    if (!IntRect(IntPoint(), descriptor.ySize())
+             .Contains(descriptor.display())) {
+      if (!PR_GetEnv("MOZ_RUN_GTEST")) {
+        MOZ_ASSERT_UNREACHABLE(
+            "YCbCr display rect exceeds Y plane dimensions!");
+      }
+      return nullptr;
+    }
+
+    auto croppedCbCr = ImageDataSerializer::GetCroppedCbCrSize(descriptor);
+    if (croppedCbCr.width > descriptor.cbCrSize().width ||
+        croppedCbCr.height > descriptor.cbCrSize().height) {
+      if (!PR_GetEnv("MOZ_RUN_GTEST")) {
+        MOZ_ASSERT_UNREACHABLE(
+            "YCbCr chroma dimensions exceed CbCr plane size!");
+      }
       return nullptr;
     }
 
@@ -115,19 +137,25 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
   if (sdBuffer.desc().type() == BufferDescriptor::TRGBDescriptor) {
     const RGBDescriptor& descriptor = sdBuffer.desc().get_RGBDescriptor();
 
-    size_t descriptorSize = ImageDataSerializer::ComputeRGBBufferSize(
+    Maybe<size_t> descriptorSize = ImageDataSerializer::ComputeRGBBufferSize(
         descriptor.size(), descriptor.format());
-    if (NS_WARN_IF(descriptorSize > bufferSize)) {
+    if (NS_WARN_IF(descriptorSize.isNothing() ||
+                   descriptorSize.value() > bufferSize)) {
       MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
       return nullptr;
     }
 
     auto stride = ImageDataSerializer::ComputeRGBStride(
         descriptor.format(), descriptor.size().width);
+    if (stride.isNothing()) {
+      MOZ_ASSERT_UNREACHABLE("Invalid RBG stride!");
+      return nullptr;
+    }
+
     auto surface = MakeRefPtr<SourceSurfaceAlignedRawData>();
     if (NS_WARN_IF(!surface->Init(descriptor.size(), descriptor.format(),
                                   /* aClearMem */ false, /* aClearValue */ 0,
-                                  stride))) {
+                                  stride.value()))) {
       return nullptr;
     }
 
@@ -136,7 +164,7 @@ already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
       return nullptr;
     }
 
-    if (NS_WARN_IF(!SwizzleData(buffer, stride, descriptor.format(),
+    if (NS_WARN_IF(!SwizzleData(buffer, stride.value(), descriptor.format(),
                                 map.GetData(), map.GetStride(),
                                 descriptor.format(), descriptor.size()))) {
       return nullptr;
@@ -181,33 +209,33 @@ RemoteImageHolder::~RemoteImageHolder() {
   }
 }
 
-/* static */ void ipc::IPDLParamTraits<RemoteImageHolder>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    RemoteImageHolder&& aParam) {
-  WriteIPDLParam(aWriter, aActor, aParam.mSource);
-  WriteIPDLParam(aWriter, aActor, aParam.mSize);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorDepth);
-  WriteIPDLParam(aWriter, aActor, aParam.mSD);
-  WriteIPDLParam(aWriter, aActor, aParam.mYUVColorSpace);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorPrimaries);
-  WriteIPDLParam(aWriter, aActor, aParam.mTransferFunction);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorRange);
+}  // namespace mozilla
+
+/* static */ void IPC::ParamTraits<mozilla::RemoteImageHolder>::Write(
+    MessageWriter* aWriter, mozilla::RemoteImageHolder&& aParam) {
+  WriteParam(aWriter, aParam.mSource);
+  WriteParam(aWriter, aParam.mSize);
+  WriteParam(aWriter, aParam.mColorDepth);
+  WriteParam(aWriter, aParam.mSD);
+  WriteParam(aWriter, aParam.mYUVColorSpace);
+  WriteParam(aWriter, aParam.mColorPrimaries);
+  WriteParam(aWriter, aParam.mTransferFunction);
+  WriteParam(aWriter, aParam.mColorRange);
   // Empty this holder.
-  aParam.mSD = Nothing();
+  aParam.mSD = mozilla::Nothing();
   aParam.mManager = nullptr;
 }
 
-/* static */ bool ipc::IPDLParamTraits<RemoteImageHolder>::Read(
-    IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-    RemoteImageHolder* aResult) {
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mSource) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mSize) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorDepth) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mSD) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mYUVColorSpace) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorPrimaries) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mTransferFunction) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorRange)) {
+/* static */ bool IPC::ParamTraits<mozilla::RemoteImageHolder>::Read(
+    MessageReader* aReader, mozilla::RemoteImageHolder* aResult) {
+  if (!ReadParam(aReader, &aResult->mSource) ||
+      !ReadParam(aReader, &aResult->mSize) ||
+      !ReadParam(aReader, &aResult->mColorDepth) ||
+      !ReadParam(aReader, &aResult->mSD) ||
+      !ReadParam(aReader, &aResult->mYUVColorSpace) ||
+      !ReadParam(aReader, &aResult->mColorPrimaries) ||
+      !ReadParam(aReader, &aResult->mTransferFunction) ||
+      !ReadParam(aReader, &aResult->mColorRange)) {
     return false;
   }
 
@@ -215,20 +243,21 @@ RemoteImageHolder::~RemoteImageHolder() {
     return true;
   }
 
-  if (auto* manager = aActor->Manager()) {
-    if (manager->GetProtocolId() == ProtocolId::PRemoteMediaManagerMsgStart) {
-      aResult->mManager =
-          XRE_IsContentProcess()
-              ? static_cast<IGPUVideoSurfaceManager*>(
-                    static_cast<RemoteMediaManagerChild*>(manager))
-              : static_cast<IGPUVideoSurfaceManager*>(
-                    static_cast<RemoteMediaManagerParent*>(manager));
-      return true;
+  if (auto* actor = aReader->GetActor()) {
+    if (auto* manager = actor->Manager()) {
+      if (manager->GetProtocolId() ==
+          mozilla::ipc::ProtocolId::PRemoteMediaManagerMsgStart) {
+        aResult->mManager =
+            XRE_IsContentProcess()
+                ? static_cast<mozilla::IGPUVideoSurfaceManager*>(
+                      static_cast<mozilla::RemoteMediaManagerChild*>(manager))
+                : static_cast<mozilla::IGPUVideoSurfaceManager*>(
+                      static_cast<mozilla::RemoteMediaManagerParent*>(manager));
+        return true;
+      }
     }
   }
 
   MOZ_ASSERT_UNREACHABLE("Unexpected or missing protocol manager!");
   return false;
 }
-
-}  // namespace mozilla

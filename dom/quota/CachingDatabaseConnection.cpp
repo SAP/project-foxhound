@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/quota/CachingDatabaseConnection.h"
 
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ipc/BackgroundParent.h"
 
@@ -30,6 +29,9 @@ void CachingDatabaseConnection::LazyInit(
 
 Result<CachingDatabaseConnection::CachedStatement, nsresult>
 CachingDatabaseConnection::GetCachedStatement(const nsACString& aQuery) {
+  GECKO_TRACE_SCOPE("dom::quota",
+                    "CachingDatabaseConnection::GetCachedStatement");
+
   AssertIsOnConnectionThread();
   MOZ_ASSERT(!aQuery.IsEmpty());
   MOZ_ASSERT(mStorageConnection);

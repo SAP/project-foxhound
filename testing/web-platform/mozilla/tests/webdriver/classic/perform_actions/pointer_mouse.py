@@ -32,7 +32,7 @@ async def test_click_in_display_none_frame(session, inline):
     session.url = url
 
     frame = session.find.css("iframe", all=False)
-    session.switch_frame(frame)
+    session.switch_to_frame(frame)
     button = session.find.css("button", all=False)
 
     mouse_chain = session.actions.sequence(

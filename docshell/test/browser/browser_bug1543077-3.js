@@ -10,27 +10,27 @@ function test() {
 function afterOpen() {
   is(
     content.document.documentElement.textContent.indexOf("\u3042"),
-    136,
+    147,
     "Parent doc should be ISO-2022-JP initially"
   );
 
   is(
     content.frames[0].document.documentElement.textContent.indexOf("\u3042"),
-    92,
-    "Child doc should be ISO-2022-JP initially"
+    -1,
+    "Child doc should be windows-1252 initially"
   );
 }
 
 function afterChangeCharset() {
   is(
     content.document.documentElement.textContent.indexOf("\u3042"),
-    136,
+    147,
     "Parent doc should decode as ISO-2022-JP subsequently"
   );
   is(
     content.frames[0].document.documentElement.textContent.indexOf("\u3042"),
-    92,
-    "Child doc should decode as ISO-2022-JP subsequently"
+    -1,
+    "Child doc should decode as windows-1252 subsequently"
   );
 
   is(
@@ -40,7 +40,7 @@ function afterChangeCharset() {
   );
   is(
     content.frames[0].document.characterSet,
-    "ISO-2022-JP",
-    "Child doc should report ISO-2022-JP subsequently"
+    "windows-1252",
+    "Child doc should report windows-1252 subsequently"
   );
 }

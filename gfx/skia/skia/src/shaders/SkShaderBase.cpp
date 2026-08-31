@@ -16,6 +16,8 @@
 #include "src/core/SkRasterPipelineOpList.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 
+#include <atomic>
+
 class SkWriteBuffer;
 
 namespace SkShaders {
@@ -26,10 +28,11 @@ std::optional<MatrixRec> MatrixRec::apply(const SkStageRec& rec, const SkMatrix&
     if (!fCTMApplied) {
         total = SkMatrix::Concat(fCTM, total);
     }
-    if (!total.invert(&total)) {
+    if (auto inv = total.invert()) {
+        total = SkMatrix::Concat(postInv, *inv);
+    } else {
         return {};
     }
-    total = SkMatrix::Concat(postInv, total);
     if (!fCTMApplied) {
         rec.fPipeline->append(SkRasterPipelineOp::seed_shader);
     }
@@ -44,11 +47,11 @@ std::optional<MatrixRec> MatrixRec::apply(const SkStageRec& rec, const SkMatrix&
 
 std::tuple<SkMatrix, bool> MatrixRec::applyForFragmentProcessor(const SkMatrix& postInv) const {
     SkASSERT(!fCTMApplied);
-    SkMatrix total;
-    if (!fPendingLocalMatrix.invert(&total)) {
+    if (auto total = fPendingLocalMatrix.invert()) {
+        return {SkMatrix::Concat(postInv, *total), true};
+    } else {
         return {SkMatrix::I(), false};
     }
-    return {SkMatrix::Concat(postInv, total), true};
 }
 
 MatrixRec MatrixRec::applied() const {
@@ -73,7 +76,7 @@ MatrixRec MatrixRec::concat(const SkMatrix& m) const {
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
-SkShaderBase::SkShaderBase() = default;
+SkShaderBase::SkShaderBase() {}
 
 SkShaderBase::~SkShaderBase() = default;
 
@@ -95,7 +98,7 @@ SkShaderBase::Context* SkShaderBase::makeContext(const ContextRec& rec, SkArenaA
 #ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
     // We always fall back to raster pipeline when perspective is present.
     auto totalMatrix = rec.fMatrixRec.totalMatrix();
-    if (totalMatrix.hasPerspective() || !totalMatrix.invert(nullptr)) {
+    if (totalMatrix.hasPerspective() || !totalMatrix.invert()) {
         return nullptr;
     }
 
@@ -109,10 +112,6 @@ SkShaderBase::Context::Context(const SkShaderBase& shader, const ContextRec& rec
         : fShader(shader) {
     // We should never use a context with perspective.
     SkASSERT(!rec.fMatrixRec.totalMatrix().hasPerspective());
-
-    // Because the context parameters must be valid at this point, we know that the matrix is
-    // invertible.
-    SkAssertResult(rec.fMatrixRec.totalInverse(&fTotalInverse));
 
     fPaintAlpha = rec.fPaintAlpha;
 }

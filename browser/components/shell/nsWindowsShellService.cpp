@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,8 +18,8 @@
 #include "mozilla/FileUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/Localization.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/widget/WinTaskbar.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
@@ -37,6 +36,7 @@
 #include "nsIOutputStream.h"
 #include "nsIPrefService.h"
 #include "nsIStringBundle.h"
+#include "nsITimer.h"
 #include "nsIWindowsRegKey.h"
 #include "nsIXULAppInfo.h"
 #include "nsLocalFile.h"
@@ -45,6 +45,7 @@
 #include "nsProxyRelease.h"
 #include "nsServiceManagerUtils.h"
 #include "nsShellService.h"
+#include "nsThreadUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowsHelpers.h"
 #include "nsXULAppAPI.h"
@@ -58,6 +59,7 @@
 #include <mbstring.h>
 #include <objbase.h>
 #include <propkey.h>
+#include <uiautomation.h>
 #include <propvarutil.h>
 #include <shellapi.h>
 #include <strsafe.h>
@@ -133,7 +135,6 @@ static nsresult PinCurrentAppToTaskbarWin10(bool aCheckOnly,
                                             const nsAString& aAppUserModelId,
                                             const nsAString& aShortcutPath);
 static nsresult WriteBitmap(nsIFile* aFile, imgIContainer* aImage);
-static nsresult WriteIcon(nsIFile* aIcoFile, gfx::DataSourceSurface* aSurface);
 
 static nsresult OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName,
                                   HKEY* aKey) {
@@ -225,7 +226,33 @@ static bool IsPathDefaultForClass(
   nsAutoString pathFromReg(cmdFromReg);
   nsLocalFile::CleanupCmdHandlerPath(pathFromReg);
 
-  return _wcsicmp(exePath, pathFromReg.Data()) == 0;
+  return _wcsicmp(exePath, pathFromReg.get()) == 0;
+}
+
+static bool IsMsixProgIdDefaultForClass(
+    const RefPtr<IApplicationAssociationRegistration>& pAAR, LPCWSTR aClass) {
+  UniquePtr<wchar_t[]> firefoxProgId;
+  const nsresult nsr{GetMsixProgId(aClass, firefoxProgId)};
+  if (NS_FAILED(nsr)) {
+    return false;
+  }
+
+  const ASSOCIATIONTYPE queryType{aClass[0] != L'.' ? AT_URLPROTOCOL
+                                                    : AT_FILEEXTENSION};
+  LPWSTR defaultProgId;
+  const HRESULT hr{pAAR->QueryCurrentDefault(aClass, queryType, AL_EFFECTIVE,
+                                             &defaultProgId)};
+  if (FAILED(hr)) {
+    return false;
+  }
+
+  const bool isDefault{::CompareStringOrdinal(firefoxProgId.get(), -1,
+                                              defaultProgId, -1,
+                                              TRUE) == CSTR_EQUAL};
+
+  CoTaskMemFree(defaultProgId);
+
+  return isDefault;
 }
 
 NS_IMETHODIMP
@@ -241,6 +268,18 @@ nsWindowsShellService::IsDefaultBrowser(bool aForAllTypes,
     return NS_OK;
   }
 
+  LPCWSTR httpClass{L"http"};
+  LPCWSTR htmlClass{L".html"};
+
+  if (widget::WinUtils::HasPackageIdentity()) {
+    // Firefox is running as an MSIX package
+    *aIsDefaultBrowser = IsMsixProgIdDefaultForClass(pAAR, httpClass);
+    if (*aIsDefaultBrowser && aForAllTypes) {
+      *aIsDefaultBrowser = IsMsixProgIdDefaultForClass(pAAR, htmlClass);
+    }
+    return NS_OK;
+  }
+
   wchar_t exePath[MAXPATHLEN] = L"";
   nsresult rv = BinaryPath::GetLong(exePath);
 
@@ -248,9 +287,9 @@ nsWindowsShellService::IsDefaultBrowser(bool aForAllTypes,
     return NS_OK;
   }
 
-  *aIsDefaultBrowser = IsPathDefaultForClass(pAAR, exePath, L"http");
+  *aIsDefaultBrowser = IsPathDefaultForClass(pAAR, exePath, httpClass);
   if (*aIsDefaultBrowser && aForAllTypes) {
-    *aIsDefaultBrowser = IsPathDefaultForClass(pAAR, exePath, L".html");
+    *aIsDefaultBrowser = IsPathDefaultForClass(pAAR, exePath, htmlClass);
   }
   return NS_OK;
 }
@@ -268,14 +307,20 @@ nsWindowsShellService::IsDefaultHandlerFor(
     return NS_OK;
   }
 
+  const nsString& flatClass = PromiseFlatString(aFileExtensionOrProtocol);
+
+  if (widget::WinUtils::HasPackageIdentity()) {
+    // Firefox is running as an MSIX package
+    *aIsDefaultHandlerFor = IsMsixProgIdDefaultForClass(pAAR, flatClass.get());
+    return NS_OK;
+  }
+
   wchar_t exePath[MAXPATHLEN] = L"";
   nsresult rv = BinaryPath::GetLong(exePath);
 
   if (NS_FAILED(rv)) {
     return NS_OK;
   }
-
-  const nsString& flatClass = PromiseFlatString(aFileExtensionOrProtocol);
 
   *aIsDefaultHandlerFor = IsPathDefaultForClass(pAAR, exePath, flatClass.get());
   return NS_OK;
@@ -412,8 +457,94 @@ nsWindowsShellService::CanSetDefaultBrowserUserChoice(bool* aResult) {
   return NS_OK;
 }
 
-nsresult nsWindowsShellService::LaunchModernSettingsDialogDefaultApps() {
+class __declspec(novtable) IOpenWithLauncher : public IUnknown {
+ public:
+  // lpszPath selects what the picker offers to set as default. It accepts
+  // several shapes:
+  //   - a file path:     "C:\\path\\to\\file.pdf"
+  //   - a file type:     ".pdf"
+  //   - a protocol:      "http"
+  //   - a protocol URI:  "https://example.com", "mailto:foo@example.com"
+  // flags determines the messaging and actions available of the
+  // IOpenWithLauncher dialog.
+  virtual HRESULT STDMETHODCALLTYPE Launch(HWND hWndParent, LPCWSTR lpszPath,
+                                           int flags) = 0;
+};
+
+NS_IMETHODIMP
+nsWindowsShellService::LaunchSetDefaultAppPicker(const nsAString& aTarget,
+                                                 int32_t aFlags) {
+  static constexpr GUID IID_IOpenWithLauncher = {
+      0x6a283fe2,
+      0xecfa,
+      0x4599,
+      {0x91, 0xc4, 0xe8, 0x09, 0x57, 0x13, 0x7b, 0x26}};
+
+  nsresult rv;
+  nsCOMPtr<nsIWindowsRegKey> regKey =
+      do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Get the CLSID from the registry.
+  rv =
+      regKey->Open(nsIWindowsRegKey::ROOT_KEY_LOCAL_MACHINE,
+                   u"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\OpenWith"_ns,
+                   nsIWindowsRegKey::ACCESS_READ);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoString value;
+  rv = regKey->ReadStringValue(u"OpenWithLauncher"_ns, value);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  CLSID CLSID_IOpenWithLauncher;
+  HRESULT hr = ::CLSIDFromString(value.get(), &CLSID_IOpenWithLauncher);
+  NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+
+  RefPtr<IOpenWithLauncher> pOWL;
+  hr = CoCreateInstance(CLSID_IOpenWithLauncher, nullptr, CLSCTX_LOCAL_SERVER,
+                        IID_IOpenWithLauncher, getter_AddRefs(pOWL));
+  NS_ENSURE_HRESULT(hr, NS_ERROR_NOT_AVAILABLE);
+
+  // Make sure the dialog is foregrounded.
+  CoAllowSetForegroundWindow(pOWL, nullptr);
+
+  hr = pOWL->Launch(nullptr, PromiseFlatString(aTarget).get(), aFlags);
+
+  return SUCCEEDED(hr) ? NS_OK : NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsWindowsShellService::LaunchModernSettingsDialogDefaultApps() {
   return ::LaunchModernSettingsDialogDefaultApps() ? NS_OK : NS_ERROR_FAILURE;
+}
+
+static void FocusSetDefaultBrowserButton() {
+  nsCOMPtr<nsISerialEventTarget> serialEventTarget;
+  const nsresult nsr{NS_CreateBackgroundTaskQueue(
+      "FocusSetDefaultBrowserButtonQueue", getter_AddRefs(serialEventTarget))};
+  if (NS_FAILED(nsr)) {
+    return;
+  }
+
+  auto attempts{std::make_shared<int>(0)};
+  auto timer{std::make_shared<nsCOMPtr<nsITimer>>()};
+  auto timerCallback{[attempts, timer](nsITimer* aTimer) {
+    const int kMaxAttempts{40};
+    if (++(*attempts) > kMaxAttempts) {
+      aTimer->Cancel();
+      return;
+    }
+    auto [window, button]{FindSetDefaultBrowserButton()};
+    if (window && button) {
+      FocusElement(window, button);
+      aTimer->Cancel();
+    }
+  }};
+  const uint32_t kRetryDelayMs{500};
+  NS_NewTimerWithCallback(getter_AddRefs(*timer), timerCallback, kRetryDelayMs,
+                          nsITimer::TYPE_REPEATING_SLACK,
+                          "FocusSetDefaultBrowserButtonTimer"_ns,
+                          serialEventTarget);
 }
 
 NS_IMETHODIMP
@@ -437,9 +568,14 @@ nsWindowsShellService::SetDefaultBrowser(bool aForAllUsers) {
 
   if (NS_SUCCEEDED(rv)) {
     rv = LaunchModernSettingsDialogDefaultApps();
-    // The above call should never really fail, but just in case
-    // fall back to showing control panel for all defaults
-    if (NS_FAILED(rv)) {
+    if (NS_SUCCEEDED(rv)) {
+      if (Preferences::GetBool("browser.shell.focusSetDefaultBrowserButton",
+                               false)) {
+        FocusSetDefaultBrowserButton();
+      }
+    } else {
+      // The above call should never really fail, but just in case
+      // fall back to showing control panel for all defaults
       rv = LaunchControlPanelDefaultsSelectionUI();
     }
   }
@@ -455,123 +591,12 @@ nsWindowsShellService::SetDefaultBrowser(bool aForAllUsers) {
   return rv;
 }
 
-/*
- * Asynchronous function to Write an ico file to the disk / in a nsIFile.
- * Limitation: Only square images are supported as of now.
- */
-NS_IMETHODIMP
-nsWindowsShellService::CreateWindowsIcon(nsIFile* aIcoFile,
-                                         imgIContainer* aImage, JSContext* aCx,
-                                         dom::Promise** aPromise) {
-  NS_ENSURE_ARG_POINTER(aIcoFile);
-  NS_ENSURE_ARG_POINTER(aImage);
-  NS_ENSURE_ARG_POINTER(aCx);
-  NS_ENSURE_ARG_POINTER(aPromise);
-
-  if (!NS_IsMainThread()) {
-    return NS_ERROR_NOT_SAME_THREAD;
-  }
-
-  ErrorResult rv;
-  RefPtr<dom::Promise> promise =
-      dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
-
-  if (MOZ_UNLIKELY(rv.Failed())) {
-    return rv.StealNSResult();
-  }
-
-  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
-      "CreateWindowsIcon promise", promise);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Reading input image...\n", __FILE__, __LINE__));
-
-  RefPtr<gfx::SourceSurface> surface = aImage->GetFrame(
-      imgIContainer::FRAME_FIRST, imgIContainer::FLAG_SYNC_DECODE);
-  NS_ENSURE_TRUE(surface, NS_ERROR_FAILURE);
-
-  // At time of writing only `DataSourceSurface` was guaranteed thread safe. We
-  // need this guarantee to write the icon file off the main thread.
-  RefPtr<gfx::DataSourceSurface> dataSurface = surface->GetDataSurface();
-  NS_ENSURE_TRUE(dataSurface, NS_ERROR_FAILURE);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Surface found, writing icon... \n", __FILE__, __LINE__));
-
-  NS_DispatchBackgroundTask(
-      NS_NewRunnableFunction(
-          "CreateWindowsIcon",
-          [icoFile = nsCOMPtr<nsIFile>(aIcoFile), dataSurface, promiseHolder] {
-            nsresult rv = WriteIcon(icoFile, dataSurface);
-
-            NS_DispatchToMainThread(NS_NewRunnableFunction(
-                "CreateWindowsIcon callback", [rv, promiseHolder] {
-                  dom::Promise* promise = promiseHolder.get()->get();
-
-                  if (NS_SUCCEEDED(rv)) {
-                    promise->MaybeResolveWithUndefined();
-                  } else {
-                    promise->MaybeReject(rv);
-                  }
-                }));
-          }),
-      NS_DISPATCH_EVENT_MAY_BLOCK);
-
-  promise.forget(aPromise);
-  return NS_OK;
-}
-
-static nsresult WriteIcon(nsIFile* aIcoFile, gfx::DataSourceSurface* aSurface) {
-  NS_ENSURE_ARG(aIcoFile);
-  NS_ENSURE_ARG(aSurface);
-
-  const gfx::IntSize size = aSurface->GetSize();
-  if (size.IsEmpty()) {
-    MOZ_LOG(sLog, LogLevel::Debug,
-            ("%s:%d - The input image looks empty :(\n", __FILE__, __LINE__));
-    return NS_ERROR_FAILURE;
-  }
-
-  int32_t width = aSurface->GetSize().width;
-  int32_t height = aSurface->GetSize().height;
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Input image dimensions are: %dx%d pixels\n", __FILE__,
-           __LINE__, width, height));
-
-  NS_ENSURE_TRUE(height > 0, NS_ERROR_FAILURE);
-  NS_ENSURE_TRUE(width > 0, NS_ERROR_FAILURE);
-  NS_ENSURE_TRUE(width == height, NS_ERROR_FAILURE);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Opening file for writing...\n", __FILE__, __LINE__));
-
-  ScopedCloseFile file;
-  nsresult rv = aIcoFile->OpenANSIFileDesc("wb", getter_Transfers(file));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Writing icon...\n", __FILE__, __LINE__));
-
-  rv = gfxUtils::EncodeSourceSurface(aSurface, ImageType::ICO, u""_ns,
-                                     gfxUtils::eBinaryEncode, file.get());
-
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(sLog, LogLevel::Debug,
-            ("%s:%d - Could not write the icon!\n", __FILE__, __LINE__));
-    return rv;
-  }
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Icon written!\n", __FILE__, __LINE__));
-  return NS_OK;
-}
-
 static nsresult WriteBitmap(nsIFile* aFile, imgIContainer* aImage) {
   nsresult rv;
 
   RefPtr<gfx::SourceSurface> surface = aImage->GetFrame(
-      imgIContainer::FRAME_FIRST, imgIContainer::FLAG_SYNC_DECODE);
+      imgIContainer::FRAME_FIRST,
+      imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY);
   NS_ENSURE_TRUE(surface, NS_ERROR_FAILURE);
 
   // For either of the following formats we want to set the biBitCount member
@@ -1368,7 +1393,7 @@ static nsresult GetMatchingShortcut(int aCSIDL, const nsAString& aAUMID,
   WIN32_FIND_DATAW findData = {};
   HANDLE hFindFile = FindFirstFileW(pattern.get(), &findData);
   if (hFindFile == INVALID_HANDLE_VALUE) {
-    Unused << NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
+    (void)NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
     return NS_ERROR_FILE_NOT_FOUND;
   }
   // Past this point we don't return until the end of the function,
@@ -1380,7 +1405,8 @@ static nsresult GetMatchingShortcut(int aCSIDL, const nsAString& aAUMID,
     // This is a case sensitive comparison, but that's probably fine for
     // the vast majority of cases -- and certainly for all the ones where
     // a shortcut was created by the installer.
-    if (StrStrIW(findData.cFileName, aShortcutSubstring.Data()) == NULL) {
+    if (StrStrIW(findData.cFileName,
+                 PromiseFlatString(aShortcutSubstring).get()) == NULL) {
       continue;
     }
 
@@ -1570,8 +1596,7 @@ static bool IsCurrentAppPinnedToTaskbarSync(const nsAString& aumid) {
   // Right now only run this check on MSIX to avoid
   // false positives when only private browsing is pinned.
   if (widget::WinUtils::HasPackageIdentity()) {
-    auto pinWithWin11TaskbarAPIResults =
-        IsCurrentAppPinnedToTaskbarWin11(false);
+    auto pinWithWin11TaskbarAPIResults = IsCurrentAppPinnedToTaskbarWin11();
     switch (pinWithWin11TaskbarAPIResults.result) {
       case Win11PinToTaskBarResultStatus::NotPinned:
         return false;
@@ -1631,7 +1656,7 @@ static bool IsCurrentAppPinnedToTaskbarSync(const nsAString& aumid) {
   WIN32_FIND_DATAW findData = {};
   HANDLE hFindFile = FindFirstFileW(pattern.get(), &findData);
   if (hFindFile == INVALID_HANDLE_VALUE) {
-    Unused << NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
+    (void)NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
     return false;
   }
   // Past this point we don't return until the end of the function,
@@ -1784,7 +1809,8 @@ static nsresult ManageShortcutTaskbarPins(bool aCheckOnly, bool aPinType,
 
 static nsresult PinShortcutToTaskbarImpl(bool aCheckOnly,
                                          const nsAString& aAppUserModelId,
-                                         const nsAString& aShortcutPath) {
+                                         const nsAString& aShortcutPath,
+                                         const bool aFireAndForget = false) {
   // Verify shortcut is visible to `shell:appsfolder`. Shortcut creation -
   // during install or runtime - causes a race between it propagating to the
   // virtual `shell:appsfolder` and attempts to pin via `ITaskbarManager`,
@@ -1797,7 +1823,7 @@ static nsresult PinShortcutToTaskbarImpl(bool aCheckOnly,
   }
 
   auto pinWithWin11TaskbarAPIResults =
-      PinCurrentAppToTaskbarWin11(aCheckOnly, aAppUserModelId);
+      PinCurrentAppToTaskbarWin11(aCheckOnly, aAppUserModelId, aFireAndForget);
   switch (pinWithWin11TaskbarAPIResults.result) {
     case Win11PinToTaskBarResultStatus::NotSupported:
       // Fall through to the win 10 mechanism
@@ -2003,9 +2029,10 @@ static bool PollAppsFolderForShortcut(const nsAString& aAppUserModelId,
 }
 
 static nsresult PinCurrentAppToTaskbarImpl(
-    bool aCheckOnly, bool aPrivateBrowsing, const nsAString& aAppUserModelId,
-    const nsAString& aShortcutName, const nsAString& aShortcutSubstring,
-    nsIFile* aGreDir, const ShortcutLocations& location) {
+    bool aCheckOnly, bool aPrivateBrowsing, const bool aFireAndForget,
+    const nsAString& aAppUserModelId, const nsAString& aShortcutName,
+    const nsAString& aShortcutSubstring, nsIFile* aGreDir,
+    const ShortcutLocations& location) {
   MOZ_DIAGNOSTIC_ASSERT(
       !NS_IsMainThread(),
       "PinCurrentAppToTaskbarImpl should be called off main thread only");
@@ -2055,13 +2082,13 @@ static nsresult PinCurrentAppToTaskbarImpl(
       return NS_ERROR_FILE_NOT_FOUND;
     }
   }
-  return PinShortcutToTaskbarImpl(aCheckOnly, aAppUserModelId, shortcutPath);
+  return PinShortcutToTaskbarImpl(aCheckOnly, aAppUserModelId, shortcutPath,
+                                  aFireAndForget);
 }
 
-static nsresult PinCurrentAppToTaskbarAsyncImpl(bool aCheckOnly,
-                                                bool aPrivateBrowsing,
-                                                JSContext* aCx,
-                                                dom::Promise** aPromise) {
+static nsresult PinCurrentAppToTaskbarAsyncImpl(
+    bool aCheckOnly, bool aPrivateBrowsing, JSContext* aCx,
+    dom::Promise** aPromise, const bool aFireAndForget = false) {
   if (!NS_IsMainThread()) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
@@ -2127,8 +2154,8 @@ static nsresult PinCurrentAppToTaskbarAsyncImpl(bool aCheckOnly,
   NS_DispatchBackgroundTask(
       NS_NewRunnableFunction(
           "CheckPinCurrentAppToTaskbarAsync",
-          [aCheckOnly, aPrivateBrowsing, shortcutName, aumid = nsString{aumid},
-           greDir, location = std::move(location),
+          [aCheckOnly, aPrivateBrowsing, aFireAndForget, shortcutName,
+           aumid = nsString{aumid}, greDir, location = std::move(location),
            promiseHolder = std::move(promiseHolder)] {
             nsresult rv = NS_ERROR_FAILURE;
             HRESULT hr = CoInitialize(nullptr);
@@ -2137,8 +2164,8 @@ static nsresult PinCurrentAppToTaskbarAsyncImpl(bool aCheckOnly,
               nsAutoString shortcutSubstring;
               shortcutSubstring.AssignLiteral(MOZ_APP_DISPLAYNAME);
               rv = PinCurrentAppToTaskbarImpl(
-                  aCheckOnly, aPrivateBrowsing, aumid, shortcutName,
-                  shortcutSubstring, greDir.get(), location);
+                  aCheckOnly, aPrivateBrowsing, aFireAndForget, aumid,
+                  shortcutName, shortcutSubstring, greDir.get(), location);
               CoUninitialize();
             }
 
@@ -2162,10 +2189,11 @@ static nsresult PinCurrentAppToTaskbarAsyncImpl(bool aCheckOnly,
 
 NS_IMETHODIMP
 nsWindowsShellService::PinCurrentAppToTaskbarAsync(bool aPrivateBrowsing,
+                                                   bool aFireAndForget,
                                                    JSContext* aCx,
                                                    dom::Promise** aPromise) {
   return PinCurrentAppToTaskbarAsyncImpl(
-      /* aCheckOnly */ false, aPrivateBrowsing, aCx, aPromise);
+      /* aCheckOnly */ false, aPrivateBrowsing, aCx, aPromise, aFireAndForget);
 }
 
 NS_IMETHODIMP

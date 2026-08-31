@@ -56,7 +56,7 @@ const kSaveDelayMs = 1500;
 /**
  * Handles serialization of the data and persistence into a file.
  *
- * @param {Object} config An object containing following members:
+ * @param {object} config An object containing following members:
  * @param {string} config.path
  *   String containing the file path where data should be saved.
  * @param {string} [config.sanitizedBasename]
@@ -200,8 +200,8 @@ JSONFile.prototype = {
   /**
    * Loads persistent data from the file to memory.
    *
-   * @return {Promise}
-   * @resolves When the operation finished successfully.
+   * @returns {Promise<void>}
+   *   Resolves when the operation finished successfully.
    * @rejects JavaScript exception when dataPostProcessor fails. It never fails
    *          if there is no dataPostProcessor.
    */
@@ -231,8 +231,7 @@ JSONFile.prototype = {
       // In the event that the file exists, but an exception is thrown because it cannot be read,
       // we store it as a .corrupt file for debugging purposes.
 
-      let errorNo = ex.winLastError || ex.unixErrno;
-      this._recordTelemetry(errorNo ? errorNo.toString() : "");
+      this._recordTelemetry("error_" + (ex.name?.toLowerCase() ?? "unknown"));
       if (!(DOMException.isInstance(ex) && ex.name == "NotFoundError")) {
         console.error(ex);
 
@@ -413,8 +412,8 @@ JSONFile.prototype = {
    *
    * If an error occurs, the previous file is not deleted.
    *
-   * @return {Promise}
-   * @resolves When the operation finished successfully.
+   * @returns {Promise<void>}
+   *   Resolves when the operation finished successfully.
    * @rejects JavaScript exception.
    */
   async _save() {
@@ -484,8 +483,8 @@ JSONFile.prototype = {
   /**
    * Finishes persisting data to disk and resets all state for this file.
    *
-   * @return {Promise}
-   * @resolves When the object is finalized.
+   * @returns {Promise<void>}
+   *   Resolves when the object is finalized.
    */
   _finalizeInternal() {
     if (this._finalizePromise) {

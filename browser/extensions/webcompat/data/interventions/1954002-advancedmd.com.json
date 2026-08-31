@@ -1,0 +1,18 @@
+{
+  "label": "advancedmd.com",
+  "bugs": {
+    "1954002": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.advancedmd.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["define_userAgentData.js"]
+      },
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

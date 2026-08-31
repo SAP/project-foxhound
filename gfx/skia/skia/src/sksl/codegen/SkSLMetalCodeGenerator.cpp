@@ -32,6 +32,7 @@
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/codegen/SkSLCodeGenTypes.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
+#include "src/sksl/codegen/SkSLNativeShader.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLConstructor.h"
@@ -240,7 +241,11 @@ protected:
 
     void writeSimpleIntrinsic(const FunctionCall& c);
 
+    void writeScalarizedIntrinsicCall(const FunctionCall& c);
+
     bool writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind);
+
+    void writeTextureTarget(const Expression& arg);
 
     void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
 
@@ -352,7 +357,7 @@ protected:
 
     // If we might use an index expression more than once, we need to capture the result in a
     // temporary variable to avoid double-evaluation. This should generally only occur when emitting
-    // a function call, since we need to polyfill GLSL-style out-parameter support. (skia:14130)
+    // a function call, since we need to polyfill GLSL-style out-parameter support. (skbug.com/40045204)
     // The map holds <index-expression, temp-variable name>.
     using IndexSubstitutionMap = skia_private::THashMap<const Expression*, std::string>;
 
@@ -875,11 +880,41 @@ void MetalCodeGenerator::writeArgumentList(const ExpressionArray& arguments) {
     this->write(")");
 }
 
+void MetalCodeGenerator::writeScalarizedIntrinsicCall(const FunctionCall& c){
+    SkASSERT(!c.arguments().empty());
+    const ExpressionArray& arguments = c.arguments();
+    const Expression& primaryArg = *arguments[0];
+    int columns = primaryArg.type().columns();
+
+    static constexpr std::array<const char*, 4> kSwizzleChars = { "x", "y", "z", "w" };
+    this->writeWithIndexSubstitution([&]() {
+        this->writeType(primaryArg.type());
+        this->write("(");
+        for (int i = 0; i < columns; ++i) {
+            if (i) { this->write(", "); }
+            this->write(c.function().mangledName());
+            this->write("(");
+            for (int32_t j = 0; j < arguments.size(); ++j) {
+                if (j) { this->write(", "); }
+                if (arguments[j]->type().isScalar()) {
+                    this->writeExpression(*arguments[j], Precedence::kSequence);
+                } else {
+                    this->writeIndexInnerExpression(*arguments[j]);
+                    this->write(".");
+                    this->write(kSwizzleChars[i]);
+                }
+            }
+            this->write(")");
+        }
+        this->write(")");
+    });
+}
+
 bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind) {
     const ExpressionArray& arguments = c.arguments();
     switch (kind) {
         case k_textureRead_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".read(");
             this->writeExpression(*arguments[1], Precedence::kSequence);
             this->write(")");
@@ -894,13 +929,21 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             this->write(")");
             return true;
         }
+        case k_textureSize_IntrinsicKind: {
+            this->write("uint2(");
+            this->writeTextureTarget(*arguments[0]);
+            this->write(".get_width(), ");
+            this->writeTextureTarget(*arguments[0]);
+            this->write(".get_height())");
+            return true;
+        }
         case k_textureWidth_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".get_width()");
             return true;
         }
         case k_textureHeight_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".get_height()");
             return true;
         }
@@ -1132,28 +1175,38 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             return true;
         }
         case k_bitCount_IntrinsicKind: {
-            this->write("popcount(");
+            // Cast to the signed return type required in SkSL
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(this->typeName(c.type()));
+            }
+            this->write("(popcount(");
             this->writeExpression(*arguments[0], Precedence::kSequence);
-            this->write(")");
+            this->write("))");
             return true;
         }
         case k_findLSB_IntrinsicKind: {
             // Create a temp variable to store the expression, to avoid double-evaluating it.
             std::string skTemp = this->getTempVariable(arguments[0]->type());
+            std::string signedType = this->typeName(c.type()); // The return type is always signed
             std::string exprType = this->typeName(arguments[0]->type());
 
             // ctz returns numbits(type) on zero inputs; GLSL documents it as generating -1 instead.
-            // Use select to detect zero inputs and force a -1 result.
+            // - Use select to detect zero inputs and force a -1 result.
+            // - ctz returns an unsigned value for unsigned inputs, so we have to cast back to int
 
-            // (_skTemp1 = (.....), select(ctz(_skTemp1), int4(-1), _skTemp1 == int4(0)))
+            // (_skTemp1 = (.....), select(int4(ctz(_skTemp1)), int4(-1), _skTemp1 == int4(0)))
             this->write("(");
             this->write(skTemp);
             this->write(" = (");
             this->writeExpression(*arguments[0], Precedence::kSequence);
-            this->write("), select(ctz(");
+            this->write("), select(");
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(signedType);
+            }
+            this->write("(ctz(");
             this->write(skTemp);
-            this->write("), ");
-            this->write(exprType);
+            this->write(")), ");
+            this->write(signedType);
             this->write("(-1), ");
             this->write(skTemp);
             this->write(" == ");
@@ -1164,11 +1217,14 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
         case k_findMSB_IntrinsicKind: {
             // Create a temp variable to store the expression, to avoid double-evaluating it.
             std::string skTemp1 = this->getTempVariable(arguments[0]->type());
+            std::string signedType = this->typeName(c.type()); // The return type is always signed
             std::string exprType = this->typeName(arguments[0]->type());
 
             // GLSL findMSB is actually quite different from Metal's clz:
             // - For signed negative numbers, it returns the first zero bit, not the first one bit!
             // - For an empty input (0/~0 depending on sign), findMSB gives -1; clz is numbits(type)
+            // - clz is relative to the MSB whereas findMSB returns a 0-based bit number
+            // - clz returns an unsigned value for unsigned inputs, so we have to cast back to int
 
             // (_skTemp1 = (.....),
             this->write("(");
@@ -1195,13 +1251,15 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
                 skTemp2 = skTemp1;
             }
 
-            // ... select(int4(clz(_skTemp2)), int4(-1), _skTemp2 == int4(0)))
-            this->write("select(");
-            this->write(this->typeName(c.type()));
+            // ... select(int4(31) - int4(clz(_skTemp2)), int4(-1), _skTemp2 == int4(0)))
+            this->write("select(31 - "); // Assuming 32-bit integer types
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(signedType);
+            }
             this->write("(clz(");
             this->write(skTemp2);
             this->write(")), ");
-            this->write(this->typeName(c.type()));
+            this->write(signedType);
             this->write("(-1), ");
             this->write(skTemp2);
             this->write(" == ");
@@ -1320,8 +1378,33 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             this->writeExpression(*c.arguments()[1], Precedence::kSequence);
             this->write(", memory_order_relaxed)");
             return true;
+        case k_min_IntrinsicKind:
+            [[fallthrough]];
+        case k_max_IntrinsicKind:
+            [[fallthrough]];
+        case k_clamp_IntrinsicKind: {
+            SkASSERT(c.function().mangledName() == "min" || c.function().mangledName() == "max" ||
+                     c.function().mangledName() == "clamp");
+            SkASSERT(!c.type().isMatrix());
+            if (fCaps.fVectorClampMinMaxSupport || !c.type().isVector()) {
+                this->writeSimpleIntrinsic(c);
+            } else {
+                this->writeScalarizedIntrinsicCall(c);
+            }
+            return true;
+        }
         default:
             return false;
+    }
+}
+
+void MetalCodeGenerator::writeTextureTarget(const Expression& arg) {
+    SkASSERT(arg.type().typeKind() == Type::TypeKind::kTexture ||
+             arg.type().typeKind() == Type::TypeKind::kSampler);
+
+    this->writeExpression(arg, Precedence::kExpression);
+    if (arg.type().typeKind() == Type::TypeKind::kSampler) {
+        this->write(".tex");
     }
 }
 
@@ -3674,12 +3757,12 @@ bool ToMetal(Program& program, const ShaderCaps* caps, OutputStream& out) {
     return ToMetal(program, caps, out, defaultPrintOpts);
 }
 
-bool ToMetal(Program& program, const ShaderCaps* caps, std::string* out) {
+bool ToMetal(Program& program, const ShaderCaps* caps, NativeShader* out) {
     StringStream buffer;
     if (!ToMetal(program, caps, buffer)) {
         return false;
     }
-    *out = buffer.str();
+    out->fText = buffer.str();
     return true;
 }
 

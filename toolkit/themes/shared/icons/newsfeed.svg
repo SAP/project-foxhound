@@ -1,4 +1,18 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity" xmlns="http://www.w3.org/2000/svg"><path d="M7 4H3v4.5h4V4zM12 10H3v1.5h9V10zM8.5 4H12v1.5H8.5V4zM12 7H8.5v1.5H12V7z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M0 3a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3zm2-.5a.5.5 0 0 0-.5.5v9.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5H2z"/></svg>
+<svg width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity" xmlns="http://www.w3.org/2000/svg">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton"><path d="M7 4H3v4.5h4V4zM12 10H3v1.5h9V10zM8.5 4H12v1.5H8.5V4zM12 7H8.5v1.5H12V7z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M0 3a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3zm2-.5a.5.5 0 0 0-.5.5v9.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5H2z"/></g>
+<g class="nova">
+  <path d="M11.25 10.25a.75.75 0 0 1 0 1.5h-6.5a.75.75 0 0 1 0-1.5zM6 4.25a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.5a1 1 0 0 1 1-1zm5.25 3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1 0-1.5zm0-3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1 0-1.5z" />
+  <path fill-rule="evenodd" d="M8 1c1.354 0 2.888.068 4.562.26A2.76 2.76 0 0 1 15 3.998v8.009c0 1.38-1.024 2.57-2.414 2.731a40 40 0 0 1-9.148.002A2.76 2.76 0 0 1 1 12.003V3.994c0-1.38 1.024-2.57 2.414-2.731A40 40 0 0 1 8 1m0 1.5c-1.603 0-3.081.099-4.414.253A1.24 1.24 0 0 0 2.5 3.994v8.009c0 .635.48 1.174 1.11 1.246a38.5 38.5 0 0 0 8.805-.002 1.24 1.24 0 0 0 1.085-1.241V3.997c0-.635-.48-1.174-1.11-1.246A38 38 0 0 0 8 2.5" clip-rule="evenodd" />
+</g>
+</svg>

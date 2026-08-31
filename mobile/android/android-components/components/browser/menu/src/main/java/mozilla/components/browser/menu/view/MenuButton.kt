@@ -237,7 +237,9 @@ class MenuButton @JvmOverloads constructor(
     /**
      * Sets the tint of the 3-dot menu icon.
      */
-    override fun setColorFilter(@ColorInt color: Int) {
+    override fun setColorFilter(
+        @ColorInt color: Int,
+    ) {
         menuIcon.setColorFilter(color)
     }
 
@@ -260,9 +262,9 @@ class MenuButton @JvmOverloads constructor(
      * Check the current [BrowserMenuBuilder], if exists, for highlight effect
      * and apply it.
      */
-    fun setHighlightStatus() {
+    fun setHighlightStatus(mainDispatcher: CoroutineDispatcher = Dispatchers.Main) {
         if (menuBuilder != null) {
-            observeAndDebounceSetHighlightStatusRequests()
+            observeAndDebounceSetHighlightStatusRequests(mainDispatcher)
             highlightStatusTrigger.tryEmit(Unit)
         }
     }
@@ -277,7 +279,7 @@ class MenuButton @JvmOverloads constructor(
      * See [https://bugzilla.mozilla.org/show_bug.cgi?id=1947534](https://bugzilla.mozilla.org/show_bug.cgi?id=1947534)
      * for more.
      */
-    private fun observeAndDebounceSetHighlightStatusRequests() {
+    private fun observeAndDebounceSetHighlightStatusRequests(mainDispatcher: CoroutineDispatcher) {
         if (isObservingHighlightStatusTrigger) return
         isObservingHighlightStatusTrigger = true
 
@@ -288,7 +290,7 @@ class MenuButton @JvmOverloads constructor(
                 .map { menuBuilder?.items?.getHighlight() }
                 .flowOn(backgroundTaskDispatcher)
                 .collectLatest { highlights ->
-                    withContext(Dispatchers.Main) {
+                    withContext(mainDispatcher) {
                         setHighlight(highlights)
                     }
                 }

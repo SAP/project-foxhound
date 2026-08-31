@@ -1,6 +1,6 @@
 fn main() {
     cfg_aliases::cfg_aliases! {
-        windows_linux_android: { any(windows, target_os = "linux", target_os = "android") },
+        windows_linux_android: { any(windows, target_os = "linux", target_os = "android", target_os = "freebsd") },
         send_sync: { all(
             feature = "std",
             any(
@@ -19,6 +19,10 @@ fn main() {
         vulkan: { any(
             all(windows_linux_android, feature = "vulkan"), // Regular Vulkan
             all(target_vendor = "apple", feature = "vulkan-portability") // Vulkan Portability on Apple
+        ) },
+        drm: { all(
+            feature = "drm",
+            any(target_os = "linux", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd")
         ) },
         metal: { all(target_vendor = "apple", feature = "metal") },
 

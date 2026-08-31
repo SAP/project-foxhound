@@ -15,6 +15,8 @@ support-files = [
   "file_global_queue_cancel.html",
   "file_global_queue_pause.html",
   "file_speech_repeating_utterance.html",
+  "file_speech_cancel_on_navigation_page1.html",
+  "file_speech_cancel_on_navigation_page2.html",
 ]
 
 ["test_bfcache.html"]
@@ -38,3 +40,5 @@ support-files = [
 ["test_speech_repeating_utterance.html"]
 
 ["test_speech_simple.html"]
+
+["test_speech_cancel_on_navigation.html"]

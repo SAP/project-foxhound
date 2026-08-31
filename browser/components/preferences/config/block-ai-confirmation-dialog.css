@@ -1,0 +1,41 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+dialog {
+  padding: var(--space-large);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: 28rem;
+  box-sizing: border-box;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  margin-block-end: var(--space-large);
+}
+
+.dialog-header-icon {
+  width: var(--icon-size);
+  aspect-ratio: 1;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+.dialog-header h2 {
+  margin: 0;
+}
+
+:where(.dialog-body > * + *) {
+  margin-block: var(--space-large) 0;
+}
+
+ul {
+  margin-block-start: var(--space-xxsmall);
+  padding-inline-start: var(--space-xlarge);
+}
+
+li {
+  margin-block: var(--space-xxsmall);
+}

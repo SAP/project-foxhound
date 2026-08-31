@@ -15,7 +15,6 @@ head_repository: https://hg.mozilla.org/releases/mozilla-release
 head_rev: d66bd740b59ffdcb800dc225cf29fc383d5e1a2b
 hg_branch: GECKOVIEW_62_RELBRANCH
 level: "3"
-message: " "
 moz_build_date: "20181011214225"
 next_version: null
 optimize_target_tasks: true
@@ -37,8 +36,6 @@ try_mode: null
 try_options: null
 try_task_config: {}
 version: 62.0.3
-required_signoffs: []
-signoff_urls: {}
 phabricator_diff:
 tasks_for: action
 test_manifest_loader: default

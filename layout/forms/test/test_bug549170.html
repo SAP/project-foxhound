@@ -30,7 +30,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549170
 
 <script type="application/javascript">
 
-/** Test for Bug 549170 **/
+/** Test for Bug 549170 */
 
 var gNumberOfMouseEventsCaught = 0;
 
@@ -39,8 +39,6 @@ SimpleTest.waitForExplicitFinish();
 function mouseHandler(aEvent)
 {
   gNumberOfMouseEventsCaught++;
-  is(SpecialPowers.wrap(aEvent).originalTarget.nodeName, "DIV", "An inner div should be the target of the event");
-  ok(SpecialPowers.wrap(aEvent).originalTarget.implementedPseudoElement == "::-moz-text-control-editing-root", "the target div should be the editor div");
 }
 
 function checkMouseEvents(element)

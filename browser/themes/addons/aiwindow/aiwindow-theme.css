@@ -1,0 +1,54 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  @media not -moz-pref("browser.nova.enabled") {
+    /* See bug 2036647 for removing this. */
+    --lwt-additional-images: radial-gradient(circle at 50% 90%, rgba(253, 244, 243, 1) 0%, rgba(253, 244, 243, 1) 30%, rgba(216, 202, 247, 1) 100%);
+    /* This makes the gradient work nicely when in the toolbox */
+    --lwt-background-size: 100vw 100vh;
+    @media (prefers-color-scheme: dark) {
+      --lwt-additional-images:
+        radial-gradient(ellipse 110% 130% at 100% 100%, rgba(255, 124, 31, 0.2), transparent 45%),
+        radial-gradient(ellipse 90% 70% at -10% 10%, rgba(115, 90, 245, 0.32), transparent 60%),
+        radial-gradient(ellipse 100% 100% at 50% 0%, rgba(106, 50, 140, 0.5), rgba(33, 3, 64, 0.25) 50%, transparent 80%),
+        linear-gradient(236deg, #31143c 5.34%, #1f133c 98.24%);
+      --lwt-background-size: 100vw 100vh, 100vw 100vh, 100vw 100vh, 100vw 100vh;
+    }
+  }
+}
+
+body {
+  --tabpanel-background-color: transparent;
+}
+
+/* Selected tab */
+#tabbrowser-tabs tab[selected] .tab-background {
+  background-image: light-dark(
+    linear-gradient(to bottom, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.3)),
+    linear-gradient(180deg, rgba(199, 194, 255, 0.36) 0%, rgba(194, 188, 247, 0.11) 100%)
+  );
+  /* AI Window design uses purple-tinted shadows to match brand colors, rather
+   * than the neutral gray shadows from standard design tokens. */
+  /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow:
+    0 3px 16px 0 rgba(59, 34, 121, 0.12),
+    0 1px 2px 0 rgba(59, 34, 121, 0.2);
+}
+
+/* Urlbar */
+#urlbar:not([open]) {
+  > .urlbar-background,
+  #identity-icon-box {
+    border-radius: var(--border-radius-circle);
+  }
+  .searchmode-switcher {
+    --button-border-radius: var(--border-radius-circle);
+  }
+}
+
+/* Tab preview thumbnail */
+.tab-preview-thumbnail-container > canvas {
+  background-image: var(--ai-gradient);
+}

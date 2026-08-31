@@ -1,0 +1,14 @@
+apply from: "$appServicesRootDir/build-scripts/component-common.gradle"
+apply from: "$appServicesRootDir/publish.gradle"
+
+android {
+    namespace 'org.mozilla.appservices.suggest'
+}
+
+dependencies {
+    api project(":remotesettings")
+}
+
+ext.configureUniFFIBindgen("suggest")
+ext.dependsOnTheMegazord()
+ext.configurePublish()

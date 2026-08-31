@@ -368,7 +368,7 @@ def WebIDLTest(parser, harness):
             parser.finish()
         except WebIDL.WebIDLError:
             threw = True
-        harness.ok(not threw, "Template for %s parses without attributes" % name)
+        harness.ok(not threw, f"Template for {name} parses without attributes")
         for attribute, type in ATTRIBUTES:
             parser = parser.reset()
             threw = False
@@ -377,7 +377,7 @@ def WebIDLTest(parser, harness):
                 parser.finish()
             except WebIDL.WebIDLError:
                 threw = True
-            harness.ok(threw, "Should not allow %s on %s" % (attribute, name))
+            harness.ok(threw, f"Should not allow {attribute} on {name}")
 
     parser = parser.reset()
     threw = False
@@ -450,31 +450,29 @@ def WebIDLTest(parser, harness):
         threw = False
         try:
             parser.parse(
-                """
-                typedef [Clamp] %s Foo;
+                f"""
+                typedef [Clamp] {type} Foo;
             """
-                % type
             )
             parser.finish()
         except WebIDL.WebIDLError:
             threw = True
 
-        harness.ok(threw, "Should not allow [Clamp] on %s" % type)
+        harness.ok(threw, f"Should not allow [Clamp] on {type}")
 
         parser = parser.reset()
         threw = False
         try:
             parser.parse(
-                """
-                typedef [EnforceRange] %s Foo;
+                f"""
+                typedef [EnforceRange] {type} Foo;
             """
-                % type
             )
             parser.finish()
         except WebIDL.WebIDLError:
             threw = True
 
-        harness.ok(threw, "Should not allow [EnforceRange] on %s" % type)
+        harness.ok(threw, f"Should not allow [EnforceRange] on {type}")
 
     parser = parser.reset()
     threw = False

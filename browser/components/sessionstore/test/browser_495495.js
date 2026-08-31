@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function test_urlbarFocus() {
-  /** Test for Bug 495495 **/
+  /** Test for Bug 495495 */
 
   let newWin = openDialog(
     location,

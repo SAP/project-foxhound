@@ -1,5 +1,3 @@
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,6 +32,7 @@
 namespace mozilla {
 namespace dom {
 class CanonicalBrowsingContext;
+class ParentProcessChannelHandle;
 struct NavigationIsolationOptions;
 }  // namespace dom
 namespace net {
@@ -182,26 +181,20 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
 
   // Creates a DocumentLoadListener directly in the parent process and opens it,
   // without needing an existing DocumentChannel.
-  // If successful it registers a unique identifier (return in aOutIdent) to
-  // keep it alive until a future DocumentChannel can attach to it, or we fail
-  // and clean up.
+  // If successful, aLoadState will be given a SpeculativeListener, which will
+  // be used for the load when the DocumentChannel is connected from the content
+  // process.
   static bool SpeculativeLoadInParent(
       dom::CanonicalBrowsingContext* aBrowsingContext,
       nsDocShellLoadState* aLoadState);
 
-  // Ensures that a load identifier allocated by OpenFromParent has
-  // been deregistered if it hasn't already been claimed.
-  // This also cancels the load.
-  static void CleanupParentLoadAttempt(uint64_t aLoadIdent);
+  // Called when we were created without a document channel, and the
+  // nsDocShellLoadState was destroyed without the load being claimed.
+  void CleanupParentLoadAttempt();
 
-  // Looks up aLoadIdent to find the associated, cleans up the registration
-  static RefPtr<OpenPromise> ClaimParentLoad(DocumentLoadListener** aListener,
-                                             uint64_t aLoadIdent,
-                                             Maybe<uint64_t> aChannelId);
-
-  // Called by the DocumentChannelParent if actor got destroyed or the parent
-  // channel got deleted.
-  void Abort();
+  // Called to associate a document channel with the DocumentLoadListener when
+  // creation has succeeded.
+  RefPtr<OpenPromise> ClaimParentLoad(Maybe<uint64_t> aChannelId);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUESTOBSERVER
@@ -340,10 +333,6 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // browsing session (e.g. due to a process switch or entering the bfcache).
   void DisconnectListeners(nsresult aStatus, nsresult aLoadGroupStatus,
                            bool aContinueNavigating = false);
-
-  // Called when we were created without a document channel, and creation has
-  // failed, and won't ever be attached.
-  void NotifyDocumentChannelFailed();
 
   // Initiates the switch from DocumentChannel to the real protocol-specific
   // channel, and ensures that RedirectToRealChannelFinished is called when
@@ -600,6 +589,11 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
 
   // Parent-initiated loads do not support redirects to real channels.
   bool mSupportsRedirectToRealChannel = true;
+
+  // Handle which will be passed to the content process. This will be passed to
+  // the WindowGlobalParent via. the content process to allow correlating the
+  // channel to the final document.
+  RefPtr<dom::ParentProcessChannelHandle> mParentProcessChannelHandle;
 
   Maybe<nsCString> mRemoteTypeOverride;
 

@@ -43,8 +43,12 @@ class OpenWindowTest : BaseSessionTest() {
         })
     }
 
-    private fun openPageClickNotification() {
-        mainSession.loadTestPath(OPEN_WINDOW_PATH)
+    private fun openPageClickNotification(
+        teardownAlertsService: Boolean = false,
+        urlParam: String = "",
+        clickAction: String? = null,
+    ) {
+        mainSession.loadUri(OPEN_WINDOW_PATH + urlParam)
         sessionRule.waitForPageStop()
         val result = mainSession.waitForJS("Notification.requestPermission()")
         assertThat(
@@ -60,12 +64,22 @@ class OpenWindowTest : BaseSessionTest() {
             @GeckoSessionTestRule.AssertCalled
             override fun onShowNotification(notification: WebNotification) {
                 notificationShown = notification
+                notification.show()
                 notificationResult.complete(null)
             }
         })
         mainSession.evaluateJS("showNotification()")
         sessionRule.waitForResult(notificationResult)
-        notificationShown!!.click()
+
+        if (teardownAlertsService) {
+            mainSession.teardownAlertsService()
+        }
+
+        if (clickAction != null) {
+            notificationShown!!.click(clickAction)
+        } else {
+            notificationShown!!.click()
+        }
     }
 
     @Test
@@ -74,7 +88,7 @@ class OpenWindowTest : BaseSessionTest() {
         sessionRule.delegateUntilTestEnd(object : ContentDelegate, NavigationDelegate {
             override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 // we should not open the target url
-                assertThat("URL should notmatch", url, not(createTestUrl(OPEN_WINDOW_TARGET_PATH)))
+                assertThat("URL should notmatch", url, not(OPEN_WINDOW_TARGET_PATH))
             }
         })
         openPageClickNotification()
@@ -86,7 +100,7 @@ class OpenWindowTest : BaseSessionTest() {
         sessionRule.delegateUntilTestEnd(object : ContentDelegate, NavigationDelegate {
             override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 // we should not open the target url
-                assertThat("URL should notmatch", url, not(createTestUrl(OPEN_WINDOW_TARGET_PATH)))
+                assertThat("URL should notmatch", url, not(OPEN_WINDOW_TARGET_PATH))
             }
         })
         openPageClickNotification()
@@ -113,7 +127,7 @@ class OpenWindowTest : BaseSessionTest() {
             @AssertCalled(count = 1, order = [1])
             override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 assertThat("Should be on the main session", session, equalTo(mainSession))
-                assertThat("URL should match", url, equalTo(createTestUrl(OPEN_WINDOW_TARGET_PATH)))
+                assertThat("URL should match", url, equalTo(OPEN_WINDOW_TARGET_PATH))
             }
 
             @AssertCalled(count = 1, order = [2])
@@ -140,7 +154,7 @@ class OpenWindowTest : BaseSessionTest() {
             @AssertCalled(count = 1, order = [1])
             override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 assertThat("Should be on the target session", session, equalTo(targetSession))
-                assertThat("URL should match", url, equalTo(createTestUrl(OPEN_WINDOW_TARGET_PATH)))
+                assertThat("URL should match", url, equalTo(OPEN_WINDOW_TARGET_PATH))
             }
 
             @AssertCalled(count = 1, order = [2])
@@ -158,23 +172,23 @@ class OpenWindowTest : BaseSessionTest() {
             @AssertCalled(count = 1)
             override fun onOpenWindow(url: String): GeckoResult<GeckoSession> {
                 ThreadUtils.assertOnUiThread()
-                assertThat("URL should match", url, equalTo(createTestUrl(OPEN_WINDOW_TARGET_PATH)))
+                assertThat("URL should match", url, equalTo(OPEN_WINDOW_TARGET_PATH))
                 targetSession = sessionRule.createClosedSession()
                 return GeckoResult.fromValue(targetSession)
             }
         })
         openPageClickNotification()
         sessionRule.waitUntilCalled(object : ContentDelegate, NavigationDelegate {
-            @AssertCalled(count = 2, order = [1, 2])
+            @AssertCalled(count = 2, order = [1, 3])
             override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 assertThat("Should be on the target session", session, equalTo(targetSession))
-                assertThat("URL should match", url, equalTo(forEachCall("about:blank", createTestUrl(OPEN_WINDOW_TARGET_PATH))))
+                assertThat("URL should match", url, equalTo(forEachCall("about:blank", OPEN_WINDOW_TARGET_PATH)))
             }
 
-            @AssertCalled(count = 1, order = [3])
+            @AssertCalled(count = 1, order = [2])
             override fun onLoadRequest(session: GeckoSession, request: LoadRequest): GeckoResult<AllowOrDeny>? {
                 assertThat("Should be on the target session", session, equalTo(targetSession))
-                assertThat("URL should match", request.uri, equalTo(createTestUrl(OPEN_WINDOW_TARGET_PATH)))
+                assertThat("URL should match", request.uri, equalTo(OPEN_WINDOW_TARGET_PATH))
                 return null
             }
 
@@ -182,6 +196,44 @@ class OpenWindowTest : BaseSessionTest() {
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 assertThat("Should be on the target session", session, equalTo(targetSession))
                 assertThat("Title should be correct", title, equalTo("Open Window test target"))
+            }
+        })
+    }
+
+    @Test
+    fun openWindowAfterAlertServiceTeardown() {
+        sessionRule.delegateUntilTestEnd(object : ServiceWorkerDelegate {
+            @AssertCalled(count = 1)
+            override fun onOpenWindow(url: String): GeckoResult<GeckoSession> {
+                ThreadUtils.assertOnUiThread()
+                return GeckoResult.fromValue(mainSession)
+            }
+        })
+        openPageClickNotification(teardownAlertsService = true)
+        sessionRule.waitUntilCalled(object : ContentDelegate, NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+                assertThat("Should be on the main session", session, equalTo(mainSession))
+                assertThat("URL should match", url, equalTo(OPEN_WINDOW_TARGET_PATH))
+            }
+        })
+    }
+
+    @Test
+    fun openWindowWithActionAfterAlertServiceTeardown() {
+        sessionRule.delegateUntilTestEnd(object : ServiceWorkerDelegate {
+            @AssertCalled(count = 1)
+            override fun onOpenWindow(url: String): GeckoResult<GeckoSession> {
+                ThreadUtils.assertOnUiThread()
+                return GeckoResult.fromValue(mainSession)
+            }
+        })
+        openPageClickNotification(teardownAlertsService = true, urlParam = "?action=foo", clickAction = "foo")
+        sessionRule.waitUntilCalled(object : ContentDelegate, NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+                assertThat("Should be on the main session", session, equalTo(mainSession))
+                assertThat("URL should match", url, equalTo("$OPEN_WINDOW_TARGET_PATH?action=foo"))
             }
         })
     }

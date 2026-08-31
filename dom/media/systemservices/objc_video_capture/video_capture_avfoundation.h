@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,11 +7,12 @@
 
 #import "components/capturer/RTCCameraVideoCapturer.h"
 
+#include "PerformanceRecorder.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "modules/video_capture/video_capture_impl.h"
 #include "mozilla/Maybe.h"
-#include "PerformanceRecorder.h"
+#include "system_wrappers/include/clock.h"
 
 @class VideoCaptureAdapter;
 
@@ -26,11 +25,12 @@ namespace webrtc::videocapturemodule {
  */
 class VideoCaptureAvFoundation : public VideoCaptureImpl {
  public:
-  VideoCaptureAvFoundation(AVCaptureDevice* _Nonnull aDevice);
+  VideoCaptureAvFoundation(Clock* _Nonnull clock,
+                           AVCaptureDevice* _Nonnull aDevice);
   virtual ~VideoCaptureAvFoundation();
 
-  static rtc::scoped_refptr<VideoCaptureModule> Create(
-      const char* _Nullable aDeviceUniqueIdUTF8);
+  static webrtc::scoped_refptr<VideoCaptureModule> Create(
+      Clock* _Nonnull clock, const char* _Nullable aDeviceUniqueIdUTF8);
 
   // Implementation of VideoCaptureImpl. Single threaded.
 

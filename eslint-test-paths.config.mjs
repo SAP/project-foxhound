@@ -34,14 +34,13 @@ const mochitestTestPaths = [
 ];
 
 const xpcshellTestPaths = [
-  "**/test*/unit*/**/",
+  "**/test*/unit*/",
   "**/test*/*/unit*/",
-  "**/test*/xpcshell/**/",
+  "**/test*/xpcshell/",
 ];
 
-// NOTE: Before adding to the list below, please see the note at the top
+// DO NOT add more items to this list. Please see the note at the top
 // of the file.
-
 const extraXpcshellTestPaths = [
   "devtools/client/shared/remote-debugging/adb/xpcshell/",
   "devtools/platform/tests/xpcshell/",
@@ -71,9 +70,8 @@ const extraXpcshellTestPaths = [
   "widget/headless/tests/",
 ];
 
-// NOTE: Before adding to the list below, please see the note at the top
+// DO NOT add more items to this list. Please see the note at the top
 // of the file.
-
 const extraBrowserTestPaths = [
   "dom/ipc/tests/",
   "toolkit/components/thumbnails/test/",
@@ -87,6 +85,7 @@ const extraBrowserTestPaths = [
   "browser/base/content/test/contextMenu/",
   "browser/base/content/test/favicons/",
   "browser/base/content/test/forms/",
+  "browser/base/content/test/framebusting/",
   "browser/base/content/test/fullscreen/",
   "browser/base/content/test/general/",
   "browser/base/content/test/gesture/",
@@ -95,6 +94,7 @@ const extraBrowserTestPaths = [
   "browser/base/content/test/linkHandling/",
   "browser/base/content/test/menubar/",
   "browser/base/content/test/metaTags/",
+  "browser/base/content/test/mousepostracker/",
   "browser/base/content/test/notificationbox/",
   "browser/base/content/test/outOfProcess/",
   "browser/base/content/test/pageActions/",
@@ -221,9 +221,8 @@ const extraBrowserTestPaths = [
   "uriloader/exthandler/tests/mochitest/",
 ];
 
-// NOTE: Before adding to the list below, please see the note at the top
+// DO NOT add more items to this list. Please see the note at the top
 // of the file.
-
 const extraChromeTestPaths = [
   "devtools/shared/security/tests/chrome/",
   "devtools/shared/webconsole/test/chrome/",
@@ -270,9 +269,8 @@ const extraChromeTestPaths = [
   "xpfe/appshell/test/",
 ];
 
-// NOTE: Before adding to the list below, please see the note at the top
+// DO NOT add more items to this list. Please see the note at the top
 // of the file.
-
 const extraMochitestTestPaths = [
   "dom/ipc/tests/",
   "toolkit/xre/test/",

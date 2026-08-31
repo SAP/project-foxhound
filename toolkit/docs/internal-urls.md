@@ -6,14 +6,15 @@ internal or "special" resources.
 The main ones are:
 
 <!-- no toc -->
-  - [`moz-src` URLs](#moz-src-urls)
-  - [`resource` URLs](#resource-urls)
-  - [`chrome` URLs](#chrome-urls)
+- [`moz-src` URLs](#moz-src-urls)
+- [`resource` URLs](#resource-urls)
+- [`chrome` URLs](#chrome-urls)
 
 There are other special protocols like `moz-icon` and various places URLs,
 but at the moment they are not covered here.
 
 ## `moz-src` URLs
+
 URLs look like: `moz-src:///browser/components/BrowserGlue.sys.mjs`.
 
 Note that there is no "host" component (nothing between the second and third
@@ -44,6 +45,7 @@ restrictions for `moz-src` URLs with non-empty "host" portions
 has not yet been implemented.
 
 ## `resource` URLs
+
 URLs look like `resource://mapping/optional/path/components/file.txt`.
 
 Here, `mapping` is an arbitrary identifier chosen elsewhere. There are
@@ -67,6 +69,7 @@ Additional mappings can be added via a
 this, as do [some components][searchfox-res-reg].
 
 ### Packaging
+
 The builtin `app` and `gre` mappings, as well as any additional mappings from
 `jar.mn` files and other non-extension parts of the build, always resolve into
 the app-specific and toolkit `omni.ja` file, respectively.
@@ -76,6 +79,7 @@ To package files for access via `resource` URLs, use
 the mapped directory inside `omni.ja` .
 
 ### Security considerations
+
 By default `resource` URLs cannot be accessed by web content and are restricted
 to privileged (system principal / "chrome" privileged) code. However, you can
 register a `resource` mapping with `contentaccessible=yes` in order to
@@ -87,6 +91,7 @@ Unfortunately more fine-grained restrictions are not available for `resource`
 URLs.
 
 ## `chrome` URLs
+
 `chrome` URLs take one of three forms:
 
 - `chrome://browser/content/browser.xhtml`
@@ -110,6 +115,7 @@ More information is available in
 [the build system's chrome registration docs][chrome-registration].
 
 ### Packaging
+
 To package files for access via `chrome` URLs, use
 [jar manifest file instructions][jar-manifest-files] to package files into
 the mapped directory inside `omni.ja` .
@@ -119,6 +125,7 @@ the files are typically packaged into either the app or toolkit `omni.ja` file,
 though it is possible to use `chrome` URLs inside builtin extensions as well.
 
 ### Security considerations
+
 By default `chrome` URLs cannot be accessed by web content and are restricted
 to privileged (system principal / "chrome" privileged) code. However, you can
 register a chrome `content` mapping with `contentaccessible=yes` in order to
@@ -129,7 +136,6 @@ forward.
 
 Unfortunately more fine-grained restrictions are not available for `chrome`
 URLs.
-
 
 [chrome-registration]: ../build/buildsystem/chrome-registration
 [resource-map]: ../build/buildsystem/chrome-registration#resource

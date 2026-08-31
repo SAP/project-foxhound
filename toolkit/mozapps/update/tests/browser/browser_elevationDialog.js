@@ -8,6 +8,12 @@ add_task(async function elevation_dialog() {
     set: [[PREF_APP_UPDATE_DISABLEDFORTESTING, false]],
   });
 
+  // Ensure the update service is initialized before we start opening
+  // elevation dialogs. Otherwise, the dialog's onLoad calling
+  // getReadyUpdate() would trigger a full initialization (including
+  // another #asyncInit) that opens an extra dialog.
+  await initUpdateService();
+
   // Create a mock of nsIAppStartup's quit method so clicking the restart button
   // won't restart the application.
   let { startup } = Services;

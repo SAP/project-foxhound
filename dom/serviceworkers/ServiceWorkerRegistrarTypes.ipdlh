@@ -1,10 +1,15 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=4 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include IPCNavigationPreloadState;
+include "mozilla/dom/cache/IPCUtils.h";
+include "mozilla/dom/WorkerIPCUtils.h";
+
+include IPCStream;
+
+using mozilla::dom::WorkerType
+  from "mozilla/dom/WorkerBinding.h";
 include PBackgroundSharedTypes;
 
 namespace mozilla {
@@ -12,7 +17,12 @@ namespace dom {
 
 struct ServiceWorkerRegistrationData
 {
+  int64_t numberOfAttemptedActivations;
+  bool isBroken;
+  int64_t cacheAPIId;
   nsCString scope;
+  WorkerType type;
+
   nsCString currentWorkerURL;
   bool currentWorkerHandlesFetch;
 

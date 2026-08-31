@@ -10,6 +10,11 @@ $ds-width: 936px;
   grid-row-gap: var(--gridRowGap);
   margin: 0 auto;
 
+  // @nova-cleanup(remove-conditional): Make grid default, remove conditional
+  .nova-enabled & {
+    display: grid;
+  }
+
   @while $columns > 0 {
     .ds-column-#{$columns} {
       grid-column-start: auto;
@@ -44,7 +49,7 @@ $ds-width: 936px;
 .ds-layout .section-title span {
   color: var(--newtab-contextual-text-primary-color);
   font-size: $section-title-font-size;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-heading);
 
   // Contrast fix for users who have wallpapers set
   @include wallpaper-contrast-fix;
@@ -63,11 +68,64 @@ $ds-width: 936px;
 
     a {
       color: var(--newtab-primary-action-background);
-      font-weight: var(--font-weight-bold);
+      font-weight: var(--font-weight-semibold);
 
       &:is(:focus, :hover) {
         text-decoration: none;
       }
     }
   }
+}
+
+// Nova Grid Overrides
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector and display: contents wrappers
+.nova-enabled .content .ds-layout:not(.discovery-stream) {
+  display: contents;
+
+  > div {
+    display: contents;
+  }
+}
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior
+.nova-enabled .content .discovery-stream.ds-layout {
+  display: contents;
+  grid-column: 1 / -1;
+
+  .ds-column {
+    display: contents;
+  }
+
+  .ds-column-grid {
+    display: contents;
+  }
+
+  // The wrapper div around components
+  .ds-column-grid > div {
+    display: contents;
+  }
+}
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector and display: contents wrapper
+.nova-enabled .content .ds-top-sites {
+  display: contents;
+}
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior
+.nova-enabled .content .top-sites {
+  grid-column: 1 / -1;
+}
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior.
+// ds-section-wrapper is the centering grid: auto-fill with 4-column tracks
+// so that section headings and card grids share the same width and alignment.
+.nova-enabled .content .ds-section-wrapper {
+  @include nova-centering-grid(4);
+}
+
+// @nova-cleanup(remove-conditional): Remove .nova-enabled selector, make default behavior.
+// ds-card-grid-container is the centering grid: auto-fill with 4-column tracks
+// so that ds-header and ds-card-grid share the same width and alignment.
+.nova-enabled .content .ds-card-grid-container {
+  @include nova-centering-grid(4);
 }

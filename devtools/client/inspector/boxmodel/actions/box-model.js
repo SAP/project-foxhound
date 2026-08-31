@@ -14,7 +14,7 @@ module.exports = {
   /**
    * Updates the geometry editor's enabled state.
    *
-   * @param  {Boolean} enabled
+   * @param  {boolean} enabled
    *         Whether or not the geometry editor is enabled or not.
    */
   updateGeometryEditorEnabled(enabled) {

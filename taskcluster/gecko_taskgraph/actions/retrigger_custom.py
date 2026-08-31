@@ -41,36 +41,33 @@ basic_properties = {
 
 # Additional properties available for custom retrigger of some additional test suites
 extended_properties = basic_properties.copy()
-extended_properties.update(
-    {
-        "runUntilFail": {
-            "type": "boolean",
-            "default": False,
-            "title": "Run until failure",
-            "description": (
-                "Runs the specified set of tests repeatedly "
-                "until failure (up to REPEAT times)"
-            ),
-        },
-        "repeat": {
-            "type": "integer",
-            "default": 0,
-            "minimum": 0,
-            "title": "Repeat test(s) N times",
-            "description": (
-                "Run test(s) repeatedly (usually used in "
-                "conjunction with runUntilFail)"
-            ),
-        },
-        "preferences": {
-            "type": "object",
-            "default": {"remote.log.level": "Info"},
-            "title": "Extra gecko (about:config) preferences",
-            "description": "Extra gecko (about:config) preferences to use for this run",
-            "additionalProperties": {"type": "string"},
-        },
-    }
-)
+extended_properties.update({
+    "runUntilFail": {
+        "type": "boolean",
+        "default": False,
+        "title": "Run until failure",
+        "description": (
+            "Runs the specified set of tests repeatedly "
+            "until failure (up to REPEAT times)"
+        ),
+    },
+    "repeat": {
+        "type": "integer",
+        "default": 0,
+        "minimum": 0,
+        "title": "Repeat test(s) N times",
+        "description": (
+            "Run test(s) repeatedly (usually used in conjunction with runUntilFail)"
+        ),
+    },
+    "preferences": {
+        "type": "object",
+        "default": {"remote.log.level": "Info"},
+        "title": "Extra gecko (about:config) preferences",
+        "description": "Extra gecko (about:config) preferences to use for this run",
+        "additionalProperties": {"type": "string"},
+    },
+})
 
 
 @register_callback_action(

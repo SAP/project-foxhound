@@ -6,57 +6,41 @@
     <!-- Design system color attributes -->
 
     <!-- Layers -->
-    <!-- Default Screen background, Frontlayer background, App Bar Top, App Bar Bottom, Frontlayer header -->
-    <attr name="layer1" format="reference" />
     <!-- Card background, Menu background, Dialog, Banner -->
     <attr name="layer2" format="reference" />
     <!-- Search -->
     <attr name="layer3" format="reference" />
-    <attr name="layerSearch" format="reference" />
-    <!-- Selected tab -->
-    <attr name="layerNonOpaque" format="reference" />
     <attr name="scrim" format="reference" />
 
     <!-- Action -->
-    <!-- Primary button, Snackbar, Floating action button -->
-    <attr name="actionPrimary" format="reference" />
     <!-- Primary button in a disabled state -->
     <attr name="actionPrimaryDisabled" format="reference" />
-    <!-- Chip selected -->
-    <attr name="actionChipSelected" format="reference" />
 
     <!-- Text -->
-    <!-- Primary text -->
-    <attr name="textPrimary" format="reference" />
-    <!-- Secondary text -->
-    <attr name="textSecondary" format="reference" />
-    <!-- Disabled text -->
-    <attr name="textDisabled" format="reference" />
-    <!-- Warning text -->
-    <attr name="textCritical" format="reference"/>
-    <!-- Small heading, Text link -->
-    <attr name="textAccent" format="reference" />
     <!-- Text Inverted/On Color -->
     <attr name="textOnColorPrimary" format="reference" />
-    <!-- Action Primary text -->
-    <attr name="textActionPrimary" format="reference" />
     <!-- Action Primary disabled text -->
     <attr name="textActionPrimaryDisabled" format="reference" />
 
     <!-- Icon -->
-    <!-- Secondary icon -->
-    <attr name="iconSecondary" format="reference" />
-    <!-- Active tab -->
-    <attr name="iconActive" format="reference" />
     <!-- Icon inverted (on color) -->
     <attr name="iconOnColor" format="reference" />
 
-    <!-- Border -->
-    <!-- Default, Divider, Dotted -->
-    <attr name="borderPrimary" format="reference" />
-    <attr name="borderSecondary" format="reference" />
-    <!-- Toolbar divider -->
-    <attr name="borderToolbarDivider" format="reference"/>
+    <!-- Material3 extended palettes -->
+    <attr name="colorInformation" format="reference" />
+    <attr name="colorOnInformation" format="reference" />
+    <attr name="colorInformationContainer" format="reference" />
+    <attr name="colorOnInformationContainer" format="reference" />
+    <attr name="colorSuccess" format="reference" />
+    <attr name="colorOnSuccess" format="reference" />
+    <attr name="colorWarning" format="reference" />
+    <attr name="colorOnWarning" format="reference" />
+    <attr name="colorWarningContainer" format="reference" />
+    <attr name="colorOnWarningContainer" format="reference" />
+    <attr name="colorSurfaceDimVariant" format="reference" />
+    <attr name="colorAutofillText" format="reference" />
+    <attr name="colorSelectedText" format="reference" />
+    <attr name="colorIconPrivate" format="reference" />
 
     <!-- Color palette attributes -->
     <attr name="accent" format="reference" />
@@ -65,24 +49,18 @@
     <attr name="accentUsedOnDarkBackground" format="reference" />
     <attr name="neutral" format="reference" />
     <attr name="neutralFaded" format="reference" />
-    <attr name="preferenceSectionHeader" format="reference"/>
-
-    <!-- Color used in DefaultToolbarMenu for buttons placed at the end of menu items -->
-    <attr name="menuItemButtonTintColor" format="reference"/>
 
     <!-- Misc -->
-    <attr name="homeBackground" format="reference"/>
     <attr name="bottomBarBackground" format="reference"/>
     <attr name="bottomBarBackgroundTop" format="reference"/>
     <attr name="fenixLogo" format="reference" />
     <attr name="fenixWordmarkText" format="reference" />
     <attr name="fenixWordmarkLogo" format="reference" />
+    <attr name="fenixWordmarkSportLogo" format="reference" />
     <attr name="toolbarStartGradient" format="reference"/>
     <attr name="toolbarCenterGradient" format="reference"/>
     <attr name="toolbarEndGradient" format="reference"/>
     <attr name="fillLinkFromClipboard" format="reference"/>
-    <attr name="syncDisconnected" format="reference" />
-    <attr name="syncDisconnectedBackground" format="reference" />
     <attr name="addOnPrivateBrowsingExteriorCircleBackground" format="reference"/>
     <attr name="awesomeBarIndicatorColor" format="reference|color"/>
     <attr name="awesomeBarIndicatorBookmarkColor" format="reference|color"/>

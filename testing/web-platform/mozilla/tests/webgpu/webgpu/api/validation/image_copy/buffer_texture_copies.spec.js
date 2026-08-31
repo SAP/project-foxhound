@@ -325,20 +325,20 @@ fn((t) => {
   if (sampleCount > 1) {
     usage |= GPUTextureUsage.RENDER_ATTACHMENT;
   }
+
+  const textureSize = { width: 16, height: 1, depthOrArrayLayers: 1 };
   const texture = t.createTextureTracked({
-    size: { width: 16, height: 16 },
+    size: textureSize,
     sampleCount,
     format: 'bgra8unorm',
     usage
   });
 
-  const uploadBufferSize = 32;
+  const uploadBufferSize = 64;
   const buffer = t.createBufferTracked({
     size: uploadBufferSize,
     usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
   });
-
-  const textureSize = { width: 1, height: 1, depthOrArrayLayers: 1 };
 
   const isSuccess = sampleCount === 1;
 
@@ -371,6 +371,10 @@ u //
 .combine('copyType', ['CopyB2T', 'CopyT2B']).
 beginSubcases().
 combine('textureUsage', kTextureUsages).
+unless(({ textureUsage }) => {
+  // TRANSIENT_ATTACHMENT is only valid when combined with RENDER_ATTACHMENT.
+  return textureUsage === GPUConst.TextureUsage.TRANSIENT_ATTACHMENT;
+}).
 expand('_textureUsageValid', (p) => [p.textureUsage === kRequiredTextureUsage[p.copyType]]).
 combine('bufferUsage', kBufferUsages).
 expand('_bufferUsageValid', (p) => [p.bufferUsage === kRequiredBufferUsage[p.copyType]]).

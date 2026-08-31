@@ -1,0 +1,230 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.sw-prompts-container {
+  display: flex;
+  padding-block: var(--space-xlarge);
+  gap: var(--space-medium);
+}
+
+/* Fullpage mode: row */
+:host([mode="fullpage"]) .sw-prompts-container {
+  flex-direction: row;
+  justify-content: center;
+}
+
+/* Sidebar mode: column */
+:host([mode="sidebar"]) .sw-prompts-container {
+  flex-direction: column;
+  align-items: flex-end;
+  margin-inline: var(--space-medium);
+}
+
+:host([mode="followup"]) .sw-prompts-container {
+  flex-direction: column;
+  align-items: flex-start;
+  padding-block-start: 0;
+  padding-block-end: var(--space-large);
+}
+
+:host([mode="followup"]) .sw-prompt-button::part(button) {
+  justify-content: start;
+}
+
+.sw-prompt-button {
+  --button-background-color: light-dark(var(--color-violet-0), var(--color-gray-80));
+  --button-background-color-active: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+  --button-background-color-disabled: var(--color-gray-20);
+  --button-background-color-hover: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), color-mix(in srgb, white 10%, transparent));
+  --button-background-color-selected: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+  --button-border-radius: var(--border-radius-circle);
+  --button-font-size: var(--font-size-small);
+  --button-font-weight: var(--font-weight);
+  --button-padding: var(--space-small);
+  --button-text-color: var(--smartwindow-brand-accent);
+  --button-text-color-hover: var(--smartwindow-brand-accent);
+  --button-text-color-active: var(--smartwindow-brand-accent);
+}
+
+.sw-prompt-button::part(button) {
+  position: relative;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow: var(--smartwindow-shadow, var(--box-shadow-level-2));
+}
+
+/* stylelint-disable stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
+.sw-prompt-button::part(button)::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--border-width));
+  border-radius: inherit;
+  padding: var(--border-width);
+  background: light-dark(
+    linear-gradient(
+      180deg,
+      var(--color-white-alpha-20) 0%,
+      color-mix(in srgb, var(--color-violet-110) 5%, transparent) 31.73%,
+      color-mix(in srgb, var(--color-violet-110) 15%, transparent) 100%
+    ),
+    linear-gradient(180deg, var(--color-black-alpha-30) 0%, var(--color-violet-50) 100%)
+  );
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  @keyframes hover-focus-fade-in {
+    0% {
+      opacity: 0;
+      background-image: linear-gradient(
+        365deg,
+        var(--sw-prompt-gradient-violet) 50%,
+        var(--sw-prompt-gradient-pink) 80%,
+        var(--sw-prompt-gradient-orange) 100%
+      );
+    }
+    33% {
+      background-image: linear-gradient(
+        365deg,
+        var(--sw-prompt-gradient-violet) 50%,
+        var(--sw-prompt-gradient-pink) 80%,
+        var(--sw-prompt-gradient-orange) 100%
+      );
+    }
+    100% {
+      opacity: 1;
+      background-image: linear-gradient(
+        400deg,
+        var(--sw-prompt-gradient-violet) 50%,
+        var(--sw-prompt-gradient-pink) 80%,
+        var(--sw-prompt-gradient-orange) 100%
+      );
+    }
+  }
+
+  @keyframes hover-focus-fade-out {
+    0% {
+      opacity: 1;
+      background-image: linear-gradient(
+        400deg,
+        var(--sw-prompt-gradient-violet) 50%,
+        var(--sw-prompt-gradient-pink) 80%,
+        var(--sw-prompt-gradient-orange) 100%
+      );
+    }
+    67% {
+      background-image: linear-gradient(
+        365deg,
+        var(--sw-prompt-gradient-violet) 50%,
+        var(--sw-prompt-gradient-pink) 80%,
+        var(--sw-prompt-gradient-orange) 100%
+      );
+    }
+    100% {
+      opacity: 0;
+      background-image: linear-gradient(
+        365deg,
+        var(--sw-prompt-gradient-violet) 50%,
+        var(--sw-prompt-gradient-pink) 80%,
+        var(--sw-prompt-gradient-orange) 100%
+      );
+    }
+  }
+
+  @keyframes active-fade-in {
+    0% {
+      opacity: 1;
+      background-image: linear-gradient(
+        400deg,
+        var(--sw-prompt-gradient-violet) 50%,
+        var(--sw-prompt-gradient-pink) 80%,
+        var(--sw-prompt-gradient-orange) 100%
+      );
+    }
+    100% {
+      opacity: 1;
+      background-image: linear-gradient(450deg, var(--sw-prompt-gradient-violet) 40%, var(--sw-prompt-gradient-pink) 100%);
+    }
+  }
+
+  .sw-prompt-button {
+    /* Note: Listing the Nova value of these tokens as a backup for consistency because some tokens do not currently exist, ex: "color-neutral" */
+    --prompt-button-background-dark-color: var(--color-gray-70, #26272f);
+    --prompt-button-background-color: light-dark(white, var(--prompt-button-background-dark-color));
+
+    --sw-prompt-gradient-violet: var(--color-violet-40);
+    --sw-prompt-gradient-pink: var(--color-pink-30);
+    --sw-prompt-gradient-orange: var(--color-orange-30);
+
+    --button-background-color: var(--prompt-button-background-color);
+    --button-background-color-active: var(--prompt-button-background-color);
+    --button-background-color-disabled: var(--color-gray-20);
+    --button-background-color-hover: var(--prompt-button-background-color);
+    --button-background-color-selected: var(--prompt-button-background-color);
+
+    --button-text-color: var(--smartwindow-text-color-accent-primary);
+    --button-text-color-hover: var(--smartwindow-text-color-accent-primary);
+    --button-text-color-active: var(--smartwindow-text-color-accent-primary);
+
+    --focus-outline-offset: var(--dimension-2);
+
+    outline: none;
+  }
+
+  .sw-prompt-button::part(button) {
+    /* TODO: Bug 2030722 to address necessity for adding transparent border color. Currently, a blue one appears */
+    border-color: transparent;
+    box-shadow: none;
+    cursor: pointer;
+  }
+
+  .sw-prompt-button::part(button)::before,
+  .sw-prompt-button::part(button)::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--border-width));
+    border-radius: inherit;
+    padding: var(--border-width);
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    transition: all ease-out 500ms;
+  }
+
+  .sw-prompt-button::part(button)::before {
+    background: linear-gradient(180deg, var(--prompt-button-background-color) 60%, var(--color-violet-30) 100%);
+    opacity: 1;
+  }
+
+  .sw-prompt-button:is(:hover, :active, :focus)::before {
+    opacity: 0;
+  }
+
+  .sw-prompt-button::part(button)::after {
+    background-image: linear-gradient(365deg, var(--sw-prompt-gradient-violet) 50%, var(--sw-prompt-gradient-pink) 80%, var(--sw-prompt-gradient-orange) 100%);
+    opacity: 0;
+  }
+
+  .sw-prompt-button.has-interacted:not(:hover, :focus, :active)::part(button)::after {
+    animation: hover-focus-fade-out 500ms ease-out forwards;
+  }
+
+  .sw-prompt-button:is(:hover, :focus)::part(button)::after {
+    animation: hover-focus-fade-in 500ms ease-in forwards;
+  }
+
+  .sw-prompt-button:active::part(button)::after {
+    animation: active-fade-in 500ms ease-in forwards;
+    background-image: linear-gradient(400deg, var(--sw-prompt-gradient-violet) 40%, var(--sw-prompt-gradient-pink) 100%);
+  }
+
+  .sw-prompt-button::part(moz-button-label) {
+    cursor: pointer;
+  }
+}

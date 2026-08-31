@@ -4,8 +4,6 @@
 
 package org.mozilla.focus.topsites
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.top.sites.PinnedSiteStorage
 import mozilla.components.feature.top.sites.TopSite
@@ -16,17 +14,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi
 class DefaultTopSitesStorageTest {
 
     private val pinnedSitesStorage: PinnedSiteStorage = mock()
 
     @Test
-    fun `WHEN a top site is added THEN the pinned sites storage is called`() = runTest(UnconfinedTestDispatcher()) {
-        val defaultTopSitesStorage = DefaultTopSitesStorage(
-            pinnedSitesStorage,
-            coroutineContext,
-        )
+    fun `WHEN a top site is added THEN the pinned sites storage is called`() = runTest {
+        val defaultTopSitesStorage = DefaultTopSitesStorage(pinnedSitesStorage)
 
         defaultTopSitesStorage.addTopSite("Mozilla", "https://mozilla.com", isDefault = false)
 
@@ -38,11 +32,8 @@ class DefaultTopSitesStorageTest {
     }
 
     @Test
-    fun `WHEN a top site is removed THEN the pinned sites storage is called`() = runTest(UnconfinedTestDispatcher()) {
-        val defaultTopSitesStorage = DefaultTopSitesStorage(
-            pinnedSitesStorage,
-            coroutineContext,
-        )
+    fun `WHEN a top site is removed THEN the pinned sites storage is called`() = runTest {
+        val defaultTopSitesStorage = DefaultTopSitesStorage(pinnedSitesStorage)
 
         val pinnedSite = TopSite.Pinned(
             id = 2,
@@ -57,11 +48,8 @@ class DefaultTopSitesStorageTest {
     }
 
     @Test
-    fun `WHEN a top site is updated THEN the pinned sites storage is called`() = runTest(UnconfinedTestDispatcher()) {
-        val defaultTopSitesStorage = DefaultTopSitesStorage(
-            pinnedSitesStorage,
-            coroutineContext,
-        )
+    fun `WHEN a top site is updated THEN the pinned sites storage is called`() = runTest {
+        val defaultTopSitesStorage = DefaultTopSitesStorage(pinnedSitesStorage)
 
         val pinnedSite = TopSite.Pinned(
             id = 2,
@@ -84,10 +72,7 @@ class DefaultTopSitesStorageTest {
 
     @Test
     fun `WHEN getTopSites is called THEN the appropriate top sites are returned`() = runTest {
-        val defaultTopSitesStorage = DefaultTopSitesStorage(
-            pinnedSitesStorage,
-            coroutineContext,
-        )
+        val defaultTopSitesStorage = DefaultTopSitesStorage(pinnedSitesStorage)
 
         val pinnedSite1 = TopSite.Pinned(
             id = 2,

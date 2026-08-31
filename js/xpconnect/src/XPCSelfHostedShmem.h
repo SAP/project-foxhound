@@ -1,15 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef xpcselfhostedshmem_h___
-#define xpcselfhostedshmem_h___
+#ifndef xpcselfhostedshmem_h_
+#define xpcselfhostedshmem_h_
 
-#include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/Span.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
@@ -36,6 +31,12 @@ class SelfHostedShmem final : public nsIMemoryReporter {
   using ContentType = mozilla::Span<const uint8_t>;
 
   static SelfHostedShmem& GetSingleton();
+
+  static void SetSelfHostedUseSharedMemory(bool aSelfHostedUseSharedMemory) {
+    sSelfHostedUseSharedMemory = aSelfHostedUseSharedMemory;
+  }
+
+  static bool SelfHostedUseSharedMemory() { return sSelfHostedUseSharedMemory; }
 
   // Initialize this singleton with the content of the Self-hosted Stencil XDR.
   // This will be used to initialize the shared memory which would hold a copy.
@@ -73,6 +74,8 @@ class SelfHostedShmem final : public nsIMemoryReporter {
   SelfHostedShmem() = default;
   ~SelfHostedShmem() = default;
 
+  // Mirrored value of javascript.options.self_hosted.use_shared_memory.
+  static bool sSelfHostedUseSharedMemory;
   static mozilla::StaticRefPtr<SelfHostedShmem> sSelfHostedXdr;
 
   // Read-only shared memory used by JS runtime initialization.
@@ -82,4 +85,4 @@ class SelfHostedShmem final : public nsIMemoryReporter {
 
 }  // namespace xpc
 
-#endif  // !xpcselfhostedshmem_h___
+#endif  // !xpcselfhostedshmem_h_

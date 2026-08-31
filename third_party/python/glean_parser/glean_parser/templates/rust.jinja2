@@ -9,7 +9,16 @@ Jinja2 template is not. Please file bugs! #}
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 {%- macro generate_structure(name, struct) %}
-{% if struct.type == "array" %}
+{%- if struct.type == "oneof" -%}
+    #[derive(Debug, Hash, Eq, PartialEq, Clone, ::glean::traits::__serde::Serialize, ::glean::traits::__serde::Deserialize)]
+    #[serde(crate = "::glean::traits::__serde")]
+    #[serde(untagged)]
+    pub enum {{ name }} {
+        {% for ty in struct.subtypes %}
+          {{ty|Camelize}}({{ty|structure_type_name}}),
+        {% endfor %}
+    }
+{% elif struct.type == "array" %}
     pub type {{ name }} = Vec<{{ name }}Item>;
 
     {{ generate_structure(name ~ "Item", struct["items"]) }}
@@ -26,6 +35,9 @@ Jinja2 template is not. Please file bugs! #}
           {% elif val.type == "object" %}
           #[serde(skip_serializing_if = "Option::is_none")]
           pub {{itemname|snake_case}}: Option<{{ name ~ "Item" ~ itemname|Camelize ~ "Object" }}>,
+          {% elif val.type == "oneof" %}
+          #[serde(skip_serializing_if = "Option::is_none")]
+          pub {{itemname|snake_case}}: Option<{{ name ~ itemname|Camelize ~ "Enum" }}>,
           {% else %}
           #[serde(skip_serializing_if = "Option::is_none")]
           pub {{itemname|snake_case}}: Option<{{val.type|structure_type_name}}>,
@@ -39,6 +51,9 @@ Jinja2 template is not. Please file bugs! #}
         {{ generate_structure(nested_name, val) }}
         {% elif val.type == "object" %}
         {% set nested_name = name ~ "Item" ~ itemname|Camelize ~ "Object" %}
+        {{ generate_structure(nested_name, val) }}
+        {% elif val.type == "oneof" %}
+        {% set nested_name = name ~ itemname|Camelize ~ "Enum" %}
         {{ generate_structure(nested_name, val) }}
         {% endif %}
     {% endfor %}

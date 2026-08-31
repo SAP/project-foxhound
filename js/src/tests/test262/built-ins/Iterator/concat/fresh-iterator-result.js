@@ -47,6 +47,6 @@ let iterResult = iterator.next();
 assert.sameValue(iterResult.done, false);
 assert.sameValue(iterResult.value, 123);
 
-assert.sameValue(iterResult, oldIterResult);
+assert.notSameValue(iterResult, oldIterResult);
 
 reportCompare(0, 0);

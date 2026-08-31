@@ -246,8 +246,8 @@ hg_pull()
         echo "cloning NSS sources to be tested from HG"
         [ ! -d "$LOCALDIST" ] && mkdir -p "$LOCALDIST"
         cd "$LOCALDIST"
-        [ ! -d "$LOCALDIST/nspr" ] && hg clone --noupdate https://hg.mozilla.org/projects/nspr
-        cd nspr; hg pull; hg update -C -r default; cd ..
+        [ ! -d "$LOCALDIST/nspr" ] && git clone https://github.com/mozilla/nspr "$LOCALDIST/nspr"
+        cd nspr; git pull; cd ..
         [ ! -d "$LOCALDIST/nss" ] && hg clone --noupdate https://hg.mozilla.org/projects/nss
         cd nss; hg pull; hg update -C -r default; cd ..
         #find . -exec touch {} \;
@@ -261,8 +261,8 @@ hg_pull()
         cd "$NSS_HACK"
         NSPR_TAG=`curl --silent http://hg.mozilla.org/releases/mozilla-aurora/raw-file/default/nsprpub/TAG-INFO | head -1 | sed --regexp-extended 's/[[:space:]]//g' | awk '{print $1}'`
         NSS_TAG=`curl --silent http://hg.mozilla.org/releases/mozilla-aurora/raw-file/default/security/nss/TAG-INFO | head -1 | sed --regexp-extended 's/[[:space:]]//g' | awk '{print $1}'`
-        [ ! -d "$NSS_HACK/nspr" ] && hg clone --noupdate https://hg.mozilla.org/projects/nspr
-        cd nspr; hg pull; hg update -C -r "$NSPR_TAG"; cd ..
+        [ ! -d "$NSS_HACK/nspr" ] && git clone https://github.com/mozilla/nspr "$NSS_HACK/nspr"
+        cd nspr; git pull; git checkout "$NSPR_TAG"; cd ..
         [ ! -d "$NSS_HACK/nss" ] && hg clone --noupdate https://hg.mozilla.org/projects/nss
         cd nss; hg pull; hg update -C -r "$NSS_TAG"; cd ..
         #find . -exec touch {} \;

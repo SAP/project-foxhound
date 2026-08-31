@@ -393,6 +393,22 @@ test.nested:
       - https://example.com
     telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_QUANTITY
 
+  unordered_quantity_metric:
+    type: quantity
+    unit: someunit
+    expires: never
+    description: |
+      A multi-line
+      description
+    notification_emails:
+      - glean-team@mozilla.com
+    metadata:
+      permit_non_commutative_operations_over_ipc: true
+    bugs:
+      - https://bugzilla.mozilla.org/2012590/
+    data_reviews:
+      - https://example.com
+
   rate_metric:
     type: rate
     expires: never

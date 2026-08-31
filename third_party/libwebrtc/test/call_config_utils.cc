@@ -13,6 +13,13 @@
 #include <string>
 #include <vector>
 
+#include "api/call/transport.h"
+#include "api/rtp_headers.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "call/video_receive_stream.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/strings/json.h"
+
 namespace webrtc {
 namespace test {
 
@@ -20,7 +27,7 @@ namespace test {
 // back into a valid object. This will not initialize the decoders or the
 // renderer.
 VideoReceiveStreamInterface::Config ParseVideoReceiveStreamJsonConfig(
-    webrtc::Transport* transport,
+    Transport* transport,
     const Json::Value& json) {
   auto receive_config = VideoReceiveStreamInterface::Config(transport);
   for (const auto& decoder_json : json["decoders"]) {
@@ -38,7 +45,6 @@ VideoReceiveStreamInterface::Config ParseVideoReceiveStreamJsonConfig(
   }
   receive_config.render_delay_ms = json["render_delay_ms"].asInt64();
   receive_config.rtp.remote_ssrc = json["rtp"]["remote_ssrc"].asInt64();
-  receive_config.rtp.local_ssrc = json["rtp"]["local_ssrc"].asInt64();
   receive_config.rtp.rtcp_mode =
       json["rtp"]["rtcp_mode"].asString() == "RtcpMode::kCompound"
           ? RtcpMode::kCompound
@@ -82,7 +88,6 @@ Json::Value GenerateVideoReceiveStreamJsonConfig(
 
   Json::Value rtp_json;
   rtp_json["remote_ssrc"] = config.rtp.remote_ssrc;
-  rtp_json["local_ssrc"] = config.rtp.local_ssrc;
   rtp_json["rtcp_mode"] = config.rtp.rtcp_mode == RtcpMode::kCompound
                               ? "RtcpMode::kCompound"
                               : "RtcpMode::kReducedSize";

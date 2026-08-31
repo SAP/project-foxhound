@@ -149,6 +149,12 @@ async function doTestNoInput(grantPermission) {
   Services.perms.removeFromPrincipal(kPrincipal, kPermission);
 }
 
+add_setup(() => {
+  return SpecialPowers.pushPrefEnv({
+    set: [["privacy.baselineFingerprintingProtection", false]],
+  });
+});
+
 // With auto-declining disabled (not the default)
 // Tests clicking "Don't Allow" button of the permission prompt.
 add_task(doTestNoInput.bind(null, false));

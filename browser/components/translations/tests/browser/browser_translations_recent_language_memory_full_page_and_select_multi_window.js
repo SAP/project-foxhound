@@ -11,13 +11,14 @@
 add_task(
   async function test_recent_language_memory_with_full_page_and_select_translations_multi_window() {
     const window1 = window;
+    await focusWindow(window1);
+    const window2 = await openNewFocusedBrowserWindow();
+
     const { runInPage, resolveDownloads, cleanup } = await loadTestPage({
       page: SELECT_TEST_PAGE_URL,
       languagePairs: LANGUAGE_PAIRS,
       prefs: [["browser.translations.select.enable", true]],
     });
-
-    const window2 = await BrowserTestUtils.openNewBrowserWindow();
 
     const testPage2 = await loadTestPage({
       win: window2,

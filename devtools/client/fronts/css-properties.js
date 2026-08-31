@@ -62,50 +62,51 @@ class CssPropertiesFront extends FrontClassWithSpec(cssPropertiesSpec) {
  * Prototype functions are bound to 'this' so they can be passed around as helper
  * functions.
  *
- * @param {Object} db
- *                 A database of CSS properties
- * @param {Object} inheritedList
- *                 The key is the property name, the value is whether or not
- *                 that property is inherited.
  */
-function CssProperties(db) {
-  this.properties = db.properties;
+class CssProperties {
+  /**
+   * @param {object} db
+   *                 A database of CSS properties
+   * @param {object} inheritedList
+   *                 The key is the property name, the value is whether or not
+   *                 that property is inherited.
+   */
+  constructor(db) {
+    this.properties = db.properties;
 
-  this.isKnown = this.isKnown.bind(this);
-  this.isInherited = this.isInherited.bind(this);
-  this.supportsType = this.supportsType.bind(this);
-}
-
-CssProperties.prototype = {
+    this.isKnown = this.isKnown.bind(this);
+    this.isInherited = this.isInherited.bind(this);
+    this.supportsType = this.supportsType.bind(this);
+  }
   /**
    * Checks to see if the property is known by the browser. This function has
    * `this` already bound so that it can be passed around by reference.
    *
-   * @param {String} property The property name to be checked.
-   * @return {Boolean}
+   * @param {string} property The property name to be checked.
+   * @return {boolean}
    */
   isKnown(property) {
     // Custom Property Names (aka CSS Variables) are case-sensitive; do not lowercase.
     property = property.startsWith("--") ? property : property.toLowerCase();
     return !!this.properties[property] || isCssVariable(property);
-  },
+  }
 
   /**
    * Checks to see if the property is an inherited one.
    *
-   * @param {String} property The property name to be checked.
-   * @return {Boolean}
+   * @param {string} property The property name to be checked.
+   * @return {boolean}
    */
   isInherited(property) {
     return this.properties[property]?.isInherited;
-  },
+  }
 
   /**
    * Checks if the property supports the given CSS type.
    *
-   * @param {String} property The property to be checked.
-   * @param {String} type One of the values from InspectorPropertyType.
-   * @return {Boolean}
+   * @param {string} property The property to be checked.
+   * @param {string} type One of the values from InspectorPropertyType.
+   * @return {boolean}
    */
   supportsType(property, type) {
     const id = CSS_TYPES[type];
@@ -114,17 +115,17 @@ CssProperties.prototype = {
       (this.properties[property].supports.includes(type) ||
         this.properties[property].supports.includes(id))
     );
-  },
+  }
 
   /**
    * Gets the CSS values for a given property name.
    *
-   * @param {String} property The property to use.
+   * @param {string} property The property to use.
    * @return {Array} An array of strings.
    */
   getValues(property) {
     return this.properties[property] ? this.properties[property].values : [];
-  },
+  }
 
   /**
    * Gets the CSS property names.
@@ -133,7 +134,7 @@ CssProperties.prototype = {
    */
   getNames() {
     return Object.keys(this.properties);
-  },
+  }
 
   /**
    * Return a list of subproperties for the given property.  If |name|
@@ -141,7 +142,7 @@ CssProperties.prototype = {
    * the property is not a shorthand property, then array containing
    * just the property itself is returned.
    *
-   * @param {String} name The property to query
+   * @param {string} name The property to query
    * @return {Array} An array of subproperty names.
    */
   getSubproperties(name) {
@@ -154,15 +155,15 @@ CssProperties.prototype = {
       return [name];
     }
     return [];
-  },
-};
+  }
+}
 
 /**
  * Even if the target has the cssProperties actor, the returned data may not be in the
  * same shape or have all of the data we need. This normalizes the data and fills in
  * any missing information like color values.
  *
- * @return {Object} The normalized CSS database.
+ * @return {object} The normalized CSS database.
  */
 function normalizeCssData(db) {
   // If there is a `from` attributes, it means that it comes from RDP
@@ -178,7 +179,8 @@ function normalizeCssData(db) {
 
 /**
  * Color values are omitted to save on space. Add them back here.
- * @param {Object} The CSS database.
+ *
+ * @param {object} The CSS database.
  */
 function reattachCssColorValues(db) {
   if (db.properties.color.values[0] === "COLOR") {

@@ -4,19 +4,17 @@
 
 package org.mozilla.fenix.settings.about
 
+import android.view.LayoutInflater
 import android.view.ViewGroup
-import io.mockk.Runs
+import android.widget.FrameLayout
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkStatic
 import io.mockk.spyk
 import io.mockk.verify
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.databinding.AboutListItemBinding
 import org.mozilla.fenix.settings.about.viewholders.AboutItemViewHolder
 import org.robolectric.RobolectricTestRunner
 
@@ -66,28 +64,16 @@ class AboutPageAdapterTest {
     @Test
     fun `the adapter binds the right item to a ViewHolder`() {
         val adapter = AboutPageAdapter(listener)
-        val parentView: ViewGroup = mockk(relaxed = true)
+        val parentView = FrameLayout(testContext)
 
-        mockkStatic(AboutListItemBinding::class)
-        val binding: AboutListItemBinding = mockk()
+        val view = LayoutInflater.from(parentView.context)
+            .inflate(AboutItemViewHolder.LAYOUT_ID, parentView, false)
 
-        every { AboutListItemBinding.bind(parentView) } returns binding
-        every { binding.root } returns mockk()
-
-        val viewHolder = spyk(AboutItemViewHolder(parentView, mockk()))
-
-        every {
-            adapter.onCreateViewHolder(
-                parentView,
-                AboutItemViewHolder.LAYOUT_ID,
-            )
-        } returns viewHolder
-
-        every { viewHolder.bind(any()) } just Runs
+        val viewHolder = spyk(AboutItemViewHolder(view, listener))
 
         adapter.submitList(aboutList)
         adapter.bindViewHolder(viewHolder, 1)
 
-        verify { viewHolder.bind(aboutList[1]) }
+        verify(exactly = 1) { viewHolder.bind(aboutList[1]) }
     }
 }

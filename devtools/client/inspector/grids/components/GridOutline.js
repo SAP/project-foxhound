@@ -141,13 +141,13 @@ class GridOutline extends PureComponent {
    * Returns the grid area name if the given grid cell is part of a grid area, otherwise
    * null.
    *
-   * @param  {Number} columnNumber
+   * @param  {number} columnNumber
    *         The column number of the grid cell.
-   * @param  {Number} rowNumber
+   * @param  {number} rowNumber
    *         The row number of the grid cell.
    * @param  {Array} areas
    *         Array of grid areas data stored in the grid fragment.
-   * @return {String} If there is a grid area return area name, otherwise null.
+   * @return {string} If there is a grid area return area name, otherwise null.
    */
   getGridAreaName(columnNumber, rowNumber, areas) {
     const gridArea = areas.find(
@@ -168,7 +168,7 @@ class GridOutline extends PureComponent {
   /**
    * Returns the height of the grid outline ranging between a minimum and maximum height.
    *
-   * @return {Number} The height of the grid outline.
+   * @return {number} The height of the grid outline.
    */
   getHeight() {
     const { height } = this.state;
@@ -199,7 +199,7 @@ class GridOutline extends PureComponent {
   /**
    * Renders the grid outline for the given grid container object.
    *
-   * @param  {Object} grid
+   * @param  {object} grid
    *         A single grid container in the document.
    */
   renderGrid(grid) {
@@ -282,23 +282,23 @@ class GridOutline extends PureComponent {
   /**
    * Renders the grid cell of a grid fragment.
    *
-   * @param  {Number} id
+   * @param  {number} id
    *         The grid id stored on the grid fragment
-   * @param  {Number} gridFragmentIndex
+   * @param  {number} gridFragmentIndex
    *         The index of the grid fragment rendered to the document.
-   * @param  {Number} x
+   * @param  {number} x
    *         The x-position of the grid cell.
-   * @param  {Number} y
+   * @param  {number} y
    *         The y-position of the grid cell.
-   * @param  {Number} rowNumber
+   * @param  {number} rowNumber
    *         The row number of the grid cell.
-   * @param  {Number} columnNumber
+   * @param  {number} columnNumber
    *         The column number of the grid cell.
-   * @param  {String|null} gridAreaName
+   * @param  {string | null} gridAreaName
    *         The grid area name or null if the grid cell is not part of a grid area.
-   * @param  {Number} width
+   * @param  {number} width
    *         The width of grid cell.
-   * @param  {Number} height
+   * @param  {number} height
    *         The height of the grid cell.
    */
   renderGridCell(
@@ -404,9 +404,9 @@ class GridOutline extends PureComponent {
 /**
  * Get the width and height of a given grid.
  *
- * @param  {Object} grid
+ * @param  {object} grid
  *         A single grid container in the document.
- * @return {Object} An object like { width, height }
+ * @return {object} An object like { width, height }
  */
 function getTotalWidthAndHeight(grid) {
   // TODO: We are drawing the first fragment since only one is currently being stored.

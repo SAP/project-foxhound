@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -235,16 +234,4 @@ interface mixin KeyEventMixin {
   // OEM specific virtual keyCode of Windows should pass through DOM keyCode
   // for compatibility with the other web browsers on Windows.
   const unsigned long DOM_VK_WIN_OEM_CLEAR  = 0xFE;
-
-  [BinaryName="initKeyEventJS", Func="KeyboardEvent::IsInitKeyEventAvailable"]
-  undefined initKeyEvent(DOMString type,
-                         optional boolean canBubble = false,
-                         optional boolean cancelable = false,
-                         optional Window? view = null,
-                         optional boolean ctrlKey = false,
-                         optional boolean altKey = false,
-                         optional boolean shiftKey = false,
-                         optional boolean metaKey = false,
-                         optional unsigned long keyCode = 0,
-                         optional unsigned long charCode = 0);
 };

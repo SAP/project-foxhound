@@ -16,8 +16,6 @@ import tempfile
 import time
 from threading import Timer
 
-import six
-
 from mozharness.base.script import PostScriptAction, PreScriptAction
 from mozharness.mozilla.automation import EXIT_STATUS_DICT, TBPL_RETRY
 
@@ -51,7 +49,7 @@ class AndroidMixin:
         self.use_gles3 = False
         self.use_root = True
         self.xre_path = None
-        super(AndroidMixin, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     @property
     def adb_path(self):
@@ -269,31 +267,48 @@ class AndroidMixin:
             status = func()
         return status
 
+    def _dump_host_perf_linux(self, f):
+        f.write("\n\nHost cpufreq/scaling_governor:\n")
+        cpus = glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")
+        for cpu in cpus:
+            out = subprocess.check_output(["cat", cpu], universal_newlines=True)
+            f.write(f"{cpu}: {out}")
+
+        f.write("\n\nHost /proc/cpuinfo:\n")
+        out = subprocess.check_output(["cat", "/proc/cpuinfo"], universal_newlines=True)
+        f.write(out)
+
+        f.write("\n\nHost /proc/meminfo:\n")
+        out = subprocess.check_output(["cat", "/proc/meminfo"], universal_newlines=True)
+        f.write(out)
+
+    def _dump_host_perf_darwin(self, f):
+        f.write("\n\nHost CPU info:\n")
+        out = subprocess.check_output(
+            ["sysctl", "-a", "machdep.cpu"], universal_newlines=True
+        )
+        f.write(out)
+
+        f.write("\n\nHost memory info:\n")
+        out = subprocess.check_output(
+            ["sysctl", "-a", "hw.memsize"], universal_newlines=True
+        )
+        f.write(out)
+
     def dump_perf_info(self):
         """
         Dump some host and android device performance-related information
         to an artifact file, to help understand task performance.
         """
+        import sys
+
         dir = self.query_abs_dirs()["abs_blob_upload_dir"]
         perf_path = os.path.join(dir, "android-performance.log")
         with open(perf_path, "w") as f:
-            f.write("\n\nHost cpufreq/scaling_governor:\n")
-            cpus = glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")
-            for cpu in cpus:
-                out = subprocess.check_output(["cat", cpu], universal_newlines=True)
-                f.write("%s: %s" % (cpu, out))
-
-            f.write("\n\nHost /proc/cpuinfo:\n")
-            out = subprocess.check_output(
-                ["cat", "/proc/cpuinfo"], universal_newlines=True
-            )
-            f.write(out)
-
-            f.write("\n\nHost /proc/meminfo:\n")
-            out = subprocess.check_output(
-                ["cat", "/proc/meminfo"], universal_newlines=True
-            )
-            f.write(out)
+            if sys.platform == "linux":
+                self._dump_host_perf_linux(f)
+            elif sys.platform == "darwin":
+                self._dump_host_perf_darwin(f)
 
             f.write("\n\nHost process list:\n")
             out = subprocess.check_output(["ps", "-ef"], universal_newlines=True)
@@ -524,7 +539,8 @@ class AndroidMixin:
 
     def kill_processes(self, process_name):
         self.info("Killing every process called %s" % process_name)
-        process_name = six.ensure_binary(process_name)
+        if isinstance(process_name, str):
+            process_name = process_name.encode("utf-8")
         out = subprocess.check_output(["ps", "-A"])
         for line in out.splitlines():
             if process_name in line:

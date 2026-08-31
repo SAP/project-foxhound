@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CommandEvent.h"
-#include "mozilla/StaticPrefs_dom.h"
+
 #include "mozilla/MiscEvents.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "prtime.h"
 
@@ -30,12 +29,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CommandEvent)
 NS_INTERFACE_MAP_END_INHERITING(Event)
-
-bool CommandEvent::IsCallerChromeOrCommandForEnabled(JSContext* aCx,
-                                                     JSObject* aGlobal) {
-  return nsContentUtils::ThreadsafeIsSystemCaller(aCx) ||
-         StaticPrefs::dom_element_commandfor_enabled();
-}
 
 already_AddRefed<CommandEvent> CommandEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
@@ -79,17 +72,9 @@ void CommandEvent::GetCommand(nsAString& aCommand) const {
 
 Element* CommandEvent::GetSource() {
   EventTarget* currentTarget = GetCurrentTarget();
-  if (currentTarget) {
-    nsINode* currentTargetNode = currentTarget->GetAsNode();
-    if (!currentTargetNode) {
-      return nullptr;
-    }
-    nsINode* retargeted = nsContentUtils::Retarget(
-        static_cast<nsINode*>(mSource), currentTargetNode);
-    return retargeted ? retargeted->AsElement() : nullptr;
-  }
-  MOZ_ASSERT(!mEvent->mFlags.mIsBeingDispatched);
-  return mSource;
+  nsINode* retargeted = nsContentUtils::Retarget(
+      mSource, currentTarget ? currentTarget->GetAsNode() : nullptr);
+  return retargeted ? retargeted->AsElement() : nullptr;
 }
 
 }  // namespace mozilla::dom

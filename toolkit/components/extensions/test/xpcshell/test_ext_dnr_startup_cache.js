@@ -16,7 +16,7 @@ ChromeUtils.defineESModuleGetters(this, {
 XPCOMUtils.defineLazyServiceGetters(this, {
   aomStartup: [
     "@mozilla.org/addons/addon-manager-startup;1",
-    "amIAddonManagerStartup",
+    Ci.amIAddonManagerStartup,
   ],
 });
 
@@ -94,7 +94,6 @@ function getDNRExtension({
 }
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.feedback", true);
 
@@ -104,7 +103,7 @@ add_setup(async () => {
 });
 
 add_task(async function test_dnr_startup_cache_save_and_load() {
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
   const rule_resources = [
     {
@@ -147,8 +146,6 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
       },
     ],
     "before any test extensions have been loaded"
@@ -169,8 +166,6 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
     [
       {
         metric: "validateRulesTime",
-        mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: 2,
       },
     ],
@@ -196,36 +191,24 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
     [
       {
         metric: "startupCacheWriteTime",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_WRITE_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "startupCacheWriteSize",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_WRITE_BYTES",
-        mirroredType: "histogram",
       },
       // Expected no startup cache file to be loaded or used for a newly installed extension.
       {
         metric: "startupCacheReadSize",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_BYTES",
-        mirroredType: "histogram",
       },
       {
         metric: "startupCacheReadTime",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_MS",
-        mirroredType: "histogram",
       },
       {
         metric: "startupCacheEntries",
         label: "miss",
-        mirroredName: "extensions.apis.dnr.startup_cache_entries",
-        mirroredType: "keyedScalar",
       },
       {
         metric: "startupCacheEntries",
         label: "hit",
-        mirroredName: "extensions.apis.dnr.startup_cache_entries",
-        mirroredType: "keyedScalar",
       },
     ],
     "on loading dnr rules for newly installed extension"
@@ -235,14 +218,10 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
     [
       {
         metric: "startupCacheWriteTime",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_WRITE_MS",
-        mirroredType: "histogram",
         expectedSamplesCount: 1,
       },
       {
         metric: "startupCacheWriteSize",
-        mirroredName: "WEBEXT_DNR_STARTUPCACHE_WRITE_BYTES",
-        mirroredType: "histogram",
         expectedSamplesCount: 1,
       },
     ],
@@ -287,7 +266,7 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
       "scheduleCacheDataSave"
     );
 
-    resetTelemetryData();
+    Services.fog.testResetFOG();
     await AddonTestUtils.promiseStartupManager();
     await extension.awaitStartup();
     await ExtensionDNR.ensureInitialized(extension.extension);
@@ -297,14 +276,10 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
         [
           {
             metric: "startupCacheReadSize",
-            mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_BYTES",
-            mirroredType: "histogram",
             expectedSamplesCount: 1,
           },
           {
             metric: "startupCacheReadTime",
-            mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_MS",
-            mirroredType: "histogram",
             expectedSamplesCount: 1,
           },
         ],
@@ -316,8 +291,6 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
             metric: "startupCacheEntries",
             label: "hit",
             expectedGetValue: 1,
-            mirroredName: "extensions.apis.dnr.startup_cache_entries",
-            mirroredType: "keyedScalar",
           },
         ],
         "after app startup and expected startup cache hit"
@@ -326,14 +299,10 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
         [
           {
             metric: "validateRulesTime",
-            mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-            mirroredType: "histogram",
           },
           {
             metric: "startupCacheEntries",
             label: "miss",
-            mirroredName: "extensions.apis.dnr.startup_cache_entries",
-            mirroredType: "keyedScalar",
           },
         ],
         "after DNR store loaded startup cache data"
@@ -343,20 +312,14 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
         [
           {
             metric: "validateRulesTime",
-            mirroredName: "WEBEXT_DNR_VALIDATE_RULES_MS",
-            mirroredType: "histogram",
             expectedSamplesCount: 1,
           },
           {
             metric: "startupCacheReadSize",
-            mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_BYTES",
-            mirroredType: "histogram",
             expectedSamplesCount: 1,
           },
           {
             metric: "startupCacheReadTime",
-            mirroredName: "WEBEXT_DNR_STARTUPCACHE_READ_MS",
-            mirroredType: "histogram",
             expectedSamplesCount: 1,
           },
         ],
@@ -368,8 +331,6 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
             metric: "startupCacheEntries",
             label: "miss",
             expectedGetValue: 1,
-            mirroredName: "extensions.apis.dnr.startup_cache_entries",
-            mirroredType: "keyedScalar",
           },
         ],
         "after app startup and expected startup cache miss"
@@ -379,8 +340,6 @@ add_task(async function test_dnr_startup_cache_save_and_load() {
           {
             metric: "startupCacheEntries",
             label: "hit",
-            mirroredName: "extensions.apis.dnr.startup_cache_entries",
-            mirroredType: "keyedScalar",
           },
         ],
         "after DNR store loaded startup cache data"

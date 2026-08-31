@@ -8,7 +8,6 @@ import android.view.View
 import androidx.annotation.VisibleForTesting
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
-import mozilla.components.support.locale.LocaleManager
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.LocaleSettingsItemBinding
 import org.mozilla.fenix.utils.LocaleUtils
@@ -18,7 +17,8 @@ class LocaleViewHolder(
     view: View,
     selectedLocale: Locale,
     private val interactor: LocaleSettingsViewInteractor,
-) : BaseLocaleViewHolder(view, selectedLocale) {
+    localeSelectionChecker: LocaleSelectionChecker,
+) : BaseLocaleViewHolder(view, selectedLocale, localeSelectionChecker) {
 
     private val binding = LocaleSettingsItemBinding.bind(view)
 
@@ -60,7 +60,8 @@ class SystemLocaleViewHolder(
     view: View,
     selectedLocale: Locale,
     private val interactor: LocaleSettingsViewInteractor,
-) : BaseLocaleViewHolder(view, selectedLocale) {
+    localeSelectionChecker: LocaleSelectionChecker,
+) : BaseLocaleViewHolder(view, selectedLocale, localeSelectionChecker) {
 
     private val binding = LocaleSettingsItemBinding.bind(view)
 
@@ -86,14 +87,17 @@ class SystemLocaleViewHolder(
 abstract class BaseLocaleViewHolder(
     view: View,
     private val selectedLocale: Locale,
+    private val localeSelectionChecker: LocaleSelectionChecker,
 ) : RecyclerView.ViewHolder(view) {
 
     @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
     internal fun isCurrentLocaleSelected(locale: Locale, isDefault: Boolean): Boolean {
+        val isSystemDefaultSelected = localeSelectionChecker.isDefaultLocaleSelected(itemView.context)
+
         return if (isDefault) {
-            locale == selectedLocale && LocaleManager.isDefaultLocaleSelected(itemView.context)
+            locale == selectedLocale && isSystemDefaultSelected
         } else {
-            locale == selectedLocale && !LocaleManager.isDefaultLocaleSelected(itemView.context)
+            locale == selectedLocale && !isSystemDefaultSelected
         }
     }
 

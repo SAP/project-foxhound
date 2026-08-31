@@ -83,10 +83,10 @@ async function runTest(inspector, view, isWindowHost) {
     // To be fixed in Bug 1571421.
     info("Ensure the swatch window is focused");
     const onWindowFocus = BrowserTestUtils.waitForEvent(
-      swatch.ownerGlobal,
+      swatch.documentGlobal,
       "focus"
     );
-    swatch.ownerGlobal.focus();
+    swatch.documentGlobal.focus();
     await onWindowFocus;
   }
 

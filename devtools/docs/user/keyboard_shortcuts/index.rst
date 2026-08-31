@@ -65,7 +65,7 @@ These shortcuts work in the main browser window to open the specified tool. The 
     - :kbd:`Shift` + :kbd:`F5`
     - :kbd:`Shift` + :kbd:`F5`
 
-  * - Open Network Monitor [#]_
+  * - Open Network Monitor
     - :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`E`
     - :kbd:`Cmd` + :kbd:`Opt` + :kbd:`E`
     - :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`E`
@@ -90,18 +90,13 @@ These shortcuts work in the main browser window to open the specified tool. The 
     - :kbd:`Shift` + :kbd:`F9`
     - :kbd:`Shift` + :kbd:`F9`
 
-  * - Open Debugger [#]_
+  * - Open Debugger
     - :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`Z`
     - :kbd:`Cmd` + :kbd:`Opt` + :kbd:`Z`
     - :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`Z`
 
 
 .. [#] Unlike the other toolbox-hosted tools, this shortcut does not also close the Web Console. Instead, it focuses on the Web Console's command line. To close the Web Console, use the global toolbox shortcut of :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`I` (:kbd:`Cmd` + :kbd:`Opt` + :kbd:`I` on a Mac).
-
-.. [#] Before Firefox 55, the keyboard shortcut was :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`Q` (:kbd:`Cmd` + :kbd:`Opt` + :kbd:`Q` on a Mac)
-
-.. [#] Starting in Firefox 71. Before Firefox 66, the letter in this shortcut was :kbd:`S`.
-
 
 .. _keyboard-shortcuts-toolbox:
 
@@ -184,7 +179,7 @@ In the :ref:`Editor Preferences <settings-editor-preferences>` section of the de
 
 To select these, visit ``about:config``, select the setting ``devtools.editor.keymap``, and assign "vim" or "emacs", or "sublime" to that setting. If you do this, the selected bindings will be used for all the developer tools that use the source editor. You need to reopen the editor for the change to take effect.
 
-From Firefox 33 onwards, the key binding preference is exposed in the :ref:`Editor Preferences <settings-editor-preferences>` section of the developer tools settings, and you can set it there instead of ``about:config``.
+The key binding preference is exposed in the :ref:`Editor Preferences <settings-editor-preferences>` section of the developer tools settings, and you can set it there instead of ``about:config``.
 
 
 .. list-table::
@@ -304,10 +299,14 @@ These shortcuts work while the :ref:`node picker <page-inspector-how-to-select-a
     - :kbd:`Click`
 
   * - Select the element under the mouse and stay in picker mode
-    - :kbd:`Shift` + :kbd:`Click`
-    - :kbd:`Shift` + :kbd:`Click`
-    - :kbd:`Shift` + :kbd:`Click`
+    - :kbd:`Ctrl` + :kbd:`Click`
+    - :kbd:`Cmd` + :kbd:`Click`
+    - :kbd:`Ctrl` + :kbd:`Click`
 
+  * - Select the element under the mouse, even if it can't consume pointer events
+    - :kbd:`Shift` + :kbd:`Click`
+    - :kbd:`Shift` + :kbd:`Click`
+    - :kbd:`Shift` + :kbd:`Click`
 
 .. _keyboard-shortcuts-html-pane:
 
@@ -406,7 +405,7 @@ These shortcuts work while you're in the :doc:`Inspector's HTML pane <../page_in
     - :kbd:`F2`
 
   * - Stop editing HTML
-    - :kbd:`F2` / :kbd:`Ctrl` +:kbd:`Enter`
+    - :kbd:`F2` / :kbd:`Ctrl` + :kbd:`Enter`
     - :kbd:`F2` / :kbd:`Cmd` + :kbd:`Return`
     - :kbd:`F2` / :kbd:`Ctrl` + :kbd:`Enter`
 
@@ -548,14 +547,14 @@ These shortcuts work when you're in the :doc:`Inspector's CSS panel <../page_ins
     - :kbd:`Shift` + :kbd:`↓`
 
   * - Increment selected value by 0.1
-    - :kbd:`Alt` + :kbd:`↑` (:kbd:`Ctrl` + :kbd:`↑` from Firefox 60 onwards.)
+    - :kbd:`Ctrl` + :kbd:`↑`
     - :kbd:`Alt` + :kbd:`↑`
-    - :kbd:`Alt` + :kbd:`↑` (:kbd:`Ctrl` + :kbd:`↑` from Firefox 60 onwards.)
+    - :kbd:`Ctrl` + :kbd:`↑`
 
   * - Decrement selected value by 0.1
-    - :kbd:`Alt` + :kbd:`↓` (:kbd:`Ctrl` + :kbd:`↓` from Firefox 60 onwards).
+    - :kbd:`Ctrl` + :kbd:`↓`.
     - :kbd:`Alt` + :kbd:`↓`
-    - :kbd:`Alt` + :kbd:`↓` (:kbd:`Ctrl` + :kbd:`↓` from Firefox 60 onwards).
+    - :kbd:`Ctrl` + :kbd:`↓`.
 
   * - Show/hide more information about current property (Computed view only, when a property is selected)
     - :kbd:`Enter` or :kbd:`Space`
@@ -648,9 +647,6 @@ Keyboard shortcuts for the :doc:`Firefox JavaScript Debugger <../debugger/index>
 .. [4] By default, on some Macs, the function key is remapped to use a special feature: for example, to change the screen brightness or the volume. See this `guide to using these keys as standard function keys <https://support.apple.com/kb/HT3399>`_. To use a remapped key as a standard function key, hold the Function key down as well (so to open the Profiler, use :kbd:`Shift` + :kbd:`Function` + :kbd:`F5`).
 
 
-.. note::
-  Before Firefox 66, the combination :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`S` on Windows and Linux or :kbd:`Cmd` + :kbd:`Opt` + :kbd:`S` on macOS would open/close the Debugger. From Firefox 66 and later, this is no longer the case.
-
 
 .. _keyboard-shortcuts-web-console:
 
@@ -695,7 +691,7 @@ Keyboard shortcuts for the :doc:`Web Console <../web_console/index>`.
 
   * - Clear output
     - :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`L`
-    - :kbd:`Ctrl` + :kbd:`L` |br| |br| From Firefox 67: |br| |br| :kbd:`Cmd` + :kbd:`K`
+    - :kbd:`Ctrl` + :kbd:`L` |br| |br| :kbd:`Cmd` + :kbd:`K`
     - :kbd:`Ctrl` + :kbd:`Shift` + :kbd:`L`
 
 

@@ -1,4 +1,3 @@
-HTTP == deferred-anchor.xhtml#d deferred-anchor-ref.xhtml#d
 fuzzy-if(gtkWidget,0-1,0-23) fails-if(useDrawSnapshot) == deferred-anchor2.xhtml deferred-anchor-ref.xhtml#d # bug 1182632
 HTTP == fixed-1.html fixed-1.html?ref
 fuzzy(0-1,0-32200) HTTP == fixed-table-1.html fixed-table-1.html?ref
@@ -17,7 +16,7 @@ fails-if(Android) == percent-height-overflowing-image-1.html percent-height-over
 == scroll-behavior-3.html scroll-behavior-3.html?ref
 == scroll-behavior-4.html scroll-behavior-4.html?ref
 == scroll-behavior-5.html scroll-behavior-5.html?ref
-== scroll-behavior-6.html scroll-behavior-6.html?ref
+fuzzy-if(cocoaWidget,0-2,0-60) fuzzy-if(Android,0-4,0-50) == scroll-behavior-6.html scroll-behavior-6.html?ref
 == scroll-behavior-7.html scroll-behavior-7.html?ref
 == scroll-behavior-8.html scroll-behavior-8.html?ref
 == scroll-behavior-9.html scroll-behavior-9.html?ref
@@ -142,3 +141,48 @@ pref(layout.disable-pixel-alignment,true) fuzzy-if(Android||cocoaWidget,255-255,
 
 fuzzy-if(Android,54-54,8-29) == xul-scrollbar-iterate.html xul-scrollbar-iterate-ref.html
 == scrollbars-area-in-iframe.html scrollbars-area-in-iframe-ref.html
+
+pref(layout.css.anchor-positioning.enabled,true) pref(image.testing.decode-sync.enabled,false) == anchor-scroll-01.html anchor-scroll-ref.html
+
+# Test case for @supports selector(::-webkit-scrollbar).
+# We do return true for the @supports
+pref(layout.css.fake-webkit-scrollbar.enabled,true) == webkit-scrollbar-in-at-supports.html about:blank
+# On Android the HTTP host is not "localhost", it's the IP address of the host machine.
+skip-if(Android) pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(layout.css.fake-webkit-scrollbar.disabled-domains,"localhost") HTTP != webkit-scrollbar-in-at-supports.html about:blank
+# Test case for CSS.supports("selector(::-webkit-scrollbar)") (the JS API).
+# We do return true when the pseudo-element is enabled.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) == webkit-scrollbar-in-css-supports.html about:blank
+# And we should return false when the document's domain is on the blocklist.
+skip-if(Android) pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(layout.css.fake-webkit-scrollbar.disabled-domains,"localhost") HTTP != webkit-scrollbar-in-css-supports.html about:blank
+# Test case where two containers have ::-webkit-scrollbar has non-zero `width` and `height`, thus overlay scrollbars are disabled on the container, but there's another container has no ::-webkit-scrollbar.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) test-pref(ui.useOverlayScrollbars,1) test-pref(layout.testing.overlay-scrollbars.always-visible,false) test-pref(ui.scrollbarFadeBeginDelay,0) ref-pref(ui.useOverlayScrollbars,0) == webkit-scrollbar.html webkit-scrollbar-ref.html
+# On Android the HTTP host is not "localhost", it's the IP address of the host machine.
+skip-if(Android) pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(layout.css.fake-webkit-scrollbar.disabled-domains,"localhost") test-pref(ui.useOverlayScrollbars,1) test-pref(layout.testing.overlay-scrollbars.always-visible,false) test-pref(ui.scrollbarFadeBeginDelay,0) ref-pref(ui.useOverlayScrollbars,0) HTTP != webkit-scrollbar.html webkit-scrollbar-ref.html
+# Test case where ::-webkit-scrollbar has zero `width`, thus overlay scrollbars are enabled.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(ui.useOverlayScrollbars,1)  == webkit-scrollbar-zero-width.html webkit-scrollbar-overlay-ref.html
+# Test case where ::-webkit-scrollbar has zero `width` and `height`, thus the scrollbars SHOULD NOT be visible.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) test-pref(layout.testing.overlay-scrollbars.always-visible,false) test-pref(ui.scrollbarFadeBeginDelay,0) pref(ui.useOverlayScrollbars,1) == webkit-scrollbar-zero-width-and-height.html webkit-scrollbar-display-none-ref.html
+# Test case where ::-webkit-scrollbar has zero `width` and `height` but `scrollbar-width: thin` clobbers it, thus scrollbars SHOULD be visible.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(layout.css.scrollbar-width-thin.disabled,false) == webkit-scrollbar-zero-width-and-height-scrollbar-width-thin.html webkit-scrollbar-display-none-scrollbar-width-thin-ref.html
+# Test case where ::-webkit-scrollbar has percent units `width` and `height`, thus overlay scrollbars are enabled.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(ui.useOverlayScrollbars,1)  == webkit-scrollbar-percent-width-height.html webkit-scrollbar-overlay-ref.html
+# Test case where ::-webkit-scrollbar has neither `width` nor `height`, thus overlay scrollbars are enabled.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(ui.useOverlayScrollbars,1) == webkit-scrollbar-no-width-height.html webkit-scrollbar-overlay-ref.html
+# Test case when using overlay scrollbars is globally disabled, disabling the horizontal scrollbars properly invalidates its descendants (e.g. scroll thumbs)
+pref(ui.useOverlayScrollbars,0) test-pref(layout.css.fake-webkit-scrollbar.enabled,true) ref-pref(layout.css.fake-webkit-scrollbar.enabled,false) == disable-horizontal-scrollbar-dynamically.html disable-horizontal-scrollbar-dynamically-ref.html
+# Test case where ::-webkit-scrollbar has `width` and `height` with a pseudo class (:focus).
+pref(layout.css.fake-webkit-scrollbar.enabled,true) test-pref(ui.useOverlayScrollbars,1) test-pref(layout.testing.overlay-scrollbars.always-visible,false) test-pref(ui.scrollbarFadeBeginDelay,0) ref-pref(ui.useOverlayScrollbars,0) needs-focus == webkit-scrollbar-focus.html webkit-scrollbar-focus-ref.html
+# Test case that ::-webkit-scrollbar style rules are dynamically added
+pref(layout.css.fake-webkit-scrollbar.enabled,true) test-pref(ui.useOverlayScrollbars,1) ref-pref(ui.useOverlayScrollbars,0) == webkit-scrollbar-dynamic-add.html webkit-scrollbar-dynamic-add-ref.html
+# Test case that ::-webkit-scrollbar style rules are dynamically removed
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(ui.useOverlayScrollbars,1) test-pref(layout.testing.overlay-scrollbars.always-visible,false) test-pref(ui.scrollbarFadeBeginDelay,0) == webkit-scrollbar-dynamic-remove.html webkit-scrollbar-dynamic-remove-ref.html
+# Test case where -webkit-scrollbar has `width` but with `display: none` and the scroll container has `scrollbar-width: none`.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(ui.useOverlayScrollbars,1) == webkit-scrollbar-display-none-with-scrollbar-width-none.html webkit-scrollbar-display-none-ref.html
+# Test case where -webkit-scrollbar has `width` but with `display: none`, thus the scrollbars SHOULD NOT be visible.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) test-pref(layout.testing.overlay-scrollbars.always-visible,false) test-pref(ui.scrollbarFadeBeginDelay,0) pref(ui.useOverlayScrollbars,1) == webkit-scrollbar-display-none.html webkit-scrollbar-display-none-ref.html
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(layout.css.scrollbar-width-thin.disabled,false) == webkit-scrollbar-display-none-scrollbar-width-thin.html webkit-scrollbar-display-none-scrollbar-width-thin-ref.html
+pref(layout.css.fake-webkit-scrollbar.enabled,true) pref(layout.css.scrollbar-width-thin.disabled,true) == webkit-scrollbar-display-none-scrollbar-width-thin.html scrollbar-width-auto.html
+# Dynamically change from ::-webkit-scrollbar { display: none } to ::-webkit-scrollbar { display: block }.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) == webkit-scrollbar-display-none-dynamic.html scrollbar-width-auto.html
+# Dynamically change from ::-webkit-scrollbar { display: block } to ::-webkit-scrollbar { display: none }.
+pref(layout.css.fake-webkit-scrollbar.enabled,true) == webkit-scrollbar-display-none-dynamic-2.html webkit-scrollbar-display-none-ref.html

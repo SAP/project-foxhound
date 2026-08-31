@@ -9,15 +9,21 @@
  */
 #include "test/null_transport.h"
 
+#include <cstdint>
+#include <span>
+
+#include "api/call/transport.h"
+
 namespace webrtc {
 namespace test {
 
-bool NullTransport::SendRtp(rtc::ArrayView<const uint8_t> packet,
+bool NullTransport::SendRtp(std::span<const uint8_t> packet,
                             const PacketOptions& options) {
   return true;
 }
 
-bool NullTransport::SendRtcp(rtc::ArrayView<const uint8_t> packet) {
+bool NullTransport::SendRtcp(std::span<const uint8_t> packet,
+                             const PacketOptions& options) {
   return true;
 }
 

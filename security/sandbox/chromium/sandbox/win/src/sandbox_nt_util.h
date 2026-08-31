@@ -1,18 +1,20 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright 2010 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SANDBOX_SRC_SANDBOX_NT_UTIL_H_
-#define SANDBOX_SRC_SANDBOX_NT_UTIL_H_
+#ifndef SANDBOX_WIN_SRC_SANDBOX_NT_UTIL_H_
+#define SANDBOX_WIN_SRC_SANDBOX_NT_UTIL_H_
 
 #include <intrin.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <memory>
 
-#include "base/macros.h"
+#include "base/containers/span.h"
+#include "base/memory/raw_ptr_exclusion.h"
 #include "sandbox/win/src/nt_internals.h"
 #include "sandbox/win/src/sandbox_nt_types.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 // Placement new and delete to be used from ntdll interception code.
 void* __cdecl operator new(size_t size,
@@ -103,7 +105,13 @@ struct NtAllocDeleter {
 void* GetGlobalIPCMemory();
 
 // Returns a pointer to the Policy shared memory.
-void* GetGlobalPolicyMemory();
+void* GetGlobalPolicyMemoryForTesting();
+
+// Returns a view of the shared delegate data, or nullopt if none was provided.
+absl::optional<base::span<const uint8_t>> GetGlobalDelegateData();
+
+// Returns a reference to imported NT functions.
+const NtExports* GetNtExports();
 
 enum RequiredAccess { READ, WRITE };
 
@@ -115,16 +123,23 @@ bool ValidParameter(void* buffer, size_t size, RequiredAccess intent);
 // Copies data from a user buffer to our buffer. Returns the operation status.
 NTSTATUS CopyData(void* destination, const void* source, size_t bytes);
 
+// Copies the name from an object attributes. |out_name| is a NUL terminated
+// string and |out_name_len| is the number of characters copied. |attributes|
+// is a copy of the attribute flags from |in_object|.
+NTSTATUS CopyNameAndAttributes(
+    const OBJECT_ATTRIBUTES* in_object,
+    std::unique_ptr<wchar_t, NtAllocDeleter>* out_name,
+    size_t* out_name_len,
+    uint32_t* attributes = nullptr);
+
 // Copies the name from an object attributes.
 NTSTATUS AllocAndCopyName(const OBJECT_ATTRIBUTES* in_object,
                           std::unique_ptr<wchar_t, NtAllocDeleter>* out_name,
-                          uint32_t* attributes,
-                          HANDLE* root);
+                          uint32_t* attributes, HANDLE* root);
 
 // Determine full path name from object root and path.
 NTSTATUS AllocAndGetFullPath(
-    HANDLE root,
-    const wchar_t* path,
+    HANDLE root, const wchar_t* path,
     std::unique_ptr<wchar_t, NtAllocDeleter>* full_path);
 
 // Initializes our ntdll level heap
@@ -192,6 +207,9 @@ class AutoProtectMemory {
   AutoProtectMemory()
       : changed_(false), address_(nullptr), bytes_(0), old_protect_(0) {}
 
+  AutoProtectMemory(const AutoProtectMemory&) = delete;
+  AutoProtectMemory& operator=(const AutoProtectMemory&) = delete;
+
   ~AutoProtectMemory() { RevertProtection(); }
 
   // Sets the desired protection of a given memory range.
@@ -202,11 +220,11 @@ class AutoProtectMemory {
 
  private:
   bool changed_;
-  void* address_;
+  // This field is not a raw_ptr<> because it was filtered by the rewriter for:
+  // #addr-of
+  RAW_PTR_EXCLUSION void* address_;
   size_t bytes_;
   ULONG old_protect_;
-
-  DISALLOW_COPY_AND_ASSIGN(AutoProtectMemory);
 };
 
 // Returns true if the file_rename_information structure is supported by our
@@ -214,6 +232,9 @@ class AutoProtectMemory {
 bool IsSupportedRenameCall(FILE_RENAME_INFORMATION* file_info,
                            DWORD length,
                            uint32_t file_info_class);
+
+// Get the CLIENT_ID from the current TEB.
+CLIENT_ID GetCurrentClientId();
 
 // Version of memset that can be called before the CRT is initialized.
 __forceinline void Memset(void* ptr, int value, size_t num_bytes) {
@@ -225,4 +246,4 @@ __forceinline void Memset(void* ptr, int value, size_t num_bytes) {
 
 }  // namespace sandbox
 
-#endif  // SANDBOX_SRC_SANDBOX_NT_UTIL_H__
+#endif  // SANDBOX_WIN_SRC_SANDBOX_NT_UTIL_H_

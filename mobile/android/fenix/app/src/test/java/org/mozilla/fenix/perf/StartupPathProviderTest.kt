@@ -7,8 +7,10 @@ package org.mozilla.fenix.perf
 import android.content.Intent
 import androidx.lifecycle.Lifecycle
 import io.mockk.MockKAnnotations
+import io.mockk.Runs
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -19,8 +21,8 @@ import org.mozilla.fenix.perf.StartupPathProvider.StartupPath
 
 class StartupPathProviderTest {
 
-    private lateinit var provider: StartupPathProvider
-    private lateinit var callbacks: StartupPathProvider.StartupPathLifecycleObserver
+    private lateinit var provider: DefaultStartupPathProvider
+    private lateinit var callbacks: DefaultStartupPathProvider.StartupPathLifecycleObserver
 
     @MockK private lateinit var intent: Intent
 
@@ -28,7 +30,7 @@ class StartupPathProviderTest {
     fun setUp() {
         MockKAnnotations.init(this)
 
-        provider = StartupPathProvider()
+        provider = DefaultStartupPathProvider()
         callbacks = provider.getTestCallbacks()
     }
 
@@ -46,7 +48,7 @@ class StartupPathProviderTest {
         // "onIntentReceived" so we don't need to duplicate all the tests we run for
         // "onIntentReceived".
         val spyProvider = spyk(provider)
-        every { spyProvider.onIntentReceived(intent) } returns Unit
+        every { spyProvider.onIntentReceived(intent) } just Runs
         spyProvider.attachOnActivityOnCreate(mockk(relaxed = true), intent)
 
         verify { spyProvider.onIntentReceived(intent) }

@@ -3,6 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 
+transforms:
+    - nss_taskgraph.transforms.tools
+
 task-defaults:
     treeherder:
         platform: nss-tools/opt
@@ -13,8 +16,6 @@ task-defaults:
         checkout:
             nss:
                 path: nss
-            nspr:
-                path: nspr
     worker:
         artifacts:
             - path: /builds/worker/artifacts
@@ -31,9 +32,6 @@ tasks:
             docker-image: {in-tree: builds}
         run:
             command: "${VCS_PATH}/nss/automation/taskcluster/scripts/check_abi.sh"
-            checkout:
-                nspr:
-                    path: nspr
 
     clang-format:
         description: Run clang-format
@@ -53,6 +51,19 @@ tasks:
         run:
             command: "bin/run.sh"
 
+    clang-tidy:
+        description: Run clang-tidy static analysis
+        treeherder:
+            symbol: clang-tidy
+        worker:
+            docker-image: {in-tree: fuzz}
+            env:
+                USE_64: "1"
+                CC: clang
+                CCC: clang++
+        run:
+            command: "${VCS_PATH}/nss/automation/taskcluster/scripts/run_clang_tidy.sh"
+
     scan-build:
         description: Run scan-build
         treeherder:
@@ -65,9 +76,6 @@ tasks:
                 CCC: clang++
         run:
             command: "${VCS_PATH}/nss/automation/taskcluster/scripts/run_scan_build.sh"
-            checkout:
-                nspr:
-                    path: nspr
 
     hacl:
         description: HACL checks
@@ -78,14 +86,61 @@ tasks:
         run:
             command: "${VCS_PATH}/nss/automation/taskcluster/scripts/run_hacl.sh"
 
-    coverage:
-        description: Generate coverage report
+    test-coverage:
+        description: Generate test coverage report
         treeherder:
-            symbol: Coverage
+            symbol: TestCov
         worker:
             docker-image: {in-tree: fuzz}
+            max-run-time: 7200
+            artifacts:
+                - path: /builds/worker/artifacts
+                  type: directory
+                  name: public
+                - path: /builds/worker/artifacts/full_coverage_html_report.zip
+                  type: file
+                  name: public/full_coverage_html_report.zip
+                - path: /builds/worker/artifacts/coverage.lcov
+                  type: file
+                  name: public/coverage.lcov
+                - path: /builds/worker/artifacts/diff_coverage.html
+                  type: file
+                  name: public/diff_coverage.html
         run:
-            command: "${VCS_PATH}/nss/automation/taskcluster/scripts/gen_coverage_report.sh"
-            checkout:
-                nspr:
-                    path: nspr
+            command: "${VCS_PATH}/nss/automation/taskcluster/scripts/gen_test_coverage_report.sh"
+
+    fuzz-coverage:
+        description: Generate fuzz coverage report
+        treeherder:
+            symbol: FuzzCov
+        worker:
+            docker-image: {in-tree: fuzz}
+            max-run-time: 7200
+            env:
+                ASAN_OPTIONS: "allocator_may_return_null=1:detect_stack_use_after_return=1"
+                UBSAN_OPTIONS: "print_stacktrace=1"
+                CC: clang
+                CCC: clang++
+            artifacts:
+                - path: /builds/worker/artifacts
+                  type: directory
+                  name: public
+                - path: /builds/worker/artifacts/full_coverage_html_report.zip
+                  type: file
+                  name: public/full_coverage_html_report.zip
+                - path: /builds/worker/artifacts/coverage.lcov
+                  type: file
+                  name: public/coverage.lcov
+                - path: /builds/worker/artifacts/diff_coverage.html
+                  type: file
+                  name: public/diff_coverage.html
+        run:
+            command: "${VCS_PATH}/nss/automation/taskcluster/scripts/gen_fuzz_coverage_report.sh"
+    doc-lint:
+        description: Check RST documentation for lint errors
+        treeherder:
+            symbol: doc-lint
+        worker:
+            docker-image: {in-tree: docs}
+        run:
+            command: "${VCS_PATH}/nss/automation/taskcluster/scripts/check_doc_lint.sh"

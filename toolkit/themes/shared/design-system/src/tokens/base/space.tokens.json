@@ -1,0 +1,30 @@
+{
+  "xxsmall": {
+    "comment": "0.125rem",
+    "value": "{dimension.relative.0125}"
+  },
+  "xsmall": {
+    "comment": "0.25rem",
+    "value": "{dimension.relative.025}"
+  },
+  "small": {
+    "comment": "0.5rem",
+    "value": "{dimension.relative.050}"
+  },
+  "medium": {
+    "comment": "0.75rem",
+    "value": "{dimension.relative.075}"
+  },
+  "large": {
+    "comment": "1rem",
+    "value": "{dimension.relative.100}"
+  },
+  "xlarge": {
+    "comment": "1.5rem",
+    "value": "{dimension.relative.150}"
+  },
+  "xxlarge": {
+    "comment": "2rem",
+    "value": "{dimension.relative.200}"
+  }
+}

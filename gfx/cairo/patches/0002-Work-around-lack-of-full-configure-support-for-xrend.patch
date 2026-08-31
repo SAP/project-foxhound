@@ -1,0 +1,35 @@
+From a042a69e758f09e6a0c1797f4c2ee5930a2c389b Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 02/29] Work around lack of full configure support for xrender
+
+---
+ src/cairo-xlib-xrender-private.h | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/cairo-xlib-xrender-private.h b/src/cairo-xlib-xrender-private.h
+index 90769467b..c622b6268 100644
+--- a/src/cairo-xlib-xrender-private.h
++++ b/src/cairo-xlib-xrender-private.h
+@@ -96,6 +96,10 @@ __attribute__((__unused__)) static void   _void_consume_free   (Display *p, XID
+ #define PictOpBlendMaximum			    0x3e
+ #endif
+ 
++/* The mozilla build doesn't set up all the following HAVE_* symbols,
++   so we cheat by just checking the version number for now. */
++#if RENDER_MAJOR == 0 && RENDER_MINOR < 10
++
+ #if !HAVE_XRENDERCREATESOLIDFILL
+ #define XRenderCreateSolidFill				_int_consume
+ #endif
+@@ -132,6 +136,7 @@ typedef struct _XConicalGradient {
+ } XConicalGradient;
+ #endif
+ 
++#endif /* RENDER_MAJOR == 0 && RENDER_MINOR < 10 */
+ 
+ #else /* !CAIRO_HAS_XLIB_XRENDER_SURFACE */
+ 
+-- 
+2.53.0
+

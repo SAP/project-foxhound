@@ -4,6 +4,9 @@
 
 "use strict";
 
+const { NodeHTTPServer, NodeHTTPSServer, NodeHTTP2Server, with_node_servers } =
+  ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
+
 async function loadURL(uri, flags) {
   let chan = NetUtil.newChannel({
     uri,

@@ -10,6 +10,9 @@ skip script non262/String/normalize-generateddata-input.js # input data for othe
 slow script test262/built-ins/decodeURI/S15.1.3.1_A2.5_T1.js
 slow script test262/built-ins/decodeURIComponent/S15.1.3.2_A2.5_T1.js
 
+# x86 NaN generation rules are different from those of riscv64 (bug 1983202)
+skip-if(this.hasOwnProperty("getBuildConfiguration")&&getBuildConfiguration("riscv64-simulator")) script test262/built-ins/TypedArray/prototype/map/return-new-typedarray-conversion-operation-consistent-nan.js
+
 
 ###########################################################################
 # Generated jstests.list for test262 when inline |reftest| isn't possible #
@@ -33,26 +36,40 @@ skip script test262/built-ins/Function/prototype/arguments/prop-desc.js
 # Test262 tests disabled when features are only conditionally available #
 #########################################################################
 
-skip-if(!String.prototype.normalize) include test262/built-ins/String/prototype/normalize/jstests.list
-
 # Requires ICU to detect Final_Sigma case mapping context
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLowerCase/Final_Sigma_U180E.js
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLowerCase/special_casing_conditional.js
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLocaleLowerCase/Final_Sigma_U180E.js
 skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLocaleLowerCase/special_casing_conditional.js
 
+# Unicode RegExps require ICU support.
+skip-if(!this.hasOwnProperty("Intl")) include test262/built-ins/RegExp/property-escapes/jstests.list
+skip-if(!this.hasOwnProperty("Intl")) include test262/built-ins/RegExp/unicodeSets/jstests.list
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/unicode_full_case_folding.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/prototype/exec/regexp-builtin-exec-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-b.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-w.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-b.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-w.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-lower-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-upper-p.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/match/regexp-prototype-match-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/matchAll/regexp-prototype-matchAll-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/replace/regexp-prototype-replace-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/search/regexp-prototype-search-v-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/search/regexp-prototype-search-v-u-flag.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/language/literals/regexp/u-case-mapping.js
+
 # Skip intl402 tests when Intl isn't available.
 skip-if(!this.hasOwnProperty("Intl")) include test262/intl402/jstests.list
+skip-if(!this.hasOwnProperty("Intl")) include non262/Intl/jstests.list
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1415303
 skip-if(!this.hasOwnProperty("Atomics")) include test262/built-ins/Atomics/jstests.list
 skip-if(!this.hasOwnProperty("SharedArrayBuffer")) include test262/built-ins/SharedArrayBuffer/jstests.list
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1863140
-skip script test262/built-ins/FinalizationRegistry/prototype/register/return-undefined-register-symbol.js
-skip script test262/built-ins/FinalizationRegistry/prototype/unregister/unregister-symbol-token.js
-skip script test262/built-ins/WeakRef/returns-new-object-from-constructor-with-symbol-target.js
-skip script test262/built-ins/WeakRef/prototype/deref/return-symbol-target.js
 
 #####################################
 # Test262 tests disabled on browser #
@@ -443,11 +460,6 @@ fails-if(!xulRuntime.shell) script test262/staging/sm/Atomics/cross-compartment.
 fails-if(!xulRuntime.shell) script test262/staging/built-ins/Reflect/preventExtensions/preventExtensions-variable-length-typed-arrays.js
 fails-if(!xulRuntime.shell) script test262/staging/built-ins/Object/seal/seal-variable-length-typed-arrays.js
 
-# https://github.com/tc39/test262/pull/3955
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1892186
-skip script test262/language/module-code/top-level-await/async-module-does-not-block-sibling-modules.js
-
-
 ##################################################
 # Test262 tests skipped due to SpiderMonkey bugs #
 ##################################################
@@ -645,11 +657,7 @@ ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-null-realm.js
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1761993
-skip script test262/built-ins/AsyncGeneratorPrototype/return/return-state-completed-broken-promise.js
-skip script test262/built-ins/AsyncGeneratorPrototype/return/return-suspendedStart-broken-promise.js
-skip script test262/built-ins/AsyncGeneratorPrototype/return/return-suspendedYield-broken-promise-try-catch.js
+ignore-flag(--more-compartments) script test262/staging/sm/extensions/dataview.js
 
 # Time zone canonicalization proposal.
 skip script test262/intl402/DateTimeFormat/timezone-not-canonicalized.js
@@ -665,46 +673,42 @@ skip script test262/language/statements/with/set-mutable-binding-idref-with-prox
 skip script test262/language/statements/with/get-binding-value-idref-with-proxy-env.js
 skip script test262/language/statements/with/set-mutable-binding-idref-compound-assign-with-proxy-env.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1934808
-skip script test262/built-ins/Iterator/concat/fresh-iterator-result.js
-skip script test262/built-ins/Iterator/concat/next-method-returns-throwing-value.js
+# See https://bugzilla.mozilla.org/show_bug.cgi?id=1983837
+skip script test262/staging/top-level-await/tla-hang-entry.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1950211
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-string-primitive.js
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-number-primitive.js
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/matchAll/cstm-matchall-on-number-primitive.js
-skip script test262/built-ins/String/prototype/matchAll/cstm-matchall-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/matchAll/cstm-matchall-on-string-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-number-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-string-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-string-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-number-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-number-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-string-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-string-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-number-primitive.js
+# Before Hijri era not implemented in ICU: <https://unicode-org.atlassian.net/browse/ICU-23327>
+# Missing localizations for Before Hijri era: <https://unicode-org.atlassian.net/browse/CLDR-19320>
+skip script test262/intl402/DateTimeFormat/prototype/formatToParts/era.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1970162
-# https://github.com/tc39/ecma402/pull/989
-skip script test262/intl402/PluralRules/constructor-options-throwing-getters.js
-skip script test262/intl402/PluralRules/default-options-object-prototype.js
-skip script test262/intl402/PluralRules/constructor-option-read-order.js
-skip script test262/intl402/PluralRules/prototype/select/notation.js
-skip script test262/intl402/PluralRules/prototype/resolvedOptions/properties.js
-skip script test262/intl402/PluralRules/prototype/resolvedOptions/order.js
-skip script test262/intl402/PluralRules/prototype/constructor/notation.js
-skip script test262/intl402/PluralRules/notation.js
+# Bug 2046165 (Source phase imports)
+skip script test262/language/module-code/ambiguous-export-bindings/namespace-unambiguous-if-import-source-and-export.js
+skip script test262/language/module-code/source-phase-import/reexport-source-binding-namespace-get.js
+skip script test262/language/module-code/source-phase-import/reexport-source-binding-named-import.js
 
+# Bug 2045859 (Error stack accessor proposal)
+skip script test262/staging/sm/Error/constructor-proto.js
+skip script test262/staging/sm/Error/prototype.js
+skip script test262/staging/sm/Error/prototype-properties.js
+skip script test262/built-ins/Error/prototype/stack/setter-non-writable-stack.js
+skip script test262/built-ins/Error/prototype/stack/setter-proxy-trap-throws.js
+skip script test262/built-ins/Error/prototype/stack/setter-existing-own-property.js
+skip script test262/built-ins/Error/prototype/stack/getter-error-as-prototype.js
+skip script test262/built-ins/Error/prototype/stack/getter-no-error-data.js
+skip script test262/built-ins/Error/prototype/stack/setter-non-string-value.js
+skip script test262/built-ins/Error/prototype/stack/setter-receiver-is-prototype.js
+skip script test262/built-ins/Error/prototype/stack/setter-proxy-wrapping-prototype.js
+skip script test262/built-ins/Error/prototype/stack/setter-cross-realm.js
+skip script test262/built-ins/Error/prototype/stack/setter-own-accessor.js
+skip script test262/built-ins/Error/prototype/stack/setter-via-assignment.js
+skip script test262/built-ins/Error/prototype/stack/setter-creates-own-property.js
+skip script test262/built-ins/Error/prototype/stack/setter-proxy-trap-rejects.js
+skip script test262/built-ins/Error/prototype/stack/setter-receiver-is-proxy.js
+skip script test262/built-ins/Error/prototype/stack/getter-receiver-is-proxy.js
+skip script test262/built-ins/Error/prototype/stack/getter-error-prototype.js
+skip script test262/built-ins/Error/prototype/stack/getter-cross-realm.js
+
+# Bug 2046890
+skip script test262/intl402/FallbackSymbol/per-realm.js
 
 ###########################################################
 # Tests disabled due to issues in test262 importer script #
@@ -725,6 +729,11 @@ skip script test262/built-ins/AsyncFunction/is-not-a-global.js
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1726243
 skip-if(!xulRuntime.shell) script test262/language/module-code/top-level-await/await-dynamic-import-rejection.js
 
+# shell.js defines "var TypedArray" and test file defines "let TypedArray". This causes a SyntaxError.
+# This can be fixed upstream by instead of defining "let TypedArray" including the harness file
+# "testTypedArray.js".
+skip script test262/staging/sm/TypedArray/getter-name.js
+
 
 ####################################################
 # Tests disabled due to invalid test expectations  #
@@ -734,12 +743,6 @@ skip-if(!xulRuntime.shell) script test262/language/module-code/top-level-await/a
 skip script test262/language/statements/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 skip script test262/language/expressions/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 
-# https://github.com/tc39/test262/issues/4359
-skip script test262/staging/sm/WeakMap/symbols.js
-
-# https://github.com/rbuckton/ecma262/pull/14
-skip script test262/staging/explicit-resource-management/call-dispose-methods.js
-skip script test262/staging/explicit-resource-management/await-using-in-switch-case-block.js
 
 ##############################################
 # Enable Iterator Helpers tests in the shell #
@@ -927,33 +930,3 @@ skip script test262/built-ins/Temporal/ZonedDateTime/from/argument-string-limits
 skip script test262/built-ins/Temporal/ZonedDateTime/prototype/equals/argument-string-limits.js
 skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/argument-string-limits.js
 skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/argument-string-limits.js
-
-# See Bug 1950425, skip tests for calendars disabled in release or beta
-skip-if(release_or_beta) script non262/Temporal/Intl/defaults.js
-skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-umalqura.js
-skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/islamic-calendars-islamic.js
-skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/islamic-calendars-islamic-rgsa.js
-skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/islamic-calendars-islamic-umalqura.js
-skip-if(release_or_beta) script test262/intl402/Temporal/PlainMonthDay/from/constrain-to-leap-day.js
-
-# Try re-enabling when Bug 1954138 or Bug 1955545 are fixed.
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic.js
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-rgsa.js
-
-# https://github.com/tc39/proposal-intl-era-monthcode/issues/23. ICU4X 2.0 doesn't have inverse type
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-coptic.js
-
-# https://github.com/tc39/proposal-intl-era-monthcode/issues/4. ICU4X 2.0 doesn't have inverse type
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-ethiopic.js
-
-# https://github.com/tc39/proposal-intl-era-monthcode/issues/23 and https://github.com/tc39/proposal-intl-era-monthcode/issues/4
-skip script test262/staging/sm/Temporal/PlainDate/non-positive-era-year.js
-
-# Canonical era names have changed.
-skip script test262/intl402/Temporal/ZonedDateTime/from/canonicalize-era-codes.js 
-skip script test262/staging/Intl402/Temporal/old/japanese-before-era.js
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-gregory.js
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamicc.js
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-civil.js
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-tbla.js
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-umalqura.js

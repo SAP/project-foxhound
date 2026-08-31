@@ -16,7 +16,6 @@ from compare_locales import paths
 from compare_locales import parser
 from compare_locales import version
 
-
 epilog = """\
 moz-l10n-lint checks for common mistakes in localizable files. It tests for
 duplicate entries, parsing errors, and the like. Optionally, it can compare

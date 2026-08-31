@@ -1,18 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/NavigationHistoryEntry.h"
-#include "mozilla/dom/NavigationHistoryEntryBinding.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/NavigationHistoryEntryBinding.h"
+#include "mozilla/dom/NavigationUtils.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "nsDocShell.h"
 #include "nsGlobalWindowInner.h"
 
-extern mozilla::LazyLogModule gNavigationLog;
+#define LOG_FMTD(format, ...) \
+  MOZ_LOG_FMT(gNavigationAPILog, LogLevel::Debug, format, ##__VA_ARGS__);
+
+extern mozilla::LazyLogModule gNavigationAPILog;
 
 namespace mozilla::dom {
 
@@ -25,9 +27,10 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(NavigationHistoryEntry)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 NavigationHistoryEntry::NavigationHistoryEntry(
-    nsIGlobalObject* aGlobal, const SessionHistoryInfo* aSHInfo, int64_t aIndex)
+    nsIGlobalObject* aGlobal, const class SessionHistoryInfo* aSHInfo,
+    int64_t aIndex)
     : DOMEventTargetHelper(aGlobal),
-      mSHInfo(MakeUnique<SessionHistoryInfo>(*aSHInfo)),
+      mSHInfo(MakeUnique<class SessionHistoryInfo>(*aSHInfo)),
       mIndex(aIndex) {}
 
 NavigationHistoryEntry::~NavigationHistoryEntry() = default;
@@ -42,9 +45,11 @@ void NavigationHistoryEntry::GetUrl(nsAString& aResult) const {
   MOZ_DIAGNOSTIC_ASSERT(GetAssociatedDocument());
 
   if (!SameDocument()) {
-    auto referrerPolicy = GetAssociatedDocument()->ReferrerPolicy();
+    const auto referrerPolicy =
+        GetAssociatedDocument()->ReferrerPolicyUsedToFetchThisDocument();
     if (referrerPolicy == ReferrerPolicy::No_referrer ||
         referrerPolicy == ReferrerPolicy::Origin) {
+      aResult.SetIsVoid(true);
       return;
     }
   }
@@ -106,36 +111,40 @@ bool NavigationHistoryEntry::SameDocument() const {
 void NavigationHistoryEntry::GetState(JSContext* aCx,
                                       JS::MutableHandle<JS::Value> aResult,
                                       ErrorResult& aRv) const {
-  if (!mSHInfo) {
-    return;
-  }
-  RefPtr<nsStructuredCloneContainer> state = mSHInfo->GetNavigationState();
-  if (!state) {
-    aResult.setUndefined();
+  // Step 1
+  aResult.setUndefined();
+  if (!HasActiveDocument()) {
     return;
   }
 
+  // Step 2
+  RefPtr<nsIStructuredCloneContainer> state = mSHInfo->GetNavigationAPIState();
+  if (!state) {
+    return;
+  }
   nsresult rv = state->DeserializeToJsval(aCx, aResult);
   if (NS_FAILED(rv)) {
-    // TODO change this to specific exception
+    // nsStructuredCloneContainer::DeserializeToJsval suppresses exceptions, so
+    // the best we can do is just re-throw the NS_ERROR_DOM_DATA_CLONE_ERR. When
+    // nsStructuredCloneContainer::DeserializeToJsval throws better exceptions
+    // this should too.
+    // See also: NavigationDestination::GetState
     aRv.Throw(rv);
   }
 }
 
-void NavigationHistoryEntry::SetState(nsStructuredCloneContainer* aState) {
-  if (RefPtr<nsStructuredCloneContainer> state =
-          mSHInfo->GetNavigationState()) {
-    state->Copy(*aState);
-  }
+void NavigationHistoryEntry::SetNavigationAPIState(
+    nsIStructuredCloneContainer* aState) {
+  mSHInfo->SetNavigationAPIState(aState);
 }
 
 bool NavigationHistoryEntry::IsSameEntry(
-    const SessionHistoryInfo* aSHInfo) const {
+    const class SessionHistoryInfo* aSHInfo) const {
   return mSHInfo->NavigationId() == aSHInfo->NavigationId();
 }
 
 bool NavigationHistoryEntry::SharesDocumentWith(
-    const SessionHistoryInfo& aSHInfo) const {
+    const class SessionHistoryInfo& aSHInfo) const {
   return mSHInfo->SharesDocumentWith(aSHInfo);
 }
 
@@ -161,12 +170,30 @@ const nsID& NavigationHistoryEntry::Key() const {
   return mSHInfo->NavigationKey();
 }
 
-nsStructuredCloneContainer* NavigationHistoryEntry::GetNavigationState() const {
+nsIStructuredCloneContainer* NavigationHistoryEntry::GetNavigationAPIState()
+    const {
   if (!mSHInfo) {
     return nullptr;
   }
 
-  return mSHInfo->GetNavigationState();
+  return mSHInfo->GetNavigationAPIState();
+}
+
+// Since we don't compute the index of the entry every time we use it, but
+// instead cache it, we need to make sure to invalidate the cache when the
+// entry is disposed.
+void NavigationHistoryEntry::ResetIndexForDisposal() { mIndex = -1; }
+
+MOZ_CAN_RUN_SCRIPT
+void NavigationHistoryEntry::FireDisposeEvent() {
+  RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
+  // it doesn't bubble, and it isn't cancelable
+  event->InitEvent(u"dispose"_ns, false, false);
+  event->SetTrusted(true);
+  LOG_FMTD("Fire dispose");
+  DispatchEvent(*event, IgnoreErrors());
 }
 
 }  // namespace mozilla::dom
+
+#undef LOG_FMTD

@@ -9,11 +9,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert
 import org.junit.Ignore
+import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.GleanMetrics.NimbusSystem
-import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.helpers.FenixTestRule
 
-class NimbusSystemMetricsTest : TestSetup() {
+class NimbusSystemMetricsTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
 
     @Test
     @Ignore("It will be addressed in https://bugzilla.mozilla.org/show_bug.cgi?id=1933543")

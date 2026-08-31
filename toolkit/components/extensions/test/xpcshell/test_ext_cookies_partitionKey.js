@@ -371,7 +371,7 @@ add_task(async function test_dfpi() {
     },
   ];
   await runWithPrefs(
-    // Enable dFPI; 5 = BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.
+    // Enable dFPI; 5 = BEHAVIOR_PARTITION_FOREIGN.
     [["network.cookie.cookieBehavior", 5]],
     () => testCookiesAPI({ testCases })
   );
@@ -406,48 +406,8 @@ add_task(async function test_dfpi_with_ip_and_port() {
     },
   ];
   await runWithPrefs(
-    // Enable dFPI; 5 = BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.
+    // Enable dFPI; 5 = BEHAVIOR_PARTITION_FOREIGN.
     [["network.cookie.cookieBehavior", 5]],
-    () => testCookiesAPI({ testCases, topDomain: LOCAL_IP_AND_PORT })
-  );
-});
-
-add_task(async function test_dfpi_with_ip_and_port_use_port() {
-  const testCases = [
-    {
-      description: "first-party cookies for IP with port",
-      domain: "127.0.0.1",
-      detailsIn: {
-        partitionKey: null,
-      },
-      expectedOut: {
-        firstPartyDomain: "",
-        partitionKey: null,
-      },
-    },
-    {
-      description: "third-party cookies for IP with port",
-      domain: THIRD_PARTY_DOMAIN,
-      detailsIn: {
-        partitionKey: { topLevelSite: `http://${LOCAL_IP_AND_PORT}` },
-      },
-      expectedOut: {
-        firstPartyDomain: "",
-        partitionKey: {
-          topLevelSite: `http://${LOCAL_IP_AND_PORT}`,
-          hasCrossSiteAncestor: true,
-        },
-      },
-    },
-  ];
-  await runWithPrefs(
-    // Enable dFPI; 5 = BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.
-    // Make sure the old behavior still works as long as we support
-    // `privacy.dynamic_firstparty.use_site.include_port` flipping.
-    [
-      ["network.cookie.cookieBehavior", 5],
-      ["privacy.dynamic_firstparty.use_site.include_port", true],
-    ],
     () => testCookiesAPI({ testCases, topDomain: LOCAL_IP_AND_PORT })
   );
 });
@@ -483,7 +443,7 @@ add_task(async function test_dfpi_with_nested_subdomains() {
     },
   ];
   await runWithPrefs(
-    // Enable dFPI; 5 = BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.
+    // Enable dFPI; 5 = BEHAVIOR_PARTITION_FOREIGN.
     [["network.cookie.cookieBehavior", 5]],
     () => testCookiesAPI({ testCases, topDomain: FIRST_DOMAIN_ETLD_PLUS_MANY })
   );
@@ -528,7 +488,7 @@ add_task(async function test_dfpi_with_non_default_use_site() {
   ];
   await runWithPrefs(
     [
-      // Enable dFPI; 5 = BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.
+      // Enable dFPI; 5 = BEHAVIOR_PARTITION_FOREIGN.
       ["network.cookie.cookieBehavior", 5],
       ["privacy.dynamic_firstparty.use_site", false],
     ],
@@ -579,7 +539,7 @@ add_task(async function test_dfpi_with_ip_and_port_and_non_default_use_site() {
   ];
   await runWithPrefs(
     [
-      // Enable dFPI; 5 = BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.
+      // Enable dFPI; 5 = BEHAVIOR_PARTITION_FOREIGN.
       ["network.cookie.cookieBehavior", 5],
       ["privacy.dynamic_firstparty.use_site", false],
     ],
@@ -672,7 +632,7 @@ add_task(async function dfpi_invalid_partitionKey() {
 
       // On Nightly, dFPI is enabled by default. We have to disable it first,
       // before we can enable FPI. Otherwise we would get error:
-      // Can't enable firstPartyIsolate when cookieBehavior is 'reject_trackers_and_partition_foreign'
+      // Can't enable firstPartyIsolate when cookieBehavior is 'partition_foreign'
       await browser.privacy.websites.cookieConfig.set({
         value: { behavior: "reject_trackers" },
       });

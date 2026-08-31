@@ -14,20 +14,24 @@ var manager = new MediaTestManager;
 
 function startTest(test, token)
 {
-  // Case 3. capturing a media element with mozCaptureStream that has a MediaKeys should fail.
+  // Case 3. capturing a media element that has MediaKeys should throw NotSupportedError.
   var p1 = new EMEPromise;
   var case3token = token + "_case3";
   let v3 = document.createElement("video");
 
   v3.addEventListener("loadeddata", function() {
     ok(true, TimeStamp(case3token) + " should reach loadeddata");
-    var threw = false;
-    try {
-      v3.mozCaptureStreamUntilEnded();
-    } catch (e) {
-      threw = true;
+
+    for (const methodName of ["captureStream", "mozCaptureStream", "mozCaptureStreamUntilEnded"]) {
+      let errorName = "";
+      try {
+        v3[methodName]();
+      } catch (e) {
+        errorName = e.name;
+      }
+      is(errorName, "NotSupportedError",
+         TimeStamp(case3token) + ` ${methodName}() on EME element should throw NotSupportedError.`);
     }
-    ok(threw, TimeStamp(case3token) + " Should throw an error calling mozCaptureStreamUntilEnded an EME video.");
     p1.resolve();
   });
 

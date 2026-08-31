@@ -13,7 +13,7 @@ const MockFilePicker = SpecialPowers.MockFilePicker;
 const file = new FileUtils.File(getTestFilePath("moz.png"));
 
 add_setup(async function () {
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([file]);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
   registerCleanupFunction(function () {
@@ -117,7 +117,7 @@ add_task(async function test() {
 
       await SpecialPowers.spawn(browser, [], async () => {
         const altText = content.document.querySelector(".altText");
-        await EventUtils.synthesizeMouseAtCenter(
+        EventUtils.synthesizeMouseAtCenter(
           altText,
           { type: "mousemove" },
           content

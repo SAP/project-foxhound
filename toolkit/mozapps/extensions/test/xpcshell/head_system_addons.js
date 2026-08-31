@@ -309,7 +309,7 @@ async function buildPrefilledUpdatesDir() {
 /**
  * Check currently installed ssystem add-ons against a set of conditions.
  *
- * @param {Array<Object>} conditions - an array of objects of the form { isUpgrade: false, version: null}
+ * @param {Array<object>} conditions - an array of objects of the form { isUpgrade: false, version: null}
  * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
  */
 async function checkInstalledSystemAddons(conditions, distroDir) {
@@ -485,9 +485,9 @@ function verifySystemAddonSetPref(expectedAddons) {
 /**
  * Verify state of system add-ons after installation.
  *
- * @param {Array<Object>} initialState - an array of objects of the form {isUpgrade: false, version: null}
- * @param {Array<Object>} finalState - an array of objects of the form {isUpgrade: false, version: null}
- * @param {Boolean} alreadyUpgraded - whether a restartless upgrade has already been performed.
+ * @param {Array<object>} initialState - an array of objects of the form {isUpgrade: false, version: null}
+ * @param {Array<object>} finalState - an array of objects of the form {isUpgrade: false, version: null}
+ * @param {boolean} alreadyUpgraded - whether a restartless upgrade has already been performed.
  * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
  */
 async function verifySystemAddonState(
@@ -574,12 +574,12 @@ async function verifySystemAddonState(
 /**
  * Run system add-on tests and compare the results against a set of expected conditions.
  *
- * @param {String} setupName - name of the current setup conditions.
+ * @param {string} setupName - name of the current setup conditions.
  * @param {Object<function, Array<Object>} setup -  Defines the set of initial conditions to run each test against. Each should
  *                                                  define the following properties:
  *    setup:        A task to setup the profile into the initial state.
  *    initialState: The initial expected system add-on state after setup has run.
- * @param {Array<Object>} test -  The test to run. Each test must define an updateList or test. The following
+ * @param {Array<object>} test -  The test to run. Each test must define an updateList or test. The following
  *                                properties are used:
  *    updateList: The set of add-ons the server should respond with.
  *    test:       A function to run to perform the update check (replaces

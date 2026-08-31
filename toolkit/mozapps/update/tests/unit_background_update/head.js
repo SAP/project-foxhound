@@ -31,7 +31,7 @@ async function checkGleanPing() {
   let retval = ["EMPTY"];
   let ping_submitted = false;
 
-  const { maybeSubmitBackgroundUpdatePing } = ChromeUtils.importESModule(
+  const { Actions } = ChromeUtils.importESModule(
     "resource://gre/modules/backgroundtasks/BackgroundTask_backgroundupdate.sys.mjs"
   );
   const { BackgroundUpdate } = ChromeUtils.importESModule(
@@ -46,7 +46,7 @@ async function checkGleanPing() {
     Assert.ok(Array.isArray(retval));
     return retval;
   });
-  await maybeSubmitBackgroundUpdatePing();
+  await Actions.maybeSubmitBackgroundUpdatePing();
   Assert.ok(ping_submitted, "Glean ping successfully submitted");
 
   // The metric has `lifetime: application` set, but when testing we do not

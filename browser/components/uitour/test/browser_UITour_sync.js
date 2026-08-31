@@ -8,17 +8,11 @@ const MOCK_FLOW_ID =
 const MOCK_FLOW_BEGIN_TIME = 1590780440325;
 const MOCK_DEVICE_ID = "7e450f3337d3479b8582ea1c9bb5ba6c";
 
-Services.prefs.setBoolPref("identity.fxaccounts.oauth.enabled", false);
-Services.prefs.setStringPref(
-  "identity.fxaccounts.contextParam",
-  "fx_desktop_v3"
-);
+const gFxaParams = `context=${Services.prefs.getStringPref("identity.fxaccounts.contextParam")}`;
 
 registerCleanupFunction(function () {
   Services.prefs.clearUserPref("identity.fxaccounts.remote.root");
   Services.prefs.clearUserPref("services.sync.username");
-  Services.prefs.clearUserPref("identity.fxaccounts.oauth.enabled");
-  Services.prefs.clearUserPref("identity.fxaccounts.contextParam");
 });
 
 add_task(setup_UITourTest);
@@ -76,10 +70,10 @@ add_UITour_task(async function test_checkSyncCounts() {
 add_UITour_task(async function test_firefoxAccountsNoParams() {
   info("Load https://accounts.firefox.com");
   await gContentAPI.showFirefoxAccounts();
-  await BrowserTestUtils.browserLoaded(
-    gTestTab.linkedBrowser,
-    false,
-    "https://example.com/?context=fx_desktop_v3&entrypoint=uitour&action=email&service=sync"
+  await BrowserTestUtils.browserLoaded(gTestTab.linkedBrowser, false, url =>
+    url.startsWith(
+      `https://example.com/?${gFxaParams}&entrypoint=uitour&action=email&service=sync`
+    )
   );
 });
 
@@ -89,17 +83,20 @@ add_UITour_task(async function test_firefoxAccountsValidParams() {
   await BrowserTestUtils.browserLoaded(
     gTestTab.linkedBrowser,
     false,
-    "https://example.com/?context=fx_desktop_v3&entrypoint=uitour&action=email&service=sync&utm_foo=foo&utm_bar=bar"
+    url =>
+      url.startsWith(
+        `https://example.com/?${gFxaParams}&entrypoint=uitour&action=email&service=sync`
+      ) && url.includes("utm_foo=foo&utm_bar=bar")
   );
 });
 
 add_UITour_task(async function test_firefoxAccountsWithEmail() {
   info("Load https://accounts.firefox.com");
   await gContentAPI.showFirefoxAccounts(null, null, "foo@bar.com");
-  await BrowserTestUtils.browserLoaded(
-    gTestTab.linkedBrowser,
-    false,
-    "https://example.com/?context=fx_desktop_v3&entrypoint=uitour&email=foo%40bar.com&service=sync"
+  await BrowserTestUtils.browserLoaded(gTestTab.linkedBrowser, false, url =>
+    url.startsWith(
+      `https://example.com/?${gFxaParams}&entrypoint=uitour&email=foo%40bar.com&service=sync`
+    )
   );
 });
 
@@ -114,8 +111,13 @@ add_UITour_task(async function test_firefoxAccountsWithEmailAndFlowParams() {
   await BrowserTestUtils.browserLoaded(
     gTestTab.linkedBrowser,
     false,
-    "https://example.com/?context=fx_desktop_v3&entrypoint=uitour&email=foo%40bar.com&service=sync&" +
-      `flow_id=${MOCK_FLOW_ID}&flow_begin_time=${MOCK_FLOW_BEGIN_TIME}&device_id=${MOCK_DEVICE_ID}`
+    url =>
+      url.startsWith(
+        `https://example.com/?${gFxaParams}&entrypoint=uitour&email=foo%40bar.com&service=sync`
+      ) &&
+      url.includes(
+        `flow_id=${MOCK_FLOW_ID}&flow_begin_time=${MOCK_FLOW_BEGIN_TIME}&device_id=${MOCK_DEVICE_ID}`
+      )
   );
 });
 
@@ -164,8 +166,13 @@ add_UITour_task(
     await BrowserTestUtils.browserLoaded(
       gTestTab.linkedBrowser,
       false,
-      "https://example.com/?context=fx_desktop_v3&entrypoint=uitour&email=foo%40bar.com&service=sync&" +
-        `flow_id=${MOCK_FLOW_ID}&flow_begin_time=${MOCK_FLOW_BEGIN_TIME}`
+      url =>
+        url.startsWith(
+          `https://example.com/?${gFxaParams}&entrypoint=uitour&email=foo%40bar.com&service=sync`
+        ) &&
+        url.includes(
+          `flow_id=${MOCK_FLOW_ID}&flow_begin_time=${MOCK_FLOW_BEGIN_TIME}`
+        )
     );
   }
 );
@@ -184,8 +191,10 @@ add_UITour_task(async function test_firefoxAccountsWithEmailAndEntrypoints() {
   await BrowserTestUtils.browserLoaded(
     gTestTab.linkedBrowser,
     false,
-    "https://example.com/?context=fx_desktop_v3&entrypoint=entry&email=foo%40bar.com&service=sync&" +
-      `entrypoint_experiment=exp&entrypoint_variation=var`
+    url =>
+      url.startsWith(
+        `https://example.com/?${gFxaParams}&entrypoint=entry&email=foo%40bar.com&service=sync`
+      ) && url.includes(`entrypoint_experiment=exp&entrypoint_variation=var`)
   );
 });
 
@@ -201,8 +210,10 @@ add_UITour_task(async function test_firefoxAccountsNonAlphaValue() {
   await BrowserTestUtils.browserLoaded(
     gTestTab.linkedBrowser,
     false,
-    "https://example.com/?context=fx_desktop_v3&entrypoint=uitour&action=email&service=sync&utm_foo=" +
-      expected
+    url =>
+      url.startsWith(
+        `https://example.com/?${gFxaParams}&entrypoint=uitour&action=email&service=sync`
+      ) && url.includes(`&utm_foo=` + expected)
   );
 });
 

@@ -15,13 +15,6 @@ server.registerPathHandler("/script.js", (request, response) => {
   response.write("() => {}");
 });
 
-add_setup(() => {
-  Services.prefs.setBoolPref("security.integrity_policy.enabled", true);
-  registerCleanupFunction(() => {
-    Services.prefs.clearUserPref("security.integrity_policy.enabled");
-  });
-});
-
 add_task(async function test_contentscript_integrity_policy() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {

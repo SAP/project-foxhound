@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,19 +62,6 @@ export var ReaderMode = {
     let url = win.document.location.href;
     let readerURL = "about:reader?url=" + encodeURIComponent(url);
 
-    if (!Services.appinfo.sessionHistoryInParent) {
-      let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-      let sh = webNav.sessionHistory;
-      if (webNav.canGoForward) {
-        let forwardEntry = sh.legacySHistory.getEntryAtIndex(sh.index + 1);
-        let forwardURL = forwardEntry.URI.spec;
-        if (forwardURL && (forwardURL == readerURL || !readerURL)) {
-          webNav.goForward();
-          return;
-        }
-      }
-    }
-
     // This could possibly move to the parent. See bug 1664982.
     win.document.location = readerURL;
   },
@@ -106,18 +92,6 @@ export var ReaderMode = {
     let url = win.document.location.href;
     let originalURL = this.getOriginalUrl(url);
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-
-    if (!Services.appinfo.sessionHistoryInParent) {
-      let sh = webNav.sessionHistory;
-      if (webNav.canGoBack) {
-        let prevEntry = sh.legacySHistory.getEntryAtIndex(sh.index - 1);
-        let prevURL = prevEntry.URI.spec;
-        if (prevURL && (prevURL == originalURL || !originalURL)) {
-          webNav.goBack();
-          return;
-        }
-      }
-    }
 
     let referrerURI, principal;
     try {
@@ -210,8 +184,9 @@ export var ReaderMode = {
    * to parse certain URIs (e.g. about: URIs).
    *
    * @param doc A document to parse.
-   * @return {Promise}
-   * @resolves JS object representing the article, or null if no article is found.
+   * @returns {Promise}
+   *   Resolves to a JS object representing the article, or null if no article is
+   *   found.
    */
   parseDocument(doc) {
     if (
@@ -230,8 +205,9 @@ export var ReaderMode = {
    *
    * @param url URL to download and parse.
    * @param attrs OriginAttributes to use for the request.
-   * @return {Promise}
-   * @resolves JS object representing the article, or null if no article is found.
+   * @returns {Promise}
+   *   Resolves to a JS object representing the article, or null if no article is
+   *   found.
    */
   async downloadAndParseDocument(url, attrs = {}, docContentType = "document") {
     let result = await this._downloadDocument(url, attrs, docContentType);
@@ -248,6 +224,7 @@ export var ReaderMode = {
     }
 
     let article = await this._readerParse(doc);
+    article.textPlainDoc = result.textPlainDoc;
     // If we have to redirect, reject to the caller with the parsed article,
     // so we can update the URL before displaying it.
     if (newURL) {
@@ -328,6 +305,9 @@ export var ReaderMode = {
         );
 
         let result = { doc };
+        if (xhr.responseType != "document") {
+          result.textPlainDoc = true;
+        }
         if (responseURL != givenURL) {
           result.newURL = xhr.responseURL;
         }
@@ -349,8 +329,9 @@ export var ReaderMode = {
    * in Reader.worker.js.
    *
    * @param doc The document to parse.
-   * @return {Promise}
-   * @resolves JS object representing the article, or null if no article is found.
+   * @returns {Promise}
+   *   Resolves to a JS object representing the article, or null if no article is
+   *   found.
    */
   async _readerParse(doc) {
     if (this.parseNodeLimit) {
@@ -456,8 +437,8 @@ export var ReaderMode = {
   /**
    * Sets a global language string value if the result is confident
    *
-   * @return Promise
-   * @resolves when the language is detected
+   * @returns {Promise<void>}
+   *   Resolves when the language is detected
    */
   _assignLanguage(article) {
     return lazy.LanguageDetector.detectLanguage(article.textContent).then(
@@ -527,21 +508,19 @@ export var ReaderMode = {
     return readingSpeed.get(lang) || readingSpeed.get("en");
   },
   /**
-   *
    * Check if the document to be parsed is text document.
+   *
    * @param doc the doc object to be parsed.
    * @return boolean
-   *
    */
   _isDocumentPlainText(doc) {
     return doc.contentType == "text/plain";
   },
   /**
-   *
    * The document to be parsed is text document and is converted to HTML format.
+   *
    * @param doc the doc object to be parsed.
    * @return doc
-   *
    */
   _convertPlainTextDocument(doc) {
     let preTag = doc.querySelector("pre");

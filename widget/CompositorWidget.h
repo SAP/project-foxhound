@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_widget_CompositorWidget_h__
-#define mozilla_widget_CompositorWidget_h__
+#ifndef mozilla_widget_CompositorWidget_h_
+#define mozilla_widget_CompositorWidget_h_
 
 #include "nsISupports.h"
 #include "mozilla/RefPtr.h"
@@ -12,12 +12,7 @@
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/LayersTypes.h"
 
-#ifdef MOZ_IS_GCC
-#  include "mozilla/layers/NativeLayer.h"
-#endif
-
 class nsIWidget;
-class nsBaseWidget;
 
 namespace mozilla {
 class VsyncObserver;
@@ -38,6 +33,7 @@ namespace widget {
 class WinCompositorWidget;
 class GtkCompositorWidget;
 class AndroidCompositorWidget;
+class CocoaCompositorWidget;
 class CompositorWidgetInitData;
 
 // Gecko widgets usually need to communicate with the CompositorWidget with
@@ -63,7 +59,7 @@ class CompositorWidgetDelegate {
 
 // Platforms that support out-of-process widgets.
 #if defined(XP_WIN) || defined(MOZ_X11) || defined(MOZ_WIDGET_ANDROID) || \
-    defined(MOZ_WAYLAND)
+    defined(MOZ_WAYLAND) || defined(XP_MACOSX)
 // CompositorWidgetParent should implement CompositorWidget and
 // PCompositorWidgetParent.
 class CompositorWidgetParent;
@@ -121,9 +117,7 @@ class CompositorWidget {
    * When native layers are used, StartRemoteDrawing(InRegion) and
    * EndRemoteDrawing(InRegion) will not be called.
    */
-  virtual RefPtr<layers::NativeLayerRoot> GetNativeLayerRoot() {
-    return nullptr;
-  }
+  virtual layers::NativeLayerRoot* GetNativeLayerRoot() { return nullptr; }
 
   /**
    * Return a DrawTarget for the window which can be composited into.
@@ -267,6 +261,7 @@ class CompositorWidget {
   virtual WinCompositorWidget* AsWindows() { return nullptr; }
   virtual GtkCompositorWidget* AsGTK() { return nullptr; }
   virtual AndroidCompositorWidget* AsAndroid() { return nullptr; }
+  virtual CocoaCompositorWidget* AsCocoa() { return nullptr; }
 
   /**
    * Return the platform-specific delegate for the widget, if any.

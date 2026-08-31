@@ -15,23 +15,17 @@ import mozilla.components.concept.engine.manifest.WebAppManifest
 @Entity(tableName = "manifests")
 internal data class ManifestEntity(
     val manifest: WebAppManifest,
-
     @PrimaryKey
     @ColumnInfo(name = "start_url")
     val startUrl: String,
-
     @ColumnInfo(name = "scope", index = true)
     val scope: String?,
-
     @ColumnInfo(name = "has_share_targets", index = true)
     val hasShareTargets: Int,
-
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
-
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long,
-
     @ColumnInfo(name = "used_at")
     val usedAt: Long,
 ) {

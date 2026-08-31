@@ -56,10 +56,13 @@ prefs = [
 
 ["test_arrowpanel.xhtml"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929437
-  "os == 'win' && os_version == '10.2009' && processor == 'x86_64'", # Bug 1727507
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'", # Bug 1797751
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1797751
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929437
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2023967
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'", # Bug 1727507
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1797751
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'", # Bug 1797751
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1797751
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1797751
 ]
 
 ["test_autocomplete2.xhtml"]
@@ -73,12 +76,16 @@ skip-if = [
 ["test_autocomplete_emphasis.xhtml"]
 
 ["test_autocomplete_mac_caret.xhtml"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_autocomplete_placehold_last_complete.xhtml"]
 
 ["test_autocomplete_with_composition_on_input.html"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1929437
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929437
+]
 
 ["test_browser_drop.xhtml"]
 
@@ -86,24 +93,21 @@ skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bu
 
 ["test_bug304188.xhtml"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1957808
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug", # Bug 1957808
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1957808
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1957808
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1957808
 ]
 
 ["test_bug331215.xhtml"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1339326 #Bug 1582327
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1582327
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1339326 #Bug 1582327
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1582327
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1339326 #Bug 1582327
 ]
 
 ["test_bug360220.xhtml"]
 
 ["test_bug360437.xhtml"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1784826
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1784826
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1784826
 ]
 
 ["test_bug365773.xhtml"]
@@ -135,15 +139,14 @@ support-files = ["bug451540_window.xhtml"]
 
 ["test_bug624329.xhtml"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1600194
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1600194
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1600194
 ]
 
 ["test_bug792324.xhtml"]
 
-["test_bug1048178.xhtml"]
-
 ["test_button.xhtml"]
+
+["test_checkbox.xhtml"]
 
 ["test_closemenu_attribute.xhtml"]
 
@@ -176,7 +179,10 @@ support-files = [
 ["test_editor_for_input_with_autocomplete.html"]
 
 ["test_findbar.xhtml"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt"] # Bug 1929437
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1929437
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2030058
+]
 
 ["test_findbar_entireword.xhtml"]
 
@@ -199,14 +205,18 @@ support-files = [
   "window_maximized_persist.xhtml",
   "file_maximized_persist.js",
 ]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1968560
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968560
+]
 
 ["test_maximized_persist_with_no_titlebar.xhtml"]
 support-files = [
   "window_maximized_persist_with_no_titlebar.xhtml",
   "file_maximized_persist.js",
 ]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1968560
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968560
+]
 
 ["test_menu.xhtml"]
 
@@ -225,6 +235,9 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["test_menuitem_commands.xhtml"]
 
 ["test_menulist.xhtml"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2034604
+]
 
 ["test_menulist_in_popup.xhtml"]
 
@@ -252,7 +265,10 @@ support-files = ["window_navigate_persist.html"]
 ["test_notificationbox.xhtml"]
 
 ["test_panel.xhtml"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1929437
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929437
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2023967
+]
 
 ["test_panel_anchoradjust.xhtml"]
 
@@ -297,6 +313,9 @@ support-files = "window_panel_focus.xhtml"
 ["test_popuphidden.xhtml"]
 
 ["test_popupincontent.xhtml"]
+skip-if = [
+  "os == 'win' && standalone", # Bug 2026600
+]
 
 ["test_popupremoving.xhtml"]
 
@@ -304,7 +323,11 @@ support-files = "window_panel_focus.xhtml"
 
 ["test_preferences.xhtml"]
 
+["test_preferencesBindings_async_setting.html"]
+
 ["test_preferencesBindings_setting.html"]
+
+["test_preferencesBindings_setting_setup_teardown.html"]
 
 ["test_preferences_beforeaccept.xhtml"]
 support-files = ["window_preferences_beforeaccept.xhtml"]
@@ -320,7 +343,7 @@ support-files = ["window_preferences_onsyncfrompreference.xhtml"]
 
 ["test_screenPersistence.xhtml"]
 
-["test_scrollbar.xhtml"]
+["test_scroll_offsets.html"]
 
 ["test_showcaret.xhtml"]
 
@@ -331,9 +354,18 @@ support-files = ["window_preferences_onsyncfrompreference.xhtml"]
 ["test_tabindex.xhtml"]
 
 ["test_tooltip.xhtml"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1929437
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929437
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2030058
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && opt", # Bug 2001695
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 2001695
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && opt", # Bug 2001695
+]
 
 ["test_tooltip_noautohide.xhtml"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2030058
+]
 
 ["test_tree.xhtml"]
 

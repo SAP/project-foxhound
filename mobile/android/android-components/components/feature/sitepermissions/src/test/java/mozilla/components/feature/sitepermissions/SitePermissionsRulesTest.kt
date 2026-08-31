@@ -67,6 +67,8 @@ class SitePermissionsRulesTest {
             persistentStorage = BLOCKED,
             crossOriginStorageAccess = ALLOWED,
             mediaKeySystemAccess = ASK_TO_ALLOW,
+            localDeviceAccess = BLOCKED,
+            localNetworkAccess = BLOCKED,
         )
 
         val mockRequest: PermissionRequest = mock()
@@ -110,6 +112,14 @@ class SitePermissionsRulesTest {
         doReturn(listOf(Permission.ContentMediaKeySystemAccess())).`when`(mockRequest).permissions
         action = rules.getActionFrom(mockRequest)
         assertEquals(action, rules.mediaKeySystemAccess)
+
+        doReturn(listOf(Permission.ContentLocalDeviceAccess())).`when`(mockRequest).permissions
+        action = rules.getActionFrom(mockRequest)
+        assertEquals(action, rules.localDeviceAccess)
+
+        doReturn(listOf(Permission.ContentLocalNetworkAccess())).`when`(mockRequest).permissions
+        action = rules.getActionFrom(mockRequest)
+        assertEquals(action, rules.localNetworkAccess)
     }
 
     @Test
@@ -124,6 +134,8 @@ class SitePermissionsRulesTest {
             autoplayInaudible = AutoplayAction.ALLOWED,
             autoplayAudible = AutoplayAction.BLOCKED,
             mediaKeySystemAccess = ASK_TO_ALLOW,
+            localDeviceAccess = BLOCKED,
+            localNetworkAccess = BLOCKED,
         )
 
         val mockRequest: PermissionRequest = mock()
@@ -142,6 +154,8 @@ class SitePermissionsRulesTest {
             autoplayAudible = AutoplayAction.BLOCKED,
             persistentStorage = BLOCKED,
             mediaKeySystemAccess = ASK_TO_ALLOW,
+            localDeviceAccess = BLOCKED,
+            localNetworkAccess = BLOCKED,
         )
 
         action = rules.getActionFrom(mockRequest)
@@ -161,6 +175,8 @@ class SitePermissionsRulesTest {
             autoplayInaudible = AutoplayStatus.ALLOWED,
             autoplayAudible = AutoplayStatus.BLOCKED,
             mediaKeySystemAccess = Status.BLOCKED,
+            localDeviceAccess = Status.BLOCKED,
+            localNetworkAccess = Status.ALLOWED,
             savedAt = 1L,
         )
 
@@ -174,6 +190,8 @@ class SitePermissionsRulesTest {
             persistentStorage = BLOCKED,
             crossOriginStorageAccess = ALLOWED,
             mediaKeySystemAccess = BLOCKED,
+            localDeviceAccess = BLOCKED,
+            localNetworkAccess = ALLOWED,
         )
 
         val convertedSitePermissions = rules.toSitePermissions(origin = "origin", savedAt = 1L)
@@ -188,6 +206,8 @@ class SitePermissionsRulesTest {
         assertEquals(expectedSitePermission.localStorage, convertedSitePermissions.localStorage)
         assertEquals(expectedSitePermission.crossOriginStorageAccess, convertedSitePermissions.crossOriginStorageAccess)
         assertEquals(expectedSitePermission.mediaKeySystemAccess, convertedSitePermissions.mediaKeySystemAccess)
+        assertEquals(expectedSitePermission.localDeviceAccess, convertedSitePermissions.localDeviceAccess)
+        assertEquals(expectedSitePermission.localNetworkAccess, convertedSitePermissions.localNetworkAccess)
         assertEquals(expectedSitePermission.savedAt, convertedSitePermissions.savedAt)
     }
 

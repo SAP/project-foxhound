@@ -96,16 +96,14 @@ def define_ui_test_command_line(config, tasks):
 
         run = task.setdefault("run", {})
         post_gradlew = run.setdefault("post-gradlew", [])
-        post_gradlew.append(
-            [
-                "python3",
-                "taskcluster/scripts/tests/test-lab.py",
-                flank_config,
-                apk_app,
-                "--apk_test",
-                apk_test,
-            ]
-        )
+        post_gradlew.append([
+            "python3",
+            "taskcluster/scripts/tests/test-lab.py",
+            flank_config,
+            apk_app,
+            "--apk_test",
+            apk_test,
+        ])
 
         yield task
 

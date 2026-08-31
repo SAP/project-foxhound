@@ -651,6 +651,7 @@ function BuildConditionSandbox(aURL) {
 
   // config specific prefs
   sandbox.appleSilicon = mozinfo.apple_silicon;
+  sandbox.macosVm = mozinfo.macos_vm;
   sandbox.os_version = mozinfo.os_version;
   sandbox.wayland = mozinfo.display == "wayland";
 
@@ -660,7 +661,6 @@ function BuildConditionSandbox(aURL) {
   // Do we *not* have a dedicated gpu process.
   sandbox.nogpu =
     sandbox.wayland ||
-    sandbox.cocoaWidget ||
     !(
       Services.prefs.getBoolPref("layers.gpu-process.enabled") &&
       Services.prefs.getBoolPref("layers.gpu-process.force-enabled")

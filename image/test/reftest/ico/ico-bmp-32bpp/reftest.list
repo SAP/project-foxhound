@@ -20,3 +20,9 @@
 == ico-partial-transparent-32bpp.ico ico-partial-transparent-32bpp.png
 == ico-transparent-32bpp.ico ico-transparent-32bpp.png
 == ico-not-square-transparent-32bpp.ico ico-not-square-transparent-32bpp.png
+
+# Multi-resolution ICO whose three dir entries all CLAIM 48x48 but whose
+# resources are really 48x48 (green), 32x32 (red), 16x16 (blue).
+== lying-dir-entry-sizes.ico lying-dir-entry-sizes.png
+pref(image.downscale-during-decode.enabled,true) == lying-at-32.html lying-at-32-ref.html
+pref(image.downscale-during-decode.enabled,true) == lying-at-16.html lying-at-16-ref.html

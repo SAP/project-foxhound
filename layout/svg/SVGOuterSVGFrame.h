@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,13 @@
 #ifndef LAYOUT_SVG_SVGOUTERSVGFRAME_H_
 #define LAYOUT_SVG_SVGOUTERSVGFRAME_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ISVGSVGFrame.h"
 #include "mozilla/SVGContainerFrame.h"
 
 class gfxContext;
 
 namespace mozilla {
-class AutoSVGViewHandler;
-class SVGFragmentIdentifier;
+class AutoFragmentHandler;
 class PresShell;
 }  // namespace mozilla
 
@@ -36,8 +32,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   friend nsContainerFrame* ::NS_NewSVGOuterSVGFrame(
       mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
   friend class AsyncSendIntrinsicSizeAndRatioToEmbedder;
-  friend class AutoSVGViewHandler;
-  friend class SVGFragmentIdentifier;
+  friend class AutoFragmentHandler;
 
  protected:
   explicit SVGOuterSVGFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
@@ -49,11 +44,23 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   nscoord IntrinsicISize(const IntrinsicSizeInput& aInput,
                          IntrinsicISizeType aType) override;
 
+  // The CSS Containment spec says that size-contained replaced elements must be
+  // treated as having an intrinsic width and height of 0.  That's applicable to
+  // outer SVG frames, unless they're the outermost element (in which case
+  // they're not really "replaced", and there's no outer context to contain
+  // sizes from leaking into). Hence, we check for a parent element before we
+  // bother testing for 'contain:size'.
+  inline ContainSizeAxes ContainSizeAxesIfApplicable() const {
+    if (!GetContent()->GetParent()) {
+      return ContainSizeAxes(false, false);
+    }
+    return GetContainSizeAxes();
+  }
   IntrinsicSize GetIntrinsicSize() override;
   AspectRatio GetIntrinsicRatio() const override;
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, WritingMode aWritingMode,
+      const SizeComputationInput& aSizingInput, WritingMode aWritingMode,
       const LogicalSize& aCBSize, nscoord aAvailableISize,
       const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
       const mozilla::StyleSizeOverrides& aSizeOverrides,
@@ -83,7 +90,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   void Destroy(DestroyContext&) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   nsContainerFrame* GetContentInsertionFrame() override {
     // Any children must be added to our single anonymous inner frame kid.
@@ -100,13 +107,13 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
 
   // ISVGSVGFrame interface:
-  void NotifyViewportOrTransformChanged(uint32_t aFlags) override;
+  void NotifyViewportOrTransformChanged(ChangeFlags aFlags) override;
 
   // ISVGDisplayableFrame methods:
   void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                 imgDrawingParams& aImgParams) override;
   SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                              uint32_t aFlags) override;
+                              SVGBBoxFlags aFlags) override;
 
   // SVGContainerFrame methods:
   gfxMatrix GetCanvasTM() override;

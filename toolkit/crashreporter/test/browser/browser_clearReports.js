@@ -70,21 +70,6 @@ add_task(async function test() {
   addPendingCrashreport(crD, crashes[0].date);
   addPendingCrashreport(crD, crashes[1].date);
 
-  // Add crashes to reports dir
-  let report1 = crD.clone();
-  report1.append("NotInstallTime777");
-  report1.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o666);
-  let report2 = crD.clone();
-  report2.append("InstallTime" + Services.appinfo.appBuildID);
-  report2.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o666);
-  let report3 = crD.clone();
-  report3.append("InstallTimeNew");
-  report3.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o666);
-  let report4 = crD.clone();
-  report4.append("InstallTimeOld");
-  report4.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o666);
-  report4.lastModifiedTime = Date.now() - 63172000000;
-
   registerCleanupFunction(function () {
     cleanup_fake_appdir();
   });
@@ -93,15 +78,7 @@ add_task(async function test() {
     { gBrowser, url: "about:crashes" },
     async function (browser) {
       let dirs = [submitdir, pendingdir, crD];
-      let existing = [
-        file1.path,
-        file2.path,
-        report1.path,
-        report2.path,
-        report3.path,
-        submitdir.path,
-        pendingdir.path,
-      ];
+      let existing = [file1.path, file2.path, submitdir.path, pendingdir.path];
 
       SpecialPowers.spawn(browser, [], clickClearReports);
       await BrowserTestUtils.waitForCondition(

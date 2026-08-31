@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebBrowserPersistDocumentParent.h"
 
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/dom/PContentParent.h"
-#include "nsIInputStream.h"
-#include "nsThreadUtils.h"
+#include "WebBrowserPersistRemoteDocument.h"
 #include "WebBrowserPersistResourcesParent.h"
 #include "WebBrowserPersistSerializeParent.h"
-#include "WebBrowserPersistRemoteDocument.h"
+#include "mozilla/dom/PContentParent.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
+#include "nsIInputStream.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 

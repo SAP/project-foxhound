@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -38,9 +36,9 @@ class StringPiece {
   // We provide non-explicit singleton constructors so users can pass
   // in a "const char*" or a "string" wherever a "StringPiece" is
   // expected.
-  StringPiece() : ptr_(NULL), length_(0) {}
+  StringPiece() : ptr_(nullptr), length_(0) {}
   MOZ_IMPLICIT StringPiece(const char* str)
-      : ptr_(str), length_((str == NULL) ? 0 : strlen(str)) {}
+      : ptr_(str), length_((str == nullptr) ? 0 : strlen(str)) {}
   MOZ_IMPLICIT StringPiece(const std::string& str)
       : ptr_(str.data()), length_(str.size()) {}
   StringPiece(const char* offset, size_type len) : ptr_(offset), length_(len) {}
@@ -55,7 +53,7 @@ class StringPiece {
   bool empty() const { return length_ == 0; }
 
   void clear() {
-    ptr_ = NULL;
+    ptr_ = nullptr;
     length_ = 0;
   }
   void set(const char* aData, size_type aLen) {

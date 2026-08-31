@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RenderD3D11TextureHost.h"
+
+#include <dcomp.h>
 
 #include "GLContextEGL.h"
 #include "GLLibraryEGL.h"
@@ -12,9 +12,9 @@
 #include "RenderCompositor.h"
 #include "RenderCompositorD3D11SWGL.h"
 #include "ScopedGLHelpers.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/FenceD3D11.h"
 #include "mozilla/layers/GpuProcessD3D11TextureMap.h"
@@ -29,17 +29,21 @@ RenderDXGITextureHost::RenderDXGITextureHost(
     const Maybe<layers::GpuProcessTextureId>& aGpuProcessTextureId,
     const uint32_t aArrayIndex, const gfx::SurfaceFormat aFormat,
     const gfx::ColorSpace2 aColorSpace, const gfx::ColorRange aColorRange,
-    const gfx::IntSize aSize, bool aHasKeyedMutex,
+    const gfx::TransferFunction aTransferFunction,
+    const Maybe<gfx::HDRMetadata>& aHDRMetadata, const gfx::IntSize aSize,
+    bool aHasKeyedMutex,
     const Maybe<layers::CompositeProcessFencesHolderId>& aFencesHolderId)
     : mHandle(aHandle),
       mGpuProcessTextureId(aGpuProcessTextureId),
       mArrayIndex(aArrayIndex),
-      mSurface(0),
-      mStream(0),
+      mSurface(nullptr),
+      mStream(nullptr),
       mTextureHandle{0},
       mFormat(aFormat),
       mColorSpace(aColorSpace),
       mColorRange(aColorRange),
+      mTransferFunction(aTransferFunction),
+      mHDRMetadata(aHDRMetadata),
       mSize(aSize),
       mHasKeyedMutex(aHasKeyedMutex),
       mFencesHolderId(aFencesHolderId),
@@ -55,6 +59,107 @@ RenderDXGITextureHost::RenderDXGITextureHost(
 RenderDXGITextureHost::~RenderDXGITextureHost() {
   MOZ_COUNT_DTOR_INHERITED(RenderDXGITextureHost, RenderTextureHost);
   DeleteTextureHandle();
+}
+
+static bool IsCompatibleDXGIFormat(gfx::SurfaceFormat aFormat,
+                                   DXGI_FORMAT aDXGIFormat) {
+  switch (aFormat) {
+    case gfx::SurfaceFormat::B8G8R8A8:
+    case gfx::SurfaceFormat::B8G8R8X8:
+    case gfx::SurfaceFormat::R8G8B8A8:
+    case gfx::SurfaceFormat::R8G8B8X8:
+      return aDXGIFormat == DXGI_FORMAT_B8G8R8A8_UNORM ||
+             aDXGIFormat == DXGI_FORMAT_B8G8R8X8_UNORM ||
+             aDXGIFormat == DXGI_FORMAT_R8G8B8A8_UNORM;
+    case gfx::SurfaceFormat::R10G10B10A2_UINT32:
+    case gfx::SurfaceFormat::R10G10B10X2_UINT32:
+      return aDXGIFormat == DXGI_FORMAT_R10G10B10A2_UNORM;
+    case gfx::SurfaceFormat::R16G16B16A16F:
+      return aDXGIFormat == DXGI_FORMAT_R16G16B16A16_FLOAT;
+    case gfx::SurfaceFormat::NV12:
+      return aDXGIFormat == DXGI_FORMAT_NV12;
+    case gfx::SurfaceFormat::P010:
+      return aDXGIFormat == DXGI_FORMAT_P010;
+    case gfx::SurfaceFormat::P016:
+      return aDXGIFormat == DXGI_FORMAT_P016;
+    case gfx::SurfaceFormat::A8:
+      return aDXGIFormat == DXGI_FORMAT_R8_UNORM ||
+             aDXGIFormat == DXGI_FORMAT_A8_UNORM;
+    case gfx::SurfaceFormat::A16:
+      return aDXGIFormat == DXGI_FORMAT_R16_UNORM;
+    default:
+      return false;
+  }
+}
+
+/* static */
+bool RenderDXGITextureHost::UseDCompositionTextureOverlay(
+    gfx::SurfaceFormat aFormat) {
+  if (!gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin()) {
+    return false;
+  }
+
+  if (!gfx::DeviceManagerDx::Get()->CanUseDCompositionTexture()) {
+    return false;
+  }
+
+  if (aFormat != gfx::SurfaceFormat::B8G8R8A8 &&
+      aFormat != gfx::SurfaceFormat::B8G8R8X8) {
+    return false;
+  }
+
+  return true;
+}
+
+IDCompositionTexture* RenderDXGITextureHost::GetDCompositionTexture() {
+  if (mDCompositionTexture) {
+    return mDCompositionTexture;
+  }
+
+  if (!UseDCompositionTextureOverlay(mFormat)) {
+    return nullptr;
+  }
+
+  if (mFencesHolderId.isNothing()) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected to be called!");
+    return nullptr;
+  }
+
+  HRESULT hr;
+  RefPtr<IDCompositionDevice2> dcomp =
+      gfx::DeviceManagerDx::Get()->GetDirectCompositionDevice();
+  if (!dcomp) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected to be called!");
+    gfxCriticalNoteOnce << "Failed to get DirectCompositionDevice";
+    return nullptr;
+  }
+
+  RefPtr<IDCompositionDevice4> dcomp4;
+  hr = dcomp->QueryInterface((IDCompositionDevice4**)getter_AddRefs(dcomp4));
+  if (FAILED(hr)) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected to be called!");
+    gfxCriticalNoteOnce << "Failed to get DCompositionDevice4";
+    return nullptr;
+  }
+
+  RefPtr<ID3D11Texture2D> texture2D = GetD3D11Texture2DWithGL();
+  if (!texture2D) {
+    gfxCriticalNoteOnce << "Failed to get D3D11Texture";
+    return nullptr;
+  }
+
+  RefPtr<IDCompositionTexture> dcompTexture;
+  hr =
+      dcomp4->CreateCompositionTexture(texture2D, getter_AddRefs(dcompTexture));
+  if (FAILED(hr)) {
+    gfxCriticalNoteOnce << "CreateCompositionTexture failed:  "
+                        << gfx::hexa(hr);
+    return nullptr;
+  }
+
+  mDCompositionTexture = dcompTexture;
+
+  return mDCompositionTexture;
 }
 
 ID3D11Texture2D* RenderDXGITextureHost::GetD3D11Texture2DWithGL() {
@@ -75,11 +180,40 @@ ID3D11Texture2D* RenderDXGITextureHost::GetD3D11Texture2DWithGL() {
 }
 
 size_t RenderDXGITextureHost::GetPlaneCount() const {
-  if (mFormat == gfx::SurfaceFormat::NV12 ||
-      mFormat == gfx::SurfaceFormat::P010 ||
-      mFormat == gfx::SurfaceFormat::P016) {
-    return 2;
+  switch (mFormat) {
+    case gfx::SurfaceFormat::NV12:
+    case gfx::SurfaceFormat::P010:
+    case gfx::SurfaceFormat::P016: {
+      return 2;
+    }
+    case gfx::SurfaceFormat::B8G8R8A8:
+    case gfx::SurfaceFormat::B8G8R8X8:
+    case gfx::SurfaceFormat::R8G8B8A8:
+    case gfx::SurfaceFormat::R8G8B8X8:
+    case gfx::SurfaceFormat::A8R8G8B8:
+    case gfx::SurfaceFormat::X8R8G8B8:
+    case gfx::SurfaceFormat::R8G8B8:
+    case gfx::SurfaceFormat::B8G8R8:
+    case gfx::SurfaceFormat::R5G6B5_UINT16:
+    case gfx::SurfaceFormat::R10G10B10A2_UINT32:
+    case gfx::SurfaceFormat::R10G10B10X2_UINT32:
+    case gfx::SurfaceFormat::R16G16B16A16F:
+    case gfx::SurfaceFormat::A8:
+    case gfx::SurfaceFormat::A16:
+    case gfx::SurfaceFormat::R8G8:
+    case gfx::SurfaceFormat::R16G16:
+    case gfx::SurfaceFormat::YUV420:
+    case gfx::SurfaceFormat::YUV420P10:
+    case gfx::SurfaceFormat::YUV422P10:
+    case gfx::SurfaceFormat::NV16:
+    case gfx::SurfaceFormat::YUY2:
+    case gfx::SurfaceFormat::HSV:
+    case gfx::SurfaceFormat::Lab:
+    case gfx::SurfaceFormat::Depth:
+    case gfx::SurfaceFormat::UNKNOWN:
+      return 1;
   }
+  MOZ_ASSERT_UNREACHABLE("unhandled enum value for gfx::SurfaceFormat");
   return 1;
 }
 
@@ -207,42 +341,55 @@ bool RenderDXGITextureHost::EnsureD3D11Texture2D(ID3D11Device* aDevice) {
       RefPtr<ID3D11Texture2D> texture;
       textureMap->WaitTextureReady(mGpuProcessTextureId.ref());
       mTexture = textureMap->GetTexture(mGpuProcessTextureId.ref());
-      if (mTexture) {
-        return true;
-      } else {
-        gfxCriticalNote << "GpuProcessTextureId is not valid";
-      }
     }
+    if (!mTexture) {
+      gfxCriticalNote << "GpuProcessTextureId is not valid";
+      return false;
+    }
+  } else {
+    RefPtr<ID3D11Device1> device1;
+    aDevice->QueryInterface((ID3D11Device1**)getter_AddRefs(device1));
+    if (!device1) {
+      gfxCriticalNoteOnce << "Failed to get ID3D11Device1";
+      return false;
+    }
+
+    // Get the D3D11 texture from shared handle.
+    HRESULT hr = device1->OpenSharedResource1(
+        (HANDLE)mHandle->GetHandle(), __uuidof(ID3D11Texture2D),
+        (void**)(ID3D11Texture2D**)getter_AddRefs(mTexture));
+    if (FAILED(hr)) {
+      MOZ_ASSERT(false,
+                 "RenderDXGITextureHost::EnsureLockable(): Failed to open "
+                 "shared texture");
+      gfxCriticalNote
+          << "RenderDXGITextureHost Failed to open shared texture, hr="
+          << gfx::hexa(hr);
+      return false;
+    }
+    MOZ_ASSERT(mTexture.get());
+    mTexture->QueryInterface((IDXGIKeyedMutex**)getter_AddRefs(mKeyedMutex));
+
+    MOZ_ASSERT(mHasKeyedMutex == !!mKeyedMutex);
+    if (mHasKeyedMutex != !!mKeyedMutex) {
+      gfxCriticalNoteOnce << "KeyedMutex mismatch";
+    }
+  }
+
+  D3D11_TEXTURE2D_DESC desc{};
+  mTexture->GetDesc(&desc);
+  if (uint32_t(mSize.width) > desc.Width ||
+      uint32_t(mSize.height) > desc.Height ||
+      !IsCompatibleDXGIFormat(mFormat, desc.Format)) {
+    gfxCriticalNote << "RenderDXGITextureHost descriptor (" << mSize.width
+                    << "x" << mSize.height << " fmt " << int(mFormat)
+                    << ") does not match resource (" << desc.Width << "x"
+                    << desc.Height << " DXGI " << int(desc.Format) << ")";
+    mTexture = nullptr;
+    mKeyedMutex = nullptr;
     return false;
   }
 
-  RefPtr<ID3D11Device1> device1;
-  aDevice->QueryInterface((ID3D11Device1**)getter_AddRefs(device1));
-  if (!device1) {
-    gfxCriticalNoteOnce << "Failed to get ID3D11Device1";
-    return 0;
-  }
-
-  // Get the D3D11 texture from shared handle.
-  HRESULT hr = device1->OpenSharedResource1(
-      (HANDLE)mHandle->GetHandle(), __uuidof(ID3D11Texture2D),
-      (void**)(ID3D11Texture2D**)getter_AddRefs(mTexture));
-  if (FAILED(hr)) {
-    MOZ_ASSERT(false,
-               "RenderDXGITextureHost::EnsureLockable(): Failed to open shared "
-               "texture");
-    gfxCriticalNote
-        << "RenderDXGITextureHost Failed to open shared texture, hr="
-        << gfx::hexa(hr);
-    return false;
-  }
-  MOZ_ASSERT(mTexture.get());
-  mTexture->QueryInterface((IDXGIKeyedMutex**)getter_AddRefs(mKeyedMutex));
-
-  MOZ_ASSERT(mHasKeyedMutex == !!mKeyedMutex);
-  if (mHasKeyedMutex != !!mKeyedMutex) {
-    gfxCriticalNoteOnce << "KeyedMutex mismatch";
-  }
   return true;
 }
 
@@ -440,8 +587,8 @@ void RenderDXGITextureHost::DeleteTextureHandle() {
 
   mTexture = nullptr;
   mKeyedMutex = nullptr;
-  mSurface = 0;
-  mStream = 0;
+  mSurface = nullptr;
+  mStream = nullptr;
 }
 
 GLuint RenderDXGITextureHost::GetGLHandle(uint8_t aChannelIndex) const {
@@ -474,18 +621,20 @@ bool RenderDXGITextureHost::SyncObjectNeeded() {
 }
 
 RenderDXGIYCbCrTextureHost::RenderDXGIYCbCrTextureHost(
-    RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
+    const RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
     const gfx::YUVColorSpace aYUVColorSpace, const gfx::ColorDepth aColorDepth,
-    const gfx::ColorRange aColorRange, const gfx::IntSize aSizeY,
+    const gfx::ColorRange aColorRange,
+    const gfx::TransferFunction aTransferFunction, const gfx::IntSize aSizeY,
     const gfx::IntSize aSizeCbCr,
     const layers::CompositeProcessFencesHolderId aFencesHolderId)
     : mHandles{aHandles[0], aHandles[1], aHandles[2]},
-      mSurfaces{0},
-      mStreams{0},
+      mSurfaces{nullptr},
+      mStreams{nullptr},
       mTextureHandles{0},
       mYUVColorSpace(aYUVColorSpace),
       mColorDepth(aColorDepth),
       mColorRange(aColorRange),
+      mTransferFunction(aTransferFunction),
       mSizeY(aSizeY),
       mSizeCbCr(aSizeCbCr),
       mFencesHolderId(aFencesHolderId) {
@@ -619,6 +768,9 @@ bool RenderDXGIYCbCrTextureHost::EnsureD3D11Texture2D(ID3D11Device* aDevice) {
     return true;
   }
 
+  const DXGI_FORMAT expectedFormat = mColorDepth == gfx::ColorDepth::COLOR_8
+                                         ? DXGI_FORMAT_R8_UNORM
+                                         : DXGI_FORMAT_R16_UNORM;
   for (int i = 0; i < 3; ++i) {
     // Get the R8 D3D11 texture from shared handle.
     HRESULT hr = device1->OpenSharedResource1(
@@ -632,6 +784,23 @@ bool RenderDXGIYCbCrTextureHost::EnsureD3D11Texture2D(ID3D11Device* aDevice) {
       gfxCriticalNote
           << "RenderDXGIYCbCrTextureHost Failed to open shared texture, hr="
           << gfx::hexa(hr);
+      return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc{};
+    mTextures[i]->GetDesc(&desc);
+    const gfx::IntSize& expected = (i == 0) ? mSizeY : mSizeCbCr;
+    if (uint32_t(expected.width) > desc.Width ||
+        uint32_t(expected.height) > desc.Height ||
+        desc.Format != expectedFormat) {
+      gfxCriticalNote << "RenderDXGIYCbCrTextureHost descriptor ("
+                      << expected.width << "x" << expected.height << " depth "
+                      << int(mColorDepth) << ") does not match resource ("
+                      << desc.Width << "x" << desc.Height << " DXGI "
+                      << int(desc.Format) << ")";
+      for (auto& tex : mTextures) {
+        tex = nullptr;
+      }
       return false;
     }
   }
@@ -734,11 +903,11 @@ void RenderDXGIYCbCrTextureHost::DeleteTextureHandle() {
 
       if (mSurfaces[i]) {
         egl->fDestroySurface(mSurfaces[i]);
-        mSurfaces[i] = 0;
+        mSurfaces[i] = nullptr;
       }
       if (mStreams[i]) {
         egl->fDestroyStreamKHR(mStreams[i]);
-        mStreams[i] = 0;
+        mStreams[i] = nullptr;
       }
     }
   }

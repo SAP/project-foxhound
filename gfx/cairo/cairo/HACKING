@@ -46,9 +46,9 @@ the -commit and -bugs lists.
 Bug Tracking System
 -------------------
 
-We use a standard bugzilla bug tracking system available at:
+We use a standard gitlab bug tracking system available at:
 
-	https://bugs.freedesktop.org/
+	https://gitlab.freedesktop.org/cairo/cairo/-/issues
 
 See file named BUGS for detailed information on reporting bugs.  In short,
 for straight bug reports, it's best to report them there such that they

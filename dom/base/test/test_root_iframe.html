@@ -16,7 +16,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=511084
 </div>
 <pre id="test">
   <script type="application/javascript">
-  /** Test for Bug 511084 **/
+  /** Test for Bug 511084 */
   var doc = frames[0].document;
   doc.replaceChild(doc.createElement("iframe"), doc.documentElement);
   ok(frames[0][0] instanceof frames[0][0].Window,

@@ -8,6 +8,8 @@
 const {
   PSEUDO_CLASSES,
 } = require("resource://devtools/shared/css/constants.js");
+const nodeConstants = require("resource://devtools/shared/dom-node-constants.js");
+
 const TEST_URI = `
   <style type='text/css'>
     div {
@@ -25,17 +27,18 @@ const TEST_URI = `
     div:focus-within {
       color: papayawhip;
     }
-    div:visited {
-      color: orange;
-    }
     div:focus-visible {
       color: wheat;
     }
     div:target {
       color: crimson;
     }
+    aside::after {
+      content: "-";
+    }
   </style>
   <div>test div</div>
+  <aside>test pseudo</aside>
 `;
 
 add_task(async function () {
@@ -86,17 +89,45 @@ add_task(async function () {
   await togglePseudoClass(inspector, view, ":target");
   await assertPseudoRemoved(inspector, view, 2);
 
-  info("Select a null element");
+  info(
+    "Check that all pseudo locks are unchecked and disabled when selection is null"
+  );
   await view.selectElement(null);
+  assertPseudoClassCheckboxesState(view, false);
 
-  info("Check that all pseudo locks are unchecked and disabled");
-  for (const pseudo of PSEUDO_CLASSES) {
-    const checkbox = getPseudoClassCheckbox(view, pseudo);
-    ok(
-      !checkbox.checked && checkbox.disabled,
-      `${pseudo} checkbox is unchecked and disabled`
-    );
-  }
+  info("Check that selecting an element again re-enable the checkboxes");
+  await selectNode("aside", inspector);
+  assertPseudoClassCheckboxesState(view, true);
+
+  info(
+    "Check that all pseudo locks are unchecked and disabled when a text node is selected"
+  );
+  const asideNodeFront = await getNodeFront("aside", inspector);
+  const asideChildren = await inspector.walker.children(asideNodeFront);
+  const [textNodeFront, afterNodeFront] = asideChildren.nodes;
+  await selectNode(textNodeFront, inspector);
+  // sanity check
+  is(
+    inspector.selection.nodeFront.nodeType,
+    nodeConstants.TEXT_NODE,
+    "We selected the text node"
+  );
+  assertPseudoClassCheckboxesState(view, false);
+
+  info("Check that selecting an element again re-enable the checkboxes");
+  await selectNode("aside", inspector);
+  assertPseudoClassCheckboxesState(view, true);
+
+  info(
+    "Check that all pseudo locks are unchecked and disabled when a pseudo element is selected"
+  );
+  await selectNode(afterNodeFront, inspector);
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::after",
+    "We selected the ::after pseudo element"
+  );
+  assertPseudoClassCheckboxesState(view, false);
 
   info("Toggle the pseudo class panel close");
   view.pseudoClassToggle.click();
@@ -115,13 +146,9 @@ async function togglePseudoClass(inspector, view, pseudoClass) {
 
 function assertPseudoAdded(inspector, view, pseudoClass, numRules, childIndex) {
   info("Check that the rule view contains the pseudo-class rule");
+  assertDisplayedRulesCount(view, numRules);
   is(
-    view.element.children.length,
-    numRules,
-    "Should have " + numRules + " rules."
-  );
-  is(
-    getRuleViewRuleEditor(view, childIndex).rule.selectorText,
+    getRuleViewRuleEditorAt(view, childIndex).rule.selectorText,
     "div" + pseudoClass,
     "rule view is showing " + pseudoClass + " rule"
   );
@@ -129,13 +156,9 @@ function assertPseudoAdded(inspector, view, pseudoClass, numRules, childIndex) {
 
 function assertPseudoRemoved(inspector, view, numRules) {
   info("Check that the rule view no longer contains the pseudo-class rule");
+  assertDisplayedRulesCount(view, numRules);
   is(
-    view.element.children.length,
-    numRules,
-    "Should have " + numRules + " rules."
-  );
-  is(
-    getRuleViewRuleEditor(view, 1).rule.selectorText,
+    getRuleViewRuleEditorAt(view, 1).rule.selectorText,
     "div",
     "Second rule is div"
   );
@@ -143,6 +166,7 @@ function assertPseudoRemoved(inspector, view, numRules) {
 
 function assertPseudoPanelOpened(view) {
   info("Check the opened state of the pseudo class panel");
+  ok(!view.pseudoClassPanel.inert, "Pseudo-class panel is not inert");
   ok(!view.pseudoClassPanel.hidden, "Pseudo Class Panel Opened");
   is(
     view.pseudoClassToggle.getAttribute("aria-pressed"),
@@ -153,29 +177,30 @@ function assertPseudoPanelOpened(view) {
   for (const pseudo of PSEUDO_CLASSES) {
     const checkbox = getPseudoClassCheckbox(view, pseudo);
     ok(!checkbox.disabled, `${pseudo} checkbox is not disabled`);
-    is(
-      checkbox.getAttribute("tabindex"),
-      "0",
-      `${pseudo} checkbox has a tabindex of 0`
-    );
   }
 }
 
 function assertPseudoPanelClosed(view) {
   info("Check the closed state of the pseudo clas panel");
+  ok(view.pseudoClassPanel.inert, "Pseudo-class panel is inert");
   ok(view.pseudoClassPanel.hidden, "Pseudo Class Panel Hidden");
   is(
     view.pseudoClassToggle.getAttribute("aria-pressed"),
     "false",
     "The toggle button is not pressed"
   );
+}
 
+function assertPseudoClassCheckboxesState(view, enabled) {
   for (const pseudo of PSEUDO_CLASSES) {
     const checkbox = getPseudoClassCheckbox(view, pseudo);
-    is(
-      checkbox.getAttribute("tabindex"),
-      "-1",
-      `${pseudo} checkbox has a tabindex of -1`
-    );
+    if (enabled) {
+      ok(!checkbox.disabled, `${pseudo} checkbox is not disabled`);
+    } else {
+      ok(
+        !checkbox.checked && checkbox.disabled,
+        `${pseudo} checkbox is unchecked and disabled`
+      );
+    }
   }
 }

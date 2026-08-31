@@ -81,7 +81,7 @@ add_task(async function test_persist_searchmode() {
   await resetApplicationProvidedEngines();
 });
 
-add_task(async function test_persist_searchmode_non_app_provided_engine() {
+add_task(async function test_persist_searchmode_non_config_engine() {
   let searchExtension = await SearchTestUtils.installSearchExtension(
     {
       name: "Contextual",
@@ -121,7 +121,7 @@ add_task(async function test_persist_searchmode_non_app_provided_engine() {
   EventUtils.synthesizeKey("KEY_Enter");
   await onLoad;
 
-  info("Should exit search mode for non app-provided engines");
+  info("Should exit search mode for non config engines");
   await UrlbarTestUtils.assertSearchMode(window, null);
 
   await searchExtension.unload();

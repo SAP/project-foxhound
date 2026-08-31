@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,13 +23,11 @@
 #ifndef mozilla_ErrorResult_h
 #define mozilla_ErrorResult_h
 
-#include <stdarg.h>
-
 #include <new>
 #include <utility>
 
-#include "js/GCAnnotations.h"
 #include "js/ErrorReport.h"
+#include "js/GCAnnotations.h"
 #include "js/Value.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -215,6 +211,7 @@ class TErrorResult {
   // informative message and calling the relevant Throw*Error.
   void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw(nsresult rv) {
     MOZ_ASSERT(NS_FAILED(rv), "Please don't try throwing success");
+    ClearUnionData();
     AssignErrorCode(rv);
   }
 
@@ -381,11 +378,11 @@ class TErrorResult {
                                                                \
   template <int N>                                             \
   void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw##name( \
-      const char(&aMessage)[N]) {                              \
+      const char (&aMessage)[N]) {                             \
     ThrowDOMException(err, aMessage);                          \
   }
 
-#include "mozilla/dom/DOMExceptionNames.h"
+#include "mozilla/dom/DOMExceptionNames.inc"
 
 #undef DOMEXCEPTION
 
@@ -401,7 +398,7 @@ class TErrorResult {
 
   // Check whether the TErrorResult says to just throw whatever is on
   // the JSContext already.
-  bool IsJSContextException() {
+  bool IsJSContextException() const {
     return ErrorCode() == NS_ERROR_INTERNAL_ERRORRESULT_EXCEPTION_ON_JSCONTEXT;
   }
 
@@ -431,7 +428,10 @@ class TErrorResult {
   // Backwards-compat to make conversion simpler.  We don't call
   // Throw() here because people can easily pass success codes to
   // this.  This operator is deprecated and ideally shouldn't be used.
-  void operator=(nsresult rv) { AssignErrorCode(rv); }
+  void operator=(nsresult rv) {
+    ClearUnionData();
+    AssignErrorCode(rv);
+  }
 
   bool Failed() const { return NS_FAILED(mResult); }
 
@@ -481,11 +481,10 @@ class TErrorResult {
 
   friend struct IPC::ParamTraits<TErrorResult>;
   friend struct IPC::ParamTraits<ErrorResult>;
-  void SerializeMessage(IPC::MessageWriter* aWriter) const;
-  bool DeserializeMessage(IPC::MessageReader* aReader);
+  friend struct IPC::ParamTraits<CopyableErrorResult>;
 
-  void SerializeDOMExceptionInfo(IPC::MessageWriter* aWriter) const;
-  bool DeserializeDOMExceptionInfo(IPC::MessageReader* aReader);
+  void SerializeErrorResult(IPC::MessageWriter* aWriter) const;
+  bool DeserializeErrorResult(IPC::MessageReader* aReader);
 
   // Helper method that creates a new Message for this TErrorResult,
   // and returns the arguments array from that Message.
@@ -543,6 +542,7 @@ class TErrorResult {
   }
 
   void AssignErrorCode(nsresult aRv) {
+    MOZ_ASSERT(mUnionState == HasNothing);
     MOZ_ASSERT(aRv != NS_ERROR_INTERNAL_ERRORRESULT_TYPEERROR,
                "Use ThrowTypeError()");
     MOZ_ASSERT(aRv != NS_ERROR_INTERNAL_ERRORRESULT_RANGEERROR,

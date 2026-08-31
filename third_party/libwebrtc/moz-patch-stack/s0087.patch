@@ -1,0 +1,37 @@
+From: Nico Grunbaum <na-g@nostrum.com>
+Date: Thu, 23 May 2024 17:28:00 +0000
+Subject: Bug 1897459 - P2 - for BSD reference null socket server
+ instead;r=mjf,webrtc-reviewers
+
+Differential Revision: https://phabricator.services.mozilla.com/D211095
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/0993ae41fb7db1624dedc5cf2278cd5a505f18f5
+---
+ rtc_base/internal/default_socket_server.cc | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/rtc_base/internal/default_socket_server.cc b/rtc_base/internal/default_socket_server.cc
+index d49c2bba32..521f21f538 100644
+--- a/rtc_base/internal/default_socket_server.cc
++++ b/rtc_base/internal/default_socket_server.cc
+@@ -13,12 +13,21 @@
+ #include <memory>
+ 
+ #include "rtc_base/socket_server.h"
++
++#if defined(WEBRTC_BSD)
++#include "rtc_base/null_socket_server.h"
++#else
+ #include "rtc_base/physical_socket_server.h"
++#endif
+ 
+ namespace webrtc {
+ 
+ std::unique_ptr<SocketServer> CreateDefaultSocketServer() {
++#if defined(WEBRTC_BSD)
++  return std::unique_ptr<SocketServer>(new NullSocketServer);
++#else
+   return std::unique_ptr<SocketServer>(new PhysicalSocketServer);
++#endif
+ }
+ 
+ }  // namespace webrtc

@@ -310,11 +310,9 @@ def fixture_httpd_with_proxy_handler(docroot):
     httpd.start(block=False)
 
     port = httpd.httpd.server_port
-    proxy_support = ProxyHandler(
-        {
-            "http": f"http://127.0.0.1:{port:d}",
-        }
-    )
+    proxy_support = ProxyHandler({
+        "http": f"http://127.0.0.1:{port:d}",
+    })
     install_opener(build_opener(proxy_support))
 
     yield httpd

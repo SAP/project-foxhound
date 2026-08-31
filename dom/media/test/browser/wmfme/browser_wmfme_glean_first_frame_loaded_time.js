@@ -59,6 +59,13 @@ const testCases = [
 ];
 
 add_task(async function testGleanMediaPlayackFirstFrameLoaded() {
+  if (!Services.telemetry.canRecordPrereleaseData) {
+    ok(
+      true,
+      "Skipping test on release channel; first_frame_loaded not recorded"
+    );
+    return;
+  }
   for (let test of testCases) {
     Services.fog.testResetFOG();
 

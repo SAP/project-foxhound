@@ -1,0 +1,58 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__fborender__recreate_color_00.html"]
+
+["test_2_deqp__functional__gles3__fborender__recreate_color_01.html"]
+
+["test_2_deqp__functional__gles3__fborender__recreate_color_02.html"]
+
+["test_2_deqp__functional__gles3__fborender__recreate_color_03.html"]
+
+["test_2_deqp__functional__gles3__fborender__recreate_color_04.html"]
+
+["test_2_deqp__functional__gles3__fborender__recreate_color_05.html"]
+
+["test_2_deqp__functional__gles3__fborender__recreate_color_06.html"]
+
+["test_2_deqp__functional__gles3__fborender__recreate_depth_stencil.html"]
+
+["test_2_deqp__functional__gles3__fborender__resize_00.html"]
+
+["test_2_deqp__functional__gles3__fborender__resize_01.html"]
+
+["test_2_deqp__functional__gles3__fborender__resize_02.html"]
+
+["test_2_deqp__functional__gles3__fborender__resize_03.html"]
+
+["test_2_deqp__functional__gles3__fborender__shared_colorbuffer_00.html"]
+
+["test_2_deqp__functional__gles3__fborender__shared_colorbuffer_01.html"]
+
+["test_2_deqp__functional__gles3__fborender__shared_colorbuffer_02.html"]
+
+["test_2_deqp__functional__gles3__fborender__shared_colorbuffer_clear.html"]
+
+["test_2_deqp__functional__gles3__fborender__shared_depth_stencil.html"]
+
+["test_2_deqp__functional__gles3__fborender__stencil_clear.html"]

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,6 @@
 #include "nsReadableUtils.h"
 
 NS_IMPL_ISUPPORTS(nsDialogParamBlock, nsIDialogParamBlock)
-
-nsDialogParamBlock::nsDialogParamBlock() : mNumStrings(0), mString(nullptr) {
-  for (int32_t i = 0; i < kNumInts; i++) {
-    mInt[i] = 0;
-  }
-}
 
 nsDialogParamBlock::~nsDialogParamBlock() { delete[] mString; }
 

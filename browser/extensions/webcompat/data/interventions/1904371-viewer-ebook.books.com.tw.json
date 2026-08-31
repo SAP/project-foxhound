@@ -1,0 +1,15 @@
+{
+  "label": "viewer-ebook.books.com.tw",
+  "bugs": {
+    "1904371": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://viewer-ebook.books.com.tw/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -43,7 +43,7 @@ add_task(async function testMouse() {
       ["mouse", "#instant", metaShiftEvent, "tab"],
 
       ["mouse", "#instant-popup", normalEvent, "popup"],
-      ["mouse", "#instant-popup", shiftEvent, "window"],
+      ["mouse", "#instant-popup", shiftEvent, "popup"],
       ["mouse", "#instant-popup", metaEvent, "tab-bg"],
       ["mouse", "#instant-popup", metaShiftEvent, "tab"],
 
@@ -53,7 +53,7 @@ add_task(async function testMouse() {
       ["mouse", "#delayed", metaShiftEvent, "tab"],
 
       ["mouse", "#delayed-popup", normalEvent, "popup"],
-      ["mouse", "#delayed-popup", shiftEvent, "window"],
+      ["mouse", "#delayed-popup", shiftEvent, "popup"],
       ["mouse", "#delayed-popup", metaEvent, "tab-bg"],
       ["mouse", "#delayed-popup", metaShiftEvent, "tab"],
     ];
@@ -71,7 +71,7 @@ add_task(async function testAlt() {
       ["mouse", "#instant", altMetaShiftEvent, "tab"],
 
       ["mouse", "#instant-popup", altEvent, "popup"],
-      ["mouse", "#instant-popup", altShiftEvent, "window"],
+      ["mouse", "#instant-popup", altShiftEvent, "popup"],
       ["mouse", "#instant-popup", altMetaEvent, "tab-bg"],
       ["mouse", "#instant-popup", altMetaShiftEvent, "tab"],
 
@@ -81,7 +81,7 @@ add_task(async function testAlt() {
       ["mouse", "#delayed", altMetaShiftEvent, "tab"],
 
       ["mouse", "#delayed-popup", altEvent, "popup"],
-      ["mouse", "#delayed-popup", altShiftEvent, "window"],
+      ["mouse", "#delayed-popup", altShiftEvent, "popup"],
       ["mouse", "#delayed-popup", altMetaEvent, "tab-bg"],
       ["mouse", "#delayed-popup", altMetaShiftEvent, "tab"],
     ];
@@ -142,13 +142,13 @@ add_task(async function testSpaceKey() {
       ["VK_SPACE", "#instant", shiftEvent, "window"],
 
       ["VK_SPACE", "#instant-popup", normalEvent, "popup"],
-      ["VK_SPACE", "#instant-popup", shiftEvent, "window"],
+      ["VK_SPACE", "#instant-popup", shiftEvent, "popup"],
 
       ["VK_SPACE", "#delayed", normalEvent, "tab"],
       ["VK_SPACE", "#delayed", shiftEvent, "window"],
 
       ["VK_SPACE", "#delayed-popup", normalEvent, "popup"],
-      ["VK_SPACE", "#delayed-popup", shiftEvent, "window"],
+      ["VK_SPACE", "#delayed-popup", shiftEvent, "popup"],
     ];
     await runWindowOpenTests(browser, tests);
   });
@@ -161,13 +161,13 @@ add_task(async function testEnterKey() {
       ["KEY_Enter", "#link-instant", shiftEvent, "window"],
 
       ["KEY_Enter", "#link-instant-popup", normalEvent, "popup"],
-      ["KEY_Enter", "#link-instant-popup", shiftEvent, "window"],
+      ["KEY_Enter", "#link-instant-popup", shiftEvent, "popup"],
 
       ["KEY_Enter", "#link-delayed", normalEvent, "tab"],
       ["KEY_Enter", "#link-delayed", shiftEvent, "window"],
 
       ["KEY_Enter", "#link-delayed-popup", normalEvent, "popup"],
-      ["KEY_Enter", "#link-delayed-popup", shiftEvent, "window"],
+      ["KEY_Enter", "#link-delayed-popup", shiftEvent, "popup"],
     ];
     await runWindowOpenTests(browser, tests);
   });
@@ -213,12 +213,12 @@ async function runWindowOpenTests(browser, tests) {
       BrowserTestUtils.synthesizeMouseAtCenter(id, { ...event }, browser);
     } else {
       // Make sure the keyboard activates a simple button on the page.
-      await ContentTask.spawn(browser, id, () => {
+      await SpecialPowers.spawn(browser, [], () => {
         content.document.querySelector("#focus-result").value = "";
         content.document.querySelector("#focus-check").focus();
       });
       BrowserTestUtils.synthesizeKey("VK_SPACE", {}, browser);
-      await ContentTask.spawn(browser, {}, async () => {
+      await SpecialPowers.spawn(browser, [], async () => {
         await ContentTaskUtils.waitForCondition(
           () => content.document.querySelector("#focus-result").value === "ok"
         );
@@ -226,7 +226,7 @@ async function runWindowOpenTests(browser, tests) {
 
       // Once confirmed the keyboard event works, send the actual event
       // that calls window.open.
-      await ContentTask.spawn(browser, id, elementId => {
+      await SpecialPowers.spawn(browser, [id], elementId => {
         content.document.querySelector(elementId).focus();
       });
       BrowserTestUtils.synthesizeKey(type, { ...event }, browser);

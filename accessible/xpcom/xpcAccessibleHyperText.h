@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,6 +25,9 @@ class xpcAccessibleHyperText : public xpcAccessibleGeneric,
     if (aIntl->IsHyperText() && aIntl->IsTextRole()) mSupportedIfaces |= eText;
   }
 
+  xpcAccessibleHyperText(const xpcAccessibleHyperText&) = delete;
+  xpcAccessibleHyperText& operator=(const xpcAccessibleHyperText&) = delete;
+
   NS_DECL_ISUPPORTS_INHERITED
 
   NS_DECL_NSIACCESSIBLETEXT
@@ -34,7 +35,7 @@ class xpcAccessibleHyperText : public xpcAccessibleGeneric,
   NS_DECL_NSIACCESSIBLEEDITABLETEXT
 
  protected:
-  virtual ~xpcAccessibleHyperText() {}
+  virtual ~xpcAccessibleHyperText() = default;
 
  private:
   HyperTextAccessibleBase* Intl() { return mIntl->AsHyperTextBase(); }
@@ -46,9 +47,6 @@ class xpcAccessibleHyperText : public xpcAccessibleGeneric,
 
     return nullptr;
   }
-
-  xpcAccessibleHyperText(const xpcAccessibleHyperText&) = delete;
-  xpcAccessibleHyperText& operator=(const xpcAccessibleHyperText&) = delete;
 };
 
 }  // namespace a11y

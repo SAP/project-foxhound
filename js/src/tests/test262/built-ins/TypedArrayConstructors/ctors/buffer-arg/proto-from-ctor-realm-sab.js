@@ -36,6 +36,6 @@ testWithTypedArrayConstructors(function(TA) {
   var ta = Reflect.construct(TA, [new SharedArrayBuffer(8)], C);
 
   assert.sameValue(Object.getPrototypeOf(ta), other[TA.name].prototype);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

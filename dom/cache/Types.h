@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,10 @@
 #ifndef mozilla_dom_cache_Types_h
 #define mozilla_dom_cache_Types_h
 
-#include <functional>
 #include <stdint.h>
+
+#include <functional>
+
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "nsCOMPtr.h"
@@ -16,7 +16,13 @@
 #include "nsIInputStream.h"
 #include "nsString.h"
 
-namespace mozilla::dom::cache {
+namespace mozilla {
+namespace ipc {
+class PBackgroundParent;
+}  // namespace ipc
+
+namespace dom::cache {
+class PBoundStorageKeyParent;
 
 enum Namespace {
   DEFAULT_NAMESPACE,
@@ -58,6 +64,10 @@ using InputStreamResolver = std::function<void(nsCOMPtr<nsIInputStream>&&)>;
 
 enum class OpenMode : uint8_t { Eager, Lazy, NumTypes };
 
-}  // namespace mozilla::dom::cache
+using pPBackgroundParent = mozilla::ipc::PBackgroundParent*;
+using pPBoundStorageKeyParent = PBoundStorageKeyParent*;
+using WeakRefParentType = Variant<pPBackgroundParent, pPBoundStorageKeyParent>;
+}  // namespace dom::cache
+}  // namespace mozilla
 
 #endif  // mozilla_dom_cache_Types_h

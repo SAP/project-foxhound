@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<title>Scroll Linked Effect for anchor tests</title>
+
+<style>
+.abs-container {
+  position: absolute;
+}
+
+.anchor {
+  width: 150px;
+  height: 50px;
+  background: purple;
+  anchor-name: --foo;
+  position: absolute;
+  left: 500px;
+}
+
+.scroller {
+  border: 1px solid;
+  height: 600px;
+  width: 500px;
+  overflow: scroll;
+  position: absolute;
+  top: 40px;
+}
+
+.anchor-queryh {
+  width: 100px;
+  height: 25px;
+  background: pink;
+  position: absolute;
+  position-anchor: --foo;
+  top: 200px;
+  left: anchor(right);
+  position-visibility: always;
+}
+
+.anchor-queryv {
+  width: 100px;
+  height: 25px;
+  background: pink;
+  position: absolute;
+  position-anchor: --foo;
+  top: anchor(bottom);
+  position-visibility: always;
+}
+
+.filler {
+  width: 2000px;
+  height: 750px;
+}
+
+</style>
+<div class="abs-container">
+  <div class="scroller">
+    <div class="filler"></div>
+    <div class="anchor">Anchor</div>
+    <div class="filler"></div>
+  </div>
+  <div class="anchor-queryh">Queried horz</div>
+  <div class="anchor-queryv">Queried vert</div>
+</div>
+
+<script>
+async function test() {
+
+  // Make sure every element gets repainted on every tick
+  function toggleBg() {
+    document.documentElement.style.background == "white"
+      ? document.documentElement.style.background = "black"
+      : document.documentElement.style.background = "white";
+    window.requestAnimationFrame(toggleBg);
+  }
+  window.requestAnimationFrame(toggleBg);
+
+  await new Promise(r => window.requestAnimationFrame(r));
+  // we are now in the mid-way through refresh driver tick, before painting
+  await new Promise(r => setTimeout(r, 0));
+  // we are now after the painting
+
+  ok(SpecialPowers.DOMWindowUtils.hasScrollLinkedEffect,
+     "scroll-linked effect found");
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>

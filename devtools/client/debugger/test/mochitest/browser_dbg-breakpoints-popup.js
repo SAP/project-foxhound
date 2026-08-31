@@ -76,10 +76,14 @@ add_task(async function testPausedByBreakpoint() {
   await addBreakpoint(dbg, source, 4);
 
   info("Now close and reopen the popup");
+  let onToolboxSwitchedToTab = dbg.toolbox.once("switched-host-to-tab");
   await closePopup(firstPopupBrowsingContext);
+  await onToolboxSwitchedToTab;
 
   info("Re-open the popup");
+  onToolboxSwitchedToTab = dbg.toolbox.once("switched-host-to-tab");
   const popupBrowsingContext = await openPopup(POPUP_URL);
+  await onToolboxSwitchedToTab;
   await waitForPaused(dbg);
   is(
     await isPopupPaused(popupBrowsingContext),

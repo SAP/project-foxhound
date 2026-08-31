@@ -70,9 +70,6 @@ Push Information
    Email address indicating the person who made the push.  Note that this
    value may be forged and *must not* be relied on for authentication.
 
-``message``
-   The try syntax in the commit message, if any.
-
 ``pushlog_id``
    The ID from the ``hg.mozilla.org`` pushlog
 
@@ -96,6 +93,12 @@ Push Information
 
 ``tasks_for``
    The ``tasks_for`` value used to generate the decision task.
+
+``pull_request_number``
+   The GitHub pull request number, if any.
+
+``dontbuild``
+   Set (to `true`) when the commit message requested that no tasks run on this push.
 
 Tree Information
 ----------------
@@ -204,7 +207,7 @@ Release Promotion
    Specify the next version for version bump tasks.
 
 ``release_type``
-   The type of release being promoted. One of "nightly", "beta", "esr115", "esr128", "esr140", "release-rc", or "release".
+   The type of release being promoted. One of "nightly", "beta", "esr115", "esr140", "esr153" or "release".
 
 ``release_eta``
    The time and date when a release is scheduled to live. This value is passed to Balrog.
@@ -229,12 +232,6 @@ Release Promotion
 
 ``release_product``
    The product that is being released.
-
-``required_signoffs``
-   A list of signoffs that are required for this release promotion flavor. If specified, and if the corresponding `signoff_urls` url isn't specified, tasks that require these signoffs will not be scheduled.
-
-``signoff_urls``
-   A dictionary of signoff keys to url values. These are the urls marking the corresponding ``required_signoffs`` as signed off.
 
 ``partial_versions``
    A list of previous versions that partial updates should be generated for, in the form of X.YbuildN, eg: ["138.0.1build1", "137.0build2"].

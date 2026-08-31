@@ -8,8 +8,6 @@ import android.app.ActivityManager.TaskDescription
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import androidx.core.net.toUri
 import mozilla.components.browser.state.state.ColorSchemeParams
 import mozilla.components.browser.state.state.ColorSchemes
@@ -53,7 +51,7 @@ fun WebAppManifest.toCustomTabConfig(): CustomTabConfig {
         ColorSchemes(
             ColorSchemeParams(
                 toolbarColor = themeColor,
-                navigationBarColor = getVersionSafeNavBarColor(backgroundColor),
+                navigationBarColor = getNavBarColor(backgroundColor),
             ),
         )
     } else {
@@ -72,11 +70,8 @@ fun WebAppManifest.toCustomTabConfig(): CustomTabConfig {
     )
 }
 
-private fun getVersionSafeNavBarColor(backgroundColor: Int) = if (SDK_INT >= Build.VERSION_CODES.O) {
+private fun getNavBarColor(backgroundColor: Int) =
     if (isDark(backgroundColor)) Color.BLACK else Color.WHITE
-} else {
-    null
-}
 
 /**
  * Returns the scope of the manifest as a [Uri] for use

@@ -18,10 +18,9 @@ async function loadShortcutsView() {
   // Load the theme view initially so we can verify that the category is switched
   // to "extension" when the shortcuts view is loaded.
   let win = await loadInitialView("theme");
-  let categoryUtils = new CategoryUtilities(win);
 
   is(
-    categoryUtils.getSelectedViewId(),
+    AboutAddonsTestUtils.getSidebarSelectedViewId(win),
     "addons://list/theme",
     "The theme category is selected"
   );
@@ -32,11 +31,11 @@ async function loadShortcutsView() {
   ok(!shortcutsLink.hidden, "The shortcuts link is visible");
 
   let loaded = waitForViewLoad(win);
-  shortcutsLink.click();
+  await triggerPageOptionsAction(win, "manage-shortcuts");
   await loaded;
 
   is(
-    categoryUtils.getSelectedViewId(),
+    AboutAddonsTestUtils.getSidebarSelectedViewId(win),
     "addons://list/extension",
     "The extension category is now selected"
   );

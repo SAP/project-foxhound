@@ -1,17 +1,21 @@
 #![allow(unsafe_code)]
 
-use crate::windows::errors::Error;
-use crate::windows::ffi::{
-    capture_context, CloseHandle, GetCurrentProcess, GetCurrentThreadId, GetThreadContext,
-    MiniDumpWriteDump, MinidumpType, OpenProcess, OpenThread, ResumeThread, SuspendThread,
-    EXCEPTION_POINTERS, EXCEPTION_RECORD, FALSE, HANDLE, MINIDUMP_EXCEPTION_INFORMATION,
-    MINIDUMP_USER_STREAM, MINIDUMP_USER_STREAM_INFORMATION, PROCESS_ALL_ACCESS,
-    STATUS_NONCONTINUABLE_EXCEPTION, THREAD_GET_CONTEXT, THREAD_QUERY_INFORMATION,
-    THREAD_SUSPEND_RESUME,
+use {
+    super::{
+        errors::Error,
+        ffi::{
+            CloseHandle, EXCEPTION_POINTERS, EXCEPTION_RECORD, FALSE, GetCurrentProcess,
+            GetCurrentThreadId, GetThreadContext, HANDLE, MINIDUMP_EXCEPTION_INFORMATION,
+            MINIDUMP_USER_STREAM, MINIDUMP_USER_STREAM_INFORMATION, MiniDumpWriteDump,
+            MinidumpType, OpenProcess, OpenThread, PROCESS_ALL_ACCESS, ResumeThread,
+            STATUS_NONCONTINUABLE_EXCEPTION, SuspendThread, THREAD_GET_CONTEXT,
+            THREAD_QUERY_INFORMATION, THREAD_SUSPEND_RESUME, capture_context,
+        },
+    },
+    minidump_common::format::{BreakpadInfoValid, MINIDUMP_BREAKPAD_INFO, MINIDUMP_STREAM_TYPE},
+    scroll::Pwrite,
+    std::os::windows::io::AsRawHandle,
 };
-use minidump_common::format::{BreakpadInfoValid, MINIDUMP_BREAKPAD_INFO, MINIDUMP_STREAM_TYPE};
-use scroll::Pwrite;
-use std::os::windows::io::AsRawHandle;
 
 pub struct MinidumpWriter {
     /// Optional exception information
@@ -114,14 +118,15 @@ impl MinidumpWriter {
                 ec.assume_init()
             };
 
-            let mut exception_record: EXCEPTION_RECORD = std::mem::zeroed();
+            let mut exception_record = EXCEPTION_RECORD {
+                ExceptionCode: exception_code,
+                ..std::mem::zeroed()
+            };
 
             let exception_ptrs = EXCEPTION_POINTERS {
                 ExceptionRecord: &mut exception_record,
                 ContextRecord: &mut exception_context,
             };
-
-            exception_record.ExceptionCode = exception_code;
 
             let cc = crash_context::CrashContext {
                 exception_pointers: (&exception_ptrs as *const EXCEPTION_POINTERS).cast(),
@@ -130,7 +135,7 @@ impl MinidumpWriter {
                 exception_code,
             };
 
-            Self::dump_crash_context(cc, minidump_type, destination)
+            Self::dump_crash_context(&cc, minidump_type, destination)
         }
     }
 
@@ -149,7 +154,7 @@ impl MinidumpWriter {
     /// is the responsibility of the caller to ensure that the pointer is valid
     /// for the duration of this function call.
     pub fn dump_crash_context(
-        crash_context: crash_context::CrashContext,
+        crash_context: &crash_context::CrashContext,
         minidump_type: Option<MinidumpType>,
         destination: &mut std::fs::File,
     ) -> Result<(), Error> {

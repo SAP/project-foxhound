@@ -7,6 +7,7 @@
 #include "mozilla/dom/Element.h"  // StringToCORSMode
 #include "mozilla/css/SheetLoadData.h"
 #include "mozilla/dom/ReferrerPolicyBinding.h"
+#include "mozilla/StyleSheet.h"
 #include "nsIPrincipal.h"
 #include "nsIReferrerInfo.h"
 
@@ -31,14 +32,9 @@ PreloadHashKey::PreloadHashKey(PreloadHashKey&& aToMove)
       mScript = std::move(aToMove.mScript);
       break;
     case ResourceType::STYLE:
-      mStyle = std::move(aToMove.mStyle);
-      break;
     case ResourceType::IMAGE:
-      break;
     case ResourceType::FONT:
-      break;
     case ResourceType::FETCH:
-      break;
     case ResourceType::NONE:
       break;
   }
@@ -59,14 +55,9 @@ PreloadHashKey& PreloadHashKey::operator=(const PreloadHashKey& aOther) {
       mScript = aOther.mScript;
       break;
     case ResourceType::STYLE:
-      mStyle = aOther.mStyle;
-      break;
     case ResourceType::IMAGE:
-      break;
     case ResourceType::FONT:
-      break;
     case ResourceType::FETCH:
-      break;
     case ResourceType::NONE:
       break;
   }
@@ -98,14 +89,12 @@ PreloadHashKey PreloadHashKey::CreateAsScript(nsIURI* aURI,
 }
 
 // static
-PreloadHashKey PreloadHashKey::CreateAsStyle(
-    nsIURI* aURI, nsIPrincipal* aPrincipal, CORSMode aCORSMode,
-    css::SheetParsingMode aParsingMode) {
+PreloadHashKey PreloadHashKey::CreateAsStyle(nsIURI* aURI,
+                                             nsIPrincipal* aPrincipal,
+                                             CORSMode aCORSMode) {
   PreloadHashKey key(aURI, ResourceType::STYLE);
   key.mCORSMode = aCORSMode;
   key.mPrincipal = aPrincipal;
-
-  key.mStyle.mParsingMode = aParsingMode;
 
   return key;
 }
@@ -114,8 +103,7 @@ PreloadHashKey PreloadHashKey::CreateAsStyle(
 PreloadHashKey PreloadHashKey::CreateAsStyle(
     css::SheetLoadData& aSheetLoadData) {
   return CreateAsStyle(aSheetLoadData.mURI, aSheetLoadData.mTriggeringPrincipal,
-                       aSheetLoadData.mSheet->GetCORSMode(),
-                       aSheetLoadData.mSheet->ParsingMode());
+                       aSheetLoadData.mSheet->GetCORSMode());
 }
 
 // static
@@ -175,12 +163,8 @@ bool PreloadHashKey::KeyEquals(KeyTypePointer aOther) const {
         return false;
       }
       break;
-    case ResourceType::STYLE: {
-      if (mStyle.mParsingMode != aOther->mStyle.mParsingMode) {
-        return false;
-      }
+    case ResourceType::STYLE:
       break;
-    }
     case ResourceType::IMAGE:
       // No more checks needed.  The image cache key consists of the document
       // (which we are scoped into), origin attributes (which we compare as part
@@ -190,7 +174,6 @@ bool PreloadHashKey::KeyEquals(KeyTypePointer aOther) const {
     case ResourceType::FONT:
       break;
     case ResourceType::FETCH:
-      // No more checks needed.
       break;
     case ResourceType::NONE:
       break;

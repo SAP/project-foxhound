@@ -1,4 +1,4 @@
-// Copyright 2019 Mozilla Foundation. See the COPYRIGHT
+// Copyright Mozilla Foundation. See the COPYRIGHT
 // file at the top-level directory of this distribution.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
@@ -11,6 +11,24 @@
 //!
 //! It is optimized for binary size in applications that already depend
 //! on `encoding_rs` for other reasons.
+
+#![no_std]
+
+#[cfg(feature = "multithreading")]
+use rayon::prelude::*;
+
+#[cfg(feature = "multithreading")]
+use arrayvec::ArrayVec;
+
+#[cfg(all(target_arch = "x86", target_feature = "sse2"))]
+use core::arch::x86::__m128i;
+#[cfg(all(target_arch = "x86", target_feature = "sse2"))]
+use core::arch::x86::_mm_movemask_epi8;
+
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+use core::arch::x86_64::__m128i;
+#[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+use core::arch::x86_64::_mm_movemask_epi8;
 
 use encoding_rs::Decoder;
 use encoding_rs::DecoderResult;
@@ -2465,9 +2483,19 @@ fn score_adjustment(score: i64, encoding: usize, tld: Tld) -> i64 {
     (score / divisor) + constant
 }
 
-struct Candidate {
-    inner: InnerCandidate,
-    score: Option<i64>,
+cfg_if::cfg_if! {
+    if #[cfg(feature = "multithreading")] {
+        #[repr(align(64))] // Align to cache lines to avoid false sharing in the Rayon case
+        struct Candidate {
+            inner: InnerCandidate,
+            score: Option<i64>,
+        }
+    } else {
+        struct Candidate {
+            inner: InnerCandidate,
+            score: Option<i64>,
+        }
+    }
 }
 
 impl Candidate {
@@ -2479,6 +2507,11 @@ impl Candidate {
                 self.score = None;
             }
         }
+    }
+
+    #[cfg(feature = "multithreading")]
+    fn qualified(&self) -> bool {
+        !self.score.is_none()
     }
 
     fn new_latin(data: &'static SingleByteData) -> Self {
@@ -2532,12 +2565,16 @@ impl Candidate {
         }
     }
 
-    fn new_iso_2022_jp() -> Self {
+    fn new_iso_2022_jp(allowed: Iso2022JpDetection) -> Self {
         Candidate {
             inner: InnerCandidate::Iso2022(Iso2022Candidate {
                 decoder: ISO_2022_JP.new_decoder_without_bom_handling(),
             }),
-            score: Some(0),
+            score: if allowed == Iso2022JpDetection::Allow {
+                Some(0)
+            } else {
+                None
+            },
         }
     }
 
@@ -2716,14 +2753,38 @@ impl Candidate {
     }
 }
 
-fn count_non_ascii(buffer: &[u8]) -> u64 {
-    let mut count = 0;
-    for &b in buffer {
-        if b >= 0x80 {
-            count += 1;
+// LLVM doesn't autovectorize this properly for SSE2, so let's help manually.
+cfg_if::cfg_if! {
+    if #[cfg(target_feature = "sse2")] {
+        fn count_non_ascii(buffer: &[u8]) -> u64 {
+            let mut count = 0;
+            let (prefix, simd, suffix) = unsafe { buffer.align_to::<__m128i>() };
+            for &b in prefix {
+                if b >= 0x80 {
+                    count += 1;
+                }
+            }
+            for &s in simd {
+                count += unsafe {_mm_movemask_epi8(s)}.count_ones() as u64;
+            }
+            for &b in suffix {
+                if b >= 0x80 {
+                    count += 1;
+                }
+            }
+            count
+        }
+    } else {
+        fn count_non_ascii(buffer: &[u8]) -> u64 {
+            let mut count = 0;
+            for &b in buffer {
+                if b >= 0x80 {
+                    count += 1;
+                }
+            }
+            count
         }
     }
-    count
 }
 
 #[derive(Clone, Copy)]
@@ -2766,6 +2827,36 @@ impl BeforeNonAscii {
     }
 }
 
+/// Whether to allow UTF-8 as a guess result.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Utf8Detection {
+    /// The guess result is allowed to be UTF-8.
+    ///
+    /// Web browsers must not pass this option by default
+    /// to avoid creating a situation where Web content starts
+    /// depending on unlabeled detection of UTF-8.
+    Allow,
+    /// The guess result is not allowed to be UTF-8.
+    Deny,
+}
+
+/// Whether to allow ISO-2022-JP as a guess result.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Iso2022JpDetection {
+    /// The guess result is allowed to be ISO-2022-JP.
+    ///
+    /// For security reasons, Web browsers should not pass this option
+    /// when decoding pages that can run scripts.
+    ///
+    /// Email clients probably want to pass this option when decoding
+    /// email (that cannot run scripts).
+    Allow,
+    /// The guess result is not allowed to be ISO-2022-JP.
+    ///
+    /// Web browsers should pass this option.
+    Deny,
+}
+
 /// A Web browser-oriented detector for guessing what character
 /// encoding a stream of bytes is encoded in.
 ///
@@ -2788,11 +2879,34 @@ pub struct EncodingDetector {
 }
 
 impl EncodingDetector {
-    fn feed_impl(&mut self, buffer: &[u8], last: bool) {
-        for candidate in self.candidates.iter_mut() {
-            candidate.feed(buffer, last);
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "multithreading")] {
+            fn feed_impl(&mut self, buffer: &[u8], last: bool) {
+                if buffer.len() < 10 {
+                    self.candidates.iter_mut().for_each(|candidate| candidate.feed(buffer, last));
+                    self.non_ascii_seen += count_non_ascii(buffer);
+                    return;
+                }
+                // Collect only qualified candidates to avoid Rayon
+                // performing thread synchronization only to bail
+                // out immediately when trying a disqualified
+                // candidate.
+                let mut qualified = ArrayVec::<&mut Candidate, 27>::new();
+                for candidate in self.candidates.iter_mut() {
+                    if candidate.qualified() {
+                        qualified.push(candidate);
+                    }
+                }
+                let (_, non_ascii) = rayon::join(|| qualified.par_iter_mut().for_each(|candidate| candidate.feed(buffer, last)),
+                                                 || count_non_ascii(buffer));
+                self.non_ascii_seen += non_ascii;
+            }
+        } else {
+            fn feed_impl(&mut self, buffer: &[u8], last: bool) {
+                self.candidates.iter_mut().for_each(|candidate| candidate.feed(buffer, last));
+                self.non_ascii_seen += count_non_ascii(buffer);
+            }
         }
-        self.non_ascii_seen += count_non_ascii(buffer);
     }
 
     /// Inform the detector of a chunk of input.
@@ -2868,12 +2982,13 @@ impl EncodingDetector {
     /// from is unavalable, `None` may be passed instead, which is equivalent
     /// to passing `Some(b"com")`.
     ///
-    /// If the `allow_utf8` argument is set to `false`, the return value of
-    /// this method won't be `encoding_rs::UTF_8`. When performing detection
-    /// on `text/html` on non-`file:` URLs, Web browsers must pass `false`,
-    /// unless the user has taken a specific contextual action to request an
-    /// override. This way, Web developers cannot start depending on UTF-8
-    /// detection. Such reliance would make the Web Platform more brittle.
+    /// If the `allow_utf8` argument is set to `Utf8Detection::Deny`, the
+    /// return value of this method won't be `encoding_rs::UTF_8`. When
+    /// performing detection on `text/html` on non-`file:` URLs, Web browsers
+    /// must pass `Utf8Detection::Deny`, unless the user has taken a specific
+    /// contextual action to request an override. This way, Web developers cannot
+    /// start depending on UTF-8 detection. Such reliance would make the Web Platform
+    /// more brittle.
     ///
     /// Returns the guessed encoding.
     ///
@@ -2884,7 +2999,7 @@ impl EncodingDetector {
     /// label correctly, failing to provide it in its Punycode form, and failure
     /// to lower-case it. Full DNS label validation is intentionally not performed
     /// to avoid panics when the reality doesn't match the specs.)
-    pub fn guess(&self, tld: Option<&[u8]>, allow_utf8: bool) -> &'static Encoding {
+    pub fn guess(&self, tld: Option<&[u8]>, allow_utf8: Utf8Detection) -> &'static Encoding {
         let mut tld_type = tld.map_or(Tld::Generic, |tld| {
             assert!(!contains_upper_case_period_or_non_ascii(tld));
             classify_tld(tld)
@@ -2898,7 +3013,7 @@ impl EncodingDetector {
         }
 
         if self.candidates[Self::UTF_8_INDEX].score.is_some() {
-            if allow_utf8 {
+            if allow_utf8 == Utf8Detection::Allow {
                 return UTF_8;
             }
             // Various test cases that prohibit UTF-8 detection want to
@@ -3080,11 +3195,17 @@ impl EncodingDetector {
     const CYRILLIC_ISO_INDEX: usize = 26;
 
     /// Creates a new instance of the detector.
-    pub fn new() -> Self {
+    ///
+    /// If `allow_iso_2022_jp` is `true`, ISO-2022-JP is a possible guess. If it is `false`,
+    /// ISO-2022-JP is not a possible guess.
+    ///
+    /// `allow_iso_2022_jp` should be set to `false` when consuming Web content. When
+    /// consuming email, it likely makes sense to set it to `true`.
+    pub fn new(allow_iso_2022_jp: Iso2022JpDetection) -> Self {
         EncodingDetector {
             candidates: [
                 Candidate::new_utf_8(),                                                // 0
-                Candidate::new_iso_2022_jp(),                                          // 1
+                Candidate::new_iso_2022_jp(allow_iso_2022_jp),                         // 1
                 Candidate::new_visual(&SINGLE_BYTE_DATA[ISO_8859_8_INDEX]),            // 2
                 Candidate::new_gbk(),                                                  // 3
                 Candidate::new_euc_jp(),                                               // 4
@@ -3119,8 +3240,17 @@ impl EncodingDetector {
     }
 
     /// Queries whether the TLD is considered non-generic and could affect the guess.
+    ///
+    /// # Panics
+    ///
+    /// If `tld` contains non-ASCII, period, or upper-case letters. (The panic
+    /// condition is intentionally limited to signs of failing to extract the
+    /// label correctly, failing to provide it in its Punycode form, and failure
+    /// to lower-case it. Full DNS label validation is intentionally not performed
+    /// to avoid panics when the reality doesn't match the specs.)
     pub fn tld_may_affect_guess(tld: Option<&[u8]>) -> bool {
         if let Some(tld) = tld {
+            assert!(!contains_upper_case_period_or_non_ascii(tld));
             classify_tld(tld) != Tld::Generic
         } else {
             false
@@ -3130,7 +3260,10 @@ impl EncodingDetector {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use super::*;
+    use alloc::string::String;
+    use alloc::vec::Vec;
     use detone::IterDecomposeVietnamese;
     use encoding_rs::IBM866;
     use encoding_rs::ISO_8859_2;
@@ -3150,11 +3283,9 @@ mod tests {
     use encoding_rs::WINDOWS_874;
 
     fn check_bytes(bytes: &[u8], encoding: &'static Encoding) {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         det.feed(bytes, true);
-        let enc = det.guess(None, false);
-        let (decoded, _) = enc.decode_without_bom_handling(bytes);
-        println!("{:?}", decoded);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, encoding);
     }
 
@@ -3173,70 +3304,79 @@ mod tests {
     }
 
     #[test]
+    fn test_no_2022() {
+        let (bytes, _, _) = ISO_2022_JP.encode("日本語");
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Deny);
+        det.feed(&bytes, true);
+        let enc = det.guess(None, Utf8Detection::Deny);
+        assert_eq!(enc, WINDOWS_1252);
+    }
+
+    #[test]
     fn test_i_apostrophe() {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         det.feed(b"I\x92", true);
-        let enc = det.guess(None, false);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, WINDOWS_1252);
     }
 
     #[test]
     fn test_streaming_numero_one_by_one() {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         det.feed(b"n", false);
         det.feed(b".", false);
         det.feed(b"\xBA", false);
         det.feed(b"1", true);
-        let enc = det.guess(None, false);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, WINDOWS_1252);
     }
 
     #[test]
     fn test_streaming_numero_two_together() {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         det.feed(b"n.", false);
         det.feed(b"\xBA", false);
         det.feed(b"1", true);
-        let enc = det.guess(None, false);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, WINDOWS_1252);
     }
 
     #[test]
     fn test_streaming_numero_one_by_one_extra_before() {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         det.feed(b" n", false);
         det.feed(b".", false);
         det.feed(b"\xBA", false);
         det.feed(b"1", true);
-        let enc = det.guess(None, false);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, WINDOWS_1252);
     }
 
     #[test]
     fn test_streaming_numero_one_before() {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         det.feed(b"n", false);
         det.feed(b".\xBA", false);
         det.feed(b"1", true);
-        let enc = det.guess(None, false);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, WINDOWS_1252);
     }
 
     #[test]
     fn test_streaming_numero_longer_first_buffer() {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         det.feed(b"rrn.", false);
         det.feed(b"\xBA", false);
         det.feed(b"1", true);
-        let enc = det.guess(None, false);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, WINDOWS_1252);
     }
 
     #[test]
     fn test_empty() {
-        let mut det = EncodingDetector::new();
+        let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
         let seen_non_ascii = det.feed(b"", true);
-        let enc = det.guess(None, false);
+        let enc = det.guess(None, Utf8Detection::Deny);
         assert_eq!(enc, WINDOWS_1252);
         assert!(!seen_non_ascii);
     }
@@ -3323,6 +3463,12 @@ mod tests {
     #[test]
     fn test_de() {
         check("Straße", WINDOWS_1252);
+    }
+
+    #[test]
+    fn test_en_windows1252() {
+        // "Don't "
+        check_bytes(&[68, 111, 110, 180, 116, 32], WINDOWS_1252);
     }
 
     #[test]

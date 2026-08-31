@@ -1,0 +1,19 @@
+{
+  "label": "riverside.com/riverside.fm dashboard",
+  "bugs": {
+    "1902507": {
+      "issue": "broken-login",
+      "matches": [
+        "https://riverside.fm/dashboard*",
+        "https://riverside.com/dashboard*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "only_channels": ["nightly"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

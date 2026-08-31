@@ -15,6 +15,8 @@ const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { PrefObserver } = require("resource://devtools/client/shared/prefs.js");
+const DEVTOOLS_STYLESHEETS_IN_DEBUGGER =
+  "devtools.debugger.features.stylesheets-in-debugger";
 
 let actions;
 let commands;
@@ -84,6 +86,11 @@ export async function onConnect(_commands, _resourceCommand, _actions, store) {
   await resourceCommand.watchResources([resourceCommand.TYPES.SOURCE], {
     onAvailable: onSourceAvailable,
   });
+  if (Services.prefs.getBoolPref(DEVTOOLS_STYLESHEETS_IN_DEBUGGER)) {
+    await resourceCommand.watchResources([resourceCommand.TYPES.STYLESHEET], {
+      onAvailable: onStyleSheetAvailable,
+    });
+  }
   await resourceCommand.watchResources([resourceCommand.TYPES.THREAD_STATE], {
     onAvailable: onThreadStateAvailable,
   });
@@ -137,7 +144,7 @@ async function onToggleContentScripts() {
       targetCommand.TYPES.CONTENT_SCRIPT,
     ]);
     for (const targetFront of existingTargets) {
-      actions.removeTarget(targetFront);
+      await actions.removeTarget(targetFront);
     }
     targetCommand.unwatchTargets({
       types: [targetCommand.TYPES.CONTENT_SCRIPT],
@@ -156,6 +163,11 @@ export function onDisconnect() {
   resourceCommand.unwatchResources([resourceCommand.TYPES.SOURCE], {
     onAvailable: onSourceAvailable,
   });
+  if (Services.prefs.getBoolPref(DEVTOOLS_STYLESHEETS_IN_DEBUGGER)) {
+    resourceCommand.unwatchResources([resourceCommand.TYPES.STYLESHEET], {
+      onAvailable: onStyleSheetAvailable,
+    });
+  }
   resourceCommand.unwatchResources([resourceCommand.TYPES.THREAD_STATE], {
     onAvailable: onThreadStateAvailable,
   });
@@ -217,12 +229,16 @@ async function onTargetAvailable({ targetFront }) {
   await actions.addTarget(targetFront);
 }
 
-function onTargetDestroyed({ targetFront }) {
-  actions.removeTarget(targetFront);
+async function onTargetDestroyed({ targetFront }) {
+  await actions.removeTarget(targetFront);
 }
 
 async function onSourceAvailable(sources) {
   await actions.newGeneratedSources(sources);
+}
+
+async function onStyleSheetAvailable(sources) {
+  await actions.newStyleSheetSources(sources);
 }
 
 async function onThreadStateAvailable(resources) {

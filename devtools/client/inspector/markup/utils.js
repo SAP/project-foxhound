@@ -12,11 +12,11 @@ const FLASH_TARGETS_SELECTOR = "[class*=theme-fg-color], .force-color-on-flash";
  *
  * @param  {Node} backgroundElt
  *         The element to set the highlighted background color on.
- * @param  {Object} options
+ * @param  {object} options
  * @param  {Node} options.foregroundElt
  *         The element to set the matching foreground color on. This will equal
  *         backgroundElt if not set.
- * @param  {String} options.backgroundClass
+ * @param  {string} options.backgroundClass
  *         The background highlight color class to set on the element.
  */
 function flashElementOn(
@@ -45,11 +45,11 @@ function flashElementOn(
  *
  * @param  {Node} backgroundElt
  *         The element to remove the highlighted background color on.
- * @param  {Object} options
+ * @param  {object} options
  * @param  {Node} options.foregroundElt
  *         The element to remove the matching foreground color on. This will equal
  *         backgroundElt if not set.
- * @param  {String} options.backgroundClass
+ * @param  {string} options.backgroundClass
  *         The background highlight color class to remove on the element.
  */
 function flashElementOff(
@@ -88,7 +88,7 @@ function getAutocompleteMaxWidth(element, container) {
 /**
  * Parse attribute names and values from a string.
  *
- * @param  {String} attr
+ * @param  {string} attr
  *         The input string for which names/values are to be parsed.
  * @param  {HTMLDocument} doc
  *         A document that can be used to test valid attributes.

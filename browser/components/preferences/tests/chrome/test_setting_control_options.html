@@ -1,0 +1,469 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>setting-control select tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script src="./head.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-group.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-control.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-support-link.mjs"
+    ></script>
+    <script
+      type="application/javascript"
+      src="chrome://global/content/preferencesBindings.js"
+    ></script>
+    <script>
+      const { Assert } = ChromeUtils.importESModule(
+        "resource://testing-common/Assert.sys.mjs"
+      );
+      /* import-globals-from /toolkit/content/preferencesBindings.js */
+      let html, testHelpers;
+
+      const LABEL_L10N_ID = "browsing-use-autoscroll";
+      const GROUP_L10N_ID = "pane-experimental-reset";
+
+      async function renderTemplate(itemConfig) {
+        let config = {
+          items: [itemConfig],
+        };
+        let result = await testHelpers.renderTemplate(html`
+          <setting-group
+            .config=${config}
+            .getSetting=${(...args) => Preferences.getSetting(...args)}
+          ></setting-group>
+        `);
+        await result.firstElementChild.updateComplete;
+        if (document.hasPendingL10nMutations) {
+          await BrowserTestUtils.waitForEvent(
+            document,
+            "L10nMutationsFinished"
+          );
+        }
+        return result.querySelector("setting-control");
+      }
+
+      add_setup(async function setup() {
+        testHelpers = new InputTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: () => html`<setting-group></setting-group>`,
+        });
+        MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
+        MozXULElement.insertFTLIfNeeded("browser/preferences/preferences.ftl");
+      });
+
+      add_task(async function testConfigBasedSelect() {
+        const PREF = "test.setting-control-select.one";
+        const SETTING = "setting-control-select-one";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF, 1]],
+        });
+        Preferences.addAll([{ id: PREF, type: "int" }]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+        let itemConfig = {
+          control: "moz-select",
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+          options: [
+            {
+              l10nId: LABEL_L10N_ID,
+              value: 0,
+            },
+            {
+              l10nId: LABEL_L10N_ID,
+              value: 1,
+            },
+            {
+              l10nId: LABEL_L10N_ID,
+              value: 2,
+            },
+          ],
+        };
+        let setting = Preferences.getSetting(SETTING);
+        let control = await renderTemplate(itemConfig);
+
+        is(
+          control.controlEl.localName,
+          "moz-select",
+          "The control rendered a select"
+        );
+        is(control.controlEl.dataset.l10nId, LABEL_L10N_ID, "Label is set");
+        is(control.controlEl.value, "1", "select value is correct");
+        is(control.controlEl.disabled, false, "select is enabled");
+        is(setting.value, 1, "setting is 1");
+        is(Services.prefs.getIntPref(PREF), 1, "pref is 1");
+
+        let inputEl = control.controlEl.inputEl;
+        is(inputEl.localName, "select", "it's a select under the hood");
+        let options = [...inputEl.children];
+        is(options.length, 3, "There are 3 options");
+        ok(
+          options.every(opt => opt.localName == "option"),
+          "All children are options"
+        );
+        options.forEach((option, i) => {
+          is(option.value, i.toString(), `Option ${i} value is correct`);
+          is(option.selected, i == 1, `Option ${i} selected is correct`);
+        });
+
+        let settingChanged = waitForSettingChange(setting);
+        let topWindow = window.docShell.chromeEventHandler.documentGlobal;
+        let pickerOpened = BrowserTestUtils.waitForSelectPopupShown(topWindow);
+        control.controlEl.focus();
+        synthesizeKey(" ");
+        const selectPopup = await pickerOpened;
+        if (selectPopup.isNativeMenu) {
+          // Synthesized events are not available with native menus
+          selectPopup.activateItem(selectPopup.childNodes[2]);
+        } else {
+          synthesizeKey("KEY_ArrowDown");
+          synthesizeKey("KEY_Enter");
+        }
+        await settingChanged;
+
+        is(Services.prefs.getIntPref(PREF), 2, "pref is 2");
+        is(setting.value, 2, "setting is 2");
+      });
+
+      add_task(async function testConfigBasedRadio() {
+        const PREF = "test.setting-control-radio.one";
+        const SETTING = "setting-control-radio-one";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF, 1]],
+        });
+        Preferences.addAll([{ id: PREF, type: "int" }]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+        let itemConfig = {
+          control: "moz-radio-group",
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+          options: [
+            {
+              l10nId: LABEL_L10N_ID,
+              value: 0,
+            },
+            {
+              l10nId: LABEL_L10N_ID,
+              value: 1,
+            },
+            {
+              l10nId: LABEL_L10N_ID,
+              value: 2,
+            },
+          ],
+        };
+        let setting = Preferences.getSetting(SETTING);
+        let control = await renderTemplate(itemConfig);
+
+        is(
+          control.controlEl.localName,
+          "moz-radio-group",
+          "The control rendered a moz-radio-group"
+        );
+        is(control.controlEl.dataset.l10nId, LABEL_L10N_ID, "Label is set");
+        is(control.controlEl.value, 1, "select value is correct");
+        is(control.controlEl.disabled, false, "select is enabled");
+        is(setting.value, 1, "setting is 1");
+        is(Services.prefs.getIntPref(PREF), 1, "pref is 1");
+
+        let radios = [...control.controlEl.children];
+        is(radios.length, 3, "There are 3 radios");
+        ok(
+          radios.every(opt => opt.localName == "moz-radio"),
+          "All children are radios"
+        );
+        radios.forEach((option, i) => {
+          is(option.value, i, `Radio ${i} value is correct`);
+          is(option.checked, i == 1, `Radio ${i} checked is correct`);
+        });
+
+        let settingChanged = waitForSettingChange(setting);
+        let radioZero = control.querySelector("moz-radio");
+        is(radioZero.value, 0, "0 radio is first");
+        control.querySelector("moz-radio[checked]").focus();
+        synthesizeKey("KEY_ArrowUp");
+        await settingChanged;
+
+        is(Services.prefs.getIntPref(PREF), 0, "pref is 0");
+        is(setting.value, 0, "setting is 0");
+      });
+
+      add_task(async function testConfigBasedCustomOptions() {
+        const PREF = "test.setting-control-custom.one";
+        const SETTING = "setting-control-custom-one";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF, 1]],
+        });
+        Preferences.addAll([{ id: PREF, type: "int" }]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+
+        const CUSTOM_LABEL = "Custom label";
+        let itemConfig = {
+          control: "moz-button-group",
+          id: SETTING,
+          options: [
+            {
+              l10nId: LABEL_L10N_ID,
+              control: "moz-button",
+              controlAttrs: {
+                type: "primary",
+              },
+            },
+            {
+              control: "moz-button",
+              controlAttrs: {
+                label: CUSTOM_LABEL,
+              },
+            },
+          ],
+        };
+        let control = await renderTemplate(itemConfig);
+
+        is(
+          control.controlEl.localName,
+          "moz-button-group",
+          "The control rendered a moz-button-group"
+        );
+        let buttons = [...control.controlEl.children];
+        is(buttons.length, 2, "There are two buttons");
+        ok(
+          buttons.every(btn => btn.localName == "moz-button"),
+          "The buttons are moz-buttons"
+        );
+        let primaryButton = buttons.find(btn => btn.slot == "primary");
+        let secondaryButton = buttons.find(btn => !btn.slot);
+        ok(primaryButton, "There is a primary button");
+        ok(secondaryButton, "There is a secondary button");
+        is(primaryButton.type, "primary", "Type was set from controlAttrs");
+        is(
+          secondaryButton.label,
+          CUSTOM_LABEL,
+          "Label was set from controlAttrs"
+        );
+      });
+
+      add_task(async function testNestedControlOptions() {
+        const PREF = "test.setting-control-custom-nested.one";
+        const SETTING = "setting-control-custom-nested-one";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF, 1]],
+        });
+        Preferences.addAll([{ id: PREF, type: "int" }]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+
+        let itemConfig = {
+          control: "moz-button-group",
+          id: SETTING,
+          options: [
+            {
+              control: "div",
+              options: [
+                {
+                  control: "moz-checkbox",
+                },
+              ],
+            },
+          ],
+        };
+        let control = await renderTemplate(itemConfig);
+
+        is(
+          control.controlEl.localName,
+          "moz-button-group",
+          "The control rendered a moz-button-group as parent control"
+        );
+        const nestedControl = control.controlEl.children[0];
+
+        is(
+          nestedControl.localName,
+          "div",
+          "Rendered the nested div element control under the parent control"
+        );
+
+        const nestedControlOption = nestedControl.children[0];
+
+        is(
+          nestedControlOption.localName,
+          "moz-checkbox",
+          "Rendered the moz-checkbox option under the div element control"
+        );
+      });
+
+      add_task(async function testNestedControlOptionItems() {
+        const PREF = "test.setting-control-custom-nested-items.one";
+        const SETTING = "setting-control-custom-nested-items-one";
+
+        const FIRST_NESTED_ITEM_PREF = "test.settings-group.itemone";
+        const FIRST_NESTED_ITEM_SETTING = "setting-item-one";
+
+        const SECOND_NESTED_ITEM_PREF = "test.settings-group.itemtwo";
+        const SECOND_NESTED_ITEM_SETTING = "setting-item-two";
+
+        await SpecialPowers.pushPrefEnv({
+          set: [
+            [PREF, 1],
+            [FIRST_NESTED_ITEM_PREF, true],
+            [SECOND_NESTED_ITEM_PREF, false],
+          ],
+        });
+        Preferences.addAll([
+          { id: PREF, type: "int" },
+          { id: FIRST_NESTED_ITEM_PREF, type: "bool" },
+          { id: SECOND_NESTED_ITEM_PREF, type: "bool" },
+        ]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+
+        Preferences.addSetting({
+          id: FIRST_NESTED_ITEM_SETTING,
+          pref: FIRST_NESTED_ITEM_PREF,
+        });
+        Preferences.addSetting({
+          id: SECOND_NESTED_ITEM_SETTING,
+          pref: SECOND_NESTED_ITEM_PREF,
+        });
+
+        let itemConfig = {
+          control: "moz-radio-group",
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+          options: [
+            {
+              control: "moz-radio",
+              l10nId: LABEL_L10N_ID,
+              items: [
+                {
+                  l10nId: LABEL_L10N_ID,
+                  id: FIRST_NESTED_ITEM_SETTING,
+                  control: "moz-box-button",
+                },
+              ],
+            },
+          ],
+        };
+        let control = await renderTemplate(itemConfig);
+
+        is(
+          control.controlEl.localName,
+          "moz-radio-group",
+          "The control rendered a moz-radio-group as parent control"
+        );
+        const nestedOptionControl = control.controlEl.children[0];
+
+        is(
+          nestedOptionControl.localName,
+          "moz-radio",
+          "Rendered moz-radio as the nested control option"
+        );
+
+        const nestedControlItems = nestedOptionControl.children;
+        is(nestedControlItems.length, 1, "Rendered nested control item");
+        const [firstNestedControlItem] = nestedControlItems;
+        is(
+          firstNestedControlItem.localName,
+          "setting-control",
+          "Rendered the first nested setting-control item"
+        );
+        is(
+          firstNestedControlItem.controlEl.id,
+          FIRST_NESTED_ITEM_SETTING,
+          "Rendered the first nested setting ID"
+        );
+        is(
+          firstNestedControlItem.controlEl.localName,
+          "moz-box-button",
+          "Rendered moz-box-button as the first nested control item"
+        );
+      });
+
+      add_task(async function testMozSupportLink() {
+        await SpecialPowers.pushPrefEnv({
+          set: [["app.support.baseURL", "https://support.example.com/"]],
+        });
+        Preferences.addSetting({
+          id: "testMozSupportLink",
+          get: () => true,
+        });
+        let itemConfig = {
+          id: "testMozSupportLink",
+          options: [
+            {
+              control: "a",
+              slot: "support-link",
+              controlAttrs: {
+                href: "https://example.com/",
+                ".textContent": "Link text",
+              },
+            },
+            {
+              control: "a",
+              slot: "support-link",
+              controlAttrs: {
+                is: "moz-support-link",
+                "support-page": "get-help",
+              },
+            },
+          ],
+        };
+        let control = await renderTemplate(itemConfig);
+        let [anchor, mozSupportLink] = control.controlEl.shadowRoot
+          .querySelector('slot[name="support-link"]')
+          .assignedNodes();
+
+        function assertLinkProperties(el, { href, text }) {
+          ok(el, "Got a link element");
+          is(el.href, href, "href is correct");
+          is(el.innerText, text, "text is correct");
+        }
+
+        assertLinkProperties(anchor, {
+          href: "https://example.com/",
+          text: "Link text",
+        });
+        assertLinkProperties(mozSupportLink, {
+          href: "https://support.example.com/get-help",
+          text: "Learn more",
+        });
+        ok(
+          mozSupportLink instanceof customElements.get("moz-support-link"),
+          "moz-support-link is a MozSupportLink"
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

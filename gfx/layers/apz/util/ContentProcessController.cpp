@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,7 +30,7 @@ void ContentProcessController::NotifyLayerTransforms(
 
 void ContentProcessController::RequestContentRepaint(
     const RepaintRequest& aRequest) {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     mBrowser->UpdateFrame(aRequest);
   }
 }
@@ -56,7 +54,7 @@ void ContentProcessController::NotifyPinchGesture(
 void ContentProcessController::NotifyAPZStateChange(
     const ScrollableLayerGuid& aGuid, APZStateChange aChange, int aArg,
     Maybe<uint64_t> aInputBlockId) {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     mBrowser->NotifyAPZStateChange(aGuid.mScrollId, aChange, aArg,
                                    aInputBlockId);
   }
@@ -64,13 +62,13 @@ void ContentProcessController::NotifyAPZStateChange(
 
 void ContentProcessController::NotifyMozMouseScrollEvent(
     const ScrollableLayerGuid::ViewID& aScrollId, const nsString& aEvent) {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     APZCCallbackHelper::NotifyMozMouseScrollEvent(aScrollId, aEvent);
   }
 }
 
 void ContentProcessController::NotifyFlushComplete() {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     RefPtr<PresShell> presShell = mBrowser->GetTopLevelPresShell();
     APZCCallbackHelper::NotifyFlushComplete(presShell);
   }
@@ -113,7 +111,7 @@ void ContentProcessController::DispatchToRepaintThread(
 }
 
 PresShell* ContentProcessController::GetTopLevelPresShell() const {
-  if (!mBrowser) {
+  if (!mBrowser || mBrowser->IsDestroyed()) {
     return nullptr;
   }
   return mBrowser->GetTopLevelPresShell();

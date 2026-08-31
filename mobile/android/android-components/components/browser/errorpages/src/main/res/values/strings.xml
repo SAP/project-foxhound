@@ -300,6 +300,13 @@
       <p>This web page at %1$s has been reported as a deceptive site and has been blocked based on your security preferences.</p>
     ]]></string>
 
+    <!-- The document title and heading of an error page. -->
+    <string name="mozac_browser_errorpages_harmful_addon_uri_title">Site blocked for your safety</string>
+    <!-- The %1$s will be replaced by the malicious website URL-->
+    <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[
+      <p>This web page at %1$s has been blocked because one of your add-ons tried to open it. This site could be used to steal your info — like passwords or credit card numbers.</p>
+    ]]></string>
+
     <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
     <string name="mozac_browser_errorpages_httpsonly_title">Secure Site Not Available</string>
     <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

@@ -6,14 +6,37 @@ prefs = [
 ]
 
 ["test_delivering.html"]
+scheme = "https"
 support-files = [
   "delivering.sjs",
   "iframe_delivering.html",
-  "worker_delivering.js",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
+]
+
+["test_delivering_chips.html"]
+scheme = "https"
+support-files = [
+  "delivering.sjs",
+  "iframe_delivering_chips.html",
+]
+skip-if = [
+  "http2",
+  "http3",
+]
+
+["test_delivering_chips_worker.html"]
+scheme = "https"
+support-files = [
+  "delivering.sjs",
+  "iframe_delivering_chips_worker.html",
+  "worker_delivering_chips.js",
+]
+skip-if = [
+  "http2",
+  "http3",
 ]
 
 ["test_deprecated.html"]
@@ -22,8 +45,8 @@ support-files = [
   "worker_deprecated.js",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_memoryPressure.html"]

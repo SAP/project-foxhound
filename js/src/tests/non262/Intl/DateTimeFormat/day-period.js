@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const {
     Weekday, DayPeriod, Literal
 } = DateTimeFormatParts;

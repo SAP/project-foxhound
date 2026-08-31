@@ -6,7 +6,6 @@ package org.mozilla.fenix.downloads.listscreen.store
 
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
-import mozilla.components.lib.state.UiStore
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
 
 /**
@@ -15,7 +14,7 @@ import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
 class DownloadUIStore(
     initialState: DownloadUIState,
     middleware: List<Middleware<DownloadUIState, DownloadUIAction>> = emptyList(),
-) : UiStore<DownloadUIState, DownloadUIAction>(
+) : Store<DownloadUIState, DownloadUIAction>(
     initialState = initialState,
     reducer = ::downloadStateReducer,
     middleware = middleware,
@@ -63,51 +62,65 @@ private fun downloadStateReducer(
 
         is DownloadUIAction.ExitEditMode -> state.copy(mode = Mode.Normal)
         is DownloadUIAction.AddPendingDeletionSet ->
-            state.copy(pendingDeletionIds = state.pendingDeletionIds + action.itemIds)
+            state.copy(
+                pendingDeletionIds = state.pendingDeletionIds + action.items.map { it.id }.toSet(),
+                deletionSnackbarState = DownloadUIState.SnackbarState.UndoDeletion(action.items),
+                dialogState = DownloadUIState.DialogState.None,
+                mode = Mode.Normal,
+            )
 
         is DownloadUIAction.UndoPendingDeletionSet ->
-            state.copy(pendingDeletionIds = state.pendingDeletionIds - action.itemIds)
+            state.copy(
+                pendingDeletionIds = state.pendingDeletionIds - action.itemIds,
+                deletionSnackbarState = DownloadUIState.SnackbarState.None,
+            )
 
         is DownloadUIAction.UpdateFileItems -> state.copy(items = action.items)
 
         is DownloadUIAction.ContentTypeSelected -> state.copy(userSelectedContentTypeFilter = action.contentTypeFilter)
 
-        is DownloadUIAction.FileItemDeletedSuccessfully -> state
+        is DownloadUIAction.FileItemDeletedSuccessfully ->
+            state.copy(deletionSnackbarState = DownloadUIState.SnackbarState.None)
 
         is DownloadUIAction.SearchQueryEntered -> state.copy(searchQuery = action.searchQuery)
-        is DownloadUIAction.UpdateDeleteDialogVisibility -> state.copy(isDeleteDialogVisible = action.visibility)
 
         DownloadUIAction.Init -> state
         is DownloadUIAction.ShareUrlClicked -> state
         is DownloadUIAction.ShareFileClicked -> state
+        is DownloadUIAction.RenameFileClicked -> state.copy(fileToRename = action.item)
+        is DownloadUIAction.RenameFileConfirmed -> state
+        is DownloadUIAction.RenameFileDismissed ->
+            state.copy(
+                fileToRename = null,
+                renameFileError = null,
+                isChangeFileExtensionDialogVisible = false,
+                itemToChangeExtension = null,
+            )
+
+        is DownloadUIAction.RenameFileFailed -> state.copy(renameFileError = action.error)
+        is DownloadUIAction.RenameFileFailureDismissed -> state.copy(renameFileError = null)
+        is DownloadUIAction.FileExtensionChangedByUser -> state
+        is DownloadUIAction.ShowChangeFileExtensionDialog -> state.copy(
+            isChangeFileExtensionDialogVisible = true,
+            itemToChangeExtension = action.item,
+        )
+
+        is DownloadUIAction.CloseChangeFileExtensionDialog -> state.copy(isChangeFileExtensionDialogVisible = false)
         is DownloadUIAction.UndoPendingDeletion -> state
-        is DownloadUIAction.PauseDownload -> {
-            state.copyWithFileItemStatusTransition(
-                downloadId = action.downloadId,
-                downloadControlAction = FileItem.Status.DownloadControlAction.PAUSE,
-            )
-        }
+        is DownloadUIAction.PauseDownload -> state
+        is DownloadUIAction.ResumeDownload -> state
+        is DownloadUIAction.RetryDownload -> state
+        is DownloadUIAction.CancelDownload -> state
+        is DownloadUIAction.NavigationIconClicked -> state
+        is DownloadUIAction.SettingsIconClicked -> state
 
-        is DownloadUIAction.ResumeDownload -> {
-            state.copyWithFileItemStatusTransition(
-                downloadId = action.downloadId,
-                downloadControlAction = FileItem.Status.DownloadControlAction.RESUME,
-            )
-        }
+        is DownloadUIAction.RequestDeleteMultiple -> state
+        is DownloadUIAction.RequestDelete -> state
+        is DownloadUIAction.ShowDeleteDialog ->
+            state.copy(dialogState = DownloadUIState.DialogState.DeleteConfirmation(action.items))
 
-        is DownloadUIAction.RetryDownload -> {
-            state.copyWithFileItemStatusTransition(
-                downloadId = action.downloadId,
-                downloadControlAction = FileItem.Status.DownloadControlAction.RETRY,
-            )
-        }
-
-        is DownloadUIAction.CancelDownload -> {
-            state.copyWithFileItemStatusTransition(
-                downloadId = action.downloadId,
-                downloadControlAction = FileItem.Status.DownloadControlAction.CANCEL,
-            )
-        }
+        is DownloadUIAction.DismissDeleteDialog ->
+            state.copy(dialogState = DownloadUIState.DialogState.None)
 
         is DownloadUIAction.SearchBarDismissRequest -> state.copy(
             isSearchFieldRequested = false,
@@ -115,24 +128,15 @@ private fun downloadStateReducer(
         )
 
         is DownloadUIAction.SearchBarVisibilityRequest -> state.copy(isSearchFieldRequested = true)
-    }
-}
 
-private fun DownloadUIState.copyWithFileItemStatusTransition(
-    downloadId: String,
-    downloadControlAction: FileItem.Status.DownloadControlAction,
-): DownloadUIState {
-    val itemIndex = items.indexOfFirst { it.id == downloadId }
-    if (itemIndex == -1) {
-        return this
-    }
+        is DownloadUIAction.ShowMultiSelectDeleteDialog ->
+            state.copy(
+                dialogState = DownloadUIState.DialogState.MultiSelectDeleteConfirmation(
+                    items = action.items,
+                ),
+            )
 
-    val updatedItems = items.map {
-        if (it.id == downloadId) {
-            it.copy(status = it.status.transition(action = downloadControlAction))
-        } else {
-            it
-        }
+        is DownloadUIAction.ConfirmMultiSelectDelete ->
+            state.copy(dialogState = DownloadUIState.DialogState.None)
     }
-    return copy(items = updatedItems)
 }

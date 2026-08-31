@@ -1,35 +1,28 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CacheLoadHandler.h"
+
 #include "ScriptResponseHeaderProcessor.h"  // ScriptResponseHeaderProcessor
 #include "WorkerLoadContext.h"              // WorkerLoadContext
-
-#include "nsIPrincipal.h"
-
-#include "nsIThreadRetargetableRequest.h"
-#include "nsIXPConnect.h"
-
 #include "jsapi.h"
-#include "nsNetUtil.h"
-
 #include "mozilla/Assertions.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/dom/CacheBinding.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/dom/cache/CacheTypes.h"
-#include "mozilla/dom/Response.h"
-#include "mozilla/dom/ServiceWorkerBinding.h"  // ServiceWorkerState
-#include "mozilla/Result.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/Response.h"
+#include "mozilla/dom/ServiceWorkerBinding.h"  // ServiceWorkerState
 #include "mozilla/dom/WorkerScope.h"
-
+#include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/dom/workerinternals/ScriptLoader.h"  // WorkerScriptLoader
+#include "nsIPrincipal.h"
+#include "nsIThreadRetargetableRequest.h"
+#include "nsIXPConnect.h"
+#include "nsNetUtil.h"
 
 namespace mozilla {
 namespace dom {
@@ -53,7 +46,8 @@ void CachePromiseHandler::ResolvedCallback(JSContext* aCx,
                                            JS::Handle<JS::Value> aValue,
                                            ErrorResult& aRv) {
   AssertIsOnMainThread();
-  if (mRequestHandle->IsEmpty()) {
+  // skip to schedule execution if it has been scheduled already.
+  if (mRequestHandle->mExecutionScheduled) {
     return;
   }
   WorkerLoadContext* loadContext = mRequestHandle->GetContext();
@@ -76,7 +70,8 @@ void CachePromiseHandler::RejectedCallback(JSContext* aCx,
                                            JS::Handle<JS::Value> aValue,
                                            ErrorResult& aRv) {
   AssertIsOnMainThread();
-  if (mRequestHandle->IsEmpty()) {
+  // skip to schedule execution if it has been scheduled already.
+  if (mRequestHandle->mExecutionScheduled) {
     return;
   }
   WorkerLoadContext* loadContext = mRequestHandle->GetContext();
@@ -91,7 +86,7 @@ void CachePromiseHandler::RejectedCallback(JSContext* aCx,
 
   // This will delete the cache object and will call LoadingFinished() with an
   // error for each ongoing operation.
-  auto* cacheCreator = mRequestHandle->GetCacheCreator();
+  RefPtr<CacheCreator> cacheCreator = mRequestHandle->GetCacheCreator();
   if (cacheCreator) {
     cacheCreator->DeleteCache(NS_ERROR_FAILURE);
   }
@@ -268,6 +263,11 @@ void CacheLoadHandler::Fail(nsresult aRv) {
     mPump->Cancel(aRv);
     mPump = nullptr;
   }
+
+  if (mRequestHandle->mExecutionScheduled) {
+    return;
+  }
+
   if (mRequestHandle->IsEmpty()) {
     return;
   }
@@ -282,7 +282,20 @@ void CacheLoadHandler::Fail(nsresult aRv) {
 
   loadContext->mCachePromise = nullptr;
 
-  mRequestHandle->LoadingFinished(aRv);
+  if (loadContext->mLoadingFinished) {
+    loadContext->mLoadResult = aRv;
+    mRequestHandle->MaybeExecuteFinishedScripts();
+  } else {
+    if (loadContext->mChannel) {
+      nsresult rv = loadContext->mChannel->Cancel(aRv);
+      if (NS_SUCCEEDED(rv)) {
+        return;
+      }
+
+      NS_WARNING("Failed to cancel channel!");
+    }
+    mRequestHandle->LoadingFinished(aRv);
+  }
 }
 
 void CacheLoadHandler::Load(Cache* aCache) {
@@ -307,7 +320,7 @@ void CacheLoadHandler::Load(Cache* aCache) {
   }
 
   mozilla::dom::RequestOrUTF8String request;
-  request.SetAsUTF8String().ShareOrDependUpon(loadContext->mFullURL);
+  request.SetAsUTF8String() = loadContext->mFullURL;
 
   mozilla::dom::CacheQueryOptions params;
 
@@ -407,6 +420,11 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
   rv = ScriptResponseHeaderProcessor::ProcessCrossOriginEmbedderPolicyHeader(
       mWorkerRef->Private(), coep, loadContext->IsTopLevel());
 
+  if (loadContext->IsTopLevel()) {
+    headers->Get("Reporting-Endpoints"_ns, mReportingEndpointsHeaderValue,
+                 IgnoreErrors());
+  }
+
   if (NS_WARN_IF(NS_FAILED(rv))) {
     Fail(rv);
     return;
@@ -424,7 +442,7 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
     loadContext->mCacheStatus = WorkerLoadContext::Cached;
 
     if (mRequestHandle->IsCancelled()) {
-      auto* cacheCreator = mRequestHandle->GetCacheCreator();
+      RefPtr<CacheCreator> cacheCreator = mRequestHandle->GetCacheCreator();
       if (cacheCreator) {
         cacheCreator->DeleteCache(mRequestHandle->GetCancelResult());
       }
@@ -433,7 +451,8 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
 
     nsresult rv = DataReceivedFromCache(
         (uint8_t*)"", 0, mChannelInfo, std::move(mPrincipalInfo),
-        mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue);
+        mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue,
+        mReportingEndpointsHeaderValue);
 
     mRequestHandle->OnStreamComplete(rv);
     return;
@@ -507,7 +526,8 @@ CacheLoadHandler::OnStreamComplete(nsIStreamLoader* aLoader,
 
   nsresult rv = DataReceivedFromCache(
       aString, aStringLen, mChannelInfo, std::move(mPrincipalInfo),
-      mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue);
+      mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue,
+      mReportingEndpointsHeaderValue);
   return mRequestHandle->OnStreamComplete(rv);
 }
 
@@ -516,7 +536,8 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
     const mozilla::dom::ChannelInfo& aChannelInfo,
     UniquePtr<PrincipalInfo> aPrincipalInfo, const nsACString& aCSPHeaderValue,
     const nsACString& aCSPReportOnlyHeaderValue,
-    const nsACString& aReferrerPolicyHeaderValue) {
+    const nsACString& aReferrerPolicyHeaderValue,
+    const nsACString& aReportingEndpointsHeaderValue) {
   AssertIsOnMainThread();
   if (mRequestHandle->IsEmpty()) {
     return NS_OK;
@@ -557,18 +578,20 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
 
   if (!loadContext->mRequest->ScriptTextLength()) {
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                                    parentDoc, nsContentUtils::eDOM_PROPERTIES,
+                                    parentDoc, PropertiesFile::DOM_PROPERTIES,
                                     "EmptyWorkerSourceWarning");
   }
 
   nsCOMPtr<nsIURI> finalURI;
   rv = NS_NewURI(getter_AddRefs(finalURI), loadContext->mFullURL);
-  if (!loadContext->mRequest->mBaseURL) {
-    loadContext->mRequest->mBaseURL = finalURI;
+  if (!loadContext->mRequest->BaseURL()) {
+    loadContext->mRequest->SetBaseURL(finalURI);
   }
   if (loadContext->IsTopLevel()) {
     if (NS_SUCCEEDED(rv)) {
       mWorkerRef->Private()->SetBaseURI(finalURI);
+      mWorkerRef->Private()->SetReportingEndpointsHeader(
+          aReportingEndpointsHeaderValue);
     }
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED

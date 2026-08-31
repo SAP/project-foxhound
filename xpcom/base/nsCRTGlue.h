@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCRTGlue_h__
-#define nsCRTGlue_h__
+#ifndef nsCRTGlue_h_
+#define nsCRTGlue_h_
 
 #include "nscore.h"
 
@@ -169,4 +167,4 @@ void NS_MakeRandomString(char* aBuf, int32_t aBufLen);
 
 #define FILE_ILLEGAL_CHARACTERS CONTROL_CHARACTERS OS_FILE_ILLEGAL_CHARACTERS
 
-#endif  // nsCRTGlue_h__
+#endif  // nsCRTGlue_h_

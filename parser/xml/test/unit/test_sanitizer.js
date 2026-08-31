@@ -45,7 +45,7 @@ function run_test() {
 
   for (var item in vectors) {
     let { data, sanitized, flags } = vectors[item];
-    if (!flags) {
+    if (flags === undefined) {
       flags = sanitizeFlags;
     }
     var out = ParserUtils.sanitize(data, flags);

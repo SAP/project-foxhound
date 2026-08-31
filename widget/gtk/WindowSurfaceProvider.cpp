@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,7 +102,7 @@ void WindowSurfaceProvider::CleanupResources() {
 #endif
 #ifdef MOZ_X11
   mXWindow = 0;
-  mXVisual = 0;
+  mXVisual = nullptr;
   mXDepth = 0;
 #endif
 }
@@ -208,15 +207,6 @@ void WindowSurfaceProvider::EndRemoteDrawingInRegion(
   if (!mWindowSurface || !mWindowSurfaceValid) {
     return;
   }
-#if defined(MOZ_WAYLAND)
-  if (GdkIsWaylandDisplay()) {
-    // We're called too early or we're unmapped.
-    // Don't draw anything.
-    if (!mWidget || !mWidget->IsMapped()) {
-      return;
-    }
-  }
-#endif
   mWindowSurface->Commit(aInvalidRegion);
 }
 

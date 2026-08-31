@@ -4,8 +4,8 @@ Restoring Data
 
 Restoring consists of two steps:
 
-1) Restore session history, which is handled in the `Session History module <https://searchfox.org/mozilla-central/source/toolkit/modules/sessionstore/SessionHistory.sys.mjs>`__.
-2) Restore the other collected data, which is handled in `SessionStoreUtils.webidl <https://searchfox.org/mozilla-central/source/dom/chrome-webidl/SessionStoreUtils.webidl>`__ and `SessionStoreUtils.cpp <https://searchfox.org/mozilla-central/source/toolkit/components/sessionstore/SessionStoreUtils.cpp>`__
+1) Restore session history, which is handled in the :searchfox:`Session History module <toolkit/modules/sessionstore/SessionHistory.sys.mjs>`.
+2) Restore the other collected data, which is handled in :searchfox:`SessionStoreUtils.webidl <dom/chrome-webidl/SessionStoreUtils.webidl>` and :searchfox:`SessionStoreUtils.cpp <toolkit/components/sessionstore/SessionStoreUtils.cpp>`
 
 The reason for this is that restoring the session history implies navigating to the location of the restored active session history entry, and it's only possible to restore the state of the page after that navigation is complete.
 
@@ -56,7 +56,7 @@ Calling ``SessionHistory.restoreFromParent``
 * ``history`` is the session history object
 * ``tabData`` is the tabdata including all history entries.
 
-The format of ``history`` isn't relevant, but it is the idl interface `nsISHistory <https://searchfox.org/mozilla-central/source/docshell/shistory/nsISHistory.idl>`__.
+The format of ``history`` isn't relevant, but it is the idl interface :searchfox:`nsISHistory <docshell/shistory/nsISHistory.idl>`.
 
 The format of ``tabData`` is an object literal with the corresponding interface:
 

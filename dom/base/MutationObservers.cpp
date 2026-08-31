@@ -1,38 +1,36 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MutationObservers.h"
 
-#include "nsContentUtils.h"
-#include "nsCSSPseudoElements.h"
-#include "nsINode.h"
-#include "nsIContent.h"
-#include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/Element.h"
-#include "nsIMutationObserver.h"
-#include "mozilla/EventListenerManager.h"
 #include "PLDHashTable.h"
-#include "nsCOMArray.h"
-#include "nsPIDOMWindow.h"
-#include "nsXULElement.h"
-#include "nsGenericHTMLElement.h"
+#include "PseudoStyleType.h"
 #include "mozilla/AnimationTarget.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/EventListenerManager.h"
 #include "mozilla/PresShell.h"
-#include "nsWrapperCacheInlines.h"
-#include "nsDOMMutationObserver.h"
+#include "mozilla/dom/Animation.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
+#include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "nsCOMArray.h"
+#include "nsContentUtils.h"
+#include "nsDOMMutationObserver.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
+#include "nsIMutationObserver.h"
+#include "nsINode.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCacheInlines.h"
+#include "nsXULElement.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -132,7 +130,7 @@ void MutationObservers::NotifyCharacterDataChanged(
 void MutationObservers::NotifyAttributeWillChange(Element* aElement,
                                                   int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType) {
+                                                  AttrModType aModType) {
   Notify(aElement,
          NOTIFIER(AttributeWillChange, aElement, aNameSpaceID, aAttribute,
                   aModType),
@@ -142,7 +140,7 @@ void MutationObservers::NotifyAttributeWillChange(Element* aElement,
 void MutationObservers::NotifyAttributeChanged(Element* aElement,
                                                int32_t aNameSpaceID,
                                                nsAtom* aAttribute,
-                                               int32_t aModType,
+                                               AttrModType aModType,
                                                const nsAttrValue* aOldValue) {
   aElement->OwnerDoc()->Changed();
   Notify(aElement,
@@ -188,22 +186,6 @@ void MutationObservers::NotifyContentWillBeRemoved(
   Notify<NotifyPresShell::Before>(aContainer,
                                   NOTIFIER(ContentWillBeRemoved, aChild, aInfo),
                                   nsIMutationObserver::kContentWillBeRemoved);
-}
-
-void MutationObservers::NotifyARIAAttributeDefaultWillChange(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
-  Notify<NotifyPresShell::No>(
-      aElement,
-      NOTIFIER(ARIAAttributeDefaultWillChange, aElement, aAttribute, aModType),
-      nsIMutationObserver::kARIAAttributeDefaultWillChange);
-}
-
-void MutationObservers::NotifyARIAAttributeDefaultChanged(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
-  Notify<NotifyPresShell::No>(
-      aElement,
-      NOTIFIER(ARIAAttributeDefaultChanged, aElement, aAttribute, aModType),
-      nsIMutationObserver::kARIAAttributeDefaultChanged);
 }
 
 }  // namespace mozilla

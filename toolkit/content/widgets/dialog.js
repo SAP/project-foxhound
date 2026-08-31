@@ -336,6 +336,7 @@
       } else if (
         AppConstants.platform != "macosx" &&
         focusedElt.hasAttribute("dlgtype") &&
+        defaultButton &&
         focusedElt != defaultButton
       ) {
         defaultButton.focus();

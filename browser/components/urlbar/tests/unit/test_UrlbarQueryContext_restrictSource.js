@@ -70,7 +70,7 @@ add_task(async function test_restrictions() {
   info("search restrict should ignore restriction token");
   results = await get_results({
     sources: [UrlbarUtils.RESULT_SOURCE.SEARCH],
-    searchString: `${UrlbarTokenizer.RESTRICT.BOOKMARKS} match`,
+    searchString: `${UrlbarShared.RESTRICT_TOKENS.BOOKMARK} match`,
   });
   Assert.ok(
     !results.some(r => r.payload.engine != SUGGESTIONS_ENGINE_NAME),
@@ -78,7 +78,7 @@ add_task(async function test_restrictions() {
   );
   Assert.equal(
     results[0].payload.query,
-    `${UrlbarTokenizer.RESTRICT.BOOKMARKS} match`,
+    `${UrlbarShared.RESTRICT_TOKENS.BOOKMARK} match`,
     "The restriction token should be ignored and not stripped"
   );
 

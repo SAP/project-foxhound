@@ -1,0 +1,29 @@
+---
+wpt-subsuite-tagging:
+    description: >
+        Checks that WPT tests in subsuite directories are tagged for
+        that subsuite, so they are not silently excluded from all CI jobs.
+    include:
+        - testing/web-platform/tests
+        - testing/web-platform/mozilla/tests
+    exclude:
+        # These are print-reftests that run in the W(Wp) job, which uses
+        # test-manifest-loader: null and bypasses chunking.py path routing.
+        # yamllint disable rule:line-length
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-rect-001-print-ref.html
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-rect-001-print.html
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-rect-002-print-ref.html
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-rect-002-print.html
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-text-001-print-ref.html
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-text-001-print.html
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-text-002-print-ref.html
+        - testing/web-platform/mozilla/tests/html/canvas/mozPrintCallback-text-002-print.html
+        # yamllint enable rule:line-length
+    extensions:
+        - .html
+        - .xhtml
+    support-files:
+        - 'tools/lint/wpt-subsuite-tagging/**'
+        - 'taskcluster/gecko_taskgraph/util/chunking.py'
+    type: external
+    payload: wpt-subsuite-tagging:lint

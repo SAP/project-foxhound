@@ -1,0 +1,15 @@
+{
+  "label": "kuruma-news.jp",
+  "bugs": {
+    "1975926": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://kuruma-news.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

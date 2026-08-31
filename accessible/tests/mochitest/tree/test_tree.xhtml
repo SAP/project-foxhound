@@ -23,9 +23,8 @@
     ////////////////////////////////////////////////////////////////////////////
     // Accessible tree testers
 
-    function getTreeItemAccTree(aTableRole, acolumnCount)
-    {
-      var treeItemRole;
+    function getTreeItemAccTree(aTableRole, acolumnCount) {
+      let treeItemRole;
       switch (aTableRole) {
         case ROLE_LIST:
           treeItemRole = ROLE_LISTITEM;
@@ -38,14 +37,14 @@
           break;
       }
 
-      var accTree = {
+      const accTree = {
         role: treeItemRole,
         children: []
       };
 
       if (aTableRole == ROLE_TABLE || aTableRole == ROLE_TREE_TABLE) {
-        for (var idx = 0; idx < acolumnCount; idx++) {
-          var cellAccTree = {
+        for (let idx = 0; idx < acolumnCount; idx++) {
+          const cellAccTree = {
             role: ROLE_GRID_CELL,
             children: []
           };
@@ -56,22 +55,21 @@
       return accTree;
     }
 
-    function testAccessibleTreeFor(aTree, aRole)
-    {
-      var accTreeForColumns = {
+    function testAccessibleTreeFor(aTree, aRole) {
+      const accTreeForColumns = {
         role: ROLE_LIST,
         children: []
       };
 
-      var accTreeForTree = {
+      const accTreeForTree = {
         role: aRole,
         children: [
           accTreeForColumns
         ]
       };
 
-      var view = aTree.view;
-      var columnCount = aTree.columns.count;
+      const view = aTree.view;
+      const columnCount = aTree.columns.count;
 
       for (let idx = 0; idx < columnCount; idx++)
         accTreeForColumns.children.push({ COLUMNHEADER: [ ] });
@@ -86,43 +84,24 @@
       testAccessibleTree(aTree, accTreeForTree);
     }
 
-    /**
-     * Event queue invoker object to test accessible tree for XUL tree element.
-     */
-    function treeChecker(aID, aView, aRole)
-    {
-      this.DOMNode = getNode(aID);
-
-      this.invoke = function invoke()
-      {
-        this.DOMNode.view = aView;
-      }
-      this.check = function check()
-      {
-        testAccessibleTreeFor(this.DOMNode, aRole);
-      }
-      this.getID = function getID()
-      {
-        return "Tree testing of " + aID;
-      }
-    }
-
     ////////////////////////////////////////////////////////////////////////////
     // Test
 
-    // gA11yEventDumpID = "debug";
-    var gQueue = null;
+    async function doTest() {
+      for (let [id, view, role] of [
+        ["list", new nsTableTreeView(3), ROLE_LIST],
+        ["tree", new nsTreeTreeView(), ROLE_OUTLINE],
+        ["table", new nsTableTreeView(3), ROLE_TABLE],
+        ["treetable", new nsTreeTreeView(), ROLE_TREE_TABLE],
+      ]) {
+        const domNode = getNode(id);
+        const reordered = waitForEvent(EVENT_REORDER, domNode);
+        domNode.view = view;
+        await reordered;
+        testAccessibleTreeFor(domNode, role);
+      }
 
-    function doTest()
-    {
-      gQueue = new eventQueue(EVENT_REORDER);
-
-      gQueue.push(new treeChecker("list", new nsTableTreeView(3), ROLE_LIST));
-      gQueue.push(new treeChecker("tree", new nsTreeTreeView(), ROLE_OUTLINE));
-      gQueue.push(new treeChecker("table", new nsTableTreeView(3), ROLE_TABLE));
-      gQueue.push(new treeChecker("treetable", new nsTreeTreeView(), ROLE_TREE_TABLE));
-
-      gQueue.invoke(); // Will call SimpleTest.finish()
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

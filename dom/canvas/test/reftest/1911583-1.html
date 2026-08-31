@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Test fillRect</title>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+let canvas = document.getElementById("canvas");
+canvas.width = 10;
+canvas.height = 32768;
+let context = canvas.getContext('2d');
+context.fillStyle = "red";
+context.fillRect(0, 0, 10, 10);
+</script>
+</body>
+

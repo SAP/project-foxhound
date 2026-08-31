@@ -2,6 +2,7 @@
 prefs = [
   "dom.security.featurePolicy.header.enabled=true",
   "dom.security.featurePolicy.webidl.enabled=true",
+  "network.lna.blocking=true",
 ]
 support-files = [
   "empty.html",
@@ -14,10 +15,14 @@ support-files = [
 
 ["test_nested.html"]
 scheme = "https"
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_parser.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_xslt.html"]
 support-files = [

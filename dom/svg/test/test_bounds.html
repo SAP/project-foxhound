@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
 <!--
 https://bugzilla.mozilla.org/show_bug.cgi?id=463934
 -->
@@ -17,18 +17,26 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=463934
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=463934">Mozilla Bug 463934</a>
 <p id="display"></p>
 <div id="content">
-  <svg id="outer-1" xmlns="http://www.w3.org/2000/svg" width="30" height="30"></svg>
-  <svg id="outer-2" xmlns="http://www.w3.org/2000/svg" width="30" height="30"
+  <svg id="outer-1" width="30" height="30"></svg>
+  <svg id="outer-2" width="30" height="30"
        style="padding: 10px;">
   </svg>
-  <svg id="outer-3" xmlns="http://www.w3.org/2000/svg" width="30" height="30"
+  <svg id="outer-3" width="30" height="30"
        style="border: 10px solid black;">
   </svg>
-  <svg id="outer-4" xmlns="http://www.w3.org/2000/svg" width="30" height="30"
+  <svg id="outer-4" width="30" height="30"
        style="border: 10px solid black; padding: 10px">
   </svg>
-  <svg id="outer-5" xmlns="http://www.w3.org/2000/svg" width="30" height="30">
+  <svg id="outer-5" width="30" height="30">
     <rect id="css-trans-rect-1" width="6" height="6"></rect>
+  </svg>
+  <svg id="outer-6" width="30" height="30">
+    <g id="g-6">
+      <rect x="5" y="5" width="10" height="10"/>
+      <g>
+        <rect x="20" y="20" width="30" height="30" fill="none"/>
+      </g>
+    </g>
   </svg>
 </div>
 
@@ -74,6 +82,10 @@ function runTest() {
   bounds = document.getElementById("css-trans-rect-1").getBoundingClientRect();
   is(bounds.width, 12, "css-trans-rect getBoundingClientRect().width");
   is(bounds.height, 6, "css-trans-rect getBoundingClientRect().height");
+
+  bounds = document.getElementById("g-6").getBoundingClientRect();
+  is(bounds.width, 45, "g-6 getBoundingClientRect().width");
+  is(bounds.height, 45, "g-6 getBoundingClientRect().height");
 
   var doc = $("svg").contentWindow.document;
 

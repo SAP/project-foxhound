@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const {
     Year, Month, Day, DayPeriod, Hour, Minute, Literal
 } = DateTimeFormatParts;
@@ -21,7 +19,7 @@ const tests = [
         options: { dayPeriod: "short", hour: "numeric", hour12: true },
         locales: {
             en: [Hour("12"), Literal(" "), DayPeriod("noon")],
-            de: [Hour("12"), Literal(" "), DayPeriod("mittags")],
+            de: [Hour("12"), Literal(" Uhr "), DayPeriod("mittags")],
         },
     },
     {
@@ -37,7 +35,7 @@ const tests = [
         options: { dayPeriod: "short", hour: "numeric", hourCycle: "h12" },
         locales: {
             en: [Hour("12"), Literal(" "), DayPeriod("noon")],
-            de: [Hour("12"), Literal(" "), DayPeriod("mittags")],
+            de: [Hour("12"), Literal(" Uhr "), DayPeriod("mittags")],
         },
     },
     {
@@ -45,7 +43,7 @@ const tests = [
         options: { dayPeriod: "short", hour: "numeric", hourCycle: "h11" },
         locales: {
             en: [Hour("0"), Literal(" "), DayPeriod("noon")],
-            de: [Hour("0"), Literal(" "), DayPeriod("mittags")],
+            de: [Hour("0"), Literal(" Uhr "), DayPeriod("mittags")],
         },
     },
     {

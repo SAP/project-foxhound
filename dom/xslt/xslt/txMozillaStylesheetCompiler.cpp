@@ -1,41 +1,38 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIAuthPrompt.h"
+#include "ReferrerInfo.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Text.h"
+#include "nsAttrName.h"
+#include "nsCharsetSource.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentPolicyUtils.h"
+#include "nsError.h"
+#include "nsIAuthPrompt.h"
 #include "nsIExpatSink.h"
+#include "nsIHttpChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
-#include "nsParser.h"
-#include "nsCharsetSource.h"
-#include "nsIRequestObserver.h"
-#include "nsContentPolicyUtils.h"
-#include "nsIStreamConverterService.h"
-#include "nsSyncLoadService.h"
-#include "nsIHttpChannel.h"
-#include "nsIURI.h"
 #include "nsIPrincipal.h"
+#include "nsIRequestObserver.h"
+#include "nsIScriptError.h"
+#include "nsIStreamConverterService.h"
+#include "nsIURI.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXMLContentSink.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
-#include "nsGkAtoms.h"
+#include "nsParser.h"
+#include "nsSyncLoadService.h"
 #include "txLog.h"
 #include "txMozillaXSLTProcessor.h"
 #include "txStylesheetCompiler.h"
 #include "txXMLUtils.h"
-#include "nsAttrName.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIScriptError.h"
-#include "nsError.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Text.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/UniquePtr.h"
-#include "ReferrerInfo.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;
@@ -110,7 +107,7 @@ txStylesheetSink::HandleStartElement(const char16_t* aName,
                                      const char16_t** aAtts,
                                      uint32_t aAttsCount, uint32_t aLineNumber,
                                      uint32_t aColumnNumber) {
-  MOZ_ASSERT(aAttsCount % 2 == 0, "incorrect aAttsCount");
+  MOZ_RELEASE_ASSERT(aAttsCount % 2 == 0, "incorrect aAttsCount");
 
   nsresult rv = mCompiler->startElement(aName, aAtts, aAttsCount / 2);
   if (NS_FAILED(rv)) {
@@ -211,7 +208,8 @@ txStylesheetSink::OnDataAvailable(nsIRequest* aRequest,
     }
   }
 
-  return mListener->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP
@@ -261,12 +259,13 @@ txStylesheetSink::OnStartRequest(nsIRequest* aRequest) {
                                   NS_ISUPPORTS_CAST(nsIParser*, mParser),
                                   getter_AddRefs(converter));
       if (NS_SUCCEEDED(rv)) {
-        mListener = converter;
+        mListener = std::move(converter);
       }
     }
   }
 
-  return mListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
@@ -275,7 +274,7 @@ txStylesheetSink::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
   if (httpChannel) {
-    Unused << httpChannel->GetRequestSucceeded(&success);
+    (void)httpChannel->GetRequestSucceeded(&success);
   }
 
   nsresult result = aStatusCode;
@@ -298,7 +297,8 @@ txStylesheetSink::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
     mCompiler->cancel(result, nullptr, spec.get());
   }
 
-  nsresult rv = mListener->OnStopRequest(aRequest, aStatusCode);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  nsresult rv = listener->OnStopRequest(aRequest, aStatusCode);
   mListener = nullptr;
   mParser = nullptr;
   return rv;
@@ -339,12 +339,12 @@ class txCompileObserver final : public txACompileObserver {
                      nsIPrincipal* aSourcePrincipal,
                      ReferrerPolicy aReferrerPolicy);
 
+  // This exists solely to suppress a warning from nsDerivedSafe
+  txCompileObserver() = delete;
+
  private:
   RefPtr<txMozillaXSLTProcessor> mProcessor;
   nsCOMPtr<Document> mLoaderDocument;
-
-  // This exists solely to suppress a warning from nsDerivedSafe
-  txCompileObserver();
 
   // Private destructor, to discourage deletion outside of Release():
   ~txCompileObserver() = default;

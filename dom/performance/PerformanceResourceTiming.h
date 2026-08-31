@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_PerformanceResourceTiming_h___
-#define mozilla_dom_PerformanceResourceTiming_h___
+#ifndef mozilla_dom_PerformanceResourceTiming_h_
+#define mozilla_dom_PerformanceResourceTiming_h_
 
-#include "mozilla/UniquePtr.h"
-#include "nsCOMPtr.h"
 #include "Performance.h"
 #include "PerformanceEntry.h"
 #include "PerformanceServerTiming.h"
 #include "PerformanceTiming.h"
+#include "mozilla/UniquePtr.h"
+#include "nsCOMPtr.h"
 
 namespace mozilla::dom {
 enum class RenderBlockingStatusType : uint8_t;
@@ -132,6 +130,10 @@ class PerformanceResourceTiming : public PerformanceEntry {
 
   IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(ResponseStart)
 
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(FirstInterimResponseStart)
+
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(FinalResponseHeadersStart)
+
   DOMHighResTimeStamp ResponseEnd() const {
     return mTimingData->ResponseEndHighRes(mPerformance);
   }
@@ -217,4 +219,4 @@ class PerformanceResourceTiming : public PerformanceEntry {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_PerformanceResourceTiming_h___ */
+#endif /* mozilla_dom_PerformanceResourceTiming_h_ */

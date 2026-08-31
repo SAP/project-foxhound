@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,10 @@
 #define mozilla_dom_cache_CacheStorageChild_h
 
 #include "mozilla/dom/cache/ActorChild.h"
-#include "mozilla/dom/cache/Types.h"
+#include "mozilla/dom/cache/CacheOpChild.h"
 #include "mozilla/dom/cache/PCacheStorageChild.h"
+#include "mozilla/dom/cache/TypeUtils.h"
+#include "mozilla/dom/cache/Types.h"
 
 class nsIGlobalObject;
 
@@ -24,21 +24,29 @@ class CacheStorage;
 class CacheWorkerRef;
 class PCacheChild;
 
-class CacheStorageChild final : public PCacheStorageChild, public ActorChild {
+class CacheStorageChild final : public PCacheStorageChild,
+                                public CacheActorChild {
   friend class PCacheStorageChild;
 
  public:
-  CacheStorageChild(CacheStorage* aListener,
-                    SafeRefPtr<CacheWorkerRef> aWorkerRef);
+  CacheStorageChild(CacheStorageChildListener* aListener,
+                    SafeRefPtr<CacheWorkerRef> aWorkerRef,
+                    ActorChild* aParentActor = nullptr);
 
   // Must be called by the associated CacheStorage listener in its
-  // DestroyInternal() method.  Also, CacheStorage must call
+  // OnActorDestroy() method.  Also, CacheStorage must call
   // SendDestroyFromListener() on the actor in its destructor to trigger
   // ActorDestroy() if it has not been called yet.
   void ClearListener();
 
-  void ExecuteOp(nsIGlobalObject* aGlobal, Promise* aPromise,
-                 nsISupports* aParent, const CacheOpArgs& aArgs);
+  template <typename PromiseType>
+  void ExecuteOp(nsIGlobalObject* aGlobal, PromiseType& aPromise,
+                 nsISupports* aParent, const CacheOpArgs& aArgs) {
+    (void)SendPCacheOpConstructor(
+        new CacheOpChild(GetWorkerRefPtr().clonePtr(), aGlobal, aParent,
+                         aPromise, this),
+        aArgs);
+  }
 
   // Our parent Listener object has gone out of scope and is being destroyed.
   void StartDestroyFromListener();
@@ -65,10 +73,12 @@ class CacheStorageChild final : public PCacheStorageChild, public ActorChild {
   // utility methods
   inline uint32_t NumChildActors() { return ManagedPCacheOpChild().Count(); }
 
+  ActorChild* mParentActor;
+
   // Use a weak ref so actor does not hold DOM object alive past content use.
   // The CacheStorage object must call ClearListener() to null this before its
   // destroyed.
-  CacheStorage* MOZ_NON_OWNING_REF mListener;
+  CacheStorageChildListener* MOZ_NON_OWNING_REF mListener;
   bool mDelayedDestroy;
 };
 

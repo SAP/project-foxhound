@@ -9,29 +9,28 @@
  *
  * Actions are added along with the necessary code to
  * reverse the action.
- *
- * @param integer maxUndo Maximum number of undo steps.
- *   defaults to 50.
  */
-function UndoStack(maxUndo) {
-  this.maxUndo = maxUndo || 50;
-  this._stack = [];
-}
+class UndoStack {
+  /**
+   * @param {integer} maxUndo Maximum number of undo steps.
+   *   defaults to 50.
+   */
+  constructor(maxUndo) {
+    this.maxUndo = maxUndo || 50;
+    this._stack = [];
+  }
 
-exports.UndoStack = UndoStack;
-
-UndoStack.prototype = {
   // Current index into the undo stack.  Is positioned after the last
   // currently-applied change.
-  _index: 0,
+  _index = 0;
 
   // The current batch depth (see startBatch() for details)
-  _batchDepth: 0,
+  _batchDepth = 0;
 
   destroy() {
     this.uninstallController();
     delete this._stack;
-  },
+  }
 
   /**
    * Start a collection of related changes.  Changes will be batched
@@ -46,7 +45,7 @@ UndoStack.prototype = {
     if (this._batchDepth++ === 0) {
       this._batch = [];
     }
-  },
+  }
 
   /**
    * End a batch of related changes, performing its action and adding
@@ -79,7 +78,7 @@ UndoStack.prototype = {
     this._stack.push(entry);
     this._index = this._stack.length;
     entry.do();
-  },
+  }
 
   /**
    * Perform an action, adding it to the undo stack.
@@ -91,14 +90,14 @@ UndoStack.prototype = {
     this.startBatch();
     this._batch.push({ do: toDo, undo });
     this.endBatch();
-  },
+  }
 
   /*
    * Returns true if undo() will do anything.
    */
   canUndo() {
     return this._index > 0;
-  },
+  }
 
   /**
    * Undo the top of the undo stack.
@@ -111,14 +110,14 @@ UndoStack.prototype = {
     }
     this._stack[--this._index].undo();
     return true;
-  },
+  }
 
   /**
    * Returns true if redo() will do anything.
    */
   canRedo() {
     return this._stack.length > this._index;
-  },
+  }
 
   /**
    * Redo the most recently undone action.
@@ -131,7 +130,7 @@ UndoStack.prototype = {
     }
     this._stack[this._index++].do();
     return true;
-  },
+  }
 
   /**
    * ViewController implementation for undo/redo.
@@ -149,7 +148,7 @@ UndoStack.prototype = {
 
     this._controllerWindow = controllerWindow;
     controllers.appendController(this);
-  },
+  }
 
   /**
    * Uninstall this object from the command controller.
@@ -159,11 +158,11 @@ UndoStack.prototype = {
       return;
     }
     this._controllerWindow.controllers.removeController(this);
-  },
+  }
 
   supportsCommand(command) {
     return command == "cmd_undo" || command == "cmd_redo";
-  },
+  }
 
   isCommandEnabled(command) {
     switch (command) {
@@ -173,7 +172,7 @@ UndoStack.prototype = {
         return this.canRedo();
     }
     return false;
-  },
+  }
 
   doCommand(command) {
     switch (command) {
@@ -184,7 +183,9 @@ UndoStack.prototype = {
       default:
         return null;
     }
-  },
+  }
 
-  onEvent() {},
-};
+  onEvent() {}
+}
+
+exports.UndoStack = UndoStack;

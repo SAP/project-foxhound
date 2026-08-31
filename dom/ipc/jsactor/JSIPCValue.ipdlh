@@ -1,0 +1,105 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
+using mozilla::null_t from "mozilla/ipc/IPCCore.h";
+[RefCounted] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
+using mozilla::void_t from "mozilla/ipc/IPCCore.h";
+
+include ClientIPCTypes;
+include DOMTypes;
+
+/*
+
+JSIPCValue is used to serialize JS values for IPC, similar to structured cloning.
+
+Some major differences from structured cloning are:
+1. It is a tightly controlled subset, to prevent weird values from being sent
+   that may behave in unexpected ways that could lead to security problems.
+2. It is defined like an algebraic data type rather than a lower-level
+   serialization format, which makes it easier to do type checking on.
+3. JSIPCValue is not used for any web APIs, so it does not need to be compatible
+   with any standard.
+
+JSIPCValue supports falling back to structured cloning for some or all of the
+JS value for compatibility. This fallback can potentially involve the quirky
+JSON fallback behavior implemented by nsFrameMessageManager::GetParamsForMessage.
+
+Some specific differences with structured cloning:
+1. Cyclic data structures can't be serialized.
+2. DAGs won't be preserved.
+2. Non-indexed properties on Arrays will be dropped.
+3. Any holes in an Array will be filled with undefined.
+
+Like with structured clone, non-standard prototypes on things like Arrays and
+Sets will be replaced with the standard ones.
+
+If a property on an object being serialized is a getter, then serialization
+will evaluate the getter, and the resulting object will have a plain data
+property where the value is whatever the evaluation result was. There are no
+guarantees about what will happen if anything being serialized is mutated by
+the getter.
+
+*/
+
+namespace mozilla {
+namespace dom {
+
+struct JSIPCDOMRect {
+    double x;
+    double y;
+    double width;
+    double height;
+};
+
+struct JSIPCProperty {
+    nsString name;
+    JSIPCValue value;
+};
+
+struct JSIPCArray {
+    JSIPCValue[] elements;
+};
+
+struct JSIPCSet {
+    JSIPCValue[] elements;
+};
+
+struct JSIPCMapEntry {
+    JSIPCValue key;
+    JSIPCValue value;
+};
+
+union JSIPCValue {
+    // Basic JS primitive values.
+    void_t; // undefined
+    null_t;
+    nsString;
+    bool;
+    // double and int32_t together implement numbers, to match JS::Value.
+    double;
+    int32_t;
+
+    // Structured clone objects are used as a fallback when serialization
+    // fails, or for places like WebExtensions which send these directly.
+    StructuredCloneData;
+
+    // Commonly used DOM objects.
+    nsIPrincipal;
+    MaybeDiscardedBrowsingContext;
+    JSIPCDOMRect;
+
+    // Plain JS object.
+    JSIPCProperty[];
+
+    JSIPCArray;
+
+    JSIPCSet;
+
+    // JS Map.
+    JSIPCMapEntry[];
+};
+
+}  // namespace dom
+}  // namespace mozilla

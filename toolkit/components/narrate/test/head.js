@@ -65,6 +65,11 @@ function spawnInNewReaderTab(url, func) {
         "chrome://mochitests/content/browser/" +
           "toolkit/components/narrate/test/NarrateTestUtils.sys.mjs"
       );
+      // Also provide TestUtils in scope as well.
+      SpecialPowers.addTaskImport(
+        "TestUtils",
+        "resource://testing-common/TestUtils.sys.mjs"
+      );
       await SpecialPowers.spawn(browser, [], async function () {
         await NarrateTestUtils.getReaderReadyPromise(content);
       });

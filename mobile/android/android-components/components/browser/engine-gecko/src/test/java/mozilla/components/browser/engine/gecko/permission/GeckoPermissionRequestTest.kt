@@ -5,6 +5,8 @@
 package mozilla.components.browser.engine.gecko.permission
 
 import android.Manifest
+import androidx.annotation.OptIn
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.engine.permission.Permission
 import mozilla.components.support.test.mock
 import mozilla.components.test.ReflectionUtils
@@ -13,6 +15,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.verify
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
@@ -42,6 +45,14 @@ class GeckoPermissionRequestTest {
         request = GeckoPermissionRequest.Content(uri, GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE, mock(), mock())
         assertEquals(uri, request.uri)
         assertEquals(listOf(Permission.ContentAutoPlayInaudible()), request.permissions)
+
+        request = GeckoPermissionRequest.Content(uri, GeckoSession.PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS, mock(), mock())
+        assertEquals(uri, request.uri)
+        assertEquals(listOf(Permission.ContentLocalDeviceAccess()), request.permissions)
+
+        request = GeckoPermissionRequest.Content(uri, GeckoSession.PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS, mock(), mock())
+        assertEquals(uri, request.uri)
+        assertEquals(listOf(Permission.ContentLocalNetworkAccess()), request.permissions)
 
         request = GeckoPermissionRequest.Content(uri, 1234, mock(), mock())
         assertEquals(uri, request.uri)
@@ -268,5 +279,25 @@ class GeckoPermissionRequestTest {
 
         verify(callback1).grant()
         verify(callback2).grant()
+    }
+
+    @OptIn(
+        ExperimentalGeckoViewApi::class,
+        ExperimentalAndroidComponentsApi::class,
+    )
+    @Test
+    fun `notifyShown forwards to underlying GeckoView ContentPermission`() {
+        val uri = "https://mozilla.org"
+        val geckoPermission: GeckoSession.PermissionDelegate.ContentPermission = mock()
+        val request = GeckoPermissionRequest.Content(
+            uri,
+            PERMISSION_GEOLOCATION,
+            geckoPermission,
+            mutableListOf(mock()),
+        )
+
+        request.notifyShown()
+
+        verify(geckoPermission).notifyShown()
     }
 }

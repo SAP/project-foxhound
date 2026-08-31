@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,9 @@
 #ifndef mozilla_dom_BroadcastChannelService_h
 #define mozilla_dom_BroadcastChannelService_h
 
-#include "nsISupportsImpl.h"
-#include "nsHashKeys.h"
 #include "nsClassHashtable.h"
+#include "nsHashKeys.h"
+#include "nsISupportsImpl.h"
 
 #ifdef XP_WIN
 #  undef PostMessage
@@ -18,7 +16,7 @@
 namespace mozilla::dom {
 
 class BroadcastChannelParent;
-class MessageData;
+class SharedMessageBody;
 
 class BroadcastChannelService final {
  public:
@@ -31,7 +29,8 @@ class BroadcastChannelService final {
   void UnregisterActor(BroadcastChannelParent* aParent,
                        const nsAString& aOriginChannelKey);
 
-  void PostMessage(BroadcastChannelParent* aParent, const MessageData& aData,
+  void PostMessage(BroadcastChannelParent* aParent,
+                   NotNull<SharedMessageBody*> aData,
                    const nsAString& aOriginChannelKey);
 
  private:

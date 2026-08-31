@@ -76,7 +76,7 @@ add_task(async function test_open_link_in_chrome_with_mouse() {
   const supportWindowPromise = BrowserTestUtils.waitForNewWindow(
     Services.urlFormatter.formatURLPref("app.support.baseURL") + "dnt"
   );
-  await EventUtils.synthesizeMouseAtCenter(supportLink, { shiftKey: true });
+  EventUtils.synthesizeMouseAtCenter(supportLink, { shiftKey: true });
   supportWindow = await supportWindowPromise;
   Assert.ok(supportWindow, "Support tab in new window opened");
   await BrowserTestUtils.closeWindow(supportWindow);

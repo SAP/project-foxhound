@@ -12,7 +12,8 @@ add_task(async function test_notice_in_aboutprefences() {
 
   await BrowserTestUtils.withNewTab("about:preferences", async browser => {
     ok(
-      !browser.contentDocument.getElementById("policies-container").hidden,
+      !browser.contentDocument.getElementById("policies-container-content")
+        .hidden,
       "The Policies notice was made visible in about:preferences"
     );
   });

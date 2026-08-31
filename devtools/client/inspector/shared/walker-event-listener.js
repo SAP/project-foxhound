@@ -11,7 +11,7 @@
 class WalkerEventListener {
   /**
    * @param {Inspector} - inspector
-   * @param {Object} - listenerMap
+   * @param {object} - listenerMap
    *        The structure of listenerMap should be as follows.
    *        {
    *          walkerEventName1: eventHandler1,
@@ -60,7 +60,17 @@ class WalkerEventListener {
   }
 
   async _onTargetAvailable({ targetFront }) {
-    const inspectorFront = await targetFront.getFront("inspector");
+    let inspectorFront;
+    try {
+      inspectorFront = await targetFront.getFront("inspector");
+    } catch (e) {
+      // When iframes are destroyed early during their creation,
+      // getFront method may throw
+      if (targetFront.isDestroyed()) {
+        return;
+      }
+      throw e;
+    }
     // In case of multiple fast navigations, the front may already be destroyed,
     // in such scenario bail out and ignore this short lived target.
     if (inspectorFront.isDestroyed() || !this._listenerMap) {

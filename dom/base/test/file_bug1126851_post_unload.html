@@ -1,0 +1,5 @@
+<script>
+addEventListener('unload', () => {
+  window.opener.postMessage('unload', '*');
+});
+</script>

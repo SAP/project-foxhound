@@ -1,0 +1,15 @@
+{
+  "label": "app.gather.town",
+  "bugs": {
+    "1902527": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://app.gather.town/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

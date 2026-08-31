@@ -9,6 +9,28 @@ newtab-page-title = Xikua tsàa
 newtab-settings-button =
     .title = Sa'a nixi kunu koo pagina kitsau
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Xikua tsa'a
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } fila
+home-restore-defaults-srd =
+    .label = Nchiko tana ntsikai
+    .accesskey = N
+home-mode-choice-custom-srd =
+    .label = Nixi kunu URLs…
+home-mode-choice-blank-srd =
+    .label = Página yaa
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Páginas ntsinu
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +38,7 @@ newtab-search-box-search-button =
     .title = Nduku
     .aria-label = Nduku
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Chika'a ñaa nduku
 newtab-topsites-edit-topsites-header = Sama sitio popular
@@ -33,12 +55,6 @@ newtab-topsites-cancel-button = Kunchatu
 newtab-topsites-delete-history-button = Stoò ntii ña niya'a
 newtab-topsites-save-button = Chika vaà
 newtab-topsites-add-button = Chikaa
-
-## Top Sites - Delete history confirmation dialog.
-
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -69,12 +85,6 @@ newtab-menu-delete-history = Stoò ntii ña ntsinu
 newtab-menu-save-to-pocket = Chika va'a nu { -pocket-brand-name }
 newtab-menu-delete-pocket = Stoo ña inka nu{ -pocket-brand-name }
 newtab-menu-archive-pocket = Chika va'a nu { -pocket-brand-name }
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -136,9 +146,6 @@ newtab-section-expand-section-label =
 
 newtab-section-header-topsites = Sitios favoritos
 
-## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
-
-
 ## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
 
 newtab-discovery-empty-section-topstories-try-again-button = kitsà tuku
@@ -149,68 +156,3 @@ newtab-discovery-empty-section-topstories-loading = Sachuin
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
 newtab-pocket-read-more = Temas populares:
 newtab-pocket-cta-button = Nduku { -pocket-brand-name }
-
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
-## Error Fallback Content.
-## This message and suggested action link are shown in each section of UI that fails to render.
-
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

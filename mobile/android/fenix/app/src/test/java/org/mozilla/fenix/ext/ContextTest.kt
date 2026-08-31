@@ -81,13 +81,6 @@ class ContextTest {
     }
 
     @Test
-    fun `GIVEN context WHEN getting metrics controller THEN send back metrics`() {
-        every { testContext.components.analytics } returns mockk(relaxed = true)
-        val expectedMetricsValue = ApplicationProvider.getApplicationContext<FenixApplication>().components.analytics.metrics
-        assertEquals(expectedMetricsValue, testContext.metrics)
-    }
-
-    @Test
     fun `GIVEN activity context WHEN make it an activity THEN return activity`() {
         val mockActivity = mockk<Activity> {
             every { baseContext } returns null
@@ -172,7 +165,7 @@ class ContextTest {
     @Test
     fun `GIVEN context WHEN toolbar position is bottom THEN isToolbarAtBottom returns true`() {
         val settings: Settings = mockk()
-        every { testContext.settings() } returns settings
+        every { testContext.components.settings } returns settings
         every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
 
         assertTrue(testContext.isToolbarAtBottom())
@@ -181,7 +174,7 @@ class ContextTest {
     @Test
     fun `GIVEN context WHEN toolbar position is top THEN isToolbarAtBottom returns false`() {
         val settings: Settings = mockk()
-        every { testContext.settings() } returns settings
+        every { testContext.components.settings } returns settings
         every { settings.toolbarPosition } returns ToolbarPosition.TOP
 
         assertFalse(testContext.isToolbarAtBottom())

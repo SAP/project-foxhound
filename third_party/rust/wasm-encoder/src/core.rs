@@ -8,6 +8,7 @@ mod exports;
 mod functions;
 mod globals;
 mod imports;
+mod instructions;
 mod linking;
 mod memories;
 mod names;
@@ -27,6 +28,7 @@ pub use exports::*;
 pub use functions::*;
 pub use globals::*;
 pub use imports::*;
+pub use instructions::*;
 pub use linking::*;
 pub use memories::*;
 pub use names::*;
@@ -37,12 +39,14 @@ pub use tags::*;
 pub use types::*;
 
 use crate::Encode;
+use alloc::vec::Vec;
 
 pub(crate) const CORE_FUNCTION_SORT: u8 = 0x00;
 pub(crate) const CORE_TABLE_SORT: u8 = 0x01;
 pub(crate) const CORE_MEMORY_SORT: u8 = 0x02;
 pub(crate) const CORE_GLOBAL_SORT: u8 = 0x03;
 pub(crate) const CORE_TAG_SORT: u8 = 0x04;
+pub(crate) const CORE_FUNCTION_EXACT_SORT: u8 = 0x20;
 
 /// A WebAssembly module section.
 ///

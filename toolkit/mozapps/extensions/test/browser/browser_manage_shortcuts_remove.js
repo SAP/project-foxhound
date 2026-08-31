@@ -43,7 +43,8 @@ function removeButtonForInput(input) {
 
 function checkHasRemoveButton(input, expected) {
   let removeButton = removeButtonForInput(input);
-  let visibility = input.ownerGlobal.getComputedStyle(removeButton).visibility;
+  let visibility =
+    input.documentGlobal.getComputedStyle(removeButton).visibility;
   if (expected) {
     is(visibility, "visible", "Remove button should be visible");
   } else {

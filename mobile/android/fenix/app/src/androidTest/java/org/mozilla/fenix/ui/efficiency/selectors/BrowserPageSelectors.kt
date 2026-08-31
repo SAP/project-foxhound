@@ -4,6 +4,9 @@
 
 package org.mozilla.fenix.ui.efficiency.selectors
 
+import org.mozilla.fenix.R
+import org.mozilla.fenix.compose.snackbar.SNACKBAR_BUTTON_TEST_TAG
+import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
@@ -22,8 +25,24 @@ object BrowserPageSelectors {
         groups = listOf(""),
     )
 
+    val SNACKBAR_EDIT_BUTTON = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_TAG,
+        value = SNACKBAR_BUTTON_TEST_TAG,
+        description = "Snackbar Edit button",
+        groups = listOf("snackbar"),
+    )
+
+    val MAIN_MENU_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_DESCRIPTION_CONTAINS,
+        value = getStringResource(R.string.content_description_menu),
+        description = "Three Dot Menu",
+        groups = listOf("requiredForPage"),
+    )
+
     val all = listOf(
         ENGINE_VIEW,
         PAGE_CONTENT,
+        SNACKBAR_EDIT_BUTTON,
+        MAIN_MENU_BUTTON,
     )
 }

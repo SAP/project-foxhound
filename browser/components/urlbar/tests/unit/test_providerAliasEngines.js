@@ -32,7 +32,7 @@ add_task(async function basicGetAndPost() {
         makeSearchResult(context, {
           engineName: SUGGESTIONS_ENGINE_NAME,
           heuristic: true,
-          providerName: "HeuristicFallback",
+          providerName: "UrlbarProviderHeuristicFallback",
         }),
       ],
     });
@@ -46,7 +46,7 @@ add_task(async function basicGetAndPost() {
           query: "",
           alias,
           heuristic: true,
-          providerName: "AliasEngines",
+          providerName: "UrlbarProviderAliasEngines",
         }),
       ],
     });
@@ -60,7 +60,7 @@ add_task(async function basicGetAndPost() {
           query: "fire",
           alias,
           heuristic: true,
-          providerName: "AliasEngines",
+          providerName: "UrlbarProviderAliasEngines",
         }),
       ],
     });
@@ -74,7 +74,7 @@ add_task(async function basicGetAndPost() {
           query: "mozilla",
           alias,
           heuristic: true,
-          providerName: "AliasEngines",
+          providerName: "UrlbarProviderAliasEngines",
         }),
       ],
     });
@@ -88,7 +88,7 @@ add_task(async function basicGetAndPost() {
           query: "MoZiLlA",
           alias,
           heuristic: true,
-          providerName: "AliasEngines",
+          providerName: "UrlbarProviderAliasEngines",
         }),
       ],
     });
@@ -104,7 +104,7 @@ add_task(async function basicGetAndPost() {
           query: "mozzarella mozilla",
           alias,
           heuristic: true,
-          providerName: "AliasEngines",
+          providerName: "UrlbarProviderAliasEngines",
         }),
       ],
     });
@@ -120,7 +120,7 @@ add_task(async function basicGetAndPost() {
           query: "kitten?",
           alias,
           heuristic: true,
-          providerName: "AliasEngines",
+          providerName: "UrlbarProviderAliasEngines",
         }),
       ],
     });
@@ -136,7 +136,7 @@ add_task(async function basicGetAndPost() {
           query: "kitten ?",
           alias,
           heuristic: true,
-          providerName: "AliasEngines",
+          providerName: "UrlbarProviderAliasEngines",
         }),
       ],
     });

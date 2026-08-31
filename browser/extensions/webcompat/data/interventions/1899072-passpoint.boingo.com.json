@@ -1,0 +1,19 @@
+{
+  "label": "passpoint.boingo.com",
+  "bugs": {
+    "1899072": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://passpoint.boingo.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum", "mimic_Android_Hotspot2_device"]
+    },
+    {
+      "platforms": ["linux", "mac"],
+      "ua_string": ["add_Safari"]
+    }
+  ]
+}

@@ -4,6 +4,7 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 const TEST_ORIGIN = "https://example.com";
+const QWAC_1_ORIGIN = "https://1-qwac.example.com";
 // eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const TEST_HTTP_ORIGIN = "http://example.com";
 const TEST_SUB_ORIGIN = "https://test1.example.com";
@@ -16,8 +17,17 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
   "https://example.com"
 );
 
-// Test opening the correct certificate information when clicking "Show certificate".
-add_task(async function test_ShowCertificate() {
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["security.qwacs.enabled", true],
+      ["security.qwacs.enable_test_trust_anchors", true],
+    ],
+  });
+});
+
+// Test opening the correct certificate information when clicking "View Certificate".
+add_task(async function test_ViewCertificate() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_ORIGIN);
   let tab2 = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -46,6 +56,11 @@ add_task(async function test_ShowCertificate() {
       () => BrowserTestUtils.isVisible(viewCertButton),
       "view cert button should be visible."
     );
+    let viewQWACButton = pageInfoDoc.getElementById("security-view-qwac");
+    ok(
+      !BrowserTestUtils.isVisible(viewQWACButton),
+      "view QWAC button should not be visible."
+    );
     viewCertButton.click();
     let browser = await loadedBrowser;
 
@@ -62,9 +77,9 @@ add_task(async function test_ShowCertificate() {
     });
 
     if (newWindow) {
-      await BrowserTestUtils.closeWindow(browser.ownerGlobal);
+      await BrowserTestUtils.closeWindow(browser.documentGlobal);
     } else {
-      browser.ownerGlobal.gBrowser.removeCurrentTab(); // closes about:certificate
+      browser.documentGlobal.gBrowser.removeCurrentTab(); // closes about:certificate
     }
   }
 
@@ -82,6 +97,56 @@ add_task(async function test_ShowCertificate() {
   pageInfo.close();
   BrowserTestUtils.removeTab(tab1);
   BrowserTestUtils.removeTab(tab2);
+});
+
+// Test opening the correct certificate information when clicking "View Qualified Certificate".
+add_task(async function test_ViewQWAC() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    QWAC_1_ORIGIN
+  );
+  let pageInfo = BrowserCommands.pageInfo(QWAC_1_ORIGIN, "securityTab");
+  await BrowserTestUtils.waitForEvent(pageInfo, "load");
+  let pageInfoDoc = pageInfo.document;
+  let securityTab = pageInfoDoc.getElementById("securityTab");
+  await TestUtils.waitForCondition(
+    () => BrowserTestUtils.isVisible(securityTab),
+    "Security tab should be visible."
+  );
+
+  async function openAboutCertificate() {
+    let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
+    let viewQWACButton = pageInfoDoc.getElementById("security-view-qwac");
+    await TestUtils.waitForCondition(
+      () => BrowserTestUtils.isVisible(viewQWACButton),
+      "view QWAC button should be visible."
+    );
+    viewQWACButton.click();
+    let aboutCertificateTab = await tabPromise;
+
+    await SpecialPowers.spawn(
+      aboutCertificateTab.linkedBrowser,
+      [],
+      async function () {
+        let certificateSection = await ContentTaskUtils.waitForCondition(() => {
+          return content.document.querySelector("certificate-section");
+        }, "Certificate section found");
+
+        let commonName = certificateSection.shadowRoot
+          .querySelector(".subject-name")
+          .shadowRoot.querySelector(".common-name")
+          .shadowRoot.querySelector(".info").textContent;
+        is(commonName, "1-QWAC", "Should have the same common name.");
+      }
+    );
+
+    BrowserTestUtils.removeTab(aboutCertificateTab);
+  }
+
+  await openAboutCertificate();
+
+  pageInfo.close();
+  BrowserTestUtils.removeTab(tab);
 });
 
 // Test displaying website identity information when loading images.
@@ -366,6 +431,70 @@ add_task(async function test_Cookies() {
 
     pageInfo.close();
   });
+});
+
+// Test that the saved passwords label shows "Yes" when a login exists and "No" otherwise.
+add_task(async function test_SavedPasswords() {
+  const nsLoginInfo = new Components.Constructor(
+    "@mozilla.org/login-manager/loginInfo;1",
+    Ci.nsILoginInfo,
+    "init"
+  );
+  const login = new nsLoginInfo(
+    "https://example.com",
+    "https://example.com",
+    null,
+    "testuser",
+    "testpass",
+    "username",
+    "password"
+  );
+
+  await BrowserTestUtils.withNewTab(TEST_ORIGIN, async function () {
+    let pageInfo = BrowserCommands.pageInfo(TEST_ORIGIN, "securityTab");
+    await BrowserTestUtils.waitForEvent(pageInfo, "load");
+    let pageInfoDoc = pageInfo.document;
+    await TestUtils.waitForCondition(
+      () =>
+        BrowserTestUtils.isVisible(pageInfoDoc.getElementById("securityTab")),
+      "Security tab should be visible."
+    );
+
+    let passwordsLabel = pageInfoDoc.getElementById(
+      "security-privacy-passwords-value"
+    );
+    await TestUtils.waitForCondition(
+      () => passwordsLabel.textContent == "No",
+      `Passwords label should be "No", got "${passwordsLabel.textContent}"`
+    );
+    pageInfo.close();
+  });
+
+  await Services.logins.addLoginAsync(login);
+
+  try {
+    await BrowserTestUtils.withNewTab(TEST_ORIGIN, async function () {
+      let pageInfo = BrowserCommands.pageInfo(TEST_ORIGIN, "securityTab");
+      await BrowserTestUtils.waitForEvent(pageInfo, "load");
+      let pageInfoDoc = pageInfo.document;
+      await TestUtils.waitForCondition(
+        () =>
+          BrowserTestUtils.isVisible(pageInfoDoc.getElementById("securityTab")),
+        "Security tab should be visible."
+      );
+
+      let passwordsLabel = pageInfoDoc.getElementById(
+        "security-privacy-passwords-value"
+      );
+      await TestUtils.waitForCondition(
+        () => passwordsLabel.textContent == "Yes",
+        `Passwords label should be "Yes", got "${passwordsLabel.textContent}"`
+      );
+      pageInfo.close();
+    });
+  } finally {
+    await Services.logins.removeLoginAsync(login);
+  }
 });
 
 // Clean up in case we missed anything...

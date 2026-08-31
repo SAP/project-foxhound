@@ -5,8 +5,8 @@ Formatting C++ Code With clang-format
 Mozilla uses the Google coding style for whitespace, which is enforced
 using `clang-format <https://clang.llvm.org/docs/ClangFormat.html>`__. A
 specific version of the binary will be installed when
-``./mach clang-format`` or ``./mach bootstrap`` are run. We build our
-own binaries and update them as needed.
+``./mach bootstrap`` is run. We build our own binaries and update them
+as needed.
 
 Options are explicitly defined `in clang-format
 itself <https://github.com/llvm-mirror/clang/blob/e8a55f98df6bda77ee2eaa7f7247bd655f79ae0e/lib/Format/Format.cpp#L856>`__.
@@ -17,13 +17,15 @@ mozilla-provided binaries.
 Manual formatting
 -----------------
 
-We provide a mach subcommand for running clang-format from the
-command-line. This wrapper handles ensuring the correct version of
-clang-format is installed and run.
+We provide mach subcommands for running `clang-format`_ from the
+command-line. These wrappers handle ensuring the correct version of
+`clang-format`_ is installed and run.
 
-If clang-format isn’t installed, the binaries will be automatically
+If `clang-format`_ isn't installed, the binaries will be automatically
 downloaded from taskcluster and installed into ~/.mozbuild. We build our
-own clang-format binaries.
+own `clang-format`_ binaries.
+
+.. _clang-format: https://clang.llvm.org/docs/ClangFormat.html
 
 
 Formatting local changes
@@ -31,11 +33,18 @@ Formatting local changes
 
 ::
 
-   $ ./mach clang-format
+   $ ./mach lint -l clang-format
 
-When run without arguments, it will run on a local diff. This could miss
-some reformatting (for example, when blocks are touched).
-(`searchfox <https://searchfox.org/mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0/python/mozbuild/mozbuild/code-analysis/mach_commands.py#1620>`__)
+When run without path arguments, it will lint the files you have
+modified.
+
+To automatically fix formatting issues::
+
+   $ ./mach format -l clang-format
+
+Or equivalently::
+
+   $ ./mach lint -l clang-format --fix
 
 
 Formatting specific paths
@@ -43,35 +52,10 @@ Formatting specific paths
 
 ::
 
-   $ ./mach clang-format -p <path>     # Format <path> in-place
-   $ ./mach clang-format -p <path> -s  # Show changes
+   $ ./mach format <path>   # Format <path> in-place, picks the right formatter
 
-The command also accepts a ``-p`` argument to reformat a specific
-directory or file, and a ``-s`` flag to show the changes instead of
-applying them to the working directory
-(`searchfox <https://searchfox.org/mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0/python/mozbuild/mozbuild/code-analysis/mach_commands.py#1633>`__)
-
-
-Formatting specific commits / revisions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-   $ ./mach clang-format -c HEAD # Format a single git commit
-   $ ./mach clang-format -c HEAD~~..HEAD # Format a range of git commits
-
-The command accepts a ``-c`` argument that takes a revision number or
-commit range, and will format the lines modified by those commits.
-(`searchfox <https://searchfox.org/mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0/python/mozbuild/mozbuild/code-analysis/mach_commands.py#1635>`__)
-
-
-Scripting Clang-Format
-~~~~~~~~~~~~~~~~~~~~~~
-
-Clang format expects that the path being passed to it is the path
-on-disk. If this is not the case, for example when formatting a
-temporary file, the "real" path must be specified. This can be done with
-the ``--assume-filename <path>`` argument.
+The command accepts paths to reformat specific directories or files,
+automatically selecting the appropriate formatter.
 
 
 Configuring the clang-format commit hook
@@ -161,7 +145,7 @@ Configuration
 ~~~~~~~~~~~~~
 
 These tools generally run clang-format themselves, and won't use
-``./mach clang-format``. The binary installed by our tooling will be
+``./mach lint``. The binary installed by our tooling will be
 located at ``~/.mozbuild/clang-tools/clang-tidy/bin/clang-format``.
 
 You typically shouldn't need to specify any other special configuration
@@ -175,16 +159,14 @@ wrapper).
 
 Coding style configuration is done within clang-format itself. When we
 change the configuration (incorrect configuration, new feature in clang,
-etc), we use `local
-overrides <https://searchfox.org/mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0/.clang-format>`__.
+etc), we use :searchfox:`local overrides <mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0:.clang-format>`.
 
 
 Ignored files & directories
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-We maintain a `list of ignored directories and
-files <https://searchfox.org/mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0/.clang-format-ignore>`__,
-which is used by ``./mach clang-format``. This is generally only used
+We maintain a :searchfox:`list of ignored directories and files <mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0:.clang-format-ignore>`,
+which is used by ``./mach lint -l clang-format``. This is generally only used
 for code broken by clang-format, and third-party code.
 
 
@@ -201,8 +183,7 @@ reformat:
    my code which should not be reformatted
    // clang-format on
 
-You can find an `example of code not
-formatted <https://searchfox.org/mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0/xpcom/io/nsEscape.cpp#22>`__.
+You can find an :searchfox:`example of code not formatted <mozilla-central/rev/501eb4718d73870892d28f31a99b46f4783efaa0:xpcom/io/nsEscape.cpp#22>`.
 
 
 Ignore lists
@@ -217,7 +198,7 @@ With Mercurial
 ~~~~~~~~~~~~~~
 
 | The list is stored in
-  `https://searchfox.org/mozilla-central/source/.hg-annotate-ignore-revs </en-US/docs/>`__
+  `https://searchfox.org/firefox-main/source/.hg-annotate-ignore-revs </en-US/docs/>`__
 | Commit messages should also contain the string ``# ignore-this-changeset``
 
 The syntax in this file is generated using the following syntax:
@@ -230,6 +211,6 @@ With git
 ~~~~~~~~
 
 The list is stored in
-`https://searchfox.org/mozilla-central/source/.git-blame-ignore-revs </en-US/docs/>`__
+`https://searchfox.org/firefox-main/source/.git-blame-ignore-revs </en-US/docs/>`__
 and contains git revisions for both gecko-dev and the git cinnabar
 repository.

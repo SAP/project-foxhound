@@ -27,8 +27,8 @@ INCLUDE_VERSION_REGEXES = {
     "nonbeta": r"'^\d+\.\d+(\.\d+)?$'",
     # Same as nonbeta, except for the esr suffix
     "esr": r"'^\d+\.\d+(\.\d+)?esr$'",
-    # Previous esr versions, for update testing before we update users to esr140
-    "esr140-next": r"'^(52|60|68|78|91|102|115|128)+\.\d+(\.\d+)?esr$'",
+    # Previous esr versions, for update testing before we update users to esr153
+    "esr153-next": r"'^(52|60|68|78|91|102|115|128|140)+\.\d+(\.\d+)?esr$'",
 }
 
 MAR_CHANNEL_ID_OVERRIDE_REGEXES = {
@@ -129,7 +129,7 @@ def add_command(config, tasks):
                 platform=task["attributes"]["build_platform"],
                 **{
                     "release-type": config.params["release_type"],
-                    "release-level": release_level(config.params["project"]),
+                    "release-level": release_level(config.params),
                 },
             )
             # ignore things that resolved to null
@@ -143,11 +143,15 @@ def add_command(config, tasks):
             command.append(f"--{arg}")
             command.append(task["extra"][arg])
 
-        task["run"].update(
-            {
-                "using": "mach",
-                "mach": " ".join(command),
-            }
-        )
+        task["run"].update({
+            "using": "mach",
+            "mach": " ".join(command),
+        })
+
+        if task.get("index"):
+            task["index"].setdefault(
+                "job-name",
+                f"update-verify-config-{task['name']}-{task['extra']['channel']}",
+            )
 
         yield task

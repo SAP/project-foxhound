@@ -16,7 +16,7 @@ const Frame = createFactory(
 );
 
 const l10n = new LocalizationHelper(
-  "devtools/client/locales/webconsole.properties"
+  "devtools/shared/locales/webconsole.properties"
 );
 
 class AsyncFrameClass extends Component {

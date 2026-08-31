@@ -30,20 +30,17 @@ add_task(async () => {
           key: "operation",
           label: "Operation",
           format: "string",
-          searchable: true,
         },
-        { key: "source", label: "Source", format: "string", searchable: true },
+        { key: "source", label: "Source", format: "string" },
         {
           key: "filename",
           label: "Filename",
           format: "file-path",
-          searchable: true,
         },
         {
           key: "threadId",
           label: "Thread ID",
           format: "string",
-          searchable: true,
         },
       ],
     });

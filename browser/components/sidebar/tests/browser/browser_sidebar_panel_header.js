@@ -9,7 +9,7 @@ add_task(async function test_close_panel() {
   const sidebar = document.querySelector("sidebar-main");
   ok(sidebar, "Sidebar is shown.");
   await sidebar.updateComplete;
-  await toggleSidebarPanel(win, "viewCustomizeSidebar");
+  await SidebarTestUtils.showPanel(win, "viewCustomizeSidebar");
   let customizeDocument = win.SidebarController.browser.contentDocument;
   const customizeComponent =
     customizeDocument.querySelector("sidebar-customize");

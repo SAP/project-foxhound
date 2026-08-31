@@ -15,7 +15,6 @@
 #include "mozStorageCID.h"
 #include "mozilla/Components.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Services.h"
 #include "nsCOMPtr.h"
 #include "nsDirectoryServiceUtils.h"
@@ -187,12 +186,11 @@ nsresult BounceTrackingProtectionStorage::UpdateDBEntry(
   if (MOZ_LOG_TEST(gBounceTrackingProtectionLog, LogLevel::Debug)) {
     nsAutoCString originAttributeSuffix;
     aOriginAttributes.CreateSuffix(originAttributeSuffix);
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: originAttributes: %s, siteHost=%s, entryType=%d, "
-             "timeStamp=%" PRId64,
-             __FUNCTION__, originAttributeSuffix.get(),
-             PromiseFlatCString(aSiteHost).get(),
-             static_cast<uint8_t>(aEntryType), aTimeStamp));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "{}: originAttributes: {}, siteHost={}, entryType={}, "
+                "timeStamp={}",
+                __FUNCTION__, originAttributeSuffix, aSiteHost, aEntryType,
+                aTimeStamp);
   }
 
   mPendingUpdates.AppendElement(PendingUpdate{
@@ -232,9 +230,9 @@ nsresult BounceTrackingProtectionStorage::FlushPendingUpdates() {
   if (mPendingUpdates.IsEmpty()) {
     return NS_OK;
   }
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: Flushing %zu pending updates", __FUNCTION__,
-           mPendingUpdates.Length()));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+              "{}: Flushing {} pending updates", __FUNCTION__,
+              mPendingUpdates.Length());
 
   IncrementPendingWrites();
 
@@ -363,9 +361,9 @@ nsresult BounceTrackingProtectionStorage::DeleteDBEntries(
     if (aOriginAttributes) {
       aOriginAttributes->CreateSuffix(originAttributeSuffix);
     }
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: originAttributes: %s, siteHost=%s", __FUNCTION__,
-             originAttributeSuffix.get(), PromiseFlatCString(aSiteHost).get()));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "{}: originAttributes: {}, siteHost={}", __FUNCTION__,
+                originAttributeSuffix, aSiteHost);
   }
 
   RefPtr<BounceTrackingProtectionStorage> self = this;
@@ -377,14 +375,15 @@ nsresult BounceTrackingProtectionStorage::DeleteDBEntries(
 
   IncrementPendingWrites();
   mBackgroundThread->Dispatch(
-      NS_NewRunnableFunction("BounceTrackingProtectionStorage::DeleteEntry",
-                             [self, originAttributes, siteHost]() {
-                               nsresult rv =
-                                   DeleteData(self->mDatabaseConnection,
-                                              originAttributes, siteHost);
-                               self->DecrementPendingWrites();
-                               NS_ENSURE_SUCCESS_VOID(rv);
-                             }),
+      NS_NewRunnableFunction(
+          "BounceTrackingProtectionStorage::DeleteEntry",
+          [self, originAttributes = std::move(originAttributes),
+           siteHost = std::move(siteHost)]() {
+            nsresult rv = DeleteData(self->mDatabaseConnection,
+                                     originAttributes, siteHost);
+            self->DecrementPendingWrites();
+            NS_ENSURE_SUCCESS_VOID(rv);
+          }),
       NS_DISPATCH_EVENT_MAY_BLOCK);
 
   return NS_OK;
@@ -444,7 +443,8 @@ nsresult BounceTrackingProtectionStorage::DeleteDBEntriesInTimeRange(
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction(
           "BounceTrackingProtectionStorage::DeleteDBEntriesInTimeRange",
-          [self, originAttributes, aFrom, aTo, aEntryType]() {
+          [self, originAttributes = std::move(originAttributes), aFrom, aTo,
+           aEntryType]() {
             nsresult rv =
                 DeleteDataInTimeRange(self->mDatabaseConnection,
                                       originAttributes, aFrom, aTo, aEntryType);
@@ -479,7 +479,7 @@ nsresult BounceTrackingProtectionStorage::DeleteDBEntriesByType(
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction(
           "BounceTrackingProtectionStorage::DeleteDBEntriesByType",
-          [self, originAttributes, aEntryType]() {
+          [self, originAttributes = std::move(originAttributes), aEntryType]() {
             nsresult rv = self->DeleteDataByType(self->mDatabaseConnection,
                                                  originAttributes, aEntryType);
             self->DecrementPendingWrites();
@@ -619,10 +619,10 @@ BounceTrackingProtectionStorage::Observe(nsISupports* aSubject,
       removedCount++;
     }
   }
-  MOZ_LOG(
+  MOZ_LOG_FMT(
       gBounceTrackingProtectionLog, LogLevel::Debug,
-      ("%s: last-pb-context-exited: Removed %d private browsing state globals",
-       __FUNCTION__, removedCount));
+      "{}: last-pb-context-exited: Removed {} private browsing state globals",
+      __FUNCTION__, removedCount);
 
   return NS_OK;
 }
@@ -662,7 +662,8 @@ nsresult BounceTrackingProtectionStorage::Init() {
 }
 
 nsresult BounceTrackingProtectionStorage::InitInternal() {
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug, ("%s", __FUNCTION__));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug, "{}",
+              __FUNCTION__);
 
   // Init shouldn't be called if the feature is disabled.
   NS_ENSURE_TRUE(StaticPrefs::privacy_bounceTrackingProtection_mode() !=
@@ -746,9 +747,9 @@ nsresult BounceTrackingProtectionStorage::CreateDatabaseConnection(
                                       mozIStorageService::CONNECTION_DEFAULT,
                                       getter_AddRefs(mDatabaseConnection));
   if (rv == NS_ERROR_FILE_CORRUPTED && aShouldRetry) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: Database file is corrupted, removing it and retrying",
-             __FUNCTION__));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "{}: Database file is corrupted, removing it and retrying",
+                __FUNCTION__);
 
     rv = mDatabaseFile->Remove(false);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -761,10 +762,10 @@ nsresult BounceTrackingProtectionStorage::CreateDatabaseConnection(
   mDatabaseConnection->GetConnectionReady(&ready);
   // If it fails once remove the db file and try again.
   if (!ready && aShouldRetry) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: Database connection failed (not ready after open), removing "
-             "it and retrying",
-             __FUNCTION__));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "{}: Database connection failed (not ready after open), "
+                "removing it and retrying",
+                __FUNCTION__);
 
     rv = mDatabaseFile->Remove(false);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -843,7 +844,7 @@ nsresult BounceTrackingProtectionStorage::LoadMemoryStateFromDisk() {
 
     // Collect entries to dispatch to main thread later.
     importEntries.AppendElement(
-        ImportEntry{oa, siteHost, entryType, timeStamp});
+        ImportEntry{std::move(oa), std::move(siteHost), entryType, timeStamp});
   }
 
   // We can only access the state map on the main thread.
@@ -872,13 +873,12 @@ nsresult BounceTrackingProtectionStorage::LoadMemoryStateFromDisk() {
             nsAutoCString originAttributeSuffix;
             entry.mOriginAttributes.CreateSuffix(originAttributeSuffix);
 
-            MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-                    ("%s: Failed to load entry from disk: "
-                     "originAttributeSuffix=%s, siteHost=%s, entryType=%d, "
-                     "timeStamp=%" PRId64,
-                     __FUNCTION__, originAttributeSuffix.get(),
-                     PromiseFlatCString(entry.mSiteHost).get(),
-                     static_cast<uint8_t>(entry.mEntryType), entry.mTimeStamp));
+            MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                        "{}: Failed to load entry from disk: "
+                        "originAttributeSuffix={}, siteHost={}, entryType={}, "
+                        "timeStamp={}",
+                        __FUNCTION__, originAttributeSuffix, entry.mSiteHost,
+                        entry.mEntryType, entry.mTimeStamp);
           }
         }
       }));

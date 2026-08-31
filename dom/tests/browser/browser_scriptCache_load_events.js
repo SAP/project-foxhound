@@ -31,7 +31,7 @@ async function testOrder() {
 
 add_task(async function test_withoutNavigationCache() {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", false]],
+    set: [["dom.script_loader.experimental.navigation_cache", false]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 
@@ -40,7 +40,7 @@ add_task(async function test_withoutNavigationCache() {
 
 add_task(async function test_withNavigationCache() {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

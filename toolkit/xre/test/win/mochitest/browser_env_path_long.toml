@@ -3,4 +3,6 @@
 environment = 'PATH="C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;C:/loremipsumdolorsitamet/adipiscingconsectetuerelit/;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%;%PATH%"'
 
 ["browser_env_path_long.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]

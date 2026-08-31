@@ -5,13 +5,13 @@
 import {
   ActionsProvider,
   ActionsResult,
-} from "resource:///modules/ActionsProvider.sys.mjs";
+} from "moz-src:///browser/components/urlbar/ActionsProvider.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickActionsLoaderDefault:
-    "resource:///modules/QuickActionsLoaderDefault.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+    "moz-src:///browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
 });
 
 // These prefs are relative to the `browser.urlbar` branch.
@@ -29,7 +29,7 @@ const MIN_SEARCH_PREF = "quickactions.minimumSearchString";
  *   The id of the label for the result element.
  * @property {() => boolean} [isVisible]
  *   A function to call to check if this action should be visible or not.
- * @property {() => null|{focusContent: boolean}} onPick
+ * @property {(queryContext, controller, window) => null|{focusContent: boolean}} onPick
  *   The function to call when the quick action is picked. It may return an object
  *   with property focusContent to indicate if the content area should be focussed
  *   after the pick.
@@ -45,6 +45,7 @@ class ProviderQuickActions extends ActionsProvider {
 
   isActive(queryContext) {
     return (
+      queryContext.sapName == "urlbar" &&
       lazy.UrlbarPrefs.get(ENABLED_PREF) &&
       !queryContext.searchMode &&
       queryContext.trimmedSearchString.length < 50 &&
@@ -55,7 +56,7 @@ class ProviderQuickActions extends ActionsProvider {
 
   async queryActions(queryContext) {
     let input = queryContext.trimmedLowerCaseSearchString;
-    let results = await this.getActions(input);
+    let results = await this.getActions({ input });
 
     if (lazy.UrlbarPrefs.get(MATCH_IN_PHRASE_PREF)) {
       for (let [keyword, keys] of this.#keywords) {
@@ -87,27 +88,38 @@ class ProviderQuickActions extends ActionsProvider {
           action: key,
           inputLength: queryContext.trimmedSearchString.length,
         },
-        onPick: action.onPick,
       });
     });
   }
 
-  async getActions(prefix) {
+  async getActions({ input, includesExactMatch = false }) {
     await lazy.QuickActionsLoaderDefault.ensureLoaded();
-    return this.#prefixes.get(prefix) ?? new Set();
+
+    let results = new Set(this.#prefixes.get(input));
+
+    if (includesExactMatch) {
+      let actions = this.#keywords.get(input);
+      actions?.forEach(action => results.add(action));
+    }
+
+    return results;
   }
 
   getAction(key) {
     return this.#actions.get(key);
   }
 
-  pickAction(_queryContext, _controller, element) {
+  onPick(queryContext, controller, element) {
+    this.pickAction(queryContext, controller, element);
+  }
+
+  pickAction(queryContext, controller, element) {
     let action = element.dataset.action;
     let inputLength = Math.min(element.dataset.inputLength, 10);
     Glean.urlbarQuickaction.picked[`${action}-${inputLength}`].add(1);
-    let options = this.#actions.get(action).onPick();
+    let options = this.#actions.get(action).onPick(queryContext, controller);
     if (options?.focusContent) {
-      element.ownerGlobal.gBrowser.selectedBrowser.focus();
+      controller.browserWindow.gBrowser.selectedBrowser.focus();
     }
   }
 

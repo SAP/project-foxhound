@@ -10,8 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import mozilla.components.compose.base.button.TextButton
+import mozilla.components.compose.base.utils.parseHtml
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.parseHtml
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
@@ -32,7 +32,7 @@ fun ClearSiteDataDialog(
         title = {
             Text(
                 text = stringResource(id = R.string.clear_site_data),
-                style = FirefoxTheme.typography.headline7,
+                style = FirefoxTheme.typography.headline5,
             )
         },
         text = {
@@ -44,14 +44,12 @@ fun ClearSiteDataDialog(
         confirmButton = {
             TextButton(
                 text = stringResource(id = R.string.clear_site_data_dialog_positive_button_text),
-                upperCaseText = false,
                 onClick = { onClearSiteDataClick() },
             )
         },
         dismissButton = {
             TextButton(
                 text = stringResource(id = R.string.clear_site_data_dialog_negative_button_text),
-                upperCaseText = false,
                 onClick = { onCancelClick() },
             )
         },

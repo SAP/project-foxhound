@@ -4,7 +4,7 @@
 /*---
 esid: sec-atomics.store
 description: Test Atomics.store on arrays that allow atomic operations.
-includes: [testAtomics.js, testBigIntTypedArray.js]
+includes: [testAtomics.js, testTypedArray.js]
 features: [ArrayBuffer, Atomics, BigInt, DataView, SharedArrayBuffer, Symbol, TypedArray]
 ---*/
 // Make it interesting - use non-zero byteOffsets and non-zero indexes.
@@ -50,6 +50,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
     Atomics.store(view, Idx, 37n);
     assert.sameValue(Atomics.load(view, Idx), 37n, 'Atomics.load(view, Idx) returns 37n');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

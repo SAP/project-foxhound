@@ -1,0 +1,145 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test InspectorUtils.getAnchorNamesFor</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<code>InspectorUtils.getAnchorNamesFor</code>
+
+<style>
+  #anchor {
+    anchor-name: --my-anchor, --anchor-alias;
+  }
+
+  #abs-pos-anchor {
+    anchor-name: --my-abs-pos-anchor;
+  }
+
+  #another-anchor {
+    anchor-name: --another-anchor;
+  }
+
+  .abs-pos {
+    position: absolute;
+  }
+
+  #not-abs-pos {
+    position: relative;
+  }
+
+  #with-pseudo::before {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 10px;
+    background: hotpink;
+    position: absolute;
+  }
+</style>
+
+<section>
+  <div id="anchor">⚓️</div>
+  <div id="another-anchor">⚓︎⚓︎⚓︎</div>
+  <div id="not-abs-pos" class="anchored">not abs-pos</div>
+  <div id="abs-pos" class="abs-pos">abs-pos</div>
+  <div id="abs-pos-anchor" class="abs-pos">abs-pos ⚓️</div>
+  <div id="with-pseudo">with pseudo</div>
+  <div id="host"></div>
+</section>
+
+<script>
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(`
+    div {
+      anchor-name: --my-shadow-anchor, --shadow-anchor-alias;
+    }
+
+    .shadow-abs-pos {
+      position: absolute;
+    }
+  `);
+  const shadow = host.attachShadow({ mode: "open" });
+  shadow.adoptedStyleSheets = [sheet];
+
+  const shadowAnchor = document.createElement("div");
+  shadowAnchor.append("⚓️");
+
+  const shadowAbsPos = document.createElement("div");
+  shadowAbsPos.classList.add("shadow-abs-pos")
+  shadowAbsPos.append("shadow abs-pos");
+  shadow.append(shadowAnchor, shadowAbsPos);
+</script>
+
+
+<script>
+add_task(async function() {
+  const { Assert } = SpecialPowers.ChromeUtils.importESModule(
+    "resource://testing-common/Assert.sys.mjs"
+  );
+
+  const { InspectorUtils } = SpecialPowers;
+  const test = (selector, expectedAnchorNames) => {
+    info(`InspectorUtils.getAnchorNamesFor(${selector})`);
+    const el = document.querySelector(selector);
+    const res = InspectorUtils.getAnchorNamesFor(el);
+
+    Assert.deepEqual(
+      res.sort(),
+      expectedAnchorNames.sort(),
+      `Got expected anchor names #${selector}`
+    );
+  }
+
+  info("Check element that are not absolutely positioned")
+  test("#not-abs-pos", []);
+
+  info("Check element that are absolutely positioned")
+  test("#abs-pos", [
+    "--anchor-alias",
+    "--another-anchor",
+    "--my-anchor",
+  ]);
+
+
+  info("Check pseudo elements")
+  const [beforePseudoElement] = InspectorUtils.getChildrenForNode(
+    document.getElementById("with-pseudo"),
+    true,
+    false,
+  );
+  is(
+    beforePseudoElement.implementedPseudoElement,
+    "::before",
+    "Got expected ::before pseudo element"
+  );
+  const pseudoElementRes = InspectorUtils.getAnchorNamesFor(beforePseudoElement);
+  Assert.deepEqual(
+    pseudoElementRes.sort(),
+    [
+      "--anchor-alias",
+      "--another-anchor",
+      // we're getting the abs-pos enchor since #with-pseudo is placed after #abs-pos-anchor
+      "--my-abs-pos-anchor",
+      "--my-anchor",
+    ],
+    `Got expected anchor names for ::before pseudo element`
+  );
+
+  info("Check shadow DOM elements");
+  const shadowRoot = host.shadowRoot;
+  const shadowEl = shadowRoot.querySelector(".shadow-abs-pos")
+  const shadowElementRes = InspectorUtils.getAnchorNamesFor(shadowEl);
+  Assert.deepEqual(
+    shadowElementRes.sort(),
+    [
+      "--my-shadow-anchor",
+      "--shadow-anchor-alias",
+    ],
+    `Got expected anchor names for shadow dom element`
+  );
+});
+</script>
+</body>
+</html>

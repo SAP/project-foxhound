@@ -8,12 +8,12 @@
 
 const testCases = [
   {
-    location: ["cookies", "https://sectest1.example.org"],
+    location: ["cookies", ALT_ORIGIN_SECURED],
     sidebarHidden: true,
     toggleButtonVisible: false,
   },
   {
-    location: getCookieId("cs2", ".example.org", "/"),
+    location: getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
     sidebarHidden: false,
     toggleButtonVisible: true,
   },
@@ -21,7 +21,7 @@ const testCases = [
     clickToggle: true,
   },
   {
-    location: getCookieId("cs2", ".example.org", "/"),
+    location: getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
     sidebarHidden: true,
   },
 ];
@@ -31,7 +31,7 @@ add_task(async function () {
   // We should not enforce https for tests using this page.
   await pushPref("dom.security.https_first", false);
 
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-listings.html");
 
   for (const test of testCases) {
     const { location, sidebarHidden, clickToggle, toggleButtonVisible } = test;

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,6 +29,8 @@ class WebGL2Context final : public WebGLContext {
 
   virtual bool IsWebGL2() const override { return true; }
 
+  virtual WebGL2Context* AsWebGL2() override { return this; }
+
   // -------------------------------------------------------------------------
   // Buffer objects - WebGL2ContextBuffers.cpp
 
@@ -37,7 +38,9 @@ class WebGL2Context final : public WebGLContext {
                          uint64_t readOffset, uint64_t writeOffset,
                          uint64_t size) const;
   bool GetBufferSubData(GLenum target, uint64_t srcByteOffset,
-                        const Range<uint8_t>& dest) const;
+                        const Range<uint8_t>& dest, uint64_t numRows = 0,
+                        uint64_t rowDataWidth = 0, uint64_t srcStride = 0,
+                        uint64_t destStride = 0) const;
 
   // -------------------------------------------------------------------------
   // Framebuffer objects - WebGL2ContextFramebuffers.cpp

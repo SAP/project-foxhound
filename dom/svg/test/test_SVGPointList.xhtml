@@ -5,7 +5,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=629200
 <head>
   <title>Tests specific to SVGPointList</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="MutationEventChecker.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -38,30 +37,21 @@ function run_tests() {
   is(points.numberOfItems, 2, "Checking numberOfItems");
 
   // Test mutation events
-  // --- Initialization
-  var eventChecker = new MutationEventChecker;
-  eventChecker.watchAttr(polyline, "points");
   // -- Actual changes
-  eventChecker.expect("modify modify");
   points[0].x = 40;
   polyline.setAttribute("points", "30,375 150,380");
   // -- Redundant changes
-  eventChecker.expect("");
   points[0].x = 30;
   points[1].y = 380;
   polyline.setAttribute("points", "30,375 150,380");
   // -- Invalid attribute
-  eventChecker.expect("modify");
   polyline.setAttribute("points", ",30,375");
   is(points.numberOfItems, 0, "Checking that parsing stops at invalid token");
   // -- Attribute removal
-  eventChecker.expect("remove");
   polyline.removeAttribute("points");
   // -- Non-existent attribute removal
-  eventChecker.expect("");
   polyline.removeAttribute("points");
   polyline.removeAttributeNS(null, "points");
-  eventChecker.finish();
 
   // Test that the addition of an owned SVGPoint to an SVGPointList creates a
   // copy of the SVGPoint
@@ -121,7 +111,8 @@ function run_tests() {
 }
 
 window.addEventListener("load",
-  () => SpecialPowers.pushPrefEnv({"set": [["dom.mutation_events.enabled", true]]}, run_tests));
+  () => SimpleTest.executeSoon(run_tests)
+);
 
 ]]>
 </script>

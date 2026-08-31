@@ -107,5 +107,4 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
   }
 }
 
-exports.WebConsoleFront = WebConsoleFront;
 registerFront(WebConsoleFront);

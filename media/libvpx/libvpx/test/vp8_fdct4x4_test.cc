@@ -25,7 +25,7 @@
 
 namespace {
 
-typedef void (*FdctFunc)(int16_t *a, int16_t *b, int a_stride);
+using FdctFunc = void (*)(int16_t *a, int16_t *b, int a_stride);
 
 const int cospi8sqrt2minus1 = 20091;
 const int sinpi8sqrt2 = 35468;
@@ -190,10 +190,10 @@ INSTANTIATE_TEST_SUITE_P(NEON, FdctTest,
                          ::testing::Values(vp8_short_fdct4x4_neon));
 #endif  // HAVE_NEON
 
-#if HAVE_SSE2
+#if HAVE_SSE2 && HAVE_X86_ASM
 INSTANTIATE_TEST_SUITE_P(SSE2, FdctTest,
                          ::testing::Values(vp8_short_fdct4x4_sse2));
-#endif  // HAVE_SSE2
+#endif  // HAVE_SSE2 && HAVE_X86_ASM
 
 #if HAVE_MSA
 INSTANTIATE_TEST_SUITE_P(MSA, FdctTest,

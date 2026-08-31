@@ -5,24 +5,20 @@
 let { ResetProfile } = ChromeUtils.importESModule(
   "resource://gre/modules/ResetProfile.sys.mjs"
 );
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/profiles/tests/browser/head.js",
+  this
+);
 
 // For this test to work properly, this profile actually needs to be
-// "reset-able", which requires that it be recognized by the profile service
+// "reset-able", which requires that it be recognized by the toolkit profile
+// service or the SelectableProfileService.
 add_setup(async function () {
-  let profileDirectory = Services.dirsvc.get("ProfD", Ci.nsIFile);
-  let profileName = profileDirectory.leafName;
-  let profileService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
-    Ci.nsIToolkitProfileService
+  await initGroupDatabase();
+  Assert.ok(
+    SelectableProfileService.currentProfile,
+    "Should have a profile now"
   );
-  let createdProfile = profileService.createProfile(
-    profileDirectory,
-    profileName
-  );
-  profileService.flush();
-  registerCleanupFunction(async function cleanup() {
-    // Pass false to remove it from the profile service without deleting files.
-    createdProfile.remove(false);
-  });
 });
 
 async function test_reset_disabled({ disabled }) {

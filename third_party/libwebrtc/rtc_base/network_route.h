@@ -23,12 +23,12 @@
 // the media code can rely on and the network code can implement, and both can
 // depend on that, but not depend on each other. Then, move this file to that
 // directory.
-namespace rtc {
+namespace webrtc {
 
 class RouteEndpoint {
  public:
   RouteEndpoint() {}  // Used by tests.
-  RouteEndpoint(webrtc::AdapterType adapter_type,
+  RouteEndpoint(AdapterType adapter_type,
                 uint16_t adapter_id,
                 uint16_t network_id,
                 bool uses_turn)
@@ -42,7 +42,7 @@ class RouteEndpoint {
 
   // Used by tests.
   static RouteEndpoint CreateWithNetworkId(uint16_t network_id) {
-    return RouteEndpoint(webrtc::ADAPTER_TYPE_UNKNOWN,
+    return RouteEndpoint(ADAPTER_TYPE_UNKNOWN,
                          /* adapter_id = */ 0, network_id,
                          /* uses_turn = */ false);
   }
@@ -50,7 +50,7 @@ class RouteEndpoint {
     return RouteEndpoint(adapter_type_, adapter_id_, network_id_, uses_turn);
   }
 
-  webrtc::AdapterType adapter_type() const { return adapter_type_; }
+  AdapterType adapter_type() const { return adapter_type_; }
   uint16_t adapter_id() const { return adapter_id_; }
   uint16_t network_id() const { return network_id_; }
   bool uses_turn() const { return uses_turn_; }
@@ -58,7 +58,7 @@ class RouteEndpoint {
   bool operator==(const RouteEndpoint& other) const;
 
  private:
-  webrtc::AdapterType adapter_type_ = webrtc::ADAPTER_TYPE_UNKNOWN;
+  AdapterType adapter_type_ = ADAPTER_TYPE_UNKNOWN;
   uint16_t adapter_id_ = 0;
   uint16_t network_id_ = 0;
   bool uses_turn_ = false;
@@ -75,13 +75,13 @@ struct NetworkRoute {
   int packet_overhead = 0;
 
   RTC_NO_INLINE inline std::string DebugString() const {
-    webrtc::StringBuilder oss;
+    StringBuilder oss;
     oss << "[ connected: " << connected << " local: [ " << local.adapter_id()
         << "/" << local.network_id() << " "
-        << webrtc::AdapterTypeToString(local.adapter_type())
+        << AdapterTypeToString(local.adapter_type())
         << " turn: " << local.uses_turn() << " ] remote: [ "
         << remote.adapter_id() << "/" << remote.network_id() << " "
-        << webrtc::AdapterTypeToString(remote.adapter_type())
+        << AdapterTypeToString(remote.adapter_type())
         << " turn: " << remote.uses_turn()
         << " ] packet_overhead_bytes: " << packet_overhead << " ]";
     return oss.Release();
@@ -91,6 +91,7 @@ struct NetworkRoute {
   bool operator!=(const NetworkRoute& other) { return !operator==(other); }
 };
 
-}  // namespace rtc
+}  //  namespace webrtc
+
 
 #endif  // RTC_BASE_NETWORK_ROUTE_H_

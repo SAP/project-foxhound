@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,8 +43,10 @@ enum class CollectChildrenOption;              // HTMLEditUtils.h
 enum class EditAction;                         // mozilla/EditAction.h
 enum class EditorCommandParamType : uint16_t;  // mozilla/EditorCommands.h
 enum class EditSubAction : int32_t;            // mozilla/EditAction.h
+enum class PaddingForEmptyBlock;               // EditorLineBreak.h
 enum class ParagraphSeparator;                 // mozilla/HTMLEditor.h
 enum class SpecifiedStyle : uint8_t;           // mozilla/PendingStyles.h
+enum class StopTracking : bool;                // mozilla/SelectionState.h
 enum class SuggestCaret;                       // EditorUtils.h
 enum class WithTransaction;                    // HTMLEditHelpers.h
 
@@ -93,6 +94,7 @@ class TextEditor;                  // mozilla/TextEditor.h
 
 class AutoClonedRangeArray;               // AutoClonedRangeArray.h
 class AutoClonedSelectionRangeArray;      // AutoClonedRangeArray.h
+class AutoDOMAPIWrapperBase;              // EditorDOMAPIWrapper.h
 class AutoSelectionRestorer;              // AutoSelectionRestorer.h
 class AutoSelectionRangeArray;            // EditorUtils.h
 class CaretPoint;                         // EditorUtils.h
@@ -123,6 +125,8 @@ class JoinNodesResult;                    // HTMLEditHelpers.h
 class JoinNodesTransaction;               // JoinNodesTransaction.h
 class MoveNodeResult;                     // HTMLEditHelpers.h
 class MoveNodeTransaction;                // MoveNodeTransaction.h
+class MoveNodeTransactionBase;            // MoveNodeTransaction.h
+class MoveSiblingsTransaction;            // MoveNodeTransaction.h
 class PlaceholderTransaction;             // PlaceholderTransaction.h
 class ReplaceTextInTextNodeTransaction;   // ReplaceTextTransaction.h
 class ReplaceTextTransaction;             // ReplaceTextTransaction.h

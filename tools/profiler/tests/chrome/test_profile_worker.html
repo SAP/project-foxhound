@@ -26,34 +26,15 @@ const settings = {
   threads: ["GeckoMain", "Compositor", "Worker"], // most common combination
 };
 
-const workerCode = `
-  console.log('hello world');
-  setTimeout(() => postMessage('message from worker'), 50);
-`;
-
-function startWorker() {
-  // We use a Blob for the worker content to avoid an external JS file, and data
-  // URLs seem to be blocked in a chrome environment.
-  const workerContent = new Blob(
-    [ workerCode ],
-    { type: "application/javascript" }
-  );
-  const blobURL = URL.createObjectURL(workerContent);
-
+function workload() {
   // We start a worker and then terminate it right away to trigger our bug.
   info("Starting the worker...");
-  const myWorker = new Worker(blobURL);
-  return { worker: myWorker, url: blobURL };
-}
-
-function workload() {
-  const { worker, url } = startWorker();
+  const worker = new Worker("chrome://mochitests/content/chrome/tools/profiler/tests/chrome/file_worker.js");
 
   return new Promise(resolve => {
     worker.onmessage = () => {
       info("Got a message, terminating the worker.");
       worker.terminate();
-      URL.revokeObjectURL(url);
       resolve();
     };
   });

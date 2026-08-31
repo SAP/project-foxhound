@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FeaturePolicy.h"
+
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Feature.h"
 #include "mozilla/dom/FeaturePolicyBinding.h"
 #include "mozilla/dom/FeaturePolicyParser.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -168,7 +167,7 @@ void FeaturePolicy::SetDeclaredPolicy(Document* aDocument,
   mSelfOrigin = aSelfOrigin;
   mSrcOrigin = aSrcOrigin;
 
-  Unused << NS_WARN_IF(!FeaturePolicyParser::ParseString(
+  (void)NS_WARN_IF(!FeaturePolicyParser::ParseString(
       aPolicyString, aDocument, aSelfOrigin, aSrcOrigin, mFeatures));
 
   // Only store explicitly declared allowlist

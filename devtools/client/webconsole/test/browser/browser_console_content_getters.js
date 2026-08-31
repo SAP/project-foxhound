@@ -379,7 +379,7 @@ async function testObjectGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   await expandObjectInspectorNode(node);
-  checkChildren(node, [`foo: "bar"`, `<prototype>`]);
+  checkChildren(node, [`foo: "bar"`, `<prototype>`, `<global>`]);
 }
 
 async function testArrayGetter(oi) {
@@ -453,7 +453,7 @@ async function testMapGetter(oi) {
   is(isObjectInspectorNodeExpandable(node), true, "The node can be expanded");
 
   await expandObjectInspectorNode(node);
-  checkChildren(node, [`size`, `<entries>`, `<prototype>`]);
+  checkChildren(node, [`size`, `<entries>`, `<prototype>`, `<global>`]);
 
   const entriesNode = findObjectInspectorNode(oi, "<entries>");
   await expandObjectInspectorNode(entriesNode);
@@ -494,11 +494,11 @@ async function testProxyGetter(oi) {
 
   const targetNode = findObjectInspectorNode(oi, "<target>");
   await expandObjectInspectorNode(targetNode);
-  checkChildren(targetNode, [`a: 1`, `<prototype>`]);
+  checkChildren(targetNode, [`a: 1`, `<prototype>`, `<global>`]);
 
   const handlerNode = findObjectInspectorNode(oi, "<handler>");
   await expandObjectInspectorNode(handlerNode);
-  checkChildren(handlerNode, [`get:`, `<prototype>`]);
+  checkChildren(handlerNode, [`get:`, `<prototype>`, `<global>`]);
 }
 
 async function testThrowingGetter(oi) {
@@ -534,6 +534,7 @@ async function testThrowingGetter(oi) {
     `message`,
     `stack`,
     `<prototype>`,
+    `<global>`,
   ]);
 }
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +6,29 @@
 #include "prsystem.h"
 
 #include "nsIFile.h"
-#ifdef XP_WIN
-#  include "nsILocalFileWin.h"
-#endif
 #include "nsComponentManagerUtils.h"
 #include "nsString.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsPrintfCString.h"
 
+#ifdef XP_WIN
+#  include <aclapi.h>
+#  include "mozilla/RandomNum.h"
+#  include "nsILocalFileWin.h"
+#  include "nsLocalFile.h"
+#  include "nsWindowsHelpers.h"
+#else
+#  include <limits.h>
+#endif
+
+#include <algorithm>
+
 #include "gtest/gtest.h"
 #include "mozilla/gtest/MozAssertions.h"
 
 #ifdef XP_WIN
+using namespace mozilla;
 bool gTestWithPrefix_Win = false;
 #endif
 
@@ -40,6 +49,59 @@ static void SetUseDOSDevicePathSyntax(nsIFile* aFile) {
     winFile->SetUseDOSDevicePathSyntax(true);
   }
 }
+
+static auto GetSecurityInfoStructured(nsIFile* aFile) {
+  nsAutoString pathStr;
+  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(aFile->GetTarget(pathStr)));
+
+  PACL pDacl = nullptr;
+  AutoFreeSecurityDescriptor secDesc;
+  DWORD errCode = ::GetNamedSecurityInfoW(
+      pathStr.getW(), SE_FILE_OBJECT,
+      DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION |
+          GROUP_SECURITY_INFORMATION,
+      nullptr, nullptr, &pDacl, nullptr, getter_Transfers(secDesc));
+  MOZ_RELEASE_ASSERT(errCode == ERROR_SUCCESS && pDacl);
+
+  return std::make_tuple(std::move(pathStr), WrapNotNull(pDacl),
+                         std::move(secDesc));
+}
+
+// SECURITY_SID_SIZE() is not defined in mingw headers
+#  if !defined(__MINGW32__)
+static void AddAcesForRandomSidToDir(nsIFile* aDir) {
+  auto [dirPath, pDirDacl, secDesc] = GetSecurityInfoStructured(aDir);
+
+  constexpr BYTE kSubAuthorityCount = 4;
+  BYTE randomSidBuffer[SECURITY_SID_SIZE(4)];
+  ASSERT_TRUE(
+      GenerateRandomBytesFromOS(randomSidBuffer, sizeof(randomSidBuffer)));
+  auto* randomSid = reinterpret_cast<SID*>(randomSidBuffer);
+  randomSid->Revision = SID_REVISION;
+  randomSid->SubAuthorityCount = kSubAuthorityCount;
+  randomSid->IdentifierAuthority = SECURITY_NULL_SID_AUTHORITY;
+  ASSERT_TRUE(::IsValidSid(randomSid));
+
+  EXPLICIT_ACCESS_W newAccess[2];
+  newAccess[0].grfAccessMode = GRANT_ACCESS;
+  newAccess[0].grfAccessPermissions = GENERIC_READ;
+  newAccess[0].grfInheritance = SUB_OBJECTS_ONLY_INHERIT;
+  ::BuildTrusteeWithSidW(&newAccess[0].Trustee, randomSid);
+  newAccess[1].grfAccessMode = DENY_ACCESS;
+  newAccess[1].grfAccessPermissions = GENERIC_WRITE;
+  newAccess[1].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+  ::BuildTrusteeWithSidW(&newAccess[1].Trustee, randomSid);
+  UniquePtr<ACL, LocalFreeDeleter> newDacl;
+  ASSERT_EQ(::SetEntriesInAclW(std::size(newAccess), newAccess, pDirDacl,
+                               getter_Transfers(newDacl)),
+            (ULONG)ERROR_SUCCESS);
+
+  ASSERT_EQ(::SetNamedSecurityInfoW(dirPath.get(), SE_FILE_OBJECT,
+                                    DACL_SECURITY_INFORMATION, nullptr, nullptr,
+                                    newDacl.get(), nullptr),
+            (ULONG)ERROR_SUCCESS);
+}
+#  endif
 #endif
 
 static already_AddRefed<nsIFile> NewFile(nsIFile* aBase) {
@@ -89,7 +151,7 @@ static bool TestInvalidFileName(nsIFile* aBase, const char* aName) {
 // Test nsIFile::Create, verifying that the file exists and did not exist
 // before, and leaving it there for future tests
 static bool TestCreate(nsIFile* aBase, const char* aName, int32_t aType,
-                       int32_t aPerm) {
+                       int32_t aPerm, nsIFile** aNewFile = nullptr) {
   nsCOMPtr<nsIFile> file = NewFile(aBase);
   if (!file) return false;
 
@@ -113,6 +175,10 @@ static bool TestCreate(nsIFile* aBase, const char* aName, int32_t aType,
   EXPECT_TRUE(exists) << "File " << name.get() << " was not created";
   if (!exists) {
     return false;
+  }
+
+  if (aNewFile) {
+    file.forget(aNewFile);
   }
 
   return true;
@@ -283,6 +349,19 @@ static bool TestMove(nsIFile* aBase, nsIFile* aDestDir, const char* aName,
   if (!exists) {
     return false;
   }
+
+#ifdef XP_WIN
+  // Ensure ACE inheritance is correct.
+  auto [childPathStr, childDacl, childSecDesc] =
+      GetSecurityInfoStructured(file);
+  EXPECT_FALSE(childSecDesc->Control & SE_DACL_PROTECTED)
+      << "SE_DACL_PROTECTED bit should not be set on the security descriptor";
+  bool isDir = false;
+  EXPECT_NS_SUCCEEDED(file->IsDirectory(&isDir));
+  EXPECT_TRUE(nsLocalFile::ChildAclMatchesAclInheritedFromParent(
+      childDacl, isDir, childSecDesc, aDestDir))
+      << newName.get() << " ACL, does not match destination dir";
+#endif
 
   return true;
 }
@@ -532,6 +611,37 @@ static void SetupAndTestFunctions(const nsAString& aDirName,
   // Test moving across directories and renaming at the same time
   ASSERT_TRUE(TestMove(subdir, base, "file2.txt", "file4.txt"));
 
+  // SECURITY_SID_SIZE() is not defined in mingw headers
+#if defined(XP_WIN) && !defined(__MINGW32__)
+  // On Windows if we move a file or directory to a directory on the same volume
+  // where the inherited ACLs differ between the source and target dirs, then we
+  // retain the ACEs from the original dir. Add inherited ACEs for random SIDs
+  // to subdir to ensure we reset the inheritance to just the target directory.
+  AddAcesForRandomSidToDir(subdir);
+  ASSERT_TRUE(TestCreate(subdir, "file8.txt", nsIFile::NORMAL_FILE_TYPE, 0600));
+  ASSERT_TRUE(TestMove(subdir, base, "file8.txt", "file8.txt"));
+
+  // Test that dir moves also get the ACL reset when required.
+  ASSERT_TRUE(TestCreate(subdir, "subdir2", nsIFile::DIRECTORY_TYPE, 0700));
+  ASSERT_TRUE(TestMove(subdir, base, "subdir2", "subdir2"));
+
+  // If we set the SE_DACL_PROTECTED bit on the file's security descriptor then
+  // no ACEs will be inherited in the moved file or the new ACL we create to
+  // compare it with. So we need an extra test to catch this case.
+  nsCOMPtr<nsIFile> file9;
+  ASSERT_TRUE(TestCreate(subdir, "file9.txt", nsIFile::NORMAL_FILE_TYPE, 0600,
+                         getter_AddRefs(file9)));
+  auto [file9Path, pFile9Dacl, f9sd] = GetSecurityInfoStructured(file9);
+  ASSERT_EQ(::SetNamedSecurityInfoW(
+                file9Path.get(), SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                nullptr, nullptr, pFile9Dacl.get(), nullptr),
+            (ULONG)ERROR_SUCCESS);
+  auto [f9p, f9d, file9SecDescAfter] = GetSecurityInfoStructured(file9);
+  ASSERT_TRUE(file9SecDescAfter->Control & SE_DACL_PROTECTED);
+  ASSERT_TRUE(TestMove(subdir, base, "file9.txt", "file9.txt"));
+#endif
+
   // Test copying across directories
   ASSERT_TRUE(TestCopy(base, subdir, "file4.txt", "file5.txt"));
 
@@ -613,4 +723,240 @@ TEST(TestFile, PrefixedOnWin_ComponentEndsWithPeriod)
   SetupAndTestFunctions(u"mozfiletests."_ns,
                         /* aTestCreateUnique */ true,
                         /* aTestNormalize */ false);
+}
+
+TEST(TestFile, GetRelativePath)
+{
+  nsCOMPtr<nsIFile> base;
+  ASSERT_NS_SUCCEEDED(
+      NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(base)));
+
+  nsCOMPtr<nsIFile> child;
+  ASSERT_NS_SUCCEEDED(base->Clone(getter_AddRefs(child)));
+  ASSERT_NS_SUCCEEDED(child->AppendNative("places.sqlite"_ns));
+
+  nsAutoCString result;
+
+  // Path without \\?\ prefix: child relative to base is just the filename.
+  ASSERT_NS_SUCCEEDED(child->GetRelativePath(base, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+
+#ifdef XP_WIN
+  // GetRelativePath strips the \\?\ prefix before comparing, so paths with
+  // and without the prefix must yield the same result.
+  nsCOMPtr<nsIFile> prefixedBase;
+  ASSERT_NS_SUCCEEDED(base->Clone(getter_AddRefs(prefixedBase)));
+  nsCOMPtr<nsILocalFileWin> winPrefixedBase = do_QueryInterface(prefixedBase);
+  ASSERT_TRUE(winPrefixedBase);
+  winPrefixedBase->SetUseDOSDevicePathSyntax(true);
+
+  nsCOMPtr<nsIFile> prefixedChild;
+  ASSERT_NS_SUCCEEDED(child->Clone(getter_AddRefs(prefixedChild)));
+  nsCOMPtr<nsILocalFileWin> winPrefixedChild = do_QueryInterface(prefixedChild);
+  ASSERT_TRUE(winPrefixedChild);
+  winPrefixedChild->SetUseDOSDevicePathSyntax(true);
+
+  // Both paths with \\?\ prefix.
+  ASSERT_NS_SUCCEEDED(prefixedChild->GetRelativePath(prefixedBase, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+
+  // Prefixed child, unprefixed base.
+  ASSERT_NS_SUCCEEDED(prefixedChild->GetRelativePath(base, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+
+  // Unprefixed child, prefixed base.
+  ASSERT_NS_SUCCEEDED(child->GetRelativePath(prefixedBase, result));
+  EXPECT_STREQ(result.get(), "places.sqlite");
+#endif
+}
+
+// These match the limits in nsLocalFileCommon.cpp's CreateUnique.
+static constexpr size_t kMaxUniqueFilenameLength = 250;
+#ifdef XP_WIN
+static constexpr int32_t kMaxUniquePathLength = MAX_PATH - 6;
+#else
+static constexpr int32_t kMaxUniquePathLength = PATH_MAX - 6;
+#endif
+
+TEST(TestFile, CreateUnique_TruncatesLongFilename)
+{
+  nsCOMPtr<nsIFile> base;
+  nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(base));
+  ASSERT_NS_SUCCEEDED(rv);
+
+  rv = base->AppendNative("cu_trunc_leaf_test"_ns);
+  ASSERT_NS_SUCCEEDED(rv);
+  base->Remove(true);
+  rv = base->Create(nsIFile::DIRECTORY_TYPE, 0700);
+  ASSERT_NS_SUCCEEDED(rv);
+
+  // 260-char root + ".txt" = 264-char leaf, exceeds kMaxUniqueFilenameLength.
+  // CreateUnique should truncate the root so the leaf fits.
+  {
+    nsCOMPtr<nsIFile> file = NewFile(base);
+    ASSERT_TRUE(file);
+
+    nsAutoCString name;
+    for (int i = 0; i < 260; ++i) {
+      name.Append('a');
+    }
+    name.AppendLiteral(".txt");
+
+    rv = file->AppendNative(name);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    rv = file->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    bool exists;
+    rv = file->Exists(&exists);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(exists);
+
+    nsAutoCString leafName;
+    rv = file->GetNativeLeafName(leafName);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_LE(leafName.Length(), kMaxUniqueFilenameLength);
+    EXPECT_TRUE(StringEndsWith(leafName, ".txt"_ns));
+  }
+
+  // 260-char leaf with no extension.
+  {
+    nsCOMPtr<nsIFile> file = NewFile(base);
+    ASSERT_TRUE(file);
+
+    nsAutoCString name;
+    for (int i = 0; i < 260; ++i) {
+      name.Append('b');
+    }
+
+    rv = file->AppendNative(name);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    rv = file->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    bool exists;
+    rv = file->Exists(&exists);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(exists);
+
+    nsAutoCString leafName;
+    rv = file->GetNativeLeafName(leafName);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_LE(leafName.Length(), kMaxUniqueFilenameLength);
+  }
+
+  base->Remove(true);
+}
+
+TEST(TestFile, CreateUnique_TruncatesLongPath)
+{
+  nsCOMPtr<nsIFile> base;
+  nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(base));
+  ASSERT_NS_SUCCEEDED(rv);
+
+  rv = base->AppendNative("cu_trunc_path_test"_ns);
+  ASSERT_NS_SUCCEEDED(rv);
+  base->Remove(true);
+  rv = base->Create(nsIFile::DIRECTORY_TYPE, 0700);
+  ASSERT_NS_SUCCEEDED(rv);
+  rv = base->Normalize();
+  ASSERT_NS_SUCCEEDED(rv);
+
+  // Build nested directories until the path is long enough that appending a
+  // moderate leaf name (well under kMaxUniqueFilenameLength) pushes the total
+  // past kMaxUniquePathLength.
+  const int32_t kLeafLen = 104;  // 100-char root + ".dat"
+  const int32_t kOvershoot = 50;
+
+  nsCOMPtr<nsIFile> deepDir = NewFile(base);
+  ASSERT_TRUE(deepDir);
+
+#ifdef XP_WIN
+  nsAutoString dirPath;
+  rv = deepDir->GetPath(dirPath);
+#else
+  nsAutoCString dirPath;
+  rv = deepDir->GetNativePath(dirPath);
+#endif
+  ASSERT_NS_SUCCEEDED(rv);
+
+  int32_t targetDirLen = kMaxUniquePathLength - kLeafLen - 1 + kOvershoot;
+
+  while (static_cast<int32_t>(dirPath.Length()) < targetDirLen) {
+    int32_t remaining = targetDirLen - dirPath.Length() - 1;
+    int32_t nameLen = std::min(remaining, 200);
+    if (nameLen < 1) break;
+
+    nsAutoCString dirName;
+    for (int32_t i = 0; i < nameLen; ++i) {
+      dirName.Append('d');
+    }
+
+    rv = deepDir->AppendNative(dirName);
+    ASSERT_NS_SUCCEEDED(rv);
+    rv = deepDir->Create(nsIFile::DIRECTORY_TYPE, 0700);
+    ASSERT_NS_SUCCEEDED(rv);
+
+#ifdef XP_WIN
+    rv = deepDir->GetPath(dirPath);
+#else
+    rv = deepDir->GetNativePath(dirPath);
+#endif
+    ASSERT_NS_SUCCEEDED(rv);
+  }
+
+  // The leaf name is short enough for kMaxUniqueFilenameLength, but the total
+  // path would exceed kMaxUniquePathLength.
+  {
+    nsCOMPtr<nsIFile> file = NewFile(deepDir);
+    ASSERT_TRUE(file);
+
+    nsAutoCString name;
+    for (int i = 0; i < 100; ++i) {
+      name.Append('f');
+    }
+    name.AppendLiteral(".dat");
+
+    rv = file->AppendNative(name);
+    ASSERT_NS_SUCCEEDED(rv);
+
+#ifdef XP_WIN
+    nsAutoString pathBefore;
+    rv = file->GetPath(pathBefore);
+#else
+    nsAutoCString pathBefore;
+    rv = file->GetNativePath(pathBefore);
+#endif
+    ASSERT_NS_SUCCEEDED(rv);
+    ASSERT_GT(static_cast<int32_t>(pathBefore.Length()), kMaxUniquePathLength)
+        << "Test setup: path should exceed the limit before CreateUnique";
+
+    rv = file->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    bool exists;
+    rv = file->Exists(&exists);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(exists);
+
+#ifdef XP_WIN
+    nsAutoString pathAfter;
+    rv = file->GetPath(pathAfter);
+#else
+    nsAutoCString pathAfter;
+    rv = file->GetNativePath(pathAfter);
+#endif
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_LE(static_cast<int32_t>(pathAfter.Length()), kMaxUniquePathLength);
+
+    nsAutoCString leafName;
+    rv = file->GetNativeLeafName(leafName);
+    ASSERT_NS_SUCCEEDED(rv);
+    EXPECT_TRUE(StringEndsWith(leafName, ".dat"_ns));
+    EXPECT_LT(leafName.Length(), static_cast<size_t>(kLeafLen));
+  }
+
+  base->Remove(true);
 }

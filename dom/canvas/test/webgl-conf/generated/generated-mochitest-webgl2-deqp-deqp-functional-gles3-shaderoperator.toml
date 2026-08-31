@@ -1,0 +1,96 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__shaderoperator__angle_and_trigonometry_00.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__angle_and_trigonometry_01.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__angle_and_trigonometry_02.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__angle_and_trigonometry_03.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_00.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_01.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_02.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_03.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_04.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_05.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_06.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_07.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_08.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_09.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_10.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_11.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_12.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_13.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_14.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__binary_operator_15.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__bool_compare.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__common_functions_00.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__common_functions_01.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__common_functions_02.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__common_functions_03.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__common_functions_04.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__common_functions_05.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__common_functions_06.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__exponential.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__float_compare.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__geometric.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__int_compare.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__selection.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__sequence.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__unary_operator_00.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__unary_operator_01.html"]
+
+["test_2_deqp__functional__gles3__shaderoperator__unary_operator_02.html"]

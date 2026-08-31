@@ -7,25 +7,21 @@
 #include "DecoderDoctorDiagnostics.h"
 #include "MediaKeySystemAccessPermissionRequest.h"
 #include "VideoUtils.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/KeySystemNames.h"
 #include "mozilla/DetailedPromise.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/Unused.h"
-#ifdef XP_WIN
-#  include "mozilla/WindowsVersion.h"
-#endif
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/KeySystemNames.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
-#include "nsTHashMap.h"
 #include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
+#include "nsTHashMap.h"
 
 namespace mozilla::dom {
 
@@ -136,7 +132,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(MediaKeySystemAccessManager)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 #define MKSAM_LOG_DEBUG(msg, ...) \
-  EME_LOG("MediaKeySystemAccessManager::%s " msg, __func__, ##__VA_ARGS__)
+  EME_LOG("MediaKeySystemAccessManager::{} " msg, __func__, ##__VA_ARGS__)
 
 MediaKeySystemAccessManager::MediaKeySystemAccessManager(
     nsPIDOMWindowInner* aWindow)
@@ -173,7 +169,7 @@ void MediaKeySystemAccessManager::CheckDoesWindowSupportProtectedMedia(
     UniquePtr<PendingRequest> aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRequest);
-  MKSAM_LOG_DEBUG("aRequest->mKeySystem=%s",
+  MKSAM_LOG_DEBUG("aRequest->mKeySystem={}",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
 
   // In Windows OS, some Firefox windows that host content cannot support
@@ -215,7 +211,7 @@ void MediaKeySystemAccessManager::CheckDoesWindowSupportProtectedMedia(
               "MediaKeySystemAccessManager::DoesWindowSupportProtectedMedia-"
               "ResolveOrRejectLambda Failed to make IPC call to "
               "IsWindowSupportingProtectedMedia: "
-              "reason=%d",
+              "reason={}",
               static_cast<int>(value.RejectValue()));
           // Treat as failure.
           self->OnDoesWindowSupportProtectedMedia(false, std::move(request));
@@ -235,7 +231,7 @@ void MediaKeySystemAccessManager::OnDoesWindowSupportProtectedMedia(
     bool aIsSupportedInWindow, UniquePtr<PendingRequest> aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRequest);
-  MKSAM_LOG_DEBUG("aIsSupportedInWindow=%s aRequest->mKeySystem=%s",
+  MKSAM_LOG_DEBUG("aIsSupportedInWindow={} aRequest->mKeySystem={}",
                   aIsSupportedInWindow ? "true" : "false",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
 
@@ -257,7 +253,7 @@ void MediaKeySystemAccessManager::CheckDoesAppAllowProtectedMedia(
   // MediaKeySystemPermissionRequest.
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRequest);
-  MKSAM_LOG_DEBUG("aRequest->mKeySystem=%s",
+  MKSAM_LOG_DEBUG("aRequest->mKeySystem={}",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
 
   if (!StaticPrefs::media_eme_require_app_approval()) {
@@ -364,7 +360,7 @@ void MediaKeySystemAccessManager::OnDoesAppAllowProtectedMedia(
     bool aIsAllowed, UniquePtr<PendingRequest> aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRequest);
-  MKSAM_LOG_DEBUG("aIsAllowed=%s aRequest->mKeySystem=%s",
+  MKSAM_LOG_DEBUG("aIsAllowed={} aRequest->mKeySystem={}",
                   aIsAllowed ? "true" : "false",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
   if (!aIsAllowed) {
@@ -381,7 +377,7 @@ void MediaKeySystemAccessManager::RequestMediaKeySystemAccess(
     UniquePtr<PendingRequest> aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRequest);
-  MKSAM_LOG_DEBUG("aIsSupportedInWindow=%s",
+  MKSAM_LOG_DEBUG("aIsSupportedInWindow={}",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
 
   // 1. If keySystem is the empty string, return a promise rejected with a newly
@@ -451,7 +447,7 @@ void MediaKeySystemAccessManager::RequestMediaKeySystemAccess(
       NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get(),
       GetEnumString(status).get(), message.get());
   LogToBrowserConsole(NS_ConvertUTF8toUTF16(msg));
-  EME_LOG("%s", msg.get());
+  EME_LOG("{}", msg.get());
 
   // We may need to install Widevine CDM to continue.
   if (status == MediaKeySystemStatus::Cdm_not_installed &&
@@ -490,19 +486,16 @@ void MediaKeySystemAccessManager::RequestMediaKeySystemAccess(
       keySystem = NS_ConvertUTF8toUTF16(kWidevineExperimentKeySystemName);
     }
 #endif
-    auto& diagnostics = aRequest->mDiagnostics;
     if (AwaitInstall(std::move(aRequest))) {
       // Notify chrome that we're going to wait for the CDM to download/update.
-      EME_LOG("Await %s for installation",
+      EME_LOG("Await {} for installation",
               NS_ConvertUTF16toUTF8(keySystem).get());
       MediaKeySystemAccess::NotifyObservers(mWindow, keySystem, status);
     } else {
       // Failed to await the install. Log failure and give up trying to service
       // this request.
-      EME_LOG("Failed to await %s for installation",
+      EME_LOG("Failed to await {} for installation",
               NS_ConvertUTF16toUTF8(keySystem).get());
-      diagnostics.StoreMediaKeySystemAccess(mWindow->GetExtantDoc(), keySystem,
-                                            false, __func__);
     }
     return;
   }
@@ -510,7 +503,7 @@ void MediaKeySystemAccessManager::RequestMediaKeySystemAccess(
     // Failed due to user disabling something, send a notification to
     // chrome, so we can show some UI to explain how the user can rectify
     // the situation.
-    EME_LOG("Notify CDM failure for %s and reject the promise",
+    EME_LOG("Notify CDM failure for {} and reject the promise",
             NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
     MediaKeySystemAccess::NotifyObservers(mWindow, aRequest->mKeySystem,
                                           status);
@@ -566,7 +559,7 @@ void MediaKeySystemAccessManager::ProvideAccess(
   MOZ_ASSERT(
       aRequest->mSupportedConfig,
       "The request needs a supported config if we're going to provide access!");
-  MKSAM_LOG_DEBUG("aRequest->mKeySystem=%s",
+  MKSAM_LOG_DEBUG("aRequest->mKeySystem={}",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
 
   DecoderDoctorDiagnostics diagnostics;
@@ -582,13 +575,15 @@ bool MediaKeySystemAccessManager::AwaitInstall(
     UniquePtr<PendingRequest> aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRequest);
-  MKSAM_LOG_DEBUG("aRequest->mKeySystem=%s",
+  MKSAM_LOG_DEBUG("aRequest->mKeySystem={}",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
 
   if (!EnsureObserversAdded()) {
     NS_WARNING("Failed to add pref observer");
     aRequest->RejectPromiseWithNotSupportedError(nsLiteralCString(
         "Failed trying to setup CDM update: failed adding observers"));
+    aRequest->mDiagnostics.StoreMediaKeySystemAccess(
+        mWindow->GetExtantDoc(), aRequest->mKeySystem, false, __func__);
     return false;
   }
 
@@ -599,13 +594,15 @@ bool MediaKeySystemAccessManager::AwaitInstall(
     NS_WARNING("Failed to create timer to await CDM install.");
     aRequest->RejectPromiseWithNotSupportedError(nsLiteralCString(
         "Failed trying to setup CDM update: failed timer creation"));
+    aRequest->mDiagnostics.StoreMediaKeySystemAccess(
+        mWindow->GetExtantDoc(), aRequest->mKeySystem, false, __func__);
     return false;
   }
 
   MOZ_DIAGNOSTIC_ASSERT(
       aRequest->mTimer == nullptr,
       "Timer should not already be set on a request we're about to await");
-  aRequest->mTimer = timer;
+  aRequest->mTimer = std::move(timer);
 
   mPendingInstallRequests.AppendElement(std::move(aRequest));
   return true;
@@ -615,7 +612,7 @@ void MediaKeySystemAccessManager::RetryRequest(
     UniquePtr<PendingRequest> aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aRequest);
-  MKSAM_LOG_DEBUG("aRequest->mKeySystem=%s",
+  MKSAM_LOG_DEBUG("aRequest->mKeySystem={}",
                   NS_ConvertUTF16toUTF8(aRequest->mKeySystem).get());
   // Cancel and null timer if it exists.
   aRequest->CancelTimer();
@@ -628,7 +625,7 @@ nsresult MediaKeySystemAccessManager::Observe(nsISupports* aSubject,
                                               const char* aTopic,
                                               const char16_t* aData) {
   MOZ_ASSERT(NS_IsMainThread());
-  MKSAM_LOG_DEBUG("%s", aTopic);
+  MKSAM_LOG_DEBUG("{}", aTopic);
 
   if (!strcmp(aTopic, "gmp-changed")) {
     // Filter out the requests where the CDM's install-status is no longer

@@ -40,7 +40,7 @@ class Repackage(BaseScript):
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(Repackage, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         config = self.config
 
         dirs = {}
@@ -74,6 +74,7 @@ class Repackage(BaseScript):
             "deb-l10n-templates": config["deb-l10n-templates"],
             "flatpak-templates": config.get("flatpak-templates"),
             "wsx-stub": config["wsx-stub"],
+            "extensions-dir": config["extensions-dir"],
         }
         subst.update(dirs)
         if config.get("fetch-dir"):
@@ -86,18 +87,14 @@ class Repackage(BaseScript):
             command = [sys.executable, "mach", "--log-no-times", "repackage"]
             command.extend([arg.format(**subst) for arg in repack_config["args"]])
             for arg, filename in repack_config["inputs"].items():
-                command.extend(
-                    [
-                        f"--{arg}",
-                        os.path.join(dirs["abs_input_dir"], filename),
-                    ]
-                )
-            command.extend(
-                [
-                    "--output",
-                    os.path.join(dirs["abs_output_dir"], repack_config["output"]),
-                ]
-            )
+                command.extend([
+                    f"--{arg}",
+                    os.path.join(dirs["abs_input_dir"], filename),
+                ])
+            command.extend([
+                "--output",
+                os.path.join(dirs["abs_output_dir"], repack_config["output"]),
+            ])
             self.run_command(
                 command=command,
                 cwd=dirs["abs_src_dir"],
@@ -127,12 +124,10 @@ class Repackage(BaseScript):
             os.path.join(dirs["abs_src_dir"], "toolchains.json"),
         ]
         if manifest_src:
-            cmd.extend(
-                [
-                    "--tooltool-manifest",
-                    os.path.join(dirs["abs_src_dir"], manifest_src),
-                ]
-            )
+            cmd.extend([
+                "--tooltool-manifest",
+                os.path.join(dirs["abs_src_dir"], manifest_src),
+            ])
         cache = config.get("tooltool_cache")
         if cache:
             cmd.extend(["--cache-dir", cache])

@@ -65,13 +65,14 @@ loader.lazyGetter(this, "worker", () => new lazy.DevToolsWorker(WORKER_URL));
 /**
  * Get canvas rendering context for the current target window bound by the bounds of the
  * accessible objects.
- * @param  {Object}  win
+ *
+ * @param  {object}  win
  *         Current target window.
- * @param  {Object}  bounds
+ * @param  {object}  bounds
  *         Bounds for the accessible object.
- * @param  {Object}  zoom
+ * @param  {object}  zoom
  *         Current zoom level for the window.
- * @param  {Object}  scale
+ * @param  {object}  scale
  *         Scale value to scale down the drawn image.
  * @param  {null|DOMNode} node
  *         If not null, a node that corresponds to the accessible object to be used to
@@ -152,16 +153,16 @@ function getTransformedRGBA(rgba, colorMatrix) {
  *
  * @param  {DOMNode}  node
  *         Node for which we want to get the background color data.
- * @param  {Object}  options
- *         - bounds       {Object}
+ * @param  {object}  options
+ *         - bounds       {object}
  *                        Bounds for the accessible object.
- *         - win          {Object}
+ *         - win          {object}
  *                        Target window.
  *         - size         {Number}
  *                        Font size of the selected text node
  *         - isBoldText   {Boolean}
  *                        True if selected text node is bold
- * @return {Object}
+ * @return {object}
  *         Object with one or more of the following RGBA fields: value, min, max
  */
 function getBackgroundFor(node, { win, bounds, size, isBoldText }) {
@@ -220,15 +221,15 @@ function getBackgroundFor(node, { win, bounds, size, isBoldText }) {
  *
  * @param  {DOMNode} node
  *         The node for which we want to calculate the contrast ratio.
- * @param  {Object}  options
- *         - bounds                           {Object}
+ * @param  {object}  options
+ *         - bounds                           {object}
  *                                            Bounds for the accessible object.
- *         - win                              {Object}
+ *         - win                              {object}
  *                                            Target window.
  *         - appliedColorMatrix               {Array|null}
  *                                            Simulation color matrix applied to
  *                                            to the viewport, if it exists.
- * @return {Object}
+ * @return {object}
  *         An object that may contain one or more of the following fields: error,
  *         isLargeText, value, min, max values for contrast.
  */

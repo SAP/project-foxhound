@@ -10,6 +10,10 @@
 
 #include "modules/rtp_rtcp/source/fec_private_tables_random.h"
 
+#include <cstdint>
+
+namespace webrtc {
+
 namespace {
 // clang-format off
 #define kMaskRandom1_1 \
@@ -637,7 +641,6 @@ namespace {
 // clang-format on
 }  // namespace
 
-namespace webrtc {
 namespace fec_private_tables {
 
 const uint8_t kPacketMaskRandomTbl[] = {

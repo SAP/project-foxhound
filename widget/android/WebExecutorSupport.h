@@ -1,10 +1,9 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WebExecutorSupport_h__
-#define WebExecutorSupport_h__
+#ifndef WebExecutorSupport_h_
+#define WebExecutorSupport_h_
 
 #include "mozilla/java/GeckoWebExecutorNatives.h"
 #include "mozilla/java/GeckoResultWrappers.h"
@@ -58,4 +57,4 @@ class WebExecutorSupport final
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // WebExecutorSupport_h__
+#endif  // WebExecutorSupport_h_

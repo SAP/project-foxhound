@@ -37,7 +37,7 @@ body { overflow:hidden; }
   grid-gap: 12px;
   border:5px solid;
 }
-span { grid-row:1/2; position:absolute; top:0;bottom:0;right:0;left:0;background:lime; border:1px solid black; }
+span { grid-row:1/2; position:absolute; top:0;bottom:0;right:0;left:0;background:lime; border:1px solid black; z-index: 1}
 x { display:block; height:20px; }
 
 .t { border-bottom-width:0; }
@@ -60,7 +60,7 @@ br { page-break-before:always; break-before:always; }
 <div class="columns" style="height: 64px/*fragmentainer ends in the end border*/">
 <div style="padding-top:10px; background:grey">
 <div class="grid t">
-<span style="height:48px"><x></x></span>
+<span style="height:110px"><x></x></span>
 </div>
 <div class="grid b">
 </div></div></div>
@@ -99,7 +99,7 @@ br { page-break-before:always; break-before:always; }
 <div class="columns" style="height: 40px/*fragmentainer ends in the first row*/; margin-bottom:30px">
 <div style="padding-top:10px; background:grey">
 <div class="grid t">
-<span><x></x></span>
+<span style="height:110px"><x></x></span>
 </div>
 <div class="grid b">
 </div></div></div>

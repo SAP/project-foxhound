@@ -4,17 +4,16 @@
 
 "use strict";
 
+const {
+  NodeHTTPSServer,
+  NodeHTTPSProxyServer,
+  NodeHTTP2Server,
+  NodeHTTP2ProxyServer,
+} = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
+
 /* import-globals-from head_cache.js */
 /* import-globals-from head_cookies.js */
 /* import-globals-from head_channels.js */
-/* import-globals-from head_servers.js */
-
-// We don't normally allow localhost channels to be proxied, but this
-// is easier than updating all the certs and/or domains.
-Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
-});
 
 function makeChan(uri) {
   let chan = NetUtil.newChannel({
@@ -25,13 +24,18 @@ function makeChan(uri) {
   return chan;
 }
 
+add_task(async function setup() {
+  Services.prefs.setBoolPref("network.dns.native-is-localhost", true);
+});
+
 async function test_cert_failure(server_or_proxy, server_cert) {
   let server = new server_or_proxy();
+  server._skipCert = true;
   await server.start();
   registerCleanupFunction(async () => {
     await server.stop();
   });
-  let chan = makeChan(`https://localhost:${server.port()}/test`);
+  let chan = makeChan(`https://alt1.example.com:${server.port()}/test`);
   let req = await new Promise(resolve => {
     chan.asyncOpen(new ChannelListener(resolve, null, CL_EXPECT_FAILURE));
   });
@@ -55,6 +59,7 @@ add_task(async function test_http2() {
 
 add_task(async function test_https_proxy() {
   let proxy = new NodeHTTPSProxyServer();
+  proxy._skipCert = true;
   await proxy.start();
   registerCleanupFunction(() => {
     proxy.stop();
@@ -64,6 +69,7 @@ add_task(async function test_https_proxy() {
 
 add_task(async function test_http2_proxy() {
   let proxy = new NodeHTTP2ProxyServer();
+  proxy._skipCert = true;
   await proxy.start();
   registerCleanupFunction(() => {
     proxy.stop();

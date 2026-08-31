@@ -27,10 +27,11 @@ let db;
 
 /**
  * Dispatch a RemoteSettings "sync" event.
- * @param {Object} data - The event's data payload.
- * @param {Object} [data.created] - Records that were created.
- * @param {Object} [data.updated] - Records that were updated.
- * @param {Object} [data.deleted] - Records that were removed.
+ *
+ * @param {object} data - The event's data payload.
+ * @param {object} [data.created] - Records that were created.
+ * @param {object} [data.updated] - Records that were updated.
+ * @param {object} [data.deleted] - Records that were removed.
  */
 async function remoteSettingsSync({ created, updated, deleted }) {
   await RemoteSettings(COLLECTION_NAME).emit("sync", {
@@ -44,6 +45,7 @@ async function remoteSettingsSync({ created, updated, deleted }) {
 
 /**
  * Compare two string arrays ignoring order.
+ *
  * @param {string[]} arr1 - The first array.
  * @param {string[]} arr2 - The second array.
  * @returns {boolean} - Whether the arrays match.
@@ -54,7 +56,8 @@ const strArrayMatches = (arr1, arr2) =>
 
 /**
  * Wait until the 3pcb allow-list matches the expected state.
- * @param {string[]} allowedSiteHosts - (Unordered) host list to match.
+ *
+ * @param {string[]} expected - (Unordered) host list to match.
  */
 async function waitForAllowListState(expected) {
   // Ensure the site host exception list has been imported correctly.
@@ -70,6 +73,7 @@ async function waitForAllowListState(expected) {
 
 /**
  * A helper function to create the iframe and the nested ABA iframe.
+ *
  * @param {Browser} browser The browser where the testing is performed.
  * @param {string} firstPartyURL The first party URL.
  * @param {string} thirdPartyURL The third party URL.
@@ -116,7 +120,7 @@ async function createNestedIframes(browser, firstPartyURL, thirdPartyURL) {
  *
  * @param {Browser} browser The browser where the testing is performed.
  * @param {CanonicalBrowsingContext} iframeBC The iframe browsing context.
- * @param {CanonicalBrowsingContext} ABAABC The ABA browsing context.
+ * @param {CanonicalBrowsingContext} ABABC The ABA browsing context.
  */
 async function setThirdPartyCookie(browser, iframeBC, ABABC) {
   const THIRD_PARTY_FETCH_COOKIE_URL = `${THIRD_PARTY_SITE}/${TEST_PATH}/setFetchCookie.sjs`;

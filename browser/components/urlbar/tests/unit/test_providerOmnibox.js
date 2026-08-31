@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim:set ts=2 sw=2 sts=2 et:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -807,8 +805,8 @@ add_task(async function conflicting_alias() {
   let engine = await addTestSuggestionsEngine();
   let keyword = "test";
   engine.alias = keyword;
-  let oldDefaultEngine = await Services.search.getDefault();
-  Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UNKNOWN);
+  let oldDefaultEngine = await SearchService.getDefault();
+  SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
   let extensionName = "Omnibox Example";
 
@@ -877,9 +875,9 @@ add_task(async function conflicting_alias() {
     ],
   });
 
-  Services.search.setDefault(
+  SearchService.setDefault(
     oldDefaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   Services.prefs.setBoolPref(SUGGEST_PREF, false);
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, false);

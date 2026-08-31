@@ -35,7 +35,7 @@
   color: var(--theme-highlight-blue);
 }
 
-.frames-group .img.arrow {
+.frames-group .dbg-img.dbg-img-arrow {
   margin-inline-start: -1px;
   margin-inline-end: 4px;
 }

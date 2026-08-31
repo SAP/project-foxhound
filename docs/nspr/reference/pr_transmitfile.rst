@@ -38,9 +38,9 @@ The function has the following parameters:
 ``flags``
    One of the following flags:
 
- - :ref:`PR_TRANSMITFILE_KEEP_OPEN` indicates that the socket will be kept
+ - ``PR_TRANSMITFILE_KEEP_OPEN`` indicates that the socket will be kept
    open after the data is sent.
- - :ref:`PR_TRANSMITFILE_CLOSE_SOCKET` indicates that the connection should
+ - ``PR_TRANSMITFILE_CLOSE_SOCKET`` indicates that the connection should
    be closed immediately after successful transfer of the file.
 
 ``timeout``

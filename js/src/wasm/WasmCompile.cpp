@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,9 +16,8 @@
 
 #include "wasm/WasmCompile.h"
 
-#include "mozilla/Maybe.h"
-
 #include <algorithm>
+#include <cstdint>
 
 #include "js/Conversions.h"
 #include "js/Equality.h"
@@ -38,6 +35,7 @@
 #include "vm/JSAtomState.h"
 #include "vm/Realm.h"
 #include "wasm/WasmBaselineCompile.h"
+#include "wasm/WasmConstants.h"
 #include "wasm/WasmFeatures.h"
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmIonCompile.h"
@@ -52,8 +50,21 @@ using namespace js::wasm;
 
 using mozilla::Atomic;
 
+ScriptedCaller ScriptedCaller::selfHosted(JSContext* cx) {
+  AutoEnterOOMUnsafeRegion oomUnsafe;
+  // The self_hosted_ atom is used by the saved stack code to distinguish self
+  // hosted frames from normal user frames.
+  UniqueChars selfHosted =
+      StringToNewUTF8CharsZ(cx, *cx->names().self_hosted_.get());
+  if (!selfHosted) {
+    oomUnsafe.crash("ScriptedCaller::selfHosted");
+  }
+  return ScriptedCaller(std::move(selfHosted), ScriptedCallerKind::SelfHosted,
+                        0);
+}
+
 uint32_t wasm::ObservedCPUFeatures() {
-  enum Arch {
+  enum Arch : uint32_t {
     X86 = 0x1,
     X64 = 0x2,
     ARM = 0x3,
@@ -62,8 +73,12 @@ uint32_t wasm::ObservedCPUFeatures() {
     ARM64 = 0x6,
     LOONG64 = 0x7,
     RISCV64 = 0x8,
-    ARCH_BITS = 3
+
+    LAST = RISCV64,
+    ARCH_BITS = 4
   };
+
+  static_assert(LAST < (1 << ARCH_BITS));
 
 #if defined(JS_CODEGEN_X86)
   MOZ_ASSERT(uint32_t(jit::CPUInfo::GetFingerprint()) <=
@@ -151,7 +166,7 @@ bool FeatureOptions::init(JSContext* cx, HandleValue val) {
     }
 
     this->jsStringConstantsNamespace =
-        js_new<ShareableChars>(std::move(jsStringConstantsNamespace));
+        cx->new_<ShareableChars>(std::move(jsStringConstantsNamespace));
     if (!this->jsStringConstantsNamespace) {
       return false;
     }
@@ -218,12 +233,26 @@ FeatureArgs FeatureArgs::build(JSContext* cx, const FeatureOptions& options) {
 
   features.simd = jit::JitSupportsWasmSimd();
   features.isBuiltinModule = options.isBuiltinModule;
-  features.builtinModules.jsString = options.jsStringBuiltins;
-  features.builtinModules.jsStringConstants = options.jsStringConstants;
-  features.builtinModules.jsStringConstantsNamespace =
-      options.jsStringConstantsNamespace;
-  features.builtinModules.intGemm =
-      MozIntGemmAvailable(cx) && options.mozIntGemm;
+  if (features.isBuiltinModule) {
+    // Builtin modules can use stack switching if it's available. JS-PI needs
+    // this.
+    features.stackSwitching = wasm::IonPlatformSupport();
+    // No builtin modules are available to use within a builtin module. We
+    // theoretically could allow a builtin module to import another builtin
+    // module, but we'd need to find a way to prevent cycles. For now just
+    // disable this.
+    MOZ_ASSERT(!options.jsStringBuiltins);
+    MOZ_ASSERT(!options.jsStringConstants);
+    MOZ_ASSERT(!options.mozIntGemm);
+  } else {
+    // Enable builtin modules that have been selected by the user.
+    features.builtinModules.jsString = options.jsStringBuiltins;
+    features.builtinModules.jsStringConstants = options.jsStringConstants;
+    features.builtinModules.jsStringConstantsNamespace =
+        options.jsStringConstantsNamespace;
+    features.builtinModules.intGemm =
+        MozIntGemmAvailable(cx) && options.mozIntGemm;
+  }
 
   return features;
 }
@@ -360,25 +389,26 @@ SharedCompileArgs CompileArgs::buildAndReport(JSContext* cx,
 }
 
 BytecodeSource::BytecodeSource(const uint8_t* begin, size_t length) {
-  BytecodeRange envRange;
   BytecodeRange codeRange;
+  if (!StartsCodeSection(begin, begin + length, &codeRange)) {
+    env_ = BytecodeSpan(begin, length);
+    code_ = BytecodeSpan();
+    tail_ = BytecodeSpan();
+    return;
+  }
+
+  BytecodeRange envRange;
   BytecodeRange tailRange;
-  if (StartsCodeSection(begin, begin + length, &codeRange)) {
-    if (codeRange.end <= length) {
-      envRange = BytecodeRange(0, codeRange.start);
-      tailRange = BytecodeRange(codeRange.end, length - codeRange.end);
-    } else {
-      MOZ_RELEASE_ASSERT(codeRange.start <= length);
-      // If the specified code range is larger than the buffer, clamp it to the
-      // the buffer size. This buffer will be rejected later.
-      envRange = BytecodeRange(0, codeRange.start);
-      codeRange = BytecodeRange(codeRange.start, length - codeRange.start);
-      MOZ_RELEASE_ASSERT(codeRange.end == length);
-      tailRange = BytecodeRange(length, 0);
-    }
+  if (codeRange.end <= length) {
+    envRange = BytecodeRange(0, codeRange.start);
+    tailRange = BytecodeRange(codeRange.end, length - codeRange.end);
   } else {
-    envRange = BytecodeRange(0, length);
-    codeRange = BytecodeRange(length, 0);
+    MOZ_RELEASE_ASSERT(codeRange.start <= length);
+    // If the specified code range is larger than the buffer, clamp it to the
+    // the buffer size. This buffer will be rejected later.
+    envRange = BytecodeRange(0, codeRange.start);
+    codeRange = BytecodeRange(codeRange.start, length - codeRange.start);
+    MOZ_RELEASE_ASSERT(codeRange.end == length);
     tailRange = BytecodeRange(length, 0);
   }
 
@@ -867,16 +897,12 @@ void CompilerEnvironment::computeParameters(const ModuleMetadata& moduleMeta) {
   // Various constraints in various places should prevent failure here.
   MOZ_RELEASE_ASSERT(baselineEnabled || ionEnabled);
 
-  bool isGcModule = moduleMeta.codeMeta->types->hasGcType();
   uint32_t codeSectionSize = moduleMeta.codeMeta->codeSectionSize();
 
-  // We use lazy tiering if the 'for-all' pref is enabled, or the 'gc-only'
-  // pref is enabled and we're compiling a GC module.  However, forcing
-  // serialization-testing disables lazy tiering.
+  // We use lazy tiering if the pref is enabled and we're not doing
+  // serialization-testing.
   bool testSerialization = args_->features.testSerialization;
-  bool lazyTiering = (JS::Prefs::wasm_lazy_tiering() ||
-                      (JS::Prefs::wasm_lazy_tiering_for_gc() && isGcModule)) &&
-                     !testSerialization;
+  bool lazyTiering = JS::Prefs::wasm_lazy_tiering() && !testSerialization;
 
   if (baselineEnabled && hasSecondTier &&
       (TieringBeneficial(lazyTiering, codeSectionSize) || forceTiering) &&
@@ -952,7 +978,7 @@ static bool DecodeCodeSection(const CodeMetadata& codeMeta, DecoderT& d,
   return mg.finishFuncDefs();
 }
 
-SharedModule wasm::CompileBuffer(const CompileArgs& args,
+SharedModule wasm::CompileModule(const CompileArgs& args,
                                  const BytecodeBufferOrSource& bytecode,
                                  UniqueChars* error,
                                  UniqueCharsVector* warnings,
@@ -1030,6 +1056,49 @@ SharedModule wasm::CompileBuffer(const CompileArgs& args,
   return mg.finishModule(bytecode, *moduleMeta, listener);
 }
 
+#ifdef ENABLE_WASM_COMPONENTS
+SharedComponent wasm::CompileComponent(
+    const CompileArgs& args, const BytecodeBufferOrSource& bytecode,
+    UniqueChars* error, UniqueCharsVector* warnings,
+    JS::OptimizedEncodingListener* listener) {
+  MutableComponent c = js_new<Component>();
+  if (!c) {
+    return nullptr;
+  }
+
+  const BytecodeSource& bytecodeSource = bytecode.source();
+  Decoder d(bytecodeSource.envSpan(), bytecodeSource.envRange().start, error,
+            warnings);
+
+  if (!DecodeComponent(d, c, args, listener)) {
+    return nullptr;
+  }
+
+  return c;
+}
+
+SharedModuleOrComponent wasm::CompileBuffer(
+    const CompileArgs& args, const BytecodeBufferOrSource& bytecode,
+    UniqueChars* error, UniqueCharsVector* warnings,
+    JS::OptimizedEncodingListener* listener) {
+  const BytecodeSource& bytecodeSource = bytecode.source();
+  Decoder preambleDecoder(bytecodeSource.envSpan(),
+                          bytecodeSource.envRange().start, error, warnings);
+  if (IsComponent(preambleDecoder)) {
+    // TODO(wasm-cm)
+    preambleDecoder.fail("components are not supported yet");
+    return mozilla::Nothing();
+  }
+
+  SharedModule module =
+      CompileModule(args, bytecode, error, warnings, listener);
+  if (!module) {
+    return mozilla::Nothing();
+  }
+  return SharedModuleOrComponent(std::in_place, module);
+}
+#endif  // ENABLE_WASM_COMPONENTS
+
 bool wasm::CompileCompleteTier2(const ShareableBytes* codeSection,
                                 const Module& module, UniqueChars* error,
                                 UniqueCharsVector* warnings,
@@ -1041,7 +1110,7 @@ bool wasm::CompileCompleteTier2(const ShareableBytes* codeSection,
   const CodeMetadata& codeMeta = module.codeMeta();
   ModuleGenerator mg(codeMeta, compilerEnv, CompileState::EagerTier2, cancelled,
                      error, warnings);
-  if (!mg.initializeCompleteTier()) {
+  if (!mg.initializeCompleteTier(nullptr, &module.codeTailMeta())) {
     return false;
   }
 
@@ -1211,8 +1280,8 @@ SharedModule wasm::CompileStreaming(
   }
 
   BytecodeBuffer bytecodeBuffer(&envBytes, &codeBytes, &tailBytes);
-  return mg.finishModule(BytecodeBufferOrSource(bytecodeBuffer), *moduleMeta,
-                         streamEnd.completeTier2Listener);
+  return mg.finishModule(BytecodeBufferOrSource(std::move(bytecodeBuffer)),
+                         *moduleMeta, streamEnd.completeTier2Listener);
 }
 
 class DumpIonModuleGenerator {
@@ -1220,19 +1289,16 @@ class DumpIonModuleGenerator {
   const CompilerEnvironment& compilerEnv_;
   CodeMetadata& codeMeta_;
   uint32_t targetFuncIndex_;
-  IonDumpContents contents_;
   GenericPrinter& out_;
   UniqueChars* error_;
 
  public:
   DumpIonModuleGenerator(const CompilerEnvironment& compilerEnv,
                          CodeMetadata& codeMeta, uint32_t targetFuncIndex,
-                         IonDumpContents contents, GenericPrinter& out,
-                         UniqueChars* error)
+                         GenericPrinter& out, UniqueChars* error)
       : compilerEnv_(compilerEnv),
         codeMeta_(codeMeta),
         targetFuncIndex_(targetFuncIndex),
-        contents_(contents),
         out_(out),
         error_(error) {}
 
@@ -1245,14 +1311,12 @@ class DumpIonModuleGenerator {
 
     FuncCompileInput input(funcIndex, lineOrBytecode, begin, end,
                            Uint32Vector());
-    return IonDumpFunction(compilerEnv_, codeMeta_, input, contents_, out_,
-                           error_);
+    return IonDumpFunction(compilerEnv_, codeMeta_, input, out_, error_);
   }
 };
 
 bool wasm::DumpIonFunctionInModule(const ShareableBytes& bytecode,
                                    uint32_t targetFuncIndex,
-                                   IonDumpContents contents,
                                    GenericPrinter& out, UniqueChars* error) {
   SharedCompileArgs compileArgs =
       CompileArgs::buildForValidation(FeatureArgs::allEnabled());
@@ -1275,7 +1339,7 @@ bool wasm::DumpIonFunctionInModule(const ShareableBytes& bytecode,
   }
 
   DumpIonModuleGenerator mg(compilerEnv, *moduleMeta->codeMeta, targetFuncIndex,
-                            contents, out, error);
+                            out, error);
   return moduleMeta->prepareForCompile(CompileMode::Once) &&
          DecodeCodeSection(*moduleMeta->codeMeta, d, mg);
 }

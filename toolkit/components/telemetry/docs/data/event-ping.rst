@@ -80,8 +80,7 @@ lostEventsCount
 ~~~~~~~~~~~~~~~
 The number of events we had to discard because we reached the 1000-per-ping limit before
 we were able to send the ping. Should only have a non-zero value on "event" pings with
-reason set to "max" or "shutdown". Which events are missing should be calculable via the
-client's "main" pings using :ref:`Event Summary <events.event-summary>`.
+reason set to "max" or "shutdown".
 
 events
 ~~~~~~

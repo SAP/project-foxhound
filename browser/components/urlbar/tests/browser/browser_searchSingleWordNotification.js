@@ -8,7 +8,7 @@ let gDNSResolved = false;
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.scotchBonnet.enableOverride", false]],
+    set: [["dom.security.https_first_schemeless", false]],
   });
 
   let observer = () => {
@@ -92,14 +92,18 @@ async function runURLBarSearchTest({
       if (!expectSearch) {
         throw new Error("Must execute a search in search mode");
       }
-      await UrlbarTestUtils.enterSearchMode(aWindow);
+      let engine = UrlbarSearchUtils.getDefaultEngine();
+      await aWindow.gURLBar.setSearchMode(
+        { engineName: engine.name, entry: "other" },
+        aWindow.gBrowser.selectedBrowser
+      );
     }
 
     let expectedURI;
     if (!expectSearch) {
       expectedURI = "http://" + valueToOpen + "/";
     } else {
-      expectedURI = (await Services.search.getDefault()).getSubmission(
+      expectedURI = (await SearchService.getDefault()).getSubmission(
         valueToOpen,
         null,
         "keyword"
@@ -354,7 +358,9 @@ add_task(async function test_navigate_invalid_url() {
     gBrowser,
     "about:blank"
   ));
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   await runURLBarSearchTest({
     valueToOpen: "mozilla is awesome",
     expectSearch: true,
@@ -373,7 +379,9 @@ add_task(async function test_search_mode() {
     gBrowser,
     "about:blank"
   ));
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   await runURLBarSearchTest({
     enterSearchMode: true,
     valueToOpen: "mozilla",

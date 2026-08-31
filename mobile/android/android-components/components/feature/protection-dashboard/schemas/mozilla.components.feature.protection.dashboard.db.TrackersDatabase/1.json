@@ -1,0 +1,157 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "1cd40ee9e459f6024e56e9e9b581fceb",
+    "entities": [
+      {
+        "tableName": "tracker_totals",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`date` INTEGER NOT NULL, `adCount` INTEGER NOT NULL, `analyticsCount` INTEGER NOT NULL, `socialCount` INTEGER NOT NULL, `contentCount` INTEGER NOT NULL, `cryptominingCount` INTEGER NOT NULL, `fingerprintingCount` INTEGER NOT NULL, `mozillaSocialCount` INTEGER NOT NULL, `emailCount` INTEGER NOT NULL, `scriptsAndSubResourcesCount` INTEGER NOT NULL, PRIMARY KEY(`date`))",
+        "fields": [
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "adCount",
+            "columnName": "adCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "analyticsCount",
+            "columnName": "analyticsCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "socialCount",
+            "columnName": "socialCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentCount",
+            "columnName": "contentCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cryptominingCount",
+            "columnName": "cryptominingCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprintingCount",
+            "columnName": "fingerprintingCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mozillaSocialCount",
+            "columnName": "mozillaSocialCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "emailCount",
+            "columnName": "emailCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scriptsAndSubResourcesCount",
+            "columnName": "scriptsAndSubResourcesCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "date"
+          ]
+        }
+      },
+      {
+        "tableName": "tracker_by_host",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`host` TEXT NOT NULL, `adCount` INTEGER NOT NULL, `analyticsCount` INTEGER NOT NULL, `socialCount` INTEGER NOT NULL, `contentCount` INTEGER NOT NULL, `cryptominingCount` INTEGER NOT NULL, `fingerprintingCount` INTEGER NOT NULL, `mozillaSocialCount` INTEGER NOT NULL, `emailCount` INTEGER NOT NULL, `scriptsAndSubResourcesCount` INTEGER NOT NULL, PRIMARY KEY(`host`))",
+        "fields": [
+          {
+            "fieldPath": "host",
+            "columnName": "host",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "adCount",
+            "columnName": "adCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "analyticsCount",
+            "columnName": "analyticsCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "socialCount",
+            "columnName": "socialCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentCount",
+            "columnName": "contentCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cryptominingCount",
+            "columnName": "cryptominingCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprintingCount",
+            "columnName": "fingerprintingCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mozillaSocialCount",
+            "columnName": "mozillaSocialCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "emailCount",
+            "columnName": "emailCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scriptsAndSubResourcesCount",
+            "columnName": "scriptsAndSubResourcesCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "host"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1cd40ee9e459f6024e56e9e9b581fceb')"
+    ]
+  }
+}

@@ -14,8 +14,9 @@
 
 use std::{
     cell::RefCell,
-    fmt::{self, Display},
+    fmt::Display,
     fs,
+    future::poll_fn,
     io::{self},
     net::{SocketAddr, ToSocketAddrs as _},
     num::NonZeroUsize,
@@ -23,80 +24,51 @@ use std::{
     pin::Pin,
     process::exit,
     rc::Rc,
+    task::{Context, Poll},
     time::{Duration, Instant},
 };
 
 use clap::Parser;
 use futures::{
-    future::{select, select_all, Either},
     FutureExt as _,
+    future::{Either, select, select_all},
 };
-use neqo_common::{qdebug, qerror, qinfo, qwarn, Datagram};
-use neqo_crypto::{
+use neqo_common::{Datagram, hex, qdebug, qerror, qinfo, qwarn};
+use neqo_http3::Http3Server;
+use neqo_transport::{OutputBatch, RandomConnectionIdGenerator, Version, server::ValidateAddress};
+use neqo_udp::{DatagramIter, RecvBuf};
+use nss::{
+    AntiReplay, Cipher, PrivateKey, PublicKey,
     constants::{TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256},
-    init_db, AntiReplay, Cipher,
+    generate_ech_keys, init_db, random,
 };
-use neqo_transport::{OutputBatch, RandomConnectionIdGenerator, Version};
-use neqo_udp::RecvBuf;
+use thiserror::Error;
 use tokio::time::Sleep;
 
-use crate::SharedArgs;
+use crate::{SharedArgs, now, send_data::SendData};
 
 const ANTI_REPLAY_WINDOW: Duration = Duration::from_secs(10);
 
-mod http09;
-mod http3;
+pub mod http09;
+pub mod http3;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
+    #[error("invalid argument: {0}")]
     Argument(&'static str),
-    Http3(neqo_http3::Error),
-    Io(io::Error),
-    Qlog,
-    Transport(neqo_transport::Error),
-    Crypto(neqo_crypto::Error),
+    #[error(transparent)]
+    Http3(#[from] neqo_http3::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Qlog(#[from] qlog::Error),
+    #[error(transparent)]
+    Transport(#[from] neqo_transport::Error),
+    #[error(transparent)]
+    Crypto(#[from] nss::Error),
 }
 
-impl From<neqo_crypto::Error> for Error {
-    fn from(err: neqo_crypto::Error) -> Self {
-        Self::Crypto(err)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Self::Io(err)
-    }
-}
-
-impl From<neqo_http3::Error> for Error {
-    fn from(err: neqo_http3::Error) -> Self {
-        Self::Http3(err)
-    }
-}
-
-impl From<qlog::Error> for Error {
-    fn from(_err: qlog::Error) -> Self {
-        Self::Qlog
-    }
-}
-
-impl From<neqo_transport::Error> for Error {
-    fn from(err: neqo_transport::Error) -> Self {
-        Self::Transport(err)
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Error: {self:?}")?;
-        Ok(())
-    }
-}
-
-impl std::error::Error for Error {}
-
-type Res<T> = Result<T, Error>;
+pub type Res<T> = Result<T, Error>;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
@@ -108,9 +80,9 @@ pub struct Args {
     #[arg(default_value = "[::]:4433")]
     hosts: Vec<String>,
 
-    #[arg(short = 'd', long, default_value = "./test-fixture/db")]
-    /// NSS database directory.
-    db: PathBuf,
+    #[arg(short = 'd', long)]
+    /// NSS database directory [default: `$TEST_FIXTURE_DB` or the bundled NSS test DB].
+    db: Option<PathBuf>,
 
     #[arg(short = 'k', long, default_value = "key")]
     /// Name of key from NSS database.
@@ -130,11 +102,10 @@ pub struct Args {
 #[cfg(any(test, feature = "bench"))]
 impl Default for Args {
     fn default() -> Self {
-        use std::str::FromStr as _;
         Self {
             shared: SharedArgs::default(),
             hosts: vec!["[::]:12345".to_string()],
-            db: PathBuf::from_str("../test-fixture/db").unwrap(),
+            db: None,
             key: "key".to_string(),
             retry: false,
             ech: false,
@@ -143,6 +114,11 @@ impl Default for Args {
 }
 
 impl Args {
+    #[must_use]
+    pub const fn get_shared(&self) -> &SharedArgs {
+        &self.shared
+    }
+
     fn get_ciphers(&self) -> Vec<Cipher> {
         self.shared
             .ciphers
@@ -179,9 +155,9 @@ impl Args {
             // in the future.
             //
             // This is NOT SAFE.  Don't do this.
-            Instant::now() + ANTI_REPLAY_WINDOW
+            now() + ANTI_REPLAY_WINDOW
         } else {
-            Instant::now()
+            now()
         }
     }
 
@@ -193,40 +169,170 @@ impl Args {
     pub fn set_hosts(&mut self, hosts: Vec<String>) {
         self.hosts = hosts;
     }
+
+    pub fn update_for_tests(&mut self) {
+        if let Some(testcase) = self.shared.qns_test.as_ref() {
+            if self.shared.quic_parameters.quic_version.is_empty() {
+                // Quic Interop Runner expects the server to support `Version1`
+                // only. Exceptions are testcases `versionnegotiation` (not yet
+                // implemented) and `v2`.
+                if testcase != "v2" {
+                    self.shared.quic_parameters.quic_version = vec![Version::Version1];
+                }
+            } else {
+                qwarn!("Both -V and --qns-test were set. Ignoring testcase specific versions");
+            }
+
+            // These are the default for all tests except http3.
+            self.shared.alpn = String::from("hq-interop");
+            // TODO: More options to deduplicate with client?
+            match testcase.as_str() {
+                "http3" => {
+                    self.shared.alpn = String::from("h3");
+                }
+                "zerortt" => self.shared.quic_parameters.max_streams_bidi = 100,
+                "handshake" | "transfer" | "resumption" | "multiconnect" | "v2" | "ecn" => {}
+                "connectionmigration" => {
+                    if self.shared.quic_parameters.preferred_address().is_none() {
+                        qerror!("No preferred addresses set for connectionmigration test");
+                        exit(127);
+                    }
+                }
+                "chacha20" => {
+                    self.shared.ciphers.clear();
+                    self.shared
+                        .ciphers
+                        .extend_from_slice(&[String::from("TLS_CHACHA20_POLY1305_SHA256")]);
+                }
+                "retry" => self.retry = true,
+                _ => exit(127),
+            }
+        }
+    }
 }
 
-fn qns_read_response(filename: &str) -> Result<Vec<u8>, io::Error> {
-    let path: PathBuf = ["/www", filename.trim_matches(|p| p == '/')]
-        .iter()
-        .collect();
-    fs::read(path)
+/// Abstracts the common configuration methods shared by [`neqo_transport::server::Server`]
+/// and [`Http3Server`], enabling [`configure_server`] to work with both.
+pub(super) trait ServerConfig {
+    fn set_ciphers(&mut self, ciphers: &[Cipher]);
+    fn set_qlog_dir(&mut self, dir: Option<PathBuf>);
+    fn set_validation(&self, v: ValidateAddress);
+    fn enable_ech(&mut self, config: u8, public_name: &str, sk: &PrivateKey, pk: &PublicKey);
+    fn ech_config(&self) -> &[u8];
+}
+
+impl ServerConfig for neqo_transport::server::Server {
+    fn set_ciphers(&mut self, ciphers: &[Cipher]) {
+        self.set_ciphers(ciphers);
+    }
+    fn set_qlog_dir(&mut self, dir: Option<PathBuf>) {
+        self.set_qlog_dir(dir);
+    }
+    fn set_validation(&self, v: ValidateAddress) {
+        self.set_validation(v);
+    }
+    fn enable_ech(&mut self, config: u8, public_name: &str, sk: &PrivateKey, pk: &PublicKey) {
+        self.enable_ech(config, public_name, sk, pk)
+            .expect("ECH configuration failed");
+    }
+    fn ech_config(&self) -> &[u8] {
+        self.ech_config()
+    }
+}
+
+impl ServerConfig for Http3Server {
+    fn set_ciphers(&mut self, ciphers: &[Cipher]) {
+        self.set_ciphers(ciphers);
+    }
+    fn set_qlog_dir(&mut self, dir: Option<PathBuf>) {
+        self.set_qlog_dir(dir);
+    }
+    fn set_validation(&self, v: ValidateAddress) {
+        self.set_validation(v);
+    }
+    fn enable_ech(&mut self, config: u8, public_name: &str, sk: &PrivateKey, pk: &PublicKey) {
+        self.enable_ech(config, public_name, sk, pk)
+            .expect("ECH configuration failed");
+    }
+    fn ech_config(&self) -> &[u8] {
+        self.ech_config()
+    }
+}
+
+/// Apply common [`Args`]-driven configuration to any server that implements [`ServerConfig`].
+pub(super) fn configure_server(server: &mut impl ServerConfig, args: &Args) {
+    server.set_ciphers(&args.get_ciphers());
+    server.set_qlog_dir(args.shared.qlog_dir.clone());
+    if args.retry {
+        server.set_validation(ValidateAddress::Always);
+    }
+    if args.ech {
+        let (sk, pk) = generate_ech_keys().expect("should create ECH keys");
+        server.enable_ech(random::<1>()[0], "public.example", &sk, &pk);
+        qinfo!("ECHConfigList: {}", hex(server.ech_config()));
+    }
+}
+
+/// Generate a response [`SendData`] for a given request path.
+///
+/// In QNS test mode, reads the corresponding file from `/www/`. Returns `Err`
+/// if the file cannot be read (caller sends a 404) or if the path contains
+/// `..` components.
+/// In non-QNS mode, trims `/` from the path, parses the remainder as a byte
+/// count, and generates that many zero bytes. If parsing fails, sends the
+/// path bytes instead.
+pub(super) fn response_for_path(path: &str, is_qns_test: bool) -> Result<SendData, ()> {
+    if is_qns_test {
+        if path.split('/').any(|segment| segment == "..") {
+            qerror!("Rejecting path with '..' component: {path}");
+            return Err(());
+        }
+        let file_path: PathBuf = ["/www", path.trim_matches('/')].iter().collect();
+        fs::read(file_path).map(SendData::from).map_err(|e| {
+            qerror!("Failed to read {path}: {e}");
+        })
+    } else {
+        Ok(path
+            .trim_matches('/')
+            .parse::<usize>()
+            .map_or_else(|_| path.into(), SendData::zeroes))
+    }
 }
 
 #[expect(clippy::module_name_repetitions, reason = "This is OK.")]
 pub trait HttpServer: Display {
-    fn process_multiple(
+    fn process_multiple<'a, D: IntoIterator<Item = Datagram<&'a mut [u8]>>>(
         &mut self,
-        dgram: Option<Datagram<&mut [u8]>>,
+        dgrams: D,
         now: Instant,
         max_datagrams: NonZeroUsize,
     ) -> OutputBatch;
     fn process_events(&mut self, now: Instant);
     fn has_events(&self) -> bool;
+    /// Enables an [`HttpServer`] to drive asynchronous operations.
+    ///
+    /// Needed in Firefox's HTTP/3 proxy test server implementation to drive TCP
+    /// and UDP sockets to the proxy target.
+    ///
+    /// <https://github.com/mozilla-firefox/firefox/blob/main/netwerk/test/http3server/src/main.rs>
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
+    }
 }
 
-pub struct Runner {
+pub struct Runner<S> {
     now: Box<dyn Fn() -> Instant>,
-    server: Box<dyn HttpServer>,
+    server: S,
     timeout: Option<Pin<Box<Sleep>>>,
     sockets: Vec<(SocketAddr, crate::udp::Socket)>,
     recv_buf: RecvBuf,
 }
 
-impl Runner {
+impl<S: HttpServer + Unpin> Runner<S> {
     #[must_use]
     pub fn new(
+        server: S,
         now: Box<dyn Fn() -> Instant>,
-        server: Box<dyn HttpServer>,
         sockets: Vec<(SocketAddr, crate::udp::Socket)>,
     ) -> Self {
         Self {
@@ -234,7 +340,7 @@ impl Runner {
             server,
             timeout: None,
             sockets,
-            recv_buf: RecvBuf::new(),
+            recv_buf: RecvBuf::default(),
         }
     }
 
@@ -262,11 +368,11 @@ impl Runner {
     // `ServerRunner::read_and_process` while holding a reference to
     // `ServerRunner::recv_buf`.
     async fn process_inner(
-        server: &mut Box<dyn HttpServer>,
+        server: &mut S,
         timeout: &mut Option<Pin<Box<Sleep>>>,
         sockets: &mut [(SocketAddr, crate::udp::Socket)],
         now: &dyn Fn() -> Instant,
-        mut input_dgram: Option<Datagram<&mut [u8]>>,
+        mut input_dgrams: Option<DatagramIter<'_>>,
     ) -> Result<(), io::Error> {
         // Each socket has a maximum number of GSO segments it can handle. When
         // calling `server.process_multiple` we don't know which socket will be
@@ -286,7 +392,11 @@ impl Runner {
             .map_err(|_| io::Error::from(io::ErrorKind::Unsupported))?;
 
         loop {
-            match server.process_multiple(input_dgram.take(), now(), smallest_max_gso_segments) {
+            match server.process_multiple(
+                input_dgrams.take().into_iter().flatten(),
+                now(),
+                smallest_max_gso_segments,
+            ) {
                 OutputBatch::DatagramBatch(dgram) => {
                     let socket = Self::find_socket(sockets, dgram.source());
                     loop {
@@ -298,6 +408,16 @@ impl Runner {
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                                 socket.writable().await?;
                                 // Now try again.
+                            }
+                            Err(e)
+                                if e.raw_os_error() == Some(libc::EIO)
+                                    && dgram.num_datagrams() > 1 =>
+                            {
+                                qinfo!(
+                                    "`libc::sendmsg` failed with {e}; quinn-udp will halt segmentation offload"
+                                );
+                                // Drop the packets and let QUIC handle retransmission.
+                                break;
                             }
                             e @ Err(_) => return e,
                         }
@@ -321,16 +441,14 @@ impl Runner {
                 break;
             };
 
-            for input_dgram in input_dgrams {
-                Self::process_inner(
-                    &mut self.server,
-                    &mut self.timeout,
-                    &mut self.sockets,
-                    &self.now,
-                    Some(input_dgram),
-                )
-                .await?;
-            }
+            Self::process_inner(
+                &mut self.server,
+                &mut self.timeout,
+                &mut self.sockets,
+                &self.now,
+                Some(input_dgrams),
+            )
+            .await?;
         }
 
         Ok(())
@@ -358,12 +476,22 @@ impl Runner {
             Ok(()) => Ok(Ready::Socket(inx)),
             Err(e) => Err(e),
         });
+
         let timeout_ready = self
             .timeout
             .as_mut()
             .map_or_else(|| Either::Right(futures::future::pending()), Either::Left)
             .map(|()| Ok(Ready::Timeout));
-        select(sockets_ready, timeout_ready).await.factor_first().0
+
+        let server_ready = poll_fn(|cx| HttpServer::poll(Pin::new(&mut self.server), cx))
+            .map(|()| Ok(Ready::Server));
+
+        select(
+            select(sockets_ready, timeout_ready).map(|either| either.factor_first().0),
+            server_ready,
+        )
+        .map(|either| either.factor_first().0)
+        .await
     }
 
     pub async fn run(mut self) -> Res<()> {
@@ -383,6 +511,9 @@ impl Runner {
                     self.timeout = None;
                     self.process().await?;
                 }
+                Ready::Server => {
+                    // Processing server at top of the loop.
+                }
             }
         }
     }
@@ -391,56 +522,26 @@ impl Runner {
 enum Ready {
     Socket(usize),
     Timeout,
+    Server,
 }
 
-pub fn server(mut args: Args) -> Res<Runner> {
+#[expect(clippy::type_complexity, reason = "pinned and boxed future")]
+pub fn run(
+    mut args: Args,
+) -> Res<(
+    Pin<Box<dyn Future<Output = Res<()>> + 'static>>,
+    Vec<SocketAddr>,
+)> {
     neqo_common::log::init(
         args.shared
             .verbose
             .as_ref()
             .map(clap_verbosity_flag::Verbosity::log_level_filter),
     );
+    args.update_for_tests();
     assert!(!args.key.is_empty(), "Need at least one key");
 
-    init_db(args.db.clone())?;
-
-    if let Some(testcase) = args.shared.qns_test.as_ref() {
-        if args.shared.quic_parameters.quic_version.is_empty() {
-            // Quic Interop Runner expects the server to support `Version1`
-            // only. Exceptions are testcases `versionnegotiation` (not yet
-            // implemented) and `v2`.
-            if testcase != "v2" {
-                args.shared.quic_parameters.quic_version = vec![Version::Version1];
-            }
-        } else {
-            qwarn!("Both -V and --qns-test were set. Ignoring testcase specific versions");
-        }
-
-        // These are the default for all tests except http3.
-        args.shared.alpn = String::from("hq-interop");
-        // TODO: More options to deduplicate with client?
-        match testcase.as_str() {
-            "http3" => {
-                args.shared.alpn = String::from("h3");
-            }
-            "zerortt" => args.shared.quic_parameters.max_streams_bidi = 100,
-            "handshake" | "transfer" | "resumption" | "multiconnect" | "v2" | "ecn" => {}
-            "connectionmigration" => {
-                if args.shared.quic_parameters.preferred_address().is_none() {
-                    qerror!("No preferred addresses set for connectionmigration test");
-                    exit(127);
-                }
-            }
-            "chacha20" => {
-                args.shared.ciphers.clear();
-                args.shared
-                    .ciphers
-                    .extend_from_slice(&[String::from("TLS_CHACHA20_POLY1305_SHA256")]);
-            }
-            "retry" => args.retry = true,
-            _ => exit(127),
-        }
-    }
+    init_db(args.db.take().unwrap_or_else(nss_test_fixture::db_path))?;
 
     let hosts = args.listen_addresses();
     if hosts.is_empty() {
@@ -461,17 +562,58 @@ pub fn server(mut args: Args) -> Res<Runner> {
         .collect::<Result<_, io::Error>>()?;
 
     // Note: this is the exception to the case where we use `Args::now`.
-    let anti_replay = AntiReplay::new(Instant::now(), ANTI_REPLAY_WINDOW, 7, 14)
-        .expect("unable to setup anti-replay");
+    let anti_replay = AntiReplay::new(now(), ANTI_REPLAY_WINDOW, 7, 14)?;
     let cid_mgr = Rc::new(RefCell::new(RandomConnectionIdGenerator::new(10)));
 
-    let server: Box<dyn HttpServer> = if args.shared.alpn == "h3" {
-        Box::new(http3::HttpServer::new(&args, anti_replay, cid_mgr))
+    if args.shared.alpn == "h3" {
+        let runner = Runner::new(
+            http3::HttpServer::new(&args, anti_replay, cid_mgr),
+            Box::new(move || args.now()),
+            sockets,
+        );
+        let local_addrs = runner.local_addresses();
+        Ok((Box::pin(runner.run()), local_addrs))
     } else {
-        Box::new(
-            http09::HttpServer::new(&args, anti_replay, cid_mgr).expect("We cannot make a server!"),
-        )
-    };
+        let runner = Runner::new(
+            http09::HttpServer::new(&args, anti_replay, cid_mgr)?,
+            Box::new(move || args.now()),
+            sockets,
+        );
+        let local_addrs = runner.local_addresses();
+        Ok((Box::pin(runner.run()), local_addrs))
+    }
+}
 
-    Ok(Runner::new(Box::new(move || args.now()), server, sockets))
+#[cfg(test)]
+mod tests {
+    use super::response_for_path;
+
+    #[test]
+    fn response_for_path_qns_not_found() {
+        // Non-existent file should return Err.
+        let result = response_for_path("/no_such_file_xyz", true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn response_for_path_non_qns_count() {
+        let data = response_for_path("/1000", false).expect("should succeed");
+        assert_eq!(data.len(), 1000);
+    }
+
+    #[test]
+    fn response_for_path_non_qns_non_numeric_sends_path_bytes() {
+        // Non-numeric path falls back to sending the path bytes themselves.
+        let data = response_for_path("/hello", false).expect("should succeed");
+        assert_eq!(data.len(), "/hello".len());
+    }
+
+    #[test]
+    fn response_for_path_qns_dotdot_rejected() {
+        // Paths with ".." components must be rejected in QNS mode to prevent
+        // directory traversal outside /www/.
+        for path in ["/../etc/passwd", "/foo/../etc/passwd", "/.."] {
+            assert!(response_for_path(path, true).is_err(), "path: {path}");
+        }
+    }
 }

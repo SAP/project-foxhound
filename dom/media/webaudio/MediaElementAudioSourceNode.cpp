@@ -1,14 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaElementAudioSourceNode.h"
-#include "mozilla/dom/MediaElementAudioSourceNodeBinding.h"
+
 #include "AudioDestinationNode.h"
+#include "AudioNodeExternalInputTrack.h"
 #include "AudioNodeTrack.h"
 #include "MediaStreamTrack.h"
+#include "mozilla/dom/MediaElementAudioSourceNodeBinding.h"
 
 namespace mozilla::dom {
 
@@ -63,6 +63,7 @@ MediaElementAudioSourceNode::Create(
     return nullptr;
   }
 
+  node->ListenForEffectiveVolumeChange();
   node->ListenForAllowedToPlay(aOptions);
   return node.forget();
 }
@@ -88,8 +89,25 @@ void MediaElementAudioSourceNode::ListenForAllowedToPlay(
       ->Track(mAllowedToPlayRequest);
 }
 
+void MediaElementAudioSourceNode::ListenForEffectiveVolumeChange() {
+  UpdateVolume(mElement->ComputedVolume());
+  mEffectiveVolumeChangeListener =
+      mElement->EffectiveVolumeChangeEvent().Connect(
+          AbstractThread::MainThread(), this,
+          &MediaElementAudioSourceNode::UpdateVolume);
+}
+
+void MediaElementAudioSourceNode::UpdateVolume(float aVolume) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!mTrack) {
+    return;
+  }
+  mTrack->AsAudioNodeExternalInputTrack()->SetVolume(aVolume);
+}
+
 void MediaElementAudioSourceNode::Destroy() {
   mAllowedToPlayRequest.DisconnectIfExists();
+  mEffectiveVolumeChangeListener.DisconnectIfExists();
   MediaStreamAudioSourceNode::Destroy();
 }
 

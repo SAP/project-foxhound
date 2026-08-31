@@ -44,11 +44,6 @@ function setupTestServer() {
 }
 
 add_task(async function () {
-  // TODO: Enable test when Bug 1557795 gets fixed.
-  // eslint-disable-next-line no-constant-condition
-  if (true) {
-    return;
-  }
   const { httpServer, completeResponse } = setupTestServer();
   const port = httpServer.identity.primaryPort;
 
@@ -72,7 +67,7 @@ add_task(async function () {
   });
   await SpecialPowers.spawn(
     tab.linkedBrowser,
-    `http://localhost:${port}/chunked-data`,
+    [`http://localhost:${port}/chunked-data`],
     async url => {
       await content.wrappedJSObject.fetch(url);
     }
@@ -90,7 +85,7 @@ add_task(async function () {
   info("Open the response panel and wait for initial chunk of the data");
   const waitForResponsePanel = waitForDOM(
     document,
-    "#response-panel .CodeMirror-code"
+    "#response-panel .cm-content"
   );
   store.dispatch(Actions.toggleNetworkDetails());
   clickOnSidebarTab(document, "response");

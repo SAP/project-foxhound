@@ -1,0 +1,186 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package org.mozilla.fenix.components.metrics
+
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Build.VERSION.SDK_INT
+import io.mockk.Runs
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.spyk
+import io.mockk.verify
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import org.mozilla.fenix.FenixApplication
+import org.mozilla.fenix.ext.application
+
+internal class FirstSessionMetricsServiceTest {
+
+    @Test
+    fun `start() triggers the ping if it wasn't marked as triggered`() {
+        val mockedPackageManager: PackageManager = mockk(relaxed = true)
+        mockedPackageManager.configureMockInstallSourcePackage()
+
+        val mockedApplication: FenixApplication = mockk(relaxed = true)
+        every { mockedApplication.packageManager } returns mockedPackageManager
+
+        val mockedContext: Context = mockk(relaxed = true)
+        every { mockedContext.applicationContext } returns mockedApplication
+
+        val mockAp = spyk(FirstSessionMetricsService(mockedContext), recordPrivateCalls = true)
+        every { mockAp.wasAlreadyTriggered() } returns false
+        every { mockAp.markAsTriggered() } just Runs
+
+        mockAp.start()
+
+        verify(exactly = 1) { mockAp.triggerPingIfNotSent() }
+        verify(timeout = 1000, exactly = 1) { mockAp.markAsTriggered() }
+    }
+
+    @Test
+    fun `start() doesn't trigger the ping again if it was marked as triggered`() {
+        val mockAp = spyk(FirstSessionMetricsService(mockk()), recordPrivateCalls = true)
+        every { mockAp.wasAlreadyTriggered() } returns true
+
+        mockAp.start()
+
+        verify(exactly = 0) { mockAp.markAsTriggered() }
+    }
+
+    @Test
+    fun `WHEN build version is R THEN installSourcePackage returns the set package name`() {
+        val mockedPackageManager: PackageManager = mockk(relaxed = true)
+        val testPackageName = "test R"
+        mockedPackageManager.mockInstallSourcePackageForBuildMinR(testPackageName)
+
+        val mockedApplication: FenixApplication = mockk(relaxed = true)
+        every { mockedApplication.packageManager } returns mockedPackageManager
+
+        val mockedContext: Context = mockk(relaxed = true)
+        every { mockedContext.applicationContext } returns mockedApplication
+
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R,
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
+        assertEquals(testPackageName, result)
+    }
+
+    @Test
+    fun `GIVEN packageManager throws an exception WHEN build version is R THEN installSourcePackage returns an empty string`() {
+        val mockedPackageManager: PackageManager = mockk(relaxed = true)
+        every { mockedPackageManager.getInstallSourceInfo(any()).installingPackageName } throws PackageManager.NameNotFoundException()
+
+        val mockedApplication: FenixApplication = mockk(relaxed = true)
+        every { mockedApplication.packageManager } returns mockedPackageManager
+
+        val mockedContext: Context = mockk(relaxed = true)
+        every { mockedContext.applicationContext } returns mockedApplication
+
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R,
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
+        assertEquals("", result)
+    }
+
+    @Test
+    fun `WHEN build version is more than R THEN installSourcePackage returns the set package name`() {
+        val mockedPackageManager: PackageManager = mockk(relaxed = true)
+        val testPackageName = "test > R"
+        mockedPackageManager.mockInstallSourcePackageForBuildMinR(testPackageName)
+
+        val mockedApplication: FenixApplication = mockk(relaxed = true)
+        every { mockedApplication.packageManager } returns mockedPackageManager
+
+        val mockedContext: Context = mockk(relaxed = true)
+        every { mockedContext.applicationContext } returns mockedApplication
+
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.plus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
+        assertEquals(testPackageName, result)
+    }
+
+    @Test
+    fun `GIVEN packageManager throws an exception WHEN build version is more than R THEN installSourcePackage returns an empty string`() {
+        val mockedPackageManager: PackageManager = mockk(relaxed = true)
+        every { mockedPackageManager.getInstallSourceInfo(any()).installingPackageName } throws PackageManager.NameNotFoundException()
+
+        val mockedApplication: FenixApplication = mockk(relaxed = true)
+        every { mockedApplication.packageManager } returns mockedPackageManager
+
+        val mockedContext: Context = mockk(relaxed = true)
+        every { mockedContext.applicationContext } returns mockedApplication
+
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.plus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
+        assertEquals("", result)
+    }
+
+    @Test
+    fun `WHEN build version is less than R THEN installSourcePackage returns the set package name`() {
+        val mockedPackageManager: PackageManager = mockk(relaxed = true)
+        val testPackageName = "test < R"
+        mockedPackageManager.mockInstallSourcePackageForBuildMaxQ(testPackageName)
+
+        val mockedApplication: FenixApplication = mockk(relaxed = true)
+        every { mockedApplication.packageManager } returns mockedPackageManager
+
+        val mockedContext: Context = mockk(relaxed = true)
+        every { mockedContext.applicationContext } returns mockedApplication
+
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.minus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
+        assertEquals(testPackageName, result)
+    }
+
+    @Test
+    fun `GIVEN packageManager throws an exception WHEN build version is less than R THEN installSourcePackage returns an empty string`() {
+        val mockedPackageManager: PackageManager = mockk(relaxed = true)
+        @Suppress("DEPRECATION")
+        every { mockedPackageManager.getInstallerPackageName(any()) } throws IllegalArgumentException()
+
+        val mockedApplication: FenixApplication = mockk(relaxed = true)
+        every { mockedApplication.packageManager } returns mockedPackageManager
+
+        val mockedContext: Context = mockk(relaxed = true)
+        every { mockedContext.applicationContext } returns mockedApplication
+
+        val result = installSourcePackage(
+            sdk = Build.VERSION_CODES.R.minus(1),
+            packageManager = mockedContext.application.packageManager,
+            packageName = mockedContext.application.packageName,
+        )
+        assertEquals("", result)
+    }
+}
+
+private fun PackageManager.configureMockInstallSourcePackage() =
+    if (SDK_INT >= Build.VERSION_CODES.R) {
+        mockInstallSourcePackageForBuildMinR()
+    } else {
+        mockInstallSourcePackageForBuildMaxQ()
+    }
+
+private fun PackageManager.mockInstallSourcePackageForBuildMinR(packageName: String = "") =
+    every { getInstallSourceInfo(any()).installingPackageName } returns packageName
+
+@Suppress("DEPRECATION")
+private fun PackageManager.mockInstallSourcePackageForBuildMaxQ(packageName: String = "") =
+    every { getInstallerPackageName(any()) } returns packageName

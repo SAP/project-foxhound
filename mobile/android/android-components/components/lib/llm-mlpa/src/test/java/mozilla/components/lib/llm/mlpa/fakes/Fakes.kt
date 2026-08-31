@@ -1,0 +1,122 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package mozilla.components.lib.llm.mlpa.fakes
+
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
+import mozilla.components.concept.fetch.Client
+import mozilla.components.concept.fetch.Headers
+import mozilla.components.concept.fetch.MutableHeaders
+import mozilla.components.concept.fetch.Request
+import mozilla.components.concept.fetch.Response
+import mozilla.components.concept.integrity.IntegrityClient
+import mozilla.components.concept.integrity.IntegrityToken
+import mozilla.components.lib.llm.mlpa.MlpaTokenProvider
+import mozilla.components.lib.llm.mlpa.UserIdProvider
+import mozilla.components.lib.llm.mlpa.service.AuthenticationService
+import mozilla.components.lib.llm.mlpa.service.AuthorizationToken
+import mozilla.components.lib.llm.mlpa.service.ChatService
+import mozilla.components.lib.llm.mlpa.service.InvalidToken
+import mozilla.components.lib.llm.mlpa.service.MlpaService
+import mozilla.components.lib.llm.mlpa.service.UserId
+import java.io.ByteArrayInputStream
+import java.io.IOException
+import java.io.InputStream
+import java.nio.charset.StandardCharsets
+
+val successIntegrityClient = IntegrityClient {
+    Result.success(IntegrityToken("my-integrity-token"))
+}
+
+val failureIntegrityClient = IntegrityClient {
+    Result.failure(IllegalStateException("Missing Token!"))
+}
+
+val successTokenProvider = MlpaTokenProvider {
+    Result.success(AuthorizationToken.Integrity("my-test-token"))
+}
+
+val userIdProvider = UserIdProvider { UserId("test-user-id") }
+
+val failureTokenProvider = MlpaTokenProvider {
+    Result.failure(IllegalStateException("Missing Token!"))
+}
+
+val successAuthenticationService = AuthenticationService { request ->
+    Result.success(
+        AuthenticationService.Response(
+            AuthorizationToken.Integrity("my-test-token"),
+            tokenType = "bearer",
+            expiresIn = 6000,
+        ),
+    )
+}
+
+val failureAuthenticationService = AuthenticationService { request ->
+    Result.failure(IllegalStateException("Bad MLPA Response"))
+}
+
+val successChatService = ChatService { token, request ->
+    listOf("Hello World!").asFlow()
+}
+
+val failureChatService = ChatService { token, request ->
+    flow { throw IllegalStateException("Bad response!") }
+}
+
+val invalidTokenService = ChatService { _, _ ->
+    flow { throw InvalidToken() }
+}
+
+val streamedResponseBody = """
+    data: {"id":"chatcmpl-8ba80f82-97e4-4d1d-a17b-8eaa6a02ab64","created":1773776808,"model":"vertex_ai/mistral-small-2503","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello","role":"assistant"}}]}
+
+    data: {"id":"chatcmpl-659c5828-fbd8-48cb-887f-2a6b3b508d95","created":1773776808,"model":"vertex_ai/mistral-small-2503","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" World!"}}]}
+
+    data: [DONE]
+""".trimIndent()
+
+data class FakeMlpaService(
+    val authService: AuthenticationService = successAuthenticationService,
+    val chatService: ChatService = successChatService,
+) : MlpaService, ChatService by chatService, AuthenticationService by authService
+
+class FakeClient(
+    val status: Int = 200,
+    val headers: Headers = MutableHeaders(),
+    val body: Response.Body = Response.Body.empty(),
+) : Client() {
+    var lastRequest: Request? = null
+
+    override fun fetch(request: Request): Response {
+        lastRequest = request
+        return Response(
+            url = request.url,
+            status = status,
+            headers = headers,
+            body = body,
+        )
+    }
+
+    companion object {
+        fun success(body: Response.Body = Response.Body.empty()) = FakeClient(body = body)
+        fun failure(
+            status: Int,
+            headers: Headers = MutableHeaders(),
+            body: Response.Body = Response.Body.empty(),
+        ) = FakeClient(
+            status = status,
+            headers = headers,
+            body = body,
+        )
+        fun throwing(message: String = "Connection refused") = object : Client() {
+            override fun fetch(request: Request): Response = throw IOException(message)
+        }
+    }
+}
+
+val String.asBody: Response.Body get() = Response.Body(
+    ByteArrayInputStream(this.toByteArray(StandardCharsets.UTF_8)),
+)

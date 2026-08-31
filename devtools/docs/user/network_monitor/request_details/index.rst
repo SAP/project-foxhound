@@ -13,10 +13,6 @@ Clicking on a row displays a new pane in the right-hand side of the network moni
   :alt: Screenshot of the Network Request details pane, without callouts for the close-pane button and the detail tabs
   :class: center
 
-.. note::
-
-  The screenshots and descriptions in this section reflect Firefox 78. Earlier versions appeared similarly, but might not include some functionality.
-
 
 The tabs at the top of this pane enable you to switch between the following pages:
 
@@ -309,8 +305,6 @@ As with headers, you can filter the list of cookies displayed. The full list of 
 .. image:: highlight-samesite-attribute.png
   :alt: cookies panel in firefox devtools network monitor, showing a number of cookie attributes including samesite
 
-The ``samesite`` attribute has been shown since Firefox 62 (`bug 1452715 <https://bugzilla.mozilla.org/show_bug.cgi?id=1452715>`_).
-
 
 .. _network-monitor-request-details-request-tab:
 
@@ -416,7 +410,7 @@ This tab can include the following sections.
 Queued, Started, Downloaded
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-New in Firefox 72, we now show the following timings at the top of the Timings tab, making dependency analysis a lot easier:
+The following timings are displayed at the top of the Timings tab:
 
 - Queued: When the resource was queued for download.
 - Started: When the resource started downloading.

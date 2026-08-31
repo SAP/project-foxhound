@@ -70,6 +70,14 @@ impl Command {
         self
     }
 
+    pub fn env_remove<K>(&mut self, key: K) -> &mut Self
+    where
+        K: AsRef<OsStr>,
+    {
+        self.env.remove(key.as_ref().into());
+        self
+    }
+
     pub fn stdin<T: Into<Stdio>>(&mut self, _cfg: T) -> &mut Self {
         self
     }
@@ -206,7 +214,9 @@ impl std::io::Write for ChildStdin {
 #[cfg(unix)]
 pub fn exit_status(status: i32) -> ExitStatus {
     use std::os::unix::process::ExitStatusExt;
-    ExitStatus::from_raw(status)
+    // ExitStatus::from_raw actually takes a *wait status*, which stores the exit status in the
+    // second byte on BSDs and Linux.
+    ExitStatus::from_raw(status << 8)
 }
 
 #[cfg(windows)]

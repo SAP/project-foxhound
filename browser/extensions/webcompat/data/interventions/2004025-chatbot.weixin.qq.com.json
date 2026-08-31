@@ -1,0 +1,15 @@
+{
+  "label": "chatbot.weixin.qq.com",
+  "bugs": {
+    "2004025": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://chatbot.weixin.qq.com/webapp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

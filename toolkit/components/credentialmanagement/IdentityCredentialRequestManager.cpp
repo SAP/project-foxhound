@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,7 +39,7 @@ IdentityCredentialRequestManager::GetTokenFromPopup(
   RefPtr<IdentityCredentialRequestManager> self = this;
 
   // Tell the RP child to open an IDP popup.
-  // It will either resolve with a failing nsresult or a BC ID of the popup.
+  // It will either resolve with a failing nsresult or the popup BC.
   aRelyingPartyWindow->SendOpenContinuationWindow(
       uri,
       [result, self](const dom::OpenContinuationWindowResponse& response) {
@@ -50,20 +48,23 @@ IdentityCredentialRequestManager::GetTokenFromPopup(
           result->Reject(response.get_nsresult(), __func__);
           return;
         }
-        // If we have a BC ID, a popup opened.
-        if (response.type() == dom::OpenContinuationWindowResponse::Tuint64_t) {
-          RefPtr<dom::CanonicalBrowsingContext> bc =
-              dom::CanonicalBrowsingContext::Get(response.get_uint64_t());
-          if (!bc) {
+        // If we have a BC, a popup opened.
+        if (response.type() == dom::OpenContinuationWindowResponse::
+                                   TMaybeDiscardedBrowsingContext) {
+          const dom::MaybeDiscardedBrowsingContext& bc =
+              response.get_MaybeDiscardedBrowsingContext();
+          if (bc.IsNullOrDiscarded()) {
             result->Reject(NS_ERROR_DOM_NETWORK_ERR, __func__);
+            return;
           }
-          // Transform the BC ID into its top-chrome-window-bc, so we have
+          // Transform the BC into its top-chrome-window-bc, so we have
           // something stable through navigation and can listen for the popup's
           // close.
           dom::CanonicalBrowsingContext* chromeBC =
-              bc->TopCrossChromeBoundary();
+              bc.get_canonical()->TopCrossChromeBoundary();
           if (!chromeBC) {
             result->Reject(NS_ERROR_DOM_NETWORK_ERR, __func__);
+            return;
           }
 
           // There really shouldn't be more than one request per top window

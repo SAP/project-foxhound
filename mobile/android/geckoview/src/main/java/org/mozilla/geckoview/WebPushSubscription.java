@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -80,7 +78,15 @@ public class WebPushSubscription implements Parcelable {
    */
   @NonNull public final byte[] authSecret;
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Construct a new WebPushSubscription.
+   *
+   * @param scope The scope of the service worker
+   * @param endpoint The push endpoint URL
+   * @param appServerKey The application server key
+   * @param browserPublicKey The browser's public key
+   * @param authSecret The authentication secret
+   */
   public WebPushSubscription(
       final @NonNull String scope,
       final @NonNull String endpoint,
@@ -163,6 +169,7 @@ public class WebPushSubscription implements Parcelable {
     out.writeByteArray(authSecret);
   }
 
+  /** Parcelable creator for WebPushSubscription instances. */
   public static final Parcelable.Creator<WebPushSubscription> CREATOR =
       new Parcelable.Creator<WebPushSubscription>() {
         @Override

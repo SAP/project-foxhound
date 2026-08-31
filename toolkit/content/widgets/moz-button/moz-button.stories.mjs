@@ -22,7 +22,16 @@ export default {
       control: { type: "radio" },
     },
     type: {
-      options: ["default", "primary", "destructive", "icon", "icon ghost"],
+      options: [
+        "default",
+        "primary",
+        "destructive",
+        "toolbar",
+        "menuitem",
+        "icon",
+        "icon ghost",
+        "split",
+      ],
       control: { type: "select" },
     },
     iconPosition: {
@@ -40,13 +49,11 @@ moz-button-labelled =
   .label = Button
 moz-button-primary = Primary
 moz-button-destructive = Destructive
+moz-button-menuitem = Menu Item
 moz-button-titled =
   .title = View logins
 moz-button-aria-labelled =
   .aria-label = View logins
-moz-button-more-options =
-  .aria-label = More options
-  .title = More options
 `,
   },
 };
@@ -126,6 +133,13 @@ Destructive.args = {
   type: "destructive",
   l10nId: "moz-button-destructive",
 };
+export const MenuItem = Template.bind({});
+MenuItem.args = {
+  ...Default.args,
+  type: "menuitem",
+  l10nId: "moz-button-menuitem",
+  size: "small",
+};
 export const Icon = Template.bind({});
 Icon.args = {
   ...Default.args,
@@ -162,6 +176,7 @@ WithAccesskey.args = {
 export const Toolbar = Template.bind({});
 Toolbar.args = {
   ...Default.args,
+  type: "toolbar",
   showOuterPadding: true,
 };
 export const Badged = Template.bind({});
@@ -175,5 +190,12 @@ MenuButton.args = {
   ...Icon.args,
   type: "icon",
   l10nId: "moz-button-more-options",
+  menuId: "panel-list",
+};
+
+export const SplitButton = Template.bind({});
+SplitButton.args = {
+  ...Default.args,
+  type: "split",
   menuId: "panel-list",
 };

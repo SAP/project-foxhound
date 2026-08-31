@@ -27,7 +27,7 @@ add_task(async function testSteps() {
   // - create_cache.js
   // - storage.sqlite
   // The file create_cache.js in the package was run locally, specifically it
-  // was temporarily added to xpcshell.ini and then executed:
+  // was temporarily added to xpcshell.toml and then executed:
   //   mach xpcshell-test --interactive dom/cache/test/xpcshell/create_cache.js
   // Note: it must be executed in FF56 and it only creates the directory
   // "storage/default/chrome/cache" and the file "storage.sqlite". To make it

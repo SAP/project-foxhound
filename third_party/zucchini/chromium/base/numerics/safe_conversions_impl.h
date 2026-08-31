@@ -10,6 +10,10 @@
 #include <limits>
 #include <type_traits>
 
+#if defined(MOZ_ZUCCHINI)
+#include "base/compiler_specific.h"
+#endif  // defined(MOZ_ZUCCHINI)
+
 #if defined(__GNUC__) || defined(__clang__)
 #define BASE_NUMERICS_LIKELY(x) __builtin_expect(!!(x), 1)
 #define BASE_NUMERICS_UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -88,7 +92,11 @@ constexpr typename std::make_unsigned<T>::type SafeUnsignedAbs(T value) {
 
 // TODO(jschuh): Switch to std::is_constant_evaluated() once C++20 is supported.
 // Alternately, the usage could be restructured for "consteval if" in C++23.
+#if !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
 #define IsConstantEvaluated() (__builtin_is_constant_evaluated())
+#else
+#define IsConstantEvaluated() false
+#endif  // !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
 
 // TODO(jschuh): Debug builds don't reliably propagate constants, so we restrict
 // some accelerated runtime paths to release builds until this can be forced

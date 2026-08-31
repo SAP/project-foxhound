@@ -137,7 +137,7 @@ PasswordEngine.prototype = {
         changes[login.guid] = {
           counter: login.syncCounter, // record the initial counter value
           modified: roundTimeForSync(login.timePasswordChanged),
-          deleted: this._store.storage.loginIsDeleted(login.guid),
+          deleted: await this._store.storage.loginIsDeletedAsync(login.guid),
         };
       }
     }
@@ -333,19 +333,20 @@ PasswordStore.prototype = {
     prop.setPropertyAsAUTF8String("guid", newID);
 
     let oldLogin = await this._getLoginFromGUID(oldID);
-    this.storage.modifyLogin(oldLogin, prop, true);
+    await this.storage.modifyLoginAsync(oldLogin, prop, true);
   },
 
   async itemExists(id) {
     let login = await this._getLoginFromGUID(id);
-    return login && !this.storage.loginIsDeleted(id);
+    let isDeleted = await this.storage.loginIsDeletedAsync(id);
+    return login && !isDeleted;
   },
 
   async createRecord(id, collection) {
     let record = new LoginRec(collection, id);
     let login = await this._getLoginFromGUID(id);
 
-    if (!login || this.storage.loginIsDeleted(id)) {
+    if (!login || (await this.storage.loginIsDeletedAsync(id))) {
       record.deleted = true;
       return record;
     }
@@ -407,12 +408,12 @@ PasswordStore.prototype = {
       return;
     }
 
-    this.storage.removeLogin(loginItem, sourceSync);
+    await this.storage.removeLoginAsync(loginItem, sourceSync);
   },
 
   async update(record) {
     let loginItem = await this._getLoginFromGUID(record.id);
-    if (!loginItem || this.storage.loginIsDeleted(record.id)) {
+    if (!loginItem || (await this.storage.loginIsDeletedAsync(record.id))) {
       this._log.trace("Skipping update for unknown item: " + record.hostname);
       return;
     }
@@ -425,11 +426,11 @@ PasswordStore.prototype = {
 
     loginItem.everSynced = true;
 
-    this.storage.modifyLogin(loginItem, newinfo, true);
+    await this.storage.modifyLoginAsync(loginItem, newinfo, true);
   },
 
   async wipe() {
-    this.storage.removeAllUserFacingLogins(true);
+    await this.storage.removeAllUserFacingLoginsAsync(true);
   },
 };
 Object.setPrototypeOf(PasswordStore.prototype, Store.prototype);

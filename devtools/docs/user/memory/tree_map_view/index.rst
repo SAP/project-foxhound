@@ -2,8 +2,6 @@
 Tree map view
 =============
 
-The Tree map view is new in Firefox 48.
-
 The Tree map view provides a visual representation of the snapshot, that helps you quickly get an idea of which objects are using the most memory.
 
 A treemap displays `"hierarchical (tree-structured) data as a set of nested rectangles" <https://en.wikipedia.org/wiki/Treemapping>`_. The size of the rectangles corresponds to some quantitative aspect of the data.

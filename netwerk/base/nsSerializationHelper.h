@@ -11,7 +11,6 @@
 
 #include "nsStringFwd.h"
 #include "nsISerializationHelper.h"
-#include "mozilla/Attributes.h"
 
 class nsISerializable;
 

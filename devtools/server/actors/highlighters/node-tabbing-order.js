@@ -35,7 +35,7 @@ loader.lazyRequireGetter(
  * h.hide();
  * h.destroy();
  *
- * @param {Number} options.index
+ * @param {number} options.index
  *        Tabbing index value to be displayed in the highlighter info bar.
  */
 class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
@@ -43,76 +43,72 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
     super(highlighterEnv);
 
     this._doNotStartRefreshLoop = true;
-    this.ID_CLASS_PREFIX = "tabbing-order-";
     this.markup = new CanvasFrameAnonymousContentHelper(
       this.highlighterEnv,
-      this._buildMarkup.bind(this)
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-tabbing-order",
+      }
     );
     this.isReady = this.markup.initialize();
   }
 
   _buildMarkup() {
-    const root = this.markup.createNode({
+    this.rootEl = this.markup.createNode({
       attributes: {
-        id: "root",
-        class: "root highlighter-container tabbing-order",
+        id: "tabbing-order-root",
+        class: "tabbing-order-root highlighter-container tabbing-order",
         "aria-hidden": "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const container = this.markup.createNode({
-      parent: root,
+      parent: this.rootEl,
       attributes: {
-        id: "container",
+        id: "tabbing-order-container",
         width: "100%",
         height: "100%",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Building the SVG element
     this.markup.createNode({
       parent: container,
       attributes: {
-        class: "bounds",
-        id: "bounds",
+        class: "tabbing-order-bounds",
+        id: "tabbing-order-bounds",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Building the nodeinfo bar markup
 
     const infobarContainer = this.markup.createNode({
-      parent: root,
+      parent: this.rootEl,
       attributes: {
-        class: "infobar-container",
-        id: "infobar-container",
+        class: "tabbing-order-infobar-container",
+        id: "tabbing-order-infobar-container",
         position: "top",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const infobar = this.markup.createNode({
       parent: infobarContainer,
       attributes: {
-        class: "infobar",
+        class: "tabbing-order-infobar",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     this.markup.createNode({
       parent: infobar,
       attributes: {
-        class: "infobar-text",
-        id: "infobar-text",
+        class: "tabbing-order-infobar-text",
+        id: "tabbing-order-infobar-text",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
-    return root;
+    return this.rootEl;
   }
 
   /**
@@ -120,23 +116,24 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
    */
   destroy() {
     this.markup.destroy();
+    this.rootEl = null;
 
     AutoRefreshHighlighter.prototype.destroy.call(this);
   }
 
   getElement(id) {
-    return this.markup.getElement(this.ID_CLASS_PREFIX + id);
+    return this.markup.getElement(id);
   }
 
   /**
    * Update focused styling for a node tabbing index highlight.
    *
-   * @param {Boolean} focused
+   * @param {boolean} focused
    *        Indicates if the highlighted node needs to be focused.
    */
   updateFocus(focused) {
-    const root = this.getElement("root");
-    root.classList.toggle("focused", focused);
+    const root = this.getElement("tabbing-order-root");
+    root.classList?.toggle("focused", focused);
   }
 
   /**
@@ -190,7 +187,10 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
    * Hide the infobar
    */
   _hideInfobar() {
-    this.getElement("infobar-container").setAttribute("hidden", "true");
+    this.getElement("tabbing-order-infobar-container").setAttribute(
+      "hidden",
+      "true"
+    );
   }
 
   /**
@@ -201,10 +201,14 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
       return;
     }
 
-    this.getElement("infobar-container").removeAttribute("hidden");
-    this.getElement("infobar-text").setTextContent(this.options.index);
+    this.getElement("tabbing-order-infobar-container").removeAttribute(
+      "hidden"
+    );
+    this.getElement("tabbing-order-infobar-text").setTextContent(
+      this.options.index
+    );
     const bounds = this._getBounds();
-    const container = this.getElement("infobar-container");
+    const container = this.getElement("tabbing-order-infobar-container");
 
     moveInfobar(container, bounds, this.win);
   }
@@ -213,19 +217,20 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
    * Hide the tabbing order highlighter
    */
   _hideTabbingOrder() {
-    this.getElement("container").setAttribute("hidden", "true");
+    this.getElement("tabbing-order-container").setAttribute("hidden", "true");
   }
 
   /**
    * Show the tabbing order highlighter
    */
   _showTabbingOrder() {
-    this.getElement("container").removeAttribute("hidden");
+    this.getElement("tabbing-order-container").removeAttribute("hidden");
   }
 
   /**
    * Calculate border bounds based on the quads returned by getAdjustedQuads.
-   * @return {Object} A bounds object {bottom,height,left,right,top,width,x,y}
+   *
+   * @return {object} A bounds object {bottom,height,left,right,top,width,x,y}
    */
   _getBorderBounds() {
     const quads = this.currentQuads.border;
@@ -271,7 +276,7 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
       return false;
     }
 
-    const boundsEl = this.getElement("bounds");
+    const boundsEl = this.getElement("tabbing-order-bounds");
     const { left, top, width, height } = this._getBounds();
     boundsEl.setAttribute(
       "style",
@@ -279,15 +284,15 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
     );
 
     // Un-zoom the root wrapper if the page was zoomed.
-    const rootId = this.ID_CLASS_PREFIX + "container";
-    this.markup.scaleRootElement(this.currentNode, rootId);
+    this.markup.scaleRootElement(this.currentNode, "tabbing-order-container");
 
     return true;
   }
 
   /**
    * Can the current node be highlighted? Does it have quads.
-   * @return {Boolean}
+   *
+   * @return {boolean}
    */
   _nodeNeedsHighlighting() {
     return (
@@ -331,7 +336,7 @@ class NodeTabbingOrderHighlighter extends AutoRefreshHighlighter {
  *
  * @param  {DOMNode} container
  *         The container element which will be used to position the infobar.
- * @param  {Object} bounds
+ * @param  {object} bounds
  *         The content bounds of the container element.
  * @param  {Window} win
  *         The window object.

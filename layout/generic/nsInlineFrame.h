@@ -1,15 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for CSS display:inline objects */
 
-#ifndef nsInlineFrame_h___
-#define nsInlineFrame_h___
+#ifndef nsInlineFrame_h_
+#define nsInlineFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 
 class nsLineLayout;
@@ -68,7 +65,7 @@ class nsInlineFrame : public nsContainerFrame {
   void AddInlinePrefISize(const mozilla::IntrinsicSizeInput& aInput,
                           InlinePrefISizeData* aData) override;
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -81,7 +78,7 @@ class nsInlineFrame : public nsContainerFrame {
               nsReflowStatus& aStatus) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   bool CanContinueTextRun() const override;
 
@@ -161,6 +158,12 @@ class nsInlineFrame : public nsContainerFrame {
   virtual void PushFrames(nsPresContext* aPresContext, nsIFrame* aFromChild,
                           nsIFrame* aPrevSibling, InlineReflowInput& aState);
 
+  // If this inline frame has abspos children, set
+  // NS_BLOCK_HAS_INLINE_ABSPOS_DESCENDANT on the block ancestor that will
+  // reflow them in nsBlockFrame::ReflowAbsoluteDescendantsInInlineFrame().
+  void MarkBlockAncestorHavingAbsoluteDescendants(
+      const ReflowInput& aReflowInput) const;
+
  private:
   explicit nsInlineFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
       : nsInlineFrame(aStyle, aPresContext, kClassID) {}
@@ -209,4 +212,4 @@ class nsFirstLineFrame final : public nsInlineFrame {
   nsIFrame* PullOneFrame(nsPresContext*, InlineReflowInput&) override;
 };
 
-#endif /* nsInlineFrame_h___ */
+#endif /* nsInlineFrame_h_ */

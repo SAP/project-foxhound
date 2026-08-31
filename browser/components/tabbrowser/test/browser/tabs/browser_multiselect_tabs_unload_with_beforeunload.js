@@ -12,7 +12,7 @@ async function openTabMenuFor(tab) {
   EventUtils.synthesizeMouseAtCenter(
     tab,
     { type: "contextmenu" },
-    tab.ownerGlobal
+    tab.documentGlobal
   );
   await tabMenuShown;
 
@@ -22,7 +22,9 @@ async function openTabMenuFor(tab) {
 async function addBrowserTabs(numberOfTabs) {
   // This is helpful to avoid some weird race conditions in the test, specifically
   // the assertion that !this.blankTab in AsyncTabSwitcher when adding a new tab.
-  //await promiseTabLoadEvent(gBrowser.selectedTab, "http://mochi.test:8888/#originalTab");
+  // await BrowserTestUtils.loadURIString({
+  //   browser: gBrowser.selectedTab, uriString: "http://mochi.test:8888/#originalTab"
+  // });
   let tabs = [];
   for (let i = 0; i < numberOfTabs; i++) {
     tabs.push(await addTab(`http://mochi.test:8888/#${i}`));
@@ -31,7 +33,7 @@ async function addBrowserTabs(numberOfTabs) {
 }
 
 function injectBeforeUnload(browser) {
-  return ContentTask.spawn(browser, null, async function () {
+  return SpecialPowers.spawn(browser, [], async function () {
     content.window.addEventListener(
       "beforeunload",
       function (event) {
@@ -58,10 +60,10 @@ function awaitAndCloseBeforeUnloadDialog(browser, doStayOnPage) {
 add_setup(async function () {
   // This is helpful to avoid some weird race conditions in the test, specifically
   // the assertion that !this.blankTab in AsyncTabSwitcher when adding a new tab.
-  await promiseTabLoadEvent(
-    gBrowser.selectedTab,
-    "http://mochi.test:8888/#originalTab"
-  );
+  await BrowserTestUtils.loadURIString({
+    browser: gBrowser.selectedTab.linkedBrowser,
+    uriString: "http://mochi.test:8888/#originalTab",
+  });
   let originalTab = gBrowser.selectedTab;
   // switch to Firefox View tab to initialize it
   FirefoxViewHandler.openTab();

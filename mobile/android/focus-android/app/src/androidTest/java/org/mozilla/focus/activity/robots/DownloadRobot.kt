@@ -13,6 +13,7 @@ import org.mozilla.focus.helpers.TestHelper.packageName
 import org.mozilla.focus.helpers.TestHelper.waitingTime
 import org.mozilla.focus.helpers.TestHelper.waitingTimeShort
 import org.mozilla.focus.idlingResources.SessionLoadedIdlingResource
+import mozilla.components.feature.downloads.R as downloadsR
 
 class DownloadRobot {
     fun verifyDownloadDialog(fileName: String) {
@@ -93,4 +94,4 @@ private val downloadBtn = mDevice.findObject(
         .resourceId("$packageName:id/download_button"),
 )
 
-private val downloadNotificationText = getStringResource(R.string.mozac_feature_downloads_completed_notification_text2)
+private val downloadNotificationText = getStringResource(downloadsR.string.mozac_feature_downloads_completed_notification_text2)

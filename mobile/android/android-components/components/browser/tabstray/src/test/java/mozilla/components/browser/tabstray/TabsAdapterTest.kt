@@ -14,13 +14,13 @@ import mozilla.components.browser.tabstray.TabsAdapter.Companion.PAYLOAD_HIGHLIG
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.test.assertIs
 
 private class TestTabViewHolder(view: View) : TabViewHolder(view) {
     override var tab: TabSessionState? = null
@@ -45,7 +45,7 @@ class TabsAdapterTest {
 
         val type = adapter.onCreateViewHolder(FrameLayout(testContext), 0)
 
-        assertTrue(type is DefaultTabViewHolder)
+        assertIs<DefaultTabViewHolder>(type)
     }
 
     @Test
@@ -57,7 +57,7 @@ class TabsAdapterTest {
 
         val type = adapter.onCreateViewHolder(FrameLayout(testContext), 0)
 
-        assertTrue(type is TestTabViewHolder)
+        assertIs<TestTabViewHolder>(type)
     }
 
     @Test

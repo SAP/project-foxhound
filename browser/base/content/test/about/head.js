@@ -59,7 +59,15 @@ async function openErrorPage(src, useFrame, sandboxed) {
   if (useFrame) {
     info("Loading cert error page in an iframe");
     tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, dummyPage);
+    let errorCardReady = BrowserTestUtils.waitForContentEvent(
+      tab.linkedBrowser,
+      "AboutNetErrorLoad",
+      false,
+      null,
+      true
+    );
     await injectErrorPageFrame(tab, src, sandboxed);
+    await errorCardReady;
   } else {
     let certErrorLoaded;
     tab = await BrowserTestUtils.openNewForegroundTab(
@@ -104,50 +112,6 @@ function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
   };
 }
 
-function whenTabLoaded(aTab, aCallback) {
-  promiseTabLoadEvent(aTab).then(aCallback);
-}
-
-function promiseTabLoaded(aTab) {
-  return new Promise(resolve => {
-    whenTabLoaded(aTab, resolve);
-  });
-}
-
-/**
- * Waits for a load (or custom) event to finish in a given tab. If provided
- * load an uri into the tab.
- *
- * @param tab
- *        The tab to load into.
- * @param [optional] url
- *        The url to load, or the current url.
- * @return {Promise} resolved when the event is handled.
- * @resolves to the received event
- * @rejects if a valid load event is not received within a meaningful interval
- */
-function promiseTabLoadEvent(tab, url) {
-  info("Wait tab event: load");
-
-  function handle(loadedUrl) {
-    if (loadedUrl === "about:blank" || (url && loadedUrl !== url)) {
-      info(`Skipping spurious load event for ${loadedUrl}`);
-      return false;
-    }
-
-    info("Tab event received: load");
-    return true;
-  }
-
-  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
-
-  if (url) {
-    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
-  }
-
-  return loaded;
-}
-
 async function waitForBookmarksToolbarVisibility({
   win = window,
   visible,
@@ -168,4 +132,85 @@ async function waitForBookmarksToolbarVisibility({
 function isBookmarksToolbarVisible(win = window) {
   let toolbar = win.document.getElementById("PersonalToolbar");
   return !toolbar.collapsed;
+}
+
+const setSecurityCertErrorsFeltPrivacyToTrue = async () =>
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", true]],
+  });
+const setSecurityCertErrorsFeltPrivacyToFalse = async () =>
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", false]],
+  });
+
+// -- TRR-only test helpers --
+
+// resetTRRPrefs is set by loadTRRErrorPage() as a closure over the proxy type
+// value captured at call time, avoiding shared mutable state.
+let resetTRRPrefs = () => {
+  throw new Error("resetTRRPrefs called before loadTRRErrorPage");
+};
+
+let _trrDnsOverrideSet = false;
+
+async function loadTRRErrorPage() {
+  const oldProxyType = Services.prefs.getIntPref("network.proxy.type");
+  resetTRRPrefs = function () {
+    Services.prefs.clearUserPref("network.trr.mode");
+    Services.prefs.clearUserPref("network.dns.native-is-localhost");
+    Services.prefs.setIntPref("network.proxy.type", oldProxyType);
+  };
+  registerCleanupFunction(resetTRRPrefs);
+
+  // See bug 1831731: prevent real connections to the DoH endpoint.
+  if (!_trrDnsOverrideSet) {
+    Cc["@mozilla.org/network/native-dns-override;1"]
+      .getService(Ci.nsINativeDNSResolverOverride)
+      .addIPOverride("mozilla.cloudflare-dns.com", "127.0.0.1");
+    _trrDnsOverrideSet = true;
+  }
+
+  Services.prefs.setBoolPref("network.dns.native-is-localhost", true);
+  Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRONLY);
+  // Disable proxy, otherwise TRR isn't used for name resolution.
+  Services.prefs.setIntPref("network.proxy.type", 0);
+
+  let browser;
+  let pageLoaded;
+  await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    () => {
+      gBrowser.selectedTab = BrowserTestUtils.addTab(
+        gBrowser,
+        "https://does-not-exist.test"
+      );
+      browser = gBrowser.selectedBrowser;
+      pageLoaded = BrowserTestUtils.waitForErrorPage(browser);
+    },
+    false
+  );
+
+  info("Loading and waiting for the TRR net error");
+  await pageLoaded;
+  return browser;
+}
+
+async function loadNetErrorPage(errorType, hostAndPort) {
+  let browser, tab;
+  const url = `about:neterror?e=${errorType}&u=http%3A%2F%2F${encodeURIComponent(hostAndPort)}%2F`;
+  await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    () => {
+      gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
+      browser = gBrowser.selectedBrowser;
+      tab = gBrowser.selectedTab;
+    },
+    false
+  );
+  const pageLoaded = BrowserTestUtils.waitForErrorPage(browser);
+  SpecialPowers.spawn(browser, [url], errorUrl => {
+    content.location = errorUrl;
+  });
+  await pageLoaded;
+  return { browser, tab };
 }

@@ -53,7 +53,7 @@ gantt
     Some web content work :t1, after g0, 0.100s
 ```
 
-## Update log:
+## Update log
 
 - 2025-05-06
 

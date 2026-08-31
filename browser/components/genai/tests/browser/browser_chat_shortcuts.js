@@ -7,6 +7,9 @@ const { GenAI } = ChromeUtils.importESModule(
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
+const { AIWindowUI } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs"
+);
 
 /**
  * Check that shortcuts aren't shown by default
@@ -31,6 +34,143 @@ add_task(async function test_no_shortcuts() {
 });
 
 /**
+ * Check that shortcuts in Smart Window submit to Smart Window
+ */
+add_task(async function test_smart_window_ask_chat() {
+  Services.fog.testResetFOG();
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.shortcuts", true],
+      ["browser.ml.chat.shortcuts.smartwindow", true],
+    ],
+  });
+
+  const submitChatMessage = sinon.stub();
+  const isSidebarOpenStub = sinon
+    .stub(AIWindowUI, "isSidebarOpen")
+    .returns(true);
+  const getSidebarAiWindowStub = sinon
+    .stub(AIWindowUI, "_getSidebarAiWindow")
+    .returns({ submitChatMessage });
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    win.document.documentElement.setAttribute("ai-window", "");
+
+    await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      "data:text/plain,hi"
+    );
+    const browser = win.gBrowser.selectedBrowser;
+    await SimpleTest.promiseFocus(browser);
+
+    const selectPromise = SpecialPowers.spawn(browser, [], () => {
+      ContentTaskUtils.waitForCondition(() => content.getSelection());
+    });
+    win.goDoCommand("cmd_selectAll");
+    await selectPromise;
+    BrowserTestUtils.synthesizeMouseAtCenter(
+      browser,
+      { type: "mouseup" },
+      browser
+    );
+
+    const selectionPanel = win.document.getElementById(
+      "selection-shortcut-action-panel"
+    );
+    await TestUtils.waitForCondition(
+      () => selectionPanel.getAttribute("panelopen") === "true"
+    );
+    Assert.ok(
+      selectionPanel.hasAttribute("panelopen"),
+      "Shortcuts shown in Smart Window"
+    );
+
+    const popup = win.document.getElementById("chat-shortcuts-options-panel");
+    const shortcuts = win.document.getElementById("ai-action-button");
+    shortcuts.click();
+    await BrowserTestUtils.waitForEvent(popup, "popupshown");
+
+    popup.querySelector("toolbarbutton").click();
+
+    await TestUtils.waitForCondition(() => submitChatMessage.calledOnce);
+    Assert.equal(
+      submitChatMessage.firstCall.args[0].text,
+      "Summarize: hi",
+      "Prompt is label + selection"
+    );
+    Assert.equal(
+      submitChatMessage.firstCall.args[0].submitType,
+      "shortcuts",
+      "submitType is shortcuts"
+    );
+
+    const events = Glean.genaiChatbot.promptClick.testGetValue();
+    Assert.equal(events.length, 1, "One prompt click");
+    Assert.equal(events[0].extra.smart_window, "true", "Is smart window");
+  } finally {
+    isSidebarOpenStub.restore();
+    getSidebarAiWindowStub.restore();
+    await BrowserTestUtils.closeWindow(win);
+  }
+
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Check that Smart Window shortcuts show even when classic window
+ * shortcuts have been hidden via browser.ml.chat.shortcuts.
+ */
+add_task(async function test_smart_window_ask_chat_ignores_classic_toggle() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.shortcuts", false],
+      ["browser.ml.chat.shortcuts.smartwindow", true],
+    ],
+  });
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    win.document.documentElement.setAttribute("ai-window", "");
+
+    await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      "data:text/plain,hi"
+    );
+    const browser = win.gBrowser.selectedBrowser;
+    await SimpleTest.promiseFocus(browser);
+
+    const selectPromise = SpecialPowers.spawn(browser, [], () => {
+      ContentTaskUtils.waitForCondition(() => content.getSelection());
+    });
+    win.goDoCommand("cmd_selectAll");
+    await selectPromise;
+    BrowserTestUtils.synthesizeMouseAtCenter(
+      browser,
+      { type: "mouseup" },
+      browser
+    );
+
+    const selectionPanel = win.document.getElementById(
+      "selection-shortcut-action-panel"
+    );
+    await TestUtils.waitForCondition(
+      () => selectionPanel.getAttribute("panelopen") === "true"
+    );
+    Assert.ok(
+      selectionPanel.hasAttribute("panelopen"),
+      "Shortcuts shown in Smart Window even with classic shortcuts disabled"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win);
+  }
+
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
  * Check that shortcuts get shown on selection and open popup and sidebar
  */
 add_task(async function test_show_shortcuts() {
@@ -38,6 +178,7 @@ add_task(async function test_show_shortcuts() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.ml.chat.shortcuts", true],
+      ["browser.ml.chat.shortcut.onboardingMouseoverCount", 0],
       ["browser.ml.chat.provider", "http://localhost:8080"],
     ],
   });
@@ -73,15 +214,83 @@ add_task(async function test_show_shortcuts() {
     const popup = document.getElementById("chat-shortcuts-options-panel");
     Assert.equal(popup.state, "closed", "Popup is closed");
 
+    Assert.equal(
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      0,
+      "Pref should start at 0"
+    );
+
     EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
     await BrowserTestUtils.waitForEvent(popup, "popupshown");
-
-    Assert.equal(popup.state, "open", "Popup is open");
-    events = Glean.genaiChatbot.shortcutsExpanded.testGetValue();
-    Assert.equal(events.length, 1, "One shortcuts opened");
-    Assert.equal(events[0].extra.selection, 2, "Selected hi");
     Assert.equal(
-      events[0].extra.warning,
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      1,
+      "Pref should be 1 after mouseover"
+    );
+    Assert.equal(
+      popup.state,
+      "open",
+      "Popup is open with mouseover the first time"
+    );
+    const hidePopup = BrowserTestUtils.waitForEvent(popup, "popuphidden");
+    popup.hidePopup();
+    await hidePopup;
+
+    EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
+    await BrowserTestUtils.waitForEvent(popup, "popupshown");
+    Assert.equal(
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      2,
+      "Pref should be 2 after second mouseover"
+    );
+
+    Assert.equal(
+      popup.state,
+      "open",
+      "Popup is open with mouseover the second time"
+    );
+    const hidePopupSecondTime = BrowserTestUtils.waitForEvent(
+      popup,
+      "popuphidden"
+    );
+    popup.hidePopup();
+    await hidePopupSecondTime;
+
+    EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
+    Assert.equal(
+      Services.prefs.getIntPref(
+        "browser.ml.chat.shortcut.onboardingMouseoverCount"
+      ),
+      2,
+      "Pref should still be 2 after third mouseover"
+    );
+    Assert.equal(
+      popup.state,
+      "closed",
+      "Popup doesn't open with mouseover after the second time"
+    );
+
+    let beforeClick = Glean.genaiChatbot.shortcutsExpanded.testGetValue();
+    shortcuts.click();
+    await BrowserTestUtils.waitForEvent(popup, "popupshown");
+    Assert.equal(popup.state, "open", "Popup open with click");
+
+    let afterClick = Glean.genaiChatbot.shortcutsExpanded.testGetValue();
+    Assert.equal(
+      afterClick.length,
+      beforeClick.length + 1,
+      "One shortcuts opened"
+    );
+    const lastEvent = afterClick[afterClick.length - 1];
+    Assert.equal(lastEvent.extra.selection, 2, "Selected hi");
+    Assert.equal(
+      lastEvent.extra.warning,
       "false",
       "Warning lable value is correct"
     );
@@ -109,6 +318,7 @@ add_task(async function test_show_shortcuts() {
     Assert.equal(events[0].extra.prompt, "summarize", "Picked summarize");
     Assert.equal(events[0].extra.provider, "localhost", "With localhost");
     Assert.equal(events[0].extra.selection, 2, "Selected hi");
+    Assert.equal(events[0].extra.smart_window, "false", "Not smart window");
     Assert.equal(events[0].extra.source, "shortcuts", "From shortcuts menu");
 
     SidebarController.hide();
@@ -120,6 +330,12 @@ add_task(async function test_show_shortcuts() {
  */
 add_task(async function test_show_shortcuts_second_tab() {
   // NB: this test runs after test_show_shortcuts, which showed shortcuts
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.shortcuts", true],
+      ["browser.ml.chat.provider", "http://localhost:8080"],
+    ],
+  });
   await BrowserTestUtils.withNewTab(
     "data:text/html,<title>second</title>page",
     async browser => {
@@ -145,7 +361,7 @@ add_task(async function test_show_shortcuts_second_tab() {
       const stub = sandbox.stub(GenAI, "addAskChatItems");
 
       const shortcuts = document.querySelector("#ai-action-button");
-      EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
+      shortcuts.click();
 
       Assert.equal(stub.callCount, 1, "Shortcuts added on select");
       Assert.equal(stub.firstCall.args[0], browser, "Got correct browser");
@@ -201,8 +417,9 @@ add_task(async function test_show_warning_label() {
         8192,
         "Selected enough text"
       );
-      // Hover button
-      EventUtils.sendMouseEvent({ type: "mouseover" }, aiActionButton);
+
+      // Click button
+      aiActionButton.click();
 
       const chatShortcutsOptionsPanel = document.getElementById(
         "chat-shortcuts-options-panel"

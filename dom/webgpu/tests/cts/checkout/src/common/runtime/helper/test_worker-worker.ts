@@ -12,7 +12,7 @@ declare const self: any;
 
 const loader = new DefaultTestFileLoader();
 
-setBaseResourcePath('../../../resources');
+setBaseResourcePath('/_mozilla/webgpu/resources');
 
 // MessagePort, DedicatedWorkerGlobalScope, etc.
 type Sender = { postMessage: (x: unknown) => void };

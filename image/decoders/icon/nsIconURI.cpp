@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set sw=2 sts=2 ts=2 et tw=80:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIconURI.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/Sprintf.h"
 
@@ -61,6 +58,8 @@ NS_INTERFACE_MAP_BEGIN(nsMozIconURI)
   NS_INTERFACE_MAP_ENTRY(nsIURI)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsINestedURI, mIconURL)
   NS_INTERFACE_MAP_ENTRY(nsISerializable)
+  NS_INTERFACE_MAP_ENTRY(nsIIPCSerializableURI)
+  NS_INTERFACE_MAP_ENTRY(nsIURIWithSizeOf)
   NS_IMPL_QUERY_CLASSINFO(nsMozIconURI)
 NS_INTERFACE_MAP_END
 
@@ -158,7 +157,7 @@ NS_IMPL_NSIURIMUTATOR_ISUPPORTS(nsMozIconURI::Mutator, nsIURISetters,
 
 NS_IMETHODIMP
 nsMozIconURI::Mutate(nsIURIMutator** aMutator) {
-  RefPtr<nsMozIconURI::Mutator> mutator = new nsMozIconURI::Mutator();
+  auto mutator = MakeRefPtr<nsMozIconURI::Mutator>();
   nsresult rv = mutator->InitFromURI(this);
   if (NS_FAILED(rv)) {
     return rv;
@@ -574,7 +573,7 @@ void nsMozIconURI::Serialize(URIParams& aParams) {
   params.iconScale() = mScale;
   params.iconDark() = mDark;
 
-  aParams = params;
+  aParams = std::move(params);
 }
 
 bool nsMozIconURI::Deserialize(const URIParams& aParams) {
@@ -603,6 +602,11 @@ bool nsMozIconURI::Deserialize(const URIParams& aParams) {
 
   return true;
 }
+
+size_t nsMozIconURI::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
+  // We don't need to calculate this unless it shows up in DMD.
+  return 0;
+};
 
 NS_IMETHODIMP
 nsMozIconURI::GetInnerURI(nsIURI** aURI) {

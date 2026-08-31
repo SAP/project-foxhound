@@ -1,0 +1,30 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>WebTransportevent service basic test</title>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script class="testbody" type="text/javascript">
+  var service = Cc["@mozilla.org/webtransportevent/service;1"]
+                  .getService(Ci.nsIWebTransportEventService);
+  ok(!!service, "We have the nsIWebTransportEventService");
+
+  var innerWindowId = window.windowGlobalChild.innerWindowId;
+  ok(innerWindowId, "We have a valid innerWindowID: " + innerWindowId);
+
+  var listener = {
+    QueryInterface: ChromeUtils.generateQI(["nsIWebTransportEventListener"]),
+  };
+
+  service.addListener(innerWindowId, listener);
+  ok(true, "Listener added");
+  ok(service.hasListenerFor(innerWindowId), "hasListenerFor(innerId) should be true");
+
+  service.removeListener(innerWindowId, listener);
+  ok(true, "Listener removed");
+  ok(!service.hasListenerFor(innerWindowId), "hasListenerFor(innerId) should be false");
+</script>
+</body>
+</html>

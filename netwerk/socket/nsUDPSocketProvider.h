@@ -2,11 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUDPSocketProvider_h__
-#define nsUDPSocketProvider_h__
+#ifndef nsUDPSocketProvider_h_
+#define nsUDPSocketProvider_h_
 
 #include "nsISocketProvider.h"
-#include "mozilla/Attributes.h"
 
 class nsUDPSocketProvider final : public nsISocketProvider {
  public:
@@ -17,4 +16,4 @@ class nsUDPSocketProvider final : public nsISocketProvider {
   ~nsUDPSocketProvider() = default;
 };
 
-#endif /* nsUDPSocketProvider_h__ */
+#endif /* nsUDPSocketProvider_h_ */

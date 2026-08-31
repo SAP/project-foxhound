@@ -40,15 +40,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 typedef struct nr_stun_attr_info_  nr_stun_attr_info;
 
 typedef struct nr_stun_attr_codec_ {
-    char     *name;
-    int     (*print)(nr_stun_attr_info *attr_info, char *msg, void *data);
+    const char     *name;
+    int     (*print)(nr_stun_attr_info *attr_info, const char *msg, void *data);
     int     (*encode)(nr_stun_attr_info *attr_info, void *data, size_t offset, size_t buflen, UCHAR *buf, size_t *attrlen);
     int     (*decode)(nr_stun_attr_info *attr_info, size_t attrlen, UCHAR *buf, size_t offset, size_t buflen, void *data);
 } nr_stun_attr_codec;
 
 struct nr_stun_attr_info_ {
      UINT2                 type;
-     char                 *name;
+     const char           *name;
      nr_stun_attr_codec   *codec;
      int                 (*illegal)(nr_stun_attr_info *attr_info, size_t attrlen, void *data);
 };

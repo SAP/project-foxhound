@@ -21,7 +21,7 @@ async function promiseNewChannelResponse(uri) {
     inBackground: false,
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
   });
-  await promiseTabLoaded(tab);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   let data = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,

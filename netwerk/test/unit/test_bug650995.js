@@ -168,8 +168,6 @@ function run_test() {
   httpserver.registerPathHandler("/bug650995", handler);
   httpserver.start(-1);
 
-  prefService.setBoolPref("network.http.rcwn.enabled", false);
-
   nextTest();
   do_test_pending();
 }

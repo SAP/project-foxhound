@@ -44,6 +44,30 @@ class IconMessageKtTest {
     }
 
     @Test
+    fun `GIVEN resource types are from tippy top and merino manifest WHEN resources are serialized THEN tippy top and merino manifest resource types are not serialized`() {
+        val resources = listOf(
+            IconRequest.Resource(
+                url = "https://www.mozilla.org/icon64.png",
+                type = IconRequest.Resource.Type.FAVICON,
+            ),
+            IconRequest.Resource(
+                url = "https://tippytop.example/icon.png",
+                type = IconRequest.Resource.Type.TIPPY_TOP,
+            ),
+            IconRequest.Resource(
+                url = "https://merino.example/icon.png",
+                type = IconRequest.Resource.Type.MERINO_MANIFEST,
+            ),
+        )
+
+        val json = resources.toJSON()
+        assertEquals(1, json.length())
+
+        val restoredResources = json.toIconResources()
+        assertEquals(resources.take(1), restoredResources)
+    }
+
+    @Test
     fun `Url must be sanitized`() {
         val resources = listOf(
             IconRequest.Resource(

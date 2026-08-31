@@ -28,7 +28,11 @@ class RemoteSettingsSyncWorker(
         try {
             val remoteSettingsService = GlobalRemoteSettingsDependencyProvider
                 .requireRemoteSettingsService().remoteSettingsService
-            remoteSettingsService.sync()
+            val onRemoteCollectionsUpdated = GlobalRemoteSettingsDependencyProvider
+                .requireRemoteCollectionsUpdatedCallback()
+
+            onRemoteCollectionsUpdated(remoteSettingsService.sync())
+
             return Result.success()
         } catch (exception: Exception) {
             return Result.failure()

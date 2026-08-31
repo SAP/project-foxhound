@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsObserverList_h___
-#define nsObserverList_h___
+#ifndef nsObserverList_h_
+#define nsObserverList_h_
 
 #include "nsISupports.h"
 #include "nsCOMArray.h"
@@ -13,7 +11,6 @@
 #include "nsHashKeys.h"
 #include "nsMaybeWeakPtr.h"
 #include "nsSimpleEnumerator.h"
-#include "mozilla/Attributes.h"
 
 class nsObserverList : public nsCharPtrHashKey {
   friend class nsObserverService;
@@ -64,4 +61,4 @@ class nsObserverEnumerator final : public nsSimpleEnumerator {
   nsCOMArray<nsIObserver> mObservers;
 };
 
-#endif /* nsObserverList_h___ */
+#endif /* nsObserverList_h_ */

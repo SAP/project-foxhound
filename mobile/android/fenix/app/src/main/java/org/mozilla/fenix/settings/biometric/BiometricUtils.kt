@@ -10,21 +10,21 @@ import android.content.Intent
 import android.provider.Settings
 import android.view.View
 import androidx.annotation.StringRes
-import androidx.appcompat.app.AlertDialog
 import androidx.biometric.BiometricManager
 import androidx.core.content.getSystemService
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.findFragment
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.secure
-import org.mozilla.fenix.ext.settings
 
 /**
  * Allows handling of biometric authentication workflows.
@@ -104,7 +104,7 @@ object DefaultBiometricUtils : BiometricUtils {
             onShowPinVerification(confirmDeviceCredentialIntent)
         } else {
             // Warn that the device has not been secured
-            if (context.settings().shouldShowSecurityPinWarning) {
+            if (context.components.settings.shouldShowSecurityPinWarning) {
                 fragment.activity?.let {
                     showPinDialogWarning(it, onAuthSuccess)
                 } ?: return
@@ -119,7 +119,7 @@ private fun showPinDialogWarning(
     activity: FragmentActivity,
     onIgnorePinWarning: () -> Unit,
 ) {
-    AlertDialog.Builder(activity).apply {
+    MaterialAlertDialogBuilder(activity).apply {
         setTitle(context.resources.getString(R.string.logins_warning_dialog_title_2))
         setMessage(
             context.resources.getString(R.string.logins_warning_dialog_message_2),
@@ -140,5 +140,5 @@ private fun showPinDialogWarning(
         }
         create().withCenterAlignedButtons()
     }.show().secure(activity)
-    activity.settings().incrementSecureWarningCount()
+    activity.components.settings.incrementSecureWarningCount()
 }

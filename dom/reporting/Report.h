@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 
 #include "js/TypeDecls.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
@@ -38,8 +35,9 @@ class Report final : public nsISupports, public nsWrapperCache {
 
   nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
-  void GetType(nsAString& aType) const;
+  const nsString& Type() const;
 
+  void GetType(nsAString& aType) const;
   void GetUrl(nsAString& aURL) const;
 
   ReportBody* GetBody() const;
@@ -49,8 +47,8 @@ class Report final : public nsISupports, public nsWrapperCache {
 
   nsCOMPtr<nsIGlobalObject> mGlobal;
 
-  const nsString mType;
-  const nsString mURL;
+  nsString mType;
+  nsString mURL;
   RefPtr<ReportBody> mBody;
 };
 

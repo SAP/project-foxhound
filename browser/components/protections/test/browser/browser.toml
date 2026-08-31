@@ -5,14 +5,19 @@ support-files = [
   "!/browser/base/content/test/protectionsUI/trackingPage.html",
 ]
 
+["browser_privacyMetrics_actor.js"]
+
+["browser_privacy_metrics_card.js"]
+
 ["browser_protections_lockwise.js"]
 
 ["browser_protections_monitor.js"]
 
-["browser_protections_proxy.js"]
-
 ["browser_protections_report_ui.js"]
 
 ["browser_protections_telemetry.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_protections_vpn.js"]

@@ -1,4 +1,4 @@
-// |reftest| skip -- legacy-regexp is not supported
+// |reftest| skip-if(release_or_beta) -- legacy-regexp is not released yet
 // Copyright (C) 2020 ExE Boss. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 /*---

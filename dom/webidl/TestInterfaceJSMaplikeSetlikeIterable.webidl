@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -106,7 +105,7 @@ interface TestInterfaceAsyncIterableSingle {
   [Throws]
   constructor(optional TestInterfaceAsyncIterableSingleOptions options = {});
 
-  async iterable<long>;
+  async_iterable<long>;
 };
 
 callback TestThrowingCallback = undefined();
@@ -126,7 +125,7 @@ interface TestInterfaceAsyncIterableSingleWithArgs {
   constructor();
 
   [GenerateReturnMethod]
-  async iterable<long>(optional TestInterfaceAsyncIteratorOptions options = {});
+  async_iterable<long>(optional TestInterfaceAsyncIteratorOptions options = {});
 
   readonly attribute long returnCallCount;
 
@@ -139,7 +138,7 @@ interface TestInterfaceAsyncIterableDouble {
   [Throws]
   constructor();
 
-  async iterable<DOMString, DOMString>;
+  async_iterable<DOMString, DOMString>;
 };
 
 [Pref="dom.expose_test_interfaces",
@@ -148,5 +147,5 @@ interface TestInterfaceAsyncIterableDoubleUnion {
   [Throws]
   constructor();
 
-  async iterable<DOMString, (DOMString or long)>;
+  async_iterable<DOMString, (DOMString or long)>;
 };

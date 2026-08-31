@@ -1,0 +1,22 @@
+[bindings.kotlin]
+package_name = "org.mozilla.experiments.nimbus.internal"
+omit_checksums = true
+
+[bindings.kotlin.custom_types.JsonObject]
+# Name of the type in the Kotlin code
+type_name = "JSONObject"
+# Classes that need to be imported
+imports = [ "org.json.JSONObject" ]
+# Functions to convert between strings and URLs
+into_custom = "JSONObject({})"
+from_custom = "{}.toString()"
+
+[bindings.swift]
+ffi_module_name = "MozillaRustComponents"
+ffi_module_filename = "nimbusFFI"
+
+[bindings.python]
+# This can be commented out, and the `--library` argument of `bindgen-uniffi` should be used instead.
+# We won't comment this out until cirrus— which a) does not use `--library` b) is not in this repo— uses the pre-built
+# binaries built by `server-megazord-build.py`. Until then, it comments out the line programmatically.
+# cdylib_name = "cirrus"

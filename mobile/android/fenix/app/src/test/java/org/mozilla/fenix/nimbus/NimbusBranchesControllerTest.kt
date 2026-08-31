@@ -9,7 +9,6 @@ import io.mockk.mockk
 import io.mockk.verify
 import io.mockk.verifyAll
 import mozilla.components.service.nimbus.NimbusApi
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -25,12 +24,12 @@ class NimbusBranchesControllerTest {
     private lateinit var controller: NimbusBranchesController
     private lateinit var nimbusBranchesStore: NimbusBranchesStore
     private lateinit var settings: Settings
-    private lateinit var notifyUserToEnableExperiments: () -> Unit
+    private var notifyUserToEnableExperimentsCount = 0
+    private val notifyUserToEnableExperiments: () -> Unit = { notifyUserToEnableExperimentsCount++ }
 
     @Before
     fun setup() {
         settings = mockk(relaxed = true)
-        notifyUserToEnableExperiments = mockk(relaxed = true)
 
         nimbusBranchesStore = NimbusBranchesStore(NimbusBranchesState(emptyList()))
         controller = NimbusBranchesController(
@@ -52,8 +51,6 @@ class NimbusBranchesControllerTest {
 
         controller.onBranchItemClicked(branch)
 
-        nimbusBranchesStore.waitUntilIdle()
-
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)
         }
@@ -72,8 +69,6 @@ class NimbusBranchesControllerTest {
 
         controller.onBranchItemClicked(branch)
 
-        nimbusBranchesStore.waitUntilIdle()
-
         verify {
             experiments.optOut(experimentId)
         }
@@ -87,8 +82,6 @@ class NimbusBranchesControllerTest {
         )
 
         controller.onBranchItemClicked(branch)
-
-        nimbusBranchesStore.waitUntilIdle()
 
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)
@@ -115,13 +108,11 @@ class NimbusBranchesControllerTest {
 
         controller.onBranchItemClicked(branch)
 
-        nimbusBranchesStore.waitUntilIdle()
-
         verifyAll {
             experiments.getExperimentBranch(experimentId)
             experiments.optInWithBranch(experimentId, branch.slug)
-            notifyUserToEnableExperiments()
         }
+        assertEquals(1, notifyUserToEnableExperimentsCount)
 
         assertEquals(branch.slug, nimbusBranchesStore.state.selectedBranch)
     }
@@ -143,8 +134,6 @@ class NimbusBranchesControllerTest {
         )
 
         controller.onBranchItemClicked(branch)
-
-        nimbusBranchesStore.waitUntilIdle()
 
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)
@@ -170,8 +159,6 @@ class NimbusBranchesControllerTest {
         )
 
         controller.onBranchItemClicked(branch)
-
-        nimbusBranchesStore.waitUntilIdle()
 
         verify {
             experiments.optInWithBranch(experimentId, branch.slug)

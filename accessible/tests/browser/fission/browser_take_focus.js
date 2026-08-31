@@ -74,12 +74,45 @@ addAccessibleTask(
 
 function focusURLBar() {
   info("Focusing the URL bar");
+  // XXX: See bug 2016839
   const focused = waitForEvent(
     EVENT_FOCUS,
-    event => event.accessible.role == ROLE_ENTRY
+    event => event.accessible.role == ROLE_EDITCOMBOBOX
   );
   gURLBar.focus();
   return focused;
+}
+
+// Retry takeFocus if the expected focus event doesn't arrive in time.
+// This handles intermittent races when moving focus between chrome UI
+// and remote content.
+async function takeFocusWithRetry(acc, retries = 5, timeoutMs = 3000) {
+  for (let i = 0; i < retries; i++) {
+    const focused = waitForEvent(EVENT_FOCUS, acc);
+    acc.takeFocus();
+    let timeoutId;
+    let resolveTimeout;
+    const timeout = new Promise(r => {
+      resolveTimeout = r;
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      timeoutId = setTimeout(() => r("timeout"), timeoutMs);
+    });
+    const result = await Promise.race([focused, timeout]);
+    if (result !== "timeout") {
+      // In the ideal case, we'll recieve a focus event here before the
+      // timeout comes back. When that happens, we should resolve the timeout
+      // so the Promise can release both the timeout and the captured focus event.
+      // Without this, browser shutdown can happen before the timeout timer fires (particularly
+      // in --verify mode). This causes the reference to the focus event to leak
+      // because the race wrapper is still active.
+      // Leaking the focus event also leaks its associated window :(
+      clearTimeout(timeoutId);
+      resolveTimeout();
+      return;
+    }
+    info(`takeFocus attempt ${i + 1} timed out, retrying...`);
+  }
+  ok(false, "Failed to receive focus event after multiple retries");
 }
 
 /**
@@ -93,29 +126,21 @@ addAccessibleTask(
   async function testFocusContentWhileUiFocused(browser, docAcc) {
     await focusURLBar();
     info("Focusing docAcc");
-    let focused = waitForEvent(EVENT_FOCUS, docAcc);
-    docAcc.takeFocus();
-    await focused;
+    await takeFocusWithRetry(docAcc);
 
     await focusURLBar();
     info("Focusing outerButton");
     const outerButton = findAccessibleChildByID(docAcc, "outerButton");
-    focused = waitForEvent(EVENT_FOCUS, outerButton);
-    outerButton.takeFocus();
-    await focused;
+    await takeFocusWithRetry(outerButton);
 
     await focusURLBar();
     info("Focusing innerButton");
-    const innerButton = findAccessibleChildByID(docAcc, "outerButton");
-    focused = waitForEvent(EVENT_FOCUS, innerButton);
-    innerButton.takeFocus();
-    await focused;
+    const innerButton = findAccessibleChildByID(docAcc, "innerButton");
+    await takeFocusWithRetry(innerButton);
 
     await focusURLBar();
     info("Focusing outerButton");
-    focused = waitForEvent(EVENT_FOCUS, outerButton);
-    outerButton.takeFocus();
-    await focused;
+    await takeFocusWithRetry(outerButton);
   },
   { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );

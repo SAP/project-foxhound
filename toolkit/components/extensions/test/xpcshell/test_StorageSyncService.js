@@ -260,3 +260,50 @@ add_task(async function test_storage_sync_quota() {
     "should reject with QuotaError"
   );
 });
+
+// Test trying to storing invalid JSON
+//
+// The main test is that this doesn't crash the browser:
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1989840
+add_task(async function test_invalid_json() {
+  let engine = new ExtensionStorageEngineBridge(Service);
+  await engine.initialize();
+  let service = engine._rustStore;
+
+  await engine._bridge.wipe();
+  await Assert.rejects(
+    service.set("ext-1", "{invalid-json"),
+    /Failed to convert arg 'val'/,
+    "should reject invalid JSON"
+  );
+});
+
+// Test sending deeply-nested objects
+//
+// Right now this fails, although it doesn't need to.
+// For example, the sync engine only cares about top-level object members,
+// so we could call `JSON.stringify` on each value
+// and send the raw JSON string across the FFI.
+//
+// Let's wait for getting more info before doing anything though:
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1990313
+add_task(async function test_storage_sync_recursion_limit() {
+  let engine = new ExtensionStorageEngineBridge(Service);
+  await engine.initialize();
+  let service = engine._rustStore;
+
+  await engine._bridge.wipe();
+  // Construct an object with lots of nested fields
+  const obj = {};
+  let current = obj;
+  for (let i = 0; i < 127; i++) {
+    const next = {};
+    current.foo = next;
+    current = next;
+  }
+  await Assert.rejects(
+    service.set("ext-1", JSON.stringify(obj)),
+    /Failed to convert arg 'val'/,
+    "should reject deeply-nested JSON"
+  );
+});

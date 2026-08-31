@@ -283,7 +283,7 @@
     }
 
     get focused() {
-      return this === document.activeElement;
+      return this === this.getRootNode().activeElement;
     }
     /**
      * maximum number of rows to display at a time when opening the popup normally
@@ -457,8 +457,7 @@
     }
 
     handleKeyDown(aEvent) {
-      // Re: urlbarDeferred, see the comment in urlbarBindings.xml.
-      if (aEvent.defaultPrevented && !aEvent.urlbarDeferred) {
+      if (aEvent.defaultPrevented) {
         return false;
       }
 

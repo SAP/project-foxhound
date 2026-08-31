@@ -1,9 +1,5 @@
 "use strict";
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 // ExtensionContent.sys.mjs needs to know when it's running from xpcshell,
 // to use the right timeout for content scripts executed at document_idle.
 ExtensionTestUtils.mockAppInfo();
@@ -16,7 +12,7 @@ const BASE_URL = `http://localhost:${server.identity.primaryPort}/data`;
 var originalReqLocales = Services.locale.requestedLocales;
 
 registerCleanupFunction(() => {
-  Preferences.reset("intl.accept_languages");
+  Services.prefs.clearUserPref("intl.accept_languages");
   Services.locale.requestedLocales = originalReqLocales;
 });
 
@@ -487,11 +483,14 @@ add_task(async function test_get_accept_languages() {
   await extension.awaitMessage("content-done");
 
   expectedLangs = ["en-US", "en", "fr-CA", "fr"];
-  Preferences.set("intl.accept_languages", expectedLangs.toString());
+  Services.prefs.setStringPref(
+    "intl.accept_languages",
+    expectedLangs.toString()
+  );
   extension.sendMessage(["expect-results", expectedLangs]);
   await extension.awaitMessage("background-done");
   await extension.awaitMessage("content-done");
-  Preferences.reset("intl.accept_languages");
+  Services.prefs.clearUserPref("intl.accept_languages");
 
   await contentPage.close();
 

@@ -16,7 +16,6 @@
 
   async function runTest() {
     let script = SpecialPowers.loadChromeScript(function() {
-      /* eslint-env mozilla/chrome-script */
       // Force download to be w/o user assistance for our testing mime type
       const mimeSvc = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
       let handlerInfo =

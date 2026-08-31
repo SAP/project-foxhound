@@ -42,5 +42,5 @@ add_task(async function () {
 });
 
 function getLineNumbersGutterElement(hud) {
-  return hud.ui.outputNode.querySelector(".CodeMirror-linenumbers");
+  return hud.ui.outputNode.querySelector(codemirrorSelectors.cmLineNumbers);
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,15 +6,29 @@
 
 #include "GroupInfo.h"
 #include "GroupInfoPair.h"
+#include "OriginInfo.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/dom/StorageActivityService.h"
 #include "mozilla/dom/quota/AssertionsImpl.h"
-#include "mozilla/dom/quota/OriginDirectoryLock.h"
 #include "mozilla/dom/quota/NotifyUtils.h"
+#include "mozilla/dom/quota/OriginDirectoryLock.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "OriginInfo.h"
 
 namespace mozilla::dom::quota {
+
+CanonicalQuotaObject::CanonicalQuotaObject(
+    const RefPtr<OriginInfo>& aOriginInfo, Client::Type aClientType,
+    const nsAString& aPath, int64_t aSize)
+    : QuotaObject(/* aIsRemote */ false),
+      mOriginInfo(aOriginInfo),
+      mPath(aPath),
+      mSize(aSize),
+      mClientType(aClientType),
+      mQuotaCheckDisabled(false),
+      mWritingDone(false) {
+  MOZ_COUNT_CTOR(CanonicalQuotaObject);
+}
 
 NS_IMETHODIMP_(MozExternalRefCountType) CanonicalQuotaObject::AddRef() {
   QuotaManager* quotaManager = QuotaManager::Get();
@@ -55,8 +67,8 @@ NS_IMETHODIMP_(MozExternalRefCountType) CanonicalQuotaObject::Release() {
       return mRefCnt;
     }
 
-    if (mOriginInfo) {
-      mOriginInfo->mCanonicalQuotaObjects.Remove(mPath);
+    if (RefPtr<OriginInfo> originInfo = RefPtr<OriginInfo>(mOriginInfo)) {
+      originInfo->mCanonicalQuotaObjects.Remove(mPath);
     }
   }
 
@@ -112,9 +124,11 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
 
   quotaManager->mQuotaMutex.AssertCurrentThreadOwns();
 
-  if (mWritingDone == false && mOriginInfo) {
+  RefPtr<OriginInfo> originInfo = RefPtr<OriginInfo>(mOriginInfo);
+
+  if (mWritingDone == false && originInfo) {
     mWritingDone = true;
-    StorageActivityService::SendActivity(mOriginInfo->mOrigin);
+    StorageActivityService::SendActivity(originInfo->mOrigin);
   }
 
   if (mQuotaCheckDisabled) {
@@ -125,34 +139,18 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
     return true;
   }
 
-  if (!mOriginInfo) {
+  if (!originInfo) {
     mSize = aSize;
     return true;
   }
 
-  GroupInfo* groupInfo = mOriginInfo->mGroupInfo;
+  DebugOnly<GroupInfo*> groupInfo = originInfo->mGroupInfo;
   MOZ_ASSERT(groupInfo);
 
   if (mSize > aSize) {
     if (aTruncate) {
       const int64_t delta = mSize - aSize;
-
-      AssertNoUnderflow(quotaManager->mTemporaryStorageUsage, delta);
-      quotaManager->mTemporaryStorageUsage -= delta;
-
-      if (!mOriginInfo->LockedPersisted()) {
-        AssertNoUnderflow(groupInfo->mUsage, delta);
-        groupInfo->mUsage -= delta;
-      }
-
-      AssertNoUnderflow(mOriginInfo->mUsage, delta);
-      mOriginInfo->mUsage -= delta;
-
-      MOZ_ASSERT(mOriginInfo->mClientUsages[mClientType].isSome());
-      AssertNoUnderflow(mOriginInfo->mClientUsages[mClientType].value(), delta);
-      mOriginInfo->mClientUsages[mClientType] =
-          Some(mOriginInfo->mClientUsages[mClientType].value() - delta);
-
+      originInfo->LockedTruncateUsages(mClientType, delta);
       mSize = aSize;
     }
     return true;
@@ -160,184 +158,90 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
 
   MOZ_ASSERT(mSize < aSize);
 
-  const auto& complementaryPersistenceTypes =
-      ComplementaryPersistenceTypes(groupInfo->mPersistenceType);
-
   uint64_t delta = aSize - mSize;
-
-  AssertNoOverflow(mOriginInfo->mClientUsages[mClientType].valueOr(0), delta);
-  uint64_t newClientUsage =
-      mOriginInfo->mClientUsages[mClientType].valueOr(0) + delta;
-
-  AssertNoOverflow(mOriginInfo->mUsage, delta);
-  uint64_t newUsage = mOriginInfo->mUsage + delta;
 
   // Temporary storage has no limit for origin usage (there's a group and the
   // global limit though).
 
-  uint64_t newGroupUsage = groupInfo->mUsage;
-  if (!mOriginInfo->LockedPersisted()) {
-    AssertNoOverflow(groupInfo->mUsage, delta);
-    newGroupUsage += delta;
-
-    uint64_t groupUsage = groupInfo->mUsage;
-    for (const auto& complementaryPersistenceType :
-         complementaryPersistenceTypes) {
-      const auto& complementaryGroupInfo =
-          groupInfo->mGroupInfoPair->LockedGetGroupInfo(
-              complementaryPersistenceType);
-
-      if (complementaryGroupInfo) {
-        AssertNoOverflow(groupUsage, complementaryGroupInfo->mUsage);
-        groupUsage += complementaryGroupInfo->mUsage;
-      }
+  if (const auto& maybeReturnValue =
+          originInfo->LockedUpdateUsages(mClientType, delta)) {
+    if (maybeReturnValue.value()) {
+      mSize = aSize;  // No limit was breached and we are done.
     }
 
-    // Temporary storage has a hard limit for group usage (20 % of the global
-    // limit).
-    AssertNoOverflow(groupUsage, delta);
-    if (groupUsage + delta > quotaManager->GetGroupLimit()) {
-      return false;
+    return maybeReturnValue.value();
+  }
+
+  // This will block the thread without holding the lock while waitting.
+
+  AutoTArray<RefPtr<OriginDirectoryLock>, 10> locks;
+  uint64_t sizeToBeFreed;
+
+  if (::mozilla::ipc::IsOnBackgroundThread()) {
+    MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+
+    sizeToBeFreed = quotaManager->CollectOriginsForEviction(delta, locks);
+  } else {
+    sizeToBeFreed = quotaManager->LockedCollectOriginsForEviction(delta, locks);
+  }
+
+  if (!sizeToBeFreed) {
+    uint64_t usage = quotaManager->mTemporaryStorageUsage;
+
+    MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+
+    NotifyStoragePressure(*quotaManager, usage);
+
+    return false;
+  }
+
+  NS_ASSERTION(sizeToBeFreed >= delta, "Huh?");
+
+  {
+    MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+
+    for (const auto& lock : locks) {
+      quotaManager->DeleteOriginDirectory(lock->OriginMetadata());
     }
   }
 
-  AssertNoOverflow(quotaManager->mTemporaryStorageUsage, delta);
-  uint64_t newTemporaryStorageUsage =
-      quotaManager->mTemporaryStorageUsage + delta;
+  // Relocked.
 
-  if (newTemporaryStorageUsage > quotaManager->mTemporaryStorageLimit) {
-    // This will block the thread without holding the lock while waitting.
+  for (const auto& lock : locks) {
+    MOZ_ASSERT(!(lock->GetPersistenceType() == groupInfo->mPersistenceType &&
+                 lock->Origin() == originInfo->mOrigin),
+               "Deleted itself!");
 
-    AutoTArray<RefPtr<OriginDirectoryLock>, 10> locks;
-    uint64_t sizeToBeFreed;
+    quotaManager->LockedRemoveQuotaForOrigin(lock->OriginMetadata());
+  }
 
-    if (::mozilla::ipc::IsOnBackgroundThread()) {
-      MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+  // We unlocked and relocked several times so we need to recompute all the
+  // essential variables and recheck the group limit.
 
-      sizeToBeFreed = quotaManager->CollectOriginsForEviction(delta, locks);
-    } else {
-      sizeToBeFreed =
-          quotaManager->LockedCollectOriginsForEviction(delta, locks);
-    }
+  AssertNoUnderflow(aSize, mSize);
+  const uint64_t increase = aSize - mSize;
 
-    if (!sizeToBeFreed) {
-      uint64_t usage = quotaManager->mTemporaryStorageUsage;
+  if (!originInfo->LockedUpdateUsagesForEviction(mClientType, increase)) {
+    // Unfortunately some other thread increased the group usage in the
+    // meantime and we are not below the group limit anymore.
 
-      MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
-
-      NotifyStoragePressure(*quotaManager, usage);
-
-      return false;
-    }
-
-    NS_ASSERTION(sizeToBeFreed >= delta, "Huh?");
-
-    {
-      MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
-
-      for (const auto& lock : locks) {
-        quotaManager->DeleteOriginDirectory(lock->OriginMetadata());
-      }
-    }
-
-    // Relocked.
-
-    NS_ASSERTION(mOriginInfo, "How come?!");
-
-    for (const auto& lock : locks) {
-      MOZ_ASSERT(!(lock->GetPersistenceType() == groupInfo->mPersistenceType &&
-                   lock->Origin() == mOriginInfo->mOrigin),
-                 "Deleted itself!");
-
-      quotaManager->LockedRemoveQuotaForOrigin(lock->OriginMetadata());
-    }
-
-    // We unlocked and relocked several times so we need to recompute all the
-    // essential variables and recheck the group limit.
-
-    AssertNoUnderflow(aSize, mSize);
-    delta = aSize - mSize;
-
-    AssertNoOverflow(mOriginInfo->mClientUsages[mClientType].valueOr(0), delta);
-    newClientUsage = mOriginInfo->mClientUsages[mClientType].valueOr(0) + delta;
-
-    AssertNoOverflow(mOriginInfo->mUsage, delta);
-    newUsage = mOriginInfo->mUsage + delta;
-
-    newGroupUsage = groupInfo->mUsage;
-    if (!mOriginInfo->LockedPersisted()) {
-      AssertNoOverflow(groupInfo->mUsage, delta);
-      newGroupUsage += delta;
-
-      uint64_t groupUsage = groupInfo->mUsage;
-
-      for (const auto& complementaryPersistenceType :
-           complementaryPersistenceTypes) {
-        const auto& complementaryGroupInfo =
-            groupInfo->mGroupInfoPair->LockedGetGroupInfo(
-                complementaryPersistenceType);
-
-        if (complementaryGroupInfo) {
-          AssertNoOverflow(groupUsage, complementaryGroupInfo->mUsage);
-          groupUsage += complementaryGroupInfo->mUsage;
-        }
-      }
-
-      AssertNoOverflow(groupUsage, delta);
-      if (groupUsage + delta > quotaManager->GetGroupLimit()) {
-        // Unfortunately some other thread increased the group usage in the
-        // meantime and we are not below the group limit anymore.
-
-        // However, the origin eviction must be finalized in this case too.
-        MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
-
-        quotaManager->FinalizeOriginEviction(std::move(locks));
-
-        return false;
-      }
-    }
-
-    AssertNoOverflow(quotaManager->mTemporaryStorageUsage, delta);
-    newTemporaryStorageUsage = quotaManager->mTemporaryStorageUsage + delta;
-
-    NS_ASSERTION(
-        newTemporaryStorageUsage <= quotaManager->mTemporaryStorageLimit,
-        "How come?!");
-
-    // Ok, we successfully freed enough space and the operation can continue
-    // without throwing the quota error.
-    mOriginInfo->mClientUsages[mClientType] = Some(newClientUsage);
-
-    mOriginInfo->mUsage = newUsage;
-    if (!mOriginInfo->LockedPersisted()) {
-      groupInfo->mUsage = newGroupUsage;
-    }
-    quotaManager->mTemporaryStorageUsage = newTemporaryStorageUsage;
-    ;
-
-    // Some other thread could increase the size in the meantime, but no more
-    // than this one.
-    MOZ_ASSERT(mSize < aSize);
-    mSize = aSize;
-
-    // Finally, release IO thread only objects and allow next synchronized
-    // ops for the evicted origins.
+    // However, the origin eviction must be finalized in this case too.
     MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
 
     quotaManager->FinalizeOriginEviction(std::move(locks));
-
-    return true;
+    return false;
   }
 
-  mOriginInfo->mClientUsages[mClientType] = Some(newClientUsage);
-
-  mOriginInfo->mUsage = newUsage;
-  if (!mOriginInfo->LockedPersisted()) {
-    groupInfo->mUsage = newGroupUsage;
-  }
-  quotaManager->mTemporaryStorageUsage = newTemporaryStorageUsage;
-
+  // Some other thread could increase the size in the meantime, but no more
+  // than this one.
+  MOZ_ASSERT(mSize < aSize);
   mSize = aSize;
+
+  // Finally, release IO thread only objects and allow next synchronized
+  // ops for the evicted origins.
+  MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+
+  quotaManager->FinalizeOriginEviction(std::move(locks));
 
   return true;
 }

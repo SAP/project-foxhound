@@ -23,9 +23,13 @@
 "use strict";
 
 const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
-  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
-});
+ChromeUtils.defineESModuleGetters(
+  lazy,
+  {
+    FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  },
+  { global: "contextual" }
+);
 
 function getHeapSnapshotFileTemplate() {
   return PathUtils.join(PathUtils.tempDir, `${Date.now()}.fxsnapshot`);
@@ -53,7 +57,7 @@ function isValidSnapshotFileId(snapshotId) {
 /**
  * Get the file path for the given snapshot id.
  *
- * @param {String} snapshotId
+ * @param {string} snapshotId
  *
  * @returns String | null
  */

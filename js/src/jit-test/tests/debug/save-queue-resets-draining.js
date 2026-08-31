@@ -8,11 +8,11 @@ let gw = dbg.addDebuggee(g);
 dbg.onDebuggerStatement = frame => {
   // Enqueue a new job from within the debugger while executing another job
   // from outside of the debugger.
-  enqueueJob(function() {});
+  Promise.resolve()
+    .then(function() {});
 };
 
 g.eval(`
-  enqueueJob(function() {
-    debugger;
-  });
+  Promise.resolve()
+    .then(function() {debugger});
 `);

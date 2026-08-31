@@ -1,0 +1,38 @@
+<!doctype html>
+<script>
+  let blob = new Blob(["ABCD"]);
+  let stream = blob.stream();
+
+  let reader1 = stream.getReader({ mode: "byob" });
+  let p1 = reader1.read(new Uint8Array(new ArrayBuffer(100)));
+  reader1.releaseLock();
+
+  let reader2 = stream.getReader({ mode: "byob" });
+  let p2 = reader2.read(new Uint8Array(new ArrayBuffer(1)));
+  let p3 = reader2.read(new Uint8Array(new ArrayBuffer(1)));
+
+  let fired = false;
+  Object.defineProperty(Object.prototype, "then", {
+    get() {
+      if (fired) return undefined;
+      fired = true;
+      delete Object.prototype.then;
+
+      reader1 = null;
+      reader2 = null;
+      stream = null;
+      blob = null;
+      p1 = null;
+      p2 = null;
+      p3 = null;
+
+      SpecialPowers.forceGC();
+      SpecialPowers.forceCC();
+      SpecialPowers.forceGC();
+      SpecialPowers.forceCC();
+
+      return undefined;
+    },
+    configurable: true,
+  });
+</script>

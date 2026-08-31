@@ -29,23 +29,23 @@ impl<'a> Timer<'a> {
 
     /// Returns the time elapsed since the timer's creation
     pub fn elapsed(&self) -> Duration {
-        Instant::now() - self.start
+        self.start.elapsed()
     }
 
     fn print_elapsed(&mut self) {
         if self.output {
             let elapsed = self.elapsed();
             let time = (elapsed.as_secs() as f64) * 1e3 +
-                (elapsed.subsec_nanos() as f64) / 1e6;
+                f64::from(elapsed.subsec_nanos()) / 1e6;
             let stderr = io::stderr();
             // Arbitrary output format, subject to change.
-            writeln!(stderr.lock(), "  time: {:>9.3} ms.\t{}", time, self.name)
+            writeln!(stderr.lock(), "  time: {time:>9.3} ms.\t{}", self.name)
                 .expect("timer write should not fail");
         }
     }
 }
 
-impl<'a> Drop for Timer<'a> {
+impl Drop for Timer<'_> {
     fn drop(&mut self) {
         self.print_elapsed();
     }

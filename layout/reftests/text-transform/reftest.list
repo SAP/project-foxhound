@@ -42,8 +42,12 @@ fuzzy(0-1,0-80) == all-title.html all-title-ref.html
 == fullwidth-2.html fullwidth-2-ref.html
 == fullwidth-all.html fullwidth-all-ref.html
 
+# Using a font that includes capital eszett (U+1E9E)
 pref(layout.css.text-transform.uppercase-eszett.enabled,false) == uppercase-eszett-1.html uppercase-eszett-1a-ref.html
 pref(layout.css.text-transform.uppercase-eszett.enabled,true)  == uppercase-eszett-1.html uppercase-eszett-1b-ref.html
+# Using a font that does not include capital eszett
+pref(layout.css.text-transform.uppercase-eszett.enabled,false) == uppercase-eszett-2.html uppercase-eszett-2a-ref.html
+pref(layout.css.text-transform.uppercase-eszett.enabled,true)  == uppercase-eszett-2.html uppercase-eszett-2b-ref.html
 
 # Reset default prefs
 defaults

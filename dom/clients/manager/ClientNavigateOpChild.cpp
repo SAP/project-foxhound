@@ -1,26 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ClientNavigateOpChild.h"
 
-#include "ClientState.h"
 #include "ClientSource.h"
 #include "ClientSourceChild.h"
+#include "ClientState.h"
+#include "ReferrerInfo.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/Unused.h"
-#include "nsIDocShell.h"
 #include "nsDocShellLoadState.h"
+#include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
 #include "nsIWebProgress.h"
 #include "nsIWebProgressListener.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsURLHelper.h"
-#include "ReferrerInfo.h"
 
 namespace mozilla::dom {
 
@@ -153,7 +151,8 @@ NS_IMPL_ISUPPORTS(NavigateLoadListener, nsIWebProgressListener,
 }  // anonymous namespace
 
 RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
-    const ClientNavigateOpConstructorArgs& aArgs) {
+    const ClientNavigateOpConstructorArgs& aArgs,
+    mozilla::ipc::ActorLifecycleProxy* aProxy) {
   nsCOMPtr<nsPIDOMWindowInner> window;
 
   // Navigating the target client window will result in the original
@@ -279,6 +278,12 @@ RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
     return ClientOpPromise::CreateAndReject(result, __func__);
   }
 
+  if (!aProxy->Get() || !CanSend()) {
+    CopyableErrorResult result;
+    result.ThrowInvalidStateError("Unknown Client");
+    return ClientOpPromise::CreateAndReject(result, __func__);
+  }
+
   RefPtr<ClientOpPromise::Private> promise =
       new ClientOpPromise::Private(__func__);
 
@@ -306,8 +311,12 @@ void ClientNavigateOpChild::ActorDestroy(ActorDestroyReason aReason) {
   mPromiseRequestHolder.DisconnectIfExists();
 }
 
-void ClientNavigateOpChild::Init(const ClientNavigateOpConstructorArgs& aArgs) {
-  RefPtr<ClientOpPromise> promise = DoNavigate(aArgs);
+void ClientNavigateOpChild::Init(const ClientNavigateOpConstructorArgs& aArgs,
+                                 mozilla::ipc::ActorLifecycleProxy* aProxy) {
+  RefPtr<ClientOpPromise> promise = DoNavigate(aArgs, aProxy);
+  if (!aProxy->Get() || !CanSend()) {
+    return;
+  }
 
   // Normally we get the event target from the window in DoNavigate().  If a
   // failure occurred, though, we may need to fall back to the current thread

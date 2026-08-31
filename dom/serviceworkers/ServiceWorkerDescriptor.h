@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,7 @@ class PrincipalInfo;
 namespace dom {
 
 class IPCServiceWorkerDescriptor;
+enum class WorkerType : uint8_t;
 enum class ServiceWorkerState : uint8_t;
 
 // This class represents a snapshot of a particular ServiceWorkerInfo object.
@@ -37,13 +36,13 @@ class ServiceWorkerDescriptor final {
   ServiceWorkerDescriptor(uint64_t aId, uint64_t aRegistrationId,
                           uint64_t aRegistrationVersion,
                           nsIPrincipal* aPrincipal, const nsACString& aScope,
-                          const nsACString& aScriptURL,
+                          WorkerType aType, const nsACString& aScriptURL,
                           ServiceWorkerState aState);
 
   ServiceWorkerDescriptor(uint64_t aId, uint64_t aRegistrationId,
                           uint64_t aRegistrationVersion,
                           const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
-                          const nsACString& aScope,
+                          const nsACString& aScope, WorkerType aType,
                           const nsACString& aScriptURL,
                           ServiceWorkerState aState);
 
@@ -73,6 +72,8 @@ class ServiceWorkerDescriptor final {
   Result<nsCOMPtr<nsIPrincipal>, nsresult> GetPrincipal() const;
 
   const nsCString& Scope() const;
+
+  WorkerType Type() const;
 
   const nsCString& ScriptURL() const;
 

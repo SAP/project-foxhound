@@ -1,4 +1,19 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity" xmlns="http://www.w3.org/2000/svg"><path d="M3 3a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.75h1.5V10a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5H5a.5.5 0 0 0-.5.5v1.25H3V3z"/><path d="M0 13V5.75h1.5V13a.5.5 0 0 0 .5.5h10V15H2a2 2 0 0 1-2-2z"/><path d="M3 7.25v-1.5h4V4.394c0-.35.423-.526.67-.278l2.106 2.107a.393.393 0 0 1 0 .555L7.67 8.884A.393.393 0 0 1 7 8.606V7.25H3z"/></svg>
+<svg width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity" xmlns="http://www.w3.org/2000/svg">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton"><path d="M3 3a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.75h1.5V10a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5H5a.5.5 0 0 0-.5.5v1.25H3V3z"/><path d="M0 13V5.75h1.5V13a.5.5 0 0 0 .5.5h10V15H2a2 2 0 0 1-2-2z"/><path d="M3 7.25v-1.5h4V4.394c0-.35.423-.526.67-.278l2.106 2.107a.393.393 0 0 1 0 .555L7.67 8.884A.393.393 0 0 1 7 8.606V7.25H3z"/></g>
+<g class="nova">
+  <path d="M.75 5.749a.75.75 0 0 1 .75.75v5.853a1 1 0 0 0 .945 1c1.946.102 3.691.15 5.81.144a.744.744 0 0 1 .745.747c0 .41-.328.743-.738.747-.49.005-.061.01-.262.01-1.858 0-3.75-.05-5.621-.15A2.503 2.503 0 0 1 0 12.356V6.5c0-.414.336-.75.75-.751" />
+  <path d="M9.5 1q1.635.002 3.151.074l.997.055A2.503 2.503 0 0 1 16 3.627v5.748a2.51 2.51 0 0 1-2.364 2.497 67 67 0 0 1-7.287.054l-.997-.055A2.503 2.503 0 0 1 3 9.373V8.75h1.5v.623c0 .53.411.968.945 1.001a66 66 0 0 0 8.099.001 1.01 1.01 0 0 0 .956-1V3.627c0-.53-.411-.968-.945-1.001a66 66 0 0 0-7.046-.058l-1.053.057a1.01 1.01 0 0 0-.956 1v.624H3v-.624a2.51 2.51 0 0 1 2.363-2.497A67 67 0 0 1 9.5 1" />
+  <path d="M6.999 4.394c0-.35.423-.525.67-.278l2.107 2.107a.394.394 0 0 1 0 .555L7.67 8.884A.393.393 0 0 1 7 8.605V7.25H3.75a.75.75 0 0 1 0-1.5h3.249z" />
+</g>
+</svg>

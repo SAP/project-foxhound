@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,6 @@
 #include "mozilla/UniquePtr.h"
 #include "nsBaseChannel.h"
 #include "nsIChildChannel.h"
-#include "mozilla/net/PSimpleChannelChild.h"
 #include "nsCOMPtr.h"
 
 class nsIChannel;
@@ -70,8 +68,11 @@ class SimpleChannelCallbacksImpl final : public SimpleChannelCallbacks {
   RefPtr<T> mContext;
 };
 
-class SimpleChannel : public nsBaseChannel {
+class SimpleChannel : public nsBaseChannel, public nsIChildChannel {
  public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSICHILDCHANNEL
+
   explicit SimpleChannel(UniquePtr<SimpleChannelCallbacks>&& aCallbacks);
 
  protected:
@@ -86,19 +87,6 @@ class SimpleChannel : public nsBaseChannel {
 
  private:
   UniquePtr<SimpleChannelCallbacks> mCallbacks;
-};
-
-class SimpleChannelChild final : public SimpleChannel,
-                                 public nsIChildChannel,
-                                 public PSimpleChannelChild {
- public:
-  explicit SimpleChannelChild(UniquePtr<SimpleChannelCallbacks>&& aCallbacks);
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSICHILDCHANNEL
-
- private:
-  virtual ~SimpleChannelChild() = default;
 };
 
 already_AddRefed<nsIChannel> NS_NewSimpleChannelInternal(

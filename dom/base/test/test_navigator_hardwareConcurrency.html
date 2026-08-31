@@ -19,8 +19,10 @@
   SimpleTest.waitForExplicitFinish();
 
   resistFingerprinting(true).then(() => {
+    const expected = SpecialPowers.Services.appinfo.OS == "Darwin" ? 8 : 4;
+
     const y = navigator.hardwareConcurrency;
-    ok(y === 2, "hardwareConcurrency should always be 2 when we're resisting fingerprinting.");
+    ok(y === expected, "hardwareConcurrency should always be 2 when we're resisting fingerprinting.");
 
     resistFingerprinting(false).then(() => {
       const z = navigator.hardwareConcurrency;

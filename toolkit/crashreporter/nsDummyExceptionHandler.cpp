@@ -1,12 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsExceptionHandler.h"
-
-using mozilla::UniqueFileHandle;
 
 namespace CrashReporter {
 
@@ -17,6 +13,12 @@ void AnnotateTexturesSize(size_t size) {}
 void AnnotatePendingIPC(size_t aNumOfPendingIPC, uint32_t aTopPendingIPCCount,
                         const char* aTopPendingIPCName,
                         uint32_t aTopPendingIPCType) {}
+
+nsresult OOPInit(nsIFile* aXREDirectory) {
+  return nsresult::NS_ERROR_NOT_AVAILABLE;
+}
+
+void OOPDeinit() {}
 
 nsresult SetExceptionHandler(nsIFile* aXREDirectory, bool force /*=false*/) {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -30,8 +32,7 @@ nsresult SetMinidumpPath(const nsAString& aPath) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-nsresult SetupExtraData(nsIFile* aAppDataDirectory,
-                        const nsACString& aBuildID) {
+nsresult SetupExtraData(nsIFile* aAppDataDirectory, nsIFile* aXreDirectory) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -205,9 +206,10 @@ void SetNotificationPipeForChild(FileHandle breakpadFd,
                                  FileHandle crashHelperFd) {}
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
-CrashPipeType GetChildNotificationPipe() { return nullptr; }
-
-UniqueFileHandle RegisterChildIPCChannel() { return UniqueFileHandle(); }
+bool RegisterChildIPCChannel(mozilla::geckoargs::ChildProcessArgs& aArgs,
+                             GeckoChildID aID) {
+  return false;
+}
 
 #if defined(MOZ_WIDGET_ANDROID)
 void SetCrashHelperPipes(FileHandle breakpadFd, FileHandle crashHelperFd) {}
@@ -215,17 +217,20 @@ void SetCrashHelperPipes(FileHandle breakpadFd, FileHandle crashHelperFd) {}
 
 bool GetLastRunCrashID(nsAString& id) { return false; }
 
-bool SetRemoteExceptionHandler(CrashPipeType aCrashPipe,
-                               UniqueFileHandle aCrashHelperPipe) {
+#if defined(XP_WIN)
+bool ChildProcessProxyRendezvous(GeckoChildID aID, DWORD aPid, HANDLE aHandle) {
   return false;
 }
+#endif  // defined(XP_WIN)
 
-bool TakeMinidumpForChild(ProcessId childPid, nsIFile** dump,
+bool SetRemoteExceptionHandler(int& aArgc, char** aArgv) { return false; }
+
+bool TakeMinidumpForChild(GeckoChildID aChildId, nsIFile** aDump,
                           AnnotationTable& aAnnotations) {
   return false;
 }
 
-bool FinalizeOrphanedMinidump(ProcessId aChildPid, GeckoProcessType aType,
+bool FinalizeOrphanedMinidump(GeckoChildID aChildId, GeckoProcessType aType,
                               nsString* aDumpId) {
   return false;
 }

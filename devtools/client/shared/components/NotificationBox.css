@@ -8,14 +8,27 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 4px;
+  gap: 6px;
 }
 
 .notificationInner .messageText {
   flex: 1;
   width: 0;
+  min-width: max(50%, 100px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.notificationInner .notification-buttons-container {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: end;
+  margin-inline-start: auto;
 }
 
 .notificationInner .messageImage,
@@ -60,7 +73,7 @@
 /**
  * Remove button borders for notifications highlighting New features.
  */
-.notification[data-type="new"] .notificationButton {
+.notificationbox .notification .notificationButton {
   border-radius: 2px;
   border-width: 0;
   padding: 4px;
@@ -79,7 +92,6 @@
   background-size: 16px;
   width: 16px;
   height: 16px;
-  margin: 6px;
 }
 
 /* Default icons for notifications */
@@ -108,7 +120,6 @@
 .notificationbox .messageCloseButton {
   width: 24px;
   height: 24px;
-  margin: 2px 4px;
   background-image: url("chrome://devtools/skin/images/close.svg");
   background-position: center;
   background-color: transparent;

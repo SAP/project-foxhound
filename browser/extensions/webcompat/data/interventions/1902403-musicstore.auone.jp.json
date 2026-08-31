@@ -1,0 +1,15 @@
+{
+  "label": "musicstore.auone.jp",
+  "bugs": {
+    "1902403": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://musicstore.auone.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

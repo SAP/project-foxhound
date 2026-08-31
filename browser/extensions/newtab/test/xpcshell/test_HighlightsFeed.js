@@ -1312,3 +1312,33 @@ add_task(
     sandbox.restore();
   }
 );
+
+add_task(function test_orderHighlights_sorts_by_date_added_descending() {
+  info(
+    "_orderHighlights should sort non-history items by date_added descending"
+  );
+
+  let sandbox = sinon.createSandbox();
+  let feed = getHighlightsFeedForTest(sandbox);
+
+  let pages = [
+    { url: "http://oldest.com", type: "bookmark", date_added: 100 },
+    { url: "http://newest.com", type: "bookmark", date_added: 300 },
+    { url: "http://middle.com", type: "bookmark", date_added: 200 },
+    { url: "http://visited.com", type: "history" },
+  ];
+
+  let result = feed._orderHighlights(pages);
+
+  Assert.equal(result.length, 4, "All items are returned");
+  Assert.equal(result[0].url, "http://newest.com", "Newest bookmark is first");
+  Assert.equal(result[1].url, "http://middle.com", "Middle bookmark is second");
+  Assert.equal(result[2].url, "http://oldest.com", "Oldest bookmark is third");
+  Assert.equal(
+    result[3].url,
+    "http://visited.com",
+    "Visited item is appended at the end"
+  );
+
+  sandbox.restore();
+});

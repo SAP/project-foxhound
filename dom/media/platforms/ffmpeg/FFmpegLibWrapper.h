@@ -2,14 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FFmpegLibWrapper_h__
-#define __FFmpegLibWrapper_h__
+#ifndef FFmpegLibWrapper_h_
+#define FFmpegLibWrapper_h_
 
+// The highest libavcodec major version we support. When bumping this for a new
+// FFmpeg release, the AV_FUNC_NN bindings, case NN dispatch, and the ffmpegNN/
+// subdirectory in FFmpegLibWrapper.cpp / FFmpegRuntimeLinker.cpp must all be
+// updated. Static asserts in FFmpegLibWrapper::Link() enforce consistency.
+#define FFMPEG_MAX_MAJOR_VERSION 62
+#define FFMPEG_MAX_MAJOR_VERSION_STR_HELPER(x) #x
+#define FFMPEG_MAX_MAJOR_VERSION_STR(x) FFMPEG_MAX_MAJOR_VERSION_STR_HELPER(x)
+
+#include "ffvpx/tx.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DefineEnum.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Types.h"
-#include "ffvpx/tx.h"
 
 struct AVCodec;
 struct AVCodecContext;
@@ -26,6 +33,9 @@ struct AVVAAPIHWConfig;
 struct AVHWFramesConstraints;
 #endif
 struct AVBufferRef;
+#ifdef MOZ_WIDGET_ANDROID
+typedef struct MediaCodecBuffer AVMediaCodecBuffer;
+#endif
 
 namespace mozilla {
 
@@ -55,7 +65,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
 
 #ifdef MOZ_WIDGET_GTK
   // Check if libva and libva-drm are available and we can use HW decode.
-  bool IsVAAPIAvailable();
+  bool IsVAAPIAvailable() const;
 #endif
 
   // Helpers for libavcodec/util logging to integrate with MOZ_LOG.
@@ -130,6 +140,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
                                                va_list));
   void (*av_log_set_level)(int level);
   void* (*av_malloc)(size_t size);
+  void* (*av_mallocz)(size_t size);
   void (*av_freep)(void* ptr);
   int (*av_image_check_size)(unsigned int w, unsigned int h, int log_offset,
                              void* log_ctx);
@@ -153,6 +164,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
 
   // libavutil v55 and later only
   AVFrame* (*av_frame_alloc)();
+  AVFrame* (*av_frame_clone)(const AVFrame* frame);
   void (*av_frame_free)(AVFrame** frame);
   void (*av_frame_unref)(AVFrame* frame);
   int (*av_frame_get_buffer)(AVFrame* frame, int align);
@@ -174,8 +186,16 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   // libavutil >= 58
   AVBufferRef* (*av_hwdevice_ctx_alloc)(int);
   int (*av_hwdevice_ctx_init)(AVBufferRef* ref);
+  int (*av_hwdevice_ctx_create)(AVBufferRef** device_ctx, int type,
+                                const char* device, AVDictionary* opts,
+                                int flags);
   AVBufferRef* (*av_hwframe_ctx_alloc)(AVBufferRef* device_ctx);
   int (*av_hwframe_ctx_init)(AVBufferRef* ref);
+  int (*avcodec_get_hw_frames_parameters)(AVCodecContext* avctx,
+                                          AVBufferRef* device_ref,
+                                          int hw_pix_fmt,
+                                          AVBufferRef** out_frames_ref);
+  int (*av_hwframe_map)(AVFrame* dst, const AVFrame* src, int flags);
   AVBufferRef* (*av_buffer_ref)(AVBufferRef* buf);
   void (*av_buffer_unref)(AVBufferRef** buf);
 
@@ -188,8 +208,14 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
                                          int** formats, int flags);
   int (*av_hwdevice_ctx_create_derived)(AVBufferRef** dst_ctx, int type,
                                         AVBufferRef* src_ctx, int flags);
+  const char* (*av_hwdevice_get_type_name)(int type);
   const char* (*avcodec_get_name)(int id);
   char* (*av_get_pix_fmt_string)(char* buf, int buf_size, int pix_fmt);
+#endif
+
+#if defined(MOZ_WIDGET_ANDROID)
+  int (*av_mediacodec_release_buffer)(AVMediaCodecBuffer*, int);
+  int (*moz_avcodec_mediacodec_is_eos)(AVCodecContext*);
 #endif
 
   // Only ever used with ffvpx

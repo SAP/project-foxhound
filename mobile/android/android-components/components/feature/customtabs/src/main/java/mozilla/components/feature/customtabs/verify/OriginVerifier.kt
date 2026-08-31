@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.customtabs.verify
 
-import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.annotation.VisibleForTesting
 import androidx.browser.customtabs.CustomTabsService.RELATION_HANDLE_ALL_URLS
@@ -18,6 +17,7 @@ import mozilla.components.service.digitalassetlinks.AssetDescriptor
 import mozilla.components.service.digitalassetlinks.Relation.HANDLE_ALL_URLS
 import mozilla.components.service.digitalassetlinks.Relation.USE_AS_ORIGIN
 import mozilla.components.service.digitalassetlinks.RelationChecker
+import mozilla.components.support.utils.ext.PackageManagerCompatHelper
 
 /**
  * Used to verify postMessage origin for a designated package name.
@@ -29,7 +29,7 @@ import mozilla.components.service.digitalassetlinks.RelationChecker
 class OriginVerifier(
     private val packageName: String,
     @param:Relation private val relation: Int,
-    packageManager: PackageManager,
+    packageManager: PackageManagerCompatHelper,
     private val relationChecker: RelationChecker,
 ) {
 

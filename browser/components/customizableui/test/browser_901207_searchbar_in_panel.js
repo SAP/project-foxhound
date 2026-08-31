@@ -7,10 +7,14 @@
 logActiveElement();
 
 async function waitForSearchBarFocus() {
-  let searchbar = document.getElementById("searchbar");
+  let searchbar = document.getElementById(
+    Services.prefs.getBoolPref("browser.search.widget.new")
+      ? "searchbar-new"
+      : "searchbar"
+  );
   await TestUtils.waitForCondition(function () {
     logActiveElement();
-    return document.activeElement === searchbar.textbox;
+    return document.activeElement === searchbar.inputField;
   });
 }
 

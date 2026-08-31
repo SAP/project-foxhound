@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 3; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -229,6 +228,12 @@ NS_IMETHODIMP nsMIMEInfoWin::GetDefaultExecutable(nsIFile** aExecutable) {
   }
 
   return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP nsMIMEInfoWin::GetDefaultDescription(nsAString& aDescription) {
+  UpdateDefaultInfoIfStale();
+  aDescription = mDefaultAppDescription;
+  return NS_OK;
 }
 
 NS_IMETHODIMP

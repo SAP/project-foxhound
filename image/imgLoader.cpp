@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +18,6 @@
 #include "ImageLogging.h"
 #include "ReferrerInfo.h"
 #include "imgRequestProxy.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -37,6 +34,14 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
+#ifdef NIGHTLY_BUILD
+#  include "mozilla/dom/PolicyContainer.h"
+#  include "mozilla/dom/IntegrityPolicyWAICT.h"
+#  include "mozilla/dom/WAICTUtils.h"
+#  include "mozilla/StaticPrefs_security.h"
+#  include "nsStringStream.h"
+static bool ShouldEnableWAICT(mozilla::dom::Document* aDoc);
+#endif
 #include "mozilla/image/ImageMemoryReporter.h"
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "nsCOMPtr.h"
@@ -57,7 +62,6 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIMemoryReporter.h"
-#include "nsINetworkPredictor.h"
 #include "nsIProgressEventSink.h"
 #include "nsIProtocolHandler.h"
 #include "nsImageModule.h"
@@ -668,9 +672,9 @@ nsProgressNotificationProxy::GetInterface(const nsIID& iid, void** result) {
 static void NewRequestAndEntry(bool aForcePrincipalCheckForCacheEntry,
                                imgLoader* aLoader, const ImageCacheKey& aKey,
                                imgRequest** aRequest, imgCacheEntry** aEntry) {
-  RefPtr<imgRequest> request = new imgRequest(aLoader, aKey);
-  RefPtr<imgCacheEntry> entry =
-      new imgCacheEntry(aLoader, request, aForcePrincipalCheckForCacheEntry);
+  auto request = MakeRefPtr<imgRequest>(aLoader, aKey);
+  auto entry = MakeRefPtr<imgCacheEntry>(aLoader, request,
+                                         aForcePrincipalCheckForCacheEntry);
   aLoader->AddToUncachedImages(request);
   request.forget(aRequest);
   entry.forget(aEntry);
@@ -830,7 +834,8 @@ static bool ValidateSecurityInfo(imgRequest* aRequest,
 
 static void AdjustPriorityForImages(nsIChannel* aChannel,
                                     nsLoadFlags aLoadFlags,
-                                    FetchPriority aFetchPriority) {
+                                    FetchPriority aFetchPriority,
+                                    bool aIsLinkPreload) {
   // Image channels are loaded by default with reduced priority.
   if (nsCOMPtr<nsISupportsPriority> supportsPriority =
           do_QueryInterface(aChannel)) {
@@ -841,8 +846,8 @@ static void AdjustPriorityForImages(nsIChannel* aChannel,
       priority += FETCH_PRIORITY_ADJUSTMENT_FOR(images, aFetchPriority);
     }
 
-    // Further reduce priority for background loads
-    if (aLoadFlags & nsIRequest::LOAD_BACKGROUND) {
+    // Further reduce priority for link preload background loads only.
+    if (aIsLinkPreload && (aLoadFlags & nsIRequest::LOAD_BACKGROUND)) {
       ++priority;
     }
 
@@ -868,7 +873,7 @@ static nsresult NewImageChannel(
     nsLoadFlags aLoadFlags, nsContentPolicyType aPolicyType,
     nsIPrincipal* aTriggeringPrincipal, nsINode* aRequestingNode,
     bool aRespectPrivacy, uint64_t aEarlyHintPreloaderId,
-    FetchPriority aFetchPriority) {
+    FetchPriority aFetchPriority, bool aIsLinkPreload) {
   MOZ_ASSERT(aResult);
 
   nsresult rv;
@@ -929,12 +934,14 @@ static nsresult NewImageChannel(
   } else {
     // either we are loading something inside a document, in which case
     // we should always have a requestingNode, or we are loading something
-    // outside a document, in which case the triggeringPrincipal and
-    // triggeringPrincipal should always be the systemPrincipal.
-    // However, there are exceptions: one is Notifications which create a
-    // channel in the parent process in which case we can't get a
-    // requestingNode.
-    rv = NS_NewChannel(aResult, aURI, nsContentUtils::GetSystemPrincipal(),
+    // outside a document, in which case the triggeringPrincipal should be the
+    // systemPrincipal. However, there are exceptions: one is Notifications
+    // which create a channel in the parent process in which case we can't get a
+    // requestingNode though we might have a valid triggeringPrincipal.
+    rv = NS_NewChannel(aResult, aURI,
+                       aTriggeringPrincipal
+                           ? aTriggeringPrincipal
+                           : nsContentUtils::GetSystemPrincipal(),
                        securityFlags, aPolicyType,
                        nullptr,  // nsICookieJarSettings
                        nullptr,  // PerformanceStorage
@@ -988,7 +995,7 @@ static nsresult NewImageChannel(
     }
   }
 
-  AdjustPriorityForImages(*aResult, aLoadFlags, aFetchPriority);
+  AdjustPriorityForImages(*aResult, aLoadFlags, aFetchPriority, aIsLinkPreload);
 
   // Create a new loadgroup for this new channel, using the old group as
   // the parent. The indirection keeps the channel insulated from cancels,
@@ -1175,7 +1182,7 @@ nsresult imgLoader::CreateNewProxyForRequest(
      proxy calls to |aObserver|.
    */
 
-  RefPtr<imgRequestProxy> proxyRequest = new imgRequestProxy();
+  auto proxyRequest = MakeRefPtr<imgRequestProxy>();
 
   /* It is important to call |SetLoadFlags()| before calling |Init()| because
      |Init()| adds the request to the loadgroup.
@@ -1205,7 +1212,7 @@ class imgCacheExpirationTracker final
 
 imgCacheExpirationTracker::imgCacheExpirationTracker()
     : nsExpirationTracker<imgCacheEntry, 3>(TIMEOUT_SECONDS * 1000,
-                                            "imgCacheExpirationTracker") {}
+                                            "imgCacheExpirationTracker"_ns) {}
 
 void imgCacheExpirationTracker::NotifyExpired(imgCacheEntry* entry) {
   // Hold on to a reference to this entry, because the expiration tracker
@@ -1250,7 +1257,7 @@ already_AddRefed<imgLoader> imgLoader::CreateImageLoader() {
   // we hand out imgLoader instances and code starts using them.
   mozilla::image::EnsureModuleInitialized();
 
-  RefPtr<imgLoader> loader = new imgLoader();
+  auto loader = MakeRefPtr<imgLoader>();
   loader->Init();
 
   return loader.forget();
@@ -1316,7 +1323,7 @@ void imgLoader::GlobalInit() {
   sCacheMaxSize = cachesize > 0 ? cachesize : 0;
 
   sMemReporter = new imgMemoryReporter();
-  RegisterStrongAsyncMemoryReporter(sMemReporter);
+  RegisterStrongAsyncMemoryReporter(do_AddRef(sMemReporter));
   RegisterImagesContentUsedUncompressedDistinguishedAmount(
       imgMemoryReporter::ImagesContentUsedUncompressedDistinguishedAmount);
 }
@@ -1432,8 +1439,8 @@ nsresult imgLoader::ClearCache(
     const mozilla::Maybe<nsCString>& aURL /* = mozilla::Nothing() */) {
   if (XRE_IsParentProcess()) {
     for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-      Unused << cp->SendClearImageCache(aPrivateLoader, aChrome, aPrincipal,
-                                        aSchemelessSite, aPattern, aURL);
+      (void)cp->SendClearImageCache(aPrivateLoader, aChrome, aPrincipal,
+                                    aSchemelessSite, aPattern, aURL);
     }
   }
 
@@ -1548,8 +1555,8 @@ nsresult imgLoader::RemoveEntriesInternal(
     const auto& key = entry.GetKey();
 
     if (SharedSubResourceCacheUtils::ShouldClearEntry(
-            key.URI(), key.LoaderPrincipal(), key.PartitionPrincipal(),
-            Nothing(), aPrincipal, aSchemelessSite, aPattern, aURL)) {
+            key.URI(), key.PartitionPrincipal(), Nothing(), aPrincipal,
+            aSchemelessSite, aPattern, aURL)) {
       entriesToBeRemoved.AppendElement(entry.GetData());
     }
   }
@@ -1707,6 +1714,8 @@ bool imgLoader::SetHasNoProxies(imgRequest* aRequest, imgCacheEntry* aEntry) {
     mCacheQueue.Push(aEntry);
   }
 
+  CheckCacheLimits();
+
   return true;
 }
 
@@ -1832,7 +1841,7 @@ bool imgLoader::ValidateRequestWithNewChannel(
                        aInitialDocumentURI, aCORSMode, aReferrerInfo,
                        aLoadGroup, aLoadFlags, aLoadPolicyType,
                        aTriggeringPrincipal, aLoadingDocument, mRespectPrivacy,
-                       aEarlyHintPreloaderId, aFetchPriority);
+                       aEarlyHintPreloaderId, aFetchPriority, aLinkPreload);
   if (NS_FAILED(rv)) {
     return false;
   }
@@ -1849,15 +1858,10 @@ bool imgLoader::ValidateRequestWithNewChannel(
   }
 
   // Make sure that OnStatus/OnProgress calls have the right request set...
-  RefPtr<nsProgressNotificationProxy> progressproxy =
-      new nsProgressNotificationProxy(newChannel, req);
-  if (!progressproxy) {
-    return false;
-  }
-
-  RefPtr<imgCacheValidator> hvc =
-      new imgCacheValidator(progressproxy, this, request, aLoadingDocument,
-                            aInnerWindowId, forcePrincipalCheck);
+  auto progressproxy = MakeRefPtr<nsProgressNotificationProxy>(newChannel, req);
+  auto hvc = MakeRefPtr<imgCacheValidator>(progressproxy, this, request,
+                                           aLoadingDocument, aInnerWindowId,
+                                           forcePrincipalCheck);
 
   // Casting needed here to get past multiple inheritance.
   nsCOMPtr<nsIStreamListener> listener =
@@ -1887,9 +1891,6 @@ bool imgLoader::ValidateRequestWithNewChannel(
   // Add the proxy without notifying
   hvc->AddProxy(req);
 
-  mozilla::net::PredictorLearn(aURI, aInitialDocumentURI,
-                               nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE,
-                               aLoadGroup);
   rv = newChannel->AsyncOpen(listener);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     req->CancelAndForgetObserver(rv);
@@ -1926,11 +1927,12 @@ void imgLoader::NotifyObserversForCachedImage(
 
   nsCOMPtr<nsIChannel> newChannel;
   bool forcePrincipalCheck;
-  nsresult rv = NewImageChannel(
-      getter_AddRefs(newChannel), &forcePrincipalCheck, aURI, nullptr,
-      aCORSMode, aReferrerInfo, nullptr, 0,
-      nsIContentPolicy::TYPE_INTERNAL_IMAGE, aTriggeringPrincipal,
-      aLoadingDocument, mRespectPrivacy, aEarlyHintPreloaderId, aFetchPriority);
+  nsresult rv =
+      NewImageChannel(getter_AddRefs(newChannel), &forcePrincipalCheck, aURI,
+                      nullptr, aCORSMode, aReferrerInfo, nullptr, 0,
+                      nsIContentPolicy::TYPE_INTERNAL_IMAGE,
+                      aTriggeringPrincipal, aLoadingDocument, mRespectPrivacy,
+                      aEarlyHintPreloaderId, aFetchPriority, false);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -1941,7 +1943,7 @@ void imgLoader::NotifyObserversForCachedImage(
     newChannel->SetContentType(nsDependentCString(request->GetMimeType()));
     RefPtr<mozilla::image::Image> image = request->GetImage();
     if (image) {
-      newChannel->SetContentLength(aEntry->GetDataSize());
+      newChannel->SetContentLength(request->GetContentLength());
     }
     obsService->NotifyObservers(newChannel, "http-on-resource-cache-response",
                                 nullptr);
@@ -2509,7 +2511,7 @@ nsresult imgLoader::LoadImage(
                          aInitialDocumentURI, corsmode, aReferrerInfo,
                          aLoadGroup, requestFlags, aContentPolicyType,
                          aTriggeringPrincipal, aContext, mRespectPrivacy,
-                         aEarlyHintPreloaderId, aFetchPriority);
+                         aEarlyHintPreloaderId, aFetchPriority, aLinkPreload);
     if (NS_FAILED(rv)) {
       return NS_ERROR_FAILURE;
     }
@@ -2539,7 +2541,7 @@ nsresult imgLoader::LoadImage(
                            nsIClassOfService::Tail);
         nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(newChannel));
         if (httpChannel) {
-          Unused << httpChannel->SetRequestContextID(aRequestContextID);
+          (void)httpChannel->SetRequestContextID(aRequestContextID);
         }
       }
     }
@@ -2560,15 +2562,16 @@ nsresult imgLoader::LoadImage(
     }
 
     // create the proxy listener
+#ifdef NIGHTLY_BUILD
+    nsCOMPtr<nsIStreamListener> listener =
+        new ProxyListener(request.get(), ShouldEnableWAICT(aLoadingDocument));
+#else
     nsCOMPtr<nsIStreamListener> listener = new ProxyListener(request.get());
+#endif
 
     MOZ_LOG(gImgLog, LogLevel::Debug,
             ("[this=%p] imgLoader::LoadImage -- Calling channel->AsyncOpen()\n",
              this));
-
-    mozilla::net::PredictorLearn(aURI, aInitialDocumentURI,
-                                 nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE,
-                                 aLoadGroup);
 
     nsresult openRes;
     openRes = newChannel->AsyncOpen(listener);
@@ -2779,7 +2782,7 @@ nsresult imgLoader::LoadImageWithChannel(nsIChannel* channel,
 #endif
 
   // Filter out any load flags not from nsIRequest
-  requestFlags &= nsIRequest::LOAD_REQUESTMASK;
+  requestFlags &= nsIRequest::LOAD_INHERIT_MASK;
 
   nsresult rv = NS_OK;
   if (request) {
@@ -2824,8 +2827,14 @@ nsresult imgLoader::LoadImageWithChannel(nsIChannel* channel,
                        corsMode, nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    RefPtr<ProxyListener> pl =
-        new ProxyListener(static_cast<nsIStreamListener*>(request.get()));
+#ifdef NIGHTLY_BUILD
+    auto pl = MakeRefPtr<ProxyListener>(
+        static_cast<nsIStreamListener*>(request.get()),
+        ShouldEnableWAICT(aLoadingDocument));
+#else
+    auto pl = MakeRefPtr<ProxyListener>(
+        static_cast<nsIStreamListener*>(request.get()));
+#endif
     pl.forget(listener);
 
     // Try to add the new request into the cache.
@@ -2980,7 +2989,122 @@ NS_IMPL_ISUPPORTS(ProxyListener, nsIStreamListener,
 
 ProxyListener::ProxyListener(nsIStreamListener* dest) : mDestListener(dest) {}
 
+#ifdef NIGHTLY_BUILD
+ProxyListener::ProxyListener(nsIStreamListener* dest, bool aIsWAICTEnabled)
+    : mDestListener(dest), mIsWAICTEnabled(aIsWAICTEnabled) {}
+#endif
+
 ProxyListener::~ProxyListener() = default;
+
+#ifdef NIGHTLY_BUILD
+static bool ShouldEnableWAICT(Document* aDoc) {
+  if (!StaticPrefs::security_waict_enabled()) {
+    return false;
+  }
+  if (!aDoc) {
+    return false;
+  }
+  auto* policy =
+      PolicyContainer::GetIntegrityPolicyWAICT(aDoc->GetPolicyContainer());
+  return policy &&
+         policy->ShouldHandle(IntegrityPolicy::DestinationType::Image);
+}
+
+// Reads and buffers image data from aInStr into aBufferedImage while updating
+// the hash. Returns false if the buffer limit
+// (security.waict.allowed_image_storage) was exceeded.
+static bool MaybeUpdateWAICTHash(mozilla::dom::ResourceHasher* aHasher,
+                                 nsTArray<uint8_t>& aBufferedImage,
+                                 nsIInputStream* aInStr, uint32_t aCount) {
+  MOZ_ASSERT(aHasher);
+  uint32_t prevLen = aBufferedImage.Length();
+  if ((uint64_t)prevLen + aCount >
+      StaticPrefs::security_waict_allowed_image_storage()) {
+    return false;
+  }
+  aBufferedImage.SetLength(prevLen + aCount);
+  uint32_t bytesRead = 0;
+  nsresult rv =
+      aInStr->Read(reinterpret_cast<char*>(aBufferedImage.Elements() + prevLen),
+                   aCount, &bytesRead);
+  if (NS_FAILED(rv) || bytesRead == 0) {
+    aBufferedImage.SetLength(prevLen);
+    return true;
+  }
+  aBufferedImage.SetLength(prevLen + bytesRead);
+  aHasher->Update(aBufferedImage.Elements() + prevLen, bytesRead);
+  return true;
+}
+
+static bool MaybeCheckWAICTIntegrity(nsIStreamListener* aListener,
+                                     mozilla::dom::ResourceHasher* aHasher,
+                                     nsIRequest* aRequest, nsresult& aStatus,
+                                     nsTArray<uint8_t> aBufferedImage) {
+  if (!aHasher) {
+    return false;
+  }
+  nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+  if (!channel) {
+    return false;
+  }
+  aHasher->Finish();
+  nsCString computedHash(aHasher->GetHash());
+  if (NS_WARN_IF(computedHash.IsEmpty())) {
+    aStatus = NS_ERROR_FAILURE;
+    return false;
+  }
+  nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+  nsCOMPtr<nsISupports> loadingContext = loadInfo->GetLoadingContext();
+  RefPtr<Document> doc;
+  if (nsCOMPtr<nsINode> node = do_QueryInterface(loadingContext)) {
+    doc = node->OwnerDoc();
+  }
+  if (!doc) {
+    return false;
+  }
+  auto* policy =
+      PolicyContainer::GetIntegrityPolicyWAICT(doc->GetPolicyContainer());
+  if (!policy) {
+    return false;
+  }
+  nsresult status = aStatus;
+  auto promise = policy->WaitForManifestLoad();
+  promise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [listener = nsCOMPtr{aListener}, channel, request = nsCOMPtr{aRequest},
+       status, policy = RefPtr{policy}, computedHash = std::move(computedHash),
+       bufferedImage = std::move(aBufferedImage)](bool) {
+        nsCOMPtr<nsIURI> originalURI;
+        channel->GetOriginalURI(getter_AddRefs(originalURI));
+        if (!policy->MaybeCheckResourceIntegrity(
+                originalURI, IntegrityPolicy::DestinationType::Image,
+                computedHash)) {
+          return listener->OnStopRequest(request, NS_ERROR_FAILURE);
+        }
+        uint32_t bufferedImageLen = bufferedImage.Length();
+        nsCOMPtr<nsIInputStream> stream;
+        NS_NewByteInputStream(getter_AddRefs(stream),
+                              mozilla::Span(reinterpret_cast<const char*>(
+                                                bufferedImage.Elements()),
+                                            bufferedImageLen),
+                              NS_ASSIGNMENT_DEPEND);
+        if (stream && bufferedImageLen > 0) {
+          nsresult rv =
+              listener->OnDataAvailable(request, stream, 0, bufferedImageLen);
+          if (NS_FAILED(rv)) {
+            return listener->OnStopRequest(request, rv);
+          }
+        }
+        return listener->OnStopRequest(request, status);
+      },
+      [](bool) {
+        // WaitForManifestLoad always resolves, never rejects.
+        // TODO: Handle edge cases such as page closed before manifest loads.
+        MOZ_ASSERT_UNREACHABLE("should always resolve");
+      });
+  return true;
+}
+#endif
 
 /** nsIRequestObserver methods **/
 
@@ -2989,6 +3113,18 @@ ProxyListener::OnStartRequest(nsIRequest* aRequest) {
   if (!mDestListener) {
     return NS_ERROR_FAILURE;
   }
+
+#ifdef NIGHTLY_BUILD
+  if (mIsWAICTEnabled) {
+    MutexAutoLock lock(mHasherMutex);
+    mResourceHasher = mozilla::dom::ResourceHasher::Init();
+    if (!mResourceHasher) {
+      MOZ_LOG(
+          mozilla::waict::gWaictLog, LogLevel::Warning,
+          ("ProxyListener::OnStartRequest -- ResourceHasher::Init() failed\n"));
+    }
+  }
+#endif
 
   nsCOMPtr<nsIChannel> channel(do_QueryInterface(aRequest));
   if (channel) {
@@ -3021,14 +3157,15 @@ ProxyListener::OnStartRequest(nsIRequest* aRequest) {
                                           toListener, nullptr,
                                           getter_AddRefs(fromListener));
           if (NS_SUCCEEDED(rv)) {
-            mDestListener = fromListener;
+            mDestListener = std::move(fromListener);
           }
         }
       }
     }
   }
 
-  return mDestListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> destListener = mDestListener;
+  return destListener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
@@ -3037,7 +3174,24 @@ ProxyListener::OnStopRequest(nsIRequest* aRequest, nsresult status) {
     return NS_ERROR_FAILURE;
   }
 
-  return mDestListener->OnStopRequest(aRequest, status);
+#ifdef NIGHTLY_BUILD
+  if (mIsWAICTEnabled) {
+    RefPtr<mozilla::dom::ResourceHasher> hasher;
+    nsTArray<uint8_t> bufferedImage;
+    {
+      MutexAutoLock lock(mHasherMutex);
+      hasher = std::move(mResourceHasher);
+      bufferedImage = std::move(mBufferedImageWAICT);
+    }
+    if (MaybeCheckWAICTIntegrity(mDestListener, hasher, aRequest, status,
+                                 std::move(bufferedImage))) {
+      return NS_OK;
+    }
+  }
+#endif
+
+  nsCOMPtr<nsIStreamListener> destListener = mDestListener;
+  return destListener->OnStopRequest(aRequest, status);
 }
 
 /** nsIStreamListener methods **/
@@ -3049,7 +3203,28 @@ ProxyListener::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* inStr,
     return NS_ERROR_FAILURE;
   }
 
-  return mDestListener->OnDataAvailable(aRequest, inStr, sourceOffset, count);
+// When WAICT is active, we buffer all image data and defer forwarding to
+// mDestListener until integrity has been verified in OnStopRequest. This
+// intentionally disables progressive decoding for WAICT-checked images.
+
+// For images not covered by WAICT, the only overhead is this boolean check.
+#ifdef NIGHTLY_BUILD
+  if (mIsWAICTEnabled) {
+    MutexAutoLock lock(mHasherMutex);
+    if (mResourceHasher) {
+      if (!MaybeUpdateWAICTHash(mResourceHasher, mBufferedImageWAICT, inStr,
+                                count)) {
+        return NS_ERROR_FAILURE;
+      }
+      return NS_OK;
+    }
+    // If hasher init failed, fall through to the normal streaming path.
+    // The image will load without WAICT integrity verification.
+  }
+#endif
+
+  nsCOMPtr<nsIStreamListener> destListener = mDestListener;
+  return destListener->OnDataAvailable(aRequest, inStr, sourceOffset, count);
 }
 
 NS_IMETHODIMP
@@ -3263,14 +3438,19 @@ imgCacheValidator::OnStartRequest(nsIRequest* aRequest) {
     return rv;
   }
 
+#ifdef NIGHTLY_BUILD
+  mDestListener = new ProxyListener(mNewRequest, ShouldEnableWAICT(document));
+#else
   mDestListener = new ProxyListener(mNewRequest);
+#endif
 
   // Try to add the new request into the cache. Note that the entry must be in
   // the cache before the proxies' ownership changes, because adding a proxy
   // changes the caching behaviour for imgRequests.
   mImgLoader->PutIntoCache(mNewRequest->CacheKey(), mNewEntry);
   UpdateProxies(/* aCancelRequest */ false, /* aSyncNotify */ true);
-  return mDestListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> destListener = mDestListener;
+  return destListener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
@@ -3282,7 +3462,8 @@ imgCacheValidator::OnStopRequest(nsIRequest* aRequest, nsresult status) {
     return NS_OK;
   }
 
-  return mDestListener->OnStopRequest(aRequest, status);
+  nsCOMPtr<nsIStreamListener> destListener = mDestListener;
+  return destListener->OnStopRequest(aRequest, status);
 }
 
 /** nsIStreamListener methods **/
@@ -3297,7 +3478,8 @@ imgCacheValidator::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* inStr,
     return NS_OK;
   }
 
-  return mDestListener->OnDataAvailable(aRequest, inStr, sourceOffset, count);
+  nsCOMPtr<nsIStreamListener> destListener = mDestListener;
+  return destListener->OnDataAvailable(aRequest, inStr, sourceOffset, count);
 }
 
 NS_IMETHODIMP

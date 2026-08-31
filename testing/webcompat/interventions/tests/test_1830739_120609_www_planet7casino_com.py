@@ -13,11 +13,13 @@ async def check_for_message(client, message):
     await client.navigate(URL)
     client.switch_to_frame(client.await_css(IFRAME_CSS))
     down = client.async_await_element(client.text(DOWN_TEXT))
-    good = await client.promise_console_message_listener(message)
-    down, good = await asyncio.wait([down, good], return_when=asyncio.FIRST_COMPLETED)
-    if down:
+    expected_message = await client.promise_console_message_listener(message)
+    done, pending = await asyncio.wait(
+        [down, expected_message], return_when=asyncio.FIRST_COMPLETED
+    )
+    if down in done:
         pytest.skip("Cannot test: casino is 'temporarily out of order'")
-    return good
+    assert expected_message in done
 
 
 @pytest.mark.only_platforms("android")

@@ -24,6 +24,8 @@ data class SitePermissionsRules constructor(
     val persistentStorage: Action,
     val mediaKeySystemAccess: Action,
     val crossOriginStorageAccess: Action,
+    val localDeviceAccess: Action,
+    val localNetworkAccess: Action,
 ) {
 
     enum class Action {
@@ -93,6 +95,12 @@ data class SitePermissionsRules constructor(
             is Permission.ContentCrossOriginStorageAccess -> {
                 crossOriginStorageAccess
             }
+            is Permission.ContentLocalDeviceAccess -> {
+                localDeviceAccess
+            }
+            is Permission.ContentLocalNetworkAccess -> {
+                localNetworkAccess
+            }
             else -> ASK_TO_ALLOW
         }
     }
@@ -120,6 +128,8 @@ data class SitePermissionsRules constructor(
             localStorage = persistentStorage.toStatus(),
             mediaKeySystemAccess = mediaKeySystemAccess.toStatus(),
             crossOriginStorageAccess = crossOriginStorageAccess.toStatus(),
+            localDeviceAccess = localDeviceAccess.toStatus(),
+            localNetworkAccess = localNetworkAccess.toStatus(),
             savedAt = savedAt,
         )
     }

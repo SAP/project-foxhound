@@ -37,7 +37,7 @@ fn linear_range(min: u64, max: u64, count: usize) -> Vec<u64> {
 ///
 /// Buckets are pre-computed at instantiation with a linear  distribution from `min` to `max`
 /// and `bucket_count` buckets.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, MallocSizeOf)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, MallocSizeOf)]
 pub struct PrecomputedLinear {
     // Don't serialize the (potentially large) array of ranges, instead compute them on first
     // access.
@@ -48,11 +48,17 @@ pub struct PrecomputedLinear {
     pub(crate) bucket_count: usize,
 }
 
+impl PartialEq for PrecomputedLinear {
+    fn eq(&self, other: &Self) -> bool {
+        self.min == other.min && self.max == other.max && self.bucket_count == other.bucket_count
+    }
+}
+
 impl Bucketing for PrecomputedLinear {
     /// Get the bucket for the sample.
     ///
     /// This uses a binary search to locate the index `i` of the bucket such that:
-    /// bucket[i] <= sample < bucket[i+1]
+    /// `bucket[i] <= sample < bucket[i+1]`
     fn sample_to_bucket_minimum(&self, sample: u64) -> u64 {
         let limit = match self.ranges().binary_search(&sample) {
             // Found an exact match to fit it in

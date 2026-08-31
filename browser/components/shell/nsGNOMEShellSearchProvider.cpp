@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +15,6 @@
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/GUniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "nsImportModule.h"
 #include "nsIOpenTabsProvider.h"
 #include "imgIContainer.h"
@@ -490,8 +486,8 @@ void nsGNOMEShellHistorySearchResult::ReceiveSearchResultContainer(
 
   // Getting the currently open tabs to mark them accordingly
   nsresult rv;
-  nsCOMPtr<nsIOpenTabsProvider> provider =
-      do_ImportESModule("resource:///modules/OpenTabsProvider.sys.mjs", &rv);
+  nsCOMPtr<nsIOpenTabsProvider> provider = do_ImportESModule(
+      "moz-src:///browser/components/shell/OpenTabsProvider.sys.mjs", &rv);
   if (NS_FAILED(rv)) {
     // Don't fail, just log an error message
     NS_WARNING("Failed to determine currently open tabs. Using history only.");

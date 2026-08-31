@@ -25,6 +25,7 @@ to "scope1/module_simpleExport.mjs", instead of "./module_simpleExport.mjs".
 
 <script type="module">
   import { x } from "simple";
+  /* global result2 */
   result2 = x;
 </script>
 
@@ -35,6 +36,7 @@ to "scope1/module_simpleExport.mjs", instead of "./module_simpleExport.mjs".
 
   SimpleTest.waitForExplicitFinish();
 
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
     ok(result_scope1 == 84, 'Check imported value result_scope1: ' + result_scope1);
     ok(result2 == 84, 'Check imported value result2: ' + result2);

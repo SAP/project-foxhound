@@ -110,6 +110,7 @@ export class HighlightsFeed {
   /**
    * Chronologically sort highlights of all types except 'visited'. Then just append
    * the rest at the end of highlights.
+   *
    * @param {Array} pages The full list of links to order.
    * @return {Array} A sorted array of highlights
    */
@@ -124,12 +125,13 @@ export class HighlightsFeed {
     }
 
     return splitHighlights.chronologicalCandidates
-      .sort((a, b) => a.date_added < b.date_added)
+      .sort((a, b) => b.date_added - a.date_added)
       .concat(splitHighlights.visited);
   }
 
   /**
    * Refresh the highlights data for content.
+   *
    * @param {bool} options.broadcast Should the update be broadcasted.
    */
   async fetchHighlights(options = {}) {

@@ -72,7 +72,7 @@ class FindHandler {
           "GeckoViewPdfjs"
         );
         break;
-      case "GeckoView:FindInPage":
+      case "GeckoView:FindInPage": {
         const type = this.#getFindType(aData);
         this.#browser.sendMessageToActor(
           "PDFJS:Child:handleEvent",
@@ -84,6 +84,7 @@ class FindHandler {
         );
         this.#callbacks.push([aCallback, this.#state]);
         break;
+      }
     }
   }
 
@@ -215,8 +216,7 @@ class FileSaver {
         });
       } else {
         // "Download" or "Open in app" from the pdf.js toolbar.
-        this.#eventDispatcher.sendRequest({
-          type: "GeckoView:SavePdf",
+        this.#eventDispatcher.sendRequest("GeckoView:SavePdf", {
           url: blobUrl,
           filename,
           originalUrl,

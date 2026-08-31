@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,7 +64,7 @@ gboolean toplevel_event_watcher(GSignalInvocationHint* ihint,
   return TRUE;
 }
 
-ENameValueFlag ApplicationAccessibleWrap::Name(nsString& aName) const {
+ENameValueFlag ApplicationAccessibleWrap::DirectName(nsString& aName) const {
   // ATK doesn't provide a way to obtain an application name (for example,
   // Firefox or Thunderbird) like IA2 does. Thus let's return an application
   // name as accessible name that was used to get a branding name (for example,

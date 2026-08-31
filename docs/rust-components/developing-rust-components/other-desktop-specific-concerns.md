@@ -25,10 +25,10 @@ This also applies to trait interfaces that have the `with_foreign` attribute.
 
 There are several ways avoid this, listed in order of preference:
 
- * Prefer callback interfaces that store no properties at all.
- * Avoid properties that store Rust objects.
- * Use a [WeakRef](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakRef) to store Rust objects.
- * As a last-resort, use callback interfaces that store Rust objects but make sure you have a system to manually break the reference cycles.
+* Prefer callback interfaces that store no properties at all.
+* Avoid properties that store Rust objects.
+* Use a [WeakRef](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakRef) to store Rust objects.
+* As a last-resort, use callback interfaces that store Rust objects but make sure you have a system to manually break the reference cycles.
 
 Note: Reference cycles can also be formed in Rust-only code, using `Arc`s so watch out for those too.
 However, cycles that go across the FFI using callback interfaces are particularly hard to spot.
@@ -38,5 +38,5 @@ However, cycles that go across the FFI using callback interfaces are particularl
 JavaScript callback interfaces can sometimes be avoided if UniFFI [trait interfaces](https://mozilla.github.io/uniffi-rs/latest/types/interfaces.html#exposing-traits-as-interfaces) are used.
 These work similarly to callback interfaces, but can be implemented in either JavaScript or Rust.
 
-Firefox Desktop has some support for using Rust code, for example [Rust code can access XPCOM components](https://firefox-source-docs.mozilla.org/writing-rust-code/xpcom.html.
+Firefox Desktop has some support for using Rust code, for example [Rust code can access XPCOM components](<https://firefox-source-docs.mozilla.org/writing-rust-code/xpcom.html>.
 You may be able to leverage this to avoid JavaScript altogether and implementing the trait in Firefox Desktop Rust code instead.

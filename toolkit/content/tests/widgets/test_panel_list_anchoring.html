@@ -32,132 +32,324 @@
         anchorButton.addEventListener("click", e => panelList.toggle(e));
       });
 
+      async function getBounds() {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        let button = anchorButton.getBoundingClientRect();
+        let menu = panelList.getBoundingClientRect();
+        return {
+          button: {
+            top: Math.round(button.top),
+            right: Math.round(button.right),
+            bottom: Math.round(button.bottom),
+            left: Math.round(button.left),
+          },
+          menu: {
+            top: Math.round(menu.top),
+            right: Math.round(menu.right),
+            bottom: Math.round(menu.bottom),
+            left: Math.round(menu.left),
+          },
+        };
+      }
+
+      async function showPanel() {
+        let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
+        anchorButton.click();
+        await shown;
+      }
+
+      async function hidePanel() {
+        let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        panelList.hide();
+        await hidden;
+      }
+
       add_task(async function checkAlignment() {
-        async function getBounds() {
-          await new Promise(resolve => requestAnimationFrame(resolve));
-          let button = anchorButton.getBoundingClientRect();
-          let menu = panelList.getBoundingClientRect();
-          return {
-            button: {
-              top: Math.round(button.top),
-              right: Math.round(button.right),
-              bottom: Math.round(button.bottom),
-              left: Math.round(button.left),
-            },
-            menu: {
-              top: Math.round(menu.top),
-              right: Math.round(menu.right),
-              bottom: Math.round(menu.bottom),
-              left: Math.round(menu.left),
-            },
-          };
+        try {
+          anchorButton.style.position = "fixed";
+
+          info(
+            "Verify menu alignment in the top left corner of the browser window"
+          );
+
+          anchorButton.style.top = "32px";
+          anchorButton.style.right = "unset";
+          anchorButton.style.bottom = "unset";
+          anchorButton.style.left = "32px";
+
+          await showPanel();
+          let bounds = await getBounds();
+          is(
+            bounds.menu.top,
+            bounds.button.bottom,
+            "Button's bottom matches Menu's top"
+          );
+          is(
+            bounds.menu.left,
+            bounds.button.left,
+            "Button and Menu have the same left value"
+          );
+          await hidePanel();
+
+          info(
+            "Verify menu alignment in the top right corner of the browser window"
+          );
+
+          anchorButton.style.top = "32px";
+          anchorButton.style.right = "32px";
+          anchorButton.style.bottom = "unset";
+          anchorButton.style.left = "unset";
+
+          await showPanel();
+          bounds = await getBounds();
+          is(
+            bounds.menu.top,
+            bounds.button.bottom,
+            "Button's bottom matches Menu's top"
+          );
+          is(
+            bounds.menu.right,
+            bounds.button.right,
+            "Button and Menu have the same right value"
+          );
+          await hidePanel();
+
+          info(
+            "Verify menu alignment in the bottom right corner of the browser window"
+          );
+
+          anchorButton.style.top = "unset";
+          anchorButton.style.right = "32px";
+          anchorButton.style.bottom = "32px";
+          anchorButton.style.left = "unset";
+
+          await showPanel();
+          bounds = await getBounds();
+          is(
+            bounds.menu.bottom,
+            bounds.button.top,
+            "Button's top matches Menu's bottom"
+          );
+          is(
+            bounds.menu.right,
+            bounds.button.right,
+            "Button and Menu have the same right value"
+          );
+          await hidePanel();
+
+          info(
+            "Verify menu alignment in the bottom left corner of the browser window"
+          );
+
+          anchorButton.style.top = "unset";
+          anchorButton.style.right = "unset";
+          anchorButton.style.bottom = "32px";
+          anchorButton.style.left = "32px";
+
+          await showPanel();
+          bounds = await getBounds();
+          is(
+            bounds.menu.bottom,
+            bounds.button.top,
+            "Button's top matches Menu's bottom"
+          );
+          is(
+            bounds.menu.left,
+            bounds.button.left,
+            "Button and Menu have the same left value"
+          );
+          await hidePanel();
+
+          info(
+            "Verify LTR menu stays within viewport when anchor's right edge overflows"
+          );
+
+          // Position the anchor so its right edge extends past the viewport.
+          // Left-alignment overflows right, so setAlign falls back to
+          // right-alignment. The right-align leftOffset clamp then prevents
+          // the panel from being placed off-screen on the right.
+          anchorButton.style.top = "32px";
+          anchorButton.style.right = "-20px";
+          anchorButton.style.bottom = "unset";
+          anchorButton.style.left = "unset";
+
+          await showPanel();
+          bounds = await getBounds();
+          is(
+            bounds.menu.top,
+            bounds.button.bottom,
+            "Button's bottom matches Menu's top"
+          );
+          is(
+            panelList.getAttribute("align"),
+            "right",
+            "Panel right-aligns when left-alignment would overflow the viewport"
+          );
+          ok(
+            bounds.menu.right <= window.innerWidth,
+            "Panel stays within viewport when anchor overflows right edge in LTR"
+          );
+          await hidePanel();
+        } finally {
+          anchorButton.style.cssText = "";
+        }
+      });
+
+      add_task(async function checkRTLAlignment() {
+        await SpecialPowers.pushPrefEnv({
+          set: [["intl.l10n.pseudo", "bidi"]],
+        });
+
+        try {
+          anchorButton.style.position = "fixed";
+
+          info(
+            "Verify RTL menu right-aligns to anchor in the top right corner"
+          );
+
+          anchorButton.style.top = "32px";
+          anchorButton.style.right = "32px";
+          anchorButton.style.bottom = "unset";
+          anchorButton.style.left = "unset";
+
+          await showPanel();
+          let bounds = await getBounds();
+          is(
+            bounds.menu.top,
+            bounds.button.bottom,
+            "Button's bottom matches Menu's top"
+          );
+          is(
+            bounds.menu.right,
+            bounds.button.right,
+            "RTL panel right-aligns to the anchor button"
+          );
+          await hidePanel();
+
+          info(
+            "Verify RTL menu left-aligns when right-align would overflow the viewport"
+          );
+
+          anchorButton.style.top = "32px";
+          anchorButton.style.right = "unset";
+          anchorButton.style.bottom = "unset";
+          anchorButton.style.left = "32px";
+
+          await showPanel();
+          bounds = await getBounds();
+          is(
+            bounds.menu.top,
+            bounds.button.bottom,
+            "Button's bottom matches Menu's top"
+          );
+          is(
+            bounds.menu.left,
+            bounds.button.left,
+            "Menu left-aligns to button when right-alignment overflows in RTL"
+          );
+          await hidePanel();
+
+          info(
+            "Verify RTL menu left-aligns when right-align would overflow the right viewport edge"
+          );
+
+          // Position the anchor entirely beyond the right viewport edge.
+          anchorButton.style.top = "32px";
+          anchorButton.style.right = "unset";
+          anchorButton.style.bottom = "unset";
+          anchorButton.style.left = `${window.innerWidth + 10}px`;
+
+          await showPanel();
+          bounds = await getBounds();
+          is(
+            bounds.menu.top,
+            bounds.button.bottom,
+            "Button's bottom matches Menu's top"
+          );
+          is(
+            panelList.getAttribute("align"),
+            "left",
+            "Panel left-aligns when anchor's right edge overflows viewport in RTL"
+          );
+          ok(
+            bounds.menu.right <= window.innerWidth,
+            "RTL menu does not overflow when anchor exceeds viewport width"
+          );
+          await hidePanel();
+
+          info(
+            "Verify RTL menu left-aligns when anchor's right edge partially overflows the viewport"
+          );
+
+          // Position the anchor so its left edge is within the viewport but
+          // its right edge extends past it, triggering the right-edge overflow
+          // guard (anchorLeft + anchorWidth > clientWidth) while
+          // rightAlignX remains non-negative.
+          anchorButton.style.top = "32px";
+          anchorButton.style.right = "-20px";
+          anchorButton.style.bottom = "unset";
+          anchorButton.style.left = "unset";
+
+          await showPanel();
+          bounds = await getBounds();
+          is(
+            bounds.menu.top,
+            bounds.button.bottom,
+            "Button's bottom matches Menu's top"
+          );
+          is(
+            panelList.getAttribute("align"),
+            "left",
+            "Panel left-aligns when anchor partially overflows right viewport edge in RTL"
+          );
+          ok(
+            bounds.menu.right <= window.innerWidth,
+            "Menu does not overflow when anchor's right edge partially exceeds viewport in RTL"
+          );
+          await hidePanel();
+        } finally {
+          await SpecialPowers.popPrefEnv();
+          anchorButton.style.cssText = "";
+        }
+      });
+
+      add_task(async function checkClampedAboveAlignment() {
+        // Regression test for Bug 2037402: when the panel-list opens above and
+        // is taller than the available space ("clamped"), its bottom must not
+        // overlap the anchor button.
+        let extraItems = [];
+        for (let i = 0; i < 30; i++) {
+          let item = document.createElement("panel-item");
+          item.textContent = `extra ${i}`;
+          panelList.appendChild(item);
+          extraItems.push(item);
         }
 
-        async function showPanel() {
-          let shown = BrowserTestUtils.waitForEvent(panelList, "shown");
-          anchorButton.click();
-          await shown;
+        try {
+          anchorButton.style.position = "fixed";
+          anchorButton.style.bottom = "32px";
+          anchorButton.style.left = "32px";
+          anchorButton.style.top = "unset";
+          anchorButton.style.right = "unset";
+
+          await showPanel();
+          let bounds = await getBounds();
+          is(
+            panelList.getAttribute("valign"),
+            "top",
+            "Panel opens above the anchor"
+          );
+          ok(
+            bounds.menu.bottom <= bounds.button.top,
+            "Clamped panel does not overlap the button when opening above"
+          );
+          await hidePanel();
+        } finally {
+          anchorButton.style.cssText = "";
+          for (let item of extraItems) {
+            item.remove();
+          }
         }
-
-        async function hidePanel() {
-          let hidden = BrowserTestUtils.waitForEvent(panelList, "hidden");
-          panelList.hide();
-          await hidden;
-        }
-
-        anchorButton.style.position = "fixed";
-
-        info(
-          "Verify menu alignment in the top left corner of the browser window"
-        );
-
-        anchorButton.style.top = "32px";
-        anchorButton.style.right = "unset";
-        anchorButton.style.bottom = "unset";
-        anchorButton.style.left = "32px";
-
-        await showPanel();
-        let bounds = await getBounds();
-        is(
-          bounds.menu.top,
-          bounds.button.bottom,
-          "Button's bottom matches Menu's top"
-        );
-        is(
-          bounds.menu.left,
-          bounds.button.left,
-          "Button and Menu have the same left value"
-        );
-        await hidePanel();
-
-        info(
-          "Verify menu alignment in the top right corner of the browser window"
-        );
-
-        anchorButton.style.top = "32px";
-        anchorButton.style.right = "32px";
-        anchorButton.style.bottom = "unset";
-        anchorButton.style.left = "unset";
-
-        await showPanel();
-        bounds = await getBounds();
-        is(
-          bounds.menu.top,
-          bounds.button.bottom,
-          "Button's bottom matches Menu's top"
-        );
-        is(
-          bounds.menu.right,
-          bounds.button.right,
-          "Button and Menu have the same right value"
-        );
-        await hidePanel();
-
-        info(
-          "Verify menu alignment in the bottom right corner of the browser window"
-        );
-
-        anchorButton.style.top = "unset";
-        anchorButton.style.right = "32px";
-        anchorButton.style.bottom = "32px";
-        anchorButton.style.left = "unset";
-
-        await showPanel();
-        bounds = await getBounds();
-        is(
-          bounds.menu.bottom,
-          bounds.button.top,
-          "Button's top matches Menu's bottom"
-        );
-        is(
-          bounds.menu.right,
-          bounds.button.right,
-          "Button and Menu have the same right value"
-        );
-        await hidePanel();
-
-        info(
-          "Verify menu alignment in the bottom left corner of the browser window"
-        );
-
-        anchorButton.style.top = "unset";
-        anchorButton.style.right = "unset";
-        anchorButton.style.bottom = "32px";
-        anchorButton.style.left = "32px";
-
-        await showPanel();
-        bounds = await getBounds();
-        is(
-          bounds.menu.bottom,
-          bounds.button.top,
-          "Button's top matches Menu's bottom"
-        );
-        is(
-          bounds.menu.left,
-          bounds.button.left,
-          "Button and Menu have the same left value"
-        );
-        await hidePanel();
       });
     </script>
   </body>

@@ -1,25 +1,25 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXMLPrettyPrinter.h"
-#include "nsContentUtils.h"
-#include "nsICSSDeclaration.h"
-#include "nsSyncLoadService.h"
-#include "nsPIDOMWindow.h"
-#include "nsNetUtil.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ShadowRoot.h"
+
 #include "mozilla/Preferences.h"
-#include "mozilla/dom/Document.h"
-#include "nsVariant.h"
 #include "mozilla/dom/CustomEvent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/DocumentL10n.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/txMozillaXSLTProcessor.h"
+#include "nsContentUtils.h"
+#include "nsICSSDeclaration.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsSyncLoadService.h"
+#include "nsVariant.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -87,7 +87,7 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
   }
 
   // Attach an UA Widget Shadow Root on it.
-  rootElement->AttachAndSetUAShadowRoot(Element::NotifyUAWidgetSetup::No);
+  rootElement->AttachAndSetUAShadowRoot(Element::NotifyUAWidget::No);
   RefPtr<ShadowRoot> shadowRoot = rootElement->GetShadowRoot();
   MOZ_RELEASE_ASSERT(shadowRoot && shadowRoot->IsUAWidget(),
                      "There should be a UA Shadow Root here.");
@@ -100,7 +100,13 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
 
   // Create a DocumentL10n, as the XML document is not allowed to have one.
   // Make it sync so that the test for bug 590812 does not require a setTimeout.
-  RefPtr<DocumentL10n> l10n = DocumentL10n::Create(aDocument, true);
+  RefPtr<DocumentL10n> l10n;
+  if (aDocument->ShouldResistFingerprinting(RFPTarget::JSLocale)) {
+    AutoTArray<nsCString, 1> langs = {nsRFPService::GetSpoofedJSLocale()};
+    l10n = DocumentL10n::Create(aDocument, true, langs);
+  } else {
+    l10n = DocumentL10n::Create(aDocument, true);
+  }
   NS_ENSURE_TRUE(l10n, NS_ERROR_UNEXPECTED);
   l10n->AddResourceId("dom/XMLPrettyPrint.ftl"_ns);
 
@@ -160,7 +166,7 @@ void nsXMLPrettyPrinter::Unhook() {
 
 void nsXMLPrettyPrinter::AttributeChanged(Element* aElement,
                                           int32_t aNameSpaceID,
-                                          nsAtom* aAttribute, int32_t aModType,
+                                          nsAtom* aAttribute, AttrModType,
                                           const nsAttrValue* aOldValue) {
   MaybeUnhook(aElement);
 }
@@ -181,6 +187,8 @@ void nsXMLPrettyPrinter::ContentWillBeRemoved(nsIContent* aChild,
 }
 
 void nsXMLPrettyPrinter::NodeWillBeDestroyed(nsINode* aNode) {
+  MOZ_DIAGNOSTIC_ASSERT(mDocument == aNode);
+  mDocument->RemoveMutationObserver(this);
   mDocument = nullptr;
   NS_RELEASE_THIS();
 }

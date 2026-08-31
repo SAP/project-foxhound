@@ -1,10 +1,15 @@
 use crate::prelude::*;
-use crate::{off64_t, off_t};
+use crate::{
+    off64_t,
+    off_t,
+};
 
 pub type wchar_t = i32;
 pub type greg_t = i32;
 
 s! {
+    // FIXME(1.0): This should not implement `PartialEq`
+    #[allow(unpredictable_function_pointer_comparisons)]
     pub struct sigaction {
         pub sa_sigaction: crate::sighandler_t,
         pub sa_mask: crate::sigset_t,
@@ -103,7 +108,7 @@ s! {
         pub start_code: c_ulong,
         pub start_stack: c_ulong,
         pub signal: c_long,
-        __reserved: c_int,
+        __reserved: Padding<c_int>,
         pub u_ar0: *mut user_regs_struct,
         pub u_fpstate: *mut user_fpregs_struct,
         pub magic: c_ulong,
@@ -125,32 +130,44 @@ s! {
         pub cuid: crate::uid_t,
         pub cgid: crate::gid_t,
         pub mode: c_ushort,
-        __pad1: c_ushort,
+        __pad1: Padding<c_ushort>,
         pub __seq: c_ushort,
-        __pad2: c_ushort,
-        __unused1: c_ulong,
-        __unused2: c_ulong,
+        __pad2: Padding<c_ushort>,
+        __unused1: Padding<c_ulong>,
+        __unused2: Padding<c_ulong>,
     }
 
     pub struct stat64 {
         pub st_dev: crate::dev_t,
-        __pad1: c_uint,
-        __st_ino: crate::ino_t,
+        #[cfg(not(gnu_time_bits64))]
+        __pad1: Padding<c_uint>,
+        #[cfg(not(gnu_time_bits64))]
+        __st_ino: c_ulong,
+        #[cfg(gnu_time_bits64)]
+        pub st_ino: crate::ino_t,
         pub st_mode: crate::mode_t,
         pub st_nlink: crate::nlink_t,
         pub st_uid: crate::uid_t,
         pub st_gid: crate::gid_t,
         pub st_rdev: crate::dev_t,
-        __pad2: c_uint,
+        #[cfg(not(gnu_time_bits64))]
+        __pad2: Padding<c_uint>,
         pub st_size: off64_t,
         pub st_blksize: crate::blksize_t,
         pub st_blocks: crate::blkcnt64_t,
         pub st_atime: crate::time_t,
         pub st_atime_nsec: c_long,
+        #[cfg(gnu_time_bits64)]
+        _atime_pad: Padding<c_int>,
         pub st_mtime: crate::time_t,
         pub st_mtime_nsec: c_long,
+        #[cfg(gnu_time_bits64)]
+        _mtime_pad: Padding<c_int>,
         pub st_ctime: crate::time_t,
         pub st_ctime_nsec: c_long,
+        #[cfg(gnu_time_bits64)]
+        _ctime_pad: Padding<c_int>,
+        #[cfg(not(gnu_time_bits64))]
         pub st_ino: crate::ino64_t,
     }
 
@@ -179,7 +196,7 @@ s! {
         pub f_ffree: u64,
         pub f_favail: u64,
         pub f_fsid: c_ulong,
-        __f_unused: c_int,
+        __f_unused: Padding<c_int>,
         pub f_flag: c_ulong,
         pub f_namemax: c_ulong,
         __f_spare: [c_int; 6],
@@ -189,33 +206,39 @@ s! {
         pub shm_perm: crate::ipc_perm,
         pub shm_segsz: size_t,
         pub shm_atime: crate::time_t,
-        __unused1: c_ulong,
+        #[cfg(not(gnu_time_bits64))]
+        __unused1: Padding<c_ulong>,
         pub shm_dtime: crate::time_t,
-        __unused2: c_ulong,
+        #[cfg(not(gnu_time_bits64))]
+        __unused2: Padding<c_ulong>,
         pub shm_ctime: crate::time_t,
-        __unused3: c_ulong,
+        #[cfg(not(gnu_time_bits64))]
+        __unused3: Padding<c_ulong>,
         pub shm_cpid: crate::pid_t,
         pub shm_lpid: crate::pid_t,
         pub shm_nattch: crate::shmatt_t,
-        __unused4: c_ulong,
-        __unused5: c_ulong,
+        __unused4: Padding<c_ulong>,
+        __unused5: Padding<c_ulong>,
     }
 
     pub struct msqid_ds {
         pub msg_perm: crate::ipc_perm,
         pub msg_stime: crate::time_t,
-        __glibc_reserved1: c_ulong,
+        #[cfg(not(gnu_time_bits64))]
+        __glibc_reserved1: Padding<c_ulong>,
         pub msg_rtime: crate::time_t,
-        __glibc_reserved2: c_ulong,
+        #[cfg(not(gnu_time_bits64))]
+        __glibc_reserved2: Padding<c_ulong>,
         pub msg_ctime: crate::time_t,
-        __glibc_reserved3: c_ulong,
+        #[cfg(not(gnu_time_bits64))]
+        __glibc_reserved3: Padding<c_ulong>,
         pub __msg_cbytes: c_ulong,
         pub msg_qnum: crate::msgqnum_t,
         pub msg_qbytes: crate::msglen_t,
         pub msg_lspid: crate::pid_t,
         pub msg_lrpid: crate::pid_t,
-        __glibc_reserved4: c_ulong,
-        __glibc_reserved5: c_ulong,
+        __glibc_reserved4: Padding<c_ulong>,
+        __glibc_reserved5: Padding<c_ulong>,
     }
 
     pub struct siginfo_t {
@@ -238,9 +261,7 @@ s! {
         pub ss_flags: c_int,
         pub ss_size: size_t,
     }
-}
 
-s_no_extra_traits! {
     pub struct user_fpxregs_struct {
         pub cwd: c_ushort,
         pub swd: c_ushort,
@@ -251,10 +272,10 @@ s_no_extra_traits! {
         pub foo: c_long,
         pub fos: c_long,
         pub mxcsr: c_long,
-        __reserved: c_long,
+        __reserved: Padding<c_long>,
         pub st_space: [c_long; 32],
         pub xmm_space: [c_long; 32],
-        padding: [c_long; 56],
+        padding: Padding<[c_long; 56]>,
     }
 
     pub struct ucontext_t {
@@ -266,110 +287,12 @@ s_no_extra_traits! {
         __private: [u8; 112],
         __ssp: [c_ulong; 4],
     }
+}
 
-    #[allow(missing_debug_implementations)]
+s_no_extra_traits! {
     #[repr(align(16))]
     pub struct max_align_t {
         priv_: [f64; 6],
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "extra_traits")] {
-        impl PartialEq for user_fpxregs_struct {
-            fn eq(&self, other: &user_fpxregs_struct) -> bool {
-                self.cwd == other.cwd
-                    && self.swd == other.swd
-                    && self.twd == other.twd
-                    && self.fop == other.fop
-                    && self.fip == other.fip
-                    && self.fcs == other.fcs
-                    && self.foo == other.foo
-                    && self.fos == other.fos
-                    && self.mxcsr == other.mxcsr
-                // Ignore __reserved field
-                    && self.st_space == other.st_space
-                    && self.xmm_space == other.xmm_space
-                // Ignore padding field
-            }
-        }
-
-        impl Eq for user_fpxregs_struct {}
-
-        impl fmt::Debug for user_fpxregs_struct {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("user_fpxregs_struct")
-                    .field("cwd", &self.cwd)
-                    .field("swd", &self.swd)
-                    .field("twd", &self.twd)
-                    .field("fop", &self.fop)
-                    .field("fip", &self.fip)
-                    .field("fcs", &self.fcs)
-                    .field("foo", &self.foo)
-                    .field("fos", &self.fos)
-                    .field("mxcsr", &self.mxcsr)
-                    // Ignore __reserved field
-                    .field("st_space", &self.st_space)
-                    .field("xmm_space", &self.xmm_space)
-                    // Ignore padding field
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for user_fpxregs_struct {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.cwd.hash(state);
-                self.swd.hash(state);
-                self.twd.hash(state);
-                self.fop.hash(state);
-                self.fip.hash(state);
-                self.fcs.hash(state);
-                self.foo.hash(state);
-                self.fos.hash(state);
-                self.mxcsr.hash(state);
-                // Ignore __reserved field
-                self.st_space.hash(state);
-                self.xmm_space.hash(state);
-                // Ignore padding field
-            }
-        }
-
-        impl PartialEq for ucontext_t {
-            fn eq(&self, other: &ucontext_t) -> bool {
-                self.uc_flags == other.uc_flags
-                    && self.uc_link == other.uc_link
-                    && self.uc_stack == other.uc_stack
-                    && self.uc_mcontext == other.uc_mcontext
-                    && self.uc_sigmask == other.uc_sigmask
-                // Ignore __private field
-            }
-        }
-
-        impl Eq for ucontext_t {}
-
-        impl fmt::Debug for ucontext_t {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("ucontext_t")
-                    .field("uc_flags", &self.uc_flags)
-                    .field("uc_link", &self.uc_link)
-                    .field("uc_stack", &self.uc_stack)
-                    .field("uc_mcontext", &self.uc_mcontext)
-                    .field("uc_sigmask", &self.uc_sigmask)
-                    // Ignore __private field
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for ucontext_t {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.uc_flags.hash(state);
-                self.uc_link.hash(state);
-                self.uc_stack.hash(state);
-                self.uc_mcontext.hash(state);
-                self.uc_sigmask.hash(state);
-                // Ignore __private field
-            }
-        }
     }
 }
 
@@ -499,7 +422,13 @@ pub const SA_NOCLDWAIT: c_int = 0x00000002;
 pub const SOCK_STREAM: c_int = 1;
 pub const SOCK_DGRAM: c_int = 2;
 
-pub const F_GETLK: c_int = 5;
+cfg_if! {
+    if #[cfg(gnu_file_offset_bits64)] {
+        pub const F_GETLK: c_int = 12;
+    } else {
+        pub const F_GETLK: c_int = 5;
+    }
+}
 pub const F_GETOWN: c_int = 9;
 pub const F_SETOWN: c_int = 8;
 

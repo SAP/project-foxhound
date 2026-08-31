@@ -34,17 +34,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_ctx_h
 #define _ice_ctx_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 /* Not good practice but making includes simpler */
 #include "transport_addr.h"
 #include "nr_socket.h"
 #include "nr_resolver.h"
 #include "nr_interface_prioritizer.h"
-#include "nr_socket_wrapper.h"
 #include "stun_client_ctx.h"
 #include "stun_server_ctx.h"
 #include "turn_client_ctx.h"
@@ -103,6 +98,10 @@ typedef struct nr_ice_gather_handler_vtbl_ {
 
   /* This media stream has finished gathering */
   int (*stream_gathered)(void* obj, nr_ice_media_stream* stream);
+
+  /* A candidate failed to gather (e.g. STUN/TURN error) */
+  int (*candidate_error)(void* obj, nr_ice_media_stream* stream,
+                         nr_ice_candidate* candidate);
 } nr_ice_gather_handler_vtbl;
 
 typedef struct nr_ice_gather_handler_ {
@@ -165,6 +164,8 @@ int nr_ice_ctx_create_with_credentials(char *label, UINT4 flags, char* ufrag, ch
 #define NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS                (1<<4)
 #define NR_ICE_CTX_FLAGS_ONLY_PROXY                        (1<<5)
 #define NR_ICE_CTX_FLAGS_OBFUSCATE_HOST_ADDRESSES          (1<<6)
+#define NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK (1 << 7)
+#define NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL (1 << 8)
 
 void nr_ice_ctx_add_flags(nr_ice_ctx *ctx, UINT4 flags);
 void nr_ice_ctx_remove_flags(nr_ice_ctx *ctx, UINT4 flags);
@@ -180,24 +181,17 @@ int nr_ice_get_global_attributes(nr_ice_ctx *ctx,char ***attrsp, int *attrctp);
 int nr_ice_ctx_deliver_packet(nr_ice_ctx *ctx, nr_ice_component *comp, nr_transport_addr *source_addr, UCHAR *data, int len);
 int nr_ice_ctx_is_known_id(nr_ice_ctx *ctx, UCHAR id[12]);
 int nr_ice_ctx_remember_id(nr_ice_ctx *ctx, nr_stun_message *msg);
-int nr_ice_ctx_finalize(nr_ice_ctx *ctx, nr_ice_peer_ctx *pctx);
 int nr_ice_ctx_set_stun_servers(nr_ice_ctx *ctx,nr_ice_stun_server *servers, int ct);
 int nr_ice_ctx_set_turn_servers(nr_ice_ctx *ctx,nr_ice_turn_server *servers, int ct);
-int nr_ice_ctx_copy_turn_servers(nr_ice_ctx *ctx, nr_ice_turn_server *servers, int ct);
 int nr_ice_ctx_set_resolver(nr_ice_ctx *ctx, nr_resolver *resolver);
 int nr_ice_ctx_set_interface_prioritizer(nr_ice_ctx *ctx, nr_interface_prioritizer *prioritizer);
 void nr_ice_ctx_set_socket_factory(nr_ice_ctx *ctx, nr_socket_factory *factory);
 int nr_ice_ctx_set_trickle_cb(nr_ice_ctx *ctx, nr_ice_trickle_candidate_cb cb, void *cb_arg);
 int nr_ice_ctx_hide_candidate(nr_ice_ctx *ctx, nr_ice_candidate *cand);
-int nr_ice_get_new_ice_ufrag(char** ufrag);
-int nr_ice_get_new_ice_pwd(char** pwd);
 
 #define NR_ICE_MAX_ATTRIBUTE_SIZE 256
 
 extern int LOG_ICE;
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

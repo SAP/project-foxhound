@@ -8,11 +8,6 @@
     <attr name="disabled" format="reference" />
     <attr name="destructive" format="reference" />
 
-   <declare-styleable name="ResizableKeyboardViewDelegate">
-       <attr name="viewsToHideWhenActivated" format="reference" />
-       <attr name="animate" format="boolean" />
-   </declare-styleable>
-
     <declare-styleable name="AnimatedProgressBar">
         <attr name="wrapShiftDrawable" format="boolean" />
         <attr name="shiftDuration" format="reference" />

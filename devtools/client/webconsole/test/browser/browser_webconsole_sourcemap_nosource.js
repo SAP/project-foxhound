@@ -5,7 +5,7 @@
 
 // Test that a missing original source is reported.
 
-const JS_URL = URL_ROOT + "code_bundle_nosource.js";
+const JS_URL = URL_ROOT_COM_SSL + "code_bundle_nosource.js";
 
 const PAGE_URL = `data:text/html,
 <!doctype html>
@@ -42,9 +42,10 @@ add_task(async function () {
   await testOpenInDebugger(hud, {
     text: "here",
     typeSelector: ".console-api",
-    expectUrl: true,
-    expectLine: false,
-    expectColumn: false,
+    // Even if the source map doesn't exists, this original location is opened at the expected location
+    url: "https://example.com/browser/devtools/client/webconsole/test/browser/nosuchfile.js",
+    line: 12,
+    column: 1,
   });
 
   info("Selecting the console again");

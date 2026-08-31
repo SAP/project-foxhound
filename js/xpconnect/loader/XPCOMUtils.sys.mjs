@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 et filetype=javascript
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -119,20 +117,20 @@ export var XPCOMUtils = {
    *        The name of the getter to define on aObject for the service.
    * @param {string} aContract
    *        The contract used to obtain the service.
-   * @param {nsID|string} aInterface
+   * @param {nsIID} aInterface
    *        The interface or name of interface to query the service to.
    */
   defineLazyServiceGetter(aObject, aName, aContract, aInterface) {
     ChromeUtils.defineLazyGetter(aObject, aName, () => {
-      if (aInterface) {
-        if (typeof aInterface === "string") {
-          aInterface = Ci[aInterface];
-        }
-        return Cc[aContract].getService(aInterface);
-      }
-      return Cc[aContract].getService().wrappedJSObject;
+      return Cc[aContract].getService(aInterface);
     });
   },
+
+  /**
+   * @typedef {{[key: string]: [string, nsIID]}} ServicesDetail
+   *   Details of the services by name. The first item in the value array is the
+   *   contract ID, the second is the nsIID for the interface of the service.
+   */
 
   /**
    * Defines a lazy service getter on a specified object for each
@@ -140,24 +138,16 @@ export var XPCOMUtils = {
    *
    * @param {object} aObject
    *        The object to define the lazy getter on.
-   * @param {object} aServices
+   * @param {ServicesDetail} aServices
    *        An object with a property for each service to be
-   *        imported, where the property name is the name of the
-   *        symbol to define, and the value is a 1 or 2 element array
-   *        containing the contract ID and, optionally, the interface
-   *        name of the service, as passed to defineLazyServiceGetter.
+   *        imported.
    */
   defineLazyServiceGetters(aObject, aServices) {
     for (let [name, service] of Object.entries(aServices)) {
       // Note: This is hot code, and cross-compartment array wrappers
       // are not JIT-friendly to destructuring or spread operators, so
       // we need to use indexed access instead.
-      this.defineLazyServiceGetter(
-        aObject,
-        name,
-        service[0],
-        service[1] || null
-      );
+      this.defineLazyServiceGetter(aObject, name, service[0], service[1]);
     }
   },
 

@@ -1,10 +1,7 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/UniquePtr.h"
@@ -194,7 +191,8 @@ nsresult nsIncrementalDownload::CallOnStartRequest() {
   if (!mObserver || mDidOnStartRequest) return NS_OK;
 
   mDidOnStartRequest = true;
-  return mObserver->OnStartRequest(this);
+  nsCOMPtr<nsIRequestObserver> observer = mObserver;
+  return observer->OnStartRequest(this);
 }
 
 void nsIncrementalDownload::CallOnStopRequest() {
@@ -206,7 +204,8 @@ void nsIncrementalDownload::CallOnStopRequest() {
 
   mIsPending = false;
 
-  mObserver->OnStopRequest(this, mStatus);
+  nsCOMPtr<nsIRequestObserver> observer = mObserver;
+  observer->OnStopRequest(this, mStatus);
   mObserver = nullptr;
 }
 
@@ -295,7 +294,7 @@ nsresult nsIncrementalDownload::ProcessTimeout() {
   // important because we don't want to introduce a reference cycle between
   // mChannel and this until we know for a fact that AsyncOpen has succeeded,
   // thus ensuring that our stream listener methods will be invoked.
-  mChannel = channel;
+  mChannel = std::move(channel);
   return NS_OK;
 }
 
@@ -618,7 +617,7 @@ nsIncrementalDownload::OnStartRequest(nsIRequest* aRequest) {
     // Update knowledge of mFinalURI
     rv = http->GetURI(getter_AddRefs(mFinalURI));
     if (NS_FAILED(rv)) return rv;
-    Unused << http->GetResponseHeader("Etag"_ns, mPartialValidator);
+    (void)http->GetResponseHeader("Etag"_ns, mPartialValidator);
     if (StringBeginsWith(mPartialValidator, "W/"_ns)) {
       mPartialValidator.Truncate();  // don't use weak validators
     }
@@ -859,7 +858,7 @@ nsIncrementalDownload::AsyncOnChannelRedirect(
 
   // If we didn't have a Range header, then we must be doing a full download.
   nsAutoCString rangeVal;
-  Unused << http->GetRequestHeader(rangeHdr, rangeVal);
+  (void)http->GetRequestHeader(rangeHdr, rangeVal);
   if (!rangeVal.IsEmpty()) {
     rv = newHttpChannel->SetRequestHeader(rangeHdr, rangeVal, false);
     NS_ENSURE_SUCCESS(rv, rv);

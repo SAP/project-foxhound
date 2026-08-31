@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
  * via XMLHttpRequest).
  */
 
-#ifndef nsNoDataProtocolContentPolicy_h__
-#define nsNoDataProtocolContentPolicy_h__
+#ifndef nsNoDataProtocolContentPolicy_h_
+#define nsNoDataProtocolContentPolicy_h_
 
 /* ac9e3e82-bfbd-4f26-941e-f58c8ee178c1 */
 #define NS_NODATAPROTOCOLCONTENTPOLICY_CID \
@@ -20,7 +18,6 @@
   "@mozilla.org/no-data-protocol-content-policy;1"
 
 #include "nsIContentPolicy.h"
-#include "mozilla/Attributes.h"
 
 class nsNoDataProtocolContentPolicy final : public nsIContentPolicy {
   ~nsNoDataProtocolContentPolicy() = default;
@@ -32,4 +29,4 @@ class nsNoDataProtocolContentPolicy final : public nsIContentPolicy {
   nsNoDataProtocolContentPolicy() = default;
 };
 
-#endif /* nsNoDataProtocolContentPolicy_h__ */
+#endif /* nsNoDataProtocolContentPolicy_h_ */

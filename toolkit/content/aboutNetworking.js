@@ -7,6 +7,9 @@
 const FileUtils = ChromeUtils.importESModule(
   "resource://gre/modules/FileUtils.sys.mjs"
 ).FileUtils;
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
+);
 const gDashboard = Cc["@mozilla.org/network/dashboard;1"].getService(
   Ci.nsIDashboard
 );
@@ -24,8 +27,8 @@ const gRequestNetworkingData = {
   sockets: gDashboard.requestSockets,
   dns: gDashboard.requestDNSInfo,
   websockets: gDashboard.requestWebsocketConnections,
+  altsvc: gDashboard.requestAltSvcCache,
   dnslookuptool: () => {},
-  rcwn: gDashboard.requestRcwnStats,
   networkid: displayNetworkID,
 };
 const gDashboardCallbacks = {
@@ -33,10 +36,18 @@ const gDashboardCallbacks = {
   sockets: displaySockets,
   dns: displayDns,
   websockets: displayWebsockets,
-  rcwn: displayRcwnStats,
+  altsvc: displayAltSvc,
 };
 
 const REFRESH_INTERVAL_MS = 3000;
+
+const gIsPrivateBrowsing = PrivateBrowsingUtils.isWindowPrivate(window);
+
+function isPrivateBrowsingEntry(originAttributesSuffix) {
+  return !!ChromeUtils.CreateOriginAttributesFromOriginSuffix(
+    originAttributesSuffix
+  ).privateBrowsingId;
+}
 
 function col(element) {
   let col = document.createElement("td");
@@ -52,6 +63,12 @@ function displayHttp(data) {
   new_cont.setAttribute("id", "http_content");
 
   for (let i = 0; i < data.connections.length; i++) {
+    if (
+      !gIsPrivateBrowsing &&
+      isPrivateBrowsingEntry(data.connections[i].originAttributesSuffix)
+    ) {
+      continue;
+    }
     let row = document.createElement("tr");
     row.appendChild(col(data.connections[i].host));
     row.appendChild(col(data.connections[i].port));
@@ -59,6 +76,7 @@ function displayHttp(data) {
     row.appendChild(col(data.connections[i].ssl));
     row.appendChild(col(data.connections[i].active.length));
     row.appendChild(col(data.connections[i].idle.length));
+    row.appendChild(col(data.connections[i].originAttributesSuffix));
     new_cont.appendChild(row);
   }
 
@@ -72,6 +90,12 @@ function displaySockets(data) {
   new_cont.setAttribute("id", "sockets_content");
 
   for (let i = 0; i < data.sockets.length; i++) {
+    if (
+      !gIsPrivateBrowsing &&
+      isPrivateBrowsingEntry(data.sockets[i].originAttributesSuffix)
+    ) {
+      continue;
+    }
     let row = document.createElement("tr");
     row.appendChild(col(data.sockets[i].host));
     row.appendChild(col(data.sockets[i].port));
@@ -79,6 +103,7 @@ function displaySockets(data) {
     row.appendChild(col(data.sockets[i].active));
     row.appendChild(col(data.sockets[i].sent));
     row.appendChild(col(data.sockets[i].received));
+    row.appendChild(col(data.sockets[i].originAttributesSuffix));
     new_cont.appendChild(row);
   }
 
@@ -118,6 +143,12 @@ function displayDns(data) {
   for (let i = 0; i < data.entries.length; i++) {
     // TODO: Will be supported in bug 1889387.
     if (data.entries[i].type != Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT) {
+      continue;
+    }
+    if (
+      !gIsPrivateBrowsing &&
+      isPrivateBrowsingEntry(data.entries[i].originAttributesSuffix)
+    ) {
       continue;
     }
 
@@ -162,52 +193,56 @@ function displayWebsockets(data) {
   parent.replaceChild(new_cont, cont);
 }
 
-function displayRcwnStats(data) {
-  let status = Services.prefs.getBoolPref("network.http.rcwn.enabled");
-  let linkType = Ci.nsINetworkLinkService.LINK_TYPE_UNKNOWN;
-  try {
-    linkType = gNetLinkSvc.linkType;
-  } catch (e) {}
-  if (
-    !(
-      linkType == Ci.nsINetworkLinkService.LINK_TYPE_UNKNOWN ||
-      linkType == Ci.nsINetworkLinkService.LINK_TYPE_ETHERNET ||
-      linkType == Ci.nsINetworkLinkService.LINK_TYPE_USB ||
-      linkType == Ci.nsINetworkLinkService.LINK_TYPE_WIFI
-    )
-  ) {
-    status = false;
+function formatTTL(seconds) {
+  if (seconds <= 0) {
+    return "expired";
   }
+  let parts = [];
+  let d = Math.floor(seconds / 86400);
+  if (d) {
+    parts.push(`${d}d`);
+  }
+  let h = Math.floor((seconds % 86400) / 3600);
+  if (h) {
+    parts.push(`${h}h`);
+  }
+  let m = Math.floor((seconds % 3600) / 60);
+  if (m) {
+    parts.push(`${m}m`);
+  }
+  let s = seconds % 60;
+  if (s || !parts.length) {
+    parts.push(`${s}s`);
+  }
+  return parts.join(" ");
+}
 
-  let cacheWon = data.rcwnCacheWonCount;
-  let netWon = data.rcwnNetWonCount;
-  let total = data.totalNetworkRequests;
-  let cacheSlow = data.cacheSlowCount;
-  let cacheNotSlow = data.cacheNotSlowCount;
+function displayAltSvc(data) {
+  let cont = document.getElementById("altsvc_content");
+  let parent = cont.parentNode;
+  let new_cont = document.createElement("tbody");
+  new_cont.setAttribute("id", "altsvc_content");
 
-  document.getElementById("rcwn_status").innerText = status;
-  document.getElementById("total_req_count").innerText = total;
-  document.getElementById("rcwn_cache_won_count").innerText = cacheWon;
-  document.getElementById("rcwn_cache_net_count").innerText = netWon;
-  document.getElementById("rcwn_cache_slow").innerText = cacheSlow;
-  document.getElementById("rcwn_cache_not_slow").innerText = cacheNotSlow;
-
-  // Keep in sync with CachePerfStats::EDataType in CacheFileUtils.h
-  const perfStatTypes = ["open", "read", "write", "entryopen"];
-
-  const perfStatFieldNames = ["avgShort", "avgLong", "stddevLong"];
-
-  for (let typeIndex in perfStatTypes) {
-    for (let statFieldIndex in perfStatFieldNames) {
-      document.getElementById(
-        "rcwn_perfstats_" +
-          perfStatTypes[typeIndex] +
-          "_" +
-          perfStatFieldNames[statFieldIndex]
-      ).innerText =
-        data.perfStats[typeIndex][perfStatFieldNames[statFieldIndex]];
+  for (let i = 0; i < data.entries.length; i++) {
+    let entry = data.entries[i];
+    if (
+      !gIsPrivateBrowsing &&
+      isPrivateBrowsingEntry(entry.originAttributesSuffix)
+    ) {
+      continue;
     }
+    let row = document.createElement("tr");
+    let scheme = entry.https ? "https" : "http";
+    row.appendChild(col(`${scheme}://${entry.originHost}:${entry.originPort}`));
+    row.appendChild(col(`${entry.alternateHost}:${entry.alternatePort}`));
+    row.appendChild(col(entry.alpn));
+    row.appendChild(col(entry.validated));
+    row.appendChild(col(formatTTL(entry.ttl)));
+    row.appendChild(col(entry.originAttributesSuffix));
+    new_cont.appendChild(row);
   }
+
+  parent.replaceChild(new_cont, cont);
 }
 
 function displayNetworkID() {
@@ -284,6 +319,13 @@ function init() {
   let dnsLookupButton = document.getElementById("dnsLookupButton");
   dnsLookupButton.addEventListener("click", function () {
     doLookup();
+  });
+
+  let hostInput = document.getElementById("host");
+  hostInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      doLookup();
+    }
   });
 
   let clearDNSCache = document.getElementById("clearDNSCache");

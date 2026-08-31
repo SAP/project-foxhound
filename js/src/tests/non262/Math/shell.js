@@ -64,7 +64,7 @@ const ONE_MINUS_EPSILON = 1 - Math.pow(2, -53);  // 1.0000000000000002
         } else if (!Number.isFinite(a)) {
             if (b * Math.sign(a) < Number.MAX_VALUE)
                 fail("got " + a + ", expected a number near " + b);
-        } else {
+        } else if (a !== b) {
             // When the two arguments do not have the same sign bit, diff()
             // returns some huge number. So if b is positive or negative 0,
             // make target the zero that has the same sign bit as a.

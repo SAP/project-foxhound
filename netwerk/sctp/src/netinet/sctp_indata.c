@@ -315,6 +315,14 @@ sctp_mark_non_revokable(struct sctp_association *asoc, uint32_t tsn)
 		return;
 	}
 	SCTP_CALC_TSN_TO_GAP(gap, tsn, asoc->mapping_array_base_tsn);
+	if (gap >= (uint32_t)(asoc->mapping_array_size << 3)) {
+		/*
+		 * The TSN falls outside the mapping window, e.g. a control
+		 * queued before a large FORWARD-TSN moved the window past it.
+		 * It has no bit in either map, so there is nothing to mark.
+		 */
+		return;
+	}
 	in_r = SCTP_IS_TSN_PRESENT(asoc->mapping_array, gap);
 	in_nr = SCTP_IS_TSN_PRESENT(asoc->nr_mapping_array, gap);
 	KASSERT(in_r || in_nr, ("%s: Things are really messed up now", __func__));

@@ -15,32 +15,44 @@
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
+#include "api/test/network_emulation/leaky_bucket_network_queue.h"
 #include "api/test/network_emulation/network_config_schedule.pb.h"
+#include "api/test/network_emulation/network_queue.h"
 #include "api/test/network_emulation_manager.h"
 #include "api/units/timestamp.h"
-#include "rtc_base/time_utils.h"
 #include "test/network/schedulable_network_behavior.h"
 
 namespace webrtc {
 
 SchedulableNetworkNodeBuilder::SchedulableNetworkNodeBuilder(
-    webrtc::NetworkEmulationManager& net,
+    NetworkEmulationManager& net,
     network_behaviour::NetworkConfigSchedule schedule)
     : net_(net),
       schedule_(std::move(schedule)),
-      start_condition_([](webrtc::Timestamp) { return true; }) {}
+      start_condition_([](Timestamp) { return true; }) {}
 
 void SchedulableNetworkNodeBuilder::set_start_condition(
-    absl::AnyInvocable<bool(webrtc::Timestamp)> start_condition) {
+    absl::AnyInvocable<bool(Timestamp)> start_condition) {
   start_condition_ = std::move(start_condition);
 }
 
-webrtc::EmulatedNetworkNode* SchedulableNetworkNodeBuilder::Build(
+void SchedulableNetworkNodeBuilder::set_queue_factory(
+    NetworkQueueFactory& queue_factory) {
+  queue_factory_ = &queue_factory;
+}
+
+EmulatedNetworkNode* SchedulableNetworkNodeBuilder::Build(
     std::optional<uint64_t> random_seed) {
-  uint64_t seed = random_seed.has_value() ? *random_seed
-                                          : static_cast<uint64_t>(TimeNanos());
+  uint64_t seed =
+      random_seed.has_value()
+          ? *random_seed
+          : static_cast<uint64_t>(
+                net_.time_controller()->GetClock()->CurrentTime().ns());
+  std::unique_ptr<NetworkQueue> network_queue =
+      queue_factory_ ? queue_factory_->CreateQueue()
+                     : std::make_unique<LeakyBucketNetworkQueue>();
   return net_.CreateEmulatedNode(std::make_unique<SchedulableNetworkBehavior>(
       std::move(schedule_), seed, *net_.time_controller()->GetClock(),
-      std::move(start_condition_)));
+      std::move(start_condition_), std::move(network_queue)));
 }
 }  // namespace webrtc

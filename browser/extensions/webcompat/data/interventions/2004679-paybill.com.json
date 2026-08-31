@@ -1,0 +1,15 @@
+{
+  "label": "paybill.com",
+  "bugs": {
+    "2004679": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://paybill.com/occourts/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["replace_colon_in_rv_with_space"]
+    }
+  ]
+}

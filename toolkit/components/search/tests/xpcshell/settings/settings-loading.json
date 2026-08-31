@@ -1,5 +1,5 @@
 {
-  "version": 12,
+  "version": 13,
   "buildID": "20121106",
   "locale": "en-US",
   "metaData": {},
@@ -10,7 +10,7 @@
       "_metaData": {
         "alias": "testAlias"
       },
-      "_isAppProvided": true
+      "_isConfigEngine": true
     },
     {
       "id": "engine2",
@@ -19,7 +19,7 @@
         "alias": null,
         "hidden": true
       },
-      "_isAppProvided": true
+      "_isConfigEngine": true
     },
     {
       "id": "test-addon-id@mozilla.orgdefault",

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=4 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@ include "mozilla/dom/TabMessageUtils.h";
 
 using class mozilla::WidgetMouseEvent from "ipc/nsGUIEventIPC.h";
 using mozilla::dom::EffectsInfo from "mozilla/dom/EffectsInfo.h";
-using mozilla::ScrollAxis from "mozilla/PresShellForwards.h";
+using mozilla::AxisScrollParams from "mozilla/PresShellForwards.h";
 using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct nsRect from "nsRect.h";
 using mozilla::dom::CallerType from "mozilla/dom/BindingDeclarations.h";
@@ -62,8 +60,8 @@ child:
    */
   async MaybeFireEmbedderLoadEvents(EmbedderElementEventType aFireEventAtEmbeddingElement);
 
-  async ScrollRectIntoView(nsRect aRect, ScrollAxis aVertical,
-                           ScrollAxis aHorizontal, ScrollFlags aScrollFlags,
+  async ScrollRectIntoView(nsRect aRect, AxisScrollParams aVertical,
+                           AxisScrollParams aHorizontal, ScrollFlags aScrollFlags,
                            int32_t aAppUnitsPerDevPixel);
 
   async SubFrameCrashed();

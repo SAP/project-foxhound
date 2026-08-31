@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -67,12 +66,11 @@ function run_test() {
   });
 
   // Set a primary password.
-  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-    Ci.nsIPK11TokenDB
+  let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+    Ci.nsIPKCS11Token
   );
-  let token = tokenDB.getInternalKeyToken();
-  token.initPassword("password");
-  token.logoutSimple();
+  token.changePassword("", "password");
+  token.logout();
 
   // Import the certificate and key so we have something to export.
   let cert = findCertByCommonName(CERT_COMMON_NAME);
@@ -85,7 +83,7 @@ function run_test() {
   notEqual(cert, null, "cert should be found now");
 
   // Log out so we're prompted for the password.
-  token.logoutSimple();
+  token.logout();
 
   // Export the certificate and key (and don't cancel the password request
   // dialog).
@@ -98,7 +96,7 @@ function run_test() {
   output.remove(false /* not a directory; recursive doesn't apply */);
 
   // Log out again so we're prompted for the password.
-  token.logoutSimple();
+  token.logout();
 
   // Attempt to export the certificate and key, but this time cancel the
   // password request dialog. The export operation should also be canceled.

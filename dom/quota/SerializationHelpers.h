@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,11 @@
 
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
-
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/UsageInfo.h"
-#include "mozilla/OriginAttributes.h"
 
 namespace IPC {
 
@@ -32,6 +29,28 @@ struct ParamTraits<mozilla::dom::quota::Client::Type>
                                       mozilla::dom::quota::Client::TYPE_MAX> {};
 
 template <>
+struct ParamTraits<mozilla::dom::quota::ClientUsageArray> {
+  using ParamType = mozilla::dom::quota::ClientUsageArray;
+
+  static void Write(MessageWriter* aWriter, const ParamType& aParam) {
+    for (size_t index = 0; index < mozilla::dom::quota::Client::TypeMax();
+         index++) {
+      WriteParam(aWriter, aParam[index]);
+    }
+  }
+
+  static bool Read(MessageReader* aReader, ParamType* aResult) {
+    for (size_t index = 0; index < mozilla::dom::quota::Client::TypeMax();
+         index++) {
+      if (!ReadParam(aReader, &aResult->operator[](index))) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+template <>
 struct ParamTraits<mozilla::dom::quota::FullOriginMetadata> {
   using ParamType = mozilla::dom::quota::FullOriginMetadata;
 
@@ -42,8 +61,13 @@ struct ParamTraits<mozilla::dom::quota::FullOriginMetadata> {
     WriteParam(aWriter, aParam.mStorageOrigin);
     WriteParam(aWriter, aParam.mIsPrivate);
     WriteParam(aWriter, aParam.mPersistenceType);
-    WriteParam(aWriter, aParam.mPersisted);
     WriteParam(aWriter, aParam.mLastAccessTime);
+    WriteParam(aWriter, aParam.mLastMaintenanceDate);
+    WriteParam(aWriter, aParam.mAccessed);
+    WriteParam(aWriter, aParam.mPersisted);
+    WriteParam(aWriter, aParam.mClientUsages);
+    WriteParam(aWriter, aParam.mOriginUsage);
+    WriteParam(aWriter, aParam.mQuotaVersion);
   }
 
   static bool Read(MessageReader* aReader, ParamType* aResult) {
@@ -53,8 +77,13 @@ struct ParamTraits<mozilla::dom::quota::FullOriginMetadata> {
            ReadParam(aReader, &aResult->mStorageOrigin) &&
            ReadParam(aReader, &aResult->mIsPrivate) &&
            ReadParam(aReader, &aResult->mPersistenceType) &&
+           ReadParam(aReader, &aResult->mLastAccessTime) &&
+           ReadParam(aReader, &aResult->mLastMaintenanceDate) &&
+           ReadParam(aReader, &aResult->mAccessed) &&
            ReadParam(aReader, &aResult->mPersisted) &&
-           ReadParam(aReader, &aResult->mLastAccessTime);
+           ReadParam(aReader, &aResult->mClientUsages) &&
+           ReadParam(aReader, &aResult->mOriginUsage) &&
+           ReadParam(aReader, &aResult->mQuotaVersion);
   }
 };
 

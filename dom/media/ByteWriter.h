@@ -5,7 +5,6 @@
 #ifndef BYTE_WRITER_H_
 #define BYTE_WRITER_H_
 
-#include "mozilla/EndianUtils.h"
 #include "nsTArray.h"
 
 namespace mozilla {

@@ -10,8 +10,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
 import mozilla.components.browser.icons.BrowserIcons
@@ -20,7 +18,6 @@ import mozilla.components.browser.icons.IconRequest
 import mozilla.components.browser.icons.IconRequest.Size
 import mozilla.components.concept.engine.webnotifications.WebNotification
 import mozilla.components.support.ktx.kotlin.tryGetHostFromUrl
-import mozilla.components.support.utils.PendingIntentUtils
 
 internal class NativeNotificationBridge(
     private val icons: BrowserIcons,
@@ -40,12 +37,7 @@ internal class NativeNotificationBridge(
         activityClass: Class<out Activity>?,
         requestId: Int,
     ): Notification {
-        val builder = if (SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationCompat.Builder(context, channelId)
-        } else {
-            @Suppress("Deprecation")
-            NotificationCompat.Builder(context)
-        }
+        val builder = NotificationCompat.Builder(context, channelId)
 
         with(notification) {
             activityClass?.let {
@@ -53,7 +45,7 @@ internal class NativeNotificationBridge(
                     putExtra(EXTRA_ON_CLICK, notification.engineNotification)
                 }
 
-                PendingIntent.getActivity(context, requestId, intent, PendingIntentUtils.defaultFlags).apply {
+                PendingIntent.getActivity(context, requestId, intent, PendingIntent.FLAG_IMMUTABLE).apply {
                     builder.setContentIntent(this)
                 }
             }
@@ -74,7 +66,7 @@ internal class NativeNotificationBridge(
                     context,
                     requestId,
                     intent,
-                    PendingIntentUtils.defaultFlags,
+                    PendingIntent.FLAG_IMMUTABLE,
                 )
                 val actionBuilder = NotificationCompat.Action.Builder(0, browserAction.title, pendingIntent)
                 builder.addAction(actionBuilder.build())

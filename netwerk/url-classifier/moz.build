@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -32,6 +30,7 @@ DEFINES["GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER"] = True
 UNIFIED_SOURCES += [
     "AsyncUrlChannelClassifier.cpp",
     "ChannelClassifierService.cpp",
+    "ChannelClassifierUtils.cpp",
     "nsChannelClassifier.cpp",
     "UrlClassifierCommon.cpp",
     "UrlClassifierExceptionList.cpp",
@@ -47,6 +46,8 @@ UNIFIED_SOURCES += [
     "UrlClassifierFeatureFactory.cpp",
     "UrlClassifierFeatureFingerprintingAnnotation.cpp",
     "UrlClassifierFeatureFingerprintingProtection.cpp",
+    "UrlClassifierFeatureGlobalCache.cpp",
+    "UrlClassifierFeatureHarmfulAddonProtection.cpp",
     "UrlClassifierFeaturePhishingProtection.cpp",
     "UrlClassifierFeatureResult.cpp",
     "UrlClassifierFeatureSocialTrackingAnnotation.cpp",
@@ -57,7 +58,9 @@ UNIFIED_SOURCES += [
 
 EXPORTS.mozilla.net += [
     "AsyncUrlChannelClassifier.h",
+    "ChannelClassifierLog.h",
     "ChannelClassifierService.h",
+    "ChannelClassifierUtils.h",
     "UrlClassifierCommon.h",
     "UrlClassifierExceptionList.h",
     "UrlClassifierExceptionListEntry.h",
@@ -68,6 +71,7 @@ EXPORTS.mozilla.net += [
 LOCAL_INCLUDES += [
     "/netwerk/base",
     "/netwerk/protocol/http",
+    "/toolkit/components/content-classifier",
     "/toolkit/components/url-classifier",
 ]
 

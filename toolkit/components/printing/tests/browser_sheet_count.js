@@ -303,20 +303,28 @@ add_task(async function testPagesPerSheetCount() {
 
     EventUtils.sendKey("space", helper.win);
 
-    await popupOpen;
+    const selectPopup = await popupOpen;
 
-    let numberMove =
-      [...pagesPerSheet.options].map(o => o.value).indexOf("16") -
-      pagesPerSheet.selectedIndex;
+    let numberMove = [...pagesPerSheet.options].map(o => o.value).indexOf("16");
 
-    for (let i = 0; i < numberMove; i++) {
-      EventUtils.sendKey("down", window);
-      if (document.activeElement.value == 16) {
-        break;
+    if (!selectPopup.isNativeMenu) {
+      numberMove -= pagesPerSheet.selectedIndex;
+
+      for (let i = 0; i < numberMove; i++) {
+        EventUtils.sendKey("down", window);
+        if (document.activeElement.value == 16) {
+          break;
+        }
       }
     }
 
-    await helper.waitForPreview(() => EventUtils.sendKey("return", window));
+    await helper.waitForPreview(() => {
+      if (selectPopup.isNativeMenu) {
+        selectPopup.activateItem(selectPopup.childNodes[numberMove]);
+      } else {
+        EventUtils.sendKey("return", window);
+      }
+    });
 
     sheets = helper.sheetCount;
     is(sheets, 1, "There's only one sheet now");

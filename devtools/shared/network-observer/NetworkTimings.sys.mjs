@@ -12,9 +12,9 @@ export const NetworkTimings = new (class {
    * timings stored for each activity notification. The HAR timing information
    * is constructed based on these lower level data.
    *
-   * @param {Object} httpActivity
+   * @param {object} httpActivity
    *     The HTTP activity object we are working with.
-   * @return {Object}
+   * @return {object}
    *     This object holds three properties:
    *     - {Object} offsets: the timings computed as offsets from the initial
    *     request start time.
@@ -173,7 +173,7 @@ export const NetworkTimings = new (class {
    * For some requests such as cached or data: URI requests, we don't have
    * access to any timing information so all timings should be 0.
    *
-   * @return {Object}
+   * @return {object}
    *     A timings object (@see extractHarTimings), with all values set to 0.
    */
   getEmptyHARTimings() {

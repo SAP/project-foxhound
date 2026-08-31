@@ -27,6 +27,7 @@ tasks-from:
     - windows11-24h2-ref.yml
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         retrigger: true
     run-on-projects: []
@@ -39,7 +40,7 @@ task-defaults:
         substitution-fields: []
     worker:
         taskcluster-proxy: true
-        max-run-time: 10800
+        max-run-time: 2400
         env:
             USE_ARTIFACT: '1'
             HOSTUTILS_MANIFEST_PATH: "testing/config/tooltool-manifests/linux64/hostutils.manifest"

@@ -1,0 +1,25 @@
+# Exercises the quad tiling code path with a repeated pattern.
+---
+root:
+  items:
+    - type: stacking-context
+      bounds: [10, 10, 600, 200]
+      items:
+        - type: clip
+          id: 1
+          complex:
+            - rect: [10, 10, 600, 120]
+              radius: [0, 65, 0, 0]
+        - type: clip-chain
+          id: 2
+          clips: [1]
+        - type: rect
+          bounds: [5, 5, 610, 130]
+          color: [200, 200, 200, 1]
+        - type: gradient
+          bounds: [10, 10, 600, 120]
+          start: 0 0
+          end: 0 50
+          tile-size: 300 50
+          stops: [0.0, black, 1.0, white]
+          clip-chain: 2

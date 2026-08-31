@@ -9,6 +9,7 @@ import { getEditor } from "../utils/editor/index";
 
 /**
  * Redux actions for the navigation state
+ *
  * @module actions/navigation
  */
 

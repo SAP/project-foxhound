@@ -40,14 +40,7 @@ var clickTest = async function (tab) {
   let clicks = await getClicks(tab);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
-    let target = content.document.body;
-    let rect = target.getBoundingClientRect();
-    let left = (rect.left + rect.right) / 2;
-    let top = (rect.top + rect.bottom) / 2;
-
-    let utils = content.windowUtils;
-    utils.sendMouseEvent("mousedown", left, top, 0, 1, 0, false, 0, 0);
-    utils.sendMouseEvent("mouseup", left, top, 0, 1, 0, false, 0, 0);
+    EventUtils.synthesizeMouseAtCenter(content.document.body, {}, content);
   });
 
   let newClicks = await getClicks(tab);

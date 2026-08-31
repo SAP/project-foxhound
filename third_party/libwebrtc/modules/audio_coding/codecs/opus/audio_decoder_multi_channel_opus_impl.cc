@@ -10,15 +10,20 @@
 
 #include "modules/audio_coding/codecs/opus/audio_decoder_multi_channel_opus_impl.h"
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <string>
+#include <optional>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
+#include "api/audio_codecs/audio_decoder.h"
+#include "api/audio_codecs/audio_format.h"
+#include "api/audio_codecs/opus/audio_decoder_multi_channel_opus_config.h"
 #include "modules/audio_coding/codecs/opus/audio_coder_opus_common.h"
-#include "rtc_base/string_to_number.h"
+#include "modules/audio_coding/codecs/opus/opus_interface.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -42,13 +47,13 @@ AudioDecoderMultiChannelOpusImpl::MakeAudioDecoder(
   // Pass the ownership to DecoderImpl. Not using 'make_unique' because the
   // c-tor is private.
   return std::unique_ptr<AudioDecoderMultiChannelOpusImpl>(
-      new AudioDecoderMultiChannelOpusImpl(dec_state, config));
+      new AudioDecoderMultiChannelOpusImpl(dec_state, std::move(config)));
 }
 
 AudioDecoderMultiChannelOpusImpl::AudioDecoderMultiChannelOpusImpl(
     OpusDecInst* dec_state,
     AudioDecoderMultiChannelOpusConfig config)
-    : dec_state_(dec_state), config_(config) {
+    : dec_state_(dec_state), config_(std::move(config)) {
   RTC_DCHECK(dec_state);
   WebRtcOpus_DecoderInit(dec_state_);
 }
@@ -86,7 +91,7 @@ AudioDecoderMultiChannelOpusImpl::SdpToConfig(const SdpAudioFormat& format) {
 }
 
 std::vector<AudioDecoder::ParseResult>
-AudioDecoderMultiChannelOpusImpl::ParsePayload(rtc::Buffer&& payload,
+AudioDecoderMultiChannelOpusImpl::ParsePayload(Buffer&& payload,
                                                uint32_t timestamp) {
   std::vector<ParseResult> results;
 
@@ -94,7 +99,7 @@ AudioDecoderMultiChannelOpusImpl::ParsePayload(rtc::Buffer&& payload,
     const int duration =
         PacketDurationRedundant(payload.data(), payload.size());
     RTC_DCHECK_GE(duration, 0);
-    rtc::Buffer payload_copy(payload.data(), payload.size());
+    Buffer payload_copy(payload.data(), payload.size());
     std::unique_ptr<EncodedAudioFrame> fec_frame(
         new OpusFrame(this, std::move(payload_copy), false));
     results.emplace_back(timestamp - duration, 1, std::move(fec_frame));

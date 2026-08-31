@@ -14,9 +14,8 @@ add_task(async function test_personaltoolbar_shown_old() {
   });
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
   let menuBar = newWin.document.getElementById("PersonalToolbar");
-  is(
-    menuBar.getAttribute("collapsed"),
-    "false",
+  ok(
+    !menuBar.hasAttribute("collapsed"),
     "The bookmarks toolbar should not be hidden"
   );
 
@@ -32,9 +31,8 @@ add_task(async function test_personaltoolbar_shown() {
 
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
   let menuBar = newWin.document.getElementById("PersonalToolbar");
-  is(
-    menuBar.getAttribute("collapsed"),
-    "false",
+  ok(
+    !menuBar.hasAttribute("collapsed"),
     "The bookmarks toolbar should not be hidden"
   );
 
@@ -50,9 +48,8 @@ add_task(async function test_personaltoolbar_hidden() {
 
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
   let menuBar = newWin.document.getElementById("PersonalToolbar");
-  is(
-    menuBar.getAttribute("collapsed"),
-    "true",
+  ok(
+    menuBar.hasAttribute("collapsed"),
     "The bookmarks toolbar should be hidden"
   );
 
@@ -68,17 +65,15 @@ add_task(async function test_personaltoolbar_newtabonly() {
 
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
   let menuBar = newWin.document.getElementById("PersonalToolbar");
-  is(
-    menuBar.getAttribute("collapsed"),
-    "true",
+  ok(
+    menuBar.hasAttribute("collapsed"),
     "The bookmarks toolbar should be hidden"
   );
 
   await BrowserTestUtils.openNewForegroundTab(newWin.gBrowser, "about:newtab");
   menuBar = newWin.document.getElementById("PersonalToolbar");
-  is(
-    menuBar.getAttribute("collapsed"),
-    "false",
+  ok(
+    !menuBar.hasAttribute("collapsed"),
     "The bookmarks toolbar should not be hidden"
   );
 

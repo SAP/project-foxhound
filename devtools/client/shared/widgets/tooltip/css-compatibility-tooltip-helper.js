@@ -15,6 +15,10 @@ loader.lazyRequireGetter(
   true
 );
 
+const { getMdnLinkParams } = ChromeUtils.importESModule(
+  "resource://devtools/shared/mdn.mjs"
+);
+
 class CssCompatibilityTooltipHelper {
   constructor() {
     this.addTab = this.addTab.bind(this);
@@ -144,7 +148,7 @@ class CssCompatibilityTooltipHelper {
   /**
    * Fill the tooltip with inactive CSS information.
    *
-   * @param {Object} data
+   * @param {object} data
    *        An object in the following format: {
    *          // Type of compatibility issue
    *          type: <string>,
@@ -166,25 +170,13 @@ class CssCompatibilityTooltipHelper {
    */
   async setContent(data, tooltip) {
     const fragment = this.getTemplate(data, tooltip);
-    const { doc } = tooltip;
-
-    tooltip.panel.innerHTML = "";
 
     tooltip.panel.addEventListener("click", this.addTab);
     tooltip.once("hidden", () => {
       tooltip.panel.removeEventListener("click", this.addTab);
     });
 
-    // Because Fluent is async we need to manually translate the fragment and
-    // then insert it into the tooltip. This is needed in order for the tooltip
-    // to size to the contents properly and for tests.
-    await doc.l10n.translateFragment(fragment);
-    doc.l10n.pauseObserving();
-    tooltip.panel.appendChild(fragment);
-    doc.l10n.resumeObserving();
-
-    // Size the content.
-    tooltip.setContentSize({ width: 267, height: Infinity });
+    await tooltip.setLocalizedFragment(fragment, { width: 267 });
   }
 
   /**
@@ -204,35 +196,37 @@ class CssCompatibilityTooltipHelper {
    *   </p>
    * </div>
    *
-   * @param {Object} data
-   *        An object in the following format: {
-   *          // Type of compatibility issue
-   *          type: <string>,
-   *          // The CSS declaration that has compatibility issues
-   *          // The raw CSS declaration name that has compatibility issues
-   *          declaration: <string>,
-   *          property: <string>,
-   *          // Alias to the given CSS property
-   *          alias: <Array>,
-   *          // Link to MDN documentation for the particular CSS rule
-   *          url: <string>,
-   *          // Link to the spec for the particular CSS rule
-   *          specUrl: <string>,
-   *          deprecated: <boolean>,
-   *          experimental: <boolean>,
-   *          // An array of all the browsers that don't support the given CSS rule
-   *          unsupportedBrowsers: <Array>,
-   *        }
+   * @param {object} data
+   * @param {string} data.type
+   *        Type of compatibility issue
+   * @param {string} data.declaration
+   *        The CSS declaration that has compatibility issues
+   * @param {string} data.property
+   * @param {Array} data.alias
+   *        Alias to the given CSS property
+   * @param {string} data.url
+   *        Link to MDN documentation for the particular CSS rule
+   * @param {string|Array<string>} data.specUrl
+   *        Link to the spec(s) for the particular CSS rule
+   * @param {boolean} data.deprecated
+   * @param {boolean} data.experimental
+   * @param {Array} data.unsupportedBrowsers
+   *        An array of all the browsers that don't support the given CSS rule
    * @param {HTMLTooltip} tooltip
    *        The tooltip we are targetting.
    */
   getTemplate(data, tooltip) {
     const { doc } = tooltip;
-    const { specUrl, url, unsupportedBrowsers } = data;
+    let { specUrl, url, unsupportedBrowsers } = data;
 
     this.#currentTooltip = tooltip;
+    // Pick the first item in specUrl if it's an array.
+    // TODO: Eventually, we should redesign the tooltip to show all the spec URLs (Bug 2020974)
+    if (Array.isArray(specUrl)) {
+      specUrl = specUrl[0];
+    }
     this.#currentUrl = url
-      ? `${url}?utm_source=devtools&utm_medium=inspector-css-compatibility&utm_campaign=default`
+      ? `${url}?${getMdnLinkParams("inspector-css-compatibility")}`
       : specUrl;
     const templateNode = this.#createElement(doc, "template");
 
@@ -263,7 +257,6 @@ class CssCompatibilityTooltipHelper {
    *
    * @param {DOMEvent} event
    *        The click event originating from the tooltip.
-   *
    */
   addTab(event) {
     // The XUL panel swallows click events so handlers can't be added directly

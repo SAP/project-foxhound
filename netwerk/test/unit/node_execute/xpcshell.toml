@@ -1,5 +1,12 @@
 [DEFAULT]
+run-if = [
+  "false",
+]
+
+# running this test leaves a process using 100% of a CPU core until
+# the xpcshell test harness ends, it is more so that racy forgetting
+# to shutdown the server can be reproduced easily when testing locally
+# than something we actually need to run in CI.
 
 ["test_node_execute_loop.js"]
-run-sequentially = "node server exceptions dont replay well"
-skip-if = ["verify"] # running it once hangs forever so don't run it in a loop.
+run-sequentially = ["true"] # node server exceptions dont replay well

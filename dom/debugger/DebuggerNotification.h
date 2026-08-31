@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,16 +20,16 @@ class DebuggerNotification : public nsISupports, public nsWrapperCache {
 
   DebuggerNotification(nsIGlobalObject* aDebuggeeGlobal,
                        DebuggerNotificationType aType,
-                       nsIGlobalObject* aOwnerGlobal = nullptr)
+                       nsIGlobalObject* aRelevantGlobal = nullptr)
       : mType(aType),
         mDebuggeeGlobal(aDebuggeeGlobal),
-        mOwnerGlobal(aOwnerGlobal) {}
+        mRelevantGlobal(aRelevantGlobal) {}
 
   nsIGlobalObject* GetParentObject() const {
-    MOZ_ASSERT(mOwnerGlobal,
+    MOZ_ASSERT(mRelevantGlobal,
                "Notification must be cloned into an observer global before "
                "being wrapped");
-    return mOwnerGlobal;
+    return mRelevantGlobal;
   }
 
   DebuggerNotificationType Type() const { return mType; }
@@ -54,7 +52,7 @@ class DebuggerNotification : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsIGlobalObject> mDebuggeeGlobal;
 
  private:
-  nsCOMPtr<nsIGlobalObject> mOwnerGlobal;
+  nsCOMPtr<nsIGlobalObject> mRelevantGlobal;
 };
 
 MOZ_CAN_RUN_SCRIPT inline void DebuggerNotificationDispatch(

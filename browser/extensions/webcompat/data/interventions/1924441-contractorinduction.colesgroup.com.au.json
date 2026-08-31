@@ -1,0 +1,15 @@
+{
+  "label": "contractorinduction.colesgroup.com.au",
+  "bugs": {
+    "1924441": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://contractorinduction.colesgroup.com.au/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

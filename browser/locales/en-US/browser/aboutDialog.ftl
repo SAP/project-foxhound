@@ -16,25 +16,38 @@ update-updateButton =
     .accesskey = R
 
 update-checkingForUpdates = Checking for updates…
+settings-update-checking-for-updates =
+    .label = Checking for updates…
 
 ## Variables:
 ##   $transfer (string) - Transfer progress.
 
-settings-update-downloading = <img data-l10n-name="icon"/>Downloading update — <label data-l10n-name="download-status">{ $transfer }</label>
+settings-update-downloading-2 =
+    .label = Downloading update — { $transfer }
 aboutdialog-update-downloading = Downloading update — <label data-l10n-name="download-status">{ $transfer }</label>
 
 ##
 
 update-applying = Applying update…
+settings-update-applying =
+    .label = Applying update…
 
 update-failed = Update failed. <label data-l10n-name="failed-link">Download the latest version</label>
 update-failed-main =
     Update failed. <a data-l10n-name="failed-link-main">Download the latest version</a>
 
 update-policy-disabled = Updates disabled by your organization
+settings-update-policy-disabled =
+    .label = Updates disabled by your organization
 update-noUpdatesFound = { -brand-short-name } is up to date
+settings-update-no-updates-found =
+    .label = { -brand-short-name } is up to date
 aboutdialog-update-checking-failed = Failed to check for updates.
+settings-update-checking-failed =
+    .label = Failed to check for updates.
 update-otherInstanceHandlingUpdates = { -brand-short-name } is being updated by another instance
+settings-update-other-instance-handling-updates =
+    .label = { -brand-short-name } is being updated by another instance
 
 ## Variables:
 ##   $displayUrl (String): URL to page with download instructions. Example: www.mozilla.org/firefox/nightly/
@@ -43,10 +56,14 @@ aboutdialog-update-manual-with-link = Updates available at <label data-l10n-name
 settings-update-manual-with-link = Updates available at <a data-l10n-name="manual-link">{ $displayUrl }</a>
 
 update-unsupported = You can not perform further updates on this system. <label data-l10n-name="unsupported-link">Learn more</label>
+settings-update-unsupported = You can not perform further updates on this system. <a data-l10n-name="unsupported-link">Learn more</a>
 
 update-restarting = Restarting…
+settings-update-restarting =
+    .label = Restarting…
 
 update-internal-error2 = Unable to check for updates due to internal error. Updates available at <label data-l10n-name="manual-link">{ $displayUrl }</label>
+settings-update-internal-error = Unable to check for updates due to internal error. Updates available at <a data-l10n-name="manual-link">{ $displayUrl }</a>
 
 ##
 

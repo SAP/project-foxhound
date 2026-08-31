@@ -1,20 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BlankDecoderModule.h"
 
-#include "mozilla/CheckedInt.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/gfx/Rect.h"
-#include "mozilla/gfx/Point.h"
 #include "ImageContainer.h"
 #include "MediaData.h"
 #include "MediaInfo.h"
 #include "VideoUtils.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/Rect.h"
 
 namespace mozilla {
 

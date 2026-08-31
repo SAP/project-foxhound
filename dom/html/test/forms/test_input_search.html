@@ -18,11 +18,11 @@
 <script class="testbody" type="application/javascript">
   const { BrowserTestUtils } = ChromeUtils.importESModule(
     "resource://testing-common/BrowserTestUtils.sys.mjs");
-  
+
   add_task(async function testClearSearchButton() {
     let input = document.getElementById("searchInput");
-    let children = SpecialPowers.InspectorUtils.getChildrenForNode(input, true, false);
-    let clearButton = children.find(e => e.localName == "button");
+    let clearButton = SpecialPowers.getInputButton(input);
+    isnot(clearButton, null, "Should find the clear button");
     is(searchInput.value, "",
       "Search input should be blank at the start of test");
     ok(!BrowserTestUtils.isVisible(clearButton),
@@ -88,7 +88,7 @@
     );
   });
 
-</script>  
+</script>
 </pre>
 </body>
 </html>

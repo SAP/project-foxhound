@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,8 +66,8 @@ nsStreamLoader::OnStartRequest(nsIRequest* request) {
       }
     }
   }
-  if (mRequestObserver) {
-    mRequestObserver->OnStartRequest(request);
+  if (nsCOMPtr<nsIRequestObserver> requestObserver = mRequestObserver) {
+    requestObserver->OnStartRequest(request);
   }
   return NS_OK;
 }
@@ -95,8 +94,8 @@ nsStreamLoader::OnStopRequest(nsIRequest* request, nsresult aStatus) {
     mObserver = nullptr;
   }
 
-  if (mRequestObserver) {
-    mRequestObserver->OnStopRequest(request, aStatus);
+  if (nsCOMPtr<nsIRequestObserver> requestObserver = mRequestObserver) {
+    requestObserver->OnStopRequest(request, aStatus);
     mRequestObserver = nullptr;
   }
 

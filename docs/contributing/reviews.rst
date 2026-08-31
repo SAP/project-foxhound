@@ -54,7 +54,7 @@ Choosing reviewers
 
 * If you have a mentor assigned on the bug you are fixing, the mentor can usually either also review or find a suitable reviewer on your behalf.
 * If you do not have a mentor, see if your code fits into one of the review groups below, and request review from that group.
-* Otherwise, try looking at the history of the file to see who has modified it recently. (For example, `hg log <modified-file>` or `git log <modified-file>`)
+* Otherwise, try looking at the history of the file to see who has modified it recently (for example, ``git log <modified-file>``).
 * Finally if you are still unable to identify someone, try asking in the `#introduction channel on Matrix <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`_.
 
 

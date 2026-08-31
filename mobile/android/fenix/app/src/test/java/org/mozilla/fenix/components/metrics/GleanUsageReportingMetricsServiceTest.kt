@@ -5,7 +5,6 @@
 package org.mozilla.fenix.components.metrics
 
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,6 +13,7 @@ import org.mozilla.fenix.components.metrics.fake.FakeGleanProfileIdStore
 import org.mozilla.fenix.components.metrics.fake.FakeGleanUsageReporting
 import org.mozilla.fenix.components.metrics.fake.FakeLifecycleEventObserver
 import org.mozilla.fenix.components.metrics.fake.FakeLifecycleOwner
+import kotlin.test.assertNotNull
 
 internal class GleanUsageReportingMetricsServiceTest {
 

@@ -19,102 +19,52 @@
 
   <script type="application/javascript">
   <![CDATA[
-    function switchDeckPanel(aContainerID, aDeckID)
-    {
-      this.panelIndex = 0;
-
-      this.container = getAccessible(aContainerID);
-      this.deckNode = getNode(aDeckID);
-      this.prevPanel = getAccessible(this.deckNode.selectedPanel);
-      this.panelNode = this.deckNode.childNodes[this.panelIndex];
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, this.prevPanel),
-        new invokerChecker(EVENT_SHOW, this.panelNode),
-        new invokerChecker(EVENT_REORDER, this.container)
-      ];
-
-      this.invoke = function switchDeckPanel_invoke()
-      {
-        var tree =
-          { GROUPING: [ // role="group"
-            { GROUPING: [ // groupbox, a selected panel #2
-              { PUSHBUTTON: [ ] } // button
-            ] }
-          ] };
-        testAccessibleTree(this.container, tree);
-
-        this.deckNode.selectedIndex = this.panelIndex;
-      }
-
-      this.finalCheck = function switchDeckPanel_finalCheck()
-      {
-        var tree =
-          { GROUPING: [ // role="group"
-            { LABEL: [ // description, a selected panel #1
-              { TEXT_LEAF: []  } // text leaf, a description value
-            ] }
-          ] };
-        testAccessibleTree(this.container, tree);
-      }
-
-      this.getID = function switchDeckPanel_getID()
-      {
-        return "switch deck panel";
-      }
-    }
-
-    function showDeckPanel(aContainerID, aPanelID)
-    {
-      this.container = getAccessible(aContainerID);
-      this.deckNode = getNode(aPanelID);
-      var tree =
+    async function doTest() {
+      // showDeckPanel: verify no REORDER fires when showing a hidden deck panel
+      const container = getAccessible("container");
+      const deckNode = getNode("hidden");
+      const initialTree =
         { GROUPING: [ // role="group"
-          { GROUPING: [ // grouping of panel 2
-            { PUSHBUTTON: []  } // push button in panel 2
+          { GROUPING: [ // groupbox, a selected panel #2
+            { PUSHBUTTON: [ ] } // button
           ] }
         ] };
 
+      let unexpected = new UnexpectedEvents([[EVENT_REORDER, container]]);
+      window.windowUtils.advanceTimeAndRefresh(100);
 
-      this.unexpectedEventSeq = [
-        new invokerChecker(EVENT_REORDER, this.container)
-      ];
+      testAccessibleTree(container, initialTree);
+      deckNode.style.display = "-moz-box";
+      window.windowUtils.advanceTimeAndRefresh(100);
 
-      this.invoke = function showDeckPanel_invoke()
-      {
-        // This stops the refreh driver from doing its regular ticks, and leaves
-        // us in control. 100 is an arbitrary positive number to advance the clock
-        // it is not checked or used anywhere.
-        window.windowUtils.advanceTimeAndRefresh(100);
+      testAccessibleTree(container, initialTree);
+      window.windowUtils.restoreNormalRefresh();
+      unexpected.stop();
 
-        testAccessibleTree(this.container, tree);
-        this.deckNode.style.display = "-moz-box";
+      // switchDeckPanel
+      const mainDeckNode = getNode("deck");
+      const prevPanel = getAccessible(mainDeckNode.selectedPanel);
+      const panelNode = mainDeckNode.childNodes[0];
 
-        // This flushes our DOM mutations and forces any pending mutation events.
-        window.windowUtils.advanceTimeAndRefresh(100);
-      }
+      testAccessibleTree(container, initialTree);
 
-      this.finalCheck = function showDeckPanel_finalCheck()
-      {
-        testAccessibleTree(this.container, tree);
+      let hidden = waitForEvent(EVENT_HIDE, prevPanel);
+      let shown = waitForEvent(EVENT_SHOW, panelNode);
+      let reordered = waitForEvent(EVENT_REORDER, container);
+      mainDeckNode.selectedIndex = 0;
+      await hidden;
+      await shown;
+      await reordered;
 
-        // Return to regular refresh driver ticks.
-        window.windowUtils.restoreNormalRefresh();
-      }
+      const finalTree =
+        { GROUPING: [ // role="group"
+          { LABEL: [ // description, a selected panel #1
+            { TEXT_LEAF: []  } // text leaf, a description value
+          ] }
+        ] };
+      testAccessibleTree(container, finalTree);
 
-      this.getID = function showDeckPanel_getID()
-      {
-        return "show deck panel";
-      }
-    }
-
-    var gQueue = null;
-    function doTest()
-    {
-      gQueue = new eventQueue();
-      gQueue.push(new showDeckPanel("container", "hidden"));
-      gQueue.push(new switchDeckPanel("container", "deck"));
-      gQueue.invoke(); // will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

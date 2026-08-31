@@ -11,10 +11,9 @@
 #ifndef RTC_BASE_CRC32_H_
 #define RTC_BASE_CRC32_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include <string>
+#include <cstddef>
+#include <cstdint>
+#include <span>
 
 #include "absl/strings/string_view.h"
 
@@ -31,14 +30,11 @@ inline uint32_t ComputeCrc32(const void* buf, size_t len) {
 inline uint32_t ComputeCrc32(absl::string_view str) {
   return ComputeCrc32(str.data(), str.size());
 }
+inline uint32_t ComputeCrc32(std::span<const uint8_t> data) {
+  return ComputeCrc32(data.data(), data.size());
+}
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::ComputeCrc32;
-using ::webrtc::UpdateCrc32;
-}  // namespace rtc
 
 #endif  // RTC_BASE_CRC32_H_

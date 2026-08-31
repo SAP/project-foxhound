@@ -30,7 +30,7 @@ class AutofillFragmentStoreTest {
         assertTrue(store.state.isLoading)
 
         val creditCards: List<CreditCard> = listOf(mockk(), mockk())
-        store.dispatch(AutofillAction.UpdateCreditCards(creditCards)).join()
+        store.dispatch(AutofillAction.UpdateCreditCards(creditCards))
 
         assertEquals(creditCards, store.state.creditCards)
         assertFalse(store.state.isLoading)
@@ -41,7 +41,7 @@ class AutofillFragmentStoreTest {
         assertTrue(store.state.isLoading)
 
         val addresses: List<Address> = listOf(mockk(), mockk())
-        store.dispatch(AutofillAction.UpdateAddresses(addresses)).join()
+        store.dispatch(AutofillAction.UpdateAddresses(addresses))
 
         assertEquals(addresses, store.state.addresses)
         assertFalse(store.state.isLoading)

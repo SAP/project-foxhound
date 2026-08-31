@@ -1,0 +1,39 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-ext"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/glsl/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__glsl__variables__gl-fragcoord-xy-values.html"]
+
+["test_conformance__glsl__variables__gl-fragcoord.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__glsl__variables__gl-fragdata-and-fragcolor.html"]
+
+["test_conformance__glsl__variables__gl-frontfacing.html"]
+
+["test_conformance__glsl__variables__gl-pointcoord.html"]
+
+["test_conformance__glsl__variables__glsl-built-ins.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]

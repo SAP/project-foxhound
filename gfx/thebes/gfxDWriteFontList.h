@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,7 +6,6 @@
 #define GFX_DWRITEFONTLIST_H
 
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "gfxDWriteCommon.h"
 #include "dwrite_3.h"
@@ -159,7 +157,7 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
    * \param aStyle italic or oblique of font
    */
   gfxDWriteFontEntry(const nsACString& aFaceName, IDWriteFontFile* aFontFile,
-                     IDWriteFontFileStream* aFontFileStream,
+                     gfxDWriteFontFileStream* aFontFileStream,
                      WeightRange aWeight, StretchRange aStretch,
                      SlantStyleRange aStyle)
       : gfxFontEntry(aFaceName),
@@ -178,8 +176,6 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
   }
 
   gfxFontEntry* Clone() const override;
-
-  virtual ~gfxDWriteFontEntry();
 
   hb_blob_t* GetFontTable(uint32_t aTableTag) override;
 
@@ -200,10 +196,16 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
   void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                               FontListSizes* aSizes) const override;
 
+  size_t ComputedSizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) override;
+
  protected:
   friend class gfxDWriteFont;
   friend class gfxDWriteFontList;
   friend class gfxDWriteFontFamily;
+
+  // Protected destructor, to discourage deletion outside of Release():
+  virtual ~gfxDWriteFontEntry();
 
   virtual nsresult CopyFontTable(uint32_t aTableTag,
                                  nsTArray<uint8_t>& aBuffer) override;
@@ -217,6 +219,8 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
 
   static bool InitLogFont(IDWriteFont* aFont, LOGFONTW* aLogFont);
 
+  FontTableCache* GetFontTableCache(bool aCreate) override;
+
   /**
    * A fontentry only needs to have either of these. If it has both only
    * the IDWriteFont will be used.
@@ -226,7 +230,7 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
 
   // For custom fonts, we hold a reference to the IDWriteFontFileStream for
   // for the IDWriteFontFile, so that the data is available.
-  RefPtr<IDWriteFontFileStream> mFontFileStream;
+  RefPtr<gfxDWriteFontFileStream> mFontFileStream;
 
   // font face corresponding to the mFont/mFontFile *without* any DWrite
   // style simulations applied
@@ -235,6 +239,8 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
   RefPtr<IDWriteFontFace5> mFontFace5;
 
   DWRITE_FONT_FACE_TYPE mFaceType;
+
+  mozilla::Atomic<FontTableCache*> mFontTableCache;
 
   int8_t mIsCJK;
   bool mIsSystemFont;
@@ -369,10 +375,10 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
 
   FontVisibility GetVisibilityForFamily(const nsACString& aName) const;
 
-  gfxFontFamily* CreateFontFamily(const nsACString& aName,
-                                  FontVisibility aVisibility) const override;
+  already_AddRefed<gfxFontFamily> CreateFontFamily(
+      const nsACString& aName, FontVisibility aVisibility) const override;
 
-  gfxFontEntry* CreateFontEntry(
+  already_AddRefed<gfxFontEntry> CreateFontEntry(
       mozilla::fontlist::Face* aFace,
       const mozilla::fontlist::Family* aFamily) override;
 
@@ -389,28 +395,25 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
       nsTArray<mozilla::fontlist::Face::InitData>& aFaces,
       bool aLoadCmaps) const override;
 
-  gfxFontEntry* LookupLocalFont(nsPresContext* aPresContext,
-                                const nsACString& aFontName,
-                                WeightRange aWeightForEntry,
-                                StretchRange aStretchForEntry,
-                                SlantStyleRange aStyleForEntry) override;
+  already_AddRefed<gfxFontEntry> LookupLocalFont(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) override;
 
-  gfxFontEntry* MakePlatformFont(const nsACString& aFontName,
-                                 WeightRange aWeightForEntry,
-                                 StretchRange aStretchForEntry,
-                                 SlantStyleRange aStyleForEntry,
-                                 const uint8_t* aFontData,
-                                 uint32_t aLength) override;
+  already_AddRefed<gfxFontEntry> MakePlatformFont(
+      const nsACString& aFontName, WeightRange aWeightForEntry,
+      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+      const uint8_t* aFontData, uint32_t aLength) override;
 
   IDWriteGdiInterop* GetGDIInterop() { return mGDIInterop; }
   bool UseGDIFontTableAccess() const;
 
   bool FindAndAddFamiliesLocked(
-      nsPresContext* aPresContext, mozilla::StyleGenericFontFamily aGeneric,
-      const nsACString& aFamily, nsTArray<FamilyAndGeneric>* aOutput,
-      FindFamiliesFlags aFlags, gfxFontStyle* aStyle = nullptr,
-      nsAtom* aLanguage = nullptr, gfxFloat aDevToCssSize = 1.0)
-      MOZ_REQUIRES(mLock) override;
+      FontVisibilityProvider* aFontVisibilityProvider,
+      mozilla::StyleGenericFontFamily aGeneric, const nsACString& aFamily,
+      nsTArray<FamilyAndGeneric>* aOutput, FindFamiliesFlags aFlags,
+      gfxFontStyle* aStyle = nullptr, nsAtom* aLanguage = nullptr,
+      gfxFloat aDevToCssSize = 1.0) MOZ_REQUIRES(mLock) override;
 
   gfxFloat GetForceGDIClassicMaxFontSize() {
     return mForceGDIClassicMaxFontSize;
@@ -422,19 +425,17 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
                                       FontListSizes* aSizes) const;
 
  protected:
-  FontFamily GetDefaultFontForPlatform(nsPresContext* aPresContext,
-                                       const gfxFontStyle* aStyle,
-                                       nsAtom* aLanguage = nullptr)
+  FontFamily GetDefaultFontForPlatform(
+      FontVisibilityProvider* aFontVisibilityProvider,
+      const gfxFontStyle* aStyle, nsAtom* aLanguage = nullptr)
       MOZ_REQUIRES(mLock) override;
 
   // attempt to use platform-specific fallback for the given character,
   // return null if no usable result found
-  gfxFontEntry* PlatformGlobalFontFallback(nsPresContext* aPresContext,
-                                           const uint32_t aCh,
-                                           Script aRunScript,
-                                           const gfxFontStyle* aMatchStyle,
-                                           FontFamily& aMatchedFamily)
-      MOZ_REQUIRES(mLock) override;
+  gfxFontEntry* PlatformGlobalFontFallback(
+      FontVisibilityProvider* aFontVisibilityProvider, const uint32_t aCh,
+      Script aRunScript, const gfxFontStyle* aMatchStyle,
+      FontFamily& aMatchedFamily) MOZ_REQUIRES(mLock) override;
 
   nsTArray<std::pair<const char**, uint32_t>> GetFilteredPlatformFontLists()
       override;

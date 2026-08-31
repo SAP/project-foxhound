@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txExpr.h"
-#include "txNodeSet.h"
 #include "txIXPathContext.h"
+#include "txNodeSet.h"
 
-using mozilla::Unused;
 using mozilla::WrapUnique;
 
 //-- Implementation of FilterExpr --/
@@ -65,7 +63,7 @@ Expr* FilterExpr::getSubExprAt(uint32_t aPos) {
 
 void FilterExpr::setSubExprAt(uint32_t aPos, Expr* aExpr) {
   if (aPos == 0) {
-    Unused << expr.release();
+    (void)expr.release();
     expr = WrapUnique(aExpr);
   } else {
     PredicateList::setSubExprAt(aPos - 1, aExpr);

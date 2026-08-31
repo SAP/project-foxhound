@@ -10,12 +10,14 @@ class PerfPushInfo:
         self,
         base_revision=None,
         new_revision=None,
+        lando_instance=None,
         base_lando_commit_id=None,
         new_lando_commit_id=None,
         framework=None,
     ):
         self.base_revision = base_revision
         self.new_revision = new_revision
+        self.lando_instance = lando_instance
         self.base_lando_commit_id = base_lando_commit_id
         self.new_lando_commit_id = new_lando_commit_id
         self.framework = framework
@@ -37,6 +39,14 @@ class PerfPushInfo:
     def new_revision(self, new_revision):
         self._new_revision = new_revision
         self.finished_run = True
+
+    @property
+    def lando_instance(self):
+        return self._lando_instance
+
+    @lando_instance.setter
+    def lando_instance(self, lando_instance):
+        self._lando_instance = lando_instance
 
     @property
     def base_lando_commit_id(self):
@@ -66,6 +76,7 @@ class PerfPushInfo:
     def get_perfcompare_settings_lando(self):
         """Returns all the settings required to setup a perfcompare URL using lando pushes."""
         return (
+            self.lando_instance,
             self.base_lando_commit_id,
             self.new_lando_commit_id,
             self.framework,

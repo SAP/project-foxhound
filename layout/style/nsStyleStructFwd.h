@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,8 @@
 
 #ifndef nsStyleStructFwd_h_
 #define nsStyleStructFwd_h_
+
+#include "nsStyleStructList.h"
 
 namespace mozilla {
 
@@ -23,43 +23,33 @@ enum class StyleStructID : uint32_t {
  * Note that we rely on the inherited structs being before the rest in
  * ComputedStyle.
  */
-#define STYLE_STRUCT_INHERITED(name) name,
-#define STYLE_STRUCT_RESET(name)
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT_INHERITED
-#undef STYLE_STRUCT_RESET
-
-#define STYLE_STRUCT_RESET(name) name,
-#define STYLE_STRUCT_INHERITED(name)
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT_INHERITED
-#undef STYLE_STRUCT_RESET
+#define ENUM_ENTRY(name) name,
+  FOR_EACH_STYLE_STRUCT(ENUM_ENTRY, ENUM_ENTRY)
+#undef ENUM_ENTRY
 };
 
 struct StyleStructConstants {
   static const uint32_t kStyleStructCount =
-#define STYLE_STRUCT_RESET(name) 1 +
-#define STYLE_STRUCT_INHERITED(name) 1 +
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT_INHERITED
-#undef STYLE_STRUCT_RESET
-      0;
+#define COUNT_STRUCT(name) 1 +
+      FOR_EACH_STYLE_STRUCT(COUNT_STRUCT, COUNT_STRUCT)
+#undef COUNT_STRUCT
+          0;
 
   static const uint32_t kInheritedStyleStructCount =
-#define STYLE_STRUCT_RESET(name)
-#define STYLE_STRUCT_INHERITED(name) 1 +
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT_INHERITED
-#undef STYLE_STRUCT_RESET
-      0;
+#define COUNT_INHERITED(name) 1 +
+#define COUNT_RESET(name)
+      FOR_EACH_STYLE_STRUCT(COUNT_INHERITED, COUNT_RESET)
+#undef COUNT_INHERITED
+#undef COUNT_RESET
+          0;
 
   static const uint32_t kResetStyleStructCount =
-#define STYLE_STRUCT_RESET(name) 1 +
-#define STYLE_STRUCT_INHERITED(name)
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT_INHERITED
-#undef STYLE_STRUCT_RESET
-      0;
+#define COUNT_INHERITED(name)
+#define COUNT_RESET(name) 1 +
+      FOR_EACH_STYLE_STRUCT(COUNT_INHERITED, COUNT_RESET)
+#undef COUNT_INHERITED
+#undef COUNT_RESET
+          0;
 
   static_assert(kStyleStructCount <= 32, "Bitmasks must be bigger!");
 

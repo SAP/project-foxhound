@@ -4,12 +4,14 @@
 
 //! The structure that contains the custom properties of a given element.
 
-use crate::custom_properties::Name;
+use crate::custom_properties::{Name, SubstitutionFunctionKind};
 use crate::properties_and_values::value::ComputedValue as ComputedRegisteredValue;
 use crate::selector_map::PrecomputedHasher;
-use indexmap::IndexMap;
+use indexmap::{Equivalent, IndexMap};
+use rustc_hash::FxBuildHasher;
 use servo_arc::Arc;
-use std::hash::BuildHasherDefault;
+use std::hash::{BuildHasherDefault, Hash};
+use std::sync::LazyLock;
 
 /// A map for a set of custom properties, which implements copy-on-write behavior on insertion with
 /// cheap copying.
@@ -23,19 +25,17 @@ impl Default for CustomPropertiesMap {
 }
 
 /// We use None in the value to represent a removed entry.
-type OwnMap =
+pub type OwnMap =
     IndexMap<Name, Option<ComputedRegisteredValue>, BuildHasherDefault<PrecomputedHasher>>;
 
-lazy_static! {
-    static ref EMPTY: Arc<Inner> = {
-        Arc::new_leaked(Inner {
-            own_properties: Default::default(),
-            parent: None,
-            len: 0,
-            ancestor_count: 0,
-        })
-    };
-}
+static EMPTY: LazyLock<Arc<Inner>> = LazyLock::new(|| {
+    Arc::new_leaked(Inner {
+        own_properties: Default::default(),
+        parent: None,
+        len: 0,
+        ancestor_count: 0,
+    })
+});
 
 #[derive(Debug, Clone)]
 struct Inner {
@@ -109,7 +109,7 @@ impl PartialEq for Inner {
 }
 
 impl Inner {
-    fn iter(&self) -> Iter {
+    fn iter(&self) -> Iter<'_> {
         Iter {
             current: self,
             current_iter: self.own_properties.iter(),
@@ -215,7 +215,63 @@ impl CustomPropertiesMap {
     }
 
     /// Return iterator to go through all properties.
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_> {
         self.0.iter()
+    }
+}
+
+/// An `IndexMap` containing both custom properties and attributes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AllSubstitutionFunctions(IndexMap<Key, ComputedRegisteredValue, FxBuildHasher>);
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+struct Key(Name, SubstitutionFunctionKind);
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+struct KeyRef<'a>(&'a Name, SubstitutionFunctionKind);
+
+impl<'a> Equivalent<Key> for KeyRef<'a> {
+    fn equivalent(&self, key: &Key) -> bool {
+        *self.0 == key.0 && self.1 == key.1
+    }
+}
+
+impl AllSubstitutionFunctions {
+    /// Returns whether the map has zero properties and attributes in it.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns a custom property or attribute value by name.
+    #[inline(always)]
+    pub fn get(
+        &self,
+        name: &Name,
+        kind: SubstitutionFunctionKind,
+    ) -> Option<&ComputedRegisteredValue> {
+        debug_assert_ne!(kind, SubstitutionFunctionKind::Env);
+        self.0.get(&KeyRef(name, kind))
+    }
+
+    /// Inserts an element into the map.
+    #[inline(always)]
+    pub fn insert(
+        &mut self,
+        name: &Name,
+        kind: SubstitutionFunctionKind,
+        value: ComputedRegisteredValue,
+    ) {
+        debug_assert_ne!(kind, SubstitutionFunctionKind::Env);
+        let k = Key(name.clone(), kind);
+        self.0.insert(k, value);
+    }
+
+    /// Returns iterator to go through all substitution functions in insertion order.
+    #[inline(always)]
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&Name, SubstitutionFunctionKind, &ComputedRegisteredValue)> {
+        self.0.iter().map(|(k, v)| (&k.0, k.1, v))
     }
 }

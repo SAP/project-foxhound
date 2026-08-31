@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<canvas id="c" width="320" height="240"></canvas>
+<script>
+async function run() {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoDecoder === 'undefined') {
+    return;
+  }
+
+  let encodedChunk = null;
+  let decoderConfig = null;
+
+  const encoder = new VideoEncoder({
+    output: (chunk, metadata) => {
+      if (!encodedChunk) encodedChunk = chunk;
+      if (metadata && metadata.decoderConfig) decoderConfig = metadata.decoderConfig;
+    },
+    error: () => {}
+  });
+
+  encoder.configure({ codec: "vp8", width: 320, height: 240 });
+  encoder.encode(new VideoFrame(document.getElementById("c"), { timestamp: 0 }));
+  await encoder.flush();
+
+  if (!decoderConfig) return;
+
+  const decoder = new VideoDecoder({
+    output: () => {},
+    error: () => {}
+  });
+
+  decoder.configure(decoderConfig);
+
+  // Decode an empty chunk -- this will fail synchronously and schedule a
+  // deferred close, but the message loop continues to the next decode.
+  decoder.decode(new EncodedVideoChunk({
+    type: "key",
+    timestamp: 1000000,
+    data: new Uint8Array(0)
+  }));
+
+  // Decode a real VP8 frame with flipped type. This starts async decoder
+  // creation (mDecoderRequest). The deferred close then calls Shutdown()
+  // which didn't disconnect mDecoderRequest, causing a use-after-reject crash.
+  if (encodedChunk) {
+    const buf = new Uint8Array(encodedChunk.byteLength);
+    encodedChunk.copyTo(buf);
+    decoder.decode(new EncodedVideoChunk({
+      type: encodedChunk.type === "key" ? "delta" : "key",
+      timestamp: encodedChunk.timestamp,
+      data: buf
+    }));
+  }
+}
+
+run().finally(() => {
+  document.documentElement.className = "";
+});
+</script>
+</body>
+</html>

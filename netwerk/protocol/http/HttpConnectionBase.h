@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpConnectionBase_h__
-#define HttpConnectionBase_h__
+#ifndef HttpConnectionBase_h_
+#define HttpConnectionBase_h_
 
 #include "nsHttpConnectionInfo.h"
-#include "nsHttpResponseHead.h"
 #include "nsAHttpTransaction.h"
 #include "nsCOMPtr.h"
 #include "nsProxyRelease.h"
@@ -18,6 +16,8 @@
 #include "HttpTrafficAnalyzer.h"
 
 #include "mozilla/net/DNS.h"
+#include "mozilla/WeakPtr.h"
+#include "nsHttpResponseHead.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIInterfaceRequestor.h"
@@ -29,6 +29,7 @@ class nsITLSSocketControl;
 namespace mozilla {
 namespace net {
 
+class ConnectionEntry;
 class nsHttpHandler;
 class ASpdySession;
 class WebTransportSessionBase;
@@ -136,14 +137,29 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   [[nodiscard]] virtual nsresult ForceSend() = 0;
   [[nodiscard]] virtual nsresult ForceRecv() = 0;
   virtual HttpVersion Version() = 0;
-  virtual bool IsProxyConnectInProgress() = 0;
   virtual bool LastTransactionExpectedNoContent() = 0;
   virtual void SetLastTransactionExpectedNoContent(bool) = 0;
   virtual int64_t BytesWritten() = 0;  // includes TLS
   void SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks);
+  already_AddRefed<nsIInterfaceRequestor> GetCallbacks() {
+    MutexAutoLock lock(mCallbacksLock);
+    return do_AddRef(mCallbacks.get());
+  }
+  // Call only from Init(), before the object is shared with other threads.
+  void InitCallbacks(nsIInterfaceRequestor* aCallbacks,
+                     const char* aName) MOZ_NO_THREAD_SAFETY_ANALYSIS {
+    mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
+        aName, aCallbacks, false);
+  }
   void SetTrafficCategory(HttpTrafficCategory);
 
   void BootstrapTimings(TimingStruct times);
+  void SetDnsBootstrapTimings(TimeStamp domainLookupStart,
+                              TimeStamp domainLookupEnd);
+  void SetConnectBootstrapTimings(TimeStamp connectStart,
+                                  TimeStamp tcpConnectEnd,
+                                  TimeStamp secureConnectionStart = TimeStamp(),
+                                  TimeStamp connectEnd = TimeStamp());
 
   virtual bool IsPersistent() = 0;
   virtual bool IsReused() = 0;
@@ -163,6 +179,7 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual PRIntervalTime LastWriteTime() = 0;
 
   void ChangeConnectionState(ConnectionState aState);
+  ConnectionCloseReason CloseReason() const { return mCloseReason; }
   void SetCloseReason(ConnectionCloseReason aReason) {
     if (mCloseReason == ConnectionCloseReason::UNSET) {
       mCloseReason = aReason;
@@ -172,11 +189,31 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   void RecordConnectionCloseTelemetry(nsresult aReason);
   void RecordConnectionAddressType();
 
+  bool IsProxyConnectInProgress() { return mState == SETTING_UP_TUNNEL; }
+
+  virtual nsresult CreateTunnelStream(nsAHttpTransaction* httpTransaction,
+                                      HttpConnectionBase** aHttpConnection,
+                                      bool aIsExtendedCONNECT = false) = 0;
+  virtual void SetInTunnel() {};
+  const RefPtr<ProxyConnectResponseHead>& GetProxyConnectResponseHead() const {
+    return mProxyConnectResponseHead;
+  }
+
+  void SetOwner(ConnectionEntry* aEntry);
+  ConnectionEntry* OwnerEntry() const;
+
+  void SetIsRacing(bool aValue) { mIsRacing = aValue; }
+  bool IsRacing() const { return mIsRacing; }
+  virtual void SetDontExclude() {}
+
  protected:
   // The capabailities associated with the most recent transaction
   uint32_t mTransactionCaps{0};
 
   RefPtr<nsHttpConnectionInfo> mConnInfo;
+  // Set when this connection is added to the active connections list,
+  // cleared when it is removed.
+  WeakPtr<ConnectionEntry> mOwnerEntry;
 
   bool mExperienced{false};
   // Used to track whether this connection is serving the first request.
@@ -185,8 +222,9 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   bool mBootstrappedTimingsSet{false};
   TimingStruct mBootstrappedTimings;
 
-  Mutex mCallbacksLock MOZ_UNANNOTATED{"nsHttpConnection::mCallbacksLock"};
-  nsMainThreadPtrHandle<nsIInterfaceRequestor> mCallbacks;
+  Mutex mCallbacksLock{"nsHttpConnection::mCallbacksLock"};
+  nsMainThreadPtrHandle<nsIInterfaceRequestor> mCallbacks
+      MOZ_GUARDED_BY(mCallbacksLock);
 
   nsTArray<HttpTrafficCategory> mTrafficCategory;
   PRIntervalTime mRtt{0};
@@ -201,6 +239,23 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   ConnectionCloseReason mCloseReason = ConnectionCloseReason::UNSET;
 
   bool mAddressTypeReported{false};
+
+  bool mIsRacing{false};
+
+  // Tunnel related functions:
+  enum HttpConnectionState {
+    UNINITIALIZED,
+    SETTING_UP_TUNNEL,
+    REQUEST,
+  } mState{HttpConnectionState::UNINITIALIZED};
+  void ChangeState(HttpConnectionState newState);
+  bool TunnelSetupInProgress() { return mState == SETTING_UP_TUNNEL; }
+  virtual void SetTunnelSetupDone() {}
+  virtual nsresult SetupProxyConnectStream() { return NS_OK; }
+  nsresult CheckTunnelIsNeeded(nsAHttpTransaction* aTransaction);
+  // Built once when the CONNECT tunnel is established and then shared by
+  // pointer with the transaction and channel. See bug 2045419.
+  RefPtr<ProxyConnectResponseHead> mProxyConnectResponseHead;
 };
 
 #define NS_DECL_HTTPCONNECTIONBASE                                             \
@@ -227,7 +282,6 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   [[nodiscard]] nsresult ForceSend() override;                                 \
   [[nodiscard]] nsresult ForceRecv() override;                                 \
   HttpVersion Version() override;                                              \
-  bool IsProxyConnectInProgress() override;                                    \
   bool LastTransactionExpectedNoContent() override;                            \
   void SetLastTransactionExpectedNoContent(bool val) override;                 \
   bool IsPersistent() override;                                                \
@@ -240,4 +294,4 @@ class HttpConnectionBase : public nsSupportsWeakReference {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // HttpConnectionBase_h__
+#endif  // HttpConnectionBase_h_

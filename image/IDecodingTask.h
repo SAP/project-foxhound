@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,7 +44,7 @@ class IDecodingTask : public IResumable {
   void Resume() override;
 
  protected:
-  virtual ~IDecodingTask() {}
+  virtual ~IDecodingTask() = default;
 
   /// Notify @aImage of @aDecoder's progress.
   void NotifyProgress(NotNull<RasterImage*> aImage, NotNull<Decoder*> aDecoder);
@@ -76,7 +75,7 @@ class MetadataDecodingTask final : public IDecodingTask {
   TaskPriority Priority() const override { return TaskPriority::eHigh; }
 
  private:
-  virtual ~MetadataDecodingTask() {}
+  virtual ~MetadataDecodingTask() = default;
 
   /// Mutex protecting access to mDecoder.
   Mutex mMutex MOZ_UNANNOTATED;
@@ -102,7 +101,7 @@ class AnonymousDecodingTask : public IDecodingTask {
   void Resume() override;
 
  protected:
-  virtual ~AnonymousDecodingTask() {}
+  virtual ~AnonymousDecodingTask() = default;
 
   NotNull<RefPtr<Decoder>> mDecoder;
   bool mResumable;

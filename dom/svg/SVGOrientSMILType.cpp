@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGOrientSMILType.h"
 
+#include <math.h>
+
+#include "SVGAnimatedOrient.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/dom/SVGMarkerElement.h"
 #include "nsDebug.h"
-#include "SVGAnimatedOrient.h"
-#include <math.h>
 
 namespace mozilla {
 
@@ -104,7 +103,7 @@ nsresult SVGOrientSMILType::ComputeDistance(const SMILValue& aFrom,
   }
 
   // Normalize both to degrees in case they're different angle units:
-  aDistance = fabs(ValueInDegrees(aTo) - ValueInDegrees(aFrom));
+  aDistance = std::abs(ValueInDegrees(aTo) - ValueInDegrees(aFrom));
 
   return NS_OK;
 }
@@ -124,9 +123,8 @@ nsresult SVGOrientSMILType::Interpolate(const SMILValue& aStartVal,
     return NS_ERROR_FAILURE;
   }
 
-  float start = ValueInDegrees(aStartVal);
-  float end = ValueInDegrees(aEndVal);
-  float result = (start + (end - start) * aUnitDistance);
+  float result = std::lerp(ValueInDegrees(aStartVal), ValueInDegrees(aEndVal),
+                           aUnitDistance);
 
   // we use the unit of the nearest value for the result:
   if (aUnitDistance > 0.5) {

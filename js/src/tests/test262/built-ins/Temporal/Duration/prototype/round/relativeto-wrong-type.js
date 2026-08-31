@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -18,7 +18,7 @@ const primitiveTests = [
   [null, 'null'],
   [true, 'boolean'],
   ['', 'empty string'],
-  [1, "number that doesn't convert to a valid ISO string"],
+  [1, 'number'],
   [1n, 'bigint']
 ];
 

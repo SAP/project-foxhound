@@ -1,5 +1,6 @@
 [DEFAULT]
-tags = "inc-origin-init"
+subsuite = "integration"
+tags = "inc-origin-init os_integration"
 support-files = ["quota_test_case.py"]
 
 ["test_private_repository_cleanup.py"]

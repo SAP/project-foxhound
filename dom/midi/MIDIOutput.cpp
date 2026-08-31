@@ -1,19 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIOutput.h"
-#include "mozilla/dom/MIDIPortChild.h"
-#include "mozilla/dom/MIDITypes.h"
-#include "mozilla/dom/MIDIOutputBinding.h"
-#include "mozilla/dom/MIDIUtils.h"
-#include "nsDOMNavigationTiming.h"
+
 #include "mozilla/ErrorResult.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/MIDIOutputBinding.h"
+#include "mozilla/dom/MIDIPortChild.h"
+#include "mozilla/dom/MIDITypes.h"
+#include "mozilla/dom/MIDIUtils.h"
 #include "mozilla/dom/Performance.h"
+#include "nsDOMNavigationTiming.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {
@@ -25,8 +24,7 @@ RefPtr<MIDIOutput> MIDIOutput::Create(nsPIDOMWindowInner* aWindow,
                                       MIDIAccess* aMIDIAccessParent,
                                       const MIDIPortInfo& aPortInfo,
                                       const bool aSysexEnabled) {
-  MOZ_ASSERT(static_cast<MIDIPortType>(aPortInfo.type()) ==
-             MIDIPortType::Output);
+  MOZ_ASSERT(aPortInfo.type() == MIDIPortType::Output);
   RefPtr<MIDIOutput> port = new MIDIOutput(aWindow);
   if (NS_WARN_IF(
           !port->Initialize(aPortInfo, aSysexEnabled, aMIDIAccessParent))) {

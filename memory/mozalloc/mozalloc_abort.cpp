@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=4 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -89,7 +86,7 @@ extern "C" void abort(void) {
 
   mozalloc_abort(msg);
 
-  // We won't reach here because mozalloc_abort() is MOZ_NORETURN. But that
+  // We won't reach here because mozalloc_abort() is [[noreturn]]. But that
   // annotation isn't used on ARM (see mozalloc_abort.h for why) so we add a
   // unreachable marker here to avoid a "'noreturn' function does return"
   // warning.

@@ -8,19 +8,20 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.os.Build
+import android.content.res.Resources
 import android.provider.Settings
 import android.view.ContextThemeWrapper
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
+import androidx.annotation.DimenRes
 import androidx.annotation.StringRes
 import mozilla.components.compose.base.theme.layout.AcornWindowSize
+import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.locale.LocaleManager
 import org.mozilla.fenix.FenixApplication
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
-import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.settings.advanced.getSelectedLocale
 import org.mozilla.fenix.utils.isLargeScreenSize
@@ -39,16 +40,12 @@ val Context.application: FenixApplication
 val Context.components: Components
     get() = application.components
 
-/**
- * Helper function to get the MetricController off of context.
- */
-val Context.metrics: MetricController
-    get() = this.components.analytics.metrics
-
 fun Context.asActivity() = (this as? ContextThemeWrapper)?.baseContext as? Activity
     ?: this as? Activity
 
-fun Context.getPreferenceKey(@StringRes resourceId: Int): String =
+fun Context.getPreferenceKey(
+    @StringRes resourceId: Int,
+): String =
     resources.getString(resourceId)
 
 /**
@@ -59,23 +56,24 @@ fun Context.getPreferenceKey(@StringRes resourceId: Int): String =
 fun Context.getRootView(): View? =
     asActivity()?.window?.decorView?.findViewById<View>(android.R.id.content) as? ViewGroup
 
-fun Context.settings() = components.settings
-
 /**
  * Used to catch IllegalArgumentException that is thrown when
  * a string's placeholder is incorrectly formatted in a translation
  *
  * @return the formatted string in locale language or English as a fallback
  */
-fun Context.getStringWithArgSafe(@StringRes resId: Int, formatArg: String): String {
+fun Context.getStringWithArgSafe(
+    @StringRes resId: Int,
+    formatArg: String,
+): String {
     return try {
         format(getString(resId), formatArg)
     } catch (e: IllegalArgumentException) {
         // fallback to <en> string
-        logDebug(
-            "L10n",
+        Logger("L10n").debug(
             "String: " + resources.getResourceEntryName(resId) +
                 " not properly formatted in: " + LocaleManager.getSelectedLocale(this).language,
+            e,
         )
         val config = resources.configuration
         config.setLocale(Locale.Builder().setLanguage("en").build())
@@ -101,14 +99,8 @@ fun Context.navigateToNotificationsSettings(
 ) {
     val intent = Intent()
     intent.let {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            it.action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-            it.putExtra(Settings.EXTRA_APP_PACKAGE, this.packageName)
-        } else {
-            it.action = "android.settings.APP_NOTIFICATION_SETTINGS"
-            it.putExtra("app_package", this.packageName)
-            it.putExtra("app_uid", this.applicationInfo.uid)
-        }
+        it.action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
+        it.putExtra(Settings.EXTRA_APP_PACKAGE, this.packageName)
     }
     startExternalActivitySafe(intent, onError)
 }
@@ -150,6 +142,17 @@ fun Context.tabClosedUndoMessage(private: Boolean): String =
     }
 
 /**
+ * Returns the message to be shown when multiple tabs are closed based on whether the tabs were all private or not.
+ * @param count The number of tabs that were closed.
+ */
+fun Context.tabsClosedUndoMessage(count: Int): String =
+    if (count > 1) {
+        getString(R.string.snackbar_num_tabs_closed, count.toString())
+    } else {
+        getString(R.string.snackbar_tab_closed)
+    }
+
+/**
  * Helper function used to determine whether the app's total *window* size is at least that of a tablet.
  * This relies on the window size check from [AcornWindowSize]. To determine whether the device's
  * *physical* size is at least the size of a tablet, use [Context.isLargeScreenSize] instead.
@@ -157,6 +160,35 @@ fun Context.tabClosedUndoMessage(private: Boolean): String =
  * @return true if the app has a large window size akin to a tablet.
  */
 fun Context.isLargeWindow(): Boolean = AcornWindowSize.isLargeWindow(this)
+
+internal const val TALL_SCREEN_HEIGHT_DP = 480
+internal const val WIDE_SCREEN_WIDTH_DP = 600
+
+/**
+ * Helper function to determine whether the app's current window height
+ * is at least more than [TALL_SCREEN_HEIGHT_DP].
+ *
+ * This is useful when navigation bar should only be enabled on
+ * taller screens (e.g., to avoid crowding content vertically).
+ *
+ * @return true if the window height size is more than [TALL_SCREEN_HEIGHT_DP].
+ */
+fun Context.isTallWindow(): Boolean {
+    return resources.configuration.screenHeightDp > TALL_SCREEN_HEIGHT_DP
+}
+
+/**
+ * Helper function to determine whether the app's current window width
+ * is at least more than [WIDE_SCREEN_WIDTH_DP].
+ *
+ * This is useful when navigation bar should only be enabled on
+ * wider screens (e.g., to avoid crowding content horizontally).
+ *
+ * @return true if the window width size is more than [WIDE_SCREEN_WIDTH_DP].
+ */
+fun Context.isWideWindow(): Boolean {
+    return resources.configuration.screenWidthDp > WIDE_SCREEN_WIDTH_DP
+}
 
 /**
  *  This will record an event in the Nimbus internal event store. Used for behavioral targeting.
@@ -168,3 +200,17 @@ fun Context.recordEventInNimbus(eventId: String) = components.nimbus.events.reco
  */
 fun Context.isToolbarAtBottom() =
     components.settings.toolbarPosition == ToolbarPosition.BOTTOM
+
+/**
+ * Returns the pixel size for the given dimension resource ID.
+ *
+ * This is a wrapper around [Resources.getDimensionPixelSize], reducing verbosity when accessing
+ * dimension values from a [Context].
+ *
+ * @param resId Resource ID of the dimension.
+ * @return The pixel size corresponding to the given dimension resource.
+ */
+@Suppress("Resources.GetDimensionPixelSizeInsteadOfPixelSizeFor")
+fun Context.pixelSizeFor(
+    @DimenRes resId: Int,
+) = resources.getDimensionPixelSize(resId)

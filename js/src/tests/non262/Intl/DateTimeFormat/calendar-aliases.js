@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Ensure ethiopic-amete-alem is resolved to ethioaa instead of ethiopic.
 function testEthiopicAmeteAlem() {
     var locale = "am-ET-u-nu-latn";

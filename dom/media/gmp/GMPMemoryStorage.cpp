@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +8,16 @@
 
 namespace mozilla::gmp {
 
-#define LOG(msg, ...)                   \
-  MOZ_LOG(GetGMPLog(), LogLevel::Debug, \
-          ("GMPMemoryStorage=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                                    \
+  MOZ_LOG_FMT(GetGMPLog(), LogLevel::Debug, "GMPMemoryStorage={}, " msg, \
+              fmt::ptr(this), ##__VA_ARGS__)
 
 class GMPMemoryStorage : public GMPStorage {
  public:
   GMPMemoryStorage(const nsACString& aNodeId, const nsAString& aGMPName) {
-    LOG("Created GMPMemoryStorage, nodeId=%s, gmpName=%s",
-        aNodeId.BeginReading(), NS_ConvertUTF16toUTF8(aGMPName).get());
+    LOG("Created GMPMemoryStorage, nodeId={}, gmpName={}",
+        PromiseFlatCString(aNodeId).get(),
+        NS_ConvertUTF16toUTF8(aGMPName).get());
   }
   ~GMPMemoryStorage() { LOG("Destroyed GMPMemoryStorage"); }
 

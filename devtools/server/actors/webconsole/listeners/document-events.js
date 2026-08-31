@@ -38,23 +38,21 @@ exports.WILL_NAVIGATE_TIME_SHIFT = WILL_NAVIGATE_TIME_SHIFT;
 /**
  * Forward `DOMContentLoaded` and `load` events with precise timing
  * of when events happened according to window.performance numbers.
- *
- * @constructor
- * @param WindowGlobalTarget targetActor
  */
-function DocumentEventsListener(targetActor) {
-  this.targetActor = targetActor;
+class DocumentEventsListener extends EventEmitter {
+  /**
+   * @param {WindowGlobalTarget} targetActor
+   */
+  constructor(targetActor) {
+    super();
 
-  EventEmitter.decorate(this);
-  this.onWillNavigate = this.onWillNavigate.bind(this);
-  this.onWindowReady = this.onWindowReady.bind(this);
-  this.onContentLoaded = this.onContentLoaded.bind(this);
-  this.onLoad = this.onLoad.bind(this);
-}
+    this.targetActor = targetActor;
 
-exports.DocumentEventsListener = DocumentEventsListener;
-
-DocumentEventsListener.prototype = {
+    this.onWillNavigate = this.onWillNavigate.bind(this);
+    this.onWindowReady = this.onWindowReady.bind(this);
+    this.onContentLoaded = this.onContentLoaded.bind(this);
+    this.onLoad = this.onLoad.bind(this);
+  }
   listen() {
     // When EFT is enabled, the Target Actor won't dispatch any will-navigate/window-ready event
     // Instead listen to WebProgressListener interface directly, so that we can later drop the whole
@@ -65,7 +63,10 @@ DocumentEventsListener.prototype = {
       // Ignore listening to anything if the page is already fully loaded.
       // This can be the case when opening DevTools against an already loaded page
       // or when doing bfcache navigations.
-      if (this.targetActor.window.document.readyState != "complete") {
+      if (
+        !Cu.isRemoteProxy(this.targetActor.window) &&
+        this.targetActor.window.document.readyState != "complete"
+      ) {
         this.webProgress = this.targetActor.docShell
           .QueryInterface(Ci.nsIInterfaceRequestor)
           .getInterface(Ci.nsIWebProgress);
@@ -88,7 +89,7 @@ DocumentEventsListener.prototype = {
       window: this.targetActor.window,
       isTopLevel: true,
     });
-  },
+  }
 
   onWillNavigate({ isTopLevel, newURI, navigationStart, isFrameSwitching }) {
     // Ignore iframes
@@ -101,7 +102,7 @@ DocumentEventsListener.prototype = {
       newURI,
       isFrameSwitching,
     });
-  },
+  }
 
   onWindowReady({ window, isTopLevel, isFrameSwitching }) {
     // Ignore iframes
@@ -109,18 +110,28 @@ DocumentEventsListener.prototype = {
       return;
     }
 
+    if (!window.docShell) {
+      // Bail out if the window is being destroyed and the docShell cannot be
+      // retrieved anymore.
+      return;
+    }
+
     const time = this._getPerformanceTiming(window, "navigationStart");
+
+    const isErrorPage =
+      window.docShell.currentDocumentChannel?.loadInfo.loadErrorPage;
 
     this.emit("dom-loading", {
       time,
       isFrameSwitching,
+      isErrorPage,
     });
 
     // Error pages, like the Offline page, i.e. about:neterror?...
     // are special and the WebProgress listener doesn't trigger any notification for them.
     // Also they are stuck on "interactive" state and never reach the "complete" state.
     // So fake the two missing events.
-    if (window.docShell.currentDocumentChannel?.loadInfo.loadErrorPage) {
+    if (isErrorPage) {
       this.onContentLoaded({ target: window.document }, isFrameSwitching);
       this.onLoad({ target: window.document }, isFrameSwitching);
       return;
@@ -151,7 +162,7 @@ DocumentEventsListener.prototype = {
     } else {
       this.onLoad({ target: window.document }, isFrameSwitching);
     }
-  },
+  }
 
   onContentLoaded(event, isFrameSwitching) {
     if (this.destroyed) {
@@ -163,7 +174,7 @@ DocumentEventsListener.prototype = {
     const window = event.target.defaultView;
     const time = this._getPerformanceTiming(window, "domInteractive");
     this.emit("dom-interactive", { time, isFrameSwitching });
-  },
+  }
 
   onLoad(event, isFrameSwitching) {
     if (this.destroyed) {
@@ -179,7 +190,7 @@ DocumentEventsListener.prototype = {
       isFrameSwitching,
       hasNativeConsoleAPI: this.hasNativeConsoleAPI(window),
     });
-  },
+  }
 
   onStateChange(progress, request, flag) {
     progress.QueryInterface(Ci.nsIDocShell);
@@ -202,15 +213,15 @@ DocumentEventsListener.prototype = {
         hasNativeConsoleAPI: this.hasNativeConsoleAPI(window),
       });
     }
-  },
+  }
 
   /**
    * Tells if the window.console object is native or overwritten by script in
    * the page.
    *
-   * @param nsIDOMWindow window
+   * @param {Window} window
    *        The window object you want to check.
-   * @return boolean
+   * @return {boolean}
    *         True if the window.console object is native, or false otherwise.
    */
   hasNativeConsoleAPI(window) {
@@ -228,7 +239,7 @@ DocumentEventsListener.prototype = {
       // ignore
     }
     return isNative;
-  },
+  }
 
   destroy() {
     // Also use a flag to silent onContentLoad and onLoad events
@@ -246,7 +257,7 @@ DocumentEventsListener.prototype = {
       } catch (e) {}
       this.webProgress = null;
     }
-  },
+  }
 
   /**
    * Safe getter for performance timings on the window object.
@@ -269,10 +280,12 @@ DocumentEventsListener.prototype = {
     }
 
     return window.performance.timing[timing];
-  },
+  }
 
-  QueryInterface: ChromeUtils.generateQI([
+  QueryInterface = ChromeUtils.generateQI([
     "nsIWebProgressListener",
     "nsISupportsWeakReference",
-  ]),
-};
+  ]);
+}
+
+exports.DocumentEventsListener = DocumentEventsListener;

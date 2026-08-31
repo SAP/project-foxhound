@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CacheStreamControlChild.h"
 
-#include "mozilla/Unused.h"
 #include "mozilla/dom/cache/ActorUtils.h"
 #include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/dom/cache/CacheWorkerRef.h"
@@ -19,12 +16,15 @@ namespace mozilla::dom::cache {
 using mozilla::ipc::FileDescriptor;
 
 // declared in ActorUtils.h
-already_AddRefed<PCacheStreamControlChild> AllocPCacheStreamControlChild() {
-  return MakeAndAddRef<CacheStreamControlChild>();
+already_AddRefed<PCacheStreamControlChild> AllocPCacheStreamControlChild(
+    ActorChild* aParentActor) {
+  return MakeAndAddRef<CacheStreamControlChild>(aParentActor);
 }
 
-CacheStreamControlChild::CacheStreamControlChild()
-    : mDestroyStarted(false), mDestroyDelayed(false) {
+CacheStreamControlChild::CacheStreamControlChild(ActorChild* aParentActor)
+    : mParentActor(aParentActor),
+      mDestroyStarted(false),
+      mDestroyDelayed(false) {
   MOZ_COUNT_CTOR(cache::CacheStreamControlChild);
 }
 
@@ -130,6 +130,11 @@ void CacheStreamControlChild::AssertOwningThread() {
 void CacheStreamControlChild::ActorDestroy(ActorDestroyReason aReason) {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
   CloseAllReadStreamsWithoutReporting();
+
+  if (mParentActor) {
+    mParentActor->NoteDeletedActor();
+  }
+
   RemoveWorkerRef();
 }
 

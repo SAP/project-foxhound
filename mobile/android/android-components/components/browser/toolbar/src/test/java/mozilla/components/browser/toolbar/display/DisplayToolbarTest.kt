@@ -5,7 +5,6 @@
 package mozilla.components.browser.toolbar.display
 
 import android.graphics.Color
-import android.os.Build
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
@@ -31,7 +30,6 @@ import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,7 +41,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
-import org.robolectric.util.ReflectionHelpers
+import kotlin.test.assertNotNull
 import mozilla.components.ui.icons.R as iconsR
 
 @RunWith(AndroidJUnit4::class)
@@ -319,7 +317,7 @@ class DisplayToolbarTest {
 
         assertFalse(callbackExecuted)
 
-        view?.performClick()
+        view.performClick()
 
         assertTrue(callbackExecuted)
     }
@@ -406,7 +404,7 @@ class DisplayToolbarTest {
         val view = displayToolbar.views.pageActions.getChildAt(0)
 
         assertNotNull(view)
-        view!!.performClick()
+        view.performClick()
 
         assertTrue(listenerExecuted)
     }
@@ -560,7 +558,7 @@ class DisplayToolbarTest {
         displayToolbar.setUrlBackground(
             ContextCompat.getDrawable(
                 testContext,
-                iconsR.drawable.mozac_ic_broken_lock,
+                iconsR.drawable.mozac_ic_lock_slash_critical_24,
             ),
         )
 
@@ -583,8 +581,8 @@ class DisplayToolbarTest {
 
         val layoutParams = displayToolbar.views.background.layoutParams as? ConstraintLayout.LayoutParams
         assertNotNull(layoutParams)
-        assertEquals(margins.goneStartMargin, layoutParams?.goneStartMargin)
-        assertEquals(margins.goneEndMargin, layoutParams?.goneEndMargin)
+        assertEquals(margins.goneStartMargin, layoutParams.goneStartMargin)
+        assertEquals(margins.goneEndMargin, layoutParams.goneEndMargin)
     }
 
     @Test
@@ -684,24 +682,7 @@ class DisplayToolbarTest {
     }
 
     @Test
-    fun `color filter is set with transparent when securityIconColor changes to transparent and api version is lower than 23`() {
-        ReflectionHelpers.setStaticField(Build.VERSION::class.java, "SDK_INT", 22)
-        val (_, displayToolbar) = createDisplayToolbar()
-
-        assertNull(displayToolbar.views.siteInfoIndicator.colorFilter)
-
-        displayToolbar.colors = displayToolbar.colors.copy(
-            siteInfoIconSecure = Color.TRANSPARENT,
-            siteInfoIconInsecure = Color.TRANSPARENT,
-        )
-
-        assertNotNull(displayToolbar.views.siteInfoIndicator.colorFilter)
-    }
-
-    @Test
-    fun `color filter is cleared when securityIconColor changes to transparent and api version is bigger than 22`() {
-        ReflectionHelpers.setStaticField(Build.VERSION::class.java, "SDK_INT", 23)
-
+    fun `color filter is cleared when securityIconColor changes to transparent`() {
         val (_, displayToolbar) = createDisplayToolbar()
 
         assertNull(displayToolbar.views.siteInfoIndicator.colorFilter)

@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,9 +42,8 @@ class PageAction extends PageActionBase {
     const action = tab
       ? this.getContextData(tab)
       : this.helper.extractProperties(this.globals);
-    this.helper.sendRequest(tabId, {
+    this.helper.sendRequest(tabId, "GeckoView:PageAction:Update", {
       action,
-      type: "GeckoView:PageAction:Update",
     });
   }
 
@@ -55,9 +52,8 @@ class PageAction extends PageActionBase {
     const popupUri = this.triggerClickOrPopup(tab);
     const actionObject = this.getContextData(tab);
     const action = this.helper.extractProperties(actionObject);
-    this.helper.sendRequest(tab.id, {
+    this.helper.sendRequest(tab.id, "GeckoView:PageAction:OpenPopup", {
       action,
-      type: "GeckoView:PageAction:OpenPopup",
       popupUri,
     });
   }
@@ -72,6 +68,10 @@ class PageAction extends PageActionBase {
 
   dispatchClick() {
     this.clickDelegate.onClick();
+  }
+
+  isPanelShownBlockingOpenPopup(_window) {
+    return ExtensionActionHelper.isShowingAnyExtensionActionPopup();
   }
 }
 
@@ -144,6 +144,8 @@ this.pageAction = class extends ExtensionAPIPersistent {
         }).api(),
 
         openPopup() {
+          const window = windowTracker.getCurrentWindow(context);
+          action.throwIfOpenPopupIsBlockedByAnyAction(window);
           action.openPopup();
         },
       },

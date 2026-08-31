@@ -18,7 +18,6 @@
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["extensions.manifestV3.enabled", true],
       ["extensions.dnr.enabled", true],
       ["extensions.dnr.match_requests_from_other_extensions", true],
     ],

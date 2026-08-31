@@ -181,12 +181,8 @@
     const source_default_rate = ac.createMediaStreamSource(remoteStream);
 
     // Now try to add the remoteStream on a non default context
-    mustThrowWith(
-      "Connect stream with graph of different sample rate",
-      "NotSupportedError", () => {
-        nonDefault_ctx.createMediaStreamSource(remoteStream);
-      }
-    );
+    nonDefault_ctx.createMediaStreamSource(remoteStream);
+    ok(true, "Connect stream with graph of different sample rate is ok");
 
     // Close peer connections to make sure we don't get error:
     // "logged result after SimpleTest.finish(): pc1 addIceCandidate success"

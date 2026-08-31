@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<body>
+<button id="first">First</button>
+<button id="last">Last</button>
+
+<script>
+  window.addEventListener("focusin", e => {
+    const isWindow = e.target == window;
+    const name = isWindow ? "window" : e.target.tagName;
+    window.parent.postMessage({ id: e.target.id, name }, "*");
+  });
+</script>
+</body>
+</html>

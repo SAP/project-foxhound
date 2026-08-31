@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +6,8 @@
 #define GMPVideoi420FrameImpl_h_
 
 #include "gmp-video-frame-i420.h"
-#include "mozilla/ipc/Shmem.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/ipc/Shmem.h"
 #include "nsTArray.h"
 
 namespace mozilla::gmp {
@@ -17,19 +16,25 @@ class GMPPlaneData;
 class GMPVideoi420FrameData;
 class GMPVideoHostImpl;
 
-class GMPVideoi420FrameImpl final : public GMPVideoi420Frame {
- public:
-  explicit GMPVideoi420FrameImpl(GMPVideoHostImpl* aHost);
-  GMPVideoi420FrameImpl(const GMPVideoi420FrameData& aFrameData,
-                        ipc::Shmem&& aShmemBuffer, GMPVideoHostImpl* aHost);
-  GMPVideoi420FrameImpl(const GMPVideoi420FrameData& aFrameData,
-                        nsTArray<uint8_t>&& aArrayBuffer,
-                        GMPVideoHostImpl* aHost);
-  virtual ~GMPVideoi420FrameImpl();
+enum class HostReportPolicy : uint8_t {
+  None,
+  Destroyed,
+};
 
-  // This is called during a normal destroy sequence, which is
-  // when a consumer is finished or during XPCOM shutdown.
-  void DoneWithAPI();
+class GMPVideoi420FrameImpl : public GMPVideoi420Frame {
+ public:
+  explicit GMPVideoi420FrameImpl(
+      GMPVideoHostImpl* aHost,
+      HostReportPolicy aReportPolicy = HostReportPolicy::None);
+  GMPVideoi420FrameImpl(
+      const GMPVideoi420FrameData& aFrameData, ipc::Shmem&& aShmemBuffer,
+      GMPVideoHostImpl* aHost,
+      HostReportPolicy aReportPolicy = HostReportPolicy::None);
+  GMPVideoi420FrameImpl(
+      const GMPVideoi420FrameData& aFrameData, nsTArray<uint8_t>&& aArrayBuffer,
+      GMPVideoHostImpl* aHost,
+      HostReportPolicy aReportPolicy = HostReportPolicy::None);
+  virtual ~GMPVideoi420FrameImpl();
 
   static bool CheckFrameData(const GMPVideoi420FrameData& aFrameData,
                              size_t aBufferSize);
@@ -75,7 +80,7 @@ class GMPVideoi420FrameImpl final : public GMPVideoi420Frame {
   const uint8_t* Buffer() const;
   int32_t AllocatedSize() const;
 
- private:
+ protected:
   struct GMPFramePlane {
     explicit GMPFramePlane(const GMPPlaneData& aPlaneData);
     GMPFramePlane() = default;
@@ -96,9 +101,12 @@ class GMPVideoi420FrameImpl final : public GMPVideoi420Frame {
   bool CheckDimensions(int32_t aWidth, int32_t aHeight, int32_t aStride_y,
                        int32_t aStride_u, int32_t aStride_v);
   GMPErr MaybeResize(int32_t aNewSize);
-  void DestroyBuffer();
 
-  GMPVideoHostImpl* mHost;
+ public:
+  const HostReportPolicy mReportPolicy;
+
+ protected:
+  RefPtr<GMPVideoHostImpl> mHost;
   nsTArray<uint8_t> mArrayBuffer;
   ipc::Shmem mShmemBuffer;
   GMPFramePlane mYPlane;

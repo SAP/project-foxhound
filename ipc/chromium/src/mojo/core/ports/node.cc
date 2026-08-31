@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <memory>
 #include <utility>
 #include <vector>
 
@@ -2126,8 +2125,6 @@ Node::DelegateHolder::DelegateHolder(Node* node, NodeDelegate* delegate)
     : node_(node), delegate_(delegate) {
   DCHECK(node_);
 }
-
-Node::DelegateHolder::~DelegateHolder() = default;
 
 #ifdef DEBUG
 void Node::DelegateHolder::EnsureSafeDelegateAccess() const {

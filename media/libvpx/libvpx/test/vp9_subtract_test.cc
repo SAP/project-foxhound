@@ -24,10 +24,10 @@
 #include "vpx_mem/vpx_mem.h"
 #include "vpx_ports/vpx_timer.h"
 
-typedef void (*SubtractFunc)(int rows, int cols, int16_t *diff_ptr,
-                             ptrdiff_t diff_stride, const uint8_t *src_ptr,
-                             ptrdiff_t src_stride, const uint8_t *pred_ptr,
-                             ptrdiff_t pred_stride);
+using SubtractFunc = void (*)(int rows, int cols, int16_t *diff_ptr,
+                              ptrdiff_t diff_stride, const uint8_t *src_ptr,
+                              ptrdiff_t src_stride, const uint8_t *pred_ptr,
+                              ptrdiff_t pred_stride);
 
 namespace vp9 {
 
@@ -132,7 +132,7 @@ TEST_P(VP9SubtractBlockTest, SimpleSubtract) {
 INSTANTIATE_TEST_SUITE_P(C, VP9SubtractBlockTest,
                          ::testing::Values(vpx_subtract_block_c));
 
-#if HAVE_SSE2
+#if HAVE_SSE2 && HAVE_X86_ASM
 INSTANTIATE_TEST_SUITE_P(SSE2, VP9SubtractBlockTest,
                          ::testing::Values(vpx_subtract_block_sse2));
 #endif
@@ -166,10 +166,10 @@ INSTANTIATE_TEST_SUITE_P(LSX, VP9SubtractBlockTest,
 
 #if CONFIG_VP9_HIGHBITDEPTH
 
-typedef void (*HBDSubtractFunc)(int rows, int cols, int16_t *diff_ptr,
-                                ptrdiff_t diff_stride, const uint8_t *src_ptr,
-                                ptrdiff_t src_stride, const uint8_t *pred_ptr,
-                                ptrdiff_t pred_stride, int bd);
+using HBDSubtractFunc = void (*)(int rows, int cols, int16_t *diff_ptr,
+                                 ptrdiff_t diff_stride, const uint8_t *src_ptr,
+                                 ptrdiff_t src_stride, const uint8_t *pred_ptr,
+                                 ptrdiff_t pred_stride, int bd);
 
 // <BLOCK_SIZE, bit_depth, optimized subtract func, reference subtract func>
 using Params = std::tuple<BLOCK_SIZE, int, HBDSubtractFunc, HBDSubtractFunc>;

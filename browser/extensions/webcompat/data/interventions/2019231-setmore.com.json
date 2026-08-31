@@ -1,0 +1,17 @@
+{
+  "label": "setmore.com",
+  "bugs": {
+    "2019231": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://*.setmore.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["support_nonstandard_timezones.js"]
+      }
+    }
+  ]
+}

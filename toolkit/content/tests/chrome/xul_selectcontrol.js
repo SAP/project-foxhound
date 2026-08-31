@@ -301,7 +301,8 @@ function test_nsIDOMXULSelectControlElement_States(
   }
 }
 
-/** test_nsIDOMXULSelectControlElement_UI
+/**
+ * test_nsIDOMXULSelectControlElement_UI
  *
  * Test the UI aspects of an element which implements nsIDOMXULSelectControlElement
  *

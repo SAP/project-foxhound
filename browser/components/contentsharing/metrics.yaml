@@ -1,0 +1,81 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Firefox :: Sharing'
+
+collection_share:
+  dialog_open:
+    type: event
+    description: Recorded when the share dialog opens. Includes the type of share and the user signed-in state.
+    extra_keys:
+      signed_in:
+        type: boolean
+        description: Boolean indicating if the user was signed in to the server when the share modal was opened.
+      share_type:
+        type: string
+        description: Source of the share. One of "bookmarks", "tabs", "tab_group".
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2025893
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2025893
+    notification_emails:
+      - jhirsch@mozilla.com
+      - nbaumgardner@mozilla.com
+      - nbarrett@mozilla.com
+      - fterdal@mozilla.com
+    expires: never
+  cta_clicked:
+    type: event
+    description: Recorded when a button is clicked in the share modal. Includes the user signed-in state and the button ID.
+    extra_keys:
+      button:
+        type: string
+        description: ID of the modal button that was clicked. One of "copy-button", "sign-in", "view-page".
+      signed_in:
+        type: boolean
+        description: Boolean indicating if the user was signed in to the server when the share modal was opened.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2025893
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2025893
+    notification_emails:
+      - jhirsch@mozilla.com
+      - nbaumgardner@mozilla.com
+      - nbarrett@mozilla.com
+      - fterdal@mozilla.com
+    expires: never
+  error:
+    type: event
+    description: >
+      Recorded when an error occurs during share creation. For HTTP errors,
+      includes the status code. For non-HTTP errors (e.g. schema validation
+      failure, missing server URL, network error), includes the error type.
+    extra_keys:
+      status_code:
+        type: quantity
+        unit: integer
+        description: HTTP status code returned by the server.
+      error_type:
+        type: string
+        description: >
+          Type of non-HTTP error. One of "invalid-schema-error",
+          "generic-error", or "max-retry-attempts-error".
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2025893
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2042366
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2025893
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2042366
+    notification_emails:
+      - jhirsch@mozilla.com
+      - nbaumgardner@mozilla.com
+      - nbarrett@mozilla.com
+      - fterdal@mozilla.com
+    expires: never

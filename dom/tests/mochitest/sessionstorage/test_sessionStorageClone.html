@@ -16,8 +16,6 @@ async function doNextTest()
   // Make sure we do not unpartition storage inappropriately
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["privacy.partition.always_partition_third_party_non_cookie_storage", true],
-      ["privacy.partition.always_partition_third_party_non_cookie_storage.exempt_sessionstorage", false],
       ["privacy.restrict3rdpartystorage.heuristic.window_open", false],
     ],
   });

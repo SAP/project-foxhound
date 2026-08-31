@@ -1,20 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workers_WorkerLoadContext_h__
-#define mozilla_dom_workers_WorkerLoadContext_h__
+#ifndef mozilla_dom_workers_WorkerLoadContext_h_
+#define mozilla_dom_workers_WorkerLoadContext_h_
 
+#include "js/loader/LoadContextBase.h"
+#include "js/loader/ScriptKind.h"
+#include "js/loader/ScriptLoadRequest.h"
+#include "mozilla/CORSMode.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/dom/Promise.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
 #include "nsIRequest.h"
-#include "mozilla/CORSMode.h"
-#include "mozilla/dom/Promise.h"
-#include "js/loader/ScriptKind.h"
-#include "js/loader/ScriptLoadRequest.h"
-#include "js/loader/LoadContextBase.h"
 
 class nsIReferrerInfo;
 class nsIURI;
@@ -102,9 +101,7 @@ class WorkerLoadContext : public JS::loader::LoadContextBase {
                     bool aOnlyExistingCachedResourcesAllowed);
 
   // Used to detect if the `is top-level` bit is set on a given module.
-  bool IsTopLevel() {
-    return mRequest->IsTopLevel() && (mKind == Kind::MainScript);
-  };
+  bool IsTopLevel();
 
   static Kind GetKind(bool isMainScript, bool isDebuggerScript) {
     if (isDebuggerScript) {
@@ -181,9 +178,12 @@ class ThreadSafeRequestHandle final {
 
   JS::loader::ScriptLoadRequest* GetRequest() const { return mRequest; }
 
-  WorkerLoadContext* GetContext() { return mRequest->GetWorkerLoadContext(); }
+  WorkerLoadContext* GetContext();
 
   bool IsEmpty() { return !mRequest; }
+
+  // Sets the owning runnable. Called on the main thread before loading begins.
+  void SetRunnable(workerinternals::loader::ScriptLoaderRunnable* aRunnable);
 
   // Runnable controls
   nsresult OnStreamComplete(nsresult aStatus);
@@ -202,18 +202,24 @@ class ThreadSafeRequestHandle final {
 
   already_AddRefed<JS::loader::ScriptLoadRequest> ReleaseRequest();
 
-  workerinternals::loader::CacheCreator* GetCacheCreator();
-
-  RefPtr<workerinternals::loader::ScriptLoaderRunnable> mRunnable;
+  already_AddRefed<workerinternals::loader::CacheCreator> GetCacheCreator();
 
   bool mExecutionScheduled = false;
 
  private:
   ~ThreadSafeRequestHandle();
 
+  // Protects mRunnable, which is read on the main thread by the accessors above
+  // but cleared on the worker thread by ReleaseRequest(). Without this lock the
+  // unsynchronized read/write races and the ScriptLoaderRunnable can be freed
+  // while a main-thread accessor is dereferencing it.
+  mozilla::Mutex mMutex{"ThreadSafeRequestHandle::mMutex"};
+  RefPtr<workerinternals::loader::ScriptLoaderRunnable> mRunnable
+      MOZ_GUARDED_BY(mMutex);
+
   RefPtr<JS::loader::ScriptLoadRequest> mRequest;
   nsCOMPtr<nsISerialEventTarget> mOwningEventTarget;
 };
 
 }  // namespace mozilla::dom
-#endif /* mozilla_dom_workers_WorkerLoadContext_h__ */
+#endif /* mozilla_dom_workers_WorkerLoadContext_h_ */

@@ -1,15 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWrapperCacheInline_h___
-#define nsWrapperCacheInline_h___
+#ifndef nsWrapperCacheInline_h_
+#define nsWrapperCacheInline_h_
 
-#include "nsWrapperCache.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
+#include "nsWrapperCache.h"
 
 inline JSObject* nsWrapperCache::GetWrapperPreserveColor() const {
   JSObject* obj = GetWrapperMaybeDead();
@@ -69,30 +67,4 @@ inline void nsWrapperCache::MarkWrapperLive() {
   GetWrapper();
 }
 
-template <typename T>
-inline void nsWrapperCache::UpdateWrapperForNewGlobal(T* aScriptObjectHolder,
-                                                      JSObject* aNewWrapper) {
-  // If the new wrapper is in a different zone we must ensure the
-  // DropJSObjects/HoldJSObjects are called to move the holder to the new zone.
-
-  bool preserving = PreservingWrapper();
-  bool zoneChanged =
-      preserving && (JS::GetObjectZone(GetWrapperPreserveColor()) !=
-                     JS::GetObjectZone(aNewWrapper));
-
-  if (zoneChanged) {
-    ReleaseWrapper(aScriptObjectHolder);
-  } else if (preserving) {
-    SetPreservingWrapper(false);
-  }
-
-  SetWrapper(aNewWrapper);
-
-  if (zoneChanged) {
-    PreserveWrapper(aScriptObjectHolder);
-  } else if (preserving) {
-    SetPreservingWrapper(true);
-  }
-}
-
-#endif /* nsWrapperCache_h___ */
+#endif /* nsWrapperCache_h_ */

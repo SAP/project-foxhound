@@ -9,11 +9,11 @@ That {doc}`viaduct` must be initialized during application startup.
 ## Async
 
 The Relevancy API is synchronous, which means calling it directly will block the current
-thread.  To deal with this, all current consumers wrap the API in order to make it async.  For
+thread. To deal with this, all current consumers wrap the API in order to make it async. For
 details on this wrapping, see the consumer code itself.
 
-On JS, this wrapping is handled automatically by UniFFI.  See
-https://searchfox.org/mozilla-central/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml
+On JS, this wrapping is handled automatically by UniFFI. See
+<https://searchfox.org/firefox-main/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml>
 for details on which functions/methods are wrapped to be async.
 
 ## Setting up the store
@@ -21,6 +21,7 @@ for details on which functions/methods are wrapped to be async.
 To use the `RelevancyStore` in either Kotlin or Swift, you need to import the relevant classes and data types from the `MozillaAppServices` library.
 
 :::{tab-set-code}
+
 ```kotlin
 import mozilla.appservices.relevancy.RelevancyStore
 import mozilla.appservices.relevancy.InterestVector
@@ -41,8 +42,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 const store = RelevancyStore.init(dbPath);
 ```
-:::
 
+:::
 
 * `dbPath`: This is the path to the SQLite database where the relevancy data is stored. The initialization is non-blocking, and the database is opened lazily.
 
@@ -50,9 +51,10 @@ const store = RelevancyStore.init(dbPath);
 
 To build the user's interest vector, call the `ingest` function with a list of URLs ranked by frequency. This method downloads the interest data, classifies the user's top URLs, and builds the interest vector. This process may take time and should only be called from a worker thread.
 
-### Example usage of `ingest`:
+### Example usage of `ingest`
 
 :::{tab-set-code}
+
 ```kotlin
 val topUrlsByFrequency = listOf("https://example.com", "https://another-example.com")
 val interestVector = store.ingest(topUrlsByFrequency)
@@ -67,6 +69,7 @@ let interestVector = store.ingest(topUrlsByFrequency)
 const topUrlsByFrequency = ["https://example.com", "https://another-example.com"];
 const interestVector = await store.ingest(topUrlsByFrequency);
 ```
+
 :::
 
 * `topUrlsByFrequency`: A list of URLs ranked by how often and recently the user has visited them. This data is used to build the user's interest vector.

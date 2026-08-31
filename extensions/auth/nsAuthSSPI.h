@@ -1,10 +1,9 @@
-/* vim:set ts=4 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAuthSSPI_h__
-#define nsAuthSSPI_h__
+#ifndef nsAuthSSPI_h_
+#define nsAuthSSPI_h_
 
 #include "nsAuth.h"
 #include "nsIAuthModule.h"
@@ -57,4 +56,4 @@ class nsAuthSSPI final : public nsIAuthModule {
   uint32_t mCertDERLength;
 };
 
-#endif /* nsAuthSSPI_h__ */
+#endif /* nsAuthSSPI_h_ */

@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaResult.h"
+
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Promise.h"
@@ -25,7 +24,7 @@ void MediaResult::ThrowTo(ErrorResult& aRv) const {
   case code:                     \
     aRv.Throw##name(mMessage);   \
     break;
-#include "mozilla/dom/DOMExceptionNames.h"
+#include "mozilla/dom/DOMExceptionNames.inc"
     EXTENDED_EXCEPTIONS
     default:
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -45,7 +44,7 @@ void MediaResult::RejectTo(dom::Promise* aPromise) const {
   case code:                                   \
     aPromise->MaybeRejectWith##name(mMessage); \
     break;
-#include "mozilla/dom/DOMExceptionNames.h"
+#include "mozilla/dom/DOMExceptionNames.inc"
     EXTENDED_EXCEPTIONS
     default:
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED

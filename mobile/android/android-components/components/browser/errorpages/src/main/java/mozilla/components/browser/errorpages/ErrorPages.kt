@@ -33,6 +33,7 @@ object ErrorPages {
         htmlResource: String = HTML_RESOURCE_FILE,
         titleOverride: (ErrorType) -> String? = { null },
         descriptionOverride: (ErrorType) -> String? = { null },
+        isPrivate: Boolean = false,
     ): String {
         val title = titleOverride(errorType) ?: context.getString(errorType.titleRes)
         val button = context.getString(errorType.refreshButtonRes)
@@ -90,7 +91,8 @@ object ErrorPages {
             "&badCertAcceptTemporary=${badCertAcceptTemporary.urlEncode()}" +
             "&showContinueHttp=${showContinueHttp.urlEncode()}" +
             "&continueHttpButton=${continueHttpButton.urlEncode()}" +
-            "&errorCode=${errorCode.urlEncode()}"
+            "&errorCode=${errorCode.urlEncode()}" +
+            "&isPrivate=$isPrivate"
 
         urlEncodedErrorPage = urlEncodedErrorPage
             .replace("<ul>".urlEncode(), "<ul role=\"presentation\">".urlEncode())
@@ -239,6 +241,10 @@ enum class ErrorType(
     ERROR_SAFEBROWSING_PHISHING_URI(
         R.string.mozac_browser_errorpages_safe_phishing_uri_title,
         R.string.mozac_browser_errorpages_safe_phishing_uri_message,
+    ),
+    ERROR_HARMFULADDON_URI(
+        R.string.mozac_browser_errorpages_harmful_addon_uri_title,
+        R.string.mozac_browser_errorpages_harmful_addon_uri_message,
     ),
     ERROR_HTTPS_ONLY(
         R.string.mozac_browser_errorpages_httpsonly_title,

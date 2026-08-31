@@ -7,6 +7,10 @@
 "use strict";
 
 add_task(async function () {
+  // Disable the Local Mode notification as it forces the toolbox to resize
+  // which cause some unexpected updates in the storage panel.
+  await pushPref("devtools.local-mode.noticed", true);
+
   const TESTPAGE = "storage-file-url.html";
 
   // We need to load TESTPAGE using a file:// path so we need to get that from

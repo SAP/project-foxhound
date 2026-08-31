@@ -5,6 +5,7 @@
 """
 Utility functions for the glean_parser-based code generator
 """
+
 import copy
 from hashlib import sha1
 
@@ -101,15 +102,24 @@ def type_ids_and_categories(objs) -> tuple[dict[str, tuple[int, list[str]]], lis
     (If it didn't, it would supply args in the wrong order to metric type
     constructors with multiple extra args (e.g. custom_distribution)).
     """
+    metric_types = set()
     metric_type_ids = {}
     categories = []
 
-    for category_name, objs in get_metrics(objs).items():
+    for category_name, objects in get_metrics(objs).items():
+        for metric in objects.values():
+            if metric.type not in metric_type_ids:
+                metric_types.add(metric.type)
+    metric_types = sorted(metric_types)
+
+    for category_name, objects in get_metrics(objs).items():
         categories.append(category_name)
 
-        for metric in objs.values():
+        for metric in objects.values():
             if metric.type not in metric_type_ids:
-                type_id = len(metric_type_ids) + 1
+                type_id = (
+                    next(i for i, v in enumerate(metric_types) if v == metric.type) + 1
+                )
                 args = util.common_metric_args.copy()
                 for arg_name in util.extra_metric_args:
                     if hasattr(metric, arg_name):

@@ -16,7 +16,7 @@ info: |
     c. If mapping is true, then
       i. Let mappedValue be ? Call(mapfn, T, « kValue, k »).
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 flags: [onlyStrict]
 features: [BigInt, TypedArray]
 ---*/
@@ -35,6 +35,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.sameValue(results.length, 2);
   assert.sameValue(results[0], undefined);
   assert.sameValue(results[1], undefined);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

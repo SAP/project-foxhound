@@ -10,17 +10,15 @@
 
 #include "modules/audio_processing/agc2/noise_level_estimator.h"
 
-#include <array>
 #include <cmath>
-#include <functional>
-#include <limits>
 
 #include "api/audio/audio_view.h"
 #include "api/function_view.h"
 #include "modules/audio_processing/agc2/agc2_testing_common.h"
 #include "modules/audio_processing/agc2/vector_float_frame.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
-#include "rtc_base/gunit.h"
+#include "rtc_base/checks.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 namespace {
@@ -34,7 +32,7 @@ float RunEstimator(FunctionView<float()> sample_generator,
                    NoiseLevelEstimator& estimator,
                    int sample_rate_hz) {
   const int samples_per_channel =
-      rtc::CheckedDivExact(sample_rate_hz, kFramesPerSecond);
+      CheckedDivExact(sample_rate_hz, kFramesPerSecond);
   VectorFloatFrame signal(1, samples_per_channel, 0.0f);
   for (int i = 0; i < kNumIterations; ++i) {
     DeinterleavedView<float> frame_view = signal.view();

@@ -48,12 +48,13 @@ add_task(async function () {
     "Selecting a flex item and expecting the flex container properties to not be " +
       "shown."
   );
-  const onFlexHeaderRendered = waitForDOM(doc, ".flex-header");
   await selectNode("#item", inspector);
-  const [flexHeader] = await onFlexHeaderRendered;
 
-  ok(
-    !flexHeader.querySelector(".flex-header-container-properties"),
-    "The flex container properties is not shown in the header."
-  );
+  await waitFor(() => {
+    const flexHeader = doc.querySelector(".flex-header");
+    return (
+      flexHeader &&
+      !flexHeader.querySelector(".flex-header-container-properties")
+    );
+  }, "The flex container properties is not shown in the header.");
 });

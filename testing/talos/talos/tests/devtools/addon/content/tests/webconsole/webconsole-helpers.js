@@ -10,9 +10,9 @@ const {
 } = require("damp-test/tests/head");
 
 /**
- * @param {String} label: The name of the test.
+ * @param {string} label: The name of the test.
  * @param {Toolbox} toolbox: The DevTools toolbox.
- * @param {Number|Array} expectedMessages: This can be, either the number of messages that
+ * @param {number | Array} expectedMessages: This can be, either the number of messages that
  *        need to be displayed in the console, or an array of objects representing the
  *        messages that need to be in the output. The objects must have the following shape:
  *          - {String} text: A string that should be in the message.

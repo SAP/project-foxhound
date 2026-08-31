@@ -12,6 +12,8 @@ pub type __u64 = c_ulonglong;
 pub type __s64 = c_longlong;
 
 s! {
+    // FIXME(1.0): This should not implement `PartialEq`
+    #[allow(unpredictable_function_pointer_comparisons)]
     pub struct sigaction {
         pub sa_sigaction: crate::sighandler_t,
         pub sa_mask: crate::sigset_t,
@@ -26,14 +28,14 @@ s! {
 
     pub struct stat {
         pub st_dev: c_ulonglong,
-        __pad0: [c_uchar; 4],
+        __pad0: Padding<[c_uchar; 4]>,
         __st_ino: crate::ino_t,
         pub st_mode: c_uint,
         pub st_nlink: crate::nlink_t,
         pub st_uid: crate::uid_t,
         pub st_gid: crate::gid_t,
         pub st_rdev: c_ulonglong,
-        __pad3: [c_uchar; 4],
+        __pad3: Padding<[c_uchar; 4]>,
         pub st_size: c_longlong,
         pub st_blksize: crate::blksize_t,
         pub st_blocks: c_ulonglong,
@@ -48,14 +50,14 @@ s! {
 
     pub struct stat64 {
         pub st_dev: c_ulonglong,
-        __pad0: [c_uchar; 4],
+        __pad0: Padding<[c_uchar; 4]>,
         __st_ino: crate::ino_t,
         pub st_mode: c_uint,
         pub st_nlink: crate::nlink_t,
         pub st_uid: crate::uid_t,
         pub st_gid: crate::gid_t,
         pub st_rdev: c_ulonglong,
-        __pad3: [c_uchar; 4],
+        __pad3: Padding<[c_uchar; 4]>,
         pub st_size: c_longlong,
         pub st_blksize: crate::blksize_t,
         pub st_blocks: c_ulonglong,
@@ -122,7 +124,7 @@ s! {
         pendingReaders: c_int,
         pendingWriters: c_int,
         attr: i32,
-        __reserved: [c_char; 12],
+        __reserved: Padding<[c_char; 12]>,
     }
 
     pub struct pthread_barrier_t {
@@ -181,18 +183,6 @@ s_no_extra_traits! {
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "extra_traits")] {
-        impl fmt::Debug for sigset64_t {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("sigset64_t")
-                    .field("__bits", &self.__bits)
-                    .finish()
-            }
-        }
-    }
-}
-
 // These constants must be of the same type of sigaction.sa_flags
 pub const SA_NOCLDSTOP: c_int = 0x00000001;
 pub const SA_NOCLDWAIT: c_int = 0x00000002;
@@ -219,7 +209,7 @@ pub const PTHREAD_RWLOCK_INITIALIZER: pthread_rwlock_t = pthread_rwlock_t {
     pendingReaders: 0,
     pendingWriters: 0,
     attr: 0,
-    __reserved: [0; 12],
+    __reserved: Padding::uninit(),
 };
 pub const PTHREAD_STACK_MIN: size_t = 4096 * 2;
 pub const CPU_SETSIZE: size_t = 32;

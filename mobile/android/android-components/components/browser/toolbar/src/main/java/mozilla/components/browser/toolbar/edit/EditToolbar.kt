@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.inputmethod.EditorInfoCompat
 import androidx.core.view.isVisible
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import mozilla.components.browser.toolbar.AsyncFilterListener
@@ -81,14 +82,16 @@ class EditToolbar internal constructor(
         @param:ColorInt val suggestionForeground: Int?,
     )
 
-    private val autocompleteDispatcher = SupervisorJob() +
+    private val autocompleteScope = CoroutineScope(
+        SupervisorJob() +
         Executors.newFixedThreadPool(
             AUTOCOMPLETE_QUERY_THREADS,
             NamedThreadFactory("EditToolbar"),
         ).asCoroutineDispatcher() +
         CoroutineExceptionHandler { _, throwable ->
             logger.error("Error while processing autocomplete input", throwable)
-        }
+        },
+    )
 
     @VisibleForTesting(otherwise = PRIVATE)
     internal val views = EditToolbarViews(
@@ -237,10 +240,13 @@ class EditToolbar internal constructor(
 
     internal var editListener: Toolbar.OnEditListener? = null
 
+    private var currentFilterListener: AsyncFilterListener? = null
+
     internal fun setAutocompleteListener(filter: suspend (String, AutocompleteDelegate) -> Unit) {
-        views.url.setOnFilterListener(
-            AsyncFilterListener(views.url, autocompleteDispatcher, filter),
-        )
+        currentFilterListener?.close()
+        val listener = AsyncFilterListener(views.url, autocompleteScope, filter)
+        currentFilterListener = listener
+        views.url.setOnFilterListener(listener)
     }
 
     /**

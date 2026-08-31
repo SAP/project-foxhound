@@ -23,7 +23,7 @@
 extern "C" {
 #endif
 
-#define DOUBLE_DIVIDE_CHECK(x) ((x) < 0 ? (x)-0.000001 : (x) + 0.000001)
+#define DOUBLE_DIVIDE_CHECK(x) ((x) < 0 ? (x) - 0.000001 : (x) + 0.000001)
 
 #define MIN_ZERO_MOTION 0.95
 #define MAX_SR_CODED_ERROR 40
@@ -68,6 +68,10 @@ typedef struct FIRSTPASS_STATS {
    * Best of intra pred error and inter pred error using golden frame as ref.
    */
   double sr_coded_error;
+  /*!
+   * Best of intra pred error and inter pred error using long term frame as ref.
+   */
+  double lt_coded_error;
   /*!
    * Percentage of blocks with inter pred error < intra pred error.
    */
@@ -393,6 +397,9 @@ typedef struct GF_GROUP {
   int skip_frame_as_ref[MAX_STATIC_GF_GROUP_LENGTH];
   // Indicates whether a switch frame is due.
   bool is_sframe_due;
+  // Indicates whether the ref frame map is overridden by the external rate
+  // control.
+  int use_ext_ref_frame_map[MAX_STATIC_GF_GROUP_LENGTH];
   /*!\endcond */
 } GF_GROUP;
 /*!\cond */
@@ -482,6 +489,9 @@ typedef struct {
   int64_t coded_error;
   // Best of intra pred error and inter pred error using golden frame as ref.
   int64_t sr_coded_error;
+  // Best of coded error using long term reference.
+  int64_t lt_coded_error;
+
   // Count of motion vector.
   int mv_count;
   // Count of blocks that pick inter prediction (inter pred error is smaller

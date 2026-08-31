@@ -218,7 +218,7 @@ exports.openResponseDetailsPanel = async function (label, toolbox) {
   const request = document.querySelectorAll(".request-list-item")[0];
   const waitForEditor = waitForDOMElement(
     monitor,
-    "#response-panel .CodeMirror.cm-s-mozilla"
+    "#response-panel .cm-editor"
   );
   mouseDownElement(request, win);
   await waitForEditor;

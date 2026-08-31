@@ -67,7 +67,7 @@ class FrameGeneratorCapturerVideoTrackSource : public VideoTrackSource {
         video_capturer_(std::move(video_capturer)),
         is_screencast_(is_screencast) {}
 
-  ~FrameGeneratorCapturerVideoTrackSource() = default;
+  ~FrameGeneratorCapturerVideoTrackSource() override = default;
 
   void Start() {
     SetState(kLive);
@@ -82,7 +82,7 @@ class FrameGeneratorCapturerVideoTrackSource : public VideoTrackSource {
   bool is_screencast() const override { return is_screencast_; }
 
  protected:
-  rtc::VideoSourceInterface<VideoFrame>* source() override {
+  VideoSourceInterface<VideoFrame>* source() override {
     return video_capturer_.get();
   }
 

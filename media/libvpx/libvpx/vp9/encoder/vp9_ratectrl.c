@@ -856,15 +856,19 @@ int vp9_rc_regulate_q(const VP9_COMP *cpi, int target_bits_per_frame,
           frame_type, i, correction_factor, cm->bit_depth);
     }
 
+    int diff_bits = (int)VPXMIN(
+        VPXMAX(((int64_t)target_bits_per_mb - (int64_t)bits_per_mb_at_this_q),
+               -INT_MAX),
+        INT_MAX);
     if (bits_per_mb_at_this_q <= target_bits_per_mb) {
-      if ((target_bits_per_mb - bits_per_mb_at_this_q) <= last_error)
+      if (diff_bits <= last_error)
         q = i;
       else
         q = i - 1;
 
       break;
     } else {
-      last_error = bits_per_mb_at_this_q - target_bits_per_mb;
+      last_error = -diff_bits;
     }
   } while (++i <= active_worst_quality);
 
@@ -1634,8 +1638,8 @@ int vp9_rc_pick_q_and_bounds(const VP9_COMP *cpi, int *bottom_index,
                                           gf_group_index);
   }
   if (cpi->sf.use_nonrd_pick_mode) {
-    if (cpi->sf.force_frame_boost == 1) q -= cpi->sf.max_delta_qindex;
-
+    if (cpi->sf.force_frame_boost == 1)
+      q = VPXMAX(q - cpi->sf.max_delta_qindex, cpi->rc.best_quality);
     if (q < *bottom_index)
       *bottom_index = q;
     else if (q > *top_index)
@@ -1796,7 +1800,9 @@ static void update_altref_usage(VP9_COMP *const cpi) {
   int arf_frame_usage = 0;
   int mi_row, mi_col;
   if (cpi->rc.alt_ref_gf_group && !cpi->rc.is_src_frame_alt_ref &&
-      !cpi->refresh_golden_frame && !cpi->refresh_alt_ref_frame)
+      !cpi->refresh_golden_frame && !cpi->refresh_alt_ref_frame &&
+      cpi->count_arf_frame_usage != NULL &&
+      cpi->count_lastgolden_frame_usage != NULL)
     for (mi_row = 0; mi_row < cm->mi_rows; mi_row += 8) {
       for (mi_col = 0; mi_col < cm->mi_cols; mi_col += 8) {
         int sboffset = ((cm->mi_cols + 7) >> 3) * (mi_row >> 3) + (mi_col >> 3);
@@ -2157,7 +2163,7 @@ int vp9_calc_pframe_target_size_one_pass_cbr(const VP9_COMP *cpi) {
       VPXMAX(rc->avg_frame_bandwidth >> 4, FRAME_OVERHEAD_BITS);
   int64_t target;
 
-  if (oxcf->gf_cbr_boost_pct) {
+  if (oxcf->gf_cbr_boost_pct && rc->baseline_gf_interval != INT_MAX) {
     const int af_ratio_pct = oxcf->gf_cbr_boost_pct + 100;
     target = cpi->refresh_golden_frame
                  ? ((int64_t)rc->avg_frame_bandwidth *
@@ -3274,7 +3280,6 @@ int vp9_encodedframe_overshoot(VP9_COMP *cpi, int frame_size, int *q) {
     int enumerator;
     // Set a larger QP.
     if (cpi->oxcf.content != VP9E_CONTENT_SCREEN &&
-        cm->width * cm->height >= 1280 * 720 &&
         (rc->buffer_level > (3 * rc->optimal_buffer_level) >> 2) &&
         (cpi->rc.avg_source_sad[0] < sad_thr)) {
       *q = (*q + cpi->rc.worst_quality) >> 1;

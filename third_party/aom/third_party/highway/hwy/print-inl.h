@@ -15,6 +15,8 @@
 
 // Print() function
 
+#include <stddef.h>
+
 #include "third_party/highway/hwy/highway.h"
 #include "third_party/highway/hwy/print.h"
 

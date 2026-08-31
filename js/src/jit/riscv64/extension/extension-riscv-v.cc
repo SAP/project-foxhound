@@ -6,7 +6,7 @@
 #include "jit/riscv64/extension/extension-riscv-v.h"
 
 #ifdef CAN_USE_RVV
-#  include "src/codegen/assembler.h"
+#  include "jit/riscv64/base/Integer.h"
 #  include "jit/riscv64/constant/Constant-riscv64.h"
 #  include "jit/riscv64/extension/register-riscv.h"
 

@@ -8,21 +8,18 @@ from marionette_harness import MarionetteTestCase, WindowManagerMixin
 
 class TestSSLStatusAfterRestart(WindowManagerMixin, MarionetteTestCase):
     def setUp(self):
-        super(TestSSLStatusAfterRestart, self).setUp()
+        super().setUp()
         self.marionette.set_context("chrome")
 
         self.test_url = "https://www.itisatrap.org/"
 
         # Set browser to restore previous session
         self.marionette.set_pref("browser.startup.page", 3)
-        # Disable rcwn to make cache behavior deterministic
-        self.marionette.set_pref("network.http.rcwn.enable", False)
 
     def tearDown(self):
         self.marionette.clear_pref("browser.startup.page")
-        self.marionette.clear_pref("network.http.rcwn.enable")
 
-        super(TestSSLStatusAfterRestart, self).tearDown()
+        super().tearDown()
 
     def test_ssl_status_after_restart(self):
         with self.marionette.using_context("content"):

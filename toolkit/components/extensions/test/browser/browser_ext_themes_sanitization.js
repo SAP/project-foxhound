@@ -36,7 +36,7 @@ add_task(async function test_sanitization_css_variables() {
         colors: {
           frame: ACCENT_COLOR,
           tab_background_text: TEXT_COLOR,
-          bookmark_text: "var(--arrowpanel-dimmed)",
+          bookmark_text: "var(--panel-background-color-dimmed)",
         },
       },
     },

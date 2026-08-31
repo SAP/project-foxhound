@@ -17,7 +17,7 @@ loader.lazyRequireGetter(
  * Creates an actor for the specified symbol.
  *
  * @param {ThreadActor} threadActor: The related thread actor.
- * @param {Symbol} symbol: The symbol we want to create an actor for.
+ * @param {symbol} symbol: The symbol we want to create an actor for.
  */
 class SymbolActor extends Actor {
   constructor(threadActor, symbol) {

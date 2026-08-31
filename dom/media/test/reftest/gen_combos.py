@@ -69,83 +69,75 @@ WEBM = cross_combine([{"ext": "webm"}], keyed_combiner("vcodec", WEBM_CODECS))
 
 # -
 
-FORMAT_LIST = set(
-    [
-        "yuv420p",
-        "yuv420p10",
-        # 'yuv420p12',
-        # 'yuv420p16be',
-        # 'yuv420p16le',
-        "gbrp",
-    ]
-)
+FORMAT_LIST = set([
+    "yuv420p",
+    "yuv420p10",
+    # 'yuv420p12',
+    # 'yuv420p16be',
+    # 'yuv420p16le',
+    "gbrp",
+])
 
 if "--all" in ARGS:
-    FORMAT_LIST |= set(
-        [
-            "yuv420p",
-            "yuv420p10",
-            "yuv420p12",
-            "yuv420p16be",
-            "yuv420p16le",
-            "yuv422p",
-            "yuv422p10",
-            "yuv422p12",
-            "yuv422p16be",
-            "yuv422p16le",
-            "yuv444p",
-            "yuv444p10",
-            "yuv444p12",
-            "yuv444p16be",
-            "yuv444p16le",
-            "yuv411p",
-            "yuv410p",
-            "yuyv422",
-            "uyvy422",
-            "rgb24",
-            "bgr24",
-            "rgb8",
-            "bgr8",
-            "rgb444be",
-            "rgb444le",
-            "bgr444be",
-            "bgr444le",
-            # 'nv12', # Encoding not different than yuv420p?
-            # 'nv21', # Encoding not different than yuv420p?
-            "gbrp",
-            "gbrp9be",
-            "gbrp9le",
-            "gbrp10be",
-            "gbrp10le",
-            "gbrp12be",
-            "gbrp12le",
-            "gbrp14be",
-            "gbrp14le",
-            "gbrp16be",
-            "gbrp16le",
-        ]
-    )
+    FORMAT_LIST |= set([
+        "yuv420p",
+        "yuv420p10",
+        "yuv420p12",
+        "yuv420p16be",
+        "yuv420p16le",
+        "yuv422p",
+        "yuv422p10",
+        "yuv422p12",
+        "yuv422p16be",
+        "yuv422p16le",
+        "yuv444p",
+        "yuv444p10",
+        "yuv444p12",
+        "yuv444p16be",
+        "yuv444p16le",
+        "yuv411p",
+        "yuv410p",
+        "yuyv422",
+        "uyvy422",
+        "rgb24",
+        "bgr24",
+        "rgb8",
+        "bgr8",
+        "rgb444be",
+        "rgb444le",
+        "bgr444be",
+        "bgr444le",
+        # 'nv12', # Encoding not different than yuv420p?
+        # 'nv21', # Encoding not different than yuv420p?
+        "gbrp",
+        "gbrp9be",
+        "gbrp9le",
+        "gbrp10be",
+        "gbrp10le",
+        "gbrp12be",
+        "gbrp12le",
+        "gbrp14be",
+        "gbrp14le",
+        "gbrp16be",
+        "gbrp16le",
+    ])
 
 FORMATS = keyed_combiner("format", list(FORMAT_LIST))
 
 RANGE = keyed_combiner("range", ["tv", "pc"])
 
-CSPACE_LIST = set(
-    [
-        "bt709",
-        # 'bt2020',
-    ]
-)
+CSPACE_LIST = set([
+    "bt709",
+    # 'bt2020',
+])
 
 if "--all" in ARGS:
-    CSPACE_LIST |= set(
-        [
-            "bt709",
-            "bt2020",
-            "bt601-6-525",  # aka smpte170m NTSC
-            "bt601-6-625",  # aka bt470bg PAL
-        ]
-    )
+    CSPACE_LIST |= set([
+        "bt709",
+        "bt2020",
+        "bt601-6-525",  # aka smpte170m NTSC
+        "bt601-6-625",  # aka bt470bg PAL
+    ])
 CSPACE_LIST = list(CSPACE_LIST)
 
 # -
@@ -164,17 +156,15 @@ print(f"{len(COMBOS)} combinations...")
 
 todo = []
 for c in COMBOS:
-    dst_name = ".".join(
-        [
-            SRC_PATH.name,
-            c["src_cspace"],
-            c["dst_cspace"],
-            c["range"],
-            c["format"],
-            c["vcodec"],
-            c["ext"],
-        ]
-    )
+    dst_name = ".".join([
+        SRC_PATH.name,
+        c["src_cspace"],
+        c["dst_cspace"],
+        c["range"],
+        c["format"],
+        c["vcodec"],
+        c["ext"],
+    ])
 
     src_cspace = c["src_cspace"]
 
@@ -226,7 +216,7 @@ for args in todo:
 
 if "--write" not in ARGS:
     print("Use --write to write. Exiting...")
-    exit(0)
+    sys.exit(0)
 
 # -
 
@@ -236,7 +226,7 @@ def run_cmd(args):
     if "-vv" not in ARGS:
         dest = subprocess.DEVNULL
     try:
-        subprocess.run(args, stderr=dest)
+        subprocess.run(args, check=True, stderr=dest)
     except FileNotFoundError:
         print("FileNotFoundError, is ffmpeg not in your PATH?")
         raise

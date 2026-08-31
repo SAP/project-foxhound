@@ -134,7 +134,6 @@ flowchart TD
 	- Passwords (See [Bug 702925](https://bugzilla.mozilla.org/show_bug.cgi?id=702925))
 	- Permissions
 	- Content preferences (e.g. page zoom level)
-	- Predictor network data
 	- Reports (Reporting API)
 	- Client-Auth-Remember flag, Certificate exceptions
 	- Does **not** clear bookmarks

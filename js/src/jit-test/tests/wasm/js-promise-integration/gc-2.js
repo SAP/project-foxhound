@@ -1,3 +1,5 @@
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled()
+
 // Example from the proposal.
 
 gczeal(2,5);
@@ -38,3 +40,17 @@ var tasks = res.then((r) => {
 });
 
 assertEq(ins.exports.get_state(), 0);
+
+// Same basic test with compacting GC.
+
+gczeal(14, 1);
+
+var suspending2 = new WebAssembly.Suspending(async () => 99);
+var ins2 = wasmEvalText(`(module
+  (import "" "s" (func $s (result i32)))
+  (func (export "f") (result i32) call $s)
+)`, {"": {s: suspending2}});
+
+var p2 = WebAssembly.promising(ins2.exports.f);
+p2().then(r => assertEq(r, 99));
+drainJobQueue();

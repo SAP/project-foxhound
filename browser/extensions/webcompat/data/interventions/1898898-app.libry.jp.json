@@ -1,0 +1,15 @@
+{
+  "label": "app.libry.jp",
+  "bugs": {
+    "1898898": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://app.libry.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

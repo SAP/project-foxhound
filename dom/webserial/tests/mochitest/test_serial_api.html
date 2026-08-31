@@ -1,0 +1,36 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - API Surface</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testGetPortsReturnsArray() {
+  await cleanupSerialPorts();
+  const ports = await navigator.serial.getPorts();
+  ok(Array.isArray(ports), "getPorts() should return an array");
+  is(ports.length, 0, "getPorts() should return empty array initially");
+});
+
+add_task(async function testSerialPortConstructor() {
+  ok("SerialPort" in window, "SerialPort should be defined");
+
+  Assert.throws(
+    () => new window.SerialPort(),
+    TypeError,
+    "SerialPort constructor should throw"
+  );
+});
+
+</script>
+</body>
+</html>

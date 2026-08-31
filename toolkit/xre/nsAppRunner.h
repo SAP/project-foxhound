@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppRunner_h__
-#define nsAppRunner_h__
+#ifndef nsAppRunner_h_
+#define nsAppRunner_h_
 
 #ifdef XP_WIN
 #  include <windows.h>
@@ -63,6 +62,14 @@ extern bool gAllowContentAnalysisArgPresent;
 
 namespace mozilla {
 nsresult AppInfoConstructor(const nsID& aIID, void** aResult);
+
+// Append the EncryptedDatabases marker to the running profile's
+// compatibility.ini (append-only; skips if already present). Exposed as a free
+// function so storage (SQLite at-rest encryption) can call it directly rather
+// than via an XPCOM service lookup;
+// nsIXULRuntime::MarkProfileEncryptedDatabases delegates here for the JS / test
+// entry point.
+nsresult MarkProfileEncryptedDatabases();
 }  // namespace mozilla
 
 // Exported for gtests.
@@ -175,4 +182,4 @@ void setASanReporterPath(nsIFile* aDir);
 
 bool IsWaylandEnabled();
 
-#endif  // nsAppRunner_h__
+#endif  // nsAppRunner_h_

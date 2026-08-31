@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // eslint-disable-next-line import/no-unresolved
-import { classMap, html, ifDefined } from "lit.all.mjs";
+import { html, ifDefined } from "lit.all.mjs";
 import "./moz-card.mjs";
 
 export default {
@@ -23,8 +23,8 @@ moz-card-heading-with-icon =
       options: ["default", "accordion"],
       control: { type: "select" },
     },
-    hasHeadingIcon: {
-      options: [true, false],
+    headingLevel: {
+      options: [1, 2, 3, 4, 5, 6],
       control: { type: "select" },
     },
     expanded: {
@@ -41,20 +41,24 @@ moz-card-heading-with-icon =
   },
 };
 
-const Template = ({ l10nId, content, type, hasHeadingIcon, expanded }) => html`
+const Template = ({
+  l10nId,
+  content,
+  type,
+  headingLevel,
+  iconSrc,
+  expanded,
+}) => html`
   <style>
     main {
       max-width: 400px;
-    }
-    moz-card.headingWithIcon::part(icon) {
-      background-image: url("chrome://browser/skin/preferences/category-general.svg");
     }
   </style>
   <main>
     <moz-card
       type=${ifDefined(type)}
-      ?icon=${hasHeadingIcon}
-      class=${classMap({ headingWithIcon: hasHeadingIcon })}
+      headingLevel=${ifDefined(headingLevel)}
+      iconSrc=${ifDefined(iconSrc)}
       data-l10n-id=${ifDefined(l10nId)}
       expanded=${ifDefined(expanded)}
     >
@@ -67,6 +71,13 @@ export const WithHeading = Template.bind({});
 WithHeading.args = {
   l10nId: "moz-card-heading",
   content: "This is the content",
+};
+
+export const WithHeadingLevel = Template.bind({});
+WithHeadingLevel.args = {
+  ...WithHeading.args,
+  content: "This is the content",
+  headingLevel: 3,
 };
 
 export const Default = Template.bind({});
@@ -86,7 +97,7 @@ Accordion.parameters = {
   a11y: {
     config: {
       rules: [
-        /* 
+        /*
         The accordion card can be expanded either by the chevron icon
         button or by activating the details element. Mouse users can
         click on the chevron button or the details element, while
@@ -127,5 +138,5 @@ WithHeadingIcon.args = {
   Nunc velit turpis, mollis a ultricies vitae, accumsan ut augue.
   In a eros ac dolor hendrerit varius et at mauris.`,
   type: "default",
-  hasHeadingIcon: true,
+  iconSrc: "chrome://global/skin/icons/settings.svg",
 };

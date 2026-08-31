@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,9 @@
 #include "ServiceWorkerInfo.h"
 
 #include "ServiceWorkerManager.h"
-#include "ServiceWorkerUtils.h"
 #include "ServiceWorkerPrivate.h"
 #include "ServiceWorkerScriptCache.h"
+#include "ServiceWorkerUtils.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/Promise.h"
@@ -232,16 +230,15 @@ void ServiceWorkerInfo::UpdateState(ServiceWorkerState aState) {
   }
 }
 
-ServiceWorkerInfo::ServiceWorkerInfo(nsIPrincipal* aPrincipal,
-                                     const nsACString& aScope,
-                                     uint64_t aRegistrationId,
-                                     uint64_t aRegistrationVersion,
-                                     const nsACString& aScriptSpec,
-                                     const nsAString& aCacheName,
-                                     nsLoadFlags aImportsLoadFlags)
+ServiceWorkerInfo::ServiceWorkerInfo(
+    nsIPrincipal* aPrincipal, const nsACString& aScope, const WorkerType& aType,
+    uint64_t aRegistrationId, uint64_t aRegistrationVersion,
+    const nsACString& aScriptSpec, const nsAString& aCacheName,
+    nsLoadFlags aImportsLoadFlags)
     : mPrincipal(aPrincipal),
       mDescriptor(GetNextID(), aRegistrationId, aRegistrationVersion,
-                  aPrincipal, aScope, aScriptSpec, ServiceWorkerState::Parsed),
+                  aPrincipal, aScope, aType, aScriptSpec,
+                  ServiceWorkerState::Parsed),
       mCacheName(aCacheName),
       mWorkerPrivateId(ComputeWorkerPrivateId()),
       mImportsLoadFlags(aImportsLoadFlags),
@@ -281,7 +278,7 @@ uint64_t ServiceWorkerInfo::GetNextID() const {
   return ++gServiceWorkerInfoCurrentID;
 }
 
-void ServiceWorkerInfo::PostMessage(RefPtr<ServiceWorkerCloneData>&& aData,
+void ServiceWorkerInfo::PostMessage(ipc::StructuredCloneData* aData,
                                     const PostMessageSource& aSource) {
   RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
   if (NS_WARN_IF(!swm)) {
@@ -305,7 +302,7 @@ void ServiceWorkerInfo::PostMessage(RefPtr<ServiceWorkerCloneData>&& aData,
       return;
   }
 
-  mServiceWorkerPrivate->SendMessageEvent(std::move(aData), lifetime, aSource);
+  mServiceWorkerPrivate->SendMessageEvent(aData, lifetime, aSource);
 }
 
 Maybe<ClientInfo> ServiceWorkerInfo::GetClientInfo() {

@@ -101,8 +101,7 @@ function startTest() {
   // we might end up at the bottom of the page.
   SpecialPowers.pushPrefEnv({"set": [["general.smoothScroll", false],
                                      ["test.events.async.enabled", true],
-                                     ["mousewheel.transaction.timeout", 100000],
-                                     ["dom.event.wheel-event-groups.enabled", true]]},
+                                     ["mousewheel.transaction.timeout", 100000]]},
                             runTest);
 }
 

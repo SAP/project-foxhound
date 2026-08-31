@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GlobalTeardownObserver.h"
-#include "nsGlobalWindowInner.h"
+
 #include "mozilla/dom/Document.h"
+#include "nsGlobalWindowInner.h"
 
 namespace mozilla {
 
@@ -14,7 +13,7 @@ GlobalTeardownObserver::GlobalTeardownObserver() = default;
 GlobalTeardownObserver::GlobalTeardownObserver(nsIGlobalObject* aGlobalObject,
                                                bool aHasOrHasHadOwnerWindow)
     : mHasOrHasHadOwnerWindow(aHasOrHasHadOwnerWindow) {
-  BindToOwner(aGlobalObject);
+  BindToGlobal(aGlobalObject);
 }
 
 GlobalTeardownObserver::~GlobalTeardownObserver() {
@@ -29,13 +28,13 @@ nsGlobalWindowInner* GlobalTeardownObserver::GetOwnerWindow() const {
              : nullptr;
 }
 
-void GlobalTeardownObserver::BindToOwner(nsIGlobalObject* aOwner) {
+void GlobalTeardownObserver::BindToGlobal(nsIGlobalObject* aGlobal) {
   MOZ_ASSERT(!mParentObject);
 
-  if (aOwner) {
-    mParentObject = aOwner;
-    aOwner->AddGlobalTeardownObserver(this);
-    const bool isWindow = !!aOwner->GetAsInnerWindow();
+  if (aGlobal) {
+    mParentObject = aGlobal;
+    aGlobal->AddGlobalTeardownObserver(this);
+    const bool isWindow = !!aGlobal->GetAsInnerWindow();
     MOZ_ASSERT_IF(!isWindow, !mHasOrHasHadOwnerWindow);
     mHasOrHasHadOwnerWindow = isWindow;
   }
@@ -64,7 +63,13 @@ nsresult GlobalTeardownObserver::CheckCurrentGlobalCorrectness() const {
     }
   }
 
-  if (mParentObject->IsDying() && !NS_IsMainThread()) {
+  if (NS_IsMainThread()) {
+    return NS_OK;
+  }
+
+  // Not on main thread, might check if is on the global's owning thread before
+  // calling IsDying().
+  if (mParentObject->IsDying()) {
     return NS_ERROR_FAILURE;
   }
 

@@ -1,21 +1,19 @@
-/* vim: se cin sw=2 ts=2 et filetype=javascript :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 let lazy = {};
 
-XPCOMUtils.defineLazyServiceGetters(lazy, {
-  Favicons: ["@mozilla.org/browser/favicon-service;1", "nsIFaviconService"],
+ChromeUtils.defineESModuleGetters(lazy, {
+  FaviconUtils: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
 });
 
-ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
-  return console.createInstance({
-    prefix: "TaskbarTabs",
-    maxLogLevel: "Warn",
-  });
+XPCOMUtils.defineLazyServiceGetters(lazy, {
+  Favicons: ["@mozilla.org/browser/favicon-service;1", Ci.nsIFaviconService],
 });
 
 export const TaskbarTabsUtils = {
@@ -27,6 +25,13 @@ export const TaskbarTabsUtils = {
   isEnabled() {
     const pref = "browser.taskbarTabs.enabled";
     return Services.prefs.getBoolPref(pref, false);
+  },
+
+  isMSIX() {
+    return (
+      AppConstants.platform === "win" &&
+      Services.sysinfo.getProperty("hasWinPackageId", false)
+    );
   },
 
   /**
@@ -62,97 +67,142 @@ export const TaskbarTabsUtils = {
   },
 
   /**
-   * Retrieves a favicon image container for the provided URL.
+   * Retrieves an image container for the provided URI and decodes it remotely,
+   * e.g. in the content process of aBrowser.
    *
-   * @param {nsIURI} aUri - The URI to retrieve a favicon for.
-   * @returns {imgIContainer} A container of the favicon retrieved, or the
-   * default favicon.
+   * May throw if an error occurs while decoding.
+   *
+   * @param {nsIFile} aFile - The file to parse the image from.
+   * @param {number} aSize - The width/height of the image to decode.
+   * @param {Browser} aBrowser - The browser to decode the image in. Can be
+   * null if there isn't a specific content process to use.
+   * @param {string} aMimeType - The MIME type to use when decoding the image.
+   * @returns {Promise<imgIContainer>} An image container with the decoded
+   * image.
+   * @throws {Components.Exception} The image could not be decoded.
    */
-  async getFavicon(aUri) {
-    let favicon = await lazy.Favicons.getFaviconForPage(aUri);
+  async _remoteDecodeImageFromFile(aFile, aSize, aBrowser, aMimeType) {
+    // We can't use a file URI since the content process wouldn't be able to
+    // read it. Read the file now and create a data URI to read instead.
+    let content = await IOUtils.read(aFile.path);
+    let spec = `data:${aMimeType};base64,${content.toBase64()}`;
+    let uri = Services.io.newURI(spec);
 
-    let imgContainer;
-    if (favicon) {
-      lazy.logConsole.debug(`Using favicon at URI ${favicon.dataURI.spec}.`);
-      try {
-        imgContainer = await getImageFromUri(favicon.dataURI);
-      } catch (e) {
-        lazy.logConsole.error(
-          `${e.message}, falling through to default favicon.`
-        );
-      }
-    }
+    return this._remoteDecodeImageFromURI(uri, aSize, aBrowser);
+  },
 
-    if (!imgContainer) {
-      lazy.logConsole.debug(
-        `Unable to retrieve icon for ${aUri.spec}, using default favicon at ${lazy.Favicons.defaultFavicon.spec}.`
+  /**
+   * Retrieves an image container for the provided URI and decodes it remotely,
+   * e.g. in the content process of aBrowser.
+   *
+   * May throw if an error occurs while decoding.
+   *
+   * @param {nsIURI} aUri - The URI to parse the image from.
+   * @param {number} aSize - The width/height of the image to decode.
+   * @param {Browser?} [aBrowser] - The browser to decode the image in. Can be
+   * null if there isn't a specific content process to use.
+   * @returns {Promise<imgIContainer>} An image container with the decoded
+   * image.
+   * @throws {TypeError} aUri is not an nsIURI.
+   * @throws {Components.Exception} The image could not be decoded.
+   */
+  async _remoteDecodeImageFromURI(aUri, aSize, aBrowser = null) {
+    if (!(aUri instanceof Ci.nsIURI)) {
+      throw new TypeError(
+        "Invalid argument, `aUri` should be instance of `nsIURI`"
       );
-      imgContainer = await getImageFromUri(lazy.Favicons.defaultFavicon);
     }
 
-    return imgContainer;
+    let params = { size: aSize };
+    if (aBrowser) {
+      params.contentParentId =
+        aBrowser.browsingContext.currentWindowContext.contentParentId;
+    }
+
+    let newUri = Services.io.newURI(
+      lazy.FaviconUtils.getMozRemoteImageURL(aUri.spec, params)
+    );
+    return unsafeDecodeImageFromAnyURI(newUri);
+  },
+
+  /**
+   * Retrieves an image container for the provided URI. The URI must be a local
+   * URI, like chrome: or data:. (Note that being local _doesn't_ mean that it
+   * is trusted---this usually should be used from tests or for images bundled
+   * with the browser.)
+   *
+   * May throw if an error occurs while decoding.
+   *
+   * @param {nsIURI} aUri - The URI to parse the image from. Must be a local
+   * URI, like data:, chrome:, or file:.
+   * @returns {imgIContainer} A container of the icon retrieved, or the
+   * default favicon.
+   * @throws {TypeError} aUri is not an nsIURI.
+   * @throws {Error} aUri is not a local URI.
+   * @throws {Components.Exception} The image could not be decoded.
+   */
+  async _imageFromLocalURI(aUri) {
+    if (!(aUri instanceof Ci.nsIURI)) {
+      throw new TypeError(
+        "Invalid argument, `aUri` should be instance of `nsIURI`"
+      );
+    }
+
+    const protocolFlags = Services.io.getProtocolFlags(aUri.scheme);
+    if (!(protocolFlags & Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE)) {
+      throw new Error("Attempting to create an image from a non-local URI");
+    }
+
+    return unsafeDecodeImageFromAnyURI(aUri);
+  },
+
+  /**
+   * Gets the favicon for aUri as a data URI.
+   *
+   * @param {nsIURI} aUri - The URI to look up the favicon for.
+   * @returns {nsIURI} The data URI of the favicon.
+   */
+  async getFaviconUri(aUri) {
+    let favicon = await lazy.Favicons.getFaviconForPage(aUri);
+    return favicon?.dataURI;
+  },
+
+  /**
+   * Gets the default favicon as an imgIContainer. This icon is used if no
+   * other icons are available.
+   *
+   * @returns {imgIContainer} The default favicon.
+   */
+  async getDefaultIcon() {
+    return await TaskbarTabsUtils._imageFromLocalURI(
+      lazy.Favicons.defaultFavicon
+    );
+  },
+
+  /**
+   * Gets the name that should be used for a new desktop entry on Linux. This
+   * avoids duplicating the logic between TaskbarTabsWindowManager, where we
+   * want the name before pinning, and TaskbarTabsPin, where it is actually
+   * pinned. As such, this should be constant within a single session.
+   *
+   * @param {string} aTaskbarTabId - The ID of the taskbar tab.
+   * @returns {string} The desktop entry name, excluding the '.desktop' suffix.
+   */
+  _determineNewDesktopEntryName(aTaskbarTabId) {
+    return `${lazy.ShellService.getGlibPrgname()}.webapp-${aTaskbarTabId}`;
   },
 };
 
-class ChannelListener {
-  #request = null;
-  #imageListener = null;
-  #rejector = null;
-
-  constructor(rejector) {
-    this.#rejector = rejector;
-  }
-
-  setImageListener(imageListener) {
-    this.#imageListener = imageListener;
-    if (this.#request) {
-      this.#imageListener.onStartRequest(this.#request);
-    }
-  }
-
-  onStartRequest(request) {
-    this.#request = request;
-    if (this.#imageListener) {
-      this.#imageListener.onStartRequest(request);
-    }
-  }
-
-  onStopRequest(request, status) {
-    if (this.#imageListener) {
-      this.#imageListener.onStopRequest(request, status);
-    }
-
-    if (!Components.isSuccessCode(status)) {
-      this.#rejector(new Components.Exception("Image loading failed", status));
-    }
-
-    this.#imageListener = null;
-    this.#rejector = null;
-    this.#request = null;
-  }
-
-  onDataAvailable(request, inputStream, offset, count) {
-    if (this.#imageListener) {
-      this.#imageListener.onDataAvailable(request, inputStream, offset, count);
-    }
-  }
-}
-
 /**
- * Retrieves an image given a URI.
+ * Shared helper function for _remoteDecodeImageFromURI and _imageFromLocalURI;
+ * fetches the given URI with the system principal and decodes it in the
+ * current process. Do not use with untrusted images.
  *
- * @param {nsIURI} aUri - The URI to retrieve an image from.
- * @returns {Promise<imgIContainer>} Resolves to an image container.
+ * @param {nsIURI} aUri - The URI to fetch and decode.
+ * @returns {Promise<imgIContainer>} The parsed image container.
+ * @throws {Components.Exception} The image could not be decoded.
  */
-async function getImageFromUri(aUri) {
-  // Creating the Taskbar Tabs icon should not result in a network request.
-  const protocolFlags = Services.io.getProtocolFlags(aUri.scheme);
-  if (!(protocolFlags & Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE)) {
-    throw new Error(
-      `Scheme "${aUri.scheme}" is not supported for creating a Taskbar Tab icon, URI should be local`
-    );
-  }
-
+async function unsafeDecodeImageFromAnyURI(aUri) {
   const channel = Services.io.newChannelFromURI(
     aUri,
     null,
@@ -162,35 +212,5 @@ async function getImageFromUri(aUri) {
     Ci.nsIContentPolicy.TYPE_IMAGE
   );
 
-  return new Promise((resolve, reject) => {
-    let imageTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
-
-    // Despite the docs it is fine to pass null here, we then just get a global loader.
-    let imageLoader = imageTools.getImgLoaderForDocument(null);
-    let observer = imageTools.createScriptedObserver({
-      decodeComplete() {
-        request.cancel(Cr.NS_BINDING_ABORTED);
-        resolve(request.image);
-      },
-    });
-
-    let channelListener = new ChannelListener(reject);
-    channel.asyncOpen(channelListener);
-
-    let streamListener = {};
-    let request = imageLoader.loadImageWithChannelXPCOM(
-      channel,
-      observer,
-      null,
-      streamListener
-    );
-    // Force image decoding to start when the container is available.
-    request.startDecoding(Ci.imgIContainer.FLAG_ASYNC_NOTIFY);
-
-    // If the request is coming from the cache then there will be no listener
-    // and the channel will have been automatically cancelled.
-    if (streamListener.value) {
-      channelListener.setImageListener(streamListener.value);
-    }
-  });
+  return ChromeUtils.fetchDecodedImage(aUri, channel);
 }

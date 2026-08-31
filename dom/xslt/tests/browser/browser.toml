@@ -5,4 +5,6 @@ support-files = [
   "bug1309630.sjs",
   "file_bug1309630.html",
 ]
-skip-if = ["true"] # bug 1776052
+skip-if = [
+  "true", # bug 1776052
+]

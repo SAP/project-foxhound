@@ -2,13 +2,15 @@
 set -ex
 set -o pipefail
 # This ugly hack is a cross-platform (Linux/Mac/Windows+MSYS) way to get the
-# absolute path to the directory containing this script
+# absolute path to the root of the update-verify source tree
 pushd `dirname $0` &>/dev/null
-MY_DIR=$(pwd)
+UV_SRC=$(dirname $(pwd))
 popd &>/dev/null
-SCRIPTS_DIR="$MY_DIR/.."
-PYTHON='./mach python'
+export UV_SRC
+PYTHON='python3'
 VERIFY_CONFIG="$MOZ_FETCHES_DIR/update-verify.cfg"
+WORKSPACE_DIR="${WORKSPACE_DIR:-$PWD/workspace}"
+mkdir -p "$WORKSPACE_DIR"
 
 while [ "$#" -gt 0 ]; do
   case $1 in
@@ -35,9 +37,9 @@ if [ -n "$CHANNEL" ]; then
 else
   EXTRA_PARAMS=""
 fi
-$PYTHON $MY_DIR/chunked-verify.py --chunks $chunks --this-chunk $thisChunk \
---verify-config $VERIFY_CONFIG --diff-summary $PWD/diff-summary.log $EXTRA_PARAMS \
-2>&1 | tee $SCRIPTS_DIR/../verify_log.txt
+$PYTHON $UV_SRC/scripts/chunked-verify.py --chunks $chunks --this-chunk $thisChunk \
+--verify-config $VERIFY_CONFIG --diff-summary $WORKSPACE_DIR/diff-summary.log $EXTRA_PARAMS \
+2>&1 | tee $WORKSPACE_DIR/verify_log.txt
 
 print_failed_msg()
 {
@@ -65,8 +67,8 @@ echo "--------------------------------------"
 # Testing for failures first is important because it's OK to to mark as failed
 # when there's failures+warnings, but not OK to mark as warnings in the same
 # situation.
-( ! grep 'TEST-UNEXPECTED-FAIL:' $SCRIPTS_DIR/../verify_log.txt ) || print_failed_msg
-( ! grep 'WARN:' $SCRIPTS_DIR/../verify_log.txt ) || print_warning_msg
+( ! grep 'TEST-UNEXPECTED-FAIL:' $WORKSPACE_DIR/verify_log.txt ) || print_failed_msg
+( ! grep 'WARN:' $WORKSPACE_DIR/verify_log.txt ) || print_warning_msg
 
 echo "-------------------------"
 echo "All is well"

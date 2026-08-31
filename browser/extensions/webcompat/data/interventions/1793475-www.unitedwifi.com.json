@@ -1,0 +1,15 @@
+{
+  "label": "www.unitedwifi.com",
+  "bugs": {
+    "1793475": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.unitedwifi.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

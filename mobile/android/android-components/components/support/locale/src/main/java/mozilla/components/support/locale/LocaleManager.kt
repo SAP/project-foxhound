@@ -9,11 +9,13 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.content.res.Resources
-import androidx.appcompat.app.AppCompatActivity
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
 import androidx.core.os.ConfigurationCompat
-import mozilla.components.support.base.R
+import mozilla.components.support.locale.LocaleManager.getCurrentLocale
+import mozilla.components.support.locale.LocaleManager.setNewLocale
 import java.util.Locale
+import mozilla.components.support.base.R as supportBaseR
 
 /**
  * Helper for apps that want to change locale defined by the system.
@@ -78,7 +80,12 @@ object LocaleManager {
         return ConfigurationCompat.getLocales(config).get(0) ?: Locale.getDefault()
     }
 
-    internal fun updateResources(baseContext: Context): Context {
+    /**
+     * Updates localization resources to use the current locale.
+     *
+     * @return A context that is locale aware.
+     */
+     fun updateResources(baseContext: Context): Context {
         val locale = getCurrentLocale(baseContext) ?: getSystemDefault()
 
         updateSystemLocale(locale)
@@ -106,7 +113,13 @@ object LocaleManager {
         Locale.setDefault(locale)
     }
 
-    internal fun clear(context: Context) {
+    /**
+     * Clears the stored locale preference.
+     *
+     * @param context The [Context] used to access SharedPreferences.
+     */
+    @VisibleForTesting
+    fun clear(context: Context) {
         Storage.clear(context)
     }
 
@@ -114,10 +127,11 @@ object LocaleManager {
         private const val PREFERENCE_FILE = "mozac_support_base_locale_manager_preference"
         private var currentLocal: String? = null
 
+        @SuppressLint("NewApi")
         fun getLocale(context: Context): String? {
-            return if (currentLocal == null) {
+            return if (currentLocal == null && !android.os.Process.isIsolated()) {
                 val settings = getSharedPreferences(context)
-                val key = context.getString(R.string.mozac_support_base_locale_preference_key_locale)
+                val key = context.getString(supportBaseR.string.mozac_support_base_locale_preference_key_locale)
                 currentLocal = settings.getString(key, null)
                 currentLocal
             } else {
@@ -128,7 +142,7 @@ object LocaleManager {
         @Synchronized
         fun save(context: Context, localeCode: String?) {
             val settings = getSharedPreferences(context)
-            val key = context.getString(R.string.mozac_support_base_locale_preference_key_locale)
+            val key = context.getString(supportBaseR.string.mozac_support_base_locale_preference_key_locale)
             settings.edit { putString(key, localeCode) }
             currentLocal = localeCode
         }

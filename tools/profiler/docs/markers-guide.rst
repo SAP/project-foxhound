@@ -28,6 +28,9 @@ Note: Most marker-related identifiers are in the ``mozilla`` namespace, to be ad
     // Create a marker with some additional text information. (Be wary of printf!)
     PROFILER_MARKER_TEXT("Marker Name", JS, MarkerOptions{}, "Additional text information.");
 
+    // Record a simple marker with automatic schema generation from variable names and types.
+    PROFILER_MARKER_SIMPLE_PAYLOAD("My Marker", DOM, MarkerOptions{}, mOpaque, mCount);
+
     // Record a custom marker of type `ExampleNumberMarker` (see definition below).
     PROFILER_MARKER("Number", OTHER, MarkerOptions{}, ExampleNumberMarker, 42);
 
@@ -116,14 +119,14 @@ Header to Include
 ^^^^^^^^^^^^^^^^^
 
 If the compilation unit only defines and records untyped, text, and/or its own markers, include
-`the main profiler markers header <https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerMarkers.h>`_:
+:searchfox:`the main profiler markers header <tools/profiler/public/ProfilerMarkers.h>`:
 
 .. code-block:: cpp
 
     #include "mozilla/ProfilerMarkers.h"
 
 If it also records one of the other common markers defined in
-`ProfilerMarkerTypes.h <https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerMarkerTypes.h>`_,
+:searchfox:`ProfilerMarkerTypes.h <tools/profiler/public/ProfilerMarkerTypes.h>`,
 include that one instead:
 
 .. code-block:: cpp
@@ -131,7 +134,7 @@ include that one instead:
     #include "mozilla/ProfilerMarkerTypes.h"
 
 And if it uses any other profiler functions (e.g., labels), use
-`the main Gecko Profiler header <https://searchfox.org/mozilla-central/source/tools/profiler/public/GeckoProfiler.h>`_
+:searchfox:`the main Gecko Profiler header <tools/profiler/public/GeckoProfiler.h>`
 instead:
 
 .. code-block:: cpp
@@ -146,7 +149,7 @@ case the advice is the same but the equivalent headers are from the Base Profile
 
     #include "mozilla/BaseProfilerMarkers.h" // Only own/untyped/text markers
     #include "mozilla/BaseProfilerMarkerTypes.h" // Only common markers
-    #include "BaseProfiler.h" // Markers and other profiler functions
+    #include "mozilla/BaseProfiler.h" // Markers and other profiler functions
 
 Untyped Markers
 ^^^^^^^^^^^^^^^
@@ -163,14 +166,13 @@ Name, category, options.
         MarkerOptions(MarkerStack::Capture(), ...));
 
 ``PROFILER_MARKER_UNTYPED`` is a macro that simplifies the use of the main
-``profiler_add_marker`` function, by adding the appropriate namespaces, and a surrounding
-``#ifdef MOZ_GECKO_PROFILER`` guard.
+``profiler_add_marker`` function, by adding the appropriate namespaces.
 
 1. Marker name
     The first argument is the name of this marker. This will be displayed in most places
     the marker is shown. It can be a literal C string, or any dynamic string object.
-2. `Category pair name <https://searchfox.org/mozilla-central/source/__GENERATED__/mozglue/baseprofiler/public/ProfilingCategoryList.h>`_
-    Choose a category + subcategory from the `the list of categories <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/build/profiling_categories.yaml>`_.
+2. :searchfox:`Category pair name <__GENERATED__/mozglue/baseprofiler/public/ProfilingCategoryList.h>`
+    Choose a category + subcategory from the :searchfox:`the list of categories <mozglue/baseprofiler/build/profiling_categories.yaml>`.
     This is the second parameter of each ``SUBCATEGORY`` line, for instance ``LAYOUT_Reflow``.
     (Internally, this is really a `MarkerCategory <https://searchfox.org/mozilla-central/define?q=T_mozilla%3A%3AMarkerCategory>`_
     object, in case you need to construct it elsewhere.)
@@ -247,6 +249,56 @@ operation could be missed if it hasn't completed by the end of the profiling ses
 In this case, consider recording two distinct markers, using
 ``MarkerTiming::IntervalStart()`` and ``MarkerTiming::IntervalEnd()``.
 
+Flow markers
+^^^^^^^^^^^^
+
+Markers can be part of a `flow`. Those are ids that allow associating
+different markers together. A `flow` is a 64-bits integer that's formatted as
+either a ``Flow`` or a ``TerminatingFlow``. ``TerminatingFlows`` mark the end of
+a flow and allow a flow id to be reused for a new flow. This is especially
+useful when using Flow ids derived from pointer values.
+
+Flow markers are useful, for example, to annotate asynchronous operations, or
+associate different parts of a long operation. In addition, it is possible to
+determine the flow that was responsible for creating another flow, allowing
+tracing through the causes and consequences of a series of (often asynchronous)
+events.
+
+..  code-block:: cpp
+
+    nsHttpChannel::OnStartRequest(nsIRequest* request) {
+      // A marker that spans the duration of this method
+      AUTO_PROFILER_FLOW_MARKER("nsHttpChannel::OnStartRequest", NETWORK, Flow::FromPointer(this));
+      // ...
+    }
+
+    nsHttpChannel::ConnectOnTailUnblock() {
+      // Will be in the same flow as this method execution, that also lasts the
+      // duration of the block
+      AUTO_PROFILER_FLOW_MARKER("nsHttpChannel::ConnectOnTailUnblock", NETWORK, Flow::FromPointer(this));
+      // ...
+    }
+
+    nsHttpChannel::~nsHttpChannel() {
+      // Terminate the flow -- this is a marker without a duration
+      PROFILER_MARKER("~nsHttpChannel", NETWORK, {}, TerminatingFlowMarker, Flow::FromPointer(this));
+      // ...
+    }
+
+If there’s not an obvious pointer that matches the lifetime of the flow, there are alternatives:
+
+- :searchfox:`Flow::ProcessScoped(uint64_t aFlowId) <mozilla-central/rev/86878e73a24fe32ea09dbae5b55362efaf7485c8:mozglue/baseprofiler/public/Flow.h#43>` -- the id should be unique in the process
+- :searchfox:`Flow::Global(uint64_t aFlowId) <mozilla-central/rev/86878e73a24fe32ea09dbae5b55362efaf7485c8:mozglue/baseprofiler/public/Flow.h#58>` -- the id should be unique across all processes
+
+``Runnable``, IPC, and ``Task`` have already been annotated with flow markers.
+This allow linking flows together, even across process boundaries.
+
+Those flow markers can be visualized in the profiler UI, but support hasn't been
+merged yet. In the meantime, loading the Firefox profile in
+https://deploy-preview-5190--perf-html.netlify.app/ will allow you to see the
+flow markers in a panel at the bottom. The frontend work is ongoing in
+https://github.com/firefox-devtools/profiler/pull/5190.
+
 Text Markers
 ^^^^^^^^^^^^
 
@@ -284,6 +336,48 @@ The same caveat as the Text Marker (described in the previous paragraph) apply
 here. The string formatting isn't performed if the marker wouldn't otherwise
 be recorded, the most typical instance being that the profiler isn't running.
 
+Simple Payload Markers
+^^^^^^^^^^^^^^^^^^^^^^
+
+For simple markers that need to carry structured data without defining a full
+custom marker type, use the ``PROFILER_MARKER_SIMPLE_PAYLOAD`` macro. This macro
+automatically generates a marker schema based on the variable names and types
+you provide:
+
+.. code-block:: cpp
+
+    PROFILER_MARKER_SIMPLE_PAYLOAD(
+        "My Marker", DOM,
+        MarkerOptions{}, // Optional marker options
+        mOpaque, mCount  // Variable names that become payload fields
+    );
+
+The macro performs compile-time type inference to determine appropriate input
+types and formats for the marker schema. It supports various data types
+including integers, timestamps, and strings. The variable names become
+the field names in the marker payload.
+
+Arguments must be simple tokens (i.e. ``(start - end)`` will not work as an
+argument).
+
+Type inference is handled automatically through template functions
+``getDefaultInputTypeForType()`` and ``getDefaultFormatForType()`` that provide
+compile-time type checking and conversion. This eliminates the need to manually
+specify field types and formats for common data types. Those functions can be
+extended as needed.
+
+The macro also supports custom table labels for markers and automatically
+handles JSON streaming of marker data, providing a convenient alternative to
+defining full custom marker types for simple use cases:
+
+.. code-block:: cpp
+
+    PROFILER_MARKER_SIMPLE_PAYLOAD("My Marker", DOM,
+        "This is element number {marker.data.mCount}."
+        " Opaque: {marker.data.mOpaque}",
+        mOpaque, mCount
+    );
+
 Other Typed Markers
 ^^^^^^^^^^^^^^^^^^^
 
@@ -317,10 +411,10 @@ The first step is to determine the location of the marker type definition:
 
   * If there is no dependency on XUL, it can be defined in the Base Profiler, which can
     be used in most locations in the codebase:
-    `mozglue/baseprofiler/public/BaseProfilerMarkerTypes.h <https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/public/BaseProfilerMarkerTypes.h>`__
+    :searchfox:`mozglue/baseprofiler/public/BaseProfilerMarkerTypes.h`
 
   * However, if there is a XUL dependency, then it needs to be defined in the Gecko Profiler:
-    `tools/profiler/public/ProfilerMarkerTypes.h <https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerMarkerTypes.h>`__
+    :searchfox:`tools/profiler/public/ProfilerMarkerTypes.h`
 
 .. _how-to-define-new-marker-types:
 
@@ -523,6 +617,9 @@ The arguments is a string that may refer to marker data within braces:
 
 * ``{marker.name}``: Marker name.
 * ``{marker.data.X}``: Type-specific data, as streamed with property name "X" from ``StreamJSONMarkerData`` (e.g., ``aWriter.IntProperty("X", a number);``
+* ``{marker.data.X ? 'yes' : 'no'}``: Ternary expression — renders the first string when the field is truthy,
+  or the second string when it is falsy (null, undefined, 0, false, or empty string).
+  Only ``marker.data.*`` fields are supported as the condition, and both branches must be single-quoted string literals.
 
 For example, here's how to set the Marker Chart label to show the marker name and the
 ``myBytes`` number of bytes:
@@ -531,6 +628,13 @@ For example, here's how to set the Marker Chart label to show the marker name an
 
     // …
         static constexpr const char* ChartLabel = "{marker.name} – {marker.data.myBytes}";
+
+Ternary expressions can be combined with regular field lookups. For instance, a label could conditionally show an icon when a request was canceled:
+
+.. code-block:: cpp
+
+    // …
+        static constexpr const char* TableLabel = "{marker.data.canceled ? '❌' : ''} {marker.data.delay}";
 
 profiler.firefox.com will apply the label with the data in a consistent manner. For
 example, with this label definition, it could display marker information like the

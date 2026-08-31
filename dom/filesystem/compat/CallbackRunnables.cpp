@@ -1,13 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CallbackRunnables.h"
+
+#include "../GetFileOrDirectoryTask.h"
+#include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/DirectoryBinding.h"
-#include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/FileSystem.h"
@@ -15,12 +15,9 @@
 #include "mozilla/dom/FileSystemFileEntry.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/Unused.h"
-#include "nsIGlobalObject.h"
 #include "nsIFile.h"
+#include "nsIGlobalObject.h"
 #include "nsPIDOMWindow.h"
-
-#include "../GetFileOrDirectoryTask.h"
 
 namespace mozilla::dom {
 

@@ -503,6 +503,10 @@ add_task(async function tabSwitchBehavior() {
   });
 
   await BrowserTestUtils.switchTab(gBrowser, exampleTab);
+  await TestUtils.waitForCondition(
+    async () => (await getTopSites()).length == 6,
+    "Waiting for Top Sites to settle after the previous test"
+  );
 
   let sites = AboutNewTab.getTopSites();
   Assert.equal(

@@ -1,8 +1,12 @@
 "use strict";
 
-var overflowPanel = document.getElementById("widget-overflow");
+var overflowPanel, originalWindowWidth;
 
-var originalWindowWidth;
+add_setup(function () {
+  overflowPanel = document.getElementById("widget-overflow");
+  originalWindowWidth = ensureToolbarOverflow(window);
+});
+
 registerCleanupFunction(function () {
   overflowPanel.removeAttribute("animate");
   window.resizeTo(originalWindowWidth, window.outerHeight);
@@ -25,7 +29,6 @@ add_task(async function () {
     ok(BrowserTestUtils.isVisible(fxaButton), "FxA button is now visible");
   }
 
-  originalWindowWidth = window.outerWidth;
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
   ok(
     !navbar.hasAttribute("overflowing"),
@@ -92,6 +95,7 @@ add_task(async function () {
     "FxA button should be pinned now"
   );
   CustomizableUI.reset();
+  ensureToolbarOverflow(window, false);
 
   // In some cases, it can take a tick for the navbar to overflow again. Wait for it:
   await TestUtils.waitForCondition(() =>

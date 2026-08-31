@@ -1,33 +1,35 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaParent.h"
 
-#include "mozilla/Base64.h"
 #include <mozilla/StaticMutex.h>
 
-#include "MediaUtils.h"
 #include "MediaEngine.h"
+#include "MediaUtils.h"
 #include "VideoUtils.h"
+#include "mozilla/Base64.h"
+#include "mozilla/Logging.h"
+#include "nsAppDirectoryServiceDefs.h"
 #include "nsClassHashtable.h"
-#include "nsThreadUtils.h"
-#include "nsNetCID.h"
-#include "nsNetUtil.h"
+#include "nsIFile.h"
 #include "nsIInputStream.h"
 #include "nsILineInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsISafeOutputStream.h"
-#include "nsAppDirectoryServiceDefs.h"
-#include "nsIFile.h"
 #include "nsISupportsImpl.h"
-#include "mozilla/Logging.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsThreadUtils.h"
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/MediaDrmRemoteCDMParent.h"
+#endif
 
-#undef LOG
 mozilla::LazyLogModule gMediaParentLog("MediaParent");
-#define LOG(args) MOZ_LOG(gMediaParentLog, mozilla::LogLevel::Debug, args)
+#define LOG(args)                                        \
+  MOZ_LOG_FMT(gMediaParentLog, mozilla::LogLevel::Debug, \
+              MOZ_LOG_EXPAND_ARGS args)
 
 // A file in the profile dir is used to persist mOriginKeys used to anonymize
 // deviceIds to be unique per origin, to avoid them being supercookies.
@@ -81,17 +83,24 @@ class OriginKeyStore {
       return NS_OK;
     }
 
-    void Clear(int64_t aSinceWhen) {
+    void Clear(int64_t aSinceWhen,
+               nsTArray<nsCString>* aRemovedKeys = nullptr) {
       // Avoid int64_t* <-> void* casting offset
       OriginKey since(nsCString(), aSinceWhen / PR_USEC_PER_SEC);
       for (auto iter = mKeys.Iter(); !iter.Done(); iter.Next()) {
         auto originKey = iter.UserData();
-        LOG((((originKey->mSecondsStamp >= since.mSecondsStamp)
-                  ? "%s: REMOVE %" PRId64 " >= %" PRId64
-                  : "%s: KEEP   %" PRId64 " < %" PRId64),
-             __FUNCTION__, originKey->mSecondsStamp, since.mSecondsStamp));
+        if (originKey->mSecondsStamp >= since.mSecondsStamp) {
+          LOG(("{}: REMOVE {} >= {}", __FUNCTION__, originKey->mSecondsStamp,
+               since.mSecondsStamp));
+        } else {
+          LOG(("{}: KEEP   {} < {}", __FUNCTION__, originKey->mSecondsStamp,
+               since.mSecondsStamp));
+        }
 
         if (originKey->mSecondsStamp >= since.mSecondsStamp) {
+          if (aRemovedKeys) {
+            aRemovedKeys->AppendElement(originKey->mKey);
+          }
           iter.Remove();
         }
       }
@@ -338,8 +347,9 @@ class OriginKeyStore {
       return rv;
     }
 
-    void Clear(int64_t aSinceWhen) {
-      OriginKeysTable::Clear(aSinceWhen);
+    void Clear(int64_t aSinceWhen,
+               nsTArray<nsCString>* aRemovedKeys = nullptr) {
+      OriginKeysTable::Clear(aSinceWhen, aRemovedKeys);
       Delete();
       Save();
     }
@@ -379,7 +389,7 @@ class OriginKeyStore {
   virtual ~OriginKeyStore() {
     MOZ_ASSERT(NS_IsMainThread());
     sOriginKeyStore = nullptr;
-    LOG(("%s", __FUNCTION__));
+    LOG(("{}", __FUNCTION__));
   }
 
  public:
@@ -448,17 +458,18 @@ mozilla::ipc::IPCResult Parent<Super>::RecvGetPrincipalKey(
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return PrincipalKeyPromise::CreateAndReject(rv, __func__);
         }
-        return PrincipalKeyPromise::CreateAndResolve(result, __func__);
+        return PrincipalKeyPromise::CreateAndResolve(std::move(result),
+                                                     __func__);
       })
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [aResolve](const PrincipalKeyPromise::ResolveOrRejectValue& aValue) {
-            if (aValue.IsReject()) {
-              aResolve(""_ns);
-            } else {
-              aResolve(aValue.ResolveValue());
-            }
-          });
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [aResolve = std::move(aResolve)](
+                 const PrincipalKeyPromise::ResolveOrRejectValue& aValue) {
+               if (aValue.IsReject()) {
+                 aResolve(""_ns);
+               } else {
+                 aResolve(aValue.ResolveValue());
+               }
+             });
 
   return IPC_OK();
 }
@@ -484,12 +495,32 @@ mozilla::ipc::IPCResult Parent<Super>::RecvSanitizeOriginKeys(
       NewRunnableFrom(
           [this, that, profileDir, aSinceWhen, aOnlyPrivateBrowsing]() {
             MOZ_ASSERT(!NS_IsMainThread());
+#ifdef MOZ_WIDGET_ANDROID
+            // Collect all removed origin keys so we can revoke any
+            // per-origin MediaDRM provisioning. This includes keys that
+            // were only used by enumerateDevices and never for DRM;
+            // unprovisioning those is a harmless no-op.
+            nsTArray<nsCString> removedKeys;
+            {
+              StaticMutexAutoLock lock(sOriginKeyStoreStsMutex);
+              mOriginKeyStore->mPrivateBrowsingOriginKeys.Clear(aSinceWhen,
+                                                                &removedKeys);
+              if (!aOnlyPrivateBrowsing) {
+                mOriginKeyStore->mOriginKeys.SetProfileDir(profileDir);
+                mOriginKeyStore->mOriginKeys.Clear(aSinceWhen, &removedKeys);
+              }
+            }
+            if (!removedKeys.IsEmpty()) {
+              MediaDrmRemoteCDMParent::UnprovisionMediaDrmOrigins(removedKeys);
+            }
+#else
             StaticMutexAutoLock lock(sOriginKeyStoreStsMutex);
             mOriginKeyStore->mPrivateBrowsingOriginKeys.Clear(aSinceWhen);
             if (!aOnlyPrivateBrowsing) {
               mOriginKeyStore->mOriginKeys.SetProfileDir(profileDir);
               mOriginKeyStore->mOriginKeys.Clear(aSinceWhen);
             }
+#endif
             return NS_OK;
           }),
       NS_DISPATCH_NORMAL);
@@ -503,20 +534,18 @@ template <class Super>
 void Parent<Super>::ActorDestroy(ActorDestroyReason aWhy) {
   // No more IPC from here
   mDestroyed = true;
-  LOG(("%s", __FUNCTION__));
+  LOG(("{}", __FUNCTION__));
 }
 
 template <class Super>
 Parent<Super>::Parent()
     : mOriginKeyStore(OriginKeyStore::Get()), mDestroyed(false) {
-  LOG(("media::Parent: %p", this));
+  LOG(("media::Parent: {}", fmt::ptr(this)));
 }
 
 template <class Super>
 Parent<Super>::~Parent() {
-  NS_ReleaseOnMainThread("Parent<Super>::mOriginKeyStore",
-                         mOriginKeyStore.forget());
-  LOG(("~media::Parent: %p", this));
+  LOG(("~media::Parent: {}", fmt::ptr(this)));
 }
 
 PMediaParent* AllocPMediaParent() {
@@ -531,6 +560,8 @@ bool DeallocPMediaParent(media::PMediaParent* aActor) {
 }
 
 }  // namespace mozilla::media
+
+#undef LOG
 
 // Instantiate templates to satisfy linker
 template class mozilla::media::Parent<mozilla::media::NonE10s>;

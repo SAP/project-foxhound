@@ -50,7 +50,7 @@ class PoweredByNotificationTest {
 
     @Test
     fun `unregister receiver on pause`() {
-        val feature = PoweredByNotification(testContext, mockk(), "session-id", mockk())
+        val feature = PoweredByNotification(testContext, BrowserStore(), "session-id", mockk())
         feature.onPause(mockk())
     }
 }

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +11,6 @@
 #include "GMPVideoEncodedFrameImpl.h"
 #include "GMPVideoi420FrameImpl.h"
 #include "mozilla/gmp/GMPTypes.h"
-#include "mozilla/Unused.h"
 #include "nsAutoRef.h"
 #include "nsThread.h"
 #include "nsThreadUtils.h"
@@ -41,7 +39,6 @@ GMPVideoEncoderParent::GMPVideoEncoderParent(GMPContentParent* aPlugin)
       mActorDestroyed(false),
       mPlugin(aPlugin),
       mCallback(nullptr),
-      mVideoHost(this),
       mPluginId(aPlugin->GetPluginId()) {
   MOZ_ASSERT(mPlugin);
 }
@@ -50,11 +47,9 @@ bool GMPVideoEncoderParent::MgrIsOnOwningThread() const {
   return !mPlugin || mPlugin->GMPEventTarget()->IsOnCurrentThread();
 }
 
-GMPVideoHostImpl& GMPVideoEncoderParent::Host() { return mVideoHost; }
-
 // Note: may be called via Terminated()
 void GMPVideoEncoderParent::Close() {
-  GMP_LOG_DEBUG("%s::%s: %p", __CLASS__, __FUNCTION__, this);
+  GMP_LOG_DEBUG("{}::{}: {}", __CLASS__, __FUNCTION__, fmt::ptr(this));
   MOZ_ASSERT(mPlugin->GMPEventTarget()->IsOnCurrentThread());
   // Consumer is done with us; we can shut down.  No more callbacks should
   // be made to mCallback.  Note: do this before Shutdown()!
@@ -73,11 +68,10 @@ GMPErr GMPVideoEncoderParent::InitEncode(
     const nsTArray<uint8_t>& aCodecSpecific,
     GMPVideoEncoderCallbackProxy* aCallback, int32_t aNumberOfCores,
     uint32_t aMaxPayloadSize) {
-  GMP_LOG_DEBUG("%s::%s: %p", __CLASS__, __FUNCTION__, this);
+  GMP_LOG_DEBUG("{}::{}: {}", __CLASS__, __FUNCTION__, fmt::ptr(this));
   if (mIsOpen) {
     NS_WARNING("Trying to re-init an in-use GMP video encoder!");
     return GMPGenericErr;
-    ;
   }
 
   MOZ_ASSERT(mPlugin->GMPEventTarget()->IsOnCurrentThread());
@@ -115,23 +109,21 @@ GMPErr GMPVideoEncoderParent::Encode(
   GMPVideoi420FrameData frameData;
   ipc::Shmem frameShmem;
   if (!inputFrameImpl->InitFrameData(frameData, frameShmem)) {
-    GMP_LOG_ERROR("%s::%s: failed to init frame data", __CLASS__, __FUNCTION__);
+    GMP_LOG_ERROR("{}::{}: failed to init frame data", __CLASS__, __FUNCTION__);
     return GMPGenericErr;
   }
 
   if (mEncodedShmemSize > 0) {
-    if (GMPSharedMemManager* memMgr = mVideoHost.SharedMemMgr()) {
-      ipc::Shmem outputShmem;
-      if (memMgr->MgrTakeShmem(GMPSharedMemClass::Encoded, mEncodedShmemSize,
-                               &outputShmem)) {
-        Unused << SendGiveShmem(std::move(outputShmem));
-      }
+    ipc::Shmem outputShmem;
+    if (MgrTakeShmem(GMPSharedMemClass::Encoded, mEncodedShmemSize,
+                     &outputShmem)) {
+      (void)SendGiveShmem(std::move(outputShmem));
     }
   }
 
   if (!SendEncode(frameData, std::move(frameShmem), aCodecSpecificInfo,
                   aFrameTypes)) {
-    GMP_LOG_ERROR("%s::%s: failed to send encode", __CLASS__, __FUNCTION__);
+    GMP_LOG_ERROR("{}::{}: failed to send encode", __CLASS__, __FUNCTION__);
     return GMPGenericErr;
   }
 
@@ -191,7 +183,7 @@ GMPErr GMPVideoEncoderParent::SetPeriodicKeyFrames(bool aEnable) {
 
 // Note: Consider keeping ActorDestroy sync'd up when making changes here.
 void GMPVideoEncoderParent::Shutdown() {
-  GMP_LOG_DEBUG("%s::%s: %p", __CLASS__, __FUNCTION__, this);
+  GMP_LOG_DEBUG("{}::{}: {}", __CLASS__, __FUNCTION__, fmt::ptr(this));
   MOZ_ASSERT(mPlugin->GMPEventTarget()->IsOnCurrentThread());
 
   if (mShuttingDown) {
@@ -207,13 +199,14 @@ void GMPVideoEncoderParent::Shutdown() {
 
   mIsOpen = false;
   if (!mActorDestroyed) {
-    Unused << Send__delete__(this);
+    (void)Send__delete__(this);
   }
 }
 
 // Note: Keep this sync'd up with Shutdown
 void GMPVideoEncoderParent::ActorDestroy(ActorDestroyReason aWhy) {
-  GMP_LOG_DEBUG("%s::%s: %p (%d)", __CLASS__, __FUNCTION__, this, (int)aWhy);
+  GMP_LOG_DEBUG("{}::{}: {} ({})", __CLASS__, __FUNCTION__, fmt::ptr(this),
+                (int)aWhy);
   mIsOpen = false;
   mActorDestroyed = true;
   if (mCallback) {
@@ -227,18 +220,13 @@ void GMPVideoEncoderParent::ActorDestroy(ActorDestroyReason aWhy) {
     mPlugin->VideoEncoderDestroyed(this);
     mPlugin = nullptr;
   }
-  mVideoHost.ActorDestroyed();  // same as DoneWithAPI
+  MgrPurgeShmems();
   MaybeDisconnect(aWhy == AbnormalShutdown);
 }
 
 mozilla::ipc::IPCResult GMPVideoEncoderParent::RecvReturnShmem(
     ipc::Shmem&& aInputShmem) {
-  if (GMPSharedMemManager* memMgr = mVideoHost.SharedMemMgr()) {
-    memMgr->MgrGiveShmem(GMPSharedMemClass::Decoded, std::move(aInputShmem));
-  } else {
-    DeallocShmem(aInputShmem);
-  }
-
+  MgrGiveShmem(GMPSharedMemClass::Decoded, std::move(aInputShmem));
   return IPC_OK();
 }
 
@@ -247,8 +235,8 @@ mozilla::ipc::IPCResult GMPVideoEncoderParent::RecvEncodedShmem(
     nsTArray<uint8_t>&& aCodecSpecificInfo) {
   if (mCallback && GMPVideoEncodedFrameImpl::CheckFrameData(
                        aEncodedFrame, aEncodedShmem.Size<uint8_t>())) {
-    auto* f = new GMPVideoEncodedFrameImpl(
-        aEncodedFrame, std::move(aEncodedShmem), &mVideoHost);
+    auto* f = new GMPVideoEncodedFrameImpl(aEncodedFrame,
+                                           std::move(aEncodedShmem), this);
     mCallback->Encoded(f, aCodecSpecificInfo);
     f->Destroy();
   } else {
@@ -263,10 +251,18 @@ mozilla::ipc::IPCResult GMPVideoEncoderParent::RecvEncodedData(
   if (mCallback && GMPVideoEncodedFrameImpl::CheckFrameData(
                        aEncodedFrame, aEncodedData.Length())) {
     mEncodedShmemSize = std::max(mEncodedShmemSize, aEncodedData.Length());
-    auto* f = new GMPVideoEncodedFrameImpl(
-        aEncodedFrame, std::move(aEncodedData), &mVideoHost);
+    auto* f = new GMPVideoEncodedFrameImpl(aEncodedFrame,
+                                           std::move(aEncodedData), this);
     mCallback->Encoded(f, aCodecSpecificInfo);
     f->Destroy();
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult GMPVideoEncoderParent::RecvDroppedFrame(
+    const uint64_t& aTimestamp) {
+  if (mCallback) {
+    mCallback->Dropped(aTimestamp);
   }
   return IPC_OK();
 }

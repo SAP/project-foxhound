@@ -8,14 +8,16 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
 
-const RESTRICT_TOKENS = [
-  UrlbarTokenizer.RESTRICT.HISTORY,
-  UrlbarTokenizer.RESTRICT.BOOKMARK,
-  UrlbarTokenizer.RESTRICT.OPENPAGE,
-  UrlbarTokenizer.RESTRICT.ACTION,
+// Restrict tokens with corresponding @keywords.
+const RESTRICT_TOKENS_TO_TEST = [
+  UrlbarShared.RESTRICT_TOKENS.HISTORY,
+  UrlbarShared.RESTRICT_TOKENS.BOOKMARK,
+  UrlbarShared.RESTRICT_TOKENS.OPENPAGE,
+  UrlbarShared.RESTRICT_TOKENS.ACTION,
 ];
 
 add_setup(async function () {
@@ -85,7 +87,7 @@ async function assertRestrictKeywordResult(window, restrictToken) {
   EventUtils.synthesizeMouseAtCenter(restrictResult, {});
   await searchPromise;
 
-  let searchMode = UrlbarUtils.searchModeForToken(
+  let searchMode = window.gURLBar.searchModeForToken(
     restrictResult.result.payload.keyword
   );
   await UrlbarTestUtils.assertSearchMode(window, {
@@ -98,7 +100,7 @@ async function assertRestrictKeywordResult(window, restrictToken) {
 }
 
 add_task(async function test_search_restrict_keyword_results() {
-  for (const restrictToken of RESTRICT_TOKENS) {
+  for (const restrictToken of RESTRICT_TOKENS_TO_TEST) {
     await assertRestrictKeywordResult(window, restrictToken);
   }
 });
@@ -114,7 +116,7 @@ add_task(async function test_search_restrict_keyword_results_es_en_locales() {
   let tokenizerStub = sinon.stub(UrlbarTokenizer, "getL10nRestrictKeywords");
   tokenizerStub.resolves(spanishEnglishKeywords);
 
-  for (const restrictToken of RESTRICT_TOKENS) {
+  for (const restrictToken of RESTRICT_TOKENS_TO_TEST) {
     await assertRestrictKeywordResult(window, restrictToken);
   }
 });

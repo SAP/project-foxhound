@@ -21,7 +21,7 @@
  *         The function to throttle
  * @param  {number} wait
  *         The wait period
- * @param  {Object} scope
+ * @param  {object} scope
  *         The scope to use for func
  * @return {Function} The throttled function
  */

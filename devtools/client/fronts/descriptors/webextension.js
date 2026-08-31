@@ -137,5 +137,4 @@ class WebExtensionDescriptorFront extends DescriptorMixin(
   }
 }
 
-exports.WebExtensionDescriptorFront = WebExtensionDescriptorFront;
 registerFront(WebExtensionDescriptorFront);

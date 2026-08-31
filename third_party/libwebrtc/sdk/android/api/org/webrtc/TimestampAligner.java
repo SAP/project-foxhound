@@ -12,25 +12,36 @@ package org.webrtc;
 
 /**
  * The TimestampAligner class helps translating camera timestamps into the same timescale as is
- * used by rtc::TimeNanos(). Some cameras have built in timestamping which is more accurate than
+ * used by webrtc. Some cameras have built in timestamping which is more accurate than
  * reading the system clock, but using a different epoch and unknown clock drift. Frame timestamps
- * in webrtc should use rtc::TimeNanos (system monotonic time), and this class provides a filter
- * which lets us use the rtc::TimeNanos timescale, and at the same time take advantage of higher
- * accuracy of the camera clock. This class is a wrapper on top of rtc::TimestampAligner.
+ * in webrtc should use clock from the webrtc::Environment (usually the system monotonic time), and
+ * this class provides a filter which lets us use the webrtc::Environment timescale, and at the same
+ * time take advantage of higheraccuracy of the camera clock.
+ * This class is a wrapper on top of webrtc::TimestampAligner.
  */
 public class TimestampAligner {
   /**
-   * Wrapper around rtc::TimeNanos(). This is normally same as System.nanoTime(), but call this
+   * Wrapper around webrtc::TimeNanos(). This is normally same as System.nanoTime(), but call this
    * function to be safe.
    */
+  @Deprecated
   public static long getRtcTimeNanos() {
-    return nativeRtcTimeNanos();
+    return Environment.builder().build().getCurrentTimeNanos();
   }
 
-  private volatile long nativeTimestampAligner = nativeCreateTimestampAligner();
+  private volatile long nativeTimestampAligner;
+
+  @Deprecated
+  public TimestampAligner() {
+    this(Environment.builder().build());
+  }
+
+  public TimestampAligner(Environment webrtcEnv) {
+    nativeTimestampAligner = nativeCreateTimestampAligner(webrtcEnv.ref());
+  }
 
   /**
-   * Translates camera timestamps to the same timescale as is used by rtc::TimeNanos().
+   * Translates camera timestamps to the same timescale as is used by webrtc::TimeNanos().
    * `cameraTimeNs` is assumed to be accurate, but with an unknown epoch and clock drift. Returns
    * the translated timestamp.
    */
@@ -52,8 +63,7 @@ public class TimestampAligner {
     }
   }
 
-  private static native long nativeRtcTimeNanos();
-  private static native long nativeCreateTimestampAligner();
+  private static native long nativeCreateTimestampAligner(long webrtcEnvRef);
   private static native void nativeReleaseTimestampAligner(long timestampAligner);
   private static native long nativeTranslateTimestamp(long timestampAligner, long cameraTimeNs);
 }

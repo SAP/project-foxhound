@@ -8,10 +8,11 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.browser.icons.BrowserIcons
@@ -23,7 +24,6 @@ import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.ids.SharedIdsHelper
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.kotlin.getOrigin
-import java.lang.UnsupportedOperationException
 import kotlin.coroutines.CoroutineContext
 
 private const val NOTIFICATION_CHANNEL_ID = "mozac.feature.webnotifications.generic.channel"
@@ -70,7 +70,10 @@ class WebNotificationFeature(
         }
     }
 
-    override fun onShowNotification(webNotification: WebNotification) {
+    override fun onShowNotification(
+        webNotification: WebNotification,
+    ): Deferred<Boolean> {
+        val deferred = CompletableDeferred<Boolean>()
         CoroutineScope(coroutineContext).launch {
             // Only need to check permissions for notifications from web pages. Permissions for
             // web extensions are managed via the extension's manifest and approved by the user
@@ -98,8 +101,19 @@ class WebNotificationFeature(
                 activityClass,
                 SharedIdsHelper.getNextIdForTag(context, PENDING_INTENT_TAG),
             )
-            notificationsDelegate.notify(webNotification.tag, NOTIFICATION_ID, notification)
+            notificationsDelegate.notify(
+                webNotification.tag,
+                NOTIFICATION_ID,
+                notification,
+                onPermissionGranted = {
+                    deferred.complete(true)
+                },
+                onPermissionRejected = {
+                    deferred.complete(false)
+                },
+            )
         }
+        return deferred
     }
 
     override fun onCloseNotification(webNotification: WebNotification) {
@@ -107,16 +121,14 @@ class WebNotificationFeature(
     }
 
     private fun ensureNotificationGroupAndChannelExists() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                context.getString(R.string.mozac_feature_notification_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT,
-            )
-            channel.setShowBadge(true)
-            channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            context.getString(R.string.mozac_feature_notification_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        channel.setShowBadge(true)
+        channel.lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
 
-            notificationsDelegate.notificationManagerCompat.createNotificationChannel(channel)
-        }
+        notificationsDelegate.notificationManagerCompat.createNotificationChannel(channel)
     }
 }

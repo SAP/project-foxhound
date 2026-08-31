@@ -3,8 +3,6 @@
 
 "use strict";
 
-/* eslint-env browser */
-
 const { require } = ChromeUtils.importESModule(
   "resource://devtools/shared/loader/Loader.sys.mjs"
 );
@@ -71,7 +69,7 @@ add_task(async function () {
   /* eslint-disable mozilla/no-arbitrary-setTimeout */
   await new Promise(r => setTimeout(r, 1000));
 
-  is(gDevTools._toolboxesPerCommands.size, 0, "No toolbox has been opened");
+  is(gDevTools.toolboxesPerCommands.size, 0, "No toolbox has been opened");
 
   info("Open the context menu for the content page.");
   const contextMenu = win.document.getElementById("contentAreaContextMenu");
@@ -154,6 +152,8 @@ function waitForDelayedStartupFinished(win) {
 
 /**
  * Helper to call the toggle devtools shortcut.
+ *
+ * @param {Window} win
  */
 function synthesizeToggleToolboxKey(win) {
   info("Trigger the toogle toolbox shortcut");

@@ -15,10 +15,10 @@ SpecialPowers.pushPrefEnv(
   // the `alt` change.
   {
     set: [
-      ["dom.image-lazy-loading.root-margin.top", 0],
-      ["dom.image-lazy-loading.root-margin.bottom", 0],
-      ["dom.image-lazy-loading.root-margin.left", 0],
-      ["dom.image-lazy-loading.root-margin.right", 0],
+      ["dom.lazy-loading.margin.top", 0],
+      ["dom.lazy-loading.margin.bottom", 0],
+      ["dom.lazy-loading.margin.left", 0],
+      ["dom.lazy-loading.margin.right", 0],
     ]
   },
   () => { window.open('file_reframe_for_lazy_load_image.html'); }

@@ -26,11 +26,27 @@ class WindowGlobalToRootModule extends Module {
       },
     });
   }
+  testHandleCommandToRootUnlisted() {
+    return this.messageHandler.handleCommand({
+      moduleName: "windowglobaltoroot",
+      commandName: "getValueFromRootUnlisted",
+      destination: {
+        type: RootMessageHandler.type,
+      },
+    });
+  }
 
   testSendRootCommand() {
     return this.messageHandler.sendRootCommand({
       moduleName: "windowglobaltoroot",
       commandName: "getValueFromRoot",
+    });
+  }
+
+  testSendRootCommandUnlisted() {
+    return this.messageHandler.sendRootCommand({
+      moduleName: "windowglobaltoroot",
+      commandName: "getValueFromRootUnlisted",
     });
   }
 

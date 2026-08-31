@@ -61,14 +61,15 @@ class RequestListEmptyNotice extends Component {
       {
         className: "request-list-empty-notice",
       },
-      !toolbox.isBrowserToolbox
+      !toolbox.isBrowserToolbox &&
+        !toolbox.commands.descriptorFront.isWebExtensionDescriptor
         ? div(
             { className: "notice-reload-message empty-notice-element" },
             span(null, RELOAD_NOTICE_1),
             button(
               {
-                className: "devtools-button requests-list-reload-notice-button",
-                "data-standalone": true,
+                className:
+                  "devtools-button devtools-button-standalone requests-list-reload-notice-button",
                 onClick: this.props.onReloadClick,
               },
               RELOAD_NOTICE_2
@@ -79,14 +80,15 @@ class RequestListEmptyNotice extends Component {
             { className: "notice-reload-message empty-notice-element" },
             span(null, RELOAD_NOTICE_BT)
           ),
-      !toolbox.isBrowserToolbox
+      !toolbox.isBrowserToolbox &&
+        !toolbox.commands.descriptorFront.isWebExtensionDescriptor
         ? div(
             { className: "notice-perf-message empty-notice-element" },
             span(null, PERFORMANCE_NOTICE_1),
             button({
               title: PERFORMANCE_NOTICE_3,
-              className: "devtools-button requests-list-perf-notice-button",
-              "data-standalone": true,
+              className:
+                "devtools-button devtools-button-standalone requests-list-perf-notice-button",
               onClick: this.props.onPerfClick,
             }),
             span(null, PERFORMANCE_NOTICE_2),

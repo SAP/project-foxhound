@@ -1,6 +1,8 @@
 [DEFAULT]
 head = ""
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "data/bug1079747.mp4",
   "data/bug1725190.cr3",

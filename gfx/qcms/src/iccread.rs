@@ -1503,6 +1503,10 @@ impl Profile {
         self.is_srgb
     }
 
+    pub fn rendering_intent(&self) -> Intent {
+        self.rendering_intent
+    }
+
     pub(crate) fn new_sRGB_parametric() -> Box<Profile> {
         let primaries = qcms_CIE_xyYTRIPLE::from(ColourPrimaries::Bt709);
         let white_point = qcms_white_point_sRGB();

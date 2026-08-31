@@ -28,6 +28,12 @@ s! {
         pub h_addr_list: *mut *mut c_char,
     }
 
+    pub struct pollfd {
+        pub fd: c_int,
+        pub events: c_int,
+        pub revents: c_int,
+    }
+
     pub struct sockaddr {
         pub sa_family: crate::sa_family_t,
         pub sa_data: [c_char; 26usize],
@@ -35,7 +41,7 @@ s! {
 
     pub struct sockaddr_storage {
         pub ss_family: crate::sa_family_t,
-        pub __ss_padding: [c_char; 26usize],
+        __ss_padding: Padding<[c_char; 26usize]>,
     }
 
     pub struct sockaddr_in {
@@ -141,9 +147,6 @@ pub const MSG_MORE: c_int = 0;
 pub const MSG_NOSIGNAL: c_int = 0;
 pub const SOL_CONFIG: c_uint = 65534;
 
-pub const _SC_PAGESIZE: c_int = 8;
-pub const _SC_GETPW_R_SIZE_MAX: c_int = 51;
-
 pub const PTHREAD_STACK_MIN: size_t = 4096;
 pub const WNOHANG: c_int = 1;
 
@@ -173,7 +176,7 @@ pub const AF_INET6: c_int = 23;
 
 pub const FIONBIO: c_ulong = 1;
 
-pub const RTLD_DEFAULT: *mut c_void = 0 as *mut c_void;
+pub const RTLD_DEFAULT: *mut c_void = ptr::null_mut();
 
 // For pthread get/setschedparam
 pub const SCHED_FIFO: c_int = 1;
@@ -185,35 +188,35 @@ pub const GRND_RANDOM: c_uint = 0x2;
 
 // Horizon OS works doesn't or can't hold any of this information
 safe_f! {
-    pub {const} fn WIFSTOPPED(_status: c_int) -> bool {
+    pub const fn WIFSTOPPED(_status: c_int) -> bool {
         false
     }
 
-    pub {const} fn WSTOPSIG(_status: c_int) -> c_int {
+    pub const fn WSTOPSIG(_status: c_int) -> c_int {
         0
     }
 
-    pub {const} fn WIFCONTINUED(_status: c_int) -> bool {
+    pub const fn WIFCONTINUED(_status: c_int) -> bool {
         true
     }
 
-    pub {const} fn WIFSIGNALED(_status: c_int) -> bool {
+    pub const fn WIFSIGNALED(_status: c_int) -> bool {
         false
     }
 
-    pub {const} fn WTERMSIG(_status: c_int) -> c_int {
+    pub const fn WTERMSIG(_status: c_int) -> c_int {
         0
     }
 
-    pub {const} fn WIFEXITED(_status: c_int) -> bool {
+    pub const fn WIFEXITED(_status: c_int) -> bool {
         true
     }
 
-    pub {const} fn WEXITSTATUS(_status: c_int) -> c_int {
+    pub const fn WEXITSTATUS(_status: c_int) -> c_int {
         0
     }
 
-    pub {const} fn WCOREDUMP(_status: c_int) -> bool {
+    pub const fn WCOREDUMP(_status: c_int) -> bool {
         false
     }
 }

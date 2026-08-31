@@ -11,9 +11,9 @@
 
 [package]
 edition = "2018"
-rust-version = "1.63"
+rust-version = "1.71"
 name = "cssparser"
-version = "0.34.1"
+version = "0.37.0"
 authors = ["Simon Sapin <simon.sapin@exyr.org>"]
 build = false
 exclude = [
@@ -38,21 +38,27 @@ repository = "https://github.com/servo/rust-cssparser"
 
 [features]
 bench = []
-dummy_match_byte = []
+default = [
+    "fast_match_byte",
+    "fast_match_color",
+]
+fast_match_byte = ["dep:cssparser-macros"]
+fast_match_color = ["dep:phf"]
 skip_long_tests = []
 
 [lib]
 name = "cssparser"
 path = "src/lib.rs"
 
-[dependencies]
-dtoa-short = "0.3"
-itoa = "1.0"
-smallvec = "1.0"
-
 [dependencies.cssparser-macros]
-version = "0.6.1"
-path = "./macros"
+version = "0.7.0"
+optional = true
+
+[dependencies.dtoa-short]
+version = "0.3"
+
+[dependencies.itoa]
+version = "1.0"
 
 [dependencies.malloc_size_of]
 version = "0.1"
@@ -60,25 +66,26 @@ optional = true
 default-features = false
 
 [dependencies.phf]
-version = "0.11.2"
+version = "0.13.1"
 features = ["macros"]
+optional = true
 
 [dependencies.serde]
 version = "1.0"
 features = ["derive"]
 optional = true
 
-[dev-dependencies]
-difference = "2.0"
-encoding_rs = "0.8"
-serde_json = "1.0.25"
+[dependencies.smallvec]
+version = "1.0"
 
-[workspace]
-members = [
-    ".",
-    "./macros",
-    "./color",
-]
+[dev-dependencies.difference]
+version = "2.0"
+
+[dev-dependencies.encoding_rs]
+version = "0.8"
+
+[dev-dependencies.serde_json]
+version = "1.0.25"
 
 [profile.profiling]
 debug = 2

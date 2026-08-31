@@ -54,12 +54,9 @@ add_task(async function search_open_tabs() {
     );
 
     info("Clear the search query.");
-    let inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
-      openTabs.searchTextbox.inputEl,
-      true,
-      false
+    let clearButton = SpecialPowers.getInputButton(
+      openTabs.searchTextbox.inputEl
     );
-    let clearButton = inputChildren.find(e => e.localName == "button");
     EventUtils.synthesizeMouseAtCenter(clearButton, {}, content);
     await TestUtils.waitForCondition(
       () => openTabs.viewCards[0].tabList.rowEls.length === winTabs.length,

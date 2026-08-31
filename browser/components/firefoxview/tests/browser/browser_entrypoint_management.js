@@ -5,7 +5,7 @@
 
 add_task(async function test_removing_button_should_close_tab() {
   await withFirefoxView({}, async browser => {
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     let tab = browser.getTabBrowser().getTabForBrowser(browser);
     let button = win.document.getElementById("firefox-view-button");
     await win.gCustomizeMode.removeFromArea(button, "toolbar-context-menu");
@@ -17,7 +17,7 @@ add_task(async function test_removing_button_should_close_tab() {
 
 add_task(async function test_button_auto_readd() {
   await withFirefoxView({}, async browser => {
-    let { FirefoxViewHandler } = browser.ownerGlobal;
+    let { FirefoxViewHandler } = browser.documentGlobal;
 
     CustomizableUI.removeWidgetFromArea("firefox-view-button");
     ok(
@@ -43,7 +43,7 @@ add_task(async function test_button_auto_readd() {
 
 add_task(async function test_button_moved() {
   await withFirefoxView({}, async browser => {
-    let { FirefoxViewHandler } = browser.ownerGlobal;
+    let { FirefoxViewHandler } = browser.documentGlobal;
     CustomizableUI.addWidgetToArea(
       "firefox-view-button",
       CustomizableUI.AREA_NAVBAR,
@@ -56,7 +56,7 @@ add_task(async function test_button_moved() {
     );
   });
   await withFirefoxView({}, async browser => {
-    let { FirefoxViewHandler } = browser.ownerGlobal;
+    let { FirefoxViewHandler } = browser.documentGlobal;
     is(
       FirefoxViewHandler.button.closest("toolbar").id,
       "nav-bar",

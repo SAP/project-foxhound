@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
 export default class VPNCard {
   constructor(doc) {
     this.doc = doc;
@@ -70,7 +68,7 @@ export default class VPNCard {
           vpnCard.classList.add("subscribed");
           document.l10n.setAttributes(
             vpnCard.querySelector(".card-title"),
-            "vpn-title-subscribed"
+            "protections-vpn-title-subscribed"
           );
 
           // hide the promo banner if the user is already subscribed to vpn

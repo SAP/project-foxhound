@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<html xmlns="http://www.w3.org/1999/xhtml" id="qrcode-dialog">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; object-src 'none'; style-src chrome:; script-src chrome:; img-src chrome: data:;"
+    />
+    <title data-l10n-id="qrcode-window-title"></title>
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/qrcode/qrcode-dialog.css"
+    />
+    <link rel="localization" href="browser/browser.ftl" />
+    <script src="chrome://browser/content/contentTheme.js"></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-button.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-button-group.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-message-bar.mjs"
+    ></script>
+    <script src="chrome://browser/content/qrcode/qrcode-dialog.js"></script>
+  </head>
+  <body>
+    <div id="qrcode-dialog-content">
+      <div id="dialog-header">
+        <h2 data-l10n-id="qrcode-dialog-title"></h2>
+        <moz-button
+          type="icon ghost"
+          iconsrc="chrome://global/skin/icons/close.svg"
+          data-l10n-id="qrcode-close-button"
+          id="close-button"
+        ></moz-button>
+      </div>
+
+      <div id="success-container" class="container" hidden>
+        <img id="qrcode-image" data-l10n-id="qrcode-image" />
+        <p id="qrcode-url" dir="ltr"></p>
+
+        <moz-button-group>
+          <moz-button
+            id="save-button"
+            data-l10n-id="qrcode-save-button"
+          ></moz-button>
+          <moz-button
+            id="copy-button"
+            type="primary"
+            data-l10n-id="qrcode-copy-button"
+          ></moz-button>
+        </moz-button-group>
+      </div>
+    </div>
+  </body>
+</html>

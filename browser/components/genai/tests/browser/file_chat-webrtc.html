@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+  <button id="request-mic">Request microphone</button>
+<script>
+  const btn = document.getElementById("request-mic");
+
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      // Silently catch
+    }
+  }, { once: true });
+</script>
+</body>
+</html>

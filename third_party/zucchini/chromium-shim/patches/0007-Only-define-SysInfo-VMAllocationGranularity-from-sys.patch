@@ -1,12 +1,14 @@
-Only define SysInfo::VMAllocationGranularity() from sys_info_win.{cc,h}
+Only define SysInfo::VMAllocationGranularity() from sys_info.h
 
-We do not need the other methods defined in these files.
+We do not need the other methods from sys_info.h. We reorganize
+windows_version.{cc,h} to reflect our needs.
 ---
- base/system/sys_info.h      |  8 ++++++++
- base/system/sys_info_win.cc | 10 ++++++++++
- base/win/windows_version.cc | 18 ++++++++++++++++++
- base/win/windows_version.h  | 14 ++++++++++++++
- 4 files changed, 50 insertions(+)
+ base/system/sys_info.h        |  8 ++++++++
+ base/system/sys_info_posix.cc |  8 ++++++++
+ base/system/sys_info_win.cc   | 10 ++++++++++
+ base/win/windows_version.cc   | 18 ++++++++++++++++++
+ base/win/windows_version.h    | 14 ++++++++++++++
+ 5 files changed, 58 insertions(+)
 
 diff --git a/base/system/sys_info.h b/base/system/sys_info.h
 index b8295c7cf2aa..8cc1179a5e49 100644
@@ -64,6 +66,59 @@ index b8295c7cf2aa..8cc1179a5e49 100644
    static void ClearAmountOfPhysicalMemoryMbForTesting();
 +#endif  // !defined(MOZ_ZUCCHINI)
  };
+ 
+ }  // namespace base
+diff --git a/base/system/sys_info_posix.cc b/base/system/sys_info_posix.cc
+index 4e3226cb1aa6..eac447df701c 100644
+--- a/base/system/sys_info_posix.cc
++++ b/base/system/sys_info_posix.cc
+@@ -16,11 +16,14 @@
+ 
+ #include <algorithm>
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/check.h"
+ #include "base/files/file_util.h"
+ #include "base/lazy_instance.h"
+ #include "base/notreached.h"
++#endif  // !defined(MOZ_ZUCCHINI)
+ #include "base/numerics/safe_conversions.h"
++#if !defined(MOZ_ZUCCHINI)
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/strings/utf_string_conversions.h"
+@@ -114,9 +117,11 @@ bool GetDiskSpaceInfo(const base::FilePath& path,
+ }
+ 
+ }  // namespace
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ namespace base {
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #if !BUILDFLAG(IS_OPENBSD)
+ int SysInfo::NumberOfProcessors() {
+ #if BUILDFLAG(IS_MAC)
+@@ -257,12 +262,14 @@ std::string SysInfo::OperatingSystemArchitecture() {
+   return arch;
+ }
+ #endif  // !BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_IOS)
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ // static
+ size_t SysInfo::VMAllocationGranularity() {
+   return checked_cast<size_t>(getpagesize());
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #if !BUILDFLAG(IS_APPLE)
+ // static
+ int SysInfo::NumberOfEfficientProcessorsImpl() {
+@@ -301,5 +308,6 @@ int SysInfo::NumberOfEfficientProcessorsImpl() {
+ #endif
+ }
+ #endif  // !BUILDFLAG(IS_APPLE)
++#endif  // !defined(MOZ_ZUCCHINI)
  
  }  // namespace base
 diff --git a/base/system/sys_info_win.cc b/base/system/sys_info_win.cc

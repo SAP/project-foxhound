@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +9,7 @@
 #include "CommonSocketControl.h"
 #include "TLSClientAuthCertSelection.h"
 #include "mozilla/Casting.h"
+#include "mozilla/Maybe.h"
 #include "nsNSSIOLayer.h"
 #include "nsThreadUtils.h"
 
@@ -156,26 +156,6 @@ class NSSSocketControl final : public CommonSocketControl {
     return mEchExtensionStatus;
   }
 
-  void WillSendMlkemShare() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    mSentMlkemShare = true;
-  }
-
-  bool SentMlkemShare() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    return mSentMlkemShare;
-  }
-
-  void SetHasTls13HandshakeSecrets() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    mHasTls13HandshakeSecrets = true;
-  }
-
-  bool HasTls13HandshakeSecrets() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    return mHasTls13HandshakeSecrets;
-  }
-
   bool GetJoined() {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     return mJoined;
@@ -205,6 +185,7 @@ class NSSSocketControl final : public CommonSocketControl {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     return mCertVerificationState == WaitingForCertVerification;
   }
+
   void AddPlaintextBytesRead(uint64_t val) {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     mPlaintextBytesRead += val;
@@ -284,39 +265,28 @@ class NSSSocketControl final : public CommonSocketControl {
   void SetPreliminaryHandshakeInfo(const SSLChannelInfo& channelInfo,
                                    const SSLCipherSuiteInfo& cipherInfo);
 
-  void SetPendingSelectClientAuthCertificate(
-      nsCOMPtr<nsIRunnable>&& selectClientAuthCertificate) {
+  // Cancels an unclaimed (i.e. speculative) connection.
+  bool CancelIfNotClaimed() {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    MOZ_LOG(
-        gPIPNSSLog, mozilla::LogLevel::Debug,
-        ("[%p] setting pending select client auth certificate", (void*)mFd));
-    // If the connection corresponding to this socket hasn't been claimed, it
-    // is a speculative connection. The connection will block until the "choose
-    // a client auth certificate" dialog has been shown. The dialog will only
-    // be shown when this connection gets claimed. However, necko will never
-    // claim the connection as long as it is blocking. Thus, this connection
-    // can't proceed, so it's best to cancel it. Necko will create a new,
-    // non-speculative connection instead.
     if (!mClaimed) {
       SetCanceled(PR_CONNECT_RESET_ERROR);
-    } else {
-      mPendingSelectClientAuthCertificate =
-          std::move(selectClientAuthCertificate);
+    }
+    return !mClaimed;
+  }
+
+  void SetClientAuthCertificateRequest(
+      mozilla::UniqueCERTCertificate&& serverCertificate,
+      nsTArray<nsTArray<uint8_t>>&& caNames) {
+    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
+    mClientAuthCertificateRequest.emplace(ClientAuthCertificateRequest{
+        std::move(serverCertificate), std::move(caNames)});
+    // Let HE pause other racers before PSM may show a cert dialog.
+    if (mTlsHandshakeCallback) {
+      (void)mTlsHandshakeCallback->ClientAuthCertificateRequested();
     }
   }
 
-  void MaybeDispatchSelectClientAuthCertificate() {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    if (!IsWaitingForCertVerification() && mClaimed &&
-        mPendingSelectClientAuthCertificate) {
-      MOZ_LOG(gPIPNSSLog, mozilla::LogLevel::Debug,
-              ("[%p] dispatching pending select client auth certificate",
-               (void*)mFd));
-      mozilla::Unused << NS_DispatchToMainThread(
-          mPendingSelectClientAuthCertificate);
-      mPendingSelectClientAuthCertificate = nullptr;
-    }
-  }
+  void MaybeSelectClientAuthCertificate();
 
  private:
   ~NSSSocketControl() = default;
@@ -342,8 +312,6 @@ class NSSSocketControl final : public CommonSocketControl {
   bool mIsFullHandshake;
   bool mNotedTimeUntilReady;
   EchExtensionStatus mEchExtensionStatus;  // Currently only used for telemetry.
-  bool mSentMlkemShare;
-  bool mHasTls13HandshakeSecrets;
 
   // True when SSL layer has indicated an "SSL short write", i.e. need
   // to call on send one or more times to push all pending data to write.
@@ -373,8 +341,19 @@ class NSSSocketControl final : public CommonSocketControl {
   mozilla::TimeStamp mSocketCreationTimestamp;
   uint64_t mPlaintextBytesRead;
 
+  // Whether or not this connection has been claimed. If it has not been
+  // claimed, this is a speculative connection.
   bool mClaimed;
-  nsCOMPtr<nsIRunnable> mPendingSelectClientAuthCertificate;
+  // When a server requests a client authentication certificate, the server's
+  // certificate may not have been verified yet. In order to prevent any
+  // certificate dialogs from appearing before verification succeeds (and to
+  // prevent them altogether if it fails), stash the information relevant to
+  // selecting a certificate until it has succeeded.
+  struct ClientAuthCertificateRequest {
+    mozilla::UniqueCERTCertificate mServerCertificate;
+    nsTArray<nsTArray<uint8_t>> mCANames;
+  };
+  mozilla::Maybe<ClientAuthCertificateRequest> mClientAuthCertificateRequest;
 
   // Regarding the client certificate message in the TLS handshake, RFC 5246
   // (TLS 1.2) says:

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,9 @@
 // A class that handles style system image loads (other image loads are handled
 // by the nodes in the content tree).
 
-#ifndef mozilla_css_ImageLoader_h___
-#define mozilla_css_ImageLoader_h___
+#ifndef mozilla_css_ImageLoader_h_
+#define mozilla_css_ImageLoader_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
@@ -167,4 +164,4 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ImageLoader::Flags)
 }  // namespace css
 }  // namespace mozilla
 
-#endif /* mozilla_css_ImageLoader_h___ */
+#endif /* mozilla_css_ImageLoader_h_ */

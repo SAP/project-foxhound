@@ -1,25 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/ReadStream.h"
 
-#include "mozilla/Unused.h"
+#include "mozilla/SnappyUncompressInputStream.h"
 #include "mozilla/dom/cache/CacheStreamControlChild.h"
 #include "mozilla/dom/cache/CacheStreamControlParent.h"
 #include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/SnappyUncompressInputStream.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIThread.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
 
 namespace mozilla::dom::cache {
-
-using mozilla::Unused;
 
 // ----------------------------------------------------------------------------
 
@@ -439,10 +434,9 @@ nsIInputStream* ReadStream::Inner::EnsureStream() {
     OpenStreamFailed();
     return mSnappyStream;
   }
-
-  mCondVar.Wait();
-  MOZ_DIAGNOSTIC_ASSERT(mSnappyStream);
-
+  while (!mSnappyStream) {
+    mCondVar.Wait();
+  }
   return mSnappyStream;
 }
 
@@ -498,7 +492,7 @@ void ReadStream::Inner::OpenStreamFailed() {
   MOZ_DIAGNOSTIC_ASSERT(!mStream);
   MOZ_DIAGNOSTIC_ASSERT(!mSnappyStream);
   mMutex.AssertCurrentThreadOwns();
-  Unused << NS_NewCStringInputStream(getter_AddRefs(mStream), ""_ns);
+  (void)NS_NewCStringInputStream(getter_AddRefs(mStream), ""_ns);
   mSnappyStream = mStream;
   mStream->Close();
   NoteClosed();

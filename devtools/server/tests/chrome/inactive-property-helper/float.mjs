@@ -92,6 +92,13 @@ export default [
     isActive: true,
   },
   {
+    info: "clear is valid on br elements",
+    property: "clear",
+    tagName: "br",
+    rules: ["br { clear: left; }"],
+    isActive: true,
+  },
+  {
     info: "clear is invalid on non-block-level elements",
     property: "clear",
     tagName: "span",

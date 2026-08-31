@@ -1,0 +1,57 @@
+<!DOCTYPE HTML>
+<meta charset="utf-8">
+<style>
+html { overflow: auto; }
+body { margin: 0; }
+#spacer {
+  width: 100%;
+  height: 500vh;
+}
+</style>
+<div id="spacer"></div>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script>
+"use strict";
+
+async function test() {
+  const spacer = document.getElementById("spacer");
+
+  // Temporarily set the spacer height to "auto" to reduce the root scroller's
+  // max scroll, which clamps the scroll position (ScrollOrigin::Clamp), then
+  // restore the height and issue a scrollTo to preserve the scroll position.
+  const adjust = () => {
+    const scrollPos = window.scrollY;
+    spacer.style.height = "auto";
+    getComputedStyle(spacer).height;
+    spacer.style.height = "";
+    document.scrollingElement.scrollTo({ top: scrollPos });
+  };
+
+  // Start a smooth scroll animation with a wheel event.
+  const transformEndPromise = promiseTransformEnd();
+  await synthesizeNativeWheel(window, 50, 50, 0, -50);
+
+  // Wait until the main thread has received a non-zero scroll position from
+  // APZ, so that the clamp in adjust() actually has an effect.
+  await new Promise(resolve => window.addEventListener("scroll", resolve, { once: true }));
+  const scrollYAtAdjust = window.scrollY;
+
+  // While the smooth scroll animation is running, call adjust() to trigger a
+  // clamp scroll. Without the fix, this clobbers the APZ animation and the
+  // scroll ends up at scrollYAtAdjust rather than continuing to the full
+  // animation target.
+  adjust();
+
+  await transformEndPromise;
+  await promiseApzFlushedRepaints();
+
+  ok(window.scrollY > scrollYAtAdjust,
+    `Scroll should have continued past ${scrollYAtAdjust} after clamp, got ${window.scrollY}`);
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>

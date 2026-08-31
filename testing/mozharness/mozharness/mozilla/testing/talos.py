@@ -79,7 +79,7 @@ class TalosOutputParser(OutputParser):
     worst_tbpl_status = TBPL_SUCCESS
 
     def __init__(self, **kwargs):
-        super(TalosOutputParser, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.minidump_output = None
         self.found_perf_data = []
 
@@ -122,7 +122,7 @@ class TalosOutputParser(OutputParser):
         elif line.startswith("Running cycle ") or line.startswith("PROCESS-CRASH "):
             SystemResourceMonitor.record_event(line)
 
-        super(TalosOutputParser, self).parse_single_line(line)
+        super().parse_single_line(line)
 
 
 class Talos(
@@ -321,7 +321,7 @@ class Talos(
             ],
         )
         kwargs.setdefault("config", {})
-        super(Talos, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         self.workdir = self.query_abs_dirs()["abs_work_dir"]  # convenience
 
@@ -374,7 +374,7 @@ class Talos(
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(Talos, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         abs_dirs["abs_blob_upload_dir"] = os.path.join(
             abs_dirs["abs_work_dir"], "blobber_upload_dir"
         )
@@ -655,39 +655,31 @@ class Talos(
         webextension_dest = os.path.join(self.talos_path, "talos", "webextensions")
 
         if self.query_pagesets_name():
-            tooltool_artifacts.append(
-                {
-                    "name": self.pagesets_name,
-                    "manifest": self.pagesets_name_manifest,
-                    "dest": src_talos_pageset_dest,
-                }
-            )
-            tooltool_artifacts.append(
-                {
-                    "name": self.pagesets_name,
-                    "manifest": self.pagesets_name_manifest,
-                    "dest": src_talos_pageset_multidomain_dest,
-                    "postprocess": self.replace_relative_iframe_paths,
-                }
-            )
+            tooltool_artifacts.append({
+                "name": self.pagesets_name,
+                "manifest": self.pagesets_name_manifest,
+                "dest": src_talos_pageset_dest,
+            })
+            tooltool_artifacts.append({
+                "name": self.pagesets_name,
+                "manifest": self.pagesets_name_manifest,
+                "dest": src_talos_pageset_multidomain_dest,
+                "postprocess": self.replace_relative_iframe_paths,
+            })
 
         if self.query_benchmark_zip():
-            tooltool_artifacts.append(
-                {
-                    "name": self.benchmark_zip,
-                    "manifest": self.benchmark_zip_manifest,
-                    "dest": src_talos_pageset_dest,
-                }
-            )
+            tooltool_artifacts.append({
+                "name": self.benchmark_zip,
+                "manifest": self.benchmark_zip_manifest,
+                "dest": src_talos_pageset_dest,
+            })
 
         if self.query_webextensions_zip():
-            tooltool_artifacts.append(
-                {
-                    "name": self.webextensions_zip,
-                    "manifest": self.webextensions_zip_manifest,
-                    "dest": webextension_dest,
-                }
-            )
+            tooltool_artifacts.append({
+                "name": self.webextensions_zip,
+                "manifest": self.webextensions_zip_manifest,
+                "dest": webextension_dest,
+            })
 
         # now that have the suite name, check if artifact is required, if so download it
         # the --no-download option will override this
@@ -754,7 +746,7 @@ class Talos(
             "tools/wpt_third_party/h2/*",
             "tools/wpt_third_party/pywebsocket3/*",
         ]
-        return super(Talos, self).download_and_extract(
+        return super().download_and_extract(
             extract_dirs=extract_dirs, suite_categories=["common", "talos"]
         )
 
@@ -809,7 +801,7 @@ class Talos(
             requirements=[mozbase_requirements],
             editable=True,
         )
-        super(Talos, self).create_virtualenv()
+        super().create_virtualenv()
         # talos in harness requires what else is
         # listed in talos requirements.txt file.
         self.install_module(requirements=[talos_requirements])

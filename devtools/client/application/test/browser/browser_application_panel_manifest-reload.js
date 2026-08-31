@@ -16,7 +16,7 @@ add_task(async function () {
   const { panel, tab } = await openNewTabAndApplicationPanel(url);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "manifest");
+  await selectPage(panel, "manifest");
 
   info("Waiting for the 'no manifest' message to appear");
   await waitFor(() => doc.querySelector(".js-manifest-empty") !== null);

@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLmmultiscriptsFrame_h___
-#define nsMathMLmmultiscriptsFrame_h___
+#ifndef nsMathMLmmultiscriptsFrame_h_
+#define nsMathMLmmultiscriptsFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLContainerFrame.h"
 
 namespace mozilla {
@@ -31,10 +28,10 @@ class nsMathMLmmultiscriptsFrame final : public nsMathMLContainerFrame {
   NS_IMETHOD
   TransmitAutomaticData() override;
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
-  static nsresult PlaceMultiScript(
+  static void PlaceMultiScript(
       nsPresContext* aPresContext, DrawTarget* aDrawTarget,
       const PlaceFlags& aFlags, ReflowOutput& aDesiredSize,
       nsMathMLContainerFrame* aFrame, nscoord aUserSubScriptShift,
@@ -49,4 +46,4 @@ class nsMathMLmmultiscriptsFrame final : public nsMathMLContainerFrame {
   virtual ~nsMathMLmmultiscriptsFrame();
 };
 
-#endif /* nsMathMLmmultiscriptsFrame_h___ */
+#endif /* nsMathMLmmultiscriptsFrame_h_ */

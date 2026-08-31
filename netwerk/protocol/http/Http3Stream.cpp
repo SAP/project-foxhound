@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "nsHttpTransaction.h"
 #include "nsIClassOfService.h"
 #include "nsISocketTransport.h"
+#include "nsISupportsPriority.h"
 #include "nsSocketTransportService2.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
@@ -24,7 +23,7 @@ namespace mozilla {
 namespace net {
 
 Http3StreamBase::Http3StreamBase(nsAHttpTransaction* trans,
-                                 Http3Session* session)
+                                 Http3SessionBase* session)
     : mTransaction(trans), mSession(session) {}
 
 Http3StreamBase::~Http3StreamBase() = default;
@@ -53,6 +52,7 @@ void Http3Stream::Close(nsresult aResult) {
   mTransaction->Close(aResult);
   // Clear the mSession to break the cycle.
   mSession = nullptr;
+  mClosed = true;
 }
 
 bool Http3Stream::GetHeadersString(const char* buf, uint32_t avail,
@@ -184,6 +184,7 @@ nsresult Http3Stream::OnReadSegment(const char* buf, uint32_t count,
       rv = mSession->SendRequestBody(mStreamId, buf, count, countRead);
       if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
         mSendingBlockedByFlowControlCount++;
+        mBlockedByFlowControl = true;
       }
 
       if (NS_FAILED(rv)) {
@@ -471,7 +472,7 @@ nsresult Http3Stream::Finish0RTT(bool aRestart) {
     mQueued = false;
     mDataReceived = false;
     mResetRecv = false;
-    mFlatResponseHeaders.TruncateLength(0);
+    mFlatResponseHeaders.ClearAndRetainStorage();
     mTotalSent = 0;
     mTotalRead = 0;
     mFin = false;

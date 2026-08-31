@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozSpellChecker_h__
-#define mozSpellChecker_h__
+#ifndef mozSpellChecker_h_
+#define mozSpellChecker_h_
 
 #include "mozilla/MozPromise.h"
 #include "nsCOMPtr.h"
@@ -170,7 +169,7 @@ class mozSpellChecker final {
   nsCOMPtr<mozIPersonalDictionary> mPersonalDictionary;
 
   nsCOMPtr<mozISpellCheckingEngine> mSpellCheckingEngine;
-  bool mFromStart;
+  bool mFromStart = false;
 
   nsTArray<nsCString> mCurrentDictionaries;
 
@@ -187,4 +186,4 @@ class mozSpellChecker final {
 
   friend class mozilla::RemoteSpellcheckEngineChild;
 };
-#endif  // mozSpellChecker_h__
+#endif  // mozSpellChecker_h_

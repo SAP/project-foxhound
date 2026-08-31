@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppDirectoryServiceDefs_h___
-#define nsAppDirectoryServiceDefs_h___
+#ifndef nsAppDirectoryServiceDefs_h_
+#define nsAppDirectoryServiceDefs_h_
 
 //========================================================================================
 //
@@ -74,4 +72,4 @@
 
 #define NS_APP_PERMISSION_PARENT_DIR "permissionDBPDir"
 
-#endif  // nsAppDirectoryServiceDefs_h___
+#endif  // nsAppDirectoryServiceDefs_h_

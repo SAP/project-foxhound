@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>certviewer ipv6 representation test</title>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+  </head>
+<body>
+  <script type="module">
+
+    async function doTest() {
+      const { hexToIpv6Repr } = await import("chrome://global/content/certviewer/components/utils.mjs");
+
+      ok(hexToIpv6Repr, "hexToIpv6Repr should be available in this context");
+
+      let tests = [
+        {
+          input: "00000000111100000000000000001111",
+          expected: "0:0:1111::1111"
+        },
+        {
+          input: "262000fe0000000000000000000000fe",
+          expected: "2620:fe::fe"
+        },
+        {
+          input: "2602ff3a0001abad0c0f0feeabadcafe",
+          expected: "2602:ff3a:1:abad:c0f:fee:abad:cafe"
+        },
+        {
+          input: "00000000000000000000000000000000",
+          expected: "::"
+        },
+        {
+          input: "00000000000000000000000000000001",
+          expected: "::1"
+        },
+        {
+          input: "10000000000000000000000000000000",
+          expected: "1000::"
+        },
+        {
+          input: "2602ff3a1001abad1c0f1feeabadcafe",
+          expected: "2602:ff3a:1001:abad:1c0f:1fee:abad:cafe"
+        },
+        {
+          input: "260200001001abad1c0f1feeabadcafe",
+          expected: "2602:0:1001:abad:1c0f:1fee:abad:cafe"
+        },
+        {
+          input: "00000000000011110000000000001111",
+          expected: "::1111:0:0:0:1111"
+        }
+      ];
+
+      for (let test of tests) {
+        let result = hexToIpv6Repr(test.input);
+        is(result, test.expected, `Ipv6 address incorrectly parsed`);
+      }
+
+      SimpleTest.finish();
+    }
+
+    SimpleTest.waitForExplicitFinish();
+    doTest();
+
+  </script>
+</body>
+</html>

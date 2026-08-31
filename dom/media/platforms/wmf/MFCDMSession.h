@@ -5,14 +5,14 @@
 #ifndef DOM_MEDIA_PLATFORM_WMF_MFCDMSESSION_H
 #define DOM_MEDIA_PLATFORM_WMF_MFCDMSESSION_H
 
-#include <vector>
 #include <wrl.h>
 #include <wrl/client.h>
 
 #include "MFCDMExtra.h"
 #include "MediaEventSource.h"
-#include "mozilla/PMFCDM.h"
 #include "mozilla/KeySystemConfig.h"
+#include "mozilla/PMFCDM.h"
+#include "mozilla/dom/MediaKeySessionBinding.h"
 #include "nsAString.h"
 
 namespace mozilla {
@@ -34,7 +34,7 @@ class MFCDMSession final {
                           const uint8_t* aInitData, uint32_t aInitDataSize);
   HRESULT Load(const nsAString& aSessionId);
   HRESULT Update(const nsTArray<uint8_t>& aMessage);
-  HRESULT Close();
+  HRESULT Close(dom::MediaKeySessionClosedReason aReason);
   HRESULT Remove();
 
   // Session status related events
@@ -46,6 +46,9 @@ class MFCDMSession final {
   }
   MediaEventSource<MFCDMKeyExpiration>& ExpirationEvent() {
     return mExpirationEvent;
+  }
+  MediaEventSource<MFCDMSessionClosedResult>& ClosedEvent() {
+    return mClosedEvent;
   }
 
   const Maybe<nsString>& SessionID() const { return mSessionId; }
@@ -76,12 +79,15 @@ class MFCDMSession final {
   MediaEventProducer<MFCDMKeyMessage> mKeyMessageEvent;
   MediaEventProducer<MFCDMKeyStatusChange> mKeyChangeEvent;
   MediaEventProducer<MFCDMKeyExpiration> mExpirationEvent;
+  MediaEventProducer<MFCDMSessionClosedResult> mClosedEvent;
   MediaEventListener mKeyMessageListener;
   MediaEventListener mKeyChangeListener;
 
   // IMFContentDecryptionModuleSession's id might not be ready immediately after
   // the session gets created.
   Maybe<nsString> mSessionId;
+
+  bool mIsClosed = false;
 
   // NaN when the CDM doesn't explicitly define the time or the time never
   // expires.

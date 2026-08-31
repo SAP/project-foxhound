@@ -20,51 +20,51 @@
 
   <script type="application/javascript">
     // //////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    function selectItem(aSelectID, aItemID) {
-      this.selectNode = getNode(aSelectID);
-      this.itemNode = getNode(aItemID);
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_SELECTION, aItemID),
-      ];
-
-      this.invoke = function selectItem_invoke() {
-        var itemNode = this.selectNode.querySelector("*[aria-selected='true']");
-        if (itemNode)
-          itemNode.removeAttribute("aria-selected");
-
-        this.itemNode.setAttribute("aria-selected", "true");
-      };
-
-      this.getID = function selectItem_getID() {
-        return "select item " + prettyName(aItemID);
-      };
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
     // Do tests
 
-    var gQueue = null;
+    function selectAriaItem(aSelectID, aItemID) {
+      const selectNode = getNode(aSelectID);
+      const prevSelected = selectNode.querySelector("*[aria-selected='true']");
+      if (prevSelected) {
+        prevSelected.removeAttribute("aria-selected");
+      }
+      getNode(aItemID).setAttribute("aria-selected", "true");
+    }
 
-    // gA11yEventDumpToConsole = true; // debug stuff
+    async function doTests() {
+      let p = waitForEvent(EVENT_SELECTION, "tab1");
+      selectAriaItem("tablist", "tab1");
+      await p;
 
-    function doTests() {
-      gQueue = new eventQueue();
+      p = waitForEvent(EVENT_SELECTION, "tab2");
+      selectAriaItem("tablist", "tab2");
+      await p;
 
-      gQueue.push(new selectItem("tablist", "tab1"));
-      gQueue.push(new selectItem("tablist", "tab2"));
+      p = waitForEvent(EVENT_SELECTION, "treeitem1");
+      selectAriaItem("tree", "treeitem1");
+      await p;
 
-      gQueue.push(new selectItem("tree", "treeitem1"));
-      gQueue.push(new selectItem("tree", "treeitem1a"));
-      gQueue.push(new selectItem("tree", "treeitem1a1"));
+      p = waitForEvent(EVENT_SELECTION, "treeitem1a");
+      selectAriaItem("tree", "treeitem1a");
+      await p;
 
-      gQueue.push(new selectItem("tree2", "tree2item1"));
-      gQueue.push(new selectItem("tree2", "tree2item1a"));
-      gQueue.push(new selectItem("tree2", "tree2item1a1"));
+      p = waitForEvent(EVENT_SELECTION, "treeitem1a1");
+      selectAriaItem("tree", "treeitem1a1");
+      await p;
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      p = waitForEvent(EVENT_SELECTION, "tree2item1");
+      selectAriaItem("tree2", "tree2item1");
+      await p;
+
+      p = waitForEvent(EVENT_SELECTION, "tree2item1a");
+      selectAriaItem("tree2", "tree2item1a");
+      await p;
+
+      p = waitForEvent(EVENT_SELECTION, "tree2item1a1");
+      selectAriaItem("tree2", "tree2item1a1");
+      await p;
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

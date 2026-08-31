@@ -124,34 +124,29 @@ const verifyRegistrationWithNewProcess = async extension => {
   await secondContentPage.close();
 };
 
-add_task(
-  {
-    pref_set: [["extensions.manifestV3.enabled", true]],
-  },
-  async function test_scripting_registerContentScripts() {
-    let extension = makeExtension({
-      manifest: {
-        manifest_version: 3,
-        host_permissions: ["<all_urls>"],
-        granted_host_permissions: true,
-      },
-      async background() {
-        const script = {
-          id: "a-script",
-          js: ["script.js"],
-          matches: ["http://*/*/*.html"],
-          persistAcrossSessions: false,
-        };
+add_task(async function test_scripting_registerContentScripts() {
+  let extension = makeExtension({
+    manifest: {
+      manifest_version: 3,
+      host_permissions: ["<all_urls>"],
+      granted_host_permissions: true,
+    },
+    async background() {
+      const script = {
+        id: "a-script",
+        js: ["script.js"],
+        matches: ["http://*/*/*.html"],
+        persistAcrossSessions: false,
+      };
 
-        await browser.scripting.registerContentScripts([script]);
+      await browser.scripting.registerContentScripts([script]);
 
-        browser.test.sendMessage("background-done");
-      },
-    });
+      browser.test.sendMessage("background-done");
+    },
+  });
 
-    await verifyRegistrationWithNewProcess(extension);
-  }
-);
+  await verifyRegistrationWithNewProcess(extension);
+});
 
 add_task(
   {

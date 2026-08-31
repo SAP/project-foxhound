@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<style>
+:root {
+  --child-width: 0px;
+}
+.scrollable {
+  overflow: scroll;
+  height: 100px;
+  width: 100px;
+  border: 2px solid black;
+}
+.scrollable::before {
+  display: block;
+  content: "content";
+  height: 300px;
+  width: var(--child-width);
+}
+</style>
+<div class="scrollable"></div>
+<div class="scrollable"></div>
+<div class="scrollable"></div>
+</html>

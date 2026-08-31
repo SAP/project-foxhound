@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Test for nsIEditorSpellChecfker.sugget</title>
+  <title>Test for nsIEditorSpellChecker.suggest</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
 </head>
@@ -33,8 +33,11 @@ add_task(async function() {
   let suggestions = await spellchecker.suggest("misspelled", 5);
   is(suggestions.length, 0, "\"misspelled\" is correct word");
 
+  // Hunspell 1.7.3 switched suggestion timeouts from CPU time (clock()) to wall
+  // time (std::chrono::steady_clock). On slower builds (sanitizers, 32-bit) the
+  // 100ms limit is hit before all 5 suggestions are generated.
   suggestions = await spellchecker.suggest("missspelled", 5);
-  is(suggestions.length, 5, "\"missspelled\" isn't correct word");
+  ok(suggestions.length >= 3 && suggestions.length <= 5, "\"missspelled\" isn't correct word");
 });
 </script>
 </pre>

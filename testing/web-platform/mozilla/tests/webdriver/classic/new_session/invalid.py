@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 import pytest
-from tests.support.asserts import assert_error
+from tests.support.classic.asserts import assert_error
 
 
 @pytest.mark.parametrize(

@@ -6,18 +6,19 @@ support-files = [
 ]
 
 ["test_crash_manager.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_crash_service.js"]
-run-sequentially = "very high failure rate in parallel"
 skip-if = [
   "os == 'android'",
 ]
 
 ["test_crash_store.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_remote_settings_crash_pull.js"]
 support-files = ["../../../../../toolkit/crashreporter/test/browser/head.js"]
-
-["test_remote_settings_crash_pull_nightly.js"]

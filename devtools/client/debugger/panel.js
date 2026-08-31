@@ -101,7 +101,7 @@ class DebuggerPanel {
       await this.panelWin.Debugger.bootstrap({
         commands: this.commands,
         fluentBundles: fluentL10n.getBundles(),
-        resourceCommand: this.toolbox.resourceCommand,
+        resourceCommand: this.commands.resourceCommand,
         workers: {
           sourceMapLoader: this.toolbox.sourceMapLoader,
           parserWorker: this.toolbox.parserWorker,
@@ -234,7 +234,8 @@ class DebuggerPanel {
 
   /**
    * Return the source-mapped variables for the current scope.
-   * @returns {{[String]: String} | null} A dictionary mapping original variable names to generated
+   *
+   * @returns {{[string]: string} | null} A dictionary mapping original variable names to generated
    * variable names if map scopes is enabled, otherwise null.
    */
   getMappedVariables() {
@@ -258,17 +259,17 @@ class DebuggerPanel {
    * This is called when some other panels wants to open a given source
    * in the debugger at a precise line/column.
    *
-   * @param {String} generatedURL
-   * @param {Number} generatedLine
-   * @param {Number} generatedColumn
-   * @param {String} sourceActorId (optional)
+   * @param {string} generatedURL
+   * @param {number} generatedLine
+   * @param {number} generatedColumn
+   * @param {string} sourceActorId (optional)
    *        If the callsite knows about a particular sourceActorId,
    *        or if the source doesn't have a URL, you have to pass a sourceActorId.
-   * @param {String} reason
+   * @param {string} reason
    *        A telemetry identifier to record when opening the debugger.
    *        This help differentiate why we opened the debugger.
    *
-   * @return {Boolean}
+   * @return {boolean}
    *         Returns true if the location is known by the debugger
    *         and the debugger opens it.
    */
@@ -279,6 +280,10 @@ class DebuggerPanel {
     sourceActorId,
     reason,
   }) {
+    // Resolve the URL in case this is an URL like http://example.org/./test.js
+    // as the frontend only supports final resolved URLs.
+    generatedURL = URL.parse(generatedURL)?.href || generatedURL;
+
     const generatedSource = sourceActorId
       ? this._selectors.getSourceByActorId(this._getState(), sourceActorId)
       : this._selectors.getSourceByURL(this._getState(), generatedURL);
@@ -393,6 +398,24 @@ class DebuggerPanel {
 
   showTracerSidebar() {
     this._actions.setPrimaryPaneTab("tracer");
+  }
+
+  /**
+   * Called by toolbox.js on `Esc` keydown to check if the Debugger should prevent the
+   * split console from being toggled.
+   *
+   * @returns {boolean} true if the split console toggle should be prevented.
+   */
+  shouldPreventSplitConsoleToggle() {
+    // If popovers or tooltips are displayed, prevent the split console from being toggled.
+    const popoverEl = this.panelWin.document.querySelector(".popover,.tooltip");
+    if (popoverEl) {
+      // Hiding the popover/tooltip is handled in the Popover component, here we just
+      // want to indicate to the toolbox that the split console shouldn't open.
+      return true;
+    }
+
+    return false;
   }
 
   destroy() {

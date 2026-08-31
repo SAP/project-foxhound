@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_quotamanager_h__
-#define mozilla_dom_quota_quotamanager_h__
+#ifndef mozilla_dom_quota_quotamanager_h_
+#define mozilla_dom_quota_quotamanager_h_
 
 #include <cstdint>
 #include <utility>
+
 #include "Client.h"
 #include "ErrorList.h"
 #include "mozilla/AlreadyAddRefed.h"
@@ -34,12 +33,12 @@
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
-#include "nsTHashMap.h"
 #include "nsDebug.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsTStringRepr.h"
 #include "nscore.h"
 #include "prenv.h"
@@ -290,7 +289,7 @@ class QuotaManager final : public BackgroundThreadObject {
   Result<Ok, nsresult> EnsureTemporaryOriginDirectoryCreated(
       const OriginMetadata& aOriginMetadata);
 
-  static nsresult CreateDirectoryMetadata2(
+  nsresult CreateDirectoryMetadata2(
       nsIFile& aDirectory, const FullOriginMetadata& aFullOriginMetadata);
 
   nsresult RestoreDirectoryMetadata2(nsIFile* aDirectory);
@@ -302,6 +301,9 @@ class QuotaManager final : public BackgroundThreadObject {
 
   Result<FullOriginMetadata, nsresult> LoadFullOriginMetadataWithRestore(
       nsIFile* aDirectory);
+
+  Result<std::pair<FullOriginMetadata, bool /* restore status */>, nsresult>
+  LoadFullOriginMetadataWithRestoreAndStatus(nsIFile* aDirectory);
 
   Result<OriginMetadata, nsresult> GetOriginMetadata(nsIFile* aDirectory);
 
@@ -750,6 +752,9 @@ class QuotaManager final : public BackgroundThreadObject {
 
   static void InvalidateQuotaCache();
 
+  OriginMetadataArray GetTemporaryOrigins(
+      PersistenceType aPersistenceType) const;
+
  private:
   virtual ~QuotaManager();
 
@@ -839,6 +844,22 @@ class QuotaManager final : public BackgroundThreadObject {
       nsIFile& aLsArchiveFile) const;
 
   template <typename OriginFunc>
+  Result<Ok, nsresult> InitializeOriginDirectory(
+      const nsCOMPtr<nsIFile>& aChildDirectory, const nsAutoString& aLeafName,
+      PersistenceType aPersistenceType,
+      nsTArray<struct RenameAndInitInfo>& aRenameAndInitInfos,
+      OriginFunc&& aOriginFunc);
+
+  // Determine the type of a repository entry (directory, file, or absent)
+  // and handle it accordingly.
+  template <typename OriginFunc>
+  Result<Ok, nsresult> ResolveRepositoryEntry(
+      const nsCOMPtr<nsIFile>& aChildDirectory,
+      PersistenceType aPersistenceType,
+      nsTArray<RenameAndInitInfo>& aRenameAndInitInfos,
+      OriginFunc&& aOriginFunc);
+
+  template <typename OriginFunc>
   nsresult InitializeRepository(PersistenceType aPersistenceType,
                                 OriginFunc&& aOriginFunc);
 
@@ -856,9 +877,40 @@ class QuotaManager final : public BackgroundThreadObject {
 
   OriginInfosNestedTraversable GetOriginInfosExceedingGlobalLimit() const;
 
-  void ClearOrigins(const OriginInfosNestedTraversable& aDoomedOriginInfos);
+  // Returns origins with zero usage. If aCutoffAccessTime is provided, origins
+  // whose last access time is newer than the cutoff are excluded.
+  //
+  // The cutoff time is expressed as an int64_t value in microseconds since the
+  // Unix epoch (1970-01-01 00:00:00 UTC), matching the format returned by
+  // PR_Now(). This is the same time unit used throughout Quota Manager for
+  // access and modification timestamps.
+  //
+  // Typically callers compute it as:
+  //     const int64_t cutoff = PR_Now() - (N * PR_USEC_PER_SEC);
+  // where N is the desired age threshold in seconds (for example, one week).
+  OriginInfosNestedTraversable GetOriginInfosWithZeroUsage(
+      const Maybe<int64_t>& aCutoffAccessTime = Nothing()) const;
+
+  /**
+   * Clears the given set of origins.
+   *
+   * @param aDoomedOriginInfos
+   *   Origins to be cleared.
+   * @param aChecker
+   *   A callable invoked for each origin before clearing. Typically used to
+   *   enforce or assert invariants at the call site.
+   * @param aMaxOriginsToClear
+   *   Optional cap on the number of origins cleared in a single run. If
+   *   Nothing(), all doomed origins are cleared.
+   */
+  template <typename Checker>
+  void ClearOrigins(const OriginInfosNestedTraversable& aDoomedOriginInfos,
+                    Checker&& aChecker,
+                    const Maybe<size_t>& aMaxOriginsToClear = Nothing());
 
   void CleanupTemporaryStorage();
+
+  void RecordTemporaryStorageMetrics();
 
   void DeleteOriginDirectory(const OriginMetadata& aOriginMetadata);
 
@@ -1049,12 +1101,6 @@ class QuotaManager final : public BackgroundThreadObject {
    */
   void IncreaseSaveOriginAccessTimeCountInternal();
 
-  template <typename Iterator>
-  static void MaybeInsertNonPersistedOriginInfos(
-      Iterator aDest, const RefPtr<GroupInfo>& aTemporaryGroupInfo,
-      const RefPtr<GroupInfo>& aDefaultGroupInfo,
-      const RefPtr<GroupInfo>& aPrivateGroupInfo);
-
   template <typename Collect, typename Pred>
   static OriginInfosFlatTraversable CollectLRUOriginInfosUntil(
       Collect&& aCollect, Pred&& aPred);
@@ -1187,4 +1233,4 @@ class QuotaManager final : public BackgroundThreadObject {
 
 }  // namespace mozilla::dom::quota
 
-#endif /* mozilla_dom_quota_quotamanager_h__ */
+#endif /* mozilla_dom_quota_quotamanager_h_ */

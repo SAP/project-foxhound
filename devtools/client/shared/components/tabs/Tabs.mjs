@@ -50,6 +50,9 @@ class Tabs extends Component {
       // To render a sidebar toggle button before the tab menu provide a function that
       // returns a React component for the button.
       renderSidebarToggle: PropTypes.func,
+      // To render a toolbar button after the tab menu provide a function that
+      // returns a React component for the button.
+      renderToolbarButton: PropTypes.func,
       // Set true will only render selected panel on DOM. It's complete
       // opposite of the created array, and it's useful if panels content
       // is unpredictable and update frequently.
@@ -245,8 +248,8 @@ class Tabs extends Component {
    *
    * @param {Integer} index
    *        Index of the tab that we want to set as the active one
-   * @param {Object} options
-   * @param {Boolean} options.fromMouseEvent
+   * @param {object} options
+   * @param {boolean} options.fromMouseEvent
    *        Set to true if this is called from a click on the tab
    */
   setActive(index, options = {}) {
@@ -368,11 +371,17 @@ class Tabs extends Component {
       ? this.props.renderSidebarToggle()
       : null;
 
+    // Get the toolbar button if a renderToolbarButton function is provided.
+    const toolbarButton = this.props.renderToolbarButton
+      ? this.props.renderToolbarButton()
+      : null;
+
     return dom.nav(
       { className: "tabs-navigation" },
       sidebarToggle,
       dom.ul({ className: "tabs-menu", role: "tablist" }, tabs),
-      allTabsMenu
+      allTabsMenu,
+      toolbarButton
     );
   }
 

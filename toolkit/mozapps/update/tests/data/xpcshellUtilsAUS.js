@@ -58,6 +58,8 @@ const DIR_RESOURCES =
 const TEST_FILE_SUFFIX = AppConstants.platform == "macosx" ? "_mac" : "";
 const FILE_COMPLETE_MAR = "complete" + TEST_FILE_SUFFIX + ".mar";
 const FILE_PARTIAL_MAR = "partial" + TEST_FILE_SUFFIX + ".mar";
+const FILE_PARTIAL_ZUCCHINI_MAR =
+  "partial_zucchini" + TEST_FILE_SUFFIX + ".mar";
 const FILE_COMPLETE_PRECOMPLETE = "complete_precomplete" + TEST_FILE_SUFFIX;
 const FILE_PARTIAL_PRECOMPLETE = "partial_precomplete" + TEST_FILE_SUFFIX;
 const FILE_COMPLETE_REMOVEDFILES = "complete_removed-files" + TEST_FILE_SUFFIX;
@@ -152,6 +154,7 @@ const APP_UPDATE_SJS_HOST = "http://127.0.0.1";
 const APP_UPDATE_SJS_PATH = "/" + REL_PATH_DATA + "app_update.sjs";
 
 var gIncrementalDownloadErrorType;
+var gIncrementalDownloadCancelOk = false;
 
 var gResponseBody;
 
@@ -5172,7 +5175,13 @@ IncrementalDownload.prototype = {
 
   /* nsIRequest */
   cancel(_aStatus) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+    // We aren't actually going to do anything to cancel this. The tests should
+    // clean up the completed download either way, so it should never really
+    // matter if we actually finish it after calling this. But we want to throw
+    // an error if a test calls this unexpectedly.
+    if (!gIncrementalDownloadCancelOk) {
+      throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+    }
   },
   suspend() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
@@ -5695,6 +5704,12 @@ const EXIT_CODE = ${JSON.stringify(TestUpdateMutexCrossProcess.EXIT_CODE)};
  *           expectedDownloadResult
  *             This function asserts that the download should finish with this
  *             result. Defaults to `NS_OK`.
+ *           expectedDownloadStartResult
+ *             This function asserts that `AUS.downloadUpdate` return the
+ *             expected value. Defaults to
+ *             `Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS`. If a different
+ *             value is specified, later checks that the download completed
+ *             properly will be skipped.
  *           incrementalDownloadErrorType
  *             This can be used to specify an alternate value of
  *             `gIncrementalDownloadErrorType`. The default value is `3`, which
@@ -5717,6 +5732,7 @@ async function downloadUpdate({
   expectDownloadRestriction,
   expectedCheckResult,
   expectedDownloadResult = Cr.NS_OK,
+  expectedDownloadStartResult = Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS,
   incrementalDownloadErrorType = 3,
   onDownloadStartCallback,
   slowDownload,
@@ -5734,7 +5750,10 @@ async function downloadUpdate({
         "update-download-restriction-hit"
       );
     });
-  } else {
+  } else if (
+    expectedDownloadStartResult ==
+    Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS
+  ) {
     downloadFinishedPromise = new Promise(resolve =>
       gAUS.addDownloadListener({
         onStartRequest: _aRequest => {},
@@ -5798,6 +5817,9 @@ async function downloadUpdate({
 
     initMockIncrementalDownload();
     gIncrementalDownloadErrorType = incrementalDownloadErrorType;
+    gIncrementalDownloadCancelOk =
+      expectedDownloadStartResult !=
+      Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS;
 
     update = await gAUS.selectUpdate(updates);
   }
@@ -5822,9 +5844,12 @@ async function downloadUpdate({
     const result = await gAUS.downloadUpdate(update);
     Assert.equal(
       result,
-      Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS,
-      "nsIApplicationUpdateService:downloadUpdate should succeed"
+      expectedDownloadStartResult,
+      "nsIApplicationUpdateService:downloadUpdate status should be correct"
     );
+    if (result != Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS) {
+      return;
+    }
   }
 
   if (waitToStartPromise) {
@@ -5853,4 +5878,61 @@ async function downloadUpdate({
     // ought to resolve only after the entire download process has completed.
     await TestUtils.waitForTick();
   }
+}
+
+/**
+ * Holds a file open until it ought to be closed.
+ *
+ * @param  file
+ *         The `nsIFile` for the file to be held open
+ * @param  shareMode
+ *         Optional. The share mode (`dwShareMode`) to pass to `CreateFileW`
+ *         when opening the file. If provided, should be a string containing
+ *         a combination of 'r', 'w', and 'd' to indicate sharing for the
+ *         read, write, and delete permissions, respectively. The default is to
+ *         share nothing.
+ * @return An asynchronous function taking no arguments. When it is called and
+ *         the returned promise resolves, the file is no longer being held open.
+ */
+async function holdFileOpen(file, shareMode) {
+  const testHelper = getTestDirFile("test_file_hold_open.exe", false);
+
+  const args = [file.path];
+  if (shareMode) {
+    args.push(shareMode);
+  }
+
+  const proc = await Subprocess.call({
+    command: testHelper.path,
+    arguments: args,
+  });
+  const isLocked = await proc.stdout.readString();
+
+  if (isLocked.trim() != "Locked") {
+    throw new Error("Expected status to be Locked, found " + isLocked);
+  }
+
+  return async () => {
+    await proc.stdin.write("q");
+    const rc = await proc.wait(1000);
+    Assert.equal(rc.exitCode, 0, "Expected process to have successful exit");
+  };
+}
+
+async function setFileModifiedAge(outfile, ageInSeconds) {
+  const outfilePath = outfile.path;
+  const testHelper = getTestDirFile("test_file_change_mtime.exe");
+
+  let proc = await Subprocess.call({
+    command: testHelper.path,
+    arguments: [outfilePath, ageInSeconds],
+  });
+
+  let stdout;
+  while ((stdout = await proc.stdout.readString())) {
+    logTestInfo(stdout);
+  }
+
+  const rc = await proc.wait(1000); // Wait for it to exit.
+  Assert.equal(rc.exitCode, 0, "Expected process to have successful exit");
 }

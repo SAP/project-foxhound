@@ -1,0 +1,35 @@
+[package]
+name = "example-sync-pass"
+version = "0.1.0"
+authors = ["sync-team@mozilla.com"]
+license = "MPL-2.0"
+edition = "2021"
+publish = false
+
+[[example]]
+name = "sync-pass"
+path = "src/sync-pass.rs"
+
+[dev-dependencies]
+base64 = "0.21"
+logins = { path = "../../components/logins", features = ["keydb"] }
+sync15 = { path = "../../components/sync15" }
+sync-guid = { path = "../../components/support/guid" }
+log = "0.4"
+sql-support = { path = "../../components/support/sql" }
+anyhow = "1.0"
+text-table = { path = "../../components/support/text-table" }
+fxa-client = { path = "../../components/fxa-client" }
+chrono = "0.4"
+clap = {version = "4.2", default-features = false, features = ["std", "derive"]}
+cli-support = { path = "../cli-support" }
+tempfile = "3"
+serde_json = "1.0"
+url = "2.2"
+viaduct = { path = "../../components/viaduct"}
+viaduct-hyper = { path = "../../components/support/viaduct-hyper" }
+rusqlite = { version = "0.37.0", features = ["limits"] }
+init_rust_components = { path = "../../components/init_rust_components", features = ["keydb"] }
+
+[dependencies]
+async-trait = "0.1"

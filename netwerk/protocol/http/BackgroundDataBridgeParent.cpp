@@ -4,22 +4,28 @@
 
 #include "mozilla/net/BackgroundDataBridgeParent.h"
 #include "mozilla/net/SocketProcessChild.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 namespace net {
 
 BackgroundDataBridgeParent::BackgroundDataBridgeParent(uint64_t aChannelID)
-    : mChannelID(aChannelID), mBackgroundThread(GetCurrentSerialEventTarget()) {
-  if (SocketProcessChild* child = SocketProcessChild::GetSingleton()) {
-    child->AddDataBridgeToMap(aChannelID, this);
-  }
-}
+    : mChannelID(aChannelID),
+      mBackgroundThread(GetCurrentSerialEventTarget()) {}
 
 void BackgroundDataBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (SocketProcessChild* child = SocketProcessChild::GetSingleton()) {
     child->RemoveDataBridgeFromMap(mChannelID);
   }
+}
+
+already_AddRefed<BackgroundDataBridgeParent> BackgroundDataBridgeParent::Create(
+    uint64_t aChannelID) {
+  RefPtr<BackgroundDataBridgeParent> actor =
+      new BackgroundDataBridgeParent(aChannelID);
+  if (SocketProcessChild* child = SocketProcessChild::GetSingleton()) {
+    child->AddDataBridgeToMap(aChannelID, actor);
+  }
+  return actor.forget();
 }
 
 already_AddRefed<nsISerialEventTarget>
@@ -50,7 +56,7 @@ void BackgroundDataBridgeParent::OnStopRequest(
                              [self, aStatus, aTiming, aLastActiveTabOptHit,
                               aResponseTrailers, aOnStopRequestStart]() {
                                if (self->CanSend()) {
-                                 Unused << self->SendOnStopRequest(
+                                 (void)self->SendOnStopRequest(
                                      aStatus, aTiming, aLastActiveTabOptHit,
                                      aResponseTrailers, aOnStopRequestStart);
                                  self->Close();

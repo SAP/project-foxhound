@@ -70,40 +70,6 @@ add_setup(async function head_setup() {
   }
 });
 
-ChromeUtils.defineLazyGetter(this, "SyncPingSchema", function () {
-  let { FileUtils } = ChromeUtils.importESModule(
-    "resource://gre/modules/FileUtils.sys.mjs"
-  );
-  let { NetUtil } = ChromeUtils.importESModule(
-    "resource://gre/modules/NetUtil.sys.mjs"
-  );
-  let stream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
-    Ci.nsIFileInputStream
-  );
-  let schema;
-  try {
-    let schemaFile = do_get_file("sync_ping_schema.json");
-    stream.init(schemaFile, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
-
-    let bytes = NetUtil.readInputStream(stream, stream.available());
-    schema = JSON.parse(new TextDecoder().decode(bytes));
-  } finally {
-    stream.close();
-  }
-
-  // Allow tests to make whatever engines they want, this shouldn't cause
-  // validation failure.
-  schema.definitions.engine.properties.name = { type: "string" };
-  return schema;
-});
-
-ChromeUtils.defineLazyGetter(this, "SyncPingValidator", function () {
-  const { JsonSchema } = ChromeUtils.importESModule(
-    "resource://gre/modules/JsonSchema.sys.mjs"
-  );
-  return new JsonSchema.Validator(SyncPingSchema);
-});
-
 // This is needed for loadAddonTestFunctions().
 var gGlobalScope = this;
 
@@ -206,60 +172,31 @@ async function generateNewKeys(collectionKeys, collections = null) {
 // These reflect part of the internal structure of TabEngine,
 // and stub part of Service.wm.
 
-function mockShouldSkipWindow(win) {
-  return win.closed || win.mockIsPrivate;
-}
-
 function mockGetTabState(tab) {
   return tab;
 }
 
-function mockGetWindowEnumerator(urls) {
-  let elements = [];
+function mockGetOrderedNonPrivateWindows(urls) {
+  let tabs = [];
+  let win = {
+    gBrowser: {
+      tabs,
+    },
+  };
 
-  const numWindows = 1;
-  for (let w = 0; w < numWindows; ++w) {
-    let tabs = [];
-    let win = {
-      closed: false,
-      mockIsPrivate: false,
-      gBrowser: {
-        tabs,
+  let lastAccessed = 2000;
+  for (let url of urls) {
+    tabs.push({
+      linkedBrowser: {
+        currentURI: Services.io.newURI(url),
+        contentTitle: "title",
       },
-    };
-    elements.push(win);
-
-    let lastAccessed = 2000;
-    for (let url of urls) {
-      tabs.push({
-        linkedBrowser: {
-          currentURI: Services.io.newURI(url),
-          contentTitle: "title",
-        },
-        lastAccessed,
-      });
-      lastAccessed += 1000;
-    }
+      lastAccessed,
+    });
+    lastAccessed += 1000;
   }
 
-  // Always include a closed window and a private window.
-  elements.push({
-    closed: true,
-    mockIsPrivate: false,
-    gBrowser: {
-      tabs: [],
-    },
-  });
-
-  elements.push({
-    closed: false,
-    mockIsPrivate: true,
-    gBrowser: {
-      tabs: [],
-    },
-  });
-
-  return elements.values();
+  return [win];
 }
 
 // Helper function to get the sync telemetry and add the typically used test
@@ -278,34 +215,7 @@ function get_sync_test_telemetry() {
 }
 
 function assert_valid_ping(record) {
-  // Our JSON validator does not like `undefined` values, even though they will
-  // be skipped when we serialize to JSON.
-  record = JSON.parse(JSON.stringify(record));
-
-  // This is called as the test harness tears down due to shutdown. This
-  // will typically have no recorded syncs, and the validator complains about
-  // it. So ignore such records (but only ignore when *both* shutdown and
-  // no Syncs - either of them not being true might be an actual problem)
   if (record && (record.why != "shutdown" || !!record.syncs.length)) {
-    const result = SyncPingValidator.validate(record);
-    if (!result.valid) {
-      if (result.errors.length) {
-        // validation failed - using a simple |deepEqual([], errors)| tends to
-        // truncate the validation errors in the output and doesn't show that
-        // the ping actually was - so be helpful.
-        info("telemetry ping validation failed");
-        info("the ping data is: " + JSON.stringify(record, undefined, 2));
-        info(
-          "the validation failures: " +
-            JSON.stringify(result.errors, undefined, 2)
-        );
-        ok(
-          false,
-          "Sync telemetry ping validation failed - see output above for details"
-        );
-      }
-    }
-    equal(record.version, 1);
     record.syncs.forEach(p => {
       lessOrEqual(p.when, Date.now());
     });

@@ -591,38 +591,27 @@ def p_Param(p):
 
 
 def p_Type(p):
-    """Type : MaybeNullable BasicType"""
-    # only some types are nullable; we check this in the type checker
-    p[2].nullable = p[1]
-    p[0] = p[2]
+    """Type : BasicType
+    | Type '?'
+    | Type '[' ']'
+    | UNIQUEPTR '<' Type '>'
+    """
+    if 2 == len(p):
+        p[0] = p[1]
+    elif 3 == len(p):
+        p[0] = p[1].withModifier("maybe")
+    elif 4 == len(p):
+        p[0] = p[1].withModifier("array")
+    else:
+        p[0] = p[3].withModifier("uniqueptr")
 
 
 def p_BasicType(p):
-    """BasicType : CxxID
-    | CxxID '[' ']'
-    | CxxID '?'
-    | CxxUniquePtrInst"""
-    # ID == CxxType; we forbid qnames here,
-    # in favor of the |using| declaration
-    if not isinstance(p[1], TypeSpec):
-        assert (len(p[1]) == 2) or (len(p[1]) == 3)
-        if 2 == len(p[1]):
-            # p[1] is CxxID. isunique = False
-            p[1] = p[1] + (False,)
-        loc, id, isunique = p[1]
-        p[1] = TypeSpec(loc, id)
-        p[1].uniqueptr = isunique
-    if 4 == len(p):
-        p[1].array = True
-    if 3 == len(p):
-        p[1].maybe = True
-    p[0] = p[1]
-
-
-def p_MaybeNullable(p):
-    """MaybeNullable : NULLABLE
-    |"""
-    p[0] = 2 == len(p)
+    """BasicType : NULLABLE CxxID
+    | CxxID"""
+    nullable = 3 == len(p)
+    loc, id = p[2] if nullable else p[1]
+    p[0] = TypeSpec(loc, id, nullable)
 
 
 # --------------------
@@ -664,11 +653,6 @@ def p_CxxID(p):
 def p_CxxTemplateInst(p):
     """CxxTemplateInst : ID '<' ID '>'"""
     p[0] = (locFromTok(p, 1), str(p[1]) + "<" + str(p[3]) + ">")
-
-
-def p_CxxUniquePtrInst(p):
-    """CxxUniquePtrInst : UNIQUEPTR '<' ID '>'"""
-    p[0] = (locFromTok(p, 1), str(p[3]), True)
 
 
 def p_error(t):

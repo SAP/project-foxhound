@@ -23,9 +23,12 @@ const {
 const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
+const { getMdnLinkParams } = ChromeUtils.importESModule(
+  "resource://devtools/shared/mdn.mjs"
+);
 const DOC_URL =
-  "https://developer.mozilla.org/en-US/docs/Web/Manifest" +
-  "?utm_source=devtools&utm_medium=sw-panel-blank";
+  "https://developer.mozilla.org/docs/Web/Progressive_web_apps/Manifest?" +
+  getMdnLinkParams("sw-panel-blank");
 
 /**
  * This component displays help information when no manifest is found for the

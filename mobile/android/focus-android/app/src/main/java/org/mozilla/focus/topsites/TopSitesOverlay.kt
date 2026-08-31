@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.feature.top.sites.TopSite
@@ -35,7 +34,7 @@ import org.mozilla.focus.state.AppAction
 fun TopSitesOverlay(modifier: Modifier = Modifier) {
     val components = components
     val topSitesState = components.appStore.observeAsComposableState { state -> state.topSites }
-    val topSites = topSitesState.value ?: listOf()
+    val topSites = topSitesState.value
     val showRenameDialog: MutableState<Boolean> = remember { mutableStateOf(false) }
     val topSiteItem: MutableState<TopSite?> = remember { mutableStateOf(null) }
 
@@ -114,7 +113,7 @@ private fun openTopSite(item: TopSite, components: Components) {
 fun removeTopSite(item: TopSite, components: Components, coroutineScope: CoroutineScope) {
     Shortcuts.shortcutRemovedCounter["removed_from_home_screen"].add()
 
-    coroutineScope.launch(Dispatchers.IO) {
+    coroutineScope.launch {
         components.topSitesUseCases.removeTopSites(item)
     }
 }
@@ -133,7 +132,7 @@ fun renameTopSite(
     components: Components,
     coroutineScope: CoroutineScope,
 ) {
-    coroutineScope.launch(Dispatchers.IO) {
+    coroutineScope.launch {
         components.topSitesUseCases.updateTopSites.invoke(
             selectedTopSite,
             newTitle,

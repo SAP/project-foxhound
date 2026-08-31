@@ -75,18 +75,4 @@ export default [
     ],
     isActive: false,
   },
-  {
-    info: "as soon as overflow:hidden is set, text-overflow is active whatever the box type",
-    property: "text-overflow",
-    tagName: "span",
-    rules: ["span { text-overflow: ellipsis; overflow: hidden; }"],
-    isActive: true,
-  },
-  {
-    info: "as soon as overflow:hidden is set, text-overflow is active whatever the box type",
-    property: "text-overflow",
-    tagName: "legend",
-    rules: ["legend { text-overflow: ellipsis; overflow: hidden; }"],
-    isActive: true,
-  },
 ];

@@ -20,13 +20,13 @@ const certOverrideService = Cc[
 ].getService(Ci.nsICertOverrideService);
 
 add_setup(async function setup() {
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
-
   h3Port = Services.env.get("MOZHTTP3_PORT_NO_RESPONSE");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
+
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
 
   trr_test_setup();
 
@@ -188,8 +188,6 @@ add_task(async function test_fast_fallback_without_speculative_connection() {
 // longer timeout in this test, so when fast fallback timer is triggered, the
 // http transaction is already activated.
 add_task(async function testFastfallback() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", false);
@@ -271,15 +269,11 @@ add_task(async function testFastfallback() {
   Assert.equal(req.protocolVersion, "h2");
   let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
   Assert.equal(internal.remotePort, h2Port);
-
-  await trrServer.stop();
 });
 
 // Like the previous test, but with a shorter timeout, so when fast fallback
 // timer is triggered, the http transaction is still in pending queue.
 add_task(async function testFastfallback1() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", false);
@@ -361,15 +355,12 @@ add_task(async function testFastfallback1() {
   Assert.equal(req.protocolVersion, "h2");
   let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
   Assert.equal(internal.remotePort, h2Port);
-
-  await trrServer.stop();
 });
 
 // Test when echConfig is enabled, we can sucessfully fallback to the last
 // record.
 add_task(async function testFastfallbackWithEchConfig() {
-  trrServer = new TRRServer();
-  await trrServer.start();
+  // XXX(valenting): This test takes 30s to fallback.
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
@@ -466,15 +457,12 @@ add_task(async function testFastfallbackWithEchConfig() {
   Assert.equal(req.protocolVersion, "h2");
   let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
   Assert.equal(internal.remotePort, h2Port);
-
-  await trrServer.stop();
 });
 
 // Test when echConfig is enabled, the connection should fail when not all
 // records have echConfig.
 add_task(async function testFastfallbackWithpartialEchConfig() {
-  trrServer = new TRRServer();
-  await trrServer.start();
+  // XXX(valenting): This test takes 30s to fallback.
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
@@ -552,13 +540,9 @@ add_task(async function testFastfallbackWithpartialEchConfig() {
 
   let chan = makeChan(`https://test.partial_ech.org/server-timing`);
   await channelOpenPromise(chan, CL_EXPECT_LATE_FAILURE | CL_ALLOW_UNKNOWN_CL);
-
-  await trrServer.stop();
 });
 
 add_task(async function testFastfallbackWithoutEchConfig() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
 
@@ -622,13 +606,9 @@ add_task(async function testFastfallbackWithoutEchConfig() {
   Assert.equal(req.protocolVersion, "h2");
   let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
   Assert.equal(internal.remotePort, h2Port);
-
-  await trrServer.stop();
 });
 
 add_task(async function testH3FallbackWithMultipleTransactions() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", false);
@@ -693,13 +673,9 @@ add_task(async function testH3FallbackWithMultipleTransactions() {
     let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
     Assert.equal(internal.remotePort, h2Port);
   });
-
-  await trrServer.stop();
 });
 
 add_task(async function testTwoFastFallbackTimers() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", false);
@@ -788,13 +764,9 @@ add_task(async function testTwoFastFallbackTimers() {
   Services.prefs.setIntPref("network.http.http3.backup_timer_delay", 10);
 
   await createChannelAndStartTest();
-
-  await trrServer.stop();
 });
 
 add_task(async function testH3FastFallbackWithMultipleTransactions() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", false);
@@ -849,13 +821,9 @@ add_task(async function testH3FastFallbackWithMultipleTransactions() {
     let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
     Assert.equal(internal.remotePort, h2Port);
   });
-
-  await trrServer.stop();
 });
 
 add_task(async function testFastfallbackToTheSameRecord() {
-  trrServer = new TRRServer();
-  await trrServer.start();
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
   Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
@@ -910,6 +878,61 @@ add_task(async function testFastfallbackToTheSameRecord() {
   Assert.equal(req.protocolVersion, "h2");
   let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
   Assert.equal(internal.remotePort, h2Port);
+});
 
-  await trrServer.stop();
+// Similar to the previous test, but no ech.
+add_task(async function testFastfallbackToTheSameRecord1() {
+  Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
+  Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
+  Services.prefs.setBoolPref("network.dns.echconfig.enabled", true);
+  Services.prefs.setBoolPref("network.dns.http3_echconfig.enabled", true);
+
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${trrServer.port()}/dns-query`
+  );
+  Services.prefs.setBoolPref("network.http.http3.enable", true);
+
+  Services.prefs.setIntPref(
+    "network.dns.httpssvc.http3_fast_fallback_timeout",
+    1000
+  );
+
+  await trrServer.registerDoHAnswers("test.no_ech.org", "HTTPS", {
+    answers: [
+      {
+        name: "test.no_ech.org",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: {
+          priority: 1,
+          name: "test.no_ech.org",
+          values: [
+            { key: "alpn", value: ["h3", "h2"] },
+            { key: "port", value: h2Port },
+          ],
+        },
+      },
+    ],
+  });
+
+  await trrServer.registerDoHAnswers("test.no_ech.org", "A", {
+    answers: [
+      {
+        name: "test.no_ech.org",
+        ttl: 55,
+        type: "A",
+        flush: false,
+        data: "127.0.0.1",
+      },
+    ],
+  });
+
+  let chan = makeChan(`https://test.no_ech.org/server-timing`);
+  let [req] = await channelOpenPromise(chan);
+  Assert.equal(req.protocolVersion, "h2");
+  let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);
+  Assert.equal(internal.remotePort, h2Port);
 });

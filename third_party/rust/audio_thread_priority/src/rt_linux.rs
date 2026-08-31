@@ -62,6 +62,10 @@ impl RtPriorityThreadInfoInternal {
     pub fn deserialize(bytes: [u8; std::mem::size_of::<Self>()]) -> Self {
         unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Self>()], Self>(bytes) }
     }
+    /// Returns the PID of the process containing the thread.
+    pub fn pid(&self) -> libc::pid_t {
+        self.pid
+    }
 }
 
 impl PartialEq for RtPriorityThreadInfoInternal {
@@ -80,8 +84,7 @@ fn item_as_i64(i: MessageItem) -> Result<i64, AudioThreadPriorityError> {
         MessageItem::Int32(i) => Ok(i as i64),
         MessageItem::Int64(i) => Ok(i),
         _ => Err(AudioThreadPriorityError::new(&format!(
-            "Property is not integer ({:?})",
-            i
+            "Property is not integer ({i:?})"
         ))),
     }
 }

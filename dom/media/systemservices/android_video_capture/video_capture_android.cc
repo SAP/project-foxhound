@@ -10,17 +10,15 @@
 
 #include "video_capture_android.h"
 
+#include "AndroidBridge.h"
 #include "device_info_android.h"
 #include "modules/utility/include/helpers_android.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/time_utils.h"
 
-#include "AndroidBridge.h"
-
 static JavaVM* g_jvm_capture = NULL;
 static jclass g_java_capturer_class = NULL;  // VideoCaptureAndroid.class.
-static jobject g_context = NULL;             // Owned android.content.Context.
 
 namespace webrtc {
 
@@ -33,12 +31,6 @@ jobject JniCommon_allocateNativeByteBuffer(JNIEnv* env, jclass, jint size) {
 void JniCommon_freeNativeByteBuffer(JNIEnv* env, jclass, jobject byte_buffer) {
   void* data = env->GetDirectBufferAddress(byte_buffer);
   ::operator delete(data);
-}
-
-// Called by Java to get the global application context.
-jobject JNICALL GetContext(JNIEnv* env, jclass) {
-  assert(g_context);
-  return g_context;
 }
 
 // Called by Java when the camera has a new frame to deliver.
@@ -61,7 +53,7 @@ void JNICALL ProvideCameraFrame(JNIEnv* env, jobject, jint width, jint height,
   uint8_t* dataV =
       reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(javaDataV));
 
-  rtc::scoped_refptr<I420Buffer> i420Buffer = I420Buffer::Copy(
+  webrtc::scoped_refptr<I420Buffer> i420Buffer = I420Buffer::Copy(
       width, height, dataY, strideY, dataU, strideU, dataV, strideV);
 
   captureModule->OnIncomingFrame(i420Buffer, rotation, timeStamp);
@@ -77,8 +69,6 @@ int32_t SetCaptureAndroidVM(JavaVM* javaVM) {
     g_jvm_capture = javaVM;
     AttachThreadScoped ats(g_jvm_capture);
 
-    g_context = mozilla::AndroidBridge::Bridge()->GetGlobalContextRef();
-
     videocapturemodule::DeviceInfoAndroid::Initialize(g_jvm_capture);
 
     {
@@ -90,14 +80,12 @@ int32_t SetCaptureAndroidVM(JavaVM* javaVM) {
       assert(g_java_capturer_class);
 
       JNINativeMethod native_methods[] = {
-          {"GetContext", "()Landroid/content/Context;",
-           reinterpret_cast<void*>(&GetContext)},
           {"ProvideCameraFrame",
            "(IILjava/nio/ByteBuffer;ILjava/nio/ByteBuffer;ILjava/nio/"
            "ByteBuffer;IIJJ)V",
            reinterpret_cast<void*>(&ProvideCameraFrame)}};
       if (ats.env()->RegisterNatives(g_java_capturer_class, native_methods,
-                                     2) != 0)
+                                     1) != 0)
         assert(false);
     }
 
@@ -119,7 +107,6 @@ int32_t SetCaptureAndroidVM(JavaVM* javaVM) {
       ats.env()->UnregisterNatives(g_java_capturer_class);
       ats.env()->DeleteGlobalRef(g_java_capturer_class);
       g_java_capturer_class = NULL;
-      g_context = NULL;
       videocapturemodule::DeviceInfoAndroid::DeInitialize();
       g_jvm_capture = NULL;
     }
@@ -130,19 +117,19 @@ int32_t SetCaptureAndroidVM(JavaVM* javaVM) {
 
 namespace videocapturemodule {
 
-rtc::scoped_refptr<VideoCaptureModule> VideoCaptureImpl::Create(
-    const char* deviceUniqueIdUTF8) {
-  rtc::scoped_refptr<VideoCaptureAndroid> implementation(
-      new rtc::RefCountedObject<VideoCaptureAndroid>());
+webrtc::scoped_refptr<VideoCaptureModule> VideoCaptureImpl::Create(
+    Clock* clock, const char* deviceUniqueIdUTF8) {
+  webrtc::scoped_refptr<VideoCaptureAndroid> implementation(
+      new webrtc::RefCountedObject<VideoCaptureAndroid>(clock));
   if (implementation->Init(deviceUniqueIdUTF8) != 0) {
     implementation = nullptr;
   }
   return implementation;
 }
 
-void VideoCaptureAndroid::OnIncomingFrame(rtc::scoped_refptr<I420Buffer> buffer,
-                                          int32_t degrees,
-                                          int64_t captureTime) {
+void VideoCaptureAndroid::OnIncomingFrame(
+    webrtc::scoped_refptr<I420Buffer> buffer, int32_t degrees,
+    int64_t captureTime) {
   MutexLock lock(&api_lock_);
 
   VideoRotation rotation =
@@ -154,13 +141,13 @@ void VideoCaptureAndroid::OnIncomingFrame(rtc::scoped_refptr<I420Buffer> buffer,
 
   // Historically, we have ignored captureTime. Why?
   VideoFrame captureFrame(I420Buffer::Rotate(*buffer, rotation), 0,
-                          rtc::TimeMillis(), rotation);
+                          webrtc::TimeMillis(), rotation);
 
   DeliverCapturedFrame(captureFrame);
 }
 
-VideoCaptureAndroid::VideoCaptureAndroid()
-    : VideoCaptureImpl(),
+VideoCaptureAndroid::VideoCaptureAndroid(Clock* clock)
+    : VideoCaptureImpl(clock),
       _deviceInfo(),
       _jCapturer(NULL),
       _captureStarted(false) {}
@@ -191,7 +178,9 @@ int32_t VideoCaptureAndroid::Init(const char* deviceUniqueIdUTF8) {
 
 VideoCaptureAndroid::~VideoCaptureAndroid() {
   // Ensure Java camera is released even if our caller didn't explicitly Stop.
-  if (_captureStarted) StopCapture();
+  if (CaptureStarted()) {
+    StopCapture();
+  }
   AttachThreadScoped ats(g_jvm_capture);
   JNIEnv* env = ats.env();
   env->DeleteGlobalRef(_jCapturer);
@@ -201,30 +190,34 @@ int32_t VideoCaptureAndroid::StartCapture(
     const VideoCaptureCapability& capability) {
   AttachThreadScoped ats(g_jvm_capture);
   JNIEnv* env = ats.env();
+  RTC_DCHECK_RUN_ON(&api_checker_);
   int width = 0;
   int height = 0;
   int min_mfps = 0;
   int max_mfps = 0;
-  {
-    RTC_DCHECK_RUN_ON(&api_checker_);
-    MutexLock lock(&api_lock_);
+  VideoCaptureCapability matchedCapability;
 
-    if (_deviceInfo.GetBestMatchedCapability(_deviceUniqueId, capability,
-                                             _captureCapability) < 0) {
-      RTC_LOG(LS_ERROR) << __FUNCTION__
-                        << "s: GetBestMatchedCapability failed: "
-                        << capability.width << "x" << capability.height;
-      return -1;
-    }
-
-    width = _captureCapability.width;
-    height = _captureCapability.height;
-    _deviceInfo.GetMFpsRange(_deviceUniqueId, _captureCapability.maxFPS,
-                             &min_mfps, &max_mfps);
-
-    // Exit critical section to avoid blocking camera thread inside
-    // onIncomingFrame() call.
+  if (_deviceInfo.GetBestMatchedCapability(_deviceUniqueId, capability,
+                                           matchedCapability) < 0) {
+    RTC_LOG(LS_ERROR) << __FUNCTION__ << "s: GetBestMatchedCapability failed: "
+                      << capability.width << "x" << capability.height;
+    return -1;
   }
+
+  if (CaptureStarted()) {
+    if (_captureCapability == matchedCapability) {
+      return 0;
+    }
+    if (StopCapture() < 0) {
+      RTC_LOG(LS_WARNING) << __FUNCTION__
+                          << "Stopping for capability change failed";
+    }
+  }
+
+  width = matchedCapability.width;
+  height = matchedCapability.height;
+  _deviceInfo.GetMFpsRange(_deviceUniqueId, matchedCapability.maxFPS, &min_mfps,
+                           &max_mfps);
 
   jmethodID j_start =
       env->GetMethodID(g_java_capturer_class, "startCapture", "(IIIIJ)Z");
@@ -233,8 +226,8 @@ int32_t VideoCaptureAndroid::StartCapture(
   bool started = env->CallBooleanMethod(_jCapturer, j_start, width, height,
                                         min_mfps, max_mfps, j_this);
   if (started) {
-    RTC_DCHECK_RUN_ON(&api_checker_);
     MutexLock lock(&api_lock_);
+    _captureCapability = matchedCapability;
     _requestedCapability = capability;
     _captureStarted = true;
   }
@@ -244,9 +237,15 @@ int32_t VideoCaptureAndroid::StartCapture(
 int32_t VideoCaptureAndroid::StopCapture() {
   AttachThreadScoped ats(g_jvm_capture);
   JNIEnv* env = ats.env();
+
+  RTC_DCHECK_RUN_ON(&api_checker_);
+
   {
-    RTC_DCHECK_RUN_ON(&api_checker_);
     MutexLock lock(&api_lock_);
+
+    if (!_captureStarted) {
+      return 0;
+    }
 
     memset(&_requestedCapability, 0, sizeof(_requestedCapability));
     memset(&_captureCapability, 0, sizeof(_captureCapability));

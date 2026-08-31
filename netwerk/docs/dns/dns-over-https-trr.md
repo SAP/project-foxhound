@@ -29,7 +29,7 @@ The functioning of this module is described
 [here](https://wiki.mozilla.org/Security/DNS_Over_HTTPS).
 
 The code lives in
-[browser/components/doh](https://searchfox.org/mozilla-central/source/browser/components/doh).
+[browser/components/doh](https://searchfox.org/firefox-main/source/browser/components/doh).
 
 ## Implementation
 

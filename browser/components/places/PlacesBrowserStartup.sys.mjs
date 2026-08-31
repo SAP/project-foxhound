@@ -17,10 +17,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
+  BrowserHandler: ["@mozilla.org/browser/clh;1", Ci.nsIBrowserHandler],
   UserIdleService: [
     "@mozilla.org/widget/useridleservice;1",
-    "nsIUserIdleService",
+    Ci.nsIUserIdleService,
   ],
 });
 
@@ -269,13 +269,6 @@ export let PlacesBrowserStartup = {
       }
 
       this._bookmarksBackupIdleTime = idleTime;
-
-      if (this._isNewProfile) {
-        // New profiles may have existing bookmarks (imported from another browser or
-        // copied into the profile) and we want to show the bookmark toolbar for them
-        // in some cases.
-        await lazy.PlacesUIUtils.maybeToggleBookmarkToolbarVisibility();
-      }
     })()
       .catch(ex => {
         console.error(ex);
@@ -297,7 +290,7 @@ export let PlacesBrowserStartup = {
     // interval between backups elapsed.
     if (
       !lastBackupFile ||
-      new Date() - lazy.PlacesBackups.getDateForFile(lastBackupFile) >
+      Date.now() - lazy.PlacesBackups.getDateForFile(lastBackupFile).getTime() >
         BOOKMARKS_BACKUP_MIN_INTERVAL_DAYS * 86400000
     ) {
       let maxBackups = Services.prefs.getIntPref(
@@ -311,7 +304,9 @@ export let PlacesBrowserStartup = {
    * Show the notificationBox for a locked places database.
    */
   async _showPlacesLockedNotificationBox() {
-    var win = lazy.BrowserWindowTracker.getTopWindow();
+    var win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     var buttons = [{ supportPage: "places-locked" }];
 
     var notifyBox = win.gBrowser.getNotificationBox();
@@ -338,6 +333,10 @@ export let PlacesBrowserStartup = {
     if (
       Services.prefs.getBoolPref("browser.bookmarks.addedImportButton", false)
     ) {
+      if (!Services.policies.isAllowed("profileImport")) {
+        lazy.PlacesUIUtils.removeImportButton();
+        return;
+      }
       lazy.PlacesUIUtils.removeImportButtonWhenImportSucceeds();
       return;
     }

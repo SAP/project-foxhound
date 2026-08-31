@@ -1,5 +1,8 @@
 "use strict";
 
+const initialHomeRegion = Region.home;
+const initialCurrentRegion = Region.current;
+
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -41,8 +44,6 @@ add_task(async function test_save_doorhanger_supported_region() {
 });
 
 add_task(async function test_save_doorhanger_supported_region_from_pref() {
-  const initialHomeRegion = Region._home;
-  const initialCurrentRegion = Region._current;
   const region = "US";
   Region._setCurrentRegion(region);
   Region._setHomeRegion(region);
@@ -104,9 +105,6 @@ add_task(async function test_save_doorhanger_unsupported_region_from_record() {
 });
 
 add_task(async function test_save_doorhanger_unsupported_region_from_pref() {
-  const initialHomeRegion = Region._home;
-  const initialCurrentRegion = Region._current;
-
   const region = "FR";
   Region._setCurrentRegion(region);
   Region._setHomeRegion(region);
@@ -139,9 +137,6 @@ add_task(async function test_save_doorhanger_unsupported_region_supported_on() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.formautofill.addresses.supported", "on"]],
   });
-
-  const initialHomeRegion = Region._home;
-  const initialCurrentRegion = Region._current;
 
   const region = "FR";
   Region._setCurrentRegion(region);

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,12 @@
 #ifndef GMPVideoEncoderChild_h_
 #define GMPVideoEncoderChild_h_
 
-#include "nsString.h"
-#include "mozilla/gmp/PGMPVideoEncoderChild.h"
-#include "gmp-video-encode.h"
 #include "GMPSharedMemManager.h"
 #include "GMPVideoHost.h"
+#include "GMPVideoi420FrameImpl.h"
+#include "gmp-video-encode.h"
+#include "mozilla/gmp/PGMPVideoEncoderChild.h"
+#include "nsString.h"
 
 namespace mozilla::gmp {
 
@@ -18,7 +18,7 @@ class GMPContentChild;
 
 class GMPVideoEncoderChild final : public PGMPVideoEncoderChild,
                                    public GMPVideoEncoderCallback,
-                                   public GMPSharedMemManager {
+                                   public GMPVideoHostImpl {
   friend class PGMPVideoEncoderChild;
 
  public:
@@ -29,7 +29,6 @@ class GMPVideoEncoderChild final : public PGMPVideoEncoderChild,
   explicit GMPVideoEncoderChild(GMPContentChild* aPlugin);
 
   void Init(GMPVideoEncoder* aEncoder);
-  GMPVideoHostImpl& Host();
 
   // GMPVideoEncoderCallback
   void Encoded(GMPVideoEncodedFrame* aEncodedFrame,
@@ -38,9 +37,15 @@ class GMPVideoEncoderChild final : public PGMPVideoEncoderChild,
   void Error(GMPErr aError) override;
 
   // GMPSharedMemManager
-  void MgrDeallocShmem(Shmem& aMem) override { DeallocShmem(aMem); }
+  void MgrDeallocShmem(Shmem& aMem) override {
+    if (CanSend()) {
+      DeallocShmem(aMem);
+    }
+  }
+  void MgrDecodedFrameDestroyed(GMPVideoi420FrameImpl* aFrame) override;
 
  protected:
+  bool MgrCanSend() const override { return CanSend(); }
   bool MgrIsOnOwningThread() const override;
 
  private:
@@ -65,7 +70,7 @@ class GMPVideoEncoderChild final : public PGMPVideoEncoderChild,
 
   GMPContentChild* mPlugin;
   GMPVideoEncoder* mVideoEncoder;
-  GMPVideoHostImpl mVideoHost;
+  uint64_t mLatestEncodedTimestamp = 0;
 };
 
 }  // namespace mozilla::gmp

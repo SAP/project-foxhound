@@ -2,7 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import json
 import os
 import shutil
 import sys
@@ -10,7 +9,7 @@ import tempfile
 import unittest
 
 import mozpack.path as mozpath
-from mozfile import NamedTemporaryFile, load_source
+from mozfile import NamedTemporaryFile, json, load_source
 from mozunit import MockedOpen, main
 from mozwebidlcodegen import WebIDLCodegenManager, WebIDLCodegenManagerState
 

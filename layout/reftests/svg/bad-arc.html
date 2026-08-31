@@ -1,0 +1,14 @@
+<!--
+The path contains an arc with very large radii, causing float precision issues.
+Before the fix, the approximation of the arc with cubic bézier segments produces
+large segments that incorrectly shoot off in the distance which leads a large
+triangular shape.
+After the fix the path is very small and sligtly off screen so nothing is visible.
+-->
+<!DOCTYPE html>
+<svg style="width: 400px; height: 400px; border: 1px solid blue" viewBox="0 -100 300 200">
+    <path d="M78.4,207.2
+             a56270558080367.86,56270558080367.86,0,0,1-1.2,1.4
+             A2.761,2.761,0,0,0,78.4,207.2
+             Z"/>
+</svg>

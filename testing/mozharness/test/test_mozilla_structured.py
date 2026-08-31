@@ -26,7 +26,7 @@ failure_summary = RunSummary(
 
 class TestParser(MozbaseMixin, StructuredOutputParser):
     def __init__(self, *args, **kwargs):
-        super(TestParser, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.config = {}
 
 

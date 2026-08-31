@@ -1,24 +1,18 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.plainyearmonth.prototype.add
-description: RangeError thrown when adding negative duration to last representable month.
+description: Adding negative duration to last representable month works
 features: [Temporal]
+includes: [temporalHelpers.js]
 ---*/
 
 const lastMonth = new Temporal.PlainYearMonth(275760, 9);
 
-// See https://tc39.es/proposal-temporal/#sec-temporal-adddurationtoyearmonth
-// (step 10d)
-assert.throws(RangeError, () => lastMonth.add({seconds: -1}));
-assert.throws(RangeError, () => lastMonth.add({minutes: -1}));
-assert.throws(RangeError, () => lastMonth.add({hours: -1}));
-assert.throws(RangeError, () => lastMonth.add({days: -1}));
-assert.throws(RangeError, () => lastMonth.add({weeks: -1}));
-assert.throws(RangeError, () => lastMonth.add({months: -1}));
-assert.throws(RangeError, () => lastMonth.add({years: -1}));
+TemporalHelpers.assertPlainYearMonth(lastMonth.add({ months: -1 }), 275760, 8, "M08", "-1 month");
+TemporalHelpers.assertPlainYearMonth(lastMonth.add({ years: -1 }), 275759, 9, "M09", "-1 year");
 
 
 reportCompare(0, 0);

@@ -98,9 +98,8 @@
       }
 
       add_setup(async function setup() {
-        ({ html, render } = await import(
-          "chrome://global/content/vendor/lit.all.mjs"
-        ));
+        ({ html, render } =
+          await import("chrome://global/content/vendor/lit.all.mjs"));
         document.querySelector("moz-button-group").remove();
         document.querySelector("moz-button").remove();
       });

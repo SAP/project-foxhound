@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef DOM_MEDIA_PACER_H_
+#define DOM_MEDIA_PACER_H_
 
 #include "MediaEventSource.h"
 #include "MediaTimer.h"
 #include "nsDeque.h"
 
-#ifndef DOM_MEDIA_PACER_H_
-#  define DOM_MEDIA_PACER_H_
-
 extern mozilla::LazyLogModule gMediaPipelineLog;
-#  define LOG(level, msg, ...) \
-    MOZ_LOG(gMediaPipelineLog, level, (msg, ##__VA_ARGS__))
+#define LOG(level, msg, ...) \
+  MOZ_LOG_FMT(gMediaPipelineLog, level, msg, ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -39,8 +37,9 @@ class Pacer {
       : mTarget(aTarget),
         mDuplicationInterval(aDuplicationInterval),
         mTimer(MakeAndAddRef<MediaTimer<TimeStamp>>()) {
-    LOG(LogLevel::Info, "Pacer %p constructed. Duplication interval is %.2fms",
-        this, mDuplicationInterval.ToMilliseconds());
+    LOG(LogLevel::Info,
+        "Pacer {} constructed. Duplication interval is {:.2f}ms",
+        fmt::ptr(this), mDuplicationInterval.ToMilliseconds());
   }
 
   /**
@@ -48,14 +47,16 @@ class Pacer {
    * t=aTime. Already queued items with t>=aTime will be dropped.
    */
   void Enqueue(T aItem, TimeStamp aTime) {
-    LOG(LogLevel::Verbose, "Pacer %p: Enqueue t=%.4fs now=%.4fs", this,
-        (aTime - mStart).ToSeconds(), (TimeStamp::Now() - mStart).ToSeconds());
+    LOG(LogLevel::Verbose, "Pacer {}: Enqueue t={:.4f}s now={:.4f}s",
+        fmt::ptr(this), (aTime - mStart).ToSeconds(),
+        (TimeStamp::Now() - mStart).ToSeconds());
     MOZ_ALWAYS_SUCCEEDS(mTarget->Dispatch(NS_NewRunnableFunction(
         __func__,
         [this, self = RefPtr<Pacer>(this), aItem = std::move(aItem), aTime] {
           MOZ_DIAGNOSTIC_ASSERT(!mIsShutdown);
-          LOG(LogLevel::Verbose, "Pacer %p: InnerEnqueue t=%.4fs, now=%.4fs",
-              self.get(), (aTime - mStart).ToSeconds(),
+          LOG(LogLevel::Verbose,
+              "Pacer {}: InnerEnqueue t={:.4f}s, now={:.4f}s",
+              fmt::ptr(self.get()), (aTime - mStart).ToSeconds(),
               (TimeStamp::Now() - mStart).ToSeconds());
           while (const auto* item = mQueue.Peek()) {
             if (item->mTime < aTime) {
@@ -69,13 +70,14 @@ class Pacer {
   }
 
   void SetDuplicationInterval(TimeDuration aInterval) {
-    LOG(LogLevel::Info, "Pacer %p: SetDuplicationInterval(%.3fs) now=%.4fs",
-        this, aInterval.ToSeconds(), (TimeStamp::Now() - mStart).ToSeconds());
+    LOG(LogLevel::Info, "Pacer {}: SetDuplicationInterval({:.3f}s) now={:.4f}s",
+        fmt::ptr(this), aInterval.ToSeconds(),
+        (TimeStamp::Now() - mStart).ToSeconds());
     MOZ_ALWAYS_SUCCEEDS(mTarget->Dispatch(NS_NewRunnableFunction(
         __func__, [this, self = RefPtr(this), aInterval] {
           LOG(LogLevel::Debug,
-              "Pacer %p: InnerSetDuplicationInterval(%.3fs) now=%.4fs",
-              self.get(), aInterval.ToSeconds(),
+              "Pacer {}: InnerSetDuplicationInterval({:.3f}s) now={:.4f}s",
+              fmt::ptr(self.get()), aInterval.ToSeconds(),
               (TimeStamp::Now() - mStart).ToSeconds());
           if (auto* next = mQueue.PeekFront(); next && next->mIsDuplicate) {
             // Adjust the time of the next duplication frame.
@@ -89,11 +91,11 @@ class Pacer {
   }
 
   RefPtr<GenericPromise> Shutdown() {
-    LOG(LogLevel::Info, "Pacer %p: Shutdown, now=%.4fs", this,
+    LOG(LogLevel::Info, "Pacer {}: Shutdown, now={:.4f}s", fmt::ptr(this),
         (TimeStamp::Now() - mStart).ToSeconds());
     return InvokeAsync(mTarget, __func__, [this, self = RefPtr<Pacer>(this)] {
-      LOG(LogLevel::Debug, "Pacer %p: InnerShutdown, now=%.4fs", self.get(),
-          (TimeStamp::Now() - mStart).ToSeconds());
+      LOG(LogLevel::Debug, "Pacer {}: InnerShutdown, now={:.4f}s",
+          fmt::ptr(self.get()), (TimeStamp::Now() - mStart).ToSeconds());
       mIsShutdown = true;
       mTimer->Cancel();
       mQueue.Erase();
@@ -119,14 +121,15 @@ class Pacer {
       mCurrentTimerTarget = Nothing();
     }
 
-    LOG(LogLevel::Verbose, "Pacer %p: Waiting until t=%.4fs", this,
+    LOG(LogLevel::Verbose, "Pacer {}: Waiting until t={:.4f}s", fmt::ptr(this),
         (aTime - mStart).ToSeconds());
     mTimer->WaitUntil(aTime, __func__)
         ->Then(
             mTarget, __func__,
             [this, self = RefPtr<Pacer>(this), aTime] {
-              LOG(LogLevel::Verbose, "Pacer %p: OnTimerTick t=%.4fs, now=%.4fs",
-                  self.get(), (aTime - mStart).ToSeconds(),
+              LOG(LogLevel::Verbose,
+                  "Pacer {}: OnTimerTick t={:.4f}s, now={:.4f}s",
+                  fmt::ptr(self.get()), (aTime - mStart).ToSeconds(),
                   (TimeStamp::Now() - mStart).ToSeconds());
               OnTimerTick();
             },
@@ -153,8 +156,9 @@ class Pacer {
           mQueue.PushFront(MakeAndAddRef<QueueItem>(
               item->mItem, item->mTime + mDuplicationInterval, true));
         }
-        LOG(LogLevel::Verbose, "Pacer %p: NotifyPacedItem t=%.4fs, now=%.4fs",
-            this, (item->mTime - mStart).ToSeconds(),
+        LOG(LogLevel::Verbose,
+            "Pacer {}: NotifyPacedItem t={:.4f}s, now={:.4f}s", fmt::ptr(this),
+            (item->mTime - mStart).ToSeconds(),
             (TimeStamp::Now() - mStart).ToSeconds());
         mPacedItemEvent.Notify(std::move(item->mItem), item->mTime);
         continue;
@@ -174,9 +178,9 @@ class Pacer {
  public:
   const nsCOMPtr<nsISerialEventTarget> mTarget;
 
-#  ifdef MOZ_LOGGING
+#ifdef MOZ_LOGGING
   const TimeStamp mStart = TimeStamp::Now();
-#  endif
+#endif
 
  protected:
   struct QueueItem {
@@ -218,6 +222,6 @@ class Pacer {
 
 }  // namespace mozilla
 
-#  undef LOG
+#undef LOG
 
-#endif
+#endif  // DOM_MEDIA_PACER_H_

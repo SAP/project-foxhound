@@ -2,11 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MTRANSPORTHANDLER_PARENT_H__
-#define _MTRANSPORTHANDLER_PARENT_H__
+#ifndef MTRANSPORTHANDLER_PARENT_H_
+#define MTRANSPORTHANDLER_PARENT_H_
+
+#include <memory>
 
 #include "mozilla/dom/PMediaTransportParent.h"
-#include <memory>
 
 namespace mozilla {
 
@@ -41,7 +42,7 @@ class MediaTransportParent : public dom::PMediaTransportParent {
       const string& localPwd, const int& componentCount,
       const string& remoteUfrag, const string& remotePwd,
       nsTArray<uint8_t>&& keyDer, nsTArray<uint8_t>&& certDer,
-      const int& authType, const bool& dtlsClient,
+      const SSLKEAType& authType, const bool& dtlsClient,
       const DtlsDigestList& digests, const bool& privacyRequested);
   mozilla::ipc::IPCResult RecvRemoveTransportsExcept(
       const StringVector& transportIds);
@@ -67,4 +68,4 @@ class MediaTransportParent : public dom::PMediaTransportParent {
 #endif  // MOZ_WEBRTC
 };
 }  // namespace mozilla
-#endif  //_MTRANSPORTHANDLER_PARENT_H__
+#endif  // MTRANSPORTHANDLER_PARENT_H_

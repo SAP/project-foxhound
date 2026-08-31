@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -16,10 +16,21 @@ const validStrings = [
   "2019-12[!Africa/Abidjan]",
   "2019-12[u-ca=iso8601]",
   "2019-12[Africa/Abidjan][u-ca=iso8601]",
+  "2019-12-15T00+00",
   "2019-12-15T00+00:00",
+  "2019-12-15T00+00:00:00,0",
+  "2019-12-15T00+00:00:00.000000000",
+  "2019-12-15T00+0000",
+  "2019-12-15T00+000000,0",
+  "2019-12-15T00+000000.000000000",
   "2019-12-15T00+00:00[UTC]",
   "2019-12-15T00+00:00[!UTC]",
+  "2019-12-15T00+01[Europe/Vienna]",
   "2019-12-15T00-02:30[America/St_Johns]",
+  "2019-12-15T00-02:30:00,0[America/St_Johns]",
+  "2019-12-15T00-02:30:00.000000000[America/St_Johns]",
+  "2019-12-15T00-023000,0[America/St_Johns]",
+  "2019-12-15T00-023000.000000000[America/St_Johns]",
 ];
 
 for (const arg of validStrings) {

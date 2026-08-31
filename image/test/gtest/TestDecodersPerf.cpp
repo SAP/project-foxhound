@@ -73,8 +73,8 @@ static void WithSingleChunkDecode(const ImageTestCase& aTestCase,
       decoderType, sourceBuffer, aOutputSize, DecoderFlags::FIRST_FRAME_ONLY,
       aTestCase.mSurfaceFlags);
   ASSERT_TRUE(decoder != nullptr);
-  RefPtr<IDecodingTask> task =
-      new AnonymousDecodingTask(WrapNotNull(decoder), /* aResumable */ false);
+  auto task = MakeRefPtr<AnonymousDecodingTask>(WrapNotNull(decoder),
+                                                /* aResumable */ false);
 
   // Run the full decoder synchronously.
   task->Run();
@@ -155,5 +155,12 @@ IMAGE_GTEST_BENCH_ALPHA_F(WebP, RgbAlphaLossless)
 IMAGE_GTEST_BENCH_ALPHA_F(WebP, RgbAlphaLossy)
 
 IMAGE_GTEST_BENCH_F(GIF, Rgb)
+
+#ifdef MOZ_JXL
+IMAGE_GTEST_BENCH_F(JXL, RgbLossless)
+IMAGE_GTEST_BENCH_F(JXL, RgbLossy)
+IMAGE_GTEST_BENCH_ALPHA_F(JXL, RgbAlphaLossless)
+IMAGE_GTEST_BENCH_ALPHA_F(JXL, RgbAlphaLossy)
+#endif
 
 }  // namespace

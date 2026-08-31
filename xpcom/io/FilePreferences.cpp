@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -107,12 +105,12 @@ void InitPrefs() {
   TTokenizer<char_path_t> p(forbidden);
   while (!p.CheckEOF()) {
     nsTString<char_path_t> path;
-    Unused << p.ReadUntil(TTokenizer<char_path_t>::Token::Char(','), path);
+    (void)p.ReadUntil(TTokenizer<char_path_t>::Token::Char(','), path);
     path.Trim(" ");
     if (!path.IsEmpty()) {
       ForbiddenPaths().AppendElement(path);
     }
-    Unused << p.CheckChar(',');
+    (void)p.CheckChar(',');
   }
 
   sForbiddenPathsEmptyQuickCheck =

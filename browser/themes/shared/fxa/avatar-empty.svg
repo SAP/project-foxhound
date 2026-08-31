@@ -1,4 +1,18 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity"><g clip-path="url(#a)"><path d="M8 4a2.38 2.38 0 0 0-2.293 3.008 2.35 2.35 0 0 0 1.661 1.661A2.376 2.376 0 1 0 8 4z"/><path d="M8 1.5c3.584 0 6.5 2.916 6.5 6.5s-2.916 6.5-6.5 6.5A6.508 6.508 0 0 1 1.5 8c0-3.584 2.916-6.5 6.5-6.5zM8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0z"/><path d="M8 13.5a5.498 5.498 0 0 0 4.667-2.603A2 2 0 0 0 11 10H5a2 2 0 0 0-1.667.897A5.498 5.498 0 0 0 8 13.5z"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h16v16H0z"/></clipPath></defs></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton"><g clip-path="url(#a)"><path d="M8 4a2.38 2.38 0 0 0-2.293 3.008 2.35 2.35 0 0 0 1.661 1.661A2.376 2.376 0 1 0 8 4z"/><path d="M8 1.5c3.584 0 6.5 2.916 6.5 6.5s-2.916 6.5-6.5 6.5A6.508 6.508 0 0 1 1.5 8c0-3.584 2.916-6.5 6.5-6.5zM8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0z"/><path d="M8 13.5a5.498 5.498 0 0 0 4.667-2.603A2 2 0 0 0 11 10H5a2 2 0 0 0-1.667.897A5.498 5.498 0 0 0 8 13.5z"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h16v16H0z"/></clipPath></defs></g>
+<g class="nova">
+  <path d="M7.999 9c1.018 0 1.951.076 2.784.19.636.087 1.161.47 1.456.997.174.31.133.71-.083.992A5.22 5.22 0 0 1 8 13.25l-.001.001a5.22 5.22 0 0 1-4.156-2.071.92.92 0 0 1-.083-.992 1.97 1.97 0 0 1 1.455-.998C6.049 9.076 6.98 9 7.999 9M8 3.75a2 2 0 0 1 2 2.001c0 1.278-1.2 2.276-2.533 1.93a1.98 1.98 0 0 1-1.398-1.398A2.004 2.004 0 0 1 8 3.75" />
+  <path fill-rule="evenodd" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0m0 1.5A6.51 6.51 0 0 0 1.5 8c0 3.584 2.916 6.5 6.5 6.5s6.5-2.916 6.5-6.5S11.584 1.5 8 1.5" clip-rule="evenodd" />
+</g>
+</svg>

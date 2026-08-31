@@ -1,0 +1,12 @@
+# Linear gradient at a 45 degrees angle with hard stops.
+# This test case used to exhibit some issues with hard stops that fall exactly
+# on a diagonal of pixels causing the hard stop to look wobbly instead of a
+# straight line.
+---
+root:
+  items:
+    - type: gradient
+      bounds: [ 0, 0, 200, 200 ]
+      start: [ 0, 200 ]
+      end: [ 200, 0 ]
+      stops: [ 0.0, red, 0.2, red, 0.2, yellow, 0.3, yellow, 0.3, blue, 0.4, blue, 0.4, yellow, 0.5, yellow, 0.5, red, 0.6, red, 0.6, green, 0.7, green, 0.7, red, 0.8, red, 0.8, yellow ]

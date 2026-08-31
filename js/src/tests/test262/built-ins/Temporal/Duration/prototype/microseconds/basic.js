@@ -1,0 +1,17 @@
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
+// Copyright (C) 2026 Igalia, S.L. All rights reserved.
+// This code is governed by the BSD license found in the LICENSE file.
+
+/*---
+esid: sec-get-temporal.duration.prototype.microseconds
+description: Basic functionality
+features: [Temporal]
+---*/
+
+const instance = new Temporal.Duration(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+assert.sameValue(instance.microseconds, 9);
+
+const negInstance = new Temporal.Duration(-1, -2, -3, -4, -5, -6, -7, -8, -9, -10);
+assert.sameValue(negInstance.microseconds, -9);
+
+reportCompare(0, 0);

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,14 +57,16 @@ UrlClassifierDBServiceWorkerProxy::SetHashCompleter(
 
 NS_IMETHODIMP
 UrlClassifierDBServiceWorkerProxy::BeginUpdate(
-    nsIUrlClassifierUpdateObserver* aUpdater, const nsACString& aTables) {
-  nsCOMPtr<nsIRunnable> r = new BeginUpdateRunnable(mTarget, aUpdater, aTables);
+    nsIUrlClassifierUpdateObserver* aUpdater, const nsACString& aTables,
+    const nsACString& aProvider) {
+  nsCOMPtr<nsIRunnable> r =
+      new BeginUpdateRunnable(mTarget, aUpdater, aTables, aProvider);
   return DispatchToWorkerThread(r);
 }
 
 NS_IMETHODIMP
 UrlClassifierDBServiceWorkerProxy::BeginUpdateRunnable::Run() {
-  mTarget->BeginUpdate(mUpdater, mTables);
+  mTarget->BeginUpdate(mUpdater, mTables, mProvider);
   return NS_OK;
 }
 
@@ -140,6 +141,16 @@ UrlClassifierDBServiceWorkerProxy::ClearCache() {
       NewRunnableMethod("nsUrlClassifierDBServiceWorker::ClearCache", mTarget,
                         &nsUrlClassifierDBServiceWorker::ClearCache);
   return DispatchToWorkerThread(r);
+}
+
+NS_IMETHODIMP
+UrlClassifierDBServiceWorkerProxy::CleanRealTimeSimulatorCache() {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+UrlClassifierDBServiceWorkerProxy::ExpireRealTimeSimulatorCache() {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult UrlClassifierDBServiceWorkerProxy::OpenDb() const {

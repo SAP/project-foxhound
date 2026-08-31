@@ -12,10 +12,9 @@
 SimpleTest.waitForExplicitFinish();
 ok(window.isSecureContext, "top level should be a secure context");
 
-// eslint-disable-next-line
-let newWin = window.open("data:text/html,<script><"+"/script>");
-ok(newWin.isSecureContext, "data uri window should be a secure context");
-newWin.close();
+// Top-level data: URI popup test removed: content-initiated top-level
+// data: URI navigations are unconditionally blocked. The isSecureContext
+// inheritance is still tested via iframes below.
 
 window.addEventListener("message", (event) => {
     ok(event.data.isSecureContext, "data uri frames should be a secure context");

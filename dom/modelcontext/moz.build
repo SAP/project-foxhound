@@ -1,0 +1,42 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Machine Learning: General")
+
+XPIDL_SOURCES += [
+    "nsIModelContextService.idl",
+]
+
+XPIDL_MODULE = "dom_modelcontext"
+
+EXPORTS.mozilla.dom += [
+    "ModelContext.h",
+    "ModelContextClient.h",
+    "ModelContextService.h",
+]
+
+UNIFIED_SOURCES += [
+    "ModelContext.cpp",
+    "ModelContextClient.cpp",
+    "ModelContextService.cpp",
+]
+
+IPDL_SOURCES += [
+    "ModelContextTypes.ipdlh",
+]
+
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
+
+XPCOM_MANIFESTS += [
+    "components.conf",
+]
+
+LOCAL_INCLUDES += [
+    "/dom/ipc",
+]
+
+include("/ipc/chromium/chromium-config.mozbuild")
+
+FINAL_LIBRARY = "xul"

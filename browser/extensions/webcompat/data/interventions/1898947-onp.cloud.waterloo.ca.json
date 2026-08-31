@@ -1,0 +1,15 @@
+{
+  "label": "onp.cloud.waterloo.ca",
+  "bugs": {
+    "1898947": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://onp.cloud.waterloo.ca/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

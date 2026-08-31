@@ -5,7 +5,7 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  jwcrypto: "resource://services-crypto/jwcrypto.sys.mjs",
+  jwcrypto: "moz-src:///services/crypto/modules/jwcrypto.sys.mjs",
 });
 
 import {
@@ -13,6 +13,7 @@ import {
   SCOPE_PROFILE,
   SCOPE_PROFILE_WRITE,
   SCOPE_APP_SYNC,
+  log,
 } from "resource://gre/modules/FxAccountsCommon.sys.mjs";
 
 const VALID_SCOPES = [SCOPE_PROFILE, SCOPE_PROFILE_WRITE, SCOPE_APP_SYNC];
@@ -37,7 +38,7 @@ export class FxAccountsOAuth {
   /**
    * Creates a new FxAccountsOAuth
    *
-   * @param { Object } fxaClient: The fxa client used to send http request to the oauth server
+   * @param {object} fxaClient: The fxa client used to send http request to the oauth server
    */
   constructor(fxaClient, fxaKeys) {
     this.#flow = {};
@@ -47,8 +48,9 @@ export class FxAccountsOAuth {
 
   /**
    * Stores a flow in-memory
+   *
    * @param { string } state: A base-64 URL-safe string represnting a random value created at the start of the flow
-   * @param { Object } value: The data needed to complete a flow, once the oauth code is available.
+   * @param {object} value: The data needed to complete a flow, once the oauth code is available.
    * in practice, `value` is:
    *  - `verifier`: A base=64 URL-safe string representing the PKCE code verifier
    *  - `key`: The private key need to decrypt the JWE we recieve from the auth server
@@ -65,10 +67,11 @@ export class FxAccountsOAuth {
     this.#flow = {};
   }
 
-  /*
+  /**
    * Gets a stored flow
+   *
    * @param { string } state: The base-64 URL-safe state string that was created at the start of the flow
-   * @returns { Object }: The values initially stored when startign th eoauth flow
+   * @returns {object}: The values initially stored when startign th eoauth flow
    * in practice, the return value is:
    *  - `verifier`: A base=64 URL-safe string representing the PKCE code verifier
    *  - `key`: The private key need to decrypt the JWE we recieve from the auth server
@@ -93,7 +96,7 @@ export class FxAccountsOAuth {
    *
    * @param { string[] } scopes: The OAuth scopes the client should request from FxA
    *
-   * @returns { Object }: Returns an object representing the query parameters that should be
+   * @returns {object}: Returns an object representing the query parameters that should be
    *     added to the FxA authorization URL to initialize an oAuth flow.
    *     In practice, the query parameters are:
    *       - `client_id`: The OAuth client ID for Firefox Desktop
@@ -172,17 +175,19 @@ export class FxAccountsOAuth {
     return queryParams;
   }
 
-  /** Completes an OAuth flow and invalidates any other ongoing flows
+  /**
+   * Completes an OAuth flow and invalidates any other ongoing flows
+   *
    * @param { string } sessionTokenHex: The session token encoded in hexadecimal
    * @param { string } code: OAuth authorization code provided by running an OAuth flow
    * @param { string } state: The state first provided by `beginOAuthFlow`, then roundtripped through the server
    *
-   * @returns { Object }: Returns an object representing the result of completing the oauth flow.
+   * @returns {object}: Returns an object representing the result of completing the oauth flow.
    *   The object includes the following:
    *     - 'scopedKeys': The encryption keys provided by the server, already decrypted
    *     - 'refreshToken': The refresh token provided by the server
    *     - 'accessToken': The access token provided by the server
-   * */
+   */
   async completeOAuthFlow(sessionTokenHex, code, state) {
     const flow = this.getFlow(state);
     if (!flow) {
@@ -196,14 +201,12 @@ export class FxAccountsOAuth {
         verifier,
         OAUTH_CLIENT_ID
       );
-    if (
-      requestedScopes.includes(SCOPE_APP_SYNC) &&
-      !scope.includes(SCOPE_APP_SYNC)
-    ) {
-      throw new Error(ERROR_SYNC_SCOPE_NOT_GRANTED);
-    }
-    if (scope.includes(SCOPE_APP_SYNC) && !keys_jwe) {
-      throw new Error(ERROR_NO_KEYS_JWE);
+    const requestedSync = requestedScopes.includes(SCOPE_APP_SYNC);
+    const grantedSync = scope.includes(SCOPE_APP_SYNC);
+    // This is not necessarily unexpected as the user could be using
+    // third-party auth but sent the sync scope, we shouldn't error here
+    if (requestedSync && !grantedSync) {
+      log.info("Requested Sync scope but was not granted sync!");
     }
     let scopedKeys;
     if (keys_jwe) {

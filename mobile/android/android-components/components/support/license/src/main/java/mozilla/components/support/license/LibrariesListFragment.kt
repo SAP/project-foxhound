@@ -4,7 +4,6 @@
 
 package mozilla.components.support.license
 
-import android.app.AlertDialog
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.util.Linkify
@@ -14,23 +13,19 @@ import android.widget.ListView
 import android.widget.TextView
 import androidx.annotation.RawRes
 import androidx.fragment.app.Fragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.support.license.databinding.FragmentLibrariesListBinding
+import mozilla.components.ui.widgets.withCenterAlignedButtons
 import java.nio.charset.Charset
 import java.util.Locale
 
 /**
- * Displays the licenses of all the libraries used by Fenix.
+ * Displays the licenses of all the libraries used by the app.
  *
- * This is a re-implementation of play-services-oss-licenses library.
- * We can't use the official implementation in the OSS flavor of Fenix
- * because it is proprietary and closed-source.
- *
- * There are popular FLOSS alternatives to Google's plugin and library
- * such as AboutLibraries (https://github.com/mikepenz/AboutLibraries)
- * but we considered the risk of introducing such third-party dependency
- * to Fenix too high. Therefore, we use Google's gradle plugin to
- * extract the dependencies and their licenses, and this fragment
- * to show the extracted licenses to the end-user.
+ * This is a re-implementation of the play-services-oss-licenses library,
+ * which cannot be used in OSS builds because it is proprietary and closed-source.
+ * It uses Google's gradle plugin to extract the dependencies and their licenses,
+ * and displays them to the end-user.
  */
 abstract class LibrariesListFragment : Fragment(R.layout.fragment_libraries_list) {
 
@@ -100,14 +95,17 @@ abstract class LibrariesListFragment : Fragment(R.layout.fragment_libraries_list
             val licenseData = licensesData.sliceArray(startOffset until startOffset + length)
             val licenseText = licenseData.toString(Charset.forName("UTF-8"))
             LibraryItem(name, licenseText)
-        }.sortedBy { item -> item.name.lowercase(Locale.ROOT) }
+        }
+        .distinctBy { it.name.lowercase(Locale.ROOT) }
+        .sortedBy { it.name.lowercase(Locale.ROOT) }
     }
 
     private fun showLicenseDialog(libraryItem: LibraryItem) {
-        val dialog = AlertDialog.Builder(requireContext())
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(libraryItem.name)
             .setMessage(libraryItem.license)
             .create()
+            .withCenterAlignedButtons()
         dialog.show()
 
         val textView = dialog.findViewById<TextView>(android.R.id.message)!!

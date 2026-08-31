@@ -28,13 +28,13 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "externalProtocolService",
   "@mozilla.org/uriloader/external-protocol-service;1",
-  "nsIExternalProtocolService"
+  Ci.nsIExternalProtocolService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "MIMEService",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 
 export function HandlerService() {
@@ -561,6 +561,7 @@ HandlerService.prototype = {
   /**
    * Private method to inject stored handler information into an nsIHandlerInfo
    * instance.
+   *
    * @param handlerInfo           the nsIHandlerInfo instance to write to
    * @param storedHandlers        the stored handlers
    * @param keepPreferredApp      whether to keep the handlerInfo's
@@ -601,14 +602,6 @@ HandlerService.prototype = {
       return {
         name: handler.name,
         uriTemplate: handler.uriTemplate,
-      };
-    } else if (handler instanceof Ci.nsIDBusHandlerApp) {
-      return {
-        name: handler.name,
-        service: handler.service,
-        method: handler.method,
-        objectPath: handler.objectPath,
-        dBusInterface: handler.dBusInterface,
       };
     } else if (handler instanceof Ci.nsIGIOMimeApp) {
       return {
@@ -651,14 +644,6 @@ HandlerService.prototype = {
         "@mozilla.org/uriloader/web-handler-app;1"
       ].createInstance(Ci.nsIWebHandlerApp);
       handlerApp.uriTemplate = handlerObj.uriTemplate;
-    } else if ("service" in handlerObj) {
-      handlerApp = Cc[
-        "@mozilla.org/uriloader/dbus-handler-app;1"
-      ].createInstance(Ci.nsIDBusHandlerApp);
-      handlerApp.service = handlerObj.service;
-      handlerApp.method = handlerObj.method;
-      handlerApp.objectPath = handlerObj.objectPath;
-      handlerApp.dBusInterface = handlerObj.dBusInterface;
     } else if ("command" in handlerObj && "@mozilla.org/gio-service;1" in Cc) {
       try {
         handlerApp = Cc["@mozilla.org/gio-service;1"]

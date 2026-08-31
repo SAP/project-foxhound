@@ -1,0 +1,17 @@
+{
+  "label": "transcrib.io",
+  "bugs": {
+    "1898946": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://transcrib.io/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["add_chrome_to_useragent.js", "use_chrome_vendor.js"]
+      }
+    }
+  ]
+}

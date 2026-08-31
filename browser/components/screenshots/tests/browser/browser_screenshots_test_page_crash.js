@@ -34,7 +34,7 @@ add_task(async function test_fullpageScreenshot() {
         "Panel buttons are hidden after page crash"
       );
 
-      await ContentTask.spawn(browser, null, async () => {
+      await SpecialPowers.spawn(browser, [], async () => {
         let screenshotsChild = content.windowGlobalChild.getActor(
           "ScreenshotsComponent"
         );

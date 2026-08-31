@@ -18,13 +18,13 @@ import mozilla.components.feature.logins.exceptions.adapter.LoginExceptionAdapte
 import mozilla.components.feature.logins.exceptions.db.LoginExceptionDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.test.assertNotNull
 
 @Suppress("LargeClass")
 class LoginExceptionStorageTest {
@@ -117,7 +117,7 @@ class LoginExceptionStorageTest {
         val exception = storage.findExceptionByOrigin("mozilla.org")
 
         assertNotNull(exception)
-        assertEquals("mozilla.org", exception!!.origin)
+        assertEquals("mozilla.org", exception.origin)
     }
 
     @Test

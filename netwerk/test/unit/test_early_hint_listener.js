@@ -152,6 +152,10 @@ add_task(async function early_hints_other() {
 
 add_task(async function early_hints_only_secure_context() {
   Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
+  Services.prefs.setBoolPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked",
+    false
+  );
   let earlyHints2 = new EarlyHintsListener();
   earlyHints2._expected_hints = "";
 
@@ -164,6 +168,9 @@ add_task(async function early_hints_only_secure_context() {
 
 add_task(async function clean_up() {
   Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
+  Services.prefs.clearUserPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked"
+  );
   await new Promise(resolve => {
     httpserver.stop(resolve);
   });

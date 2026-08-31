@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,11 +47,10 @@ class DataChannelConnectionUsrsctp : public DataChannelConnection {
   void Destroy() override;
   bool RaiseStreamLimitTo(uint16_t aNewLimit) override;
   void OnTransportReady() override;
-  bool Init(const uint16_t aLocalPort, const uint16_t aNumStreams,
-            const Maybe<uint64_t>& aMaxMessageSize) override;
+  bool Init(const uint16_t aLocalPort, const uint16_t aNumStreams) override;
   int SendMessage(DataChannel& aChannel, OutgoingMsg&& aMsg) override;
   void OnSctpPacketReceived(const MediaPacket& packet) override;
-  void ResetStreams(nsTArray<uint16_t>& aStreams) override;
+  bool ResetStreams(nsTArray<uint16_t>& aStreams) override;
   void OnStreamOpen(uint16_t stream) override;
 
   // Called on data reception from the SCTP library
@@ -91,6 +88,7 @@ class DataChannelConnectionUsrsctp : public DataChannelConnection {
                               uint16_t stream, uint16_t messageId, int flags);
   void HandleDCEPMessageChunk(const void* buffer, size_t length, uint32_t ppid,
                               uint16_t stream, int flags);
+  bool HasQueuedData(uint16_t aStream) const;
 
   // All STS only
   bool mSendInterleaved = false;
@@ -99,6 +97,8 @@ class DataChannelConnectionUsrsctp : public DataChannelConnection {
   PendingType mPendingType = PendingType::None;
   // holds outgoing control messages if usrsctp is not ready to send them
   nsTArray<OutgoingMsg> mBufferedControl;
+  // For partial DCEP messages (should be _really_ rare, since they're small)
+  Maybe<IncomingMsg> mRecvBuffer;
   // holds data that's come in before a channel is open
   nsTArray<UniquePtr<QueuedDataMessage>> mQueuedData;
   // accessed from STS thread

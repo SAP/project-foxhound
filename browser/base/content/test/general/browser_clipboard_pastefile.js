@@ -78,13 +78,9 @@ add_task(async function () {
       "paste",
       function (event) {
         let dt = event.clipboardData;
-        is(dt.types.length, 3, "number of types");
+        is(dt.types.length, 2, "number of types");
         ok(dt.types.includes("text/plain"), "text/plain exists in types");
-        ok(
-          dt.types.includes("application/x-moz-file"),
-          "application/x-moz-file exists in types"
-        );
-        is(dt.types[2], "Files", "Last type should be 'Files'");
+        is(dt.types[1], "Files", "Last type should be 'Files'");
         ok(
           dt.mozTypesAt(0).contains("text/plain"),
           "text/plain exists in mozTypesAt"

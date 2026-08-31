@@ -26,3 +26,4 @@ Sources
 -------
 
 * :searchfox:`Configuration (YAML) <tools/lint/rejected-words.yml>`
+* :searchfox:`Source (Rust) <tools/lint/mozcheck/src/rejected_words.rs>`

@@ -1,0 +1,73 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.footer-container {
+  display: flex;
+  gap: var(--space-large);
+  padding: var(--space-xlarge);
+}
+
+.footer-action-button {
+  @media not (forced-colors) {
+    --button-text-color-ghost: var(--smartwindow-brand-accent);
+
+    --button-text-color-ghost-active: var(--smartwindow-brand-accent);
+    --button-background-color-ghost-active: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+
+    --button-text-color-ghost-hover: var(--smartwindow-brand-accent);
+    --button-background-color-ghost-hover: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), color-mix(in srgb, white 10%, transparent));
+
+    --button-background-color-ghost-selected: light-dark(
+      color-mix(in srgb, var(--color-violet-50) 25%, transparent),
+      color-mix(in srgb, white 15%, transparent)
+    );
+  }
+
+  &::part(button) {
+    --icon-size: var(--icon-size-medium);
+    --button-font-weight: var(--font-weight);
+    font-size: var(--button-font-size-small);
+    flex-direction: column;
+    gap: var(--space-small);
+  }
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  .footer-action-button {
+    --button-padding: var(--space-medium);
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
+    min-width: 86px;
+
+    &::part(button) {
+      --button-border-radius: var(--border-radius-large);
+    }
+
+    &::part(button),
+    &::part(moz-button-label) {
+      cursor: pointer;
+    }
+
+    @media not (forced-colors) {
+      --button-text-color-ghost: var(--smartwindow-icon-color-accent-primary-desaturated);
+
+      --button-background-color-ghost-active: light-dark(
+        color-mix(in srgb, var(--color-violet-60) 30%, transparent),
+        color-mix(in srgb, var(--color-violet-30) 36%, transparent)
+      );
+      /* Active state is using a different text color for a11y contrast */
+      --button-text-color-ghost-active: light-dark(var(--color-violet-90), var(--color-gray-0));
+
+      --button-background-color-ghost-hover: light-dark(
+        color-mix(in srgb, var(--color-violet-60) 16%, transparent),
+        color-mix(in srgb, var(--color-violet-30) 24%, transparent)
+      );
+      --button-text-color-ghost-hover: var(--smartwindow-icon-color-accent-primary-desaturated);
+
+      --button-background-color-ghost-selected: light-dark(
+        color-mix(in srgb, var(--color-violet-60) 16%, transparent),
+        color-mix(in srgb, var(--color-violet-30) 24%, transparent)
+      );
+    }
+  }
+}

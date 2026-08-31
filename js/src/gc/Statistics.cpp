@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -12,7 +10,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <stdarg.h>
 #include <stdio.h>
 #include <type_traits>
 
@@ -641,22 +638,6 @@ UniqueChars Statistics::renderNurseryJson() const {
   return printer.release();
 }
 
-#ifdef DEBUG
-void Statistics::log(const char* fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  if (gcDebugFile) {
-    TimeDuration sinceStart =
-        TimeBetween(TimeStamp::FirstTimeStamp(), TimeStamp::Now());
-    fprintf(gcDebugFile, "%12.3f: ", sinceStart.ToMicroseconds());
-    vfprintf(gcDebugFile, fmt, args);
-    fprintf(gcDebugFile, "\n");
-    fflush(gcDebugFile);
-  }
-  va_end(args);
-}
-#endif
-
 UniqueChars Statistics::renderJsonMessage() const {
   /*
    * The format of the JSON message is specified by the GCMajorMarkerPayload
@@ -701,6 +682,7 @@ void Statistics::formatJsonDescription(JSONPrinter& json) const {
   // We might be able to omit reason if profiler.firefox.com was able to retrive
   // it from the first slice.  But it doesn't do this yet.
   json.property("reason", ExplainGCReason(slices_[0].reason));
+  json.property("options", ExplainGCOptions(gcOptions));
   json.property("zones_collected", zoneStats.collectedZoneCount);
   json.property("total_zones", zoneStats.zoneCount);
   json.property("total_compartments", zoneStats.compartmentCount);
@@ -790,7 +772,6 @@ void Statistics::formatJsonPhaseTimes(const PhaseTimes& phaseTimes,
 Statistics::Statistics(GCRuntime* gc)
     : gc(gc),
       gcTimerFile(nullptr),
-      gcDebugFile(nullptr),
       nonincrementalReason_(GCAbortReason::None),
       creationTime_(TimeStamp::Now()),
       tenuredAllocsSinceMinorGC(0),
@@ -831,7 +812,6 @@ Statistics::Statistics(GCRuntime* gc)
   MOZ_ALWAYS_TRUE(suspendedPhases.reserve(MAX_SUSPENDED_PHASES));
 
   gcTimerFile = MaybeOpenFileFromEnv("MOZ_GCTIMER");
-  gcDebugFile = MaybeOpenFileFromEnv("JS_GC_DEBUG");
   gcProfileFile = MaybeOpenFileFromEnv("JS_GC_PROFILE_FILE", stderr);
 
   gc::ReadProfileEnv("JS_GC_PROFILE",
@@ -847,8 +827,8 @@ Statistics::~Statistics() {
   if (gcTimerFile && gcTimerFile != stdout && gcTimerFile != stderr) {
     fclose(gcTimerFile);
   }
-  if (gcDebugFile && gcDebugFile != stdout && gcDebugFile != stderr) {
-    fclose(gcDebugFile);
+  if (gcProfileFile && gcProfileFile != stdout && gcProfileFile != stderr) {
+    fclose(gcProfileFile);
   }
 }
 
@@ -1250,8 +1230,6 @@ void Statistics::beginSlice(const ZoneGCStats& zoneStats, JS::GCOptions options,
     }
     (*sliceCallback)(cx, JS::GC_SLICE_BEGIN, desc);
   }
-
-  log("begin slice");
 }
 
 void Statistics::endSlice() {
@@ -1263,8 +1241,6 @@ void Statistics::endSlice() {
     slice.end = TimeStamp::Now();
     slice.endFaults = GetPageFaultCount();
     slice.finalState = gc->state();
-
-    log("end slice");
 
     sendSliceTelemetry(slice);
 
@@ -1279,6 +1255,11 @@ void Statistics::endSlice() {
       printStats();
     }
 
+    if (enableBufferAllocStats_ && gc->rt->isMainRuntime()) {
+      maybePrintProfileHeaders();
+      BufferAllocator::printStats(gc, creationTime(), true, profileFile());
+    }
+
     if (!aborted) {
       endGC();
     }
@@ -1288,11 +1269,6 @@ void Statistics::endSlice() {
     if (ShouldPrintProfile(gc->rt, enableProfiling_, profileWorkers_,
                            profileThreshold_, slices_.back().duration())) {
       printSliceProfile();
-    }
-
-    if (enableBufferAllocStats_ && gc->rt->isMainRuntime()) {
-      maybePrintProfileHeaders();
-      BufferAllocator::printStats(gc, creationTime(), true, profileFile());
     }
 
     // Slice callbacks should only fire for the outermost level.
@@ -1340,7 +1316,7 @@ void Statistics::sendSliceTelemetry(const SliceData& slice) {
     TimeDuration budgetDuration = slice.budget.timeBudgetDuration();
     runtime->metrics().GC_BUDGET_MS_2(budgetDuration);
 
-    if (IsCurrentlyAnimating(runtime->lastAnimationTime, slice.end)) {
+    if (IsCurrentlyAnimating(runtime->gc.lastAnimationTime(), slice.end)) {
       runtime->metrics().GC_ANIMATION_MS(sliceTime);
     }
 
@@ -1483,7 +1459,6 @@ void Statistics::recordPhaseBegin(Phase phase) {
 
   phaseStack.infallibleAppend(phase);
   phaseStartTimes[phase] = now;
-  log("begin: %s", phases[phase].path);
 }
 
 void Statistics::recordPhaseEnd(Phase phase) {
@@ -1539,7 +1514,6 @@ void Statistics::recordPhaseEnd(Phase phase) {
 
 #ifdef DEBUG
   phaseEndTimes[phase] = now;
-  log("end: %s", phases[phase].path);
 #endif
 }
 
@@ -1562,7 +1536,7 @@ void Statistics::recordParallelPhase(PhaseKind phaseKind,
                                      TimeDuration duration) {
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(gc->rt));
 
-  if (aborted) {
+  if (slices_.empty()) {
     return;
   }
 

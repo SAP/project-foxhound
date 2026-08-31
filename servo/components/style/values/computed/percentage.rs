@@ -4,13 +4,15 @@
 
 //! Computed percentages.
 
-use crate::values::animated::ToAnimatedValue;
-use crate::values::generics::NonNegative;
+use crate::derives::*;
+use crate::typed_om::{ToTyped, TypedValue};
+use crate::values::generics::{ClampToNonNegative, NonNegative};
 use crate::values::specified::percentage::ToPercentage;
-use crate::values::{serialize_normalized_percentage, CSSFloat};
+use crate::values::{reify_percentage, serialize_normalized_percentage, CSSFloat};
 use crate::Zero;
 use std::fmt;
 use style_traits::{CssWriter, ToCss};
+use thin_vec::ThinVec;
 
 /// A computed percentage.
 #[derive(
@@ -35,6 +37,13 @@ use style_traits::{CssWriter, ToCss};
 #[repr(C)]
 pub struct Percentage(pub CSSFloat);
 
+impl ClampToNonNegative for Percentage {
+    #[inline]
+    fn clamp_to_non_negative(self) -> Self {
+        Percentage(self.0.max(0.))
+    }
+}
+
 impl Percentage {
     /// 100%
     #[inline]
@@ -46,12 +55,6 @@ impl Percentage {
     #[inline]
     pub fn abs(&self) -> Self {
         Percentage(self.0.abs())
-    }
-
-    /// Clamps this percentage to a non-negative percentage.
-    #[inline]
-    pub fn clamp_to_non_negative(self) -> Self {
-        Percentage(self.0.max(0.))
     }
 }
 
@@ -66,8 +69,8 @@ impl Zero for Percentage {
 }
 
 impl ToPercentage for Percentage {
-    fn to_percentage(&self) -> CSSFloat {
-        self.0
+    fn to_percentage(&self) -> Option<CSSFloat> {
+        Some(self.0)
     }
 }
 
@@ -110,6 +113,12 @@ impl ToCss for Percentage {
     }
 }
 
+impl ToTyped for Percentage {
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        reify_percentage(self.0, dest)
+    }
+}
+
 /// A wrapper over a `Percentage`, whose value should be clamped to 0.
 pub type NonNegativePercentage = NonNegative<Percentage>;
 
@@ -118,19 +127,5 @@ impl NonNegativePercentage {
     #[inline]
     pub fn hundred() -> Self {
         NonNegative(Percentage::hundred())
-    }
-}
-
-impl ToAnimatedValue for NonNegativePercentage {
-    type AnimatedValue = Percentage;
-
-    #[inline]
-    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
-        self.0
-    }
-
-    #[inline]
-    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
-        NonNegative(animated.clamp_to_non_negative())
     }
 }

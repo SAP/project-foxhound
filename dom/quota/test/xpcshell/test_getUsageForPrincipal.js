@@ -64,7 +64,7 @@ async function testSteps() {
 
   // The profile contains IndexedDB databases placed across the repositories.
   // The file make_getUsageForPrincipal.js was run locally, specifically it was
-  // temporarily enabled in xpcshell.ini and then executed:
+  // temporarily enabled in xpcshell.toml and then executed:
   // mach test --interactive dom/quota/test/xpcshell/make_getUsageForPrincipal.js
   installPackage("getUsageForPrincipal_profile");
 

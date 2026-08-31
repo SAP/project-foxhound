@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -64,12 +62,6 @@ add_task(function test_storage_local_idb_backend() {
   );
 });
 
-add_task(function test_storage_local_idb_bytes_in_use() {
-  return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, true]], () =>
-    test_background_storage_area_no_bytes_in_use("local")
-  );
-});
-
 add_task(function test_storage_local_onChanged_event_page() {
   return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, true]], () =>
     test_storage_change_event_page("local")
@@ -79,5 +71,17 @@ add_task(function test_storage_local_onChanged_event_page() {
 add_task(async function test_storage_local_empty_events() {
   return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, true]], () =>
     test_storage_empty_events("local")
+  );
+});
+
+add_task(async function test_storage_local_idb_get_bytes_in_use() {
+  return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, true]], () =>
+    test_get_bytes_in_use("local", true)
+  );
+});
+
+add_task(async function test_storage_local_file_get_bytes_in_use() {
+  return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, false]], () =>
+    test_get_bytes_in_use("local", false)
   );
 });

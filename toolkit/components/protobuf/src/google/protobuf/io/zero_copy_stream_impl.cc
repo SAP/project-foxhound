@@ -1,36 +1,16 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
 //  Sanjay Ghemawat, Jeff Dean, and others.
+
+// We request posix_close if available. See the comment on "robust_close".
+#define _POSIX_C_SOURCE 202405L
 
 #ifndef _MSC_VER
 #include <fcntl.h>
@@ -41,13 +21,13 @@
 #include <errno.h>
 
 #include <algorithm>
-#include <iostream>
+#include <istream>
+#include <ostream>
 
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/logging.h>
-#include <google/protobuf/io/io_win32.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-#include <google/protobuf/stubs/stl_util.h>
+#include "absl/log/absl_check.h"
+#include "absl/log/absl_log.h"
+#include "google/protobuf/io/io_win32.h"
+#include "google/protobuf/io/zero_copy_stream_impl.h"
 
 
 namespace google {
@@ -69,13 +49,20 @@ using google::protobuf::io::win32::write;
 
 namespace {
 
-// EINTR sucks.
-int close_no_eintr(int fd) {
-  int result;
-  do {
-    result = close(fd);
-  } while (result < 0 && errno == EINTR);
-  return result;
+// If close(fd) returns an error, there is really nothing special to do --
+// except on *some* systems in case `errno == EINTR`. Unfortunately, that case
+// is also a huge mess and the question whether fd was closed in this case
+// depends on the system. Linux *did* close `fd` in this case. POSIX.1-2024
+// introduced posix_close (and did other changes) which helps fix this mess.
+// The POSIX.1-2024 documentation for unistd.h specifies that
+// POSIX_CLOSE_RESTART needs to be provided (and the value defines the behavior
+// of posix_close). We use it to decide if we can use posix_close.
+int robust_close(int fd) {
+#if defined(POSIX_CLOSE_RESTART)
+  return posix_close(fd, 0);
+#else
+  return close(fd);
+#endif
 }
 
 }  // namespace
@@ -114,19 +101,16 @@ FileInputStream::CopyingFileInputStream::CopyingFileInputStream(
 FileInputStream::CopyingFileInputStream::~CopyingFileInputStream() {
   if (close_on_delete_) {
     if (!Close()) {
-      GOOGLE_LOG(ERROR) << "close() failed: " << strerror(errno_);
+      ABSL_LOG(ERROR) << "close() failed: " << strerror(errno_);
     }
   }
 }
 
 bool FileInputStream::CopyingFileInputStream::Close() {
-  GOOGLE_CHECK(!is_closed_);
+  ABSL_CHECK(!is_closed_);
 
   is_closed_ = true;
-  if (close_no_eintr(file_) != 0) {
-    // The docs on close() do not specify whether a file descriptor is still
-    // open after close() fails with EIO.  However, the glibc source code
-    // seems to indicate that it is not.
+  if (robust_close(file_) != 0) {
     errno_ = errno;
     return false;
   }
@@ -135,7 +119,7 @@ bool FileInputStream::CopyingFileInputStream::Close() {
 }
 
 int FileInputStream::CopyingFileInputStream::Read(void* buffer, int size) {
-  GOOGLE_CHECK(!is_closed_);
+  ABSL_CHECK(!is_closed_);
 
   int result;
   do {
@@ -151,7 +135,7 @@ int FileInputStream::CopyingFileInputStream::Read(void* buffer, int size) {
 }
 
 int FileInputStream::CopyingFileInputStream::Skip(int count) {
-  GOOGLE_CHECK(!is_closed_);
+  ABSL_CHECK(!is_closed_);
 
   if (!previous_seek_failed_ && lseek(file_, count, SEEK_CUR) != (off_t)-1) {
     // Seek succeeded.
@@ -170,8 +154,8 @@ int FileInputStream::CopyingFileInputStream::Skip(int count) {
 
 // ===================================================================
 
-FileOutputStream::FileOutputStream(int file_descriptor, int /*block_size*/)
-    : CopyingOutputStreamAdaptor(&copying_output_),
+FileOutputStream::FileOutputStream(int file_descriptor, int block_size)
+    : CopyingOutputStreamAdaptor(&copying_output_, block_size),
       copying_output_(file_descriptor) {}
 
 bool FileOutputStream::Close() {
@@ -186,24 +170,21 @@ FileOutputStream::CopyingFileOutputStream::CopyingFileOutputStream(
       is_closed_(false),
       errno_(0) {}
 
-FileOutputStream::~FileOutputStream() { Flush(); }
+FileOutputStream::~FileOutputStream() { (void)Flush(); }
 
 FileOutputStream::CopyingFileOutputStream::~CopyingFileOutputStream() {
   if (close_on_delete_) {
     if (!Close()) {
-      GOOGLE_LOG(ERROR) << "close() failed: " << strerror(errno_);
+      ABSL_LOG(ERROR) << "close() failed: " << strerror(errno_);
     }
   }
 }
 
 bool FileOutputStream::CopyingFileOutputStream::Close() {
-  GOOGLE_CHECK(!is_closed_);
+  ABSL_CHECK(!is_closed_);
 
   is_closed_ = true;
-  if (close_no_eintr(file_) != 0) {
-    // The docs on close() do not specify whether a file descriptor is still
-    // open after close() fails with EIO.  However, the glibc source code
-    // seems to indicate that it is not.
+  if (robust_close(file_) != 0) {
     errno_ = errno;
     return false;
   }
@@ -213,7 +194,7 @@ bool FileOutputStream::CopyingFileOutputStream::Close() {
 
 bool FileOutputStream::CopyingFileOutputStream::Write(const void* buffer,
                                                       int size) {
-  GOOGLE_CHECK(!is_closed_);
+  ABSL_CHECK(!is_closed_);
   int total_written = 0;
 
   const uint8_t* buffer_base = reinterpret_cast<const uint8_t*>(buffer);
@@ -265,7 +246,8 @@ IstreamInputStream::CopyingIstreamInputStream::CopyingIstreamInputStream(
     std::istream* input)
     : input_(input) {}
 
-IstreamInputStream::CopyingIstreamInputStream::~CopyingIstreamInputStream() {}
+IstreamInputStream::CopyingIstreamInputStream::~CopyingIstreamInputStream() =
+    default;
 
 int IstreamInputStream::CopyingIstreamInputStream::Read(void* buffer,
                                                         int size) {
@@ -282,7 +264,7 @@ int IstreamInputStream::CopyingIstreamInputStream::Read(void* buffer,
 OstreamOutputStream::OstreamOutputStream(std::ostream* output, int block_size)
     : copying_output_(output), impl_(&copying_output_, block_size) {}
 
-OstreamOutputStream::~OstreamOutputStream() { impl_.Flush(); }
+OstreamOutputStream::~OstreamOutputStream() { (void)impl_.Flush(); }
 
 bool OstreamOutputStream::Next(void** data, int* size) {
   return impl_.Next(data, size);
@@ -296,8 +278,8 @@ OstreamOutputStream::CopyingOstreamOutputStream::CopyingOstreamOutputStream(
     std::ostream* output)
     : output_(output) {}
 
-OstreamOutputStream::CopyingOstreamOutputStream::~CopyingOstreamOutputStream() {
-}
+OstreamOutputStream::CopyingOstreamOutputStream::~CopyingOstreamOutputStream() =
+    default;
 
 bool OstreamOutputStream::CopyingOstreamOutputStream::Write(const void* buffer,
                                                             int size) {
@@ -330,7 +312,7 @@ void ConcatenatingInputStream::BackUp(int count) {
   if (stream_count_ > 0) {
     streams_[0]->BackUp(count);
   } else {
-    GOOGLE_LOG(DFATAL) << "Can't BackUp() after failed Next().";
+    ABSL_DLOG(FATAL) << "Can't BackUp() after failed Next().";
   }
 }
 
@@ -344,7 +326,7 @@ bool ConcatenatingInputStream::Skip(int count) {
     // Hit the end of the stream.  Figure out how many more bytes we still have
     // to skip.
     int64_t final_byte_count = streams_[0]->ByteCount();
-    GOOGLE_DCHECK_LT(final_byte_count, target_byte_count);
+    ABSL_DCHECK_LT(final_byte_count, target_byte_count);
     count = target_byte_count - final_byte_count;
 
     // That stream is done.  Advance to the next one.

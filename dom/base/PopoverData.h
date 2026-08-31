@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,6 +21,7 @@ enum class PopoverAttributeState : uint8_t {
   None,
   Auto,    ///< https://html.spec.whatwg.org/#attr-popover-auto-state
   Manual,  ///< https://html.spec.whatwg.org/#attr-popover-manual-state
+  Hint,    ///< https://html.spec.whatwg.org/#attr-popover-hint-state
 };
 
 enum class PopoverVisibilityState : uint8_t {
@@ -32,18 +31,24 @@ enum class PopoverVisibilityState : uint8_t {
 
 class PopoverToggleEventTask : public Runnable {
  public:
-  explicit PopoverToggleEventTask(nsWeakPtr aElement,
-                                  PopoverVisibilityState aOldState);
+  explicit PopoverToggleEventTask(nsWeakPtr aElement, nsWeakPtr aSource,
+                                  PopoverVisibilityState aOldState,
+                                  PopoverVisibilityState aNewState);
 
   // MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
   // bug 1535398.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
   PopoverVisibilityState GetOldState() const { return mOldState; }
+  PopoverVisibilityState GetNewState() const { return mNewState; }
+
+  Element* GetSource() const;
 
  private:
   nsWeakPtr mElement;
+  nsWeakPtr mSource;
   PopoverVisibilityState mOldState;
+  PopoverVisibilityState mNewState;
 };
 
 class PopoverData {
@@ -59,6 +64,9 @@ class PopoverData {
   void SetPopoverAttributeState(PopoverAttributeState aState) {
     mState = aState;
   }
+
+  PopoverAttributeState GetOpenedInMode() const { return mOpenedInMode; }
+  void SetOpenedInMode(PopoverAttributeState aMode) { mOpenedInMode = aMode; }
 
   PopoverVisibilityState GetPopoverVisibilityState() const {
     return mVisibilityState;
@@ -86,14 +94,15 @@ class PopoverData {
   void SetToggleEventTask(PopoverToggleEventTask* aTask) { mTask = aTask; }
   void ClearToggleEventTask() { mTask = nullptr; }
 
-  bool IsShowingOrHiding() const { return mIsShowingOrHiding; }
-  void SetIsShowingOrHiding(bool aIsShowingOrHiding) {
-    mIsShowingOrHiding = aIsShowingOrHiding;
+  bool IsPopoverHiding() const { return mIsPopoverHiding; }
+  void SetIsPopoverHiding(bool aIsPopoverHiding) {
+    mIsPopoverHiding = aIsPopoverHiding;
   }
 
  private:
   PopoverVisibilityState mVisibilityState = PopoverVisibilityState::Hidden;
   PopoverAttributeState mState = PopoverAttributeState::None;
+  PopoverAttributeState mOpenedInMode = PopoverAttributeState::None;
   // Popover and dialog don't share mPreviouslyFocusedElement for there are
   // chances to lose the previously focused element.
   // See, https://github.com/whatwg/html/issues/9063
@@ -105,7 +114,7 @@ class PopoverData {
   // this a weak reference, as if the element goes away it's necessarily not
   // connected to our document.
   nsWeakPtr mInvokerElement;
-  bool mIsShowingOrHiding = false;
+  bool mIsPopoverHiding = false;
   RefPtr<PopoverToggleEventTask> mTask;
 
   // This won't need to be cycle collected as CloseWatcher only has strong

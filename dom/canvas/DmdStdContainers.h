@@ -5,10 +5,11 @@
 #ifndef dom_canvas_DmdStdContainers_h
 #define dom_canvas_DmdStdContainers_h
 
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/layers/BuildConstants.h"
 #include <unordered_map>
 #include <unordered_set>
+
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/layers/BuildConstants.h"
 
 namespace mozilla::webgl {
 

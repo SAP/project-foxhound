@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "L10nMutations.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "nsRefreshDriver.h"
+
 #include "DOMLocalization.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/intl/Localization.h"
+#include "nsRefreshDriver.h"
 #include "nsThreadManager.h"
 
 using namespace mozilla;
@@ -47,7 +46,7 @@ L10nMutations::~L10nMutations() {
 }
 
 void L10nMutations::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                     nsAtom* aAttribute, int32_t aModType,
+                                     nsAtom* aAttribute, AttrModType,
                                      const nsAttrValue* aOldValue) {
   if (!mObserving) {
     return;
@@ -149,7 +148,7 @@ void L10nMutations::L10nElementChanged(Element* aElement) {
     StartRefreshObserver();
   }
 
-  if (!mBlockingLoad) {
+  if (!mBlockingLoad && mDOMLocalization->IsDocumentL10n()) {
     Document* doc = GetDocument();
     if (doc && doc->GetReadyStateEnum() != Document::READYSTATE_COMPLETE) {
       doc->BlockOnload();

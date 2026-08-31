@@ -1,11 +1,7 @@
-// |reftest| shell-option(--enable-iterator-helpers) skip-if(!this.hasOwnProperty('Iterator')||!xulRuntime.shell) -- iterator-helpers is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 features:
   - iterator-helpers
 info: |
@@ -29,17 +25,17 @@ class TestIterator extends Iterator {
 const sum = (x, y) => x + y;
 
 let iter = new TestIterator(undefined);
-assertThrowsInstanceOf(() => iter.reduce(sum), TypeError);
+assert.throws(TypeError, () => iter.reduce(sum));
 iter = new TestIterator(null);
-assertThrowsInstanceOf(() => iter.reduce(sum), TypeError);
+assert.throws(TypeError, () => iter.reduce(sum));
 iter = new TestIterator(0);
-assertThrowsInstanceOf(() => iter.reduce(sum), TypeError);
+assert.throws(TypeError, () => iter.reduce(sum));
 iter = new TestIterator(false);
-assertThrowsInstanceOf(() => iter.reduce(sum), TypeError);
+assert.throws(TypeError, () => iter.reduce(sum));
 iter = new TestIterator('');
-assertThrowsInstanceOf(() => iter.reduce(sum), TypeError);
+assert.throws(TypeError, () => iter.reduce(sum));
 iter = new TestIterator(Symbol(''));
-assertThrowsInstanceOf(() => iter.reduce(sum), TypeError);
+assert.throws(TypeError, () => iter.reduce(sum));
 
 
 reportCompare(0, 0);

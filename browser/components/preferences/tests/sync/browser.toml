@@ -1,0 +1,15 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_sync_chooseWhatToSync.js"]
+
+["browser_sync_disabled.js"]
+
+["browser_sync_pairing.js"]

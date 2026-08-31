@@ -7,7 +7,6 @@
 #include "CSSEditUtils.h"
 #include "HTMLEditUtils.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/dom/BindContext.h"
@@ -77,21 +76,35 @@ static int32_t GetCSSFloatValue(nsComputedDOMStyle* aComputedStyle,
 
 class ElementDeletionObserver final : public nsStubMultiMutationObserver {
  public:
+  /**
+   * Start observing the deletion of aNativeAnonNode and aObservedElement with
+   * making a new instance. Then, the instance will be released automatically
+   * when one of them is destroyed or the parent chain is changed.
+   */
+  static void StartObservingAndDeleteOnRemoval(nsIContent* aNativeAnonNode,
+                                               Element* aObservedElement) {
+    auto* observer =
+        new ElementDeletionObserver(aNativeAnonNode, aObservedElement);
+    observer->mSelf = observer;
+  }
+
+ protected:
   ElementDeletionObserver(nsIContent* aNativeAnonNode,
                           Element* aObservedElement)
       : mNativeAnonNode(aNativeAnonNode), mObservedElement(aObservedElement) {
-    AddMutationObserverToNode(aNativeAnonNode);
-    AddMutationObserverToNode(aObservedElement);
+    AddMutationObserverToNode(mNativeAnonNode);
+    AddMutationObserverToNode(mObservedElement);
   }
+
+  ~ElementDeletionObserver() = default;
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED
   NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED
 
- protected:
-  ~ElementDeletionObserver() = default;
   nsIContent* mNativeAnonNode;
   Element* mObservedElement;
+  RefPtr<ElementDeletionObserver> mSelf;
 };
 
 NS_IMPL_ISUPPORTS(ElementDeletionObserver, nsIMutationObserver)
@@ -104,28 +117,35 @@ void ElementDeletionObserver::ParentChainChanged(nsIContent* aContent) {
     return;
   }
 
-  ManualNACPtr::RemoveContentFromNACArray(mNativeAnonNode);
+  MOZ_DIAGNOSTIC_ASSERT(mSelf);
+  RefPtr<ElementDeletionObserver> self = std::move(mSelf);
 
-  mObservedElement->RemoveMutationObserver(this);
-  mObservedElement = nullptr;
-  mNativeAnonNode->RemoveMutationObserver(this);
+  // aContent is mObservedElement so that mNativeAnonNode may be stored only by
+  // the MNC array. Let's grab it.
+  nsCOMPtr<nsIContent> nativeAnonNode(mNativeAnonNode);
   mNativeAnonNode = nullptr;
-  NS_RELEASE_THIS();
+  nativeAnonNode->RemoveMutationObserver(self);
+  ManualNACPtr::RemoveContentFromNACArray(nativeAnonNode);
+
+  // aContent is mObservedElement so that it's safe to remove it without adding
+  // the refcount.
+  mObservedElement->RemoveMutationObserver(self);
+  mObservedElement = nullptr;
 }
 
 void ElementDeletionObserver::NodeWillBeDestroyed(nsINode* aNode) {
-  NS_ASSERTION(aNode == mNativeAnonNode || aNode == mObservedElement,
-               "Wrong aNode!");
-  if (aNode == mNativeAnonNode) {
-    mObservedElement->RemoveMutationObserver(this);
-    mObservedElement = nullptr;
-  } else {
-    mNativeAnonNode->RemoveMutationObserver(this);
-    mNativeAnonNode->UnbindFromTree();
-    mNativeAnonNode = nullptr;
-  }
+  MOZ_DIAGNOSTIC_ASSERT(mSelf);
+  MOZ_ASSERT(aNode == mNativeAnonNode || aNode == mObservedElement);
 
-  NS_RELEASE_THIS();
+  // If either mObservedElement or mNativeAnonNode, we don't need to keep
+  // observing the other. Therefore, we should stop observing the both and
+  // release ourselves.
+  RefPtr<ElementDeletionObserver> self = std::move(mSelf);
+  mObservedElement->RemoveMutationObserver(self);
+  mObservedElement = nullptr;
+  mNativeAnonNode->RemoveMutationObserver(self);
+  mNativeAnonNode->UnbindFromTree();
+  mNativeAnonNode = nullptr;
 }
 
 /******************************************************************************
@@ -192,9 +212,8 @@ ManualNACPtr HTMLEditor::CreateAnonymousElement(nsAtom* aTag,
   }
 
   ManualNACPtr newNativeAnonymousContent(newElement.forget());
-  auto* observer = new ElementDeletionObserver(newNativeAnonymousContent,
-                                               aParentContent.AsElement());
-  NS_ADDREF(observer);  // NodeWillBeDestroyed releases.
+  ElementDeletionObserver::StartObservingAndDeleteOnRemoval(
+      newNativeAnonymousContent, aParentContent.AsElement());
 
 #ifdef DEBUG
   // Editor anonymous content gets passed to PostRecreateFramesFor... Which
@@ -418,9 +437,8 @@ nsresult HTMLEditor::RefreshEditingUI() {
   //                cellElement   contains the element for InlineTableEditing
   //                absPosElement contains the element for Positioning
 
-  // Note: All the Hide/Show methods below may change attributes on real
-  // content which means a DOMAttrModified handler may cause arbitrary
-  // side effects while this code runs (bug 420439).
+  // TODO: Since we've already stopped supporting the DOM mutation events.
+  // So, we may not need to verity the result below.
 
   if (IsAbsolutePositionEditorEnabled() && mAbsolutelyPositionedObject &&
       absPosElement != mAbsolutelyPositionedObject) {
@@ -584,7 +602,7 @@ nsresult HTMLEditor::SetAnonymousElementPositionWithoutTransaction(
     nsStyledElement& aStyledElement, int32_t aX, int32_t aY) {
   nsresult rv;
   rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
-      aStyledElement, *nsGkAtoms::left, aX);
+      *this, aStyledElement, *nsGkAtoms::left, aX);
   if (rv == NS_ERROR_EDITOR_DESTROYED) {
     NS_WARNING(
         "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(nsGkAtoms::left) "
@@ -596,7 +614,7 @@ nsresult HTMLEditor::SetAnonymousElementPositionWithoutTransaction(
       "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(nsGkAtoms::left) "
       "failed, but ignored");
   rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
-      aStyledElement, *nsGkAtoms::top, aY);
+      *this, aStyledElement, *nsGkAtoms::top, aY);
   if (rv == NS_ERROR_EDITOR_DESTROYED) {
     NS_WARNING(
         "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(nsGkAtoms::top) "

@@ -413,7 +413,7 @@ add_task(async function test_translation_inline_styling() {
   info("Setting a span as display: block.");
   const span = document.getElementById("spanAsBlock");
   span.style.display = "block";
-  is(span.ownerGlobal.getComputedStyle(span).display, "block");
+  is(span.documentGlobal.getComputedStyle(span).display, "block");
 
   translate();
 
@@ -1004,6 +1004,37 @@ add_task(async function test_svgs_more() {
   await cleanup();
 });
 
+add_task(async function test_standalone_svg_document() {
+  const svgSource = /* html */ `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <title>Test title</title>
+      <text x="10" y="20">Test text inside of standalone SVG.</text>
+    </svg>
+  `;
+
+  const { translate, htmlMatches, cleanup, document } =
+    await createTranslationsDoc(svgSource, { parserType: "image/svg+xml" });
+
+  translate();
+
+  await htmlMatches(
+    "Standalone SVG documents are translated.",
+    /* html */ `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <title>
+        TEST TITLE
+      </title>
+      <text x="10" y="20">
+        TEST TEXT INSIDE OF STANDALONE SVG.
+      </text>
+    </svg>
+    `,
+    document
+  );
+
+  await cleanup();
+});
+
 add_task(async function test_tables() {
   const { translate, htmlMatches, cleanup } =
     await createTranslationsDoc(/* html */ `
@@ -1183,7 +1214,7 @@ add_task(async function test_html_lang_attribute() {
 
   translate();
 
-  await waitForCondition(() => document.documentElement.lang === "EN");
+  await waitForCondition(() => document.documentElement.lang === "es");
 
   cleanup();
 });
@@ -1941,6 +1972,26 @@ add_task(async function test_node_specific_attribute_mutation() {
       <div value="New div attribute value">
       </div>
       <input type="button" value="NEW INPUT ATTRIBUTE VALUE">
+    `
+  );
+
+  cleanup();
+});
+
+add_task(async function test_translate_selected_input() {
+  const { translate, htmlMatches, cleanup } =
+    await createTranslationsDoc(/* html */ `
+      <input type="text" autofocus="" onfocus="this.select()" value="Do not translate">
+      Translate me
+    `);
+
+  translate();
+
+  await htmlMatches(
+    "The initial setup is translated",
+    /* html */ `
+      <input type="text" autofocus="" onfocus="this.select()" value="Do not translate">
+      TRANSLATE ME
     `
   );
 

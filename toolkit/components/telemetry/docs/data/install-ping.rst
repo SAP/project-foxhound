@@ -4,31 +4,19 @@ Install Ping
 
 The install pings contain some data about the system and the installation process, sent whenever the installer exits.
 
----------
-Stub Ping
----------
+---------------------------
+Submitting the install ping
+---------------------------
 
-The :doc:`Stub Installer </browser/installer/windows/installer/StubInstaller>` sends a ping just before it exits, in function SendPing of `stub.nsi <https://searchfox.org/mozilla-central/source/browser/installer/windows/nsis/stub.nsi>`_. This is sent as an HTTP GET request to DSMO (download-stats.mozilla.org).
-
-Ingestion is handled in `gcp-ingestion <https://mozilla.github.io/gcp-ingestion/>`_ at class StubUri within `ParseUri <https://github.com/mozilla/gcp-ingestion/blob/master/ingestion-beam/src/main/java/com/mozilla/telemetry/decoder/ParseUri.java>`_. Several of the fields are codes which are broken out into multiple boolean columns in the database table.
-
-To add a new data field to the stub installer ping, append the desired variable to this `function <https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/browser/installer/windows/nsis/stub.nsi#1237>`_, as well as the `debug log <https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/browser/installer/windows/nsis/stub.nsi#1187>`_.
-
-On the server side, append the name and type of the new data field to gcp-ingestion's `URI parser <https://github.com/mozilla/gcp-ingestion/blob/d2d3a36101418a240c0dc9b68b6217d6ddae6ca3/ingestion-beam/src/main/java/com/mozilla/telemetry/decoder/ParseUri.java#L253-L257>`_, and increment the payload version and update SUFFIX_LENGTH & PING_VERSION_PATTERN to reflect the version change (see https://github.com/mozilla/gcp-ingestion/pull/2719/files).
-
-Additionally, modify the `schema <https://github.com/mozilla-services/mozilla-pipeline-schemas/blob/main/schemas/firefox-installer/install/install.1.schema.json>`_ and `template <https://github.com/mozilla-services/mozilla-pipeline-schemas/blob/main/templates/firefox-installer/install/install.1.schema.json>`_ files of ``mozilla-pipeline-schemas`` to include the new fields to the bigquery table. (see https://github.com/mozilla-services/mozilla-pipeline-schemas/pull/829/files).
-
-Finally, in the stub installer code, increment `StubUrlVersion <https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/browser/installer/windows/nsis/stub.nsi#106>`_ to match the changes in the server side.
-
------------------
-Full Install Ping
------------------
-
-The :doc:`Full Installer </browser/installer/windows/installer/FullInstaller>` sends a ping just before it exits, in function SendPing of `installer.nsi <https://searchfox.org/mozilla-central/source/browser/installer/windows/nsis/installer.nsi>`_. This is an HTTP POST request with a JSON document, sent to the standard Telemetry endpoint (incoming.telemetry.mozilla.org).
+The :doc:`Full Installer </browser/installer/windows/installer/FullInstaller>` and :doc:`Stub Installer</browser/installer/windows/installer/StubInstaller>` send a ping just before they exit. The ping is configured as a JSON payload in function PrepareTelemetryPing of :searchfox:`telemetry.nsh <browser/installer/windows/nsis/telemetry.nsh>`, along with a callback (either ``PrepareFullInstallPing`` or ``PrepareStubInstallPing``). The ping is then sent as an HTTP POST request with a JSON document, sent to the standard Telemetry endpoint (incoming.telemetry.mozilla.org), from ``SendTelemetryPing``.
 
 To avoid double counting, the full installer does not send a ping when it is launched from the stub installer, so pings where ``installer_type = "full"`` correspond to installs that did not use the stub.
 
-To add a new data field to the full installer telemetry, call ``nsJSON::Set /tree ping "Data" "[DATA FIELD NAME]" /value '[DATA TO REPORT]'`` within ``browser/installer/windows/nsis/installer.nsi``. Then update ``mozilla-pipeline-schemas`` as described in the stub ping section.
+To add a new data field to the installer telemetry, call ``nsJSON::Set /tree ping "Data" "[DATA FIELD NAME]" /value '[DATA TO REPORT]'`` within one of the ``Prepare<Type>Ping`` functions in ``browser/installer/windows/nsis/telemetry.nsh``. Then, modify the `template <https://github.com/mozilla-services/mozilla-pipeline-schemas/blob/main/templates/firefox-installer/install/install.1.schema.json>`_ file in ``mozilla-pipeline-schemas`` to include the new fields to the bigquery table. You should be able to run a CMake build for it to propagate into the ``schemas/`` folder. See the mozilla-pipeline-schemas `README.md <https://github.com/mozilla-services/mozilla-pipeline-schemas/blob/main/README.md#notes>`_ for an explanation of how this works, and pull request `#829 <https://github.com/mozilla-services/mozilla-pipeline-schemas/pull/829/files>`_ for an example of the end result. Finally, remember to document the field here!
+
+You should also add a test for your new telemetry field in ``test_telemetry.nsh``. You can also look at the submitted ping manually by running either installer with the ``/TelemetryDebug:<something>`` command-line argument, which will submit the ping so it's visible in `the Glean Debug Ping Viewer <https://debug-ping-preview.firebaseapp.com/>`_ with the given debug id.
+
+Formerly, the stub installer used a GET endpoint at DSMO (download-stats.mozilla.org). Pings that are still sent to that endpoint are processed by `gcp-ingestion <https://mozilla.github.io/gcp-ingestion/>`_ at class StubUri within `ParseUri <https://github.com/mozilla/gcp-ingestion/blob/master/ingestion-beam/src/main/java/com/mozilla/telemetry/decoder/ParseUri.java>`_. Several of the fields are codes which are broken out into multiple boolean columns in the database table.
 
 --------------------------
 Querying the install pings
@@ -54,7 +42,7 @@ installer_type (both)
   Which type of installer generated this ping (full or stub)
 
 installer_version (full)
-  Version of the installer itself [#stubversion]_
+  Version of the installer itself [#stubversion]_. From stub installers, this will be the empty string.
 
 build_channel (both)
   Channel the installer was built with the branding for ("release", "beta", "nightly", or "default")
@@ -65,9 +53,6 @@ update_channel (both)
 locale (both)
   Locale of the installer and of the installed product, in AB_CD format
 
-ping_version (stub)
-  Version of the stub ping, currently 8
-
 stub_build_id (stub)
   Build ID of the stub installer.
 
@@ -77,9 +62,7 @@ Application fields
 version, build_id (both)
   Version number and Build ID of the installed product, from ``application.ini``. This is **not** the version of the installer itself, see stub_build_id.
 
-  stub: 0 if the installation failed
-
-  full: ``""`` if not found [#versionfailure]_
+  If the installation failed, this will be ``""`` [#versionfailure]_ (except from old stub installers, which send '0').
 
 _64bit_build (both)
   True if a 64-bit build was selected for installation.
@@ -99,14 +82,14 @@ _64bit_os (both)
 os_version (both)
   Version number of Windows in ``major.minor.build`` format [#win10build]_
 
-service_pack (stub)
+service_pack (both)
   Latest Windows service pack installed on the machine.
 
 server_os (both)
   True if the installed OS is a server version of Windows.
 
 windows_ubr (both)
-  The Windows Update Build Revision of the installation device.
+  The Windows Update Build Revision of the installation device. This will be -1 if it could not be found.
 
 
 Event fields
@@ -136,8 +119,6 @@ set_default (both)
 new_default (both)
   True if the new installation is now the default browser (registered to handle the http protocol).
 
-  full: Checks the association using ``AppAssocReg::QueryCurrentDefault`` and :abbr:`HKCU (HKEY_CURRENT_USER)`.
-
   stub: [DEPRECATED] [#stubnewdefault]_
 
 old_default (both)
@@ -146,9 +127,7 @@ old_default (both)
 had_old_install (both)
   True if at least one existing installation of Firefox was found on the system prior to this installation.
 
-  full: Checks for the installation directory given in the ``Software\Mozilla\${BrandFullName}`` registry keys, either :abbr:`HKLM` or :abbr:`HKCU`
-
-  stub: Checks for the top level profile directory ``%LOCALAPPDATA%\Mozilla\Firefox``
+  both: Checks for the installation directory given in the ``Software\Mozilla\${BrandFullName}`` registry keys, either :abbr:`HKLM` or :abbr:`HKCU`
 
 old_version, old_build_id (stub)
   Version number and Build ID (from ``application.ini``) of a previous installation of Firefox in the install directory, 0 if not found
@@ -279,6 +258,8 @@ no_write_access (stub)
 old_running (stub)
   [DEPRECATED] True if the installation succeeded and we weren't able to launch the newly installed application because a copy of Firefox was already running. This should always be false since the check for a running copy was `removed <https://bugzilla.mozilla.org/show_bug.cgi?id=1601806>`_ in Firefox 74.
 
+ping_version (stub)
+  [DEPRECATED] Version of the stub ping using the former StubUri system. The latest version is 14.
 
 ---------
 Footnotes

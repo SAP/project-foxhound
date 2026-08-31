@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,21 +7,17 @@
 
 #include <cstring>
 #include <type_traits>
+#include <limits.h>
 
 #ifdef XP_WIN
 #  include <io.h>  // for _write()
 #endif
 
 #include "mozilla/CheckedInt.h"
-#include "mozilla/TemplateLib.h"
+#include "mozilla/MathAlgorithms.h"
 
 // Helper for log2 of powers of 2 at compile time.
-template <size_t N>
-struct Log2 : mozilla::tl::CeilingLog2<N> {
-  using mozilla::tl::CeilingLog2<N>::value;
-  static_assert(1ULL << value == N, "Number is not a power of 2");
-};
-#define LOG2(N) Log2<N>::value
+constexpr size_t LOG2(size_t N) { return mozilla::CeilingLog2(N); }
 
 enum class Order {
   eLess = -1,
@@ -206,6 +200,8 @@ unsigned inline operator/(unsigned num, FastDivisor<T> divisor) {
 // Return the smallest alignment multiple that is >= s.
 #define ALIGNMENT_CEILING(s, alignment) \
   (((s) + ((alignment) - 1)) & (~((alignment) - 1)))
+
+#define ALIGNMENT_FLOOR(s, alignment) ((s) & (~((alignment) - 1)))
 
 static inline const char* _getprogname(void) { return "<jemalloc>"; }
 

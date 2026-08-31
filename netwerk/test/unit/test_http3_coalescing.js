@@ -8,7 +8,6 @@ var { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
 );
 
-let h2Port;
 let h3Port;
 
 const certOverrideService = Cc[
@@ -16,14 +15,12 @@ const certOverrideService = Cc[
 ].getService(Ci.nsICertOverrideService);
 
 function setup() {
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
-
   h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);
   Assert.notEqual(h3Port, "");
   Services.prefs.setBoolPref("network.http.http3.enable", true);
+  // Happy Eyeballs does not support connection coalescing for now.
+  Services.prefs.setBoolPref("network.http.happy_eyeballs_enabled", false);
 }
 
 setup();
@@ -36,9 +33,11 @@ registerCleanupFunction(async () => {
   );
   Services.prefs.clearUserPref("network.dns.httpssvc.reset_exclustion_list");
   Services.prefs.clearUserPref("network.http.http3.enable");
+  Services.prefs.clearUserPref("network.http.happy_eyeballs_enabled");
   Services.prefs.clearUserPref(
     "network.dns.httpssvc.http3_fast_fallback_timeout"
   );
+  Services.prefs.clearUserPref("network.http.http3.pmtud");
   Services.prefs.clearUserPref(
     "network.http.http3.alt-svc-mapping-for-testing"
   );

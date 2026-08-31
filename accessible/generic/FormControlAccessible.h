@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,13 +18,7 @@ class CheckboxAccessible : public LeafAccessible {
   enum { eAction_Click = 0 };
 
   CheckboxAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : LeafAccessible(aContent, aDoc) {
-    // Ignore "CheckboxStateChange" DOM event in lieu of document observer
-    // state change notification.
-    if (aContent->IsHTMLElement()) {
-      mStateFlags |= eIgnoreDOMUIEvent;
-    }
-  }
+      : LeafAccessible(aContent, aDoc) {}
 
   // LocalAccessible
   virtual mozilla::a11y::role NativeRole() const override;

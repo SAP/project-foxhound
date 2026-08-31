@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "nsContentUtils.h"
+#include "nsIAnonymousContentCreator.h"
 #include "nsIFormControl.h"
 #include "nsTextNode.h"
 
@@ -16,12 +15,14 @@ using namespace mozilla;
 namespace mozilla {
 
 /* A frame for <input type={button,reset,submit} */
-class InputButtonControlFrame final : public ButtonControlFrame {
+class InputButtonControlFrame final : public ButtonControlFrame,
+                                      public nsIAnonymousContentCreator {
  public:
   InputButtonControlFrame(ComputedStyle* aStyle, nsPresContext* aPc)
       : ButtonControlFrame(aStyle, aPc, kClassID) {}
 
   NS_DECL_FRAMEARENA_HELPERS(InputButtonControlFrame)
+  NS_DECL_QUERYFRAME
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {
@@ -38,7 +39,7 @@ class InputButtonControlFrame final : public ButtonControlFrame {
 
  protected:
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
   void GetDefaultLabel(nsAString&) const;
   void GetLabel(nsAString& aLabel);
   void UpdateLabel();
@@ -47,6 +48,10 @@ class InputButtonControlFrame final : public ButtonControlFrame {
 };
 
 NS_IMPL_FRAMEARENA_HELPERS(InputButtonControlFrame);
+
+NS_QUERYFRAME_HEAD(InputButtonControlFrame)
+  NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
+NS_QUERYFRAME_TAIL_INHERITING(ButtonControlFrame)
 
 void InputButtonControlFrame::Destroy(DestroyContext& aContext) {
   aContext.AddAnonymousContent(mTextContent.forget());
@@ -99,7 +104,7 @@ void InputButtonControlFrame::GetDefaultLabel(nsAString& aLabel) const {
   }
 
   if (NS_FAILED(nsContentUtils::GetMaybeLocalizedString(
-          nsContentUtils::eFORMS_PROPERTIES, prop.get(), mContent->OwnerDoc(),
+          PropertiesFile::FORMS_PROPERTIES, prop.get(), mContent->OwnerDoc(),
           aLabel))) {
     // Use the non-localized version.
     CopyUTF8toUTF16(prop, aLabel);
@@ -158,7 +163,7 @@ void InputButtonControlFrame::UpdateLabel() {
 
 nsresult InputButtonControlFrame::AttributeChanged(int32_t aNameSpaceID,
                                                    nsAtom* aAttribute,
-                                                   int32_t aModType) {
+                                                   AttrModType aModType) {
   // If the value attribute is set, update the text of the label
   if (nsGkAtoms::value == aAttribute) {
     UpdateLabel();

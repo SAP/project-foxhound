@@ -31,12 +31,12 @@ cp $SPELLER/en_US-custom.dic $SPELLER/en_US-custom.aff $SPELLER/README_en_US-cus
 mkdir "$SUPPORT_DIR/mozilla-bk"
 mv ../en-US.dic ../en-US.aff ../README_en_US.txt "$SUPPORT_DIR/mozilla-bk"
 
-# The affix file is ISO-8859-1, but still need to change the character set to
-# ISO-8859-1 and remove conversion rules.
+# Save the UTF-8 mirror verbatim (used for Phabricator-friendly diffs), then
+# transform the file in place into the shipped ISO-8859-1 form.
 cp en_US-mozilla.aff utf8/en-US-utf8.aff
-sed -i "" -e '/^ICONV/d' -e 's/^SET UTF-8$/SET ISO8859-1/' en_US-mozilla.aff
+python3 "$WKDIR/convert-aff.py" en_US-mozilla.aff
 
-# Convert the dictionary to ISO-8859-1
+# Convert the dictionary to ISO-8859-1.
 cp en_US-mozilla.dic utf8/en-US-utf8.dic
 iconv -f utf-8 -t iso-8859-1 < utf8/en-US-utf8.dic > en_US-mozilla.dic
 

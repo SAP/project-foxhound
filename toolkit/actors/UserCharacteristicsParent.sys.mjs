@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -17,7 +16,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "UserCharacteristicsPageService",
   "@mozilla.org/user-characteristics-page;1",
-  "nsIUserCharacteristicsPageService"
+  Ci.nsIUserCharacteristicsPageService
 );
 
 function mapToObjectReplacer(_key, value) {

@@ -65,7 +65,6 @@ An example config looks like this:
         - ru
       platforms:
         - macosx64-shippable
-        - win64-shippable
         - win32-shippable
       upload_to_candidates: true
       publish_to_releases: true
@@ -83,6 +82,19 @@ The Firefox installers are uploaded into the `candidates directory
 <https://archive.mozilla.org/pub/firefox/candidates/>`_ when ``upload_to_candidates`` is set to true and
 into the `release directory <https://archive.mozilla.org/pub/firefox/releases/partners/>`_ when
 ``publish_to_releases`` is too.
+
+
+Verifying attribution
+---------------------
+
+To verify that a Firefox install was correctly attributed, navigate to
+``about:telemetry#search=attribution`` in the browser. The following fields should
+be populated with values matching the ``attribution_config.yml``:
+
+* ``attribution.medium``
+* ``attribution.source``
+* ``attribution.campaign``
+* ``attribution.content``
 
 
 Repacking process
@@ -103,11 +115,13 @@ There is one task per OS.
 
 On Windows, `python/mozrelease/mozrelease/attribute_builds.py
 <https://hg.mozilla.org/releases/mozilla-release/file/default/python/mozrelease/mozrelease/attribute_builds.py>`_
-handles the attribution. It takes full and stub installers as input. The ``ATTRIBUTION_CONFIG``
-environment variable controls the script. It produces more installers. The size of
-``ATTRIBUTION_CONFIG`` variable may grow large if the number of configurations increases,
-and it may be necessary to pass the content of ``attribution_config.yml`` to the script
-instead, or via an artifact of the promotion task.
+handles the attribution. Since `bug 1943640 <https://bugzilla.mozilla.org/show_bug.cgi?id=1943640>`_,
+only the stub installer is attributed: it carries the attribution code and passes it to the
+installed Firefox. No attributed full installer is generated. The stub installer is a 32-bit
+binary and is therefore shipped under the ``win32`` folder. The ``ATTRIBUTION_CONFIG``
+environment variable controls the script. The size of ``ATTRIBUTION_CONFIG`` variable may grow
+large if the number of configurations increases, and it may be necessary to pass the content of
+``attribution_config.yml`` to the script instead, or via an artifact of the promotion task.
 
 On macOS, the `dmg attribute <https://github.com/mozilla/libdmg-hfsplus/blob/d6287b5afc2406b398de42f74eba432f2123b937/dmg/dmg.c#L133>`_
 binary handles the attribution. Unlike Windows, ``ATTRIBUTION_CONFIG`` is not used. Instead,

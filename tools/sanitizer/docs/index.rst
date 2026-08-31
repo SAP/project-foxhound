@@ -26,8 +26,6 @@ Memory Sanitizer (MSan) is a fast detector used for uninitialized memory in C/C+
 
 :ref:`More information <Memory Sanitizer>`
 
-**ASan Nightly Project**
+**ASan Nightly Project (defunct)**
 
-The ASan Nightly Project involves building a Firefox Nightly browser with the popular AddressSanitizer tool and enhancing it with remote crash reporting capabilities for any errors detected.
-
-:ref:`More information <ASan Nightly>`
+The ASan Nightly Project involved building a Firefox Nightly browser with the popular AddressSanitizer tool and enhancing it with remote crash reporting capabilities for any errors detected.  It was sunset in 2025 (`bug 1950072 <https://bugzilla.mozilla.org/show_bug.cgi?id=1950072>`_) after being replaced by the Probabilistic Heap Checker (PHC).

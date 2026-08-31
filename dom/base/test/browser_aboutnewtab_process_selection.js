@@ -77,7 +77,7 @@ add_task(async function () {
   // We should create a new content process.
   expectedChildCount += 1;
   await BrowserTestUtils.switchTab(gBrowser, tabs[2]);
-  await ContentTask.spawn(tabs[2].linkedBrowser, TEST_URL_2, url => {
+  await SpecialPowers.spawn(tabs[2].linkedBrowser, [TEST_URL_2], url => {
     content.location.href = url;
   });
   await BrowserTestUtils.browserLoaded(

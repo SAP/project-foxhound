@@ -1,0 +1,9 @@
+# Any copyright is dedicated to the Public Domain.
+# http://creativecommons.org/publicdomain/zero/1.0/
+
+JS_SHELL_ARCHIVE_FILES += [
+    "!/dist/bin/js",
+    "!/dist/bin/libmozglue.so",
+    "%/usr/bin/llvm-symbolizer",
+    "!/dist/bin/fuzz-tests",
+]

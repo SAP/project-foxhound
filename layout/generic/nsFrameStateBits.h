@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,24 +39,24 @@
  ******/
 
 #ifndef FRAME_STATE_GROUP_NAME
-#define FRAME_STATE_GROUP_NAME(name_) /* nothing */
-#define DEFINED_FRAME_STATE_GROUP_NAME
+#  define FRAME_STATE_GROUP_NAME(name_) /* nothing */
+#  define DEFINED_FRAME_STATE_GROUP_NAME
 #endif
 
 #ifndef FRAME_STATE_GROUP_CLASS
-#define FRAME_STATE_GROUP_CLASS(name_, class_) /* nothing */
-#define DEFINED_FRAME_STATE_GROUP_CLASS
+#  define FRAME_STATE_GROUP_CLASS(name_, class_) /* nothing */
+#  define DEFINED_FRAME_STATE_GROUP_CLASS
 #endif
 
 #ifndef FRAME_STATE_BIT
-#define FRAME_STATE_BIT(group_, value_, name_) /* nothing */
-#define DEFINED_FRAME_STATE_BIT
+#  define FRAME_STATE_BIT(group_, value_, name_) /* nothing */
+#  define DEFINED_FRAME_STATE_BIT
 #endif
 
 // Helper macro for the common case of a single class
 #define FRAME_STATE_GROUP(name_, class_) \
-FRAME_STATE_GROUP_NAME(name_)            \
-FRAME_STATE_GROUP_CLASS(name_, class_)
+  FRAME_STATE_GROUP_NAME(name_)          \
+  FRAME_STATE_GROUP_CLASS(name_, class_)
 
 // == Frame state bits that apply to all frames ===============================
 
@@ -144,11 +142,9 @@ FRAME_STATE_BIT(Generic, 11, NS_FRAME_TOO_DEEP_IN_FRAME_TREE)
 // PresShell::FrameNeedsReflow.  Pass the right arguments instead.
 FRAME_STATE_BIT(Generic, 12, NS_FRAME_HAS_DIRTY_CHILDREN)
 
-// If this bit is set, the frame has an associated view
-FRAME_STATE_BIT(Generic, 13, NS_FRAME_HAS_VIEW)
-
-// If this bit is set, the frame was created from anonymous content.
-FRAME_STATE_BIT(Generic, 14, NS_FRAME_INDEPENDENT_SELECTION)
+// If this bit is set, the frame will not be rendered, because of it's
+// 'position-visibility' values.
+FRAME_STATE_BIT(Generic, 13, NS_FRAME_POSITION_VISIBILITY_HIDDEN)
 
 // If this bit is set, the frame is part of the mangled frame hierarchy
 // that results when an inline has been split because of a nested block.
@@ -167,8 +163,7 @@ FRAME_STATE_BIT(Generic, 16, NS_FRAME_MAY_BE_TRANSFORMED)
 // or is incomplete (its next sibling is a bidi continuation)
 FRAME_STATE_BIT(Generic, 17, NS_FRAME_IS_BIDI)
 
-// If this bit is set the frame has descendant with a view
-FRAME_STATE_BIT(Generic, 18, NS_FRAME_HAS_CHILD_WITH_VIEW)
+// Free bit here.
 
 // If this bit is set, then reflow may be dispatched from the current
 // frame instead of the root frame.
@@ -177,15 +172,14 @@ FRAME_STATE_BIT(Generic, 19, NS_FRAME_REFLOW_ROOT)
 // NOTE: Bits 20-31 and 60-63 of the frame state are reserved for specific
 // frame classes.
 
-// This bit is set on floats whose parent does not contain their
-// placeholder.  This can happen for two reasons:  (1) the float was
-// split, and this piece is the continuation, or (2) the entire float
-// didn't fit on the page.
-// Note that this bit is also shared by text frames for
-// TEXT_IS_IN_TOKEN_MATHML.  That's OK because we only check the
-// NS_FRAME_IS_PUSHED_FLOAT bit on frames which we already know are
-// out-of-flow.
-FRAME_STATE_BIT(Generic, 32, NS_FRAME_IS_PUSHED_FLOAT)
+// This bit is set on out-of-flow frames (e.g. floats or absolutely positioned
+// elements) whose parent does not contain their placeholder. This can happen
+// for two reasons: (1) the frame was split, and this piece is the continuation,
+// or (2) the entire frame didn't fit on the fragmentainer (e.g. page/column).
+// Note that this bit is also shared by text frames for TEXT_IS_IN_TOKEN_MATHML.
+// That's OK because we only check the NS_FRAME_IS_PUSHED_OUT_OF_FLOW bit on
+// frames which we already know are out-of-flow.
+FRAME_STATE_BIT(Generic, 32, NS_FRAME_IS_PUSHED_OUT_OF_FLOW)
 
 // This bit acts as a loop flag for recursive paint server drawing.
 FRAME_STATE_BIT(Generic, 33, NS_FRAME_DRAWING_AS_PAINTSERVER)
@@ -195,12 +189,6 @@ FRAME_STATE_BIT(Generic, 33, NS_FRAME_DRAWING_AS_PAINTSERVER)
 // situation (possibly the frame itself).
 FRAME_STATE_BIT(Generic, 34,
                 NS_FRAME_DESCENDANT_INTRINSIC_ISIZE_DEPENDS_ON_BSIZE)
-
-// A flag that tells us we can take the common path with respect to style
-// properties for this frame when building event regions. This flag is cleared
-// when any styles are changed and then we recompute it on the next build
-// of the event regions.
-FRAME_STATE_BIT(Generic, 35, NS_FRAME_SIMPLE_EVENT_REGIONS)
 
 // Frame is a display root and the retained layer tree needs to be updated
 // at the next paint via display list construction.
@@ -502,7 +490,7 @@ FRAME_STATE_BIT(Text, 31, TEXT_HAS_NONCOLLAPSED_CHARACTERS)
 
 // This state bit is set on children of token MathML elements.
 // NOTE: TEXT_IS_IN_TOKEN_MATHML has a global state bit value that is shared
-//       with NS_FRAME_IS_PUSHED_FLOAT.
+//       with NS_FRAME_IS_PUSHED_OUT_OF_FLOW.
 FRAME_STATE_BIT(Text, 32, TEXT_IS_IN_TOKEN_MATHML)
 
 // Set when this text frame is mentioned in the userdata for the
@@ -591,6 +579,18 @@ FRAME_STATE_BIT(Block, 61, NS_BLOCK_INTRINSICS_INFLATED)
 // frame, or the block has first-letter style but has no first letter, this
 // bit is not set. This bit is set on the first continuation only.
 FRAME_STATE_BIT(Block, 62, NS_BLOCK_HAS_FIRST_LETTER_CHILD)
+
+// NS_BLOCK_HAS_INLINE_ABSPOS_DESCENDANT is an optimization hint indicating that
+// this block needs to reflow abspos descendants whose containing block is
+// formed by an inline frame.
+//
+// This bit is set in
+// nsInlineFrame::MarkBlockAncestorHavingAbsoluteDescendants() (called from the
+// Reflow() of an inline/ruby descendant that has abspos children), and reset by
+// nsBlockFrame::ReflowAbsoluteDescendantsInInlineFrame() after it walks all the
+// block's inline descendants and finds no such abspos descendant, so it may
+// stay set for one extra reflow after the last one is gone.
+FRAME_STATE_BIT(Block, 63, NS_BLOCK_HAS_INLINE_ABSPOS_DESCENDANT)
 
 // == Frame state bits that apply to image frames =============================
 
@@ -710,16 +710,16 @@ FRAME_STATE_BIT(Page, 20, NS_PAGE_SKIPPED_BY_CUSTOM_RANGE)
 #undef FRAME_STATE_GROUP
 
 #ifdef DEFINED_FRAME_STATE_GROUP_NAME
-#undef DEFINED_FRAME_STATE_GROUP_NAME
-#undef FRAME_STATE_GROUP_NAME
+#  undef DEFINED_FRAME_STATE_GROUP_NAME
+#  undef FRAME_STATE_GROUP_NAME
 #endif
 
 #ifdef DEFINED_FRAME_STATE_GROUP_CLASS
-#undef DEFINED_FRAME_STATE_GROUP_CLASS
-#undef FRAME_STATE_GROUP_CLASS
+#  undef DEFINED_FRAME_STATE_GROUP_CLASS
+#  undef FRAME_STATE_GROUP_CLASS
 #endif
 
 #ifdef DEFINED_FRAME_STATE_BIT
-#undef DEFINED_FRAME_STATE_BIT
-#undef FRAME_STATE_BIT
+#  undef DEFINED_FRAME_STATE_BIT
+#  undef FRAME_STATE_BIT
 #endif

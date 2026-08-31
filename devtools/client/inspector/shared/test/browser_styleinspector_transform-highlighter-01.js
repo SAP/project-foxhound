@@ -40,7 +40,7 @@ add_task(async function () {
     2,
     2,
     { type: "mousemove" },
-    rulesViewTarget.ownerGlobal
+    rulesViewTarget.documentGlobal
   );
   const h = await onHighlighterShown;
 
@@ -57,7 +57,7 @@ add_task(async function () {
     2,
     2,
     { type: "mousemove" },
-    rulesViewTarget.ownerGlobal
+    rulesViewTarget.documentGlobal
   );
   await onHighlighterHidden;
 
@@ -68,7 +68,7 @@ add_task(async function () {
     2,
     2,
     { type: "mousemove" },
-    rulesViewTarget.ownerGlobal
+    rulesViewTarget.documentGlobal
   );
   const h2 = await onHighlighterShown;
 
@@ -79,7 +79,7 @@ add_task(async function () {
   );
 
   const onComputedViewReady = inspector.once("computed-view-refreshed");
-  const cView = selectComputedView(inspector);
+  const cView = await selectComputedView(inspector);
   await onComputedViewReady;
   overlay = cView.highlighters;
 
@@ -95,7 +95,7 @@ add_task(async function () {
     2,
     2,
     { type: "mousemove" },
-    computedViewTarget.ownerGlobal
+    computedViewTarget.documentGlobal
   );
 
   const h3 = await onHighlighterShown;

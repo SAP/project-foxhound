@@ -1,0 +1,22 @@
+---
+ruff-format:
+    description: Reformat python with ruff
+    # Excludes should be added to topsrcdir/pyproject.toml
+    exclude:
+        - gfx/harfbuzz/src/meson.build
+        - '**/*.mako.py'
+        - python/mozbuild/mozbuild/test/frontend/data/reader-error-syntax/moz.build
+        - testing/mozharness/configs/test/test_malformed.py
+        - testing/web-platform/tests
+    extensions:
+        - build
+        - configure
+        - mozbuild
+        - py
+    # Format Python inside dot-directories too (e.g. .agents, .claude skills).
+    find-dotfiles: true
+    support-files:
+        - 'tools/lint/python/**'
+        - '**/pyproject.toml'
+    type: external
+    payload: python.ruff:format

@@ -5,7 +5,6 @@
 package mozilla.components.support.remotesettings
 
 import android.content.Context
-import android.os.Build
 import androidx.annotation.VisibleForTesting
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -41,7 +40,7 @@ interface RemoteSettingsSyncScheduler {
 @SuppressWarnings("MagicNumber")
 class DefaultRemoteSettingsSyncScheduler(
     private val context: Context,
-    private val frequency: Frequency = Frequency(24, TimeUnit.HOURS),
+    private val frequency: Frequency = Frequency(2, TimeUnit.HOURS),
 ) : RemoteSettingsSyncScheduler {
     private val logger = Logger("DefaultRemoteSettingsChecker")
 
@@ -74,9 +73,7 @@ class DefaultRemoteSettingsSyncScheduler(
     }
 
     private fun getWorkerConstraints() = Constraints.Builder().apply {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            setRequiresDeviceIdle(true)
-        }
+        setRequiresDeviceIdle(true)
     }.setRequiresBatteryNotLow(true)
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()

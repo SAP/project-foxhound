@@ -12,7 +12,6 @@
 
 async function chromeScriptFunc() {
   function childFrameScript() {
-    /* eslint-env mozilla/frame-script */
     "use strict";
 
     const mmName = "test:idb-and-mm";
@@ -312,6 +311,10 @@ async function chromeScriptFunc() {
 }
 
 add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.indexedDB.testing.allowContentSystem", true]],
+  });
+
   let chromeScript = SpecialPowers.loadChromeScript(chromeScriptFunc);
   await chromeScript.promiseOneMessage("done");
   await chromeScript.destroy();

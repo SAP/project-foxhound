@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsSliderFrame_h__
-#define nsSliderFrame_h__
+#ifndef nsSliderFrame_h_
+#define nsSliderFrame_h_
 
 #include "mozilla/Attributes.h"
 #include "nsAtom.h"
@@ -83,9 +81,6 @@ class nsSliderFrame final : public nsContainerFrame {
                                 nsIFrame* aThumb,
                                 const nsDisplayListSet& aLists);
 
-  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
-
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
             nsIFrame* aPrevInFlow) override;
 
@@ -104,16 +99,9 @@ class nsSliderFrame final : public nsContainerFrame {
 
   nsresult StartDrag(mozilla::dom::Event* aEvent);
   nsresult StopDrag();
+  bool ClickAndHoldActive() const;
 
   void StartAPZDrag(mozilla::WidgetGUIEvent* aEvent);
-
-  static int32_t GetCurrentPosition(nsIContent* content);
-  static int32_t GetMinPosition(nsIContent* content);
-  static int32_t GetMaxPosition(nsIContent* content);
-  static int32_t GetIncrement(nsIContent* content);
-  static int32_t GetPageIncrement(nsIContent* content);
-  static int32_t GetIntegerAttribute(nsIContent* content, nsAtom* atom,
-                                     int32_t defaultValue);
 
   NS_IMETHOD HandlePress(nsPresContext* aPresContext,
                          mozilla::WidgetGUIEvent* aEvent,
@@ -156,22 +144,16 @@ class nsSliderFrame final : public nsContainerFrame {
   // Returns the associated scroll container frame that contains this slider if
   // any.
   mozilla::ScrollContainerFrame* GetScrollContainerFrame();
+  void CurrentPositionChanged();
 
  private:
   bool GetScrollToClick();
-  nsScrollbarFrame* Scrollbar();
+  nsScrollbarFrame* Scrollbar() const;
   bool ShouldScrollForEvent(mozilla::WidgetGUIEvent* aEvent);
   bool ShouldScrollToClickForEvent(mozilla::WidgetGUIEvent* aEvent);
   bool IsEventOverThumb(mozilla::WidgetGUIEvent* aEvent);
 
-  void PageUpDown(nscoord change);
-  void SetCurrentThumbPosition(nsIContent* aScrollbar, nscoord aNewPos,
-                               bool aIsSmooth, bool aMaySnap);
-  void SetCurrentPosition(nsIContent* aScrollbar, int32_t aNewPos,
-                          bool aIsSmooth);
-  void SetCurrentPositionInternal(nsIContent* aScrollbar, int32_t pos,
-                                  bool aIsSmooth);
-  void CurrentPositionChanged();
+  void SetCurrentThumbPosition(nscoord aNewPos);
 
   void DragThumb(bool aGrabMouseEvents);
   void AddListener();
@@ -181,10 +163,7 @@ class nsSliderFrame final : public nsContainerFrame {
   void SuppressDisplayport();
   void UnsuppressDisplayport();
 
-  void StartRepeat() {
-    nsRepeatService::GetInstance()->Start(Notify, this, mContent->OwnerDoc(),
-                                          "nsSliderFrame"_ns);
-  }
+  void StartRepeat();
   void StopRepeat() {
     nsRepeatService::GetInstance()->Stop(Notify, this);
     mCurrentClickHoldDestination = Nothing();
@@ -209,17 +188,9 @@ class nsSliderFrame final : public nsContainerFrame {
 
   nscoord mDragStart;
   nscoord mThumbStart;
-
-  int32_t mCurPos;
-
   nscoord mRepeatDirection;
 
   bool mDragInProgress = false;
-
-  // true if an attribute change has been caused by the user manipulating the
-  // slider. This allows notifications to tell how a slider's current position
-  // was changed.
-  bool mUserChanged;
 
   // true if we've handed off the scrolling to APZ. This means that we should
   // ignore scrolling events as the position will be updated by APZ. If we were

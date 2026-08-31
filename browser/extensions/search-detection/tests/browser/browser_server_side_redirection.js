@@ -6,7 +6,9 @@
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
-
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
 const { TelemetryTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
@@ -69,7 +71,7 @@ const testServerSideRedirect = async ({
 
   await searchEngine.startup();
   ok(
-    Services.search.getEngineByName(searchEngineName),
+    SearchService.getEngineByName(searchEngineName),
     "test search engine registered"
   );
   await AddonTestUtils.waitForSearchProviderStartup(searchEngine);
@@ -85,7 +87,7 @@ const testServerSideRedirect = async ({
 
   await searchEngine.unload();
   ok(
-    !Services.search.getEngineByName(searchEngineName),
+    !SearchService.getEngineByName(searchEngineName),
     "test search engine unregistered"
   );
 

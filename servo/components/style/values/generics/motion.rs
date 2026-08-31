@@ -4,6 +4,7 @@
 
 //! Generic types for CSS Motion Path.
 
+use crate::derives::*;
 use crate::values::animated::ToAnimatedZero;
 use crate::values::generics::position::{GenericPosition, GenericPositionOrAuto};
 use crate::values::specified::motion::CoordBox;
@@ -183,8 +184,10 @@ pub use self::GenericOffsetPathFunction as OffsetPathFunction;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
+#[typed(todo_derive_fields)]
 pub enum GenericOffsetPath<Function> {
     /// <offset-path> || <coord-box>.
     OffsetPath {
@@ -243,6 +246,7 @@ impl<Function> ToAnimatedZero for OffsetPath<Function> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericOffsetPosition<H, V> {

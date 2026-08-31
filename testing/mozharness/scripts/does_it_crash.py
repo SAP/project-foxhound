@@ -2,10 +2,11 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-""" does_it_crash.py
+"""does_it_crash.py
 
-    Runs a thing to see if it crashes within a set period.
+Runs a thing to see if it crashes within a set period.
 """
+
 import os
 import signal
 import subprocess
@@ -72,7 +73,7 @@ class DoesItCrash(BaseScript):
     ]
 
     def __init__(self):
-        super(DoesItCrash, self).__init__(
+        super().__init__(
             all_actions=[
                 "download",
                 "run-thing",

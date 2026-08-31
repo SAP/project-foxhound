@@ -15,41 +15,30 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    function runTest() {
-      this.containerNode = getNode("outerDiv");
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_HIDE, getNode("child")),
-        new invokerChecker(EVENT_HIDE, getNode("childDoc")),
-        new invokerChecker(EVENT_SHOW, "newChildDoc"),
-        new invokerChecker(EVENT_REORDER, this.containerNode),
-      ];
-
-      this.invoke = function runTest_invoke() {
-        this.containerNode.removeChild(getNode("child"));
-
-        var docContainer = getNode("docContainer");
-        var iframe = document.createElement("iframe");
-        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-        iframe.setAttribute("src", "http://example.com");
-        iframe.setAttribute("id", "newChildDoc");
-
-        docContainer.removeChild(getNode("childDoc"));
-        docContainer.appendChild(iframe);
-      };
-
-      this.getID = function runTest_getID() {
-        return "check show events are not incorrectly coalesced";
-      };
-    }
-
     // enableLogging("tree");
-    gA11yEventDumpToConsole = true;
-    var gQueue = null;
-    function doTest() {
-      gQueue = new eventQueue();
-      gQueue.push(new runTest());
-      gQueue.invoke(); // SimpleTest.finish();
+
+    async function doTest() {
+      let containerNode = getNode("outerDiv");
+      let p = waitForEvents([
+        [EVENT_HIDE, getNode("child")],
+        [EVENT_HIDE, getNode("childDoc")],
+        [EVENT_SHOW, "newChildDoc"],
+        [EVENT_REORDER, containerNode],
+      ]);
+
+      containerNode.removeChild(getNode("child"));
+
+      const docContainer = getNode("docContainer");
+      const iframe = document.createElement("iframe");
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      iframe.setAttribute("src", "http://example.com");
+      iframe.setAttribute("id", "newChildDoc");
+
+      docContainer.removeChild(getNode("childDoc"));
+      docContainer.appendChild(iframe);
+
+      await p;
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

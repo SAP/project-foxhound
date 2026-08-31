@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAboutCache_h__
-#define nsAboutCache_h__
+#ifndef nsAboutCache_h_
+#define nsAboutCache_h_
 
 #include "nsIAboutModule.h"
 #include "nsICacheStorageVisitor.h"
@@ -112,7 +111,17 @@
   }                                                                            \
   NS_IMETHOD GetCanceled(bool* aCanceled) override {                           \
     return !(_to) ? NS_ERROR_NULL_POINTER : (_to)->GetCanceled(aCanceled);     \
-  };
+  }                                                                            \
+  NS_IMETHOD GetParentProcessChannelHandle(                                    \
+      mozilla::dom::ParentProcessChannelHandle** aValue) override {            \
+    return !(_to) ? NS_ERROR_NULL_POINTER                                      \
+                  : (_to)->GetParentProcessChannelHandle(aValue);              \
+  }                                                                            \
+  NS_IMETHOD SetParentProcessChannelHandle(                                    \
+      mozilla::dom::ParentProcessChannelHandle* aValue) override {             \
+    return !(_to) ? NS_ERROR_NULL_POINTER                                      \
+                  : (_to)->SetParentProcessChannelHandle(aValue);              \
+  }
 
 class nsAboutCache final : public nsIAboutModule {
  public:
@@ -196,4 +205,4 @@ class nsAboutCache final : public nsIAboutModule {
    0x11d4,                                    \
    {0x9b, 0xe2, 0x00, 0xe0, 0x98, 0x72, 0xa4, 0x16}}
 
-#endif  // nsAboutCache_h__
+#endif  // nsAboutCache_h_

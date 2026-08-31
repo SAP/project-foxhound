@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,13 +12,13 @@
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 
 namespace mozilla {
 namespace layers {
 
 InProcessCompositorSession::InProcessCompositorSession(
-    nsBaseWidget* aWidget, widget::CompositorWidget* aCompositorWidget,
+    nsIWidget* aWidget, widget::CompositorWidget* aCompositorWidget,
     CompositorBridgeChild* aChild, CompositorBridgeParent* aParent)
     : CompositorSession(aWidget, aCompositorWidget->AsDelegate(), aChild,
                         aParent->RootLayerTreeId()),
@@ -31,11 +29,10 @@ InProcessCompositorSession::InProcessCompositorSession(
 
 /* static */
 RefPtr<InProcessCompositorSession> InProcessCompositorSession::Create(
-    nsBaseWidget* aWidget, WebRenderLayerManager* aLayerManager,
-    const LayersId& aRootLayerTreeId, CSSToLayoutDeviceScale aScale,
-    const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
-    const gfx::IntSize& aSurfaceSize, uint32_t aNamespace,
-    uint64_t aInnerWindowId) {
+    nsIWidget* aWidget, const LayersId& aRootLayerTreeId,
+    CSSToLayoutDeviceScale aScale, const CompositorOptions& aOptions,
+    bool aUseExternalSurfaceSize, const gfx::IntSize& aSurfaceSize,
+    uint32_t aNamespace, uint64_t aInnerWindowId) {
   widget::CompositorWidgetInitData initData;
   aWidget->GetCompositorWidgetInitData(&initData);
 
@@ -50,7 +47,7 @@ RefPtr<InProcessCompositorSession> InProcessCompositorSession::Create(
 
   RefPtr<CompositorBridgeChild> child =
       CompositorManagerChild::CreateSameProcessWidgetCompositorBridge(
-          aLayerManager, aNamespace);
+          aNamespace);
   MOZ_ASSERT(child);
   if (!child) {
     gfxCriticalNote << "Failed to create CompositorBridgeChild";
@@ -63,7 +60,7 @@ RefPtr<InProcessCompositorSession> InProcessCompositorSession::Create(
 void InProcessCompositorSession::NotifySessionLost() {
   // Hold a reference to mWidget since NotifyCompositorSessionLost may
   // release the last reference mid-execution.
-  RefPtr<nsBaseWidget> widget(mWidget);
+  RefPtr<nsIWidget> widget(mWidget);
   widget->NotifyCompositorSessionLost(this);
 }
 

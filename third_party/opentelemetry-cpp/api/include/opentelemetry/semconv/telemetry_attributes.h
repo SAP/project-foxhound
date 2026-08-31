@@ -20,6 +20,20 @@ namespace telemetry
 {
 
 /**
+  The name of the auto instrumentation agent or distribution, if used.
+  <p>
+  Official auto instrumentation agents and distributions SHOULD set the @code telemetry.distro.name
+  @endcode attribute to a string starting with @code opentelemetry- @endcode, e.g. @code
+  opentelemetry-java-instrumentation @endcode.
+ */
+static constexpr const char *kTelemetryDistroName = "telemetry.distro.name";
+
+/**
+  The version string of the auto instrumentation agent or distribution, if used.
+ */
+static constexpr const char *kTelemetryDistroVersion = "telemetry.distro.version";
+
+/**
   The language of the telemetry SDK.
  */
 static constexpr const char *kTelemetrySdkLanguage = "telemetry.sdk.language";
@@ -44,64 +58,29 @@ static constexpr const char *kTelemetrySdkVersion = "telemetry.sdk.version";
 
 namespace TelemetrySdkLanguageValues
 {
-/**
-  none
- */
+
 static constexpr const char *kCpp = "cpp";
 
-/**
-  none
- */
 static constexpr const char *kDotnet = "dotnet";
 
-/**
-  none
- */
 static constexpr const char *kErlang = "erlang";
 
-/**
-  none
- */
 static constexpr const char *kGo = "go";
 
-/**
-  none
- */
 static constexpr const char *kJava = "java";
 
-/**
-  none
- */
 static constexpr const char *kNodejs = "nodejs";
 
-/**
-  none
- */
 static constexpr const char *kPhp = "php";
 
-/**
-  none
- */
 static constexpr const char *kPython = "python";
 
-/**
-  none
- */
 static constexpr const char *kRuby = "ruby";
 
-/**
-  none
- */
 static constexpr const char *kRust = "rust";
 
-/**
-  none
- */
 static constexpr const char *kSwift = "swift";
 
-/**
-  none
- */
 static constexpr const char *kWebjs = "webjs";
 
 }  // namespace TelemetrySdkLanguageValues

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,16 +5,17 @@
 #ifndef DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_MEDIACONDUITCONTROL_H_
 #define DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_MEDIACONDUITCONTROL_H_
 
-#include "jsapi/RTCDTMFSender.h"  // For DtmfEvent
-#include "mozilla/StateMirroring.h"
-#include "RtpRtcpConfig.h"
-#include <vector>
 #include <string>
-#include "mozilla/Maybe.h"
-#include "CodecConfig.h"                   // For Audio/VideoCodecConfig
+#include <vector>
+
+#include "CodecConfig.h"  // For Audio/VideoCodecConfig
+#include "FrameTransformerProxy.h"
+#include "RtpRtcpConfig.h"
 #include "api/rtp_parameters.h"            // For webrtc::RtpExtension
 #include "api/video_codecs/video_codec.h"  // For webrtc::VideoCodecMode
-#include "FrameTransformerProxy.h"
+#include "jsapi/RTCDTMFSender.h"           // For DtmfEvent
+#include "mozilla/Maybe.h"
+#include "mozilla/StateMirroring.h"
 #include "mozilla/dom/RTCRtpParametersBinding.h"
 
 namespace mozilla {

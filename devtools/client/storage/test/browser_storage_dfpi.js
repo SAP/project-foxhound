@@ -31,7 +31,7 @@ function listOrigins() {
 add_task(async function () {
   await pushPref(
     "network.cookie.cookieBehavior",
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
   );
 
   registerCleanupFunction(SiteDataTestUtils.clear);
@@ -105,7 +105,7 @@ async function testPartitionedStorage(
 ) {
   await pushPref(
     "network.cookie.cookieBehavior",
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
   );
   // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
   await pushPref("network.cookie.sameSite.laxByDefault", false);

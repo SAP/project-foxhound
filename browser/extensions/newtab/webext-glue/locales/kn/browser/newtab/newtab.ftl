@@ -9,6 +9,23 @@ newtab-page-title = ಹೊಸ ಹಾಳೆ
 newtab-settings-button =
     .title = ಹೊಸ ಹಾಳೆಯ ಪುಟವನ್ನು ಅಗತ್ಯಾನುಗುಣಗೊಳಿಸಿ
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = ಹೊಸ ಟ್ಯಾಬ್ ಗಳು
+
+## Firefox Home content
+
+home-mode-choice-blank-srd =
+    .label = ಖಾಲಿ ಪುಟ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = ಭೇಟಿಕೊಟ್ಟ ಪುಟಗಳು
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ಪುಟಗುರುತುಗಳು
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ತೀರಾ ಇತ್ತೀಚಿನ ಡೌನ್ಲೋಡ್
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +33,7 @@ newtab-search-box-search-button =
     .title = ಹುಡುಕು
     .aria-label = ಹುಡುಕು
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-edit-topsites-header = ಅಗ್ರ ತಾಣಗಳನ್ನು ಸಂಪಾದಿಸಿ
 newtab-topsites-title-label = ಶೀರ್ಷಿಕೆ
@@ -39,9 +56,6 @@ newtab-topsites-add-button = ಸೇರಿಸು
 
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = ಈ ಕಾರ್ಯವನ್ನು ರದ್ದುಗೊಳಿಸಲು ಸಾಧ್ಯವಿರುವುದಿಲ್ಲ.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -66,12 +80,6 @@ newtab-menu-delete-history = ಇತಿಹಾಸದಿಂದ ಅಳಿಸು‍
 newtab-menu-save-to-pocket = { -pocket-brand-name } ಗೆ ಉಳಿಸಿ‍
 newtab-menu-delete-pocket = { -pocket-brand-name } ನಿಂದ ಅಳಿಸಿ
 newtab-menu-archive-pocket = { -pocket-brand-name } ಆರ್ಕೈವ್ ಮಾಡಿ
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -119,9 +127,6 @@ newtab-section-menu-manage-webext = ವಿಸ್ತರಣೆಯನ್ನು ನ�
 newtab-section-menu-move-up = ಮೇಲೆ ಜರುಗಿಸು
 newtab-section-menu-move-down = ಕೆಳಗೆ ಜರುಗಿಸು
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = ಪ್ರಮುಖ ತಾಣಗಳು
@@ -133,76 +138,8 @@ newtab-section-header-pocket = { $provider } ರಿಂದ ಶಿಫಾರಸು�
 
 newtab-empty-section-highlights = ವೀಕ್ಷಣೆ ಮಾಡಲು ಶುರುಮಾಡಿ, ಮತ್ತು ನಾವು ಇತ್ತೀಚೆಗೆ ಭೇಟಿ ನೀಡಿದ ಅಥವಾ ಬುಕ್‌ಮಾರ್ಕ್ ಮಾಡಲಾದ ಕೆಲವು ಶ್ರೇಷ್ಠ ಲೇಖನಗಳು, ವೀಡಿಯೊಗಳು ಮತ್ತು ಇತರ ಪುಟಗಳನ್ನು ನಾವು ತೋರಿಸುತ್ತೇವೆ.
 
-## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
-
-
 ## Pocket Content Section.
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
 newtab-pocket-read-more = ಜನಪ್ರಿಯವಾದ ವಿಷಯಗಳು:
 newtab-pocket-cta-button = { -pocket-brand-name } ಪಡೆಯಿರಿ
-
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
-## Error Fallback Content.
-## This message and suggested action link are shown in each section of UI that fails to render.
-
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

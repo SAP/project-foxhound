@@ -11,8 +11,8 @@ using ComponentsBag = DateTimeFormat::ComponentsBag;
 static DateTimeFormat::StyleBag ToStyleBag(Maybe<DateTimeFormat::Style> date,
                                            Maybe<DateTimeFormat::Style> time) {
   DateTimeFormat::StyleBag style;
-  style.date = date;
-  style.time = time;
+  style.date = std::move(date);
+  style.time = std::move(time);
   return style;
 }
 
@@ -267,7 +267,7 @@ TEST(AppDateTimeFormat, DateFormatSelectorsForeign)
     nsresult rv =
         AppDateTimeFormat::Format(components, &prExplodedTime, formattedTime);
     ASSERT_NS_SUCCEEDED(rv);
-    ASSERT_STREQ("01.1970", NS_ConvertUTF16toUTF8(formattedTime).get());
+    ASSERT_STREQ("01/1970", NS_ConvertUTF16toUTF8(formattedTime).get());
   }
   {
     ComponentsBag components{};

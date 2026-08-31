@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,13 +5,13 @@
 #ifndef BaseMediaResource_h
 #define BaseMediaResource_h
 
+#include "MediaCache.h"
 #include "MediaResource.h"
 #include "MediaResourceCallback.h"
-#include "MediaCache.h"
-#include "nsIChannel.h"
-#include "nsIURI.h"
-#include "nsIStreamListener.h"
 #include "mozilla/dom/MediaDebugInfoBinding.h"
+#include "nsIChannel.h"
+#include "nsIStreamListener.h"
+#include "nsIURI.h"
 
 class nsIPrincipal;
 

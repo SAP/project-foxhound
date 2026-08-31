@@ -1,0 +1,70 @@
+# Don't use Gannen year numbering for Gregorian eras in Japanese calendar.
+
+diff --git a/intl/icu/source/i18n/smpdtfmt.cpp b/intl/icu/source/i18n/smpdtfmt.cpp
+--- a/intl/icu/source/i18n/smpdtfmt.cpp
++++ b/intl/icu/source/i18n/smpdtfmt.cpp
+@@ -1066,16 +1066,64 @@ SimpleDateFormat::_format(Calendar& cal,
+             calClone->setTimeZone(cal.getTimeZone());
+             workCal = calClone;
+         } else {
+             status = U_MEMORY_ALLOCATION_ERROR;
+             return appendTo;
+         }
+     }
+ 
++    // Set or reset Gannen year numbering.
++    if (typeid(*fCalendar) == typeid(JapaneseCalendar) && fHasHanYearChar &&
++        uprv_strcmp(fLocale.getLanguage(), "ja") == 0) {
++
++        int32_t era = workCal->get(UCAL_ERA, status);
++        if (U_FAILURE(status)) {
++            return appendTo;
++        }
++
++        // Cast away constness.
++        auto* self = const_cast<SimpleDateFormat *>(this);
++
++        // Does the current calendar era uses Gannen year numbering?
++        bool useGannen = era != GregorianCalendar::AD && era != GregorianCalendar::BC;
++
++        // Code to set/reset numbering copied from `SimpleDateFormat::applyPattern`.
++        if (!useGannen && fDateOverride == UnicodeString(u"y=jpanyear")) {
++            // Gannen numbering is set but current era should not use it, unset;
++            // use procedure from adoptNumberFormat to clear overrides
++            if (fSharedNumberFormatters) {
++                freeSharedNumberFormatters(fSharedNumberFormatters);
++                self->fSharedNumberFormatters = nullptr;
++            }
++            self->fDateOverride.setToBogus(); // record status
++        } else if (useGannen && fDateOverride.isBogus()) {
++            // No current override (=> no Gannen numbering) but current era needs it;
++            // use procedures from initNUmberFormatters / adoptNumberFormat
++            umtx_lock(&LOCK);
++            if (fSharedNumberFormatters == nullptr) {
++                self->fSharedNumberFormatters = allocSharedNumberFormatters();
++            }
++            umtx_unlock(&LOCK);
++            if (fSharedNumberFormatters != nullptr) {
++                Locale ovrLoc(fLocale.getLanguage(), fLocale.getCountry(), fLocale.getVariant(), "numbers=jpanyear");
++                const SharedNumberFormat *snf = createSharedNumberFormat(ovrLoc, status);
++                if (U_FAILURE(status)) {
++                    return appendTo;
++                }
++                // Now that we have an appropriate number formatter, fill in the
++                // appropriate slot in the number formatters table.
++                UDateFormatField patternCharIndex = DateFormatSymbols::getPatternCharIndex(u'y');
++                SharedObject::copyPtr(snf, fSharedNumberFormatters[patternCharIndex]);
++                snf->deleteIfZeroRefCount();
++                self->fDateOverride.setTo(u"y=jpanyear", -1); // record status
++            }
++        }
++    }
++
+     UBool inQuote = false;
+     char16_t prevCh = 0;
+     int32_t count = 0;
+     int32_t fieldNum = 0;
+     UDisplayContext capitalizationContext = getContext(UDISPCTX_TYPE_CAPITALIZATION, status);
+ 
+     // loop through the pattern string character by character
+     int32_t patternLength = fPattern.length();

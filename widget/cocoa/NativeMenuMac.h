@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,8 +28,10 @@ class NativeMenuMac : public NativeMenu,
   explicit NativeMenuMac(dom::Element* aElement);
 
   // NativeMenu
-  void ShowAsContextMenu(nsIFrame* aClickedFrame, const CSSIntPoint& aPosition,
-                         bool aIsContextMenu) override;
+  void ShowMenuAnchored(nsIFrame* aClickedFrame,
+                        const nsMenuPopupFrame* aPopupFrame) override;
+  void ShowMenuAtPosition(nsIFrame* aClickedFrame, const CSSIntPoint& aPosition,
+                          bool aIsContextMenu) override;
   bool Close() override;
   void ActivateItem(dom::Element* aItemElement, Modifiers aModifiers,
                     int16_t aButton, ErrorResult& aRv) override;
@@ -83,8 +84,8 @@ class NativeMenuMac : public NativeMenu,
   nsTArray<NativeMenu::Observer*> mObservers;
   NSStatusItem* mContainerStatusBarItem;
 
-  // Non-zero after a call to ShowAsContextMenu. Stores the handle from the
-  // MOZMenuOpeningCoordinator.
+  // Non-zero after a call to ShowMenuAnchored or ShowMenuAtPosition. Stores the
+  // handle from the MOZMenuOpeningCoordinator.
   NSInteger mOpeningHandle = 0;
 };
 

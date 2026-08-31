@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -303,87 +302,32 @@ class HistoryDelegateTest : BaseSessionTest() {
         })
     }
 
-    @Test fun fissionDisabledWithShipDisabled() {
-        // Check if this is a fission disabled run.
-        assumeThat(sessionRule.env.isFission, equalTo(false))
+    @Test fun flushSessionStateTriggersHistoryChange() {
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.loadTestPath(HELLO2_HTML_PATH)
 
-        // Check preference with Gecko, this can be changed externally through configs.
-        val shipPref = sessionRule.getPrefs(
-            "fission.disableSessionHistoryInParent",
-        )
+        sessionRule.delegateUntilTestEnd(object : HistoryDelegate {
+            @AssertCalled(count = 1)
+            override fun onHistoryStateChange(session: GeckoSession, state: GeckoSession.HistoryDelegate.HistoryList) {
+                assertThat(
+                    "History should have two entries",
+                    state.size,
+                    equalTo(2),
+                )
+                assertThat(
+                    "URLs should match",
+                    state[state.currentIndex].uri,
+                    endsWith(HELLO2_HTML_PATH),
+                )
+                assertThat(
+                    "History index should be 1",
+                    state.currentIndex,
+                    equalTo(1),
+                )
+            }
+        })
 
-        // Check if this is a SHIP disabled run.
-        assumeThat(
-            shipPref[0] as Boolean,
-            equalTo(true),
-        )
-
-        // Check preference with GeckoView
-        assertNull(
-            "Default will have no value since we are relying on Gecko.",
-            sessionRule.runtime.settings.disableShip,
-        )
-
-        // Verify SHIP is not running
-        assertFalse(
-            "SHIP is not running.",
-            sessionRule.isSessionHistoryInParentRunning,
-        )
-    }
-
-    @Test fun fissionDisabledWithShipEnabled() {
-        // Check if this is a fission disabled run.
-        assumeThat(sessionRule.env.isFission, equalTo(false))
-
-        // Check preference with Gecko, this can be changed externally through configs.
-        val shipPref = sessionRule.getPrefs(
-            "fission.disableSessionHistoryInParent",
-        )
-
-        // Check if this is a SHIP enabled run.
-        assumeThat(
-            shipPref[0] as Boolean,
-            equalTo(false),
-        )
-
-        // Check preference with GeckoView
-        assertNull(
-            "Default will have no value since we are relying on Gecko.",
-            sessionRule.runtime.settings.disableShip,
-        )
-
-        // Verify SHIP is running
-        assertTrue(
-            "SHIP is running.",
-            sessionRule.isSessionHistoryInParentRunning,
-        )
-    }
-
-    @Test fun fissionEnabledWithShipEnabled() {
-        // Check if this is a fission enabled run.
-        assumeThat(sessionRule.env.isFission, equalTo(true))
-
-        // Check preference with Gecko, this can be changed externally through configs.
-        val shipPref = sessionRule.getPrefs(
-            "fission.disableSessionHistoryInParent",
-        )
-
-        // Check if this is a SHIP enabled run.
-        assumeThat(
-            shipPref[0] as Boolean,
-            equalTo(false),
-        )
-
-        // Check preference with GeckoView
-        assertNull(
-            "Default will have no value since we are relying on Gecko.",
-            sessionRule.runtime.settings.disableShip,
-        )
-
-        // Verify SHIP is running
-        assertTrue(
-            "SHIP is running.",
-            sessionRule.isSessionHistoryInParentRunning,
-        )
+        sessionRule.waitForPageStops(2)
+        mainSession.flushSessionState()
     }
 }

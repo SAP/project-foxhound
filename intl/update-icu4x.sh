@@ -14,13 +14,15 @@ set -e
 #   update-icu4x.sh https://github.com/unicode-org/icu4x.git main 45.0.0 release-75-1 1.5.0
 
 # default
-cldr=${3:-47.0.0}
-icuexport=${4:-release-77-1}
-icu4x_version=${5:-2.0.0}
+cldr=${3:-48.0.0}
+icuexport=${4:-release-78.1}
+icu4x_version=${5:-2.1.1}
+icuexport_filename=${6:-icu4x-icuexportdata-78.1.zip}
 
+# Switch the example back to the unicode-org repo once the Gecko-relevant code has landed there.
 if [ $# -lt 2 ]; then
-  echo "Usage: update-icu4x.sh <URL of ICU4X GIT> <ICU4X release tag name> <CLDR version> <ICU release tag name> <ICU4X version for icu_capi>"
-  echo "Example: update-icu4x.sh https://github.com/unicode-org/icu4x.git icu@2.0.0 47.0.0 release-77-1 2.0.0"
+  echo "Usage: update-icu4x.sh <URL of ICU4X GIT> <ICU4X release tag name> <CLDR version> <ICU release tag name> <ICU4X version for icu_capi> <icuexport filename>"
+  echo "Example: update-icu4x.sh https://github.com/hsivonen/icu4x.git gecko 48.0.0 release-78.1 2.1.1 icu4x-icuexportdata-78.1.zip"
   exit 1
 fi
 
@@ -41,14 +43,15 @@ export LC_ALL=en_US.UTF-8
 original_pwd=$(pwd)
 top_src_dir=$(cd -- "$(dirname "$0")/.." >/dev/null 2>&1 ; pwd -P)
 segmenter_data_dir=${top_src_dir}/intl/icu_segmenter_data/data
+collator_data_dir=${top_src_dir}/third_party/rust/icu_collator_data/data
 git_info_file=${segmenter_data_dir}/ICU4X-GIT-INFO
 
 log "Remove the old data"
 rm -rf ${segmenter_data_dir}
+rm -rf ${collator_data_dir}
 
 log "Download icuexportdata"
 tmpicuexportdir=$(mktemp -d)
-icuexport_filename=`echo "icuexportdata_${icuexport}.zip" | sed "s/\//-/g"`
 cd ${tmpicuexportdir}
 wget https://github.com/unicode-org/icu/releases/download/${icuexport}/${icuexport_filename}
 
@@ -65,11 +68,19 @@ done
 
 log "Clone ICU4X"
 tmpclonedir=$(mktemp -d)
-git clone --depth 1 --branch $2 $1 ${tmpclonedir}
+git clone --depth 1 --branch $2 $1 ${tmpclonedir}/icu4x
+
+# Remove this step once the code is on crates.io.
+log "Clone utf8_iter"
+git clone --depth 1 --branch cptrie https://github.com/hsivonen/utf8_iter.git ${tmpclonedir}/utf8_iter
+
+# Remove this step once the code is on crates.io.
+log "Clone utf16_iter"
+git clone --depth 1 --branch cptrie https://github.com/hsivonen/utf16_iter.git ${tmpclonedir}/utf16_iter
 
 log "Change the directory to the cloned repo"
-log ${tmpclonedir}
-cd ${tmpclonedir}
+log ${tmpclonedir}/icu4x
+cd ${tmpclonedir}/icu4x
 
 log "Copy icu_capi crate to local since we need a patched version"
 rm -rf ${top_src_dir}/intl/icu_capi
@@ -81,6 +92,7 @@ rm -rf icu_capi_tar.gz
 log "Patching icu_capi"
 for patch in \
     001-Cargo.toml.patch \
+    002-bug2011393.patch \
 ; do
     patch -d ${top_src_dir} -p1 --no-backup-if-mismatch < ${top_src_dir}/intl/icu4x-patches/$patch
 done
@@ -115,12 +127,30 @@ cargo run --bin icu4x-datagen          \
   --format baked                       \
   --out ${segmenter_data_dir}          \
 
+log "Run the icu4x-datagen tool to regenerate the collator data."
+log "Saving the data into: ${collator_data_dir}"
+cargo run --bin icu4x-datagen          \
+  --                                   \
+  --cldr-tag ${cldr}                   \
+  --icuexport-root ${tmpicuexportdir}  \
+  --include-collations=search          \
+  -m CollationRootV1                   \
+  -m CollationTailoringV1              \
+  -m CollationDiacriticsV1             \
+  -m CollationJamoV1                   \
+  -m CollationReorderingV1             \
+  -m CollationMetadataV1               \
+  -m CollationSpecialPrimariesV1       \
+  --locales full                       \
+  --format baked                       \
+  --out ${collator_data_dir}          \
+
 log "Record the current cloned git information to:"
 log ${git_info_file}
 # (This ensures that if ICU modifications are performed properly, it's always
 # possible to run the command at the top of this script and make no changes to
 # the tree.)
-git -C ${tmpclonedir} log -1 > ${git_info_file}
+git -C ${tmpclonedir}/icu4x log -1 > ${git_info_file}
 
 log "Clean up the tmp directory"
 cd ${original_pwd}

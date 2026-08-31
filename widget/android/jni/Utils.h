@@ -1,17 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_jni_Utils_h__
-#define mozilla_jni_Utils_h__
+#ifndef mozilla_jni_Utils_h_
+#define mozilla_jni_Utils_h_
 
 #include <jni.h>
 
 #include "nsIRunnable.h"
-
-#include "mozilla/UniquePtr.h"
 
 #if defined(DEBUG) || !defined(RELEASE_OR_BETA)
 #  define MOZ_CHECK_JNI
@@ -147,4 +143,4 @@ bool IsOOMException(JNIEnv* aEnv);
 }  // namespace jni
 }  // namespace mozilla
 
-#endif  // mozilla_jni_Utils_h__
+#endif  // mozilla_jni_Utils_h_

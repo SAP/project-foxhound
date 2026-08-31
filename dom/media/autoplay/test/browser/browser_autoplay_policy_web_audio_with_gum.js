@@ -115,7 +115,7 @@ async function callGUM(testParameters) {
     // Because of the prefs we've set and passed, this is going to allow the
     // window to start an AudioContext synchronously.
     testParameters.constraints.fake = true;
-    await content.navigator.mediaDevices.getUserMedia(
+    content.gumStream = await content.navigator.mediaDevices.getUserMedia(
       testParameters.constraints
     );
     return;
@@ -130,6 +130,16 @@ async function callGUM(testParameters) {
   // because of saved permissions for an origin or explicit user consent using
   // the prompt.
   content.navigator.mediaDevices.getUserMedia(testParameters.constraints);
+}
+
+function stopGUMStream() {
+  if (!content.gumStream) {
+    return;
+  }
+  for (const track of content.gumStream.getTracks()) {
+    track.stop();
+  }
+  content.gumStream = null;
 }
 
 async function testWebAudioWithGUM(testParameters) {
@@ -166,6 +176,24 @@ async function testWebAudioWithGUM(testParameters) {
     await SpecialPowers.spawn(tab.linkedBrowser, [], resumeFunc);
   } catch (error) {
     ok(false, error.toString());
+  }
+
+  if (testParameters.shouldAllowStartingContext) {
+    const recordingEndedPromise = BrowserTestUtils.contentTopicObserved(
+      tab.linkedBrowser.browsingContext,
+      "recording-window-ended"
+    );
+    info("- stop gUM stream -");
+    await SpecialPowers.spawn(tab.linkedBrowser, [], stopGUMStream);
+    await recordingEndedPromise;
+
+    const { webrtcUI } = ChromeUtils.importESModule(
+      "resource:///modules/webrtcUI.sys.mjs"
+    );
+    await TestUtils.waitForCondition(
+      () => !webrtcUI.showGlobalIndicator,
+      "waiting for the global indicator to be hidden"
+    );
   }
 
   info("- remove tab -");

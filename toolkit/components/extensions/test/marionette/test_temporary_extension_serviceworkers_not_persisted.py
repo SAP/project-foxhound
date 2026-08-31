@@ -23,7 +23,7 @@ class TemporarilyInstalledAddonServiceWorkerNotPersisted(
     MarionetteServiceWorkerTestCase
 ):
     def setUp(self):
-        super(TemporarilyInstalledAddonServiceWorkerNotPersisted, self).setUp()
+        super().setUp()
         self.test_extension_id = EXT_ID
         # Flip the "mirror: once" pref and restart Firefox to be able
         # to run the extension successfully.
@@ -32,7 +32,7 @@ class TemporarilyInstalledAddonServiceWorkerNotPersisted(
 
     def tearDown(self):
         self.marionette.restart(in_app=False, clean=True)
-        super(TemporarilyInstalledAddonServiceWorkerNotPersisted, self).tearDown()
+        super().tearDown()
 
     def test_temporarily_installed_addon_serviceWorkers_not_persisted(self):
         self.install_temporary_extension_with_service_worker()

@@ -5,6 +5,8 @@
 include HttpChannelParams;
 include NeckoChannelParams;
 
+using class mozilla::net::nsHttpHeaderArray from "nsHttpHeaderArray.h";
+
 namespace mozilla {
 namespace net {
 
@@ -14,7 +16,6 @@ async protocol PBackgroundDataBridge
 {
 child:
   async OnTransportAndData(uint64_t  offset,
-                           uint32_t  count,
                            nsCString data,
                            TimeStamp onDataAvailableStart);
 

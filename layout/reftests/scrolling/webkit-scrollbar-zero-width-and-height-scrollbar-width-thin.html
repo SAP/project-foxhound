@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<style>
+.scrollable {
+  overflow: scroll;
+  height: 100px;
+  width: 100px;
+  border: 2px solid black;
+  scrollbar-width: thin;
+}
+.scrollable::before {
+  display: block;
+  content: "overflowing content";
+  height: 300px;
+  width: 300px;
+}
+.scrollable::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+</style>
+<div class="scrollable"></div>

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define mozilla_layers_AsyncPanZoomController_h
 
 #include "Units.h"
+#include "apz/public/APZPublicUtils.h"
 #include "mozilla/layers/CompositorScrollUpdate.h"
 #include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/RepaintRequest.h"
@@ -180,10 +179,11 @@ struct PointerEventsConsumableFlags {
 class AsyncPanZoomController {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AsyncPanZoomController)
 
-  typedef mozilla::MonitorAutoLock MonitorAutoLock;
-  typedef mozilla::gfx::Matrix4x4 Matrix4x4;
-  typedef mozilla::layers::RepaintRequest::ScrollOffsetUpdateType
-      RepaintUpdateType;
+  using MonitorAutoLock = mozilla::MonitorAutoLock;
+  using Matrix4x4 = mozilla::gfx::Matrix4x4;
+  using RepaintUpdateType =
+      mozilla::layers::RepaintRequest::ScrollOffsetUpdateType;
+  using ScrollAnimationKind = apz::ScrollAnimationKind;
 
  public:
   enum GestureBehavior {
@@ -281,16 +281,21 @@ class AsyncPanZoomController {
   // These methods must only be called on the updater thread.
   //
 
+  struct LayersUpdateFlags {
+    // Passed from the WebRender scroll data code indicating that the scroll
+    // metadata being sent with this call are the initial metadata and the
+    // initial paint of the frame has just happened.
+    bool mIsFirstPaint : 1;
+    // Whether this update was triggered by a paint for the LayersId (tab)
+    // containing this scroll frame.
+    bool mThisLayerTreeUpdated : 1;
+  };
   /**
-   * A shadow layer update has arrived. |aScrollMetdata| is the new
-   * ScrollMetadata for the container layer corresponding to this APZC.
-   * |aIsFirstPaint| is a flag passed from the shadow
-   * layers code indicating that the scroll metadata being sent with this call
-   * are the initial metadata and the initial paint of the frame has just
-   * happened.
+   * A WebRender scroll data has arrived. |aScrollMetdata| is the new
+   * ScrollMetadata for the scroll container corresponding to this APZC.
    */
-  void NotifyLayersUpdated(const ScrollMetadata& aScrollMetadata,
-                           bool aIsFirstPaint, bool aThisLayerTreeUpdated);
+  void NotifyMainThreadTransaction(const ScrollMetadata& aScrollMetadata,
+                                   LayersUpdateFlags aLayersUpdateFlags);
 
   /**
    * The platform implementation must set the compositor controller so that we
@@ -559,6 +564,10 @@ class AsyncPanZoomController {
   // direction.
   bool CanScroll(const ParentLayerPoint& aDelta) const;
 
+  // Return whether or not a scroll delta will be able to scroll or overscroll
+  // in either direction
+  bool CanScrollOrOverscroll(const ParentLayerPoint& aDelta) const;
+
   // Return whether or not a scroll delta will be able to scroll in either
   // direction with wheel.
   bool CanScrollWithWheel(const ParentLayerPoint& aDelta) const;
@@ -580,7 +589,8 @@ class AsyncPanZoomController {
   bool CanScrollDownwards() const;
 
   // Return true if there is room to scroll upwards.
-  bool CanOverscrollUpwards() const;
+  bool CanOverscrollUpwards(
+      HandoffConsumer aConsumer = HandoffConsumer::Scrolling) const;
 
   /**
    * Convert a point on the scrollbar from this APZC's ParentLayer coordinates
@@ -626,6 +636,19 @@ class AsyncPanZoomController {
   bool IsZero(ParentLayerCoord aCoord) const;
 
   bool FuzzyGreater(ParentLayerCoord aCoord1, ParentLayerCoord aCoord2) const;
+
+  /**
+   * This deleted function is used for:
+   * 1. avoiding accidental implicit value type conversions of input delta
+   *    values when callers intend to call the above function;
+   * 2. decoupling the manual relationship between the delta value type and the
+   *    above function. If by any chance the defined delta value type in
+   *    ScrollWheelInput has changed, this will automatically result in build
+   *    time failure, so we can learn of it the first time and accordingly
+   *    redefine those parameters' value types in the above function.
+   */
+  template <typename T>
+  ParentLayerPoint GetScrollWheelDelta(ScrollWheelInput&, T, T, T, T) = delete;
 
  private:
   // Get whether the horizontal content of the honoured target of auto-dir
@@ -722,19 +745,6 @@ class AsyncPanZoomController {
                                        double aMultiplierY) const;
 
   /**
-   * This deleted function is used for:
-   * 1. avoiding accidental implicit value type conversions of input delta
-   *    values when callers intend to call the above function;
-   * 2. decoupling the manual relationship between the delta value type and the
-   *    above function. If by any chance the defined delta value type in
-   *    ScrollWheelInput has changed, this will automatically result in build
-   *    time failure, so we can learn of it the first time and accordingly
-   *    redefine those parameters' value types in the above function.
-   */
-  template <typename T>
-  ParentLayerPoint GetScrollWheelDelta(ScrollWheelInput&, T, T, T, T) = delete;
-
-  /**
    * Helper methods for handling keyboard events.
    */
   nsEventStatus OnKeyboard(const KeyboardInput& aEvent);
@@ -813,6 +823,21 @@ class AsyncPanZoomController {
   void ScrollByAndClamp(const CSSPoint& aOffset);
 
   /**
+   * A variant of ScrollByAndClamp() that can scroll either the visual
+   * or the layout viewport.
+   */
+  void ScrollByAndClamp(ViewportType aViewportToScroll,
+                        const CSSPoint& aOffset);
+
+  /**
+   * Similar to ScrollByAndClamp() but scrolls to a specified destination.
+   * Can also be thought of as a variant of ClampAndSetVisualScrollOffset()
+   * which can set either the layout or viewport viewport offse.
+   */
+  void ScrollToAndClamp(ViewportType aViewportToScroll,
+                        const CSSPoint& aDestination);
+
+  /**
    * Scales the viewport by an amount (note that it multiplies this scale in to
    * the current scale, it doesn't set it to |aScale|). Also considers a focus
    * point so that the page zooms inward/outward from that point.
@@ -875,6 +900,9 @@ class AsyncPanZoomController {
   // the test async properties.
   ParentLayerPoint GetOverscrollAmountInternal() const;
 
+  // Return whether this APZC blocks pull-to-refresh.
+  bool BlocksPullToRefreshForOverflowHidden() const;
+
  protected:
   /**
    * Returns SideBits where this APZC is overscrolled.
@@ -889,15 +917,15 @@ class AsyncPanZoomController {
   void RestoreOverscrollAmount(const ParentLayerPoint& aOverscroll);
 
   /**
-   * Sets the panning state basing on the pan direction angle and current
+   * Sets the panning state basing on the pan vector and current
    * touch-action value.
    */
-  void HandlePanningWithTouchAction(double angle);
+  void HandlePanningWithTouchAction(const ParentLayerPoint& aVector);
 
   /**
    * Sets the panning state ignoring the touch action value.
    */
-  void HandlePanning(double angle);
+  void HandlePanning(const ParentLayerPoint& aVector);
 
   /**
    * Update the panning state and axis locks.
@@ -1442,15 +1470,11 @@ class AsyncPanZoomController {
     ANIMATING_ZOOM,       /* animated zoom to a new rect */
     OVERSCROLL_ANIMATION, /* Spring-based animation used to relieve overscroll
                              once the finger is lifted. */
-    SMOOTH_SCROLL,        /* Smooth scrolling to destination, with physics
-                             controlled by prefs specific to the scroll origin. */
-    SMOOTHMSD_SCROLL,     /* SmoothMSD scrolling to destination. Used by
-                             CSSOM-View smooth scroll-behavior */
-    WHEEL_SCROLL,    /* Smooth scrolling to a destination for a wheel event. */
-    KEYBOARD_SCROLL, /* Smooth scrolling to a destination for a keyboard event.
-                      */
-    AUTOSCROLL,      /* Autoscroll animation. */
-    SCROLLBAR_DRAG   /* Async scrollbar drag. */
+    SMOOTH_SCROLL,        /* Smooth scrolling to destination. May be for a wheel
+                             event, keyboard event, scroll-behavior or scroll
+                             snapping. */
+    AUTOSCROLL,           /* Autoscroll animation. */
+    SCROLLBAR_DRAG        /* Async scrollbar drag. */
   };
   // This is in theory protected by |mRecursiveMutex|; that is, it should be
   // held whenever this is updated. In practice though... see bug 897017.
@@ -1475,6 +1499,18 @@ class AsyncPanZoomController {
    * Returns wheter a delayed transform end is queued.
    */
   void SetDelayedTransformEnd(bool aDelayedTransformEnd);
+
+  /**
+   * Check whether there is an ongoing smooth scroll animation of
+   * the specified kind.
+   */
+  bool InScrollAnimation(ScrollAnimationKind aKind) const;
+
+  /**
+   * Check whether there is an ongoing smooth scroll animation triggered by
+   * script.
+   */
+  bool InScrollAnimationTriggeredByScript() const;
 
   /**
    * Returns whether the specified PanZoomState does not need to be reset when
@@ -1620,9 +1656,8 @@ class AsyncPanZoomController {
   friend class AndroidFlingPhysics;
   friend class DesktopFlingPhysics;
   friend class OverscrollAnimation;
-  friend class SmoothMsdScrollAnimation;
   friend class GenericScrollAnimation;
-  friend class WheelScrollAnimation;
+  friend class SmoothScrollAnimation;
   friend class ZoomAnimation;
 
   friend class GenericOverscrollEffect;
@@ -1653,18 +1688,17 @@ class AsyncPanZoomController {
   void StartOverscrollAnimation(const ParentLayerPoint& aVelocity,
                                 SideBits aOverscrollSideBits);
 
-  // Start a smooth-scrolling animation to the given destination, with physics
-  // based on the prefs for the indicated origin.
+  // Start a smooth-scrolling animation to the given destination.
+  // |aAnimationKind| must be |Smooth| or |SmoothMsd|
+  // |aOrigin| is only used with |Smooth| (for |SmoothMsd|,
+  // |ScrollOrigin::NotSpecified| may be passed).
   void SmoothScrollTo(CSSSnapDestination&& aDestination,
                       ScrollTriggeredByScript aTriggeredByScript,
-                      const ScrollOrigin& aOrigin);
+                      ScrollAnimationKind aAnimationKind,
+                      ViewportType aViewportToScroll, ScrollOrigin aOrigin,
+                      TimeStamp aStartTime);
 
   ParentLayerPoint ConvertDestinationToDelta(CSSPoint& aDestination) const;
-
-  // Start a smooth-scrolling animation to the given destination, with MSD
-  // physics that is suited for scroll-snapping.
-  void SmoothMsdScrollTo(CSSSnapDestination&& aDestination,
-                         ScrollTriggeredByScript aTriggeredByScript);
 
   // Returns whether overscroll is allowed during an event.
   bool AllowScrollHandoffInCurrentBlock() const;
@@ -1905,9 +1939,13 @@ class AsyncPanZoomController {
     return mState == PINCHING || mState == ANIMATING_ZOOM;
   }
 
+  void SetFixedLayerMargins(const ScreenMargin& aMargins);
+
  private:
   // The timestamp of the latest touch start event.
   TimeStamp mTouchStartTime;
+  // The start time of the latest autoscroll animation.
+  TimeStamp mAutoscrollStartTime;
   // Used for interpolating touch events that cross the touch-start
   // tolerance threshold.
   struct TouchSample {
@@ -1926,6 +1964,8 @@ class AsyncPanZoomController {
   Maybe<ParentLayerCoord> mMinimumVelocityDuringPan;
   // This variable needs to be protected by |mRecursiveMutex|.
   ScrollSnapTargetIds mLastSnapTargetIds;
+  // This variable needs to be protected by |mRecursiveMutex|.
+  ScreenMargin mCompositorFixedLayerMargins;
   // Extra offset to add to the async scroll position for testing
   CSSPoint mTestAsyncScrollOffset;
   // Extra zoom to include in the aync zoom for testing
@@ -1961,20 +2001,18 @@ class AsyncPanZoomController {
   // If moving |aStartPosition| by |aDelta| should trigger scroll snapping,
   // adjust |aDelta| to reflect the snapping (that is, make it a delta that will
   // take us to the desired snap point). The delta is interpreted as being
-  // relative to |aStartPosition|, and if a target snap point is found,
-  // |aStartPosition| is also updated, to the value of the snap point.
-  // |aUnit| affects the snapping behaviour (see ScrollSnapUtils::
-  // GetSnapPointForDestination).
+  // relative to |aStartPosition|. |aUnit| affects the snapping behaviour
+  // (see ScrollSnapUtils:: GetSnapPointForDestination).
   // Returns true iff. a target snap point was found.
   Maybe<CSSSnapDestination> MaybeAdjustDeltaForScrollSnapping(
       ScrollUnit aUnit, ScrollSnapFlags aSnapFlags, ParentLayerPoint& aDelta,
-      CSSPoint& aStartPosition);
+      const CSSPoint& aStartPosition);
 
   // A wrapper function of MaybeAdjustDeltaForScrollSnapping for
   // ScrollWheelInput.
   Maybe<CSSSnapDestination> MaybeAdjustDeltaForScrollSnappingOnWheelInput(
       const ScrollWheelInput& aEvent, ParentLayerPoint& aDelta,
-      CSSPoint& aStartPosition);
+      const CSSPoint& aStartPosition);
 
   Maybe<CSSSnapDestination> MaybeAdjustDestinationForScrollSnapping(
       const KeyboardInput& aEvent, CSSPoint& aDestination,
@@ -2021,6 +2059,9 @@ class AsyncPanZoomController {
   // position change delta if filling out happened, CSSPoint() otherwise.
   CSSPoint MaybeFillOutOverscrollGutter(
       const RecursiveMutexAutoLock& aProofOfLock);
+
+  ScreenMargin GetFixedLayerMargins(
+      const RecursiveMutexAutoLock& aProofOfLock) const;
 
   friend std::ostream& operator<<(
       std::ostream& aOut, const AsyncPanZoomController::PanZoomState& aState);

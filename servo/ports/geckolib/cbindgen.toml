@@ -30,7 +30,7 @@ line_length = 80
 tab_width = 2
 language = "C++"
 namespaces = ["mozilla"]
-includes = ["mozilla/ServoStyleConstsForwards.h", "mozilla/ServoStyleSet.h"]
+includes = ["mozilla/ServoStyleConstsForwards.h"]
 after_includes = """
 // Work-around silly windows.h define.
 #pragma push_macro("STRICT")
@@ -38,6 +38,7 @@ after_includes = """
 #pragma push_macro("TRANSPARENT")
 #undef TRANSPARENT
 """
+usize_is_size_t = true
 
 [parse]
 parse_deps = true
@@ -84,14 +85,26 @@ exclude = [
   "NS_LogDtor",
   "SelectorList",
   "AuthorStyles",
+  "LockedStyleRule",
+  "LockedImportRule",
+  "LockedFontFaceRule",
+  "LockedCounterStyleRule",
+  "LockedKeyframesRule",
+  "LockedPageRule",
+  "LockedPositionTryRule",
+  "LockedNestedDeclarationsRule",
 ]
 include = [
+  "AlignmentBaseline",
   "AnchorName",
-  "AnchorScope",
+  "ScopedName",
   "AnimationName",
   "AnimationTimeline",
+  "AnimationRangeEnd",
+  "AnimationRangeStart",
   "AnimationIterationCount",
   "AnimationDirection",
+  "BackgroundClip",
   "AnimationFillMode",
   "AnimationPlayState",
   "AnimationComposition",
@@ -100,12 +113,14 @@ include = [
   "Au",
   "BreakBetween",
   "BreakWithin",
+  "BorderSideWidth",
   "BorderStyle",
   "BorderSpacing",
   "BoolInteger",
   "OutlineStyle",
   "CaptionSide",
   "ColorGamut",
+  "DominantBaseline",
   "FontSizeAdjust",
   "FontPalette",
   "FontLanguageOverride",
@@ -126,6 +141,8 @@ include = [
   "Platform",
   "PositionAnchor",
   "PositionArea",
+  "PositionAreaAxis",
+  "PositionAreaTrack",
   "PositionAreaKeyword",
   "PositionTryFallbacks",
   "PositionTryOrder",
@@ -153,7 +170,6 @@ include = [
   "OffsetRotate",
   "RayFunction",
   "UnicodeRange",
-  "UserInput",
   "UserFocus",
   "UserSelect",
   "PointerEvents",
@@ -170,12 +186,12 @@ include = [
   "TransitionBehavior",
   "ViewTimelineInset",
   "OverflowAnchor",
-  "OverflowClipBox",
+  "OverflowClipMargin",
   "Resize",
   "Overflow",
   "LengthPercentage",
   "LetterSpacing",
-  "LikelyBaseUriDependency",
+  "NonLocalUriDependency",
   "NonNegativeLengthPercentage",
   "LengthPercentageOrAuto",
   "LineHeight",
@@ -183,8 +199,11 @@ include = [
   "NonNegativeLengthPercentageOrNormal",
   "LengthOrAuto",
   "NonNegativeLengthOrAuto",
+  "TextBoxEdge",
+  "TextBoxTrim",
   "TextDecorationSkipInk",
   "TextDecorationLength",
+  "TextDecorationInset",
   "Time",
   "Rect",
   "InitialLetter",
@@ -195,14 +214,18 @@ include = [
   "Position",
   "PositionOrAuto",
   "BackgroundSize",
+  "BaselineShift",
   "BaselineSource",
   "BorderImageSlice",
   "BorderImageRepeat",
   "BorderImageRepeatKeyword",
   "BorderSpacing",
   "BorderRadius",
+  "CornerShape",
+  "CornerShapeRect",
   "ColorScheme",
   "ColumnCount",
+  "CssRuleRef",
   "NonNegativeLengthOrNumberRect",
   "Perspective",
   "ZIndex",
@@ -242,7 +265,6 @@ include = [
   "SystemColorScheme",
   "SystemFont",
   "GradientItem",
-  "VerticalAlign",
   "BasicShape",
   "InsetRect",
   "ShapeRadius",
@@ -284,9 +306,9 @@ include = [
   "WritingModeProperty",
   "Content",
   "ContentItem",
-  "AlignSelf",
-  "JustifySelf",
-  "AlignItems",
+  "ContentDistribution",
+  "SelfAlignment",
+  "ItemPlacement",
   "ComputedJustifyItems",
   "AlignContent",
   "JustifyContent",
@@ -302,6 +324,7 @@ include = [
   "SVGWidth",
   "TextAlign",
   "TextAlignLast",
+  "TextAutospace",
   "FontSizeKeyword",
   "AspectRatio",
   "DefaultFontSizes",
@@ -338,6 +361,8 @@ include = [
   "PhysicalSide",
   "QueryFontMetricsFlags",
   "AllowAnchorPosResolutionInCalcPercentage",
+  "ListStyleType",
+  "LinkParameters",
 ]
 item_types = [
   "enums",
@@ -356,7 +381,6 @@ renaming_overrides_prefixing = true
 "nsIURI" = "nsIURI"
 "imgRequestProxy" = "imgRequestProxy"
 "nsCompatibility" = "nsCompatibility"
-"nsSimpleContentList" = "nsSimpleContentList"
 "nsACString" = "nsACString"
 "nsAString" = "nsAString"
 "nsCString" = "nsCString"
@@ -367,9 +391,9 @@ renaming_overrides_prefixing = true
 "ComputedTiming" = "ComputedTiming"
 "CountedUnknownProperty" = "CountedUnknownProperty"
 "RefPtr" = "RefPtr"
-"nsCSSPropertyID" = "nsCSSPropertyID"
+"NonCustomCSSPropertyId" = "NonCustomCSSPropertyId"
 "nsCSSPropertyIDSet" = "nsCSSPropertyIDSet"
-"AnimatedPropertyID" = "AnimatedPropertyID"
+"CSSPropertyId" = "CSSPropertyId"
 "nsCSSValueSharedList" = "nsCSSValueSharedList"
 "AnimationPropertySegment" = "AnimationPropertySegment"
 "RawServoAnimationValueTable" = "RawServoAnimationValueTable"
@@ -383,7 +407,8 @@ renaming_overrides_prefixing = true
 "nsFontFaceRuleContainer" = "nsFontFaceRuleContainer"
 "MediumFeaturesChangedResult" = "MediumFeaturesChangedResult"
 "FontSizePrefs" = "FontSizePrefs"
-"nsCSSFontDesc" = "nsCSSFontDesc"
+"FontFaceDescriptorId" = "FontFaceDescriptorId"
+"CounterStyleDescriptorId" = "CounterStyleDescriptorId"
 "nsresult" = "nsresult"
 "gfxFontFeature" = "gfxFontFeature"
 "gfxFontFeatureValueSet" = "gfxFontFeatureValueSet"
@@ -430,31 +455,19 @@ renaming_overrides_prefixing = true
   void ScaleLengthsBy(float);
 """
 
-"LengthPercentageUnion" = """
-  using Self = StyleLengthPercentageUnion;
+"LengthPercentage" = """
+  using Self = StyleLengthPercentage;
 
-  // TODO(emilio): cbindgen should be able to generate these in the body of the
-  // union, but it seems it's only implemented for structs, not unions.
-  static const uint8_t TAG_CALC = StyleLengthPercentageUnion_TAG_CALC;
-  static const uint8_t TAG_LENGTH = StyleLengthPercentageUnion_TAG_LENGTH;
-  static const uint8_t TAG_PERCENTAGE = StyleLengthPercentageUnion_TAG_PERCENTAGE;
-  static const uint8_t TAG_MASK = StyleLengthPercentageUnion_TAG_MASK;
-
- private:
-  uint8_t Tag() const {
-    return tag.tag & TAG_MASK;
-  }
-
- public:
-  // We need to do all this manually because cbingen can't reason about unions.
-  inline StyleLengthPercentageUnion();
-  inline StyleLengthPercentageUnion(const Self&);
-  inline ~StyleLengthPercentageUnion();
+  // We need to do all this manually because cbindgen can't reason about unions.
+  inline StyleLengthPercentage();
+  inline StyleLengthPercentage(const Self&);
+  inline ~StyleLengthPercentage();
   inline Self& operator=(const Self&);
 
   inline bool operator==(const Self& aOther) const;
   inline bool operator!=(const Self& aOther) const;
 
+  inline bool IsLengthOrPercentage() const;
   inline bool IsLength() const;
   inline bool IsPercentage() const;
   inline bool IsCalc() const;
@@ -520,6 +533,7 @@ renaming_overrides_prefixing = true
   inline bool BehavesLikeInitialValue(LogicalAxis) const;
   inline bool HasAnchorPositioningFunction() const;
   inline explicit StyleGenericSize(const LengthPercent &);
+  static inline StyleGenericSize FromAppUnits(nscoord);
 """
 
 "GenericFlexBasis" = """
@@ -545,6 +559,10 @@ renaming_overrides_prefixing = true
   inline bool HasPercent() const;
   inline bool DependsOnPositioningAreaSize() const;
   static inline StyleGenericPosition FromPercentage(float);
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
 """
 
 "GenericBackgroundSize" = """
@@ -641,6 +659,8 @@ renaming_overrides_prefixing = true
 
   bool MaybeTransparent() const;
 
+  bool DependsOnCurrentColor() const;
+
   /**
    * Compute the final color, taking into account the foreground color.
    **/
@@ -681,6 +701,47 @@ renaming_overrides_prefixing = true
    * if required.
    */
   nscolor ToColor() const;
+"""
+
+"ColorFunction" = """
+  bool DependsOnCurrentColor() const;
+"""
+
+"GenericColorMix" = """
+  bool DependsOnCurrentColor() const;
+"""
+
+"OwnedArray" = """
+  static_assert(N > 0);
+
+  StyleOwnedArray() = delete;
+
+  inline StyleOwnedArray& operator=(const StyleOwnedArray&);
+  inline StyleOwnedArray& operator=(StyleOwnedArray&&) = delete;
+
+  inline StyleOwnedArray(const StyleOwnedArray&);
+  inline StyleOwnedArray(StyleOwnedArray&&) = delete;
+  template <typename... Args>
+    requires (sizeof...(Args) == N)
+  inline explicit StyleOwnedArray(Args&&... aArgs);
+
+  inline ~StyleOwnedArray();
+
+  Span<const T> AsSpan() const {
+    return {ptr, N};
+  }
+
+  static constexpr size_t Length() {
+    return N;
+  }
+
+  bool operator==(const StyleOwnedArray& other) const {
+    return AsSpan() == other.AsSpan();
+  }
+
+  bool operator!=(const StyleOwnedArray& other) const {
+    return !(*this == other);
+  }
 """
 
 "OwnedSlice" = """
@@ -844,6 +905,38 @@ renaming_overrides_prefixing = true
   };
 """
 
+"CommandEndPoint" = """
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
+"""
+
+"AxisEndPoint" = """
+  inline gfx::Coord ToGfxCoord(const float* aBasis = nullptr) const;
+  gfx::Coord ToGfxCoord(const float& aBasis) const {
+    return ToGfxCoord(&aBasis);
+  };
+"""
+
+"ControlPoint" = """
+  inline gfx::Point ToGfxPoint(
+    const gfx::Point aStatePos, const gfx::Point aEndPoint,
+    const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(
+    const gfx::Point aStatePos, const gfx::Point aEndPoint,
+    const CSSSize& aBasis) const {
+    return ToGfxPoint(aStatePos, aEndPoint, &aBasis);
+  }
+"""
+
+"ArcRadii" = """
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
+"""
+
 "TextOverflow" = """
   StyleTextOverflow()
     : first(StyleTextOverflowSide::Clip()),
@@ -965,7 +1058,9 @@ renaming_overrides_prefixing = true
   //
   // The resolution is in dppx, and should be used to impact the intrinsic
   // size of the image.
-  ImageResolution GetResolution(const ComputedStyle&) const;
+  //
+  // @param aStyleForZoom a style, if CSS zoom should be considered as well.
+  ImageResolution GetResolution(const ComputedStyle* aStyleForZoom) const;
 
   // If this is an image-set(), the final image we've selected, otherwise it
   // returns *this.
@@ -1008,7 +1103,6 @@ renaming_overrides_prefixing = true
 "GenericAspectRatio" = """
   bool HasRatio() const { return ratio.IsRatio(); }
   bool HasFiniteRatio() const { return static_cast<bool>(ToLayoutRatio()); }
-  bool BehavesAsAuto() const { return auto_ || !HasFiniteRatio(); }
   inline AspectRatio ToLayoutRatio() const;
 
   static StyleGenericAspectRatio Auto() {
@@ -1033,6 +1127,7 @@ renaming_overrides_prefixing = true
  bool IsNormal() const { return *this == NORMAL; }
 
  inline bool IsBold() const;
+ inline bool PreferBold() const;
 """
 
 "FontStyle" = """
@@ -1065,18 +1160,24 @@ renaming_overrides_prefixing = true
 
 "AnimationName" = """
  public:
-  StyleAnimationName() : _0(nsGkAtoms::_empty) {}
+  StyleAnimationName();
 """
 
-"TimelineName" = """
+"TimelineIdent" = """
  public:
-  StyleTimelineName() : _0(nsGkAtoms::_empty) {}
+  StyleTimelineIdent();
   nsAtom* AsAtom() const { return _0.AsAtom(); }
 """
 
 "GenericViewTimelineInset" = """
  public:
   inline StyleGenericViewTimelineInset();
+"""
+
+"GenericAnimationRangeValue" = """
+ public:
+  static StyleGenericAnimationRangeValue<LengthPercent> DefaultStart();
+  static StyleGenericAnimationRangeValue<LengthPercent> DefaultEnd();
 """
 
 "Time" = """
@@ -1097,9 +1198,7 @@ renaming_overrides_prefixing = true
 """
 
 "FontPalette" = """
-  inline static StyleFontPalette Normal() {
-    return StyleFontPalette{StyleAtom(nsGkAtoms::normal->ToAddRefed())};
-  }
+  inline static StyleFontPalette Normal();
 """
 
 "GenericOffsetPath" = """
@@ -1170,7 +1269,7 @@ renaming_overrides_prefixing = true
 "TransitionProperty" = """
   bool IsAll() const {
     return IsNonCustom() &&
-           nsCSSPropertyID(AsNonCustom()._0) == eCSSProperty_all;
+           NonCustomCSSPropertyId(AsNonCustom()._0) == eCSSProperty_all;
   }
 """
 
@@ -1198,4 +1297,69 @@ renaming_overrides_prefixing = true
 
 "PositionArea" = """
   inline bool IsNone() const;
+  constexpr StylePositionArea()
+    : first(StylePositionAreaKeyword::None),
+      second(StylePositionAreaKeyword::None)
+  {}
+"""
+
+"CascadeLevel" = """
+  inline static StyleCascadeLevel Default() {
+    return SAME_TREE_AUTHOR_NORMAL;
+  }
+  inline int8_t ShadowCascadeOrder() const {
+    bool neg(*this & CASCADE_ORDER_SIGN);
+    uint8_t abs = (*this & CASCADE_ORDER_BITS)._0 >> CASCADE_ORDER_SHIFT;
+    return int8_t(neg ? -abs : abs);
+  }
+"""
+
+"TreeScoped" = """
+  inline StyleTreeScoped()
+    : value(T()),
+      scope(StyleCascadeLevel::Default())
+  {}
+  inline explicit StyleTreeScoped(T&& aValue)
+    : value(std::move(aValue)),
+      scope(StyleCascadeLevel::Default())
+  {}
+  inline bool IsEmpty() const;
+  inline Span<const mozilla::StyleAtom> AsSpan() const;
+"""
+
+"NumericType" = """
+  static_assert(static_cast<size_t>(StyleNumericBaseType::Percent) + 1 ==
+                StyleNUMERIC_BASE_TYPE_COUNT);
+
+  inline StyleNumericType();
+"""
+
+"PropertyTypedValueList" = """
+  StylePropertyTypedValueList(StylePropertyTypedValueList&& other)
+      : tag(other.tag) {
+    switch (tag) {
+      case Tag::None:
+        break;
+      case Tag::Unsupported:
+        ::new (&unsupported)
+            StyleUnsupported_Body(std::move(other.unsupported));
+        break;
+      case Tag::Typed:
+        ::new (&typed) StyleTyped_Body(std::move(other.typed));
+        break;
+    }
+  }
+
+  StylePropertyTypedValueList& operator=(StylePropertyTypedValueList&& other) {
+    if (this != &other) {
+      this->~StylePropertyTypedValueList();
+      new (this) StylePropertyTypedValueList(std::move(other));
+    }
+    return *this;
+  }
+
+  StyleUnsupportedValue ExtractUnsupported() && {
+    MOZ_DIAGNOSTIC_ASSERT(IsUnsupported());
+    return std::move(unsupported._0);
+  }
 """

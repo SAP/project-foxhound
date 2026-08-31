@@ -1,6 +1,6 @@
 import os
 
-from tests.support.asserts import assert_error, assert_success
+from tests.support.classic.asserts import assert_error, assert_success
 
 
 def test_bad_binary(new_session, configuration):

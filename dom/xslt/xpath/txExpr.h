@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,13 +5,12 @@
 #ifndef TRANSFRMX_EXPR_H
 #define TRANSFRMX_EXPR_H
 
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
-#include "txExprResult.h"
-#include "txCore.h"
-#include "nsString.h"
-#include "txOwningArray.h"
 #include "nsAtom.h"
+#include "nsString.h"
+#include "txCore.h"
+#include "txExprResult.h"
+#include "txOwningArray.h"
 
 #ifdef DEBUG
 #  define TX_TO_STRING
@@ -172,7 +170,7 @@ class Expr {
   }                                                            \
   void _class::setSubExprAt(uint32_t aPos, Expr* aExpr) {      \
     NS_ASSERTION(aPos < 1, "setting bad subexpression index"); \
-    mozilla::Unused << _Expr1.release();                       \
+    (void)_Expr1.release();                                    \
     _Expr1 = mozilla::WrapUnique(aExpr);                       \
   }
 
@@ -192,10 +190,10 @@ class Expr {
   void _class::setSubExprAt(uint32_t aPos, Expr* aExpr) {         \
     NS_ASSERTION(aPos < 2, "setting bad subexpression index");    \
     if (aPos == 0) {                                              \
-      mozilla::Unused << _Expr1.release();                        \
+      (void)_Expr1.release();                                     \
       _Expr1 = mozilla::WrapUnique(aExpr);                        \
     } else {                                                      \
-      mozilla::Unused << _Expr2.release();                        \
+      (void)_Expr2.release();                                     \
       _Expr2 = mozilla::WrapUnique(aExpr);                        \
     }                                                             \
   }
@@ -514,7 +512,7 @@ class LocationStep : public Expr, public PredicateList {
 
   txNodeTest* getNodeTest() { return mNodeTest.get(); }
   void setNodeTest(txNodeTest* aNodeTest) {
-    mozilla::Unused << mNodeTest.release();
+    (void)mNodeTest.release();
     mNodeTest = mozilla::WrapUnique(aNodeTest);
   }
   LocationStepType getAxisIdentifier() { return mAxisIdentifier; }
@@ -747,12 +745,7 @@ class RootExpr : public Expr {
   /**
    * Creates a new RootExpr
    */
-  RootExpr()
-#ifdef TX_TO_STRING
-      : mSerialize(true)
-#endif
-  {
-  }
+  RootExpr() = default;
 
   TX_DECL_EXPR
 
@@ -762,7 +755,7 @@ class RootExpr : public Expr {
 
  private:
   // When a RootExpr is used in a PathExpr it shouldn't be serialized
-  bool mSerialize;
+  bool mSerialize = true;
 #endif
 };  //-- RootExpr
 

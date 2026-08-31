@@ -79,15 +79,44 @@ body {
 
 #preview {
   position: fixed;
-  height: 100vh;
+  top: 70px;
+  bottom: 0;
   margin-left: 66%;
   width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 #submit-tasks {
   display: flex;
   flex-direction: column;
-  height: 80%;
+  flex: 1;
+  min-height: 0;
+}
+
+#exclude-filter {
+  margin-bottom: 5px;
+  padding: 6px 10px;
+  width: 100%;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+#selection-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+#artifact-option {
+  margin-right: 0;
+}
+
+#large-push-warning {
+  margin-bottom: 5px;
+  font-size: 13px;
 }
 
 #buttons {
@@ -102,6 +131,57 @@ body {
 }
 
 #selection {
-  height: 100%;
+  flex: 1;
   width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  padding: 0;
+  margin-bottom: 5px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background-color: white;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.selection-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px;
+  border-bottom: 1px solid #eee;
+}
+
+.selection-item:last-child {
+  border-bottom: none;
+}
+
+.selection-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-remove {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.selection-remove:hover {
+  color: #d9534f;
+}
+
+.selection-remove:focus-visible {
+  outline: 2px solid #0f5a3a;
+  outline-offset: 1px;
 }

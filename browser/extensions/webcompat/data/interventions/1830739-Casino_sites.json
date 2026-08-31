@@ -1,0 +1,90 @@
+{
+  "label": "Casino sites",
+  "bugs": {
+    "1902446": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.casinobrango.com/*"]
+    },
+    "1902452": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.eternalslots.com/*"]
+    },
+    "1902453": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.palaceofchance.com/*"]
+    },
+    "1902471": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.springbokcasino.co.za/*"]
+    },
+    "1902475": {
+      "issue": "firefox-blocked-completely",
+      "matches": [
+        "*://cdk.fairgocasinowins.com/*",
+        "*://cdk.fairgo-pokies.com/*",
+        "*://cdk.fgwinners.com/*",
+        "*://cdk.play-fg.com/*",
+        "*://cdk.fairg0games.club/*",
+        "*://cdk.fairgogames.club/*"
+      ]
+    },
+    "1902493": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.ozwincasino.com/*"]
+    },
+    "1904935": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.rubyslots.com/*"]
+    },
+    "1944317": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.captainjackcasino.com/*"]
+    },
+    "1944319": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.casinoextreme.eu/*"]
+    },
+    "1944320": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.cryptoloko.com/*"]
+    },
+    "1944324": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.123lobbygames.com/*"]
+    },
+    "1944321": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.planet7casino.com/*"]
+    },
+    "1944322": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.yebocasino.co.za/*"]
+    },
+    "1944323": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.yabbycasino.com/*"]
+    },
+    "1947963": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.slotmadness.com/*"]
+    },
+    "1964350": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.bonusblitz.com/*"]
+    },
+    "2016407": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.123whitesector.com/*"]
+    },
+    "2017590": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.slotsofvegas.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

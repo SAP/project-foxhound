@@ -2,27 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MTRANSPORTHANDLER_H__
-#define _MTRANSPORTHANDLER_H__
+#ifndef MTRANSPORTHANDLER_H_
+#define MTRANSPORTHANDLER_H_
 
+#include <set>
+#include <string>
+#include <vector>
+
+#include "MediaEventSource.h"
+#include "RTCStatsReport.h"
+#include "common/CandidateInfo.h"
 #include "mozilla/RefPtr.h"
-#include "nsISupportsImpl.h"
-#include "transport/transportlayer.h"  // Need the State enum
-#include "transport/dtlsidentity.h"    // For DtlsDigest
-#include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "mozilla/dom/RTCIceTransportBinding.h"  // RTCIceTransportState
-#include "transport/nricectx.h"                  // Need some enums
-#include "common/CandidateInfo.h"
-#include "transport/nr_socket_proxy_config.h"
-#include "RTCStatsReport.h"
-#include "MediaEventSource.h"
-
+#include "mozilla/dom/RTCPeerConnectionBinding.h"
+#include "nsISupportsImpl.h"
 #include "nsString.h"
-
-#include <string>
-#include <set>
-#include <vector>
+#include "transport/dtlsidentity.h"  // For DtlsDigest
+#include "transport/nr_socket_proxy_config.h"
+#include "transport/nricectx.h"        // Need some enums
+#include "transport/transportlayer.h"  // Need the State enum
 
 namespace mozilla {
 class DtlsIdentity;
@@ -44,12 +43,6 @@ class MediaTransportHandler {
 
   explicit MediaTransportHandler()
       : mStateCacheMutex("MediaTransportHandler::mStateCacheMutex") {}
-
-  // Exposed so we can synchronously validate ICE servers from PeerConnection
-  static nsresult ConvertIceServers(
-      const nsTArray<dom::RTCIceServer>& aIceServers,
-      std::vector<NrIceStunServer>* aStunServers,
-      std::vector<NrIceTurnServer>* aTurnServers);
 
   typedef MozPromise<dom::Sequence<nsString>, nsresult, true> IceLogPromise;
 
@@ -137,6 +130,10 @@ class MediaTransportHandler {
     return mCandidateGathered;
   }
 
+  MediaEventSource<IceCandidateErrorInfo>& GetCandidateError() {
+    return mCandidateError;
+  }
+
   MediaEventSource<std::string, bool>& GetAlpnNegotiated() {
     return mAlpnNegotiated;
   }
@@ -152,7 +149,9 @@ class MediaTransportHandler {
   MediaEventSource<std::string, MediaPacket>& GetEncryptedSending() {
     return mEncryptedSending;
   }
-  MediaEventSource<std::string, TransportLayer::State>& GetStateChange() {
+  MediaEventSource<std::string, TransportLayer::State,
+                   nsTArray<nsTArray<uint8_t>>>&
+  GetStateChange() {
     return mStateChange;
   }
   MediaEventSource<std::string, TransportLayer::State>& GetRtcpStateChange() {
@@ -162,6 +161,7 @@ class MediaTransportHandler {
  protected:
   void OnCandidate(const std::string& aTransportId,
                    CandidateInfo&& aCandidateInfo);
+  void OnCandidateError(IceCandidateErrorInfo&& aErrorInfo);
   void OnAlpnNegotiated(const std::string& aAlpn);
   void OnGatheringStateChange(const std::string& aTransportId,
                               dom::RTCIceGathererState aState);
@@ -171,7 +171,8 @@ class MediaTransportHandler {
   void OnEncryptedSending(const std::string& aTransportId,
                           MediaPacket&& aPacket);
   void OnStateChange(const std::string& aTransportId,
-                     TransportLayer::State aState);
+                     TransportLayer::State aState,
+                     nsTArray<nsTArray<uint8_t>>&& aRemoteCerts);
   void OnRtcpStateChange(const std::string& aTransportId,
                          TransportLayer::State aState);
   virtual void Destroy() = 0;
@@ -187,13 +188,16 @@ class MediaTransportHandler {
   MediaEventProducerOneCopyPerThread<std::string, MediaPacket>
       mSctpPacketReceived;
   MediaEventProducer<std::string, CandidateInfo> mCandidateGathered;
+  MediaEventProducer<IceCandidateErrorInfo> mCandidateError;
   MediaEventProducer<std::string, bool> mAlpnNegotiated;
   MediaEventProducer<std::string, dom::RTCIceGathererState>
       mGatheringStateChange;
   MediaEventProducer<std::string, dom::RTCIceTransportState>
       mConnectionStateChange;
   MediaEventProducer<std::string, MediaPacket> mEncryptedSending;
-  MediaEventProducer<std::string, TransportLayer::State> mStateChange;
+  MediaEventProducer<std::string, TransportLayer::State,
+                     nsTArray<nsTArray<uint8_t>>>
+      mStateChange;
   MediaEventProducer<std::string, TransportLayer::State> mRtcpStateChange;
 };
 
@@ -202,4 +206,4 @@ void TokenizeCandidate(const std::string& aCandidate,
 
 }  // namespace mozilla
 
-#endif  //_MTRANSPORTHANDLER_H__
+#endif  // MTRANSPORTHANDLER_H_

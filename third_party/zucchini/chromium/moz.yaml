@@ -52,13 +52,25 @@ vendoring:
     - base/allocator/partition_allocator/pointers/raw_ptr_exclusion.h
     - base/allocator/partition_allocator/pointers/raw_ptr_noop_impl.h
     - base/allocator/partition_allocator/pointers/raw_ref.h
+    - base/apple/bundle_locations.h
     - base/atomic_ref_count.h
     - base/atomicops.h
     - base/atomicops_internals_atomicword_compat.h
     - base/atomicops_internals_portable.h
     - base/auto_reset.h
     - base/base_export.h
+    - base/base_paths.cc
+    - base/base_paths.h
+    - base/base_paths_apple.cc
+    - base/base_paths_apple.h
+    - base/base_paths_mac.h
+    - base/base_paths_mac.mm
+    - base/base_paths_posix.cc
+    - base/base_paths_posix.h
+    - base/base_paths_win.cc
+    - base/base_paths_win.h
     - base/bit_cast.h
+    - base/bits.h
     - base/check.cc
     - base/check.h
     - base/check_op.cc
@@ -68,6 +80,7 @@ vendoring:
     - base/compiler_specific.h
     - base/containers/adapters.h
     - base/containers/checked_iterators.h
+    - base/containers/circular_deque.h
     - base/containers/contains.h
     - base/containers/contiguous_iterator.h
     - base/containers/cxx20_erase.h
@@ -82,7 +95,9 @@ vendoring:
     - base/containers/cxx20_erase_unordered_set.h
     - base/containers/cxx20_erase_vector.h
     - base/containers/span.h
+    - base/containers/stack.h
     - base/containers/util.h
+    - base/containers/vector_buffer.h
     - base/cpu.cc
     - base/cpu.h
     - base/cxx20_is_constant_evaluated.h
@@ -92,23 +107,37 @@ vendoring:
     # base/debug/stack_trace.h
     - base/files/file.cc
     - base/files/file.h
+    - base/files/file_enumerator.cc
+    - base/files/file_enumerator.h
+    - base/files/file_enumerator_posix.cc
+    - base/files/file_enumerator_win.cc
     - base/files/file_path.cc
     - base/files/file_path.h
+    - base/files/file_posix.cc
     - base/files/file_tracing.cc
     - base/files/file_tracing.h
+    - base/files/file_util.cc
     - base/files/file_util.h
+    - base/files/file_util_mac.mm
+    - base/files/file_util_posix.cc
     - base/files/file_util_win.cc
     - base/files/file_win.cc
     - base/files/memory_mapped_file.cc
     - base/files/memory_mapped_file.h
+    - base/files/memory_mapped_file_posix.cc
     - base/files/memory_mapped_file_win.cc
     - base/files/platform_file.h
+    - base/files/scoped_file.cc
     - base/files/scoped_file.h
+    - base/files/scoped_file_linux.cc
+    - base/files/scoped_temp_dir.cc
+    - base/files/scoped_temp_dir.h
     - base/format_macros.h
     - base/functional/bind.h
     - base/functional/bind_internal.h
     - base/functional/callback.h
     - base/functional/callback_forward.h
+    - base/functional/callback_helpers.h
     - base/functional/callback_internal.cc
     - base/functional/callback_internal.h
     - base/functional/callback_tags.h
@@ -117,13 +146,21 @@ vendoring:
     - base/functional/identity.h
     - base/functional/invoke.h
     - base/functional/unretained_traits.h
-    # base/gtest_prod_util.h
+    - base/gtest_prod_util.h
     - base/immediate_crash.h
     - base/location.cc
     - base/location.h
     # base/logging.cc
     - base/logging.h
     # base/logging_buildflags.h
+    - base/mac/foundation_util.h
+    - base/mac/foundation_util.mm
+    - base/mac/mac_logging.h
+    - base/mac/mach_logging.cc
+    - base/mac/mach_logging.h
+    - base/mac/scoped_cftyperef.h
+    - base/mac/scoped_mach_port.h
+    - base/mac/scoped_typeref.h
     - base/memory/raw_ptr.h
     - base/memory/raw_ptr_asan_bound_arg_tracker.h
     - base/memory/raw_ptr_asan_service.h
@@ -133,6 +170,7 @@ vendoring:
     - base/memory/ref_counted.cc
     - base/memory/ref_counted.h
     - base/memory/safe_ref_traits.h
+    - base/memory/scoped_policy.h
     - base/memory/scoped_refptr.h
     - base/memory/weak_ptr.h
     - base/no_destructor.h
@@ -148,7 +186,19 @@ vendoring:
     - base/numerics/safe_math_arm_impl.h
     - base/numerics/safe_math_clang_gcc_impl.h
     - base/numerics/safe_math_shared_impl.h
+    - base/path_service.cc
+    - base/path_service.h
+    - base/posix/eintr_wrapper.h
+    - base/posix/safe_strerror.cc
+    - base/posix/safe_strerror.h
     - base/process/process_handle.h
+    - base/process/process_handle_posix.cc
+    - base/process/process_handle_win.cc
+    - base/process/process_metrics.h
+    - base/rand_util.cc
+    - base/rand_util.h
+    - base/rand_util_posix.cc
+    - base/rand_util_win.cc
     - base/ranges/algorithm.h
     - base/ranges/functional.h
     - base/ranges/ranges.h
@@ -169,7 +219,9 @@ vendoring:
     - base/strings/string_number_conversions_win.h
     - base/strings/string_piece.h
     - base/strings/string_piece_forward.h
+    - base/strings/string_split.cc
     - base/strings/string_split.h
+    - base/strings/string_split_internal.h
     - base/strings/string_split_win.h
     - base/strings/string_tokenizer.h
     - base/strings/string_util.cc
@@ -177,10 +229,13 @@ vendoring:
     - base/strings/string_util_constants.cc
     - base/strings/string_util_impl_helpers.h
     - base/strings/string_util_internal.h
+    - base/strings/string_util_posix.h
     - base/strings/string_util_win.cc
     - base/strings/string_util_win.h
     - base/strings/stringprintf.cc
     - base/strings/stringprintf.h
+    - base/strings/sys_string_conversions.h
+    - base/strings/sys_string_conversions_posix.cc
     - base/strings/to_string.h
     - base/strings/utf_ostream_operators.cc
     - base/strings/utf_ostream_operators.h
@@ -190,10 +245,15 @@ vendoring:
     - base/synchronization/atomic_flag.h
     - base/synchronization/lock.h
     - base/synchronization/lock_impl.h
+    - base/synchronization/lock_impl_posix.cc
     - base/synchronization/lock_impl_win.cc
+    # base/synchronization/synchronization_buildflags.h
     - base/system/sys_info.h
+    - base/system/sys_info_internal.h
+    - base/system/sys_info_posix.cc
     - base/system/sys_info_win.cc
     - base/template_util.h
+    - base/test/gtest_util.h
     - base/third_party/icu/icu_utf.h
     - base/third_party/icu/LICENSE
     - base/third_party/nspr/LICENSE
@@ -205,8 +265,11 @@ vendoring:
     - base/threading/thread_checker_impl.h
     - base/threading/thread_collision_warner.h
     # base/threading/scoped_blocking_call.h
+    # base/time/buildflags/buildflags.h
     - base/time/time.cc
     - base/time/time.h
+    - base/time/time_mac.mm
+    - base/time/time_now_posix.cc
     - base/time/time_override.h
     - base/time/time_win.cc
     - base/trace_event/base_tracing.h
@@ -221,103 +284,150 @@ vendoring:
     - base/types/supports_ostream_operator.h
     # base/values.h
     - base/version.h
+    - base/win/current_module.h
     - base/win/scoped_handle.cc
     - base/win/scoped_handle.h
+    - base/win/shlwapi.h
     - base/win/win_handle_types.h
     - base/win/win_handle_types_list.inc
     - base/win/win_util.cc
     - base/win/win_util.h
+    - base/win/windows_defines.inc
     - base/win/windows_types.h
+    - base/win/windows_undefines.inc
     - base/win/windows_version.cc
     - base/win/windows_version.h
+    # build/blink_buildflags.h
     - build/build_config.h
     - build/buildflag.h
+    # build/chromecast_buildflags.h
     # build/chromeos_buildflags.h
     - components/zucchini/abs32_utils.cc
     - components/zucchini/abs32_utils.h
+    - components/zucchini/abs32_utils_unittest.cc
     - components/zucchini/address_translator.cc
     - components/zucchini/address_translator.h
+    - components/zucchini/address_translator_unittest.cc
     - components/zucchini/algorithm.h
+    - components/zucchini/algorithm_unittest.cc
     - components/zucchini/arm_utils.cc
     - components/zucchini/arm_utils.h
+    - components/zucchini/arm_utils_unittest.cc
     - components/zucchini/binary_data_histogram.cc
     - components/zucchini/binary_data_histogram.h
+    - components/zucchini/binary_data_histogram_unittest.cc
     - components/zucchini/buffer_sink.cc
     - components/zucchini/buffer_sink.h
+    - components/zucchini/buffer_sink_unittest.cc
     - components/zucchini/buffer_source.cc
     - components/zucchini/buffer_source.h
+    - components/zucchini/buffer_source_unittest.cc
     - components/zucchini/buffer_view.h
+    - components/zucchini/buffer_view_unittest.cc
     # components/zucchini/buildflags.h
     - components/zucchini/crc32.cc
     - components/zucchini/crc32.h
+    - components/zucchini/crc32_unittest.cc
     - components/zucchini/disassembler.cc
     - components/zucchini/disassembler.h
     - components/zucchini/disassembler_elf.cc
     - components/zucchini/disassembler_elf.h
+    - components/zucchini/disassembler_elf_unittest.cc
     - components/zucchini/disassembler_no_op.cc
     - components/zucchini/disassembler_no_op.h
     - components/zucchini/disassembler_win32.cc
     - components/zucchini/disassembler_win32.h
     - components/zucchini/element_detection.cc
     - components/zucchini/element_detection.h
+    - components/zucchini/element_detection_unittest.cc
     - components/zucchini/encoded_view.cc
     - components/zucchini/encoded_view.h
+    - components/zucchini/encoded_view_unittest.cc
     - components/zucchini/ensemble_matcher.cc
     - components/zucchini/ensemble_matcher.h
     - components/zucchini/equivalence_map.cc
     - components/zucchini/equivalence_map.h
+    - components/zucchini/equivalence_map_unittest.cc
     - components/zucchini/exception_filter_helper_win.cc
     - components/zucchini/exception_filter_helper_win.h
+    - components/zucchini/exception_filter_helper_win_unittest.cc
     - components/zucchini/heuristic_ensemble_matcher.cc
     - components/zucchini/heuristic_ensemble_matcher.h
     - components/zucchini/image_index.cc
     - components/zucchini/image_index.h
+    - components/zucchini/image_index_unittest.cc
     - components/zucchini/image_utils.h
+    - components/zucchini/image_utils_unittest.cc
     - components/zucchini/imposed_ensemble_matcher.cc
     - components/zucchini/imposed_ensemble_matcher.h
+    - components/zucchini/imposed_ensemble_matcher_unittest.cc
+    - components/zucchini/integration_test.cc
     - components/zucchini/io_utils.cc
     - components/zucchini/io_utils.h
+    - components/zucchini/io_utils_unittest.cc
     - components/zucchini/main_utils.cc
     - components/zucchini/main_utils.h
     - components/zucchini/mapped_file.cc
     - components/zucchini/mapped_file.h
+    - components/zucchini/mapped_file_unittest.cc
+    - components/zucchini/patch_read_write_unittest.cc
     - components/zucchini/patch_reader.cc
     - components/zucchini/patch_reader.h
     - components/zucchini/patch_utils.h
+    - components/zucchini/patch_utils_unittest.cc
     - components/zucchini/patch_writer.cc
     - components/zucchini/patch_writer.h
     - components/zucchini/reference_set.cc
     - components/zucchini/reference_set.h
+    - components/zucchini/reference_set_unittest.cc
     - components/zucchini/rel32_finder.cc
     - components/zucchini/rel32_finder.h
+    - components/zucchini/rel32_finder_unittest.cc
     - components/zucchini/rel32_utils.cc
     - components/zucchini/rel32_utils.h
+    - components/zucchini/rel32_utils_unittest.cc
     - components/zucchini/reloc_elf.cc
     - components/zucchini/reloc_elf.h
+    - components/zucchini/reloc_elf_unittest.cc
     - components/zucchini/reloc_win32.cc
     - components/zucchini/reloc_win32.h
+    - components/zucchini/reloc_win32_unittest.cc
     - components/zucchini/suffix_array.h
+    - components/zucchini/suffix_array_unittest.cc
     - components/zucchini/target_pool.cc
     - components/zucchini/target_pool.h
+    - components/zucchini/target_pool_unittest.cc
     - components/zucchini/targets_affinity.cc
     - components/zucchini/targets_affinity.h
+    - components/zucchini/targets_affinity_unittest.cc
+    - components/zucchini/test_disassembler.cc
+    - components/zucchini/test_disassembler.h
+    - components/zucchini/test_reference_reader.cc
+    - components/zucchini/test_reference_reader.h
+    - components/zucchini/test_utils.cc
+    - components/zucchini/test_utils.h
     - components/zucchini/type_elf.h
     - components/zucchini/type_win_pe.h
     - components/zucchini/typed_value.h
+    - components/zucchini/typed_value_unittest.cc
     - components/zucchini/version_info.h
     - components/zucchini/zucchini.h
     - components/zucchini/zucchini_apply.cc
     - components/zucchini/zucchini_apply.h
+    - components/zucchini/zucchini_apply_unittest.cc
     - components/zucchini/zucchini_commands.cc
     - components/zucchini/zucchini_commands.h
     - components/zucchini/zucchini_gen.cc
     - components/zucchini/zucchini_gen.h
+    - components/zucchini/zucchini_gen_unittest.cc
     - components/zucchini/zucchini_integration.cc
     - components/zucchini/zucchini_integration.h
     - components/zucchini/zucchini_main.cc
     - components/zucchini/zucchini_tools.cc
     - components/zucchini/zucchini_tools.h
     - LICENSE
+    # testing/gtest/include/gtest/gtest.h
+    # testing/gtest/include/gtest/gtest_prod.h
     # third_party/abseil-cpp/absl/base/attributes.h
     # third_party/abseil-cpp/absl/functional/function_ref.h
     # third_party/abseil-cpp/absl/types/optional.h

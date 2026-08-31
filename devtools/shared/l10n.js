@@ -6,10 +6,13 @@
 const parsePropertiesFile = require("devtools/shared/node-properties/node-properties");
 const { sprintf } = require("devtools/shared/sprintfjs/sprintf");
 
-const propertiesMap = {};
+// Map between .properties file paths, e.g. "devtools/client/locales/startup.properties"
+// and objects containing all the key, value pairs for this localization file.
+const propertiesMap = new Map();
 
 // Map used to memoize Number formatters.
 const numberFormatters = new Map();
+
 const getNumberFormatter = function (decimals) {
   let formatter = numberFormatters.get(decimals);
   if (!formatter) {
@@ -24,64 +27,71 @@ const getNumberFormatter = function (decimals) {
   return formatter;
 };
 
+function getPropertiesFile(url) {
+  let isNodeEnv = false;
+  try {
+    // eslint-disable-next-line no-undef
+    isNodeEnv = process?.release?.name == "node";
+  } catch (e) {}
+
+  if (isNodeEnv) {
+    // In Node environment (e.g. when running jest test), we need to prepend the en-US
+    // to the filename in order to have the actual location of the file in source.
+    const lastDelimIndex = url.lastIndexOf("/");
+    const defaultLocaleUrl =
+      url.substring(0, lastDelimIndex) +
+      "/en-US" +
+      url.substring(lastDelimIndex);
+
+    const path = require("path");
+    // eslint-disable-next-line no-undef
+    const rootPath = path.join(__dirname, "../../");
+    const absoluteUrl = path.join(rootPath, defaultLocaleUrl);
+    const { readFileSync } = require("fs");
+    // In Node environment we directly use readFileSync to get the file content instead
+    // of relying on custom raw loader, like we do in regular environment.
+    return readFileSync(absoluteUrl, { encoding: "utf8" });
+  }
+
+  return require("raw!" + url);
+}
+
 /**
  * Memoized getter for properties files that ensures a given url is only required and
  * parsed once.
  *
- * @param {String} url
+ * @param {string} url
  *        The URL of the properties file to parse.
- * @return {Object} parsed properties mapped in an object.
+ * @return {object} parsed properties mapped in an object.
  */
 function getProperties(url) {
-  if (!propertiesMap[url]) {
-    let propertiesFile;
-    let isNodeEnv = false;
+  if (!propertiesMap.has(url)) {
     try {
-      // eslint-disable-next-line no-undef
-      isNodeEnv = process?.release?.name == "node";
-    } catch (e) {}
-
-    if (isNodeEnv) {
-      // In Node environment (e.g. when running jest test), we need to prepend the en-US
-      // to the filename in order to have the actual location of the file in source.
-      const lastDelimIndex = url.lastIndexOf("/");
-      const defaultLocaleUrl =
-        url.substring(0, lastDelimIndex) +
-        "/en-US" +
-        url.substring(lastDelimIndex);
-
-      const path = require("path");
-      // eslint-disable-next-line no-undef
-      const rootPath = path.join(__dirname, "../../");
-      const absoluteUrl = path.join(rootPath, defaultLocaleUrl);
-      const { readFileSync } = require("fs");
-      // In Node environment we directly use readFileSync to get the file content instead
-      // of relying on custom raw loader, like we do in regular environment.
-      propertiesFile = readFileSync(absoluteUrl, { encoding: "utf8" });
-    } else {
-      propertiesFile = require("raw!" + url);
+      propertiesMap.set(url, parsePropertiesFile(getPropertiesFile(url)));
+    } catch (e) {
+      console.error(`Failed to load localization file: ${url}`, e);
+      propertiesMap.set(url, {});
     }
-
-    propertiesMap[url] = parsePropertiesFile(propertiesFile);
   }
 
-  return propertiesMap[url];
+  return propertiesMap.get(url);
 }
 
 /**
  * Localization convenience methods.
- *
- * @param string stringBundleName
- *        The desired string bundle's name.
- * @param boolean strict
- *        (legacy) pass true to force the helper to throw if the l10n id cannot be found.
  */
-function LocalizationHelper(stringBundleName, strict = false) {
-  this.stringBundleName = stringBundleName;
-  this.strict = strict;
-}
-
-LocalizationHelper.prototype = {
+class LocalizationHelper {
+  /**
+   *
+   * @param {string} stringBundleName
+   *        The desired string bundle's name.
+   * @param {boolean} strict
+   *        (legacy) pass true to force the helper to throw if the l10n id cannot be found.
+   */
+  constructor(stringBundleName, strict = false) {
+    this.stringBundleName = stringBundleName;
+    this.strict = strict;
+  }
   /**
    * L10N shortcut function.
    *
@@ -100,7 +110,7 @@ LocalizationHelper.prototype = {
 
     console.error("No localization found for [" + name + "]");
     return name;
-  },
+  }
 
   /**
    * L10N shortcut function.
@@ -111,7 +121,7 @@ LocalizationHelper.prototype = {
    */
   getFormatStr(name, ...args) {
     return sprintf(this.getStr(name), ...args);
-  },
+  }
 
   /**
    * L10N shortcut function for numeric arguments that need to be formatted.
@@ -128,7 +138,7 @@ LocalizationHelper.prototype = {
     });
 
     return this.getFormatStr(name, ...newArgs);
-  },
+  }
 
   /**
    * Converts a number to a locale-aware string format and keeps a certain
@@ -164,8 +174,8 @@ LocalizationHelper.prototype = {
     }
 
     return localized;
-  },
-};
+  }
+}
 
 function getPropertiesForNode(node) {
   const bundleEl = node.closest("[data-localization-bundle]");
@@ -224,50 +234,49 @@ function localizeMarkup(root) {
   }
 }
 
-const sharedL10N = new LocalizationHelper(
-  "devtools/shared/locales/shared.properties"
-);
-
 /**
  * A helper for having the same interface as LocalizationHelper, but for more
  * than one file. Useful for abstracting l10n string locations.
  */
-function MultiLocalizationHelper(...stringBundleNames) {
-  const instances = stringBundleNames.map(bundle => {
-    // Use strict = true because the MultiLocalizationHelper logic relies on try/catch
-    // around the underlying LocalizationHelper APIs.
-    return new LocalizationHelper(bundle, true);
-  });
-
-  // Get all function members of the LocalizationHelper class, making sure we're
-  // not executing any potential getters while doing so, and wrap all the
-  // methods we've found to work on all given string bundles.
-  Object.getOwnPropertyNames(LocalizationHelper.prototype)
-    .map(name => ({
-      name,
-      descriptor: Object.getOwnPropertyDescriptor(
-        LocalizationHelper.prototype,
-        name
-      ),
-    }))
-    .filter(({ descriptor }) => descriptor.value instanceof Function)
-    .forEach(method => {
-      this[method.name] = (...args) => {
-        for (const l10n of instances) {
-          try {
-            return method.descriptor.value.apply(l10n, args);
-          } catch (e) {
-            // Do nothing
-          }
-        }
-        return null;
-      };
+class MultiLocalizationHelper {
+  constructor(...stringBundleNames) {
+    const instances = stringBundleNames.map(bundle => {
+      // Use strict = true because the MultiLocalizationHelper logic relies on try/catch
+      // around the underlying LocalizationHelper APIs.
+      return new LocalizationHelper(bundle, true);
     });
+
+    // Get all function members of the LocalizationHelper class, making sure we're
+    // not executing any potential getters while doing so, and wrap all the
+    // methods we've found to work on all given string bundles.
+    Object.getOwnPropertyNames(LocalizationHelper.prototype)
+      .map(name => ({
+        name,
+        descriptor: Object.getOwnPropertyDescriptor(
+          LocalizationHelper.prototype,
+          name
+        ),
+      }))
+      .filter(({ descriptor }) => descriptor.value instanceof Function)
+      .forEach(method => {
+        this[method.name] = (...args) => {
+          for (const l10n of instances) {
+            try {
+              return method.descriptor.value.apply(l10n, args);
+            } catch (e) {
+              // Do nothing
+            }
+          }
+          return null;
+        };
+      });
+  }
 }
 
 exports.LocalizationHelper = LocalizationHelper;
 exports.localizeMarkup = localizeMarkup;
 exports.MultiLocalizationHelper = MultiLocalizationHelper;
 Object.defineProperty(exports, "ELLIPSIS", {
-  get: () => sharedL10N.getStr("ellipsis"),
+  get: () =>
+    typeof Services == "undefined" ? "\u2026" : Services.locale.ellipsis,
 });

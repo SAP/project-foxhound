@@ -140,7 +140,6 @@ const networkEventSpec = generateActorSpec({
       updateType: Arg(0, "string"),
 
       state: Option(1, "string"),
-      isRacing: Option(1, "boolean"),
     },
 
     "network-event-update:response-content": {
@@ -152,7 +151,7 @@ const networkEventSpec = generateActorSpec({
       encoding: Option(1, "string"),
       transferredSize: Option(1, "number"),
       blockedReason: Option(1, "number"),
-      blockingExtension: Option(1, "string"),
+      extension: Option(1, "json"),
     },
 
     "network-event-update:event-timings": {

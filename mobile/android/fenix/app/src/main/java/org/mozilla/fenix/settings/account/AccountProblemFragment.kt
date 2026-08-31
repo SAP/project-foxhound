@@ -20,12 +20,16 @@ import mozilla.components.service.fxa.manager.SCOPE_SYNC
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.SyncAuth
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 
-class AccountProblemFragment : PreferenceFragmentCompat(), AccountObserver {
+/**
+ * Settings screen allowing users to choose what to do in case of problems with their Firefox account.
+ */
+class AccountProblemFragment : PreferenceFragmentCompat(), AccountObserver, SystemInsetsPaddedFragment {
     private val args by navArgs<AccountProblemFragmentArgs>()
 
     private val signInClickListener = Preference.OnPreferenceClickListener {

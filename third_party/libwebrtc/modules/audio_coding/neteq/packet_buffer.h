@@ -11,6 +11,8 @@
 #ifndef MODULES_AUDIO_CODING_NETEQ_PACKET_BUFFER_H_
 #define MODULES_AUDIO_CODING_NETEQ_PACKET_BUFFER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 
 #include "modules/audio_coding/neteq/decoder_database.h"
@@ -49,6 +51,10 @@ class PacketBuffer {
 
   // Flushes the buffer and deletes all packets in it.
   virtual void Flush();
+
+  // Changes the maximum number of packets allowed in the buffer.
+  // If the buffer currently contains more packets, it will be flushed.
+  virtual void SetMaxNumberOfPackets(size_t max_number_of_packets);
 
   // Returns true for an empty buffer.
   virtual bool Empty() const;

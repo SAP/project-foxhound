@@ -1,4 +1,4 @@
-// |jit-test| --enable-import-attributes
+// |jit-test|
 
 // Test importEntries property
 
@@ -57,16 +57,14 @@ testImportEntries('import {x} from "a"; import {y} from "b";',
                    {moduleRequest: {specifier: 'b', moduleType: 'js'}, importName: 'y', localName: 'y'}]);
 
 
-if (getRealmConfiguration("importAttributes")) {
-    testImportEntries('import v from "mod" with {};',
-                  [{moduleRequest: {specifier: 'mod', moduleType: 'js'}, importName: 'default', localName: 'v'}]);
+testImportEntries('import v from "mod" with {};',
+              [{moduleRequest: {specifier: 'mod', moduleType: 'js'}, importName: 'default', localName: 'v'}]);
 
-    testImportEntries('import v from "mod" with { type: "json"};',
-        [{moduleRequest: {specifier: 'mod', moduleType: 'json'}, importName: 'default', localName: 'v'}]);
+testImportEntries('import v from "mod" with { type: "json"};',
+    [{moduleRequest: {specifier: 'mod', moduleType: 'json'}, importName: 'default', localName: 'v'}]);
 
-    testImportEntries('import {x} from "mod" with { type: "json"};',
-                  [{moduleRequest: {specifier: 'mod', moduleType: 'json'}, importName: 'x', localName: 'x'}]);
+testImportEntries('import {x} from "mod" with { type: "json"};',
+              [{moduleRequest: {specifier: 'mod', moduleType: 'json'}, importName: 'x', localName: 'x'}]);
 
-    testImportEntries('import {x as v} from "mod" with { type: "json"};',
-                  [{moduleRequest: {specifier: 'mod', moduleType: 'json'}, importName: 'x', localName: 'v'}]);
-}
+testImportEntries('import {x as v} from "mod" with { type: "json"};',
+              [{moduleRequest: {specifier: 'mod', moduleType: 'json'}, importName: 'x', localName: 'v'}]);

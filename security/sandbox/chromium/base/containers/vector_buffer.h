@@ -1,9 +1,9 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_CONTAINERS_VECTOR_BUFFERS_H_
-#define BASE_CONTAINERS_VECTOR_BUFFERS_H_
+#ifndef BASE_CONTAINERS_VECTOR_BUFFER_H_
+#define BASE_CONTAINERS_VECTOR_BUFFER_H_
 
 #include <stdlib.h>
 #include <string.h>
@@ -11,13 +11,14 @@
 #include <type_traits>
 #include <utility>
 
+#include "base/check.h"
+#include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/containers/util.h"
-#include "base/logging.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr_exclusion.h"
 #include "base/numerics/checked_math.h"
 
-namespace base {
-namespace internal {
+namespace base::internal {
 
 // Internal implementation detail of base/containers.
 //
@@ -57,6 +58,9 @@ class VectorBuffer {
     other.capacity_ = 0;
   }
 
+  VectorBuffer(const VectorBuffer&) = delete;
+  VectorBuffer& operator=(const VectorBuffer&) = delete;
+
   ~VectorBuffer() { free(buffer_); }
 
   VectorBuffer& operator=(VectorBuffer&& other) {
@@ -93,15 +97,13 @@ class VectorBuffer {
 
   // Trivially destructible objects need not have their destructors called.
   template <typename T2 = T,
-            typename std::enable_if<std::is_trivially_destructible<T2>::value,
-                                    int>::type = 0>
+            std::enable_if_t<std::is_trivially_destructible_v<T2>, int> = 0>
   void DestructRange(T* begin, T* end) {}
 
   // Non-trivially destructible objects must have their destructors called
   // individually.
   template <typename T2 = T,
-            typename std::enable_if<!std::is_trivially_destructible<T2>::value,
-                                    int>::type = 0>
+            std::enable_if_t<!std::is_trivially_destructible_v<T2>, int> = 0>
   void DestructRange(T* begin, T* end) {
     CHECK_LE(begin, end);
     while (begin != end) {
@@ -119,24 +121,32 @@ class VectorBuffer {
   // and the address of the first element to copy to. There must be sufficient
   // room in the destination for all items in the range [begin, end).
 
-  // Trivially copyable types can use memcpy. trivially copyable implies
+  // Trivially copyable types can use memcpy. Trivially copyable implies
   // that there is a trivial destructor as we don't have to call it.
+
+  // Trivially relocatable types can also use memcpy. Trivially relocatable
+  // imples that memcpy is equivalent to move + destroy.
+
+  template <typename T2>
+  static inline constexpr bool is_trivially_copyable_or_relocatable =
+      std::is_trivially_copyable_v<T2> || IS_TRIVIALLY_RELOCATABLE(T2);
+
   template <typename T2 = T,
-            typename std::enable_if<base::is_trivially_copyable<T2>::value,
-                                    int>::type = 0>
+            std::enable_if_t<is_trivially_copyable_or_relocatable<T2>, int> = 0>
   static void MoveRange(T* from_begin, T* from_end, T* to) {
     CHECK(!RangesOverlap(from_begin, from_end, to));
+
     memcpy(
-        to, from_begin,
+        static_cast<void*>(to), from_begin,
         CheckSub(get_uintptr(from_end), get_uintptr(from_begin)).ValueOrDie());
   }
 
   // Not trivially copyable, but movable: call the move constructor and
   // destruct the original.
   template <typename T2 = T,
-            typename std::enable_if<std::is_move_constructible<T2>::value &&
-                                        !base::is_trivially_copyable<T2>::value,
-                                    int>::type = 0>
+            std::enable_if_t<std::is_move_constructible_v<T2> &&
+                                 !is_trivially_copyable_or_relocatable<T2>,
+                             int> = 0>
   static void MoveRange(T* from_begin, T* from_end, T* to) {
     CHECK(!RangesOverlap(from_begin, from_end, to));
     while (from_begin != from_end) {
@@ -150,9 +160,9 @@ class VectorBuffer {
   // Not movable, not trivially copyable: call the copy constructor and
   // destruct the original.
   template <typename T2 = T,
-            typename std::enable_if<!std::is_move_constructible<T2>::value &&
-                                        !base::is_trivially_copyable<T2>::value,
-                                    int>::type = 0>
+            std::enable_if_t<!std::is_move_constructible_v<T2> &&
+                                 !is_trivially_copyable_or_relocatable<T2>,
+                             int> = 0>
   static void MoveRange(T* from_begin, T* from_end, T* to) {
     CHECK(!RangesOverlap(from_begin, from_end, to));
     while (from_begin != from_end) {
@@ -176,13 +186,12 @@ class VectorBuffer {
                 .ValueOrDie() <= from_begin_uintptr);
   }
 
-  T* buffer_ = nullptr;
+  // `buffer_` is not a raw_ptr<...> for performance reasons (based on analysis
+  // of sampling profiler data and tab_search:top100:2020).
+  RAW_PTR_EXCLUSION T* buffer_ = nullptr;
   size_t capacity_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(VectorBuffer);
 };
 
-}  // namespace internal
-}  // namespace base
+}  // namespace base::internal
 
-#endif  // BASE_CONTAINERS_VECTOR_BUFFERS_H_
+#endif  // BASE_CONTAINERS_VECTOR_BUFFER_H_

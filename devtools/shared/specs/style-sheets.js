@@ -34,6 +34,10 @@ const styleSheetsSpec = generateActorSpec({
       request: { resourceId: Arg(0, "string") },
       response: { text: RetVal("longstring") },
     },
+    getStyleSheetIndentation: {
+      request: { resourceId: Arg(0, "string") },
+      response: { indentation: RetVal("string") },
+    },
     update: {
       request: {
         resourceId: Arg(0, "string"),

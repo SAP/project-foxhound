@@ -158,7 +158,7 @@ export var PropertyListUtils = Object.freeze({
    * and objects.
    *
    * @return one of the TYPE_* constants listed above.
-   * @note this method is merely for convenience.  It has no magic to detect
+   * Note: this method is merely for convenience.  It has no magic to detect
    * that aObject is indeed a property list object created by this module.
    */
   getObjectType: function PLU_getObjectType(aObject) {
@@ -194,6 +194,7 @@ export var PropertyListUtils = Object.freeze({
   /**
    * Wraps a 64-bit stored in the form of a string primitive as a String object,
    * which we can later distiguish from regular string values.
+   *
    * @param aPrimitive
    *        a number in the form of either a primitive string or a primitive number.
    * @return a String wrapper around aNumberStr that can later be identified
@@ -383,7 +384,7 @@ BinaryPropertyListReader.prototype = {
    *        Whether or not it is a unicode string.
    * @return the string read.
    *
-   * @note this is tested to work well with unicode surrogate pairs.  Because
+   * Note: this is tested to work well with unicode surrogate pairs.  Because
    * all unicode characters are read as 2-byte integers, unicode surrogate
    * pairs are read from the buffer in the form of two integers, as required
    * by String.fromCharCode.
@@ -500,6 +501,7 @@ BinaryPropertyListReader.prototype = {
 
   /**
    * Read array from the buffer and wrap it as a js array.
+   *
    * @param aObjectOffset
    *        the offset in the buffer at which the array starts.
    * @param aNumberOfObjects
@@ -536,6 +538,7 @@ BinaryPropertyListReader.prototype = {
 
   /**
    * Reads dictionary from the buffer and wraps it as a Map object.
+   *
    * @param aObjectOffset
    *        the offset in the buffer at which the dictionary starts
    * @param aNumberOfObjects
@@ -572,6 +575,7 @@ BinaryPropertyListReader.prototype = {
 
   /**
    * Reads an object at the spcified index in the object table
+   *
    * @param aObjectIndex
    *        index at the object table
    * @return the property list object at the given index.
@@ -707,6 +711,7 @@ XMLPropertyListReader.prototype = {
 
   /**
    * Convert a dom element to a property list object.
+   *
    * @param aDOMElt
    *        a dom element in a xml tree of a property list.
    * @return a js object representing the property list object.
@@ -731,11 +736,12 @@ XMLPropertyListReader.prototype = {
       }
       case "date":
         return new Date(aDOMElt.textContent);
-      case "data":
+      case "data": {
         // Strip spaces and new lines.
         let base64str = aDOMElt.textContent.replace(/\s*/g, "");
         let decoded = atob(base64str);
         return new Uint8Array(Array.from(decoded, c => c.charCodeAt(0)));
+      }
       case "dict":
         return this._wrapDictionary(aDOMElt);
       case "array":
@@ -819,9 +825,10 @@ XMLPropertyListReader.prototype = {
  * Simple handler method to proxy calls to dict/Map objects to implement the
  * setAsLazyGetter API. With this, a value can be set as a function that will
  * evaluate its value and only be called when it's first retrieved.
+ *
  * @member _lazyGetters
  *         Set() object to hold keys invoking LazyGetter.
- * @method get
+ * @function get
  *         Trap for getting property values. Ensures that if a lazyGetter is present
  *         as value for key, then the function is evaluated, the value is cached,
  *         and its value will be returned.

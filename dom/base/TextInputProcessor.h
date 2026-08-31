@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,9 +25,10 @@ class KeyboardEvent;
 
 class TextInputProcessor final : public nsITextInputProcessor,
                                  public widget::TextEventDispatcherListener {
-  typedef mozilla::widget::IMENotification IMENotification;
-  typedef mozilla::widget::IMENotificationRequests IMENotificationRequests;
-  typedef mozilla::widget::TextEventDispatcher TextEventDispatcher;
+  using IMENotification = mozilla::widget::IMENotification;
+  using IMENotificationRequest = mozilla::widget::IMENotificationRequest;
+  using IMENotificationRequests = mozilla::widget::IMENotificationRequests;
+  using TextEventDispatcher = mozilla::widget::TextEventDispatcher;
 
  public:
   TextInputProcessor();
@@ -69,7 +68,7 @@ class TextInputProcessor final : public nsITextInputProcessor,
    * See explanation of nsITextInputProcessor::BeginInputTransaction() for
    * the detail.
    */
-  nsresult BeginInputTransactionForFuzzing(
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult BeginInputTransactionForFuzzing(
       nsPIDOMWindowInner* aWindow, nsITextInputProcessorCallback* aCallback,
       bool* aSucceeded);
 
@@ -125,7 +124,7 @@ class TextInputProcessor final : public nsITextInputProcessor,
 
  private:
   bool IsComposing() const;
-  nsresult BeginInputTransactionInternal(
+  MOZ_CAN_RUN_SCRIPT nsresult BeginInputTransactionInternal(
       mozIDOMWindow* aWindow, nsITextInputProcessorCallback* aCallback,
       bool aForTests, bool& aSucceeded);
   MOZ_CAN_RUN_SCRIPT nsresult CommitCompositionInternal(

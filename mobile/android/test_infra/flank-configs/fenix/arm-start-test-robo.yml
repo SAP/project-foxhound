@@ -19,7 +19,7 @@ gcloud:
       locale: en_US
 
   type: robo
-  robo-script: robo-scripts/default-browser-dismissal.json
+  robo-script: robo-scripts/fenix-robo-script.json
 
 flank:
   project: GOOGLE_PROJECT

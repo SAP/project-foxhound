@@ -91,6 +91,7 @@ modules["ERRORRESULT"] = Mod(43)
 modules["WIN32"] = Mod(44)
 modules["WDBA"] = Mod(45)
 modules["DOM_QM"] = Mod(46)
+modules["CLIPBOARD"] = Mod(47)
 
 # NS_ERROR_MODULE_GENERAL should be used by modules that do not
 # care if return code values overlap. Callers of methods that
@@ -356,9 +357,6 @@ with modules["NETWORK"]:
     errors["NS_ERROR_BAD_HSTS_CERT"] = FAILURE(89)
     # Error parsing the status line of an HTTP response
     errors["NS_ERROR_PARSING_HTTP_STATUS_LINE"] = FAILURE(90)
-    # The user refused to navigate to a potentially unsafe URL with
-    # embedded credentials/superfluos authentication.
-    errors["NS_ERROR_SUPERFLUOS_AUTH"] = FAILURE(91)
     # The user attempted basic HTTP authentication while
     # the basic_http_auth pref is disabled
     errors["NS_ERROR_BASIC_HTTP_AUTH_DISABLED"] = FAILURE(92)
@@ -815,6 +813,11 @@ with modules["EDITOR"]:
     # non-collapsed range crosses editing host boundaries.
     errors["NS_ERROR_EDITOR_NO_EDITABLE_RANGE"] = FAILURE(4)
 
+    # An error code that indicates that there is no deletable selection ranges
+    # even though there are some editable ranges.  E.g., if each editable range
+    # is in a replaced element or a void element.
+    errors["NS_ERROR_EDITOR_NO_DELETABLE_RANGE"] = FAILURE(5)
+
     errors["NS_SUCCESS_EDITOR_ELEMENT_NOT_FOUND"] = SUCCESS(1)
     errors["NS_SUCCESS_EDITOR_FOUND_TARGET"] = SUCCESS(2)
 
@@ -955,6 +958,8 @@ with modules["URILOADER"]:
     errors["NS_ERROR_CRYPTOMINING_URI"] = FAILURE(42)
     errors["NS_ERROR_SOCIALTRACKING_URI"] = FAILURE(43)
     errors["NS_ERROR_EMAILTRACKING_URI"] = FAILURE(44)
+    errors["NS_ERROR_RESTRICTED_CONTENT"] = FAILURE(45)
+    errors["NS_ERROR_HARMFULADDON_URI"] = FAILURE(46)
     # Used when "Save Link As..." doesn't see the headers quickly enough to
     # choose a filename.  See nsContextMenu.js.
     errors["NS_ERROR_SAVE_LINK_AS_TIMEOUT"] = FAILURE(32)
@@ -962,8 +967,7 @@ with modules["URILOADER"]:
     # doesn't need to be reparsed from the original source.
     errors["NS_ERROR_PARSED_DATA_CACHED"] = FAILURE(33)
 
-    # When browser.tabs.documentchannel.parent-controlled pref and SHIP
-    # are enabled and a load gets cancelled due to another one
+    # When SHIP is enabled and a load gets cancelled due to another one
     # starting, the error is NS_BINDING_CANCELLED_OLD_LOAD.
     errors["NS_BINDING_CANCELLED_OLD_LOAD"] = FAILURE(39)
 
@@ -1184,6 +1188,7 @@ with modules["DOM_MEDIA"]:
     errors["NS_ERROR_DOM_MEDIA_CDM_NO_SESSION_ERR"] = FAILURE(50)
     errors["NS_ERROR_DOM_MEDIA_CDM_SESSION_OPERATION_ERR"] = FAILURE(51)
     errors["NS_ERROR_DOM_MEDIA_CDM_HDCP_NOT_SUPPORT"] = FAILURE(52)
+    errors["NS_ERROR_DOM_MEDIA_CDM_NOT_FOUND_ERR"] = FAILURE(53)
 
     # Internal platform-related errors
     errors["NS_ERROR_DOM_MEDIA_CUBEB_INITIALIZATION_ERR"] = FAILURE(101)
@@ -1193,6 +1198,7 @@ with modules["DOM_MEDIA"]:
     errors["NS_ERROR_DOM_MEDIA_RANGE_ERR"] = FAILURE(105)
     errors["NS_ERROR_DOM_MEDIA_TYPE_ERR"] = FAILURE(106)
     errors["NS_ERROR_DOM_MEDIA_MEDIA_ENGINE_INITIALIZATION_ERR"] = FAILURE(107)
+    errors["NS_ERROR_DOM_MEDIA_DROPPED_BY_ENCODER_ERR"] = FAILURE(108)
 
 # =======================================================================
 # 42: NS_ERROR_MODULE_URL_CLASSIFIER
@@ -1250,6 +1256,12 @@ with modules["DOM_QM"]:
     errors["NS_ERROR_DOM_QM_CLIENT_INIT_ORIGIN_UNINITIALIZED"] = FAILURE(1)
 
 # =======================================================================
+# 47: NS_ERROR_MODULE_CLIPBOARD
+# =======================================================================
+with modules["CLIPBOARD"]:
+    errors["NS_ERROR_CLIPBOARD_TOO_BIG"] = FAILURE(1)
+
+# =======================================================================
 # 51: NS_ERROR_MODULE_GENERAL
 # =======================================================================
 with modules["GENERAL"]:
@@ -1290,23 +1302,27 @@ with modules["GENERAL"]:
 def import_extra_errors(infile):
     """Import extra error definitions from a json file.
 
+    The new errors are added to the global `error` object, and also returned independently.
+
     Example json file (to add module):
     ```
     {
-      "MAILNEWS": {
-        "description": "Extra error codes for comm/mail",
-        "code": 16,
-        "members": {
-          "NS_MSG_ERROR_MBOX_MALFORMED": {
-            "severity": "FAILURE",
-            "code": 36,
-            "description": "Mbox message doesn't start with 'From ' separator line."
-          },
+        "MAILNEWS": {
+            "description": "Extra error codes for comm/mail",
+            "code": 16,
+            "members": {
+                "NS_MSG_ERROR_MBOX_MALFORMED": {
+                    "severity": "FAILURE",
+                    "code": 36,
+                    "description": "Mbox message doesn't start with 'From ' separator line.",
+                },
+            },
         }
-      }
     }
     ```
     """
+
+    new_errors = []
 
     with open(infile) as f:
         data = json.load(f)
@@ -1339,6 +1355,13 @@ def import_extra_errors(infile):
                         raise ValueError(
                             f"Invalid severity value ({severity}) in {infile}"
                         )
+
+                    new_errors.append({
+                        "name": name,
+                        "description": details["description"],
+                    })
+
+    return new_errors
 
 
 # ============================================================================
@@ -1377,9 +1400,7 @@ enum class nsresult : uint32_t
 {}
 }};
 
-""".format(
-            ",\n".join(items)
-        )
+""".format(",\n".join(items))
     )
 
     items = []
@@ -1393,9 +1414,7 @@ const nsresult
 ;
 
 #endif // ErrorList_h__
-""".format(
-            ",\n".join(items)
-        )
+""".format(",\n".join(items))
     )
 
 
@@ -1507,3 +1526,25 @@ def error_list_json(output, *extra_errors):
 
     json.dump(errors, output, indent=2)
     output.write("\n")
+
+
+def extra_xpc_msg(output, *extra_errors):
+    """
+    Generates `extra_xpc_msg.h`, which is used by XPCException.cpp to generate
+    the `Cr` object used by JavaScript code.
+
+    This file contains only the extra codes included in the files referred to by
+    `extra_errors`, as the common error codes are already defined in
+    `js/xpconnect/src/xpc.msg`.
+    """
+
+    output.write("/* THIS FILE IS GENERATED BY ErrorList.py - DO NOT EDIT */\n")
+
+    new_errors = []
+
+    for infile in extra_errors:
+        new_imported = import_extra_errors(infile)
+        new_errors = new_imported + new_errors
+
+    for error in new_errors:
+        output.write(f'XPC_MSG_DEF({error["name"]}, "{error["description"]}")\n')

@@ -17,6 +17,9 @@ import org.mozilla.focus.ext.components
 private const val ENGINE_TYPE_CUSTOM = "custom"
 private const val ENGINE_TYPE_BUNDLED = "bundled"
 
+/**
+ * A search engine list preference that uses radio buttons to allow selecting a single engine.
+ */
 class RadioSearchEngineListPreference : SearchEngineListPreference, RadioGroup.OnCheckedChangeListener {
 
     override val itemResId: Int

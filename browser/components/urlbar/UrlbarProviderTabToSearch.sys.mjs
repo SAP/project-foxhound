@@ -10,21 +10,22 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionsProviderContextualSearch:
-    "resource:///modules/ActionsProviderContextualSearch.sys.mjs",
-  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderContextualSearch.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarProviderAutofill:
+    "moz-src:///browser/components/urlbar/UrlbarProviderAutofill.sys.mjs",
   UrlbarProviderGlobalActions:
-    "resource:///modules/UrlbarProviderGlobalActions.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderGlobalActions.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 const DYNAMIC_RESULT_TYPE = "onboardTabToSearch";
@@ -89,29 +90,13 @@ const VIEW_TEMPLATE = {
 };
 
 /**
- * Initializes this provider's dynamic result. To be called after the creation
- *  of the provider singleton.
- */
-function initializeDynamicResult() {
-  lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
-  lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
-}
-
-/**
  * Class used to create the provider.
  */
-class ProviderTabToSearch extends UrlbarProvider {
+export class UrlbarProviderTabToSearch extends UrlbarProvider {
+  static onboardingInteractionAtTime = null;
+
   constructor() {
     super();
-  }
-
-  /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return "TabToSearch";
   }
 
   /**
@@ -135,7 +120,9 @@ class ProviderTabToSearch extends UrlbarProvider {
       !queryContext.searchMode &&
       lazy.UrlbarPrefs.get("suggest.engines") &&
       !(
-        (await lazy.UrlbarProviderGlobalActions.isActive(queryContext)) &&
+        (await this.queryInstance
+          .getProvider(lazy.UrlbarProviderGlobalActions.name)
+          ?.isActive(queryContext)) &&
         lazy.ActionsProviderContextualSearch.isActive(queryContext)
       )
     );
@@ -148,6 +135,10 @@ class ProviderTabToSearch extends UrlbarProvider {
    */
   getPriority() {
     return 0;
+  }
+
+  getViewTemplate(_result) {
+    return VIEW_TEMPLATE;
   }
 
   /**
@@ -209,8 +200,9 @@ class ProviderTabToSearch extends UrlbarProvider {
     // counter by interacting with the same result repeatedly.
     if (
       result.payload.dynamicType &&
-      (!this.onboardingInteractionAtTime ||
-        this.onboardingInteractionAtTime < Date.now() - 1000 * 60 * 5)
+      (!UrlbarProviderTabToSearch.onboardingInteractionAtTime ||
+        UrlbarProviderTabToSearch.onboardingInteractionAtTime <
+          Date.now() - 1000 * 60 * 5)
     ) {
       let interactionsLeft = lazy.UrlbarPrefs.get(
         "tabToSearch.onboard.interactionsLeft"
@@ -223,7 +215,7 @@ class ProviderTabToSearch extends UrlbarProvider {
         );
       }
 
-      this.onboardingInteractionAtTime = Date.now();
+      UrlbarProviderTabToSearch.onboardingInteractionAtTime = Date.now();
     }
   }
 
@@ -233,7 +225,7 @@ class ProviderTabToSearch extends UrlbarProvider {
       // Confirm search mode, but only for the onboarding (dynamic) result. The
       // input will handle confirming search mode for the non-onboarding
       // `RESULT_TYPE.SEARCH` result since it sets `providesSearchMode`.
-      element.ownerGlobal.gURLBar.maybeConfirmSearchModeFromResult({
+      element.documentGlobal.gURLBar.maybeConfirmSearchModeFromResult({
         result,
         checkValue: false,
       });
@@ -254,10 +246,9 @@ class ProviderTabToSearch extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {object} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result.
-   * @returns {Promise} resolved when the query stops.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     // enginesForDomainPrefix only matches against engine domains.
@@ -272,7 +263,7 @@ class ProviderTabToSearch extends UrlbarProvider {
     );
     // Skip any string that cannot be an origin.
     if (
-      !lazy.UrlbarTokenizer.looksLikeOrigin(searchStr, {
+      !lazy.UrlUtils.looksLikeOrigin(searchStr, {
         ignoreKnownDomains: true,
         noIp: true,
       })
@@ -361,28 +352,28 @@ class ProviderTabToSearch extends UrlbarProvider {
 }
 
 function makeOnboardingResult(engine, satisfiesAutofillThreshold = false) {
-  let result = new lazy.UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.DYNAMIC,
-    UrlbarUtils.RESULT_SOURCE.SEARCH,
-    {
+  return new lazy.UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    resultSpan: 2,
+    suggestedIndex: 1,
+    payload: {
       engine: engine.name,
       searchUrlDomainWithoutSuffix: searchUrlDomainWithoutSuffix(engine),
       providesSearchMode: true,
       icon: UrlbarUtils.ICON.SEARCH_GLASS,
       dynamicType: DYNAMIC_RESULT_TYPE,
       satisfiesAutofillThreshold,
-    }
-  );
-  result.resultSpan = 2;
-  result.suggestedIndex = 1;
-  return result;
+    },
+  });
 }
 
 function makeResult(context, engine, satisfiesAutofillThreshold = false) {
-  let result = new lazy.UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.SEARCH,
-    UrlbarUtils.RESULT_SOURCE.SEARCH,
-    ...lazy.UrlbarResult.payloadAndSimpleHighlights(context.tokens, {
+  return new lazy.UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.SEARCH,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    suggestedIndex: 1,
+    payload: {
       engine: engine.name,
       isGeneralPurposeEngine: engine.isGeneralPurposeEngine,
       searchUrlDomainWithoutSuffix: searchUrlDomainWithoutSuffix(engine),
@@ -390,10 +381,8 @@ function makeResult(context, engine, satisfiesAutofillThreshold = false) {
       icon: UrlbarUtils.ICON.SEARCH_GLASS,
       query: "",
       satisfiesAutofillThreshold,
-    })
-  );
-  result.suggestedIndex = 1;
-  return result;
+    },
+  });
 }
 
 function searchUrlDomainWithoutSuffix(engine) {
@@ -402,6 +391,3 @@ function searchUrlDomainWithoutSuffix(engine) {
   });
   return value.substr(0, value.length - engine.searchUrlPublicSuffix.length);
 }
-
-export var UrlbarProviderTabToSearch = new ProviderTabToSearch();
-initializeDynamicResult();

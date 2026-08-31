@@ -12,7 +12,7 @@ const {
   "resource://gre/modules/ExtensionStorageSyncKinto.sys.mjs"
 );
 const { CryptoUtils } = ChromeUtils.importESModule(
-  "resource://services-crypto/utils.sys.mjs"
+  "moz-src:///services/crypto/modules/utils.sys.mjs"
 );
 const { Utils } = ChromeUtils.importESModule(
   "resource://services-sync/util.sys.mjs"

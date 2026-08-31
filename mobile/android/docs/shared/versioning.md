@@ -12,6 +12,7 @@ XXX.0 (where XXX is defined as the current desktop release #)
 * The first will be directly tied to the associated desktop release
 
 ### Example
+
 |                                | Desktop                       | Android                        |
 | ------------------------------ | ----------------------------- | ------------------------------ |
 | Fx XXX initial release         | XXX.0                         | XXX.0                          |

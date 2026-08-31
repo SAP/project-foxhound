@@ -1,9 +1,13 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/hash/hash.h"
 
+#include <string_view>
+
+#include "base/check_op.h"
+#include "base/notreached.h"
 #include "base/rand_util.h"
 #include "base/third_party/cityhash/city.h"
 #include "build/build_config.h"
@@ -20,13 +24,13 @@ namespace {
 size_t FastHashImpl(base::span<const uint8_t> data) {
   // We use the updated CityHash within our namespace (not the deprecated
   // version from third_party/smhasher).
-#if defined(ARCH_CPU_64_BITS)
-  return base::internal::cityhash_v111::CityHash64(
-      reinterpret_cast<const char*>(data.data()), data.size());
-#else
-  return base::internal::cityhash_v111::CityHash32(
-      reinterpret_cast<const char*>(data.data()), data.size());
-#endif
+  if constexpr (sizeof(size_t) > 4) {
+    return base::internal::cityhash_v111::CityHash64(
+        reinterpret_cast<const char*>(data.data()), data.size());
+  } else {
+    return base::internal::cityhash_v111::CityHash32(
+        reinterpret_cast<const char*>(data.data()), data.size());
+  }
 }
 
 // Implement hashing for pairs of at-most 32 bit integer values.
@@ -128,10 +132,6 @@ uint32_t Hash(const std::string& str) {
   return PersistentHash(as_bytes(make_span(str)));
 }
 
-uint32_t Hash(const string16& str) {
-  return PersistentHash(as_bytes(make_span(str)));
-}
-
 uint32_t PersistentHash(span<const uint8_t> data) {
   // This hash function must not change, since it is designed to be persistable
   // to disk.
@@ -147,19 +147,14 @@ uint32_t PersistentHash(const void* data, size_t length) {
   return PersistentHash(make_span(static_cast<const uint8_t*>(data), length));
 }
 
-uint32_t PersistentHash(const std::string& str) {
-  return PersistentHash(str.data(), str.size());
+uint32_t PersistentHash(std::string_view str) {
+  return PersistentHash(as_bytes(make_span(str)));
 }
 
 size_t HashInts32(uint32_t value1, uint32_t value2) {
   return Scramble(HashInts32Impl(value1, value2));
 }
 
-// Implement hashing for pairs of up-to 64-bit integer values.
-// We use the compound integer hash method to produce a 64-bit hash code, by
-// breaking the two 64-bit inputs into 4 32-bit values:
-// http://opendatastructures.org/versions/edition-0.1d/ods-java/node33.html#SECTION00832000000000000000
-// Then we reduce our result to 32 bits if required, similar to above.
 size_t HashInts64(uint64_t value1, uint64_t value2) {
   return Scramble(HashInts64Impl(value1, value2));
 }

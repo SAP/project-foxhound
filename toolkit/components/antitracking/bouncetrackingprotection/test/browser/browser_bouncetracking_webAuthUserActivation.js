@@ -49,8 +49,9 @@ function promiseWebAuthnGetAssertionDiscoverableBC(
 
 /**
  * Test that a webauthn request triggers BTP user activation.
+ *
  * @param {Function} triggerFn - Function that runs the webauthn request.
- * @param {String} userActivationSiteHost - The expected user activation site host in BTP.
+ * @param {string} userActivationSiteHost - The expected user activation site host in BTP.
  */
 async function runWebAuthTest(triggerFn, userActivationSiteHost) {
   is(
@@ -81,6 +82,7 @@ async function runWebAuthTest(triggerFn, userActivationSiteHost) {
 /**
  * Wrapper around runWebAuthTest for the case where the webauthn request is made
  * in an iframe.
+ *
  * @param {string} topLevelSite - The top level site where the iframe is inserted.
  * @param {string} iframeSite - The site of the iframe.
  */

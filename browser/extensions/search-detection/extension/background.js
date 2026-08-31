@@ -124,8 +124,12 @@ class AddonsSearchDetection {
           : TELEMETRY_VALUE_EXTENSION,
       };
       if (sameSite) {
-        let ssr = { addonId: id, addonVersion, paramChanged };
-        browser.addonsSearchDetection.reportSameSiteRedirect(ssr);
+        browser.addonsSearchDetection.reportSameSiteRedirect({
+          addonId: id,
+          addonVersion,
+          origin: from,
+          paramChanged,
+        });
       } else if (maybeServerSideRedirect) {
         browser.addonsSearchDetection.reportETLDChangeOther(extra);
       } else {

@@ -130,15 +130,17 @@ function checkBookmarksItemsChevronContextMenu() {
     EventUtils.synthesizeMouseAtCenter(chevron, {});
     info("Waiting for bookmark toolbar item chevron popup to show");
     await shownPromise;
+    let visibleItem;
     await TestUtils.waitForCondition(() => {
       for (let child of chevronPopup.children) {
-        if (child.style.visibility != "hidden") {
+        if (BrowserTestUtils.isVisible(child)) {
+          visibleItem = child;
           return true;
         }
       }
       return false;
     });
-    await checkPlacesContextMenu(chevronPopup);
+    await checkPlacesContextMenu(visibleItem);
     info("Waiting for bookmark toolbar item chevron popup to close");
     await closePopup(chevronPopup);
   })();
@@ -149,14 +151,14 @@ function checkBookmarksItemsChevronContextMenu() {
  * its contents. Returns a Promise that resolves as soon as the
  * overflowable nav-bar is showing its chevron.
  */
-function overflowEverything() {
+function overflowEverything(win) {
   info("Waiting for overflow");
   let waitOverflowing = BrowserTestUtils.waitForMutationCondition(
     gNavBar,
     { attributes: true, attributeFilter: ["overflowing"] },
     () => gNavBar.hasAttribute("overflowing")
   );
-  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  ensureToolbarOverflow(win, false);
   return waitOverflowing;
 }
 
@@ -165,14 +167,14 @@ function overflowEverything() {
  * and returns a Promise that resolves when the nav-bar is no longer
  * overflowing.
  */
-function stopOverflowing() {
+function stopOverflowing(win, originalWindowWidth) {
   info("Waiting until we stop overflowing");
   let waitOverflowing = BrowserTestUtils.waitForMutationCondition(
     gNavBar,
     { attributes: true, attributeFilter: ["overflowing"] },
     () => !gNavBar.hasAttribute("overflowing")
   );
-  window.resizeTo(kOriginalWindowWidth, window.outerHeight);
+  unensureToolbarOverflow(win, originalWindowWidth);
   return waitOverflowing;
 }
 
@@ -255,10 +257,11 @@ add_task(async function testOverflowingBookmarksButtonContextMenu() {
   // that they have views attached.
   await checkSpecialContextMenus();
 
-  await overflowEverything();
+  const originalWindowWidth = window.outerWidth;
+  await overflowEverything(window);
   checkOverflowing(kBookmarksButton);
 
-  await stopOverflowing();
+  await stopOverflowing(window, originalWindowWidth);
   checkNotOverflowing(kBookmarksButton);
 
   await checkSpecialContextMenus();
@@ -288,12 +291,13 @@ add_task(async function testOverflowingBookmarksItemsContextMenu() {
   await waitBookmarksToolbarIsUpdated();
   await checkPlacesContextMenu(bookmarksToolbarItems);
 
-  await overflowEverything();
+  let originalWindowWidth = window.outerWidth;
+  await overflowEverything(window);
   checkOverflowing(kBookmarksItems);
 
   await gCustomizeMode.addToPanel(bookmarksToolbarItems);
 
-  await stopOverflowing();
+  await stopOverflowing(window, originalWindowWidth);
 
   await gCustomizeMode.addToToolbar(bookmarksToolbarItems);
   await waitBookmarksToolbarIsUpdated();
@@ -321,10 +325,11 @@ add_task(async function testOverflowingBookmarksItemsChevronContextMenu() {
 
   await checkBookmarksItemsChevronContextMenu();
 
-  await overflowEverything();
+  let originalWindowWidth = window.outerWidth;
+  await overflowEverything(window);
   checkOverflowing(kBookmarksItems);
 
-  await stopOverflowing();
+  await stopOverflowing(window, originalWindowWidth);
   checkNotOverflowing(kBookmarksItems);
 
   await waitBookmarksToolbarIsUpdated();

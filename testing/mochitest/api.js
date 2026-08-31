@@ -79,6 +79,11 @@ var WindowListener = {
       "resource://gre/modules/Console.sys.mjs"
     );
     win.console = new ConsoleAPI();
+    // Add createInstance to the native wrapper so that it can be called from
+    // within windows.
+    win.console.createInstance = win.nativeConsole.createInstance.bind(
+      win.nativeConsole
+    );
   },
 
   tearDownWindow(win) {

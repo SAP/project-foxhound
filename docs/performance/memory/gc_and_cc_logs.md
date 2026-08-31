@@ -86,7 +86,6 @@ something like this code to the file:
 There are numerous scripts that analyze GC and CC logs on
 [GitHub](https://github.com/amccreight/heapgraph/)
 
-
 To find out why an object is being kept alive, you should use `find_roots.py`
 in the root of the github repository. Calling `find_roots.py` on a CC log
 with a specific object or kind of object will produce paths from rooting
@@ -105,5 +104,5 @@ on the GC log.
 
 There are two add-ons that can be used to create and analyze CC graphs.
 
--   [about:cc](https://bugzilla.mozilla.org/show_bug.cgi?id=726346)
-    is simple, ugly, but rather powerful.
+- [about:cc](https://bugzilla.mozilla.org/show_bug.cgi?id=726346)
+  is simple, ugly, but rather powerful.

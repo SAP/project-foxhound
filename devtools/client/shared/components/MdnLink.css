@@ -2,38 +2,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* Learn more links */
-
 .network-monitor .learn-more-link {
-  display: inline-block;
-  line-height: 16px;
+  display: inline-flex;
+  padding: 2px;
+  --icon-color: var(--theme-icon-color);
 
   &::before {
     background-image: url(chrome://devtools/skin/images/help.svg);
     background-size: contain;
     -moz-context-properties: fill;
-    fill: var(--theme-icon-color);
+    fill: var(--icon-color);
+    height: 16px;
+    width: 16px;
+    margin: 0;
+  }
+
+  &.mdn-link::before {
+    background-image: url(chrome://devtools/skin/images/mdn.svg);
+    height: 12px;
+    width: 12px;
+    border: 1px solid var(--icon-color);
   }
 }
 
-.network-monitor [role="treeitem"][aria-selected="true"] .learn-more-link:not(:hover)::before {
-  fill: var(--theme-selection-color);
-}
+.network-monitor .treeTable .treeRow {
+  .learn-more-link:not(:hover) {
+    --icon-color: var(--theme-icon-dimmed-color);
+  }
 
-.network-monitor .tree-container .learn-more-link {
-  position: absolute;
-  top: 0;
-  inset-inline-start: 2px;
-  /* Override devtools-button styles to make this button 20x20,
-   * so that the icon is vertically centered in the table row */
-  padding: 1px 0;
-}
-
-:root:not([forced-colors-active]) .network-monitor .tree-container tr:not(:hover) .learn-more-link {
-  opacity: 0.4;
-}
-
-.network-monitor .tabpanel-summary-value.status {
-  display: flex;
-  align-items: center;
+  &.selected .learn-more-link:not(:hover)::before {
+    --icon-color: var(--theme-selection-color);
+  }
 }

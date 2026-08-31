@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shared Worker Listener test page</title>
+</head>
+<body>
+  Shared Worker Listener test page.
+
+  <script type="text/javascript">
+    window.registerSharedWorker = function () {
+      window.testSharedWorker = new window.SharedWorker("shared_worker.js");
+    }
+  </script>
+</body>
+</html>

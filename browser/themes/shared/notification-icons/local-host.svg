@@ -1,0 +1,19 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton">
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M0 12h3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h3v1.5H0V12zm3-8.5a.5.5 0 0 0-.5.5v6a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V4a.5.5 0 0 0-.5-.5H3z"/>
+</g>
+<g class="nova">
+  <path fill-rule="evenodd" d="M8 2c1.355 0 2.888.07 4.562.26A2.757 2.757 0 0 1 15 4.998v5.008c0 1.38-1.022 2.57-2.415 2.731l-.125.014h2.79a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1 0-1.5h2.781l-.113-.012A2.74 2.74 0 0 1 1 10.008V4.99a2.74 2.74 0 0 1 2.414-2.727l1.066-.109A40 40 0 0 1 8 2m0 1.5a39 39 0 0 0-3.388.15l-1.026.103A1.24 1.24 0 0 0 2.5 4.99v5.019c0 .638.47 1.168 1.09 1.239a38.3 38.3 0 0 0 8.823 0 1.24 1.24 0 0 0 1.087-1.243V4.997c0-.635-.48-1.174-1.11-1.246A39 39 0 0 0 8 3.5" clip-rule="evenodd" />
+</g>
+</svg>

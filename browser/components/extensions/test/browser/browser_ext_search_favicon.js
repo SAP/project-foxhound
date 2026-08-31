@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 const { AddonTestUtils } = ChromeUtils.importESModule(
@@ -14,8 +12,11 @@ const { SearchTestUtils } = ChromeUtils.importESModule(
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
-const { AppProvidedSearchEngine } = ChromeUtils.importESModule(
-  "moz-src:///toolkit/components/search/AppProvidedSearchEngine.sys.mjs"
+const { AppProvidedConfigEngine } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs"
+);
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
 );
 
 AddonTestUtils.initMochitest(this);
@@ -49,7 +50,7 @@ add_setup(async () => {
   let createdBlobURLs = [];
 
   sinon
-    .stub(AppProvidedSearchEngine.prototype, "getIconURL")
+    .stub(AppProvidedConfigEngine.prototype, "getIconURL")
     .callsFake(async () => {
       let response = await fetch(IMAGE_DATA_URI);
 
@@ -69,13 +70,12 @@ add_setup(async () => {
 async function promiseEngineIconLoaded(engineName) {
   await TestUtils.topicObserved(
     "browser-search-engine-modified",
-    (engine, verb) => {
-      engine.QueryInterface(Ci.nsISearchEngine);
-      return verb == "engine-icon-changed" && engine.name == engineName;
-    }
+    (subject, verb) =>
+      verb == "engine-icon-changed" &&
+      subject.wrappedJSObject.name == engineName
   );
   Assert.ok(
-    await Services.search.getEngineByName(engineName).getIconURL(),
+    await SearchService.getEngineByName(engineName).getIconURL(),
     "Should have a valid icon URL"
   );
 }

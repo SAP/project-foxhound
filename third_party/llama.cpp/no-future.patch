@@ -1,0 +1,53 @@
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 1a90a1eb88..6f5f3d2868 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -5,7 +5,6 @@
+ #include <array>
+ #include <cinttypes>
+ #include <cstring>
+-#include <future>
+ 
+ #include "moz-overrides.h"
+ 
+@@ -926,7 +925,7 @@
+     GGML_ASSERT(size_data != 0 && "call init_mappings() first");
+ 
+     std::vector<no_init<uint8_t>> read_buf;
+-    std::vector<std::future<std::pair<ggml_tensor *, bool>>> validation_result;
++    std::vector<std::pair<ggml_tensor *, bool>> validation_result;
+ 
+     // 4 staging buffers for async uploads, each sized 1MB seems to be a good default for single NVMe drives.
+     // NVMe raid configurations might require more / larger buffers.
+@@ -1041,9 +1040,7 @@
+             uint8_t * data = (uint8_t *) mapping->addr() + weight->offs;
+ 
+             if (check_tensors) {
+-                validation_result.emplace_back(std::async(std::launch::async, [cur, data, n_size] {
+-                    return std::make_pair(cur, ggml_validate_row_data(cur->type, data, n_size));
+-                }));
++                validation_result.push_back(std::make_pair(cur, ggml_validate_row_data(cur->type, data, n_size)));
+             }
+ 
+             GGML_ASSERT(buf_mmap || cur->data); // either we have a buffer to allocate the tensor in, or it is already allocated
+@@ -1066,9 +1063,7 @@
+                 file->seek(weight->offs, SEEK_SET);
+                 file->read_raw(cur->data, n_size);
+                 if (check_tensors) {
+-                    validation_result.emplace_back(std::async(std::launch::async, [cur, n_size] {
+-                        return std::make_pair(cur, ggml_validate_row_data(cur->type, cur->data, n_size));
+-                    }));
++                    validation_result.push_back(std::make_pair(cur, ggml_validate_row_data(cur->type, cur->data, n_size)));
+                 }
+             } else {
+                 // If upload_backend is valid load the tensor in chunks to pinned memory and upload the buffers asynchronously to the GPU.
+@@ -1116,8 +1111,7 @@
+ 
+     // check validation results
+     bool validation_failed = false;
+-    for (auto & future : validation_result) {
+-        auto result = future.get();
++    for (const auto & result : validation_result) {
+         if (!result.second) {
+             LLAMA_LOG_ERROR("%s: tensor '%s' has invalid data\n", __func__, ggml_get_name(result.first));
+             validation_failed = true;

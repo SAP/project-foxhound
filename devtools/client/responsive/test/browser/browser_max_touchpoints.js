@@ -19,6 +19,11 @@ addRDMTask(TEST_COM_URL, async function ({ ui, browser, tab }) {
     0,
     "navigator.maxTouchPoints is 0 when touch simulation is not enabled"
   );
+  is(
+    await getMaxTouchPoints(browser.browsingContext.children[0]),
+    0,
+    "navigator.maxTouchPoints in the iframe is 0 when touch simulation is not enabled"
+  );
 
   info(
     "Test value maxTouchPoints is non-zero when touch simulation is enabled."
@@ -29,6 +34,11 @@ addRDMTask(TEST_COM_URL, async function ({ ui, browser, tab }) {
     1,
     "navigator.maxTouchPoints should be 1 after enabling touch simulation"
   );
+  is(
+    await getMaxTouchPoints(browser.browsingContext.children[0]),
+    1,
+    "navigator.maxTouchPoints in the iframe should be 1 after enabling touch simulation"
+  );
 
   info("Toggling off touch simulation.");
   await toggleTouchSimulation(ui);
@@ -38,6 +48,12 @@ addRDMTask(TEST_COM_URL, async function ({ ui, browser, tab }) {
     "navigator.maxTouchPoints should be 0 after turning off touch simulation"
   );
 
+  is(
+    await getMaxTouchPoints(browser.browsingContext.children[0]),
+    0,
+    "navigator.maxTouchPoints in the iframe should be 0 after turning off touch simulation"
+  );
+
   info("Enabling touch simulation again");
   await toggleTouchSimulation(ui);
   is(
@@ -45,14 +61,24 @@ addRDMTask(TEST_COM_URL, async function ({ ui, browser, tab }) {
     1,
     "navigator.maxTouchPoints should be 1 after enabling touch simulation again"
   );
+  is(
+    await getMaxTouchPoints(browser.browsingContext.children[0]),
+    1,
+    "navigator.maxTouchPoints in the iframe should be 1 after enabling touch simulation again"
+  );
 
   info("Check maxTouchPoints override persists after reload");
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   is(
     await getMaxTouchPoints(browser),
     1,
     "navigator.maxTouchPoints is still 1 after reloading"
+  );
+  is(
+    await getMaxTouchPoints(browser.browsingContext.children[0]),
+    1,
+    "navigator.maxTouchPoints in the iframe is still 1 after reloading"
   );
 
   info(
@@ -78,6 +104,11 @@ addRDMTask(TEST_COM_URL, async function ({ ui, browser, tab }) {
     1,
     "navigator.maxTouchPoints is still 1 after navigating to a new browsing context"
   );
+  is(
+    await getMaxTouchPoints(browser.browsingContext.children[0]),
+    1,
+    "navigator.maxTouchPoints in the iframe is still 1 after navigating to a new browsing context"
+  );
 
   info("Check that the value is reset when closing RDM");
   // Closing RDM trigers a reload
@@ -90,14 +121,19 @@ addRDMTask(TEST_COM_URL, async function ({ ui, browser, tab }) {
     0,
     "navigator.maxTouchPoints is 0 after closing RDM"
   );
+  is(
+    await getMaxTouchPoints(browser.browsingContext.children[0]),
+    0,
+    "navigator.maxTouchPoints in the iframe is 0 after closing RDM"
+  );
 
   reloadOnTouchChange(false);
 });
 
 function getMaxTouchPoints(browserOrBrowsingContext) {
-  return ContentTask.spawn(
+  return SpecialPowers.spawn(
     browserOrBrowsingContext,
-    null,
+    [],
     () => content.navigator.maxTouchPoints
   );
 }

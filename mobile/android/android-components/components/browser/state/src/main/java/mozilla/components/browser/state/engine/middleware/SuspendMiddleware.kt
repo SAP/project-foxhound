@@ -14,7 +14,7 @@ import mozilla.components.browser.state.state.EngineState
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSessionState
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] implementation responsible for suspending an [EngineSession].
@@ -28,28 +28,28 @@ internal class SuspendMiddleware(
     private val scope: CoroutineScope,
 ) : Middleware<BrowserState, BrowserAction> {
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
-            is EngineAction.SuspendEngineSessionAction -> suspend(context, action.tabId)
+            is EngineAction.SuspendEngineSessionAction -> suspend(store, action.tabId)
             is EngineAction.KillEngineSessionAction -> {
                 next(action)
-                suspend(context, action.tabId)
+                suspend(store, action.tabId)
             }
             else -> next(action)
         }
     }
 
     private fun suspend(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         sessionId: String,
     ) {
-        val tab = context.state.findTabOrCustomTab(sessionId) ?: return
+        val tab = store.state.findTabOrCustomTab(sessionId) ?: return
 
         // First we unlink (which clearsEngineSession and state)
-        context.dispatch(
+        store.dispatch(
             EngineAction.UnlinkEngineSessionAction(
                 tab.id,
             ),

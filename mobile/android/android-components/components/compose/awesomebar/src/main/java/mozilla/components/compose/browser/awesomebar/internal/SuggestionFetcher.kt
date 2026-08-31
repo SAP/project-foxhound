@@ -40,7 +40,7 @@ internal class SuggestionFetcher(
     /**
      * The current list of suggestions as an observable list.
      */
-    val state = mutableStateOf<Map<AwesomeBar.SuggestionProviderGroup, List<AwesomeBar.Suggestion>>>(emptyMap())
+    val state = mutableStateOf<Map<AwesomeBar.SuggestionProviderGroup, List<AwesomeBar.SuggestionItem>>>(emptyMap())
 
     /**
      * Fetches suggestions for [text] from all providers in all [groups] asynchronously.
@@ -102,7 +102,7 @@ internal class SuggestionFetcher(
     internal fun processResultFrom(
         group: AwesomeBar.SuggestionProviderGroup,
         provider: AwesomeBar.SuggestionProvider,
-        suggestions: List<AwesomeBar.Suggestion>,
+        suggestions: List<AwesomeBar.SuggestionItem>,
         profilerStartTime: Double?,
     ) {
         val suggestionMap = state.value

@@ -1,11 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "Preferences.h"
 
 using namespace mozilla;
@@ -13,8 +10,8 @@ using namespace mozilla;
 // Keep this in sync with the declaration in Preferences.cpp.
 //
 // It's declared here to avoid polluting Preferences.h with test-only stuff.
-void TestParseError(PrefValueKind aKind, const char* aText,
-                    nsCString& aErrorMsg);
+nsresult TestParseError(PrefValueKind aKind, const char* aText,
+                        nsCString& aErrorMsg);
 
 TEST(PrefsParser, Errors)
 {
@@ -86,13 +83,21 @@ pref("int.overflow", 4294967297);
 pref("int.overflow", 1234567890987654321);
     )",
     "test:3: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
     "test:5: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
     "test:7: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
     "test:8: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
     "test:9: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
     "test:10: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
     "test:11: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
     "test:12: prefs parse error: integer literal overflowed\n"
+    "integer literal overflowed\n"
   );
 
   // Other integer errors.
@@ -101,6 +106,7 @@ pref("int.unexpected", 100foo);
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: unexpected character in integer literal\n"
+    "unexpected character in integer literal\n"
   );
 
   // \x00 is not allowed.
@@ -109,6 +115,7 @@ pref("string.bad-x-escape", "foo\x00bar");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: \\x00 is not allowed\n"
+    "\\x00 is not allowed\n"
   );
 
   // Various bad things after \x: end of string, punctuation, space, newline,
@@ -121,10 +128,15 @@ pref("string.bad-x-escape", "foo\x
 12");
 pref("string.bad-x-escape", "foo\x)",
     "test:2: prefs parse error: malformed \\x escape sequence\n"
+    "malformed \\x escape sequence\n"
     "test:3: prefs parse error: malformed \\x escape sequence\n"
+    "malformed \\x escape sequence\n"
     "test:4: prefs parse error: malformed \\x escape sequence\n"
+    "malformed \\x escape sequence\n"
     "test:5: prefs parse error: malformed \\x escape sequence\n"
+    "malformed \\x escape sequence\n"
     "test:7: prefs parse error: malformed \\x escape sequence\n"
+    "malformed \\x escape sequence\n"
   );
 
   // Not enough hex digits.
@@ -133,6 +145,7 @@ pref("string.bad-x-escape", "foo\x1");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: malformed \\x escape sequence\n"
+    "malformed \\x escape sequence\n"
   );
 
   // Invalid hex digit.
@@ -141,6 +154,7 @@ pref("string.bad-x-escape", "foo\x1G");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: malformed \\x escape sequence\n"
+    "malformed \\x escape sequence\n"
   );
 
   // \u0000 is not allowed.
@@ -151,6 +165,7 @@ pref("string.bad-u-escape", "foo\)" R"(u0000 bar");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: \\u0000 is not allowed\n"
+    "\\u0000 is not allowed\n"
   );
 
   // Various bad things after \u: end of string, punctuation, space, newline,
@@ -163,10 +178,15 @@ pref("string.bad-u-escape", "foo\u
 1234");
 pref("string.bad-u-escape", "foo\u)",
     "test:2: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
     "test:3: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
     "test:4: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
     "test:5: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
     "test:7: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
   );
 
   // Not enough hex digits.
@@ -177,8 +197,11 @@ pref("string.bad-u-escape", "foo\u123");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
     "test:3: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
     "test:4: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
   );
 
   // Invalid hex digit.
@@ -187,6 +210,7 @@ pref("string.bad-u-escape", "foo\u1G34");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: malformed \\u escape sequence\n"
+    "malformed \\u escape sequence\n"
   );
 
   // High surrogate not followed by low surrogate.
@@ -197,6 +221,7 @@ pref("string.bad-u-surrogate", "foo\)" R"(ud83c,blah");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: expected low surrogate after high surrogate\n"
+    "expected low surrogate after high surrogate\n"
   );
 
   // High surrogate followed by invalid low surrogate.
@@ -207,6 +232,7 @@ pref("string.bad-u-surrogate", "foo\)" R"(ud83c\u1234");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: invalid low surrogate after high surrogate\n"
+    "invalid low surrogate after high surrogate\n"
   );
 
   // Low surrogate not preceded by high surrogate.
@@ -217,6 +243,7 @@ pref("string.bad-u-surrogate", "foo\)" R"(udc00");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: expected high surrogate before low surrogate\n"
+    "expected high surrogate before low surrogate\n"
   );
 
   // Unlike in JavaScript, \b, \f, \t, \v aren't allowed.
@@ -228,9 +255,13 @@ pref("string.bad-escape", "foo\v");
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:3: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:4: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:5: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
   );
 
   // Various bad things after \: non-special letter, number, punctuation,
@@ -244,11 +275,17 @@ pref("string.bad-escape", "foo\
 n");
 pref("string.bad-escape", "foo\)",
     "test:2: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:3: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:4: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:5: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:6: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
     "test:8: prefs parse error: unexpected escape sequence character after '\\'\n"
+    "unexpected escape sequence character after '\\'\n"
   );
 
   // Unterminated string literals.
@@ -258,6 +295,7 @@ pref("string.bad-escape", "foo\)",
 pref("string.unterminated-string", "foo
     )",
     "test:3: prefs parse error: unterminated string literal\n"
+    "unterminated string literal\n"
   );
 
   // Alternative case; `int` comes after the string and is seen as a keyword.
@@ -268,6 +306,7 @@ pref("string.unterminated-string", "foo);
 pref("int.ok", 0);
     )",
     "test:3: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
   );
 
   // Mismatched quotes (1).
@@ -275,6 +314,7 @@ pref("int.ok", 0);
 pref("string.unterminated-string", "foo');
     )",
     "test:3: prefs parse error: unterminated string literal\n"
+    "unterminated string literal\n"
   );
 
   // Mismatched quotes (2).
@@ -282,6 +322,7 @@ pref("string.unterminated-string", "foo');
 pref("string.unterminated-string", 'foo");
     )",
     "test:3: prefs parse error: unterminated string literal\n"
+    "unterminated string literal\n"
   );
 
   // Unknown keywords.
@@ -293,10 +334,15 @@ User_pref("string.bad-keyword", true);
 pref("string.bad-keyword", TRUE);
     )",
     "test:2: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
     "test:3: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
     "test:4: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
     "test:5: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
     "test:6: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
   );
 
   // Unterminated C-style comment.
@@ -304,6 +350,7 @@ pref("string.bad-keyword", TRUE);
 /* comment
     )",
     "test:3: prefs parse error: unterminated /* comment\n"
+    "unterminated /* comment\n"
   );
 
   // Malformed comments (single slashes), followed by whitespace, newline, EOF.
@@ -312,8 +359,11 @@ pref("string.bad-keyword", TRUE);
 /
 ; /)",
     "test:2: prefs parse error: expected '/' or '*' after '/'\n"
+    "expected '/' or '*' after '/'\n"
     "test:3: prefs parse error: expected '/' or '*' after '/'\n"
+    "expected '/' or '*' after '/'\n"
     "test:4: prefs parse error: expected '/' or '*' after '/'\n"
+    "expected '/' or '*' after '/'\n"
   );
 
   // C++-style comment ending in EOF (1).
@@ -336,9 +386,13 @@ pref("unexpected.chars" : true);
 pref["unexpected.chars": true];
     )",
     "test:2: prefs parse error: unexpected character\n"
+    "unexpected character\n"
     "test:3: prefs parse error: unexpected character\n"
+    "unexpected character\n"
     "test:4: prefs parse error: unexpected character\n"
+    "unexpected character\n"
     "test:5: prefs parse error: unexpected character\n"
+    "unexpected character\n"
   );
 
   //-------------------------------------------------------------------------
@@ -360,17 +414,29 @@ pref("parse.error", true)
 pref("int.ok", 1);
 pref("parse.error", true))",
     "test:2: prefs parse error: expected pref specifier at start of pref definition\n"
+    "expected pref specifier at start of pref definition\n"
     "test:3: prefs parse error: expected '(' after pref specifier\n"
+    "expected '(' after pref specifier\n"
     "test:4: prefs parse error: expected pref name after '('\n"
+    "expected pref name after '('\n"
     "test:5: prefs parse error: expected ',' after pref name\n"
+    "expected ',' after pref name\n"
     "test:6: prefs parse error: expected pref value after ','\n"
+    "expected pref value after ','\n"
     "test:7: prefs parse error: expected integer literal after '-'\n"
+    "expected integer literal after '-'\n"
     "test:8: prefs parse error: expected integer literal after '+'\n"
+    "expected integer literal after '+'\n"
     "test:9: prefs parse error: expected pref attribute after ','\n"
+    "expected pref attribute after ','\n"
     "test:10: prefs parse error: expected ',' or ')' after pref value\n"
+    "expected ',' or ')' after pref value\n"
     "test:11: prefs parse error: expected ',' or ')' after pref attribute\n"
+    "expected ',' or ')' after pref attribute\n"
     "test:13: prefs parse error: expected ';' after ')'\n"
+    "expected ';' after ')'\n"
     "test:14: prefs parse error: expected ';' after ')'\n"
+    "expected ';' after ')'\n"
   );
 
   USER(R"(
@@ -379,7 +445,9 @@ sticky_pref("parse.error", true);
 user_pref("int.ok", 1);
     )",
     "test:2: prefs parse error: expected 'user_pref' at start of pref definition\n"
+    "expected 'user_pref' at start of pref definition\n"
     "test:3: prefs parse error: expected 'user_pref' at start of pref definition\n"
+    "expected 'user_pref' at start of pref definition\n"
   );
 
   USER(R"(
@@ -387,6 +455,7 @@ user_pref("parse.error", true;
 user_pref("int.ok", 1);
     )",
     "test:2: prefs parse error: expected ')' after pref value\n"
+    "expected ')' after pref value\n"
   );
 
   // Parse errors involving unexpected EOF.
@@ -394,56 +463,67 @@ user_pref("int.ok", 1);
   DEFAULT(R"(
 pref)",
     "test:2: prefs parse error: expected '(' after pref specifier\n"
+    "expected '(' after pref specifier\n"
   );
 
   DEFAULT(R"(
 pref()",
     "test:2: prefs parse error: expected pref name after '('\n"
+    "expected pref name after '('\n"
   );
 
   DEFAULT(R"(
 pref("parse.error")",
     "test:2: prefs parse error: expected ',' after pref name\n"
+    "expected ',' after pref name\n"
   );
 
   DEFAULT(R"(
 pref("parse.error",)",
     "test:2: prefs parse error: expected pref value after ','\n"
+    "expected pref value after ','\n"
   );
 
   DEFAULT(R"(
 pref("parse.error", -)",
     "test:2: prefs parse error: expected integer literal after '-'\n"
+    "expected integer literal after '-'\n"
   );
 
   DEFAULT(R"(
 pref("parse.error", +)",
     "test:2: prefs parse error: expected integer literal after '+'\n"
+    "expected integer literal after '+'\n"
   );
 
   DEFAULT(R"(
 pref("parse.error", true)",
     "test:2: prefs parse error: expected ',' or ')' after pref value\n"
+    "expected ',' or ')' after pref value\n"
   );
 
   USER(R"(
 user_pref("parse.error", true)",
     "test:2: prefs parse error: expected ')' after pref value\n"
+    "expected ')' after pref value\n"
   );
 
   DEFAULT(R"(
 pref("parse.error", true,)",
     "test:2: prefs parse error: expected pref attribute after ','\n"
+    "expected pref attribute after ','\n"
   );
 
   DEFAULT(R"(
 pref("parse.error", true, sticky)",
     "test:2: prefs parse error: expected ',' or ')' after pref attribute\n"
+    "expected ',' or ')' after pref attribute\n"
   );
 
   DEFAULT(R"(
 pref("parse.error", true))",
     "test:2: prefs parse error: expected ';' after ')'\n"
+    "expected ';' after ')'\n"
   );
 
   // This is something we saw in practice with the old parser, which allowed
@@ -455,11 +535,17 @@ pref("parse.error", true, sticky, locked);;;;
 pref("int.ok", 0);
     )",
     "test:2: prefs parse error: expected pref specifier at start of pref definition\n"
+    "expected pref specifier at start of pref definition\n"
     "test:3: prefs parse error: expected pref specifier at start of pref definition\n"
+    "expected pref specifier at start of pref definition\n"
     "test:3: prefs parse error: expected pref specifier at start of pref definition\n"
+    "expected pref specifier at start of pref definition\n"
     "test:4: prefs parse error: expected pref specifier at start of pref definition\n"
+    "expected pref specifier at start of pref definition\n"
     "test:4: prefs parse error: expected pref specifier at start of pref definition\n"
+    "expected pref specifier at start of pref definition\n"
     "test:4: prefs parse error: expected pref specifier at start of pref definition\n"
+    "expected pref specifier at start of pref definition\n"
   );
 
   //-------------------------------------------------------------------------
@@ -473,23 +559,40 @@ pref("int.ok", 0);
 
   DEFAULT("\n \r \r\n bad",
     "test:4: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
   );
 
   DEFAULT("#\n#\r#\r\n bad",
     "test:4: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
   );
 
   DEFAULT("//\n//\r//\r\n bad",
     "test:4: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
   );
 
   DEFAULT("/*\n \r \r\n*/ bad",
     "test:4: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
   );
 
   // Note: the escape sequences do *not* affect the line number.
   DEFAULT("pref(\"foo\\n\n foo\\r\r foo\\r\\n\r\n foo\", bad);",
     "test:4: prefs parse error: unknown keyword\n"
+    "unknown keyword\n"
+  );
+
+  // UTF-8 BOM should be skipped at the start of the input.
+  USER("\xEF\xBB\xBF" R"(
+user_pref("int.ok", 1);
+    )",
+    ""
+  );
+
+  // UTF-8 BOM followed by no content.
+  USER("\xEF\xBB\xBF",
+    ""
   );
 
   // clang-format on

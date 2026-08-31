@@ -10,20 +10,25 @@ const SCHEDULED_BACKUPS_ENABLED_PREF = "browser.backup.scheduled.enabled";
  * as expected.
  */
 add_task(async function password_validation() {
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
-    let sandbox = sinon.createSandbox();
-    let settings = browser.contentDocument.querySelector("backup-settings");
-
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     await SpecialPowers.pushPrefEnv({
       set: [[SCHEDULED_BACKUPS_ENABLED_PREF, true]],
     });
+    let sandbox = sinon.createSandbox();
+    let settings = await waitForBackupSettings(browser);
 
+    settings.backupServiceState.archiveEnabledStatus = true;
+    settings.backupServiceState.scheduledBackupsEnabled = true;
     settings.backupServiceState.encryptionEnabled = true;
     await settings.requestUpdate();
     await settings.updateComplete;
 
     let changePasswordButton = settings.changePasswordButtonEl;
     Assert.ok(changePasswordButton, "Change password button should be found");
+    Assert.ok(
+      !changePasswordButton.disabled,
+      "Change password button should be enabled"
+    );
 
     changePasswordButton.click();
     await settings.updateComplete;
@@ -86,6 +91,15 @@ add_task(async function password_validation() {
 
     validityStub.restore();
 
+    /*
+     * We can't use waitForMutationCondition because mutation observers do not detect computed style updates following a modified class name.
+     * Plus, visibility changes are delayed due to transitions. Use waitForCondition instead to wait for the animation to finish and
+     * validate the tooltip's final visibility state.
+     */
+    let hiddenPromise = BrowserTestUtils.waitForCondition(() => {
+      return !passwordInputs.passwordRulesEl.open;
+    });
+
     // Now assume an email was entered
     const mockEmail = "email@example.com";
     await createMockPassInputEventPromise(newPasswordInput, mockEmail);
@@ -108,6 +122,9 @@ add_task(async function password_validation() {
     await createMockPassInputEventPromise(repeatPasswordInput, noMatchPass);
     await passwordInputs.updateComplete;
 
+    // Ensure that the popover is not open anymore
+    await hiddenPromise;
+
     Assert.ok(
       !passwordInputs._hasEmail,
       "Has email rule is no longer detected"
@@ -128,27 +145,9 @@ add_task(async function password_validation() {
       "Passwords are now considered valid"
     );
 
-    let classChangePromise = BrowserTestUtils.waitForMutationCondition(
-      passwordRules,
-      { attributes: true, attributesFilter: ["class"] },
-      () => passwordRules.classList.contains("hidden")
-    );
-
-    /*
-     * We can't use waitForMutationCondition because mutation observers do not detect computed style updates following a modified class name.
-     * Plus, visibility changes are delayed due to transitions. Use waitForCondition instead to wait for the animation to finish and
-     * validate the tooltip's final visibility state.
-     */
-    let hiddenPromise = BrowserTestUtils.waitForCondition(() => {
-      return BrowserTestUtils.isHidden(passwordRules);
-    });
-
-    newPasswordInput.blur();
-    await passwordInputs.updateComplete;
-    await classChangePromise;
-    await hiddenPromise;
-
     Assert.ok(true, "Password rules tooltip should be hidden");
     sandbox.restore();
   });
+
+  await SpecialPowers.popPrefEnv();
 });

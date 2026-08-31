@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // UTS 35, 3.2.1 Canonical Unicode Locale Identifiers:
 // - Any variants are in alphabetical order.
 

@@ -15,4 +15,5 @@ config = {
     "flatpak-templates": "browser/installer/linux/app/flatpak",
     "wsx-stub": "browser/installer/windows/msi/installer.wxs",
     "fetch-dir": os.environ.get("MOZ_FETCHES_DIR"),
+    "extensions-dir": "firefox/distribution/extensions",
 }

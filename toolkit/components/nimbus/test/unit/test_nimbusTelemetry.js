@@ -36,14 +36,6 @@ function setupTest({ ...args } = {}) {
 add_task(
   { skip_if: nimbusTargetingContextTelemetryDisabled },
   async function test_enrollAndUnenroll_gleanMetricConfiguration() {
-    Services.fog.applyServerKnobsConfig(
-      JSON.stringify({
-        metrics_enabled: {
-          "nimbus_events.enrollment_status": true,
-        },
-      })
-    );
-
     info(
       "Testing the interaction of gleanMetricConfiguration with submission of enrollment status and targeting context telemetry"
     );
@@ -242,23 +234,29 @@ add_task(
       "The targetingContextValue metric has not been recorded yet."
     );
 
-    await GleanPings.nimbusTargetingContext.testSubmission(() => {
-      Assert.deepEqual(
-        JSON.parse(
-          Glean.nimbusTargetingEnvironment.targetingContextValue.testGetValue()
-        ),
-        {
-          activeExperiments: ["config"],
-          activeRollouts: [],
-          enrollmentsMap: [
-            {
-              experimentSlug: "config",
-              branchSlug: "control",
-            },
-          ],
-        }
-      );
-    }, recordTargetingContext);
+    await GleanPings.nimbusTargetingContext.testSubmission(
+      () => {
+        Assert.deepEqual(
+          JSON.parse(
+            Glean.nimbusTargetingEnvironment.targetingContextValue.testGetValue()
+          ),
+          {
+            activeExperiments: ["config"],
+            activeRollouts: [],
+            enrollmentsMap: [
+              {
+                experimentSlug: "config",
+                branchSlug: "control",
+              },
+            ],
+          }
+        );
+      },
+      async () => {
+        await recordTargetingContext();
+        GleanPings.nimbusTargetingContext.submit();
+      }
+    );
 
     await cleanupExperiment();
     await cleanup();

@@ -5,7 +5,7 @@
 #define VECS_PER_SPECIFIC_BRUSH 3
 #define WR_FEATURE_TEXTURE_2D
 
-#include shared,prim_shared,brush
+#include shared,prim_shared,brush,image_source
 
 // UV and bounds for the source image
 varying highp vec2 v_src_uv;
@@ -153,10 +153,10 @@ vec3 ClipColor(vec3 C) {
     float n = min(C.r, min(C.g, C.b));
     float x = max(C.r, max(C.g, C.b));
 
-    if (n < 0.0)
+    if (n < 0.0 && L != n)
         C = L + (((C - L) * L) / (L - n));
 
-    if (x > 1.0)
+    if (x > 1.0 && x != L)
         C = L + (((C - L) * (1.0 - L)) / (x - L));
 
     return C;

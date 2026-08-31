@@ -19,9 +19,7 @@ Firefox, see the toolkit :doc:`/toolkit/components/telemetry/index` document.
 Histograms
 ----------
 
-The following histograms are recorded for Firefox Suggest. For general
-information on histogram telemetry in Firefox, see the
-:doc:`/toolkit/components/telemetry/collection/histograms` document.
+The following histograms were once recorded for Firefox Suggest.
 
 FX_URLBAR_MERINO_LATENCY_MS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -157,9 +155,7 @@ Changelog
 Scalars
 -------
 
-The following scalars are recorded for Firefox Suggest. For general information
-on scalar telemetry in Firefox, see the
-:doc:`/toolkit/components/telemetry/collection/scalars` document.
+The following scalars are recorded for Firefox Suggest.
 
 browser.ui.interaction.preferences_paneSearch
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -923,9 +919,7 @@ Events
 ------
 
 The following Firefox Suggest events are recorded in the
-``contextservices.quicksuggest`` category. For general information on event
-telemetry in Firefox, see the
-:doc:`/toolkit/components/telemetry/collection/events` document.
+``contextservices.quicksuggest`` category.
 
 contextservices.quicksuggest.data_collect_toggled
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1331,7 +1325,11 @@ Changelog
   Firefox 94.0.2
     Introduced. [Bug 1735976_]
 
+  Firefox 146.0
+    Removed. [Bug 1995362_]
+
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
+.. _1995362: https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
 
 browser.urlbar.suggest.quicksuggest
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1371,8 +1369,12 @@ Changelog
     all other users, it will default to true when/if they are enrolled in
     online. [Bug 1740965_]
 
+  Firefox 146.0
+    Removed. [Bug 1995574_]
+
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
 .. _1740965: https://bugzilla.mozilla.org/show_bug.cgi?id=1740965
+.. _1995574: https://bugzilla.mozilla.org/show_bug.cgi?id=1995574
 
 browser.urlbar.suggest.quicksuggest.sponsored
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

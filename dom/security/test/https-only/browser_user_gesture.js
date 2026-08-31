@@ -29,7 +29,7 @@ add_task(async function () {
       // 1. Upgrade a page to https://
       BrowserTestUtils.startLoadingURIString(browser, kTestURI);
       await loaded;
-      await ContentTask.spawn(browser, [buttonId], async buttonId => {
+      await SpecialPowers.spawn(browser, [buttonId], async buttonId => {
         ok(
           content.document.location.href.startsWith("https://"),
           "Should be https"
@@ -39,12 +39,12 @@ add_task(async function () {
         // The scheme of the link url is `http` and the load should be able to
         // upgraded to `https` because of HTTPS-only mode.
         let button = content.document.getElementById(buttonId);
-        await EventUtils.synthesizeMouseAtCenter(
+        EventUtils.synthesizeMouseAtCenter(
           button,
           { type: "mousedown" },
           content
         );
-        await EventUtils.synthesizeMouseAtCenter(
+        EventUtils.synthesizeMouseAtCenter(
           button,
           { type: "mouseup" },
           content

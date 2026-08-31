@@ -1,11 +1,17 @@
 #!/bin/bash
 #set -x
 
-. ../common/cached_download.sh
-. ../common/unpack.sh
-. ../common/download_mars.sh
-. ../common/download_builds.sh
-. ../common/check_updates.sh
+if [ -z "$UV_SRC" ]; then
+  pushd "$(dirname "$0")" &>/dev/null || exit
+  UV_SRC=$(cd ../.. && pwd)
+  popd &>/dev/null || exit
+fi
+
+. "$UV_SRC/release/common/cached_download.sh"
+. "$UV_SRC/release/common/unpack.sh"
+. "$UV_SRC/release/common/download_mars.sh"
+. "$UV_SRC/release/common/download_builds.sh"
+. "$UV_SRC/release/common/check_updates.sh"
 
 # Cache init being handled by new async_download.py
 # clear_cache
@@ -25,11 +31,8 @@ if [ -e "${diff_summary_log}" ]; then
 fi
 touch "${diff_summary_log}"
 
-pushd "$(dirname "$0")" &>/dev/null || exit
-MY_DIR=$(pwd)
-popd &>/dev/null || exit
-retry="$MY_DIR/../../../../mach python -m redo.cmd -s 1 -a 3"
-cert_replacer="$MY_DIR/../replace-updater-certs.py"
+retry="python3 -m redo.cmd -s 1 -a 3"
+cert_replacer="$UV_SRC/release/replace-updater-certs.py"
 
 dep_overrides="nightly_aurora_level3_primary.der dep1.der nightly_aurora_level3_secondary.der dep2.der release_primary.der dep1.der release_secondary.der dep2.der sha1/release_primary.der sha1/dep1.der sha1/release_secondary.der sha1/dep2.der"
 nightly_overrides="dep1.der nightly_aurora_level3_primary.der dep2.der nightly_aurora_level3_secondary.der release_primary.der nightly_aurora_level3_primary.der release_secondary.der nightly_aurora_level3_secondary.der"
@@ -207,7 +210,7 @@ do
           echo "TEST-UNEXPECTED-FAIL: [$release $locale $patch_type] couldn't download updater package"
           continue
         fi
-        unpack_build "$updater_platform" updater "$updater_package_filename" "$locale" "$product"
+        unpack_build "$updater_platform" updater "$PWD/$updater_package_filename" "$locale" "$product"
 
         # Even on Windows, we want Unix-style paths for the updater, because of MSYS.
         cwd=$(\ls -d "$PWD"/updater/"$platform_dirname")
@@ -243,7 +246,7 @@ do
             esac
             # because we actually rely on $overrides being split up into separate args 🤦
             # shellcheck disable=SC2086
-            python3 "${cert_replacer}" "${MY_DIR}/../mar_certs" "${updater}.orig" "${updater}" ${overrides}
+            python3 "${cert_replacer}" "${UV_SRC}/release/mar_certs" "${updater}.orig" "${updater}" ${overrides}
         else
             echo "override_certs is '${override_certs}', not replacing any certificates"
         fi
@@ -269,7 +272,7 @@ do
         if [ -e ${diff_file} ]; then
           rm ${diff_file}
         fi
-        check_updates "${platform}" "downloads/${source_file}" "downloads/${target_file}" "${locale}" "${updater}" ${diff_file} "${channel}" "${mar_channel_IDs}" ${update_to_dep} "${mac_update_settings_dir_override}" "${product}"
+        check_updates "${platform}" "${PWD}/downloads/${source_file}" "${PWD}/downloads/${target_file}" "${locale}" "${updater}" ${diff_file} "${channel}" "${mar_channel_IDs}" ${update_to_dep} "${mac_update_settings_dir_override}" "${product}"
         err=$?
         if [ "$err" == "0" ]; then
           continue

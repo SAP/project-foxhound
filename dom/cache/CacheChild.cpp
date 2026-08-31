@@ -1,29 +1,29 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/CacheChild.h"
 
-#include "mozilla/Unused.h"
+#include "CacheWorkerRef.h"
 #include "mozilla/dom/cache/ActorUtils.h"
 #include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/cache/CacheOpChild.h"
-#include "CacheWorkerRef.h"
 
 namespace mozilla::dom::cache {
 
 // Declared in ActorUtils.h
-already_AddRefed<PCacheChild> AllocPCacheChild() {
-  return MakeAndAddRef<CacheChild>();
+already_AddRefed<PCacheChild> AllocPCacheChild(ActorChild* aParentActor) {
+  return MakeAndAddRef<CacheChild>(aParentActor);
 }
 
 // Declared in ActorUtils.h
 void DeallocPCacheChild(PCacheChild* aActor) { delete aActor; }
 
-CacheChild::CacheChild()
-    : mListener(nullptr), mLocked(false), mDelayedDestroy(false) {
+CacheChild::CacheChild(ActorChild* aParentActor)
+    : mParentActor(aParentActor),
+      mListener(nullptr),
+      mLocked(false),
+      mDelayedDestroy(false) {
   MOZ_COUNT_CTOR(cache::CacheChild);
 }
 
@@ -34,7 +34,7 @@ CacheChild::~CacheChild() {
   MOZ_DIAGNOSTIC_ASSERT(!mLocked);
 }
 
-void CacheChild::SetListener(Cache* aListener) {
+void CacheChild::SetListener(CacheChildListener* aListener) {
   NS_ASSERT_OWNINGTHREAD(CacheChild);
   MOZ_DIAGNOSTIC_ASSERT(!mListener);
   mListener = aListener;
@@ -45,14 +45,6 @@ void CacheChild::ClearListener() {
   NS_ASSERT_OWNINGTHREAD(CacheChild);
   MOZ_DIAGNOSTIC_ASSERT(mListener);
   mListener = nullptr;
-}
-
-void CacheChild::ExecuteOp(nsIGlobalObject* aGlobal, Promise* aPromise,
-                           nsISupports* aParent, const CacheOpArgs& aArgs) {
-  MOZ_ALWAYS_TRUE(SendPCacheOpConstructor(
-      new CacheOpChild(GetWorkerRefPtr().clonePtr(), aGlobal, aParent, aPromise,
-                       this),
-      aArgs));
 }
 
 void CacheChild::StartDestroyFromListener() {
@@ -66,7 +58,7 @@ void CacheChild::StartDestroyFromListener() {
 }
 
 void CacheChild::DestroyInternal() {
-  RefPtr<Cache> listener = mListener;
+  CacheChildListener* listener = mListener;
 
   // StartDestroy() can get called from either Cache or the WorkerRef.
   // Theoretically we can get double called if the right race happens.  Handle
@@ -75,9 +67,9 @@ void CacheChild::DestroyInternal() {
     return;
   }
 
-  listener->DestroyInternal(this);
+  listener->OnActorDestroy(this);
 
-  // Cache listener should call ClearListener() in DestroyInternal()
+  // Cache listener should call ClearListener() in OnActorDestroy()
   MOZ_DIAGNOSTIC_ASSERT(!mListener);
 
   // Start actor destruction from parent process
@@ -97,11 +89,15 @@ void CacheChild::StartDestroy() {
 
 void CacheChild::ActorDestroy(ActorDestroyReason aReason) {
   NS_ASSERT_OWNINGTHREAD(CacheChild);
-  RefPtr<Cache> listener = mListener;
+  CacheChildListener* listener = mListener;
   if (listener) {
-    listener->DestroyInternal(this);
-    // Cache listener should call ClearListener() in DestroyInternal()
+    listener->OnActorDestroy(this);
+    // Cache listener should call ClearListener() in OnActorDestroy()
     MOZ_DIAGNOSTIC_ASSERT(!mListener);
+  }
+
+  if (mParentActor) {
+    mParentActor->NoteDeletedActor();
   }
 
   RemoveWorkerRef();

@@ -617,9 +617,9 @@ assert_invalid(
 // ./test/core/return_call_indirect.wast:552
 assert_invalid(
   () => instantiate(`(module
-  (type (func))
-  (table 10 externref)
-  (func \$return-call-indirect (return_call_indirect (type 0) (i32.const 0)))
+    (type (func))
+    (table 10 externref)
+    (func \$return-call-indirect (return_call_indirect (type 0) (i32.const 0)))
   )`),
   `type mismatch`,
 );

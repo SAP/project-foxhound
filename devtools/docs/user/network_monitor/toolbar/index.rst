@@ -7,7 +7,7 @@ The network monitor provides two toolbar areas, one above the main section, and 
 Toolbar
 *******
 
-The toolbar is at the top of the main network monitor window. (Prior to Firefox 77, this toolbar was arranged somewhat differently.)
+The toolbar is at the top of the main network monitor window.
 
 .. image:: network_toolbar_callouts.png
   :alt: Screenshot of the Network toolbar, without callouts for the parts

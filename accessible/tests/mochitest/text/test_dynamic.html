@@ -14,53 +14,56 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    function insertBefore(aId, aEl, aTextBefore, aTextAfter, aStartIdx, aEndIdx) {
-      this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, aId),
-      ];
+    async function doTest() {
+      // insertTextBefore("c1", "ho", "ha")
+      {
+        let c1Node = getNode("c1");
+        testText("c1", 0, -1, "ho");
+        let p = waitForEvent(EVENT_REORDER, "c1");
+        let el = document.createTextNode("ha");
+        c1Node.insertBefore(el, c1Node.firstChild);
+        await p;
+        testText("c1", 0, -1, "haho");
+      }
 
-      this.invoke = function insertBefore_invoke() {
-        testText(aId, 0, -1, aTextBefore);
-        getNode(aId).insertBefore(aEl, getNode(aId).firstChild);
-      };
+      // insertImgBefore("c1", "haho")
+      {
+        let c1Node = getNode("c1");
+        testText("c1", 0, -1, "haho");
+        let p = waitForEvent(EVENT_REORDER, "c1");
+        let el = document.createElement("img");
+        el.setAttribute("src", "../moz.png");
+        el.setAttribute("alt", "mozilla");
+        c1Node.insertBefore(el, c1Node.firstChild);
+        await p;
+        testText("c1", 0, -1, kEmbedChar + "haho");
+      }
 
-      this.finalCheck = function insertBefore_finalCheck() {
-        testText(aId, aStartIdx, aEndIdx, aTextAfter);
-      };
+      // insertImgBefore("c2", kEmbedChar)
+      {
+        let c2Node = getNode("c2");
+        testText("c2", 0, -1, kEmbedChar);
+        let p = waitForEvent(EVENT_REORDER, "c2");
+        let el = document.createElement("img");
+        el.setAttribute("src", "../moz.png");
+        el.setAttribute("alt", "mozilla");
+        c2Node.insertBefore(el, c2Node.firstChild);
+        await p;
+        testText("c2", 0, -1, kEmbedChar + kEmbedChar);
+      }
 
-      this.getID = function insertTextBefore_getID() {
-        return "insert " + prettyName(aEl) + " before";
-      };
-    }
+      // insertTextBefore2("c3"): inserts "hehe" before, text "ho" stays at offset 4
+      {
+        let c3Node = getNode("c3");
+        testText("c3", 0, -1, "ho");
+        let p = waitForEvent(EVENT_REORDER, "c3");
+        let el = document.createTextNode("hehe");
+        c3Node.insertBefore(el, c3Node.firstChild);
+        await p;
+        testText("c3", 4, -1, "ho");
+      }
 
-    function insertTextBefore(aId, aTextBefore, aText) {
-      var el = document.createTextNode(aText);
-      this.__proto__ = new insertBefore(aId, el, aTextBefore,
-                                        aText + aTextBefore, 0, -1);
-    }
-
-    function insertImgBefore(aId, aTextBefore) {
-      var el = document.createElement("img");
-      el.setAttribute("src", "../moz.png");
-      el.setAttribute("alt", "mozilla");
-
-      this.__proto__ = new insertBefore(aId, el, aTextBefore,
-                                        kEmbedChar + aTextBefore, 0, -1);
-    }
-
-    function insertTextBefore2(aId) {
-      var el = document.createTextNode("hehe");
-      this.__proto__ = new insertBefore(aId, el, "ho", "ho", 4, -1);
-    }
-
-    var gQueue = null;
-    function doTest() {
-      gQueue = new eventQueue();
-      gQueue.push(new insertTextBefore("c1", "ho", "ha"));
-      gQueue.push(new insertImgBefore("c1", "haho"));
-      gQueue.push(new insertImgBefore("c2", kEmbedChar));
-      gQueue.push(new insertTextBefore2("c3"));
-      gQueue.invoke(); // will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

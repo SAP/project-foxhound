@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vám dáva kontrolu.</p> <p>Používajte ho ako súkromný prehliadač: <ul> <li>Hľadajte a prehliadajte priamo v aplikácii</li> <li>Blokujte sledovacie prvky (alebo aktualizujte nastavenia a povoľte niektoré sledovacie prvky)</li> <li>Jednoducho odstraňujte súbory cookie, ako aj históriu vyhľadávania a prehliadania</li> </ul> </p> <p>%1$s je vytváraný spoločnosťou Mozilla. Našim poslaním je podporovať zdravý a otvorený internet.<br/> <a href=\"%2$s\">Ďalšie informácie</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vám dáva kontrolu.</p>\n<p>Používajte ho ako súkromný prehliadač:\n<ul>\n<li>Hľadajte a prehliadajte priamo v aplikácii</li>\n<li>Blokujte sledovacie prvky (alebo aktualizujte nastavenia a povoľte niektoré sledovacie prvky)</li>\n<li>Jednoducho odstraňujte súbory cookie, ako aj históriu vyhľadávania a prehliadania</li>\n</ul> </p>\n<p>%1$s je vytváraný spoločnosťou Mozilla. Našim poslaním je podporovať zdravý a otvorený internet.<br/>\n<a href=\"%2$s\">Ďalšie informácie</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Ďalšie informácie</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -244,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Prilepte alebo zadajte URL adresu</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Príklad: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Príklad: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Príklad: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -316,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Nastaviť %1$s ako predvolený prehliadač</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Odosielať údaje o používaní</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Ďalšie informácie</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla sa usiluje zbierať len údaje, ktoré potrebujeme na vylepšenie aplikácie %1$s pre všetkých.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla sa usiluje zbierať len údaje, ktoré potrebujeme na vylepšenie aplikácie %1$s pre všetkých.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping denného používania</string>
-  <string name="preference_daily_usage_ping_description">Toto pomáha spoločnosti Mozilla odhadnúť počet aktívnych používateľov.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Toto pomáha spoločnosti Mozilla odhadnúť počet aktívnych používateľov.</string>
   <string name="preference_daily_usage_ping_learn_more">Ďalšie informácie</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Vyhlásenie o ochrane osobných údajov</string>
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Pokračovaním vyjadrujete súhlas s dokumentom %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Pokračovaním vyjadrujete súhlas s dokumentom %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Podmienky používania Firefoxu.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Podmienky používania Firefoxu</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox sa stará o vaše súkromie. Podrobnosti nájdete v dokumente %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox sa stará o vaše súkromie. Podrobnosti nájdete v dokumente %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Vyhlásenie o ochrane osobných údajov.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Vyhlásenie o ochrane osobných údajov</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Vymazať históriu prehliadania</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Zavrieť ostatné karty</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Pridať novú kartu</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -583,6 +584,21 @@
   <string name="security_popup_security_verified">Overil ju %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Zabezpečenie stránky</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Certifikát vydaný pre %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Kvalifikovaný podľa nariadenia (EÚ) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL adresa už existuje</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Hľadať na stránke</string>
@@ -813,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Zavrieť kartu</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Odoslať správu o zlyhaní Mozille</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Odoslať správu o zlyhaní Mozille</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -883,7 +899,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Môže to byť problém s konfiguráciou servera alebo sa ho niekto snaží napodobniť. <br/><br/> Ak ste sa k tomuto serveru úspešne pripojili v minulosti, chyba môže byť dočasná.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Niekto sa môže vydávať za tento server, a preto pokračovať by mohlo byť riskantné.</label> <br><br> <label>%1$s nedôveruje serveru <b>%2$s</b>, pretože vydavateľ jeho certifikátu je neznámy, certifikát je podpísaný sám sebou alebo server neposiela správne prechodné certifikáty.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Niekto sa môže vydávať za tento server, a preto pokračovať by mohlo byť riskantné.</label> <br><br>\n<label>%1$s nedôveruje serveru <b>%2$s</b>, pretože vydavateľ jeho certifikátu je neznámy, certifikát je podpísaný sám sebou alebo server neposiela správne prechodné certifikáty.</label>]]></string>
   <!--
     Sessions List
 

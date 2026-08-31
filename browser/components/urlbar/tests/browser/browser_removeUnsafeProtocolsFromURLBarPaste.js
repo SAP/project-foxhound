@@ -40,14 +40,10 @@ var pairs = [
   ],
 ];
 
-let supportsNullBytes = AppConstants.platform == "macosx";
 // Note that \u000d (\r) is missing here; we test it separately because it
 // makes the test sad on Windows.
 let nonsense =
   "\u000a\u000b\u000c\u000e\u000f\u0010\u0011\u0012\u0013\u0014javascript:foo";
-if (supportsNullBytes) {
-  nonsense = "\u0000" + nonsense;
-}
 pairs.push([nonsense, "foo"]);
 
 let supportsReturnWithoutNewline =

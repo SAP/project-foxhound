@@ -12,7 +12,6 @@ from fluent.syntax.visitor import Visitor
 from .base import Checker, CSSCheckMixin
 from compare_locales import plurals
 
-
 MSGS = {
     "missing-msg-ref": "Missing message reference: {ref}",
     "missing-term-ref": "Missing term reference: {ref}",

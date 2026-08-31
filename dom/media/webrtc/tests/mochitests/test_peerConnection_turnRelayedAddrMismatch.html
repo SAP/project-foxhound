@@ -1,0 +1,112 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <script type="application/javascript" src="pc.js"></script>
+  <script type="application/javascript" src="iceTestUtils.js"></script>
+</head>
+<body>
+<pre id="test">
+<script type="application/javascript">
+  createHTML({
+    bug: "2034159",
+    title: "ICE connects via TURN when XOR-RELAYED-ADDRESS differs from the address the remote peer sees"
+  });
+
+  /* Background:
+   * Some deployments of TURN have address translation between the TURN server
+   * and the remote peer. In those cases, the XOR-RELAYED-ADDRESS returned in
+   * the Allocate response is not the same as the source address the remote peer
+   * will observe traffic arriving from. When the remote peer responds to an ICE
+   * connectivity check via the relay, its XOR-MAPPED-ADDRESS reflects the
+   * address it saw, which will not match the local relay candidate's address.
+   *
+   * We should handle this gracefully. The relay path works end-to-end (the
+   * response came back) and we are going to keep sending via the TURN relay
+   * regardless, so the mismatch is purely informational.
+   *
+   * The test TURN server opens an extra port that lies about
+   * XOR-RELAYED-ADDRESS in Allocate responses (reporting a TEST-NET-1
+   * address) while relaying traffic on the normal socket. That produces
+   * exactly this mismatch when the remote peer's binding response comes
+   * back.
+   */
+
+  async function makePcWithBadRelayedAddress() {
+    const turnServer = iceServersArray.find(server => "username" in server);
+    const { username, credential } = turnServer;
+    const turnHostname = getTurnHostname(turnServer.urls[0]);
+    const target = await dnsLookupV4(turnHostname);
+    const wrongPort = turnServer.turn_wrong_relayed_addr_port;
+
+    return new RTCPeerConnection({
+      iceServers: [{
+        urls: [`turn:${target}:${wrongPort}`],
+        username,
+        credential,
+      }],
+      iceTransportPolicy: 'relay',
+      bundlePolicy: 'max-bundle',
+    });
+  }
+
+  const tests = [
+    async function offererHasMismatchedRelay() {
+      // Offerer (controlling) has the mismatched relay.
+      const offerer = await makePcWithBadRelayedAddress();
+      const answerer = new RTCPeerConnection();
+
+      try {
+        await connect(offerer, answerer, 30000,
+                      'mismatched XOR-RELAYED-ADDRESS on offerer');
+        ok(true, 'ICE connected with mismatched XOR-RELAYED-ADDRESS on offerer');
+        const stats = await offerer.getStats();
+        const localCandidates =
+          [...stats.values()].filter(s => s.type == 'local-candidate');
+        ok(localCandidates.some(s => s.candidateType == 'relay'));
+        ok(!localCandidates.some(s => s.candidateType != 'relay'));
+      } finally {
+        offerer.close();
+        answerer.close();
+      }
+    },
+
+    async function answererHasMismatchedRelay() {
+      // Answerer (controlled) has the mismatched relay.
+      const offerer = new RTCPeerConnection();
+      const answerer = await makePcWithBadRelayedAddress();
+
+      try {
+        await connect(offerer, answerer, 30000,
+                      'mismatched XOR-RELAYED-ADDRESS on answerer');
+        ok(true, 'ICE connected with mismatched XOR-RELAYED-ADDRESS on answerer');
+        const stats = await answerer.getStats();
+        const localCandidates =
+          [...stats.values()].filter(s => s.type == 'local-candidate');
+        ok(localCandidates.some(s => s.candidateType == 'relay'));
+        ok(!localCandidates.some(s => s.candidateType != 'relay'));
+      } finally {
+        offerer.close();
+        answerer.close();
+      }
+    },
+  ];
+
+  runNetworkTest(async () => {
+    await withPrefs(
+        [['media.peerconnection.ice.obfuscate_host_addresses', false],
+        ['media.peerconnection.ice.loopback', true],
+        ['media.getusermedia.insecure.enabled', true]],
+      async () => {
+        for (const test of tests) {
+          info(`Running test: ${test.name}`);
+          await test();
+          info(`Done running test: ${test.name}`);
+        }
+      }
+    );
+  }, { useIceServer: true });
+
+</script>
+</pre>
+</body>
+</html>

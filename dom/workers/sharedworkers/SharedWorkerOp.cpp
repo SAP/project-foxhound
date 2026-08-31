@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SharedWorkerOp.h"
+
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerNonLifeCycleOpControllerChild.h"
@@ -176,14 +177,24 @@ void SharedWorkerOp::StartOnMainThread(RefPtr<RemoteWorkerChild>& aOwner) {
         mOpArgs.get_SharedWorkerAddWindowIDOpArgs().windowID());
     RefPtr<UpdateWindowIDRunnable> r = new UpdateWindowIDRunnable(
         mOpArgs.get_SharedWorkerAddWindowIDOpArgs().windowID(), true);
-    Unused << r->Dispatch(workerPrivate);
+    (void)r->Dispatch(workerPrivate);
   } else if (mOpArgs.type() ==
              SharedWorkerOpArgs::TSharedWorkerRemoveWindowIDOpArgs) {
     aOwner->mWindowIDs.RemoveElement(
         mOpArgs.get_SharedWorkerRemoveWindowIDOpArgs().windowID());
     RefPtr<UpdateWindowIDRunnable> r = new UpdateWindowIDRunnable(
         mOpArgs.get_SharedWorkerRemoveWindowIDOpArgs().windowID(), false);
-    Unused << r->Dispatch(workerPrivate);
+    (void)r->Dispatch(workerPrivate);
+  } else if (mOpArgs.type() ==
+             SharedWorkerOpArgs::TSharedWorkerSetLocaleOverrideOpArgs) {
+    const auto& args = mOpArgs.get_SharedWorkerSetLocaleOverrideOpArgs();
+    workerPrivate->UpdateLanguageOverride(args.languageOverride(),
+                                          args.languages());
+  } else if (mOpArgs.type() ==
+             SharedWorkerOpArgs::TSharedWorkerUpdateTimezoneOverrideOpArgs) {
+    workerPrivate->UpdateTimezoneOverride(
+        mOpArgs.get_SharedWorkerUpdateTimezoneOverrideOpArgs()
+            .timezoneOverride());
   } else {
     MOZ_CRASH("Unknown SharedWorkerOpArgs type!");
   }

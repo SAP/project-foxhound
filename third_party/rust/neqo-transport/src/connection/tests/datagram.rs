@@ -8,25 +8,30 @@ use std::{cell::RefCell, rc::Rc};
 
 use neqo_common::event::Provider as _;
 use static_assertions::const_assert;
-use test_fixture::now;
 
 use super::{
-    assert_error, connect_force_idle, default_client, default_server, new_client, new_server,
-    AT_LEAST_PTO,
+    AT_LEAST_PTO, assert_error, connect_force_idle, default_server, new_client, new_server, now,
 };
 use crate::{
+    CloseReason, Connection, ConnectionParameters, Error, MIN_INITIAL_PACKET_SIZE, Pmtud,
+    StreamType,
     connection::tests::DEFAULT_ADDR,
     events::{ConnectionEvent, OutgoingDatagramOutcome},
     frame::FrameType,
     packet,
-    quic_datagrams::MAX_QUIC_DATAGRAM,
+    quic_datagrams::QuicDatagram,
     send_stream::{RetransmissionPriority, TransmissionPriority},
-    CloseReason, Connection, ConnectionParameters, Error, Pmtud, StreamType,
-    MIN_INITIAL_PACKET_SIZE,
 };
 
-// FIXME: The 27 here is a magic constant that the original code also (implicitly) had.
-const DATAGRAM_LEN_MTU: usize = Pmtud::default_plpmtu(DEFAULT_ADDR.ip()) - 27;
+/// Minimum overhead for a short header packet carrying a DATAGRAM frame:
+/// - 8 bytes: minimum connection ID length (from `CountingConnectionIdGenerator`)
+/// - 1 byte: short header (header form, spin, reserved, key phase, PN length)
+/// - 1 byte: minimum packet number encoding
+/// - 1 byte: DATAGRAM frame type
+/// - 16 bytes: AEAD authentication tag
+const MIN_DATAGRAM_PACKET_OVERHEAD: usize = 8 + 1 + 1 + 1 + 16;
+const DATAGRAM_LEN_MTU: usize =
+    Pmtud::default_plpmtu(DEFAULT_ADDR.ip()) - MIN_DATAGRAM_PACKET_OVERHEAD;
 const DATA_MTU: &[u8] = &[1; DATAGRAM_LEN_MTU];
 const DATA_BIGGER_THAN_MTU: &[u8] = &[0; 2 * DATAGRAM_LEN_MTU];
 const_assert!(DATA_BIGGER_THAN_MTU.len() > DATAGRAM_LEN_MTU);
@@ -51,8 +56,8 @@ impl crate::connection::test_internal::FrameWriter for InsertDatagram<'_> {
 
 #[test]
 fn datagram_disabled_both() {
-    let mut client = default_client();
-    let mut server = default_server();
+    let mut client = new_client(ConnectionParameters::default().datagram_size(0));
+    let mut server = new_server(ConnectionParameters::default().datagram_size(0));
     connect_force_idle(&mut client, &mut server);
 
     assert_eq!(client.max_datagram_size(), Err(Error::NotAvailable));
@@ -73,7 +78,7 @@ fn datagram_disabled_both() {
 fn datagram_enabled_on_client() {
     let mut client =
         new_client(ConnectionParameters::default().datagram_size(DATAGRAM_LEN_SMALLER_THAN_MTU));
-    let mut server = default_server();
+    let mut server = new_server(ConnectionParameters::default().datagram_size(0));
     connect_force_idle(&mut client, &mut server);
 
     assert_eq!(client.max_datagram_size(), Err(Error::NotAvailable));
@@ -102,7 +107,7 @@ fn datagram_enabled_on_client() {
 
 #[test]
 fn datagram_enabled_on_server() {
-    let mut client = default_client();
+    let mut client = new_client(ConnectionParameters::default().datagram_size(0));
     let mut server =
         new_server(ConnectionParameters::default().datagram_size(DATAGRAM_LEN_SMALLER_THAN_MTU));
     connect_force_idle(&mut client, &mut server);
@@ -134,10 +139,11 @@ fn datagram_enabled_on_server() {
 fn connect_datagram() -> (Connection, Connection) {
     let mut client = new_client(
         ConnectionParameters::default()
-            .datagram_size(MAX_QUIC_DATAGRAM)
+            .datagram_size(QuicDatagram::MAX_SIZE)
             .outgoing_datagram_queue(OUTGOING_QUEUE),
     );
-    let mut server = new_server(ConnectionParameters::default().datagram_size(MAX_QUIC_DATAGRAM));
+    let mut server =
+        new_server(ConnectionParameters::default().datagram_size(QuicDatagram::MAX_SIZE));
     connect_force_idle(&mut client, &mut server);
     (client, server)
 }
@@ -366,7 +372,7 @@ fn datagram_lost() {
     let dgram_lost = client.stats().datagram_tx.lost;
     let out = client.process_output(now).dgram();
     assert!(out.is_some()); // PING probing
-                            // Datagram is not sent again.
+    // Datagram is not sent again.
     assert_eq!(client.stats().frame_tx.ping, pings_sent + 1);
     assert_eq!(client.stats().frame_tx.datagram, dgram_sent2);
     assert_eq!(client.stats().datagram_tx.lost, dgram_lost + 1);
@@ -392,21 +398,6 @@ fn datagram_sent_once() {
     // Call process_output again should not send any new Datagram.
     assert!(client.process_output(now()).dgram().is_none());
     assert_eq!(client.stats().frame_tx.datagram, dgram_sent + 1);
-}
-
-#[test]
-fn dgram_no_allowed() {
-    let mut client = default_client();
-    let mut server = default_server();
-    connect_force_idle(&mut client, &mut server);
-
-    let out = server
-        .test_write_frames(InsertDatagram { data: DATA_MTU }, now())
-        .dgram()
-        .unwrap();
-    client.process_input(out, now());
-
-    assert_error(&client, &CloseReason::Transport(Error::ProtocolViolation));
 }
 
 #[test]
@@ -553,11 +544,11 @@ fn too_many_datagram_events() {
     // Datagram with FIRST_DATAGRAM data will be dropped.
     assert!(matches!(
         client.next_event().unwrap(),
-        ConnectionEvent::Datagram(data) if data == SECOND_DATAGRAM
+        ConnectionEvent::IncomingDatagramDropped
     ));
     assert!(matches!(
         client.next_event().unwrap(),
-        ConnectionEvent::IncomingDatagramDropped
+        ConnectionEvent::Datagram(data) if data == SECOND_DATAGRAM
     ));
     assert!(matches!(
         client.next_event().unwrap(),
@@ -601,8 +592,8 @@ fn multiple_quic_datagrams_in_one_packet() {
 /// Datagrams that are close to the capacity of the packet need special
 /// handling.  They need to use the packet-filling frame type and
 /// they cannot allow other frames to follow.
-#[test]
-fn datagram_fill() {
+fn datagram_overfill(client: &mut Connection, server: &mut Connection, gap: usize) {
+    /// This `FrameWriter` should not be invoked.
     struct PanickingFrameWriter {}
     impl crate::connection::test_internal::FrameWriter for PanickingFrameWriter {
         fn write_frames(&mut self, builder: &mut packet::Builder<&mut Vec<u8>>) {
@@ -612,17 +603,6 @@ fn datagram_fill() {
             );
         }
     }
-    struct TrackingFrameWriter {
-        called: Rc<RefCell<bool>>,
-    }
-    impl crate::connection::test_internal::FrameWriter for TrackingFrameWriter {
-        fn write_frames(&mut self, builder: &mut packet::Builder<&mut Vec<u8>>) {
-            assert_eq!(builder.remaining(), 2);
-            *self.called.borrow_mut() = true;
-        }
-    }
-
-    let (mut client, mut server) = connect_datagram();
 
     // Work out how much space we have for a datagram.
     let space = {
@@ -635,25 +615,61 @@ fn datagram_fill() {
     assert!(space >= 64); // Unlikely, but this test depends on the datagram being this large.
 
     // This should not be called.
-    client.test_frame_writer = Some(Box::new(PanickingFrameWriter {}));
+    if client.test_frame_writer.is_none() {
+        client.test_frame_writer = Some(Box::new(PanickingFrameWriter {}));
+    }
 
-    let buf = vec![9; space];
-    // This will completely fill available space.
-    send_datagram(&mut client, &mut server, buf.clone());
-    // This will leave 1 byte free, but more frames won't be added in this space.
-    send_datagram(&mut client, &mut server, buf[..buf.len() - 1].to_vec());
-    // This will leave 2 bytes free, which is enough space for a length field,
-    // but not enough space for another frame after that.
-    send_datagram(&mut client, &mut server, buf[..buf.len() - 2].to_vec());
-    // Three bytes free will be space enough for a length frame, but not enough
-    // space left over for another frame (we need 2 bytes).
-    send_datagram(&mut client, &mut server, buf[..buf.len() - 3].to_vec());
+    // This will completely fill available space, so the packet is completely full.
+    send_datagram(client, server, vec![9; space - gap]);
+}
+
+#[test]
+#[should_panic(expected = "test_frame_writer set on full packet")]
+fn datagram_fill_gap0() {
+    let (mut client, mut server) = connect_datagram();
+    datagram_overfill(&mut client, &mut server, 0);
+}
+
+#[test]
+#[should_panic(expected = "test_frame_writer set on full packet")]
+fn datagram_fill_gap1() {
+    let (mut client, mut server) = connect_datagram();
+    datagram_overfill(&mut client, &mut server, 1);
+}
+
+#[test]
+#[should_panic(expected = "test_frame_writer set on full packet")]
+fn datagram_fill_gap2() {
+    let (mut client, mut server) = connect_datagram();
+    datagram_overfill(&mut client, &mut server, 2);
+}
+
+#[test]
+#[should_panic(expected = "test_frame_writer set on full packet")]
+fn datagram_fill_gap3() {
+    let (mut client, mut server) = connect_datagram();
+    datagram_overfill(&mut client, &mut server, 3);
+}
+
+#[test]
+fn datagram_fill_gap4() {
+    struct TrackingFrameWriter {
+        called: Rc<RefCell<bool>>,
+    }
+    impl crate::connection::test_internal::FrameWriter for TrackingFrameWriter {
+        fn write_frames(&mut self, builder: &mut packet::Builder<&mut Vec<u8>>) {
+            assert_eq!(builder.remaining(), 2);
+            *self.called.borrow_mut() = true;
+        }
+    }
+
+    let (mut client, mut server) = connect_datagram();
 
     // Four bytes free is enough space for another frame.
     let called = Rc::new(RefCell::new(false));
     client.test_frame_writer = Some(Box::new(TrackingFrameWriter {
         called: Rc::clone(&called),
     }));
-    send_datagram(&mut client, &mut server, buf[..buf.len() - 4].to_vec());
+    datagram_overfill(&mut client, &mut server, 4);
     assert!(*called.borrow());
 }

@@ -73,7 +73,7 @@ var Agent = {
   },
 
   async getFileEntriesInDirectory(path, skipFiles) {
-    let children = await IOUtils.getChildren(path);
+    let children = await IOUtils.getChildren(path, { ignoreAbsent: true });
     let skip = new Set(skipFiles);
 
     let entries = [];
@@ -91,7 +91,7 @@ var Agent = {
     if (pathFrom == pathTo) {
       return true;
     }
-    let children = await IOUtils.getChildren(pathFrom);
+    let children = await IOUtils.getChildren(pathFrom, { ignoreAbsent: true });
     for (let entry of children) {
       let stat = await IOUtils.stat(entry);
       if (stat.type !== "regular") {
@@ -110,7 +110,7 @@ var Agent = {
     }
 
     try {
-      await IOUtils.remove(pathFrom, { recursive: true });
+      await IOUtils.remove(pathFrom, { recursive: true, ignoreAbsent: true });
     } catch (e) {
       // This could fail if there's something in
       // the folder we're not permitted to remove.

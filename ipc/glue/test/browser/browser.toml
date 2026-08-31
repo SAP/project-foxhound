@@ -9,20 +9,37 @@ support-files = [
   "../../../../dom/media/test/small-shot.m4a",
   "../../../../dom/media/test/small-shot.flac"
 ]
-run-if = ["crashreporter"]
-skip-if = ["ccov"]
+run-if = [
+  "crashreporter",
+]
+skip-if = [
+  "ccov",
+]
 
 ["browser_utility_crashReporter.js"]
-run-if = ["crashreporter"]
-skip-if = ["ccov"]
+run-if = [
+  "crashreporter",
+]
+skip-if = [
+  "ccov",
+]
 
 ["browser_utility_filepicker_crashed.js"]
-run-if = ["os == 'win' && crashreporter"]
-skip-if = ["ccov"]
+run-if = [
+  "os == 'win' && crashreporter",
+]
+skip-if = [
+  "ccov",
+]
 
 ["browser_utility_geolocation_crashed.js"]
-run-if = ["os == 'win' && crashreporter"]
-skip-if = ["ccov"]
+run-if = [
+  "os == 'win' && crashreporter",
+]
+skip-if = [
+  "os == 'win' && os_version == '11.26200'", # Bug 2019745
+  "ccov",
+]
 
 ["browser_utility_hard_kill.js"]
 
@@ -41,8 +58,12 @@ support-files = [
 
 ["browser_utility_profiler.js"]
 skip-if = [
-  "!gecko_profiler",
   "tsan",
-] # from tools/profiler/tests/browser/browser.ini, timing out on profiler tests?
+] # from tools/profiler/tests/browser/browser.toml, timing out on profiler tests?
 
 ["browser_utility_start_clean_shutdown.js"]
+
+["browser_zombies.js"]
+run-if = [
+  "os == 'linux'",
+]

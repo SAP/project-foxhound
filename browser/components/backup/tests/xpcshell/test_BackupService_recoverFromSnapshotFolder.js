@@ -3,15 +3,17 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.importESModule(
-  "resource://gre/modules/AppConstants.sys.mjs"
-);
 const { ArchiveUtils } = ChromeUtils.importESModule(
   "resource:///modules/backup/ArchiveUtils.sys.mjs"
 );
 const { JsonSchema } = ChromeUtils.importESModule(
   "resource://gre/modules/JsonSchema.sys.mjs"
 );
+
+let currentProfile;
+add_setup(() => {
+  currentProfile = setupProfile();
+});
 
 /**
  * Tests that if the backup-manifest.json provides an appName different from
@@ -95,6 +97,57 @@ add_task(async function test_newer_appVersion() {
   await Assert.rejects(
     bs.recoverFromSnapshotFolder(testRecoveryPath),
     new RegExp(`${meta.appVersion}`)
+  );
+
+  await IOUtils.remove(testRecoveryPath, { recursive: true });
+});
+
+add_task(async function test_profile_naming() {
+  let testRecoveryPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "testProfileNaming"
+  );
+
+  let meta = Object.assign({}, FAKE_METADATA);
+  let manifest = {
+    version: ArchiveUtils.SCHEMA_VERSION,
+    meta,
+    resources: {},
+  };
+  let schema = await BackupService.MANIFEST_SCHEMA;
+  let validationResult = JsonSchema.validate(manifest, schema);
+  Assert.ok(validationResult.valid, "Schema matches manifest");
+
+  await IOUtils.writeJSON(
+    PathUtils.join(testRecoveryPath, BackupService.MANIFEST_FILE_NAME),
+    manifest
+  );
+
+  let currentName = `original-profile-that-was-backed-up`;
+  currentProfile.name = currentName;
+
+  let bs = new BackupService();
+
+  await bs.recoverFromSnapshotFolder(testRecoveryPath, false);
+
+  Assert.equal(
+    currentProfile.name,
+    `old-${currentName}`,
+    "The old profile prefix was added"
+  );
+  currentName = currentProfile.name;
+
+  // Let's make sure that we don't end up chaining the prefix
+  await bs.recoverFromSnapshotFolder(testRecoveryPath, false);
+  Assert.notEqual(
+    currentProfile.name,
+    `old-${currentName}`,
+    "The old profile prefix was not added again"
+  );
+  Assert.equal(
+    currentProfile.name,
+    currentName,
+    "The name of the profile did not change"
   );
 
   await IOUtils.remove(testRecoveryPath, { recursive: true });

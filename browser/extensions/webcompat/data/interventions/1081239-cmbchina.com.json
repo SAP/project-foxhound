@@ -1,0 +1,17 @@
+{
+  "label": "cmbchina.com",
+  "bugs": {
+    "1081239": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://www.cmbchina.com/*", "*://cmbchina.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["add_samsung_to_useragent.js"]
+      }
+    }
+  ]
+}

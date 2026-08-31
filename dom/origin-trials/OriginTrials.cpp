@@ -1,29 +1,29 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OriginTrials.h"
+
+#include <mutex>
+
+#include "ScopedNSSTypes.h"
+#include "js/Wrapper.h"
+#include "jsapi.h"
 #include "mozilla/Base64.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Span.h"
-#include "nsString.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/WebCryptoCommon.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkletThread.h"
+#include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsContentUtils.h"
+#include "nsString.h"
 #include "xpcpublic.h"
-#include "jsapi.h"
-#include "js/Wrapper.h"
-#include "nsGlobalWindowInner.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/WorkletThread.h"
-#include "mozilla/dom/WebCryptoCommon.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "ScopedNSSTypes.h"
-#include <mutex>
 
 namespace mozilla {
 

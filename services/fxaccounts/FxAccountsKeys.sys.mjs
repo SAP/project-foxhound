@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { CommonUtils } from "resource://services-common/utils.sys.mjs";
 
-import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
+import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 
 import {
   SCOPE_APP_SYNC,
@@ -26,20 +25,6 @@ const DEPRECATED_DERIVED_KEYS_NAMES = [
   "ecosystemUserId",
   "ecosystemAnonId",
 ];
-
-const lazy = {};
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "oauthEnabled",
-  "identity.fxaccounts.oauth.enabled",
-  true
-);
-
-// Is key fetching enabled/possible in the current configuration?
-function keyFetchingEnabled() {
-  return !lazy.oauthEnabled;
-}
 
 // This scope and its associated key material were used by the old Kinto webextension
 // storage backend, but has since been decommissioned. It's here entirely so that we
@@ -110,32 +95,38 @@ export class FxAccountsKeys {
         log.info("Can't get keys; user is not verified");
         return false;
       }
+      return userData.scopedKeys && userData.scopedKeys.hasOwnProperty(scope);
+    });
+  }
 
-      if (userData.scopedKeys && userData.scopedKeys.hasOwnProperty(scope)) {
-        return true;
+  /**
+   * Checks if we currently have the key for a given scope locally available.
+   *
+   * This method only checks if the keys exist in local storage. With OAuth-based
+   * authentication, keys cannot be fetched on demand - if they don't exist locally,
+   * there is no way to obtain them.
+   *
+   * @param {string} scope The OAuth scope whose key should be checked
+   *
+   * @return Promise<boolean>
+   *        Resolves to true if the key exists locally, false otherwise.
+   */
+  hasKeysForScope(scope) {
+    return this._fxai.withCurrentAccountState(async currentState => {
+      let userData = await currentState.getUserAccountData();
+      if (!userData) {
+        return false;
       }
-
-      // If we have a `keyFetchToken` we can fetch `kB`.
-      if (userData.keyFetchToken) {
-        // this is a kind of defense-in-depth for our oauth flows in case something is confused.
-        if (!keyFetchingEnabled()) {
-          log.error(
-            "Key management confusion: we should never have a keyFetchToken in oauth flows; ignoring it"
-          );
-          return false;
-        }
-        return true;
-      }
-
-      log.info("Can't get keys; no key material or tokens available");
-      return false;
+      return !!(
+        userData.scopedKeys && userData.scopedKeys.hasOwnProperty(scope)
+      );
     });
   }
 
   /**
    * Get the key for a specified OAuth scope.
    *
-   * @param {String} scope The OAuth scope whose key should be returned
+   * @param {string} scope The OAuth scope whose key should be returned
    *
    * @return Promise<JWK>
    *        If no key is available the promise resolves to `null`.
@@ -146,7 +137,6 @@ export class FxAccountsKeys {
    *          k: Derived key material
    *          kty: Always "oct" for scoped keys
    *        }
-   *
    */
   async getKeyForScope(scope) {
     const { scopedKeys } = await this._loadOrFetchKeys();
@@ -162,9 +152,9 @@ export class FxAccountsKeys {
   /**
    * Validates if the given scoped keys are valid keys
    *
-   * @param { Object } scopedKeys: The scopedKeys bundle
+   * @param {object} scopedKeys: The scopedKeys bundle
    *
-   * @return { Boolean }: true if the scopedKeys bundle is valid, false otherwise
+   * @return {boolean}: true if the scopedKeys bundle is valid, false otherwise
    */
   validScopedKeys(scopedKeys) {
     for (const expectedScope of Object.keys(scopedKeys)) {
@@ -229,7 +219,7 @@ export class FxAccountsKeys {
    * for use as a key identifier, rather than the timestamp+fingerprint format used by
    * FxA scoped keys.
    *
-   * @param {Object} jwk The JWK from which to extract the `kid` field as hex.
+   * @param {object} jwk The JWK from which to extract the `kid` field as hex.
    */
   kidAsHex(jwk) {
     // The kid format is "{timestamp}-{b64url(fingerprint)}", but we have to be careful
@@ -308,7 +298,8 @@ export class FxAccountsKeys {
 
   /**
    * Set externally derived scoped keys in internal storage
-   * @param { Object } scopedKeys: The scoped keys object derived by the oauth flow
+   *
+   * @param {object} scopedKeys: The scoped keys object derived by the oauth flow
    *
    * @return { Promise }: A promise that resolves if the keys were successfully stored,
    *    or rejects if we failed to persist the keys, or if the user is not signed in already
@@ -686,9 +677,9 @@ export class FxAccountsKeys {
    *
    * @param {ArrayBuffer} kid bytes of the key hash to use in the key identifier
    * @param {ArrayBuffer} key bytes of the derived sync key
-   * @param {String} scope the scope with which this key is associated
-   * @param {Number} keyRotationTimestamp server-provided timestamp of last key rotation
-   * @returns {Object} key material formatted as a JWK object
+   * @param {string} scope the scope with which this key is associated
+   * @param {number} keyRotationTimestamp server-provided timestamp of last key rotation
+   * @returns {object} key material formatted as a JWK object
    */
   _formatLegacyScopedKey(kid, key, scope, { keyRotationTimestamp }) {
     kid = ChromeUtils.base64URLEncode(kid, {

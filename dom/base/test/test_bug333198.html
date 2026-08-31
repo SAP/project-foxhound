@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=333198
 <head>
   <title>Test for Bug 333198</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <!-- setTimeout so that the test starts after paint suppression ends -->
@@ -19,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=333198
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 333198 **/
+/** Test for Bug 333198 */
 
 var focusTester;
 var focusTester2;
@@ -34,13 +35,8 @@ function suppressEvents(suppress) {
 }
 
 function sendEvents() {
-  windowUtils = SpecialPowers.getDOMWindowUtils(window);
-  windowUtils.sendMouseEvent("mousedown", 1, 1, 0, 1, 0);
-  windowUtils.sendMouseEvent("mouseup", 1, 1, 0, 1, 0);
-
-  iframeUtils = SpecialPowers.getDOMWindowUtils(document.getElementById("ifr").contentWindow);
-  iframeUtils.sendMouseEvent("mousedown", 1, 1, 0, 1, 0);
-  iframeUtils.sendMouseEvent("mouseup", 1, 1, 0, 1, 0);
+  synthesizeMouseAtPoint(1, 1, {});
+  synthesizeMouseAtPoint(1, 1, {}, document.getElementById("ifr").contentWindow);
 }
 
 function runTest() {

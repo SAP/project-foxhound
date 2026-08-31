@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,7 +11,6 @@
 #include "mozStoragePrivateHelpers.h"
 #include "mozStorageBindingParams.h"
 #include "Variant.h"
-#include "sqlite3_static_ext.h"
 
 namespace mozilla::storage {
 
@@ -68,7 +65,8 @@ int sqlite3_T_array(BindingColumnData aData, void* aArray, int aSize,
                     int aType) {
   // In debug builds ensure that the statement includes at least one `carray()`.
   MOZ_ASSERT(
-      ::strstr(::sqlite3_sql(aData.stmt), "carray("),
+      ::strstr(::sqlite3_sql(aData.stmt), "carray(") ||
+          ::strstr(::sqlite3_sql(aData.stmt), "CARRAY("),
       "Binding arrays to SQL statements requires using the carray() function.");
 
   if (aType == CARRAY_TEXT) {

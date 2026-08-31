@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,6 @@
 #include "txXMLUtils.h"
 #include "txXPathTreeWalker.h"
 
-using mozilla::Unused;
 using mozilla::WrapUnique;
 
 //------------/
@@ -148,10 +146,10 @@ nsresult PathExpr::evalDescendants(Expr* aStep, const txXPathNode& aNode,
   resNodes->addAndTransfer(newSet);
 
   bool filterWS;
-  rv = aContext->isStripSpaceAllowed(aNode, filterWS);
+  rv = aContext->isStripSpaceAllowed(eContext.getContextNode(), filterWS);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  txXPathTreeWalker walker(aNode);
+  txXPathTreeWalker walker(eContext.getContextNode());
   if (!walker.moveToFirstChild()) {
     return NS_OK;
   }
@@ -177,7 +175,7 @@ Expr* PathExpr::getSubExprAt(uint32_t aPos) {
 }
 void PathExpr::setSubExprAt(uint32_t aPos, Expr* aExpr) {
   NS_ASSERTION(aPos < mItems.Length(), "setting bad subexpression index");
-  Unused << mItems[aPos].expr.release();
+  (void)mItems[aPos].expr.release();
   mItems[aPos].expr = WrapUnique(aExpr);
 }
 

@@ -48,9 +48,9 @@ reachable object is holding a reference to them.
 This gives rise to a distinction between two ways to look at the size of
 an object:
 
--   *shallow size*: the size of the object itself
--   *retained size*: the size of the object itself, plus the size of
-    other objects that are kept alive by this object
+- *shallow size*: the size of the object itself
+- *retained size*: the size of the object itself, plus the size of
+  other objects that are kept alive by this object
 
 Often, objects will have a small shallow size but a much larger retained
 size, through the references they contain to other objects. Retained

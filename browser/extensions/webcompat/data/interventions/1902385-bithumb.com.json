@@ -1,0 +1,18 @@
+{
+  "label": "bithumb.com",
+  "bugs": {
+    "1902385": {
+      "issue": "unsupported-warning",
+      "matches": ["*://www.bithumb.com/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": ".browser-campaign { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

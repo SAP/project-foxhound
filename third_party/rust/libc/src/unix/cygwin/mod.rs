@@ -28,13 +28,8 @@ pub type nlink_t = c_ushort;
 pub type suseconds_t = c_long;
 pub type useconds_t = c_ulong;
 
-#[cfg_attr(feature = "extra_traits", derive(Debug))]
-pub enum timezone {}
-impl Copy for timezone {}
-impl Clone for timezone {
-    fn clone(&self) -> timezone {
-        *self
-    }
+extern_ty! {
+    pub enum timezone {}
 }
 
 pub type sigset_t = c_ulong;
@@ -75,13 +70,8 @@ pub type nfds_t = c_uint;
 
 pub type sem_t = *mut sem;
 
-#[cfg_attr(feature = "extra_traits", derive(Debug))]
-pub enum sem {}
-impl Copy for sem {}
-impl Clone for sem {
-    fn clone(&self) -> sem {
-        *self
-    }
+extern_ty! {
+    pub enum sem {}
 }
 
 pub type tcflag_t = c_uint;
@@ -272,13 +262,13 @@ s! {
     }
 
     pub struct fd_set {
-        fds_bits: [fd_mask; FD_SETSIZE / core::mem::size_of::<c_ulong>() / 8],
+        fds_bits: [fd_mask; FD_SETSIZE / size_of::<c_ulong>() / 8],
     }
 
     pub struct _uc_fpxreg {
         pub significand: [u16; 4],
         pub exponent: u16,
-        pub padding: [u16; 3],
+        padding: Padding<[u16; 3]>,
     }
 
     pub struct _uc_xmmreg {
@@ -296,7 +286,7 @@ s! {
         pub mxcr_mask: u32,
         pub st: [_uc_fpxreg; 8],
         pub xmm: [_uc_xmmreg; 16],
-        pub padding: [u32; 24],
+        padding: Padding<[u32; 24]>,
     }
 
     #[repr(align(16))]
@@ -351,6 +341,8 @@ s! {
         pub cr2: u64,
     }
 
+    // FIXME(1.0): This should not implement `PartialEq`
+    #[allow(unpredictable_function_pointer_comparisons)]
     pub struct sigevent {
         pub sigev_value: sigval,
         pub sigev_signo: c_int,
@@ -375,9 +367,9 @@ s! {
 
     pub struct sockaddr_storage {
         pub ss_family: sa_family_t,
-        __ss_pad1: [c_char; 6],
+        __ss_pad1: Padding<[c_char; 6]>,
         __ss_align: i64,
-        __ss_pad2: [c_char; 112],
+        __ss_pad2: Padding<[c_char; 112]>,
     }
 
     pub struct stat {
@@ -435,13 +427,32 @@ s! {
         pub f_flag: c_ulong,
         pub f_namemax: c_ulong,
     }
-}
 
-s_no_extra_traits! {
-    #[allow(missing_debug_implementations)]
-    #[repr(align(16))]
-    pub struct max_align_t {
-        priv_: [f64; 4],
+    pub struct statfs {
+        pub f_type: c_long,
+        pub f_bsize: c_long,
+        pub f_blocks: c_long,
+        pub f_bfree: c_long,
+        pub f_bavail: c_long,
+        pub f_files: c_long,
+        pub f_ffree: c_long,
+        pub f_fsid: c_long,
+        pub f_namelen: c_long,
+        pub f_spare: [c_long; 6],
+    }
+
+    pub struct sockaddr_un {
+        pub sun_family: sa_family_t,
+        pub sun_path: [c_char; 108],
+    }
+
+    pub struct utsname {
+        pub sysname: [c_char; 66],
+        pub nodename: [c_char; 65],
+        pub release: [c_char; 65],
+        pub version: [c_char; 65],
+        pub machine: [c_char; 65],
+        pub domainname: [c_char; 65],
     }
 
     pub struct siginfo_t {
@@ -450,7 +461,23 @@ s_no_extra_traits! {
         pub si_pid: pid_t,
         pub si_uid: uid_t,
         pub si_errno: c_int,
-        __pad: [u32; 32],
+        __pad: Padding<[u32; 32]>,
+    }
+
+    pub struct dirent {
+        __d_version: u32,
+        pub d_ino: ino_t,
+        pub d_type: c_uchar,
+        __d_unused1: Padding<[c_uchar; 3]>,
+        __d_internal1: u32,
+        pub d_name: [c_char; 256],
+    }
+}
+
+s_no_extra_traits! {
+    #[repr(align(16))]
+    pub struct max_align_t {
+        priv_: [f64; 4],
     }
 
     pub union __c_anonymous_ifr_ifru {
@@ -464,7 +491,7 @@ s_no_extra_traits! {
         pub ifru_mtu: c_int,
         pub ifru_ifindex: c_int,
         pub ifru_data: *mut c_char,
-        __ifru_pad: [c_char; 28],
+        __ifru_pad: Padding<[c_char; 28]>,
     }
 
     pub struct ifreq {
@@ -483,27 +510,16 @@ s_no_extra_traits! {
         pub ifc_ifcu: __c_anonymous_ifc_ifcu,
     }
 
-    pub struct dirent {
-        __d_version: u32,
-        pub d_ino: ino_t,
-        pub d_type: c_uchar,
-        __d_unused1: [c_uchar; 3],
-        __d_internal1: u32,
-        pub d_name: [c_char; 256],
-    }
-
-    pub struct sockaddr_un {
-        pub sun_family: sa_family_t,
-        pub sun_path: [c_char; 108],
-    }
-
-    pub struct utsname {
-        pub sysname: [c_char; 65],
-        pub nodename: [c_char; 65],
-        pub release: [c_char; 65],
-        pub version: [c_char; 65],
-        pub machine: [c_char; 65],
-        pub domainname: [c_char; 65],
+    pub struct utmpx {
+        pub ut_type: c_short,
+        pub ut_pid: pid_t,
+        pub ut_line: [c_char; UT_LINESIZE],
+        pub ut_id: [c_char; UT_IDLEN],
+        pub ut_time: time_t,
+        pub ut_user: [c_char; UT_NAMESIZE],
+        pub ut_host: [c_char; UT_HOSTSIZE],
+        pub ut_addr: c_long,
+        pub ut_tv: timeval,
     }
 }
 
@@ -553,185 +569,6 @@ impl siginfo_t {
             si_value: sigval,
         }
         (*(self as *const siginfo_t as *const siginfo_si_value)).si_value
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "extra_traits")] {
-        impl PartialEq for siginfo_t {
-            fn eq(&self, other: &siginfo_t) -> bool {
-                self.si_signo == other.si_signo
-                    && self.si_code == other.si_code
-                    && self.si_pid == other.si_pid
-                    && self.si_uid == other.si_uid
-                    && self.si_errno == other.si_errno
-            }
-        }
-
-        impl Eq for siginfo_t {}
-
-        impl fmt::Debug for siginfo_t {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("siginfo_t")
-                    .field("si_signo", &self.si_signo)
-                    .field("si_code", &self.si_code)
-                    .field("si_pid", &self.si_pid)
-                    .field("si_uid", &self.si_uid)
-                    .field("si_errno", &self.si_errno)
-                    // Ignore __pad
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for siginfo_t {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.si_signo.hash(state);
-                self.si_code.hash(state);
-                self.si_pid.hash(state);
-                self.si_uid.hash(state);
-                self.si_errno.hash(state);
-                // Ignore __pad
-            }
-        }
-
-        impl fmt::Debug for ifreq {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("ifreq")
-                    .field("ifr_name", &self.ifr_name)
-                    .field("ifr_ifru", &self.ifr_ifru)
-                    .finish()
-            }
-        }
-
-        impl fmt::Debug for ifconf {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("ifconf")
-                    .field("ifc_len", &self.ifc_len)
-                    .field("ifc_ifcu", &self.ifc_ifcu)
-                    .finish()
-            }
-        }
-
-        impl PartialEq for dirent {
-            fn eq(&self, other: &dirent) -> bool {
-                self.d_ino == other.d_ino
-                    && self.d_type == other.d_type
-                    && self
-                        .d_name
-                        .iter()
-                        .zip(other.d_name.iter())
-                        .all(|(a, b)| a == b)
-            }
-        }
-
-        impl Eq for dirent {}
-
-        impl fmt::Debug for dirent {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("dirent")
-                    .field("d_ino", &self.d_ino)
-                    .field("d_type", &self.d_type)
-                    // FIXME: .field("d_name", &self.d_name)
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for dirent {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.d_ino.hash(state);
-                self.d_type.hash(state);
-                self.d_name.hash(state);
-            }
-        }
-
-        impl PartialEq for sockaddr_un {
-            fn eq(&self, other: &sockaddr_un) -> bool {
-                self.sun_family == other.sun_family
-                    && self
-                        .sun_path
-                        .iter()
-                        .zip(other.sun_path.iter())
-                        .all(|(a, b)| a == b)
-            }
-        }
-
-        impl Eq for sockaddr_un {}
-
-        impl fmt::Debug for sockaddr_un {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("sockaddr_un")
-                    .field("sun_family", &self.sun_family)
-                    // FIXME: .field("sun_path", &self.sun_path)
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for sockaddr_un {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.sun_family.hash(state);
-                self.sun_path.hash(state);
-            }
-        }
-
-        impl PartialEq for utsname {
-            fn eq(&self, other: &utsname) -> bool {
-                self.sysname
-                    .iter()
-                    .zip(other.sysname.iter())
-                    .all(|(a, b)| a == b)
-                    && self
-                        .nodename
-                        .iter()
-                        .zip(other.nodename.iter())
-                        .all(|(a, b)| a == b)
-                    && self
-                        .release
-                        .iter()
-                        .zip(other.release.iter())
-                        .all(|(a, b)| a == b)
-                    && self
-                        .version
-                        .iter()
-                        .zip(other.version.iter())
-                        .all(|(a, b)| a == b)
-                    && self
-                        .machine
-                        .iter()
-                        .zip(other.machine.iter())
-                        .all(|(a, b)| a == b)
-                    && self
-                        .domainname
-                        .iter()
-                        .zip(other.domainname.iter())
-                        .all(|(a, b)| a == b)
-            }
-        }
-
-        impl Eq for utsname {}
-
-        impl fmt::Debug for utsname {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("utsname")
-                    // FIXME: .field("sysname", &self.sysname)
-                    // FIXME: .field("nodename", &self.nodename)
-                    // FIXME: .field("release", &self.release)
-                    // FIXME: .field("version", &self.version)
-                    // FIXME: .field("machine", &self.machine)
-                    // FIXME: .field("domainname", &self.domainname)
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for utsname {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.sysname.hash(state);
-                self.nodename.hash(state);
-                self.release.hash(state);
-                self.version.hash(state);
-                self.machine.hash(state);
-                self.domainname.hash(state);
-            }
-        }
     }
 }
 
@@ -961,6 +798,8 @@ pub const SOL_UDP: c_int = 17;
 pub const IPTOS_LOWDELAY: u8 = 0x10;
 pub const IPTOS_THROUGHPUT: u8 = 0x08;
 pub const IPTOS_RELIABILITY: u8 = 0x04;
+pub const IPTOS_LOWCOST: u8 = 0x02;
+pub const IPTOS_MINCOST: u8 = IPTOS_LOWCOST;
 pub const IP_DEFAULT_MULTICAST_TTL: c_int = 1;
 pub const IP_DEFAULT_MULTICAST_LOOP: c_int = 1;
 pub const IP_OPTIONS: c_int = 1;
@@ -977,8 +816,18 @@ pub const IP_DROP_SOURCE_MEMBERSHIP: c_int = 16;
 pub const IP_BLOCK_SOURCE: c_int = 17;
 pub const IP_UNBLOCK_SOURCE: c_int = 18;
 pub const IP_PKTINFO: c_int = 19;
+pub const IP_RECVTTL: c_int = 21;
 pub const IP_UNICAST_IF: c_int = 31;
+pub const IP_RECVTOS: c_int = 40;
+pub const IP_MTU_DISCOVER: c_int = 71;
+pub const IP_MTU: c_int = 73;
+pub const IP_RECVERR: c_int = 75;
+pub const IP_PMTUDISC_WANT: c_int = 0;
+pub const IP_PMTUDISC_DO: c_int = 1;
+pub const IP_PMTUDISC_DONT: c_int = 2;
+pub const IP_PMTUDISC_PROBE: c_int = 3;
 pub const IPV6_HOPOPTS: c_int = 1;
+pub const IPV6_HDRINCL: c_int = 2;
 pub const IPV6_UNICAST_HOPS: c_int = 4;
 pub const IPV6_MULTICAST_IF: c_int = 9;
 pub const IPV6_MULTICAST_HOPS: c_int = 10;
@@ -997,6 +846,13 @@ pub const IPV6_RTHDR: c_int = 32;
 pub const IPV6_RECVRTHDR: c_int = 38;
 pub const IPV6_TCLASS: c_int = 39;
 pub const IPV6_RECVTCLASS: c_int = 40;
+pub const IPV6_MTU_DISCOVER: c_int = 71;
+pub const IPV6_MTU: c_int = 72;
+pub const IPV6_RECVERR: c_int = 75;
+pub const IPV6_PMTUDISC_WANT: c_int = 0;
+pub const IPV6_PMTUDISC_DO: c_int = 1;
+pub const IPV6_PMTUDISC_DONT: c_int = 2;
+pub const IPV6_PMTUDISC_PROBE: c_int = 3;
 pub const MCAST_JOIN_GROUP: c_int = 41;
 pub const MCAST_LEAVE_GROUP: c_int = 42;
 pub const MCAST_BLOCK_SOURCE: c_int = 43;
@@ -1045,10 +901,12 @@ pub const PATH_MAX: c_int = 4096;
 pub const PIPE_BUF: usize = 4096;
 pub const NGROUPS_MAX: c_int = 1024;
 
+pub const FILENAME_MAX: c_int = 4096;
+
 pub const FORK_RELOAD: c_int = 1;
 pub const FORK_NO_RELOAD: c_int = 0;
 
-pub const RTLD_DEFAULT: *mut c_void = 0isize as *mut c_void;
+pub const RTLD_DEFAULT: *mut c_void = ptr::null_mut();
 pub const RTLD_LOCAL: c_int = 0;
 pub const RTLD_LAZY: c_int = 1;
 pub const RTLD_NOW: c_int = 2;
@@ -1121,6 +979,19 @@ pub const EAI_SERVICE: c_int = 9;
 pub const EAI_SOCKTYPE: c_int = 10;
 pub const EAI_SYSTEM: c_int = 11;
 pub const EAI_OVERFLOW: c_int = 14;
+
+pub const UT_LINESIZE: usize = 16;
+pub const UT_NAMESIZE: usize = 16;
+pub const UT_HOSTSIZE: usize = 256;
+pub const UT_IDLEN: usize = 2;
+pub const RUN_LVL: c_short = 1;
+pub const BOOT_TIME: c_short = 2;
+pub const NEW_TIME: c_short = 3;
+pub const OLD_TIME: c_short = 4;
+pub const INIT_PROCESS: c_short = 5;
+pub const LOGIN_PROCESS: c_short = 6;
+pub const USER_PROCESS: c_short = 7;
+pub const DEAD_PROCESS: c_short = 8;
 
 pub const POLLIN: c_short = 0x1;
 pub const POLLPRI: c_short = 0x2;
@@ -1365,9 +1236,6 @@ pub const X_OK: c_int = 1;
 pub const SEEK_SET: c_int = 0;
 pub const SEEK_CUR: c_int = 1;
 pub const SEEK_END: c_int = 2;
-pub const STDIN_FILENO: c_int = 0;
-pub const STDOUT_FILENO: c_int = 1;
-pub const STDERR_FILENO: c_int = 2;
 pub const _SC_ARG_MAX: c_int = 0;
 pub const _SC_CHILD_MAX: c_int = 1;
 pub const _SC_CLK_TCK: c_int = 2;
@@ -1776,6 +1644,8 @@ pub const _POSIX_VDISABLE: cc_t = 0;
 pub const GRND_NONBLOCK: c_uint = 0x1;
 pub const GRND_RANDOM: c_uint = 0x2;
 
+pub const _IOFBF: c_int = 0;
+pub const _IOLBF: c_int = 1;
 pub const _IONBF: c_int = 2;
 pub const BUFSIZ: c_int = 1024;
 
@@ -1786,22 +1656,36 @@ pub const POSIX_SPAWN_SETSCHEDULER: c_int = 0x08;
 pub const POSIX_SPAWN_SETSIGDEF: c_int = 0x10;
 pub const POSIX_SPAWN_SETSIGMASK: c_int = 0x20;
 
+pub const POSIX_FADV_NORMAL: c_int = 0;
+pub const POSIX_FADV_SEQUENTIAL: c_int = 1;
+pub const POSIX_FADV_RANDOM: c_int = 2;
+pub const POSIX_FADV_WILLNEED: c_int = 3;
+pub const POSIX_FADV_DONTNEED: c_int = 4;
+pub const POSIX_FADV_NOREUSE: c_int = 5;
+
+pub const FALLOC_FL_PUNCH_HOLE: c_int = 0x0001;
+pub const FALLOC_FL_ZERO_RANGE: c_int = 0x0002;
+pub const FALLOC_FL_UNSHARE_RANGE: c_int = 0x0004;
+pub const FALLOC_FL_COLLAPSE_RANGE: c_int = 0x0008;
+pub const FALLOC_FL_INSERT_RANGE: c_int = 0x0010;
+pub const FALLOC_FL_KEEP_SIZE: c_int = 0x1000;
+
 f! {
     pub fn FD_CLR(fd: c_int, set: *mut fd_set) -> () {
         let fd = fd as usize;
-        let size = core::mem::size_of_val(&(*set).fds_bits[0]) * 8;
+        let size = size_of_val(&(*set).fds_bits[0]) * 8;
         (*set).fds_bits[fd / size] &= !(1 << (fd % size));
     }
 
     pub fn FD_ISSET(fd: c_int, set: *const fd_set) -> bool {
         let fd = fd as usize;
-        let size = core::mem::size_of_val(&(*set).fds_bits[0]) * 8;
+        let size = size_of_val(&(*set).fds_bits[0]) * 8;
         ((*set).fds_bits[fd / size] & (1 << (fd % size))) != 0
     }
 
     pub fn FD_SET(fd: c_int, set: *mut fd_set) -> () {
         let fd = fd as usize;
-        let size = core::mem::size_of_val(&(*set).fds_bits[0]) * 8;
+        let size = size_of_val(&(*set).fds_bits[0]) * 8;
         (*set).fds_bits[fd / size] |= 1 << (fd % size);
     }
 
@@ -1813,13 +1697,13 @@ f! {
 
     pub fn CPU_ALLOC_SIZE(count: c_int) -> size_t {
         let _dummy: cpu_set_t = cpu_set_t { bits: [0; 16] };
-        let size_in_bits = 8 * core::mem::size_of_val(&_dummy.bits[0]);
+        let size_in_bits = 8 * size_of_val(&_dummy.bits[0]);
         ((count as size_t + size_in_bits - 1) / 8) as size_t
     }
 
     pub fn CPU_COUNT_S(size: usize, cpuset: &cpu_set_t) -> c_int {
         let mut s: u32 = 0;
-        let size_of_mask = core::mem::size_of_val(&cpuset.bits[0]);
+        let size_of_mask = size_of_val(&cpuset.bits[0]);
         for i in cpuset.bits[..(size / size_of_mask)].iter() {
             s += i.count_ones();
         }
@@ -1832,7 +1716,7 @@ f! {
         }
     }
     pub fn CPU_SET(cpu: usize, cpuset: &mut cpu_set_t) -> () {
-        let size_in_bits = 8 * core::mem::size_of_val(&cpuset.bits[0]);
+        let size_in_bits = 8 * size_of_val(&cpuset.bits[0]);
         if cpu < size_in_bits {
             let (idx, offset) = (cpu / size_in_bits, cpu % size_in_bits);
             cpuset.bits[idx] |= 1 << offset;
@@ -1840,7 +1724,7 @@ f! {
     }
 
     pub fn CPU_CLR(cpu: usize, cpuset: &mut cpu_set_t) -> () {
-        let size_in_bits = 8 * core::mem::size_of_val(&cpuset.bits[0]);
+        let size_in_bits = 8 * size_of_val(&cpuset.bits[0]);
         if cpu < size_in_bits {
             let (idx, offset) = (cpu / size_in_bits, cpu % size_in_bits);
             cpuset.bits[idx] &= !(1 << offset);
@@ -1848,7 +1732,7 @@ f! {
     }
 
     pub fn CPU_ISSET(cpu: usize, cpuset: &cpu_set_t) -> bool {
-        let size_in_bits = 8 * core::mem::size_of_val(&cpuset.bits[0]);
+        let size_in_bits = 8 * size_of_val(&cpuset.bits[0]);
         if cpu < size_in_bits {
             let (idx, offset) = (cpu / size_in_bits, cpu % size_in_bits);
             0 != (cpuset.bits[idx] & (1 << offset))
@@ -1858,31 +1742,23 @@ f! {
     }
 
     pub fn CPU_COUNT(cpuset: &cpu_set_t) -> c_int {
-        CPU_COUNT_S(::core::mem::size_of::<cpu_set_t>(), cpuset)
+        CPU_COUNT_S(size_of::<cpu_set_t>(), cpuset)
     }
 
     pub fn CPU_EQUAL(set1: &cpu_set_t, set2: &cpu_set_t) -> bool {
         set1.bits == set2.bits
     }
 
-    pub fn major(dev: dev_t) -> c_uint {
-        ((dev >> 16) & 0xffff) as c_uint
-    }
-
-    pub fn minor(dev: dev_t) -> c_uint {
-        (dev & 0xffff) as c_uint
-    }
-
     pub fn CMSG_LEN(length: c_uint) -> c_uint {
-        CMSG_ALIGN(::core::mem::size_of::<cmsghdr>()) as c_uint + length
+        CMSG_ALIGN(size_of::<cmsghdr>()) as c_uint + length
     }
 
-    pub {const} fn CMSG_SPACE(length: c_uint) -> c_uint {
-        (CMSG_ALIGN(length as usize) + CMSG_ALIGN(::core::mem::size_of::<cmsghdr>())) as c_uint
+    pub const fn CMSG_SPACE(length: c_uint) -> c_uint {
+        (CMSG_ALIGN(length as usize) + CMSG_ALIGN(size_of::<cmsghdr>())) as c_uint
     }
 
     pub fn CMSG_FIRSTHDR(mhdr: *const msghdr) -> *mut cmsghdr {
-        if (*mhdr).msg_controllen as usize >= core::mem::size_of::<cmsghdr>() {
+        if (*mhdr).msg_controllen as usize >= size_of::<cmsghdr>() {
             (*mhdr).msg_control.cast()
         } else {
             core::ptr::null_mut()
@@ -1892,7 +1768,7 @@ f! {
     pub fn CMSG_NXTHDR(mhdr: *const msghdr, cmsg: *const cmsghdr) -> *mut cmsghdr {
         let next = (cmsg as usize + CMSG_ALIGN((*cmsg).cmsg_len as usize)) as *mut cmsghdr;
         let max = (*mhdr).msg_control as usize + (*mhdr).msg_controllen as usize;
-        if next as usize + CMSG_ALIGN(::core::mem::size_of::<cmsghdr>()) as usize > max {
+        if next as usize + CMSG_ALIGN(size_of::<cmsghdr>()) as usize > max {
             core::ptr::null_mut()
         } else {
             next
@@ -1905,49 +1781,55 @@ f! {
 }
 
 safe_f! {
-    pub {const} fn makedev(ma: c_uint, mi: c_uint) -> dev_t {
+    pub const fn makedev(ma: c_uint, mi: c_uint) -> dev_t {
         let ma = ma as dev_t;
         let mi = mi as dev_t;
         (ma << 16) | (mi & 0xffff)
     }
 
-    pub {const} fn WIFEXITED(status: c_int) -> bool {
+    pub const fn major(dev: dev_t) -> c_uint {
+        ((dev >> 16) & 0xffff) as c_uint
+    }
+
+    pub const fn minor(dev: dev_t) -> c_uint {
+        (dev & 0xffff) as c_uint
+    }
+
+    pub const fn WIFEXITED(status: c_int) -> bool {
         (status & 0xff) == 0
     }
 
-    pub {const} fn WIFSIGNALED(status: c_int) -> bool {
+    pub const fn WIFSIGNALED(status: c_int) -> bool {
         (status & 0o177) != 0o177 && (status & 0o177) != 0
     }
 
-    pub {const} fn WIFSTOPPED(status: c_int) -> bool {
+    pub const fn WIFSTOPPED(status: c_int) -> bool {
         (status & 0xff) == 0o177
     }
 
-    pub {const} fn WIFCONTINUED(status: c_int) -> bool {
+    pub const fn WIFCONTINUED(status: c_int) -> bool {
         (status & 0o177777) == 0o177777
     }
 
-    pub {const} fn WEXITSTATUS(status: c_int) -> c_int {
+    pub const fn WEXITSTATUS(status: c_int) -> c_int {
         (status >> 8) & 0xff
     }
 
-    pub {const} fn WTERMSIG(status: c_int) -> c_int {
+    pub const fn WTERMSIG(status: c_int) -> c_int {
         status & 0o177
     }
 
-    pub {const} fn WSTOPSIG(status: c_int) -> c_int {
+    pub const fn WSTOPSIG(status: c_int) -> c_int {
         (status >> 8) & 0xff
     }
 
-    pub {const} fn WCOREDUMP(status: c_int) -> bool {
+    pub const fn WCOREDUMP(status: c_int) -> bool {
         WIFSIGNALED(status) && (status & 0x80) != 0
     }
 }
 
-const_fn! {
-    {const} fn CMSG_ALIGN(len: usize) -> usize {
-        len + core::mem::size_of::<usize>() - 1 & !(::core::mem::size_of::<usize>() - 1)
-    }
+const fn CMSG_ALIGN(len: usize) -> usize {
+    len + size_of::<usize>() - 1 & !(size_of::<usize>() - 1)
 }
 
 extern "C" {
@@ -2157,8 +2039,6 @@ extern "C" {
     pub fn timingsafe_bcmp(a: *const c_void, b: *const c_void, len: size_t) -> c_int;
     pub fn timingsafe_memcmp(a: *const c_void, b: *const c_void, len: size_t) -> c_int;
 
-    pub fn memccpy(dest: *mut c_void, src: *const c_void, c: c_int, count: size_t) -> *mut c_void;
-
     pub fn memmem(
         haystack: *const c_void,
         haystacklen: size_t,
@@ -2178,17 +2058,16 @@ extern "C" {
     pub fn dup3(src: c_int, dst: c_int, flags: c_int) -> c_int;
     pub fn eaccess(pathname: *const c_char, mode: c_int) -> c_int;
     pub fn euidaccess(pathname: *const c_char, mode: c_int) -> c_int;
-    // pub fn execlpe(path: *const c_char, arg0: *const c_char, ...) -> c_int;
 
     pub fn execvpe(
         file: *const c_char,
-        argv: *const *const c_char,
-        envp: *const *const c_char,
+        argv: *const *mut c_char,
+        envp: *const *mut c_char,
     ) -> c_int;
 
     pub fn faccessat(dirfd: c_int, pathname: *const c_char, mode: c_int, flags: c_int) -> c_int;
 
-    pub fn fexecve(fd: c_int, argv: *const *const c_char, envp: *const *const c_char) -> c_int;
+    pub fn fexecve(fd: c_int, argv: *const *mut c_char, envp: *const *mut c_char) -> c_int;
 
     pub fn fdatasync(fd: c_int) -> c_int;
     pub fn getdomainname(name: *mut c_char, len: size_t) -> c_int;
@@ -2349,7 +2228,7 @@ extern "C" {
     ) -> c_int;
 
     pub fn pthread_setname_np(thread: pthread_t, name: *const c_char) -> c_int;
-    pub fn pthread_sigqueue(thread: *mut pthread_t, sig: c_int, value: sigval) -> c_int;
+    pub fn pthread_sigqueue(thread: pthread_t, sig: c_int, value: sigval) -> c_int;
 
     pub fn ioctl(fd: c_int, request: c_int, ...) -> c_int;
 
@@ -2436,6 +2315,22 @@ extern "C" {
         fd: c_int,
         newfd: c_int,
     ) -> c_int;
+    pub fn posix_spawn_file_actions_addchdir(
+        actions: *mut crate::posix_spawn_file_actions_t,
+        path: *const c_char,
+    ) -> c_int;
+    pub fn posix_spawn_file_actions_addfchdir(
+        actions: *mut crate::posix_spawn_file_actions_t,
+        fd: c_int,
+    ) -> c_int;
+    pub fn posix_spawn_file_actions_addchdir_np(
+        actions: *mut crate::posix_spawn_file_actions_t,
+        path: *const c_char,
+    ) -> c_int;
+    pub fn posix_spawn_file_actions_addfchdir_np(
+        actions: *mut crate::posix_spawn_file_actions_t,
+        fd: c_int,
+    ) -> c_int;
 
     pub fn forkpty(
         amaster: *mut c_int,
@@ -2451,6 +2346,7 @@ extern "C" {
         winp: *const crate::winsize,
     ) -> c_int;
 
+    pub fn getgrgid(gid: crate::gid_t) -> *mut crate::group;
     pub fn getgrgid_r(
         gid: crate::gid_t,
         grp: *mut crate::group,
@@ -2464,6 +2360,7 @@ extern "C" {
         groups: *mut crate::gid_t,
         ngroups: *mut c_int,
     ) -> c_int;
+    pub fn getgrnam(name: *const c_char) -> *mut crate::group;
     pub fn getgrnam_r(
         name: *const c_char,
         grp: *mut crate::group,
@@ -2472,4 +2369,20 @@ extern "C" {
         result: *mut *mut crate::group,
     ) -> c_int;
     pub fn initgroups(user: *const c_char, group: crate::gid_t) -> c_int;
+
+    pub fn statfs(path: *const c_char, buf: *mut statfs) -> c_int;
+    pub fn fstatfs(fd: c_int, buf: *mut statfs) -> c_int;
+
+    pub fn posix_fadvise(fd: c_int, offset: off_t, len: off_t, advise: c_int) -> c_int;
+    pub fn posix_fallocate(fd: c_int, offset: off_t, len: off_t) -> c_int;
+    pub fn fallocate(fd: c_int, mode: c_int, offset: off_t, len: off_t) -> c_int;
+
+    pub fn endutxent();
+    pub fn getutxent() -> *mut utmpx;
+    pub fn getutxid(id: *const utmpx) -> *mut utmpx;
+    pub fn getutxline(line: *const utmpx) -> *mut utmpx;
+    pub fn pututxline(utmpx: *const utmpx) -> *mut utmpx;
+    pub fn setutxent();
+    pub fn utmpxname(file: *const c_char) -> c_int;
+    pub fn updwtmpx(file: *const c_char, utmpx: *const utmpx);
 }

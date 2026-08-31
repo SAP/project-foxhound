@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<script>
+try {
+  const mem = new WebAssembly.Memory({initial: 32768});
+  const buf = mem.buffer;
+  const view = new Uint8Array(buf, 0, 2147483645);
+  const chunk = new EncodedAudioChunk({
+    type: "key",
+    timestamp: 0,
+    data: view
+  });
+} catch(e) {}
+document.documentElement.className = "";
+</script>
+</body>
+</html>

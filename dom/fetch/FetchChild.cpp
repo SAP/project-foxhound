@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FetchChild.h"
+
 #include "FetchLog.h"
 #include "FetchObserver.h"
 #include "FetchUtil.h"
@@ -11,8 +12,8 @@
 #include "Response.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/SchedulerGroup.h"
-#include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/SecurityPolicyViolationEventBinding.h"
@@ -26,6 +27,7 @@
 #include "nsIRunnable.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla::dom {
@@ -183,8 +185,7 @@ mozilla::ipc::IPCResult FetchChild::RecvOnFlushConsoleReport(
     // extract doc object to flush the console report
     for (const auto& report : aReports) {
       mReporter->AddConsoleReport(
-          report.errorFlags(), report.category(),
-          static_cast<nsContentUtils::PropertiesFile>(report.propertiesFile()),
+          report.errorFlags(), report.category(), report.propertiesFile(),
           report.sourceFileURI(), report.lineNumber(), report.columnNumber(),
           report.messageName(), report.stringParams());
     }
@@ -215,9 +216,7 @@ mozilla::ipc::IPCResult FetchChild::RecvOnFlushConsoleReport(
                  workerRef = std::move(workerRef)]() mutable {
         for (const auto& report : reports) {
           reporter->AddConsoleReport(
-              report.errorFlags(), report.category(),
-              static_cast<nsContentUtils::PropertiesFile>(
-                  report.propertiesFile()),
+              report.errorFlags(), report.category(), report.propertiesFile(),
               report.sourceFileURI(), report.lineNumber(),
               report.columnNumber(), report.messageName(),
               report.stringParams());
@@ -278,9 +277,9 @@ RefPtr<FetchChild> FetchChild::CreateForMainThread(
 }
 
 mozilla::ipc::IPCResult FetchChild::RecvOnCSPViolationEvent(
-    const nsAString& aJSON) {
+    const nsAString& aJSON, const nsAString& aReportGroupName) {
   FETCH_LOG(("FetchChild::RecvOnCSPViolationEvent [%p] aJSON: %s\n", this,
-             NS_ConvertUTF16toUTF8(aJSON).BeginReading()));
+             NS_ConvertUTF16toUTF8(aJSON).get()));
 
   nsString JSON(aJSON);
 
@@ -312,8 +311,8 @@ mozilla::ipc::IPCResult FetchChild::RecvOnCSPViolationEvent(
   MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 
   if (mCSPEventListener) {
-    Unused << NS_WARN_IF(
-        NS_FAILED(mCSPEventListener->OnCSPViolationEvent(aJSON)));
+    (void)NS_WARN_IF(NS_FAILED(
+        mCSPEventListener->OnCSPViolationEvent(aJSON, aReportGroupName)));
   }
   return IPC_OK();
 }
@@ -383,10 +382,41 @@ mozilla::ipc::IPCResult FetchChild::RecvOnNotifyNetworkMonitorAlternateStack(
         });
 
     MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
+  } else {
+    // Handle main-thread fetch requests
+    if (!mOriginStack) {
+      return IPC_OK();
+    }
+
+    if (!mWorkerChannelInfo) {
+      // Get browsing context from the promise's global object
+      uint64_t browsingContextID = 0;
+      if (mPromise && mPromise->GetGlobalObject()) {
+        if (auto* innerWindow =
+                mPromise->GetGlobalObject()->GetAsInnerWindow()) {
+          if (auto* browsingContext = innerWindow->GetBrowsingContext()) {
+            browsingContextID = browsingContext->Id();
+          }
+        }
+      }
+      if (browsingContextID == 0) {
+        FETCH_LOG(
+            ("FetchChild::RecvOnNotifyNetworkMonitorAlternateStack: unable to "
+             "get browsingContextID for main-thread fetch, channelID=%" PRIu64,
+             aChannelID));
+      }
+      mWorkerChannelInfo =
+          MakeRefPtr<WorkerChannelInfo>(aChannelID, browsingContextID);
+    }
+
+    nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+        __func__, [channel = mWorkerChannelInfo,
+                   stack = std::move(mOriginStack)]() mutable {
+          NotifyNetworkMonitorAlternateStack(channel, std::move(stack));
+        });
+
+    MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
   }
-  // Currently we only support sending notifications for worker-thread initiated
-  // Fetch requests. We need to extend this to main-thread fetch requests as
-  // well. See Bug 1897424.
 
   return IPC_OK();
 }
@@ -412,7 +442,7 @@ void FetchChild::RunAbortAlgorithm() {
     return;
   }
   if (mWorkerRef || mIsKeepAliveRequest) {
-    Unused << SendAbortFetchOp(true);
+    (void)SendAbortFetchOp(true);
   }
 }
 
@@ -427,12 +457,12 @@ void FetchChild::DoFetchOp(const FetchOpArgs& aArgs) {
   }
   if (mSignalImpl) {
     if (mSignalImpl->Aborted()) {
-      Unused << SendAbortFetchOp(true);
+      (void)SendAbortFetchOp(true);
       return;
     }
     Follow(mSignalImpl);
   }
-  Unused << SendFetchOp(aArgs);
+  (void)SendFetchOp(aArgs);
 }
 
 void FetchChild::Shutdown() {

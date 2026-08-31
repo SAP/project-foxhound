@@ -1,6 +1,8 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
+
+const { ProfilerTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ProfilerTestUtils.sys.mjs"
+);
 
 let getExtension = () => {
   return ExtensionTestUtils.loadExtension({
@@ -70,7 +72,7 @@ let getExtension = () => {
               });
             }
             break;
-          case "test profile as array buffer":
+          case "test profile as array buffer": {
             let arrayBuffer =
               await browser.geckoProfiler.getProfileAsArrayBuffer();
             browser.test.assertTrue(
@@ -97,6 +99,7 @@ let getExtension = () => {
             );
             browser.test.sendMessage("tested profile as array buffer");
             break;
+          }
           case "remove runningListener":
             browser.geckoProfiler.onRunning.removeListener(runningListener);
             browser.test.sendMessage("removed runningListener");
@@ -129,6 +132,8 @@ let verifyProfileData = profile => {
     "The profile contains a GeckoMain thread."
   );
 };
+
+add_setup(ProfilerTestUtils.assertProfilerInactive);
 
 add_task(async function testProfilerControl() {
   const acceptedExtensionIdsPref =

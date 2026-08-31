@@ -15,7 +15,9 @@ import {
   loadGeneratedSourceText,
 } from "../sources/loadSourceText";
 import { validateSelectedFrame } from "../../utils/context";
-import { PROMISE } from "../utils/middleware/promise";
+const {
+  PROMISE,
+} = require("resource://devtools/client/shared/redux/middleware/promise.js");
 
 import { log } from "../../utils/log";
 

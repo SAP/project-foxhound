@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<script>
+window.addEventListener("load", async () => {
+    const sup = document.getElementById("id_1")
+    const range = new Range()
+    const selection = window.getSelection()
+    const iterator = document.createNodeIterator(document, NodeFilter.SHOW_COMMENT, {
+        "acceptNode":  async function(n) {
+        range.selectNodeContents(n)
+        }
+    })
+
+    iterator.nextNode()
+    range.setStartBefore(sup)
+    selection.addRange(range)
+})
+</script>
+<sup id="id_1"></sup>
+</html>
+<!-- COMMENT -->
+ 

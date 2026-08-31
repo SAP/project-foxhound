@@ -12,11 +12,6 @@
 <script type="text/javascript">
 "use strict";
 
-// add_setup not available in mochitest
-add_task(async function setup() {
-  await SpecialPowers.pushPrefEnv({set: [["extensions.manifestV3.enabled", true]]});
-})
-
 let image = atob(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAA" +
     "ACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII="

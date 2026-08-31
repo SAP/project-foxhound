@@ -144,7 +144,7 @@ add_task(async function invalid_input_throws() {
     () =>
       PlacesUtils.bookmarks.insert({
         type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        url: NetUtil.newURI(longurl),
+        url: Services.io.newURI(longurl),
       }),
     /Invalid value for property 'url'/
   );

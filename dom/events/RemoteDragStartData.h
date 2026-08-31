@@ -5,11 +5,11 @@
 #ifndef mozilla_dom_RemoteDragStartData_h
 #define mozilla_dom_RemoteDragStartData_h
 
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/DataTransfer.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "nsCOMPtr.h"
 #include "nsRect.h"
-#include "mozilla/dom/DataTransfer.h"
-#include "mozilla/dom/DOMTypes.h"
-#include "mozilla/gfx/DataSurfaceHelpers.h"
 
 class nsICookieJarSettings;
 

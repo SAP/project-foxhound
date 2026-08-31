@@ -1,0 +1,18 @@
+{
+  "label": "port8.fi",
+  "bugs": {
+    "1934567": {
+      "issue": "broken-scrolling",
+      "matches": ["*://www.port8.fi/bokning/*"]
+    }
+  },
+  "css": {
+    "fix_scrolling": "@media (max-width: 959px) { html.firefox .row div[class*='col-lg-'].pos-bottom, html.firefox .row div[class*='col-lg-'].pos-middle { height: unset !important; } }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": ["fix_scrolling"]
+    }
+  ]
+}

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +8,7 @@
 
 #include "CacheFileUtils.h"
 #include "CacheObserver.h"
+#include "Dictionary.h"
 #include "mozilla/Sprintf.h"
 #include "nsAboutCache.h"
 #include "nsAboutProtocolUtils.h"
@@ -489,6 +489,22 @@ nsAboutCacheEntry::Channel::OnMetaDataElement(char const* key,
   mBuffer->AppendLiteral(
       ":</th>\n"
       "    <td>");
+  if (mEnhanceId.EqualsLiteral("dict:")) {
+    // We set the content ID to CONTENT_TYPE_DICTIONARY, ensure that's correct
+    if (strcmp(key, "ctid") == 0) {
+      MOZ_ASSERT(strcmp(value, "7") == 0);
+    } else {
+      RefPtr<DictionaryCacheEntry> dict = new DictionaryCacheEntry("temp");
+      dict->ParseMetadata(value);
+      nsAppendEscapedHTML(
+          nsPrintfCString("Hash: %s\nPattern: %s\nId: %s\nMatch-Id: ",
+                          dict->GetHash().get(), dict->GetPattern().get(),
+                          dict->GetId().get()),
+          *mBuffer);
+      dict->AppendMatchDest(*mBuffer);
+      mBuffer->AppendLiteral("\n");
+    }
+  }
   nsAppendEscapedHTML(nsDependentCString(value), *mBuffer);
   mBuffer->AppendLiteral(
       "</td>\n"

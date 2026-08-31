@@ -24,7 +24,6 @@ add_task(async () => {
     .getAllTargets([toolbox.commands.targetCommand.TYPES.FRAME])
     .find(t => t.url.startsWith("https://example.org"));
 
-  // The iframe only has a dedicated target when Fission or EFT is enabled
   const iframeHighlighterTestFront = iframeTarget
     ? await iframeTarget.getFront("highlighterTest")
     : null;
@@ -48,51 +47,28 @@ add_task(async () => {
     await topLevelFrameHighlighterTestFront.getTabbingOrderHighlighterData(
       topLevelAccessibilityFrontActorID
     );
-  if (isFissionEnabled()) {
-    // ⚠️ We don't get the highlighter for the <html> node of the iframe when Fission is enabled.
-    // This should be fix as part of Bug 1740509.
-    is(
-      JSON.stringify(tabbingOrderHighlighterData),
-      JSON.stringify([`button#top-btn-1 : 1`, `button#top-btn-2 : 4`]),
-      "Tabbing order is visible for the top level target after clicking the checkbox"
+  // ⚠️ We don't get the highlighter for the <html> node of the iframe when Fission is enabled.
+  // This should be fix as part of Bug 1740509.
+  is(
+    JSON.stringify(tabbingOrderHighlighterData),
+    JSON.stringify([`button#top-btn-1 : 1`, `button#top-btn-2 : 4`]),
+    "Tabbing order is visible for the top level target after clicking the checkbox"
+  );
+
+  let iframeTabingOrderHighlighterData =
+    await iframeHighlighterTestFront.getTabbingOrderHighlighterData(
+      iframeAccessibilityFrontActorID
     );
 
-    const iframeTabingOrderHighlighterData =
-      await iframeHighlighterTestFront.getTabbingOrderHighlighterData(
-        iframeAccessibilityFrontActorID
-      );
-
-    is(
-      JSON.stringify(iframeTabingOrderHighlighterData),
-      JSON.stringify([`button#iframe-btn-1 : 2`, `button#iframe-btn-2 : 3`]),
-      "Tabbing order is visible for the top level target after clicking the checkbox"
-    );
-  } else {
-    is(
-      JSON.stringify(tabbingOrderHighlighterData),
-      JSON.stringify([
-        `button#top-btn-1 : 1`,
-        `html : 2`,
-        `button#iframe-btn-1 : 3`,
-        `button#iframe-btn-2 : 4`,
-        `button#top-btn-2 : 5`,
-      ]),
-      "Tabbing order is visible for the top level target after clicking the checkbox"
-    );
-  }
+  is(
+    JSON.stringify(iframeTabingOrderHighlighterData),
+    JSON.stringify([`button#iframe-btn-1 : 2`, `button#iframe-btn-2 : 3`]),
+    "Tabbing order is visible for the top level target after clicking the checkbox"
+  );
 
   info("Select the iframe in the iframe picker");
   // Get the iframe picker items
   const menuList = toolbox.doc.getElementById("toolbox-frame-menu");
-
-  if (isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-    is(
-      menuList,
-      null,
-      "iframe picker does not show remote frames when Fission is enabled and EFT is disabled"
-    );
-    return;
-  }
 
   const frames = Array.from(menuList.querySelectorAll(".command"));
 
@@ -130,32 +106,22 @@ add_task(async () => {
     await topLevelFrameHighlighterTestFront.getTabbingOrderHighlighterData(
       topLevelAccessibilityFrontActorID
     );
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    is(
-      tabbingOrderHighlighterData.length,
-      0,
-      "There's no highlighter displayed on the top level target when focused on specific iframe"
+  is(
+    tabbingOrderHighlighterData.length,
+    0,
+    "There's no highlighter displayed on the top level target when focused on specific iframe"
+  );
+
+  iframeTabingOrderHighlighterData =
+    await iframeHighlighterTestFront.getTabbingOrderHighlighterData(
+      iframeAccessibilityFrontActorID
     );
 
-    const iframeTabingOrderHighlighterData =
-      await iframeHighlighterTestFront.getTabbingOrderHighlighterData(
-        iframeAccessibilityFrontActorID
-      );
-
-    is(
-      JSON.stringify(iframeTabingOrderHighlighterData),
-      JSON.stringify([`button#iframe-btn-1 : 1`, `button#iframe-btn-2 : 2`]),
-      "Tabbing order has expected data when a specific iframe is selected"
-    );
-  } else {
-    // When Fission/EFT are not enabled, the highlighter is displayed from the top-level
-    // target, but only for the iframe
-    is(
-      JSON.stringify(tabbingOrderHighlighterData),
-      JSON.stringify([`button#iframe-btn-1 : 1`, `button#iframe-btn-2 : 2`]),
-      "Tabbing order has expected data when a specific iframe is selected"
-    );
-  }
+  is(
+    JSON.stringify(iframeTabingOrderHighlighterData),
+    JSON.stringify([`button#iframe-btn-1 : 1`, `button#iframe-btn-2 : 2`]),
+    "Tabbing order has expected data when a specific iframe is selected"
+  );
 
   info("Select the top level document back");
   onInitialized = win.once(win.EVENTS.INITIALIZED);
@@ -176,19 +142,16 @@ add_task(async () => {
     await topLevelFrameHighlighterTestFront.getTabbingOrderHighlighterData(
       topLevelAccessibilityFrontActorID
     );
-
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    const iframeTabingOrderHighlighterData =
-      await iframeHighlighterTestFront.getTabbingOrderHighlighterData(
-        iframeAccessibilityFrontActorID
-      );
-
-    is(
-      iframeTabingOrderHighlighterData.length,
-      0,
-      "Highlighter is hidden on the frame after selecting back the top level target"
+  iframeTabingOrderHighlighterData =
+    await iframeHighlighterTestFront.getTabbingOrderHighlighterData(
+      iframeAccessibilityFrontActorID
     );
-  }
+
+  is(
+    iframeTabingOrderHighlighterData.length,
+    0,
+    "Highlighter is hidden on the frame after selecting back the top level target"
+  );
 
   await closeTabToolboxAccessibility(env.tab);
 });

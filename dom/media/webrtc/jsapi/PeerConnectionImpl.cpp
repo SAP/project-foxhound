@@ -2,61 +2,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <cstdlib>
+#include "PeerConnectionImpl.h"
+
 #include <cerrno>
-#include <deque>
+#include <cstdlib>
 #include <set>
 #include <sstream>
 #include <vector>
 
-#include "common/browser_logging/CSFLog.h"
+#include "IPeerConnection.h"
+#include "MediaTrackGraph.h"
+#include "PeerConnectionCtx.h"
+#include "RTCDataChannelDeclarations.h"
+#include "RemoteTrackSource.h"
 #include "base/histogram.h"
+#include "common/browser_logging/CSFLog.h"
 #include "common/time_profiling/timecard.h"
-
 #include "jsapi.h"
-#include "nspr.h"
-#include "nss.h"
-#include "pk11pub.h"
-
-#include "nsFmtString.h"
-#include "nsNetCID.h"
-#include "nsILoadContext.h"
-#include "nsEffectiveTLDService.h"
-#include "nsServiceManagerUtils.h"
-#include "nsThreadUtils.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
-#include "nsProxyRelease.h"
-#include "prtime.h"
-
+#include "jsapi/RTCRtpReceiver.h"
+#include "jsapi/RTCRtpSender.h"
+#include "jsep/JsepSession.h"
+#include "jsep/JsepSessionImpl.h"
+#include "jsep/JsepTrack.h"
 #include "libwebrtcglue/AudioConduit.h"
 #include "libwebrtcglue/VideoConduit.h"
 #include "libwebrtcglue/WebrtcCallWrapper.h"
 #include "libwebrtcglue/WebrtcEnvironmentWrapper.h"
-#include "MediaTrackGraph.h"
-#include "transport/runnable_utils.h"
-#include "IPeerConnection.h"
-#include "PeerConnectionCtx.h"
-#include "PeerConnectionImpl.h"
-#include "RemoteTrackSource.h"
-#include "RTCDataChannelDeclarations.h"
-#include "transport/dtlsidentity.h"
-#include "sdp/SdpAttribute.h"
-
-#include "jsep/JsepTrack.h"
-#include "jsep/JsepSession.h"
-#include "jsep/JsepSessionImpl.h"
-
-#include "transportbridge/MediaPipeline.h"
-#include "transportbridge/RtpLogger.h"
-#include "jsapi/RTCRtpReceiver.h"
-#include "jsapi/RTCRtpSender.h"
-
+#include "mozilla/IceServerParser.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/glean/DomMediaWebrtcMetrics.h"
 #include "mozilla/media/MediaUtils.h"
+#include "nsEffectiveTLDService.h"
+#include "nsILoadContext.h"
+#include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
+#include "nsNetCID.h"
+#include "nsProxyRelease.h"
+#include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
+#include "nspr.h"
+#include "nss.h"
+#include "pk11pub.h"
+#include "prtime.h"
+#include "sdp/SdpAttribute.h"
+#include "transport/dtlsidentity.h"
+#include "transport/runnable_utils.h"
+#include "transportbridge/MediaPipeline.h"
+#include "transportbridge/RtpLogger.h"
 
 #ifdef XP_WIN
 // We need to undef the MS macro for Document::CreateEvent
@@ -65,60 +59,58 @@
 #  endif
 #endif  // XP_WIN
 
-#include "mozilla/dom/Document.h"
-#include "nsGlobalWindowInner.h"
+#include "AudioStreamTrack.h"
+#include "DOMMediaStream.h"
+#include "MediaManager.h"
+#include "MediaStreamTrack.h"
 #include "RTCDataChannel.h"
-#include "mozilla/dom/Location.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/NullPrincipal.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/glean/DomMediaWebrtcMetrics.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/PublicSSL.h"
-#include "nsXULAppAPI.h"
-#include "nsContentUtils.h"
-#include "nsDOMJSUtils.h"
-#include "nsPrintfCString.h"
-#include "nsURLHelper.h"
-#include "nsNetUtil.h"
+#include "RTCDtlsTransport.h"
+#include "RTCSctpTransport.h"
+#include "VideoStreamTrack.h"
+#include "WebrtcGlobalInformation.h"
 #include "js/ArrayBuffer.h"    // JS::NewArrayBufferWithContents
 #include "js/GCAnnotations.h"  // JS_HAZ_ROOTED
 #include "js/RootingAPI.h"     // JS::{{,Mutable}Handle,Rooted}
+#include "jsep/JsepTransport.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/NullPrincipal.h"
 #include "mozilla/PeerIdentity.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/PublicSSL.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/Location.h"
+#include "mozilla/dom/PeerConnectionImplBinding.h"
+#include "mozilla/dom/PluginCrashedEvent.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RTCCertificate.h"
-#include "mozilla/dom/RTCSctpTransportBinding.h"  // RTCSctpTransportState
+#include "mozilla/dom/RTCDataChannelBinding.h"
 #include "mozilla/dom/RTCDtlsTransportBinding.h"  // RTCDtlsTransportState
 #include "mozilla/dom/RTCIceTransportBinding.h"   // RTCIceTransportState
+#include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/dom/RTCRtpReceiverBinding.h"
 #include "mozilla/dom/RTCRtpSenderBinding.h"
+#include "mozilla/dom/RTCSctpTransportBinding.h"  // RTCSctpTransportState
 #include "mozilla/dom/RTCStatsReportBinding.h"
-#include "mozilla/dom/RTCPeerConnectionBinding.h"
-#include "mozilla/dom/PeerConnectionImplBinding.h"
-#include "mozilla/dom/RTCDataChannelBinding.h"
-#include "mozilla/dom/PluginCrashedEvent.h"
-#include "MediaStreamTrack.h"
-#include "AudioStreamTrack.h"
-#include "VideoStreamTrack.h"
-#include "nsIScriptGlobalObject.h"
-#include "DOMMediaStream.h"
-#include "WebrtcGlobalInformation.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/EventDispatcher.h"
+#include "mozilla/glean/DomMediaWebrtcMetrics.h"
 #include "mozilla/net/DataChannelProtocol.h"
-#include "MediaManager.h"
-
-#include "transport/nr_socket_proxy_config.h"
-#include "RTCSctpTransport.h"
-#include "RTCDtlsTransport.h"
-#include "jsep/JsepTransport.h"
-
+#include "mozilla/net/WebrtcProxyConfig.h"
+#include "nsContentUtils.h"
+#include "nsDOMJSUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsILoadInfo.h"
 #include "nsIPrincipal.h"
-#include "mozilla/LoadInfo.h"
 #include "nsIProxiedChannel.h"
-
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/net/WebrtcProxyConfig.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
+#include "nsPrintfCString.h"
+#include "nsURLHelper.h"
+#include "nsXULAppAPI.h"
+#include "transport/nr_socket_proxy_config.h"
 
 #ifdef XP_WIN
 // We need to undef the MS macro again in case the windows include file
@@ -299,7 +291,7 @@ NS_INTERFACE_MAP_END
 
 already_AddRefed<PeerConnectionImpl> PeerConnectionImpl::Constructor(
     const dom::GlobalObject& aGlobal) {
-  RefPtr<PeerConnectionImpl> pc = new PeerConnectionImpl(&aGlobal);
+  RefPtr pc = MakeRefPtr<PeerConnectionImpl>(&aGlobal);
 
   CSFLogDebug(LOGTAG, "Created PeerConnection: %p", pc.get());
 
@@ -374,7 +366,7 @@ PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
       mPrivateWindow(false),
       mActiveOnWindow(false),
       mTimestampMaker(dom::RTCStatsTimestampMaker::Create(mWindow)),
-      mIdGenerator(new RTCStatsIdGenerator()),
+      mIdGenerator(MakeRefPtr<RTCStatsIdGenerator>()),
       listenPort(0),
       connectPort(0),
       connectStr(nullptr) {
@@ -395,8 +387,8 @@ PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
       nsCOMPtr<nsIEffectiveTLDService> eTLDService(
           do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID, &rv));
       if (eTLDService) {
-        Unused << eTLDService->GetBaseDomain(mWindow->GetDocumentURI(), 0,
-                                             mEffectiveTLDPlus1);
+        (void)eTLDService->GetBaseDomain(mWindow->GetDocumentURI(), 0,
+                                         mEffectiveTLDPlus1);
       }
 
       mRtxIsAllowed = !media::HostnameInPref(
@@ -441,14 +433,6 @@ PeerConnectionImpl::~PeerConnectionImpl() {
              __FUNCTION__, mHandle.c_str());
 }
 
-struct CompareCodecPriority {
-  bool operator()(const UniquePtr<JsepCodecDescription>& lhs,
-                  const UniquePtr<JsepCodecDescription>& rhs) const {
-    // If only the left side is strongly preferred, prefer it
-    return lhs->mStronglyPreferred && !rhs->mStronglyPreferred;
-  }
-};
-
 nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
                                         nsGlobalWindowInner* aWindow) {
   nsresult res;
@@ -482,6 +466,21 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   MOZ_ASSERT(aWindow);
   mWindow = aWindow;
   NS_ENSURE_STATE(mWindow);
+
+  // Now rummage through the objects to get a usable origin
+  nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(mWindow);
+  NS_ENSURE_STATE(sgo);
+  nsCOMPtr<nsIScriptContext> scriptContext = sgo->GetContext();
+  NS_ENSURE_STATE(scriptContext);
+
+  nsCOMPtr<nsIScriptObjectPrincipal> scriptPrincipal(
+      do_QueryInterface(mWindow));
+  NS_ENSURE_STATE(scriptPrincipal);
+  nsCOMPtr<nsIPrincipal> principal = scriptPrincipal->GetPrincipal();
+  NS_ENSURE_STATE(principal);
+
+  res = nsContentUtils::GetWebExposedOriginSerialization(principal, mOrigin);
+  NS_ENSURE_SUCCESS(res, res);
 
   PRTime timestamp = PR_Now();
   // Ok if we truncate this, but we want it to be large enough to reliably
@@ -541,7 +540,7 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
 
   if (XRE_IsContentProcess()) {
     mStunAddrsRequest =
-        new net::StunAddrsRequestChild(new StunAddrsHandler(this));
+        net::StunAddrsRequestChild::Create(new StunAddrsHandler(this));
   }
 
   // Initialize the media object.
@@ -551,6 +550,8 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   // param in RTCConfiguration.
   mAllowOldSetParameters = Preferences::GetBool(
       "media.peerconnection.allow_old_setParameters", false);
+  mAllowOldSetParameters |= media::HostnameInPref(
+      "media.peerconnection.allow_old_setParameters.allowlist", mHostname);
 
   // setup the stun local addresses IPC async call
   InitLocalAddrs();
@@ -568,6 +569,9 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   mCandidateListener = mTransportHandler->GetCandidateGathered().Connect(
       GetMainThreadSerialEventTarget(), this,
       &PeerConnectionImpl::OnCandidateFound);
+  mCandidateErrorListener = mTransportHandler->GetCandidateError().Connect(
+      GetMainThreadSerialEventTarget(), this,
+      &PeerConnectionImpl::OnCandidateError);
   mAlpnNegotiatedListener = mTransportHandler->GetAlpnNegotiated().Connect(
       GetMainThreadSerialEventTarget(), this,
       &PeerConnectionImpl::OnAlpnNegotiated);
@@ -576,7 +580,7 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
       &PeerConnectionImpl::OnDtlsStateChange);
   mRtcpStateChangeListener = mTransportHandler->GetRtcpStateChange().Connect(
       GetMainThreadSerialEventTarget(), this,
-      &PeerConnectionImpl::OnDtlsStateChange);
+      &PeerConnectionImpl::OnRtcpStateChange);
 
   return NS_OK;
 }
@@ -617,7 +621,7 @@ void PeerConnectionImpl::SetCertificate(
   }
 
   if (mUncommittedJsepSession) {
-    Unused << mUncommittedJsepSession->AddDtlsFingerprint(
+    (void)mUncommittedJsepSession->AddDtlsFingerprint(
         DtlsIdentity::DEFAULT_HASH_ALGORITHM, fingerprint);
   }
 }
@@ -664,21 +668,17 @@ void RecordCodecTelemetry() {
 // behaviour triggered by these parameters.
 NS_IMETHODIMP
 PeerConnectionImpl::EnsureDataConnection(uint16_t aLocalPort,
-                                         uint16_t aNumstreams,
-                                         uint32_t aMaxMessageSize,
-                                         bool aMMSSet) {
+                                         uint16_t aNumstreams) {
   PC_AUTO_ENTER_API_CALL(false);
 
   if (mDataConnection) {
     CSFLogDebug(LOGTAG, "%s DataConnection already connected", __FUNCTION__);
-    mDataConnection->SetMaxMessageSize(aMMSSet, aMaxMessageSize);
     return NS_OK;
   }
 
   nsCOMPtr<nsISerialEventTarget> target = GetMainThreadSerialEventTarget();
-  Maybe<uint64_t> mms = aMMSSet ? Some(aMaxMessageSize) : Nothing();
   if (auto res = DataChannelConnection::Create(this, target, mTransportHandler,
-                                               aLocalPort, aNumstreams, mms)) {
+                                               aLocalPort, aNumstreams)) {
     mDataConnection = res.value();
     CSFLogDebug(LOGTAG, "%s DataChannelConnection %p attached to %s",
                 __FUNCTION__, (void*)mDataConnection.get(), mHandle.c_str());
@@ -690,14 +690,13 @@ PeerConnectionImpl::EnsureDataConnection(uint16_t aLocalPort,
 
 nsresult PeerConnectionImpl::GetDatachannelParameters(
     uint32_t* channels, uint16_t* localport, uint16_t* remoteport,
-    uint32_t* remotemaxmessagesize, bool* mmsset, std::string* transportId,
+    uint32_t* remotemaxmessagesize, std::string* transportId,
     bool* client) const {
   // Clear, just in case we fail.
   *channels = 0;
   *localport = 0;
   *remoteport = 0;
   *remotemaxmessagesize = 0;
-  *mmsset = false;
   transportId->clear();
 
   Maybe<const JsepTransceiver> datachannelTransceiver =
@@ -756,7 +755,6 @@ nsresult PeerConnectionImpl::GetDatachannelParameters(
     *localport = appCodec->mLocalPort;
     *remoteport = appCodec->mRemotePort;
     *remotemaxmessagesize = appCodec->mRemoteMaxMessageSize;
-    *mmsset = appCodec->mRemoteMMSSet;
     MOZ_ASSERT(!datachannelTransceiver->mTransport.mTransportId.empty());
     *transportId = datachannelTransceiver->mTransport.mTransportId;
     *client = datachannelTransceiver->mTransport.mDtls->GetRole() ==
@@ -963,12 +961,11 @@ nsresult PeerConnectionImpl::MaybeInitializeDataChannel() {
   uint16_t localport = 0;
   uint16_t remoteport = 0;
   uint32_t remotemaxmessagesize = 0;
-  bool mmsset = false;
   std::string transportId;
   bool client = false;
-  nsresult rv = GetDatachannelParameters(&channels, &localport, &remoteport,
-                                         &remotemaxmessagesize, &mmsset,
-                                         &transportId, &client);
+  nsresult rv =
+      GetDatachannelParameters(&channels, &localport, &remoteport,
+                               &remotemaxmessagesize, &transportId, &client);
 
   if (NS_FAILED(rv)) {
     CSFLogDebug(LOGTAG, "%s: We did not negotiate datachannel", __FUNCTION__);
@@ -979,8 +976,9 @@ nsresult PeerConnectionImpl::MaybeInitializeDataChannel() {
     channels = MAX_NUM_STREAMS;
   }
 
-  rv = EnsureDataConnection(localport, channels, remotemaxmessagesize, mmsset);
+  rv = EnsureDataConnection(localport, channels);
   if (NS_SUCCEEDED(rv)) {
+    mDataConnection->SetMaxMessageSize(remotemaxmessagesize);
     if (mDataConnection->ConnectToTransport(transportId, client, localport,
                                             remoteport)) {
       return NS_OK;
@@ -1036,9 +1034,8 @@ PeerConnectionImpl::CreateDataChannel(
                           WEBRTC_DATACHANNEL_STREAMS_DEFAULT),
       256, 2048);
 
-  nsresult rv = EnsureDataConnection(
-      WEBRTC_DATACHANNEL_PORT_DEFAULT, maxStreams,
-      WEBRTC_DATACHANNEL_MAX_MESSAGE_SIZE_REMOTE_DEFAULT, false);
+  nsresult rv =
+      EnsureDataConnection(WEBRTC_DATACHANNEL_PORT_DEFAULT, maxStreams);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1068,9 +1065,10 @@ PeerConnectionImpl::CreateDataChannel(
   }
 
   RefPtr<RTCDataChannel> retval;
-  rv = NS_NewDOMDataChannel(dataChannel.forget(), aLabel, ordered, maxLifeTime,
-                            maxRetransmits, aProtocol, aExternalNegotiated,
-                            mWindow, getter_AddRefs(retval));
+  rv = NS_NewDOMDataChannel(dataChannel.forget(), aLabel, mOrigin, ordered,
+                            maxLifeTime, maxRetransmits, aProtocol,
+                            aExternalNegotiated, mWindow,
+                            getter_AddRefs(retval));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1162,7 +1160,7 @@ already_AddRefed<dom::Promise> PeerConnectionImpl::Chain(
     dom::ChainedOperation& aOperation, ErrorResult& aError) {
   MOZ_RELEASE_ASSERT(!mChainingOperation);
   mChainingOperation = true;
-  RefPtr<Operation> operation = new JSOperation(this, aOperation, aError);
+  RefPtr operation = MakeRefPtr<JSOperation>(this, aOperation, aError);
   if (aError.Failed()) {
     return nullptr;
   }
@@ -1365,10 +1363,13 @@ void PeerConnectionImpl::NotifyDataChannel(
   CSFLogDebug(LOGTAG, "%s: channel: %p", __FUNCTION__, channel.get());
 
   RefPtr<RTCDataChannel> domchannel;
-  nsresult rv = NS_NewDOMDataChannel(
-      channel.forget(), aLabel, aOrdered, aMaxLifeTime, aMaxRetransmits,
-      aProtocol, aNegotiated, mWindow, getter_AddRefs(domchannel));
+  nsresult rv =
+      NS_NewDOMDataChannel(channel.forget(), aLabel, mOrigin, aOrdered,
+                           aMaxLifeTime, aMaxRetransmits, aProtocol,
+                           aNegotiated, mWindow, getter_AddRefs(domchannel));
   NS_ENSURE_SUCCESS_VOID(rv);
+
+  domchannel->SetReadyState(RTCDataChannelState::Open);
 
   JSErrorResult jrv;
   mPCObserver->NotifyDataChannel(*domchannel, jrv);
@@ -1438,9 +1439,17 @@ static void DeferredCreateOffer(const std::string& aPcHandle,
 // copy c'tor.
 static std::unique_ptr<dom::PCErrorData> buildJSErrorData(
     const JsepSession::Result& aResult, const std::string& aMessage) {
-  std::unique_ptr<dom::PCErrorData> result(new dom::PCErrorData);
+  auto result = std::make_unique<dom::PCErrorData>();
   result->mName = *aResult.mError;
   result->mMessage = NS_ConvertASCIItoUTF16(aMessage.c_str());
+  // Populate RTCError-specific fields when the error has an errorDetail.
+  if (aResult.mErrorDetail.isSome()) {
+    result->mErrorDetail.Construct(
+        NS_ConvertASCIItoUTF16(aResult.mErrorDetail->c_str()));
+    if (aResult.mSdpLineNumber.isSome()) {
+      result->mSdpLineNumber.Construct((int32_t)aResult.mSdpLineNumber.value());
+    }
+  }
   return result;
 }
 
@@ -1602,7 +1611,7 @@ PeerConnectionImpl::SetLocalDescription(int32_t aAction, const char* aSDP) {
       return NS_ERROR_FAILURE;
   }
   MOZ_ASSERT(!mUncommittedJsepSession);
-  mUncommittedJsepSession.reset(mJsepSession->Clone());
+  mUncommittedJsepSession = mJsepSession->Clone();
   JsepSession::Result result =
       mUncommittedJsepSession->SetLocalDescription(sdpType, mLocalRequestedSDP);
   JSErrorResult rv;
@@ -1701,7 +1710,7 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP) {
   }
 
   MOZ_ASSERT(!mUncommittedJsepSession);
-  mUncommittedJsepSession.reset(mJsepSession->Clone());
+  mUncommittedJsepSession = mJsepSession->Clone();
   JsepSession::Result result = mUncommittedJsepSession->SetRemoteDescription(
       sdpType, mRemoteRequestedSDP);
   JSErrorResult jrv;
@@ -1743,23 +1752,19 @@ already_AddRefed<dom::Promise> PeerConnectionImpl::GetStats(
     MOZ_CRASH("Failed to create a promise!");
   }
 
-  if (!IsClosed()) {
-    GetStats(aSelector, false)
-        ->Then(
-            GetMainThreadSerialEventTarget(), __func__,
-            [promise, window = mWindow](
-                UniquePtr<dom::RTCStatsReportInternal>&& aReport) {
-              RefPtr<RTCStatsReport> report(new RTCStatsReport(window));
-              report->Incorporate(*aReport);
-              promise->MaybeResolve(std::move(report));
-            },
-            [promise, window = mWindow](nsresult aError) {
-              RefPtr<RTCStatsReport> report(new RTCStatsReport(window));
-              promise->MaybeResolve(std::move(report));
-            });
-  } else {
-    promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
-  }
+  GetStats(aSelector, false)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [promise,
+           window = mWindow](UniquePtr<dom::RTCStatsReportInternal>&& aReport) {
+            RefPtr report = MakeRefPtr<RTCStatsReport>(window);
+            report->Incorporate(*aReport);
+            promise->MaybeResolve(std::move(report));
+          },
+          [promise, window = mWindow](nsresult aError) {
+            RefPtr report = MakeRefPtr<RTCStatsReport>(window);
+            promise->MaybeResolve(std::move(report));
+          });
 
   return promise.forget();
 }
@@ -1829,7 +1834,8 @@ PeerConnectionImpl::AddIceCandidate(
 
     GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
         __func__,
-        [this, self = RefPtr<PeerConnectionImpl>(this), errorString, result] {
+        [this, self = RefPtr<PeerConnectionImpl>(this),
+         errorString = std::move(errorString), result = std::move(result)] {
           if (IsClosed()) {
             return;
           }
@@ -1860,7 +1866,7 @@ PeerConnectionImpl::SetPeerIdentity(const nsAString& aPeerIdentity) {
       return NS_ERROR_FAILURE;
     }
   } else {
-    mPeerIdentity = new PeerIdentity(aPeerIdentity);
+    mPeerIdentity = MakeRefPtr<PeerIdentity>(aPeerIdentity);
     Document* doc = mWindow->GetExtantDoc();
     if (!doc) {
       CSFLogInfo(LOGTAG, "Can't update principal on streams; document gone");
@@ -1876,11 +1882,15 @@ PeerConnectionImpl::SetPeerIdentity(const nsAString& aPeerIdentity) {
 
 nsresult PeerConnectionImpl::OnAlpnNegotiated(const std::string& aAlpn,
                                               bool aPrivacyRequested) {
-  PC_AUTO_ENTER_API_CALL(false);
+  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread");
+  RefPtr<PeerConnectionImpl> kungFuDeathGrip(this);
+  if (IsClosed()) {
+    return NS_OK;  // Nod and smile
+  }
   MOZ_DIAGNOSTIC_ASSERT(!mRequestedPrivacy ||
                         (*mRequestedPrivacy == PrincipalPrivacy::Private) ==
                             aPrivacyRequested);
-  Unused << aAlpn;
+  (void)aAlpn;
 
   mRequestedPrivacy = Some(aPrivacyRequested ? PrincipalPrivacy::Private
                                              : PrincipalPrivacy::NonPrivate);
@@ -1892,8 +1902,15 @@ nsresult PeerConnectionImpl::OnAlpnNegotiated(const std::string& aAlpn,
   return NS_OK;
 }
 
-void PeerConnectionImpl::OnDtlsStateChange(const std::string& aTransportId,
-                                           TransportLayer::State aState) {
+void PeerConnectionImpl::OnDtlsStateChange(
+    const std::string& aTransportId, TransportLayer::State aState,
+    const nsTArray<nsTArray<uint8_t>>& aRemoteCerts) {
+  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread");
+  RefPtr<PeerConnectionImpl> kungFuDeathGrip(this);
+  if (IsClosed()) {
+    return;
+  }
+
   nsCString key(aTransportId.data(), aTransportId.size());
   RefPtr<RTCDtlsTransport> dtlsTransport =
       mTransportIdToRTCDtlsTransport.Get(key);
@@ -1901,7 +1918,12 @@ void PeerConnectionImpl::OnDtlsStateChange(const std::string& aTransportId,
     return;
   }
 
-  dtlsTransport->UpdateState(aState);
+  nsTArray<nsTArray<uint8_t>> certsCopy;
+  certsCopy.SetCapacity(aRemoteCerts.Length());
+  for (const auto& cert : aRemoteCerts) {
+    certsCopy.AppendElement(cert.Clone());
+  }
+  dtlsTransport->UpdateState(aState, std::move(certsCopy));
   // Whenever the state of an RTCDtlsTransport changes or when the [[IsClosed]]
   // slot turns true, the user agent MUST update the connection state by
   // queueing a task that runs the following steps:
@@ -1922,6 +1944,11 @@ void PeerConnectionImpl::OnDtlsStateChange(const std::string& aTransportId,
           mPCObserver->OnStateChange(PCObserverStateType::ConnectionState, jrv);
         }
       }));
+}
+
+void PeerConnectionImpl::OnRtcpStateChange(const std::string& aTransportId,
+                                           TransportLayer::State aState) {
+  OnDtlsStateChange(aTransportId, aState, {});
 }
 
 RTCPeerConnectionState PeerConnectionImpl::GetNewConnectionState() const {
@@ -2056,46 +2083,22 @@ void PeerConnectionImpl::SendWarningToConsole(const nsCString& aWarning) {
 void PeerConnectionImpl::GetDefaultVideoCodecs(
     std::vector<UniquePtr<JsepCodecDescription>>& aSupportedCodecs,
     const OverrideRtxPreference aOverrideRtxPreference) {
-  const auto prefs = GetDefaultCodecPreferences(aOverrideRtxPreference);
-  // Supported video codecs.
-  // Note: order here implies priority for building offers!
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultVP8(prefs));
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultVP9(prefs));
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultH264_1(prefs));
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultH264_0(prefs));
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultH264Baseline_1(prefs));
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultH264Baseline_0(prefs));
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultAV1(prefs));
-
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultUlpFec(prefs));
-  aSupportedCodecs.emplace_back(
-      JsepApplicationCodecDescription::CreateDefault());
-  aSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultRed(prefs));
-
-  CompareCodecPriority comparator;
-  std::stable_sort(aSupportedCodecs.begin(), aSupportedCodecs.end(),
-                   comparator);
+  nsTArray<UniquePtr<JsepCodecDescription>> codecs;
+  EnumerateDefaultVideoCodecs(codecs, aOverrideRtxPreference);
+  aSupportedCodecs.reserve(codecs.Length());
+  for (auto& codec : codecs) {
+    aSupportedCodecs.emplace_back(std::move(codec));
+  }
 }
 
 void PeerConnectionImpl::GetDefaultAudioCodecs(
     std::vector<UniquePtr<JsepCodecDescription>>& aSupportedCodecs) {
-  const auto prefs = GetDefaultCodecPreferences();
-  aSupportedCodecs.emplace_back(
-      JsepAudioCodecDescription::CreateDefaultOpus(prefs));
-  aSupportedCodecs.emplace_back(JsepAudioCodecDescription::CreateDefaultG722());
-  aSupportedCodecs.emplace_back(JsepAudioCodecDescription::CreateDefaultPCMU());
-  aSupportedCodecs.emplace_back(JsepAudioCodecDescription::CreateDefaultPCMA());
-  aSupportedCodecs.emplace_back(
-      JsepAudioCodecDescription::CreateDefaultTelephoneEvent());
+  nsTArray<UniquePtr<JsepCodecDescription>> codecs;
+  EnumerateDefaultAudioCodecs(codecs);
+  aSupportedCodecs.reserve(codecs.Length());
+  for (auto& codec : codecs) {
+    aSupportedCodecs.emplace_back(std::move(codec));
+  }
 }
 
 void PeerConnectionImpl::GetDefaultRtpExtensions(
@@ -2103,37 +2106,40 @@ void PeerConnectionImpl::GetDefaultRtpExtensions(
   RtpExtensionHeader audioLevel = {JsepMediaType::kAudio,
                                    SdpDirectionAttribute::Direction::kSendrecv,
                                    webrtc::RtpExtension::kAudioLevelUri};
-  aRtpExtensions.push_back(audioLevel);
+  aRtpExtensions.push_back(std::move(audioLevel));
 
   RtpExtensionHeader csrcAudioLevels = {
       JsepMediaType::kAudio, SdpDirectionAttribute::Direction::kRecvonly,
       webrtc::RtpExtension::kCsrcAudioLevelsUri};
-  aRtpExtensions.push_back(csrcAudioLevels);
+  aRtpExtensions.push_back(std::move(csrcAudioLevels));
 
   RtpExtensionHeader mid = {JsepMediaType::kAudioVideo,
                             SdpDirectionAttribute::Direction::kSendrecv,
                             webrtc::RtpExtension::kMidUri};
-  aRtpExtensions.push_back(mid);
+  aRtpExtensions.push_back(std::move(mid));
 
   RtpExtensionHeader absSendTime = {JsepMediaType::kVideo,
                                     SdpDirectionAttribute::Direction::kSendrecv,
                                     webrtc::RtpExtension::kAbsSendTimeUri};
-  aRtpExtensions.push_back(absSendTime);
+  aRtpExtensions.push_back(std::move(absSendTime));
 
   RtpExtensionHeader timestampOffset = {
       JsepMediaType::kVideo, SdpDirectionAttribute::Direction::kSendrecv,
       webrtc::RtpExtension::kTimestampOffsetUri};
-  aRtpExtensions.push_back(timestampOffset);
+  aRtpExtensions.push_back(std::move(timestampOffset));
 
   RtpExtensionHeader playoutDelay = {
       JsepMediaType::kVideo, SdpDirectionAttribute::Direction::kRecvonly,
       webrtc::RtpExtension::kPlayoutDelayUri};
-  aRtpExtensions.push_back(playoutDelay);
+  aRtpExtensions.push_back(std::move(playoutDelay));
 
   RtpExtensionHeader transportSequenceNumber = {
-      JsepMediaType::kVideo, SdpDirectionAttribute::Direction::kSendrecv,
+      GetDefaultCodecPreferences().UseAudioTransportCC()
+          ? JsepMediaType::kAudioVideo
+          : JsepMediaType::kVideo,
+      SdpDirectionAttribute::Direction::kSendrecv,
       webrtc::RtpExtension::kTransportSequenceNumberUri};
-  aRtpExtensions.push_back(transportSequenceNumber);
+  aRtpExtensions.push_back(std::move(transportSequenceNumber));
 }
 
 void PeerConnectionImpl::GetCapabilities(
@@ -2444,6 +2450,7 @@ PeerConnectionImpl::Close() {
   mGatheringStateChangeListener.DisconnectIfExists();
   mConnectionStateChangeListener.DisconnectIfExists();
   mCandidateListener.DisconnectIfExists();
+  mCandidateErrorListener.DisconnectIfExists();
   mAlpnNegotiatedListener.DisconnectIfExists();
   mStateChangeListener.DisconnectIfExists();
   mRtcpStateChangeListener.DisconnectIfExists();
@@ -2530,6 +2537,51 @@ void PeerConnectionImpl::InvalidateLastReturnedParameters() {
   }
 }
 
+void PeerConnectionImpl::ParseIceServers(
+    const nsTArray<dom::RTCIceServer>& aIceServers, ErrorResult& aRv) {
+  auto result = IceServerParser::Parse(aIceServers);
+  if (result.isErr()) {
+    aRv = result.unwrapErr();
+  }
+}
+
+static JsepRtcpMuxPolicy ToJsepRtcpMuxPolicy(dom::RTCRtcpMuxPolicy aPolicy) {
+  switch (aPolicy) {
+    case dom::RTCRtcpMuxPolicy::Require:
+      return kRtcpMuxRequire;
+    case dom::RTCRtcpMuxPolicy::Negotiate:
+      return kRtcpMuxNegotiate;
+  }
+  MOZ_CRASH("Unexpected RTCRtcpMuxPolicy value");
+}
+
+void PeerConnectionImpl::SetConfiguration(
+    const RTCConfiguration& aConfiguration, ErrorResult& aRv) {
+  // Spec: check rtcpMuxPolicy consistency before ICE server validation.
+  if (!mRtcpMuxPolicy.isSome()) {
+    if (NS_FAILED(mJsepSession->SetRtcpMuxPolicy(
+            ToJsepRtcpMuxPolicy(aConfiguration.mRtcpMuxPolicy)))) {
+      aRv.ThrowOperationError("Failed to set rtcpMuxPolicy");
+      return;
+    }
+    mRtcpMuxPolicy = Some(aConfiguration.mRtcpMuxPolicy);
+    if (aConfiguration.mRtcpMuxPolicy == dom::RTCRtcpMuxPolicy::Negotiate) {
+      mozilla::glean::rtcpeerconnection::count_rtcp_mux_policy_negotiate.Add(1);
+    }
+  } else if (*mRtcpMuxPolicy != aConfiguration.mRtcpMuxPolicy) {
+    aRv.ThrowInvalidModificationError(
+        "Cannot change rtcpMuxPolicy with setConfiguration");
+    return;
+  }
+
+  ParseIceServers(aConfiguration.mIceServers, aRv);
+  if (aRv.Failed()) {
+    return;
+  }
+
+  aRv = SetConfiguration(aConfiguration);
+}
+
 nsresult PeerConnectionImpl::SetConfiguration(
     const RTCConfiguration& aConfiguration) {
   nsresult rv = mTransportHandler->SetIceConfig(
@@ -2554,10 +2606,10 @@ nsresult PeerConnectionImpl::SetConfiguration(
   }
 
   // Ignore errors, since those ought to be handled earlier.
-  Unused << mJsepSession->SetBundlePolicy(bundlePolicy);
+  (void)mJsepSession->SetBundlePolicy(bundlePolicy);
 
   if (!aConfiguration.mPeerIdentity.IsEmpty()) {
-    mPeerIdentity = new PeerIdentity(aConfiguration.mPeerIdentity);
+    mPeerIdentity = MakeRefPtr<PeerIdentity>(aConfiguration.mPeerIdentity);
     mRequestedPrivacy = Some(PrincipalPrivacy::Private);
   }
 
@@ -2758,7 +2810,7 @@ void PeerConnectionImpl::RecordSignalingTelemetry() const {
               }
             }
           }
-          return nsFmtCString{FMT_STRING("{}"), fmt::join(payload_names, ", ")};
+          return nsFmtCString{"{}", fmt::join(payload_names, ", ")};
         })((sending ? aTransceiver.mSendTrack : aTransceiver.mRecvTrack)
                .GetNegotiatedDetails());
     const char* direction = ([&]() {
@@ -2836,7 +2888,7 @@ DOMMediaStream* PeerConnectionImpl::GetReceiveStream(
 
 DOMMediaStream* PeerConnectionImpl::CreateReceiveStream(
     const std::string& aId) {
-  mReceiveStreams.AppendElement(new DOMMediaStream(mWindow));
+  mReceiveStreams.AppendElement(MakeRefPtr<DOMMediaStream>(mWindow));
   mReceiveStreams.LastElement()->AssignId(NS_ConvertASCIItoUTF16(aId.c_str()));
   return mReceiveStreams.LastElement();
 }
@@ -2887,7 +2939,7 @@ void PeerConnectionImpl::DoSetDescriptionSuccessPostProcessing(
           // flight (that will race against the [[SendEncodings]]
           // modification caused by sRD(offer)), or when addTrack has been
           // called while sRD(offer) was in progress.
-          mUncommittedJsepSession.reset(mJsepSession->Clone());
+          mUncommittedJsepSession = mJsepSession->Clone();
           JsepSession::Result result;
           if (aRemote) {
             mUncommittedJsepSession->SetRemoteDescription(
@@ -3074,6 +3126,15 @@ void PeerConnectionImpl::DoSetDescriptionSuccessPostProcessing(
           }
         }
 
+        if (aSdpType == dom::RTCSdpType::Answer) {
+          dom::RTCIceRole role = mJsepSession->IsIceControlling()
+                                     ? dom::RTCIceRole::Controlling
+                                     : dom::RTCIceRole::Controlled;
+          for (const auto& dtlsTransport : GetActiveTransports()) {
+            dtlsTransport->IceTransport()->SetRole(role);
+          }
+        }
+
         // Make sure to wait until after we've calculated track changes before
         // doing this.
         for (size_t i = 0; i < mTransceivers.Length();) {
@@ -3249,7 +3310,7 @@ void PeerConnectionImpl::CandidateReady(const std::string& candidate,
     // the current/pending local descriptions when determining whether to
     // surface the candidate to content, which does not take into account any
     // in-progress sRD/sLD.
-    Unused << mUncommittedJsepSession->AddLocalIceCandidate(
+    (void)mUncommittedJsepSession->AddLocalIceCandidate(
         candidate, transportId, ufrag, &level, &mid, &skipped);
   }
 
@@ -3301,8 +3362,16 @@ void PeerConnectionImpl::SendLocalIceCandidateToContent(
 
 void PeerConnectionImpl::IceConnectionStateChange(
     const std::string& aTransportId, dom::RTCIceTransportState domState) {
+  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread");
+
+  // Let connection be the RTCPeerConnection object associated with this ICE
+  // Agent.
+  RefPtr<PeerConnectionImpl> connection(this);
+
   // If connection.[[IsClosed]] is true, abort these steps.
-  PC_AUTO_ENTER_API_CALL_VOID_RETURN(false);
+  if (IsClosed()) {
+    return;
+  }
 
   CSFLogDebug(LOGTAG, "IceConnectionStateChange: %s %d (%p)",
               aTransportId.c_str(), static_cast<int>(domState), this);
@@ -3462,6 +3531,9 @@ bool PeerConnectionImpl::UpdateIceConnectionState() {
 
 void PeerConnectionImpl::OnCandidateFound(const std::string& aTransportId,
                                           const CandidateInfo& aCandidateInfo) {
+  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread");
+  RefPtr<PeerConnectionImpl> kungFuDeathGrip(this);
+
   if (mStunAddrsRequest && !aCandidateInfo.mMDNSAddress.empty()) {
     MOZ_ASSERT(!aCandidateInfo.mActualAddress.empty());
 
@@ -3492,10 +3564,34 @@ void PeerConnectionImpl::OnCandidateFound(const std::string& aTransportId,
                  aCandidateInfo.mUfrag);
 }
 
+void PeerConnectionImpl::OnCandidateError(
+    const IceCandidateErrorInfo& aErrorInfo) {
+  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread");
+  RefPtr<PeerConnectionImpl> kungFuDeathGrip(this);
+
+  // Spec does not actually say to do this. That's probably a spec bug.
+  if (IsClosed()) {
+    return;
+  }
+
+  STAMP_TIMECARD(mTimeCard, "Sending icecandidateerror event");
+  uint16_t errorCode = aErrorInfo.mErrorCode ? aErrorInfo.mErrorCode : 701;
+  JSErrorResult rv;
+  mPCObserver->OnIceCandidateError(ObString(aErrorInfo.mAddress.c_str()),
+                                   aErrorInfo.mPort,
+                                   ObString(aErrorInfo.mUrl.c_str()), errorCode,
+                                   ObString(aErrorInfo.mErrorText.c_str()), rv);
+}
+
 void PeerConnectionImpl::IceGatheringStateChange(
     const std::string& aTransportId, dom::RTCIceGathererState state) {
+  MOZ_ASSERT(NS_IsMainThread(), "Wrong thread");
+  RefPtr<PeerConnectionImpl> kungFuDeathGrip(this);
+
   // If connection.[[IsClosed]] is true, abort these steps.
-  PC_AUTO_ENTER_API_CALL_VOID_RETURN(false);
+  if (IsClosed()) {
+    return;
+  }
 
   CSFLogWarn(LOGTAG, "IceGatheringStateChange: %s %d (%p)",
              aTransportId.c_str(), static_cast<int>(state), this);
@@ -3636,14 +3732,25 @@ void PeerConnectionImpl::UpdateDefaultCandidate(
 }
 
 RefPtr<dom::RTCStatsPromise> PeerConnectionImpl::GetDataChannelStats(
-    const RefPtr<DataChannelConnection>& aDataChannelConnection,
     const DOMHighResTimeStamp aTimestamp) {
-  UniquePtr<dom::RTCStatsCollection> report(new dom::RTCStatsCollection);
-  if (aDataChannelConnection) {
-    aDataChannelConnection->AppendStatsToReport(report, aTimestamp);
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mDataConnection) {
+    return mDataConnection->GetStats(aTimestamp)
+        ->Then(GetMainThreadSerialEventTarget(), __func__,
+               [](DataChannelConnection::StatsPromise::ResolveOrRejectValue&&
+                      aResult) {
+                 auto report = MakeUnique<dom::RTCStatsCollection>();
+                 if (aResult.IsResolve()) {
+                   if (!report->mDataChannelStats.AppendElements(
+                           aResult.ResolveValue(), fallible)) {
+                     mozalloc_handle_oom(0);
+                   }
+                 }
+                 return RTCStatsPromise::CreateAndResolve(std::move(report),
+                                                          __func__);
+               });
   }
-  return RTCStatsPromise::CreateAndResolve(std::move(report), __func__);
-  ;
+  return nullptr;
 }
 
 void PeerConnectionImpl::CollectConduitTelemetryData() {
@@ -3816,7 +3923,8 @@ RefPtr<dom::RTCStatsReportPromise> PeerConnectionImpl::GetStats(
       std::tuple<RTCRtpTransceiver*, RefPtr<RTCStatsPromise::AllPromiseType>>>
       transceiverStatsPromises;
   for (const auto& transceiver : mTransceivers) {
-    const bool sendSelected = transceiver->Sender()->HasTrack(aSelector);
+    const bool sendSelected = transceiver->Sender()->HasTrack(aSelector) ||
+                              (!aSelector && transceiver->HasBeenUsedToSend());
     const bool recvSelected = transceiver->Receiver()->HasTrack(aSelector);
     if (!sendSelected && !recvSelected) {
       continue;
@@ -3853,7 +3961,9 @@ RefPtr<dom::RTCStatsReportPromise> PeerConnectionImpl::GetStats(
     promises.AppendElement(mTransportHandler->GetIceStats(transportId, now));
   }
 
-  promises.AppendElement(GetDataChannelStats(mDataConnection, now));
+  if (mDataConnection) {
+    promises.AppendElement(GetDataChannelStats(now));
+  }
 
   auto pcStatsCollection = MakeUnique<dom::RTCStatsCollection>();
   RTCPeerConnectionStats pcStats;
@@ -3871,8 +3981,7 @@ RefPtr<dom::RTCStatsReportPromise> PeerConnectionImpl::GetStats(
 
   // This is what we're going to return; all the stuff in |promises| will be
   // accumulated here.
-  UniquePtr<dom::RTCStatsReportInternal> report(
-      new dom::RTCStatsReportInternal);
+  auto report = MakeUnique<dom::RTCStatsReportInternal>();
   report->mPcid = NS_ConvertASCIItoUTF16(mName.c_str());
   if (mWindow && mWindow->GetBrowsingContext()) {
     report->mBrowserId = mWindow->GetBrowsingContext()->BrowserId();
@@ -4042,13 +4151,13 @@ void PeerConnectionImpl::StunAddrsHandler::OnMDNSQueryComplete(
   if (!pcw.impl()) {
     return;
   }
-  auto itor = pcw.impl()->mQueriedMDNSHostnames.find(hostname.BeginReading());
+  auto itor = pcw.impl()->mQueriedMDNSHostnames.find(hostname.get());
   if (itor != pcw.impl()->mQueriedMDNSHostnames.end()) {
     if (address) {
       for (auto& cand : itor->second) {
         // Replace obfuscated address with actual address
         std::string obfuscatedAddr = cand.mTokenizedCandidate[4];
-        cand.mTokenizedCandidate[4] = address->BeginReading();
+        cand.mTokenizedCandidate[4] = address->get();
         std::ostringstream o;
         for (size_t i = 0; i < cand.mTokenizedCandidate.size(); ++i) {
           o << cand.mTokenizedCandidate[i];
@@ -4131,7 +4240,7 @@ bool PeerConnectionImpl::ShouldForceProxy() const {
   }
 
   bool proxyUsed = false;
-  Unused << httpChannelInternal->GetIsProxyUsed(&proxyUsed);
+  (void)httpChannelInternal->GetIsProxyUsed(&proxyUsed);
   return proxyUsed;
 }
 
@@ -4177,13 +4286,11 @@ void PeerConnectionImpl::UpdateRTCDtlsTransports() {
             return;
           }
 
-          // Why on earth does the spec use a floating point for this?
-          double maxMessageSize =
-              static_cast<double>(mDataConnection->GetMaxMessageSize());
+          double maxMessageSize = mDataConnection->GetMaxMessageSize();
           Nullable<uint16_t> maxChannels;
 
           if (!oldSctp) {
-            mSctpTransport = new RTCSctpTransport(
+            mSctpTransport = MakeRefPtr<RTCSctpTransport>(
                 GetParentObject(), *dtlsTransport, maxMessageSize, maxChannels);
           } else {
             // Restore the SCTP transport we had before this function was called
@@ -4438,11 +4545,12 @@ void PeerConnectionImpl::AddIceCandidate(const std::string& aCandidate,
           cand.mTokenizedCandidate = std::move(tokens);
           cand.mTransportId = aTransportId;
           cand.mUfrag = aUfrag;
-          mQueriedMDNSHostnames[addr].push_back(cand);
+          mQueriedMDNSHostnames[addr].push_back(std::move(cand));
 
           GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
               "PeerConnectionImpl::SendQueryMDNSHostname",
-              [self = RefPtr<PeerConnectionImpl>(this), addr]() mutable {
+              [self = RefPtr<PeerConnectionImpl>(this),
+               addr = std::move(addr)]() mutable {
                 if (self->mStunAddrsRequest) {
                   self->StampTimecard("Look up mDNS name");
                   self->mStunAddrsRequest->SendQueryMDNSHostname(
@@ -4610,7 +4718,7 @@ already_AddRefed<dom::RTCRtpTransceiver> PeerConnectionImpl::CreateTransceiver(
     });
   }
 
-  RefPtr<RTCRtpTransceiver> transceiver = new RTCRtpTransceiver(
+  RefPtr transceiver = MakeRefPtr<RTCRtpTransceiver>(
       mWindow, PrivacyRequested(), this, mTransportHandler, mJsepSession.get(),
       aId, aIsVideo, mSTSThread.get(), aSendTrack, mCall.get(), mIdGenerator);
 
@@ -4710,8 +4818,8 @@ std::unique_ptr<NrSocketProxyConfig> PeerConnectionImpl::GetProxyConfig()
   net::LoadInfoArgs loadInfoArgs;
   MOZ_ALWAYS_SUCCEEDS(
       mozilla::ipc::LoadInfoToLoadInfoArgs(loadInfo, &loadInfoArgs));
-  return std::unique_ptr<NrSocketProxyConfig>(new NrSocketProxyConfig(
-      net::WebrtcProxyConfig(id, alpn, loadInfoArgs, mForceProxy)));
+  return std::make_unique<NrSocketProxyConfig>(
+      net::WebrtcProxyConfig(id, alpn, loadInfoArgs, mForceProxy));
 }
 
 MOZ_RUNINIT std::map<uint64_t, PeerConnectionAutoTimer>

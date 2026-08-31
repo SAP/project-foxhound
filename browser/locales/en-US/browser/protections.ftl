@@ -231,3 +231,63 @@ bar-tooltip-cryptominer =
        [one] { $count } cryptominer ({ $percentage }%)
       *[other] { $count } cryptominers ({ $percentage }%)
     }
+
+# Privacy Metrics Card
+privacy-metrics-title = Privacy Protections
+# Variables:
+#   $count (Number) - Total number of trackers blocked this week
+privacy-metrics-blocked-this-week =
+    { $count ->
+        [one] { $count } blocked this week
+       *[other] { $count } blocked this week
+    }
+# Variables:
+#   $count (Number) - Number of trackers blocked
+privacy-metrics-trackers =
+    { $count ->
+        [one] { $count } tracker
+       *[other] { $count } trackers
+    }
+# Variables:
+#   $count (Number) - Number of fingerprinters blocked
+privacy-metrics-fingerprinters =
+    { $count ->
+        [one] { $count } fingerprinter
+       *[other] { $count } fingerprinters
+    }
+# Variables:
+#   $count (Number) - Number of tracking cookies blocked
+privacy-metrics-cookies =
+    { $count ->
+        [one] { $count } tracking cookie
+       *[other] { $count } tracking cookies
+    }
+# Variables:
+#   $count (Number) - Number of social trackers blocked
+privacy-metrics-social =
+    { $count ->
+        [one] { $count } social tracker
+       *[other] { $count } social trackers
+    }
+privacy-metrics-empty = No trackers blocked this week. { -brand-short-name } protects you from the following threats as you browse.
+privacy-metrics-loading = Loading protection stats…
+privacy-metrics-error = Unable to load protection stats.
+privacy-metrics-private-window = { -brand-short-name } continues to block trackers in Private Windows, but does not keep a record of what was blocked.
+
+## VPN promo card and banner
+
+protections-vpn-title = Take privacy protections beyond the browser
+protections-vpn-header-content = Protect your entire device with { -mozilla-vpn-brand-name }. One tap encrypts all traffic and hides your location.
+protections-get-vpn-link = Get { -mozilla-vpn-brand-name }
+
+protections-vpn-title-subscribed = VPN: Subscribed
+# Variables
+#   $count (number): Number of devices
+protections-vpn-header-content-subscribed =
+    { $count ->
+       *[other] Using the { -mozilla-vpn-brand-name } encrypts all your traffic and hides your location — on up to { $count } devices. Get the most from your subscription — add it from the <a data-l10n-name="playstore-link">Google Play Store</a> or <a data-l10n-name="appstore-link">Apple App Store</a>.
+    }
+
+protections-vpn-banner-header = Protection that extends beyond the browser
+protections-vpn-banner-content = Try { -mozilla-vpn-brand-name } risk-free and see why TechRadar says, “its speed, simplicity and low monthly price make it worth a look.”
+protections-vpn-banner-link = Get { -mozilla-vpn-brand-name }

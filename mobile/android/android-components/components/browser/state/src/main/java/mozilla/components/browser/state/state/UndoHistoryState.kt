@@ -16,9 +16,11 @@ import mozilla.components.browser.state.state.recover.RecoverableTab
  * avoid removing/restoring the wrong state in a multi-threaded environment.
  * @param tabs List of previously removed tabs.
  * @param selectedTabId Id of the tab in [tabs] that was selected and should get reselected on restore.
+ * @param tabPartitions a mapping of IDs to the corresponding [TabPartition].
  */
 data class UndoHistoryState(
     val tag: String = "",
     val tabs: List<RecoverableTab> = emptyList(),
     val selectedTabId: String? = null,
+    val tabPartitions: Map<String, TabPartition> = emptyMap(),
 )

@@ -1,0 +1,46 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+.weather-widget {
+  .weather-icon {
+    width: var(--size-item-medium);
+    height: auto;
+    vertical-align: middle;
+
+    @media (prefers-contrast) {
+      -moz-context-properties: fill, stroke;
+      fill: currentColor;
+      stroke: currentColor;
+    }
+
+    &.iconId1 { content: url('chrome://browser/skin/weather/sunny.svg'); }
+    &.iconId2 { content: url('chrome://browser/skin/weather/mostly-sunny.svg'); }
+    &:is(.iconId3, .iconId4, .iconId6) { content: url('chrome://browser/skin/weather/partly-sunny.svg'); }
+    &.iconId5 { content: url('chrome://browser/skin/weather/hazy-sunshine.svg'); }
+    &:is(.iconId7, .iconId8) { content: url('chrome://browser/skin/weather/cloudy.svg'); }
+    &.iconId11 { content: url('chrome://browser/skin/weather/fog.svg'); }
+    &.iconId12 { content: url('chrome://browser/skin/weather/showers.svg'); }
+    &:is(.iconId13, .iconId14) { content: url('chrome://browser/skin/weather/mostly-cloudy-with-showers.svg'); }
+    &.iconId15 { content: url('chrome://browser/skin/weather/thunderstorms.svg'); }
+    &:is(.iconId16, .iconId17) { content: url('chrome://browser/skin/weather/mostly-cloudy-with-thunderstorms.svg'); }
+    &.iconId18 { content: url('chrome://browser/skin/weather/rain.svg'); }
+    &:is(.iconId19, .iconId20, .iconId25) { content: url('chrome://browser/skin/weather/flurries.svg'); }
+    &.iconId21 { content: url('chrome://browser/skin/weather/partly-sunny-with-flurries.svg'); }
+    &:is(.iconId22, .iconId23) { content: url('chrome://browser/skin/weather/snow.svg'); }
+    &:is(.iconId24, .iconId31) { content: url('chrome://browser/skin/weather/ice.svg'); }
+    &:is(.iconId26, .iconId29) { content: url('chrome://browser/skin/weather/freezing-rain.svg'); }
+    &.iconId30 { content: url('chrome://browser/skin/weather/hot.svg'); }
+    &.iconId32 { content: url('chrome://browser/skin/weather/windy.svg'); }
+    &.iconId33 { content: url('chrome://browser/skin/weather/night-clear.svg'); }
+    &:is(.iconId34, .iconId35, .iconId36, .iconId38) { content: url('chrome://browser/skin/weather/night-mostly-clear.svg'); }
+    &.iconId37 { content: url('chrome://browser/skin/weather/night-hazy-moonlight.svg'); }
+
+    &:is(.iconId39, .iconId40) {
+      content: url('chrome://browser/skin/weather/night-partly-cloudy-with-showers.svg');
+      height: var(--size-item-large);
+    }
+    &:is(.iconId41, .iconId42) { content: url('chrome://browser/skin/weather/night-partly-cloudy-with-thunderstorms.svg'); }
+    &:is(.iconId43, .iconId44) { content: url('chrome://browser/skin/weather/night-mostly-cloudy-with-flurries.svg'); }
+  }
+}

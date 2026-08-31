@@ -1,14 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VsyncParent.h"
 
-#include "mozilla/Unused.h"
 #include "nsThreadUtils.h"
-#include "nsIThread.h"
 
 namespace mozilla::dom {
 
@@ -56,7 +52,7 @@ void VsyncParent::DispatchVsyncEvent(const VsyncEvent& aVsync) {
   // notification.
   if (mObservingVsync && !mDestroyed) {
     TimeDuration vsyncRate = mVsyncDispatcher->GetVsyncRate();
-    Unused << SendNotify(aVsync, vsyncRate.ToMilliseconds());
+    (void)SendNotify(aVsync, vsyncRate.ToMilliseconds());
   }
 }
 

@@ -11,12 +11,12 @@ import mozilla.components.browser.state.state.SearchState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertNotNull
 
 class BrowserStoreKtTest {
     @Test
@@ -42,7 +42,7 @@ class BrowserStoreKtTest {
 
         store.waitForSelectedOrDefaultSearchEngine { searchEngine ->
             assertNotNull(searchEngine)
-            assertEquals("google", searchEngine!!.id)
+            assertEquals("google", searchEngine.id)
             latch.countDown()
         }
 
@@ -57,7 +57,7 @@ class BrowserStoreKtTest {
 
         store.waitForSelectedOrDefaultSearchEngine { searchEngine ->
             assertNotNull(searchEngine)
-            assertEquals("google", searchEngine!!.id)
+            assertEquals("google", searchEngine.id)
             latch.countDown()
         }
 
@@ -73,6 +73,8 @@ class BrowserStoreKtTest {
                 ),
                 userSelectedSearchEngineId = null,
                 userSelectedSearchEngineName = null,
+                userSelectedPrivateSearchEngineId = null,
+                userSelectedPrivateSearchEngineName = null,
                 regionDefaultSearchEngineId = "google",
                 customSearchEngines = emptyList(),
                 hiddenSearchEngines = emptyList(),
@@ -80,6 +82,7 @@ class BrowserStoreKtTest {
                 additionalAvailableSearchEngines = emptyList(),
                 additionalSearchEngines = emptyList(),
                 regionSearchEnginesOrder = listOf("google"),
+                searchEnginesConfigurationId = 1,
             ),
         )
 
@@ -102,6 +105,8 @@ class BrowserStoreKtTest {
                 regionSearchEngines = listOf(),
                 userSelectedSearchEngineId = null,
                 userSelectedSearchEngineName = null,
+                userSelectedPrivateSearchEngineId = null,
+                userSelectedPrivateSearchEngineName = null,
                 regionDefaultSearchEngineId = "default",
                 customSearchEngines = emptyList(),
                 hiddenSearchEngines = emptyList(),
@@ -109,6 +114,7 @@ class BrowserStoreKtTest {
                 additionalAvailableSearchEngines = emptyList(),
                 additionalSearchEngines = emptyList(),
                 regionSearchEnginesOrder = listOf("google"),
+                searchEnginesConfigurationId = 12,
             ),
         )
 

@@ -183,7 +183,7 @@ add_task(async function test_double_key_typing_and_delay() {
   // Test three 2-key typing bursts.
   const text = ["Ab", "cd", "ef"];
 
-  const testStartTime = Cu.now();
+  const testStartTime = ChromeUtils.now();
 
   Services.prefs.setIntPref(PREF_TYPING_DELAY, POST_TYPING_DELAY);
 
@@ -209,7 +209,7 @@ add_task(async function test_double_key_typing_and_delay() {
         (accumulator, current) => accumulator + current.length,
         0
       ),
-      typingTimeIsLessThan: Cu.now() - testStartTime,
+      typingTimeIsLessThan: ChromeUtils.now() - testStartTime,
     },
   ]);
 });
@@ -217,7 +217,7 @@ add_task(async function test_double_key_typing_and_delay() {
 add_task(async function test_typing_and_delay() {
   await Interactions.reset();
 
-  const testStartTime = Cu.now();
+  const testStartTime = ChromeUtils.now();
 
   Services.prefs.setIntPref(PREF_TYPING_DELAY, POST_TYPING_DELAY);
 
@@ -243,7 +243,7 @@ add_task(async function test_typing_and_delay() {
         0
       ),
       typingTimeIsGreaterThan: 0,
-      typingTimeIsLessThan: Cu.now() - testStartTime,
+      typingTimeIsLessThan: ChromeUtils.now() - testStartTime,
     },
   ]);
 });
@@ -251,7 +251,7 @@ add_task(async function test_typing_and_delay() {
 add_task(async function test_typing_and_reload() {
   await Interactions.reset();
 
-  const testStartTime = Cu.now();
+  const testStartTime = ChromeUtils.now();
 
   await BrowserTestUtils.withNewTab(TEST_URL, async browser => {
     await sendTextToInput(browser, sentenceFragments[0]);
@@ -281,13 +281,13 @@ add_task(async function test_typing_and_reload() {
         url: TEST_URL,
         keypresses: sentenceFragments[0].length,
         typingTimeIsGreaterThan: 0,
-        typingTimeIsLessThan: Cu.now() - testStartTime,
+        typingTimeIsLessThan: ChromeUtils.now() - testStartTime,
       },
       {
         url: TEST_URL,
         keypresses: sentenceFragments[1].length,
         typingTimeIsGreaterThan: 0,
-        typingTimeIsLessThan: Cu.now() - testStartTime,
+        typingTimeIsLessThan: ChromeUtils.now() - testStartTime,
       },
     ]);
   });

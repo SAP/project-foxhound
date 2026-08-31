@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +17,7 @@
 #include "nsISupportsUtils.h"
 #include "nsIWidget.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/ipc/IPCTypes.h"
@@ -84,8 +84,7 @@ constexpr int64_t Int32Modulo = 2147483648;
 std::unique_ptr<char[]> GetTokenInfo(ScopedHANDLE& token) {
   DWORD length = 0;
   // https://docs.microsoft.com/en-us/windows/desktop/api/securitybaseapi/nf-securitybaseapi-gettokeninformation
-  mozilla::Unused << GetTokenInformation(token.get(), TokenUser, nullptr, 0,
-                                         &length);
+  (void)GetTokenInformation(token.get(), TokenUser, nullptr, 0, &length);
   if (!length || GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
     MOZ_LOG(gCredentialManagerSecretLog, LogLevel::Debug,
             ("Unable to obtain current token info."));

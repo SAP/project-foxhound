@@ -8,13 +8,13 @@ const exampleUrl = "https://example.com/1";
 
 function click(target) {
   let promise = BrowserTestUtils.waitForEvent(target, "click");
-  EventUtils.synthesizeMouseAtCenter(target, {}, target.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(target, {}, target.documentGlobal);
   return promise;
 }
 
 function openContextMenu(target) {
   let popupShownPromise = BrowserTestUtils.waitForEvent(
-    target.ownerGlobal,
+    target.documentGlobal,
     "contextmenu"
   );
 
@@ -24,7 +24,7 @@ function openContextMenu(target) {
       type: "contextmenu",
       button: 2,
     },
-    target.ownerGlobal
+    target.documentGlobal
   );
   return popupShownPromise;
 }
@@ -36,28 +36,28 @@ function drag(target, fromX, fromY, toX, toY) {
     fromX,
     fromY,
     { type: "mousemove" },
-    target.ownerGlobal
+    target.documentGlobal
   );
   EventUtils.synthesizeMouse(
     target,
     fromX,
     fromY,
     { type: "mousedown" },
-    target.ownerGlobal
+    target.documentGlobal
   );
   EventUtils.synthesizeMouse(
     target,
     toX,
     toY,
     { type: "mousemove" },
-    target.ownerGlobal
+    target.documentGlobal
   );
   EventUtils.synthesizeMouse(
     target,
     toX,
     toY,
     { type: "mouseup" },
-    target.ownerGlobal
+    target.documentGlobal
   );
   return promise;
 }
@@ -222,7 +222,7 @@ add_task(async function dragSelect() {
   gURLBar.value = exampleSearch.repeat(10);
   // Drags from an artibrary offset of 30 to test for bug 1562145: that the
   // selection does not start at the beginning.
-  await drag(gURLBar.inputField, 30, 0, 60, 0);
+  await drag(gURLBar.inputField, 30, 10, 60, 10);
   Assert.greater(
     gURLBar.selectionStart,
     0,
@@ -260,7 +260,7 @@ add_task(async function dragAfterSelectAll() {
   checkPrimarySelection();
 
   // The offset of 30 is arbitrary.
-  await drag(gURLBar.inputField, 30, 0, 60, 0);
+  await drag(gURLBar.inputField, 30, 10, 60, 10);
 
   Assert.notEqual(
     gURLBar.selectionStart,

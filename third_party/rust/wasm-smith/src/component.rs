@@ -4,7 +4,7 @@
 // FIXME(#1000): component support in `wasm-smith` is a work in progress.
 #![allow(unused_variables, dead_code)]
 
-use crate::{arbitrary_loop, Config};
+use crate::{Config, arbitrary_loop};
 use arbitrary::{Arbitrary, Result, Unstructured};
 use std::collections::BTreeMap;
 use std::{
@@ -22,7 +22,7 @@ mod encode;
 /// Construct instances of this type with [the `Arbitrary`
 /// trait](https://docs.rs/arbitrary/*/arbitrary/trait.Arbitrary.html).
 ///
-/// [component]: https://github.com/WebAssembly/component-model/blob/ast-and-binary/design/MVP/Explainer.md
+/// [component]: https://github.com/WebAssembly/component-model/blob/main/design/mvp/Explainer.md
 ///
 /// ## Configured Generated Components
 ///
@@ -792,7 +792,7 @@ impl ComponentBuilder {
                 0 => {
                     let module = crate::limited_string(100, u)?;
                     let existing_module_imports = imports.entry(module.clone()).or_default();
-                    let field = crate::unique_string(100, existing_module_imports, u)?;
+                    let name = crate::unique_string(100, existing_module_imports, u)?;
                     let entity_type = match self.arbitrary_core_entity_type(
                         u,
                         &types,
@@ -804,7 +804,7 @@ impl ComponentBuilder {
                     };
                     defs.push(ModuleTypeDef::Import(crate::core::Import {
                         module,
-                        field,
+                        name,
                         entity_type,
                     }));
                 }
@@ -1784,7 +1784,7 @@ fn canonical_abi_for(func_ty: &FuncType) -> Rc<crate::core::FuncType> {
             PrimitiveValType::S64 | PrimitiveValType::U64 => ValType::I64,
             PrimitiveValType::F32 => ValType::F32,
             PrimitiveValType::F64 => ValType::F64,
-            PrimitiveValType::String => {
+            PrimitiveValType::String | PrimitiveValType::ErrorContext => {
                 unimplemented!("non-scalar types are not supported yet")
             }
         },
@@ -2067,7 +2067,7 @@ fn is_scalar(ty: &ComponentValType) -> bool {
             | PrimitiveValType::F32
             | PrimitiveValType::F64
             | PrimitiveValType::Char => true,
-            PrimitiveValType::String => false,
+            PrimitiveValType::String | PrimitiveValType::ErrorContext => false,
         },
         ComponentValType::Type(_) => false,
     }

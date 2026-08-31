@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,18 +6,16 @@
 #define mozilla_TimingParams_h
 
 #include "X11UndefineNone.h"
-#include "nsPrintfCString.h"
-#include "nsStringFwd.h"
-#include "nsPrintfCString.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/StickyTimeDuration.h"
+#include "mozilla/TimeStamp.h"                   // for TimeDuration
+#include "mozilla/dom/AnimationEffectBinding.h"  // for FillMode
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/UnionTypes.h"  // For OwningUnrestrictedDoubleOrString
-#include "mozilla/Maybe.h"
-#include "mozilla/StickyTimeDuration.h"
-#include "mozilla/TimeStamp.h"  // for TimeDuration
-#include "mozilla/ServoStyleConsts.h"
-
-#include "mozilla/dom/AnimationEffectBinding.h"  // for FillMode
-                                                 // and PlaybackDirection
+#include "nsPrintfCString.h"
+#include "nsStringFwd.h"
+// and PlaybackDirection
 
 namespace mozilla {
 
@@ -78,13 +74,14 @@ struct TimingParams {
       const TimingParams& aSource,
       const dom::OptionalEffectTiming& aEffectTiming, ErrorResult& aRv);
 
-  // Range-checks and validates an UnrestrictedDoubleOrString or
-  // OwningUnrestrictedDoubleOrString object and converts to a
-  // StickyTimeDuration value or Nothing() if aDuration is "auto".
-  // Caller must check aRv.Failed().
-  template <class DoubleOrString>
-  static Maybe<StickyTimeDuration> ParseDuration(DoubleOrString& aDuration,
-                                                 ErrorResult& aRv) {
+  // Range-checks and validates an UnrestrictedDoubleOrCSSNumericValueOrString
+  // or its owning variant and converts to a StickyTimeDuration value, or
+  // Nothing() if aDuration a CSSNumericValue or is "auto". Caller must check
+  // aRv.Failed().
+  // https://drafts.csswg.org/web-animations-2/#dom-effecttiming-duration
+  template <class DoubleOrCSSNumericValueOrString>
+  static Maybe<StickyTimeDuration> CheckedDuration(
+      DoubleOrCSSNumericValueOrString& aDuration, ErrorResult& aRv) {
     Maybe<StickyTimeDuration> result;
     if (aDuration.IsUnrestrictedDouble()) {
       double durationInMs = aDuration.GetAsUnrestrictedDouble();
@@ -94,6 +91,10 @@ struct TimingParams {
         nsPrintfCString err("Duration (%g) must be nonnegative", durationInMs);
         aRv.ThrowTypeError(err);
       }
+    } else if (aDuration.IsCSSNumericValue()) {
+      // See the "NOTE" at the end of:
+      // https://drafts.csswg.org/web-animations-2/#the-effecttiming-dictionaries
+      aRv.ThrowTypeError("Duration is not settable as a CSSNumericValue.");
     } else if (!aDuration.GetAsString().EqualsLiteral("auto")) {
       aRv.ThrowTypeError<dom::MSG_INVALID_DURATION_ERROR>(
           NS_ConvertUTF16toUTF8(aDuration.GetAsString()));

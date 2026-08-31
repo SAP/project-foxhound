@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -40,14 +38,41 @@ FINAL_TARGET_FILES.data.data += [
 ]
 FINAL_TARGET_FILES.data.content += [
     "../data/content/activity-stream.bundle.js",
+    "../data/content/bundled-renderer-index.js",
+    "../data/content/bundled-renderer.css",
     "../data/content/newtab-render.js",
+    "../data/content/remote-renderer-host.html",
+    "../data/content/vendor.bundle.js",
 ]
 FINAL_TARGET_FILES.data.css += [
     "../css/activity-stream.css",
 ]
+FINAL_TARGET_FILES.data.css["nova"] += [
+    "../css/nova/activity-stream.css",
+]
 FINAL_TARGET_FILES.prerendered += [
     "../prerendered/activity-stream-noscripts.html",
     "../prerendered/activity-stream.html",
+]
+
+# The following are resources that exist in other component folders that are
+# included in the newtab resources at build time. Specifically, these are for
+# external UI components maintained by other teams that have the ability to
+# "train-hop" with the rest of newtab.
+FINAL_TARGET_FILES.data.data.content["external-components"][
+    "asrouter-newtab-multistage"
+] += [
+    "../../../components/asrouter/content/components/asrouter-newtab-multistage/asrouter-newtab-multistage.bundle.js",
+    "../../../components/asrouter/content/components/asrouter-newtab-multistage/asrouter-newtab-multistage.css",
+]
+
+FINAL_TARGET_FILES.data.data.content["external-components"][
+    "asrouter-newtab-message"
+] += [
+    "../../../components/asrouter/content/components/asrouter-newtab-message/asrouter-newtab-message.css",
+    "../../../components/asrouter/content/components/asrouter-newtab-message/asrouter-newtab-message.mjs",
+    "../../../components/asrouter/content/components/asrouter-newtab-message/ASRouterNewTabMessageChild.sys.mjs",
+    "../../../components/asrouter/content/components/asrouter-newtab-message/ASRouterNewTabMessageParent.sys.mjs",
 ]
 
 # This doesn't need to be in sync with the addon-jar.mn file, as the locales

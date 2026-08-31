@@ -76,6 +76,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1166138
 
       SpecialPowers.pushPrefEnv({'set': [['layout.css.devPixelsPerPx', 1]]});
       await spin(true);
+      is(image.currentSrc, img1x, "changing to 1x while unbound should update");
 
       document.body.appendChild(image);
       await spin(false);
@@ -83,10 +84,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1166138
 
       document.body.removeChild(image);
       SpecialPowers.pushPrefEnv({'set': [['layout.css.devPixelsPerPx', 2]]});
-      await spin(false); // No load should occur because the element is unbound
+      await spin(true);
+      is(image.currentSrc, img2x, "changing to 2x while unbound should update");
 
       document.body.appendChild(image);
-      await spin(true);
+      await spin(false);
       is(image.currentSrc, img2x, "remove and re-add tag after changing to 2x");
 
       // get rid of the srcset attribute! It should become the default

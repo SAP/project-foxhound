@@ -10,6 +10,7 @@ const fluentStrings = [
   "moz-message-bar-message",
   "moz-message-bar-message-heading",
   "moz-message-bar-message-heading-long",
+  "moz-message-bar-message-with-link",
 ];
 
 export default {
@@ -47,6 +48,7 @@ moz-message-bar-message-heading-long =
   .heading = A longer heading to check text wrapping in the message bar
   .message = Some message that we use to check text wrapping. Some message that we use to check text wrapping.
 moz-message-bar-button = Click me!
+moz-message-bar-message-slot = This is a message inside of a slot that contains a <a data-l10n-name="moz-message-bar-link">link</a>
     `,
   },
 };
@@ -59,6 +61,7 @@ const Template = ({
   dismissable,
   hasSupportLink,
   hasActionButton,
+  hasSlottedMessage,
 }) => html`
   <moz-message-bar
     type=${type}
@@ -67,6 +70,14 @@ const Template = ({
     data-l10n-id=${ifDefined(l10nId)}
     ?dismissable=${dismissable}
   >
+    ${hasSlottedMessage
+      ? html` <span slot="message" data-l10n-id="moz-message-bar-message-slot"
+          ><a
+            data-l10n-name="moz-message-bar-link"
+            href="http://example.com"
+          ></a
+        ></span>`
+      : ""}
     ${hasSupportLink
       ? html`
           <a
@@ -91,6 +102,7 @@ Default.args = {
   dismissable: false,
   hasSupportLink: false,
   hasActionButton: false,
+  hasSlottedMessage: false,
 };
 
 export const Dismissable = Template.bind({});
@@ -124,4 +136,10 @@ export const WithHeading = Template.bind({});
 WithHeading.args = {
   ...Default.args,
   l10nId: "moz-message-bar-message-heading",
+};
+
+export const WithMessageSlot = Template.bind({});
+WithMessageSlot.args = {
+  ...Default.args,
+  hasSlottedMessage: true,
 };

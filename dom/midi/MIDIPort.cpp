@@ -1,22 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIPort.h"
+
+#include "MIDILog.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/MIDIAccess.h"
 #include "mozilla/dom/MIDIConnectionEvent.h"
 #include "mozilla/dom/MIDIPortChild.h"
-#include "mozilla/dom/MIDIAccess.h"
 #include "mozilla/dom/MIDITypes.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Promise.h"
 #include "nsContentUtils.h"
 #include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, MOZ_COUNT_DTOR
-#include "MIDILog.h"
 
 using namespace mozilla::ipc;
 
@@ -155,7 +154,7 @@ already_AddRefed<Promise> MIDIPort::Open(ErrorResult& aError) {
   if (mOpeningPromise) {
     return do_AddRef(mOpeningPromise);
   }
-  RefPtr<Promise> p = Promise::Create(GetOwnerGlobal(), aError);
+  RefPtr<Promise> p = Promise::Create(GetRelevantGlobal(), aError);
   if (aError.Failed()) {
     return nullptr;
   }
@@ -170,7 +169,7 @@ already_AddRefed<Promise> MIDIPort::Close(ErrorResult& aError) {
   if (mClosingPromise) {
     return do_AddRef(mClosingPromise);
   }
-  RefPtr<Promise> p = Promise::Create(GetOwnerGlobal(), aError);
+  RefPtr<Promise> p = Promise::Create(GetRelevantGlobal(), aError);
   if (aError.Failed()) {
     return nullptr;
   }

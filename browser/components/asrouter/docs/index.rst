@@ -81,6 +81,7 @@ Current templates include\:
 .. toctree::
   :maxdepth: 1
 
+  action-only
   moments-page
   feature-callout
   contextual-feature-recommendation
@@ -89,6 +90,7 @@ Current templates include\:
   spotlight
   private-browsing
   multi-message
+  menu-message
 
 Detailed Docs
 -------------
@@ -120,6 +122,8 @@ Detailed Docs
 .. toctree::
   :maxdepth: 2
 
+  asrouter-newtab-message
+  asrouter-newtab-multistage-message
   building-and-testing
   debugging-docs
   frequency-caps

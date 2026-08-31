@@ -263,7 +263,6 @@ add_task(async function () {
     },
     {
       info: "Testing when data argument is a BigInt64Array",
-      // eslint-disable-next-line no-undef
       input: new BigInt64Array([1n, 2n, 3n, 4n]),
       expected: {
         columns: ["(index)", "Values"],
@@ -277,7 +276,6 @@ add_task(async function () {
     },
     {
       info: "Testing when data argument is a BigUint64Array",
-      // eslint-disable-next-line no-undef
       input: new BigUint64Array([1n, 2n, 3n, 4n]),
       expected: {
         columns: ["(index)", "Values"],

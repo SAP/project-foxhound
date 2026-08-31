@@ -11,12 +11,14 @@
 #ifndef PC_TEST_FAKE_RTC_CERTIFICATE_GENERATOR_H_
 #define PC_TEST_FAKE_RTC_CERTIFICATE_GENERATOR_H_
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 
 #include "api/scoped_refptr.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "rtc_base/checks.h"
@@ -24,9 +26,11 @@
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/ssl_identity.h"
 
+namespace webrtc {
+
 // RSA with mod size 1024, pub exp 0x10001.
-static const webrtc::RTCCertificatePEM kRsaPems[] = {
-    webrtc::RTCCertificatePEM(
+static const std::array kRsaPems{
+    RTCCertificatePEM(
         "-----BEGIN RSA PRI"  // Linebreak to avoid detection of private
         "VATE KEY-----\n"     // keys by linters.
         "MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAMYRkbhmI7kVA/rM\n"
@@ -55,7 +59,7 @@ static const webrtc::RTCCertificatePEM kRsaPems[] = {
         "LJE/mGw3MyFHEqi81jh95J+ypl6xKW6Rm8jKLR87gUvCaVYn/Z4/P3AqcQTB7wOv\n"
         "UD0A8qfhfDM+LK6rPAnCsVN0NRDY3jvd6rzix9M=\n"
         "-----END CERTIFICATE-----\n"),
-    webrtc::RTCCertificatePEM(
+    RTCCertificatePEM(
         "-----BEGIN RSA PRI"  // Linebreak to avoid detection of private
         "VATE KEY-----\n"     // keys by linters.
         "MIICXQIBAAKBgQDeYqlyJ1wuiMsi905e3X81/WA/G3ym50PIDZBVtSwZi7JVQPgj\n"
@@ -93,8 +97,8 @@ static const webrtc::RTCCertificatePEM kRsaPems[] = {
 // `SSLIdentity::Create` and invoking `identity->PrivateKeyToPEMString()`,
 // `identity->PublicKeyToPEMString()` and
 // `identity->certificate().ToPEMString()`.
-static const webrtc::RTCCertificatePEM kEcdsaPems[] = {
-    webrtc::RTCCertificatePEM(
+static const std::array kEcdsaPems{
+    RTCCertificatePEM(
         "-----BEGIN PRI"   // Linebreak to avoid detection of private
         "VATE KEY-----\n"  // keys by linters.
         "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg+qaRsR5uHtqG689M\n"
@@ -109,7 +113,7 @@ static const webrtc::RTCCertificatePEM kEcdsaPems[] = {
         "vK0wCgYIKoZIzj0EAwIDSQAwRgIhAIIc3+CqfkZ9lLwTj1PvUtt3KhnqF2kD0War\n"
         "cCoTBbCxAiEAyp9Cn4vo2ZBhRIVDKyoxmwak8Z0PAVhJAQaWCgoY2D4=\n"
         "-----END CERTIFICATE-----\n"),
-    webrtc::RTCCertificatePEM(
+    RTCCertificatePEM(
         "-----BEGIN PRI"   // Linebreak to avoid detection of private
         "VATE KEY-----\n"  // keys by linters.
         "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQghL/G4JRYnuDNbQuh\n"
@@ -125,8 +129,7 @@ static const webrtc::RTCCertificatePEM kEcdsaPems[] = {
         "1fE/g68CIQD7uoFfbiq6dTp8ZwzbwQ8jJf08KjriamqA9OW/4268Dw==\n"
         "-----END CERTIFICATE-----\n")};
 
-class FakeRTCCertificateGenerator
-    : public webrtc::RTCCertificateGeneratorInterface {
+class FakeRTCCertificateGenerator : public RTCCertificateGeneratorInterface {
  public:
   FakeRTCCertificateGenerator() : should_fail_(false), should_wait_(false) {}
 
@@ -142,7 +145,7 @@ class FakeRTCCertificateGenerator
   int generated_certificates() { return generated_certificates_; }
   int generated_failures() { return generated_failures_; }
 
-  void GenerateCertificateAsync(const rtc::KeyParams& key_params,
+  void GenerateCertificateAsync(const KeyParams& key_params,
                                 const std::optional<uint64_t>& expires_ms,
                                 Callback callback) override {
     // The certificates are created from constant PEM strings and use its coded
@@ -150,26 +153,27 @@ class FakeRTCCertificateGenerator
     RTC_DCHECK(!expires_ms);
 
     // Only supports RSA-1024-0x10001 and ECDSA-P256.
-    if (key_params.type() == rtc::KT_RSA) {
+    if (key_params.type() == KT_RSA) {
       RTC_DCHECK_EQ(key_params.rsa_params().mod_size, 1024);
       RTC_DCHECK_EQ(key_params.rsa_params().pub_exp, 0x10001);
     } else {
-      RTC_DCHECK_EQ(key_params.type(), rtc::KT_ECDSA);
-      RTC_DCHECK_EQ(key_params.ec_curve(), rtc::EC_NIST_P256);
+      RTC_DCHECK_EQ(key_params.type(), KT_ECDSA);
+      RTC_DCHECK_EQ(key_params.ec_curve(), EC_NIST_P256);
     }
-    rtc::KeyType key_type = key_params.type();
-    webrtc::TaskQueueBase::Current()->PostTask(
-        [this, key_type, callback = std::move(callback)]() mutable {
-          GenerateCertificate(key_type, std::move(callback));
-        });
+    KeyType key_type = key_params.type();
+    TaskQueueBase::Current()->PostTask(
+        SafeTask(pending_delete_.flag(),
+                 [this, key_type, callback = std::move(callback)]() mutable {
+                   GenerateCertificate(key_type, std::move(callback));
+                 }));
   }
 
-  static rtc::scoped_refptr<webrtc::RTCCertificate> GenerateCertificate() {
-    switch (rtc::KT_DEFAULT) {
-      case rtc::KT_RSA:
-        return webrtc::RTCCertificate::FromPEM(kRsaPems[0]);
-      case rtc::KT_ECDSA:
-        return webrtc::RTCCertificate::FromPEM(kEcdsaPems[0]);
+  static scoped_refptr<RTCCertificate> GenerateCertificate() {
+    switch (KT_DEFAULT) {
+      case KT_RSA:
+        return RTCCertificate::FromPEM(kRsaPems[0]);
+      case KT_ECDSA:
+        return RTCCertificate::FromPEM(kEcdsaPems[0]);
       default:
         RTC_DCHECK_NOTREACHED();
         return nullptr;
@@ -177,47 +181,50 @@ class FakeRTCCertificateGenerator
   }
 
  private:
-  const webrtc::RTCCertificatePEM& get_pem(const rtc::KeyType& key_type) const {
+  const RTCCertificatePEM& get_pem(const KeyType& key_type) const {
     switch (key_type) {
-      case rtc::KT_RSA:
+      case KT_RSA:
         return kRsaPems[key_index_];
-      case rtc::KT_ECDSA:
+      case KT_ECDSA:
         return kEcdsaPems[key_index_];
       default:
         RTC_DCHECK_NOTREACHED();
         return kEcdsaPems[key_index_];
     }
   }
-  const std::string& get_key(const rtc::KeyType& key_type) const {
+  const std::string& get_key(const KeyType& key_type) const {
     return get_pem(key_type).private_key();
   }
-  const std::string& get_cert(const rtc::KeyType& key_type) const {
+  const std::string& get_cert(const KeyType& key_type) const {
     return get_pem(key_type).certificate();
   }
 
-  void GenerateCertificate(rtc::KeyType key_type, Callback callback) {
+  void GenerateCertificate(KeyType key_type, Callback callback) {
     // If the certificate generation should be stalled, re-post this same
     // message to the queue with a small delay so as to wait in a loop until
     // set_should_wait(false) is called.
     if (should_wait_) {
-      webrtc::TaskQueueBase::Current()->PostDelayedTask(
-          [this, key_type, callback = std::move(callback)]() mutable {
-            GenerateCertificate(key_type, std::move(callback));
-          },
-          webrtc::TimeDelta::Millis(1));
+      TaskQueueBase::Current()->PostDelayedTask(
+          SafeTask(pending_delete_.flag(),
+                   [this, key_type, callback = std::move(callback)]() mutable {
+                     GenerateCertificate(key_type, std::move(callback));
+                   }),
+          TimeDelta::Millis(1));
       return;
     }
     if (should_fail_) {
       ++generated_failures_;
       std::move(callback)(nullptr);
     } else {
-      rtc::scoped_refptr<webrtc::RTCCertificate> certificate =
-          webrtc::RTCCertificate::FromPEM(get_pem(key_type));
+      scoped_refptr<RTCCertificate> certificate =
+          RTCCertificate::FromPEM(get_pem(key_type));
       RTC_DCHECK(certificate);
       ++generated_certificates_;
       std::move(callback)(std::move(certificate));
     }
   }
+
+  ScopedTaskSafetyDetached pending_delete_;
 
   bool should_fail_;
   bool should_wait_;
@@ -226,4 +233,5 @@ class FakeRTCCertificateGenerator
   int generated_failures_ = 0;
 };
 
+}  // namespace webrtc
 #endif  // PC_TEST_FAKE_RTC_CERTIFICATE_GENERATOR_H_

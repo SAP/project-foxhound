@@ -9,10 +9,10 @@ export var TelemetryTestUtils = {
   /**
    * A helper that asserts the value of a scalar.
    *
-   * @param {Object} scalars The snapshot of the scalars.
-   * @param {String} scalarName The name of the scalar to check.
-   * @param {Boolean|Number|String} value The expected value for the scalar.
-   * @param {String} msg The message to print when checking the value.
+   * @param {object} scalars The snapshot of the scalars.
+   * @param {string} scalarName The name of the scalar to check.
+   * @param {boolean | number | string} value The expected value for the scalar.
+   * @param {string} msg The message to print when checking the value.
    */
   assertScalar(scalars, scalarName, value, msg) {
     Assert.equal(scalars[scalarName], value, msg);
@@ -21,8 +21,8 @@ export var TelemetryTestUtils = {
   /**
    * A helper that asserts a scalar is not set.
    *
-   * @param {Object} scalars The snapshot of the scalars.
-   * @param {String} scalarName The name of the scalar to check.
+   * @param {object} scalars The snapshot of the scalars.
+   * @param {string} scalarName The name of the scalar to check.
    */
   assertScalarUnset(scalars, scalarName) {
     Assert.ok(!(scalarName in scalars), scalarName + " must not be reported.");
@@ -32,10 +32,10 @@ export var TelemetryTestUtils = {
    * Asserts if the snapshotted keyed scalars contain the expected
    * data.
    *
-   * @param {Object} scalars The snapshot of the keyed scalars.
-   * @param {String} scalarName The name of the keyed scalar to check.
-   * @param {String} key The key that must be within the keyed scalar.
-   * @param {String|Boolean|Number} expectedValue The expected value for the
+   * @param {object} scalars The snapshot of the keyed scalars.
+   * @param {string} scalarName The name of the keyed scalar to check.
+   * @param {string} key The key that must be within the keyed scalar.
+   * @param {string | boolean | number} expectedValue The expected value for the
    *        provided key in the scalar.
    */
   assertKeyedScalar(scalars, scalarName, key, expectedValue) {
@@ -54,14 +54,14 @@ export var TelemetryTestUtils = {
   /**
    * Returns a snapshot of scalars from the specified process.
    *
-   * @param {String} aProcessName Name of the process. Could be parent or
+   * @param {string} aProcessName Name of the process. Could be parent or
    *   something else.
    * @param {boolean} [aKeyed] Set to true if keyed scalars rather than normal
    *   scalars should be snapshotted.
    * @param {boolean} [aClear] Set to true to clear the scalars once the snapshot
    *   has been obtained.
-   * @param {Number} aChannel The channel dataset type from nsITelemetry.
-   * @returns {Object} The snapshotted scalars from the parent process.
+   * @param {number} aChannel The channel dataset type from nsITelemetry.
+   * @returns {object} The snapshotted scalars from the parent process.
    */
   getProcessScalars(
     aProcessName,
@@ -86,9 +86,9 @@ export var TelemetryTestUtils = {
   /**
    * Asserts that the number of events, after filtering, is equal to numEvents.
    *
-   * @param {Number} numEvents The number of events to assert.
-   * @param {Object} filter As per assertEvents.
-   * @param {Object} options As per assertEvents.
+   * @param {number} numEvents The number of events to assert.
+   * @param {object} filter As per assertEvents.
+   * @param {object} options As per assertEvents.
    */
   assertNumberOfEvents(numEvents, filter, options) {
     // Create an array of empty objects of length numEvents
@@ -102,10 +102,10 @@ export var TelemetryTestUtils = {
   /**
    * Returns the events in a snapshot, after optional filtering.
    *
-   * @param {Object} filter An object of strings or RegExps for first filtering
+   * @param {object} filter An object of strings or RegExps for first filtering
    *                 the event snapshot. Of the form {category, method, object}.
    *                 Absent filters filter nothing.
-   * @param {Object} options An object containing any of
+   * @param {object} options An object containing any of
    *                     - process {string} the process to examine. Default parent.
    */
   getEvents(filter = {}, { process = "parent" } = {}) {
@@ -173,10 +173,10 @@ export var TelemetryTestUtils = {
    *                matches by returning true when called with the field.
    *                `extra` is slightly different. If present it must be an
    *                object whose fields are treated the same way as the others.
-   * @param {Object} filter An object of strings or RegExps for first filtering
+   * @param {object} filter An object of strings or RegExps for first filtering
    *                 the event snapshot. Of the form {category, method, object}.
    *                 Absent filters filter nothing.
-   * @param {Object} options An object containing any of
+   * @param {object} options An object containing any of
    *                     - clear {bool} clear events. Default true.
    *                     - process {string} the process to examine. Default parent.
    */
@@ -241,8 +241,8 @@ export var TelemetryTestUtils = {
         filtered
       )}`
     );
-    if (expectedEvents.length === 0) {
-      // Job's done!
+    if (!expectedEvents.length) {
+      // Without expected events, there's nothing to check.
       return;
     }
 
@@ -263,6 +263,11 @@ export var TelemetryTestUtils = {
     const EXTRA_INDEX = 4;
     for (let i = 0; i < expectedEvents.length; ++i) {
       let expected = expectedEvents[i];
+      if (i >= filtered.length) {
+        // We will have failed the length equality assert above,
+        // so stop here without further logging.
+        return;
+      }
       let actual = filtered[i];
 
       // Match everything up to `extra`
@@ -315,8 +320,8 @@ export var TelemetryTestUtils = {
   /**
    * Clear and get the named histogram.
    *
-   * @param {String} name The name of the histogram
-   * @returns {Object} The obtained histogram.
+   * @param {string} name The name of the histogram
+   * @returns {object} The obtained histogram.
    */
   getAndClearHistogram(name) {
     let histogram = Services.telemetry.getHistogramById(name);
@@ -327,8 +332,8 @@ export var TelemetryTestUtils = {
   /**
    * Clear and get the named keyed histogram.
    *
-   * @param {String} name The name of the keyed histogram
-   * @returns {Object} The obtained keyed histogram.
+   * @param {string} name The name of the keyed histogram
+   * @returns {object} The obtained keyed histogram.
    */
   getAndClearKeyedHistogram(name) {
     let histogram = Services.telemetry.getKeyedHistogramById(name);
@@ -340,9 +345,9 @@ export var TelemetryTestUtils = {
    * Assert that the histogram index is the right value. It expects that
    * other indexes are all zero.
    *
-   * @param {Object} histogram The histogram to check.
-   * @param {Number} index The index to check against the expected value.
-   * @param {Number} expected The expected value of the index.
+   * @param {object} histogram The histogram to check.
+   * @param {number} index The index to check against the expected value.
+   * @param {number} expected The expected value of the index.
    */
   assertHistogram(histogram, index, expected) {
     const snapshot = histogram.snapshot();
@@ -372,9 +377,9 @@ export var TelemetryTestUtils = {
   /**
    * Assert that a key within a keyed histogram contains the required sum.
    *
-   * @param {Object} histogram The keyed histogram to check.
-   * @param {String} key The key to check.
-   * @param {Number} [expected] The expected sum for the key.
+   * @param {object} histogram The keyed histogram to check.
+   * @param {string} key The key to check.
+   * @param {number} [expected] The expected sum for the key.
    */
   assertKeyedHistogramSum(histogram, key, expected) {
     const snapshot = histogram.snapshot();
@@ -400,10 +405,10 @@ export var TelemetryTestUtils = {
    * Assert that the value of a key within a keyed histogram is the right value.
    * It expects that other values are all zero.
    *
-   * @param {Object} histogram The keyed histogram to check.
-   * @param {String} key The key to check.
-   * @param {Number} index The index to check against the expected value.
-   * @param {Number} [expected] The expected values for the key.
+   * @param {object} histogram The keyed histogram to check.
+   * @param {string} key The key to check.
+   * @param {number} index The index to check against the expected value.
+   * @param {number} [expected] The expected values for the key.
    */
   assertKeyedHistogramValue(histogram, key, index, expected) {
     const snapshot = histogram.snapshot();

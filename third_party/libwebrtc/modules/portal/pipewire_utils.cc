@@ -12,13 +12,69 @@
 
 #include <pipewire/pipewire.h>
 
+#include <optional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <vector>
+
 #include "rtc_base/sanitizer.h"
+#include "rtc_base/string_encode.h"
+#include "rtc_base/string_to_number.h"
 
 #if defined(WEBRTC_DLOPEN_PIPEWIRE)
 #include "modules/portal/pipewire_stubs.h"
 #endif  // defined(WEBRTC_DLOPEN_PIPEWIRE)
 
 namespace webrtc {
+
+#if defined(__GNUC__) && defined(WEBRTC_MOZILLA_BUILD)
+// Mozilla linux builds are using -std=gnu++20, which doesn't approve
+// of using std::string in a constexpr.  PipewireVersion now contains
+// std::string as of libwebrtc commit d167fe9296.
+static const PipeWireVersion kReentrantDeinitMinVersion = {.major = 0,
+                                                           .minor = 3,
+                                                           .micro = 49};
+#else
+constexpr PipeWireVersion kReentrantDeinitMinVersion = {.major = 0,
+                                                        .minor = 3,
+                                                        .micro = 49};
+#endif
+
+PipeWireVersion PipeWireVersion::Parse(const std::string_view& version) {
+  std::vector<std::string_view> parsed_version = split(version, '.');
+
+  if (parsed_version.size() != 3) {
+    return {};
+  }
+
+  std::optional<int> major = StringToNumber<int>(parsed_version.at(0));
+  std::optional<int> minor = StringToNumber<int>(parsed_version.at(1));
+  std::optional<int> micro = StringToNumber<int>(parsed_version.at(2));
+
+  // Return invalid version if we failed to parse it
+  if (!major || !minor || !micro) {
+    return {};
+  }
+
+  return {.major = major.value(),
+          .minor = minor.value(),
+          .micro = micro.value(),
+          .full_version = std::string(version)};
+}
+
+bool PipeWireVersion::operator>=(const PipeWireVersion& other) {
+  if (!major && !minor && !micro) {
+    return false;
+  }
+
+  return std::tie(major, minor, micro) >=
+         std::tie(other.major, other.minor, other.micro);
+}
+
+std::string_view PipeWireVersion::ToStringView() const {
+  return full_version;
+}
 
 RTC_NO_SANITIZE("cfi-icall")
 bool InitializePipeWire() {
@@ -48,6 +104,20 @@ PipeWireThreadLoopLock::PipeWireThreadLoopLock(pw_thread_loop* loop)
 
 PipeWireThreadLoopLock::~PipeWireThreadLoopLock() {
   pw_thread_loop_unlock(loop_);
+}
+
+RTC_NO_SANITIZE("cfi-icall")
+PipeWireInitializer::PipeWireInitializer() {
+  pw_init(/*argc=*/nullptr, /*argv=*/nullptr);
+}
+
+RTC_NO_SANITIZE("cfi-icall")
+PipeWireInitializer::~PipeWireInitializer() {
+  PipeWireVersion pw_client_version =
+      PipeWireVersion::Parse(pw_get_library_version());
+  if (pw_client_version >= kReentrantDeinitMinVersion) {
+    pw_deinit();
+  }
 }
 
 }  // namespace webrtc

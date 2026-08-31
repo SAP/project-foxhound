@@ -14,7 +14,8 @@ import { TestUtils } from "resource://testing-common/TestUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
 });
 
 export class CustomizableUITestUtils {
@@ -130,7 +131,11 @@ export class CustomizableUITestUtils {
       return !navbar.overflowable.isHandlingOverflow();
     });
 
-    let searchbar = this.window.document.getElementById("searchbar");
+    let searchbar = this.window.document.getElementById(
+      Services.prefs.getBoolPref("browser.search.widget.new")
+        ? "searchbar-new"
+        : "searchbar"
+    );
     if (!searchbar) {
       throw new Error("The search bar should exist.");
     }

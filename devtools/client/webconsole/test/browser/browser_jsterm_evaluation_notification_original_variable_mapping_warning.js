@@ -8,7 +8,7 @@
 "use strict";
 
 const l10n = new LocalizationHelper(
-  "devtools/client/locales/webconsole.properties"
+  "devtools/shared/locales/webconsole.properties"
 );
 const TEST_URI =
   "https://example.com/browser/devtools/client/webconsole/test/browser/test-autocomplete-mapped.html";

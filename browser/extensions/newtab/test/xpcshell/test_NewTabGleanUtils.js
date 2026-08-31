@@ -376,3 +376,38 @@ add_task(async function test_registerMetricIfNeeded_nonEventMetrics() {
     "Success when using set to send data of type text"
   );
 });
+
+/**
+ * Test case: Memory distribution metric registration
+ * Verifies proper registration and recording of memory_distribution metrics
+ * Ensures that extraArgs (memory_unit) are honored
+ */
+add_task(
+  async function test_registerMetricIfNeeded_memoryDistributionMetrics() {
+    const optionsWithExtra = {
+      name: "memdist1",
+      category: "test_category",
+      type: "memory_distribution",
+      pings: ["metrics"],
+      lifetime: "ping",
+      disabled: false,
+      extraArgs: {
+        memory_unit: "megabyte",
+      },
+    };
+
+    NewTabGleanUtils.registerMetricIfNeeded(optionsWithExtra);
+
+    Assert.ok(
+      Glean.newtab.metricRegistered.memdist1.testGetValue(),
+      "Glean metricRegistered telemetry sent with value as true"
+    );
+
+    Glean.testCategory.memdist1.accumulate(7);
+    Glean.testCategory.memdist1.accumulate(17);
+
+    let data = Glean.testCategory.memdist1.testGetValue();
+    Assert.equal(2, data.count, "Recorded sample count");
+    Assert.equal(24 * 1024 * 1024, data.sum, "Sum is in bytes for MB unit");
+  }
+);

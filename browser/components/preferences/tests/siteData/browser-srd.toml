@@ -1,0 +1,33 @@
+[DEFAULT]
+dupe-manifest=true
+prefs = [
+  "browser.settings-redesign.enabled=true",
+]
+support-files = [
+  "head.js",
+  "site_data_test.html",
+  "service_worker_test.html",
+  "service_worker_test.js",
+  "offline/offline.html",
+  "offline/manifest.appcache",
+]
+
+["browser_clearSiteData_v2.js"]
+
+["browser_siteData.js"]
+
+["browser_siteData2.js"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1775910
+]
+
+["browser_siteData3.js"]
+
+["browser_siteData_multi_select.js"]
+skip-if = [
+  "tsan", # Bug 1683730
+]
+
+["browser_siteData_search.js"]
+
+["browser_siteData_srd.js"]

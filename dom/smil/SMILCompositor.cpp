@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SMILCompositor.h"
 
-#include "mozilla/dom/SVGSVGElement.h"
-#include "nsComputedDOMStyle.h"
-#include "nsCSSProps.h"
-#include "nsHashKeys.h"
 #include "SMILCSSProperty.h"
+#include "mozilla/dom/SVGSVGElement.h"
+#include "nsCSSProps.h"
+#include "nsComputedDOMStyle.h"
+#include "nsHashKeys.h"
 
 namespace mozilla {
 
@@ -68,7 +66,7 @@ void SMILCompositor::ComposeAttribute(bool& aMightHavePendingStyleUpdates) {
 
   // FIRST: Get the SMILAttr (to grab base value from, and to eventually
   // give animated value to)
-  UniquePtr<SMILAttr> smilAttr = CreateSMILAttr(baseComputedStyle);
+  std::unique_ptr<SMILAttr> smilAttr = CreateSMILAttr(baseComputedStyle);
   if (!smilAttr) {
     // Target attribute not found (or, out of memory)
     return;
@@ -122,7 +120,7 @@ void SMILCompositor::ComposeAttribute(bool& aMightHavePendingStyleUpdates) {
 void SMILCompositor::ClearAnimationEffects() {
   if (!mKey.mElement || !mKey.mAttributeName) return;
 
-  UniquePtr<SMILAttr> smilAttr = CreateSMILAttr(nullptr);
+  std::unique_ptr<SMILAttr> smilAttr = CreateSMILAttr(nullptr);
   if (!smilAttr) {
     // Target attribute not found (or, out of memory)
     return;
@@ -132,28 +130,28 @@ void SMILCompositor::ClearAnimationEffects() {
 
 // Protected Helper Functions
 // --------------------------
-UniquePtr<SMILAttr> SMILCompositor::CreateSMILAttr(
+std::unique_ptr<SMILAttr> SMILCompositor::CreateSMILAttr(
     const ComputedStyle* aBaseComputedStyle) {
-  nsCSSPropertyID propID = GetCSSPropertyToAnimate();
+  NonCustomCSSPropertyId propId = GetCSSPropertyToAnimate();
 
-  if (propID != eCSSProperty_UNKNOWN) {
-    return MakeUnique<SMILCSSProperty>(propID, mKey.mElement.get(),
-                                       aBaseComputedStyle);
+  if (propId != eCSSProperty_UNKNOWN) {
+    return std::make_unique<SMILCSSProperty>(propId, mKey.mElement.get(),
+                                             aBaseComputedStyle);
   }
 
   return mKey.mElement->GetAnimatedAttr(mKey.mAttributeNamespaceID,
                                         mKey.mAttributeName);
 }
 
-nsCSSPropertyID SMILCompositor::GetCSSPropertyToAnimate() const {
+NonCustomCSSPropertyId SMILCompositor::GetCSSPropertyToAnimate() const {
   if (mKey.mAttributeNamespaceID != kNameSpaceID_None) {
     return eCSSProperty_UNKNOWN;
   }
 
-  nsCSSPropertyID propID =
+  NonCustomCSSPropertyId propId =
       nsCSSProps::LookupProperty(nsAtomCString(mKey.mAttributeName));
 
-  if (!SMILCSSProperty::IsPropertyAnimatable(propID)) {
+  if (!SMILCSSProperty::IsPropertyAnimatable(propId)) {
     return eCSSProperty_UNKNOWN;
   }
 
@@ -176,7 +174,7 @@ nsCSSPropertyID SMILCompositor::GetCSSPropertyToAnimate() const {
     // Indeed an outer <svg> element, fall through.
   }
 
-  return propID;
+  return propId;
 }
 
 bool SMILCompositor::MightNeedBaseStyle() const {

@@ -1947,6 +1947,28 @@ extern SECStatus X25519_DerivePublicKey(const SECItem *privateKey, SECItem *publ
 /* Public key derivation is supported only for the curves supporting pt_mul method. */
 extern SECStatus EC_DerivePublicKey(const SECItem *privateKey, const ECParams *ecParams, SECItem *publicKey);
 
+/*
+ * ML_DSA functions
+ */
+SECStatus MLDSA_NewKey(CK_ML_DSA_PARAMETER_SET_TYPE paramSet, SECItem *seed,
+                       MLDSAPrivateKey *privKey, MLDSAPublicKey *pubKey);
+SECStatus MLDSA_SignInit(MLDSAPrivateKey *key, CK_HEDGE_TYPE hedgeType,
+                         const SECItem *sgnCtx, MLDSAContext **ctx);
+SECStatus MLDSA_SignUpdate(MLDSAContext *ctx, const SECItem *data);
+SECStatus MLDSA_SignFinal(MLDSAContext *ctx, SECItem *signature);
+
+SECStatus MLDSA_VerifyInit(MLDSAPublicKey *key, const SECItem *sgnCtx,
+                           MLDSAContext **ctx);
+SECStatus MLDSA_VerifyUpdate(MLDSAContext *ctx, const SECItem *data);
+SECStatus MLDSA_VerifyFinal(MLDSAContext *ctx, const SECItem *signature);
+
+/* Decompress public key.
+ ** On input, publicCompressed == buffer containing compressed key
+ ** Output, publicRaw == decompressed public key. The function returns true iff the
+ ** decompressed key belongs to the appropriate curve.
+ */
+SECStatus EC_DecompressPublicKey(const SECItem *publicCompressed, const ECParams *params, SECItem *publicUncompressed);
+
 SEC_END_PROTOS
 
 #endif /* _BLAPI_H_ */

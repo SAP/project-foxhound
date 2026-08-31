@@ -1,14 +1,17 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebBrowserPersistLocalDocument.h"
-#include "WebBrowserPersistDocumentParent.h"
 
+#include "WebBrowserPersistDocumentParent.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/Try.h"
 #include "mozilla/dom/Attr.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Comment.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLAreaElement.h"
@@ -22,11 +25,7 @@
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "mozilla/dom/ResponsiveImageSelector.h"
-#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/TreeWalker.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
@@ -36,7 +35,6 @@
 #include "nsIContent.h"
 #include "nsICookieJarSettings.h"
 #include "nsIDOMWindowUtils.h"
-#include "mozilla/dom/Document.h"
 #include "nsIDocumentEncoder.h"
 #include "nsILoadContext.h"
 #include "nsIProtocolHandler.h"
@@ -85,6 +83,9 @@ WebBrowserPersistLocalDocument::GetIsClosed(bool* aIsClosed) {
   *aIsClosed = false;
   return NS_OK;
 }
+
+NS_IMETHODIMP
+WebBrowserPersistLocalDocument::Close() { return NS_OK; }
 
 NS_IMETHODIMP
 WebBrowserPersistLocalDocument::GetIsPrivate(bool* aIsPrivate) {
@@ -193,29 +194,6 @@ WebBrowserPersistLocalDocument::GetPrincipal(nsIPrincipal** aPrincipal) {
   nsCOMPtr<nsIPrincipal> nodePrincipal = mDocument->NodePrincipal();
   nodePrincipal.forget(aPrincipal);
   return NS_OK;
-}
-
-already_AddRefed<nsISHEntry> WebBrowserPersistLocalDocument::GetHistory() {
-  nsCOMPtr<nsPIDOMWindowOuter> window = mDocument->GetWindow();
-  if (NS_WARN_IF(!window)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(window);
-  if (NS_WARN_IF(!webNav)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsIWebPageDescriptor> desc = do_QueryInterface(webNav);
-  if (NS_WARN_IF(!desc)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsISupports> curDesc;
-  nsresult rv = desc->GetCurrentDescriptor(getter_AddRefs(curDesc));
-  // This can fail if, e.g., the document is a Print Preview.
-  if (NS_FAILED(rv) || NS_WARN_IF(!curDesc)) {
-    return nullptr;
-  }
-  nsCOMPtr<nsISHEntry> history = do_QueryInterface(curDesc);
-  return history.forget();
 }
 
 NotNull<const Encoding*> WebBrowserPersistLocalDocument::GetCharacterSet()
@@ -762,7 +740,7 @@ nsresult PersistNodeFixup::FixupAnchor(nsINode* aNode) {
     nsresult rv = NS_NewURI(getter_AddRefs(newURI), oldCValue,
                             mParent->GetCharacterSet(), relativeURI);
     if (NS_SUCCEEDED(rv) && newURI) {
-      Unused << NS_MutateURI(newURI).SetUserPass(""_ns).Finalize(newURI);
+      (void)NS_MutateURI(newURI).SetUserPass(""_ns).Finalize(newURI);
       nsAutoCString uriSpec;
       rv = newURI->GetSpec(uriSpec);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -1229,6 +1207,8 @@ static uint32_t ConvertEncoderFlags(uint32_t aEncoderFlags) {
     encoderFlags |= nsIDocumentEncoder::OutputNoScriptContent;
   if (aEncoderFlags & nsIWebBrowserPersist::ENCODE_FLAGS_NOFRAMES_CONTENT)
     encoderFlags |= nsIDocumentEncoder::OutputNoFramesContent;
+  if (aEncoderFlags & nsIWebBrowserPersist::ENCODE_FLAGS_DISALLOW_LINE_BREAKING)
+    encoderFlags |= nsIDocumentEncoder::OutputDisallowLineBreaking;
 
   return encoderFlags;
 }
@@ -1260,9 +1240,8 @@ nsresult WebBrowserPersistLocalDocument::GetDocEncoder(
       do_createDocumentEncoder(PromiseFlatCString(aContentType).get());
   NS_ENSURE_TRUE(encoder, NS_ERROR_FAILURE);
 
-  nsresult rv =
-      encoder->NativeInit(mDocument, NS_ConvertASCIItoUTF16(aContentType),
-                          ConvertEncoderFlags(aEncoderFlags));
+  nsresult rv = encoder->Init(mDocument, NS_ConvertASCIItoUTF16(aContentType),
+                              ConvertEncoderFlags(aEncoderFlags));
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
   nsAutoCString charSet;

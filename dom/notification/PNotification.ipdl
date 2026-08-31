@@ -4,6 +4,8 @@
 
 include protocol PBackground;
 
+include DOMTypes;
+
 include "ipc/ErrorIPCUtils.h";
 
 using mozilla::CopyableErrorResult from "mozilla/ErrorResult.h";
@@ -15,7 +17,7 @@ namespace notification {
 [ChildProc=anydom]
 async protocol PNotification {
  parent:
-  async Show() returns (CopyableErrorResult rv);
+  async Show(IPCImage? aIcon) returns (CopyableErrorResult rv);
   async Close();
 
  child:

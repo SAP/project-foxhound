@@ -55,20 +55,34 @@ impl<'a> MinidumpAnalyzer<'a> {
         self
     }
 
+    /// Return the effective extras file to read.
+    pub fn get_extras_file(&self) -> Cow<'a, Path> {
+        self.extras
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned(extra_path_from_minidump(&self.minidump)))
+    }
+
     /// Analyze the thread(s) and put stacks in the associated .extra file.
     pub fn analyze(self) -> anyhow::Result<()> {
-        let extra_file = self
-            .extras
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(extra_path_from_minidump(&self.minidump)));
+        let extra_file = self.get_extras_file();
         let extra_file = extra_file.as_ref();
 
         log::info!("minidump file path: {}", self.minidump.display());
         log::info!("extra file path: {}", extra_file.display());
 
-        let minidump = Minidump::read_path(&self.minidump).context("while reading minidump")?;
-
         let mut extra_json = parse_extra_file(extra_file)?;
+
+        self.analyze_json(&mut extra_json)?;
+
+        std::fs::write(extra_file, extra_json.to_string())
+            .context("while writing modified extra file")?;
+
+        Ok(())
+    }
+
+    /// Analyze the thread(s) and alter the given extra JSON data.
+    pub fn analyze_json(self, extra_json: &mut JsonValue) -> anyhow::Result<()> {
+        let minidump = Minidump::read_path(&self.minidump).context("while reading minidump")?;
 
         let proc = processor::Processor::new(&minidump)?;
 
@@ -78,14 +92,11 @@ impl<'a> MinidumpAnalyzer<'a> {
         let used_modules = get_used_modules(&call_stacks, proc.main_module());
 
         // Set the `StackTraces` field in the extra JSON data.
-        extra_json["StackTraces"] = json!({
-            "status": call_stack_status(&call_stacks),
-            "crash_info": {
-                "type": crash_type,
-                "address": format!("{crash_address:#x}"),
-                "crashing_thread": crashing_thread_idx
-                // TODO: "assertion" when there's no crash indicator
-            },
+        let mut stack_traces = json!({
+            "error": call_stack_error(&call_stacks),
+            "crash_type": crash_type,
+            "crash_address": format!("{crash_address:#x}"),
+            "crash_thread": crashing_thread_idx,
             "main_module": proc.main_module().and_then(|m| module_index(&used_modules, m)),
             "modules": used_modules.iter().map(|module| {
                 let code_file = module.code_file();
@@ -96,8 +107,8 @@ impl<'a> MinidumpAnalyzer<'a> {
                 }
 
                 json!({
-                    "base_addr": format!("{:#x}", module.base_address()),
-                    "end_addr": format!("{:#x}", module.base_address() + module.size()),
+                    "base_address": format!("{:#x}", module.base_address()),
+                    "end_address": format!("{:#x}", module.base_address() + module.size()),
                     "filename": file_name_str(code_file_path),
                     "code_id": module.code_identifier().as_ref().map(|id| id.as_str()),
                     // `debug_file` may be a file path with additional components; we just want the
@@ -111,8 +122,8 @@ impl<'a> MinidumpAnalyzer<'a> {
                 let code_file = module.code_file();
                 let code_file_path: &std::path::Path = code_file.as_ref().as_ref();
                 json!({
-                    "base_addr": format!("{:#x}", module.base_address()),
-                    "end_addr": format!("{:#x}", module.base_address() + module.size()),
+                    "base_address": format!("{:#x}", module.base_address()),
+                    "end_address": format!("{:#x}", module.base_address() + module.size()),
                     "filename": code_file_path.file_name().map(|s| s.to_string_lossy()),
                     "code_id": module.code_identifier().as_ref().map(|id| id.as_str()),
                 })
@@ -122,7 +133,8 @@ impl<'a> MinidumpAnalyzer<'a> {
 
         // StackTraces should not have null values (upstream processing expects the values to be
         // omitted).
-        remove_nulls(&mut extra_json["StackTraces"]);
+        remove_nulls(&mut stack_traces);
+        extra_json["StackTraces"] = serde_json::to_string(&stack_traces).unwrap().into();
 
         let module_signature_info = proc.module_signature_info();
         if !module_signature_info.is_null() {
@@ -133,9 +145,6 @@ impl<'a> MinidumpAnalyzer<'a> {
                 .unwrap()
                 .into();
         }
-
-        std::fs::write(extra_file, extra_json.to_string())
-            .context("while writing modified extra file")?;
 
         Ok(())
     }
@@ -415,10 +424,32 @@ mod processor {
                 thread.context(&self.system_info, self.misc_info.as_ref())
             }
             .map(|c| c.into_owned());
-            let stack_memory = thread.stack_memory(&self.memory_list);
+
+            let mut stack_memory = thread.stack_memory(&self.memory_list);
+
             let Some(mut call_stack) = context.map(CallStack::with_context) else {
                 return CallStack::with_info(thread.raw.thread_id, CallStackInfo::MissingContext);
             };
+
+            // Always choose the memory region that is referenced by the context,
+            // as the exception context may refer to a different memory region than
+            // the thread context, which in turn would fail to stack walk.
+            if let Some(stack_ptr) = call_stack
+                .frames
+                .first()
+                .map(|frame| frame.context.get_stack_pointer())
+            {
+                let contains_stack_ptr = stack_memory
+                    .as_ref()
+                    .and_then(|memory| memory.get_memory_at_address::<u64>(stack_ptr))
+                    .is_some();
+                if !contains_stack_ptr {
+                    stack_memory = self
+                        .memory_list
+                        .memory_at_address(stack_ptr)
+                        .or(stack_memory);
+                }
+            }
 
             walk_stack(
                 0,
@@ -445,6 +476,16 @@ impl SymbolProvider for BoxedSymbolProvider {
         module: &(dyn Module + Sync),
         frame: &mut (dyn minidump_unwind::FrameSymbolizer + Send),
     ) -> Result<(), minidump_unwind::FillSymbolError> {
+        // Initialize the function name to a dummy value to allow stack scanning to work when the
+        // DebugInfoSymbolProvider is used. It will be overwritten by `fill_symbol` if necessary,
+        // however either way we don't care about symbols at all here. This works around
+        // `minidump-unwind`'s behavior of only doing stack scanning if fill_symbol (1) fails or
+        // (2) succeeds and sets a function name. By always setting a function name, we can ensure
+        // that unwinding will always attempt to scan the stack if necessary.
+        //
+        // TODO: Remove this workaround once minidump-unwind is updated to a version which includes
+        // https://github.com/rust-minidump/rust-minidump/pull/1117.
+        frame.set_function("<unknown>", 0, 0);
         self.0.fill_symbol(module, frame).await
     }
 
@@ -493,26 +534,19 @@ fn call_stack_to_json(call_stack: &CallStack, modules: &[&MinidumpModule]) -> Js
     })
 }
 
-fn call_stack_status(stacks: &[CallStack]) -> JsonValue {
-    let mut error_string = String::new();
-
+fn call_stack_error(stacks: &[CallStack]) -> Option<String> {
     for (_i, s) in stacks.iter().enumerate() {
         match s.info {
             CallStackInfo::Ok | CallStackInfo::DumpThreadSkipped => (),
             CallStackInfo::UnsupportedCpu => {
                 // If the CPU is unsupported, it ought to be the same error for every thread.
-                error_string = "unsupported cpu".into();
-                break;
+                return Some("unsupported cpu".into());
             }
             // We ignore these errors as they are permissible wrt the overall status.
             CallStackInfo::MissingContext | CallStackInfo::MissingMemory => (),
         }
     }
-    if error_string.is_empty() {
-        "OK".into()
-    } else {
-        error_string.into()
-    }
+    None
 }
 
 /// Remove all object entries which have null values.

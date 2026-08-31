@@ -87,11 +87,6 @@ FirefoxProfileMigrator class
 .. js:autoclass:: FirefoxProfileMigrator
   :members:
 
-IEProfileMigrator class
------------------------
-.. js:autoclass:: IEProfileMigrator
-  :members:
-
 File migrators
 ==============
 

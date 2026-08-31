@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SingleLineTextInputTypes.h"
 
-#include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/TextUtils.h"
 #include "HTMLSplitOnSpacesTokenizer.h"
-#include "nsContentUtils.h"
+#include "mozilla/TextUtils.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/HTMLInputElement.h"
 #include "nsCRTGlue.h"
+#include "nsContentUtils.h"
 #include "nsIIOService.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -115,7 +113,7 @@ bool URLInputType::HasTypeMismatch() const {
 
 nsresult URLInputType::GetTypeMismatchMessage(nsAString& aMessage) {
   return nsContentUtils::GetMaybeLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidURL",
+      PropertiesFile::DOM_PROPERTIES, "FormValidationInvalidURL",
       mInputElement->OwnerDoc(), aMessage);
 }
 
@@ -154,13 +152,13 @@ bool EmailInputType::HasBadInput() const {
 
 nsresult EmailInputType::GetTypeMismatchMessage(nsAString& aMessage) {
   return nsContentUtils::GetMaybeLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidEmail",
+      PropertiesFile::DOM_PROPERTIES, "FormValidationInvalidEmail",
       mInputElement->OwnerDoc(), aMessage);
 }
 
 nsresult EmailInputType::GetBadInputMessage(nsAString& aMessage) {
   return nsContentUtils::GetMaybeLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidEmail",
+      PropertiesFile::DOM_PROPERTIES, "FormValidationInvalidEmail",
       mInputElement->OwnerDoc(), aMessage);
 }
 
@@ -179,14 +177,17 @@ bool EmailInputType::IsValidEmailAddressList(const nsAString& aValue) {
 
 /* static */
 bool EmailInputType::IsValidEmailAddress(const nsAString& aValue) {
+  nsAutoString trimmed(aValue);
+  trimmed.Trim(" \n\r\t\f");
+
   // Email addresses can't be empty and can't end with a '.' or '-'.
-  if (aValue.IsEmpty() || aValue.Last() == '.' || aValue.Last() == '-') {
+  if (trimmed.IsEmpty() || trimmed.Last() == '.' || trimmed.Last() == '-') {
     return false;
   }
 
   uint32_t atPos;
   nsAutoCString value;
-  if (!PunycodeEncodeEmailAddress(aValue, value, &atPos) ||
+  if (!PunycodeEncodeEmailAddress(trimmed, value, &atPos) ||
       atPos == (uint32_t)kNotFound || atPos == 0 ||
       atPos == value.Length() - 1) {
     // Could not encode, or "@" was not found, or it was at the start or end
@@ -250,7 +251,7 @@ bool EmailInputType::PunycodeEncodeEmailAddress(const nsAString& aEmail,
   *aIndexOfAt = (uint32_t)value.FindChar('@');
 
   if (*aIndexOfAt == (uint32_t)kNotFound || *aIndexOfAt == value.Length() - 1) {
-    aEncodedEmail = value;
+    aEncodedEmail = std::move(value);
     return true;
   }
 
@@ -274,6 +275,6 @@ bool EmailInputType::PunycodeEncodeEmailAddress(const nsAString& aEmail,
 
   value.Replace(indexOfDomain, domain.Length(), domainACE);
 
-  aEncodedEmail = value;
+  aEncodedEmail = std::move(value);
   return true;
 }

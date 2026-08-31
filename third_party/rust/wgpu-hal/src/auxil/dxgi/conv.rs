@@ -68,6 +68,7 @@ pub fn map_texture_format_failable(
         Tf::Depth32Float => DXGI_FORMAT_D32_FLOAT,
         Tf::Depth32FloatStencil8 => DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
         Tf::NV12 => DXGI_FORMAT_NV12,
+        Tf::P010 => DXGI_FORMAT_P010,
         Tf::Bc1RgbaUnorm => DXGI_FORMAT_BC1_UNORM,
         Tf::Bc1RgbaUnormSrgb => DXGI_FORMAT_BC1_UNORM_SRGB,
         Tf::Bc2RgbaUnorm => DXGI_FORMAT_BC2_UNORM,
@@ -173,6 +174,12 @@ pub fn map_texture_format_for_copy(
             | wgt::TextureFormat::Depth32FloatStencil8,
             crate::FormatAspects::STENCIL,
         ) => Dxgi::Common::DXGI_FORMAT_R8_UINT,
+
+        // `CopyTextureRegion` on a plane subresource wants the
+        // single-plane DXGI format, not the planar one.
+        (format, aspects) if format.is_multi_planar_format() && aspects.is_one() => {
+            map_texture_format(format.aspect_specific_format(aspects.map())?)
+        }
 
         (format, crate::FormatAspects::COLOR) => map_texture_format(format),
 

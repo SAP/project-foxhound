@@ -10,11 +10,12 @@
 
 #include "rtc_base/synchronization/yield.h"
 
+#include <time.h>
+
 #if defined(WEBRTC_WIN)
 #include <windows.h>
 #else
-#include <sched.h>
-#include <time.h>
+#include <ctime>
 #endif
 
 namespace webrtc {
@@ -28,7 +29,7 @@ void YieldCurrentThread() {
     !RTC_USE_NATIVE_MUTEX_ON_MAC
   sched_yield();
 #else
-  static const struct timespec ts_null = {0};
+  static const struct timespec ts_null = {.tv_sec = 0, .tv_nsec = 0};
   nanosleep(&ts_null, nullptr);
 #endif
 }

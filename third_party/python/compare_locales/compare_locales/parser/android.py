@@ -10,7 +10,6 @@ As we're using a built-in XML parser underneath, errors on that level
 break the full parsing, and result in a single Junk entry.
 """
 
-
 import re
 from xml.dom import minidom
 from xml.dom.minidom import Node

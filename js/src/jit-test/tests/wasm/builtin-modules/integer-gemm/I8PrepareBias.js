@@ -14,19 +14,19 @@ function testInvalidSize() {
 
   // row: 0
   invalidSize = 0;
-  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, invalidSize, VALID.cols, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, invalidSize, VALID.cols, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // row: Not an integral multiple of ROWS_B_MULTIPLIER
   invalidSize = ROWS_B_MULTIPLIER + 1;
-  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, invalidSize, VALID.cols, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, invalidSize, VALID.cols, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // col: 0
   invalidSize = 0;
-  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, VALID.rows, invalidSize, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, VALID.rows, invalidSize, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // col: Not an integral multiple of COLUMNS_B_MULTIPLIER
   invalidSize = COLUMNS_B_MULTIPLIER + 1;
-  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, VALID.rows, invalidSize, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_prepare_bias(VALID.input, VALID.scaleA, VALID.zeroPointA, VALID.scaleB, VALID.zeroPointB, VALID.rows, invalidSize, VALID.inputBias, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 }
 
 function testInvalidAlignment() {

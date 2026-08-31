@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define mozilla_dom_workers_WorkerCommon_h
 
 #include "js/TypeDecls.h"
+#include "nsString.h"
 
 class nsPIDOMWindowInner;
 
@@ -50,6 +49,9 @@ void ResumeWorkersForWindow(const nsPIDOMWindowInner& aWindow);
 void PropagateStorageAccessPermissionGrantedToWorkers(
     const nsPIDOMWindowInner& aWindow);
 
+void UpdateTimezoneOverrideForWorkers(const nsPIDOMWindowInner& aWindow,
+                                      const nsAString& aTimezone);
+
 // All of these are implemented in WorkerScope.cpp
 
 bool IsWorkerGlobal(JSObject* global);
@@ -60,6 +62,11 @@ bool IsWorkerDebuggerSandbox(JSObject* object);
 
 void UpdateWorkersPlaybackState(const nsPIDOMWindowInner& aWindow,
                                 bool aIsPlayingAudio);
+
+inline size_t GetWorkerScriptMaxSizeInBytes() {
+  // This is the max size that any of our worker scripts can be.
+  return nsString::LengthStorage::kMax;
+}
 
 }  // namespace mozilla::dom
 

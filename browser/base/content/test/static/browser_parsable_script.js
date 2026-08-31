@@ -106,7 +106,7 @@ add_task(async function checkAllTheJS() {
     // our zipreader APIs are all sync)
     let startTimeMs = Date.now();
     info("Collecting URIs");
-    uris = await generateURIsFromDirTree(appDir, [".js", ".jsm", ".mjs"]);
+    uris = await generateURIsFromDirTree(appDir, [".js", ".mjs"]);
     info("Collected URIs in " + (Date.now() - startTimeMs) + "ms");
 
     // Apply the filter specified on the command line, if any.

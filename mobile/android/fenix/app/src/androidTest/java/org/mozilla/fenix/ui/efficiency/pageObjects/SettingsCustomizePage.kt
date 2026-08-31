@@ -1,6 +1,18 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.hasSibling
+import androidx.test.espresso.matcher.ViewMatchers.isChecked
+import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.ViewMatchers.withText
+import org.hamcrest.Matchers.allOf
+import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.ui.efficiency.helpers.BasePage
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
@@ -18,6 +30,17 @@ class SettingsCustomizePage(composeRule: AndroidComposeTestRule<HomeActivityInte
             to = "SettingsPage",
             steps = listOf(NavigationStep.Click(SettingsSelectors.GO_BACK_BUTTON)),
         )
+    }
+
+    override fun navigateToPage(url: String, forceNavigation: Boolean): SettingsCustomizePage {
+        super.navigateToPage(url, forceNavigation)
+        return this
+    }
+
+    fun verifyOptionIsSelected(selector: Selector): SettingsCustomizePage {
+        onView(withText(selector.value))
+            .check(matches(hasSibling(allOf(withId(R.id.radio_button), isChecked()))))
+        return this
     }
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {

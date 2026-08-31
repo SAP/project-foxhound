@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -283,12 +281,12 @@ class APZCFlingStopTester : public APZCGestureDetectorTester {
     EXPECT_CALL(*mcc,
                 HandleTap(TapType::eSingleTap, _, 0, apzc->GetGuid(), _, _))
         .Times(tapCallsExpected);
-    Tap(apzc, ScreenIntPoint(10, 10), 0);
+    Tap(apzc, ScreenIntPoint(10, 10), nullptr);
     while (mcc->RunThroughDelayedTasks());
 
     // Deliver another tap, to make sure that taps are flowing properly once
     // the fling is aborted.
-    Tap(apzc, ScreenIntPoint(100, 100), 0);
+    Tap(apzc, ScreenIntPoint(100, 100), nullptr);
     while (mcc->RunThroughDelayedTasks());
 
     // Verify that we didn't advance any further after the fling was aborted, in

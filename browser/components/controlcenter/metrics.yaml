@@ -1,0 +1,52 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Core :: DOM: Credential Management'
+  - 'Firefox :: Site Identity'
+
+trustpanel:
+  opened:
+    type: event
+    description: |
+      Event to record opens of the Trust Panel.
+    bugs: &trustpanel_bugs
+      - https://bugzil.la/2024187
+    data_reviews: &trustpanel_data_reviews
+      - https://bugzil.la/2024187
+    notification_emails: &trustpanel_emails
+      - tcinotto@mozilla.com
+      - monitor-ops@mozilla.com
+    expires: never
+    extra_keys:
+      breach_status:
+        description: >
+          Whether and what type of breach alert was shown.
+        type: string
+  breach_alert_dismissed:
+    type: event
+    description: |
+      Event to record when a breach alert is dismissed.
+    bugs: *trustpanel_bugs
+    data_reviews: *trustpanel_data_reviews
+    notification_emails: *trustpanel_emails
+    expires: never
+    extra_keys:
+      breach_status:
+        description: >
+          What type of breach alert was dismissed.
+        type: string
+  breach_alert_discovered_monitor:
+    type: event
+    description: |
+      Event to record when a user who does not use Monitor yet, nor uses the Credential Manager, decides to open Monitor.
+    bugs: *trustpanel_bugs
+    data_reviews: *trustpanel_data_reviews
+    notification_emails: *trustpanel_emails
+    expires: never

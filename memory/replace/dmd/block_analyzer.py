@@ -117,8 +117,7 @@ parser.add_argument(
     "-c",
     "--chain-reports",
     action="store_true",
-    help="if only one block is found to hold onto the object, report "
-    "the next one, too",
+    help="if only one block is found to hold onto the object, report the next one, too",
 )
 
 
@@ -214,7 +213,6 @@ def show_block_info(args, blocks, stacks, block):
     sys.stdout.write("\n\n")
     sys.stdout.write("allocation stack:\n")
     print_trace_segment(args, stacks, b)
-    return
 
 
 def cleanupTraceTable(args, frameTable, traceTable):

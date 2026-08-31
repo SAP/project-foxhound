@@ -16,6 +16,10 @@ class WindowGlobalToRootModule extends Module {
     return "root-value-called-from-windowglobal";
   }
 
+  getValueFromRootUnlisted() {
+    return "should-not-succeed";
+  }
+
   #assertParentProcess() {
     const isParent =
       Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT;
@@ -23,6 +27,10 @@ class WindowGlobalToRootModule extends Module {
     if (!isParent) {
       throw new Error("Can only run in the parent process");
     }
+  }
+
+  static get supportedCommandsFromContent() {
+    return ["getValueFromRoot"];
   }
 }
 

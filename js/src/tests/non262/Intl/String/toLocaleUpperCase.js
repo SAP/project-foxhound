@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Test language dependent special casing with different language tags.
 for (let locale of ["lt", "LT", "lt-LT", "lt-u-co-phonebk", "lt-x-lietuva"]) {
     assertEq("i\u0307".toLocaleUpperCase(locale), "I");

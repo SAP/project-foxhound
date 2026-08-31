@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +29,7 @@
 #include "nsSound.h"
 #include "nsUserIdleServiceX.h"
 #include "NativeKeyBindings.h"
-#include "OSXNotificationCenter.h"
+#include "MacOSNotificationCenter.h"
 
 #include "nsDeviceContextSpecX.h"
 #include "nsPrinterListCUPS.h"
@@ -85,7 +84,7 @@ MAKE_GENERIC_CTOR_INIT(nsPrintSettingsServiceX, nsIPrintSettingsService, Init)
 MAKE_GENERIC_CTOR_INIT(nsPrintDialogServiceX, nsIPrintDialogService, Init)
 MAKE_GENERIC_SINGLETON_CTOR(nsUserIdleServiceX, nsUserIdleServiceX::GetInstance)
 MAKE_GENERIC_SINGLETON_CTOR(ScreenManager, ScreenManager::GetAddRefedSingleton)
-MAKE_GENERIC_CTOR_INIT(OSXNotificationCenter, nsIAlertsService, Init)
+MAKE_GENERIC_CTOR_INIT(MacOSNotificationCenter, nsIAlertsService, Init)
 
 #include "nsMacDockSupport.h"
 MAKE_GENERIC_CTOR(nsMacDockSupport, nsIMacDockSupport)
@@ -110,6 +109,9 @@ MAKE_GENERIC_CTOR(nsSystemStatusBarCocoa, nsISystemStatusBar)
 
 #include "nsTouchBarUpdater.h"
 MAKE_GENERIC_CTOR(nsTouchBarUpdater, nsITouchBarUpdater)
+
+#include "nsMacPermissionMonitor.h"
+MAKE_GENERIC_CTOR(nsMacPermissionMonitor, nsIPermissionMonitor)
 
 void nsWidgetCocoaModuleCtor() { nsAppShellInit(); }
 

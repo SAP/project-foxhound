@@ -40,7 +40,7 @@ windows.
   async function ensureExpectedChromeOuterWindowIDs(browser1, browser2) {
     is(browser1.ownerDocument, browser2.ownerDocument,
        "Both browsers should belong to the same document.");
-    let winID = getOuterWindowID(browser1.ownerGlobal);
+    let winID = getOuterWindowID(browser1.documentGlobal);
 
     let getChildRootOuterId = () => { 
       try {
@@ -48,7 +48,7 @@ windows.
       } catch(ex) { }
 
       // Not a remote tab
-      return content.top.windowRoot.ownerGlobal.docShell.outerWindowID;
+      return content.top.windowRoot.window.docShell.outerWindowID;
     };
 
     let browser1ID = await SpecialPowers.spawn(browser1, [], getChildRootOuterId);

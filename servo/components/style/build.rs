@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#[macro_use]
-extern crate lazy_static;
-
 use std::env;
 use std::path::Path;
 use std::process::{exit, Command};
+use std::sync::LazyLock;
 use walkdir::WalkDir;
 
 #[cfg(feature = "gecko")]
@@ -18,8 +16,8 @@ mod build_gecko {
     pub fn generate() {}
 }
 
-lazy_static! {
-    pub static ref PYTHON: String = env::var("PYTHON3").ok().unwrap_or_else(|| {
+pub static PYTHON: LazyLock<String> = LazyLock::new(|| {
+    env::var("PYTHON3").ok().unwrap_or_else(|| {
         let candidates = if cfg!(windows) {
             ["python3.exe"]
         } else {
@@ -39,14 +37,14 @@ lazy_static! {
             "Can't find python (tried {})! Try fixing PATH or setting the PYTHON3 env var",
             candidates.join(", ")
         )
-    });
-}
+    })
+});
 
 fn generate_properties(engine: &str) {
     for entry in WalkDir::new("properties") {
         let entry = entry.unwrap();
         match entry.path().extension().and_then(|e| e.to_str()) {
-            Some("mako") | Some("rs") | Some("py") | Some("zip") => {
+            Some("mako") | Some("rs") | Some("py") | Some("zip") | Some("toml") => {
                 println!("cargo:rerun-if-changed={}", entry.path().display());
             },
             _ => {},

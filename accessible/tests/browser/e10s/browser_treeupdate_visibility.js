@@ -340,3 +340,28 @@ addAccessibleTask(
   },
   { iframe: true, remoteIframe: true }
 );
+
+/**
+ * Test that display: contents children are correctly omitted from a visibility:
+ * hidden subtree.
+ */
+addAccessibleTask(
+  `
+<div id="container">
+  <div id="visibility" style="overflow: hidden;">
+    <a href="/" style="display: contents;">test</a>
+  </div>
+</div>
+  `,
+  async function testDisplayContentsInHidden(browser, docAcc) {
+    await testTreeOnHide(
+      browser,
+      docAcc,
+      "container",
+      "visibility",
+      { SECTION: [{ SECTION: [{ LINK: [{ TEXT_LEAF: [] }] }] }] },
+      { SECTION: [] }
+    );
+  },
+  { chrome: true, topLevel: true }
+);

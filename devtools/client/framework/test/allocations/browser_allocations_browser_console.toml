@@ -5,15 +5,12 @@ support-files = [
   "!/devtools/shared/test-helpers/allocation-tracker.js",
   "head.js",
 ]
+prefs = "extensions.webcompat.disable_debug_logging=true"
 
 # Each metrics tests is loaded in a separate .ini file. This way the test is executed
 # individually, without any other test being executed before or after.
 
 ["browser_allocations_browser_console.js"]
-run-if = ["os == 'linux'"] # Results should be platform agnostic - only run on linux64-opt
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan",
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug",
+run-if = [
+  "os == 'linux' && opt", # Results should be platform agnostic - only run on linux64-opt
 ]

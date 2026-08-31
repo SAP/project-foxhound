@@ -16,7 +16,7 @@ let originalDT = Intl.DateTimeFormat("en-US", {
 assertEq(originalDT.format(original).endsWith("Pacific Standard Time"), true);
 assertEq(originalDT.resolvedOptions().timeZone, "America/Los_Angeles");
 
-let global = newGlobal({forceUTC: true});
+let global = newGlobal({timeZone: SPOOFED_TZ_NAME});
 
 let date = new global.Date();
 assertEq(tzRE.exec(date.toString())[1], SPOOFED_TZ_GENERIC);

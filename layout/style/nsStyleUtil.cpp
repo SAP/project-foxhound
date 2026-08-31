@@ -1,15 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsStyleUtil.h"
 
-#include <cctype>
-
 #include "mozilla/ExpandedPrincipal.h"
-#include "mozilla/TextUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/intl/MozLocaleBindings.h"
@@ -140,33 +135,26 @@ bool nsStyleUtil::ValueIncludes(const nsAString& aValueList,
   return false;
 }
 
-void nsStyleUtil::AppendEscapedCSSString(const nsAString& aString,
-                                         nsAString& aReturn,
-                                         char16_t quoteChar) {
-  MOZ_ASSERT(quoteChar == '\'' || quoteChar == '"',
+void nsStyleUtil::AppendQuotedCSSString(const nsACString& aString,
+                                        nsACString& aReturn, char aQuoteChar) {
+  MOZ_ASSERT(aQuoteChar == '\'' || aQuoteChar == '"',
              "CSS strings must be quoted with ' or \"");
 
-  aReturn.Append(quoteChar);
+  aReturn.Append(aQuoteChar);
 
-  const char16_t* in = aString.BeginReading();
-  const char16_t* const end = aString.EndReading();
+  const char* in = aString.BeginReading();
+  const char* const end = aString.EndReading();
   for (; in != end; in++) {
-    if (*in < 0x20 || *in == 0x7F) {
-      // Escape U+0000 through U+001F and U+007F numerically.
-      aReturn.AppendPrintf("\\%x ", *in);
-    } else {
-      if (*in == '"' || *in == '\'' || *in == '\\') {
-        // Escape backslash and quote characters symbolically.
-        // It's not technically necessary to escape the quote
-        // character that isn't being used to delimit the string,
-        // but we do it anyway because that makes testing simpler.
-        aReturn.Append(char16_t('\\'));
-      }
-      aReturn.Append(*in);
+    if (*in == '\\' || *in == aQuoteChar) {
+      // Escape backslash and quote characters symbolically.
+      // It's not technically necessary to escape the quote
+      // character that isn't being used to delimit the string,
+      // but we do it anyway because that makes testing simpler.
+      aReturn.Append('\\');
     }
+    aReturn.Append(*in);
   }
-
-  aReturn.Append(quoteChar);
+  aReturn.Append(aQuoteChar);
 }
 
 /* static */

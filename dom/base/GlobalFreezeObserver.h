@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,10 +14,10 @@ namespace mozilla {
 class GlobalFreezeObserver : public nsISupports,
                              public LinkedListElement<GlobalFreezeObserver> {
  public:
-  virtual void FrozenCallback(nsIGlobalObject* aOwner) = 0;
-  virtual void ThawedCallback(nsIGlobalObject* aOwner) {};
+  virtual void FrozenCallback(nsIGlobalObject* aGlobal) = 0;
+  virtual void ThawedCallback(nsIGlobalObject* aGlobal) {};
 
-  bool Observing() { return !!mOwner; }
+  bool Observing() { return !!mGlobal; }
 
   /**
    * This method is non-virtual because it's expected that any object
@@ -28,31 +26,31 @@ class GlobalFreezeObserver : public nsISupports,
    * relevant action by overriding GlobalTeardownObserver::DisconnectFromOwner.
    */
   void DisconnectFreezeObserver() {
-    if (mOwner) {
-      mOwner->RemoveGlobalFreezeObserver(this);
-      mOwner = nullptr;
+    if (mGlobal) {
+      mGlobal->RemoveGlobalFreezeObserver(this);
+      mGlobal = nullptr;
     }
   }
 
  protected:
   virtual ~GlobalFreezeObserver() { DisconnectFreezeObserver(); }
 
-  void BindToOwner(nsIGlobalObject* aOwner) {
-    MOZ_ASSERT(!mOwner);
+  void BindToGlobal(nsIGlobalObject* aGlobal) {
+    MOZ_ASSERT(!mGlobal);
 
-    if (aOwner) {
+    if (aGlobal) {
       MOZ_ASSERT(
           NS_IsMainThread(),
           "GlobalFreezeObserver is currently only supported in window object");
-      mOwner = aOwner;
-      aOwner->AddGlobalFreezeObserver(this);
+      mGlobal = aGlobal;
+      aGlobal->AddGlobalFreezeObserver(this);
     }
   }
 
  private:
   // The parent global object. The global will clear this when
   // it is destroyed by calling DisconnectFreezeObserver().
-  nsIGlobalObject* MOZ_NON_OWNING_REF mOwner = nullptr;
+  nsIGlobalObject* MOZ_NON_OWNING_REF mGlobal = nullptr;
 };
 
 }  // namespace mozilla

@@ -38,6 +38,17 @@ function* testSteps() {
     "../defaultStorageDirectory_shared",
   ];
 
+  // XXX Set the pref using add_task once the test is converted to use explicit
+  // tasks
+  info("Setting pref");
+
+  Services.prefs.setBoolPref(
+    "dom.quotaManager.temporaryStorage.clearNonPersistedZeroUsageOrigins",
+    false
+  );
+
+  todo(!testGenerator, "Set the pref using add_task");
+
   info("Clearing");
 
   clear(continueToNextStepSync);

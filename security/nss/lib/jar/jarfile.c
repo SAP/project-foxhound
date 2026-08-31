@@ -843,6 +843,10 @@ jar_listtar(JAR *jar, JAR_FILE fp)
         if (JAR_FREAD(fp, &tarball, sizeof tarball) < sizeof tarball)
             break;
 
+        /* Force NUL-termination within the fixed-size filename field so
+         * the unbounded string scan below cannot walk past it. */
+        tarball.val.filename[sizeof tarball.val.filename - 1] = 0;
+
         if (!*tarball.val.filename)
             break;
 

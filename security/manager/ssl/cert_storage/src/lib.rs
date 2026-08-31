@@ -9,7 +9,6 @@ extern crate clubcard_crlite;
 extern crate crossbeam_utils;
 #[macro_use]
 extern crate cstr;
-extern crate firefox_on_glean;
 #[macro_use]
 extern crate log;
 extern crate moz_task;
@@ -30,7 +29,9 @@ use wr_malloc_size_of as malloc_size_of;
 use base64::prelude::*;
 use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use clubcard::{ApproximateSizeOf, Queryable};
-use clubcard_crlite::{CRLiteClubcard, CRLiteKey, CRLiteQuery, CRLiteStatus};
+use clubcard_crlite::{
+    CRLiteClubcard, CRLiteKey, CRLiteQuery, CRLiteStatus, IssuerSpkiHash, LogId, Timestamp,
+};
 use crossbeam_utils::atomic::AtomicCell;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use moz_task::{create_background_task_queue, is_main_thread, Task, TaskRunnable};
@@ -124,8 +125,9 @@ impl MallocSizeOf for EnvAndStore {
     }
 }
 
-enum Filter {
-    Clubcard(CRLiteClubcard),
+struct Filter {
+    hash: [u8; 32],
+    clubcard: CRLiteClubcard,
 }
 
 impl Filter {
@@ -139,55 +141,50 @@ impl Filter {
             return Ok(None);
         }
         let filter_bytes = std::fs::read(&filter_path)?;
-
+        let hash = Sha256::digest(&filter_bytes).into();
         if let Ok(clubcard) = CRLiteClubcard::from_bytes(&filter_bytes) {
-            Ok(Some(Filter::Clubcard(clubcard)))
+            Ok(Some(Filter { hash, clubcard }))
         } else {
             Err(SecurityStateError::from("invalid CRLite filter"))
         }
     }
 
     fn has(&self, clubcard_crlite_key: &CRLiteKey, timestamps: &[CRLiteTimestamp]) -> i16 {
-        match self {
-            Filter::Clubcard(clubcard) => {
-                let timestamp_iter = timestamps
-                    .iter()
-                    .map(|timestamp| {
-                        (&*timestamp.log_id) /* ThinVec -> &[u8; 32] */
-                            .try_into()
-                            .ok()
-                            .map(|log_id| (log_id, timestamp.timestamp))
-                    })
-                    .flatten();
-                let mut covered_timestamp_count = 0;
-                for timestamp in timestamp_iter.clone() {
-                    if CRLiteQuery::new(&clubcard_crlite_key, Some(timestamp))
-                        .in_universe(clubcard.universe())
-                    {
-                        covered_timestamp_count += 1;
-                    }
-                }
-                if covered_timestamp_count
-                    < static_prefs::pref!("security.pki.crlite_timestamps_for_coverage")
-                {
-                    return nsICertStorage::STATE_NOT_COVERED;
-                }
-                match clubcard.contains(&clubcard_crlite_key, timestamp_iter) {
-                    CRLiteStatus::Good => nsICertStorage::STATE_UNSET,
-                    CRLiteStatus::NotCovered => nsICertStorage::STATE_NOT_COVERED,
-                    CRLiteStatus::NotEnrolled => nsICertStorage::STATE_NOT_ENROLLED,
-                    CRLiteStatus::Revoked => nsICertStorage::STATE_ENFORCE,
-                }
+        let clubcard = &self.clubcard;
+        let timestamp_iter = timestamps
+            .iter()
+            .map(|timestamp| {
+                (&*timestamp.log_id) /* ThinVec -> &[u8; 32] */
+                    .try_into()
+                    .ok()
+                    .map(|log_id| (LogId(log_id), Timestamp(timestamp.timestamp)))
+            })
+            .flatten();
+        let mut covered_timestamp_count = 0;
+        for timestamp in timestamp_iter.clone() {
+            if CRLiteQuery::new(&clubcard_crlite_key, Some(timestamp))
+                .in_universe(clubcard.universe())
+            {
+                covered_timestamp_count += 1;
             }
+        }
+        if covered_timestamp_count
+            < static_prefs::pref!("security.pki.crlite_timestamps_for_coverage")
+        {
+            return nsICertStorage::STATE_NOT_COVERED;
+        }
+        match clubcard.contains(&clubcard_crlite_key, timestamp_iter) {
+            CRLiteStatus::Good => nsICertStorage::STATE_UNSET,
+            CRLiteStatus::NotCovered => nsICertStorage::STATE_NOT_COVERED,
+            CRLiteStatus::NotEnrolled => nsICertStorage::STATE_NOT_ENROLLED,
+            CRLiteStatus::Revoked => nsICertStorage::STATE_ENFORCE,
         }
     }
 }
 
 impl MallocSizeOf for Filter {
     fn size_of(&self, _: &mut MallocSizeOfOps) -> usize {
-        match self {
-            Filter::Clubcard(clubcard) => clubcard.approximate_size_of(),
-        }
+        self.clubcard.approximate_size_of()
     }
 }
 
@@ -336,14 +333,21 @@ impl SecurityState {
         }
     }
 
-    pub fn get_has_prior_data(&self, data_type: u8) -> Result<bool, SecurityStateError> {
-        if data_type == nsICertStorage::DATA_TYPE_CRLITE_FILTER_FULL {
-            return Ok(!self.crlite_filters.is_empty());
-        }
-        if data_type == nsICertStorage::DATA_TYPE_CRLITE_FILTER_INCREMENTAL {
-            return Ok(self.crlite_filters.len() > 1);
-        }
+    pub fn get_crlite_filter_hashes(&self) -> Result<Option<nsCString>, SecurityStateError> {
+        let hash_strings: Vec<String> = self
+            .crlite_filters
+            .iter()
+            .map(|f| {
+                f.hash
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<String>()
+            })
+            .collect();
+        Ok(Some(nsCString::from(hash_strings.join(","))))
+    }
 
+    pub fn get_has_prior_data(&self, data_type: u8) -> Result<bool, SecurityStateError> {
         let env_and_store = match self.env_and_store.as_ref() {
             Some(env_and_store) => env_and_store,
             None => return Err(SecurityStateError::from("env and store not initialized?")),
@@ -511,7 +515,6 @@ impl SecurityState {
 
         self.note_crlite_update_time()?;
         self.load_crlite_filter()?;
-        self.note_memory_usage();
         Ok(())
     }
 
@@ -542,7 +545,6 @@ impl SecurityState {
             self.crlite_filters.push(filter);
         }
         self.note_crlite_update_time()?;
-        self.note_memory_usage();
         Ok(())
     }
 
@@ -563,8 +565,8 @@ impl SecurityState {
         let mut maybe_good = false;
         let mut covered = false;
 
-        let issuer_spki_hash = Sha256::digest(issuer_spki);
-        let clubcard_crlite_key = CRLiteKey::new(issuer_spki_hash.as_ref(), serial_number);
+        let issuer_spki_hash = IssuerSpkiHash(Sha256::digest(issuer_spki).into());
+        let clubcard_crlite_key = CRLiteKey::new(&issuer_spki_hash, serial_number);
         for filter in &self.crlite_filters {
             match filter.has(&clubcard_crlite_key, timestamps) {
                 nsICertStorage::STATE_ENFORCE => return nsICertStorage::STATE_ENFORCE,
@@ -781,13 +783,6 @@ impl SecurityState {
             }
         }
         Ok(true)
-    }
-
-    fn note_memory_usage(&self) -> usize {
-        let mut ops = MallocSizeOfOps::new(cert_storage_malloc_size_of, None);
-        let size = self.size_of(&mut ops);
-        firefox_on_glean::metrics::cert_storage::memory.accumulate(size as u64);
-        size
     }
 }
 
@@ -1342,6 +1337,26 @@ impl CertStorage {
         NS_OK
     }
 
+    unsafe fn GetCRLiteFilterHashes(
+        &self,
+        callback: *const nsICertStorageCallback,
+    ) -> nserror::nsresult {
+        if !is_main_thread() {
+            return NS_ERROR_NOT_SAME_THREAD;
+        }
+        if callback.is_null() {
+            return NS_ERROR_NULL_POINTER;
+        }
+        let task = Box::new(try_ns!(SecurityStateTask::new(
+            &*callback,
+            &self.security_state,
+            |ss| ss.get_crlite_filter_hashes(),
+        )));
+        let runnable = try_ns!(TaskRunnable::new("GetCRLiteFilterHashes", task));
+        try_ns!(TaskRunnable::dispatch(runnable, self.queue.coerce()));
+        NS_OK
+    }
+
     unsafe fn GetRemainingOperationCount(&self, state: *mut i32) -> nserror::nsresult {
         if !is_main_thread() {
             return NS_ERROR_NOT_SAME_THREAD;
@@ -1682,7 +1697,8 @@ impl MemoryReporter {
         _anonymize: bool,
     ) -> nserror::nsresult {
         let ss = try_ns!(self.security_state.read());
-        let size = ss.note_memory_usage();
+        let mut ops = MallocSizeOfOps::new(cert_storage_malloc_size_of, None);
+        let size = ss.size_of(&mut ops);
         let callback = match RefPtr::from_raw(callback) {
             Some(ptr) => ptr,
             None => return NS_ERROR_UNEXPECTED,

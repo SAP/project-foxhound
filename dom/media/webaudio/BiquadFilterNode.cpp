@@ -1,22 +1,22 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BiquadFilterNode.h"
+
 #include <algorithm>
+
 #include "AlignmentUtils.h"
+#include "AudioDestinationNode.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "AudioDestinationNode.h"
+#include "AudioParamTimeline.h"
 #include "PlayingRefChangeHandler.h"
+#include "Tracing.h"
 #include "WebAudioUtils.h"
 #include "blink/Biquad.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/ErrorResult.h"
-#include "AudioParamTimeline.h"
-#include "Tracing.h"
+#include "mozilla/UniquePtr.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {

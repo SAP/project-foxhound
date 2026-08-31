@@ -27,7 +27,6 @@ support-files = [
   "webapi_checknavigatedwindow.html",
   "!/toolkit/mozapps/extensions/test/xpinstall/corrupt.xpi",
   "!/toolkit/mozapps/extensions/test/xpinstall/incompatible.xpi",
-  "!/toolkit/mozapps/extensions/test/xpinstall/installtrigger.html",
   "!/toolkit/mozapps/extensions/test/xpinstall/unsigned.xpi",
   "!/toolkit/mozapps/extensions/test/xpinstall/amosigned.xpi",
 ]
@@ -62,10 +61,14 @@ support-files = ["head_abuse_report.js"]
 ["browser_checkAddonCompatibility.js"]
 
 ["browser_colorwaybuiltins_notification.js"]
-run-if = ["appname == 'firefox'"]
+run-if = [
+  "appname == 'firefox'",
+]
 
 ["browser_dragdrop.js"]
-skip-if = ["true"] # Bug 1626824
+skip-if = [
+  "true", # Bug 1626824
+]
 
 ["browser_file_xpi_no_process_switch.js"]
 
@@ -78,6 +81,10 @@ https_first_disabled = true
 
 ["browser_html_detail_permissions.js"]
 
+["browser_html_detail_permissions_file_access.js"]
+
+["browser_html_detail_permissions_policy_blocked.js"]
+
 ["browser_html_detail_permissions_userScripts.js"]
 
 ["browser_html_detail_view.js"]
@@ -85,18 +92,29 @@ https_first_disabled = true
 ["browser_html_discover_view.js"]
 https_first_disabled = true
 support-files = ["head_disco.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && opt && a11y_checks && swgl && verify-standalone",
+]
 
 ["browser_html_discover_view_clientid.js"]
 
 ["browser_html_discover_view_prefs.js"]
 
+["browser_html_embedder_hook.js"]
+
+["browser_html_forced_colors_notice.js"]
+run-if = [
+  "os == 'win'", # Forced-colors is only supported on Windows
+]
+
 ["browser_html_list_view.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl"] # Bug 1781893
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1781893
+]
 
 ["browser_html_list_view_recommendations.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks && swgl", # Bug 1858037 to investigate intermittent a11y_checks results for .popup-notification-primary-button.primary.footer-button
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1858037 to investigate intermittent a11y_checks results for .popup-notification-primary-button.primary.footer-button
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1858037 to investigate intermittent a11y_checks results for .popup-notification-primary-button.primary.footer-button
 ]
 
 ["browser_html_mlmodel_addons.js"]
@@ -118,15 +136,17 @@ https_first_disabled = true
 
 ["browser_html_sitepermission_addons.js"]
 
+["browser_html_smartwindow_themes_notice.js"]
+
 ["browser_html_updates.js"]
 https_first_disabled = true
 
 ["browser_html_warning_messages.js"]
 
 ["browser_installssl.js"]
-
-["browser_installtrigger_install.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl"] # Bug 1861339
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_local_install.js"]
 
@@ -145,7 +165,9 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["browser_page_options_updates.js"]
 
 ["browser_permission_prompt.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl"] # Bug 1964764
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks && swgl", # Bug 1964764
+]
 
 ["browser_permission_prompt_userScripts.js"]
 
@@ -164,6 +186,11 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["browser_subframe_install.js"]
 
 ["browser_task_next_test.js"]
+
+["browser_theme_forced_colors.js"]
+run-if = [
+  "os == 'win'", # Forced-colors is only supported on Windows
+]
 
 ["browser_theme_undo.js"]
 
@@ -189,9 +216,15 @@ https_first_disabled = true
 ["browser_webapi_sendAbuseReport.js"]
 
 ["browser_webapi_theme.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_webapi_uninstall.js"]
 
 ["browser_webext_icon.js"]
 
 ["browser_webext_incognito.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]

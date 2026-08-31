@@ -19,6 +19,7 @@
 #include <cstdint>
 
 class SkPath;
+class SkPathBuilder;
 struct SkRect;
 
 #ifdef SK_DEBUG
@@ -36,7 +37,7 @@ extern int gMaxRecursion[];
 class SkStroke {
 public:
     SkStroke();
-    SkStroke(const SkPaint&);
+    explicit SkStroke(const SkPaint&);
     SkStroke(const SkPaint&, SkScalar width);   // width overrides paint.getStrokeWidth()
 
     SkPaint::Cap getCap() const { return (SkPaint::Cap)fCap; }
@@ -68,9 +69,9 @@ public:
     /**
      *  Stroke the specified rect, winding it in the specified direction..
      */
-    void    strokeRect(const SkRect& rect, SkPath* result,
+    void    strokeRect(const SkRect& rect, SkPathBuilder* result,
                        SkPathDirection = SkPathDirection::kCW) const;
-    void    strokePath(const SkPath& path, SkPath*) const;
+    void    strokePath(const SkPath& path, SkPathBuilder*) const;
 
     ////////////////////////////////////////////////////////////////
 

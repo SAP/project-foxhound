@@ -28,7 +28,6 @@ export MOZILLA_OFFICIAL=1
 # Disable Keyfile Loading (and checks) since.
 # This overrides the settings in the common android mozconfig
 ac_add_options --without-mozilla-api-keyfile
-ac_add_options --without-google-location-service-api-keyfile
 ac_add_options --without-google-safebrowsing-api-keyfile
 
 . "$topsrcdir/mobile/android/config/mozconfigs/common.override"

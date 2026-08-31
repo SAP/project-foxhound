@@ -1,10 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
 
 ChromeUtils.defineESModuleGetters(this, {
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
@@ -94,7 +90,7 @@ customElements.define(
               event
             );
           } else if (target === this._actionButton) {
-            const win = event.target.ownerGlobal;
+            const win = event.target.documentGlobal;
             const tab = win.gBrowser.selectedTab;
 
             this.extension.tabManager.addActiveTabPermission(tab);
@@ -124,7 +120,7 @@ customElements.define(
     #setStateMessage() {
       const messages = OriginControls.getStateMessageIDs({
         policy: this.extension.policy,
-        tab: this.ownerGlobal.gBrowser.selectedTab,
+        tab: this.documentGlobal.gBrowser.selectedTab,
       });
 
       if (!messages) {
@@ -151,7 +147,7 @@ customElements.define(
     #hasAction() {
       const state = OriginControls.getState(
         this.extension.policy,
-        this.ownerGlobal.gBrowser.selectedTab
+        this.documentGlobal.gBrowser.selectedTab
       );
 
       return state && state.whenClicked && !state.hasAccess;
@@ -176,7 +172,7 @@ customElements.define(
 
       const { attention } = OriginControls.getAttentionState(
         this.extension.policy,
-        this.ownerGlobal
+        this.documentGlobal
       );
       this.toggleAttribute("attention", attention);
 

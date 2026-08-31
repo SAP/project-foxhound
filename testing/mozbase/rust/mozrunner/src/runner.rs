@@ -99,6 +99,12 @@ pub struct FirefoxProcess {
     profile: Option<Profile>,
 }
 
+impl FirefoxProcess {
+    pub fn pid(&self) -> u32 {
+        self.process.id()
+    }
+}
+
 impl RunnerProcess for FirefoxProcess {
     fn try_wait(&mut self) -> io::Result<Option<process::ExitStatus>> {
         self.process.try_wait()
@@ -269,11 +275,10 @@ impl Runner for FirefoxRunner {
         if !seen_no_remote {
             cmd.arg("-no-remote");
         }
-        if let Some(ref profile) = self.profile {
-            if !seen_profile {
+        if let Some(ref profile) = self.profile
+            && !seen_profile {
                 cmd.arg("-profile").arg(&profile.path);
             }
-        }
 
         info!("Running command: {:?}", cmd);
         let process = cmd.spawn()?;
@@ -316,67 +321,6 @@ pub mod platform {
     pub fn arg_prefix_char(c: char) -> bool {
         c == '-'
     }
-
-    #[cfg(test)]
-    mod tests {
-        use crate::firefox_default_path;
-        use std::env;
-        use std::ops::Drop;
-        use std::path::PathBuf;
-
-        static SNAP_KEY: &str = "SNAP_INSTANCE_NAME";
-        static SNAP_LEGACY_KEY: &str = "SNAP_NAME";
-
-        struct SnapEnvironment {
-            initial_environment: (Option<String>, Option<String>),
-        }
-
-        impl SnapEnvironment {
-            fn new() -> SnapEnvironment {
-                SnapEnvironment {
-                    initial_environment: (env::var(SNAP_KEY).ok(), env::var(SNAP_LEGACY_KEY).ok()),
-                }
-            }
-
-            fn set(&self, value: Option<String>, legacy_value: Option<String>) {
-                fn set_env(key: &str, value: Option<String>) {
-                    match value {
-                        Some(value) => env::set_var(key, value),
-                        None => env::remove_var(key),
-                    }
-                }
-                set_env(SNAP_KEY, value);
-                set_env(SNAP_LEGACY_KEY, legacy_value);
-            }
-        }
-
-        impl Drop for SnapEnvironment {
-            fn drop(&mut self) {
-                self.set(
-                    self.initial_environment.0.clone(),
-                    self.initial_environment.1.clone(),
-                )
-            }
-        }
-
-        #[test]
-        fn test_default_path() {
-            let snap_path = Some(PathBuf::from(
-                "/snap/firefox/current/usr/lib/firefox/firefox",
-            ));
-
-            let snap_env = SnapEnvironment::new();
-
-            snap_env.set(None, None);
-            assert_ne!(firefox_default_path(), snap_path);
-
-            snap_env.set(Some("value".into()), None);
-            assert_eq!(firefox_default_path(), snap_path);
-
-            snap_env.set(None, Some("value".into()));
-            assert_eq!(firefox_default_path(), snap_path);
-        }
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -415,7 +359,6 @@ pub mod platform {
         if let Some(path) = find_binary("firefox") {
             return Some(path);
         }
-
         let home = dirs::home_dir();
         for &(prefix_home, trial_path) in [
             (false, "/Applications/Firefox.app"),

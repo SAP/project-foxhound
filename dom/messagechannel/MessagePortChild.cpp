@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MessagePortChild.h"
+
 #include "MessagePort.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/ipc/PBackgroundChild.h"
@@ -21,7 +20,7 @@ mozilla::ipc::IPCResult MessagePortChild::RecvStopSendingDataConfirmed() {
 }
 
 mozilla::ipc::IPCResult MessagePortChild::RecvEntangled(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (mPort) {
     mPort->Entangled(aMessages);
   }
@@ -29,7 +28,7 @@ mozilla::ipc::IPCResult MessagePortChild::RecvEntangled(
 }
 
 mozilla::ipc::IPCResult MessagePortChild::RecvReceiveData(
-    nsTArray<MessageData>&& aMessages) {
+    nsTArray<NotNull<RefPtr<SharedMessageBody>>>&& aMessages) {
   if (mPort) {
     mPort->MessagesReceived(aMessages);
   }

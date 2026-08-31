@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -108,10 +106,8 @@ class UtilityProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   void DestroyProcess();
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
-  static bool sLaunchWithMacSandbox;
-
-  // Sandbox the Utility process at launch for all instances
-  bool IsMacSandboxLaunchEnabled() override { return sLaunchWithMacSandbox; }
+  // Sandbox utility processes based on IsUtilitySandboxEnabled()
+  bool IsMacSandboxLaunchEnabled() override { return mDisableOSActivityMode; }
 
   // Override so we can turn on Utility process-specific sandbox logging
   bool FillMacSandboxInfo(MacSandboxInfo& aInfo) override;

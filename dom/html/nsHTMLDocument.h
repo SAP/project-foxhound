@@ -1,22 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsHTMLDocument_h___
-#define nsHTMLDocument_h___
-
-#include "mozilla/Attributes.h"
-#include "nsContentList.h"
-#include "mozilla/dom/Document.h"
-#include "nsIHTMLCollection.h"
-#include "nsIScriptElement.h"
-#include "nsTArray.h"
+#ifndef nsHTMLDocument_h_
+#define nsHTMLDocument_h_
 
 #include "PLDHashTable.h"
-#include "nsThreadUtils.h"
-#include "mozilla/dom/HTMLSharedElement.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLSharedElement.h"
+#include "nsIScriptElement.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 class nsCommandManager;
 class nsIURI;
@@ -41,7 +35,7 @@ class nsHTMLDocument : public mozilla::dom::Document {
  public:
   using Document::SetDocumentURI;
 
-  nsHTMLDocument();
+  explicit nsHTMLDocument(mozilla::dom::LoadedAsData aLoadedAsData);
   virtual nsresult Init(nsIPrincipal* aPrincipal,
                         nsIPrincipal* aPartitionedPrincipal) override;
 
@@ -63,7 +57,7 @@ class nsHTMLDocument : public mozilla::dom::Document {
  public:
   mozilla::dom::Element* GetUnfocusedKeyEventTarget() override;
 
-  nsContentList* GetExistingForms() const { return mForms; }
+  mozilla::dom::ContentList* GetExistingForms() const { return mForms; }
 
   bool IsPlainText() const { return mIsPlainText; }
 
@@ -104,6 +98,8 @@ class nsHTMLDocument : public mozilla::dom::Document {
       nsWindowSizes& aWindowSizes) const override;
   // DocAddSizeOfIncludingThis is inherited from Document.
 
+  bool IsAsciiCompatible(const mozilla::Encoding* aEncoding);
+
   virtual bool WillIgnoreCharsetOverride() override;
 
   // WebIDL API
@@ -124,8 +120,8 @@ class nsHTMLDocument : public mozilla::dom::Document {
                                 int32_t aNamespaceID, nsAtom* aAtom,
                                 void* aData);
 
-  void GetFormsAndFormControls(nsContentList** aFormList,
-                               nsContentList** aFormControlList);
+  void GetFormsAndFormControls(mozilla::dom::ContentList** aFormList,
+                               mozilla::dom::ContentList** aFormControlList);
 
  protected:
   ~nsHTMLDocument();
@@ -136,38 +132,19 @@ class nsHTMLDocument : public mozilla::dom::Document {
 
   static void DocumentWriteTerminationFunc(nsISupports* aRef);
 
-  // A helper class to keep nsContentList objects alive for a short period of
-  // time. Note, when the final Release is called on an nsContentList object, it
-  // removes itself from MutationObserver list.
-  class ContentListHolder : public mozilla::Runnable {
-   public:
-    ContentListHolder(nsHTMLDocument* aDocument, nsContentList* aFormList,
-                      nsContentList* aFormControlList)
-        : mozilla::Runnable("ContentListHolder"),
-          mDocument(aDocument),
-          mFormList(aFormList),
-          mFormControlList(aFormControlList) {}
-
-    ~ContentListHolder() {
-      MOZ_ASSERT(!mDocument->mContentListHolder ||
-                 mDocument->mContentListHolder == this);
-      mDocument->mContentListHolder = nullptr;
-    }
-
-    RefPtr<nsHTMLDocument> mDocument;
-    RefPtr<nsContentList> mFormList;
-    RefPtr<nsContentList> mFormControlList;
-  };
-
+  // A helper class to keep mozilla::dom::ContentList objects alive for a short
+  // period of time. Note, when the final Release is called on an
+  // mozilla::dom::ContentList object, it removes itself from MutationObserver
+  // list.
+  class ContentListHolder;
   friend class ContentListHolder;
   ContentListHolder* mContentListHolder;
 
   /** # of forms in the document, synchronously set */
   int32_t mNumForms;
 
-  static void TryReloadCharset(nsIDocumentViewer* aViewer,
-                               int32_t& aCharsetSource,
-                               NotNull<const Encoding*>& aEncoding);
+  void TryReloadCharset(nsIDocumentViewer* aViewer, int32_t& aCharsetSource,
+                        NotNull<const Encoding*>& aEncoding);
   void TryUserForcedCharset(nsIDocumentViewer* aViewer, nsIDocShell* aDocShell,
                             int32_t& aCharsetSource,
                             NotNull<const Encoding*>& aEncoding,
@@ -206,4 +183,4 @@ inline const nsHTMLDocument* Document::AsHTMLDocument() const {
 
 }  // namespace mozilla::dom
 
-#endif /* nsHTMLDocument_h___ */
+#endif /* nsHTMLDocument_h_ */

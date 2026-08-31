@@ -1,0 +1,55 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+
+android-gradle-build:
+    attributes:
+        build_platform: android
+        build_type: opt
+        code-review: true
+    description: Android Gradle Build python tests
+    platform:
+        - linux2404-64/opt
+    treeherder:
+        symbol: py3(agb)
+        kind: test
+        tier: 2
+    worker-type: t-linux-docker
+    worker:
+        docker-image: {in-tree: android-build}
+        env:
+            GRADLE_USER_HOME: /builds/worker/checkouts/gecko/mobile/android/gradle/dotgradle-offline
+            MOZ_OBJDIR: obj-firefox
+            PERFHERDER_EXTRA_OPTIONS: android-gradle-build
+            TINDERBOX_OUTPUT: '1'
+        max-run-time: 7200
+    run-on-repo-type: [hg]
+    run:
+        using: run-task
+        command: >
+            ln -s $MOZ_FETCHES_DIR/android-gradle-dependencies $GECKO_PATH &&
+            ln -s $MOZ_FETCHES_DIR/android-sdk-linux $GECKO_PATH &&
+            ln -s $MOZ_FETCHES_DIR/node $GECKO_PATH &&
+            cd $GECKO_PATH &&
+            export GRADLE_MAVEN_REPOSITORIES="file://$MOZ_FETCHES_DIR/android-gradle-dependencies/mozilla","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/google","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/central","file://$MOZ_FETCHES_DIR/android-gradle-dependencies/gradle-plugins" &&
+            ./mach --log-no-times python-test --subsuite android-gradle-build --run-slow
+        tooltool-downloads: internal  # For internal toolchains.
+    fetches:
+        toolchain:
+            # Aliases aren't allowed for toolchains installed by fetch.
+            - linux64-android-gradle-dependencies
+            - linux64-android-sdk-linux-repack
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
+            - linux64-jdk-repack
+            - linux64-node
+            - terser
+    when:
+        files-changed:
+            # Build stuff.
+            - 'mobile/android/**/Makefile.in'
+            - 'mobile/android/config/**'
+            - 'mobile/android/gradle.configure'
+            - 'mobile/android/**/moz.build'
+            - '**/*.gradle'

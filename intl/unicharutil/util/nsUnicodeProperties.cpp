@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,39 +5,12 @@
 #include "nsUnicodeProperties.h"
 #include "nsUnicodePropertyData.cpp"
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/HashTable.h"
 #include "mozilla/intl/Segmenter.h"
 
 #include "BaseChars.h"
 #include "IsCombiningDiacritic.h"
 
 #define UNICODE_BMP_LIMIT 0x10000
-#define UNICODE_LIMIT 0x110000
-
-const nsCharProps2& GetCharProps2(uint32_t aCh) {
-  if (aCh < UNICODE_BMP_LIMIT) {
-    return sCharProp2Values[sCharProp2Pages[0][aCh >> kCharProp2CharBits]]
-                           [aCh & ((1 << kCharProp2CharBits) - 1)];
-  }
-  if (aCh < (kCharProp2MaxPlane + 1) * 0x10000) {
-    return sCharProp2Values[sCharProp2Pages[sCharProp2Planes[(aCh >> 16) - 1]]
-                                           [(aCh & 0xffff) >>
-                                            kCharProp2CharBits]]
-                           [aCh & ((1 << kCharProp2CharBits) - 1)];
-  }
-
-  MOZ_ASSERT_UNREACHABLE(
-      "Getting CharProps for codepoint outside Unicode "
-      "range");
-
-  // Default values for unassigned
-  using namespace mozilla::unicode;
-  static const nsCharProps2 undefined = {
-      0  // IdentifierType
-  };
-  return undefined;
-}
 
 namespace mozilla {
 

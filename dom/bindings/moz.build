@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -32,13 +30,12 @@ EXPORTS.mozilla.dom += [
     "CallbackFunction.h",
     "CallbackInterface.h",
     "CallbackObject.h",
-    "DOMExceptionNames.h",
+    "DOMExceptionNames.inc",
     "DOMJSClass.h",
     "DOMJSProxyHandler.h",
     "DOMString.h",
     "Errors.msg",
     "Exceptions.h",
-    "FakeString.h",
     "IterableIterator.h",
     "JSSlots.h",
     "NonRefcountedDOMObject.h",
@@ -196,20 +193,31 @@ if CONFIG["CC_TYPE"] == "gcc":
 
 if CONFIG["COMPILE_ENVIRONMENT"]:
     GeneratedFile(
-        "CSS2Properties.webidl",
-        script="GenerateCSSPropListWebIDL.py",
-        entry_point="generateCSS2Properties",
-        inputs=["!/layout/style/ServoCSSPropList.py"],
+        "CSSStyleProperties.webidl",
+        script="/layout/style/GenerateCSSProperties.py",
+        entry_point="gen_style_properties_webidl",
     )
     GeneratedFile(
         "CSSPageDescriptors.webidl",
-        script="GenerateCSSPropListWebIDL.py",
-        entry_point="generateCSSPageDescriptors",
-        inputs=["!/layout/style/ServoCSSPropList.py"],
+        script="/layout/style/GenerateCSSProperties.py",
+        entry_point="gen_page_descriptors_webidl",
     )
     GeneratedFile(
         "CSSPositionTryDescriptors.webidl",
-        script="GenerateCSSPropListWebIDL.py",
-        entry_point="generateCSSPositionTryDescriptors",
-        inputs=["!/layout/style/ServoCSSPropList.py"],
+        script="/layout/style/GenerateCSSProperties.py",
+        entry_point="gen_position_try_descriptors_webidl",
     )
+    GeneratedFile(
+        "CSSFontFaceDescriptors.webidl",
+        script="/layout/style/GenerateCSSProperties.py",
+        entry_point="gen_font_face_descriptors_webidl",
+    )
+    GeneratedFile(
+        "CSSCounterStyleRule.webidl",
+        script="/layout/style/GenerateCSSProperties.py",
+        entry_point="gen_counter_style_rule_webidl",
+    )
+
+# Old versions of GCC issue false-positive warnings about buffer overflow.
+if CONFIG["CC_TYPE"] == "gcc" and 10 <= int(CONFIG["CC_VERSION"].split(".")[0]) < 12:
+    CXXFLAGS += ["-Wno-stringop-overflow"]

@@ -23,13 +23,12 @@ except ImportError:
 
 CB_PBM_PREF = "network.cookie.cookieBehavior.pbmode"
 CB_PREF = "network.cookie.cookieBehavior"
-INJECTIONS_PREF = "extensions.webcompat.perform_injections"
+INTERVENTIONS_PREF = "extensions.webcompat.enable_interventions"
 NOTIFICATIONS_PERMISSIONS_PREF = "permissions.default.desktop-notification"
 PBM_PREF = "browser.privatebrowsing.autostart"
 PIP_OVERRIDES_PREF = "extensions.webcompat.enable_picture_in_picture_overrides"
 SHIMS_PREF = "extensions.webcompat.enable_shims"
 STRICT_ETP_PREF = "privacy.trackingprotection.enabled"
-UA_OVERRIDES_PREF = "extensions.webcompat.perform_ua_overrides"
 SYSTEM_ADDON_UPDATES_PREF = "extensions.systemAddon.update.enabled"
 DOWNLOAD_TO_TEMP_PREF = "browser.download.start_downloads_in_tmp_dir"
 DELETE_DOWNLOADS_PREF = "browser.helperApps.deleteTempFileOnExit"
@@ -89,8 +88,7 @@ class FirefoxWebDriver(WebDriver):
 
         if "use_interventions" in test_config:
             value = test_config["use_interventions"]
-            prefs[INJECTIONS_PREF] = value
-            prefs[UA_OVERRIDES_PREF] = value
+            prefs[INTERVENTIONS_PREF] = value
             prefs[PIP_OVERRIDES_PREF] = value
 
         if "use_pbm" in test_config:
@@ -102,9 +100,33 @@ class FirefoxWebDriver(WebDriver):
         if "use_strict_etp" in test_config:
             prefs[STRICT_ETP_PREF] = test_config["use_strict_etp"]
 
+        if test_config.get("use_big_minimum_font_size"):
+            prefs["font.size.variable.x-western"] = 14
+            prefs["font.minimum-size.x-western"] = 20
+
         if test_config.get("no_overlay_scrollbars"):
             prefs["widget.gtk.overlay-scrollbars.enabled"] = False
             prefs["widget.windows.overlay-scrollbars.enabled"] = False
+
+        if test_config.get("enable_speechrecognition"):
+            prefs["media.webspeech.recognition.enable"] = True
+        elif test_config.get("disable_speechrecognition"):
+            prefs["media.webspeech.recognition.enable"] = False
+
+        if test_config.get("enable_standard_captureStream"):
+            prefs["media.captureStream.enabled"] = True
+        elif test_config.get("disable_standard_captureStream"):
+            prefs["media.captureStream.enabled"] = False
+
+        if test_config.get("enable_webkit_scrollbar"):
+            prefs["layout.css.fake-webkit-scrollbar.enabled"] = True
+        elif test_config.get("disable_webkit_scrollbar"):
+            prefs["layout.css.fake-webkit-scrollbar.enabled"] = False
+
+        if test_config.get("enable_webkit_fill_available"):
+            prefs["layout.css.webkit-fill-available.enabled"] = True
+        elif test_config.get("disable_webkit_fill_available"):
+            prefs["layout.css.webkit-fill-available.enabled"] = False
 
         if test_config.get("enable_moztransform"):
             prefs["layout.css.prefixes.transforms"] = True
@@ -117,6 +139,9 @@ class FirefoxWebDriver(WebDriver):
         cookieBehavior = 4 if test_config.get("without_tcp") else 5
         prefs[CB_PREF] = cookieBehavior
         prefs[CB_PBM_PREF] = cookieBehavior
+
+        prefs["webgl.allow-in-parent"] = True
+        prefs["layout.css.getBoxQuads.enabled"] = True
 
         # prevent "allow notifications for?" popups by setting the
         # default permission for notificaitons to PERM_DENY_ACTION.
@@ -216,11 +241,9 @@ async def test_failed_check(request):
         and request.node.rep_call.failed
     ):
         session = request.node.funcargs["session"]
-        file_name = f'{request.node.nodeid}_failure_{datetime.today().strftime("%Y-%m-%d_%H:%M")}.png'.replace(
+        file_name = f"{request.node.nodeid}_failure_{datetime.today().strftime('%Y-%m-%d_%H:%M')}.png".replace(
             "/", "_"
-        ).replace(
-            "::", "__"
-        )
+        ).replace("::", "__")
         dest_dir = request.config.getoption("failure_screenshots_dir")
         try:
             await take_screenshot(session, file_name, dest_dir=dest_dir)
@@ -325,12 +348,11 @@ def install_addon(session, addon_file_path):
 @pytest.fixture(scope="function")
 async def session(driver, request, test_config):
     caps = driver.capabilities(request, test_config)
-    caps.update(
-        {
-            "acceptInsecureCerts": True,
-            "webSocketUrl": True,
-        }
-    )
+    caps.update({
+        "acceptInsecureCerts": True,
+        "webSocketUrl": True,
+        "unhandledPromptBehavior": "dismiss",
+    })
     caps = {"alwaysMatch": caps}
     print(caps)
 
@@ -446,16 +468,26 @@ def only_firefox_versions(bug_number, firefox_version, request):
 @pytest.fixture(autouse=True)
 def only_platforms(bug_number, platform, request, session):
     is_fenix = "org.mozilla.fenix" in session.capabilities.get("moz:profile", "")
+    is_gve = "org.mozilla.geckoview_example" in session.capabilities.get(
+        "moz:profile", ""
+    )
     actualPlatform = session.capabilities["platformName"]
     actualPlatformRequired = request.node.get_closest_marker("actual_platform_required")
     if actualPlatformRequired and request.config.getoption("platform_override"):
         pytest.skip(
             f"Bug #{bug_number} skipped; needs to be run on the actual platform, won't work while overriding"
         )
+    is_desktop = platform in ["linux", "mac", "windows"]
     if request.node.get_closest_marker("only_platforms"):
         plats = request.node.get_closest_marker("only_platforms").args
         for only in plats:
-            if only == platform or (only == "fenix" and is_fenix):
+            if (
+                only == platform
+                or (only == "android" and not is_desktop)
+                or (only == "desktop" and is_desktop)
+                or (only == "fenix" and is_fenix)
+                or (only == "gve" and is_gve)
+            ):
                 if actualPlatform == platform or not actualPlatformRequired:
                     return
         pytest.skip(
@@ -466,10 +498,20 @@ def only_platforms(bug_number, platform, request, session):
 @pytest.fixture(autouse=True)
 def skip_platforms(bug_number, platform, request, session):
     is_fenix = "org.mozilla.fenix" in session.capabilities.get("moz:profile", "")
+    is_gve = "org.mozilla.geckoview_example" in session.capabilities.get(
+        "moz:profile", ""
+    )
+    is_desktop = platform in ["linux", "mac", "windows"]
     if request.node.get_closest_marker("skip_platforms"):
         plats = request.node.get_closest_marker("skip_platforms").args
         for skipped in plats:
-            if skipped == platform or (skipped == "fenix" and is_fenix):
+            if (
+                skipped == platform
+                or (skipped == "android" and not is_desktop)
+                or (skipped == "desktop" and is_desktop)
+                or (skipped == "fenix" and is_fenix)
+                or (skipped == "gve" and is_gve)
+            ):
                 pytest.skip(
                     f"Bug #{bug_number} skipped on platform ({platform}, test skipped for {' and '.join(plats)})"
                 )

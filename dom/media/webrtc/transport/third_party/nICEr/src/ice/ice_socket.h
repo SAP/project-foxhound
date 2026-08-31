@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_socket_h
 #define _ice_socket_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 typedef struct nr_ice_stun_ctx_ {
   int type;
@@ -91,8 +87,5 @@ int nr_ice_socket_register_turn_client(nr_ice_socket *sock, nr_turn_client_ctx *
 int nr_ice_socket_deregister(nr_ice_socket *sock, void *handle);
 void nr_ice_socket_failed(nr_ice_socket *sock);
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

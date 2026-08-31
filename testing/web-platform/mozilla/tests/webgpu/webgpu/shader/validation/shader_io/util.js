@@ -14,7 +14,9 @@
   type,
   stage,
   io,
-  use_struct
+  use_struct,
+  enable
+
 
 
 
@@ -24,11 +26,8 @@
 }) {
   let code = '';
 
-  if (attribute.includes('subgroup')) {
-    code += 'enable subgroups;\n';
-  }
-  if (attribute.includes('clip_distances')) {
-    code += 'enable clip_distances;\n';
+  if (enable) {
+    code += `enable ${enable};\n`;
   }
 
   if (use_struct) {

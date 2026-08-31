@@ -16,14 +16,24 @@
           src="../../events.js"></script>
 
   <script type="application/javascript">
-    // //////////////////////////////////////////////////////////////////////////
-    // Invokers
+    const { TestUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/TestUtils.sys.mjs");
 
     let gDialog;
     let gDialogDoc;
     let gRootAcc;
 
-    function openDialogWnd(aURL) {
+    async function doTests() {
+      if (Services.appShell.hasHiddenWindow) {
+        // Front end stuff sometimes likes to stuff things in the hidden window(s)
+        // in which case we should repress all accessibles for those.
+
+        // Try to create an accessible for the hidden window's document.
+        let doc = Services.appShell.hiddenDOMWindow.document;
+        let hiddenDocAcc = gAccService.getAccessibleFor(doc);
+        ok(!hiddenDocAcc, "hiddenDOMWindow should not have an accessible.");
+      }
+
       // Get application root accessible.
       let docAcc = getAccessible(document);
       while (docAcc) {
@@ -36,74 +46,38 @@
         }
       }
 
-      this.eventSeq = [
-        new asyncInvokerChecker(EVENT_REORDER, gRootAcc),
-        // We use a function here to get the target because gDialog isn't set
-        // yet, but it will be when the function is called.
-        new invokerChecker(EVENT_FOCUS, () => gDialog.document)
-      ];
+      const evts = waitForEvents([
+        [EVENT_REORDER, gRootAcc],
+        [EVENT_FOCUS,  e => {
+          let doc = e.accessible.QueryInterface(Ci.nsIAccessibleDocument);
+          return doc.URL == "about:about";
+        }]
+      ]);
+      gDialog = window.browsingContext.topChromeWindow.openDialog("about:about");
+      await evts;
 
-      this.invoke = () => (gDialog = window.browsingContext.topChromeWindow.openDialog(aURL));
+      testAccessibleTree(gRootAcc, {
+        role: ROLE_APP_ROOT,
+        children: [
+          { role: ROLE_CHROME_WINDOW },
+          { role: ROLE_CHROME_WINDOW },
+        ],
+      });
+      gDialogDoc = gDialog.document;
+      ok(isAccessibleInCache(gDialogDoc),
+        "The document accessible for 'about:about' is not in cache!");
 
-      this.finalCheck = () => {
-        const accTree = {
-          role: ROLE_APP_ROOT,
-          children: [
-            {
-              role: ROLE_CHROME_WINDOW,
-            },
-            {
-              role: ROLE_CHROME_WINDOW,
-            },
-          ],
-        };
+      const focused = waitForEvent(EVENT_FOCUS, getAccessible(document));
+      gDialog.close();
+      window.focus();
+      await focused;
+      await TestUtils.waitForTick();
 
-        testAccessibleTree(gRootAcc, accTree);
+      ok(!isAccessibleInCache(gDialogDoc),
+        "The document accessible for dialog is in cache still!");
+      gDialog = gDialogDoc = gRootAcc = null;
 
-        gDialogDoc = gDialog.document;
-        ok(isAccessibleInCache(gDialogDoc),
-          `The document accessible for '${aURL}' is not in cache!`);
-      };
-
-      this.getID = () => `open dialog '${aURL}'`;
-    }
-
-    function closeDialogWnd() {
-      this.eventSeq = [ new invokerChecker(EVENT_FOCUS, getAccessible(document)) ];
-
-      this.invoke = () => {
-        gDialog.close();
-        window.focus();
-      };
-
-      this.finalCheck = () => {
-        ok(!isAccessibleInCache(gDialogDoc),
-          `The document accessible for dialog is in cache still!`);
-
-        gDialog = gDialogDoc = gRootAcc = null;
-      };
-
-      this.getID = () => "close dialog";
-    }
-
-    // //////////////////////////////////////////////////////////////////////////
-    // Do tests
-
-    function doTests() {
-      if (Services.appShell.hasHiddenWindow) {
-        // Front end stuff sometimes likes to stuff things in the hidden window(s)
-        // in which case we should repress all accessibles for those.
-
-        // Try to create an accessible for the hidden window's document.
-        let doc = Services.appShell.hiddenDOMWindow.document;
-        let hiddenDocAcc = gAccService.getAccessibleFor(doc);
-        ok(!hiddenDocAcc, "hiddenDOMWindow should not have an accessible.");
-      }
-
-      const gQueue = new eventQueue();
-      gQueue.push(new openDialogWnd("about:about"));
-      gQueue.push(new closeDialogWnd());
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

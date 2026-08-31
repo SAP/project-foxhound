@@ -1,7 +1,9 @@
 [DEFAULT]
 head = "head_addons.js head_unpack.js"
 firefox-appdir = "browser"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 dupe-manifest = true
 tags = "addons"
 

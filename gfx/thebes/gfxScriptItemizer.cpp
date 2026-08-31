@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -122,52 +121,59 @@ static inline bool SameScript(Script runScript, Script currCharScript,
 }
 
 gfxScriptItemizer::Run gfxScriptItemizer::Next() {
-  MOZ_ASSERT(textLength == 0 || (textIs8bit && textPtr._1b) ||
-             (!textIs8bit && textPtr._2b));
-
-  /* if we've fallen off the end of the text, we're done */
-  if (scriptLimit >= textLength) {
-    return Run{};
-  }
+  // The caller should have checked !Done() before calling this.
+  MOZ_DIAGNOSTIC_ASSERT(scriptLimit < textLength, "already finished!");
 
   SYNC_FIXUP();
   scriptCode = Script::COMMON;
   Script fallbackScript = Script::UNKNOWN;
 
   for (scriptStart = scriptLimit; scriptLimit < textLength; scriptLimit += 1) {
-    uint32_t ch;
+    const uint32_t startOfChar = scriptLimit;
+    uint32_t ch = textPtr[scriptLimit];
     Script sc;
-    uint32_t startOfChar = scriptLimit;
 
-    ch = textIs8bit ? textPtr._1b[scriptLimit] : textPtr._2b[scriptLimit];
-
-    /* decode UTF-16 (may be surrogate pair) */
-    if (NS_IS_HIGH_SURROGATE(ch) && scriptLimit < textLength - 1) {
-      uint32_t low = textPtr._2b[scriptLimit + 1];
-      if (NS_IS_LOW_SURROGATE(low)) {
-        ch = SURROGATE_TO_UCS4(ch, low);
-        scriptLimit += 1;
+    // Fast path for most Latin text: avoid GetScriptCode/GetGeneralCategory.
+    // Characters below kFirstNonCommonOrLatin are either COMMON or LATIN,
+    // and we have a fast-path lookup for these.
+    if (ch < kFirstNonCommonOrLatin) {
+      sc = FastGetScriptCode(ch);
+    } else {
+      // decode UTF-16 (may be surrogate pair)
+      if (scriptLimit < textLength - 1 &&
+          NS_IS_SURROGATE_PAIR(ch, textPtr[scriptLimit + 1])) {
+        ch = SURROGATE_TO_UCS4(ch, textPtr[++scriptLimit]);
       }
+      sc = UnicodeProperties::GetScriptCode(ch);
     }
 
     // Initialize gc to UNASSIGNED; we'll only set it to the true GC
     // if the character has script=COMMON, otherwise we don't care.
     uint8_t gc = HB_UNICODE_GENERAL_CATEGORY_UNASSIGNED;
 
-    sc = UnicodeProperties::GetScriptCode(ch);
     if (sc == Script::COMMON) {
-      /*
-       * Paired character handling:
-       *
-       * if it's an open character, push it onto the stack.
-       * if it's a close character, find the matching open on the
-       * stack, and use that script code. Any non-matching open
-       * characters above it on the stack will be popped.
-       *
-       * We only do this if the script is COMMON; for chars with
-       * specific script assignments, we just use them as-is.
-       */
-      gc = GetGeneralCategory(ch);
+      // Paired character handling:
+      //
+      // if it's an open character, push it onto the stack.
+      // if it's a close character, find the matching open on the
+      // stack, and use that script code. Any non-matching open
+      // characters above it on the stack will be popped.
+      //
+      // We only do this if the script is COMMON; for chars with
+      // specific script assignments, we just use them as-is.
+      static constexpr uint32_t kFirstNonLatinOpenOrClose = 0x0F3A;
+      if (ch < kFirstNonLatinOpenOrClose) {
+        // Avoid calling GetGeneralCategory() for common Latin-script cases:
+        // there are only 3 pairs of open/close punctuation in the early blocks
+        // of Unicode, and those are the only categories we care about.
+        if (ch == '(' || ch == '[' || ch == '{') {
+          gc = HB_UNICODE_GENERAL_CATEGORY_OPEN_PUNCTUATION;
+        } else if (ch == ')' || ch == ']' || ch == '}') {
+          gc = HB_UNICODE_GENERAL_CATEGORY_CLOSE_PUNCTUATION;
+        }
+      } else {
+        gc = GetGeneralCategory(ch);
+      }
       if (gc == HB_UNICODE_GENERAL_CATEGORY_OPEN_PUNCTUATION) {
         uint32_t endPairChar = UnicodeProperties::CharMirror(ch);
         if (endPairChar != ch) {
@@ -214,21 +220,16 @@ gfxScriptItemizer::Run gfxScriptItemizer::Next() {
         }
       }
 
-      /*
-       * if this character is a close paired character,
-       * pop the matching open character from the stack
-       */
+      // if this character is a close paired character,
+      // pop the matching open character from the stack
       if (gc == HB_UNICODE_GENERAL_CATEGORY_CLOSE_PUNCTUATION &&
           UnicodeProperties::IsMirrored(ch)) {
         pop();
       }
     } else {
-      /*
-       * reset scriptLimit in case it was advanced during reading a
-       * multiple-code-unit character
-       */
+      // reset scriptLimit in case it was advanced during reading a
+      // multiple-code-unit character
       scriptLimit = startOfChar;
-
       break;
     }
   }

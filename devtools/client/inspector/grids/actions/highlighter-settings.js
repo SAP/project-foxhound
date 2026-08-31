@@ -14,7 +14,7 @@ module.exports = {
   /**
    * Updates the grid highlighter's show grid areas preference.
    *
-   * @param  {Boolean} enabled
+   * @param  {boolean} enabled
    *         Whether or not the grid highlighter should show the grid areas.
    */
   updateShowGridAreas(enabled) {
@@ -27,7 +27,7 @@ module.exports = {
   /**
    * Updates the grid highlighter's show grid line numbers preference.
    *
-   * @param  {Boolean} enabled
+   * @param  {boolean} enabled
    *         Whether or not the grid highlighter should show the grid line numbers.
    */
   updateShowGridLineNumbers(enabled) {
@@ -40,7 +40,7 @@ module.exports = {
   /**
    * Updates the grid highlighter's show infinite lines preference.
    *
-   * @param  {Boolean} enabled
+   * @param  {boolean} enabled
    *         Whether or not the grid highlighter should extend grid lines infinitely.
    */
   updateShowInfiniteLines(enabled) {

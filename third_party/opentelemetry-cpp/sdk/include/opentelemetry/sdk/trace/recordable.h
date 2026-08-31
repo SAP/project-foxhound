@@ -44,6 +44,13 @@ class SpanData;
 class Recordable
 {
 public:
+  Recordable() = default;
+
+  Recordable(const Recordable &)            = delete;
+  Recordable(Recordable &&)                 = delete;
+  Recordable &operator=(const Recordable &) = delete;
+  Recordable &operator=(Recordable &&)      = delete;
+
   virtual ~Recordable() = default;
 
   /**
@@ -56,7 +63,7 @@ public:
 
   /**
    * Set an attribute of a span.
-   * @param name the name of the attribute
+   * @param key the name of the attribute
    * @param value the attribute value
    */
   virtual void SetAttribute(nostd::string_view key,
@@ -116,7 +123,7 @@ public:
    * Add a link to a span with default (empty) attributes.
    * @param span_context the span context of the linked span
    */
-  void AddLink(opentelemetry::trace::SpanContext span_context)
+  void AddLink(const opentelemetry::trace::SpanContext &span_context)
   {
     AddLink(span_context, opentelemetry::sdk::GetEmptyAttributes());
   }
@@ -137,7 +144,6 @@ public:
 
   /**
    * Set the trace flags of the span.
-   * @param flags the flags to set
    */
   virtual void SetTraceFlags(opentelemetry::trace::TraceFlags /* flags */) noexcept {}
 
@@ -149,7 +155,7 @@ public:
 
   /**
    * Set Resource of the span
-   * @param Resource the resource to set
+   * @param resource the resource to set
    */
   virtual void SetResource(const opentelemetry::sdk::resource::Resource &resource) noexcept = 0;
 

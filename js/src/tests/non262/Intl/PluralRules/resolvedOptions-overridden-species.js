@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Tests the PluralRules.resolvedOptions function for overriden Array[Symbol.species].
 
 var pl = new Intl.PluralRules("de");

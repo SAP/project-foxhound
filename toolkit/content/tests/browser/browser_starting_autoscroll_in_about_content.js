@@ -33,7 +33,7 @@ add_task(async function testStartingAutoScrollInAboutContent() {
     });
 
     ok(!browser.isRemoteBrowser, "Browser should not be remote.");
-    await ContentTask.spawn(browser, null, async function () {
+    await SpecialPowers.spawn(browser, [], async function () {
       await ContentTaskUtils.waitForCondition(
         () =>
           content.document.documentElement.scrollHeight >

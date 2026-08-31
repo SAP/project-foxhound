@@ -1,0 +1,45 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for Bug 1666613</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+  <style>iframe { width: 90%; }</style>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1666613">Mozilla Bug 691215</a>
+<p id="display"></p>
+<script class="testbody" type="text/javascript">
+
+SimpleTest.waitForExplicitFinish();
+
+function checkDir(expected) {
+  return new Promise(resolve => {
+    let iframe = document.createElement("iframe");
+    document.body.append(iframe);
+    iframe.onload = () => {
+      let parserError = iframe.contentDocument.documentElement;
+      is(parserError.getAttribute("dir"), expected);
+      resolve();
+    };
+    iframe.src = "file_bug1666613.xml";
+  });
+}
+
+async function sanityTest() {
+  await checkDir("ltr");
+  await pseudoBidiTest();
+}
+
+async function pseudoBidiTest() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["intl.l10n.pseudo", "bidi"]]
+  });
+  await checkDir("rtl"); 
+  SimpleTest.finish();
+}
+
+sanityTest();
+</script>
+</body>
+</html>

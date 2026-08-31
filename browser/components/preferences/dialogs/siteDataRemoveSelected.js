@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,7 @@
 /**
  * This dialog will ask the user to confirm that they really want to delete all
  * site data for a number of hosts.
- **/
+ */
 window.addEventListener("load", () => {
   document.addEventListener("dialogaccept", function () {
     window.arguments[0].allowed = true;

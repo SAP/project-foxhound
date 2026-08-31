@@ -418,6 +418,7 @@ this.CryptoUtils = {
 
   /**
    * Get the computed hash for a given file
+   *
    * @param {nsIFile} file The file to be hashed
    * @param {string} [algorithm] The hashing algorithm to use
    */

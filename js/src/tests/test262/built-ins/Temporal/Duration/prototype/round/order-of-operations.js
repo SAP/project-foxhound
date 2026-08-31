@@ -1,10 +1,12 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.duration.prototype.round
-description: Properties on objects passed to round() are accessed in the correct order
+description: >
+  Properties on objects passed to round() are accessed in the correct order
+  when relativeTo is a property bag.
 includes: [compareArray.js, temporalHelpers.js]
 features: [Temporal]
 ---*/
@@ -43,6 +45,33 @@ instance.round(createOptionsObserver({ smallestUnit: "microseconds" }));
 assert.compareArray(actual, expected, "order of operations");
 actual.splice(0); // clear
 
+// Check fast path for temporal objects.
+function checkTemporalObject(object) {
+  ["year", "month", "monthCode", "day", "hour", "minute", "second", "millisecond", "microsecond", "nanosecond"].forEach((property) => {
+    Object.defineProperty(object, property, {
+      get() {
+        throw new Test262Error(`should not get ${property}`);
+      }});
+  });
+}
+
+// basic order of operations, with relativeTo a Temporal.PlainDate object
+const pd = new Temporal.PlainDate(2026, 3, 6);
+checkTemporalObject(pd);
+instance.round(createOptionsObserver({ relativeTo: pd }));
+assert.compareArray(actual, expected,
+  "relativeTo PlainDate should not read property bag fields");
+actual.splice(0); // clear
+
+// basic order of operations, with relativeTo a Temporal.ZonedDateTime object
+const zdt = new Temporal.ZonedDateTime(1772751600000000000n, "UTC");
+checkTemporalObject(zdt);
+instance.round(createOptionsObserver({ relativeTo: zdt }));
+assert.compareArray(actual, expected,
+  "relativeTo ZonedDateTime should not read property bag fields");
+actual.splice(0); // clear
+
+// basic order of operations, with relativeTo a plain property bag
 const expectedOpsForPlainRelativeTo = [
   "get options.largestUnit",
   "get options.largestUnit.toString",

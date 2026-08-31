@@ -1,58 +1,90 @@
 TPS is a test automation framework for Firefox Sync. See
 https://developer.mozilla.org/en/TPS for documentation.
 
-Installation
-============
+FxA Stage WAF Bypass Token (Required)
+======================================
 
-TPS requires several packages to operate properly. To install TPS and
-required packages, use the INSTALL.sh script, provided:
+TPS hits the FxA staging server, which has a WAF that blocks automated
+traffic. To run TPS you need a bypass token, exposed via the
+TPS_FXA_CI_TOKEN environment variable.
 
-  python3 create_venv.py /path/to/create/virtualenv
+Where to get the most current token:
+  https://mozilla-hub.atlassian.net/wiki/spaces/CLOUDSERVICES/pages/5276635/SACI+Triage+Rotation#Run-desktop-Sync-TPS-tests
 
-This script will create a virtalenv and install TPS into it.
+Set it in your shell profile (.bashrc / .zshrc / etc.) so it persists across worktrees and sessions:
 
-You must then activate the virtualenv by executing:
+  export TPS_FXA_CI_TOKEN=<token>
 
--  (mac/linux): source /path/to/virtualenv/Scripts/activate
--  (win): /path/to/virtualenv/Scripts/activate.bat
+or just simply invoke it as part of the CLI:
 
-TPS can then be run by executing:
+  TPS_FXA_CI_TOKEN=xx ./mach tps-test --auto-account...
 
-  runtps --binary=/path/to/firefox
+If it's not set, `./mach tps-test` against staging will fail.
 
-> Note: You can run the tps tests in headless mode by using `MOZ_HEADLESS=1`. This will make
-> your computer somewhat useable while the tests are running.
+Quick Start (Recommended)
+==========================
 
-When you are done with TPS, you can deactivate the virtualenv by executing
-`deactivate`
+The easiest way to run TPS tests is using the `./mach tps-test` command with
+automatic account creation:
 
-Configuration
-=============
-To edit the TPS configuration, do not edit config/config.json.in in the tree.
-Instead, edit config.json inside your virtualenv; it will be located at the
-top level of where you specified the virtualenv be created - eg, for the
-example above, it will be `/path/to/create/virtualenv/config.json`
+  ./mach tps-test --testfile services/sync/tests/tps/test_sync.js \
+                  --auto-account
 
-Setting Up Test Accounts
+This command:
+- Automatically creates and verifies a test account via restmail.net
+- Builds the TPS extension automatically
+- Works directly with your Firefox build
+- Automates OAuth authentication with real FxA credentials
+- Tests real Sync functionality between multiple profiles
+- Uses FxA staging server by default
+
+Options:
+  --testfile        Path to test file (e.g., services/sync/tests/tps/test_sync.js)
+  --auto-account    Automatically create test account (recommended)
+  --username        Firefox Account username (alternative to --auto-account)
+  --password        Firefox Account password (required with --username)
+  --fxa-staging     Use FxA staging server (default with --auto-account)
+  --fxa-production  Use FxA production server (not recommended)
+  --binary          Path to Firefox binary (default: uses your build)
+  --logfile         Path to log file (default: tps.log)
+  --debug           Enable debug logging
+
+Run in headless mode with:
+  MOZ_HEADLESS=1 ./mach tps-test --testfile ... --auto-account
+
+Setting Up (FxA) Test Accounts
 ========================
 
-Firefox Accounts
-----------------
-To create a test account for using the Firefox Account authentication perform the
-following steps:
+Automatic Account Creation (Recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The simplest way to run TPS tests is with automatic account creation:
 
-> Note: Currently, the TPS tests rely on how restmail returns the verification code
-> You should use restmail or something very similar.
-> Gmail and other providers might give a `The request was blocked for security reasons`
+  ./mach tps-test --testfile services/sync/tests/tps/test_sync.js \
+                  --auto-account
 
-1. Go to the URL: http://restmail.net/mail/%account_prefix%@restmail.net
-  - Replace `%account_prefix%` with your own test name
-2. Go to https://accounts.firefox.com/signup?service=sync&context=fx_desktop_v1
-3. Sign in with the previous chosen email address and a password
-4. Go back to the Restmail URL, reload the page
-5. Search for the verification link and open that page
+TPS will automatically:
+1. Generate test credentials (random restmail.net address and password)
+2. Create the account via FxA API inside Firefox
+3. Verify the account via restmail.net (FxA requires email verification before
+   sign-in; the staging server does not support skipping this step)
+4. Start an OAuth flow with the FxA server
+5. Open the login page in a browser window
+6. Fill in the credentials programmatically
+7. Complete the OAuth handshake
+8. Set up real Sync connections between test profiles
 
-Now you will be able to use this account for TPS. Note that these
-steps can be done in either a test profile or in a private browsing window - you
-might want to avoid doing that in a "real" profile that's already connected to
-Sync.
+No manual account creation or verification needed.
+
+Manual Account Setup (Alternative)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+If you prefer to use an existing account:
+
+  ./mach tps-test --testfile services/sync/tests/tps/test_sync.js \
+                  --username your-test@restmail.net \
+                  --password your-password
+
+Note: The account must already exist. You can create accounts manually at
+https://accounts.stage.mozaws.net (for staging).
+
+Note: The staging server approach is recommended for testing to avoid using
+production infrastructure. Accounts must be verified before TPS can use them.

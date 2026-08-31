@@ -17,6 +17,7 @@
  * labels, "even" if the first time they're rendered is in customize mode's
  * palette.
  */
+
 add_task(async function test_all_buttons_have_labels() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
   registerCleanupFunction(async () => {
@@ -25,15 +26,6 @@ add_task(async function test_all_buttons_have_labels() {
   });
   await startCustomizing(win);
   let { palette } = win.gNavToolbox;
-  // Wait for things to paint.
-  await TestUtils.waitForCondition(() => {
-    return !!Array.from(palette.querySelectorAll(".toolbarbutton-icon")).filter(
-      n => {
-        let rect = n.getBoundingClientRect();
-        return rect.height > 0 && rect.width > 0;
-      }
-    ).length;
-  }, "Must start rendering icons.");
 
   for (let wrapper of palette.children) {
     if (wrapper.hasAttribute("title")) {
@@ -48,16 +40,26 @@ add_task(async function test_all_buttons_have_labels() {
         wrapper.firstElementChild.id + " has a label."
       );
     }
-    let icons = Array.from(wrapper.querySelectorAll(".toolbarbutton-icon"));
+    let icons = Array.from(
+      wrapper.querySelectorAll(".toolbarbutton-icon, img")
+    );
     // If there are icons, at least one must be visible
     // (not everything necessarily has one, e.g. the search bar has no icon)
     if (icons.length) {
-      let visibleIcons = icons.filter(n => {
-        let rect = n.getBoundingClientRect();
+      let isIconVisible = icon => {
+        let rect = icon.getBoundingClientRect();
         return rect.height > 0 && rect.width > 0;
-      });
+      };
+
+      // Wait for icons to paint. Icons get their width quickly but height takes
+      // longer as we wait for the images to load and paint.
+      await TestUtils.waitForCondition(
+        () => icons.some(isIconVisible),
+        `Wait for icons to paint for ${wrapper.firstElementChild.id}`
+      );
+
       Assert.greater(
-        visibleIcons.length,
+        icons.filter(isIconVisible).length,
         0,
         `${wrapper.firstElementChild.id} should have at least one visible icon.`
       );

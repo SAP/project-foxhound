@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -31,8 +29,8 @@ WebrtcEnvironmentWrapper::WebrtcEnvironmentWrapper(
       mTaskQueueFactory(std::move(aTaskQueueFactory)),
       mTrials(std::move(aTrials)),
       mClock(aTimestampMaker),
-      mEnv(webrtc::CreateEnvironment(mEventLog.get(),
-                                     mClock.GetRealTimeClockRaw(),
-                                     mTaskQueueFactory.get(), mTrials.get())) {}
+      mEnv(webrtc::CreateEnvironment(
+          mEventLog.get(), mClock.GetRealTimeClockOnlyUseForRelativeTime(),
+          mTaskQueueFactory.get(), mTrials.get())) {}
 
 }  // namespace mozilla

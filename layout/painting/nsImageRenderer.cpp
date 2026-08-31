@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,7 +54,7 @@ nsImageRenderer::nsImageRenderer(nsIFrame* aForFrame, const StyleImage* aImage,
                                  uint32_t aFlags)
     : mForFrame(aForFrame),
       mImage(&aImage->FinalImage()),
-      mImageResolution(aImage->GetResolution(*aForFrame->Style())),
+      mImageResolution(aImage->GetResolution(aForFrame->Style())),
       mType(mImage->tag),
       mImageContainer(nullptr),
       mGradientData(nullptr),
@@ -94,11 +92,7 @@ static already_AddRefed<imgIContainer> GetSymbolicIconImage(nsAtom* aName,
   }
   const auto fg = aFrame->StyleText()->mColor.ToColor();
   auto key = std::make_tuple(aName, aScale, fg);
-  auto* cache = aFrame->GetProperty(SymbolicImageCacheProp());
-  if (!cache) {
-    cache = new SymbolicImageCache();
-    aFrame->SetProperty(SymbolicImageCacheProp(), cache);
-  }
+  auto* cache = aFrame->GetOrCreateDeletableProperty(SymbolicImageCacheProp());
   auto lookup = cache->Lookup(key);
   if (lookup) {
     return do_AddRef(lookup.Data().mImage);
@@ -111,7 +105,7 @@ static already_AddRefed<imgIContainer> GetSymbolicIconImage(nsAtom* aName,
   if (NS_WARN_IF(!surface)) {
     return nullptr;
   }
-  RefPtr drawable = new gfxSurfaceDrawable(surface, surface->GetSize());
+  auto drawable = MakeRefPtr<gfxSurfaceDrawable>(surface, surface->GetSize());
   nsCOMPtr<imgIContainer> container = ImageOps::CreateFromDrawable(drawable);
   MOZ_ASSERT(container);
   lookup.Set(SymbolicImageEntry{std::move(key), std::move(container)});
@@ -253,6 +247,8 @@ bool nsImageRenderer::PrepareImage() {
     // on.
     mPrepareResult = ImgDrawResult::BAD_IMAGE;
     return false;
+  } else if (mImage->IsImage()) {
+    mPrepareResult = ImgDrawResult::SUCCESS;
   } else {
     MOZ_ASSERT(mImage->IsNone(), "Unknown image type?");
   }
@@ -333,6 +329,7 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
     // Per <http://dev.w3.org/csswg/css3-images/#gradients>, gradients have no
     // intrinsic dimensions.
     case StyleImage::Tag::Gradient:
+    case StyleImage::Tag::Image:
     case StyleImage::Tag::None:
       break;
   }
@@ -527,24 +524,19 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
   ImgDrawResult result = ImgDrawResult::SUCCESS;
   gfxContext* ctx = &aRenderingContext;
   Maybe<gfxContext> tempCtx;
-  IntRect tmpDTRect;
+  CompositionOp savedCompositionOp = CompositionOp::OP_OVER;
 
-  if (ctx->CurrentOp() != CompositionOp::OP_OVER ||
-      mMaskOp == StyleMaskMode::Luminance) {
-    gfxRect clipRect = ctx->GetClipExtents(gfxContext::eDeviceSpace);
-    tmpDTRect = RoundedOut(ToRect(clipRect));
-    if (tmpDTRect.IsEmpty()) {
-      return ImgDrawResult::SUCCESS;
-    }
-    RefPtr<DrawTarget> tempDT = ctx->GetDrawTarget()->CreateSimilarDrawTarget(
-        tmpDTRect.Size(), SurfaceFormat::B8G8R8A8);
+  if (mMaskOp == StyleMaskMode::Luminance) {
+    savedCompositionOp = ctx->CurrentOp();
+    ctx->SetOp(CompositionOp::OP_OVER);
+
+    RefPtr<DrawTarget> tempDT = ctx->GetDrawTarget()->CreateClippedDrawTarget(
+        Rect(), SurfaceFormat::B8G8R8A8);
     if (!tempDT || !tempDT->IsValid()) {
       gfxDevCrash(LogReason::InvalidContext)
           << "ImageRenderer::Draw problem " << gfx::hexa(tempDT);
       return ImgDrawResult::TEMPORARY_ERROR;
     }
-    tempDT->SetTransform(ctx->GetDrawTarget()->GetTransform() *
-                         Matrix::Translation(-tmpDTRect.TopLeft()));
     tempCtx.emplace(tempDT, /* aPreserveTransform */ true);
     ctx = &tempCtx.ref();
     if (!ctx) {
@@ -552,6 +544,15 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
           << "ImageRenderer::Draw problem " << gfx::hexa(tempDT);
       return ImgDrawResult::TEMPORARY_ERROR;
     }
+  } else if (ctx->CurrentOp() != CompositionOp::OP_OVER) {
+    savedCompositionOp = ctx->CurrentOp();
+    ctx->SetOp(CompositionOp::OP_OVER);
+
+    IntRect clipRect =
+        RoundedOut(ToRect(ctx->GetClipExtents(gfxContext::eDeviceSpace)));
+    ctx->GetDrawTarget()->PushLayerWithBlend(false, 1.0, nullptr,
+                                             mozilla::gfx::Matrix(), clipRect,
+                                             false, savedCompositionOp);
   }
 
   switch (mType) {
@@ -561,6 +562,15 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
           *ctx, mForFrame, aPresContext, mImageContainer, samplingFilter, aDest,
           aFill, aRepeatSize, aAnchor, aDirtyRect,
           ConvertImageRendererToDrawFlags(mFlags), mExtendMode, aOpacity);
+      break;
+    }
+    case StyleImage::Tag::Image: {
+      const auto fill = LayoutDeviceRect::FromAppUnits(
+          aFill, aPresContext->AppUnitsPerDevPixel());
+      ctx->GetDrawTarget()->FillRect(
+          fill.ToUnknownRect(),
+          ColorPattern(ToDeviceColor(mImage->AsImage()->CalcColor(mForFrame))),
+          DrawOptions(/* aAlpha = */ aOpacity));
       break;
     }
     case StyleImage::Tag::Gradient: {
@@ -596,27 +606,19 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
       break;
   }
 
-  if (!tmpDTRect.IsEmpty()) {
+  if (mMaskOp == StyleMaskMode::Luminance) {
+    RefPtr<SourceSurface> surf = ctx->GetDrawTarget()->IntoLuminanceSource(
+        LuminanceType::LUMINANCE, 1.0f);
     DrawTarget* dt = aRenderingContext.GetDrawTarget();
     Matrix oldTransform = dt->GetTransform();
     dt->SetTransform(Matrix());
-    if (mMaskOp == StyleMaskMode::Luminance) {
-      RefPtr<SourceSurface> surf = ctx->GetDrawTarget()->IntoLuminanceSource(
-          LuminanceType::LUMINANCE, 1.0f);
-      dt->MaskSurface(ColorPattern(DeviceColor(0, 0, 0, 1.0f)), surf,
-                      tmpDTRect.TopLeft(),
-                      DrawOptions(1.0f, aRenderingContext.CurrentOp()));
-    } else {
-      RefPtr<SourceSurface> surf = ctx->GetDrawTarget()->Snapshot();
-      dt->DrawSurface(
-          surf,
-          Rect(tmpDTRect.x, tmpDTRect.y, tmpDTRect.width, tmpDTRect.height),
-          Rect(0, 0, tmpDTRect.width, tmpDTRect.height),
-          DrawSurfaceOptions(SamplingFilter::POINT),
-          DrawOptions(1.0f, aRenderingContext.CurrentOp()));
-    }
-
+    dt->MaskSurface(ColorPattern(DeviceColor(0, 0, 0, 1.0f)), surf, Point(0, 0),
+                    DrawOptions(1.0f, savedCompositionOp));
     dt->SetTransform(oldTransform);
+    aRenderingContext.SetOp(savedCompositionOp);
+  } else if (savedCompositionOp != CompositionOp::OP_OVER) {
+    aRenderingContext.GetDrawTarget()->PopLayer();
+    aRenderingContext.SetOp(savedCompositionOp);
   }
 
   if (!mImage->IsComplete()) {
@@ -678,11 +680,10 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
       SVGImageContext svgContext(Some(destCSSSize));
       Maybe<ImageIntRegion> region;
 
-      const int32_t appUnitsPerDevPixel =
-          mForFrame->PresContext()->AppUnitsPerDevPixel();
-      LayoutDeviceRect destRect =
+      const int32_t appUnitsPerDevPixel = aPresContext->AppUnitsPerDevPixel();
+      const auto destRect =
           LayoutDeviceRect::FromAppUnits(aDest, appUnitsPerDevPixel);
-      LayoutDeviceRect clipRect =
+      const auto clipRect =
           LayoutDeviceRect::FromAppUnits(aFill, appUnitsPerDevPixel);
       auto stretchSize = wr::ToLayoutSize(destRect.Size());
 
@@ -751,6 +752,16 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
       }
       break;
     }
+    case StyleImage::Tag::Image: {
+      const int32_t appUnitsPerDevPixel = aPresContext->AppUnitsPerDevPixel();
+      auto fillRect = wr::ToLayoutRect(
+          LayoutDeviceRect::FromAppUnits(aFill, appUnitsPerDevPixel));
+      aBuilder.PushRect(
+          fillRect, fillRect, !aItem->BackfaceIsHidden(),
+          /* aFoceAntiAliasing = */ false, /* aIsCheckerboard = */ false,
+          wr::ToColorF(ToDeviceColor(mImage->AsImage()->CalcColor(mForFrame))));
+      break;
+    }
     default:
       break;
   }
@@ -787,17 +798,16 @@ already_AddRefed<gfxDrawable> nsImageRenderer::DrawableForElement(
       drawable = SVGIntegrationUtils::DrawableFromPaintServer(
           mPaintServerFrame, mForFrame, mSize, imageSize,
           aContext.GetDrawTarget(), aContext.CurrentMatrixDouble(),
-          SVGIntegrationUtils::FLAG_SYNC_DECODE_IMAGES);
+          SVGIntegrationUtils::DecodeFlag::SyncDecodeImages);
     }
 
     return drawable.forget();
   }
   NS_ASSERTION(mImageElementSurface.GetSourceSurface(),
                "Surface should be ready.");
-  RefPtr<gfxDrawable> drawable =
-      new gfxSurfaceDrawable(mImageElementSurface.GetSourceSurface().get(),
-                             mImageElementSurface.mSize);
-  return drawable.forget();
+  return MakeAndAddRef<gfxSurfaceDrawable>(
+      mImageElementSurface.GetSourceSurface().get(),
+      mImageElementSurface.mSize);
 }
 
 ImgDrawResult nsImageRenderer::DrawLayer(

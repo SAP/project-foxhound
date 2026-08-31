@@ -12,12 +12,12 @@ import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
 import org.mozilla.geckoview.GeckoRuntime
+import kotlin.test.assertNotNull
 import org.mozilla.geckoview.MediaSession as GeckoViewMediaSession
 
 @RunWith(AndroidJUnit4::class)
@@ -48,7 +48,7 @@ class GeckoMediaSessionDelegateTest {
         engineSession.geckoSession.mediaSessionDelegate!!.onActivated(mock(), geckoViewMediaSession)
 
         assertNotNull(observedController)
-        observedController!!.play()
+        observedController.play()
         verify(geckoViewMediaSession).play()
     }
 
@@ -93,10 +93,10 @@ class GeckoMediaSessionDelegateTest {
         engineSession.geckoSession.mediaSessionDelegate!!.onMetadata(mock(), geckoViewMediaSession, metadata)
 
         assertNotNull(observedMetadata)
-        assertEquals(observedMetadata?.title, metadata.title)
-        assertEquals(observedMetadata?.artist, metadata.artist)
-        assertEquals(observedMetadata?.album, metadata.album)
-        assertEquals(observedMetadata?.getArtwork, metadata.artwork)
+        assertEquals(observedMetadata.title, metadata.title)
+        assertEquals(observedMetadata.artist, metadata.artist)
+        assertEquals(observedMetadata.album, metadata.album)
+        assertEquals(observedMetadata.getArtwork, metadata.artwork)
     }
 
     @Test
@@ -178,9 +178,9 @@ class GeckoMediaSessionDelegateTest {
         engineSession.geckoSession.mediaSessionDelegate!!.onPositionState(mock(), geckoViewMediaSession, positionState)
 
         assertNotNull(observedPositionState)
-        assertEquals(observedPositionState?.duration, positionState.duration)
-        assertEquals(observedPositionState?.position, positionState.position)
-        assertEquals(observedPositionState?.playbackRate, positionState.playbackRate)
+        assertEquals(observedPositionState.duration, positionState.duration, 0.0)
+        assertEquals(observedPositionState.position, positionState.position, 0.0)
+        assertEquals(observedPositionState.playbackRate, positionState.playbackRate, 0.0)
     }
 
     @Test

@@ -81,7 +81,10 @@ class RequestListColumnTime extends Component {
       isNaN(time) || time === undefined ? "" : getFormattedTime(time);
     return dom.td(
       {
-        className: "requests-list-column requests-list-" + type + "-time",
+        className:
+          "requests-list-column requests-list-number-column requests-list-" +
+          type +
+          "-time",
         title: formattedTime,
       },
       formattedTime

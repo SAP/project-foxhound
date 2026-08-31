@@ -180,10 +180,6 @@ CERT_AddExtensionByOID(void *exthandle, SECItem *oid, SECItem *value,
         return (SECFailure);
     }
 
-    /* add to list */
-    node->next = handle->head;
-    handle->head = node;
-
     /* point to ext struct */
     node->ext = ext;
 
@@ -209,6 +205,10 @@ CERT_AddExtensionByOID(void *exthandle, SECItem *oid, SECItem *value,
         ext->value = *value;
     }
 
+    /* Link node and bump count only after all failable ops succeed,
+     * so handle->head and handle->count stay in sync on failure. */
+    node->next = handle->head;
+    handle->head = node;
     handle->count++;
 
     return (SECSuccess);
@@ -251,6 +251,14 @@ PrepareBitStringForEncoding(SECItem *bitsmap, SECItem *value)
 {
     unsigned char onebyte;
     unsigned int i, len = 0;
+
+    /* An empty bit string has no bits set; emit an empty value rather than
+     * reading value->data and reporting a length of 1. */
+    if (value->len == 0) {
+        bitsmap->data = NULL;
+        bitsmap->len = 0;
+        return;
+    }
 
     /* to prevent warning on some platform at compile time */
     onebyte = '\0';
@@ -371,7 +379,9 @@ CERT_MergeExtensions(void *exthandle, CERTCertExtension **extensions)
             }
         }
         if (node == NULL) {
-            PRBool critical = (ext->critical.len != 0 &&
+            PORT_Assert(ext->critical.len == 0 || ext->critical.data != NULL);
+            PRBool critical = (ext->critical.data != NULL &&
+                               ext->critical.len != 0 &&
                                ext->critical.data[ext->critical.len - 1] != 0);
             if (critical && tag == SEC_OID_UNKNOWN) {
                 PORT_SetError(SEC_ERROR_UNKNOWN_CRITICAL_EXTENSION);

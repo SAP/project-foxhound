@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -45,7 +43,7 @@ function runNextTest() {
   }
 }
 
-/** ***********
+/*************
  * TEST DATA *
  *************/
 
@@ -72,7 +70,7 @@ const LATTER_HALF_THIRD_SEGMENT = [11, 12];
 
 const TWO_HALF_SEGMENTS = [1, 2, 1, 2];
 
-/** *******
+/*********
  * TESTS *
  *********/
 
@@ -318,7 +316,7 @@ function sinkAndSourceClosedWithPendingData(next) {
   t.expect(Cr.NS_ERROR_UNEXPECTED, []);
 }
 
-/** ***********
+/*************
  * UTILITIES *
  *************/
 
@@ -375,7 +373,7 @@ function note(m) {
   dumpn(asterisks + "\n* " + m + " *\n" + asterisks);
 }
 
-/** *********
+/***********
  * MOCKERY *
  ***********/
 

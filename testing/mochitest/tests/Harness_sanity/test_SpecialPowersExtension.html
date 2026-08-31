@@ -34,7 +34,7 @@ var startTime = new Date();
 async function starttest(){
   dump("\nSPECIALPTEST:::Test script running after load " + (new Date).getTime() + "\n");
 
-  /** Test for SpecialPowers extension **/
+  /** Test for SpecialPowers extension */
   is(SpecialPowers.sanityCheck(), "foo", "check to see whether the Special Powers extension is installed.");
 
   // Test a sync call into chrome

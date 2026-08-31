@@ -9,7 +9,7 @@ HERO_CSS = "body.videoLoaded"
 
 async def is_mousewheel_scrolling_too_fast(client):
     await client.navigate(URL, wait="none")
-    hero = client.await_css(HERO_CSS, is_displayed=True, timeout=30)
+    hero = client.await_css(HERO_CSS, is_displayed=True, timeout=60)
     await client.send_apz_scroll_gesture(-100, element=hero, offset=[200, 200])
     await asyncio.sleep(2)
     after = client.execute_script("return window.scrollY")

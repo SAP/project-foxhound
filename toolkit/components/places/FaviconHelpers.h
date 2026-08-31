@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -14,6 +12,7 @@
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
 #include "imgLoader.h"
+#include "ConcurrentConnection.h"
 
 class nsIPrincipal;
 
@@ -22,10 +21,9 @@ class nsIPrincipal;
 #include "mozilla/ipc/IPCCore.h"
 
 #define ICON_STATUS_UNKNOWN 0
-#define ICON_STATUS_CHANGED 1 << 0
-#define ICON_STATUS_SAVED 1 << 1
-#define ICON_STATUS_ASSOCIATED 1 << 2
-#define ICON_STATUS_CACHED 1 << 3
+#define ICON_STATUS_SAVED 1 << 0
+#define ICON_STATUS_ASSOCIATED 1 << 1
+#define ICON_STATUS_CACHED 1 << 2
 
 #define TO_CHARBUFFER(_buffer) \
   reinterpret_cast<char*>(const_cast<uint8_t*>(_buffer))
@@ -180,12 +178,15 @@ class AsyncGetFaviconForPageRunnable final : public Runnable {
    */
   AsyncGetFaviconForPageRunnable(
       const nsCOMPtr<nsIURI>& aPageURI, uint16_t aPreferredWidth,
-      const RefPtr<FaviconPromise::Private>& aPromise);
+      const RefPtr<FaviconPromise::Private>& aPromise, bool aOnConcurrentConn);
 
  private:
+  ~AsyncGetFaviconForPageRunnable();
+
   nsCOMPtr<nsIURI> mPageURI;
   uint16_t mPreferredWidth;
   nsMainThreadPtrHandle<FaviconPromise::Private> mPromise;
+  bool mOnConcurrentConn;
 };
 
 /**
@@ -239,6 +240,52 @@ class AsyncTryCopyFaviconsRunnable final : public Runnable {
   nsCOMPtr<nsIURI> mToPageURI;
   bool mCanAddToHistoryForToPage;
   nsMainThreadPtrHandle<BoolPromise::Private> mPromise;
+};
+
+/**
+ * Provides a uniform way to obtain statements from either the
+ * main Places Database or a ConcurrentConnection.
+ */
+class ConnectionAdapter {
+ public:
+  /**
+   * Constructor.
+   *
+   * @param aDB
+   *  The main Database object.
+   */
+  explicit ConnectionAdapter(const RefPtr<Database>& aDB)
+      : mDatabase(aDB), mConcurrentConnection(nullptr) {}
+
+  /**
+   * Constructor.
+   *
+   * @param aConn
+   *  The read-only ConcurrentConnection.
+   */
+  explicit ConnectionAdapter(const RefPtr<ConcurrentConnection>& aConn)
+      : mDatabase(nullptr), mConcurrentConnection(aConn) {}
+
+  already_AddRefed<mozIStorageStatement> GetStatement(
+      const nsCString& aQuery) const {
+    MOZ_ASSERT(!NS_IsMainThread(), "Must be on helper thread");
+
+    if (mDatabase) {
+      return mDatabase->GetStatement(aQuery);
+    }
+    if (mConcurrentConnection) {
+      return mConcurrentConnection->GetStatementOnHelperThread(aQuery);
+    }
+    return nullptr;
+  }
+
+  explicit operator bool() const {
+    return mDatabase || mConcurrentConnection.get();
+  }
+
+ private:
+  RefPtr<Database> mDatabase;
+  RefPtr<ConcurrentConnection> mConcurrentConnection;
 };
 
 }  // namespace places

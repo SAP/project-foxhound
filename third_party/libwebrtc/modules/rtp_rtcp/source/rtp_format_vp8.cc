@@ -10,16 +10,15 @@
 
 #include "modules/rtp_rtcp/source/rtp_format_vp8.h"
 
-#include <stdint.h>
-#include <string.h>  // memcpy
-
+#include <cstdint>
+#include <cstring>
+#include <span>
 #include <vector>
 
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "modules/rtp_rtcp/source/video_rtp_depacketizer_vp8.h"
 #include "modules/video_coding/codecs/interface/common_constants.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace {
@@ -58,7 +57,7 @@ bool ValidateHeader(const RTPVideoHeaderVP8& hdr_info) {
 
 }  // namespace
 
-RtpPacketizerVp8::RtpPacketizerVp8(rtc::ArrayView<const uint8_t> payload,
+RtpPacketizerVp8::RtpPacketizerVp8(std::span<const uint8_t> payload,
                                    PayloadSizeLimits limits,
                                    const RTPVideoHeaderVP8& hdr_info)
     : hdr_(BuildHeader(hdr_info)), remaining_payload_(payload) {
@@ -90,7 +89,7 @@ bool RtpPacketizerVp8::NextPacket(RtpPacketToSend* packet) {
   memcpy(buffer, hdr_.data(), hdr_.size());
   memcpy(buffer + hdr_.size(), remaining_payload_.data(), packet_payload_len);
 
-  remaining_payload_ = remaining_payload_.subview(packet_payload_len);
+  remaining_payload_ = remaining_payload_.subspan(packet_payload_len);
   hdr_[0] &= (~kSBit);  //  Clear 'Start of partition' bit.
   packet->SetMarker(current_packet_ == payload_sizes_.end());
   return true;

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">دووبارە هەوڵ بدەرەوە</string>
@@ -37,17 +44,17 @@
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">جۆری پەڕگە پارێزراو نیە</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>تکایە پەیوەندی بکە بە بەرپرسی ماڵپەڕەکەوە بۆ ئاگادادارکردنەوەی لەم کێشەیە.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>تکایە پەیوەندی بکە بە بەرپرسی ماڵپەڕەکەوە بۆ ئاگادادارکردنەوەی لەم کێشەیە.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">هەڵەی ناوەڕۆکی تێکشکاو</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
-  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>ئەو پەڕەیەیی کە دەتەوێت بیبینیت ناتوانرێت پیشانبدرێت لەبەرئەوەی گواستنەوەی زانیاری تێدا بە دیدەکرێت.</p> <ul> <li>تکایە پەیوەندی بکە بە خاوەنی ماڵپەڕەکەوە و کێشەکەیان پێ ڕابگەیەنە.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>ئەو پەڕەیەیی کە دەتەوێت بیبینیت ناتوانرێت پیشانبدرێت لەبەرئەوەی گواستنەوەی زانیاری تێدا بە دیدەکرێت.</p>\n<ul>\n<li>تکایە پەیوەندی بکە بە خاوەنی ماڵپەڕەکەوە و کێشەکەیان پێ ڕابگەیەنە.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_content_crashed_title">ناوەڕۆک تێکشکا</string>
-  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>ئەو پەڕەیەیی کە دەتەوێت بیبینیت ناتوانرێت پیشانبدرێت لەبەرئەوەی گواستنەوەی زانیاری تێدا بە دیدەکرێت.</p> <ul> <li>تکایە پەیوەندی بکە بە خاوەنی ماڵپەڕەکەوە و کێشەکەیان پێ ڕابگەیەنە.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>ئەو پەڕەیەیی کە دەتەوێت بیبینیت ناتوانرێت پیشانبدرێت لەبەرئەوەی گواستنەوەی زانیاری تێدا بە دیدەکرێت.</p>\n<ul>\n<li>تکایە پەیوەندی بکە بە خاوەنی ماڵپەڕەکەوە و کێشەکەیان پێ ڕابگەیەنە.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_invalid_content_encoding_title">هەڵەی کۆدکردنی ناوەڕۆک</string>
-  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>ئەو پەڕەیەیی کە دەتەوێت بیبینیت ناتوانرێت پیشانبدرێت لەبەرئەوەی فۆرمێکی هەڵە یان پشتگیر نەکراو بەکرادێنێت بۆ پەستاندن .</p> <ul> <li>تکایە پەیوەندی بکە بە خاوەنی ماڵپەڕەکەوە و کێشەکەیان پێ ڕابگەیەنە.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>ئەو پەڕەیەیی کە دەتەوێت بیبینیت ناتوانرێت پیشانبدرێت لەبەرئەوەی فۆرمێکی هەڵە یان پشتگیر نەکراو بەکرادێنێت بۆ پەستاندن .</p>\n<ul>\n<li>تکایە پەیوەندی بکە بە خاوەنی ماڵپەڕەکەوە و کێشەکەیان پێ ڕابگەیەنە.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">ناونیشان نەدۆزرایەوە</string>
   <!-- Text that will show up on the button at the bottom of the error page -->
@@ -57,7 +64,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">ناونیشان گونجاو نیە</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>ناونیشانی ماڵپەڕ بەم شێوەیە دەنووسرێت <strong>http://www.example.com/</strong></li> <li>دڵنیابە کە لارەهێڵی ڕاست بەکاردێنیت (بۆ نموونە <strong>/</strong>).</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>ناونیشانی ماڵپەڕ بەم شێوەیە دەنووسرێت <strong>http://www.example.com/</strong></li>\n<li>دڵنیابە کە لارەهێڵی ڕاست بەکاردێنیت (بۆ نموونە <strong>/</strong>).</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">پرۆتۆکۆڵی نەناسراو</string>
   <!-- The document title and heading of an error page. -->

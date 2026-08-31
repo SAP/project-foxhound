@@ -1,0 +1,161 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for dom.promise.experimental_safe_resolve pref (thenable curtailment)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<pre id="test">
+<script type="application/javascript">
+"use strict";
+
+// ReadableStreamDefaultReader.read() resolves its promise via
+// Promise::MaybeResolve with a freshly-built {value, done} dict. That dict
+// inherits from Object.prototype. If a user has defined Object.prototype.then
+// — even as an accessor — the default JS::ResolvePromise path reads "then"
+// synchronously during read(), running the getter on the caller's stack.
+//
+// The thenable-curtailment proposal — exposed here behind the pref
+// dom.promise.experimental_safe_resolve — routes MaybeResolve through
+// JS::SafeResolve, which defers that read to a microtask.
+//
+// Invariants under test:
+//
+//   1. With the pref ON, after reader.read() returns, Object.prototype.then
+//      has NOT been accessed on the caller's stack.
+//
+//   2. With the pref ON, any thenable resolution through MaybeResolve costs
+//      exactly one extra microtask tick compared to the same resolution with
+//      the pref OFF. This applies to any case that routes through the
+//      deferred job — including resolving a promise with another real
+//      promise, since MaybeResolve(outer, aPromise) sees Promise.prototype.then
+//      on the chain and takes the deferred path.
+
+SimpleTest.waitForExplicitFinish();
+
+function makePrepopulatedStream() {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue("payload");
+      controller.close();
+    },
+  });
+}
+
+// Installs a self-deleting getter on Object.prototype for "then". Returns
+// a state object with a `called` flag flipped to true on first access. The
+// getter returns undefined so that IsCallable(then) is false and the
+// resolution path fulfills the outer promise with the dict as-is.
+function installSelfDeletingThenGetter() {
+  const state = { called: false };
+  // eslint-disable-next-line no-extend-native
+  Object.defineProperty(Object.prototype, "then", {
+    configurable: true,
+    get() {
+      delete Object.prototype.then;
+      state.called = true;
+      return undefined;
+    },
+  });
+  return state;
+}
+
+async function testNoSyncThenReadDuringReaderRead() {
+  const state = installSelfDeletingThenGetter();
+  try {
+    const reader = makePrepopulatedStream().getReader();
+    const readPromise = reader.read();
+
+    // The key invariant: resolution steps must not have read "then" from the
+    // proto chain of the result dict on the caller's stack.
+    is(state.called, false,
+       "Object.prototype.then must not be accessed synchronously during reader.read()");
+
+    // Let the deferred resolution run. Because our getter returned undefined
+    // (non-callable), the outer promise fulfills with the {value, done} dict
+    // directly.
+    const result = await readPromise;
+    is(result.value, "payload", "stream chunk value flows through resolution");
+    is(result.done, false, "stream done flag flows through resolution");
+
+    // By now the getter HAS fired — in the microtask that ran the deferred
+    // PerformPromiseResolution — and self-deleted.
+    ok(state.called,
+       "Object.prototype.then is eventually accessed in a microtask");
+  } finally {
+    delete Object.prototype.then;
+  }
+}
+
+// Returns the number of await-Promise.resolve() microtask turns between
+// reader.read() returning and its promise's fulfilment handler running.
+//
+// With dom.promise.experimental_safe_resolve OFF, reader.read() fulfills its promise
+// synchronously (since Object.prototype.then is a non-callable accessor,
+// IsCallable is false and we take the FulfillPromise branch). That costs
+// 1 tick to observe: the registered .then handler runs first, then our
+// await-loop resumes with ticks == 1 and exits.
+//
+// With dom.promise.experimental_safe_resolve ON, the same resolution is deferred to a
+// microtask, which fulfils the promise in tick 1; our await-loop sees
+// fulfilled == false the first time it resumes (tick 1, ticks == 1), loops
+// again, the .then handler fires in tick 3, we resume in tick 4 with
+// ticks == 2. So the count is 2.
+//
+// Delta: exactly one extra tick.
+async function countTicksForReaderRead() {
+  installSelfDeletingThenGetter();  // self-cleans on first access.
+  try {
+    const reader = makePrepopulatedStream().getReader();
+    const readPromise = reader.read();
+
+    let fulfilled = false;
+    readPromise.then(() => { fulfilled = true; });
+
+    let ticks = 0;
+    while (!fulfilled && ticks < 10) {
+      await Promise.resolve();
+      ticks++;
+    }
+    return ticks;
+  } finally {
+    delete Object.prototype.then;
+  }
+}
+
+async function testOneExtraTickForThenableResolution() {
+  // pref=OFF baseline.
+  await SpecialPowers.pushPrefEnv(
+      {set: [["dom.promise.experimental_safe_resolve", false]]});
+  const ticksOff = await countTicksForReaderRead();
+
+  // pref=ON: one more tick because of the deferred resolve job.
+  await SpecialPowers.pushPrefEnv(
+      {set: [["dom.promise.experimental_safe_resolve", true]]});
+  const ticksOn = await countTicksForReaderRead();
+
+  is(ticksOn - ticksOff, 1,
+     "dom.promise.experimental_safe_resolve adds exactly one microtask tick when " +
+     "MaybeResolve is called with a thenable (including a promise)");
+}
+
+async function run() {
+  try {
+    await SpecialPowers.pushPrefEnv(
+        {set: [["dom.promise.experimental_safe_resolve", true]]});
+    await testNoSyncThenReadDuringReaderRead();
+    await testOneExtraTickForThenableResolution();
+  } catch (e) {
+    ok(false, "unexpected exception: " + e);
+  } finally {
+    SimpleTest.finish();
+  }
+}
+
+addLoadEvent(run);
+</script>
+</pre>
+</body>
+</html>

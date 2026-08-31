@@ -14,10 +14,12 @@ const TEST_DATA = [
       {
         declaration: { "font-size": "100px" },
         ruleIndex: 2,
+        msgId: "inactive-css-property-is-impossible-to-override-in-visited",
       },
       {
         declaration: { "margin-left": "50px" },
         ruleIndex: 2,
+        msgId: "inactive-css-property-is-impossible-to-override-in-visited",
       },
     ],
     activeDeclarations: [

@@ -15,6 +15,9 @@ kind-dependencies:
     - beetmover-repackage
     - beetmover-android-app
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     post-beetmover-dummy:
         description: Dummy task to deal with max_dependencies

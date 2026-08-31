@@ -22,10 +22,10 @@ if (import.meta.url.includes("specialpowers")) {
 var registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
 var oldClassID;
 var newClassID = Services.uuid.generateUUID();
-var newFactory = function (window) {
+var newFactory = function () {
   return {
     createInstance(aIID) {
-      return new MockFilePickerInstance(window).QueryInterface(aIID);
+      return new MockFilePickerInstance().QueryInterface(aIID);
     },
     QueryInterface: ChromeUtils.generateQI(["nsIFactory"]),
   };
@@ -47,18 +47,14 @@ export var MockFilePicker = {
   filterAudio: Ci.nsIFilePicker.filterAudio,
   filterVideo: Ci.nsIFilePicker.filterVideo,
 
-  window: null,
-  pendingPromises: [],
-
-  init(browsingContext) {
+  init() {
     if (registrar.isCIDRegistered(newClassID)) {
       this.cleanup();
     } else {
       this.reset();
     }
 
-    this.window = browsingContext.window;
-    this.factory = newFactory(this.window);
+    this.factory = newFactory();
     oldClassID = registrar.contractIDToCID(CONTRACT_ID);
     registrar.registerFactory(newClassID, "", CONTRACT_ID, this.factory);
   },
@@ -83,94 +79,55 @@ export var MockFilePicker = {
     var previousFactory = this.factory;
     this.reset();
     this.factory = null;
-    this.window = null;
     if (oldClassID) {
       registrar.unregisterFactory(newClassID, previousFactory);
       registrar.registerFactory(oldClassID, "", CONTRACT_ID, null);
     }
   },
 
-  internalFileData(obj) {
-    return {
-      nsIFile: "nsIFile" in obj ? obj.nsIFile : null,
-      domFile: "domFile" in obj ? obj.domFile : null,
-      domDirectory: "domDirectory" in obj ? obj.domDirectory : null,
-    };
-  },
+  // returnData entries are descriptors. DOM objects are created lazily by the
+  // MockFilePickerInstance in the correct global at open() time.
+  //
+  // Possible shapes:
+  //   { blobFile: true }
+  //   { nsIFile: <nsIFile> }
+  //   { domFile: <File> }
+  //   { directoryPath: <string>, nsIFile: <nsIFile> }
 
   useAnyFile() {
     var file = lazy.FileUtils.getDir("TmpD", []);
     file.append("testfile");
     file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o644);
-    let promise = this.window.File.createFromNsIFile(file)
-      .then(
-        domFile => domFile,
-        () => null
-      )
-      // domFile can be null.
-      .then(domFile => {
-        this.returnData = [this.internalFileData({ nsIFile: file, domFile })];
-      })
-      .then(() => file);
-
-    this.pendingPromises = [promise];
-
-    // We return a promise in order to support some existing mochitests.
-    return promise;
+    this.returnData = [{ nsIFile: file }];
+    return Promise.resolve(file);
   },
 
   useBlobFile() {
-    var blob = new this.window.Blob([]);
-    var file = new this.window.File([blob], "helloworld.txt", {
-      type: "plain/text",
-    });
-    this.returnData = [this.internalFileData({ domFile: file })];
-    this.pendingPromises = [];
+    this.returnData = [{ blobFile: true }];
   },
 
   useDirectory(aPath) {
-    var directory = new this.window.Directory(aPath);
     var file = new lazy.FileUtils.File(aPath);
-    this.returnData = [
-      this.internalFileData({ domDirectory: directory, nsIFile: file }),
-    ];
-    this.pendingPromises = [];
+    this.returnData = [{ directoryPath: aPath, nsIFile: file }];
     this.returnDataForWebKitDirs = [];
 
     if (AppConstants.platform === "android") {
       for (const filename of ["/foo.txt", "/subdir/bar.txt"]) {
-        let fileInDir = lazy.FileUtils.File(aPath + filename);
-        this.window.File.createFromNsIFile(file, {
-          existenceCheck: false,
-        }).then(domFile => {
-          this.returnDataForWebKitDirs.push(
-            this.internalFileData({ nsIFile: fileInDir, domFile })
-          );
+        this.returnDataForWebKitDirs.push({
+          nsIFile: lazy.FileUtils.File(aPath + filename),
         });
-        // promise might be added into pendinngPromise, but it causes
-        // InvalidStateError.
       }
     }
   },
 
   setFiles(files) {
     this.returnData = [];
-    this.pendingPromises = [];
 
     for (let file of files) {
-      if (this.window.File.isInstance(file)) {
-        this.returnData.push(this.internalFileData({ domFile: file }));
+      if (ChromeUtils.getClassName(file) === "File") {
+        this.returnData.push({ domFile: file });
       } else {
-        let promise = this.window.File.createFromNsIFile(file, {
-          existenceCheck: false,
-        });
-
-        promise.then(domFile => {
-          this.returnData.push(
-            this.internalFileData({ nsIFile: file, domFile })
-          );
-        });
-        this.pendingPromises.push(promise);
+        this.returnData.push({ nsIFile: file });
       }
     }
   },
@@ -183,17 +140,19 @@ export var MockFilePicker = {
   },
 };
 
-function MockFilePickerInstance(window) {
-  this.window = window;
+function MockFilePickerInstance() {
   this.showCallback = null;
   this.showCallbackWrapped = null;
+  this.window = null;
+  this._domResults = [];
+  this._domWebKitDirs = [];
 }
 MockFilePickerInstance.prototype = {
   QueryInterface: ChromeUtils.generateQI(["nsIFilePicker"]),
-  init(aParent, aTitle, aMode) {
+  init(aBrowsingContext, aTitle, aMode, aRelevantGlobal) {
     this.mode = aMode;
     this.filterIndex = MockFilePicker.filterIndex;
-    this.parent = aParent;
+    this.window = aRelevantGlobal || aBrowsingContext?.window || globalThis;
   },
   appendFilter(aTitle, aFilter) {
     if (typeof MockFilePicker.appendFilterCallback == "function") {
@@ -207,7 +166,7 @@ MockFilePickerInstance.prototype = {
   },
   defaultString: "",
   defaultExtension: "",
-  parent: null,
+  window: null,
   filterIndex: 0,
   displayDirectory: null,
   displaySpecialDirectory: "",
@@ -219,21 +178,63 @@ MockFilePickerInstance.prototype = {
     return null;
   },
 
-  // We don't support directories here.
-  get domFileOrDirectory() {
-    if (MockFilePicker.returnData.length < 1) {
-      return null;
+  // Create a DOM File from a descriptor using this.window as the global.
+  async _toDomFile(descriptor) {
+    if (descriptor.blobFile) {
+      return new this.window.File(
+        [new this.window.Blob([])],
+        "helloworld.txt",
+        { type: "plain/text" }
+      );
     }
-
-    if (MockFilePicker.returnData[0].domFile) {
-      return MockFilePicker.returnData[0].domFile;
+    if (descriptor.domFile) {
+      if (Cu.getGlobalForObject(descriptor.domFile) === this.window) {
+        return descriptor.domFile;
+      }
+      return new this.window.File(
+        [descriptor.domFile],
+        descriptor.domFile.name,
+        {
+          type: descriptor.domFile.type,
+        }
+      );
     }
-
-    if (MockFilePicker.returnData[0].domDirectory) {
-      return MockFilePicker.returnData[0].domDirectory;
+    if (descriptor.nsIFile) {
+      try {
+        return await this.window.File.createFromNsIFile(descriptor.nsIFile, {
+          existenceCheck: false,
+        });
+      } catch {
+        return null;
+      }
     }
-
     return null;
+  },
+
+  // Materialize all returnData descriptors into DOM objects in this.window's
+  // global. Called from open() before notifying the caller.
+  async _materializeDomObjects() {
+    this._domResults = [];
+    for (let descriptor of MockFilePicker.returnData) {
+      if (descriptor.directoryPath) {
+        this._domResults.push(
+          new this.window.Directory(descriptor.directoryPath)
+        );
+      } else {
+        this._domResults.push(await this._toDomFile(descriptor));
+      }
+    }
+    this._domWebKitDirs = [];
+    for (let descriptor of MockFilePicker.returnDataForWebKitDirs) {
+      let f = await this._toDomFile(descriptor);
+      if (f) {
+        this._domWebKitDirs.push(f);
+      }
+    }
+  },
+
+  get domFileOrDirectory() {
+    return this._domResults[0] || null;
   },
   get fileURL() {
     if (
@@ -246,11 +247,11 @@ MockFilePickerInstance.prototype = {
     return null;
   },
   *getFiles(asDOM) {
-    for (let d of MockFilePicker.returnData) {
+    for (let i = 0; i < MockFilePicker.returnData.length; i++) {
       if (asDOM) {
-        yield d.domFile || d.domDirectory;
-      } else if (d.nsIFile) {
-        yield d.nsIFile;
+        yield this._domResults[i];
+      } else if (MockFilePicker.returnData[i].nsIFile) {
+        yield MockFilePicker.returnData[i].nsIFile;
       } else {
         throw Components.Exception("", Cr.NS_ERROR_FAILURE);
       }
@@ -263,8 +264,8 @@ MockFilePickerInstance.prototype = {
     return this.getFiles(true);
   },
   *getDomFilesInWebKitDirectory() {
-    for (let d of MockFilePicker.returnDataForWebKitDirs) {
-      yield d.domFile;
+    for (let f of this._domWebKitDirs) {
+      yield f;
     }
   },
   get domFilesInWebKitDirectory() {
@@ -276,77 +277,45 @@ MockFilePickerInstance.prototype = {
   },
   open(aFilePickerShownCallback) {
     MockFilePicker.showing = true;
-    Services.tm.dispatchToMainThread(() => {
-      // Maybe all the pending promises are already resolved, but we want to be sure.
-      Promise.all(MockFilePicker.pendingPromises)
-        .then(
-          () => {
-            return Ci.nsIFilePicker.returnOK;
-          },
-          () => {
-            return Ci.nsIFilePicker.returnCancel;
-          }
-        )
-        .then(result => {
-          // Nothing else has to be done.
-          MockFilePicker.pendingPromises = [];
+    Services.tm.dispatchToMainThread(async () => {
+      MockFilePicker.displayDirectory = this.displayDirectory;
+      MockFilePicker.displaySpecialDirectory = this.displaySpecialDirectory;
+      MockFilePicker.shown = true;
 
-          if (result == Ci.nsIFilePicker.returnCancel) {
-            return result;
-          }
-
-          MockFilePicker.displayDirectory = this.displayDirectory;
-          MockFilePicker.displaySpecialDirectory = this.displaySpecialDirectory;
-          MockFilePicker.shown = true;
-          if (typeof MockFilePicker.showCallback == "function") {
-            if (MockFilePicker.showCallback != this.showCallback) {
-              this.showCallback = MockFilePicker.showCallback;
-              if (Cu.isXrayWrapper(this.window)) {
-                this.showCallbackWrapped = lazy.WrapPrivileged.wrapCallback(
-                  MockFilePicker.showCallback,
-                  this.window
-                );
-              } else {
-                this.showCallbackWrapped = this.showCallback;
-              }
-            }
-            try {
-              var returnValue = this.showCallbackWrapped(this);
-              if (typeof returnValue != "undefined") {
-                return returnValue;
-              }
-            } catch (ex) {
-              return Ci.nsIFilePicker.returnCancel;
+      var result = MockFilePicker.returnValue ?? Ci.nsIFilePicker.returnOK;
+      try {
+        // Note that the callback can result in some additional results.
+        if (typeof MockFilePicker.showCallback == "function") {
+          if (MockFilePicker.showCallback != this.showCallback) {
+            this.showCallback = MockFilePicker.showCallback;
+            if (Cu.isXrayWrapper(this.window)) {
+              this.showCallbackWrapped = lazy.WrapPrivileged.wrapCallback(
+                MockFilePicker.showCallback,
+                this.window
+              );
+            } else {
+              this.showCallbackWrapped = this.showCallback;
             }
           }
-
-          return MockFilePicker.returnValue;
-        })
-        .then(result => {
-          // Some additional result file can be set by the callback. Let's
-          // resolve the pending promises again.
-          return Promise.all(MockFilePicker.pendingPromises).then(
-            () => {
-              return result;
-            },
-            () => {
-              return Ci.nsIFilePicker.returnCancel;
-            }
-          );
-        })
-        .then(result => {
-          MockFilePicker.pendingPromises = [];
-
-          if (aFilePickerShownCallback) {
-            aFilePickerShownCallback.done(result);
+          var returnValue = await this.showCallbackWrapped(this);
+          if (typeof returnValue != "undefined") {
+            result = returnValue;
           }
+        }
 
-          if (typeof MockFilePicker.afterOpenCallback == "function") {
-            Services.tm.dispatchToMainThread(() => {
-              MockFilePicker.afterOpenCallback(this);
-            });
-          }
+        // Create DOM File/Directory objects in the correct global.
+        await this._materializeDomObjects();
+      } catch (ex) {
+        result = Ci.nsIFilePicker.returnCancel;
+      }
+      if (aFilePickerShownCallback) {
+        aFilePickerShownCallback.done(result);
+      }
+      if (typeof MockFilePicker.afterOpenCallback == "function") {
+        Services.tm.dispatchToMainThread(() => {
+          MockFilePicker.afterOpenCallback(this);
         });
+      }
     });
   },
 };

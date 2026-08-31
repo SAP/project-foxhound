@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,16 +11,13 @@
 #include "Units.h"                    // for LayoutDeviceIntSize
 #include "mozilla/AlreadyAddRefed.h"  // for already_AddRefed
 #include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT, MOZ_ASSERT_HELPER2
-#include "mozilla/Attributes.h"               // for MOZ_NON_OWNING_REF
-#include "mozilla/RefPtr.h"                   // for RefPtr
-#include "mozilla/StaticPrefs_apz.h"          // for apz_test_logging_enabled
-#include "mozilla/TimeStamp.h"                // for TimeStamp
-#include "mozilla/gfx/Point.h"                // for IntSize
-#include "mozilla/gfx/Types.h"                // for SurfaceFormat
-#include "mozilla/layers/APZTestData.h"       // for APZTestData
-#include "mozilla/layers/CompositorTypes.h"   // for TextureFactoryIdentifier
-#include "mozilla/layers/DisplayItemCache.h"  // for DisplayItemCache
-#include "mozilla/layers/FocusTarget.h"       // for FocusTarget
+#include "mozilla/Attributes.h"              // for MOZ_NON_OWNING_REF
+#include "mozilla/RefPtr.h"                  // for RefPtr
+#include "mozilla/TimeStamp.h"               // for TimeStamp
+#include "mozilla/gfx/Point.h"               // for IntSize
+#include "mozilla/gfx/Types.h"               // for SurfaceFormat
+#include "mozilla/layers/CompositorTypes.h"  // for TextureFactoryIdentifier
+#include "mozilla/layers/FocusTarget.h"      // for FocusTarget
 #include "mozilla/layers/LayersTypes.h"  // for TransactionId, LayersBackend, CompositionPayload (ptr only), LayersBackend::...
 #include "mozilla/layers/RenderRootStateManager.h"  // for RenderRootStateManager
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid, ScrollableLayerGuid::ViewID
@@ -46,6 +41,7 @@ struct ActiveScrolledRoot;
 
 namespace layers {
 
+class APZTestData;
 class CompositorBridgeChild;
 class KnowsCompositor;
 class Layer;
@@ -58,10 +54,15 @@ class LayerUserData;
 class WebRenderLayerManager final : public WindowRenderer {
   typedef nsTHashSet<RefPtr<WebRenderUserData>> WebRenderUserDataRefTable;
 
+  NS_INLINE_DECL_REFCOUNTING(WebRenderLayerManager, final)
+
  public:
-  explicit WebRenderLayerManager(nsIWidget* aWidget);
-  bool Initialize(PCompositorBridgeChild* aCBChild, wr::PipelineId aLayersId,
-                  TextureFactoryIdentifier* aTextureFactoryIdentifier,
+  static RefPtr<WebRenderLayerManager> Create(nsIWidget* aWidget,
+                                              PCompositorBridgeChild* aCBChild,
+                                              wr::PipelineId aPipelineId,
+                                              nsCString& aError);
+
+  bool Initialize(TextureFactoryIdentifier* aTextureFactoryIdentifier,
                   nsCString& aError);
 
   void Destroy() override;
@@ -145,19 +146,12 @@ class WebRenderLayerManager final : public WindowRenderer {
   // See equivalent function in ClientLayerManager
   void LogTestDataForCurrentPaint(ScrollableLayerGuid::ViewID aScrollId,
                                   const std::string& aKey,
-                                  const std::string& aValue) {
-    MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
-    mApzTestData.LogTestDataForPaint(mPaintSequenceNumber, aScrollId, aKey,
-                                     aValue);
-  }
+                                  const std::string& aValue);
   void LogAdditionalTestData(const std::string& aKey,
-                             const std::string& aValue) {
-    MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
-    mApzTestData.RecordAdditionalData(aKey, aValue);
-  }
+                             const std::string& aValue);
 
   // See equivalent function in ClientLayerManager
-  const APZTestData& GetAPZTestData() const { return mApzTestData; }
+  const APZTestData& GetAPZTestData() const { return *mApzTestData.get(); }
 
   WebRenderCommandBuilder& CommandBuilder() { return mWebRenderCommandBuilder; }
   WebRenderUserDataRefTable* GetWebRenderUserDataTable() {
@@ -212,14 +206,16 @@ class WebRenderLayerManager final : public WindowRenderer {
         mUserData.Get(static_cast<gfx::UserDataKey*>(aKey)));
   }
 
-  std::unordered_set<ScrollableLayerGuid::ViewID>
-  ClearPendingScrollInfoUpdate();
+  void ClearAndNotifyOfFullTransactionPendingScrollInfoUpdate();
 
 #ifdef DEBUG
   gfxContext* GetTarget() const { return mTarget; }
 #endif
 
  private:
+  explicit WebRenderLayerManager(
+      nsIWidget* aWidget, already_AddRefed<WebRenderBridgeChild> aWrChild);
+
   /**
    * Take a snapshot of the parent context, and copy
    * it into mTarget.
@@ -267,19 +263,22 @@ class WebRenderLayerManager final : public WindowRenderer {
   // See equivalent field in ClientLayerManager
   uint32_t mPaintSequenceNumber;
   // See equivalent field in ClientLayerManager
-  APZTestData mApzTestData;
+  const std::unique_ptr<APZTestData> mApzTestData;
 
   TimeStamp mTransactionStart;
   nsCString mURL;
   WebRenderCommandBuilder mWebRenderCommandBuilder;
 
   RenderRootStateManager mStateManager;
-  DisplayItemCache mDisplayItemCache;
   UniquePtr<wr::DisplayListBuilder> mDLBuilder;
 
   ScrollUpdatesMap mPendingScrollUpdates;
 
   LayoutDeviceIntSize mFlushWidgetSize;
+
+  // When we fail to initialize WebRender, it is useful to know if it has ever
+  // succeeded, or if this is the first attempt.
+  static bool sHasInitialized;
 };
 
 }  // namespace layers

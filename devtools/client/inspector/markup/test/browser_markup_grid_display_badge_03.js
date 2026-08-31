@@ -37,9 +37,9 @@ add_task(async function () {
  * Enable the flex or grid highlighter by clicking on the corresponding badge
  * next to a node in the markup view. Returns the badge element.
  *
- * @param  {String} type
+ * @param  {string} type
  *         Either "flex" or "grid"
- * @param  {String} selector
+ * @param  {string} selector
  *         Selector matching the flex or grid container element.
  * @param  {Inspector} inspector
  *         Instance of Inspector panel

@@ -37,6 +37,6 @@ fi
 mkdir -p $PGO_RUNDIR
 mkdir -p $UPLOAD_PATH
 mv $MOZ_FETCHES_DIR/firefox $PGO_RUNDIR
-./mach python build/pgo/profileserver.py --binary $PGO_RUNDIR/firefox/firefox
+./mach python build/pgo/profileserver.py --binary $PGO_RUNDIR/firefox/firefox --extended-corpus $MOZ_FETCHES_DIR/pgo-extended-corpus/
 
 tar -acvf $UPLOAD_PATH/profdata.tar.xz merged.profdata en-US.log

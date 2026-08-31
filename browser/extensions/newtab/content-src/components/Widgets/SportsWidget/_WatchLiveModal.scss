@@ -1,0 +1,157 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.watch-live-modal-dialog {
+  border: none;
+  padding: 0;
+  border-radius: var(--border-radius-large);
+  background: var(--newtab-background-color-secondary);
+  color: var(--text-color);
+  box-shadow: var(--box-shadow-level-2);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: 437px;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: 367px;
+  overflow: hidden;
+
+  &::backdrop {
+    background: var(--background-color-overlay);
+  }
+
+  .watch-live-modal-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .watch-live-modal-header {
+    flex: 0 0 auto;
+    padding: var(--space-large) var(--space-large) var(--space-medium);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-medium);
+  }
+
+  .watch-live-modal-title {
+    font-size: var(--font-size-large);
+    font-weight: var(--font-weight-bold);
+    margin: 0;
+  }
+
+  .watch-live-modal-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    padding: 0 var(--space-large) var(--space-large);
+  }
+
+  .watch-live-modal-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .watch-live-modal-row-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-medium);
+    padding: var(--space-small) var(--space-medium);
+    border-radius: var(--border-radius-medium);
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+      background: var(--newtab-element-hover-color);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-inset);
+    }
+  }
+
+  .watch-live-modal-row-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .watch-live-modal-product {
+    font-weight: var(--font-weight-bold);
+  }
+
+  .watch-live-modal-entitlement {
+    font-size: var(--font-size-small);
+    color: var(--text-color-deemphasized);
+  }
+
+  .watch-live-modal-play {
+    flex: 0 0 auto;
+    width: var(--icon-size-large);
+    height: var(--icon-size-large);
+    border-radius: var(--border-radius-circle);
+    border: var(--border-width) solid currentColor;
+    background:
+      url('chrome://global/skin/media/play-fill.svg') center / var(--icon-size-xsmall) no-repeat;
+    color: var(--color-accent-primary, AccentColor);
+    -moz-context-properties: fill;
+    fill: currentColor;
+  }
+
+  .watch-live-modal-separator {
+    border: none;
+    border-block-start: var(--border-width) solid var(--border-color);
+    margin: var(--space-medium) 0;
+  }
+
+  .watch-live-modal-other-regions-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    padding: var(--space-small) var(--space-medium);
+    border-radius: var(--border-radius-medium);
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--newtab-element-hover-color);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-inset);
+    }
+  }
+
+  .watch-live-modal-chevron {
+    width: var(--icon-size-small);
+    height: var(--icon-size-small);
+    -moz-context-properties: fill;
+    fill: currentColor;
+  }
+
+  .watch-live-modal-other-regions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-medium);
+    margin-block-start: var(--space-medium);
+  }
+
+  .watch-live-modal-region-title {
+    font-size: var(--font-size-root);
+    font-weight: var(--font-weight-bold);
+    margin: 0 0 var(--space-xsmall);
+    padding-inline: var(--space-medium);
+  }
+}

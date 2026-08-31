@@ -3,7 +3,6 @@ tags = "devtools"
 subsuite = "devtools"
 support-files = [
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/shared/test/highlighter-test-actor.js",
   "head.js",
   "breakpoint_document.html",
@@ -18,6 +17,7 @@ support-files = [
   "fission_document_workers.html",
   "fission_iframe.html",
   "fission_iframe_workers.html",
+  "iframe_request.html",
   "service-worker-sources.js",
   "sources.html",
   "sources.js",
@@ -68,6 +68,8 @@ support-files = [
 
 ["browser_resources_network_event_stacktraces.js"]
 
+["browser_resources_network_event_stacktraces_keepalive.js"]
+
 ["browser_resources_network_events.js"]
 
 ["browser_resources_network_events_cache.js"]
@@ -80,10 +82,10 @@ support-files = [
 
 ["browser_resources_reflows.js"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1767771
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1767771
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug", # Bug 1767771
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug", # Bug 1767771
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1767771
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1767771
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1767771
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1767771
 ]
 
 ["browser_resources_root_node.js"]
@@ -91,6 +93,8 @@ skip-if = [
 ["browser_resources_scope_flag.js"]
 
 ["browser_resources_server_sent_events.js"]
+
+["browser_resources_session_history_events.js"]
 
 ["browser_resources_several_resources.js"]
 
@@ -120,6 +124,5 @@ skip-if = [
 
 ["browser_resources_websocket.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]

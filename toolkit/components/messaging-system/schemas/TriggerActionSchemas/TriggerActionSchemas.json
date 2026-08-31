@@ -24,6 +24,13 @@
                 "type": "string"
               },
               "description": "List of Match pattern compatible strings to match against"
+            },
+            "regexPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of regular expression patterns to match against URLs"
             }
           },
           "required": ["id"],
@@ -50,6 +57,13 @@
                 "type": "string"
               },
               "description": "List of Match pattern compatible strings to match against"
+            },
+            "regexPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of regular expression patterns to match against URLs"
             }
           },
           "required": ["id"],
@@ -73,6 +87,18 @@
           "properties": {
             "id": {
               "type": "string",
+              "enum": ["userBookmarkFolderActivity"]
+            }
+          },
+          "required": ["id"],
+          "additionalProperties": false,
+          "description": "Happens when the user either creates a new bookmark folder or saves a bookmark into a user-created folder. Does not fire for tag operations or while a private window is active."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
               "enum": ["frequentVisits"]
             },
             "params": {
@@ -88,6 +114,13 @@
                 "type": "string"
               },
               "description": "List of Match pattern compatible strings to match against"
+            },
+            "regexPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of regular expression patterns to match against URLs"
             }
           },
           "required": ["id"],
@@ -248,6 +281,10 @@
                 "currentTabsOpen": {
                   "type": "integer",
                   "description": "The number of tabs open in the browser"
+                },
+                "actionSource": {
+                  "type": "string",
+                  "description": "Optional source attribution propagated from a tab marker (tab.smartWindowActionSource). Absent from context when no caller has tagged the tab."
                 }
               }
             }
@@ -424,6 +461,16 @@
             "id": {
               "type": "string",
               "enum": ["pageActionInUrlbar"]
+            },
+            "params": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Hosts to match against the current tab's host"
+            },
+            "patterns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "URL patterns to match against the current tab's URL"
             }
           },
           "additionalProperties": false,
@@ -447,6 +494,7 @@
                 "searchSource": {
                   "type": "string",
                   "enum": [
+                    "searchbar",
                     "urlbar-handoff",
                     "urlbar-searchmode",
                     "urlbar-persisted",
@@ -493,6 +541,99 @@
           "additionalProperties": false,
           "required": ["id"],
           "description": "Happens when a browser chrome element is clicked"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["ipProtectionReady"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the IP protection widget is loaded and the toolbar item is available"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["ipProtectionPanelClosed"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Fires on close of the IP Protection Panel"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["ipProtectionBandwidthReset"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Fires when the IP protection bandwidth quota resets at the start of a new month"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["selectableProfilesUpdated"]
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["remote"],
+                  "description": "The source type of the profiles update event. Only 'remote' is emitted by the trigger"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when shared profile data changes in another running profile instance (remote) and a tracked data-collection preference changed."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["tabSwitch"]
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "integer",
+                  "description": "The number of currently open tabs"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the user switches between two tabs 2 times within a minute"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["smartWindowNewTab"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Occurs every time a user opens a new Smart Window tab."
         }
       ]
     }

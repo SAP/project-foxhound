@@ -72,24 +72,41 @@ struct YuvLumaCoeffs final {
   static constexpr auto Gbr() { return YuvLumaCoeffs{.r = 0, .g = 1, .b = 0}; }
 };
 
-struct PiecewiseGammaDesc final {
+enum TransferFunctionDescType {
+  PiecewiseGamma,
+  HLG,
+  PQ,
+};
+
+// From Rec2100 this is the brightness of the reference display they consider to
+// be standard dynamic range, this can be used to convert linear colors between
+// display-referred and scene-referred (absolute brightness).
+static const float Rec2100ReferenceDisplayWhite = 203.0f;
+
+// This has grown beyond merely sRGB/BT709/BT2020 gamma functions and includes
+// HLG and PQ transfer functions which are completely different, it would be
+// nice to replace it with gfx::TransferFunction enum but this comes earlier in
+// include order.
+struct TransferFunctionDesc final {
   // tf = { k * linear                   | linear < b
   //      { a * pow(linear, 1/g) - (a-1) | linear >= b
 
   // Default to Srgb
+  TransferFunctionDescType tfType = TransferFunctionDescType::PiecewiseGamma;
   float a = 1.055;
   float b = 0.04045 / 12.92;
   float g = 2.4;
   float k = 12.92;
 
-  auto Members() const { return std::tie(a, b, g, k); }
-  MOZ_MIXIN_DERIVE_CMP_OPS_BY_MEMBERS(PiecewiseGammaDesc)
+  auto Members() const { return std::tie(tfType, a, b, g, k); }
+  MOZ_MIXIN_DERIVE_CMP_OPS_BY_MEMBERS(TransferFunctionDesc)
 
-  static constexpr auto Srgb() { return PiecewiseGammaDesc(); }
+  static constexpr auto Srgb() { return TransferFunctionDesc(); }
   static constexpr auto DisplayP3() { return Srgb(); }
 
   static constexpr auto Rec709() {
-    return PiecewiseGammaDesc{
+    return TransferFunctionDesc{
+        .tfType = TransferFunctionDescType::PiecewiseGamma,
         .a = 1.099,
         .b = 0.018,
         .g = 1.0 / 0.45,  // ~2.222
@@ -98,11 +115,42 @@ struct PiecewiseGammaDesc final {
   }
   // FYI: static constexpr auto Rec2020_10bit() { return Rec709(); }
   static constexpr auto Rec2020_12bit() {
-    return PiecewiseGammaDesc{
+    return TransferFunctionDesc{
+        .tfType = TransferFunctionDescType::PiecewiseGamma,
         .a = 1.0993,
         .b = 0.0181,
         .g = 1.0 / 0.45,  // ~2.222
         .k = 4.5,
+    };
+  }
+
+  static constexpr auto Rec2100_HLG() {
+    return TransferFunctionDesc{
+        .tfType = TransferFunctionDescType::HLG,
+        .a = 0.17883277f,
+        .b = 0.28466892f,
+        .g = 0.55991073f,
+        .k = 0.0f,
+    };
+  }
+
+  static constexpr auto Rec2100_PQ() {
+    return TransferFunctionDesc{
+        .tfType = TransferFunctionDescType::PQ,
+        .a = 0.0f,
+        .b = 0.0f,
+        .g = 0.0f,
+        .k = 0.0f,
+    };
+  }
+
+  static constexpr auto Linear() {
+    return TransferFunctionDesc{
+        .tfType = TransferFunctionDescType::PiecewiseGamma,
+        .a = 1.0f,
+        .b = 0.0f,
+        .g = 1.0f,
+        .k = 1.0f,
     };
   }
 };
@@ -202,7 +250,7 @@ struct YuvDesc final {
 
 struct ColorspaceDesc final {
   Chromaticities chrom;
-  std::optional<PiecewiseGammaDesc> tf;
+  std::optional<TransferFunctionDesc> tf;
   std::optional<YuvDesc> yuv;
 
   auto Members() const { return std::tie(chrom, tf, yuv); }
@@ -218,7 +266,7 @@ struct ColorspaceDesc final {
   struct std::hash<X> : mozilla::StdHashMembers<X> {};
 
 _(mozilla::color::YuvLumaCoeffs)
-_(mozilla::color::PiecewiseGammaDesc)
+_(mozilla::color::TransferFunctionDesc)
 _(mozilla::color::YcbcrDesc)
 _(mozilla::color::Chromaticities)
 _(mozilla::color::YuvDesc)
@@ -727,9 +775,9 @@ struct ColorspaceTransform final {
   ColorspaceDesc srcSpace;
   ColorspaceDesc dstSpace;
   mat4 srcRgbTfFromSrc;
-  std::optional<PiecewiseGammaDesc> srcTf;
+  std::optional<TransferFunctionDesc> srcTf;
   mat3 dstRgbLinFromSrcRgbLin;
-  std::optional<PiecewiseGammaDesc> dstTf;
+  std::optional<TransferFunctionDesc> dstTf;
   mat4 dstFromDstRgbTf;
 
   static ColorspaceTransform Create(const ColorspaceDesc& src,

@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(TA => {
     array.findLast(() => {});
     throw new Test262Error('findLast completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

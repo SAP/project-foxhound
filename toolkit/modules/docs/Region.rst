@@ -17,10 +17,10 @@ callers should use ``Region.home``.
 Region Updating
 ---------------
 
-Firefox `uses a location service`_ that is provided by Mozilla. Firefox will
+Firefox :searchfox:`uses a location service <mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf:modules/libpref/init/all.js#3107>` that is provided by Mozilla. Firefox will
 attempt to check for region on first run of a new profile and
-`every 7 days thereafter`_. If an update check fails, then the update will be
-retried `after an hour`_ for a `maximum of three times`_.
+:searchfox:`every 7 days thereafter <mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf:toolkit/modules/Region.sys.mjs#106>`. If an update check fails, then the update will be
+retried :searchfox:`after an hour <mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf:toolkit/modules/Region.sys.mjs#32-40>` for a :searchfox:`maximum of three times <mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf:toolkit/modules/Region.sys.mjs#101>`.
 
 If the user is detected in a current region that is not their `home` region
 for a continuous period (current 2 weeks) then their `home` region
@@ -86,8 +86,3 @@ Run the script
 
 If you want to commit the new test data ~500 seems to be a reasonable
 number of data points to test before running into issues with the test length.
-
-.. _every 7 days thereafter: https://searchfox.org/mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf/toolkit/modules/Region.sys.mjs#106
-.. _uses a location service: https://searchfox.org/mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf/modules/libpref/init/all.js#3107
-.. _after an hour: https://searchfox.org/mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf/toolkit/modules/Region.sys.mjs#32-40
-.. _maximum of three times: https://searchfox.org/mozilla-central/rev/b22ec3f983078ff98b04cee7dafe4b90342a42bf/toolkit/modules/Region.sys.mjs#101

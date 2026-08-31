@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 import json
+import time
 from collections import defaultdict, namedtuple
 
 from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
@@ -36,7 +37,7 @@ class StructuredOutputParser(OutputParser):
         self.suite_category = kwargs.pop("suite_category", None)
 
         tbpl_compact = kwargs.pop("log_compact", False)
-        super(StructuredOutputParser, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.allow_crashes = kwargs.pop("allow_crashes", False)
 
         mozlog = self._get_mozlog_module()
@@ -61,7 +62,7 @@ class StructuredOutputParser(OutputParser):
 
     def _handle_unstructured_output(self, line, log_output=True):
         self.log_output = log_output
-        return super(StructuredOutputParser, self).parse_single_line(line)
+        return super().parse_single_line(line)
 
     def parse_single_line(self, line):
         """Parses a line of log output from the child process and passes
@@ -99,13 +100,34 @@ class StructuredOutputParser(OutputParser):
 
         self.prev_was_unstructured = False
 
+        if "time" not in data:
+            data["time"] = int(time.time() * 1000)
+
         self.handler(data)
 
         action = data["action"]
         if action == "test_start":
-            SystemResourceMonitor.begin_marker("test", data["test"])
+            SystemResourceMonitor.begin_test(data)
         elif action == "test_end":
-            SystemResourceMonitor.end_marker("test", data["test"])
+            SystemResourceMonitor.end_test(data)
+        elif action == "test_status":
+            SystemResourceMonitor.test_status(data)
+        elif action == "log":
+            SystemResourceMonitor.test_status(data)
+        elif action == "process_output":
+            SystemResourceMonitor.test_status(data)
+        elif action == "crash":
+            SystemResourceMonitor.crash(data)
+        elif action == "lsan_leak":
+            SystemResourceMonitor.lsan_leak(data)
+        elif action == "lsan_summary":
+            SystemResourceMonitor.lsan_summary(data)
+        elif action == "tsan_error":
+            SystemResourceMonitor.tsan_error(data)
+        elif action == "mozleak_object":
+            SystemResourceMonitor.mozleak_object(data)
+        elif action == "mozleak_total":
+            SystemResourceMonitor.mozleak_total(data)
         elif action == "suite_start":
             SystemResourceMonitor.begin_marker("suite", data["source"])
         elif action == "suite_end":
@@ -114,8 +136,6 @@ class StructuredOutputParser(OutputParser):
             SystemResourceMonitor.begin_marker("test", data["name"])
         elif action == "group_end":
             SystemResourceMonitor.end_marker("test", data["name"])
-        if line.startswith("TEST-UNEXPECTED-FAIL"):
-            SystemResourceMonitor.record_event(line)
 
         if action in ("log", "process_output"):
             if action == "log":

@@ -1,0 +1,15 @@
+{
+  "label": "4gamer.net",
+  "bugs": {
+    "2013856": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://www.4gamer.net/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

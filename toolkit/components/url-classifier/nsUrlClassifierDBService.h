@@ -1,4 +1,3 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,7 +53,7 @@ nsresult TablesToResponse(const nsACString& tables);
 }  // namespace safebrowsing
 
 namespace net {
-class AsyncUrlChannelClassifier;
+class AntiTrackingChannelClassifierUtils;
 }
 
 }  // namespace mozilla
@@ -65,13 +64,14 @@ class nsUrlClassifierDBService final : public nsIUrlClassifierDBService,
                                        public nsIURIClassifier,
                                        public nsIUrlClassifierInfo,
                                        public nsIObserver {
-  friend class mozilla::net::AsyncUrlChannelClassifier;
+  friend class mozilla::net::AntiTrackingChannelClassifierUtils;
 
  public:
   class FeatureHolder;
 
   // This is thread safe. It throws an exception if the thread is busy.
   nsUrlClassifierDBService();
+  nsUrlClassifierDBService(nsUrlClassifierDBService&) = delete;
 
   nsresult Init();
 
@@ -92,6 +92,12 @@ class nsUrlClassifierDBService final : public nsIUrlClassifierDBService,
   nsresult CacheCompletions(
       const mozilla::safebrowsing::ConstCacheResultArray& results);
 
+  // Lookup without proxy callback wrapper. Use this when you need direct
+  // control over how lookup results are handled (e.g., coordinating multiple
+  // lookups or processing results off the main thread).
+  nsresult LookupURIWithoutProxy(const nsACString& aKey, FeatureHolder* aHolder,
+                                 nsIUrlClassifierLookupCallback* aCallback);
+
   static nsIThread* BackgroundThread();
 
   static bool ShutdownHasStarted();
@@ -103,9 +109,6 @@ class nsUrlClassifierDBService final : public nsIUrlClassifierDBService,
 
   // No subclassing
   ~nsUrlClassifierDBService();
-
-  // Disallow copy constructor
-  nsUrlClassifierDBService(nsUrlClassifierDBService&);
 
   nsresult LookupURI(const nsACString& aKey, FeatureHolder* aHolder,
                      nsIUrlClassifierCallback* c);
@@ -138,8 +141,14 @@ class nsUrlClassifierDBService final : public nsIUrlClassifierDBService,
   // processed.
   bool mInUpdate;
 
+  // The mDisallowCompletionsTablesLock protects access to the
+  // mDisallowCompletionsTables array, which is populated from the main thread
+  // and read from the worker thread.
+  mozilla::Mutex mDisallowCompletionsTablesLock;
+
   // The list of tables that should never be hash completed.
-  nsTArray<nsCString> mDisallowCompletionsTables;
+  nsTArray<nsCString> mDisallowCompletionsTables
+      MOZ_GUARDED_BY(mDisallowCompletionsTablesLock);
 
   // Thread that we do the updates on.
   static nsIThread* gDbBackgroundThread;
@@ -148,6 +157,7 @@ class nsUrlClassifierDBService final : public nsIUrlClassifierDBService,
 class nsUrlClassifierDBServiceWorker final : public nsIUrlClassifierDBService {
  public:
   nsUrlClassifierDBServiceWorker();
+  nsUrlClassifierDBServiceWorker(nsUrlClassifierDBServiceWorker&) = delete;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURLCLASSIFIERDBSERVICE
@@ -203,9 +213,6 @@ class nsUrlClassifierDBServiceWorker final : public nsIUrlClassifierDBService {
   // No subclassing
   ~nsUrlClassifierDBServiceWorker();
 
-  // Disallow copy constructor
-  nsUrlClassifierDBServiceWorker(nsUrlClassifierDBServiceWorker&);
-
   nsresult NotifyUpdateObserver(nsresult aUpdateStatus);
 
   // Reset the in-progress update stream
@@ -231,6 +238,8 @@ class nsUrlClassifierDBServiceWorker final : public nsIUrlClassifierDBService {
   // The class that actually parses the update chunks.
   mozilla::UniquePtr<ProtocolParser> mProtocolParser;
 
+  nsCString mProvider;
+
   // Directory where to store the SB databases.
   nsCOMPtr<nsIFile> mCacheDir;
 
@@ -238,12 +247,12 @@ class nsUrlClassifierDBServiceWorker final : public nsIUrlClassifierDBService {
 
   TableUpdateArray mTableUpdates;
 
-  uint32_t mUpdateWaitSec;
+  uint32_t mUpdateWaitSec = 0;
 
   // Stores the last results that triggered a table update.
   ConstCacheResultArray mLastResults;
 
-  nsresult mUpdateStatus;
+  nsresult mUpdateStatus = NS_OK;
   nsTArray<nsCString> mUpdateTables;
 
   // The mUpdateObserver will be accessed by both the main thread and the worker

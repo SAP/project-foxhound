@@ -25,7 +25,7 @@ function promiseClearHistory() {
 }
 
 add_task(async function () {
-  /** Test for Bug 464199 **/
+  /** Test for Bug 464199 */
 
   const REMEMBER = Date.now(),
     FORGET = Math.random();

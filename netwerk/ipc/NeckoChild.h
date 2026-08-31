@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,25 +25,19 @@ class NeckoChild : public PNeckoChild {
  protected:
   virtual ~NeckoChild();
 
-  PStunAddrsRequestChild* AllocPStunAddrsRequestChild();
-  bool DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor);
-
-  PWebrtcTCPSocketChild* AllocPWebrtcTCPSocketChild(const Maybe<TabId>& tabId);
-  bool DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor);
+  PCacheEntryWriteHandleChild* AllocPCacheEntryWriteHandleChild(
+      PHttpChannelChild* channel);
+  bool DeallocPCacheEntryWriteHandleChild(PCacheEntryWriteHandleChild* aActor);
 
   PAltDataOutputStreamChild* AllocPAltDataOutputStreamChild(
       const nsACString& type, const int64_t& predictedSize,
-      PHttpChannelChild* channel);
+      const mozilla::Maybe<mozilla::NotNull<PHttpChannelChild*>>& channel,
+      const mozilla::Maybe<mozilla::NotNull<PCacheEntryWriteHandleChild*>>&
+          handle);
   bool DeallocPAltDataOutputStreamChild(PAltDataOutputStreamChild* aActor);
 
   PCookieServiceChild* AllocPCookieServiceChild();
   bool DeallocPCookieServiceChild(PCookieServiceChild*);
-#ifdef MOZ_WIDGET_GTK
-  PGIOChannelChild* AllocPGIOChannelChild(
-      PBrowserChild* aBrowser, const SerializedLoadContext& aSerialized,
-      const GIOChannelCreationArgs& aOpenArgs);
-  bool DeallocPGIOChannelChild(PGIOChannelChild*);
-#endif
   PWebSocketChild* AllocPWebSocketChild(PBrowserChild*,
                                         const SerializedLoadContext&,
                                         const uint32_t&);
@@ -54,26 +45,11 @@ class NeckoChild : public PNeckoChild {
   PTCPSocketChild* AllocPTCPSocketChild(const nsAString& host,
                                         const uint16_t& port);
   bool DeallocPTCPSocketChild(PTCPSocketChild*);
-  PTCPServerSocketChild* AllocPTCPServerSocketChild(
-      const uint16_t& aLocalPort, const uint16_t& aBacklog,
-      const bool& aUseArrayBuffers);
-  bool DeallocPTCPServerSocketChild(PTCPServerSocketChild*);
-  PUDPSocketChild* AllocPUDPSocketChild(nsIPrincipal* aPrincipal,
-                                        const nsACString& aFilter);
-  bool DeallocPUDPSocketChild(PUDPSocketChild*);
-  PSimpleChannelChild* AllocPSimpleChannelChild(const uint32_t& channelId);
-  bool DeallocPSimpleChannelChild(PSimpleChannelChild* child);
   PTransportProviderChild* AllocPTransportProviderChild();
   bool DeallocPTransportProviderChild(PTransportProviderChild* aActor);
   PWebSocketEventListenerChild* AllocPWebSocketEventListenerChild(
       const uint64_t& aInnerWindowID);
   bool DeallocPWebSocketEventListenerChild(PWebSocketEventListenerChild*);
-
-  /* Predictor Messsages */
-  mozilla::ipc::IPCResult RecvPredOnPredictPrefetch(
-      nsIURI* aURI, const uint32_t& aHttpStatus);
-  mozilla::ipc::IPCResult RecvPredOnPredictPreconnect(nsIURI* aURI);
-  mozilla::ipc::IPCResult RecvPredOnPredictDNS(nsIURI* aURI);
 
   mozilla::ipc::IPCResult RecvSpeculativeConnectRequest();
   mozilla::ipc::IPCResult RecvNetworkChangeNotification(nsCString const& type);

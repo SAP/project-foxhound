@@ -1,0 +1,14 @@
+# A vertically-repeated gradient that is too wide to fit into the max texture width
+# but with enough repetitions that we will chose to bake the the gradient into a
+# render task. This caused a crash when we didn't ensure that the indirect pattern
+# task that is fed into the repeating shader was down-scaled until it fit the size
+# limits.
+---
+root:
+  items:
+    - type: gradient
+      bounds: 0 0 5000 500
+      start: -10 -10
+      end: 0 0
+      stops: [0, [0, 0, 254, 1.0], 1, [0, 0, 255, 1.0]]
+      tile-size: 5000 2

@@ -72,7 +72,7 @@ const testDescriptions = async function () {
 };
 
 add_task(async function () {
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-empty-objectstores.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-empty-objectstores.html");
 
   testTree();
   await testDescriptions();

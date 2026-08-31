@@ -11,6 +11,7 @@ let db;
 
 /**
  * Load a tracker in third-party context.
+ *
  * @param {string} topLevelURL - The URL of the top level page to load.
  * @param {boolean} usePrivateWindow - Whether to use a private window.
  * @returns {Promise} A promise that resolves when the tracker is loaded or

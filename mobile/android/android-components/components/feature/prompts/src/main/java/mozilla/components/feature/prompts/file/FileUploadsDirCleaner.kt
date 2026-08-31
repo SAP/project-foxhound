@@ -23,6 +23,7 @@ import java.io.IOException
 @OptIn(DelicateCoroutinesApi::class)
 class FileUploadsDirCleaner(
     private val scope: CoroutineScope = GlobalScope,
+    private val ioDispatcher: CoroutineDispatcher = IO,
     private val cacheDirectory: () -> File,
 ) {
     private val logger = Logger("FileUploadsDirCleaner")
@@ -31,9 +32,6 @@ class FileUploadsDirCleaner(
 
     @VisibleForTesting
     internal var fileNamesToBeDeleted: List<String> = emptyList()
-
-    @VisibleForTesting
-    internal var dispatcher: CoroutineDispatcher = IO
 
     /**
      * Enqueue the [fileName] for future clean up.
@@ -56,7 +54,7 @@ class FileUploadsDirCleaner(
 
     @VisibleForTesting
     internal fun performCleanRecentUploads() {
-        scope.launch(dispatcher) {
+        scope.launch(ioDispatcher) {
             val cacheUploadDirectory = File(getCacheDir(), DEFAULT_UPLOADS_DIR_NAME)
             fileNamesToBeDeleted = fileNamesToBeDeleted.filter { fileName ->
                 try {
@@ -75,7 +73,7 @@ class FileUploadsDirCleaner(
      * Remove the file uploads directory if exists.
      */
     suspend fun cleanUploadsDirectory() {
-        withContext(dispatcher) {
+        withContext(ioDispatcher) {
             val cacheUploadDirectory = File(getCacheDir(), DEFAULT_UPLOADS_DIR_NAME)
             if (cacheUploadDirectory.exists()) {
                 // To not collide with users uploading while, we are cleaning
@@ -89,7 +87,7 @@ class FileUploadsDirCleaner(
         }
     }
 
-    private suspend fun getCacheDir(): File = withContext(dispatcher) {
+    private suspend fun getCacheDir(): File = withContext(ioDispatcher) {
         cacheDir
     }
 }

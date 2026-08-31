@@ -47,7 +47,7 @@ with the following structure and adapt it to your needs:
     },
   };
 
-  requestLongerTimeout(120);
+  requestLongerTimeout(10);
 
   add_task(async function test_ml_generic_pipeline() {
     const options = {

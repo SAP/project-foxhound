@@ -15,10 +15,11 @@
  * This file is generated from kinto.js - do not modify directly.
  */
 
+/* eslint @typescript-eslint/no-unused-vars: off */
 import { setTimeout, clearTimeout } from "resource://gre/modules/Timer.sys.mjs";
 
 /*
- * Version 15.0.0 - c8775d9
+ * Version 17.0.0 - f643998
  */
 
 import { EventEmitter } from "resource://gre/modules/EventEmitter.sys.mjs";
@@ -37,7 +38,7 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ***************************************************************************** */
-/* global Reflect, Promise */
+/* global Reflect, Promise, SuppressedError, Symbol, Iterator */
 
 function __decorate(decorators, target, key, desc) {
   var c = arguments.length,
@@ -45,8 +46,8 @@ function __decorate(decorators, target, key, desc) {
       c < 3
         ? target
         : desc === null
-        ? (desc = Object.getOwnPropertyDescriptor(target, key))
-        : desc,
+          ? (desc = Object.getOwnPropertyDescriptor(target, key))
+          : desc,
     d;
   if (typeof Reflect === "object" && typeof Reflect.decorate === "function")
     r = Reflect.decorate(decorators, target, key, desc);
@@ -54,8 +55,20 @@ function __decorate(decorators, target, key, desc) {
     for (var i = decorators.length - 1; i >= 0; i--)
       if ((d = decorators[i]))
         r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-  return c > 3 && r && Object.defineProperty(target, key, r), r;
+  return (c > 3 && r && Object.defineProperty(target, key, r), r);
 }
+
+typeof SuppressedError === "function"
+  ? SuppressedError
+  : function (error, suppressed, message) {
+      var e = new Error(message);
+      return (
+        (e.name = "SuppressedError"),
+        (e.error = error),
+        (e.suppressed = suppressed),
+        e
+      );
+    };
 
 /**
  * Chunks an array into n pieces.
@@ -84,7 +97,7 @@ function partition(array, n) {
  * @return Promise<void>
  */
 function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 /**
  * Always returns a resource data object from the provided argument.
@@ -110,14 +123,14 @@ function toDataBody(resource) {
  * @return {String}
  */
 function qsify(obj) {
-  const encode = v =>
+  const encode = (v) =>
     encodeURIComponent(typeof v === "boolean" ? String(v) : v);
   const stripped = cleanUndefinedProperties(obj);
   return Object.keys(stripped)
-    .map(k => {
+    .map((k) => {
       const ks = encode(k) + "=";
       if (Array.isArray(stripped[k])) {
-        return ks + stripped[k].map(v => encode(v)).join(",");
+        return ks + stripped[k].map((v) => encode(v)).join(",");
       }
       return ks + encode(stripped[k]);
     })
@@ -132,7 +145,7 @@ function qsify(obj) {
  * @throws {Error} If the version is outside of the provided range.
  */
 function checkVersion(version, minVersion, maxVersion) {
-  const extract = str => str.split(".").map(x => parseInt(x, 10));
+  const extract = (str) => str.split(".").map((x) => parseInt(x, 10));
   const [verMajor, verMinor] = extract(version);
   const [minMajor, minMinor] = extract(minVersion);
   const [maxMajor, maxMinor] = extract(maxVersion);
@@ -142,7 +155,7 @@ function checkVersion(version, minVersion, maxVersion) {
     verMajor > maxMajor,
     verMajor === maxMajor && verMinor >= maxMinor,
   ];
-  if (checks.some(x => x)) {
+  if (checks.some((x) => x)) {
     throw new Error(
       `Version ${version} doesn't satisfy ${minVersion} <= x < ${maxVersion}`
     );
@@ -172,7 +185,7 @@ function support(min, max) {
           const client = this.client ? this.client : this;
           return client
             .fetchHTTPApiVersion()
-            .then(version => checkVersion(version, min, max))
+            .then((version) => checkVersion(version, min, max))
             .then(() => fn.apply(this, args));
         };
         Object.defineProperty(this, key, {
@@ -208,8 +221,8 @@ function capable(capabilities) {
           const client = this.client ? this.client : this;
           return client
             .fetchServerCapabilities()
-            .then(available => {
-              const missing = capabilities.filter(c => !(c in available));
+            .then((available) => {
+              const missing = capabilities.filter((c) => !(c in available));
               if (missing.length) {
                 const missingStr = missing.join(", ");
                 throw new Error(
@@ -415,9 +428,7 @@ class UnparseableResponseError extends Error {
   constructor(response, body, error) {
     const { status } = response;
     super(
-      `Response from server unparseable (HTTP ${
-        status || 0
-      }; ${error}): ${body}`
+      `Response from server unparseable (HTTP ${status || 0}; ${error}): ${body}`
     );
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, UnparseableResponseError);
@@ -557,7 +568,7 @@ class HTTP {
         }, this.timeout);
       }
       function proceedWithHandler(fn) {
-        return arg => {
+        return (arg) => {
           if (!hasTimedout) {
             if (_timeoutId) {
               clearTimeout(_timeoutId);
@@ -695,8 +706,8 @@ const ENDPOINTS = {
   root: () => "/",
   batch: () => "/batch",
   permissions: () => "/permissions",
-  bucket: bucket => "/buckets" + (bucket ? `/${bucket}` : ""),
-  history: bucket => `${ENDPOINTS.bucket(bucket)}/history`,
+  bucket: (bucket) => "/buckets" + (bucket ? `/${bucket}` : ""),
+  history: (bucket) => `${ENDPOINTS.bucket(bucket)}/history`,
   collection: (bucket, coll) =>
     `${ENDPOINTS.bucket(bucket)}/collections` + (coll ? `/${coll}` : ""),
   group: (bucket, group) =>
@@ -749,7 +760,7 @@ function updateRequest(path, { data, permissions }, options = {}) {
   const { last_modified } = { ...data, ...options };
   const hasNoData =
     data &&
-    Object.keys(data).filter(k => k !== "id" && k !== "last_modified")
+    Object.keys(data).filter((k) => k !== "id" && k !== "last_modified")
       .length === 0;
   if (hasNoData) {
     data = undefined;
@@ -814,16 +825,13 @@ function addAttachmentRequest(
   { data, permissions } = {},
   options = {}
 ) {
-  const { headers, safe, gzipped } = { ...requestDefaults, ...options };
+  const { headers, safe } = { ...requestDefaults, ...options };
   const { last_modified } = { ...data, ...options };
   const body = { data, permissions };
   const formData = createFormData(dataURI, body, options);
-  const customPath = `${path}${
-    gzipped !== null ? "?gzipped=" + (gzipped ? "true" : "false") : ""
-  }`;
   return {
     method: "POST",
-    path: customPath,
+    path,
     headers: { ...headers, ...safeHeader(safe, last_modified) },
     body: formData,
   };
@@ -881,44 +889,11 @@ function aggregate(responses = [], requests = []) {
   }, results);
 }
 
-// Unique ID creation requires a high quality random # generator. In the browser we therefore
-// require the crypto API and do not support built-in fallback to lower quality random number
-// generators (like Math.random()).
-let getRandomValues;
-const rnds8 = new Uint8Array(16);
-function rng() {
-  // lazy load so that environments that need to polyfill have a chance to do so
-  if (!getRandomValues) {
-    // getRandomValues needs to be invoked in a context where "this" is a Crypto implementation.
-    getRandomValues =
-      typeof crypto !== "undefined" &&
-      crypto.getRandomValues &&
-      crypto.getRandomValues.bind(crypto);
-
-    if (!getRandomValues) {
-      throw new Error(
-        "crypto.getRandomValues() not supported. See https://github.com/uuidjs/uuid#getrandomvalues-not-supported"
-      );
-    }
-  }
-
-  return getRandomValues(rnds8);
-}
-
-/**
- * Convert array of 16 byte values to UUID string format of the form:
- * XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
- */
-
 const byteToHex = [];
-
 for (let i = 0; i < 256; ++i) {
   byteToHex.push((i + 0x100).toString(16).slice(1));
 }
-
 function unsafeStringify(arr, offset = 0) {
-  // Note: Be careful editing this code!  It's been tuned for performance
-  // and works in ways you may not expect. See https://github.com/uuidjs/uuid/pull/434
   return (
     byteToHex[arr[offset + 0]] +
     byteToHex[arr[offset + 1]] +
@@ -943,36 +918,41 @@ function unsafeStringify(arr, offset = 0) {
   ).toLowerCase();
 }
 
+let getRandomValues;
+const rnds8 = new Uint8Array(16);
+function rng() {
+  if (!getRandomValues) {
+    if (typeof crypto === "undefined" || !crypto.getRandomValues) {
+      throw new Error(
+        "crypto.getRandomValues() not supported. See https://github.com/uuidjs/uuid#getrandomvalues-not-supported"
+      );
+    }
+    getRandomValues = crypto.getRandomValues.bind(crypto);
+  }
+  return getRandomValues(rnds8);
+}
+
 const randomUUID =
   typeof crypto !== "undefined" &&
   crypto.randomUUID &&
   crypto.randomUUID.bind(crypto);
-var native = {
-  randomUUID,
-};
+var native = { randomUUID };
 
+function _v4(options, buf, offset) {
+  options = options || {};
+  const rnds = options.random ?? options.rng?.() ?? rng();
+  if (rnds.length < 16) {
+    throw new Error("Random bytes length must be >= 16");
+  }
+  rnds[6] = (rnds[6] & 0x0f) | 0x40;
+  rnds[8] = (rnds[8] & 0x3f) | 0x80;
+  return unsafeStringify(rnds);
+}
 function v4(options, buf, offset) {
-  if (native.randomUUID && !buf && !options) {
+  if (native.randomUUID && true && !options) {
     return native.randomUUID();
   }
-
-  options = options || {};
-  const rnds = options.random || (options.rng || rng)(); // Per 4.4, set bits for version and `clock_seq_hi_and_reserved`
-
-  rnds[6] = (rnds[6] & 0x0f) | 0x40;
-  rnds[8] = (rnds[8] & 0x3f) | 0x80; // Copy bytes to buffer, if provided
-
-  if (buf) {
-    offset = offset || 0;
-
-    for (let i = 0; i < 16; ++i) {
-      buf[offset + i] = rnds[i];
-    }
-
-    return buf;
-  }
-
-  return unsafeStringify(rnds);
+  return _v4(options);
 }
 
 /**
@@ -1297,7 +1277,6 @@ class Collection {
    * @param  {Number}  [options.last_modified] The last_modified option.
    * @param  {Object}  [options.permissions]   The permissions option.
    * @param  {String}  [options.filename]      Force the attachment filename.
-   * @param  {String}  [options.gzipped]       Force the attachment to be gzipped or not.
    * @return {Promise<Object, Error>}
    */
   async addAttachment(dataURI, record = {}, options = {}) {
@@ -1312,7 +1291,6 @@ class Collection {
       {
         last_modified,
         filename: options.filename,
-        gzipped: options.gzipped,
         headers: this._getHeaders(options),
         safe: this._getSafe(options),
       }
@@ -1569,8 +1547,8 @@ class Collection {
     // and the full history of the collection since its genesis.
     // List full history of collection.
     const { data: fullHistory } = await this.bucket.listHistory({
-      pages: Infinity,
-      sort: "last_modified",
+      pages: Infinity, // all pages up to target timestamp are required
+      sort: "last_modified", // chronological order
       filters: {
         resource_name: "record",
         collection_id: this.name,
@@ -1592,7 +1570,7 @@ class Collection {
       pages: Infinity,
       fields: ["id"], // we don't need attributes.
     });
-    const currentIds = new Set(current.map(record => record.id));
+    const currentIds = new Set(current.map((record) => record.id));
     // If a record is not in the current collection, and its
     // latest history entry isn't a delete then this means that
     // it was deleted via the plural endpoint (and that we lost track
@@ -2267,11 +2245,6 @@ class Bucket {
 __decorate([capable(["history"])], Bucket.prototype, "listHistory", null);
 
 /**
- * Currently supported protocol version.
- * @type {String}
- */
-const SUPPORTED_PROTOCOL_VERSION = "v1";
-/**
  * High level HTTP client for the Kinto API.
  *
  * @example
@@ -2357,9 +2330,6 @@ class KintoClientBase {
     } catch (err) {
       throw new Error("The remote URL must contain the version: " + url);
     }
-    if (version !== SUPPORTED_PROTOCOL_VERSION) {
-      throw new Error(`Unsupported protocol version: ${version}`);
-    }
     this._remote = url;
     this._version = version;
   }
@@ -2390,7 +2360,7 @@ class KintoClientBase {
   _registerHTTPEvents() {
     // Prevent registering event from a batch client instance
     if (!this._isBatch && this.events) {
-      this.events.on("backoff", backoffMs => {
+      this.events.on("backoff", (backoffMs) => {
         this._backoffReleaseTime = backoffMs;
       });
     }
@@ -2723,7 +2693,7 @@ class KintoClientBase {
       }
       return processNextPage(nextPage);
     };
-    const processNextPage = async nextPage => {
+    const processNextPage = async (nextPage) => {
       const { headers } = options;
       return handleResponse(await this.http.request(nextPage, { headers }));
     };

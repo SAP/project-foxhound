@@ -10,12 +10,28 @@
 
 #include "modules/video_coding/codecs/test/video_codec_unittest.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
+#include "api/environment/environment_factory.h"
 #include "api/test/create_frame_generator.h"
+#include "api/test/frame_generator_interface.h"
+#include "api/units/time_delta.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_decoder.h"
 #include "api/video_codecs/video_encoder.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/video_coding/include/video_error_codes.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "test/gtest.h"
 #include "test/video_codec_settings.h"
 
 static constexpr webrtc::TimeDelta kEncodeTimeout =
@@ -32,7 +48,7 @@ static const int kMaxFramerate = 30;  // Arbitrary value.
 namespace webrtc {
 namespace {
 const VideoEncoder::Capabilities kCapabilities(false);
-}
+}  // namespace
 
 EncodedImageCallback::Result
 VideoCodecUnitTest::FakeEncodeCompleteCallback::OnEncodedImage(
@@ -66,7 +82,10 @@ void VideoCodecUnitTest::FakeDecodeCompleteCallback::Decoded(
 }
 
 void VideoCodecUnitTest::SetUp() {
-  webrtc::test::CodecSettings(kVideoCodecVP8, &codec_settings_);
+  EnvironmentFactory factory(env_);
+  factory.Set(field_trials_.CreateCopy());
+  env_ = factory.Create();
+  test::CodecSettings(kVideoCodecVP8, &codec_settings_);
   codec_settings_.startBitrate = kStartBitrate;
   codec_settings_.maxBitrate = kMaxBitrate;
   codec_settings_.maxFramerate = kMaxFramerate;

@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Video controls test - localization with Trusted Types</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
+    <script type="text/javascript" src="head.js"></script>
+    <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+  </head>
+  <body>
+    <div id="content"></div>
+
+    <script clas="testbody" type="application/javascript">
+      function pushPref(preferenceName, value) {
+        return new Promise(resolve => {
+          const options = { set: [[preferenceName, value]] };
+          SpecialPowers.pushPrefEnv(options, resolve);
+        });
+      }
+
+      add_task(async _ => {
+        await pushPref("media.cache_size", 40000);
+        await pushPref("dom.security.trusted_types.enabled", true);
+
+        // Append the CSP policy after enabling TrustedTypes, so that it is
+        // taken into account.
+        document.head.insertAdjacentHTML(
+          "beforeend",
+          `<meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'">`
+        );
+
+        // Sanity check: TrustedTypes enforcement is enabled.
+        let error = undefined;
+        try {
+          document.createElement("div").innerHTML = "foo";
+        } catch (e) {
+          error = e;
+        }
+        ok(
+          error && /Sink type mismatch violation blocked by CSP/.test(error),
+          "TrustedTypes enforcement happens outside the sandbox."
+        );
+
+        // Append the video, ensuring the video is at time 2s with duration 4s.
+        const content = document.getElementById("content");
+        const video = document.createElement("video");
+        video.preload = "auto";
+        video.src = "video.webm";
+        await new Promise(resolve => {
+          video.addEventListener("loadedmetadata", resolve);
+          content.appendChild(video);
+        });
+        video.currentTime = 2;
+        is(video.duration, 4, "Duration is 4s.");
+        is(video.currentTime, 2, "Current time is 2s.");
+        ok(!video.controls, "No controls.");
+        ok(
+          !getElementWithinVideo(video, "positionDurationBox"),
+          "No duration box."
+        );
+
+        // Enable controls.
+        video.controls = true;
+        const positionDurationBox = getElementWithinVideo(
+          video,
+          "positionDurationBox"
+        );
+        ok(positionDurationBox, "Duration box available");
+        is(
+          positionDurationBox.textContent.trim(),
+          "",
+          "Duration text initially empty."
+        );
+
+        // Force translation and check the duration box again.
+        const { widget } = SpecialPowers.wrap(window)
+          .windowGlobalChild.getActor("UAWidgets")
+          .widgets.get(video);
+        await widget.impl.Utils.l10n.translateRoots();
+        is(
+          positionDurationBox.textContent.trim(),
+          "0:02 / 0:04",
+          "Duration text updated after forcing translation."
+        );
+
+        // Move to a different position and check the duration box again.
+        await new Promise(resolve => {
+          video.addEventListener("seeked", _ => {
+            resolve();
+          });
+          video.currentTime = 1;
+        });
+        await widget.impl.Utils.l10n.translateRoots();
+        is(
+          positionDurationBox.textContent.trim(),
+          "0:01 / 0:04",
+          "Duration text updated after changing current time."
+        );
+      });
+    </script>
+  </body>
+</html>

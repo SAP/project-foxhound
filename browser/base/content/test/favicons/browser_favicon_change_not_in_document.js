@@ -6,15 +6,19 @@ const TEST_URL = TEST_ROOT + "file_favicon_change_not_in_document.html";
 
 // Runs the given task in the document of the browser.
 function runInDoc(browser, task) {
-  return ContentTask.spawn(browser, `(${task.toString()})();`, scriptStr => {
-    let script = content.document.createElement("script");
-    script.textContent = scriptStr;
-    content.document.body.appendChild(script);
+  return SpecialPowers.spawn(
+    browser,
+    [`(${task.toString()})();`],
+    scriptStr => {
+      let script = content.document.createElement("script");
+      script.textContent = scriptStr;
+      content.document.body.appendChild(script);
 
-    // Link events are dispatched asynchronously so allow the event loop to run
-    // to ensure that any events are actually dispatched before returning.
-    return new Promise(resolve => content.setTimeout(resolve, 0));
-  });
+      // Link events are dispatched asynchronously so allow the event loop to run
+      // to ensure that any events are actually dispatched before returning.
+      return new Promise(resolve => content.setTimeout(resolve, 0));
+    }
+  );
 }
 
 /*

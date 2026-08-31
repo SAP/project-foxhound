@@ -1,0 +1,21 @@
+{
+  "label": "bankofamerica.com",
+  "bugs": {
+    "1280834": {
+      "issue": "unsupported-warning",
+      "matches": ["*://*.bankofamerica.com/*"]
+    },
+    "1899933": {
+      "issue": "unsupported-warning",
+      "matches": ["*://*.ml.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["mac", "linux"],
+      "content_scripts": {
+        "js": ["use_chrome_useragent.js", "use_chrome_vendor.js"]
+      }
+    }
+  ]
+}

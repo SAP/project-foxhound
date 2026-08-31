@@ -36,7 +36,7 @@ You do not need to rename the encoder models.
 By default, the conversion script above generates a single file containing both the ONNX model architecture and its weights.
 
 To split the model architecture and weights into separate files, you can use the script provided at:
-`convert_to_external_data.py <https://searchfox.org/mozilla-central/source/toolkit/components/ml/tools/convert_to_external_data.py>`_.
+:searchfox:`convert_to_external_data.py <toolkit/components/ml/tools/convert_to_external_data.py>`.
 
 This process, known as using the external data format, provides additional speed and memory benefits for your model.
 
@@ -61,8 +61,14 @@ When Firefox uses a model, it will
 
 We have two collections in Remote Settings:
 
-- `ml-onnx-runtime`: provides all the WASM files we need to run the inference runtime.
-- `ml-inference-options`: provides for each `taskId` a list of running options, such as the `modelId`.
+- ``ml-onnx-runtime``
+  (`dashboard <https://firefox-ai.github.io/runtime-tools/ml-onnx-runtime/>`__,
+  `searchfox <https://searchfox.org/firefox-main/search?q=%22ml-onnx-runtime%22>`__):
+  provides all the WASM files we need to run the inference runtime.
+- ``ml-inference-options``
+  (`dashboard <https://firefox-ai.github.io/runtime-tools/ml-inference-options/>`__,
+  `searchfox <https://searchfox.org/firefox-main/search?q=%22ml-inference-options%22>`__):
+  provides for each ``taskId`` a list of running options, such as the ``modelId``.
 
 Running the inference API will download the WASM files if needed, and then see
 if there's an entry for the task in `ml-inference-options`, to grab the options.
@@ -91,7 +97,7 @@ For example, the PDF.js image-to-text record is:
    }
 
 
-If you are adding in Firefox a new inference call, create a new unique `featureId` in `FEATURES <https://searchfox.org/mozilla-central/source/toolkit/components/ml/content/EngineProcess.sys.mjs>`_ and add a record in `ml-inference-options` with the task settings.
+If you are adding in Firefox a new inference call, create a new unique `featureId` in :searchfox:`FEATURES <toolkit/components/ml/content/EngineProcess.sys.mjs>` and add a record in `ml-inference-options` with the task settings.
 
 By doing this, you will be able to create an engine with this simple call:
 

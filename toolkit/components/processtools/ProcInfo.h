@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_ProcInfo_h
-#define __mozilla_ProcInfo_h
+#ifndef _mozilla_ProcInfo_h
+#define _mozilla_ProcInfo_h
 
 #include <base/process.h>
 #include <stdint.h>
@@ -19,6 +18,15 @@ namespace mozilla {
 namespace ipc {
 class GeckoChildProcessHost;
 }
+
+/**
+ * Returns, in bytes, a platform-normalized estimate of the process's
+ * private physical memory usage, that is, how much RAM the process
+ * alone consumes.
+ *
+ * @return NS_OK on success.
+ */
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult);
 
 /**
  * Return the number of milliseconds of CPU time used since process start.
@@ -73,10 +81,6 @@ using UtilityActorName = mozilla::dom::WebIDLUtilityActorName;
 
 // String that will be used e.g. to annotate crash reports
 nsCString GetUtilityActorName(const UtilityActorName aActorName);
-
-#ifdef XP_WIN
-int GetCpuFrequencyMHz();
-#endif
 
 /* Get the CPU frequency to use to convert cycle time values to actual time.
  * @returns the TSC (Time Stamp Counter) frequency in MHz, or 0 if converting
@@ -172,7 +176,7 @@ struct ProcInfoRequest {
   ProcInfoRequest(base::ProcessId aPid, ProcType aProcessType,
                   const nsACString& aOrigin, nsTArray<WindowInfo>&& aWindowInfo,
                   nsTArray<UtilityInfo>&& aUtilityInfo, uint32_t aChildId = 0
-#ifdef XP_DARWIN
+#ifdef XP_MACOSX
                   ,
                   mach_port_t aChildTask = 0
 #endif  // XP_DARWIN
@@ -183,7 +187,7 @@ struct ProcInfoRequest {
         windowInfo(std::move(aWindowInfo)),
         utilityInfo(std::move(aUtilityInfo)),
         childId(aChildId)
-#ifdef XP_DARWIN
+#ifdef XP_MACOSX
         ,
         childTask(aChildTask)
 #endif  // XP_DARWIN
@@ -196,7 +200,7 @@ struct ProcInfoRequest {
   const nsTArray<UtilityInfo> utilityInfo;
   // If the process is a child, its child id, otherwise `0`.
   const int32_t childId;
-#ifdef XP_DARWIN
+#ifdef XP_MACOSX
   const mach_port_t childTask;
 #endif  // XP_DARWIN
 };
@@ -277,4 +281,5 @@ nsresult CopySysProcInfoToDOM(const ProcInfo& source, T* dest) {
 }
 
 }  // namespace mozilla
-#endif  // ProcInfo_h
+
+#endif  // _mozilla_ProcInfo_h

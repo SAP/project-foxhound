@@ -211,6 +211,87 @@ sm-arm64-sim-linux64/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
+sm-mips64-sim-linux64/debug:
+    description: "Spidermonkey MIPS64 sim"
+    index:
+        job-name: sm-mips64-sim-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(mips64)
+        tier: 3
+    run:
+        spidermonkey-variant: mips64-sim
+    worker:
+        env:
+            MOZ_JS_UPLOAD_BINARIES_DEFAULT: "1"
+    # Disable by default but allow try pushes to explicitly request.
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
+sm-loong64-sim-linux64/debug:
+    description: "Spidermonkey LOONG64 sim"
+    index:
+        job-name: sm-loong64-sim-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(loong64)
+        tier: 3
+    run:
+        spidermonkey-variant: loong64-sim
+    worker:
+        env:
+            MOZ_JS_UPLOAD_BINARIES_DEFAULT: "1"
+    # Disable by default but allow try pushes to explicitly request.
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
+sm-riscv64-sim-linux64/debug:
+    description: "Spidermonkey RISCV64 sim"
+    index:
+        job-name: sm-riscv64-sim-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(riscv64)
+        tier: 3
+    run:
+        spidermonkey-variant: riscv64-sim
+    worker:
+        env:
+            MOZ_JS_UPLOAD_BINARIES_DEFAULT: "1"
+    # Disable by default but allow try pushes to explicitly request.
+    run-on-projects: []
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
 sm-asan-linux64/opt:
     description: "Spidermonkey Address Sanitizer"
     index:
@@ -353,7 +434,7 @@ sm-msan-linux64/opt:
             MOZ_JS_UPLOAD_BINARIES_DEFAULT: "1"
     run:
         spidermonkey-variant: msan
-    # Disable by default by allow try pushes to explicitly request.
+    # Disable by default but allow try pushes to explicitly request.
     run-on-projects: []
     fetches:
         toolchain:
@@ -413,6 +494,28 @@ sm-rootanalysis-linux64/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
 
+sm-concurrent-linux64/debug:
+    description: "Spidermonkey Concurrent Marking"
+    index:
+        job-name: sm-concurrent-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(cm)
+        tier: 2
+    run:
+        spidermonkey-variant: concurrent
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux64-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
 sm-nonunified-linux64/debug:
     description: "Spidermonkey Non-Unified Debug"
     index:
@@ -456,6 +559,58 @@ sm-fuzzing-linux64/opt:
             - linux64-minidump-stackwalk
             - linux64-llvm-symbolizer
             - linux64-pkgconf
+            - sysroot-x86_64-linux-gnu
+
+sm-fuzzing-linux32/opt:
+    description: "Spidermonkey Fuzzing"
+    index:
+        job-name: sm-linux32-fuzzing
+    treeherder:
+        platform: linux32/opt
+        symbol: SM(f)
+    worker:
+        env:
+            MOZ_JS_UPLOAD_BINARIES_DEFAULT: "1"
+    run:
+        spidermonkey-variant: fuzzing
+        spidermonkey-platform: linux
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux32-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-i686-linux-gnu
+            - sysroot-x86_64-linux-gnu
+
+sm-fuzzing-linux32/debug:
+    description: "Spidermonkey Fuzzing"
+    index:
+        job-name: sm-linux32-fuzzing-debug
+    treeherder:
+        platform: linux32/debug
+        symbol: SM(f)
+    worker:
+        env:
+            MOZ_JS_UPLOAD_BINARIES_DEFAULT: "1"
+    run:
+        spidermonkey-variant: fuzzing-debug
+        spidermonkey-platform: linux
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-breakpad-injector
+            - linux64-minidump-stackwalk
+            - linux32-llvm-symbolizer
+            - linux64-pkgconf
+            - sysroot-i686-linux-gnu
             - sysroot-x86_64-linux-gnu
 
 sm-fuzzilli-linux64/debug:

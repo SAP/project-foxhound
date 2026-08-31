@@ -18,6 +18,7 @@ const PDF_VIEWER_ORIGIN = "resource://pdf.js";
 const PDF_VIEWER_WEB_PAGE = "resource://pdf.js/web/viewer.html";
 const MAX_NUMBER_OF_PREFS = 50;
 const PDF_CONTENT_TYPE = "application/pdf";
+const SUMO_URL = "https://support.mozilla.org/";
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -41,13 +42,13 @@ XPCOMUtils.defineLazyServiceGetter(
   Svc,
   "mime",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 XPCOMUtils.defineLazyServiceGetter(
   Svc,
   "handlers",
   "@mozilla.org/uriloader/handler-service;1",
-  "nsIHandlerService"
+  Ci.nsIHandlerService
 );
 
 ChromeUtils.defineLazyGetter(lazy, "gOurBinary", () => {
@@ -393,6 +394,11 @@ class ChromeActions {
   }
 
   download(data) {
+    if (!this.supportsDownloading()) {
+      console.warn("PdfStreamConverter: blocked a download request.");
+      return;
+    }
+
     const { originalUrl } = data;
     const blobUrl = data.blobUrl || originalUrl;
     let { filename } = data;
@@ -423,6 +429,22 @@ class ChromeActions {
     return this.domWindow.windowGlobalChild.browsingContext.parent === null;
   }
 
+  supportsDownloading() {
+    const context = this.domWindow.windowGlobalChild.browsingContext;
+    // A top-level document may always trigger downloads. The sandboxed-downloads
+    // flag is meant to let an embedder gate downloads from embedded content; at
+    // top level there is no embedder, and since the PDF response's CSP sandbox
+    // is already ignored for http(s) URLs, enforcing it only for the blob: edge
+    // case would be inconsistent and needlessly stop users saving a PDF they
+    // view.
+    if (context.parent === null) {
+      return true;
+    }
+    // Copied from nsSandboxFlags.h
+    const SANDBOXED_DOWNLOADS = 0x10000;
+    return (context.sandboxFlags & SANDBOXED_DOWNLOADS) === 0;
+  }
+
   async getBrowserPrefs() {
     const isMobile = this.isMobile();
     const nimbusDataStr = isMobile
@@ -440,6 +462,7 @@ class ChromeActions {
         !!Services.prefs.getIntPref("browser.display.use_document_fonts") &&
         Services.prefs.getBoolPref("gfx.downloadable_fonts.enabled"),
       supportsIntegratedFind: this.supportsIntegratedFind(),
+      supportsDownloading: this.supportsDownloading(),
       supportsMouseWheelZoomCtrlKey:
         Services.prefs.getIntPref("mousewheel.with_control.action") === 3,
       supportsMouseWheelZoomMetaKey:
@@ -498,6 +521,11 @@ class ChromeActions {
   reportTelemetry(data) {
     const actor = getActor(this.domWindow);
     actor?.sendAsyncMessage("PDFJS:Parent:reportTelemetry", data);
+  }
+
+  reportText(data) {
+    const actor = getActor(this.domWindow);
+    actor?.sendAsyncMessage("PDFJS:Parent:reportText", data);
   }
 
   updateFindControlState(data) {
@@ -581,14 +609,16 @@ class ChromeActions {
         case "number":
           currentPrefs[key] = Services.prefs.getIntPref(prefName, prefValue);
           break;
-        case "string":
+        case "string": {
           // The URL contains some dynamic values (%VERSION%, ...), so we need to
           // format it.
+          const str = Services.prefs.getStringPref(prefName, prefValue);
           currentPrefs[key] =
-            key === "altTextLearnMoreUrl"
+            str.startsWith(SUMO_URL) && str.includes("%")
               ? Services.urlFormatter.formatURLPref(prefName)
-              : Services.prefs.getStringPref(prefName, prefValue);
+              : str;
           break;
+        }
       }
     }
 
@@ -608,24 +638,24 @@ class ChromeActions {
   /**
    * Set the different editor states in order to be able to update the context
    * menu.
-   * @param {Object} details
+   *
+   * @param {object} details
    */
   updateEditorStates({ details }) {
     const doc = this.domWindow.document;
-    if (!doc.editorStates) {
-      doc.editorStates = {
-        isEditing: false,
-        isEmpty: true,
-        hasSomethingToUndo: false,
-        hasSomethingToRedo: false,
-        hasSelectedEditor: false,
-        hasSelectedText: false,
-      };
-    }
-    const { editorStates } = doc;
+    doc.pdfStates ||= {
+      isEditing: false,
+      isEmpty: true,
+      hasSomethingToUndo: false,
+      hasSomethingToRedo: false,
+      hasSelectedEditor: false,
+      hasSelectedText: false,
+      hasSelectedPages: false,
+    };
+    const { pdfStates } = doc;
     for (const [key, value] of Object.entries(details)) {
-      if (typeof value === "boolean" && key in editorStates) {
-        editorStates[key] = value;
+      if (typeof value === "boolean" && key in pdfStates) {
+        pdfStates[key] = value;
       }
     }
   }
@@ -1204,6 +1234,9 @@ PdfStreamConverter.prototype = {
       );
       // The viewer does not need to handle HTTP Refresh header.
       aRequest.setResponseHeader("Refresh", "", false);
+      // There is no reason to load something via <link>: the only external
+      // resource is the pdf itself.
+      aRequest.setResponseHeader("Link", "", false);
     }
 
     lazy.PdfJsTelemetryContent.onViewerIsUsed();

@@ -20,4 +20,8 @@ disabled = "https://bugzilla.mozilla.org/show_bug.cgi?id=920938"
 
 ["test_testmanifest.py"]
 
+["test_token.py"]
+
+["test_toml.py"]
+
 ["test_util.py"]

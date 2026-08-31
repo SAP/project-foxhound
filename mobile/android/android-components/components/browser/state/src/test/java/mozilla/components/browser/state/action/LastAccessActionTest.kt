@@ -4,29 +4,32 @@
 
 package mozilla.components.browser.state.action
 
+import mozilla.components.browser.state.reducer.BrowserStateReducer
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
 
 class LastAccessActionTest {
-    @Test
-    fun `UpdateLastAccessAction - updates the timestamp when the tab was last accessed`() {
-        val existingTab = createTab("https://www.mozilla.org")
+    private lateinit var state: BrowserState
 
-        val state = BrowserState(
+    @Before
+    fun setUp() {
+        val existingTab = createTab("https://www.mozilla.org")
+        state = BrowserState(
             tabs = listOf(existingTab),
             selectedTabId = existingTab.id,
         )
+    }
 
-        val store = BrowserStore(state)
+    @Test
+    fun `UpdateLastAccessAction - updates the timestamp when the tab was last accessed`() {
         val timestamp = System.currentTimeMillis()
 
-        store.dispatch(LastAccessAction.UpdateLastAccessAction(existingTab.id, timestamp)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, LastAccessAction.UpdateLastAccessAction(state.selectedTab!!.id, timestamp))
 
-        assertEquals(timestamp, store.state.selectedTab?.lastAccess)
+        assertEquals(timestamp, state.selectedTab?.lastAccess)
     }
 }

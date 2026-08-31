@@ -1,0 +1,248 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Events</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testOnconnectAttributeIsSettable() {
+  const handler = (_) => {};
+
+  navigator.serial.onconnect = handler;
+  is(navigator.serial.onconnect, handler, "onconnect should be settable");
+
+  navigator.serial.onconnect = null;
+  is(navigator.serial.onconnect, null, "onconnect should be clearable");
+});
+
+add_task(async function testOndisconnectAttributeIsSettable() {
+  const handler = (_) => {};
+
+  navigator.serial.ondisconnect = handler;
+  is(navigator.serial.ondisconnect, handler, "ondisconnect should be settable");
+
+  navigator.serial.ondisconnect = null;
+  is(navigator.serial.ondisconnect, null, "ondisconnect should be clearable");
+});
+
+add_task(async function testConnectEventListenerCanBeAdded() {
+  const listener = () => { };
+
+  navigator.serial.addEventListener("connect", listener);
+  ok(true, "Should be able to add connect event listener");
+
+  navigator.serial.removeEventListener("connect", listener);
+  ok(true, "Should be able to remove connect event listener");
+});
+
+add_task(async function testDisconnectEventListenerCanBeAdded() {
+  const listener = () => { };
+
+  navigator.serial.addEventListener("disconnect", listener);
+  ok(true, "Should be able to add disconnect event listener");
+
+  navigator.serial.removeEventListener("disconnect", listener);
+  ok(true, "Should be able to remove disconnect event listener");
+});
+
+add_task(async function testMultipleConnectListenersCanBeAdded() {
+  const listener1 = () => {};
+  const listener2 = () => {};
+  const listener3 = () => {};
+
+  navigator.serial.addEventListener("connect", listener1);
+  navigator.serial.addEventListener("connect", listener2);
+  navigator.serial.addEventListener("connect", listener3);
+  ok(true, "Should be able to add multiple connect listeners");
+
+  navigator.serial.removeEventListener("connect", listener1);
+  navigator.serial.removeEventListener("connect", listener2);
+  navigator.serial.removeEventListener("connect", listener3);
+  ok(true, "Should be able to remove multiple connect listeners");
+});
+
+add_task(async function testMultipleDisconnectListenersCanBeAdded() {
+  const listener1 = () => {};
+  const listener2 = () => {};
+  const listener3 = () => {};
+
+  navigator.serial.addEventListener("disconnect", listener1);
+  navigator.serial.addEventListener("disconnect", listener2);
+  navigator.serial.addEventListener("disconnect", listener3);
+  ok(true, "Should be able to add multiple disconnect listeners");
+
+  navigator.serial.removeEventListener("disconnect", listener1);
+  navigator.serial.removeEventListener("disconnect", listener2);
+  navigator.serial.removeEventListener("disconnect", listener3);
+  ok(true, "Should be able to remove multiple disconnect listeners");
+});
+
+add_task(async function testEventListenerOptionsWork() {
+  const listener = () => {};
+
+  navigator.serial.addEventListener("connect", listener, { once: true });
+  ok(true, "Should support once option");
+
+  navigator.serial.addEventListener("connect", listener, { passive: true });
+  ok(true, "Should support passive option");
+  navigator.serial.removeEventListener("connect", listener);
+
+  navigator.serial.addEventListener("connect", listener, { capture: true });
+  ok(true, "Should support capture option");
+  navigator.serial.removeEventListener("connect", listener, { capture: true });
+});
+
+add_task(async function testNavigatorSerialIsEventTarget() {
+  ok(navigator.serial instanceof EventTarget,
+     "navigator.serial should be an instance of EventTarget");
+  ok(typeof navigator.serial.addEventListener === "function",
+     "navigator.serial should have addEventListener method");
+  ok(typeof navigator.serial.removeEventListener === "function",
+     "navigator.serial should have removeEventListener method");
+  ok(typeof navigator.serial.dispatchEvent === "function",
+     "navigator.serial should have dispatchEvent method");
+});
+
+add_task(async function testNoConnectEventOnPortOpen() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  let connectEventFired = false;
+  // The "connect" event is fired when a device is connected to the system,
+  // not when it is opened.
+  port.addEventListener("connect", () => {
+    connectEventFired = true;
+  }, { once: true});
+
+  await port.open({
+    baudRate: 9600,
+    dataBits: 8,
+    stopBits: 1,
+    parity: "none"
+  });
+
+  SimpleTest.requestFlakyTimeout("Wait to ensure we don't get a connect event");
+  await new Promise(resolve => setTimeout(resolve, 500));
+  ok(!connectEventFired, "connect event should not have fired for open");
+
+  await port.close();
+  ok(!port.writable, "port should not have a writable since it is not opened");
+});
+
+add_task(async function testConnectEventViaOnconnectAttribute() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  let onconnectCalled = false;
+
+  // The "connect" event is fired when a device is connected to the system,
+  // not when it is opened.
+  port.onconnect = () => {
+    onconnectCalled = true;
+  };
+
+  await port.open({
+    baudRate: 9600,
+    dataBits: 8,
+    stopBits: 1,
+    parity: "none"
+  });
+
+  SimpleTest.requestFlakyTimeout("Wait to ensure we don't get a connect event");
+  await new Promise(resolve => setTimeout(resolve, 500));
+  ok(!onconnectCalled, "connect event should not have fired for open");
+
+  await port.close();
+  ok(!port.writable, "port should not have a writable since it is not opened");
+});
+
+add_task(async function testDisconnectEventOnPortClose() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600 });
+
+  let disconnectEventFired = false;
+
+  // The "disconnect" event is fired when a device is disconnected from the system,
+  // not when it is closed.
+  port.addEventListener("disconnect", () => {
+    disconnectEventFired = true;
+  }, { once: true });
+
+  await port.close();
+
+  SimpleTest.requestFlakyTimeout("Wait to ensure we don't get a disconnect event");
+  await new Promise(resolve => setTimeout(resolve, 500));
+  ok(!disconnectEventFired, "disconnect event should not have fired for close");
+});
+
+add_task(async function testDisconnectEventViaOndisconnectAttribute() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600 });
+
+  let ondisconnectCalled = false;
+
+  // The "disconnect" event is fired when a device is disconnected from the system,
+  // not when it is closed.
+  port.ondisconnect = () => {
+    ondisconnectCalled = true;
+  };
+
+  await port.close();
+
+  SimpleTest.requestFlakyTimeout("Wait to ensure we don't get a disconnect event");
+  await new Promise(resolve => setTimeout(resolve, 500));
+  ok(!ondisconnectCalled, "disconnect event should not have fired for close");
+});
+
+add_task(async function testMultipleConnectDisconnectCycles() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  // get a different port
+  const port2 = await navigator.serial.requestPort({
+    filters: [{ usbVendorId: 0x0403, usbProductId: 0x6002 }]});
+
+  let connectCount = 0;
+  let disconnectCount = 0;
+
+  port.addEventListener("connect", () => {
+    connectCount++;
+  });
+  port2.addEventListener("connect", () => {
+    connectCount++;
+  });
+
+  port.addEventListener("disconnect", () => {
+    disconnectCount++;
+  });
+  port2.addEventListener("disconnect", () => {
+    disconnectCount++;
+  });
+
+  for (let i = 0; i < 3; i++) {
+    await port.open({ baudRate: 9600 });
+    await port2.open({ baudRate: 9600 });
+    await port.close();
+    await port2.close();
+  }
+  is(connectCount, 0, "connect event should never have fired");
+  is(disconnectCount, 0, "disconnect event should never have fired");
+});
+
+</script>
+</body>
+</html>

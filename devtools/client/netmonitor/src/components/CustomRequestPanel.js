@@ -84,7 +84,7 @@ class CustomRequestPanel extends Component {
    * the given name regex and divider character.
    *
    * @param {string} text - Text of list
-   * @return {array} array of headers info {name, value}
+   * @return {Array} array of headers info {name, value}
    */
   parseRequestText(text, namereg, divider) {
     const regex = new RegExp(`(${namereg})\\${divider}\\s*(\\S.*)`);
@@ -103,8 +103,8 @@ class CustomRequestPanel extends Component {
   /**
    * Update Custom Request Fields
    *
-   * @param {Object} evt click event
-   * @param {Object} request current request
+   * @param {object} evt click event
+   * @param {object} request current request
    * @param {updateRequest} updateRequest action
    */
   updateCustomRequestFields(evt, request, updateRequest) {
@@ -129,7 +129,7 @@ class CustomRequestPanel extends Component {
             ? { method: this.initialRequestMethod }
             : { method: val.trim() };
         break;
-      case "custom-postdata-value":
+      case "custom-postdata-value": {
         // Update "content-length" header value to reflect change
         // in post data field.
         const { requestHeaders } = request;
@@ -152,7 +152,8 @@ class CustomRequestPanel extends Component {
           },
         };
         break;
-      case "custom-query-value":
+      }
+      case "custom-query-value": {
         let customQueryValue = val || "";
         // Parse readable text list of a query string
         const queryArray = customQueryValue
@@ -177,6 +178,7 @@ class CustomRequestPanel extends Component {
           url,
         };
         break;
+      }
       case "custom-url-value":
         data = {
           customQueryValue: null,

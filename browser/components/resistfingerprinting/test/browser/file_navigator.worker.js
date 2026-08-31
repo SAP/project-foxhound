@@ -11,6 +11,7 @@ onconnect = function (e) {
   result.userAgent = navigatorObj.userAgent;
   result.product = navigatorObj.product;
   result.hardwareConcurrency = navigatorObj.hardwareConcurrency;
+  result.maxTouchPoints = navigatorObj.maxTouchPoints;
 
   port.postMessage(JSON.stringify(result));
   port.start();

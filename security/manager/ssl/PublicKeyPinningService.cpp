@@ -5,7 +5,6 @@
 #include "PublicKeyPinningService.h"
 
 #include "RootCertificateTelemetryUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Base64.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/Casting.h"

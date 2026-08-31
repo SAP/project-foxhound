@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,9 +31,11 @@ class SurfacePoolWayland final : public SurfacePool {
   explicit SurfacePoolWayland(size_t aPoolSizeLimit);
 
   RefPtr<widget::WaylandBuffer> ObtainBufferFromPool(
+      const widget::WaylandSurfaceLock& aWaylandSurfaceLock,
       const gfx::IntSize& aSize, gl::GLContext* aGL,
       RefPtr<widget::DRMFormat> aFormat);
-  void ReturnBufferToPool(const RefPtr<widget::WaylandBuffer>& aBuffer);
+  void ReturnBufferToPool(const widget::WaylandSurfaceLock& aWaylandSurfaceLock,
+                          const RefPtr<widget::WaylandBuffer>& aBuffer);
   void EnforcePoolSizeLimit();
   void CollectPendingSurfaces();
   Maybe<GLuint> GetFramebufferForBuffer(
@@ -46,16 +47,19 @@ class SurfacePoolWayland final : public SurfacePool {
     UniquePtr<gl::MozFramebuffer> mFramebuffer;  // non-null
   };
 
+  // Keep mWaylandSurface / mWaylandBuffer in pair as we don't share
+  // mWaylandBuffer among WaylandSurfaces.
   struct SurfacePoolEntry final {
     const gfx::IntSize mSize;
-    const RefPtr<widget::WaylandBuffer> mWaylandBuffer;  // non-null
+    const RefPtr<widget::WaylandSurface> mWaylandSurface;  // non-null
+    const RefPtr<widget::WaylandBuffer> mWaylandBuffer;    // non-null
     Maybe<GLResourcesForBuffer> mGLResources;
   };
 
-  bool CanRecycleSurfaceForRequest(const MutexAutoLock& aProofOfLock,
-                                   const SurfacePoolEntry& aEntry,
-                                   const gfx::IntSize& aSize,
-                                   gl::GLContext* aGL);
+  bool CanRecycleSurfaceForRequest(
+      const MutexAutoLock& aProofOfLock, const SurfacePoolEntry& aEntry,
+      const widget::WaylandSurfaceLock& aWaylandSurfaceLock,
+      const gfx::IntSize& aSize, gl::GLContext* aGL);
 
   RefPtr<gl::DepthAndStencilBuffer> GetDepthBufferForSharing(
       const MutexAutoLock& aProofOfLock, gl::GLContext* aGL,
@@ -105,8 +109,10 @@ class SurfacePoolHandleWayland final : public SurfacePoolHandle {
   }
 
   RefPtr<widget::WaylandBuffer> ObtainBufferFromPool(
+      const widget::WaylandSurfaceLock& aWaylandSurfaceLock,
       const gfx::IntSize& aSize, RefPtr<widget::DRMFormat> aFormat);
-  void ReturnBufferToPool(const RefPtr<widget::WaylandBuffer>& aBuffer);
+  void ReturnBufferToPool(const widget::WaylandSurfaceLock& aWaylandSurfaceLock,
+                          const RefPtr<widget::WaylandBuffer>& aBuffer);
   Maybe<GLuint> GetFramebufferForBuffer(
       const RefPtr<widget::WaylandBuffer>& aBuffer, bool aNeedsDepthBuffer);
   const auto& gl() { return mGL; }

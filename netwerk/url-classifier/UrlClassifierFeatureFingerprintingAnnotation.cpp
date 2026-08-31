@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UrlClassifierFeatureFingerprintingAnnotation.h"
 
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "nsIClassifiedChannel.h"
 #include "nsContentUtils.h"
@@ -92,7 +91,7 @@ UrlClassifierFeatureFingerprintingAnnotation::MaybeCreate(
       ("UrlClassifierFeatureFingerprintingAnnotation::MaybeCreate - channel %p",
        aChannel));
 
-  if (UrlClassifierCommon::IsPassiveContent(aChannel)) {
+  if (ChannelClassifierUtils::IsPassiveContent(aChannel)) {
     return nullptr;
   }
 
@@ -148,7 +147,7 @@ UrlClassifierFeatureFingerprintingAnnotation::ProcessChannel(
 
   UrlClassifierCommon::SetTrackingInfo(aChannel, aList, aHashes);
 
-  UrlClassifierCommon::AnnotateChannel(
+  ChannelClassifierUtils::AnnotateChannel(
       aChannel, flags,
       nsIWebProgressListener::STATE_LOADED_FINGERPRINTING_CONTENT);
 

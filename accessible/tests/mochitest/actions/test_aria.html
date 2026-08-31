@@ -16,115 +16,30 @@
           src="../actions.js"></script>
 
   <script type="application/javascript">
-    function doTest() {
-      var actionsArray = [
-        {
-          ID: "clickable",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "button",
-          actionName: "press",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "checkbox_unchecked",
-          actionName: "check",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "checkbox_checked",
-          actionName: "uncheck",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "checkbox_mixed",
-          actionName: "cycle",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "combobox_collapsed",
-          actionName: "open",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "combobox_expanded",
-          actionName: "close",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "link",
-          actionName: "jump",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "menuitem",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "menuitemcheckbox",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "menuitemradio",
-          actionName: "click",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "option",
-          actionName: "select",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "radio",
-          actionName: "select",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "switch_unchecked",
-          actionName: "check",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "switch_checked",
-          actionName: "uncheck",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "tab",
-          actionName: "switch",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "textbox",
-          actionName: "activate",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "treeitem",
-          actionName: "activate",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "sortable",
-          actionName: "sort",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "expandable",
-          actionName: "expand",
-          events: CLICK_EVENTS,
-        },
-        {
-          ID: "collapseable",
-          actionName: "collapse",
-          events: CLICK_EVENTS,
-        },
-      ];
-      testActions(actionsArray);
+    /* global testAction */
+    async function doTest() {
+      await testAction({ id: "clickable", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "button", actionName: "press", events: CLICK_EVENTS });
+      await testAction({ id: "checkbox_unchecked", actionName: "check", events: CLICK_EVENTS });
+      await testAction({ id: "checkbox_checked", actionName: "uncheck", events: CLICK_EVENTS });
+      await testAction({ id: "checkbox_mixed", actionName: "cycle", events: CLICK_EVENTS });
+      await testAction({ id: "combobox_collapsed", actionName: "open", events: CLICK_EVENTS });
+      await testAction({ id: "combobox_expanded", actionName: "close", events: CLICK_EVENTS });
+      await testAction({ id: "link", actionName: "jump", events: CLICK_EVENTS });
+      await testAction({ id: "menuitem", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "menuitemcheckbox", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "menuitemradio", actionName: "click", events: CLICK_EVENTS });
+      await testAction({ id: "option", actionName: "select", events: CLICK_EVENTS });
+      await testAction({ id: "radio", actionName: "select", events: CLICK_EVENTS });
+      await testAction({ id: "switch_unchecked", actionName: "check", events: CLICK_EVENTS });
+      await testAction({ id: "switch_checked", actionName: "uncheck", events: CLICK_EVENTS });
+      await testAction({ id: "tab", actionName: "switch", events: CLICK_EVENTS });
+      await testAction({ id: "textbox", actionName: "activate", events: CLICK_EVENTS });
+      await testAction({ id: "treeitem", actionName: "activate", events: CLICK_EVENTS });
+      await testAction({ id: "sortable", actionName: "sort", events: CLICK_EVENTS });
+      await testAction({ id: "expandable", actionName: "expand", events: CLICK_EVENTS });
+      await testAction({ id: "collapseable", actionName: "collapse", events: CLICK_EVENTS });
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -194,7 +109,7 @@
     </div>
   </div>
   
-  <div id="expandable" aria-expanded="false">collapsed</div>
-  <div id="collapseable" aria-expanded="true">expanded</div>
+  <div id="expandable" aria-expanded="false" role="row">collapsed</div>
+  <div id="collapseable" aria-expanded="true" role="row">expanded</div>
 </body>
 </html>

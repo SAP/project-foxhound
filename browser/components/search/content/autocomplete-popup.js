@@ -6,18 +6,26 @@
 
 // Wrap in a block to prevent leaking to window scope.
 {
-  ChromeUtils.defineESModuleGetters(this, {
+  const lazy = {};
+  ChromeUtils.defineESModuleGetters(lazy, {
     BrowserSearchTelemetry:
       "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
     BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
     SearchOneOffs: "moz-src:///browser/components/search/SearchOneOffs.sys.mjs",
+    SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   });
+
+  /**
+   * @import {SearchEngine} from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
+   */
 
   /**
    * A richlistbox popup custom element for for a browser search autocomplete
    * widget.
    */
-  class MozSearchAutocompleteRichlistboxPopup extends MozElements.MozAutocompleteRichlistboxPopup {
+  class MozSearchAutocompleteRichlistboxPopup
+    extends MozElements.MozAutocompleteRichlistboxPopup
+  {
     constructor() {
       super();
 
@@ -101,7 +109,9 @@
       this._searchOneOffsContainer = this.querySelector(".search-one-offs");
       this._searchbarEngine = this.querySelector(".search-panel-header");
       this._searchbarEngineName = this.querySelector(".searchbar-engine-name");
-      this._oneOffButtons = new SearchOneOffs(this._searchOneOffsContainer);
+      this._oneOffButtons = new lazy.SearchOneOffs(
+        this._searchOneOffsContainer
+      );
       this._searchbar = document.getElementById("searchbar");
     }
 
@@ -191,7 +201,7 @@
       }
 
       // Check for middle-click or modified clicks on the search bar
-      BrowserSearchTelemetry.recordSearchSuggestionSelectionMethod(
+      lazy.BrowserSearchTelemetry.recordSearchSuggestionSelectionMethod(
         aEvent,
         this.selectedIndex
       );
@@ -200,7 +210,7 @@
       let search = this.input.controller.getValueAt(this.selectedIndex);
 
       // open the search results according to the clicking subtlety
-      let where = BrowserUtils.whereToOpenLink(aEvent, false, true);
+      let where = lazy.BrowserUtils.whereToOpenLink(aEvent, false, true);
       let params = {};
 
       // But open ctrl/cmd clicks on autocomplete items in a new background tab.
@@ -238,15 +248,15 @@
     /**
      * Updates the header of the pop-up with the search engine name and icon.
      *
-     * @param {nsISearchEngine} [engine]
+     * @param {SearchEngine} [engine]
      *   The engine to use, if not specified falls back to the default engine.
      */
     async updateHeader(engine) {
       if (!engine) {
         if (PrivateBrowsingUtils.isWindowPrivate(window)) {
-          engine = await Services.search.getDefaultPrivate();
+          engine = await lazy.SearchService.getDefaultPrivate();
         } else {
-          engine = await Services.search.getDefault();
+          engine = await lazy.SearchService.getDefault();
         }
       }
       this.#currentEngineName = engine.name;
@@ -279,6 +289,15 @@
     /**
      * This is called when a one-off is clicked and when "search in new tab"
      * is selected from a one-off context menu.
+     *
+     * @param {Event} event
+     *   The event that triggered the search.
+     * @param {SearchEngine} engine
+     *   The search engine being used for the search.
+     * @param {string} where
+     *   Where the search should be opened (current tab, new tab, window etc).
+     * @param {object} params
+     *   The parameters associated with opening the search.
      */
     handleOneOffSearch(event, engine, where, params) {
       this.searchbar.handleSearchCommandWhere(event, engine, where, params);

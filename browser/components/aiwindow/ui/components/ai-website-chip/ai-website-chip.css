@@ -1,0 +1,324 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.chip {
+  --chip-border-color: light-dark(var(--color-violet-0), var(--color-violet-80));
+  --chip-border-radius: var(--border-radius-medium);
+
+  --chip-hover-background-color: light-dark(var(--color-violet-0), var(--color-violet-80));
+  --chip-hover-border-color: color-mix(in srgb, var(--color-violet-20) 50%, transparent);
+
+  --chip-text-color: var(--color-gray-100);
+  --chip-text-color-deemphasized: color-mix(in srgb, var(--color-gray-100) 69%, transparent);
+  --chip-text-color-empty: color-mix(in srgb, var(--color-gray-100) 60%, transparent);
+  --chip-text-color-hover: var(--chip-text-color);
+
+  --chip-selected-background-color: color-mix(in srgb, var(--color-violet-20) 20%, var(--color-violet-0));
+  --chip-selected-border-color: var(--color-violet-20);
+  --chip-selected-text-color: var(--chip-text-color);
+
+  --chip-label-mask-size: 1em;
+
+  --chip-remove-border-radius: var(--border-radius-small);
+  --chip-remove-size: var(--size-item-small);
+
+  --chip-remove-icon-size: var(--size-item-small);
+  --chip-remove-icon-padding: var(--space-xxsmall);
+
+  /* context chips */
+  --context-chip-hover-background-color: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), var(--color-violet-110));
+  --context-chip-background-color: light-dark(var(--color-violet-0), var(--color-violet-80));
+  --context-chip-inside-chat-background-color: light-dark(var(--color-violet-0), var(--color-violet-80));
+
+  --context-chip-border-width: 1px;
+  --context-chip-border-color: light-dark(transparent, var(--color-violet-80));
+  --context-chip-active-border-color: var(--context-chip-hover-border-color);
+  --context-chip-hover-border-color: light-dark(color-mix(in srgb, var(--color-violet-20) 50%, transparent), var(--color-violet-80));
+
+  --context-chip-label-color: light-dark(var(--color-violet-90), var(--color-violet-10));
+  --context-chip-label-hover-color: var(--context-chip-label-color);
+  --context-chip-label-hover-margin-inline-end: 0;
+  --context-chip-label-hover-text-decoration: none;
+
+  --context-chip-remove-hover-background-color: light-dark(transparent, var(--color-violet-80));
+  --context-chip-remove-initial-display: none;
+
+  --context-chip-icon-hover-display: none;
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  /* Nova tokens were implemented as the default value for the custom properties, and the fallbacks (and lint exceptions) will need to be removed after launch  */
+  .chip {
+    /* TODO: replace with token when available - Bug 2033070 */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --chip-border-radius: 12px;
+    --chip-border-color: transparent;
+    --chip-hover-border-color: transparent;
+    --chip-hover-background-color: transparent;
+
+    --chip-remove-border-radius: var(--border-radius-circle);
+    --chip-remove-size: var(--icon-size-medium);
+    --chip-remove-icon-size: var(--icon-size-xsmall);
+    --chip-remove-icon-padding: 0;
+
+    --context-chip-background-color: light-dark(
+      color-mix(in srgb, var(--color-violet-desaturated-10, #e1dbf1) 70%, transparent),
+      var(--color-violet-desaturated-60, #534577)
+    );
+    --context-chip-hover-background-color: var(--context-chip-background-color);
+
+    --context-chip-border-color: transparent;
+    --context-chip-active-border-color: light-dark(var(--color-violet-50), var(--color-violet-30));
+    --context-chip-hover-border-color: transparent;
+    --context-chip-border-width: var(--focus-outline-width);
+
+    --context-chip-remove-hover-background-color: light-dark(
+      color-mix(in srgb, var(--color-violet-desaturated-60, #534577) 16%, transparent),
+      color-mix(in srgb, var(--color-violet-30) 24%, transparent)
+    );
+    --context-chip-remove-initial-display: flex;
+
+    --context-chip-label-color: light-dark(var(--color-violet-desaturated-90, #14092b), var(--color-violet-desaturated-0, #f2f0f8));
+    --context-chip-label-hover-margin-inline-end: var(--space-xlarge);
+    --context-chip-label-hover-text-decoration: underline;
+
+    --context-chip-inside-chat-background-color: light-dark(var(--color-violet-desaturated-10, #e1dbf1), var(--color-violet-desaturated-60, #534577));
+
+    --context-chip-icon-hover-display: flex;
+  }
+
+  :host([type="context-chip"]) .chip[data-removable] {
+    &:hover .chip-remove {
+      opacity: 1;
+    }
+
+    .chip-remove {
+      inset-inline-end: var(--space-small);
+      opacity: 0;
+      position: absolute;
+      transition: all ease 150ms;
+      z-index: 1;
+    }
+  }
+}
+
+@media (forced-colors) {
+  .chip {
+    --chip-border-color: var(--button-border-color);
+    --chip-hover-border-color: var(--button-border-color-hover);
+
+    --chip-hover-background-color: var(--button-background-color-hover);
+
+    --text-color-deemphasized: var(--chip-text-color-deemphasized);
+    --chip-text-color: var(--button-text-color);
+    --chip-text-color-deemphasized: var(--button-text-color);
+    --chip-text-color-empty: var(--chip-text-color);
+    --chip-text-color-hover: var(--button-text-color-hover);
+
+    --chip-selected-background-color: var(--button-background-color-selected);
+    --chip-selected-border-color: var(--button-border-color-selected);
+    --chip-selected-text-color: var(--button-text-color-selected);
+
+    --context-chip-background-color: var(--button-background-color);
+    --context-chip-hover-background-color: var(--button-background-color-hover);
+
+    --context-chip-label-color: var(--button-text-color);
+    --context-chip-label-hover-color: var(--button-text-color-hover);
+
+    --context-chip-border-color: var(--button-border-color);
+    --context-chip-hover-border-color: var(--button-border-color-hover);
+
+    --context-chip-remove-hover-background-color: var(--button-background-color-hover);
+  }
+}
+
+/* Shared base styles */
+.chip {
+  display: inline-flex;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: 170px;
+  position: relative;
+  align-items: center;
+  gap: var(--space-small, 8px);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--chip-border-radius);
+  box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+  color: inherit;
+}
+
+button.chip {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+}
+
+.chip-icon {
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  border-radius: var(--border-radius-xsmall);
+  flex-shrink: 0;
+  -moz-context-properties: fill;
+  fill: var(--icon-color);
+}
+
+.chip-label {
+  overflow: hidden;
+  font-style: normal;
+  line-height: normal;
+}
+
+/* Type: In-line/Mentions */
+:host([type="in-line"]) .chip {
+  --border-color: var(--chip-border-color);
+
+  align-items: baseline;
+  border: 1px solid var(--border-color);
+  gap: var(--space-xsmall);
+  padding: var(--space-xxsmall) var(--space-xsmall);
+
+  &:hover {
+    background-color: var(--chip-hover-background-color);
+    border-color: var(--chip-hover-border-color);
+  }
+}
+
+:host([type="in-line"]) .chip-icon {
+  align-self: center;
+  transition: opacity 120ms ease;
+}
+
+:host([type="in-line"]) .chip-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  color: var(--text-color-deemphasized, var(--chip-text-color-deemphasized));
+  word-break: break-all;
+}
+
+:host([type="in-line"]) .chip-at {
+  color: var(--text-color, var(--chip-text-color));
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+:host([type="in-line"]) .chip:hover .chip-label,
+:host([type="in-line"]) .chip:hover .chip-at {
+  color: var(--text-color, var(--chip-text-color-hover));
+}
+
+:host([type="in-line"]) .chip[data-empty] .chip-label {
+  --text-color: var(--chip-text-color-empty);
+
+  color: var(--text-color);
+}
+
+/* Type: Context Chip */
+:host([type="context-chip"]) .chip {
+  --background-color-box: var(--context-chip-background-color);
+
+  padding: var(--space-small);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border: var(--context-chip-border-width) solid var(--context-chip-border-color);
+  background-color: var(--background-color-box);
+
+  &:hover .chip-label {
+    color: var(--context-chip-label-hover-color);
+  }
+
+  &:active,
+  &:focus-visible {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    border: var(--context-chip-border-width) solid var(--context-chip-active-border-color);
+    outline: none;
+  }
+}
+
+/* context chips inside the chat bubble */
+:host([type="context-chip"]) .chip:not([data-removable]) {
+  --background-color-box: var(--context-chip-inside-chat-background-color);
+
+  &:hover {
+    .chip-label {
+      text-decoration: var(--context-chip-label-hover-text-decoration);
+    }
+  }
+}
+
+/* context chips in the smartbar */
+:host([type="context-chip"]) .chip[data-removable]:hover {
+  --background-color-box: var(--context-chip-hover-background-color);
+  border-color: var(--context-chip-hover-border-color);
+
+  .chip-icon {
+    display: var(--context-chip-icon-hover-display);
+  }
+
+  .chip-remove {
+    display: flex;
+  }
+
+  .chip-label {
+    margin-inline-end: var(--context-chip-label-hover-margin-inline-end);
+  }
+}
+
+:host([type="context-chip"]) .chip-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+:host([type="context-chip"]) .chip-remove-icon {
+  box-sizing: border-box;
+  -moz-context-properties: fill;
+  fill: var(--icon-color);
+  width: var(--chip-remove-icon-size);
+  height: var(--chip-remove-icon-size);
+  padding: var(--chip-remove-icon-padding);
+}
+
+:host([type="context-chip"]) .chip-remove {
+  cursor: pointer;
+  display: var(--context-chip-remove-initial-display);
+  width: var(--chip-remove-size);
+  height: var(--chip-remove-size);
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: var(--chip-remove-border-radius);
+  border: none;
+  background: none;
+  padding: 0;
+
+  &:hover {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    background-color: var(--context-chip-remove-hover-background-color);
+  }
+}
+
+:host([type="context-chip"]) .chip-label {
+  --text-color: var(--context-chip-label-color);
+
+  color: var(--text-color);
+  font-size: var(--font-size-small);
+  height: var(--size-item-small);
+  mask-image: linear-gradient(to left, transparent, var(--color-black) var(--chip-label-mask-size));
+  transition: margin-inline-end ease 150ms;
+  white-space: nowrap;
+}
+
+/* Hover state for selected - must come after type-specific rules to override borders */
+:host([selected]) .chip:not(:hover) {
+  background-color: var(--chip-selected-background-color);
+  border-color: var(--chip-selected-border-color);
+  color: var(--chip-selected-text-color);
+}

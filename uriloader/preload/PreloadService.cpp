@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,6 @@
 #include "PreloaderBase.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/HTMLLinkElement.h"
 #include "mozilla/dom/ScriptLoader.h"
@@ -93,6 +91,13 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
   integrity =
       aLinkElement->HasAttr(nsGkAtoms::integrity) ? integrity : VoidString();
 
+  // rel=compression-dictionary fetches default to "anonymous" if no
+  // crossorigin=foo parameter is given
+  if (rel.LowerCaseEqualsASCII("compression-dictionary") &&
+      crossOrigin.IsEmpty()) {
+    crossOrigin = u"anonymous"_ns;
+  }
+
   nsAutoString nonce;
   if (nsString* cspNonce =
           static_cast<nsString*>(aLinkElement->GetProperty(nsGkAtoms::nonce))) {
@@ -107,7 +112,7 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
     aLinkElement->GetType(type);
   }
 
-  auto result = PreloadOrCoalesce(uri, url, aPolicyType, as, type, charset,
+  auto result = PreloadOrCoalesce(uri, url, aPolicyType, as, rel, type, charset,
                                   srcset, sizes, nonce, integrity, crossOrigin,
                                   referrerPolicy, fetchPriority,
                                   /* aFromHeader = */ false, 0);
@@ -123,9 +128,9 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
 
 void PreloadService::PreloadLinkHeader(
     nsIURI* aURI, const nsAString& aURL, nsContentPolicyType aPolicyType,
-    const nsAString& aAs, const nsAString& aType, const nsAString& aNonce,
-    const nsAString& aIntegrity, const nsAString& aSrcset,
-    const nsAString& aSizes, const nsAString& aCORS,
+    const nsAString& aAs, const nsAString& aRel, const nsAString& aType,
+    const nsAString& aNonce, const nsAString& aIntegrity,
+    const nsAString& aSrcset, const nsAString& aSizes, const nsAString& aCORS,
     const nsAString& aReferrerPolicy, uint64_t aEarlyHintPreloaderId,
     const nsAString& aFetchPriority) {
   if (aPolicyType == nsIContentPolicy::TYPE_INVALID) {
@@ -133,10 +138,17 @@ void PreloadService::PreloadLinkHeader(
     return;
   }
 
-  PreloadOrCoalesce(aURI, aURL, aPolicyType, aAs, aType, u""_ns, aSrcset,
-                    aSizes, aNonce, aIntegrity, aCORS, aReferrerPolicy,
-                    aFetchPriority,
-                    /* aFromHeader = */ true, aEarlyHintPreloaderId);
+  // rel=compression-dictionary fetches default to "anonymous" if no
+  // crossorigin=foo parameter is given
+
+  PreloadOrCoalesce(
+      aURI, aURL, aPolicyType, aAs, aRel, aType, u""_ns, aSrcset, aSizes,
+      aNonce, aIntegrity,
+      aRel.LowerCaseEqualsASCII("compression-dictionary") && aCORS.IsEmpty()
+          ? u"anonymous"_ns
+          : aCORS,
+      aReferrerPolicy, aFetchPriority,
+      /* aFromHeader = */ true, aEarlyHintPreloaderId);
 }
 
 // The mapping is specified as implementation-defined, see step 15 of
@@ -167,12 +179,14 @@ class SupportsPriorityValueFor {
 
 PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     nsIURI* aURI, const nsAString& aURL, nsContentPolicyType aPolicyType,
-    const nsAString& aAs, const nsAString& aType, const nsAString& aCharset,
-    const nsAString& aSrcset, const nsAString& aSizes, const nsAString& aNonce,
+    const nsAString& aAs, const nsAString& aRel, const nsAString& aType,
+    const nsAString& aCharset, const nsAString& aSrcset,
+    const nsAString& aSizes, const nsAString& aNonce,
     const nsAString& aIntegrity, const nsAString& aCORS,
     const nsAString& aReferrerPolicy, const nsAString& aFetchPriority,
     bool aFromHeader, uint64_t aEarlyHintPreloaderId) {
-  if (!aURI) {
+  if (!aURI &&
+      !(aPolicyType == nsIContentPolicy::TYPE_IMAGE && !aSrcset.IsEmpty())) {
     MOZ_ASSERT_UNREACHABLE("Should not pass null nsIURI");
     return {nullptr, false};
   }
@@ -185,8 +199,7 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     preloadKey = PreloadHashKey::CreateAsScript(uri, aCORS, aType);
   } else if (aAs.LowerCaseEqualsASCII("style")) {
     preloadKey = PreloadHashKey::CreateAsStyle(
-        uri, mDocument->NodePrincipal(), dom::Element::StringToCORSMode(aCORS),
-        css::eAuthorSheetFeatures /* see Loader::LoadSheet */);
+        uri, mDocument->NodePrincipal(), dom::Element::StringToCORSMode(aCORS));
   } else if (aAs.LowerCaseEqualsASCII("image")) {
     uri = mDocument->ResolvePreloadImage(BaseURIForPreload(), aURL, aSrcset,
                                          aSizes, &isImgSet);
@@ -200,6 +213,10 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     preloadKey = PreloadHashKey::CreateAsFont(
         uri, dom::Element::StringToCORSMode(aCORS));
   } else if (aAs.LowerCaseEqualsASCII("fetch")) {
+    preloadKey = PreloadHashKey::CreateAsFetch(
+        uri, dom::Element::StringToCORSMode(aCORS));
+  } else if (aRel.LowerCaseEqualsASCII("compression-dictionary")) {
+    // compression-dictionary doesn't specify an 'as=' value
     preloadKey = PreloadHashKey::CreateAsFetch(
         uri, dom::Element::StringToCORSMode(aCORS));
   } else {
@@ -240,7 +257,8 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
   } else if (aAs.LowerCaseEqualsASCII("font")) {
     PreloadFont(uri, aCORS, aReferrerPolicy, aEarlyHintPreloaderId,
                 aFetchPriority);
-  } else if (aAs.LowerCaseEqualsASCII("fetch")) {
+  } else if (aAs.LowerCaseEqualsASCII("fetch") ||
+             aRel.LowerCaseEqualsASCII("compression-dictionary")) {
     PreloadFetch(uri, aCORS, aReferrerPolicy, aEarlyHintPreloaderId,
                  aFetchPriority);
   }
@@ -259,10 +277,12 @@ void PreloadService::PreloadScript(
     const nsAString& aNonce, const nsAString& aFetchPriority,
     const nsAString& aIntegrity, bool aScriptFromHead,
     uint64_t aEarlyHintPreloaderId) {
-  mDocument->ScriptLoader()->PreloadURI(
-      aURI, aCharset, aType, aCrossOrigin, aNonce, aFetchPriority, aIntegrity,
-      aScriptFromHead, false, false, true,
-      PreloadReferrerPolicy(aReferrerPolicy), aEarlyHintPreloaderId);
+  if (ScriptLoader* scriptLoader = mDocument->GetScriptLoader()) {
+    scriptLoader->PreloadURI(
+        aURI, aCharset, aType, aCrossOrigin, aNonce, aFetchPriority, aIntegrity,
+        aScriptFromHead, false, false, true,
+        PreloadReferrerPolicy(aReferrerPolicy), aEarlyHintPreloaderId);
+  }
 }
 
 void PreloadService::PreloadImage(nsIURI* aURI, const nsAString& aCrossOrigin,
@@ -292,7 +312,7 @@ void PreloadService::PreloadFont(nsIURI* aURI, const nsAString& aCrossOrigin,
       SupportsPriorityValueFor::LinkRelPreloadFont(fetchPriority);
   LogPriorityMapping(sPreloadServiceLog, fetchPriority, supportsPriorityValue);
 
-  RefPtr<FontPreloader> preloader = new FontPreloader();
+  RefPtr preloader = MakeRefPtr<FontPreloader>();
   dom::ReferrerPolicy referrerPolicy = PreloadReferrerPolicy(aReferrerPolicy);
   preloader->OpenChannel(key, aURI, cors, referrerPolicy, mDocument,
                          aEarlyHintPreloaderId, supportsPriorityValue);
@@ -309,7 +329,7 @@ void PreloadService::PreloadFetch(nsIURI* aURI, const nsAString& aCrossOrigin,
     return;
   }
 
-  RefPtr<FetchPreloader> preloader = new FetchPreloader();
+  RefPtr preloader = MakeRefPtr<FetchPreloader>();
   dom::ReferrerPolicy referrerPolicy = PreloadReferrerPolicy(aReferrerPolicy);
 
   const auto fetchPriority =
@@ -335,7 +355,7 @@ void PreloadService::NotifyNodeEvent(nsINode* aNode, bool aSuccess) {
   // that we're not allowed to touch. (Our network request happens in the
   // DocGroup of one of the mSources nodes--not necessarily this one).
 
-  RefPtr<AsyncEventDispatcher> dispatcher = new AsyncEventDispatcher(
+  RefPtr dispatcher = MakeRefPtr<AsyncEventDispatcher>(
       aNode, aSuccess ? u"load"_ns : u"error"_ns, CanBubble::eNo);
 
   dispatcher->RequireNodeInDocument();

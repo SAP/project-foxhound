@@ -6,9 +6,10 @@ const {
   Dialog,
   Sections,
   Pocket,
-  Personalization,
   DiscoveryStream,
   Search,
+  ExternalComponents,
+  SportsWidget,
 } = reducers;
 import { actionTypes as at } from "common/Actions.mjs";
 
@@ -701,30 +702,6 @@ describe("Reducers", () => {
       });
       assert.isFalse(state.waitingForSpoc);
     });
-    it("should have undefined for initial isUserLoggedIn state", () => {
-      assert.isNull(Pocket(undefined, { type: "some_action" }).isUserLoggedIn);
-    });
-    it("should set isUserLoggedIn to false on a POCKET_LOGGED_IN with null", () => {
-      const state = Pocket(undefined, {
-        type: at.POCKET_LOGGED_IN,
-        data: null,
-      });
-      assert.isFalse(state.isUserLoggedIn);
-    });
-    it("should set isUserLoggedIn to false on a POCKET_LOGGED_IN with false", () => {
-      const state = Pocket(undefined, {
-        type: at.POCKET_LOGGED_IN,
-        data: false,
-      });
-      assert.isFalse(state.isUserLoggedIn);
-    });
-    it("should set isUserLoggedIn to true on a POCKET_LOGGED_IN with true", () => {
-      const state = Pocket(undefined, {
-        type: at.POCKET_LOGGED_IN,
-        data: true,
-      });
-      assert.isTrue(state.isUserLoggedIn);
-    });
     it("should set pocketCta with correct object on a POCKET_CTA", () => {
       const data = {
         cta_button: "cta button",
@@ -739,47 +716,12 @@ describe("Reducers", () => {
       assert.equal(state.pocketCta.useCta, data.use_cta);
     });
   });
-  describe("Personalization", () => {
-    it("should return INITIAL_STATE by default", () => {
-      assert.equal(
-        Personalization(undefined, { type: "some_action" }),
-        INITIAL_STATE.Personalization
-      );
-    });
-    it("should set lastUpdated with DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED", () => {
-      const state = Personalization(undefined, {
-        type: at.DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED,
-        data: {
-          lastUpdated: 123,
-        },
-      });
-      assert.equal(state.lastUpdated, 123);
-    });
-    it("should set initialized to true with DISCOVERY_STREAM_PERSONALIZATION_INIT", () => {
-      const state = Personalization(undefined, {
-        type: at.DISCOVERY_STREAM_PERSONALIZATION_INIT,
-      });
-      assert.equal(state.initialized, true);
-    });
-  });
   describe("DiscoveryStream", () => {
     it("should return INITIAL_STATE by default", () => {
       assert.equal(
         DiscoveryStream(undefined, { type: "some_action" }),
         INITIAL_STATE.DiscoveryStream
       );
-    });
-    it("should set isPrivacyInfoModalVisible to true with SHOW_PRIVACY_INFO", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.SHOW_PRIVACY_INFO,
-      });
-      assert.equal(state.isPrivacyInfoModalVisible, true);
-    });
-    it("should set isPrivacyInfoModalVisible to false with HIDE_PRIVACY_INFO", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.HIDE_PRIVACY_INFO,
-      });
-      assert.equal(state.isPrivacyInfoModalVisible, false);
     });
     it("should set layout data with DISCOVERY_STREAM_LAYOUT_UPDATE", () => {
       const state = DiscoveryStream(undefined, {
@@ -815,33 +757,25 @@ describe("Reducers", () => {
 
       assert.deepEqual(state, INITIAL_STATE.DiscoveryStream);
     });
+    it("should preserve sectionPersonalization with DISCOVERY_STREAM_LAYOUT_RESET", () => {
+      const personalization = {
+        sports: { isBlocked: true, isFollowed: false, title: "Sports" },
+      };
+      let state = DiscoveryStream(undefined, {
+        type: at.SECTION_PERSONALIZATION_UPDATE,
+        data: personalization,
+      });
+      state = DiscoveryStream(state, {
+        type: at.DISCOVERY_STREAM_LAYOUT_RESET,
+      });
+      assert.deepEqual(state.sectionPersonalization, personalization);
+    });
     it("should set config data with DISCOVERY_STREAM_CONFIG_CHANGE", () => {
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
         data: { enabled: true },
       });
       assert.deepEqual(state.config, { enabled: true });
-    });
-    it("should set recentSavesEnabled with DISCOVERY_STREAM_PREFS_SETUP", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.DISCOVERY_STREAM_PREFS_SETUP,
-        data: { recentSavesEnabled: true },
-      });
-      assert.isTrue(state.recentSavesEnabled);
-    });
-    it("should set recentSavesData with DISCOVERY_STREAM_RECENT_SAVES", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.DISCOVERY_STREAM_RECENT_SAVES,
-        data: { recentSaves: [1, 2, 3] },
-      });
-      assert.deepEqual(state.recentSavesData, [1, 2, 3]);
-    });
-    it("should set isUserLoggedIn with DISCOVERY_STREAM_POCKET_STATE_SET", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.DISCOVERY_STREAM_POCKET_STATE_SET,
-        data: { isUserLoggedIn: true },
-      });
-      assert.isTrue(state.isUserLoggedIn);
     });
     it("should set feeds as loaded with DISCOVERY_STREAM_FEEDS_UPDATE", () => {
       const state = DiscoveryStream(undefined, {
@@ -876,6 +810,8 @@ describe("Reducers", () => {
       const data = {
         lastUpdated: 123,
         spocs: [1, 2, 3],
+        spocsCacheUpdateTime: 10 * 60 * 1000,
+        spocsOnDemand: true,
       };
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
@@ -883,12 +819,17 @@ describe("Reducers", () => {
       });
       assert.deepEqual(state.spocs, {
         spocs_endpoint: "",
-        data: [1, 2, 3],
-        lastUpdated: 123,
+        data: data.spocs,
+        lastUpdated: data.lastUpdated,
         loaded: true,
         frequency_caps: [],
         blocked: [],
         placements: [],
+        cacheUpdateTime: data.spocsCacheUpdateTime,
+        onDemand: {
+          enabled: data.spocsOnDemand,
+          loaded: false,
+        },
       });
     });
     it("should default to a single spoc placement", () => {
@@ -1199,18 +1140,6 @@ describe("Reducers", () => {
           .bookmarkTitle
       );
     });
-    describe("PREF_CHANGED", () => {
-      it("should set isCollectionDismissible", () => {
-        const state = DiscoveryStream(undefined, {
-          type: at.PREF_CHANGED,
-          data: {
-            name: "discoverystream.isCollectionDismissible",
-            value: true,
-          },
-        });
-        assert.equal(state.isCollectionDismissible, true);
-      });
-    });
   });
   describe("Search", () => {
     it("should return INITIAL_STATE by default", () => {
@@ -1223,14 +1152,196 @@ describe("Reducers", () => {
       const nextState = Search(undefined, { type: "DISABLE_SEARCH" });
       assert.propertyVal(nextState, "disable", true);
     });
-    it("should set focus to true on FAKE_FOCUS_SEARCH", () => {
-      const nextState = Search(undefined, { type: "FAKE_FOCUS_SEARCH" });
-      assert.propertyVal(nextState, "fakeFocus", true);
-    });
     it("should set focus and disable to false on SHOW_SEARCH", () => {
       const nextState = Search(undefined, { type: "SHOW_SEARCH" });
-      assert.propertyVal(nextState, "fakeFocus", false);
       assert.propertyVal(nextState, "disable", false);
+    });
+  });
+  describe("ExternalComponents", () => {
+    it("should return INITIAL_STATE by default", () => {
+      const nextState = ExternalComponents(undefined, { type: "some_action" });
+      assert.equal(nextState, INITIAL_STATE.ExternalComponents);
+    });
+    it("should return initial state with empty components array", () => {
+      const nextState = ExternalComponents(undefined, { type: "some_action" });
+      assert.deepEqual(nextState.components, []);
+    });
+    it("should update components on REFRESH_EXTERNAL_COMPONENTS", () => {
+      const testComponents = [
+        {
+          type: "SEARCH",
+          componentURL: "chrome://test/content/component.mjs",
+          tagName: "test-component",
+          l10nURLs: [],
+        },
+      ];
+      const nextState = ExternalComponents(undefined, {
+        type: at.REFRESH_EXTERNAL_COMPONENTS,
+        data: testComponents,
+      });
+      assert.deepEqual(nextState.components, testComponents);
+    });
+    it("should preserve other state when updating components", () => {
+      const testComponents = [
+        {
+          type: "SEARCH",
+          componentURL: "chrome://test/content/component.mjs",
+          tagName: "test-component",
+          l10nURLs: [],
+        },
+      ];
+      const prevState = { components: [], otherProp: "value" };
+      const nextState = ExternalComponents(prevState, {
+        type: at.REFRESH_EXTERNAL_COMPONENTS,
+        data: testComponents,
+      });
+      assert.deepEqual(nextState.components, testComponents);
+      assert.propertyVal(nextState, "otherProp", "value");
+    });
+    it("should replace existing components on REFRESH_EXTERNAL_COMPONENTS", () => {
+      const oldComponents = [
+        {
+          type: "OLD",
+          componentURL: "chrome://old/content/component.mjs",
+          tagName: "old-component",
+          l10nURLs: [],
+        },
+      ];
+      const newComponents = [
+        {
+          type: "NEW",
+          componentURL: "chrome://new/content/component.mjs",
+          tagName: "new-component",
+          l10nURLs: [],
+        },
+      ];
+      const prevState = { components: oldComponents };
+      const nextState = ExternalComponents(prevState, {
+        type: at.REFRESH_EXTERNAL_COMPONENTS,
+        data: newComponents,
+      });
+      assert.deepEqual(nextState.components, newComponents);
+      assert.notDeepEqual(nextState.components, oldComponents);
+    });
+  });
+  describe("SportsWidget", () => {
+    const baseMatches = {
+      previous: [],
+      current: [
+        { global_event_id: 1, status_type: "live", home_score: 0 },
+        { global_event_id: 2, status_type: "live", home_score: 1 },
+      ],
+      next: [],
+    };
+    const stateWithMatches = () => ({
+      ...INITIAL_STATE.SportsWidget,
+      data: { teams: [], matches: { ...baseMatches } },
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE writes the incoming array to data.live", () => {
+      const liveEvents = [
+        { global_event_id: 1, home_score: 2 },
+        { global_event_id: 99, home_score: 0 },
+      ];
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: liveEvents, lastLiveUpdated: 12345 },
+      });
+      assert.deepEqual(next.data.live, liveEvents);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE replaces data.live wholesale on each update", () => {
+      // /wcs/live returns the canonical set of in-progress games each tick,
+      // so the reducer simply overwrites; no merge against the prior set.
+      const prev = {
+        ...stateWithMatches(),
+        data: {
+          ...stateWithMatches().data,
+          live: [{ global_event_id: 1, home_score: 0 }],
+        },
+      };
+      const next = SportsWidget(prev, {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: {
+          live: [{ global_event_id: 2, home_score: 5 }],
+          lastLiveUpdated: 12345,
+        },
+      });
+      assert.deepEqual(next.data.live, [{ global_event_id: 2, home_score: 5 }]);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE records lastLiveUpdated at SportsWidget root", () => {
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: [], lastLiveUpdated: 999_000 },
+      });
+      assert.equal(next.lastLiveUpdated, 999_000);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE lastLiveUpdated survives WIDGETS_SPORTS_WIDGET_SET", () => {
+      // Regression: the timestamp used to live under data.matches and was wiped
+      // by every post-match resync.
+      const afterLive = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: [], lastLiveUpdated: 12345 },
+      });
+      const afterResync = SportsWidget(afterLive, {
+        type: at.WIDGETS_SPORTS_WIDGET_SET,
+        data: { teams: [], matches: { previous: [], current: [], next: [] } },
+      });
+      assert.equal(afterResync.lastLiveUpdated, 12345);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE preserves data.matches", () => {
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: {
+          live: [{ global_event_id: 1, home_score: 0 }],
+          lastLiveUpdated: 12345,
+        },
+      });
+      assert.deepEqual(next.data.matches, baseMatches);
+    });
+
+    it("WIDGETS_SPORTS_LIVE_UPDATE preserves other SportsWidget fields", () => {
+      const prev = {
+        ...stateWithMatches(),
+        widgetState: "sports-intro",
+        selectedTeams: ["ENG"],
+      };
+      const next = SportsWidget(prev, {
+        type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+        data: { live: [], lastLiveUpdated: 1 },
+      });
+      assert.equal(next.widgetState, "sports-intro");
+      assert.deepEqual(next.selectedTeams, ["ENG"]);
+    });
+
+    it("WIDGETS_SPORTS_SET_CELEBRATIONS replaces the celebrations map", () => {
+      const celebrations = {
+        endedAt: { 7: 12345 },
+        celebrated: [3, 5],
+      };
+      const next = SportsWidget(stateWithMatches(), {
+        type: at.WIDGETS_SPORTS_SET_CELEBRATIONS,
+        data: celebrations,
+      });
+      assert.deepEqual(next.celebrations, celebrations);
+    });
+
+    it("WIDGETS_SPORTS_SET_CELEBRATIONS preserves other SportsWidget fields", () => {
+      const prev = {
+        ...stateWithMatches(),
+        widgetState: "sports-matches",
+        selectedTeams: ["ENG"],
+      };
+      const next = SportsWidget(prev, {
+        type: at.WIDGETS_SPORTS_SET_CELEBRATIONS,
+        data: { endedAt: {}, celebrated: [1] },
+      });
+      assert.equal(next.widgetState, "sports-matches");
+      assert.deepEqual(next.selectedTeams, ["ENG"]);
+      assert.deepEqual(next.data.matches, baseMatches);
     });
   });
 });

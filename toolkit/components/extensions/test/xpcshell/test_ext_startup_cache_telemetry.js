@@ -62,12 +62,6 @@ add_task(async function test_startupCache_write_byteLength() {
   );
   await StartupCache._saveNow();
 
-  let scalars = TelemetryTestUtils.getProcessScalars("parent");
-  equal(
-    scalars["extensions.startupCache.write_byteLength"],
-    expectedByteLength,
-    "Got the expected value set in the 'extensions.startupCache.write_byteLength' scalar"
-  );
   equal(
     Glean.extensions.startupCacheWriteBytelength.testGetValue(),
     expectedByteLength,
@@ -80,8 +74,7 @@ add_task(async function test_startupCache_write_byteLength() {
 add_task(async function test_startupCache_read_errors() {
   const { StartupCache } = ExtensionParent;
 
-  // Clear any pre-existing keyed scalar.
-  TelemetryTestUtils.getProcessScalars("parent", /* keyed */ true, true);
+  // Clear any pre-existing Glean metrics data.
   Services.fog.testResetFOG();
 
   // Temporarily point StartupCache._file to a path that is
@@ -101,17 +94,6 @@ add_task(async function test_startupCache_read_errors() {
   // been recorded.
   await StartupCache._readData();
 
-  let scalars = TelemetryTestUtils.getProcessScalars(
-    "parent",
-    /* keyed */ true
-  );
-  Assert.deepEqual(
-    scalars["extensions.startupCache.read_errors"],
-    {
-      NotFoundError: 1,
-    },
-    "Got the expected value set in the 'extensions.startupCache.read_errors' keyed scalar"
-  );
   Assert.deepEqual(
     Glean.extensions.startupCacheReadErrors.NotFoundError.testGetValue(),
     1,
@@ -124,8 +106,7 @@ add_task(async function test_startupCache_read_errors() {
 add_task(async function test_startupCache_load_timestamps() {
   const { StartupCache } = ExtensionParent;
 
-  // Clear any pre-existing keyed scalar and Glean metrics data.
-  Services.telemetry.getSnapshotForScalars("main", true);
+  // Clear any pre-existing Glean metrics data.
   Services.fog.testResetFOG();
 
   let gleanMetric = Glean.extensions.startupCacheLoadTime.testGetValue();
@@ -149,25 +130,5 @@ add_task(async function test_startupCache_load_timestamps() {
     typeof gleanMetric,
     "number",
     "Expect extensions.startup_cache_load_time Glean metric to be set to a number"
-  );
-
-  info(
-    "Verify telemetry mirrored into the 'extensions.startupCache.load_time' scalar"
-  );
-
-  const scalars = TelemetryTestUtils.getProcessScalars("parent", false, true);
-  const mirror = scalars["extensions.startupCache.load_time"];
-
-  equal(
-    typeof mirror,
-    "number",
-    "Expect extensions.startupCache.load_time mirrored scalar to be set to a number"
-  );
-
-  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1865850.
-  Assert.lessOrEqual(
-    Math.abs(gleanMetric - mirror),
-    1,
-    `Expect Glean metric ${gleanMetric} and mirrored scalar ${mirror} to be within 1ms of each other.`
   );
 });

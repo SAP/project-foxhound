@@ -7,14 +7,18 @@ add_task(async function () {
   info("Test 1 JSON row selection started");
 
   // Create a tall JSON so that there is a scrollbar.
-  const numRows = 1e3;
+  // Use 10,000 elements which creates 100 buckets (bucket size = 100)
+  const numElements = 1e4;
   const json = JSON.stringify(
-    Array(numRows)
+    Array(numElements)
       .fill()
       .map((_, i) => i)
   );
   const tab = await addJsonViewTab("data:application/json," + json);
 
+  // Array with 10,000 elements creates buckets (100 buckets of 100 elements each)
+  // The root array expands to show 100 bucket rows
+  const numRows = 100;
   is(
     await getElementCount(".treeRow"),
     numRows,

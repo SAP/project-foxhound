@@ -10,7 +10,7 @@ const TOOL_DELAY = 0;
 add_task(async function () {
   await addTab(TEST_URI);
 
-  startTelemetry();
+  Services.fog.testResetFOG();
 
   await openAndCloseToolbox(1, TOOL_DELAY, "inspector");
   checkResults();
@@ -19,33 +19,10 @@ add_task(async function () {
 });
 
 function checkResults() {
-  // For help generating these tests use generateTelemetryTests("DEVTOOLS_")
-  // here.
-  checkTelemetry("DEVTOOLS_TOOLBOX_OPENED_COUNT", "", { 0: 1, 1: 0 }, "array");
-  checkTelemetry(
-    "DEVTOOLS_INSPECTOR_OPENED_COUNT",
-    "",
-    { 0: 1, 1: 0 },
-    "array"
-  );
-  checkTelemetry("DEVTOOLS_RULEVIEW_OPENED_COUNT", "", { 0: 1, 1: 0 }, "array");
-  checkTelemetry(
-    "DEVTOOLS_TOOLBOX_TIME_ACTIVE_SECONDS",
-    "",
-    null,
-    "hasentries"
-  );
-  checkTelemetry(
-    "DEVTOOLS_INSPECTOR_TIME_ACTIVE_SECONDS",
-    "",
-    null,
-    "hasentries"
-  );
-  checkTelemetry(
-    "DEVTOOLS_RULEVIEW_TIME_ACTIVE_SECONDS",
-    "",
-    null,
-    "hasentries"
-  );
-  checkTelemetry("DEVTOOLS_TOOLBOX_HOST", "", null, "hasentries");
+  is(1, Glean.devtools.toolboxOpenedCount.testGetValue());
+  is(1, Glean.devtools.inspectorOpenedCount.testGetValue());
+  Assert.greater(Glean.devtools.toolboxTimeActive.testGetValue().sum, 0);
+  Assert.greater(Glean.devtools.inspectorTimeActive.testGetValue().sum, 0);
+  Assert.greater(Glean.devtools.ruleviewTimeActive.testGetValue().sum, 0);
+  Assert.greater(Glean.devtools.toolboxHost.testGetValue().values[0], 0);
 }

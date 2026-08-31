@@ -7,7 +7,7 @@ package org.mozilla.fenix.reviewprompt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.settings.SupportUtils
 
 /**
@@ -19,11 +19,11 @@ class CustomReviewPromptNavigationMiddleware(
 ) : Middleware<CustomReviewPromptState, CustomReviewPromptAction> {
 
     override fun invoke(
-        context: MiddlewareContext<CustomReviewPromptState, CustomReviewPromptAction>,
+        store: Store<CustomReviewPromptState, CustomReviewPromptAction>,
         next: (CustomReviewPromptAction) -> Unit,
         action: CustomReviewPromptAction,
     ) {
-        val events = (context.store as CustomReviewPromptStore).navigationEvents
+        val events = (store as CustomReviewPromptStore).navigationEvents
         when (action) {
             CustomReviewPromptAction.RateButtonClicked -> {
                 scope.launch {
@@ -34,7 +34,7 @@ class CustomReviewPromptNavigationMiddleware(
 
             CustomReviewPromptAction.LeaveFeedbackButtonClicked -> {
                 scope.launch {
-                    events.emit(CustomReviewPromptNavigationEvent.OpenNewTab(SupportUtils.ANDROID_SUPPORT_SUMO_URL))
+                    events.emit(CustomReviewPromptNavigationEvent.OpenInNewTab(SupportUtils.ANDROID_SUPPORT_SUMO_URL))
                     events.emit(CustomReviewPromptNavigationEvent.Dismiss)
                 }
             }
@@ -48,14 +48,22 @@ class CustomReviewPromptNavigationMiddleware(
     }
 }
 
-/** Events to emit to the fragment to handle navigation side-effects. */
+/**
+ * Events to emit to the fragment to handle navigation side-effects.
+ */
 sealed class CustomReviewPromptNavigationEvent {
-    /** Dismiss the custom review prompt bottom sheet. */
+    /**
+     * Dismiss the custom review prompt bottom sheet.
+     */
     data object Dismiss : CustomReviewPromptNavigationEvent()
 
-    /** Call the Play In-App Review API to show the review prompt. */
+    /**
+     * Call the Play In-App Review API to show the review prompt.
+     */
     data object OpenPlayStoreReviewPrompt : CustomReviewPromptNavigationEvent()
 
-    /** Open the given [url] in a new tab. */
-    data class OpenNewTab(val url: String) : CustomReviewPromptNavigationEvent()
+    /**
+     * Open a [url] in a new tab.
+     */
+    data class OpenInNewTab(val url: String) : CustomReviewPromptNavigationEvent()
 }

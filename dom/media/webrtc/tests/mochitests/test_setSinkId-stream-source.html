@@ -1,14 +1,15 @@
 <!DOCTYPE HTML>
 <html>
 <head>
-<title>Test setSinkId() on an Audio element with MediaStream source</title>
-<script src="/tests/SimpleTest/SimpleTest.js"></script>
-<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<script src="mediaStreamPlayback.js"></script>
 </head>
 <script>
 "use strict";
 
-SimpleTest.requestFlakyTimeout("delays to trigger races");
+createHTML({
+  title: "Test setSinkId() on an Audio element with MediaStream source",
+  bug: "1869043",
+});
 
 function maybeTodoIs(a, b, msg) {
   if (Object.is(a, b)) {
@@ -18,7 +19,7 @@ function maybeTodoIs(a, b, msg) {
   }
 }
 
-add_task(async () => {
+runTest(async () => {
   await SpecialPowers.pushPrefEnv({set: [
     // skip selectAudioOutput/getUserMedia permission prompt
     ["media.navigator.permission.disabled", true],

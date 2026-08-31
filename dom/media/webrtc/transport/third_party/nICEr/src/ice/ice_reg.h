@@ -34,10 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef _ice_reg_h
 #define _ice_reg_h
-#ifdef __cplusplus
-using namespace std;
-extern "C" {
-#endif /* __cplusplus */
 
 #define NR_ICE_REG_PREF_TYPE_HOST           "ice.pref.type.host"
 #define NR_ICE_REG_PREF_TYPE_RELAYED        "ice.pref.type.relayed"
@@ -74,8 +70,5 @@ extern "C" {
 #define NR_ICE_REG_USE_NR_RESOLVER_FOR_TCP  "ice.tcp.use_nr_resolver"
 #define NR_ICE_REG_USE_NR_RESOLVER_FOR_UDP  "ice.udp.use_nr_resolver"
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 #endif
 

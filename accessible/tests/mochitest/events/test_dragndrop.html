@@ -18,64 +18,36 @@
 
   <script type="application/javascript">
 
-    /**
-     * Do tests.
-     */
-    var gQueue = null;
-
-    // aria grabbed invoker
-    function changeGrabbed(aNodeOrID, aGrabValue) {
-      this.DOMNode = getNode(aNodeOrID);
-
-      this.invoke = function changeGrabbed_invoke() {
-        if (aGrabValue != undefined) {
-          this.DOMNode.setAttribute("aria-grabbed", aGrabValue);
-        }
-      };
-
-      this.check = function changeGrabbed_check() {
-        testAttrs(aNodeOrID, {"grabbed": aGrabValue}, true);
-      };
-
-      this.getID = function changeGrabbed_getID() {
-        return prettyName(aNodeOrID) + " aria-grabbed changed";
-      };
-    }
-
-    // aria dropeffect invoker
-    function changeDropeffect(aNodeOrID, aDropeffectValue) {
-      this.DOMNode = getNode(aNodeOrID);
-
-      this.invoke = function changeDropeffect_invoke() {
-        if (aDropeffectValue != undefined) {
-          this.DOMNode.setAttribute("aria-dropeffect", aDropeffectValue);
-        }
-      };
-
-      this.check = function changeDropeffect_check() {
-        testAttrs(aNodeOrID, {"dropeffect": aDropeffectValue}, true);
-      };
-
-      this.getID = function changeDropeffect_getID() {
-        return prettyName(aNodeOrID) + " aria-dropeffect changed";
-      };
-    }
-
-    function doTests() {
+    async function doTests() {
       // Test aria attribute mutation events
-      gQueue = new eventQueue(nsIAccessibleEvent.EVENT_OBJECT_ATTRIBUTE_CHANGED);
-
       let id = "grabbable";
-      gQueue.push(new changeGrabbed(id, "true"));
-      gQueue.push(new changeGrabbed(id, "false"));
+
+      let p = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, id);
+      getNode(id).setAttribute("aria-grabbed", "true");
+      await p;
+      testAttrs(id, {"grabbed": "true"}, true);
+
+      p = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, id);
+      getNode(id).setAttribute("aria-grabbed", "false");
+      await p;
+      testAttrs(id, {"grabbed": "false"}, true);
+
       todo(false, "uncomment this test when 472142 is fixed.");
-      // gQueue.push(new changeGrabbed(id, "undefined"));
+      // getNode(id).setAttribute("aria-grabbed", "undefined");
 
       id = "dropregion";
-      gQueue.push(new changeDropeffect(id, "copy"));
-      gQueue.push(new changeDropeffect(id, "execute"));
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      p = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, id);
+      getNode(id).setAttribute("aria-dropeffect", "copy");
+      await p;
+      testAttrs(id, {"dropeffect": "copy"}, true);
+
+      p = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, id);
+      getNode(id).setAttribute("aria-dropeffect", "execute");
+      await p;
+      testAttrs(id, {"dropeffect": "execute"}, true);
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

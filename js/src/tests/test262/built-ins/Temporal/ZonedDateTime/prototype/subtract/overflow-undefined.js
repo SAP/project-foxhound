@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -26,5 +26,7 @@ const explicit = datetime.subtract(duration, { overflow: undefined });
 assert.sameValue(explicit.epochNanoseconds, -2678400_000_000_001n, "default overflow is constrain");
 const implicit = datetime.subtract(duration, {});
 assert.sameValue(implicit.epochNanoseconds, -2678400_000_000_001n, "default overflow is constrain");
+const lambda = datetime.subtract(duration, () => {});
+assert.sameValue(lambda.epochNanoseconds, -2678400_000_000_001n, "default overflow is constrain");
 
 reportCompare(0, 0);

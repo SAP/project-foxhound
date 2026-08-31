@@ -10,8 +10,12 @@
  * selections, and whether or not the current time state is out of range
  * or off step.
  *
- * @param {Object} props
+ * @param {object} props
  *        {
+ *          {String} type: "date", "time", or "datetime-local"
+ *          {Number} year [optional]
+ *          {Number} month [optional]
+ *          {Number} day [optional]
  *          {Date} min
  *          {Date} max
  *          {Number} step
@@ -21,6 +25,28 @@
 function TimeKeeper(props) {
   this.props = props;
   this.state = { time: new Date(0), ranges: {} };
+  if (this.props.type == "datetime-local") {
+    if (
+      this.props.year !== undefined &&
+      this.props.month !== undefined &&
+      this.props.day !== undefined
+    ) {
+      this.setState({
+        year: this.props.year,
+        month: this.props.month,
+        day: this.props.day,
+      });
+      return;
+    }
+    // The date picker defaults to today. Do the same here so that valid
+    // time ranges match the focused date.
+    const today = new Date();
+    this.setState({
+      year: today.getFullYear(),
+      month: today.getMonth(),
+      day: today.getDate(),
+    });
+  }
 }
 
 {
@@ -35,7 +61,8 @@ function TimeKeeper(props) {
   TimeKeeper.prototype = {
     /**
      * Getters for different time units.
-     * @return {Number}
+     *
+     * @return {number}
      */
     get hour() {
       return this.state.time.getUTCHours();
@@ -58,7 +85,8 @@ function TimeKeeper(props) {
 
     /**
      * Get the ranges of different time units.
-     * @return {Object}
+     *
+     * @return {object}
      *         {
      *           {Array<Number>} dayPeriod
      *           {Array<Number>} hours
@@ -74,8 +102,11 @@ function TimeKeeper(props) {
     /**
      * Set new time, check if the current state is valid, and set ranges.
      *
-     * @param {Object} timeState: The new time
+     * @param {object} timeState: The new time
      *        {
+     *          {Number} year [optional]
+     *          {Number} month [optional]
+     *          {Number} day [optional]
      *          {Number} hour [optional]
      *          {Number} minute [optional]
      *          {Number} second [optional]
@@ -83,8 +114,21 @@ function TimeKeeper(props) {
      *        }
      */
     setState(timeState) {
-      const { min, max } = this.props;
-      const { hour, minute, second, millisecond } = timeState;
+      const { type, min, max } = this.props;
+      const { year, month, day, hour, minute, second, millisecond } = timeState;
+      let dateChanged;
+
+      if (year !== undefined && month !== undefined && day !== undefined) {
+        dateChanged =
+          this.state.time.getUTCFullYear() != year ||
+          this.state.time.getUTCMonth() != month ||
+          this.state.time.getUTCDate() != day;
+        if (dateChanged) {
+          this.state.time.setUTCFullYear(year);
+          this.state.time.setUTCMonth(month);
+          this.state.time.setUTCDate(day);
+        }
+      }
 
       if (hour != undefined) {
         this.state.time.setUTCHours(hour);
@@ -100,15 +144,27 @@ function TimeKeeper(props) {
       }
 
       this.state.isOffStep = this._isOffStep(this.state.time);
-      this.state.isOutOfRange = this.state.time < min || this.state.time > max;
+      // If type="time" and min > max, the valid range wraps across midnight.
+      // Otherwise, the valid range is between min and max.
+      this.state.isOutOfRange =
+        type == "time" && min > max
+          ? this.state.time < min && this.state.time > max
+          : this.state.time < min || this.state.time > max;
       this.state.isInvalid = this.state.isOutOfRange || this.state.isOffStep;
 
-      this._setRanges(this.dayPeriod, this.hour, this.minute, this.second);
+      this._setRanges(
+        this.dayPeriod,
+        this.hour,
+        this.minute,
+        this.second,
+        dateChanged
+      );
     },
 
     /**
      * Set day-period (AM/PM)
-     * @param {Number} dayPeriod: 0 as AM, 12 as PM
+     *
+     * @param {number} dayPeriod: 0 as AM, 12 as PM
      */
     setDayPeriod(dayPeriod) {
       if (dayPeriod == this.dayPeriod) {
@@ -124,7 +180,8 @@ function TimeKeeper(props) {
 
     /**
      * Set hour in 24hr format (0 ~ 23)
-     * @param {Number} hour
+     *
+     * @param {number} hour
      */
     setHour(hour) {
       this.setState({ hour });
@@ -132,7 +189,8 @@ function TimeKeeper(props) {
 
     /**
      * Set minute (0 ~ 59)
-     * @param {Number} minute
+     *
+     * @param {number} minute
      */
     setMinute(minute) {
       this.setState({ minute });
@@ -140,7 +198,8 @@ function TimeKeeper(props) {
 
     /**
      * Set second (0 ~ 59)
-     * @param {Number} second
+     *
+     * @param {number} second
      */
     setSecond(second) {
       this.setState({ second });
@@ -148,7 +207,8 @@ function TimeKeeper(props) {
 
     /**
      * Set millisecond (0 ~ 999)
-     * @param {Number} millisecond
+     *
+     * @param {number} millisecond
      */
     setMillisecond(millisecond) {
       this.setState({ millisecond });
@@ -158,31 +218,38 @@ function TimeKeeper(props) {
      * Calculate the range of possible choices for each time unit.
      * Reuse the old result if the input has not changed.
      *
-     * @param {Number} dayPeriod
-     * @param {Number} hour
-     * @param {Number} minute
-     * @param {Number} second
+     * @param {number} dayPeriod
+     * @param {number} hour
+     * @param {number} minute
+     * @param {number} second
+     * @param {boolean} dateChanged
      */
-    _setRanges(dayPeriod, hour, minute, second) {
-      this.state.ranges.dayPeriod =
-        this.state.ranges.dayPeriod || this._getDayPeriodRange();
+    _setRanges(dayPeriod, hour, minute, second, dateChanged = false) {
+      if (this.state.ranges.dayPeriod === undefined || dateChanged) {
+        this.state.ranges.dayPeriod = this._getDayPeriodRange();
+      }
 
-      if (this.state.dayPeriod != dayPeriod) {
+      if (this.state.dayPeriod != dayPeriod || dateChanged) {
         this.state.ranges.hours = this._getHoursRange(dayPeriod);
       }
 
-      if (this.state.hour != hour) {
+      if (this.state.hour != hour || dateChanged) {
         this.state.ranges.minutes = this._getMinutesRange(hour);
       }
 
-      if (this.state.hour != hour || this.state.minute != minute) {
+      if (
+        this.state.hour != hour ||
+        this.state.minute != minute ||
+        dateChanged
+      ) {
         this.state.ranges.seconds = this._getSecondsRange(hour, minute);
       }
 
       if (
         this.state.hour != hour ||
         this.state.minute != minute ||
-        this.state.second != second
+        this.state.second != second ||
+        dateChanged
       ) {
         this.state.ranges.milliseconds = this._getMillisecondsRange(
           hour,
@@ -201,7 +268,7 @@ function TimeKeeper(props) {
     /**
      * Get the AM/PM range. Return an empty array if in 24hr mode.
      *
-     * @return {Array<Number>}
+     * @return {Array<number>}
      */
     _getDayPeriodRange() {
       if (this.props.format == TIME_FORMAT_24) {
@@ -222,8 +289,8 @@ function TimeKeeper(props) {
     /**
      * Get the hours range.
      *
-     * @param  {Number} dayPeriod
-     * @return {Array<Number>}
+     * @param  {number} dayPeriod
+     * @return {Array<number>}
      */
     _getHoursRange(dayPeriod) {
       const { format } = this.props;
@@ -238,8 +305,8 @@ function TimeKeeper(props) {
     /**
      * Get the minutes range
      *
-     * @param  {Number} hour
-     * @return {Array<Number>}
+     * @param  {number} hour
+     * @return {Array<number>}
      */
     _getMinutesRange(hour) {
       const start = hour * HOUR_IN_MS;
@@ -253,9 +320,9 @@ function TimeKeeper(props) {
     /**
      * Get the seconds range
      *
-     * @param  {Number} hour
-     * @param  {Number} minute
-     * @return {Array<Number>}
+     * @param  {number} hour
+     * @param  {number} minute
+     * @return {Array<number>}
      */
     _getSecondsRange(hour, minute) {
       const start = hour * HOUR_IN_MS + minute * MINUTE_IN_MS;
@@ -268,10 +335,11 @@ function TimeKeeper(props) {
 
     /**
      * Get the milliseconds range
-     * @param  {Number} hour
-     * @param  {Number} minute
-     * @param  {Number} second
-     * @return {Array<Number>}
+     *
+     * @param  {number} hour
+     * @param  {number} minute
+     * @param  {number} second
+     * @return {Array<number>}
      */
     _getMillisecondsRange(hour, minute, second) {
       const start =
@@ -286,23 +354,36 @@ function TimeKeeper(props) {
     /**
      * Calculate the range of possible steps.
      *
-     * @param  {Number} startValue: Start time in ms
-     * @param  {Number} endValue: End time in ms
-     * @param  {Number} minStep: Smallest step in ms for the time unit
+     * @param  {number} startValue: Start time in ms
+     * @param  {number} endValue: End time in ms
+     * @param  {number} minStep: Smallest step in ms for the time unit
      * @param  {Function} formatter: Outputs time in a particular format
-     * @return {Array<Object>}
+     * @return {Array<object>}
      *         {
      *           {Number} value
      *           {Boolean} enabled
      *         }
      */
     _getSteps(startValue, endValue, minStep, formatter) {
-      const { min, max, step } = this.props;
+      const { type, min, max, step } = this.props;
+      const { time: currentTime } = this.state;
       // The timeStep should be big enough so that there won't be
       // duplications. Ex: minimum step for minute should be 60000ms,
       // if smaller than that, next step might return the same minute.
       const timeStep = Math.max(minStep, step);
 
+      if (type == "datetime-local") {
+        // For datetime-local pickers, the min/max values have a date component.
+        // Append the current date to the start/end values so that we can
+        // compare against the min/max.
+        const currentDate = Date.UTC(
+          currentTime.getUTCFullYear(),
+          currentTime.getUTCMonth(),
+          currentTime.getUTCDate()
+        );
+        startValue += currentDate;
+        endValue += currentDate;
+      }
       // Make sure the starting point and end point is not off step
       let time =
         min.valueOf() +
@@ -318,9 +399,13 @@ function TimeKeeper(props) {
           value: formatter(time),
           // Check if the value is within the min and max. If it's out of range,
           // also check for the case when minStep is too large, and has stepped out
-          // of range when it should be enabled.
+          // of range when it should be enabled. If type="time" and min > max, the
+          // valid values wrap across midnight.
           enabled:
             (time >= min.valueOf() && time <= max.valueOf()) ||
+            (type == "time" &&
+              min > max &&
+              (time >= min.valueOf() || time <= max.valueOf())) ||
             (time > maxValue &&
               startValue <= maxValue &&
               endValue >= maxValue &&
@@ -336,10 +421,10 @@ function TimeKeeper(props) {
      * A generic function for stepping up or down from a value of a range.
      * It stops at the upper and lower limits.
      *
-     * @param  {Number} current: The current value
-     * @param  {Number} offset: The offset relative to current value
-     * @param  {Array<Object>} range: List of possible steps
-     * @return {Number} The new value
+     * @param  {number} current: The current value
+     * @param  {number} offset: The offset relative to current value
+     * @param  {Array<object>} range: List of possible steps
+     * @return {number} The new value
      */
     _step(current, offset, range) {
       const index = range.findIndex(step => step.value == current);
@@ -353,7 +438,7 @@ function TimeKeeper(props) {
     /**
      * Step up or down AM/PM
      *
-     * @param  {Number} offset
+     * @param  {number} offset
      */
     stepDayPeriodBy(offset) {
       const current = this.dayPeriod;
@@ -373,7 +458,7 @@ function TimeKeeper(props) {
     /**
      * Step up or down hours
      *
-     * @param  {Number} offset
+     * @param  {number} offset
      */
     stepHourBy(offset) {
       const current = this.hour;
@@ -387,7 +472,7 @@ function TimeKeeper(props) {
     /**
      * Step up or down minutes
      *
-     * @param  {Number} offset
+     * @param  {number} offset
      */
     stepMinuteBy(offset) {
       const current = this.minute;
@@ -401,7 +486,7 @@ function TimeKeeper(props) {
     /**
      * Step up or down seconds
      *
-     * @param  {Number} offset
+     * @param  {number} offset
      */
     stepSecondBy(offset) {
       const current = this.second;
@@ -415,7 +500,7 @@ function TimeKeeper(props) {
     /**
      * Step up or down milliseconds
      *
-     * @param  {Number} offset
+     * @param  {number} offset
      */
     stepMillisecondBy(offset) {
       const current = this.milliseconds;
@@ -434,7 +519,7 @@ function TimeKeeper(props) {
      * Checks if the time state is off step.
      *
      * @param  {Date} time
-     * @return {Boolean}
+     * @return {boolean}
      */
     _isOffStep(time) {
       const { min, step } = this.props;

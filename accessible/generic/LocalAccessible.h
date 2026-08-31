@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _LocalAccessible_H_
-#define _LocalAccessible_H_
+#ifndef LocalAccessible_H_
+#define LocalAccessible_H_
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/a11y/Accessible.h"
@@ -25,6 +24,8 @@ struct nsRoleMapEntry;
 class nsIFrame;
 
 class nsAttrValue;
+
+enum class AttrModType : uint8_t;  // Defined in nsIMutationObserver.h
 
 namespace mozilla::dom {
 class Element;
@@ -87,6 +88,10 @@ class LocalAccessible : public nsISupports, public Accessible {
  public:
   LocalAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
+  LocalAccessible() = delete;
+  LocalAccessible(const LocalAccessible&) = delete;
+  LocalAccessible& operator=(const LocalAccessible&) = delete;
+
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(LocalAccessible)
 
@@ -142,7 +147,8 @@ class LocalAccessible : public nsISupports, public Accessible {
   /**
    * Get the description of this accessible.
    */
-  virtual void Description(nsString& aDescription) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
 
   /**
    * Get the value of this accessible.
@@ -152,7 +158,9 @@ class LocalAccessible : public nsISupports, public Accessible {
   /**
    * Get the name of this accessible.
    */
-  virtual ENameValueFlag Name(nsString& aName) const override;
+  virtual ENameValueFlag Name(nsString& aName) const override final;
+
+  virtual ENameValueFlag DirectName(nsString& aName) const;
 
   /**
    * Maps ARIA state attributes to state of accessible. Note the given state
@@ -164,11 +172,6 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual void ApplyARIAState(uint64_t* aState) const;
 
   /**
-   * Return enumerated accessible role (see constants in Role.h).
-   */
-  virtual mozilla::a11y::role Role() const override;
-
-  /**
    * Return accessible role specified by ARIA (see constants in
    * roles).
    */
@@ -178,7 +181,7 @@ class LocalAccessible : public nsISupports, public Accessible {
    * Returns enumerated accessible role from native markup (see constants in
    * Role.h). Doesn't take into account ARIA roles.
    */
-  virtual mozilla::a11y::role NativeRole() const;
+  virtual mozilla::a11y::role NativeRole() const override;
 
   virtual uint64_t State() override;
 
@@ -226,6 +229,12 @@ class LocalAccessible : public nsISupports, public Accessible {
    * Return true if native unavailable state present.
    */
   virtual bool NativelyUnavailable() const;
+
+  /**
+   * Return true if this accessible and all of its descendants have only
+   * plain-content roles (text, images, generic containers, etc.).
+   */
+  bool IsOnlyPlainContent() const;
 
   virtual already_AddRefed<AccAttributes> Attributes() override;
 
@@ -427,6 +436,12 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual void ScrollToPoint(uint32_t aCoordinateType, int32_t aX,
                              int32_t aY) override;
 
+  virtual bool IsScrollable() const override;
+
+  virtual bool IsPopover() const override;
+
+  virtual bool IsEditable() const override;
+
   /**
    * Get a pointer to accessibility interface for this node, which is specific
    * to the OS/accessibility toolkit we're running on.
@@ -438,13 +453,13 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual bool GetStringARIAAttr(nsAtom* aAttrName,
                                  nsAString& aAttrValue) const override;
 
+  virtual bool ARIAAttrValueIs(nsAtom* aAttrName,
+                               nsAtom* aAttrValue) const override;
+
+  virtual bool HasARIAAttr(nsAtom* aAttrName) const override;
+
   //////////////////////////////////////////////////////////////////////////////
   // Downcasting and types
-
-  inline bool IsAbbreviation() const {
-    return mContent &&
-           mContent->IsAnyOfHTMLElements(nsGkAtoms::abbr, nsGkAtoms::acronym);
-  }
 
   ApplicationAccessible* AsApplication();
 
@@ -489,6 +504,8 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
 
   virtual bool DoAction(uint8_t aIndex) const override;
+
+  virtual bool HasCustomActions() const override;
 
   virtual KeyBinding AccessKey() const override;
 
@@ -601,7 +618,7 @@ class LocalAccessible : public nsISupports, public Accessible {
    * document. This method is only used for ID changes and therefore does not
    * need to work for direct element references via ariaActiveDescendantElement.
    */
-  bool IsActiveDescendantId(LocalAccessible** aWidget = nullptr) const;
+  bool IsActiveDescendant(LocalAccessible** aWidget = nullptr) const;
 
   /**
    * Return true if the accessible is defunct.
@@ -745,9 +762,13 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   virtual float Opacity() const override;
 
+  virtual WritingMode GetWritingMode() const override;
+
   virtual void DOMNodeID(nsString& aID) const override;
 
   virtual void DOMNodeClass(nsString& aClass) const override;
+
+  virtual int32_t HeadingLevel() const override;
 
   virtual void LiveRegionAttributes(nsAString* aLive, nsAString* aRelevant,
                                     Maybe<bool>* aAtomic,
@@ -791,7 +812,7 @@ class LocalAccessible : public nsISupports, public Accessible {
    * relevant events.
    */
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState);
 
@@ -853,17 +874,6 @@ class LocalAccessible : public nsISupports, public Accessible {
   //////////////////////////////////////////////////////////////////////////////
   // Miscellaneous helpers
 
-  /**
-   * Return ARIA role (helper method).
-   */
-  mozilla::a11y::role ARIATransformRole(mozilla::a11y::role aRole) const;
-
-  /**
-   * Return the minimum role that should be used as a last resort if the element
-   * does not have a more specific role.
-   */
-  mozilla::a11y::role GetMinimumRole(mozilla::a11y::role aRole) const;
-
   //////////////////////////////////////////////////////////////////////////////
   // Name helpers
 
@@ -875,7 +885,13 @@ class LocalAccessible : public nsISupports, public Accessible {
   /**
    * Returns the accessible description specified by ARIA.
    */
-  void ARIADescription(nsString& aDescription) const;
+  bool ARIADescription(nsString& aDescription) const;
+
+  /**
+   * Returns the accessible "tooltip", usually derived from title attribute in
+   * HTML or tooltiptext in XUL.
+   */
+  bool Tooltip(nsString& aTooltip) const;
 
   /**
    * Returns the accessible name specified for this control using XUL
@@ -1016,10 +1032,6 @@ class LocalAccessible : public nsISupports, public Accessible {
   friend class AccGroupInfo;
 
  private:
-  LocalAccessible() = delete;
-  LocalAccessible(const LocalAccessible&) = delete;
-  LocalAccessible& operator=(const LocalAccessible&) = delete;
-
   /**
    * Traverses the accessible's parent chain in search of an accessible with
    * a frame. Returns the frame when found. Includes special handling for
@@ -1027,18 +1039,15 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   nsIFrame* FindNearestAccessibleAncestorFrame();
 
-  /*
-   * This function assumes that the current role is not valid. It searches for a
-   * fallback role in the role attribute string, and returns it. If there is no
-   * valid fallback role in the role attribute string, the function returns the
-   * native role. The aRolesToSkip parameter will cause the function to skip any
-   * roles found in the role attribute string when searching for the next valid
-   * role.
-   */
-  role FindNextValidARIARole(
-      std::initializer_list<nsStaticAtom*> aRolesToSkip) const;
+  LocalAccessible* GetCommandForDetailsRelation() const;
 
   LocalAccessible* GetPopoverTargetDetailsRelation() const;
+
+  LocalAccessible* GetAnchorPositionTargetDetailsRelation() const;
+
+  LocalAccessible* GetPopoverTargetDescribedByRelation() const;
+
+  LocalAccessible* GetCommandForDescribedByRelation() const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

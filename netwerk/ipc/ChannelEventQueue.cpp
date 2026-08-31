@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set sw=2 ts=8 et tw=80 :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +5,6 @@
 #include "ChannelEventQueue.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 #include "nsIChannel.h"
 #include "mozilla/dom/Document.h"
 #include "nsThreadUtils.h"
@@ -38,7 +34,7 @@ void ChannelEventQueue::FlushQueue() {
   // method is running.
   nsCOMPtr<nsISupports> kungFuDeathGrip;
   kungFuDeathGrip = mOwner;
-  mozilla::Unused << kungFuDeathGrip;  // Not used in this function
+  (void)kungFuDeathGrip;  // Not used in this function
 
   MOZ_ASSERT(mFlushing);
 
@@ -163,7 +159,7 @@ void ChannelEventQueue::ResumeInternal() {
     target = mEventQueue[0]->GetEventTarget();
     MOZ_ASSERT(target);
 
-    Unused << NS_WARN_IF(
+    (void)NS_WARN_IF(
         NS_FAILED(target->Dispatch(event.forget(), NS_DISPATCH_NORMAL)));
   }
 }

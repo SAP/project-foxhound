@@ -10,7 +10,7 @@
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLPosition.h"
 
-#include "src/tint/lang/wgsl/extension.h"
+#include "src/tint/lang/wgsl/enums.h"
 #include "src/tint/lang/wgsl/reader/options.h"
 #include "tint/tint.h"
 
@@ -23,7 +23,9 @@ static bool validate_wgsl(ErrorReporter& reporter,
     // Enable the WGSL optional features that Skia might rely on.
     tint::wgsl::reader::Options options;
     for (auto extension : {tint::wgsl::Extension::kChromiumExperimentalPixelLocal,
-                           tint::wgsl::Extension::kDualSourceBlending}) {
+                           tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch,
+                           tint::wgsl::Extension::kDualSourceBlending,
+                           tint::wgsl::Extension::kF16}) {
         options.allowed_features.extensions.insert(extension);
     }
     options.allowed_features.features.insert(

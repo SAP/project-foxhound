@@ -36,6 +36,26 @@ DATA_PATH = Path(__file__).parent.joinpath("data")
             "whatsnew-62.0.3.yml",
             "Firefox-64.0b13.update.json",
         ),
+        (
+            {
+                "release-type": "release",
+                "product": "firefox",
+                "version": GeckoVersion.parse("140.0"),
+                "blob-type": "wnp",
+            },
+            "whatsnew-firefox-com.yml",
+            "Firefox-140.0.update.json",
+        ),
+        (
+            {
+                "release-type": "release",
+                "product": "firefox",
+                "version": GeckoVersion.parse("140.0.1"),
+                "blob-type": "wnp",
+            },
+            "whatsnew-firefox-com.yml",
+            "Firefox-140.0.1.update.json",
+        ),
     ],
 )
 def test_update_properties(context, config_file, output_file):

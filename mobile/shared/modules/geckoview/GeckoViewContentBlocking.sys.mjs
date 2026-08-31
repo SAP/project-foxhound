@@ -97,14 +97,13 @@ export class GeckoViewContentBlocking extends GeckoViewModule {
     debug`onContentBlockingEvent matchedTrackingLists: ${loadedLists}`;
 
     const message = {
-      type: "GeckoView:ContentBlockingEvent",
       uri,
       category: aEvent,
       blockedList,
       loadedLists,
     };
 
-    this.eventDispatcher.sendRequest(message);
+    this.eventDispatcher.sendRequest("GeckoView:ContentBlockingEvent", message);
   }
 }
 

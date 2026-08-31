@@ -13,6 +13,8 @@
 #include "include/core/SkScalar.h"
 #include "src/shaders/gradients/SkGradientBaseShader.h"
 
+#include <optional>
+
 class SkArenaAlloc;
 class SkMatrix;
 class SkRasterPipeline;
@@ -50,15 +52,14 @@ public:
 
     enum class Type { kRadial, kStrip, kFocal };
 
-    static bool MapToUnitX(const SkPoint& startCenter,
-                           const SkPoint& endCenter,
-                           SkMatrix* dstMatrix);
+    static std::optional<SkMatrix> MapToUnitX(const SkPoint& startCenter,
+                                              const SkPoint& endCenter);
 
     static sk_sp<SkShader> Create(const SkPoint& start,
                                   SkScalar startRadius,
                                   const SkPoint& end,
                                   SkScalar endRadius,
-                                  const Descriptor&,
+                                  const SkGradient&,
                                   const SkMatrix* localMatrix);
 
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
@@ -78,7 +79,7 @@ public:
                       SkScalar r0,
                       const SkPoint& c1,
                       SkScalar r1,
-                      const Descriptor&,
+                      const SkGradient&,
                       Type,
                       const SkMatrix&,
                       const FocalData&);

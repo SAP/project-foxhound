@@ -116,8 +116,8 @@ async function userAgentStylesVisible(inspector, view) {
     await selectNode(data.selector, inspector);
     await compareAppliedStylesWithUI(inspector, view, "ua");
 
-    userRules = view._elementStyle.rules.filter(rule => rule.editor.isEditable);
-    uaRules = view._elementStyle.rules.filter(rule => !rule.editor.isEditable);
+    userRules = view.elementStyle.rules.filter(rule => rule.editor.isEditable);
+    uaRules = view.elementStyle.rules.filter(rule => !rule.editor.isEditable);
     is(userRules.length, data.numUserRules, "Correct number of user rules");
     Assert.greater(uaRules.length, data.numUARules, "Has UA rules");
   }
@@ -132,7 +132,7 @@ async function userAgentStylesVisible(inspector, view) {
   ok(
     uaRules.some(rule => {
       const matchedSelectors = rule.matchedSelectorIndexes.map(
-        index => rule.selector.selectors[index]
+        index => rule.domRule.selectors[index]
       );
       return matchedSelectors.includes(":any-link");
     }),
@@ -141,7 +141,7 @@ async function userAgentStylesVisible(inspector, view) {
   ok(
     uaRules.some(rule => {
       const matchedSelectors = rule.matchedSelectorIndexes.map(
-        index => rule.selector.selectors[index]
+        index => rule.domRule.selectors[index]
       );
       return matchedSelectors.includes(":link");
     }),
@@ -165,8 +165,8 @@ async function userAgentStylesNotVisible(inspector, view) {
     await selectNode(data.selector, inspector);
     await compareAppliedStylesWithUI(inspector, view);
 
-    userRules = view._elementStyle.rules.filter(rule => rule.editor.isEditable);
-    uaRules = view._elementStyle.rules.filter(rule => !rule.editor.isEditable);
+    userRules = view.elementStyle.rules.filter(rule => rule.editor.isEditable);
+    uaRules = view.elementStyle.rules.filter(rule => !rule.editor.isEditable);
     is(userRules.length, data.numUserRules, "Correct number of user rules");
     is(uaRules.length, data.numUARules, "No UA rules");
   }
@@ -190,13 +190,9 @@ async function compareAppliedStylesWithUI(inspector, view, filter) {
   }
   entries = [...entryMap.values()];
 
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
   await waitFor(() => elementStyle.rules.length === entries.length);
-  is(
-    elementStyle.rules.length,
-    entries.length,
-    "Should have correct number of rules (" + entries.length + ")"
-  );
+  assertDisplayedRulesCount(view, entries.length);
 
   entries = entries.sort((a, b) => {
     return (a.pseudoElement || "z") > (b.pseudoElement || "z");

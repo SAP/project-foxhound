@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Per UTS 35, computing the canonical form for Unicode BCP 47 locale identifiers
 // includes replacing deprecated variant mappings. The other UTS 35 canonicalisation
 // algorithm ("BCP 47 Language Tag to Unicode BCP 47 Locale Identifier") doesn't

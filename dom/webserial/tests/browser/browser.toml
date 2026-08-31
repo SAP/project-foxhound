@@ -1,0 +1,27 @@
+[DEFAULT]
+prefs = [
+ "dom.webserial.enabled=true",
+ "dom.webserial.testing.enabled=true",
+ "dom.sitepermsaddon-provider.enabled=true",
+]
+
+["browser_webserial_bfcache.js"]
+support-files = [
+  "blank.html",
+  "serial_bfcache_page.html",
+]
+
+["browser_webserial_blocked_icon.js"]
+
+["browser_webserial_chooser.js"]
+
+["browser_webserial_permission_gated.js"]
+support-files = [
+  "blank.html",
+  "../../../../toolkit/mozapps/extensions/test/xpinstall/helpers_addons_install_dialogs.js",
+]
+
+["browser_webserial_permission_revoke.js"]
+
+["browser_webserial_sharing_icon.js"]
+support-files = ["worker_open_close.js"]

@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMixedContentBlocker_h___
-#define nsMixedContentBlocker_h___
+#ifndef nsMixedContentBlocker_h_
+#define nsMixedContentBlocker_h_
 
 #define NS_MIXEDCONTENTBLOCKER_CONTRACTID "@mozilla.org/mixedcontentblocker;1"
 /* daf1461b-bf29-4f88-8d0e-4bcdf332c862 */
@@ -22,10 +20,10 @@ enum MixedContentTypes {
   eMixedDisplay
 };
 
-#include "nsIContentPolicy.h"
+#include "imgRequest.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
-#include "imgRequest.h"
+#include "nsIContentPolicy.h"
 
 using mozilla::OriginAttributes;
 
@@ -57,13 +55,8 @@ class nsMixedContentBlocker : public nsIContentPolicy,
   /**
    * Returns true if the provided content policy type is subject to the
    * mixed content level 2 upgrading mechanism (audio, video, image).
-   *
-   * @param aConsiderPrefs A boolean that indicates whether the result of this
-   * functions takes the `security.mixed_content.upgrade_display_content`
-   * preferences into account.
    */
-  static bool IsUpgradableContentType(nsContentPolicyType aType,
-                                      bool aConsiderPrefs);
+  static bool IsUpgradableContentType(nsContentPolicyType aType);
 
   /* Static version of ShouldLoad() that contains all the Mixed Content Blocker
    * logic.  Called from non-static ShouldLoad().
@@ -93,4 +86,4 @@ class nsMixedContentBlocker : public nsIContentPolicy,
   static nsCString* sSecurecontextAllowlist;
 };
 
-#endif /* nsMixedContentBlocker_h___ */
+#endif /* nsMixedContentBlocker_h_ */

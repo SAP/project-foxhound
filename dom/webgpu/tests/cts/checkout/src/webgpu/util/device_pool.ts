@@ -1,4 +1,5 @@
 import { SkipTestCase, TestCaseRecorder } from '../../common/framework/fixture.js';
+import { globalTestConfig } from '../../common/framework/test_config.js';
 import { attemptGarbageCollection } from '../../common/util/collect_garbage.js';
 import { getGPU, getDefaultRequestAdapterOptions } from '../../common/util/navigator_gpu.js';
 import {
@@ -6,8 +7,9 @@ import {
   raceWithRejectOnTimeout,
   assertReject,
   unreachable,
+  hasFeature,
 } from '../../common/util/util.js';
-import { getDefaultLimits, kLimits } from '../capability_info.js';
+import { getDefaultLimits, kPossibleLimits } from '../capability_info.js';
 
 // MUST_NOT_BE_IMPORTED_BY_DATA_CACHE
 // This file should not be transitively imported by .cache.ts files
@@ -97,41 +99,48 @@ export class DevicePool {
     assert(holder instanceof DeviceHolder, 'DeviceProvider should always be a DeviceHolder');
 
     assert(holder.state === 'acquired', 'trying to release a device while already released');
+    let deviceNeedsReplacement = false;
     try {
       await holder.endTestScope();
 
-      // (Hopefully if the device was lost, it has been reported by the time endErrorScopes()
-      // has finished (or timed out). If not, it could cause a finite number of extra test
-      // failures following this one (but should recover eventually).)
-      assert(
-        holder.lostInfo === undefined,
-        `Device was unexpectedly lost. Reason: ${holder.lostInfo?.reason}, Message: ${holder.lostInfo?.message}`
-      );
+      if (holder.expectedLostReason) {
+        deviceNeedsReplacement = true;
+        assert(holder.lostInfo !== undefined, 'Device expected to be lost, but was not lost');
+        assert(
+          holder.lostInfo.reason === holder.expectedLostReason,
+          `Expected device loss reason "${holder.expectedLostReason}", got "${holder.lostInfo?.reason}"`
+        );
+      } else {
+        // Hopefully if the device was lost, it has been reported by the time endErrorScopes()
+        // has finished (or timed out). If not, it could cause a finite number of extra test
+        // failures following this test. (It should recover after one test in most cases.)
+        assert(holder.lostInfo === undefined, 'Device lost unexpectedly during test');
+      }
     } catch (ex) {
       // Any error that isn't explicitly TestFailedButDeviceReusable forces a new device to be
       // created for the next test.
       if (!(ex instanceof TestFailedButDeviceReusable)) {
-        this.holders.delete(holder);
-        // Wait for destruction (or actual device loss if any) to complete.
-        await holder.device.lost;
+        deviceNeedsReplacement = true;
 
-        // Try to clean up, in case there are stray GPU resources in need of collection.
+        // Try to clean up, in case there are stray resources in need of collection that won't be
+        // cleaned up by destroying the device - either outside the device (related to
+        // interop/video/canvas/ImageBitmap/etc.) or not destroyed along with the device for some
+        // other reason.
         if (ex instanceof TestOOMedShouldAttemptGC) {
           await attemptGarbageCollection();
         }
       }
-      // In the try block, we may throw an error if the device is lost in order to force device
-      // reinitialization, however, if the device lost was expected we want to suppress the error
-      // The device lost is expected when `holder.expectedLostReason` is equal to
-      // `holder.lostInfo.reason`.
-      const expectedDeviceLost =
-        holder.expectedLostReason !== undefined &&
-        holder.lostInfo !== undefined &&
-        holder.expectedLostReason === holder.lostInfo.reason;
-      if (!expectedDeviceLost) {
-        throw ex;
-      }
+
+      throw ex;
     } finally {
+      const deviceDueForReplacement =
+        holder.testCaseUseCounter >= globalTestConfig.casesBetweenReplacingDevice;
+      if (deviceNeedsReplacement || deviceDueForReplacement) {
+        this.holders.delete(holder);
+        holder.device.destroy();
+        await holder.device.lost;
+      }
+
       // Mark the holder as free so the device can be reused (if it's still in this.devices).
       holder.state = 'free';
     }
@@ -283,9 +292,9 @@ function canonicalizeDescriptor(
   assert(featureLevel === 'compatibility' || featureLevel === 'core');
   const defaultLimits = getDefaultLimits(featureLevel);
   if (desc.requiredLimits) {
-    for (const limit of kLimits) {
+    for (const limit of kPossibleLimits) {
       const requestedValue = desc.requiredLimits[limit];
-      const defaultValue = defaultLimits[limit].default;
+      const defaultValue = defaultLimits[limit]?.default;
       // Skip adding a limit to limitsCanonicalized if it is the same as the default.
       if (requestedValue !== undefined && requestedValue !== defaultValue) {
         limitsCanonicalized[limit] = requestedValue;
@@ -311,7 +320,7 @@ function supportsFeature(
   }
 
   for (const feature of descriptor.requiredFeatures) {
-    if (!adapter.features.has(feature)) {
+    if (!hasFeature(adapter.features, feature)) {
       return false;
     }
   }
@@ -333,13 +342,15 @@ class DeviceHolder implements DeviceProvider {
   /** Adapter the device was created from. Cannot be reused; just for adapter info. */
   readonly adapter: GPUAdapter;
   /** The device. Will be cleared during cleanup if there were unexpected errors. */
-  private _device: GPUDevice | undefined;
+  private readonly _device: GPUDevice;
   /** Whether the device is in use by a test or not. */
   state: DeviceHolderState = 'free';
   /** initially undefined; becomes set when the device is lost */
   lostInfo?: GPUDeviceLostInfo;
   /** Set if the device is expected to be lost. */
   expectedLostReason?: GPUDeviceLostReason;
+  /** Number of test cases the device has been used for. */
+  testCaseUseCounter = 0;
 
   // Gets a device and creates a DeviceHolder.
   // If the device is lost, DeviceHolder.lost gets set.
@@ -374,13 +385,13 @@ class DeviceHolder implements DeviceProvider {
   }
 
   get device() {
-    assert(this._device !== undefined);
     return this._device;
   }
 
   /** Push error scopes that surround test execution. */
   beginTestScope(): void {
     assert(this.state === 'acquired');
+    this.testCaseUseCounter++;
     this.device.pushErrorScope('validation');
     this.device.pushErrorScope('internal');
     this.device.pushErrorScope('out-of-memory');
@@ -414,30 +425,28 @@ class DeviceHolder implements DeviceProvider {
     let gpuInternalError: GPUError | null;
     let gpuOutOfMemoryError: GPUError | null;
 
-    // Submit to the queue to attempt to force a GPU flush.
-    this.device.queue.submit([]);
+    // Wait for queue to be idle just in case there are any implementation bugs where errors are not
+    // reported promptly. (This won't catch everything, e.g. deferred pipeline creations, but is
+    // still slightly more likely to catch things.)
+    await this.device.queue.onSubmittedWorkDone();
 
     try {
-      // May reject if the device was lost.
+      // If the device is lost, all of these should return null.
       [gpuOutOfMemoryError, gpuInternalError, gpuValidationError] = await Promise.all([
         this.device.popErrorScope(),
         this.device.popErrorScope(),
         this.device.popErrorScope(),
       ]);
     } catch (ex) {
-      assert(this.lostInfo !== undefined, 'popErrorScope failed; did the test body steal it?');
-      throw ex;
+      unreachable('popErrorScope failed. Did the test body pop too many scopes?');
     }
 
-    // Attempt to wait for the queue to be idle.
-    if (this.device.queue.onSubmittedWorkDone) {
-      await this.device.queue.onSubmittedWorkDone();
+    if (!this.expectedLostReason) {
+      await assertReject('OperationError', this.device.popErrorScope(), {
+        allowMissingStack: true,
+        message: 'There was an extra error scope on the stack after a test',
+      });
     }
-
-    await assertReject('OperationError', this.device.popErrorScope(), {
-      allowMissingStack: true,
-      message: 'There was an extra error scope on the stack after a test',
-    });
 
     if (gpuOutOfMemoryError !== null) {
       assert(gpuOutOfMemoryError instanceof GPUOutOfMemoryError);

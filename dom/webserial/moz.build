@@ -1,0 +1,77 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
+
+EXPORTS.mozilla.dom += [
+    "Serial.h",
+    "SerialManagerChild.h",
+    "SerialManagerParent.h",
+    "SerialPlatformService.h",
+    "SerialPort.h",
+    "SerialPortChild.h",
+    "SerialPortInfo.h",
+    "SerialPortIPCTypes.h",
+    "SerialPortParent.h",
+]
+
+if CONFIG["OS_TARGET"] == "WINNT":
+    SOURCES += [
+        "Win32SerialPlatformService.cpp",
+    ]
+    OS_LIBS += [
+        "cfgmgr32",
+        "setupapi",
+    ]
+elif (CONFIG["OS_TARGET"] == "Darwin" and CONFIG["TARGET_OS"] != "iOS") or CONFIG[
+    "OS_TARGET"
+] == "Linux":
+    UNIFIED_SOURCES += [
+        "PosixSerialPlatformService.cpp",
+    ]
+
+    if CONFIG["OS_TARGET"] == "Darwin":
+        OS_LIBS += [
+            "-framework IOKit",
+            "-framework CoreFoundation",
+        ]
+    elif CONFIG["OS_TARGET"] == "Linux":
+        CXXFLAGS += CONFIG["GLIB_CFLAGS"]
+
+UNIFIED_SOURCES += [
+    "Serial.cpp",
+    "SerialManagerChild.cpp",
+    "SerialManagerParent.cpp",
+    "SerialPermissionRequest.cpp",
+    "SerialPlatformService.cpp",
+    "SerialPort.cpp",
+    "SerialPortChild.cpp",
+    "SerialPortParent.cpp",
+    "SerialPortPumps.cpp",
+    "SerialPortStreamAlgorithms.cpp",
+    "TestSerialPlatformService.cpp",
+]
+
+IPDL_SOURCES += [
+    "PSerialManager.ipdl",
+    "PSerialPort.ipdl",
+    "SerialTypes.ipdlh",
+]
+
+FINAL_LIBRARY = "xul"
+
+LOCAL_INCLUDES += [
+    "/dom/base",
+]
+
+MOCHITEST_MANIFESTS += [
+    "tests/mochitest/mochitest.toml",
+]
+
+BROWSER_CHROME_MANIFESTS += [
+    "tests/browser/browser.toml",
+]
+
+include("/ipc/chromium/chromium-config.mozbuild")

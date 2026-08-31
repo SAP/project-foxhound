@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/StaticRange.h"
+
+#include "mozilla/dom/CrossShadowBoundaryRange.h"
 #include "mozilla/dom/StaticRangeBinding.h"
 #include "nsContentUtils.h"
 #include "nsINode.h"
@@ -72,8 +72,7 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 already_AddRefed<StaticRange> StaticRange::Create(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   if (!sCachedRanges || sCachedRanges->IsEmpty()) {
-    return do_AddRef(
-        new StaticRange(aNode, RangeBoundaryIsMutationObserved::No));
+    return do_AddRef(new StaticRange(aNode, MutationObserved::No));
   }
   RefPtr<StaticRange> staticRange = sCachedRanges->PopLastElement().forget();
   staticRange->Init(aNode);
@@ -121,8 +120,12 @@ void StaticRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
       IsInAnySelection() &&
       (mStart.GetContainer() != aStartBoundary.GetContainer() ||
        mEnd.GetContainer() != aEndBoundary.GetContainer());
-  mStart.CopyFrom(aStartBoundary, mIsMutationObserved);
-  mEnd.CopyFrom(aEndBoundary, mIsMutationObserved);
+  mStart.CopyFrom(aStartBoundary, static_cast<bool>(mIsMutationObserved)
+                                      ? RangeBoundarySetBy::Ref
+                                      : RangeBoundarySetBy::Offset);
+  mEnd.CopyFrom(aEndBoundary, static_cast<bool>(mIsMutationObserved)
+                                  ? RangeBoundarySetBy::Ref
+                                  : RangeBoundarySetBy::Offset);
   MOZ_ASSERT(mStart.IsSet() == mEnd.IsSet());
   mIsPositioned = mStart.IsSet() && mEnd.IsSet();
 
@@ -133,6 +136,13 @@ void StaticRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
   mAreStartAndEndInSameTree =
       RangeUtils::ComputeRootNode(mStart.GetContainer()) ==
       RangeUtils::ComputeRootNode(mEnd.GetContainer());
+
+  // CrossShadowBoundaryRange must keep its mutation observer registered on the
+  // common ancestor of the current boundaries. This is the single point every
+  // boundary change funnels through, so update it here for all of them.
+  if (IsCrossShadowBoundaryRange()) {
+    AsCrossShadowBoundaryRange()->UpdateCommonAncestor();
+  }
 }
 
 /* static */

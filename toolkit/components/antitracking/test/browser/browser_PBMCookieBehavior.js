@@ -10,7 +10,7 @@ const COOKIE_BEHAVIORS = [
   Ci.nsICookieService.BEHAVIOR_REJECT,
   Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN,
   Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
 ];
 
 async function verifyCookieBehavior(browser, expected) {
@@ -26,11 +26,9 @@ async function verifyCookieBehavior(browser, expected) {
 
       // Create an 3rd party iframe and check the cookieBehavior.
       let ifr = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loading = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = obj.page;
+      content.document.body.appendChild(ifr);
       await loading;
 
       await SpecialPowers.spawn(

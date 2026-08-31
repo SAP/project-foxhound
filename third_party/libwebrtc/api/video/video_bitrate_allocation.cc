@@ -43,7 +43,7 @@ bool VideoBitrateAllocation::SetBitrate(size_t spatial_index,
     return false;
 
   layer_bitrate = bitrate_bps;
-  sum_ = rtc::dchecked_cast<uint32_t>(new_bitrate_sum_bps);
+  sum_ = dchecked_cast<uint32_t>(new_bitrate_sum_bps);
   return true;
 }
 
@@ -119,7 +119,7 @@ VideoBitrateAllocation::GetSimulcastAllocations() const {
     std::optional<VideoBitrateAllocation> layer_bitrate;
     if (IsSpatialLayerUsed(si)) {
       layer_bitrate = VideoBitrateAllocation();
-      for (int tl = 0; tl < kMaxTemporalStreams; ++tl) {
+      for (size_t tl = 0; tl < kMaxTemporalStreams; ++tl) {
         if (HasBitrate(si, tl))
           layer_bitrate->SetBitrate(0, tl, GetBitrate(si, tl));
       }
@@ -146,8 +146,7 @@ std::string VideoBitrateAllocation::ToString() const {
 
   // Max string length in practice is 260, but let's have some overhead and
   // round up to nearest power of two.
-  char string_buf[512];
-  SimpleStringBuilder ssb(string_buf);
+  StringBuilder ssb;
 
   ssb << "VideoBitrateAllocation [";
   uint32_t spatial_cumulator = 0;
@@ -184,7 +183,7 @@ std::string VideoBitrateAllocation::ToString() const {
 
   RTC_DCHECK_EQ(spatial_cumulator, sum_);
   ssb << " ]";
-  return ssb.str();
+  return ssb.Release();
 }
 
 }  // namespace webrtc

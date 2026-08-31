@@ -30,13 +30,12 @@ var gTestTransports = {};
  * Implements the same API as Transport in discovery.js.  Here, no UDP sockets
  * are used.  Instead, messages are delivered immediately.
  */
-function TestTransport(port) {
-  EventEmitter.decorate(this);
-  this.port = port;
-  gTestTransports[this.port] = this;
-}
-
-TestTransport.prototype = {
+class TestTransport extends EventEmitter {
+  constructor(port) {
+    super();
+    this.port = port;
+    gTestTransports[this.port] = this;
+  }
   send(object, port) {
     log("Send to " + port + ":\n" + JSON.stringify(object, null, 2));
     if (!gTestTransports[port]) {
@@ -45,23 +44,22 @@ TestTransport.prototype = {
     }
     const message = JSON.stringify(object);
     gTestTransports[port].onPacketReceived(null, message);
-  },
+  }
 
   destroy() {
     delete gTestTransports[this.port];
-  },
+  }
 
   // nsIUDPSocketListener
-
   onPacketReceived(socket, message) {
     const object = JSON.parse(message);
     object.from = "localhost";
     log("Recv on " + this.port + ":\n" + JSON.stringify(object, null, 2));
     this.emit("message", object);
-  },
+  }
 
-  onStopListening() {},
-};
+  onStopListening() {}
+}
 
 // Use TestTransport instead of the usual Transport
 discovery._factories.Transport = TestTransport;

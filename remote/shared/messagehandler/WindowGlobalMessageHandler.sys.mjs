@@ -2,10 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import {
-  ContextDescriptorType,
-  MessageHandler,
-} from "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs";
+import { MessageHandler } from "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs";
 
 const lazy = {};
 
@@ -27,6 +24,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 export class WindowGlobalMessageHandler extends MessageHandler {
   #innerWindowId;
+  #pausedDebuggerFrame;
   #realms;
 
   constructor() {
@@ -36,6 +34,9 @@ export class WindowGlobalMessageHandler extends MessageHandler {
 
     // Maps sandbox names to instances of window realms.
     this.#realms = new Map();
+
+    // The currently paused Debugger.Frame, if any.
+    this.#pausedDebuggerFrame = null;
   }
 
   initialize(sessionDataItems) {
@@ -108,6 +109,26 @@ export class WindowGlobalMessageHandler extends MessageHandler {
 
   get window() {
     return this.context.window;
+  }
+
+  /**
+   * Get the currently paused Debugger.Frame.
+   *
+   * @returns {Debugger.Frame|null}
+   *     The paused frame, or null if not paused.
+   */
+  getPausedDebuggerFrame() {
+    return this.#pausedDebuggerFrame;
+  }
+
+  /**
+   * Set the currently paused Debugger.Frame.
+   *
+   * @param {Debugger.Frame|null} frame
+   *     The paused frame, or null to clear.
+   */
+  setPausedDebuggerFrame(frame) {
+    this.#pausedDebuggerFrame = frame;
   }
 
   #createRealm(sandboxName = null) {
@@ -183,6 +204,7 @@ export class WindowGlobalMessageHandler extends MessageHandler {
             params: {
               category,
               sessionData: Array.from(relevantSessionData),
+              initial: true,
             },
             destination,
           })
@@ -237,14 +259,17 @@ export class WindowGlobalMessageHandler extends MessageHandler {
     throw new lazy.error.NoSuchFrameError(`Realm with id ${realmId} not found`);
   }
 
+  /**
+   * Check if the context matches a provided context descriptor.
+   *
+   * @param {object} contextDescriptor
+   *     A context descriptor.
+   * @returns {boolean}
+   *     Return true if the context matches a provided context descriptor,
+   *     false otherwise.
+   */
   matchesContext(contextDescriptor) {
-    return (
-      contextDescriptor.type === ContextDescriptorType.All ||
-      (contextDescriptor.type === ContextDescriptorType.TopBrowsingContext &&
-        contextDescriptor.id === this.context.browserId) ||
-      (contextDescriptor.type === ContextDescriptorType.UserContext &&
-        contextDescriptor.id === this.context.originAttributes.userContextId)
-    );
+    return this.contextsMatchDescriptor([this.context], contextDescriptor);
   }
 
   /**

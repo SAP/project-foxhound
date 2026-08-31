@@ -1,0 +1,128 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --confirm-border-radius: 24px;
+  --select-background-color: light-dark(var(--color-violet-desaturated-0, #f2f0f8), color-mix(in srgb, var(--color-violet-30) 12%, transparent));
+  --select-hover-background-color: light-dark(var(--color-violet-desaturated-10, #e7e1f8), color-mix(in srgb, var(--color-violet-40) 25%, transparent));
+  --confirm-border-color: light-dark(var(--color-violet-desaturated-20, #d2c8ec), color-mix(in srgb, var(--color-violet-40) 35%, transparent));
+
+  display: block;
+  position: relative;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: 315px;
+}
+
+.ai-website-confirmation-wrapper {
+  /* TODO: Bug 2030460 - replace with token when available */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--confirm-border-radius);
+  border-width: var(--border-width);
+  border-style: solid;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-color: var(--confirm-border-color);
+  box-shadow: var(--box-shadow-level-3);
+  overflow: hidden;
+  height: 100%;
+}
+
+.ai-website-confirmation-container {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: 255px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--background-color-box);
+}
+
+moz-button.close-button {
+  --button-border-radius: 24px;
+  --icon-size: calc(var(--icon-size-xsmall) - 2px);
+
+  position: absolute;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  top: -10px;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  inset-inline-end: -10px;
+  z-index: 10;
+
+  @media not (forced-colors) {
+    --button-background-color-ghost: var(--background-color-box);
+  }
+}
+
+moz-button.close-button::part(button) {
+  --button-size-icon: var(--size-item-medium);
+  --button-min-height: var(--size-item-medium);
+
+  box-shadow: var(--box-shadow-level-3);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border: 1px solid var(--confirm-border-color);
+}
+
+.tabs-list-wrapper {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  padding-inline: var(--space-small);
+}
+
+.tabs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xsmall);
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-small) 0 var(--space-medium);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  scroll-padding-block: 30px 40px;
+  scrollbar-width: none;
+}
+
+.tabs-list::after {
+  content: "";
+  display: block;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: var(--space-xlarge);
+  flex-shrink: 0;
+}
+
+.fade-overlay {
+  position: absolute;
+  inset-inline: 0;
+  pointer-events: none;
+  backdrop-filter: blur(3px);
+}
+
+.fade-top {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: 10px;
+  top: 0;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background: linear-gradient(to bottom, var(--background-color-box), light-dark(rgba(255, 255, 255, 0.8), rgba(35, 34, 43, 0.8)), transparent);
+}
+
+.fade-bottom {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: 20px;
+  bottom: 0;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background: linear-gradient(to top, var(--background-color-box), light-dark(rgba(255, 255, 255, 0.8), rgba(35, 34, 43, 0.8)), transparent);
+}
+
+.actions-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  padding-inline: var(--space-medium);
+  padding-block-end: var(--space-medium);
+  background: var(--background-color-box);
+  position: relative;
+  z-index: 1;
+}
+
+.actions-section moz-button {
+  width: 100%;
+}

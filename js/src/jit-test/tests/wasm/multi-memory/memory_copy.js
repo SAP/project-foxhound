@@ -43,3 +43,37 @@ for (let ix = 0; ix < 12; ix++) {
 }
 
 assertEq(s, "schnfaengenack_staubfaehnfa");
+
+// Bounds-check tests for memory.copy between distinct memories. Both memories
+// are 1 page (65536 bytes).
+{
+  let bounds = wasmEvalText(
+    `(module
+       (memory $$dst 1)
+       (memory $$src 1)
+       (func (export "copy") (param $dst i32) (param $src i32) (param $n i32)
+         (memory.copy $$dst $$src
+           (local.get $dst)
+           (local.get $src)
+           (local.get $n))
+       )
+     )`).exports;
+  const PAGE = 65536;
+
+  // Zero-len copy at exact dst boundary succeeds.
+  bounds.copy(PAGE, 0, 0);
+  // Zero-len copy one past dst boundary traps.
+  assertErrorMessage(() => bounds.copy(PAGE + 1, 0, 0),
+                     WebAssembly.RuntimeError, /index out of bounds/);
+  // Zero-len copy at exact src boundary succeeds.
+  bounds.copy(0, PAGE, 0);
+  // Zero-len copy one past src boundary traps.
+  assertErrorMessage(() => bounds.copy(0, PAGE + 1, 0),
+                     WebAssembly.RuntimeError, /index out of bounds/);
+  // dst offset = 2^32 - 4 wraps around when added to n, must trap.
+  assertErrorMessage(() => bounds.copy(-4, 0, 4),
+                     WebAssembly.RuntimeError, /index out of bounds/);
+  // src offset = 2^32 - 4 wraps around when added to n, must trap.
+  assertErrorMessage(() => bounds.copy(0, -4, 4),
+                     WebAssembly.RuntimeError, /index out of bounds/);
+}

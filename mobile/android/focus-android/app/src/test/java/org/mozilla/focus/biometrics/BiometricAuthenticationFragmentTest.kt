@@ -5,7 +5,6 @@
 package org.mozilla.focus.biometrics
 
 import android.content.Context
-import android.os.Build
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
@@ -16,10 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.doReturn
-import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
-import org.mockito.Mockito.verify
-import org.robolectric.annotation.Config
 
 class BiometricAuthenticationFragmentTest {
     private lateinit var biometricPromptAuth: BiometricPromptAuth
@@ -51,14 +47,6 @@ class BiometricAuthenticationFragmentTest {
                 },
             ),
         )
-    }
-
-    @Config(sdk = [Build.VERSION_CODES.LOLLIPOP])
-    @Test
-    fun `GIVEN biometric authentication fragment WHEN show biometric prompt is called and can use feature returns false THEN request authentication is not called`() {
-        fragment.showBiometricPrompt(biometricPromptAuth, "title", "subtitle")
-
-        verify(biometricPromptAuth, never()).requestAuthentication("title", "subtitle")
     }
 
     @Test

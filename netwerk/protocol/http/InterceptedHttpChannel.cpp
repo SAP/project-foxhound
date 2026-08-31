@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  *  License, v. 2.0. If a copy of the MPL was not distributed with this
  *  file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -111,8 +109,7 @@ void InterceptedHttpChannel::AsyncOpenInternal() {
         mURI, requestMethod, mPriority, mChannelId, NetworkLoadType::LOAD_START,
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mClassOfService.Flags(), mStatus);
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(), this, mStatus);
   }
 
   // If an error occurs in this file we must ensure mListener callbacks are
@@ -287,13 +284,9 @@ nsresult InterceptedHttpChannel::RedirectForResponseURL(
   nsCOMPtr<nsILoadInfo> redirectLoadInfo =
       CloneLoadInfoForRedirect(aResponseURI, flags);
 
-  ExtContentPolicyType contentPolicyType =
-      redirectLoadInfo->GetExternalContentPolicyType();
-
-  rv = newChannel->Init(aResponseURI, mCaps,
-                        static_cast<nsProxyInfo*>(mProxyInfo.get()),
-                        mProxyResolveFlags, mProxyURI, mChannelId,
-                        contentPolicyType, redirectLoadInfo);
+  rv = newChannel->Init(
+      aResponseURI, mCaps, static_cast<nsProxyInfo*>(mProxyInfo.get()),
+      mProxyResolveFlags, mProxyURI, mChannelId, redirectLoadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Normally we don't propagate the LoadInfo's service worker tainting
@@ -355,18 +348,19 @@ nsresult InterceptedHttpChannel::StartPump() {
   // TODO: We could implement an nsIFixedLengthInputStream interface and
   //       QI to it here.  This would let us determine the total length
   //       for streams that support it.  See bug 1388774.
-  Unused << GetContentLength(&mSynthesizedStreamLength);
+  (void)GetContentLength(&mSynthesizedStreamLength);
 
   nsresult rv =
       nsInputStreamPump::Create(getter_AddRefs(mPump), mBodyReader, 0, 0, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = mPump->AsyncRead(this);
+  RefPtr<nsInputStreamPump> pump(mPump);
+  rv = pump->AsyncRead(this);
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint32_t suspendCount = mSuspendCount;
   while (suspendCount--) {
-    mPump->Suspend();
+    pump->Suspend();
   }
 
   MOZ_DIAGNOSTIC_ASSERT(!mCanceled);
@@ -390,10 +384,11 @@ nsresult InterceptedHttpChannel::OpenRedirectChannel() {
 
   // Make sure to do this after we received redirect veto answer,
   // i.e. after all sinks had been notified
-  mRedirectChannel->SetOriginalURI(mOriginalURI);
+  nsCOMPtr<nsIChannel> redirectChannel(mRedirectChannel);
+  redirectChannel->SetOriginalURI(mOriginalURI);
 
   // open new channel
-  rv = mRedirectChannel->AsyncOpen(mListener);
+  rv = redirectChannel->AsyncOpen(mListener);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mStatus = NS_BINDING_REDIRECTED;
@@ -452,9 +447,10 @@ void InterceptedHttpChannel::MaybeCallStatusAndProgress() {
     CopyUTF8toUTF16(host, mStatusHost);
   }
 
-  mProgressSink->OnStatus(this, NS_NET_STATUS_READING, mStatusHost.get());
+  nsCOMPtr<nsIProgressEventSink> progressSink(mProgressSink);
+  progressSink->OnStatus(this, NS_NET_STATUS_READING, mStatusHost.get());
 
-  mProgressSink->OnProgress(this, progress, mSynthesizedStreamLength);
+  progressSink->OnProgress(this, progress, mSynthesizedStreamLength);
 
   mProgressReported = progress;
 }
@@ -550,9 +546,8 @@ InterceptedHttpChannel::Cancel(nsresult aStatus) {
         mURI, requestMethod, priority, mChannelId, NetworkLoadType::LOAD_CANCEL,
         mLastStatusReported, TimeStamp::Now(), size, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mClassOfService.Flags(), mStatus, &mTransactionTimings,
-        std::move(mSource));
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(), this, mStatus,
+        &mTransactionTimings, std::move(mSource));
   }
 
   MOZ_DIAGNOSTIC_ASSERT(NS_FAILED(aStatus));
@@ -561,7 +556,8 @@ InterceptedHttpChannel::Cancel(nsresult aStatus) {
   }
 
   if (mPump) {
-    return mPump->Cancel(mStatus);
+    RefPtr<nsInputStreamPump> pump(mPump);
+    return pump->Cancel(mStatus);
   }
 
   return AsyncAbort(mStatus);
@@ -571,7 +567,8 @@ NS_IMETHODIMP
 InterceptedHttpChannel::Suspend(void) {
   ++mSuspendCount;
   if (mPump) {
-    return mPump->Suspend();
+    RefPtr<nsInputStreamPump> pump(mPump);
+    return pump->Suspend();
   }
   return NS_OK;
 }
@@ -580,7 +577,8 @@ NS_IMETHODIMP
 InterceptedHttpChannel::Resume(void) {
   --mSuspendCount;
   if (mPump) {
-    return mPump->Resume();
+    RefPtr<nsInputStreamPump> pump(mPump);
+    return pump->Resume();
   }
   return NS_OK;
 }
@@ -692,7 +690,7 @@ void InterceptedHttpChannel::DoNotifyListenerCleanup() {
 }
 
 void InterceptedHttpChannel::DoAsyncAbort(nsresult aStatus) {
-  Unused << AsyncAbort(aStatus);
+  (void)AsyncAbort(aStatus);
 }
 
 namespace {
@@ -784,9 +782,8 @@ InterceptedHttpChannel::ResetInterception(bool aBypass) {
         mURI, requestMethod, priority, mChannelId,
         NetworkLoadType::LOAD_REDIRECT, mLastStatusReported, TimeStamp::Now(),
         size, kCacheUnknown, mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mClassOfService.Flags(), mStatus, &mTransactionTimings,
-        std::move(mSource), httpVersion, responseStatus,
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(), this, mStatus,
+        &mTransactionTimings, std::move(mSource), httpVersion, responseStatus,
         Some(nsDependentCString(contentType.get())), mURI, flags,
         newBaseChannel->ChannelId());
   }
@@ -944,7 +941,7 @@ InterceptedHttpChannel::StartSynthesizedResponse(
   }
 
   bool equal = false;
-  Unused << mURI->Equals(responseURI, &equal);
+  (void)mURI->Equals(responseURI, &equal);
   if (!equal) {
     rv = RedirectForResponseURL(responseURI, aResponseRedirected);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -1153,7 +1150,8 @@ InterceptedHttpChannel::OnStartRequest(nsIRequest* aRequest) {
                         mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal());
 
   if (mPump && mLoadFlags & LOAD_CALL_CONTENT_SNIFFERS) {
-    mPump->PeekStream(CallTypeSniffers, static_cast<nsIChannel*>(this));
+    RefPtr<nsInputStreamPump> pump(mPump);
+    pump->PeekStream(CallTypeSniffers, static_cast<nsIChannel*>(this));
   }
 
   nsresult rv = ProcessCrossOriginEmbedderPolicyHeader();
@@ -1182,7 +1180,8 @@ InterceptedHttpChannel::OnStartRequest(nsIRequest* aRequest) {
 
   StoreOnStartRequestCalled(true);
   if (mListener) {
-    return mListener->OnStartRequest(this);
+    nsCOMPtr<nsIStreamListener> listener(mListener);
+    return listener->OnStartRequest(this);
   }
   return NS_OK;
 }
@@ -1234,15 +1233,15 @@ InterceptedHttpChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
         mURI, requestMethod, priority, mChannelId, NetworkLoadType::LOAD_STOP,
         mLastStatusReported, TimeStamp::Now(), size, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mClassOfService.Flags(), mStatus, &mTransactionTimings,
-        std::move(mSource), httpVersion, responseStatus,
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(), this, mStatus,
+        &mTransactionTimings, std::move(mSource), httpVersion, responseStatus,
         Some(nsDependentCString(contentType.get())));
   }
 
   nsresult rv = NS_OK;
   if (mListener) {
-    rv = mListener->OnStopRequest(this, mStatus);
+    nsCOMPtr<nsIStreamListener> listener(mListener);
+    rv = listener->OnStopRequest(this, mStatus);
   }
 
   gHttpHandler->OnStopRequest(this);
@@ -1272,7 +1271,8 @@ InterceptedHttpChannel::OnDataAvailable(nsIRequest* aRequest,
     }
   }
 
-  return mListener->OnDataAvailable(this, aInputStream, aOffset, aCount);
+  nsCOMPtr<nsIStreamListener> listener(mListener);
+  return listener->OnDataAvailable(this, aInputStream, aOffset, aCount);
 }
 
 NS_IMETHODIMP
@@ -1305,7 +1305,8 @@ InterceptedHttpChannel::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return mPump->RetargetDeliveryTo(aNewTarget);
+  RefPtr<nsInputStreamPump> pump(mPump);
+  return pump->RetargetDeliveryTo(aNewTarget);
 }
 
 NS_IMETHODIMP
@@ -1313,7 +1314,8 @@ InterceptedHttpChannel::GetDeliveryTarget(nsISerialEventTarget** aEventTarget) {
   if (!mPump) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  return mPump->GetDeliveryTarget(aEventTarget);
+  RefPtr<nsInputStreamPump> pump(mPump);
+  return pump->GetDeliveryTarget(aEventTarget);
 }
 
 NS_IMETHODIMP
@@ -1346,9 +1348,9 @@ InterceptedHttpChannel::IsFromCache(bool* value) {
 }
 
 NS_IMETHODIMP
-InterceptedHttpChannel::IsRacing(bool* value) {
+InterceptedHttpChannel::HasCacheEntry(bool* value) {
   if (mSynthesizedCacheInfo) {
-    return mSynthesizedCacheInfo->IsRacing(value);
+    return mSynthesizedCacheInfo->HasCacheEntry(value);
   }
   *value = false;
   return NS_OK;
@@ -1478,6 +1480,15 @@ InterceptedHttpChannel::GetAlternativeDataType(nsACString& aType) {
 }
 
 NS_IMETHODIMP
+InterceptedHttpChannel::GetCacheEntryWriteHandle(
+    nsICacheEntryWriteHandle** _retval) {
+  if (mSynthesizedCacheInfo) {
+    return mSynthesizedCacheInfo->GetCacheEntryWriteHandle(_retval);
+  }
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
 InterceptedHttpChannel::OpenAlternativeOutputStream(
     const nsACString& type, int64_t predictedSize,
     nsIAsyncOutputStream** _retval) {
@@ -1518,6 +1529,14 @@ NS_IMETHODIMP
 InterceptedHttpChannel::SetCacheKey(uint32_t key) {
   if (mSynthesizedCacheInfo) {
     return mSynthesizedCacheInfo->SetCacheKey(key);
+  }
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+InterceptedHttpChannel::GetCacheDisposition(CacheDisposition* aDisposition) {
+  if (mSynthesizedCacheInfo) {
+    return mSynthesizedCacheInfo->GetCacheDisposition(aDisposition);
   }
   return NS_ERROR_NOT_AVAILABLE;
 }

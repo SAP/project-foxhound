@@ -55,7 +55,7 @@ module.exports = async function () {
       ? null
       : jsterm.autocompletePopup.once("popup-opened");
     const onAutocompleteUpdated = jsterm.once("autocomplete-updated");
-    jsterm.insertStringAtCursor(char);
+    jsterm.editor.insertStringAtCursor(char, 0, "jsterm");
     // We need to trigger autocompletion update to show the popup.
     jsterm.props.autocompleteUpdate();
     await onAutocompleteUpdated;

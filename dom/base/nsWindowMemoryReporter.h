@@ -1,23 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWindowMemoryReporter_h__
-#define nsWindowMemoryReporter_h__
+#ifndef nsWindowMemoryReporter_h_
+#define nsWindowMemoryReporter_h_
 
+#include "mozilla/TimeStamp.h"
 #include "nsIMemoryReporter.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsTHashMap.h"
 #include "nsTHashSet.h"
 #include "nsWeakReference.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/TimeStamp.h"
 
 class nsGlobalWindowInner;
 
@@ -176,4 +170,4 @@ class nsWindowMemoryReporter final : public nsIMemoryReporter,
   int64_t mGhostWindowCount;
 };
 
-#endif  // nsWindowMemoryReporter_h__
+#endif  // nsWindowMemoryReporter_h_

@@ -1,0 +1,155 @@
+Flush changes to memory-mapped files once zucchini is done updating them
+
+This patch ensures proper flushing to disk and invalidation of metadata once
+the zucchini algorithm is done updating a file. These memory-mapped files were
+being unmapped without first calling msync() or FlushViewOfFile(), causing
+dirty pages to not be properly flushed to disk and metadata not being
+invalidated.
+
+On all platforms, flushing to disk ensures better resilience against unexpected
+events like system crashes or power cuts. On macOS, this also fixes a critical
+issue where the kernel skipped recomputing per-page code signatures for the
+modified files. When code later tried to load these patched libraries, the
+kernel would detect signature mismatches and kill the process, causing Firefox
+to crash when launched after a zucchini-based update.
+---
+ base/files/memory_mapped_file.h         |  6 +++++
+ base/files/memory_mapped_file_posix.cc  | 27 +++++++++++++++++++
+ base/files/memory_mapped_file_win.cc    | 22 +++++++++++++++
+ components/zucchini/mapped_file.cc      | 10 +++++++
+ components/zucchini/mapped_file.h       |  6 +++++
+ 5 files changed, 71 insertions(+)
+
+diff --git a/base/files/memory_mapped_file.h b/base/files/memory_mapped_file.h
+index 542403c713af..44ee14dec8f5 100644
+--- a/base/files/memory_mapped_file.h
++++ b/base/files/memory_mapped_file.h
+@@ -114,6 +114,12 @@ class BASE_EXPORT MemoryMappedFile {
+   // Is file_ a valid file handle that points to an open, memory mapped file?
+   bool IsValid() const;
+ 
++#if defined(MOZ_ZUCCHINI)
++  // Flushes memory-mapped changes to disk. Returns true on success, false on
++  // error. Must be called before unmapping if changes need to be persisted.
++  bool Flush();
++#endif  // MOZ_ZUCCHINI
++
+  private:
+   // Given the arbitrarily aligned memory region [start, size], returns the
+   // boundaries of the region aligned to the granularity specified by the OS,
+diff --git a/base/files/memory_mapped_file_posix.cc b/base/files/memory_mapped_file_posix.cc
+index be5084bb429a..e6f624cc9eaa 100644
+--- a/base/files/memory_mapped_file_posix.cc
++++ b/base/files/memory_mapped_file_posix.cc
+@@ -85,9 +85,18 @@ bool MemoryMappedFile::MapFileRegionToMemory(
+       break;
+   }
+ 
++#if defined(MOZ_ZUCCHINI)
++  auto* data = static_cast<uint8_t*>(mmap(nullptr, map_size, flags, MAP_SHARED,
++                                          file_.GetPlatformFile(), map_start));
++  if (data != MAP_FAILED) {
++    data_ = data;
++  }
++  else {
++#else
+   data_ = static_cast<uint8_t*>(mmap(nullptr, map_size, flags, MAP_SHARED,
+                                      file_.GetPlatformFile(), map_start));
+   if (data_ == MAP_FAILED) {
++#endif  // MOZ_ZUCCHINI
+     DPLOG(ERROR) << "mmap " << file_.GetPlatformFile();
+     return false;
+   }
+@@ -107,4 +116,22 @@ void MemoryMappedFile::CloseHandles() {
+   length_ = 0;
+ }
+ 
++#if defined(MOZ_ZUCCHINI)
++bool MemoryMappedFile::Flush() {
++  if (!data_) {
++    return false;
++  }
++
++  // Synchronize memory-mapped changes to disk. MS_SYNC ensures all writes are
++  // completed before returning. MS_INVALIDATE is critical on macOS to
++  // invalidate kernel code signing caches, ensuring subsequent opens will
++  // revalidate signatures.
++  bool success = msync(data_, length_, MS_SYNC | MS_INVALIDATE) == 0;
++  if (!success) {
++    PLOG(ERROR) << "msync failed";
++  }
++  return success;
++}
++#endif  // MOZ_ZUCCHINI
++
+ }  // namespace base
+diff --git a/base/files/memory_mapped_file_win.cc b/base/files/memory_mapped_file_win.cc
+index 9943773bec40..777b32358f86 100644
+--- a/base/files/memory_mapped_file_win.cc
++++ b/base/files/memory_mapped_file_win.cc
+@@ -149,4 +149,26 @@ void MemoryMappedFile::CloseHandles() {
+   length_ = 0;
+ }
+ 
++#if defined(MOZ_ZUCCHINI)
++bool MemoryMappedFile::Flush() {
++  if (!data_) {
++    return false;
++  }
++
++  // Flush the memory-mapped view to disk.
++  if (!::FlushViewOfFile(data_, length_)) {
++    PLOG(ERROR) << "FlushViewOfFile failed";
++    return false;
++  }
++
++  // Flush the file buffers to ensure data is written to disk.
++  if (file_.IsValid() && !::FlushFileBuffers(file_.GetPlatformFile())) {
++    PLOG(ERROR) << "FlushFileBuffers failed";
++    return false;
++  }
++
++  return true;
++}
++#endif  // MOZ_ZUCCHINI
++
+ }  // namespace base
+diff --git a/components/zucchini/mapped_file.cc b/components/zucchini/mapped_file.cc
+index 8dfb9181fb90..0e786aabf15f 100644
+--- a/components/zucchini/mapped_file.cc
++++ b/components/zucchini/mapped_file.cc
+@@ -78,4 +78,14 @@ bool MappedFileWriter::Keep() {
+   return true;
+ }
+ 
++#if defined(MOZ_ZUCCHINI)
++bool MappedFileWriter::Flush() {
++  bool success = buffer_.Flush();
++  if (!success) {
++    error_ = "Failed to flush changes to disk.";
++  }
++  return success;
++}
++#endif  // MOZ_ZUCCHINI
++
+ }  // namespace zucchini
+diff --git a/components/zucchini/mapped_file.h b/components/zucchini/mapped_file.h
+index e8230e394dde..ed7d0f97217b 100644
+--- a/components/zucchini/mapped_file.h
++++ b/components/zucchini/mapped_file.h
+@@ -74,6 +74,12 @@ class MappedFileWriter {
+   // iff the operation succeeds.
+   bool Keep();
+ 
++#if defined(MOZ_ZUCCHINI)
++  // Flushes memory-mapped changes to disk. Returns true on success, false on
++  // error. On error, sets error_ so HasError() will return true.
++  bool Flush();
++#endif  // MOZ_ZUCCHINI
++
+  private:
+   enum OnCloseDeleteBehavior {
+     kKeep,
+-- 
+2.49.0.windows.1
+

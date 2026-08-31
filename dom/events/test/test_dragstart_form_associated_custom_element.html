@@ -1,0 +1,39 @@
+<!doctype html>
+<link rel="help" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1935367">
+<title>Test dragging works inside form-associated custom elements</title>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css">
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+
+<x-element><span id="contents">Text contents</span></x-element>
+<input id="dropZone">
+
+<script>
+class XElement extends HTMLElement {
+  constructor() {
+    super();
+  }
+  static get formAssociated() {
+    return true;
+  }
+}
+
+customElements.define('x-element', XElement);
+
+add_task(async () => {
+  let selection = getSelection();
+  let range = new Range();
+  range.setStartBefore(contents);
+  range.setEndAfter(contents);
+  selection.addRange(range);
+  let gotDragStart = false;
+  contents.addEventListener("dragstart", () => {
+    gotDragStart = true;
+  });
+  await synthesizePlainDragAndDrop({
+    srcSelection: selection,
+    destElement: dropZone
+  });
+  ok(gotDragStart, 'Should have fired a dragstart event.');
+});
+</script>

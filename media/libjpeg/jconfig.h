@@ -4,10 +4,10 @@
 #define JPEG_LIB_VERSION  62
 
 /* libjpeg-turbo version */
-#define LIBJPEG_TURBO_VERSION  3.0.4
+#define LIBJPEG_TURBO_VERSION  3.1.4.1
 
 /* libjpeg-turbo version in integer form */
-#define LIBJPEG_TURBO_VERSION_NUMBER  3000004
+#define LIBJPEG_TURBO_VERSION_NUMBER  3001004
 
 /* Support arithmetic encoding when using 8-bit samples */
 /* #undef C_ARITH_CODING_SUPPORTED */

@@ -1,0 +1,26 @@
+{
+  "gap": {
+    "value": "{space.small}"
+  },
+  "icon": {
+    "size": {
+      "value": "{icon.size.xsmall}"
+    }
+  },
+  "link": {
+    "color": {
+      "@base": {
+        "value": "{link.color.@base}"
+      },
+      "hover": {
+        "value": "{link.color.hover}"
+      },
+      "active": {
+        "value": "{link.color.active}"
+      },
+      "visited": {
+        "value": "{link.color.visited}"
+      }
+    }
+  }
+}

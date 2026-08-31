@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,12 +17,9 @@
 #include "nsServiceManagerUtils.h"
 #include "systemservices/MediaUtils.h"
 
-#ifdef LOG
-#  undef LOG
-#endif
-
-static mozilla::LazyLogModule gMediaStreamTrackLog("MediaStreamTrack");
-#define LOG(type, msg) MOZ_LOG(gMediaStreamTrackLog, type, msg)
+mozilla::LazyLogModule gMediaStreamTrackLog("MediaStreamTrack");
+#define LOG(type, ...) \
+  MOZ_LOG_FMT(gMediaStreamTrackLog, type, MOZ_LOG_EXPAND_ARGS __VA_ARGS__)
 
 using namespace mozilla::media;
 
@@ -45,6 +41,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(MediaStreamTrackSource)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPrincipal)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+auto MediaStreamTrackSource::Clone() -> CloneResult { return {}; }
 
 auto MediaStreamTrackSource::ApplyConstraints(
     const dom::MediaTrackConstraints& aConstraints, CallerType aCallerType)
@@ -283,8 +281,8 @@ JSObject* MediaStreamTrack::WrapObject(JSContext* aCx,
 void MediaStreamTrack::GetId(nsAString& aID) const { aID = mID; }
 
 void MediaStreamTrack::SetEnabled(bool aEnabled) {
-  LOG(LogLevel::Info,
-      ("MediaStreamTrack %p %s", this, aEnabled ? "Enabled" : "Disabled"));
+  LOG(LogLevel::Info, ("MediaStreamTrack {} {}", fmt::ptr(this),
+                       aEnabled ? "Enabled" : "Disabled"));
 
   if (mEnabled == aEnabled) {
     return;
@@ -302,10 +300,11 @@ void MediaStreamTrack::SetEnabled(bool aEnabled) {
 }
 
 void MediaStreamTrack::Stop() {
-  LOG(LogLevel::Info, ("MediaStreamTrack %p Stop()", this));
+  LOG(LogLevel::Info, ("MediaStreamTrack {} Stop()", fmt::ptr(this)));
 
   if (Ended()) {
-    LOG(LogLevel::Warning, ("MediaStreamTrack %p Already ended", this));
+    LOG(LogLevel::Warning,
+        ("MediaStreamTrack {} Already ended", fmt::ptr(this)));
     return;
   }
 
@@ -346,9 +345,9 @@ already_AddRefed<Promise> MediaStreamTrack::ApplyConstraints(
     nsString str;
     aConstraints.ToJSON(str);
 
-    LOG(LogLevel::Info, ("MediaStreamTrack %p ApplyConstraints() with "
-                         "constraints %s",
-                         this, NS_ConvertUTF16toUTF8(str).get()));
+    LOG(LogLevel::Info, ("MediaStreamTrack {} ApplyConstraints() with "
+                         "constraints {}",
+                         fmt::ptr(this), NS_ConvertUTF16toUTF8(str).get()));
   }
 
   nsIGlobalObject* go = mWindow ? mWindow->AsGlobal() : nullptr;
@@ -408,10 +407,10 @@ void MediaStreamTrack::SetPrincipal(nsIPrincipal* aPrincipal) {
   mPrincipal = aPrincipal;
 
   LOG(LogLevel::Info,
-      ("MediaStreamTrack %p principal changed to %p. Now: "
-       "null=%d, codebase=%d, expanded=%d, system=%d",
-       this, mPrincipal.get(), mPrincipal->GetIsNullPrincipal(),
-       mPrincipal->GetIsContentPrincipal(),
+      ("MediaStreamTrack {} principal changed to {}. Now: "
+       "null={}, codebase={}, expanded={}, system={}",
+       fmt::ptr(this), fmt::ptr(mPrincipal.get()),
+       mPrincipal->GetIsNullPrincipal(), mPrincipal->GetIsContentPrincipal(),
        mPrincipal->GetIsExpandedPrincipal(), mPrincipal->IsSystemPrincipal()));
   for (PrincipalChangeObserver<MediaStreamTrack>* observer :
        mPrincipalChangeObservers) {
@@ -422,9 +421,10 @@ void MediaStreamTrack::SetPrincipal(nsIPrincipal* aPrincipal) {
 void MediaStreamTrack::PrincipalChanged() {
   mPendingPrincipal = GetSource().GetPrincipal();
   nsCOMPtr<nsIPrincipal> newPrincipal = mPrincipal;
-  LOG(LogLevel::Info, ("MediaStreamTrack %p Principal changed on main thread "
-                       "to %p (pending). Combining with existing principal %p.",
-                       this, mPendingPrincipal.get(), mPrincipal.get()));
+  LOG(LogLevel::Info, ("MediaStreamTrack {} Principal changed on main thread "
+                       "to {} (pending). Combining with existing principal {}.",
+                       fmt::ptr(this), fmt::ptr(mPendingPrincipal.get()),
+                       fmt::ptr(mPrincipal.get())));
   if (nsContentUtils::CombineResourcePrincipals(&newPrincipal,
                                                 mPendingPrincipal)) {
     SetPrincipal(newPrincipal);
@@ -434,11 +434,12 @@ void MediaStreamTrack::PrincipalChanged() {
 void MediaStreamTrack::NotifyPrincipalHandleChanged(
     const PrincipalHandle& aNewPrincipalHandle) {
   PrincipalHandle handle(aNewPrincipalHandle);
-  LOG(LogLevel::Info, ("MediaStreamTrack %p principalHandle changed on "
-                       "MediaTrackGraph thread to %p. Current principal: %p, "
-                       "pending: %p",
-                       this, GetPrincipalFromHandle(handle), mPrincipal.get(),
-                       mPendingPrincipal.get()));
+  LOG(LogLevel::Info,
+      ("MediaStreamTrack {} principalHandle changed on "
+       "MediaTrackGraph thread to {}. Current principal: {}, "
+       "pending: {}",
+       fmt::ptr(this), fmt::ptr(GetPrincipalFromHandle(handle)),
+       fmt::ptr(mPrincipal.get()), fmt::ptr(mPendingPrincipal.get())));
   if (PrincipalHandleMatches(handle, mPendingPrincipal)) {
     SetPrincipal(mPendingPrincipal);
     mPendingPrincipal = nullptr;
@@ -462,8 +463,8 @@ void MediaStreamTrack::MutedChanged(bool aNewState) {
     return;
   }
 
-  LOG(LogLevel::Info,
-      ("MediaStreamTrack %p became %s", this, aNewState ? "muted" : "unmuted"));
+  LOG(LogLevel::Info, ("MediaStreamTrack {} became {}", fmt::ptr(this),
+                       aNewState ? "muted" : "unmuted"));
 
   mMuted = aNewState;
 
@@ -539,13 +540,6 @@ void MediaStreamTrack::RemoveConsumer(MediaStreamTrackConsumer* aConsumer) {
   }
 }
 
-already_AddRefed<MediaStreamTrack> MediaStreamTrack::Clone() {
-  RefPtr<MediaStreamTrack> newTrack = CloneInternal();
-  newTrack->SetEnabled(Enabled());
-  newTrack->SetMuted(Muted());
-  return newTrack.forget();
-}
-
 void MediaStreamTrack::SetReadyState(MediaStreamTrackState aState) {
   MOZ_ASSERT(!(mReadyState == MediaStreamTrackState::Ended &&
                aState == MediaStreamTrackState::Live),
@@ -584,7 +578,7 @@ void MediaStreamTrack::OverrideEnded() {
     return;
   }
 
-  LOG(LogLevel::Info, ("MediaStreamTrack %p ended", this));
+  LOG(LogLevel::Info, ("MediaStreamTrack {} ended", fmt::ptr(this)));
 
   SetReadyState(MediaStreamTrackState::Ended);
 
@@ -594,8 +588,8 @@ void MediaStreamTrack::OverrideEnded() {
 }
 
 void MediaStreamTrack::AddListener(MediaTrackListener* aListener) {
-  LOG(LogLevel::Debug,
-      ("MediaStreamTrack %p adding listener %p", this, aListener));
+  LOG(LogLevel::Debug, ("MediaStreamTrack {} adding listener {}",
+                        fmt::ptr(this), fmt::ptr(aListener)));
   mTrackListeners.AppendElement(aListener);
 
   if (Ended()) {
@@ -605,8 +599,8 @@ void MediaStreamTrack::AddListener(MediaTrackListener* aListener) {
 }
 
 void MediaStreamTrack::RemoveListener(MediaTrackListener* aListener) {
-  LOG(LogLevel::Debug,
-      ("MediaStreamTrack %p removing listener %p", this, aListener));
+  LOG(LogLevel::Debug, ("MediaStreamTrack {} removing listener {}",
+                        fmt::ptr(this), fmt::ptr(aListener)));
   mTrackListeners.RemoveElement(aListener);
 
   if (Ended()) {
@@ -616,10 +610,11 @@ void MediaStreamTrack::RemoveListener(MediaTrackListener* aListener) {
 }
 
 void MediaStreamTrack::AddDirectListener(DirectMediaTrackListener* aListener) {
-  LOG(LogLevel::Debug, ("MediaStreamTrack %p (%s) adding direct listener %p to "
-                        "track %p",
-                        this, AsAudioStreamTrack() ? "audio" : "video",
-                        aListener, mTrack.get()));
+  LOG(LogLevel::Debug,
+      ("MediaStreamTrack {} ({}) adding direct listener {} to "
+       "track {}",
+       fmt::ptr(this), AsAudioStreamTrack() ? "audio" : "video",
+       fmt::ptr(aListener), fmt::ptr(mTrack.get())));
   mDirectTrackListeners.AppendElement(aListener);
 
   if (Ended()) {
@@ -631,8 +626,8 @@ void MediaStreamTrack::AddDirectListener(DirectMediaTrackListener* aListener) {
 void MediaStreamTrack::RemoveDirectListener(
     DirectMediaTrackListener* aListener) {
   LOG(LogLevel::Debug,
-      ("MediaStreamTrack %p removing direct listener %p from track %p", this,
-       aListener, mTrack.get()));
+      ("MediaStreamTrack {} removing direct listener {} from track {}",
+       fmt::ptr(this), fmt::ptr(aListener), fmt::ptr(mTrack.get())));
   mDirectTrackListeners.RemoveElement(aListener);
 
   if (Ended()) {
@@ -649,3 +644,5 @@ already_AddRefed<MediaInputPort> MediaStreamTrack::ForwardTrackContentsTo(
 }
 
 }  // namespace mozilla::dom
+
+#undef LOG

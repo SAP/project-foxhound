@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ObservableArrayProxyHandler.h"
 
-#include "jsapi.h"
-#include "js/friend/ErrorMessages.h"
 #include "js/Conversions.h"
 #include "js/Object.h"
+#include "js/friend/ErrorMessages.h"
+#include "jsapi.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/JSSlots.h"
 #include "mozilla/dom/ProxyHandlerUtils.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/ErrorResult.h"
 #include "nsDebug.h"
 #include "nsJSUtils.h"
 
@@ -275,6 +273,9 @@ bool ObservableArrayProxyHandler::GetBackingListObject(
     JS::Rooted<JSObject*> newBackingListObj(aCx);
     newBackingListObj.set(JS::NewArrayObject(aCx, 0));
     if (NS_WARN_IF(!newBackingListObj)) {
+      return false;
+    }
+    if (NS_WARN_IF(!JS_SetPrototype(aCx, newBackingListObj, nullptr))) {
       return false;
     }
     slotValue = JS::ObjectValue(*newBackingListObj);

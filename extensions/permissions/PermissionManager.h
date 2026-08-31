@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,8 @@
 #include "nsWeakReference.h"
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
+#include "nsITimer.h"
+#include "nsTHashMap.h"
 #include "nsTHashtable.h"
 #include "nsTArray.h"
 #include "nsString.h"
@@ -45,6 +45,8 @@ class OriginAttributesPattern;
 
 namespace dom {
 class ContentChild;
+class ContentParent;
+class WindowContext;
 }  // namespace dom
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -85,12 +87,12 @@ class PermissionManager final : public nsIPermissionManager,
    */
   class PermissionKey {
    public:
-    static PermissionKey* CreateFromPrincipal(nsIPrincipal* aPrincipal,
-                                              bool aForceStripOA,
-                                              bool aScopeToSite,
-                                              nsresult& aResult);
-    static PermissionKey* CreateFromURI(nsIURI* aURI, nsresult& aResult);
-    static PermissionKey* CreateFromURIAndOriginAttributes(
+    static already_AddRefed<PermissionKey> CreateFromPrincipal(
+        nsIPrincipal* aPrincipal, bool aForceStripOA, bool aScopeToSite,
+        nsresult& aResult);
+    static already_AddRefed<PermissionKey> CreateFromURI(nsIURI* aURI,
+                                                         nsresult& aResult);
+    static already_AddRefed<PermissionKey> CreateFromURIAndOriginAttributes(
         nsIURI* aURI, const OriginAttributes* aOriginAttributes,
         bool aForceStripOA, nsresult& aResult);
 
@@ -113,7 +115,7 @@ class PermissionManager final : public nsIPermissionManager,
     PermissionKey() = delete;
 
     // Dtor shouldn't be used outside of the class.
-    ~PermissionKey() {};
+    ~PermissionKey() = default;
   };
 
   class PermissionHashKey : public nsRefPtrHashKey<PermissionKey> {
@@ -177,6 +179,10 @@ class PermissionManager final : public nsIPermissionManager,
   PermissionManager();
   static already_AddRefed<nsIPermissionManager> GetXPCOMSingleton();
   static already_AddRefed<PermissionManager> GetInstance();
+
+  // Record a user interaction for permission expiry tracking.
+  // Handles content/parent process IPC branching internally.
+  static nsresult RecordSiteInteraction(dom::WindowContext* aWindowContext);
 
   // enums for AddInternal()
   enum OperationType {
@@ -378,6 +384,17 @@ class PermissionManager final : public nsIPermissionManager,
                DBOperationType aDBOperation,
                const nsACString* aOriginString = nullptr,
                const bool aAllowPersistInPrivateBrowsing = false);
+
+  struct BrowserPermissionEntry {
+    uint32_t mPermission;
+    int64_t mExpireTime;  // absolute timestamp (ms since epoch), 0 = no expiry
+    nsCOMPtr<nsITimer> mTimer;
+    uint32_t mTypeIndex;
+    bool mSiteScoped;
+  };
+
+  using BrowserPermissionMap =
+      nsTHashMap<nsCStringHashKey, BrowserPermissionEntry>;
 
  private:
   ~PermissionManager();
@@ -723,8 +740,67 @@ class PermissionManager final : public nsIPermissionManager,
     nsCOMPtr<mozIStorageStatement> mStmtInsert;
     nsCOMPtr<mozIStorageStatement> mStmtDelete;
     nsCOMPtr<mozIStorageStatement> mStmtUpdate;
+    nsCOMPtr<mozIStorageStatement> mStmtInsertInteraction;
   };
   ThreadBound<ThreadBoundData> mThreadBoundData;
+
+  void UpdateLastInteractionInternal(const nsACString& aOrigin)
+      MOZ_REQUIRES(mMonitor);
+  void ExpireUnusedPermissions();
+  bool ShouldExpirePermission(const PermissionEntry& aEntry,
+                              const nsTArray<nsCString>& aExpirableTypes) const
+      MOZ_REQUIRES(mMonitor);
+  RefPtr<GenericPromise> CleanupOrphanedInteractionRecords();
+
+  // BrowserId -> permission map for browser-scoped (per-tab) permissions.
+  nsTHashMap<nsUint64HashKey, UniquePtr<BrowserPermissionMap>>
+      mBrowserPermissionTable;
+
+  void NotifyBrowserObservers(const nsCOMPtr<nsIPermission>& aPermission,
+                              const nsString& aData);
+
+  void ForwardBrowserPermissionToChild(nsIPrincipal* aPrincipal,
+                                       const nsACString& aType,
+                                       uint32_t aAction, uint64_t aBrowserId,
+                                       bool aIsRemoval);
+
+  void ForwardClearBrowserPermissionsToChild(uint64_t aBrowserId,
+                                             uint32_t aActionFilter);
+
+ public:
+  void TransmitBrowserPermissionsForPrincipal(
+      dom::ContentParent* aContentParent, nsIPrincipal* aPrincipal,
+      uint64_t aBrowserId);
+  // Called from ContentChild IPC handlers. These are thin wrappers around
+  // the internal methods, asserting we are in the content process.
+  void SetBrowserPermissionFromIPC(nsIPrincipal* aPrincipal,
+                                   const nsACString& aType, uint32_t aAction,
+                                   uint64_t aBrowserId, bool aIsRemoval);
+  void ClearBrowserPermissionsFromIPC(uint64_t aBrowserId,
+                                      uint32_t aActionFilter);
+
+ private:
+  // Core browser permission operations. These work in any process and are
+  // shared between the XPCOM (parent-only) and IPC (child-only) entry points.
+  nsresult AddBrowserPermissionInternal(nsIPrincipal* aPrincipal,
+                                        const nsACString& aType,
+                                        uint32_t aPermission,
+                                        uint64_t aBrowserId,
+                                        int64_t aExpireTimeMS);
+  void RemoveBrowserPermissionInternal(nsIPrincipal* aPrincipal,
+                                       const nsACString& aType,
+                                       uint64_t aBrowserId);
+  // Returns true if any entries were removed.
+  bool ClearBrowserPermissionsInternal(uint64_t aBrowserId,
+                                       uint32_t aActionFilter);
+
+  nsCString BrowserCompositeKey(nsIPrincipal* aPrincipal,
+                                const nsACString& aType, bool aSiteScoped);
+
+  nsCOMPtr<nsITimer> ScheduleBrowserPermissionExpiry(
+      uint64_t aBrowserId, const nsACString& aCompositeKey,
+      nsIPrincipal* aPrincipal, const nsACString& aType, uint32_t aPermission,
+      int64_t aExpireMS);
 };
 
 // {4F6B5E00-0C36-11d5-A535-0010A401EB10}

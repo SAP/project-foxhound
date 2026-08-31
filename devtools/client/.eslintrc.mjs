@@ -11,13 +11,13 @@ export default [
     },
     rules: {
       // See bug 1288147, the devtools front-end wants to be able to run in
-      // content privileged windows, where ownerGlobal doesn't exist.
-      "mozilla/use-ownerGlobal": "off",
+      // content privileged windows, where documentGlobal doesn't exist.
+      "mozilla/use-documentGlobal": "off",
     },
   },
   {
     // Tests verify the exact source code of these functions
-    files: ["inspector/markup/test/doc_markup_events_*.html"],
+    files: ["inspector/markup/test/events/doc_markup_events_*.html"],
     rules: {
       "no-unused-vars": "off",
     },

@@ -13,60 +13,72 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1765835
 <script class="testbody" type="text/javascript">
 /* global sendAsyncMessage, addMessageListener */
 function mockChromeScript() {
+  let highAccuracy = false;
+  let hasSetHighAccuracy = false;
   function enableHighAccuracy(subject, topic, data) {
-    sendAsyncMessage("setHighAccuracy", data == "true");
+    highAccuracy = data == "true";
+    hasSetHighAccuracy |= highAccuracy;
   };
   Services.obs.addObserver(enableHighAccuracy, "testing-geolocation-high-accuracy");
 
   addMessageListener("cleanup", () => {
     Services.obs.removeObserver(enableHighAccuracy, "testing-geolocation-high-accuracy");
-    sendAsyncMessage("done");
   });
+  addMessageListener("getHighAccuracy", () => highAccuracy);
+  addMessageListener("hasSetHighAccuracy", () => hasSetHighAccuracy);
 
   sendAsyncMessage("ready");
 }
 
-add_task(async function test_watchPosition() {
+add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [["geo.prompt.testing", true], ["geo.prompt.testing.allow", true]],
   });
+})
 
+add_task(async function test_watchPosition() {
   let chromeScript = SpecialPowers.loadChromeScript(mockChromeScript);
   await chromeScript.promiseOneMessage("ready");
 
-  let id = navigator.geolocation.watchPosition(() => {}, () => {}, { enableHighAccuracy: true });
-  let highAccuracy = await chromeScript.promiseOneMessage("setHighAccuracy");
+  let { promise, resolve, reject } = Promise.withResolvers();
+  let id = navigator.geolocation.watchPosition(resolve, reject, { enableHighAccuracy: true });
+  await promise;
+  let highAccuracy = await chromeScript.sendQuery("getHighAccuracy");
   ok(highAccuracy, "enableHighAccuracy option should be enabled");
   navigator.geolocation.clearWatch(id);
 
-  id = navigator.geolocation.watchPosition(() => {}, () => {}, { enableHighAccuracy: false });
-  highAccuracy = await chromeScript.promiseOneMessage("setHighAccuracy");
+  ({ promise, resolve, reject } = Promise.withResolvers());
+  id = navigator.geolocation.watchPosition(resolve, reject, { enableHighAccuracy: false });
+  await promise;
+  highAccuracy = await chromeScript.sendQuery("getHighAccuracy");
   ok(!highAccuracy, "enableHighAccuracy option should be disabled");
   navigator.geolocation.clearWatch(id);
 
-  chromeScript.sendAsyncMessage("cleanup");
-  await chromeScript.promiseOneMessage("done");
+  await chromeScript.sendQuery("cleanup");
   chromeScript.destroy();
 });
 
 add_task(async function test_getCurrentPosition() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["geo.prompt.testing", true], ["geo.prompt.testing.allow", true]],
-  });
-
   let chromeScript = SpecialPowers.loadChromeScript(mockChromeScript);
   await chromeScript.promiseOneMessage("ready");
 
-  navigator.geolocation.getCurrentPosition(() => {}, () => {}, { enableHighAccuracy: true });
-  let highAccuracy = await chromeScript.promiseOneMessage("setHighAccuracy");
-  ok(highAccuracy, "enableHighAccuracy option should be enabled");
-
-  navigator.geolocation.getCurrentPosition(() => {}, () => {}, { enableHighAccuracy: false });
-  highAccuracy = await chromeScript.promiseOneMessage("setHighAccuracy");
+  let { promise, resolve, reject } = Promise.withResolvers();
+  navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false });
+  await promise;
+  let hasSetHighAccuracy = await chromeScript.sendQuery("hasSetHighAccuracy");
+  ok(!hasSetHighAccuracy, "enableHighAccuracy option should have never been enabled");
+  let highAccuracy = await chromeScript.sendQuery("getHighAccuracy");
   ok(!highAccuracy, "enableHighAccuracy option should be disabled");
 
-  chromeScript.sendAsyncMessage("cleanup");
-  await chromeScript.promiseOneMessage("done");
+  ({ promise, resolve, reject } = Promise.withResolvers());
+  navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
+  await promise;
+  hasSetHighAccuracy = await chromeScript.sendQuery("hasSetHighAccuracy");
+  ok(hasSetHighAccuracy, "enableHighAccuracy option should have been enabled");
+  highAccuracy = await chromeScript.sendQuery("getHighAccuracy");
+  ok(!highAccuracy, "enableHighAccuracy option should be disabled");
+
+  await chromeScript.sendQuery("cleanup");
   chromeScript.destroy();
 });
 </script>

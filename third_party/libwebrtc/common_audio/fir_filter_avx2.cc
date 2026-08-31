@@ -11,9 +11,10 @@
 #include "common_audio/fir_filter_avx2.h"
 
 #include <immintrin.h>
-#include <stdint.h>
-#include <string.h>
 #include <xmmintrin.h>
+
+#include <cstdint>
+#include <cstring>
 
 #include "common_audio/intrin.h"
 

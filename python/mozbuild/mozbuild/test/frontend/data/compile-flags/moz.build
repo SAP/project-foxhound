@@ -18,5 +18,5 @@ def DisableStlWrapping():
 
 UNIFIED_SOURCES += ["test1.c"]
 
-CXXFLAGS += ["-funroll-loops", "-Wall"]
-CFLAGS += ["-Wall", "-funroll-loops"]
+CXXFLAGS += ["-funroll-loops", "-Os"]
+CFLAGS += ["-Os", "-funroll-loops"]

@@ -4,7 +4,7 @@
 
 :root {
   /* we eventually want to share this value with the bookmark panel, which is
-     currently using --arrowpanel-padding */
+     currently using --panel-padding */
   --editbookmarkdialog-padding: 1.25em;
 }
 

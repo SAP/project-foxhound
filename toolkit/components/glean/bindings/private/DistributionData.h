@@ -1,4 +1,3 @@
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,7 @@
 #define mozilla_glean_DistributionData_h
 
 #include "nsTHashMap.h"
+#include "mozilla/glean/fog_ffi_generated.h"
 
 namespace mozilla::glean {
 
@@ -25,6 +25,16 @@ struct DistributionData final {
       : sum(aSum), count(aCount) {
     for (size_t i = 0; i < aBuckets.Length(); ++i) {
       this->values.InsertOrUpdate(aBuckets[i], aCounts[i]);
+    }
+  }
+
+  /**
+   * Create distribution data from an FfiDistributionData instance.
+   */
+  explicit DistributionData(const impl::FfiDistributionData& aData)
+      : sum(aData.sum), count(aData.count) {
+    for (size_t i = 0; i < aData.keys.Length(); ++i) {
+      this->values.InsertOrUpdate(aData.keys[i], aData.values[i]);
     }
   }
 
@@ -48,6 +58,14 @@ struct DistributionData final {
     aStream << "}";
     aStream << ")";
     return aStream;
+  }
+
+  static void fromFFIArray(
+      const nsTArray<impl::FfiDistributionData>& aDataArray,
+      nsTArray<DistributionData>& aResultArray) {
+    for (const auto& d : aDataArray) {
+      aResultArray.AppendElement(DistributionData(d));
+    }
   }
 };
 

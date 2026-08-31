@@ -10,15 +10,16 @@
 
 #include "examples/peerconnection/client/defaults.h"
 
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdlib>
+#include <iterator>
+#include <string>
 
 #ifdef WIN32
 #include <winsock2.h>
 #else
 #include <unistd.h>
 #endif
-
-#include "rtc_base/arraysize.h"
 
 const char kAudioLabel[] = "audio_label";
 const char kVideoLabel[] = "video_label";
@@ -46,11 +47,19 @@ std::string GetDefaultServerName() {
   return GetEnvVarOrDefault("WEBRTC_SERVER", "localhost");
 }
 
+std::string GetTurnUserName() {
+  return GetEnvVarOrDefault("WEBRTC_TURN_USER", "");
+}
+
+std::string GetTurnPassword() {
+  return GetEnvVarOrDefault("WEBRTC_TURN_PASSWORD", "");
+}
+
 std::string GetPeerName() {
   char computer_name[256];
   std::string ret(GetEnvVarOrDefault("USERNAME", "user"));
   ret += '@';
-  if (gethostname(computer_name, arraysize(computer_name)) == 0) {
+  if (gethostname(computer_name, std::size(computer_name)) == 0) {
     ret += computer_name;
   } else {
     ret += "host";

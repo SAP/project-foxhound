@@ -48,7 +48,13 @@ int wmain(int argc, wchar_t** argv) {
   if (!MiniDumpWriteDump(hProcess, pid, file, MiniDumpNormal, nullptr, nullptr,
                          nullptr)) {
     fprintf(stderr, "Error 0x%lX in MiniDumpWriteDump\n", GetLastError());
-    rv = 1;
+    DWORD status = 0;
+    if (!GetExitCodeProcess(hProcess, &status) || (status == STILL_ACTIVE)) {
+      // We return an error only if the process was still running. If we failed
+      // because the process had already been terminated then don't consider it
+      // an actual error.
+      rv = 1;
+    }
   }
 
   CloseHandle(file);

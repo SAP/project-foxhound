@@ -6,14 +6,13 @@
 
 import argparse
 import os
+import sys
 
 import taskcluster
 
-queue = taskcluster.Queue(
-    {
-        "rootUrl": os.environ.get("TASKCLUSTER_PROXY_URL", "https://taskcluster.net"),
-    }
-)
+queue = taskcluster.Queue({
+    "rootUrl": os.environ.get("TASKCLUSTER_PROXY_URL", "https://taskcluster.net"),
+})
 
 
 def check_all_dependencies_are_completed(current_task_id):
@@ -52,7 +51,7 @@ def main():
     result = parser.parse_args()
     check_all_dependencies_are_completed(result.current_task_id)
     print("All dependencies are completed. Reporting a green task!")
-    exit(0)
+    sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +15,6 @@
 #include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Result.h"
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
 
@@ -60,6 +58,12 @@ OSPreferences* OSPreferences::GetInstance() {
 }
 
 void OSPreferences::Refresh() {
+  // TODO: in content processes, get system locales from the parent process
+  // to ensure consistency and avoid depending on APIs that may be blocked
+  // by sandboxing (see bug 1946691).
+  // (Not strictly necessary for now as we don't currently use Refresh() on
+  // Windows.)
+
   nsTArray<nsCString> newLocales;
   ReadSystemLocales(newLocales);
 
@@ -511,7 +515,7 @@ OSPreferences::GetDateTimePattern(int32_t aDateFormatStyle,
 
   nsCString pattern;
   if (mPatternCache.Get(key, &pattern)) {
-    aRetVal = pattern;
+    aRetVal = std::move(pattern);
     return NS_OK;
   }
 
@@ -532,7 +536,7 @@ OSPreferences::GetDateTimePattern(int32_t aDateFormatStyle,
   }
   mPatternCache.InsertOrUpdate(key, pattern);
 
-  aRetVal = pattern;
+  aRetVal = std::move(pattern);
   return NS_OK;
 }
 

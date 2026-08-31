@@ -55,7 +55,7 @@ class TabCollectionStorage(
     var cachedTabCollections = listOf<TabCollection>()
 
     private val collectionStorage by lazy {
-        strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             TabCollectionStorage(context)
         }
     }

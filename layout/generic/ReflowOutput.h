@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #define mozilla_ReflowOutput_h
 
 #include "mozilla/EnumeratedRange.h"
+#include "mozilla/TypedEnumBits.h"
 #include "mozilla/WritingModes.h"
 #include "nsBoundingMetrics.h"
 #include "nsRect.h"
@@ -21,9 +20,23 @@ struct ReflowInput;
 
 enum class OverflowType : uint8_t { Ink, Scrollable };
 constexpr auto AllOverflowTypes() {
-  return mozilla::MakeInclusiveEnumeratedRange(OverflowType::Ink,
-                                               OverflowType::Scrollable);
+  return MakeInclusiveEnumeratedRange(OverflowType::Ink,
+                                      OverflowType::Scrollable);
 }
+
+// Flags controlling how a child's overflow areas are unioned into a parent's
+// overflow areas.
+enum class OverflowAreaUnionFlags : uint8_t {
+  None = 0,
+  // Treat the frame as if it were a scroll container: bypass the contain:layout
+  // check so the scrollable overflow of children still contributes.
+  AsIfScrolled = 1 << 0,
+  // The child being considered is absolutely positioned. The child's overflow
+  // is unioned via OverflowAreas::UnionWithAbsoluteOverflowAreas (which skips
+  // empty overflow rects).
+  ChildIsAbsPos = 1 << 1,
+};
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(OverflowAreaUnionFlags)
 
 struct OverflowAreas {
  public:
@@ -52,9 +65,7 @@ struct OverflowAreas {
            ScrollableOverflow().IsEqualEdges(aOther.ScrollableOverflow());
   }
 
-  bool operator!=(const OverflowAreas& aOther) const {
-    return !(*this == aOther);
-  }
+  bool operator!=(const OverflowAreas&) const = default;
 
   OverflowAreas operator+(const nsPoint& aPoint) const {
     OverflowAreas result(*this);
@@ -73,6 +84,10 @@ struct OverflowAreas {
   // Mutates |this| by unioning both overflow areas with |aOther|.
   void UnionWith(const OverflowAreas& aOther);
 
+  // Mutates |this| by unioning both overflow areas with |aOther|, which is
+  // assumed to be overflow areas of an absolutely positioned frame.
+  void UnionWithAbsoluteOverflowAreas(const OverflowAreas& aOther);
+
   // Mutates |this| by unioning both overflow areas with |aRect|.
   void UnionAllWith(const nsRect& aRect);
 
@@ -82,7 +97,7 @@ struct OverflowAreas {
   // Applies overflow clipping (for e.g. overflow: clip) as needed to both our
   // overflow rects.
   void ApplyClipping(const nsRect& aBounds, PhysicalAxes aClipAxes,
-                     const nsSize& aOverflowMargin) {
+                     const nsMargin& aOverflowMargin) {
     ApplyOverflowClippingOnRect(InkOverflow(), aBounds, aClipAxes,
                                 aOverflowMargin);
     ApplyOverflowClippingOnRect(ScrollableOverflow(), aBounds, aClipAxes,
@@ -94,14 +109,14 @@ struct OverflowAreas {
   static nsRect GetOverflowClipRect(const nsRect& aRectToClip,
                                     const nsRect& aBounds,
                                     PhysicalAxes aClipAxes,
-                                    const nsSize& aOverflowMargin);
+                                    const nsMargin& aOverflowMargin);
 
   // Applies the overflow clipping to a given overflow rect, given the frame
   // bounds, and the physical axes on which to apply the overflow clip.
   static void ApplyOverflowClippingOnRect(nsRect& aOverflowRect,
                                           const nsRect& aBounds,
                                           PhysicalAxes aClipAxes,
-                                          const nsSize& aOverflowMargin);
+                                          const nsMargin& aOverflowMargin);
 
  private:
   nsRect mInk;
@@ -119,13 +134,8 @@ struct OverflowAreas {
  */
 class CollapsingMargin final {
  public:
-  bool operator==(const CollapsingMargin& aOther) const {
-    return mMostPos == aOther.mMostPos && mMostNeg == aOther.mMostNeg;
-  }
-
-  bool operator!=(const CollapsingMargin& aOther) const {
-    return !(*this == aOther);
-  }
+  bool operator==(const CollapsingMargin&) const = default;
+  bool operator!=(const CollapsingMargin&) const = default;
 
   void Include(nscoord aCoord) {
     if (aCoord > mMostPos) {
@@ -176,32 +186,28 @@ class CollapsingMargin final {
  */
 class ReflowOutput {
  public:
-  explicit ReflowOutput(mozilla::WritingMode aWritingMode)
+  explicit ReflowOutput(WritingMode aWritingMode)
       : mSize(aWritingMode), mWritingMode(aWritingMode) {}
 
   // A convenient constructor to get WritingMode in ReflowInput.
   explicit ReflowOutput(const ReflowInput& aReflowInput);
 
-  nscoord ISize(mozilla::WritingMode aWritingMode) const {
+  nscoord ISize(WritingMode aWritingMode) const {
     return mSize.ISize(aWritingMode);
   }
-  nscoord BSize(mozilla::WritingMode aWritingMode) const {
+  nscoord BSize(WritingMode aWritingMode) const {
     return mSize.BSize(aWritingMode);
   }
-  mozilla::LogicalSize Size(mozilla::WritingMode aWritingMode) const {
+  LogicalSize Size(WritingMode aWritingMode) const {
     return mSize.ConvertTo(aWritingMode, mWritingMode);
   }
 
-  nscoord& ISize(mozilla::WritingMode aWritingMode) {
-    return mSize.ISize(aWritingMode);
-  }
-  nscoord& BSize(mozilla::WritingMode aWritingMode) {
-    return mSize.BSize(aWritingMode);
-  }
+  nscoord& ISize(WritingMode aWritingMode) { return mSize.ISize(aWritingMode); }
+  nscoord& BSize(WritingMode aWritingMode) { return mSize.BSize(aWritingMode); }
 
   // Set inline and block size from a LogicalSize, converting to our
   // writing mode as necessary.
-  void SetSize(mozilla::WritingMode aWM, mozilla::LogicalSize aSize) {
+  void SetSize(WritingMode aWM, const LogicalSize& aSize) {
     mSize = aSize.ConvertTo(mWritingMode, aWM);
   }
 
@@ -261,7 +267,7 @@ class ReflowOutput {
   // Union all of mOverflowAreas with (0, 0, width, height).
   void UnionOverflowAreasWithDesiredBounds();
 
-  mozilla::WritingMode GetWritingMode() const { return mWritingMode; }
+  WritingMode GetWritingMode() const { return mWritingMode; }
 
  private:
   // Desired size of a frame's border-box.
@@ -270,7 +276,7 @@ class ReflowOutput {
   // Baseline (in block direction), or the default value ASK_FOR_BASELINE.
   nscoord mBlockStartAscent = ASK_FOR_BASELINE;
 
-  mozilla::WritingMode mWritingMode;
+  WritingMode mWritingMode;
 };
 
 }  // namespace mozilla

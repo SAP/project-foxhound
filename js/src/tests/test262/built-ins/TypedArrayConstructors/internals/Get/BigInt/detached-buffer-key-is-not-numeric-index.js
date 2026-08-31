@@ -13,7 +13,7 @@ info: |
     b. If numericIndex is not undefined, then
     ...
   3. Return ? OrdinaryGet(O, P, Receiver
-includes: [testBigIntTypedArray.js, detachArrayBuffer.js]
+includes: [testTypedArray.js, detachArrayBuffer.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -25,6 +25,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
 
   assert.sameValue(sample.undef, undefined);
   assert.sameValue(sample.foo, "test262");
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

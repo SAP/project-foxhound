@@ -21,4 +21,6 @@ RUN apt-get update && \
       zip \
       lsb-release \
       gperf \
-      procps
+      procps \
+      libdbus-1-3 \
+      libxcb1

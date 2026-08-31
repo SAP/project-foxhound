@@ -7,10 +7,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=993936
   <meta charset="utf-8">
   <title>Test for Bug 993936</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 993936 **/
+  /** Test for Bug 993936 */
 
 var currentId = 0;
 var evictedTouchesCount = 0;
@@ -39,7 +40,7 @@ function touchEvent(aOptions) {
   this.changedTouches = aOptions.changedTouches || [];
 }
 
-function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
+function sendTouchEvent(aType, aEvent, aModifiers) {
   var ids = [], xs=[], ys=[], rxs = [], rys = [],
       rotations = [], forces = [], tiltXs = [], tiltYs = [], twists = [];
 
@@ -59,10 +60,18 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
       }
     }
   }
-  return windowUtils.sendTouchEvent(aType,
-                                    ids, xs, ys, rxs, rys,
-                                    rotations, forces, tiltXs, tiltYs, twists,
-                                    aModifiers);
+  return synthesizeTouchAtPoint(xs, ys, {
+    type: aType,
+    id: ids,
+    rx: rxs,
+    ry: rys,
+    angle: rotations,
+    force: forces,
+    tiltX: tiltXs,
+    tiltY: tiltYs,
+    twist: twists,
+    modifiers: aModifiers,
+  });
 }
 
 function getSingleTouchEventForTarget(target, cwu) {
@@ -110,12 +119,12 @@ function runTests() {
   var cwu = SpecialPowers.getDOMWindowUtils(window);
 
   var event1 = getMultiTouchEventForTarget(d0, cwu);
-  sendTouchEvent(cwu, "touchstart", event1, 0);
-  sendTouchEvent(cwu, "touchmove", event1, 0);
+  sendTouchEvent("touchstart", event1, 0);
+  sendTouchEvent("touchmove", event1, 0);
   is(evictedTouchesCount, 0, "Still no evicted touches");
 
   var event2 = getSingleTouchEventForTarget(d0, cwu);
-  sendTouchEvent(cwu, "touchstart", event2, 0);
+  sendTouchEvent("touchstart", event2, 0);
 
   // By now we should get touchend event
   ok(evictedTouchesCount > 0, "Got evicted touch");

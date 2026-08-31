@@ -23,7 +23,7 @@ add_task(async function init() {
   await SpecialPowers.pushPrefEnv({set: [["dom.expose_test_interfaces", true]]});
 });
 
-/** Test for Bug 1776790 **/
+/** Test for Bug 1776790 */
 add_task(function test_interface_length() {
   is(TestInterfaceLength.length, 1, "TestInterfaceLength.length");
 });

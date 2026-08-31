@@ -1,20 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Components.h"
+#include "nsHTTPSOnlyUtils.h"
+
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
+#include "mozilla/Components.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/net/DNS.h"
 #include "nsContentUtils.h"
 #include "nsDNSPrefetch.h"
-#include "nsHTTPSOnlyUtils.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
@@ -104,7 +105,7 @@ void nsHTTPSOnlyUtils::PotentiallyFireHttpRequestToShortenTimout(
 
   // if it's not a GET method, then there is nothing to do here either.
   nsAutoCString method;
-  mozilla::Unused << httpChannel->GetRequestMethod(method);
+  (void)httpChannel->GetRequestMethod(method);
   if (!method.EqualsLiteral("GET")) {
     return;
   }
@@ -174,6 +175,15 @@ bool nsHTTPSOnlyUtils::ShouldUpgradeRequest(nsIURI* aURI,
                                 HTTPS_ONLY_MODE)) {
       return false;
     }
+  }
+
+  if (IsExemptedExtensionRequest(aURI, aLoadInfo)) {
+    AutoTArray<nsString, 1> params = {
+        NS_ConvertUTF8toUTF16(aURI->GetSpecOrDefault())};
+    nsHTTPSOnlyUtils::LogLocalizedString("HTTPSOnlyNoUpgradeException", params,
+                                         nsIScriptError::infoFlag, aLoadInfo,
+                                         aURI);
+    return false;
   }
 
   // We can not upgrade "Save-As" downloads, since we have no way of detecting
@@ -702,6 +712,30 @@ bool nsHTTPSOnlyUtils::TestIfPrincipalIsExempt(nsIPrincipal* aPrincipal,
 }
 
 /* static */
+bool nsHTTPSOnlyUtils::IsExemptedExtensionRequest(nsIURI* aURI,
+                                                  nsILoadInfo* aLoadInfo) {
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal = aLoadInfo->TriggeringPrincipal();
+  if (!triggeringPrincipal) {
+    return false;
+  }
+
+  RefPtr<mozilla::extensions::WebExtensionPolicyCore> core =
+      mozilla::BasePrincipal::Cast(triggeringPrincipal)->AddonPolicyCore();
+  if (!core) {
+    return false;
+  }
+
+  mozilla::OriginAttributes oa = aLoadInfo->GetOriginAttributes();
+  nsCOMPtr<nsIPrincipal> targetPrincipal =
+      mozilla::BasePrincipal::CreateContentPrincipal(aURI, oa);
+  if (!targetPrincipal) {
+    return false;
+  }
+
+  return TestIfPrincipalIsExempt(targetPrincipal, HTTPS_ONLY_MODE);
+}
+
+/* static */
 void nsHTTPSOnlyUtils::TestSitePermissionAndPotentiallyAddExemption(
     nsIChannel* aChannel) {
   NS_ENSURE_TRUE_VOID(aChannel);
@@ -774,7 +808,9 @@ bool nsHTTPSOnlyUtils::HttpsUpgradeUnrelatedErrorCode(nsresult aError) {
          NS_ERROR_UNKNOWN_HOST == aError || NS_ERROR_PHISHING_URI == aError ||
          NS_ERROR_MALWARE_URI == aError || NS_ERROR_UNWANTED_URI == aError ||
          NS_ERROR_HARMFUL_URI == aError || NS_ERROR_CONTENT_CRASHED == aError ||
-         NS_ERROR_FRAME_CRASHED == aError || NS_ERROR_SUPERFLUOS_AUTH == aError;
+         NS_ERROR_FRAME_CRASHED == aError ||
+         NS_ERROR_NET_EMPTY_RESPONSE == aError ||
+         NS_ERROR_NET_ERROR_RESPONSE == aError;
 }
 
 /* ------ Logging ------ */
@@ -786,7 +822,7 @@ void nsHTTPSOnlyUtils::LogLocalizedString(const char* aName,
                                           nsILoadInfo* aLoadInfo, nsIURI* aURI,
                                           bool aUseHttpsFirst) {
   nsAutoString logMsg;
-  nsContentUtils::FormatLocalizedString(nsContentUtils::eSECURITY_PROPERTIES,
+  nsContentUtils::FormatLocalizedString(PropertiesFile::SECURITY_PROPERTIES,
                                         aName, aParams, logMsg);
   LogMessage(logMsg, aFlags, aLoadInfo, aURI, aUseHttpsFirst);
 }
@@ -1050,7 +1086,7 @@ TestHTTPAnswerRunnable::OnStartRequest(nsIRequest* aRequest) {
     nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal =
         do_QueryInterface(httpsOnlyChannel);
     bool isAuthChannel = false;
-    mozilla::Unused << httpChannelInternal->GetIsAuthChannel(&isAuthChannel);
+    (void)httpChannelInternal->GetIsAuthChannel(&isAuthChannel);
     // some server configurations need a long time to respond to an https
     // connection, but also redirect any http connection to the https version of
     // it. If the top-level load has not started yet, but the http background
@@ -1116,9 +1152,17 @@ TestHTTPAnswerRunnable::Run() {
         new nsDNSPrefetch(mURI, originAttributes, origChannel->GetTRRMode());
     nsCOMPtr<nsIHttpChannelInternal> internalChannel =
         do_QueryInterface(origChannel);
+    // If the channel will be proxied and the proxy is responsible for DNS
+    // resolution, skip the HTTPS RR lookup to avoid leaking the host name
+    nsIHttpChannelInternal::ProxyDNSStrategy dnsStrategy =
+        nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN;
+    if (internalChannel) {
+      (void)internalChannel->GetProxyDNSStrategy(&dnsStrategy);
+    }
     uint32_t caps;
-    if (NS_SUCCEEDED(internalChannel->GetCaps(&caps))) {
-      mozilla::Unused << resolver->FetchHTTPSSVC(
+    if (dnsStrategy != nsIHttpChannelInternal::PROXY_DNS_STRATEGY_PROXY &&
+        internalChannel && NS_SUCCEEDED(internalChannel->GetCaps(&caps))) {
+      (void)resolver->FetchHTTPSSVC(
           caps & NS_HTTP_REFRESH_DNS, false,
           [self = RefPtr{this}](nsIDNSHTTPSSVCRecord* aRecord) {
             self->mHasHTTPSRR = (aRecord != nullptr);

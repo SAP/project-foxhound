@@ -36,10 +36,7 @@ async function testSteps() {
   request = reset();
   await requestFinished(request);
 
-  let spoofedLimitBytes = 50 * GiB;
-  if (AppConstants.platform == "android") {
-    spoofedLimitBytes = 32 * GiB;
-  }
+  const spoofedLimitBytes = 50 * GiB;
 
   Services.prefs.setBoolPref("privacy.resistFingerprinting", true);
 

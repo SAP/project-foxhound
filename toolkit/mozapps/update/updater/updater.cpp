@@ -29,7 +29,20 @@
  *  -----------
  *  method   = "remove" | "rmdir"
  */
-#include "bspatch.h"
+
+#if defined(MOZ_BSPATCH)
+#  include "bspatch.h"
+#  include "crctable.h"
+#endif  // defined(MOZ_BSPATCH)
+
+#if defined(MOZ_ZUCCHINI)
+#  include "mozilla/moz_zucchini.h"
+#endif  // defined(MOZ_ZUCCHINI)
+
+#if !defined(MOZ_BSPATCH) && !defined(MOZ_ZUCCHINI)
+#  error Updater enabled, but all supported patch formats are turned off.
+#endif  // !defined(MOZ_BSPATCH) && !defined(MOZ_ZUCCHINI)
+
 #include "progressui.h"
 #include "archivereader.h"
 #include "readstrings.h"
@@ -52,6 +65,7 @@
 
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 #ifdef XP_WIN
 #  include "mozilla/Maybe.h"
 #  include "mozilla/WinHeaderOnlyUtils.h"
@@ -86,7 +100,7 @@ bool PerformInstallationFromDMG(int argc, char** argv);
 struct UpdateServerThreadArgs {
   int argc;
   const NS_tchar** argv;
-  const char* marChannelID;
+  const char* marChannelID = "";
 };
 #endif
 
@@ -116,8 +130,6 @@ struct UpdateServerThreadArgs {
 #  include "nss.h"
 #  include "prerror.h"
 #endif
-
-#include "crctable.h"
 
 #ifdef XP_WIN
 #  ifdef MOZ_MAINTENANCE_SERVICE
@@ -199,22 +211,6 @@ static UpdaterInvocation getUpdaterInvocationFromArg(const NS_tchar* argument) {
     return UpdaterInvocation::Second;
   }
   return UpdaterInvocation::Unknown;
-}
-
-//-----------------------------------------------------------------------------
-
-// This BZ2_crc32Table variable lives in libbz2. We just took the
-// data structure from bz2 and created crctables.h
-
-static unsigned int crc32(const unsigned char* buf, unsigned int len) {
-  unsigned int crc = 0xffffffffL;
-
-  const unsigned char* end = buf + len;
-  for (; buf != end; ++buf)
-    crc = (crc << 8) ^ BZ2_crc32Table[(crc >> 24) ^ *buf];
-
-  crc = ~crc;
-  return crc;
 }
 
 //-----------------------------------------------------------------------------
@@ -337,7 +333,7 @@ class Thread {
 static NS_tchar gPatchDirPath[MAXPATHLEN];
 static NS_tchar gInstallDirPath[MAXPATHLEN];
 static NS_tchar gWorkingDirPath[MAXPATHLEN];
-MOZ_RUNINIT static ArchiveReader gArchiveReader;
+constinit static ArchiveReader gArchiveReader;
 static bool gSucceeded = false;
 static bool sStagedUpdate = false;
 static bool sReplaceRequest = false;
@@ -369,7 +365,7 @@ static const int kCallbackIndex = 8;
 
 // This string contains the MAR channel IDs that are later extracted by one of
 // the `ReadMARChannelIDsFrom` variants.
-MOZ_RUNINIT static MARChannelStringTable gMARStrings;
+constinit static MARChannelStringTable gMARStrings;
 
 // Normally, we run updates as a result of user action (the user started Firefox
 // or clicked a "Restart to Update" button). But there are some cases when
@@ -710,7 +706,7 @@ static int ensure_remove_recursive(const NS_tchar* path,
     return rv;
   }
 
-  while ((entry = NS_treaddir(dir)) != 0) {
+  while ((entry = NS_treaddir(dir)) != nullptr) {
     if (NS_tstrcmp(entry->d_name, NS_T(".")) &&
         NS_tstrcmp(entry->d_name, NS_T(".."))) {
       NS_tchar childPath[MAXPATHLEN];
@@ -974,7 +970,7 @@ static int ensure_copy_recursive(const NS_tchar* path, const NS_tchar* dest,
     return READ_ERROR;
   }
 
-  while ((entry = NS_treaddir(dir)) != 0) {
+  while ((entry = NS_treaddir(dir)) != nullptr) {
     if (NS_tstrcmp(entry->d_name, NS_T(".")) &&
         NS_tstrcmp(entry->d_name, NS_T(".."))) {
       NS_tchar childPath[MAXPATHLEN];
@@ -1576,9 +1572,213 @@ void AddFile::Finish(int status) {
   }
 }
 
+class PatchFileDecoder {
+ public:
+  // This method is the only valid way to create a PatchFileDecoder object,
+  // which ensures that any such object has successfully called the Load()
+  // method. Child classes must hide their constructors and declare the parent
+  // class as a friend.
+  template <typename ChildClass>
+  static mozilla::UniquePtr<PatchFileDecoder> TryLoadAs(FILE* aPatchFile,
+                                                        int* aReturnValue) {
+    // We cannot use MakeUnique because child classes hide their constructors.
+    mozilla::UniquePtr<ChildClass> ptr{new ChildClass()};
+    fseek(aPatchFile, 0, SEEK_SET);
+    int rv = ptr->Load(aPatchFile);
+    if (rv != OK) {
+      ptr.reset();
+    }
+    if (aReturnValue) {
+      *aReturnValue = rv;
+    }
+    return ptr;
+  }
+
+  virtual ~PatchFileDecoder() = default;
+
+  virtual unsigned int ComputeCrc32(const uint8_t* aBuf, size_t aBufSize) = 0;
+
+  virtual off_t SourceSize() = 0;
+  virtual off_t DestinationSize() = 0;
+  virtual unsigned int SourceCrc32() = 0;
+
+  // Applies the loaded patch to aCheckedSrcBuf, and writes the result to
+  // aDstFile. aDstFile is never deleted, cleanup is up to the caller.
+  // Assumes that the crc32 and size of aCheckedSrcBuf have been
+  // checked by the caller.
+  virtual int Apply(const uint8_t* aCheckedSrcBuf, size_t aCheckedSrcBufSize,
+                    FILE* aDstFile) = 0;
+
+ protected:
+  virtual int Load(FILE* aPatchFile) = 0;
+};
+
+#if defined(MOZ_BSPATCH)
+class BSPatchFileDecoder : public PatchFileDecoder {
+ public:
+  ~BSPatchFileDecoder() override = default;
+
+  unsigned int ComputeCrc32(const uint8_t* aBuf, size_t aBufSize) override;
+
+  off_t SourceSize() override;
+
+  off_t DestinationSize() override;
+
+  unsigned int SourceCrc32() override;
+
+  int Apply(const uint8_t* aSrcBuf, size_t aSrcBufSize,
+            FILE* aDstFile) override;
+
+ protected:  // Comply with PatchFileDecoder::TryLoadAs requirements
+  BSPatchFileDecoder() = default;
+  int Load(FILE* aPatchFile) override;
+  friend class PatchFileDecoder;
+
+ private:
+  FILE* mPatchFile{};
+  MBSPatchHeader mHeader{};
+};
+
+// This BZ2_crc32Table variable lives in libbz2. We just took the
+// data structure from bz2 and created crctables.h
+unsigned int BSPatchFileDecoder::ComputeCrc32(const uint8_t* aBuf,
+                                              size_t aBufSize) {
+  unsigned int crc = 0xffffffffL;
+
+  const uint8_t* end = aBuf + aBufSize;
+  for (; aBuf != end; ++aBuf)
+    crc = (crc << 8) ^ BZ2_crc32Table[(crc >> 24) ^ *aBuf];
+
+  crc = ~crc;
+  return crc;
+}
+
+int BSPatchFileDecoder::Load(FILE* aPatchFile) {
+  mPatchFile = aPatchFile;
+  return MBS_ReadHeader(aPatchFile, &mHeader);
+}
+
+off_t BSPatchFileDecoder::SourceSize() {
+  return static_cast<off_t>(mHeader.slen);
+}
+
+off_t BSPatchFileDecoder::DestinationSize() {
+  return static_cast<off_t>(mHeader.dlen);
+}
+
+unsigned int BSPatchFileDecoder::SourceCrc32() { return mHeader.scrc32; }
+
+int BSPatchFileDecoder::Apply(const uint8_t* aCheckedSrcBuf,
+                              size_t aCheckedSrcBufSize, FILE* aDstFile) {
+  return MBS_ApplyPatch(&mHeader, mPatchFile, aCheckedSrcBuf, aDstFile);
+}
+#endif  // defined(MOZ_BSPATCH)
+
+#if defined(MOZ_ZUCCHINI)
+void LogZucchiniMessage(const char* aMessage) { LOG(("%s", aMessage)); }
+
+// Best-effort conversion from Zucchini status codes to updater status codes
+int FromZucchiniStatus(zucchini::status::Code code) {
+  int result = OK;
+  switch (code) {
+    case zucchini::status::kStatusSuccess:
+      break;
+    case zucchini::status::kStatusFileReadError:
+    case zucchini::status::kStatusPatchReadError:
+      result = READ_ERROR;
+      break;
+    case zucchini::status::kStatusFileWriteError:
+      result = WRITE_ERROR;
+      break;
+    case zucchini::status::kStatusPatchWriteError:
+      result = WRITE_ERROR_PATCH_FILE;
+      break;
+    case zucchini::status::kStatusInvalidOldImage:
+    case zucchini::status::kStatusInvalidNewImage:
+      result = CRC_ERROR;
+      break;
+    case zucchini::status::kStatusOutOfMemory:
+      result = BSPATCH_MEM_ERROR;
+      break;
+    case zucchini::status::kStatusInvalidParam:
+    case zucchini::status::kStatusDiskFull:
+    case zucchini::status::kStatusIoError:
+    case zucchini::status::kStatusFatal:
+    default:
+      result = UNEXPECTED_BSPATCH_ERROR;
+      break;
+  }
+  if (result != OK) {
+    LOG(
+        ("FromZucchiniStatus: encountered zucchini error %d, converting to "
+         "updater error %d",
+         code, result));
+  }
+  return result;
+}
+
+class ZucchiniPatchFileDecoder : public PatchFileDecoder {
+ public:
+  ~ZucchiniPatchFileDecoder() override = default;
+
+  unsigned int ComputeCrc32(const uint8_t* aBuf, size_t aBufSize) override;
+
+  off_t SourceSize() override;
+
+  off_t DestinationSize() override;
+
+  unsigned int SourceCrc32() override;
+
+  int Apply(const uint8_t* aCheckedSrcBuf, size_t aCheckedSrcBufSize,
+            FILE* aDstFile) override;
+
+ protected:  // Comply with PatchFileDecoder::TryLoadAs requirements
+  ZucchiniPatchFileDecoder() = default;
+  int Load(FILE* aPatchFile) override;
+  friend class PatchFileDecoder;
+
+ private:
+  zucchini::mozilla::MappedPatch mMappedPatch;
+  uint32_t mSourceSize{};
+  uint32_t mDestinationSize{};
+  uint32_t mSourceCrc32{};
+};
+
+unsigned int ZucchiniPatchFileDecoder::ComputeCrc32(const uint8_t* aBuf,
+                                                    size_t aBufSize) {
+  return zucchini::mozilla::ComputeCrc32(aBuf, aBufSize);
+}
+
+int ZucchiniPatchFileDecoder::Load(FILE* aPatchFile) {
+  return FromZucchiniStatus(mMappedPatch.Load(
+      aPatchFile, &mSourceSize, &mDestinationSize, &mSourceCrc32));
+}
+
+off_t ZucchiniPatchFileDecoder::SourceSize() {
+  return static_cast<off_t>(mSourceSize);
+}
+
+off_t ZucchiniPatchFileDecoder::DestinationSize() {
+  return static_cast<off_t>(mDestinationSize);
+}
+
+unsigned int ZucchiniPatchFileDecoder::SourceCrc32() {
+  return static_cast<int>(mSourceCrc32);
+}
+
+int ZucchiniPatchFileDecoder::Apply(const uint8_t* aCheckedSrcBuf,
+                                    size_t aCheckedSrcBufSize, FILE* aDstFile) {
+  // SAFETY: The caller has already checked that the crc32 and size of
+  // aCheckedSrcBuf match with the contents of the patch file as a requirement
+  // of PatchFileDecoder::Apply.
+  return FromZucchiniStatus(
+      mMappedPatch.ApplyUnsafe(aCheckedSrcBuf, aCheckedSrcBufSize, aDstFile));
+}
+#endif  // defined(MOZ_ZUCCHINI)
+
 class PatchFile : public Action {
  public:
-  PatchFile() : mPatchFile(nullptr), mPatchIndex(-1), buf(nullptr) {}
+  PatchFile() : mPatchFile(nullptr), mPatchIndex(-1), mBufSize(0) {}
 
   ~PatchFile() override;
 
@@ -1596,9 +1796,10 @@ class PatchFile : public Action {
   mozilla::UniquePtr<NS_tchar[]> mFile;
   mozilla::UniquePtr<NS_tchar[]> mFileRelPath;
   int mPatchIndex;
-  MBSPatchHeader header;
-  unsigned char* buf;
-  NS_tchar spath[MAXPATHLEN];
+  mozilla::UniquePtr<PatchFileDecoder> mPatchFileDecoder;
+  mozilla::UniquePtr<uint8_t[]> mBuf;
+  size_t mBufSize;
+  NS_tchar mPatchPath[MAXPATHLEN];
   AutoFile mPatchStream;
 };
 
@@ -1616,10 +1817,6 @@ PatchFile::~PatchFile() {
 #endif
   // Patch files are written to the <working_dir>/updating directory which is
   // removed after the update has finished so don't delete patch files here.
-
-  if (buf) {
-    free(buf);
-  }
 }
 
 int PatchFile::LoadSourceFile(FILE* ofile) {
@@ -1632,21 +1829,24 @@ int PatchFile::LoadSourceFile(FILE* ofile) {
     return READ_ERROR;
   }
 
-  if (uint32_t(os.st_size) != header.slen) {
+  off_t expectedSize = mPatchFileDecoder->SourceSize();
+  if (os.st_size != expectedSize) {
     LOG(
-        ("LoadSourceFile: destination file size %d does not match expected "
-         "size %d",
-         uint32_t(os.st_size), header.slen));
+        ("LoadSourceFile: destination file size %jd does not match expected "
+         "size %jd",
+         static_cast<intmax_t>(os.st_size),
+         static_cast<intmax_t>(expectedSize)));
     return LOADSOURCE_ERROR_WRONG_SIZE;
   }
 
-  buf = (unsigned char*)malloc(header.slen);
-  if (!buf) {
+  mBufSize = os.st_size;
+  mBuf = mozilla::MakeUniqueFallible<uint8_t[]>(mBufSize);
+  if (!mBuf) {
     return UPDATER_MEM_ERROR;
   }
 
-  size_t r = header.slen;
-  unsigned char* rb = buf;
+  size_t r = mBufSize;
+  uint8_t* rb = mBuf.get();
   while (r) {
     const size_t count = mmin(SSIZE_MAX, r);
     size_t c = fread(rb, 1, count, ofile);
@@ -1662,13 +1862,14 @@ int PatchFile::LoadSourceFile(FILE* ofile) {
 
   // Verify that the contents of the source file correspond to what we expect.
 
-  unsigned int crc = crc32(buf, header.slen);
+  unsigned int crc = mPatchFileDecoder->ComputeCrc32(mBuf.get(), mBufSize);
+  unsigned int expectedCrc = mPatchFileDecoder->SourceCrc32();
 
-  if (crc != header.scrc32) {
+  if (crc != expectedCrc) {
     LOG(
-        ("LoadSourceFile: destination file crc %d does not match expected "
-         "crc %d",
-         crc, header.scrc32));
+        ("LoadSourceFile: destination file crc %u does not match expected "
+         "crc %u",
+         crc, expectedCrc));
     return CRC_ERROR;
   }
 
@@ -1712,18 +1913,18 @@ int PatchFile::Prepare() {
   // extract the patch to a temporary file
   mPatchIndex = sPatchIndex++;
 
-  NS_tsnprintf(spath, sizeof(spath) / sizeof(spath[0]),
+  NS_tsnprintf(mPatchPath, sizeof(mPatchPath) / sizeof(mPatchPath[0]),
                NS_T("%s/updating/%d.patch"), gWorkingDirPath, mPatchIndex);
 
   // The removal of pre-existing patch files here is in case a previous update
   // crashed and left these files behind.
-  if (NS_tremove(spath) && errno != ENOENT) {
-    LOG(("failure removing pre-existing patch file: " LOG_S ", err: %d", spath,
-         errno));
+  if (NS_tremove(mPatchPath) && errno != ENOENT) {
+    LOG(("failure removing pre-existing patch file: " LOG_S ", err: %d",
+         mPatchPath, errno));
     return WRITE_ERROR;
   }
 
-  mPatchStream = NS_tfopen(spath, NS_T("wb+"));
+  mPatchStream = NS_tfopen(mPatchPath, NS_T("wb+"));
   if (!mPatchStream) {
     return WRITE_ERROR;
   }
@@ -1754,10 +1955,26 @@ int PatchFile::Prepare() {
 int PatchFile::Execute() {
   LOG(("EXECUTE PATCH " LOG_S, mFileRelPath.get()));
 
-  fseek(mPatchStream, 0, SEEK_SET);
+  int rv = UNEXPECTED_BSPATCH_ERROR;
 
-  int rv = MBS_ReadHeader(mPatchStream, &header);
-  if (rv) {
+  // zucchini patch files start with "Zucc" bytes, while bspatch patch files
+  // start with "MBDIFF10" bytes. Since these bytes are checked, there is no
+  // risk of a loader accepting a patch in the wrong format and we can safely
+  // iterate over the formats.
+
+#if defined(MOZ_BSPATCH)
+  mPatchFileDecoder =
+      PatchFileDecoder::TryLoadAs<BSPatchFileDecoder>(mPatchStream, &rv);
+#endif  // defined(MOZ_BSPATCH)
+
+#if defined(MOZ_ZUCCHINI)
+  if (!mPatchFileDecoder) {
+    mPatchFileDecoder = PatchFileDecoder::TryLoadAs<ZucchiniPatchFileDecoder>(
+        mPatchStream, &rv);
+  }
+#endif  // defined(MOZ_ZUCCHINI)
+
+  if (!mPatchFileDecoder) {
     return rv;
   }
 
@@ -1805,11 +2022,14 @@ int PatchFile::Execute() {
     }
   }
 
+  off_t dlen = mPatchFileDecoder->DestinationSize();
+
 #if defined(HAVE_POSIX_FALLOCATE)
   AutoFile ofile(ensure_open(mFile.get(), NS_T("wb+"), ss.st_mode));
-  posix_fallocate(fileno((FILE*)ofile), 0, header.dlen);
+  posix_fallocate(fileno((FILE*)ofile), 0, dlen);
 #elif defined(XP_WIN)
   bool shouldTruncate = true;
+
   // Creating the file, setting the size, and then closing the file handle
   // lessens fragmentation more than any other method tested. Other methods that
   // have been tested are:
@@ -1821,7 +2041,7 @@ int PatchFile::Execute() {
                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 
   if (hfile != INVALID_HANDLE_VALUE) {
-    if (SetFilePointer(hfile, header.dlen, nullptr, FILE_BEGIN) !=
+    if (SetFilePointer(hfile, dlen, nullptr, FILE_BEGIN) !=
             INVALID_SET_FILE_POINTER &&
         SetEndOfFile(hfile) != 0) {
       shouldTruncate = false;
@@ -1834,7 +2054,7 @@ int PatchFile::Execute() {
 #elif defined(XP_MACOSX)
   AutoFile ofile(ensure_open(mFile.get(), NS_T("wb+"), ss.st_mode));
   // Modified code from FileUtils.cpp
-  fstore_t store = {F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, header.dlen};
+  fstore_t store = {F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, dlen};
   // Try to get a continous chunk of disk space
   rv = fcntl(fileno((FILE*)ofile), F_PREALLOCATE, &store);
   if (rv == -1) {
@@ -1844,7 +2064,7 @@ int PatchFile::Execute() {
   }
 
   if (rv != -1) {
-    ftruncate(fileno((FILE*)ofile), header.dlen);
+    ftruncate(fileno((FILE*)ofile), dlen);
   }
 #else
   AutoFile ofile(ensure_open(mFile.get(), NS_T("wb+"), ss.st_mode));
@@ -1862,9 +2082,15 @@ int PatchFile::Execute() {
   }
 #endif
 
-  rv = MBS_ApplyPatch(&header, mPatchStream, buf, ofile);
+  // SAFETY: We have manually checked that the size and crc32 of mBuf match with
+  // the patch in PatchFile::LoadSourceFile.
+  rv = mPatchFileDecoder->Apply(mBuf.get(), mBufSize, ofile);
 
   // Go ahead and do a bit of cleanup now to minimize runtime overhead.
+  // Release the patch decoder and any resources it holds (such as
+  // memory-mapped patch files in zucchini) so they don't accumulate
+  // across sequential patch actions.
+  mPatchFileDecoder.reset();
   // Make sure mPatchStream gets unlocked on Windows; the system will do that,
   // but not until some indeterminate future time, and we want determinism.
 #ifdef XP_WIN
@@ -1875,9 +2101,9 @@ int PatchFile::Execute() {
   mPatchStream = nullptr;
   // Patch files are written to the <working_dir>/updating directory which is
   // removed after the update has finished so don't delete patch files here.
-  spath[0] = NS_T('\0');
-  free(buf);
-  buf = nullptr;
+  mPatchPath[0] = NS_T('\0');
+  mBuf.reset();
+  mBufSize = 0;
 
   return rv;
 }
@@ -1976,7 +2202,7 @@ int AddIfNotFile::Parse(NS_tchar* line) {
 int AddIfNotFile::Prepare() {
   // If the test file exists, then skip this action.
   if (!NS_taccess(mTestFile.get(), F_OK)) {
-    mTestFile = NULL;
+    mTestFile = nullptr;
     return OK;
   }
 
@@ -2056,6 +2282,8 @@ void PatchIfFile::Finish(int status) {
 //-----------------------------------------------------------------------------
 
 #ifdef XP_WIN
+#  include "EnterprisePolicies.h"
+#  include "EnterprisePoliciesFlagFile.h"
 #  include "nsWindowsRestart.cpp"
 #  include "nsWindowsHelpers.h"
 #  include "uachelper.h"
@@ -2171,7 +2399,13 @@ bool LaunchWinPostProcess(const WCHAR* installationDir,
   wcsncpy(dummyArg, L"argv0ignored ",
           sizeof(dummyArg) / sizeof(dummyArg[0]) - 1);
 
-  size_t len = wcslen(exearg) + wcslen(dummyArg);
+  const bool addDesktopLauncher{
+      !EnterprisePoliciesFlagFile::Exists(gPatchDirPath)};
+  if (addDesktopLauncher) {
+    LOG(("Add /DesktopLauncher argument to helper.exe"));
+  }
+  LPCWSTR desktopLauncherArg{addDesktopLauncher ? L" /DesktopLauncher" : L""};
+  size_t len{wcslen(exearg) + wcslen(dummyArg) + wcslen(desktopLauncherArg)};
   WCHAR* cmdline = (WCHAR*)malloc((len + 1) * sizeof(WCHAR));
   if (!cmdline) {
     LOG(
@@ -2183,6 +2417,7 @@ bool LaunchWinPostProcess(const WCHAR* installationDir,
 
   wcsncpy(cmdline, dummyArg, len);
   wcscat(cmdline, exearg);
+  wcscat(cmdline, desktopLauncherArg);
 
   // We want to launch the post update helper app to update the Windows
   // registry even if there is a failure with removing the uninstall.update
@@ -2785,16 +3020,17 @@ static int ReadMARChannelIDsFromBuffer(char* aChannels,
  *        `OK` on success, `UPDATE_SETTINGS_FILE_CHANNEL` on failure.
  */
 static int PopulategMARStrings() {
+  if (gMARStrings.MARChannelID && gMARStrings.MARChannelID[0] != '\0') {
+    return OK;
+  }
+
   int rv = UPDATE_SETTINGS_FILE_CHANNEL;
 #  ifdef XP_MACOSX
-  if (gInvocation == UpdaterInvocation::Second) {
-    // An elevated update process will have already populated gMARStrings when
-    // it connected to the unelevated update process to obtain the command line
-    // args. See `ObtainUpdaterArguments`.
-    rv = OK;
-  } else if (auto marChannels =
-                 UpdateSettingsUtil::GetAcceptedMARChannelsValue()) {
-    rv = ReadMARChannelIDsFromBuffer(marChannels->data(), &gMARStrings);
+  if (gInvocation != UpdaterInvocation::Second) {
+    if (std::optional<std::string> marChannels =
+            UpdateSettingsUtil::GetAcceptedMARChannelsValue()) {
+      rv = ReadMARChannelIDsFromBuffer(marChannels->data(), &gMARStrings);
+    }
   }
 #  else
   NS_tchar updateSettingsPath[MAXPATHLEN];
@@ -3016,6 +3252,10 @@ int LaunchCallbackAndPostProcessApps(int argc, NS_tchar** argv
     }
 
     EXIT_IF_SECOND_UPDATER_INSTANCE(updateLockFileHandle, 0);
+
+    // Flag removed by the unelevated process during the single-process update
+    EnterprisePoliciesFlagFile::Remove(gPatchDirPath);
+
 #elif XP_MACOSX
     if (gInvocation == UpdaterInvocation::First) {
       if (gSucceeded) {
@@ -3175,7 +3415,6 @@ int NS_main(int argc, NS_tchar** argv) {
   if (argc == 4 && (strstr(argv[1], "-dmgInstall") != 0)) {
     isDMGInstall = true;
     if (isElevated) {
-      PerformInstallationFromDMG(argc, argv);
       freeArguments(argc, argv);
       CleanupElevatedMacUpdate(true);
       return 0;
@@ -3479,7 +3718,27 @@ int NS_main(int argc, NS_tchar** argv) {
       UpdateServerThreadArgs threadArgs;
       threadArgs.argc = suiArgc;
       threadArgs.argv = suiArgv.get();
-      threadArgs.marChannelID = gMARStrings.MARChannelID.get();
+      threadArgs.marChannelID = "";
+
+#  ifdef MOZ_VERIFY_MAR_SIGNATURE
+      // Try to populate gMARStrings so that we can pass the resulting MAR
+      // channel ID to the elevated updater via IPC. If this fails (observed on
+      // some macOS standard-profile elevated updates where the unelevated
+      // updater cannot resolve the weak UpdateSettingsGetAcceptedMARChannels
+      // symbol from UpdateSettings.framework), proceed with an empty channel
+      // ID rather than aborting the elevated update.
+      // ArchiveReader::VerifyProductInformation skips the channel-match check
+      // when the channel ID is empty; the MAR's cryptographic signature is
+      // still verified, preserving the security posture that existed prior to
+      // bug 2028575.
+      if (PopulategMARStrings() == OK) {
+        threadArgs.marChannelID = gMARStrings.MARChannelID.get();
+      } else {
+        fprintf(stderr,
+                "Unable to retrieve MAR channels in unelevated updater; "
+                "proceeding with elevation using an empty channel ID.\n");
+      }
+#  endif  // MOZ_VERIFY_MAR_SIGNATURE
 
       Thread t1;
       if (t1.Run(ServeElevatedUpdateThreadFunc, &threadArgs) == 0) {
@@ -3701,6 +3960,14 @@ int NS_main(int argc, NS_tchar** argv) {
         LOG(("Failed to open update lock file: %lu", GetLastError()));
       } else {
         LOG(("Successfully opened lock file"));
+      }
+
+      if (EnterprisePolicies::InDistribution(gInstallDirPath) ||
+          EnterprisePolicies::InRegistry(L"" MOZ_APP_BASENAME)) {
+        LOG(("Enterprise policies detected"));
+        EnterprisePoliciesFlagFile::Add(gPatchDirPath);
+      } else {
+        LOG(("No enterprise policies detected"));
       }
 
       if (updateLockFileHandle == INVALID_HANDLE_VALUE ||
@@ -4034,6 +4301,9 @@ int NS_main(int argc, NS_tchar** argv) {
                  "'succeeded'."));
           }
         }
+
+        // Flag removed by the unelevated process during the two-process update
+        EnterprisePoliciesFlagFile::Remove(gPatchDirPath);
 
         if (updateLockFileHandle != INVALID_HANDLE_VALUE) {
           CloseHandle(updateLockFileHandle);
@@ -4916,7 +5186,7 @@ int AddPreCompleteActions(ActionList* list) {
 
   int rv;
   NS_tchar* line;
-  while ((line = mstrtok(kNL, &rb)) != 0) {
+  while ((line = mstrtok(kNL, &rb)) != nullptr) {
     // skip comments
     if (*line == NS_T('#')) {
       continue;
@@ -4984,10 +5254,24 @@ int DoUpdate() {
   }
   NS_tchar* rb = buf;
 
+#if defined(MOZ_ZUCCHINI)
+#  if defined(TEST_UPDATER) && defined(XP_WIN)
+  // Crash recovery is only supported (and hence tested) on Windows for now.
+  // POSIX support is planned, see bug 2043122 for more information.
+  zucchini::mozilla::TestOptions options;
+  options.logDestructorMarker = EnvHasValue("MOZ_TEST_ZUCCHINI_DTOR_MARKER");
+  options.triggerBadAlloc = EnvHasValue("MOZ_TEST_ZUCCHINI_BAD_ALLOC");
+  options.triggerCheckFailure = EnvHasValue("MOZ_TEST_ZUCCHINI_CHECK_FAILURE");
+  zucchini::mozilla::SetTestOptions(options);
+#  endif  // TEST_UPDATER && XP_WIN
+
+  zucchini::mozilla::SetLogFunction(LogZucchiniMessage);
+#endif  // defined(MOZ_ZUCCHINI)
+
   ActionList list;
   NS_tchar* line;
   bool isFirstAction = true;
-  while ((line = mstrtok(kNL, &rb)) != 0) {
+  while ((line = mstrtok(kNL, &rb)) != nullptr) {
     // skip comments
     if (*line == NS_T('#')) {
       continue;

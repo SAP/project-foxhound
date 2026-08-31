@@ -32,9 +32,13 @@ s! {
         __error_code: c_int,
         __return_value: ssize_t,
         pub aio_offset: off_t,
-        #[cfg(all(not(target_arch = "x86_64"), target_pointer_width = "32"))]
-        __unused1: [c_char; 4],
-        __glibc_reserved: [c_char; 32],
+        #[cfg(all(
+            not(gnu_file_offset_bits64),
+            not(target_arch = "x86_64"),
+            target_pointer_width = "32"
+        ))]
+        __unused1: Padding<[c_char; 4]>,
+        __glibc_reserved: Padding<[c_char; 32]>,
     }
 
     pub struct __exit_status {
@@ -53,11 +57,11 @@ s! {
         pub gl_offs: size_t,
         pub gl_flags: c_int,
 
-        __unused1: *mut c_void,
-        __unused2: *mut c_void,
-        __unused3: *mut c_void,
-        __unused4: *mut c_void,
-        __unused5: *mut c_void,
+        __unused1: Padding<*mut c_void>,
+        __unused2: Padding<*mut c_void>,
+        __unused3: Padding<*mut c_void>,
+        __unused4: Padding<*mut c_void>,
+        __unused5: Padding<*mut c_void>,
     }
 
     pub struct msghdr {
@@ -127,126 +131,6 @@ s! {
         pub uordblks: size_t,
         pub fordblks: size_t,
         pub keepcost: size_t,
-    }
-
-    pub struct nl_pktinfo {
-        pub group: u32,
-    }
-
-    pub struct nl_mmap_req {
-        pub nm_block_size: c_uint,
-        pub nm_block_nr: c_uint,
-        pub nm_frame_size: c_uint,
-        pub nm_frame_nr: c_uint,
-    }
-
-    pub struct nl_mmap_hdr {
-        pub nm_status: c_uint,
-        pub nm_len: c_uint,
-        pub nm_group: u32,
-        pub nm_pid: u32,
-        pub nm_uid: u32,
-        pub nm_gid: u32,
-    }
-
-    pub struct rtentry {
-        pub rt_pad1: c_ulong,
-        pub rt_dst: crate::sockaddr,
-        pub rt_gateway: crate::sockaddr,
-        pub rt_genmask: crate::sockaddr,
-        pub rt_flags: c_ushort,
-        pub rt_pad2: c_short,
-        pub rt_pad3: c_ulong,
-        pub rt_tos: c_uchar,
-        pub rt_class: c_uchar,
-        #[cfg(target_pointer_width = "64")]
-        pub rt_pad4: [c_short; 3usize],
-        #[cfg(not(target_pointer_width = "64"))]
-        pub rt_pad4: c_short,
-        pub rt_metric: c_short,
-        pub rt_dev: *mut c_char,
-        pub rt_mtu: c_ulong,
-        pub rt_window: c_ulong,
-        pub rt_irtt: c_ushort,
-    }
-
-    pub struct timex {
-        pub modes: c_uint,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub offset: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub offset: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub freq: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub freq: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub maxerror: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub maxerror: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub esterror: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub esterror: c_long,
-        pub status: c_int,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub constant: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub constant: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub precision: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub precision: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub tolerance: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub tolerance: c_long,
-        pub time: crate::timeval,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub tick: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub tick: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub ppsfreq: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub ppsfreq: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub jitter: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub jitter: c_long,
-        pub shift: c_int,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub stabil: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub stabil: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub jitcnt: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub jitcnt: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub calcnt: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub calcnt: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub errcnt: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub errcnt: c_long,
-        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-        pub stbcnt: i64,
-        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-        pub stbcnt: c_long,
-        pub tai: c_int,
-        pub __unused1: i32,
-        pub __unused2: i32,
-        pub __unused3: i32,
-        pub __unused4: i32,
-        pub __unused5: i32,
-        pub __unused6: i32,
-        pub __unused7: i32,
-        pub __unused8: i32,
-        pub __unused9: i32,
-        pub __unused10: i32,
-        pub __unused11: i32,
     }
 
     pub struct ntptimeval {
@@ -328,6 +212,13 @@ s! {
         pub u: __c_anonymous_ptrace_syscall_info_data,
     }
 
+    pub struct ptrace_sud_config {
+        pub mode: crate::__u64,
+        pub selector: crate::__u64,
+        pub offset: crate::__u64,
+        pub len: crate::__u64,
+    }
+
     pub struct iocb {
         pub aio_data: crate::__u64,
         #[cfg(target_endian = "little")]
@@ -344,7 +235,7 @@ s! {
         pub aio_buf: crate::__u64,
         pub aio_nbytes: crate::__u64,
         pub aio_offset: crate::__s64,
-        aio_reserved2: crate::__u64,
+        aio_reserved2: Padding<crate::__u64>,
         pub aio_flags: crate::__u32,
         pub aio_resfd: crate::__u32,
     }
@@ -407,105 +298,40 @@ s! {
         #[cfg(target_pointer_width = "64")]
         __size: [c_char; 32],
     }
-}
 
-impl siginfo_t {
-    pub unsafe fn si_addr(&self) -> *mut c_void {
-        #[repr(C)]
-        struct siginfo_sigfault {
-            _si_signo: c_int,
-            _si_errno: c_int,
-            _si_code: c_int,
-            si_addr: *mut c_void,
-        }
-        (*(self as *const siginfo_t as *const siginfo_sigfault)).si_addr
+    pub struct mbstate_t {
+        __count: c_int,
+        __wchb: [c_char; 4],
     }
 
-    pub unsafe fn si_value(&self) -> crate::sigval {
-        #[repr(C)]
-        struct siginfo_timer {
-            _si_signo: c_int,
-            _si_errno: c_int,
-            _si_code: c_int,
-            _si_tid: c_int,
-            _si_overrun: c_int,
-            si_sigval: crate::sigval,
-        }
-        (*(self as *const siginfo_t as *const siginfo_timer)).si_sigval
-    }
-}
-
-// Internal, for casts to access union fields
-#[repr(C)]
-struct sifields_sigchld {
-    si_pid: crate::pid_t,
-    si_uid: crate::uid_t,
-    si_status: c_int,
-    si_utime: c_long,
-    si_stime: c_long,
-}
-impl Copy for sifields_sigchld {}
-impl Clone for sifields_sigchld {
-    fn clone(&self) -> sifields_sigchld {
-        *self
-    }
-}
-
-// Internal, for casts to access union fields
-#[repr(C)]
-union sifields {
-    _align_pointer: *mut c_void,
-    sigchld: sifields_sigchld,
-}
-
-// Internal, for casts to access union fields. Note that some variants
-// of sifields start with a pointer, which makes the alignment of
-// sifields vary on 32-bit and 64-bit architectures.
-#[repr(C)]
-struct siginfo_f {
-    _siginfo_base: [c_int; 3],
-    sifields: sifields,
-}
-
-impl siginfo_t {
-    unsafe fn sifields(&self) -> &sifields {
-        &(*(self as *const siginfo_t as *const siginfo_f)).sifields
+    pub struct fpos64_t {
+        __pos: off64_t,
+        __state: crate::mbstate_t,
     }
 
-    pub unsafe fn si_pid(&self) -> crate::pid_t {
-        self.sifields().sigchld.si_pid
+    pub struct fpos_t {
+        #[cfg(not(gnu_file_offset_bits64))]
+        __pos: off_t,
+        #[cfg(gnu_file_offset_bits64)]
+        __pos: off64_t,
+        __state: crate::mbstate_t,
     }
 
-    pub unsafe fn si_uid(&self) -> crate::uid_t {
-        self.sifields().sigchld.si_uid
+    // linux x32 compatibility
+    // See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
+    #[derive(Default)]
+    pub struct timespec {
+        pub tv_sec: time_t,
+        #[cfg(all(gnu_time_bits64, target_endian = "big"))]
+        __pad: Padding<i32>,
+        #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
+        pub tv_nsec: c_long,
+        #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+        pub tv_nsec: i64,
+        #[cfg(all(gnu_time_bits64, target_endian = "little"))]
+        __pad: Padding<i32>,
     }
 
-    pub unsafe fn si_status(&self) -> c_int {
-        self.sifields().sigchld.si_status
-    }
-
-    pub unsafe fn si_utime(&self) -> c_long {
-        self.sifields().sigchld.si_utime
-    }
-
-    pub unsafe fn si_stime(&self) -> c_long {
-        self.sifields().sigchld.si_stime
-    }
-}
-
-pub union __c_anonymous_ptrace_syscall_info_data {
-    pub entry: __c_anonymous_ptrace_syscall_info_entry,
-    pub exit: __c_anonymous_ptrace_syscall_info_exit,
-    pub seccomp: __c_anonymous_ptrace_syscall_info_seccomp,
-}
-impl Copy for __c_anonymous_ptrace_syscall_info_data {}
-impl Clone for __c_anonymous_ptrace_syscall_info_data {
-    fn clone(&self) -> __c_anonymous_ptrace_syscall_info_data {
-        *self
-    }
-}
-
-s_no_extra_traits! {
     pub struct utmpx {
         pub ut_type: c_short,
         pub ut_pid: crate::pid_t,
@@ -547,68 +373,97 @@ s_no_extra_traits! {
         pub ut_tv: __timeval,
 
         pub ut_addr_v6: [i32; 4],
-        __glibc_reserved: [c_char; 20],
+        __glibc_reserved: Padding<[c_char; 20]>,
+    }
+}
+
+impl siginfo_t {
+    pub unsafe fn si_addr(&self) -> *mut c_void {
+        #[repr(C)]
+        struct siginfo_sigfault {
+            _si_signo: c_int,
+            _si_errno: c_int,
+            _si_code: c_int,
+            si_addr: *mut c_void,
+        }
+        (*(self as *const siginfo_t).cast::<siginfo_sigfault>()).si_addr
+    }
+
+    pub unsafe fn si_value(&self) -> crate::sigval {
+        #[repr(C)]
+        struct siginfo_timer {
+            _si_signo: c_int,
+            _si_errno: c_int,
+            _si_code: c_int,
+            _si_tid: c_int,
+            _si_overrun: c_int,
+            si_sigval: crate::sigval,
+        }
+        (*(self as *const siginfo_t).cast::<siginfo_timer>()).si_sigval
+    }
+}
+
+s_no_extra_traits! {
+    // Internal, for casts to access union fields
+    struct sifields_sigchld {
+        si_pid: crate::pid_t,
+        si_uid: crate::uid_t,
+        si_status: c_int,
+        si_utime: c_long,
+        si_stime: c_long,
+    }
+
+    // Internal, for casts to access union fields
+    union sifields {
+        _align_pointer: *mut c_void,
+        sigchld: sifields_sigchld,
+    }
+
+    // Internal, for casts to access union fields. Note that some variants
+    // of sifields start with a pointer, which makes the alignment of
+    // sifields vary on 32-bit and 64-bit architectures.
+    struct siginfo_f {
+        _siginfo_base: [c_int; 3],
+        sifields: sifields,
+    }
+}
+
+impl siginfo_t {
+    unsafe fn sifields(&self) -> &sifields {
+        &(*(self as *const siginfo_t).cast::<siginfo_f>()).sifields
+    }
+
+    pub unsafe fn si_pid(&self) -> crate::pid_t {
+        self.sifields().sigchld.si_pid
+    }
+
+    pub unsafe fn si_uid(&self) -> crate::uid_t {
+        self.sifields().sigchld.si_uid
+    }
+
+    pub unsafe fn si_status(&self) -> c_int {
+        self.sifields().sigchld.si_status
+    }
+
+    pub unsafe fn si_utime(&self) -> c_long {
+        self.sifields().sigchld.si_utime
+    }
+
+    pub unsafe fn si_stime(&self) -> c_long {
+        self.sifields().sigchld.si_stime
+    }
+}
+
+s_no_extra_traits! {
+    pub union __c_anonymous_ptrace_syscall_info_data {
+        pub entry: __c_anonymous_ptrace_syscall_info_entry,
+        pub exit: __c_anonymous_ptrace_syscall_info_exit,
+        pub seccomp: __c_anonymous_ptrace_syscall_info_seccomp,
     }
 }
 
 cfg_if! {
     if #[cfg(feature = "extra_traits")] {
-        impl PartialEq for utmpx {
-            fn eq(&self, other: &utmpx) -> bool {
-                self.ut_type == other.ut_type
-                    && self.ut_pid == other.ut_pid
-                    && self.ut_line == other.ut_line
-                    && self.ut_id == other.ut_id
-                    && self.ut_user == other.ut_user
-                    && self
-                        .ut_host
-                        .iter()
-                        .zip(other.ut_host.iter())
-                        .all(|(a, b)| a == b)
-                    && self.ut_exit == other.ut_exit
-                    && self.ut_session == other.ut_session
-                    && self.ut_tv == other.ut_tv
-                    && self.ut_addr_v6 == other.ut_addr_v6
-                    && self.__glibc_reserved == other.__glibc_reserved
-            }
-        }
-
-        impl Eq for utmpx {}
-
-        impl fmt::Debug for utmpx {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("utmpx")
-                    .field("ut_type", &self.ut_type)
-                    .field("ut_pid", &self.ut_pid)
-                    .field("ut_line", &self.ut_line)
-                    .field("ut_id", &self.ut_id)
-                    .field("ut_user", &self.ut_user)
-                    // FIXME(debug): .field("ut_host", &self.ut_host)
-                    .field("ut_exit", &self.ut_exit)
-                    .field("ut_session", &self.ut_session)
-                    .field("ut_tv", &self.ut_tv)
-                    .field("ut_addr_v6", &self.ut_addr_v6)
-                    .field("__glibc_reserved", &self.__glibc_reserved)
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for utmpx {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.ut_type.hash(state);
-                self.ut_pid.hash(state);
-                self.ut_line.hash(state);
-                self.ut_id.hash(state);
-                self.ut_user.hash(state);
-                self.ut_host.hash(state);
-                self.ut_exit.hash(state);
-                self.ut_session.hash(state);
-                self.ut_tv.hash(state);
-                self.ut_addr_v6.hash(state);
-                self.__glibc_reserved.hash(state);
-            }
-        }
-
         impl PartialEq for __c_anonymous_ptrace_syscall_info_data {
             fn eq(&self, other: &__c_anonymous_ptrace_syscall_info_data) -> bool {
                 unsafe {
@@ -620,18 +475,6 @@ cfg_if! {
         }
 
         impl Eq for __c_anonymous_ptrace_syscall_info_data {}
-
-        impl fmt::Debug for __c_anonymous_ptrace_syscall_info_data {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                unsafe {
-                    f.debug_struct("__c_anonymous_ptrace_syscall_info_data")
-                        .field("entry", &self.entry)
-                        .field("exit", &self.exit)
-                        .field("seccomp", &self.seccomp)
-                        .finish()
-                }
-            }
-        }
 
         impl hash::Hash for __c_anonymous_ptrace_syscall_info_data {
             fn hash<H: hash::Hasher>(&self, state: &mut H) {
@@ -722,7 +565,6 @@ pub const RTLD_DI_TLS_MODID: c_int = 9;
 pub const RTLD_DI_TLS_DATA: c_int = 10;
 
 pub const SOCK_NONBLOCK: c_int = O_NONBLOCK;
-pub const PIDFD_NONBLOCK: c_uint = O_NONBLOCK as c_uint;
 
 pub const SOL_RXRPC: c_int = 272;
 pub const SOL_PPPOL2TP: c_int = 273;
@@ -783,7 +625,6 @@ pub const BUFSIZ: c_uint = 8192;
 pub const TMP_MAX: c_uint = 238328;
 pub const FOPEN_MAX: c_uint = 16;
 pub const FILENAME_MAX: c_uint = 4096;
-pub const POSIX_MADV_DONTNEED: c_int = 4;
 pub const _CS_GNU_LIBC_VERSION: c_int = 2;
 pub const _CS_GNU_LIBPTHREAD_VERSION: c_int = 3;
 pub const _CS_V6_ENV: c_int = 1148;
@@ -907,19 +748,13 @@ pub const PTRACE_PEEKSIGINFO: c_uint = 0x4209;
 pub const PTRACE_GETSIGMASK: c_uint = 0x420a;
 pub const PTRACE_SETSIGMASK: c_uint = 0x420b;
 pub const PTRACE_GET_SYSCALL_INFO: c_uint = 0x420e;
+pub const PTRACE_SET_SYSCALL_INFO: c_uint = 0x4212;
 pub const PTRACE_SYSCALL_INFO_NONE: crate::__u8 = 0;
 pub const PTRACE_SYSCALL_INFO_ENTRY: crate::__u8 = 1;
 pub const PTRACE_SYSCALL_INFO_EXIT: crate::__u8 = 2;
 pub const PTRACE_SYSCALL_INFO_SECCOMP: crate::__u8 = 3;
-
-// linux/fs.h
-
-// Flags for preadv2/pwritev2
-pub const RWF_HIPRI: c_int = 0x00000001;
-pub const RWF_DSYNC: c_int = 0x00000002;
-pub const RWF_SYNC: c_int = 0x00000004;
-pub const RWF_NOWAIT: c_int = 0x00000008;
-pub const RWF_APPEND: c_int = 0x00000010;
+pub const PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG: crate::__u8 = 0x4210;
+pub const PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG: crate::__u8 = 0x4211;
 
 // linux/rtnetlink.h
 pub const TCA_PAD: c_ushort = 9;
@@ -957,8 +792,6 @@ pub const NDA_SRC_VNI: c_ushort = 11;
 pub const UNAME26: c_int = 0x0020000;
 pub const FDPIC_FUNCPTRS: c_int = 0x0080000;
 
-pub const MAX_LINKS: c_int = 32;
-
 pub const GENL_UNS_ADMIN_PERM: c_int = 0x10;
 
 pub const GENL_ID_VFS_DQUOT: c_int = crate::NLMSG_MIN_TYPE + 1;
@@ -971,42 +804,6 @@ pub const CLONE_NEWTIME: c_int = 0x80;
 // DIFF(main): changed to `c_ulonglong` in e9abac9ac2
 pub const CLONE_CLEAR_SIGHAND: c_int = 0x100000000;
 pub const CLONE_INTO_CGROUP: c_int = 0x200000000;
-
-// linux/keyctl.h
-pub const KEYCTL_DH_COMPUTE: u32 = 23;
-pub const KEYCTL_PKEY_QUERY: u32 = 24;
-pub const KEYCTL_PKEY_ENCRYPT: u32 = 25;
-pub const KEYCTL_PKEY_DECRYPT: u32 = 26;
-pub const KEYCTL_PKEY_SIGN: u32 = 27;
-pub const KEYCTL_PKEY_VERIFY: u32 = 28;
-pub const KEYCTL_RESTRICT_KEYRING: u32 = 29;
-
-pub const KEYCTL_SUPPORTS_ENCRYPT: u32 = 0x01;
-pub const KEYCTL_SUPPORTS_DECRYPT: u32 = 0x02;
-pub const KEYCTL_SUPPORTS_SIGN: u32 = 0x04;
-pub const KEYCTL_SUPPORTS_VERIFY: u32 = 0x08;
-cfg_if! {
-    if #[cfg(not(any(
-        target_arch = "mips",
-        target_arch = "mips32r6",
-        target_arch = "mips64",
-        target_arch = "mips64r6"
-    )))] {
-        pub const KEYCTL_MOVE: u32 = 30;
-        pub const KEYCTL_CAPABILITIES: u32 = 31;
-
-        pub const KEYCTL_CAPS0_CAPABILITIES: u32 = 0x01;
-        pub const KEYCTL_CAPS0_PERSISTENT_KEYRINGS: u32 = 0x02;
-        pub const KEYCTL_CAPS0_DIFFIE_HELLMAN: u32 = 0x04;
-        pub const KEYCTL_CAPS0_PUBLIC_KEY: u32 = 0x08;
-        pub const KEYCTL_CAPS0_BIG_KEY: u32 = 0x10;
-        pub const KEYCTL_CAPS0_INVALIDATE: u32 = 0x20;
-        pub const KEYCTL_CAPS0_RESTRICT_KEYRING: u32 = 0x40;
-        pub const KEYCTL_CAPS0_MOVE: u32 = 0x80;
-        pub const KEYCTL_CAPS1_NS_KEYRING_NAME: u32 = 0x01;
-        pub const KEYCTL_CAPS1_NS_KEY_TAG: u32 = 0x02;
-    }
-}
 
 pub const M_MXFAST: c_int = 1;
 pub const M_NLBLKS: c_int = 2;
@@ -1128,33 +925,6 @@ pub const REG_EEND: c_int = 14;
 pub const REG_ESIZE: c_int = 15;
 pub const REG_ERPAREN: c_int = 16;
 
-cfg_if! {
-    if #[cfg(any(
-        target_arch = "x86",
-        target_arch = "x86_64",
-        target_arch = "arm",
-        target_arch = "aarch64",
-        target_arch = "loongarch64",
-        target_arch = "riscv64",
-        target_arch = "s390x"
-    ))] {
-        pub const TUNSETCARRIER: Ioctl = 0x400454e2;
-        pub const TUNGETDEVNETNS: Ioctl = 0x54e3;
-    } else if #[cfg(any(
-        target_arch = "mips",
-        target_arch = "mips64",
-        target_arch = "powerpc",
-        target_arch = "powerpc64",
-        target_arch = "sparc",
-        target_arch = "sparc64"
-    ))] {
-        pub const TUNSETCARRIER: Ioctl = 0x800454e2;
-        pub const TUNGETDEVNETNS: Ioctl = 0x200054e3;
-    } else {
-        // Unknown target_arch
-    }
-}
-
 extern "C" {
     pub fn fgetspent_r(
         fp: *mut crate::FILE,
@@ -1183,12 +953,14 @@ extern "C" {
         compar: Option<unsafe extern "C" fn(*const c_void, *const c_void, *mut c_void) -> c_int>,
         arg: *mut c_void,
     );
+    #[cfg_attr(gnu_time_bits64, link_name = "__sendmmsg64")]
     pub fn sendmmsg(
         sockfd: c_int,
         msgvec: *mut crate::mmsghdr,
         vlen: c_uint,
         flags: c_int,
     ) -> c_int;
+    #[cfg_attr(gnu_time_bits64, link_name = "__recvmmsg64")]
     pub fn recvmmsg(
         sockfd: c_int,
         msgvec: *mut crate::mmsghdr,
@@ -1200,8 +972,11 @@ extern "C" {
     pub fn getrlimit64(resource: crate::__rlimit_resource_t, rlim: *mut crate::rlimit64) -> c_int;
     pub fn setrlimit64(resource: crate::__rlimit_resource_t, rlim: *const crate::rlimit64)
         -> c_int;
+    #[cfg_attr(gnu_file_offset_bits64, link_name = "getrlimit64")]
     pub fn getrlimit(resource: crate::__rlimit_resource_t, rlim: *mut crate::rlimit) -> c_int;
+    #[cfg_attr(gnu_file_offset_bits64, link_name = "setrlimit64")]
     pub fn setrlimit(resource: crate::__rlimit_resource_t, rlim: *const crate::rlimit) -> c_int;
+    #[cfg_attr(gnu_file_offset_bits64, link_name = "prlimit64")]
     pub fn prlimit(
         pid: crate::pid_t,
         resource: crate::__rlimit_resource_t,
@@ -1224,15 +999,20 @@ extern "C" {
     pub fn endutxent();
     pub fn getpt() -> c_int;
     pub fn mallopt(param: c_int, value: c_int) -> c_int;
+    #[cfg_attr(gnu_time_bits64, link_name = "__gettimeofday64")]
     pub fn gettimeofday(tp: *mut crate::timeval, tz: *mut crate::timezone) -> c_int;
     pub fn getentropy(buf: *mut c_void, buflen: size_t) -> c_int;
     pub fn getrandom(buf: *mut c_void, buflen: size_t, flags: c_uint) -> ssize_t;
     pub fn getauxval(type_: c_ulong) -> c_ulong;
 
+    #[cfg_attr(gnu_time_bits64, link_name = "___adjtimex64")]
     pub fn adjtimex(buf: *mut timex) -> c_int;
+    #[cfg_attr(gnu_time_bits64, link_name = "___adjtimex64")]
     pub fn ntp_adjtime(buf: *mut timex) -> c_int;
-    #[link_name = "ntp_gettimex"]
+    #[cfg_attr(not(gnu_time_bits64), link_name = "ntp_gettimex")]
+    #[cfg_attr(gnu_time_bits64, link_name = "__ntp_gettime64")]
     pub fn ntp_gettime(buf: *mut ntptimeval) -> c_int;
+    #[cfg_attr(gnu_time_bits64, link_name = "__clock_adjtime64")]
     pub fn clock_adjtime(clk_id: crate::clockid_t, buf: *mut crate::timex) -> c_int;
 
     pub fn fanotify_mark(
@@ -1242,6 +1022,7 @@ extern "C" {
         dirfd: c_int,
         path: *const c_char,
     ) -> c_int;
+    #[cfg_attr(gnu_file_offset_bits64, link_name = "preadv64v2")]
     pub fn preadv2(
         fd: c_int,
         iov: *const crate::iovec,
@@ -1249,6 +1030,7 @@ extern "C" {
         offset: off_t,
         flags: c_int,
     ) -> ssize_t;
+    #[cfg_attr(gnu_file_offset_bits64, link_name = "pwritev64v2")]
     pub fn pwritev2(
         fd: c_int,
         iov: *const crate::iovec,
@@ -1285,12 +1067,16 @@ extern "C" {
 
     pub fn ctermid(s: *mut c_char) -> *mut c_char;
     pub fn backtrace(buf: *mut *mut c_void, sz: c_int) -> c_int;
+    pub fn backtrace_symbols(buffer: *const *mut c_void, len: c_int) -> *mut *mut c_char;
+    pub fn backtrace_symbols_fd(buffer: *const *mut c_void, len: c_int, fd: c_int);
+    #[cfg_attr(gnu_time_bits64, link_name = "__glob64_time64")]
     pub fn glob64(
         pattern: *const c_char,
         flags: c_int,
         errfunc: Option<extern "C" fn(epath: *const c_char, errno: c_int) -> c_int>,
         pglob: *mut glob64_t,
     ) -> c_int;
+    #[cfg_attr(gnu_time_bits64, link_name = "__globfree64_time64")]
     pub fn globfree64(pglob: *mut glob64_t);
     pub fn ptrace(request: c_uint, ...) -> c_long;
     pub fn pthread_attr_getaffinity_np(
@@ -1314,6 +1100,16 @@ extern "C" {
         val: c_int,
     ) -> c_int;
     pub fn pthread_sigqueue(thread: crate::pthread_t, sig: c_int, value: crate::sigval) -> c_int;
+    pub fn pthread_tryjoin_np(thread: crate::pthread_t, retval: *mut *mut c_void) -> c_int;
+    #[cfg_attr(
+        all(target_pointer_width = "32", gnu_time_bits64),
+        link_name = "__pthread_timedjoin_np64"
+    )]
+    pub fn pthread_timedjoin_np(
+        thread: crate::pthread_t,
+        retval: *mut *mut c_void,
+        abstime: *const crate::timespec,
+    ) -> c_int;
     pub fn mallinfo() -> crate::mallinfo;
     pub fn mallinfo2() -> crate::mallinfo2;
     pub fn malloc_stats();
@@ -1358,6 +1154,7 @@ extern "C" {
     pub fn eaccess(pathname: *const c_char, mode: c_int) -> c_int;
 
     pub fn asctime_r(tm: *const crate::tm, buf: *mut c_char) -> *mut c_char;
+    #[cfg_attr(gnu_time_bits64, link_name = "__ctime64_r")]
     pub fn ctime_r(timep: *const time_t, buf: *mut c_char) -> *mut c_char;
 
     pub fn dirname(path: *mut c_char) -> *mut c_char;
@@ -1375,6 +1172,11 @@ extern "C" {
         extra_info: *mut *mut c_void,
         flags: c_int,
     ) -> c_int;
+    pub fn dlvsym(
+        handle: *mut c_void,
+        symbol: *const c_char,
+        version: *const c_char,
+    ) -> *mut c_void;
     pub fn malloc_trim(__pad: size_t) -> c_int;
     pub fn gnu_get_libc_release() -> *const c_char;
     pub fn gnu_get_libc_version() -> *const c_char;
@@ -1422,6 +1224,7 @@ extern "C" {
 
     pub fn mq_notify(mqdes: crate::mqd_t, sevp: *const crate::sigevent) -> c_int;
 
+    #[cfg_attr(gnu_time_bits64, link_name = "__epoll_pwait2_time64")]
     pub fn epoll_pwait2(
         epfd: c_int,
         events: *mut crate::epoll_event,
@@ -1431,6 +1234,8 @@ extern "C" {
     ) -> c_int;
 
     pub fn mempcpy(dest: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
+
+    pub fn tgkill(tgid: crate::pid_t, tid: crate::pid_t, sig: c_int) -> c_int;
 }
 
 cfg_if! {

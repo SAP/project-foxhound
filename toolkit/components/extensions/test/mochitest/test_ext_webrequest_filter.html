@@ -23,7 +23,6 @@ add_task(async function setup() {
   });
 
   testWindow = window.open("about:blank", "_blank", "width=100,height=100");
-  await waitForLoad(testWindow);
 
   // Fetch the windowId and tabId we need to filter with WebRequest.
   let extension = ExtensionTestUtils.loadExtension({
@@ -55,8 +54,7 @@ add_task(async function test_webRequest_filter_window() {
   }
 
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.serviceWorkers.testing.enabled", true],
-          ["network.http.rcwn.enabled", false]],
+    set: [["dom.serviceWorkers.testing.enabled", true]],
   });
 
   let events = {

@@ -8,18 +8,33 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
 
-#include "media/engine/webrtc_video_engine.h"
+#include "api/environment/environment.h"
+#include "api/make_ref_counted.h"
+#include "api/units/data_rate.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_source_interface.h"
+#include "api/video_codecs/scalability_mode.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder.h"
+#include "call/video_receive_stream.h"
+#include "call/video_send_stream.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "rtc_base/experiments/encoder_info_settings.h"
 #include "test/call_test.h"
 #include "test/fake_encoder.h"
-#include "test/field_trial.h"
+#include "test/frame_generator_capturer.h"
 #include "test/gtest.h"
 #include "test/video_encoder_proxy_factory.h"
 #include "test/video_test_constants.h"
-#include "video/config/encoder_stream_factory.h"
+#include "video/config/video_encoder_config.h"
 
 namespace webrtc {
 namespace test {
@@ -31,8 +46,7 @@ void SetEncoderSpecific(VideoEncoderConfig* encoder_config,
     VideoCodecVP9 vp9 = VideoEncoder::GetDefaultVp9Settings();
     vp9.numberOfSpatialLayers = num_spatial_layers;
     encoder_config->encoder_specific_settings =
-        rtc::make_ref_counted<VideoEncoderConfig::Vp9EncoderSpecificSettings>(
-            vp9);
+        make_ref_counted<VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9);
   }
 }
 
@@ -49,23 +63,28 @@ BitrateLimits GetLayerBitrateLimits(int pixels, const VideoCodec& codec) {
          ++i) {
       if (codec.spatialLayers[i].width * codec.spatialLayers[i].height ==
           pixels) {
-        return {DataRate::KilobitsPerSec(codec.spatialLayers[i].minBitrate),
-                DataRate::KilobitsPerSec(codec.spatialLayers[i].maxBitrate)};
+        return {
+            .min = DataRate::KilobitsPerSec(codec.spatialLayers[i].minBitrate),
+            .max = DataRate::KilobitsPerSec(codec.spatialLayers[i].maxBitrate)};
       }
     }
   } else if (codec.codecType == VideoCodecType::kVideoCodecVP9) {
     for (size_t i = 0; i < codec.VP9().numberOfSpatialLayers; ++i) {
       if (codec.spatialLayers[i].width * codec.spatialLayers[i].height ==
           pixels) {
-        return {DataRate::KilobitsPerSec(codec.spatialLayers[i].minBitrate),
-                DataRate::KilobitsPerSec(codec.spatialLayers[i].maxBitrate)};
+        return {
+            .min = DataRate::KilobitsPerSec(codec.spatialLayers[i].minBitrate),
+            .max = DataRate::KilobitsPerSec(codec.spatialLayers[i].maxBitrate)};
       }
     }
   } else {
     for (int i = 0; i < codec.numberOfSimulcastStreams; ++i) {
       if (codec.simulcastStream[i].width * codec.simulcastStream[i].height ==
           pixels) {
-        return {DataRate::KilobitsPerSec(codec.simulcastStream[i].minBitrate),
+        return {
+            .min =
+                DataRate::KilobitsPerSec(codec.simulcastStream[i].minBitrate),
+            .max =
                 DataRate::KilobitsPerSec(codec.simulcastStream[i].maxBitrate)};
       }
     }
@@ -136,8 +155,8 @@ class InitEncodeTest : public test::EndToEndTest,
     frame_generator_capturer->ChangeResolution(1280, 720);
   }
 
-  void OnSinkWantsChanged(rtc::VideoSinkInterface<VideoFrame>* sink,
-                          const rtc::VideoSinkWants& wants) override {}
+  void OnSinkWantsChanged(VideoSinkInterface<VideoFrame>* sink,
+                          const VideoSinkWants& wants) override {}
 
   size_t GetNumVideoStreams() const override {
     return SupportsSpatialLayers(payload_name_) ? 1 : configs_.size();
@@ -213,32 +232,33 @@ class InitEncodeTest : public test::EndToEndTest,
 };
 
 TEST_P(ResolutionBitrateLimitsTest, LimitsApplied) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:921600,"
-      "min_start_bitrate_bps:0,"
-      "min_bitrate_bps:32000,"
-      "max_bitrate_bps:3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:921600,"
+                     "min_start_bitrate_bps:0,"
+                     "min_bitrate_bps:32000,"
+                     "max_bitrate_bps:3333000");
 
-  InitEncodeTest test(env(), payload_name_, {{.active = true}},
-                      // Expectations:
-                      {{.pixels = 1280 * 720,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(32),
-                                       DataRate::KilobitsPerSec(3333)}}});
+  InitEncodeTest test(
+      env(), payload_name_, {{.active = true}},
+      // Expectations:
+      {{.pixels = 1280 * 720,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        OneStreamDefaultMaxBitrateAppliedForOneSpatialLayer) {
-  InitEncodeTest test(env(), "VP9",
-                      {{.active = true,
-                        .bitrate = {DataRate::KilobitsPerSec(30),
-                                    DataRate::KilobitsPerSec(3000)},
-                        .scalability_mode = ScalabilityMode::kL1T1}},
-                      // Expectations:
-                      {{.pixels = 1280 * 720,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(30),
-                                       DataRate::KilobitsPerSec(3000)}}});
+  InitEncodeTest test(
+      env(), "VP9",
+      {{.active = true,
+        .bitrate = {.min = DataRate::KilobitsPerSec(30),
+                    .max = DataRate::KilobitsPerSec(3000)},
+        .scalability_mode = ScalabilityMode::kL1T1}},
+      // Expectations:
+      {{.pixels = 1280 * 720,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(30),
+                       .max = DataRate::KilobitsPerSec(3000)}}});
   RunBaseTest(&test);
 }
 
@@ -247,166 +267,164 @@ TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
   InitEncodeTest test(
       env(), "VP9",
       {{.active = true,
-        .bitrate = {DataRate::KilobitsPerSec(30),
-                    DataRate::KilobitsPerSec(3000)},
+        .bitrate = {.min = DataRate::KilobitsPerSec(30),
+                    .max = DataRate::KilobitsPerSec(3000)},
         .scalability_mode = ScalabilityMode::kL2T1}},
       // Expectations:
       {{.pixels = 1280 * 720,
-        .ne_bitrate = {std::nullopt, DataRate::KilobitsPerSec(3000)}}});
+        .ne_bitrate = {.min = std::nullopt,
+                       .max = DataRate::KilobitsPerSec(3000)}}});
   RunBaseTest(&test);
 }
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        OneStreamLimitsAppliedForOneSpatialLayer) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:921600,"
-      "min_start_bitrate_bps:0,"
-      "min_bitrate_bps:32000,"
-      "max_bitrate_bps:3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:921600,"
+                     "min_start_bitrate_bps:0,"
+                     "min_bitrate_bps:32000,"
+                     "max_bitrate_bps:3333000");
 
   InitEncodeTest test(
       env(), "VP9",
       {{.active = true, .scalability_mode = ScalabilityMode::kL1T1}},
       // Expectations:
       {{.pixels = 1280 * 720,
-        .eq_bitrate = {DataRate::KilobitsPerSec(32),
-                       DataRate::KilobitsPerSec(3333)}}});
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        OneStreamLimitsNotAppliedForMultipleSpatialLayers) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:21000|32000,"
-      "max_bitrate_bps:2222000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:21000|32000,"
+                     "max_bitrate_bps:2222000|3333000");
 
   InitEncodeTest test(
       env(), "VP9",
       {{.active = true, .scalability_mode = ScalabilityMode::kL2T1}},
       // Expectations:
       {{.pixels = 640 * 360,
-        .ne_bitrate = {DataRate::KilobitsPerSec(31),
-                       DataRate::KilobitsPerSec(2222)}},
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(31),
+                       .max = DataRate::KilobitsPerSec(2222)}},
        {.pixels = 1280 * 720,
-        .ne_bitrate = {DataRate::KilobitsPerSec(32),
-                       DataRate::KilobitsPerSec(3333)}}});
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, EncodingsApplied) {
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = true,
-                        .bitrate = {DataRate::KilobitsPerSec(22),
-                                    DataRate::KilobitsPerSec(3555)}}},
-                      // Expectations:
-                      {{.pixels = 1280 * 720,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(22),
-                                       DataRate::KilobitsPerSec(3555)}}});
+  InitEncodeTest test(
+      env(), payload_name_,
+      {{.active = true,
+        .bitrate = {.min = DataRate::KilobitsPerSec(22),
+                    .max = DataRate::KilobitsPerSec(3555)}}},
+      // Expectations:
+      {{.pixels = 1280 * 720,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(22),
+                       .max = DataRate::KilobitsPerSec(3555)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, IntersectionApplied) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:921600,"
-      "min_start_bitrate_bps:0,"
-      "min_bitrate_bps:32000,"
-      "max_bitrate_bps:3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:921600,"
+                     "min_start_bitrate_bps:0,"
+                     "min_bitrate_bps:32000,"
+                     "max_bitrate_bps:3333000");
 
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = true,
-                        .bitrate = {DataRate::KilobitsPerSec(22),
-                                    DataRate::KilobitsPerSec(1555)}}},
-                      // Expectations:
-                      {{.pixels = 1280 * 720,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(32),
-                                       DataRate::KilobitsPerSec(1555)}}});
+  InitEncodeTest test(
+      env(), payload_name_,
+      {{.active = true,
+        .bitrate = {.min = DataRate::KilobitsPerSec(22),
+                    .max = DataRate::KilobitsPerSec(1555)}}},
+      // Expectations:
+      {{.pixels = 1280 * 720,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(1555)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, LimitsAppliedMiddleActive) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:21000|32000,"
-      "max_bitrate_bps:2222000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:21000|32000,"
+                     "max_bitrate_bps:2222000|3333000");
 
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = false}, {.active = true}, {.active = false}},
-                      // Expectations:
-                      {{.pixels = 640 * 360,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(21),
-                                       DataRate::KilobitsPerSec(2222)}}});
+  InitEncodeTest test(
+      env(), payload_name_,
+      {{.active = false}, {.active = true}, {.active = false}},
+      // Expectations:
+      {{.pixels = 640 * 360,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(21),
+                       .max = DataRate::KilobitsPerSec(2222)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, EncodingMinMaxBitrateAppliedMiddleActive) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:1111000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:1111000|3333000");
 
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = false,
-                        .bitrate = {DataRate::KilobitsPerSec(28),
-                                    DataRate::KilobitsPerSec(1000)}},
-                       {.active = true,
-                        .bitrate = {DataRate::KilobitsPerSec(28),
-                                    DataRate::KilobitsPerSec(1555)}},
-                       {.active = false}},
-                      // Expectations:
-                      {{.pixels = 640 * 360,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(28),
-                                       DataRate::KilobitsPerSec(1555)}}});
+  InitEncodeTest test(
+      env(), payload_name_,
+      {{.active = false,
+        .bitrate = {.min = DataRate::KilobitsPerSec(28),
+                    .max = DataRate::KilobitsPerSec(1000)}},
+       {.active = true,
+        .bitrate = {.min = DataRate::KilobitsPerSec(28),
+                    .max = DataRate::KilobitsPerSec(1555)}},
+       {.active = false}},
+      // Expectations:
+      {{.pixels = 640 * 360,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(28),
+                       .max = DataRate::KilobitsPerSec(1555)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, MinBitrateNotAboveEncodingMax) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:1111000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:1111000|3333000");
 
   InitEncodeTest test(
       env(), payload_name_,
       {{.active = false},
        {.active = true,
-        .bitrate = {std::nullopt, DataRate::KilobitsPerSec(25)}},
+        .bitrate = {.min = std::nullopt, .max = DataRate::KilobitsPerSec(25)}},
        {.active = false}},
       // Expectations:
       {{.pixels = 640 * 360,
-        .eq_bitrate = {DataRate::KilobitsPerSec(25),
-                       DataRate::KilobitsPerSec(25)}}});
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(25),
+                       .max = DataRate::KilobitsPerSec(25)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, MaxBitrateNotBelowEncodingMin) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:21000|22000,"
-      "max_bitrate_bps:31000|32000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:21000|22000,"
+                     "max_bitrate_bps:31000|32000");
 
   InitEncodeTest test(
       env(), payload_name_,
       {{.active = false,
-        .bitrate = {DataRate::KilobitsPerSec(50), std::nullopt}},
+        .bitrate = {.min = DataRate::KilobitsPerSec(50), .max = std::nullopt}},
        {.active = true,
-        .bitrate = {DataRate::KilobitsPerSec(50), std::nullopt}},
+        .bitrate = {.min = DataRate::KilobitsPerSec(50), .max = std::nullopt}},
        {.active = false}},
       // Expectations:
       {{.pixels = 640 * 360,
-        .eq_bitrate = {DataRate::KilobitsPerSec(50),
-                       DataRate::KilobitsPerSec(50)}}});
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(50),
+                       .max = DataRate::KilobitsPerSec(50)}}});
   RunBaseTest(&test);
 }
 
@@ -421,10 +439,10 @@ TEST_P(ResolutionBitrateLimitsTest, DefaultLimitsAppliedMiddleActive) {
       {{.active = false}, {.active = true}, {.active = false}},
       // Expectations:
       {{.pixels = 640 * 360,
-        .eq_bitrate = {
-            DataRate::BitsPerSec(kDefaultSinglecastLimits360p->min_bitrate_bps),
-            DataRate::BitsPerSec(
-                kDefaultSinglecastLimits360p->max_bitrate_bps)}}});
+        .eq_bitrate = {.min = DataRate::BitsPerSec(
+                           kDefaultSinglecastLimits360p->min_bitrate_bps),
+                       .max = DataRate::BitsPerSec(
+                           kDefaultSinglecastLimits360p->max_bitrate_bps)}}});
   RunBaseTest(&test);
 }
 
@@ -441,83 +459,81 @@ TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        {.active = false}},
       // Expectations:
       {{.pixels = 1280 * 720,
-        .eq_bitrate = {
-            DataRate::BitsPerSec(kDefaultSinglecastLimits720p->min_bitrate_bps),
-            DataRate::BitsPerSec(
-                kDefaultSinglecastLimits720p->max_bitrate_bps)}}});
+        .eq_bitrate = {.min = DataRate::BitsPerSec(
+                           kDefaultSinglecastLimits720p->min_bitrate_bps),
+                       .max = DataRate::BitsPerSec(
+                           kDefaultSinglecastLimits720p->max_bitrate_bps)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, LimitsAppliedHighestActive) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:2222000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:2222000|3333000");
 
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = false}, {.active = false}, {.active = true}},
-                      // Expectations:
-                      {{.pixels = 1280 * 720,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(32),
-                                       DataRate::KilobitsPerSec(3333)}}});
+  InitEncodeTest test(
+      env(), payload_name_,
+      {{.active = false}, {.active = false}, {.active = true}},
+      // Expectations:
+      {{.pixels = 1280 * 720,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, EncodingMinMaxBitrateAppliedHighestActive) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:555000|1111000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:555000|1111000");
 
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = false,
-                        .bitrate = {DataRate::KilobitsPerSec(28),
-                                    DataRate::KilobitsPerSec(500)}},
-                       {.active = false,
-                        .bitrate = {DataRate::KilobitsPerSec(28),
-                                    DataRate::KilobitsPerSec(1000)}},
-                       {.active = true,
-                        .bitrate = {DataRate::KilobitsPerSec(28),
-                                    DataRate::KilobitsPerSec(1555)}}},
-                      // Expectations:
-                      {{.pixels = 1280 * 720,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(28),
-                                       DataRate::KilobitsPerSec(1555)}}});
+  InitEncodeTest test(
+      env(), payload_name_,
+      {{.active = false,
+        .bitrate = {.min = DataRate::KilobitsPerSec(28),
+                    .max = DataRate::KilobitsPerSec(500)}},
+       {.active = false,
+        .bitrate = {.min = DataRate::KilobitsPerSec(28),
+                    .max = DataRate::KilobitsPerSec(1000)}},
+       {.active = true,
+        .bitrate = {.min = DataRate::KilobitsPerSec(28),
+                    .max = DataRate::KilobitsPerSec(1555)}}},
+      // Expectations:
+      {{.pixels = 1280 * 720,
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(28),
+                       .max = DataRate::KilobitsPerSec(1555)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, LimitsNotAppliedLowestActive) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:2222000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:2222000|3333000");
 
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = true}, {.active = false}},
-                      // Expectations:
-                      {{.pixels = 640 * 360,
-                        .ne_bitrate = {DataRate::KilobitsPerSec(31),
-                                       DataRate::KilobitsPerSec(2222)}},
-                       {.pixels = 1280 * 720,
-                        .ne_bitrate = {DataRate::KilobitsPerSec(32),
-                                       DataRate::KilobitsPerSec(3333)}}});
+  InitEncodeTest test(
+      env(), payload_name_, {{.active = true}, {.active = false}},
+      // Expectations:
+      {{.pixels = 640 * 360,
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(31),
+                       .max = DataRate::KilobitsPerSec(2222)}},
+       {.pixels = 1280 * 720,
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        LimitsAppliedForVp9OneSpatialLayer) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:2222000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:2222000|3333000");
 
   InitEncodeTest test(
       env(), "VP9",
@@ -525,19 +541,18 @@ TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        {.active = false}},
       // Expectations:
       {{.pixels = 1280 * 720,
-        .eq_bitrate = {DataRate::KilobitsPerSec(32),
-                       DataRate::KilobitsPerSec(3333)}}});
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        LimitsNotAppliedForVp9MultipleSpatialLayers) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:2222000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:2222000|3333000");
 
   InitEncodeTest test(
       env(), "VP9",
@@ -545,41 +560,39 @@ TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        {.active = false}},
       // Expectations:
       {{.pixels = 640 * 360,
-        .ne_bitrate = {DataRate::KilobitsPerSec(31),
-                       DataRate::KilobitsPerSec(2222)}},
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(31),
+                       .max = DataRate::KilobitsPerSec(2222)}},
        {.pixels = 1280 * 720,
-        .ne_bitrate = {DataRate::KilobitsPerSec(32),
-                       DataRate::KilobitsPerSec(3333)}}});
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        OneStreamLimitsAppliedForAv1OneSpatialLayer) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:921600,"
-      "min_start_bitrate_bps:0,"
-      "min_bitrate_bps:32000,"
-      "max_bitrate_bps:133000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:921600,"
+                     "min_start_bitrate_bps:0,"
+                     "min_bitrate_bps:32000,"
+                     "max_bitrate_bps:133000");
 
   InitEncodeTest test(
       env(), "AV1",
       {{.active = true, .scalability_mode = ScalabilityMode::kL1T1}},
       // Expectations:
       {{.pixels = 1280 * 720,
-        .eq_bitrate = {DataRate::KilobitsPerSec(32),
-                       DataRate::KilobitsPerSec(133)}}});
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(133)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        LimitsAppliedForAv1SingleSpatialLayer) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:25000|80000,"
-      "max_bitrate_bps:400000|1200000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:25000|80000,"
+                     "max_bitrate_bps:400000|1200000");
 
   InitEncodeTest test(
       env(), "AV1",
@@ -587,41 +600,39 @@ TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        {.active = false}},
       // Expectations:
       {{.pixels = 1280 * 720,
-        .eq_bitrate = {DataRate::KilobitsPerSec(80),
-                       DataRate::KilobitsPerSec(1200)}}});
+        .eq_bitrate = {.min = DataRate::KilobitsPerSec(80),
+                       .max = DataRate::KilobitsPerSec(1200)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        EncodingMinMaxBitrateAppliedForAv1SingleSpatialLayer) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:921600,"
-      "min_start_bitrate_bps:0,"
-      "min_bitrate_bps:32000,"
-      "max_bitrate_bps:99000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:921600,"
+                     "min_start_bitrate_bps:0,"
+                     "min_bitrate_bps:32000,"
+                     "max_bitrate_bps:99000");
 
   InitEncodeTest test(env(), "AV1",
                       {{.active = true,
-                        .bitrate = {DataRate::KilobitsPerSec(28),
-                                    DataRate::KilobitsPerSec(100)},
+                        .bitrate = {.min = DataRate::KilobitsPerSec(28),
+                                    .max = DataRate::KilobitsPerSec(100)},
                         .scalability_mode = ScalabilityMode::kL1T1},
                        {.active = false}},
                       // Expectations:
                       {{.pixels = 1280 * 720,
-                        .eq_bitrate = {DataRate::KilobitsPerSec(28),
-                                       DataRate::KilobitsPerSec(100)}}});
+                        .eq_bitrate = {.min = DataRate::KilobitsPerSec(28),
+                                       .max = DataRate::KilobitsPerSec(100)}}});
   RunBaseTest(&test);
 }
 
 TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        LimitsNotAppliedForAv1MultipleSpatialLayers) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:20000|25000,"
-      "max_bitrate_bps:900000|1333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:20000|25000,"
+                     "max_bitrate_bps:900000|1333000");
 
   InitEncodeTest test(
       env(), "AV1",
@@ -629,31 +640,30 @@ TEST_F(ResolutionBitrateLimitsWithScalabilityModeTest,
        {.active = false}},
       // Expectations:
       {{.pixels = 640 * 360,
-        .ne_bitrate = {DataRate::KilobitsPerSec(20),
-                       DataRate::KilobitsPerSec(900)}},
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(20),
+                       .max = DataRate::KilobitsPerSec(900)}},
        {.pixels = 1280 * 720,
-        .ne_bitrate = {DataRate::KilobitsPerSec(25),
-                       DataRate::KilobitsPerSec(1333)}}});
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(25),
+                       .max = DataRate::KilobitsPerSec(1333)}}});
   RunBaseTest(&test);
 }
 
 TEST_P(ResolutionBitrateLimitsTest, LimitsNotAppliedSimulcast) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-GetEncoderInfoOverride/"
-      "frame_size_pixels:230400|921600,"
-      "min_start_bitrate_bps:0|0,"
-      "min_bitrate_bps:31000|32000,"
-      "max_bitrate_bps:2222000|3333000/");
+  field_trials().Set("WebRTC-GetEncoderInfoOverride",
+                     "frame_size_pixels:230400|921600,"
+                     "min_start_bitrate_bps:0|0,"
+                     "min_bitrate_bps:31000|32000,"
+                     "max_bitrate_bps:2222000|3333000");
 
-  InitEncodeTest test(env(), payload_name_,
-                      {{.active = true}, {.active = true}},
-                      // Expectations:
-                      {{.pixels = 640 * 360,
-                        .ne_bitrate = {DataRate::KilobitsPerSec(31),
-                                       DataRate::KilobitsPerSec(2222)}},
-                       {.pixels = 1280 * 720,
-                        .ne_bitrate = {DataRate::KilobitsPerSec(32),
-                                       DataRate::KilobitsPerSec(3333)}}});
+  InitEncodeTest test(
+      env(), payload_name_, {{.active = true}, {.active = true}},
+      // Expectations:
+      {{.pixels = 640 * 360,
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(31),
+                       .max = DataRate::KilobitsPerSec(2222)}},
+       {.pixels = 1280 * 720,
+        .ne_bitrate = {.min = DataRate::KilobitsPerSec(32),
+                       .max = DataRate::KilobitsPerSec(3333)}}});
   RunBaseTest(&test);
 }
 

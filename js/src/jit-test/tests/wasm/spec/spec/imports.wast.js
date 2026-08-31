@@ -27,25 +27,41 @@ let $0 = instantiate(`(module
   (global (export "global-i32") i32 (i32.const 55))
   (global (export "global-f32") f32 (f32.const 44))
   (global (export "global-mut-i64") (mut i64) (i64.const 66))
-  (table (export "table-10-inf") 10 funcref)
-  (table (export "table-10-20") 10 20 funcref)
-  (table (export "table64-10-inf") i64 10 funcref)
-  (table (export "table64-10-20") i64 10 20 funcref)
-  (memory (export "memory-2-inf") 2)
-  (memory (export "memory-2-4") 2 4)
-  (memory (export "memory64-2-inf") i64 2)
-  (memory (export "memory64-2-4") i64 2 4)
   (tag (export "tag"))
   (tag \$tag-i32 (param i32))
   (export "tag-i32" (tag \$tag-i32))
   (tag (export "tag-f32") (param f32))
 )`);
 
-// ./test/core/imports.wast:28
+// ./test/core/imports.wast:19
 register($0, `test`);
 
-// ./test/core/imports.wast:33
-let $1 = instantiate(`(module
+// ./test/core/imports.wast:21
+let $1 = instantiate(`(module (table (export "table-10-inf") 10 funcref))`);
+
+// ./test/core/imports.wast:22
+register($1, `test-table-10-inf`);
+
+// ./test/core/imports.wast:23
+let $2 = instantiate(`(module (table (export "table-10-20") 10 20 funcref))`);
+
+// ./test/core/imports.wast:24
+register($2, `test-table-10-20`);
+
+// ./test/core/imports.wast:26
+let $3 = instantiate(`(module (memory (export "memory-2-inf") 2))`);
+
+// ./test/core/imports.wast:27
+register($3, `test-memory-2-inf`);
+
+// ./test/core/imports.wast:28
+let $4 = instantiate(`(module (memory (export "memory-2-4") 2 4))`);
+
+// ./test/core/imports.wast:29
+register($4, `test-memory-2-4`);
+
+// ./test/core/imports.wast:35
+let $5 = instantiate(`(module
   (type \$func_i32 (func (param i32)))
   (type \$func_i64 (func (param i64)))
   (type \$func_f32 (func (param f32)))
@@ -107,13 +123,13 @@ let $1 = instantiate(`(module
   )
 )`);
 
-// ./test/core/imports.wast:95
-assert_return(() => invoke($1, `print32`, [13]), []);
-
-// ./test/core/imports.wast:96
-assert_return(() => invoke($1, `print64`, [24n]), []);
+// ./test/core/imports.wast:97
+assert_return(() => invoke($5, `print32`, [13]), []);
 
 // ./test/core/imports.wast:98
+assert_return(() => invoke($5, `print64`, [24n]), []);
+
+// ./test/core/imports.wast:100
 assert_invalid(
   () => instantiate(`(module 
     (type (func (result i32)))
@@ -122,231 +138,231 @@ assert_invalid(
   `unknown type`,
 );
 
-// ./test/core/imports.wast:107
-let $2 = instantiate(`(module
+// ./test/core/imports.wast:109
+let $6 = instantiate(`(module
   (import "spectest" "print_i32" (func \$imported_print (param i32)))
   (func (export "print_i32") (param \$i i32)
     (call \$imported_print (local.get \$i))
   )
 )`);
 
-// ./test/core/imports.wast:114
-assert_return(() => invoke($2, `print_i32`, [13]), []);
+// ./test/core/imports.wast:116
+assert_return(() => invoke($6, `print_i32`, [13]), []);
 
-// ./test/core/imports.wast:117
-let $3 = instantiate(`(module
+// ./test/core/imports.wast:119
+let $7 = instantiate(`(module
   (import "spectest" "print_i32" (func \$imported_print (param i32)))
   (func (export "print_i32") (param \$i i32) (param \$j i32) (result i32)
     (i32.add (local.get \$i) (local.get \$j))
   )
 )`);
 
-// ./test/core/imports.wast:124
-assert_return(() => invoke($3, `print_i32`, [5, 11]), [value("i32", 16)]);
-
 // ./test/core/imports.wast:126
-let $4 = instantiate(`(module (import "test" "func" (func)))`);
-
-// ./test/core/imports.wast:127
-let $5 = instantiate(`(module (import "test" "func-i32" (func (param i32))))`);
+assert_return(() => invoke($7, `print_i32`, [5, 11]), [value("i32", 16)]);
 
 // ./test/core/imports.wast:128
-let $6 = instantiate(`(module (import "test" "func-f32" (func (param f32))))`);
+let $8 = instantiate(`(module (import "test" "func" (func)))`);
 
 // ./test/core/imports.wast:129
-let $7 = instantiate(`(module (import "test" "func->i32" (func (result i32))))`);
+let $9 = instantiate(`(module (import "test" "func-i32" (func (param i32))))`);
 
 // ./test/core/imports.wast:130
-let $8 = instantiate(`(module (import "test" "func->f32" (func (result f32))))`);
+let $10 = instantiate(`(module (import "test" "func-f32" (func (param f32))))`);
 
 // ./test/core/imports.wast:131
-let $9 = instantiate(`(module (import "test" "func-i32->i32" (func (param i32) (result i32))))`);
+let $11 = instantiate(`(module (import "test" "func->i32" (func (result i32))))`);
 
 // ./test/core/imports.wast:132
-let $10 = instantiate(`(module (import "test" "func-i64->i64" (func (param i64) (result i64))))`);
+let $12 = instantiate(`(module (import "test" "func->f32" (func (result f32))))`);
+
+// ./test/core/imports.wast:133
+let $13 = instantiate(`(module (import "test" "func-i32->i32" (func (param i32) (result i32))))`);
 
 // ./test/core/imports.wast:134
+let $14 = instantiate(`(module (import "test" "func-i64->i64" (func (param i64) (result i64))))`);
+
+// ./test/core/imports.wast:136
 assert_unlinkable(
   () => instantiate(`(module (import "test" "unknown" (func)))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:138
+// ./test/core/imports.wast:140
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "unknown" (func)))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:143
+// ./test/core/imports.wast:145
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func" (func (param i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:147
+// ./test/core/imports.wast:149
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func" (func (result i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:151
+// ./test/core/imports.wast:153
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func" (func (param i32) (result i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:155
+// ./test/core/imports.wast:157
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:159
+// ./test/core/imports.wast:161
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32" (func (result i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:163
+// ./test/core/imports.wast:165
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32" (func (param f32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:167
+// ./test/core/imports.wast:169
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32" (func (param i64))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:171
+// ./test/core/imports.wast:173
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32" (func (param i32) (result i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:175
+// ./test/core/imports.wast:177
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func->i32" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:179
+// ./test/core/imports.wast:181
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func->i32" (func (param i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:183
+// ./test/core/imports.wast:185
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func->i32" (func (result f32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:187
+// ./test/core/imports.wast:189
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func->i32" (func (result i64))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:191
+// ./test/core/imports.wast:193
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func->i32" (func (param i32) (result i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:195
+// ./test/core/imports.wast:197
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32->i32" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:199
+// ./test/core/imports.wast:201
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32->i32" (func (param i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:203
+// ./test/core/imports.wast:205
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32->i32" (func (result i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:208
+// ./test/core/imports.wast:210
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-i32" (func (result i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:212
+// ./test/core/imports.wast:214
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-inf" (func)))`),
+  () => instantiate(`(module (import "test-table-10-inf" "table-10-inf" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:216
+// ./test/core/imports.wast:218
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (func)))`),
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:220
+// ./test/core/imports.wast:222
 assert_unlinkable(
   () => instantiate(`(module (import "test" "tag" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:224
+// ./test/core/imports.wast:226
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "global_i32" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:228
+// ./test/core/imports.wast:230
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "table" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:232
+// ./test/core/imports.wast:234
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "memory" (func)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:237
+// ./test/core/imports.wast:239
 assert_unlinkable(
   () => instantiate(`(module (tag (import "test" "unknown")))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:241
+// ./test/core/imports.wast:243
 assert_unlinkable(
   () => instantiate(`(module (tag (import "test" "tag") (param f32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:245
+// ./test/core/imports.wast:247
 assert_unlinkable(
   () => instantiate(`(module (tag (import "test" "tag-i32")))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:249
+// ./test/core/imports.wast:251
 assert_unlinkable(
   () => instantiate(`(module (tag (import "test" "tag-i32") (param f32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:253
+// ./test/core/imports.wast:255
 assert_unlinkable(
   () => instantiate(`(module (tag (import "test" "func-i32") (param f32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:261
-let $11 = instantiate(`(module
+// ./test/core/imports.wast:263
+let $15 = instantiate(`(module
   (import "spectest" "global_i32" (global i32))
   (global (import "spectest" "global_i32") i32)
 
@@ -366,161 +382,160 @@ let $11 = instantiate(`(module
   (func (export "get-6") (result f64) (global.get 6))
 )`);
 
-// ./test/core/imports.wast:281
-assert_return(() => invoke($11, `get-0`, []), [value("i32", 666)]);
-
-// ./test/core/imports.wast:282
-assert_return(() => invoke($11, `get-1`, []), [value("i32", 666)]);
-
 // ./test/core/imports.wast:283
-assert_return(() => invoke($11, `get-x`, []), [value("i32", 666)]);
+assert_return(() => invoke($15, `get-0`, []), [value("i32", 666)]);
 
 // ./test/core/imports.wast:284
-assert_return(() => invoke($11, `get-y`, []), [value("i32", 666)]);
+assert_return(() => invoke($15, `get-1`, []), [value("i32", 666)]);
 
 // ./test/core/imports.wast:285
-assert_return(() => invoke($11, `get-4`, []), [value("i64", 666n)]);
+assert_return(() => invoke($15, `get-x`, []), [value("i32", 666)]);
 
 // ./test/core/imports.wast:286
-assert_return(() => invoke($11, `get-5`, []), [value("f32", 666.6)]);
+assert_return(() => invoke($15, `get-y`, []), [value("i32", 666)]);
 
 // ./test/core/imports.wast:287
-assert_return(() => invoke($11, `get-6`, []), [value("f64", 666.6)]);
+assert_return(() => invoke($15, `get-4`, []), [value("i64", 666n)]);
+
+// ./test/core/imports.wast:288
+assert_return(() => invoke($15, `get-5`, []), [value("f32", 666.6)]);
 
 // ./test/core/imports.wast:289
-let $12 = instantiate(`(module (import "test" "global-i32" (global i32)))`);
-
-// ./test/core/imports.wast:290
-let $13 = instantiate(`(module (import "test" "global-f32" (global f32)))`);
+assert_return(() => invoke($15, `get-6`, []), [value("f64", 666.6)]);
 
 // ./test/core/imports.wast:291
-let $14 = instantiate(`(module (import "test" "global-mut-i64" (global (mut i64))))`);
+let $16 = instantiate(`(module (import "test" "global-i32" (global i32)))`);
+
+// ./test/core/imports.wast:292
+let $17 = instantiate(`(module (import "test" "global-f32" (global f32)))`);
 
 // ./test/core/imports.wast:293
+let $18 = instantiate(`(module (import "test" "global-mut-i64" (global (mut i64))))`);
+
+// ./test/core/imports.wast:295
 assert_unlinkable(
   () => instantiate(`(module (import "test" "unknown" (global i32)))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:297
+// ./test/core/imports.wast:299
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "unknown" (global i32)))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:302
+// ./test/core/imports.wast:304
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-i32" (global i64)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:306
+// ./test/core/imports.wast:308
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-i32" (global f32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:310
+// ./test/core/imports.wast:312
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-i32" (global f64)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:314
+// ./test/core/imports.wast:316
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-i32" (global (mut i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:318
+// ./test/core/imports.wast:320
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-f32" (global i32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:322
+// ./test/core/imports.wast:324
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-f32" (global i64)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:326
+// ./test/core/imports.wast:328
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-f32" (global f64)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:330
+// ./test/core/imports.wast:332
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-f32" (global (mut f32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:334
+// ./test/core/imports.wast:336
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-mut-i64" (global (mut i32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:338
+// ./test/core/imports.wast:340
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-mut-i64" (global (mut f32))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:342
+// ./test/core/imports.wast:344
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-mut-i64" (global (mut f64))))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:346
+// ./test/core/imports.wast:348
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-mut-i64" (global i64)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:351
+// ./test/core/imports.wast:353
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func" (global i32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:355
+// ./test/core/imports.wast:357
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-inf" (global i32)))`),
+  () => instantiate(`(module (import "test-table-10-inf" "table-10-inf" (global i32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:359
+// ./test/core/imports.wast:361
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (global i32)))`),
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (global i32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:363
+// ./test/core/imports.wast:365
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "print_i32" (global i32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:367
+// ./test/core/imports.wast:369
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "table" (global i32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:371
+// ./test/core/imports.wast:373
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "memory" (global i32)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:379
-let $15 = instantiate(`(module
+// ./test/core/imports.wast:381
+let $19 = instantiate(`(module
   (type (func (result i32)))
   (import "spectest" "table" (table \$tab 10 20 funcref))
-  (import "test" "table64-10-inf" (table \$tab64 i64 10 funcref))
   (elem (table \$tab) (i32.const 1) func \$f \$g)
 
   (func (export "call") (param i32) (result i32)
@@ -529,27 +544,26 @@ let $15 = instantiate(`(module
   (func \$f (result i32) (i32.const 11))
   (func \$g (result i32) (i32.const 22))
 )`);
-
-// ./test/core/imports.wast:392
-assert_trap(() => invoke($15, `call`, [0]), `uninitialized element`);
 
 // ./test/core/imports.wast:393
-assert_return(() => invoke($15, `call`, [1]), [value("i32", 11)]);
+assert_trap(() => invoke($19, `call`, [0]), `uninitialized element`);
 
 // ./test/core/imports.wast:394
-assert_return(() => invoke($15, `call`, [2]), [value("i32", 22)]);
+assert_return(() => invoke($19, `call`, [1]), [value("i32", 11)]);
 
 // ./test/core/imports.wast:395
-assert_trap(() => invoke($15, `call`, [3]), `uninitialized element`);
+assert_return(() => invoke($19, `call`, [2]), [value("i32", 22)]);
 
 // ./test/core/imports.wast:396
-assert_trap(() => invoke($15, `call`, [100]), `undefined element`);
+assert_trap(() => invoke($19, `call`, [3]), `uninitialized element`);
 
-// ./test/core/imports.wast:399
-let $16 = instantiate(`(module
+// ./test/core/imports.wast:397
+assert_trap(() => invoke($19, `call`, [100]), `undefined element`);
+
+// ./test/core/imports.wast:398
+let $20 = instantiate(`(module
   (type (func (result i32)))
   (table \$tab (import "spectest" "table") 10 20 funcref)
-  (table \$tab64 (import "test" "table64-10-inf") i64 10 funcref)
   (elem (table \$tab) (i32.const 1) func \$f \$g)
 
   (func (export "call") (param i32) (result i32)
@@ -559,816 +573,566 @@ let $16 = instantiate(`(module
   (func \$g (result i32) (i32.const 22))
 )`);
 
+// ./test/core/imports.wast:410
+assert_trap(() => invoke($20, `call`, [0]), `uninitialized element`);
+
+// ./test/core/imports.wast:411
+assert_return(() => invoke($20, `call`, [1]), [value("i32", 11)]);
+
 // ./test/core/imports.wast:412
-assert_trap(() => invoke($16, `call`, [0]), `uninitialized element`);
+assert_return(() => invoke($20, `call`, [2]), [value("i32", 22)]);
 
 // ./test/core/imports.wast:413
-assert_return(() => invoke($16, `call`, [1]), [value("i32", 11)]);
+assert_trap(() => invoke($20, `call`, [3]), `uninitialized element`);
 
 // ./test/core/imports.wast:414
-assert_return(() => invoke($16, `call`, [2]), [value("i32", 22)]);
+assert_trap(() => invoke($20, `call`, [100]), `undefined element`);
 
 // ./test/core/imports.wast:415
-assert_trap(() => invoke($16, `call`, [3]), `uninitialized element`);
+let $21 = instantiate(`(module (import "spectest" "table" (table 0 funcref)))`);
 
 // ./test/core/imports.wast:416
-assert_trap(() => invoke($16, `call`, [100]), `undefined element`);
+let $22 = instantiate(`(module (import "spectest" "table" (table 0 funcref)))`);
+
+// ./test/core/imports.wast:417
+let $23 = instantiate(`(module (table 10 funcref))`);
 
 // ./test/core/imports.wast:418
-let $17 = instantiate(`(module
-  (import "spectest" "table" (table 0 funcref))
-  (import "spectest" "table" (table 0 funcref))
-  (import "test" "table64-10-inf" (table i64 10 funcref))
-  (import "test" "table64-10-inf" (table i64 10 funcref))
-  (table 10 funcref)
-  (table 10 funcref)
-  (table i64 10 funcref)
-  (table i64 10 funcref)
-)`);
+let $24 = instantiate(`(module (table 10 funcref))`);
+
+// ./test/core/imports.wast:419
+let $25 = instantiate(`(module (import "test-table-10-inf" "table-10-inf" (table 10 funcref)))`);
+
+// ./test/core/imports.wast:420
+let $26 = instantiate(`(module (import "test-table-10-inf" "table-10-inf" (table 5 funcref)))`);
+
+// ./test/core/imports.wast:421
+let $27 = instantiate(`(module (import "test-table-10-inf" "table-10-inf" (table 0 funcref)))`);
+
+// ./test/core/imports.wast:422
+let $28 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 10 funcref)))`);
+
+// ./test/core/imports.wast:423
+let $29 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 5 funcref)))`);
+
+// ./test/core/imports.wast:424
+let $30 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 0 funcref)))`);
+
+// ./test/core/imports.wast:425
+let $31 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 10 20 funcref)))`);
+
+// ./test/core/imports.wast:426
+let $32 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 5 20 funcref)))`);
+
+// ./test/core/imports.wast:427
+let $33 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 0 20 funcref)))`);
+
+// ./test/core/imports.wast:428
+let $34 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 10 25 funcref)))`);
 
 // ./test/core/imports.wast:429
-let $18 = instantiate(`(module (import "test" "table-10-inf" (table 10 funcref)))`);
+let $35 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 5 25 funcref)))`);
 
 // ./test/core/imports.wast:430
-let $19 = instantiate(`(module (import "test" "table-10-inf" (table 5 funcref)))`);
+let $36 = instantiate(`(module (import "test-table-10-20" "table-10-20" (table 0 25 funcref)))`);
 
 // ./test/core/imports.wast:431
-let $20 = instantiate(`(module (import "test" "table-10-inf" (table 0 funcref)))`);
+let $37 = instantiate(`(module (import "spectest" "table" (table 10 funcref)))`);
 
 // ./test/core/imports.wast:432
-let $21 = instantiate(`(module (import "test" "table-10-20" (table 10 funcref)))`);
+let $38 = instantiate(`(module (import "spectest" "table" (table 5 funcref)))`);
 
 // ./test/core/imports.wast:433
-let $22 = instantiate(`(module (import "test" "table-10-20" (table 5 funcref)))`);
+let $39 = instantiate(`(module (import "spectest" "table" (table 0 funcref)))`);
 
 // ./test/core/imports.wast:434
-let $23 = instantiate(`(module (import "test" "table-10-20" (table 0 funcref)))`);
+let $40 = instantiate(`(module (import "spectest" "table" (table 10 20 funcref)))`);
 
 // ./test/core/imports.wast:435
-let $24 = instantiate(`(module (import "test" "table-10-20" (table 10 20 funcref)))`);
+let $41 = instantiate(`(module (import "spectest" "table" (table 5 20 funcref)))`);
 
 // ./test/core/imports.wast:436
-let $25 = instantiate(`(module (import "test" "table-10-20" (table 5 20 funcref)))`);
+let $42 = instantiate(`(module (import "spectest" "table" (table 0 20 funcref)))`);
 
 // ./test/core/imports.wast:437
-let $26 = instantiate(`(module (import "test" "table-10-20" (table 0 20 funcref)))`);
+let $43 = instantiate(`(module (import "spectest" "table" (table 10 25 funcref)))`);
 
 // ./test/core/imports.wast:438
-let $27 = instantiate(`(module (import "test" "table-10-20" (table 10 25 funcref)))`);
-
-// ./test/core/imports.wast:439
-let $28 = instantiate(`(module (import "test" "table-10-20" (table 5 25 funcref)))`);
+let $44 = instantiate(`(module (import "spectest" "table" (table 5 25 funcref)))`);
 
 // ./test/core/imports.wast:440
-let $29 = instantiate(`(module (import "test" "table-10-20" (table 0 25 funcref)))`);
-
-// ./test/core/imports.wast:441
-let $30 = instantiate(`(module (import "test" "table64-10-inf" (table i64 10 funcref)))`);
-
-// ./test/core/imports.wast:442
-let $31 = instantiate(`(module (import "test" "table64-10-inf" (table i64 5 funcref)))`);
-
-// ./test/core/imports.wast:443
-let $32 = instantiate(`(module (import "test" "table64-10-inf" (table i64 0 funcref)))`);
-
-// ./test/core/imports.wast:444
-let $33 = instantiate(`(module (import "test" "table64-10-20" (table i64 10 funcref)))`);
-
-// ./test/core/imports.wast:445
-let $34 = instantiate(`(module (import "test" "table64-10-20" (table i64 5 funcref)))`);
-
-// ./test/core/imports.wast:446
-let $35 = instantiate(`(module (import "test" "table64-10-20" (table i64 0 funcref)))`);
-
-// ./test/core/imports.wast:447
-let $36 = instantiate(`(module (import "test" "table64-10-20" (table i64 10 20 funcref)))`);
-
-// ./test/core/imports.wast:448
-let $37 = instantiate(`(module (import "test" "table64-10-20" (table i64 5 20 funcref)))`);
-
-// ./test/core/imports.wast:449
-let $38 = instantiate(`(module (import "test" "table64-10-20" (table i64 0 20 funcref)))`);
-
-// ./test/core/imports.wast:450
-let $39 = instantiate(`(module (import "test" "table64-10-20" (table i64 10 25 funcref)))`);
-
-// ./test/core/imports.wast:451
-let $40 = instantiate(`(module (import "test" "table64-10-20" (table i64 5 25 funcref)))`);
-
-// ./test/core/imports.wast:452
-let $41 = instantiate(`(module (import "test" "table64-10-20" (table i64 0 25 funcref)))`);
-
-// ./test/core/imports.wast:453
-let $42 = instantiate(`(module (import "spectest" "table" (table 10 funcref)))`);
-
-// ./test/core/imports.wast:454
-let $43 = instantiate(`(module (import "spectest" "table" (table 5 funcref)))`);
-
-// ./test/core/imports.wast:455
-let $44 = instantiate(`(module (import "spectest" "table" (table 0 funcref)))`);
-
-// ./test/core/imports.wast:456
-let $45 = instantiate(`(module (import "spectest" "table" (table 10 20 funcref)))`);
-
-// ./test/core/imports.wast:457
-let $46 = instantiate(`(module (import "spectest" "table" (table 5 20 funcref)))`);
-
-// ./test/core/imports.wast:458
-let $47 = instantiate(`(module (import "spectest" "table" (table 0 20 funcref)))`);
-
-// ./test/core/imports.wast:459
-let $48 = instantiate(`(module (import "spectest" "table" (table 10 25 funcref)))`);
-
-// ./test/core/imports.wast:460
-let $49 = instantiate(`(module (import "spectest" "table" (table 5 25 funcref)))`);
-
-// ./test/core/imports.wast:462
 assert_unlinkable(
   () => instantiate(`(module (import "test" "unknown" (table 10 funcref)))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:466
+// ./test/core/imports.wast:444
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "unknown" (table 10 funcref)))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:471
+// ./test/core/imports.wast:449
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-inf" (table 12 funcref)))`),
+  () => instantiate(`(module (import "test-table-10-inf" "table-10-inf" (table 12 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:475
+// ./test/core/imports.wast:453
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-inf" (table 10 20 funcref)))`),
+  () => instantiate(`(module (import "test-table-10-inf" "table-10-inf" (table 10 20 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:479
+// ./test/core/imports.wast:457
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "table64-10-inf" (table i64 12 funcref)))`),
+  () => instantiate(`(module (import "test-table-10-20" "table-10-20" (table 12 20 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:483
+// ./test/core/imports.wast:461
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "table64-10-inf" (table i64 10 20 funcref)))`),
+  () => instantiate(`(module (import "test-table-10-20" "table-10-20" (table 10 18 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:487
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-20" (table 12 20 funcref)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:491
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-20" (table 10 18 funcref)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:495
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table64-10-20" (table i64 12 20 funcref)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:499
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table64-10-20" (table i64 10 18 funcref)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:503
+// ./test/core/imports.wast:465
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "table" (table 12 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:507
+// ./test/core/imports.wast:469
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "table" (table 10 15 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:512
+// ./test/core/imports.wast:474
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func" (table 10 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:516
+// ./test/core/imports.wast:478
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-i32" (table 10 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:520
+// ./test/core/imports.wast:482
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (table 10 funcref)))`),
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (table 10 funcref)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:524
+// ./test/core/imports.wast:486
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "print_i32" (table 10 funcref)))`),
   `incompatible import type`,
 );
 
+// ./test/core/imports.wast:494
+let $45 = instantiate(`(module
+  (import "spectest" "memory" (memory 1 2))
+  (data (memory 0) (i32.const 10) "\\10")
+
+  (func (export "load") (param i32) (result i32) (i32.load (local.get 0)))
+)`);
+
+// ./test/core/imports.wast:501
+assert_return(() => invoke($45, `load`, [0]), [value("i32", 0)]);
+
+// ./test/core/imports.wast:502
+assert_return(() => invoke($45, `load`, [10]), [value("i32", 16)]);
+
+// ./test/core/imports.wast:503
+assert_return(() => invoke($45, `load`, [8]), [value("i32", 1048576)]);
+
+// ./test/core/imports.wast:504
+assert_trap(() => invoke($45, `load`, [1000000]), `out of bounds memory access`);
+
+// ./test/core/imports.wast:506
+let $46 = instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 2)))`);
+
+// ./test/core/imports.wast:507
+let $47 = instantiate(`(module
+  (memory (import "spectest" "memory") 1 2)
+  (data (memory 0) (i32.const 10) "\\10")
+
+  (func (export "load") (param i32) (result i32) (i32.load (local.get 0)))
+)`);
+
+// ./test/core/imports.wast:513
+assert_return(() => invoke($47, `load`, [0]), [value("i32", 0)]);
+
+// ./test/core/imports.wast:514
+assert_return(() => invoke($47, `load`, [10]), [value("i32", 16)]);
+
+// ./test/core/imports.wast:515
+assert_return(() => invoke($47, `load`, [8]), [value("i32", 1048576)]);
+
+// ./test/core/imports.wast:516
+assert_trap(() => invoke($47, `load`, [1000000]), `out of bounds memory access`);
+
+// ./test/core/imports.wast:518
+let $48 = instantiate(`(module (memory (import "test-memory-2-inf" "memory-2-inf") 2))`);
+
+// ./test/core/imports.wast:520
+let $49 = instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 2)))`);
+
+// ./test/core/imports.wast:521
+let $50 = instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 1)))`);
+
+// ./test/core/imports.wast:522
+let $51 = instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 0)))`);
+
+// ./test/core/imports.wast:523
+let $52 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 2)))`);
+
+// ./test/core/imports.wast:524
+let $53 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 1)))`);
+
+// ./test/core/imports.wast:525
+let $54 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 0)))`);
+
+// ./test/core/imports.wast:526
+let $55 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 2 4)))`);
+
+// ./test/core/imports.wast:527
+let $56 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 1 4)))`);
+
+// ./test/core/imports.wast:528
+let $57 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 0 4)))`);
+
 // ./test/core/imports.wast:529
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-inf" (table i64 10 funcref)))`),
-  `incompatible import type`,
-);
+let $58 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 2 5)))`);
+
+// ./test/core/imports.wast:530
+let $59 = instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 2 6)))`);
+
+// ./test/core/imports.wast:531
+let $60 = instantiate(`(module (import "spectest" "memory" (memory 1)))`);
+
+// ./test/core/imports.wast:532
+let $61 = instantiate(`(module (import "spectest" "memory" (memory 0)))`);
 
 // ./test/core/imports.wast:533
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table64-10-inf" (table 10 funcref)))`),
-  `incompatible import type`,
-);
+let $62 = instantiate(`(module (import "spectest" "memory" (memory 1 2)))`);
 
-// ./test/core/imports.wast:537
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-20" (table i64 10 20 funcref)))`),
-  `incompatible import type`,
-);
+// ./test/core/imports.wast:534
+let $63 = instantiate(`(module (import "spectest" "memory" (memory 0 2)))`);
 
-// ./test/core/imports.wast:541
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "table64-10-20" (table 10 20 funcref)))`),
-  `incompatible import type`,
-);
+// ./test/core/imports.wast:535
+let $64 = instantiate(`(module (import "spectest" "memory" (memory 1 3)))`);
 
-// ./test/core/imports.wast:549
-let $50 = instantiate(`(module
-  (import "spectest" "memory" (memory 1 2))
-  (import "test" "memory-2-inf" (memory 2))
-  (import "test" "memory64-2-inf" (memory i64 2))
-  (data (memory 0) (i32.const 10) "\\10")
+// ./test/core/imports.wast:536
+let $65 = instantiate(`(module (import "spectest" "memory" (memory 0 3)))`);
 
-  (func (export "load") (param i32) (result i32) (i32.load (local.get 0)))
-)`);
-
-// ./test/core/imports.wast:558
-assert_return(() => invoke($50, `load`, [0]), [value("i32", 0)]);
-
-// ./test/core/imports.wast:559
-assert_return(() => invoke($50, `load`, [10]), [value("i32", 16)]);
-
-// ./test/core/imports.wast:560
-assert_return(() => invoke($50, `load`, [8]), [value("i32", 1048576)]);
-
-// ./test/core/imports.wast:561
-assert_trap(() => invoke($50, `load`, [1000000]), `out of bounds memory access`);
-
-// ./test/core/imports.wast:563
-let $51 = instantiate(`(module
-  (memory (import "spectest" "memory") 1 2)
-  (memory (import "test" "memory-2-inf") 2)
-  (memory (import "test" "memory64-2-inf") i64 2)
-  (data (memory 0) (i32.const 10) "\\10")
-
-  (func (export "load") (param i32) (result i32) (i32.load (local.get 0)))
-)`);
-
-// ./test/core/imports.wast:571
-assert_return(() => invoke($51, `load`, [0]), [value("i32", 0)]);
-
-// ./test/core/imports.wast:572
-assert_return(() => invoke($51, `load`, [10]), [value("i32", 16)]);
-
-// ./test/core/imports.wast:573
-assert_return(() => invoke($51, `load`, [8]), [value("i32", 1048576)]);
-
-// ./test/core/imports.wast:574
-assert_trap(() => invoke($51, `load`, [1000000]), `out of bounds memory access`);
-
-// ./test/core/imports.wast:576
-let $52 = instantiate(`(module (import "test" "memory-2-inf" (memory 2)))`);
-
-// ./test/core/imports.wast:577
-let $53 = instantiate(`(module (import "test" "memory-2-inf" (memory 1)))`);
-
-// ./test/core/imports.wast:578
-let $54 = instantiate(`(module (import "test" "memory-2-inf" (memory 0)))`);
-
-// ./test/core/imports.wast:579
-let $55 = instantiate(`(module (import "test" "memory-2-4" (memory 2)))`);
-
-// ./test/core/imports.wast:580
-let $56 = instantiate(`(module (import "test" "memory-2-4" (memory 1)))`);
-
-// ./test/core/imports.wast:581
-let $57 = instantiate(`(module (import "test" "memory-2-4" (memory 0)))`);
-
-// ./test/core/imports.wast:582
-let $58 = instantiate(`(module (import "test" "memory-2-4" (memory 2 4)))`);
-
-// ./test/core/imports.wast:583
-let $59 = instantiate(`(module (import "test" "memory-2-4" (memory 1 4)))`);
-
-// ./test/core/imports.wast:584
-let $60 = instantiate(`(module (import "test" "memory-2-4" (memory 0 4)))`);
-
-// ./test/core/imports.wast:585
-let $61 = instantiate(`(module (import "test" "memory-2-4" (memory 2 5)))`);
-
-// ./test/core/imports.wast:586
-let $62 = instantiate(`(module (import "test" "memory-2-4" (memory 2 6)))`);
-
-// ./test/core/imports.wast:587
-let $63 = instantiate(`(module (import "test" "memory64-2-inf" (memory i64 2)))`);
-
-// ./test/core/imports.wast:588
-let $64 = instantiate(`(module (import "test" "memory64-2-inf" (memory i64 1)))`);
-
-// ./test/core/imports.wast:589
-let $65 = instantiate(`(module (import "test" "memory64-2-inf" (memory i64 0)))`);
-
-// ./test/core/imports.wast:590
-let $66 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 2)))`);
-
-// ./test/core/imports.wast:591
-let $67 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 1)))`);
-
-// ./test/core/imports.wast:592
-let $68 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 0)))`);
-
-// ./test/core/imports.wast:593
-let $69 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 2 4)))`);
-
-// ./test/core/imports.wast:594
-let $70 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 1 4)))`);
-
-// ./test/core/imports.wast:595
-let $71 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 0 4)))`);
-
-// ./test/core/imports.wast:596
-let $72 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 2 5)))`);
-
-// ./test/core/imports.wast:597
-let $73 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 1 5)))`);
-
-// ./test/core/imports.wast:598
-let $74 = instantiate(`(module (import "test" "memory64-2-4" (memory i64 0 5)))`);
-
-// ./test/core/imports.wast:599
-let $75 = instantiate(`(module (import "spectest" "memory" (memory 1)))`);
-
-// ./test/core/imports.wast:600
-let $76 = instantiate(`(module (import "spectest" "memory" (memory 0)))`);
-
-// ./test/core/imports.wast:601
-let $77 = instantiate(`(module (import "spectest" "memory" (memory 1 2)))`);
-
-// ./test/core/imports.wast:602
-let $78 = instantiate(`(module (import "spectest" "memory" (memory 0 2)))`);
-
-// ./test/core/imports.wast:603
-let $79 = instantiate(`(module (import "spectest" "memory" (memory 1 3)))`);
-
-// ./test/core/imports.wast:604
-let $80 = instantiate(`(module (import "spectest" "memory" (memory 0 3)))`);
-
-// ./test/core/imports.wast:606
+// ./test/core/imports.wast:538
 assert_unlinkable(
   () => instantiate(`(module (import "test" "unknown" (memory 1)))`),
   `unknown import`,
 );
 
-// ./test/core/imports.wast:610
+// ./test/core/imports.wast:542
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "unknown" (memory 1)))`),
   `unknown import`,
 );
 
+// ./test/core/imports.wast:547
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 0 1)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:551
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 0 2)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:555
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 0 3)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:559
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 2 3)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:563
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-inf" "memory-2-inf" (memory 3)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:567
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 0 1)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:571
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 0 2)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:575
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 0 3)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:579
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 2 2)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:583
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 2 3)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:587
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 3 3)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:591
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 3 4)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:595
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 3 5)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:599
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 4 4)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:603
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 4 5)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:607
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 3)))`),
+  `incompatible import type`,
+);
+
+// ./test/core/imports.wast:611
+assert_unlinkable(
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 4)))`),
+  `incompatible import type`,
+);
+
 // ./test/core/imports.wast:615
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (memory 0 1)))`),
+  () => instantiate(`(module (import "test-memory-2-4" "memory-2-4" (memory 5)))`),
   `incompatible import type`,
 );
 
 // ./test/core/imports.wast:619
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (memory 0 2)))`),
+  () => instantiate(`(module (import "spectest" "memory" (memory 2)))`),
   `incompatible import type`,
 );
 
 // ./test/core/imports.wast:623
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (memory 0 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:627
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (memory 2 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:631
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (memory 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:635
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 0 1)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:639
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 0 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:643
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 0 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:647
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 2 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:651
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 2 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:655
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 3 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:659
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 3 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:663
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 3 5)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:667
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 4 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:671
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 4 5)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:675
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:679
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:683
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory 5)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:687
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-inf" (memory i64 0 1)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:691
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-inf" (memory i64 0 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:695
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-inf" (memory i64 0 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:699
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-inf" (memory i64 2 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:703
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-inf" (memory i64 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:707
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 0 1)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:711
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 0 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:715
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 0 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:719
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 2 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:723
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 2 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:727
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 3 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:731
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 3 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:735
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 3 5)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:739
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 4 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:743
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 4 5)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:747
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 3)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:751
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:755
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory i64 5)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:759
-assert_unlinkable(
-  () => instantiate(`(module (import "spectest" "memory" (memory 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:763
-assert_unlinkable(
   () => instantiate(`(module (import "spectest" "memory" (memory 1 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:768
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-inf" (memory i64 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:772
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-inf" (memory 2)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:776
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory-2-4" (memory i64 2 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:780
-assert_unlinkable(
-  () => instantiate(`(module (import "test" "memory64-2-4" (memory 2 4)))`),
-  `incompatible import type`,
-);
-
-// ./test/core/imports.wast:785
+// ./test/core/imports.wast:628
 assert_unlinkable(
   () => instantiate(`(module (import "test" "func-i32" (memory 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:789
+// ./test/core/imports.wast:632
 assert_unlinkable(
   () => instantiate(`(module (import "test" "global-i32" (memory 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:793
+// ./test/core/imports.wast:636
 assert_unlinkable(
-  () => instantiate(`(module (import "test" "table-10-inf" (memory 1)))`),
+  () => instantiate(`(module (import "test-table-10-inf" "table-10-inf" (memory 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:797
+// ./test/core/imports.wast:640
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "print_i32" (memory 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:801
+// ./test/core/imports.wast:644
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "global_i32" (memory 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:805
+// ./test/core/imports.wast:648
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "table" (memory 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:810
+// ./test/core/imports.wast:653
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "memory" (memory 2)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:814
+// ./test/core/imports.wast:657
 assert_unlinkable(
   () => instantiate(`(module (import "spectest" "memory" (memory 1 1)))`),
   `incompatible import type`,
 );
 
-// ./test/core/imports.wast:819
-let $81 = instantiate(`(module
+// ./test/core/imports.wast:662
+let $66 = instantiate(`(module
   (import "spectest" "memory" (memory 0 3))  ;; actual has max size 2
   (func (export "grow") (param i32) (result i32) (memory.grow (local.get 0)))
 )`);
 
-// ./test/core/imports.wast:823
-assert_return(() => invoke($81, `grow`, [0]), [value("i32", 1)]);
+// ./test/core/imports.wast:666
+assert_return(() => invoke($66, `grow`, [0]), [value("i32", 1)]);
 
-// ./test/core/imports.wast:824
-assert_return(() => invoke($81, `grow`, [1]), [value("i32", 1)]);
+// ./test/core/imports.wast:667
+assert_return(() => invoke($66, `grow`, [1]), [value("i32", 1)]);
 
-// ./test/core/imports.wast:825
-assert_return(() => invoke($81, `grow`, [0]), [value("i32", 2)]);
+// ./test/core/imports.wast:668
+assert_return(() => invoke($66, `grow`, [0]), [value("i32", 2)]);
 
-// ./test/core/imports.wast:826
-assert_return(() => invoke($81, `grow`, [1]), [value("i32", -1)]);
+// ./test/core/imports.wast:669
+assert_return(() => invoke($66, `grow`, [1]), [value("i32", -1)]);
 
-// ./test/core/imports.wast:827
-assert_return(() => invoke($81, `grow`, [0]), [value("i32", 2)]);
+// ./test/core/imports.wast:670
+assert_return(() => invoke($66, `grow`, [0]), [value("i32", 2)]);
 
-// ./test/core/imports.wast:832
+// ./test/core/imports.wast:675
 assert_malformed(
   () => instantiate(`(func) (import "" "" (func)) `),
   `import after function`,
 );
 
-// ./test/core/imports.wast:836
+// ./test/core/imports.wast:679
 assert_malformed(
   () => instantiate(`(func) (import "" "" (global i64)) `),
   `import after function`,
 );
 
-// ./test/core/imports.wast:840
+// ./test/core/imports.wast:683
 assert_malformed(
   () => instantiate(`(func) (import "" "" (table 0 funcref)) `),
   `import after function`,
 );
 
-// ./test/core/imports.wast:844
+// ./test/core/imports.wast:687
 assert_malformed(
   () => instantiate(`(func) (import "" "" (memory 0)) `),
   `import after function`,
 );
 
-// ./test/core/imports.wast:849
+// ./test/core/imports.wast:692
 assert_malformed(
   () => instantiate(`(global i64 (i64.const 0)) (import "" "" (func)) `),
   `import after global`,
 );
 
-// ./test/core/imports.wast:853
+// ./test/core/imports.wast:696
 assert_malformed(
   () => instantiate(`(global i64 (i64.const 0)) (import "" "" (global f32)) `),
   `import after global`,
 );
 
-// ./test/core/imports.wast:857
+// ./test/core/imports.wast:700
 assert_malformed(
   () => instantiate(`(global i64 (i64.const 0)) (import "" "" (table 0 funcref)) `),
   `import after global`,
 );
 
-// ./test/core/imports.wast:861
+// ./test/core/imports.wast:704
 assert_malformed(
   () => instantiate(`(global i64 (i64.const 0)) (import "" "" (memory 0)) `),
   `import after global`,
 );
 
-// ./test/core/imports.wast:866
+// ./test/core/imports.wast:709
 assert_malformed(
   () => instantiate(`(table 0 funcref) (import "" "" (func)) `),
   `import after table`,
 );
 
-// ./test/core/imports.wast:870
+// ./test/core/imports.wast:713
 assert_malformed(
   () => instantiate(`(table 0 funcref) (import "" "" (global i32)) `),
   `import after table`,
 );
 
-// ./test/core/imports.wast:874
+// ./test/core/imports.wast:717
 assert_malformed(
   () => instantiate(`(table 0 funcref) (import "" "" (table 0 funcref)) `),
   `import after table`,
 );
 
-// ./test/core/imports.wast:878
+// ./test/core/imports.wast:721
 assert_malformed(
   () => instantiate(`(table 0 funcref) (import "" "" (memory 0)) `),
   `import after table`,
 );
 
-// ./test/core/imports.wast:883
+// ./test/core/imports.wast:726
 assert_malformed(
   () => instantiate(`(memory 0) (import "" "" (func)) `),
   `import after memory`,
 );
 
-// ./test/core/imports.wast:887
+// ./test/core/imports.wast:730
 assert_malformed(
   () => instantiate(`(memory 0) (import "" "" (global i32)) `),
   `import after memory`,
 );
 
-// ./test/core/imports.wast:891
+// ./test/core/imports.wast:734
 assert_malformed(
   () => instantiate(`(memory 0) (import "" "" (table 1 3 funcref)) `),
   `import after memory`,
 );
 
-// ./test/core/imports.wast:895
+// ./test/core/imports.wast:738
 assert_malformed(
   () => instantiate(`(memory 0) (import "" "" (memory 1 2)) `),
   `import after memory`,
 );
 
-// ./test/core/imports.wast:903
-let $82 = instantiate(`(module)`);
+// ./test/core/imports.wast:746
+let $67 = instantiate(`(module)`);
 
-// ./test/core/imports.wast:904
-register($82, `not wasm`);
+// ./test/core/imports.wast:747
+register($67, `not wasm`);
 
-// ./test/core/imports.wast:905
+// ./test/core/imports.wast:748
 assert_unlinkable(
   () => instantiate(`(module
     (import "not wasm" "overloaded" (func))

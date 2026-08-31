@@ -3,22 +3,713 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 .lists {
-  grid-column: span 1;
-  width: 300px;
-  background: var(--newtab-background-card);
+  @include newtab-card-style;
+
+  --lists-surface-color: light-dark(
+    var(--color-white),
+    var(--newtab-background-card)
+  );
+  --lists-text-color: light-dark(
+    color-mix(in srgb, var(--color-violet-desaturated-90) 70%, transparent),
+    color-mix(in srgb, var(--color-violet-desaturated-0) 70%, transparent)
+  );
+  --lists-checkbox-border-color: light-dark(
+    var(--text-color),
+    var(--newtab-text-primary-color)
+  );
+  --lists-button-background: light-dark(var(--color-violet-50), var(--color-violet-30));
+  --lists-button-background-hover: var(--color-accent-primary-hover);
+  --lists-button-background-active: var(--color-accent-primary-active);
+  --lists-button-text-color: var(--button-text-color-primary);
+  --widget-celebration-accent-color: var(--color-accent-primary);
+  --widget-celebration-copy-color: var(--lists-text-color);
+  --widget-celebration-surface-color: var(--lists-surface-color);
+  --widget-celebration-headline-gradient-angle: 90deg;
+  --widget-celebration-headline-gradient-start: var(--color-orange-20);
+  --widget-celebration-headline-gradient-mid-start: var(--color-orange-30);
+  --widget-celebration-headline-gradient-mid-end: var(--color-pink-30);
+  --widget-celebration-headline-gradient-end: var(--color-pink-40);
+  --widget-celebration-tint-color: color-mix(
+    in srgb,
+    var(--lists-surface-color) 92%,
+    transparent
+  );
+  --widget-celebration-glow-color: color-mix(
+    in srgb,
+    var(--widget-celebration-accent-color) 35%,
+    transparent
+  );
+  --widget-celebration-orbit-color: color-mix(
+    in srgb,
+    var(--color-violet-40) 70%,
+    transparent
+  );
+  --widget-celebration-border-draw-duration: 1900ms;
+  --widget-celebration-orbit-duration: 1900ms;
+  --widget-celebration-track-color: color-mix(
+    in srgb,
+    var(--widget-celebration-accent-color) 45%,
+    transparent
+  );
+  --widget-celebration-hold-duration: 3400ms;
+  --widget-celebration-exit-duration: 1200ms;
+  --widget-celebration-enter-ease: cubic-bezier(0.2, 0.9, 0.2, 1);
+  --widget-celebration-headline-delay: 80ms;
+  --widget-celebration-panel-delay: var(--widget-celebration-headline-delay);
+  --widget-celebration-illustration-delay: 180ms;
+  --widget-celebration-subhead-delay: 280ms;
+
   border-radius: var(--border-radius-large);
-  padding: var(--space-large);
-  max-height: 282px;
+  padding-block-start: var(--space-medium);
+  // @backward-compat { version 150 } D281466/D283723 renamed design tokens; remove once Firefox 150 is on Release.
+  box-shadow: var(--card-box-shadow, var(--box-shadow-card));
+
+  .nova-enabled & {
+    @include widget-base-style;
+  }
+
+  // Classic layout (when Nova is disabled)
+  // @nova-cleanup(remove-conditional): Remove classic fixed-width/height styles after Nova ships
+  .classic-enabled & {
+    grid-column: span 1;
+    width: var(--newtab-card-grid-layout-width);
+    height: var(--newtab-card-height);
+    padding: var(--space-medium);
+    box-shadow: var(--card-box-shadow);
+
+    // Match the new card width if sections are enabled
+    .has-sections-grid & {
+      width: var(--newtab-card-width-medium);
+    }
+
+    .empty-list {
+      @include wallpaper-contrast-fix;
+    }
+  }
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+
+  @media (forced-colors: active) {
+    --lists-surface-color: Canvas;
+    --lists-text-color: CanvasText;
+    --lists-checkbox-border-color: ButtonText;
+    --lists-button-background: ButtonFace;
+    --lists-button-background-hover: SelectedItem;
+    --lists-button-background-active: SelectedItem;
+    --lists-button-text-color: ButtonText;
+
+    .lists-celebration-headline {
+      background: none;
+      -webkit-text-fill-color: CanvasText;
+      color: CanvasText;
+    }
+  }
+
+  @include widget-celebration-styles('lists-celebration');
+
+  .lists-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xsmall);
+    margin-block-end: var(--space-xsmall);
+    min-height: 24px;
+    position: relative;
+    z-index: 1;
+
+    > :first-child {
+      flex: 1;
+      min-width: 0;
+    }
+
+    > .lists-switcher {
+      flex: 0 1 auto;
+      max-inline-size: min(100%, 320px);
+    }
+
+    .lists-switcher {
+      align-items: center;
+      display: inline-flex;
+      gap: var(--space-xxsmall);
+      min-width: 0;
+
+      .lists-title {
+        flex: 0 1 auto;
+      }
+    }
+
+    moz-button.lists-switcher-button {
+      flex: 0 0 auto;
+      margin: 0;
+      min-height: 24px;
+      min-width: 24px;
+    }
+
+    #lists-switcher-panel panel-item::part(button) {
+      padding-inline-start: var(--space-xxlarge);
+    }
+
+    .lists-title {
+      color: var(--lists-text-color);
+      display: block;
+      font-size: var(--font-size-small);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    moz-button.lists-panel-button {
+      margin-inline-start: auto;
+      visibility: hidden;
+    }
+  }
+
+  &:hover,
+  &:focus-within {
+    .lists-header moz-button.lists-panel-button {
+      visibility: visible;
+    }
+  }
+
+  .edit-list-wrapper {
+    position: relative;
+    width: 100%;
+
+    .edit-list {
+      padding-inline-end: var(--space-xxlarge);
+    }
+
+    moz-button.edit-list-clear {
+      position: absolute;
+      inset-block-start: 50%;
+      transform: translateY(-50%);
+      inset-inline-end: var(--space-xxsmall);
+      --focus-outline-offset: var(--focus-outline-inset);
+    }
+  }
+
+  .edit-list {
+    background: none;
+    border: none;
+    box-sizing: border-box;
+    color: var(--lists-text-color);
+    font-size: var(--font-size-small);
+    outline: var(--focus-outline);
+    padding-inline: var(--space-small);
+    width: 100%;
+    min-height: 24px;
+  }
+
+  .lists-add-action {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xsmall);
+    margin-block-end: var(--space-xsmall);
+  }
+
+  .add-task-container {
+    display: none;
+    position: relative;
+
+    .icon.icon-add {
+      inset-block-start: 50%;
+      inset-inline-start: var(--space-small);
+      position: absolute;
+      transform: translateY(-50%);
+    }
+
+    .icon.icon-add.icon-disabled {
+      fill: var(--text-color-disabled);
+    }
+
+    .add-task-input {
+      background: var(--button-background-color);
+      border: none;
+      border-radius: var(--border-radius-medium);
+      outline: none;
+      padding-block: var(--space-small);
+      padding-inline-end: var(--space-large);
+      padding-inline-start: calc((var(--space-large) * 2) + var(--space-xsmall));
+      width: 100%;
+
+      &:focus {
+        outline: var(--focus-outline);
+      }
+
+      &:focus::placeholder {
+        color: var(--newtab-text-primary-color);
+      }
+
+      &:disabled {
+        background-color: var(--button-background-color-ghost);
+        color: var(--text-color-disabled);
+        outline: var(--border-width) solid var(--border-color-interactive-disabled);
+      }
+    }
+  }
+
+  &.is-adding-task .lists-add-action {
+    .add-task-container {
+      display: block;
+    }
+  }
+
+  &.is-adding-task .lists-add-action .lists-add-button {
+    display: none;
+  }
+
+  .lists-add-button {
+    appearance: none;
+    align-items: center;
+    align-self: flex-start;
+    background: var(--lists-button-background);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--border-radius-large);
+    color: var(--lists-button-text-color);
+    display: inline-flex;
+    font-family: inherit;
+    font-size: var(--font-size-root);
+    font-weight: var(--font-weight-semibold);
+    gap: var(--space-small);
+    min-height: 32px;
+    padding-block: var(--space-xsmall);
+    padding-inline: var(--space-large);
+
+    .icon.icon-add {
+      color: inherit;
+      margin: 0;
+      -moz-context-properties: fill;
+      fill: currentColor;
+      position: static;
+    }
+
+    &:hover:not(:disabled) {
+      background: var(--lists-button-background-hover);
+      color: var(--lists-button-text-color);
+    }
+
+    &:active:not(:disabled) {
+      background: var(--lists-button-background-active);
+      color: var(--lists-button-text-color);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-offset);
+    }
+
+    &:disabled {
+      background: var(--lists-button-background);
+      color: var(--lists-button-text-color);
+      opacity: var(--button-opacity-disabled);
+    }
+
+    &.icon-only {
+      align-items: center;
+      border-radius: var(--border-radius-circle);
+      justify-content: center;
+      min-height: 24px;
+      min-width: 24px;
+      padding: var(--space-small);
+
+      .sr-only {
+        border: 0;
+        clip: rect(0, 0, 0, 0);
+        height: var(--size-item-xsmall);
+        margin: calc(-1 * var(--border-width));
+        overflow: hidden;
+        padding: 0;
+        position: absolute;
+        white-space: nowrap;
+        width: var(--size-item-xsmall);
+      }
+    }
+  }
+
+  .lists-completed-button {
+    appearance: none;
+    align-items: center;
+    align-self: flex-start;
+    background: var(--lists-button-background);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--border-radius-circle);
+    color: var(--lists-button-text-color);
+    display: inline-flex;
+    font-family: inherit;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+    justify-content: center;
+    line-height: 1;
+    min-height: 24px;
+    min-width: 24px;
+    padding: var(--space-small);
+
+    &:hover:not(:disabled) {
+      background: var(--lists-button-background-hover);
+    }
+
+    &:active:not(:disabled),
+    &.is-active {
+      background: var(--button-background-color-active);
+      color: var(--lists-text-color);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+      outline-offset: var(--focus-outline-offset);
+    }
+
+    .lists-completed-button-label {
+      line-height: 1;
+    }
+
+    .sr-only {
+      border: 0;
+      clip: rect(0, 0, 0, 0);
+      height: var(--size-item-xsmall);
+      margin: calc(-1 * var(--border-width));
+      overflow: hidden;
+      padding: 0;
+      position: absolute;
+      white-space: nowrap;
+      width: var(--size-item-xsmall);
+    }
+  }
+
+  .task-list-wrapper {
+    display: flex;
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+  }
+
+  moz-reorderable-list {
+    display: block;
+    flex: 1;
+    min-height: 0;
+  }
 
   fieldset {
-    padding: var(--space-xsmall);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xxsmall);
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    padding-block-start: var(--space-small);
+    padding-inline-end: var(--space-small);
+    border: none;
+    overflow-y: auto;
+    scrollbar-width: none;
+
+    &:hover {
+      scrollbar-width: thin;
+    }
+
+    &:focus {
+      outline: var(--focus-outline);
+    }
   }
 
   .task-item {
+    align-items: center;
+    background: transparent;
+    border-radius: var(--border-radius-medium);
     display: flex;
+    justify-content: space-between;
+    min-height: 32px;
+    transition: opacity 300ms ease;
 
-    input:checked ~ span {
+    // Spacing between uncompleted task and "Completed" list
+    &.task-type-tasks {
+      &:last-of-type {
+        margin-block-end: 0;
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      &.exiting {
+        opacity: 0;
+      }
+    }
+
+    .checkbox-wrapper {
+      display: flex;
+      align-items: flex-start;
+      flex-grow: 2;
+      gap: var(--space-small);
+      padding-block: var(--space-small);
+      padding-inline: var(--space-small);
+
+      span {
+        -webkit-line-clamp: 3;
+        color: var(--lists-text-color);
+        display: -webkit-box;
+        font-size: var(--font-size-small);
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        word-break: break-word;
+        white-space: normal;
+        width: 100%;
+      }
+    }
+
+    input[type='checkbox'] {
+      -moz-appearance: none;
+      appearance: none;
+      background-color: transparent;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: var(--size-item-xsmall) var(--size-item-xsmall);
+      border: var(--border-width) solid var(--lists-checkbox-border-color);
+      border-radius: var(--border-radius-small);
+      box-sizing: border-box;
+      display: block;
+      flex: none;
+      height: 16px;
+      margin: 0;
+      opacity: 1;
+      padding: 0;
+      width: 16px;
+
+      &:checked {
+        -moz-context-properties: fill;
+        background-color: var(--lists-button-background);
+        background-image: url('chrome://global/skin/icons/check.svg');
+        border-color: var(--lists-button-background);
+        fill: var(--lists-button-text-color);
+      }
+
+      &:focus-visible {
+        outline: var(--focus-outline);
+        outline-offset: var(--focus-outline-inset);
+      }
+    }
+
+    .task-label {
+      color: var(--lists-text-color);
+      display: -webkit-box;
+      font-size: var(--font-size-small);
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      position: relative;
+      text-decoration: none;
+      word-break: break-word;
+
+      &:is(a) {
+        color: var(--link-color);
+        text-decoration: underline;
+      }
+    }
+
+    input:checked ~ .task-label {
+      color: var(--lists-text-color);
       text-decoration: line-through;
+      text-decoration-thickness: 2px;
+    }
+
+    moz-button {
+      margin-inline-end: var(--space-xsmall);
+      visibility: hidden;
+
+      &:has(+ panel-list[open]) {
+        visibility: visible;
+      }
+    }
+
+    &:hover,
+    &:focus-visible,
+    &:focus-within {
+      background: var(--button-background-color);
+
+      moz-button {
+        visibility: visible;
+      }
+    }
+
+    panel-list[open] {
+      ~ moz-button {
+        visibility: visible;
+      }
+    }
+
+    .edit-task {
+      margin-inline-start: var(--space-small);
+      max-width: 180px;
+      border: none;
+      border-radius: 0;
+      user-select: text;
+
+      &:focus {
+        outline: var(--focus-outline);
+      }
+    }
+  }
+
+  .empty-list {
+    display: flex;
+    flex: 1;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    padding-block-end: var(--space-medium);
+
+    @include wallpaper-contrast-fix;
+
+    .empty-list-illustration {
+      height: auto;
+      width: 75px;
+      -moz-context-properties: fill;
+      // stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, declaration-property-value-disallowed-list
+      fill: light-dark(#DADBDF, #3B3B43);
+    }
+  }
+
+  .completed-task-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-small);
+    margin-block-start: var(--space-small);
+  }
+
+  .completed-task-wrapper summary {
+    list-style: none;
+
+    &:focus {
+      outline: var(--focus-outline);
+    }
+
+    .completed-title {
+      color: var(--lists-text-color);
+      position: relative;
+
+      &::after {
+        content: '';
+        -moz-context-properties: fill;
+        fill: var(--button-icon-fill);
+        background-image: url('chrome://global/skin/icons/arrow-right.svg');
+        height: var(--icon-size-small);
+        width: var(--icon-size-small);
+        position: absolute;
+        inset-inline-end: calc(-1 * var(--space-xlarge));
+        inset-block-start: 50%;
+        transform: translateY(-50%);
+        transition: transform 160ms ease;
+      }
+
+      &:dir(rtl)::after {
+        background-image: url('chrome://global/skin/icons/arrow-left.svg');
+      }
+    }
+  }
+
+  .completed-task-wrapper[open] .completed-title::after {
+    background-image: url('chrome://global/skin/icons/arrow-down.svg');
+    transform: translateY(-50%) rotate(90deg);
+  }
+
+  .completed-task-wrapper[open] .completed-title:dir(rtl)::after {
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  &.compact-widget {
+    .nova-enabled & {
+      height: var(--newtab-card-height-small);
+    }
+
+    .lists-celebration-copy {
+      inset-block-start: 46%;
+      inset-inline: var(--space-medium);
+    }
+
+    .lists-celebration-headline {
+      font-size: var(--font-size-large);
+    }
+
+    .lists-celebration-subhead {
+      font-size: var(--font-size-small);
+    }
+
+    .lists-celebration-illustration {
+      block-size: 80px;
+      inline-size: auto;
+      max-inline-size: 127px;
+      inset-inline-end: var(--space-large);
+    }
+
+    .lists-header {
+      align-items: center;
+      gap: var(--space-small);
+
+      > :first-child {
+        flex: 0 1 auto;
+      }
+    }
+
+    .lists-add-button.icon-only,
+    .lists-completed-button {
+      block-size: 32px;
+      inline-size: 32px;
+      min-height: 32px;
+      min-width: 32px;
+      padding: 0;
+    }
+
+    .lists-add-action {
+      margin-block-end: var(--space-xxsmall);
+    }
+
+    fieldset {
+      padding-block-start: var(--space-medium);
+    }
+
+    &.has-visible-tasks:not(.is-adding-task) fieldset {
+      -webkit-mask-image: linear-gradient(
+        180deg,
+        #000 0%,
+        #000 calc(100% - 32px),
+        transparent 100%
+      );
+      mask-image: linear-gradient(
+        180deg,
+        #000 0%,
+        #000 calc(100% - 32px),
+        transparent 100%
+      );
+    }
+
+    @media (forced-colors: active) {
+      &.has-visible-tasks:not(.is-adding-task) fieldset {
+        -webkit-mask-image: none;
+        mask-image: none;
+      }
+    }
+
+    .task-item {
+      min-height: 24px;
+    }
+
+    .task-item .checkbox-wrapper {
+      padding-block: var(--space-small);
+      padding-inline: 0;
+    }
+
+    .task-item .checkbox-wrapper span,
+    .task-label {
+      -webkit-line-clamp: 2;
+    }
+
+    .empty-list {
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding-block-end: var(--space-xsmall);
+    }
+
+    .empty-list-illustration {
+      width: 48px;
     }
   }
 }
+

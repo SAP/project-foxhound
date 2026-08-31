@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
@@ -12,49 +11,53 @@ import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
 import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_DOCS
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
-import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.appName
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
 import org.mozilla.fenix.helpers.TestHelper.mDevice
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.notificationShade
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-class PDFViewerTest : TestSetup() {
+class PDFViewerTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
     private val downloadTestPage =
         "https://storage.googleapis.com/mobile_test_assets/test_app/downloads.html"
     private val pdfFileName = "washington.pdf"
     private val pdfFileURL = "storage.googleapis.com/mobile_test_assets/public/washington.pdf"
     private val pdfFileContent = "Washington Crossing the Delaware"
 
-    @get:Rule
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
+        AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2048140
     @SmokeTest
     @Test
     fun verifyPDFFileIsOpenedInTheSameTabTest() {
-        val genericURL =
-            getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-            clickPageObject(itemContainingText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(composeTestRule, itemContainingText("PDF form file"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
             verifyPageContent("Washington Crossing the Delaware")
             verifyTabCounter("1")
         }
@@ -64,13 +67,13 @@ class PDFViewerTest : TestSetup() {
     // Download PDF file using the download toolbar button
     @Test
     fun verifyPDFViewerDownloadButtonTest() {
-        val genericURL = getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
         val downloadFile = "pdfForm.pdf"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-            clickPageObject(itemWithText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(composeTestRule, itemWithText("PDF form file"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
         }.clickDownloadPDFButton {
             verifyDownloadCompleteSnackbar(fileName = downloadFile)
             clickSnackbarButton(composeTestRule = composeTestRule, "OPEN")
@@ -81,16 +84,14 @@ class PDFViewerTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2283305
     @Test
     fun pdfFindInPageTest() {
-        val genericURL = getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-            clickPageObject(MatcherHelper.itemWithText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(composeTestRule, itemWithText("PDF form file"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
         }.openThreeDotMenu {
-            verifyThreeDotMenuExists()
-            verifyFindInPageButton()
-        }.openFindInPage {
+        }.clickFindInPageButton {
             verifyFindInPageNextButton()
             verifyFindInPagePrevButton()
             verifyFindInPageCloseButton()
@@ -100,13 +101,13 @@ class PDFViewerTest : TestSetup() {
             verifyFindInPageResult("2/2")
             clickFindInPagePrevButton()
             verifyFindInPageResult("1/2")
-        }.closeFindInPageWithCloseButton {
+        }.closeFindInPageWithCloseButton(composeTestRule) {
             verifyFindInPageBar(false)
         }.openThreeDotMenu {
-        }.openFindInPage {
+        }.clickFindInPageButton {
             enterFindInPageQuery("p")
             verifyFindInPageResult("1/1")
-        }.closeFindInPageWithBackButton {
+        }.closeFindInPageWithBackButton(composeTestRule) {
             verifyFindInPageBar(false)
         }
     }
@@ -114,14 +115,14 @@ class PDFViewerTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2284297
     @Test
     fun addPDFToHomeScreenTest() {
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(downloadTestPage.toUri()) {
-            clickPageObject(MatcherHelper.itemContainingText(pdfFileName))
+            clickPageObject(composeTestRule, itemContainingText(pdfFileName))
             verifyUrl(pdfFileURL)
             verifyPageContent(pdfFileContent)
         }.openThreeDotMenu {
-            expandMenu()
-        }.openAddToHomeScreen {
+            clickTheMoreButton()
+        }.clickAddToHomeScreenButton {
             verifyShortcutTextFieldTitle(pdfFileName)
             clickAddShortcutButton()
             clickSystemHomeScreenShortcutAddButton()
@@ -134,17 +135,17 @@ class PDFViewerTest : TestSetup() {
     // Download PDF file using the download toolbar button
     @Test
     fun verifyDownloadedPDFIsOpenedInFirefoxTest() {
-        val genericURL = getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
         val downloadFile = "pdfForm.pdf"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-            clickPageObject(itemWithText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(composeTestRule, itemWithText("PDF form file"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
             verifyTabCounter("1")
         }.openThreeDotMenu {
-            expandMenu()
-        }.openAddToHomeScreen {
+            clickTheMoreButton()
+        }.clickAddToHomeScreenButton {
             verifyShortcutTextFieldTitle("Untitled document")
             addShortcutName("pdfForm")
             clickAddShortcutButton()
@@ -155,16 +156,16 @@ class PDFViewerTest : TestSetup() {
             verifyDownloadCompleteSnackbar(fileName = downloadFile)
             clickSnackbarButton(composeTestRule = composeTestRule, "OPEN")
         }
-            browserScreen {
+            browserScreen(composeTestRule) {
                 selectToAlwaysOpenDownloadedFileWithApp(appName = appName)
                 verifyUrl("content://media/external_primary/downloads/")
                 verifyTabCounter("2")
             }
 
-            navigationToolbar {
+            navigationToolbar(composeTestRule) {
             }.enterURLAndEnterToBrowser(genericURL.url) {
-                clickPageObject(itemWithText("PDF form file"))
-                clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+                clickPageObject(composeTestRule, itemWithText("PDF form file"))
+                clickPageObject(composeTestRule, itemContainingText("Stay in"))
             }.clickDownloadPDFButton {
             }
 
@@ -174,14 +175,14 @@ class PDFViewerTest : TestSetup() {
                 expandMultipleDownloadNotification("pdfForm(1).pdf")
                 clickNotification("pdfForm(1).pdf")
             }
-            browserScreen {
+            browserScreen(composeTestRule) {
                 verifyUrl("content://media/external_primary/downloads/")
                 verifyTabCounter("3")
             }.openThreeDotMenu {
-            }.openDownloadsManager {
-                clickDownloadedItem(composeTestRule, "pdfForm.pdf")
+            }.clickDownloadsButton {
+                clickDownloadedItem("pdfForm.pdf")
             }
-            browserScreen {
+            browserScreen(composeTestRule) {
                 verifyTabCounter("4")
                 verifyUrl("content://media/external_primary/downloads/")
             }

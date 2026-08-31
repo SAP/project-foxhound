@@ -29,12 +29,12 @@ public class MediaConstraints {
       this.value = value;
     }
 
-    @CalledByNative("KeyValuePair")
+    @CalledByNative
     public String getKey() {
       return key;
     }
 
-    @CalledByNative("KeyValuePair")
+    @CalledByNative
     public String getValue() {
       return value;
     }
@@ -49,7 +49,7 @@ public class MediaConstraints {
       if (this == other) {
         return true;
       }
-      if (other == null || getClass() != other.getClass()) {
+      if (!(other instanceof KeyValuePair)) {
         return false;
       }
       KeyValuePair that = (KeyValuePair) other;

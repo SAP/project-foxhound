@@ -26,7 +26,7 @@ var tests = [
       showNotification(this.notifyObj);
     },
     onShown(popup) {
-      window.addEventListener("command", commandTriggered, true);
+      window.addEventListener("click", commandTriggered, true);
       checkPopup(popup, this.notifyObj);
       EventUtils.synthesizeKey("VK_ALT", { type: "keydown" });
       EventUtils.synthesizeKey("M", { altKey: true });
@@ -37,7 +37,7 @@ var tests = [
       isnot(popup.state, "hiding", "popup is not hiding");
     },
     onHidden() {
-      window.removeEventListener("command", commandTriggered, true);
+      window.removeEventListener("click", commandTriggered, true);
       ok(buttonPressed, "button pressed");
     },
   },

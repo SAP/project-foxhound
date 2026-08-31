@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #ifndef mozilla_GraphRunner_h
 #define mozilla_GraphRunner_h
 
+#include <thread>
+
 #include "GraphDriver.h"
 #include "MediaSegment.h"
 #include "mozilla/Monitor.h"
-
-#include <thread>
 
 struct PRThread;
 
@@ -35,7 +33,7 @@ class GraphRunner final : public Runnable {
    * Signals one iteration of mGraph. Hands state over to mThread and runs
    * the iteration there.
    */
-  IterationResult OneIteration(GraphTime aStateTime, GraphTime aIterationEnd,
+  IterationResult OneIteration(GraphTime aStateTime,
                                MixerCallbackReceiver* aMixerReceiver);
 
   /**
@@ -63,18 +61,13 @@ class GraphRunner final : public Runnable {
 
   class IterationState {
     GraphTime mStateTime;
-    GraphTime mIterationEnd;
     MixerCallbackReceiver* MOZ_NON_OWNING_REF mMixerReceiver;
 
    public:
-    IterationState(GraphTime aStateTime, GraphTime aIterationEnd,
-                   MixerCallbackReceiver* aMixerReceiver)
-        : mStateTime(aStateTime),
-          mIterationEnd(aIterationEnd),
-          mMixerReceiver(aMixerReceiver) {}
+    IterationState(GraphTime aStateTime, MixerCallbackReceiver* aMixerReceiver)
+        : mStateTime(aStateTime), mMixerReceiver(aMixerReceiver) {}
     IterationState& operator=(const IterationState& aOther) = default;
     GraphTime StateTime() const { return mStateTime; }
-    GraphTime IterationEnd() const { return mIterationEnd; }
     MixerCallbackReceiver* MixerReceiver() const { return mMixerReceiver; }
   };
 

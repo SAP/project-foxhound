@@ -61,11 +61,10 @@ export var AboutHomeStartupCache = {
   // allow the shutdown to proceed.
   SHUTDOWN_CACHE_WRITE_TIMEOUT_MS: 1000,
 
-  // The following values are as possible values for the
-  // browser.startup.abouthome_cache_result scalar. Keep these in sync with the
-  // scalar definition in Scalars.yaml and the matching Glean metric in
-  // browser/components/metrics.yaml. See setDeferredResult for more
-  // information.
+  // The following values are possible values for the
+  // browser.startup.abouthome_cache_result Glean metric. Keep these in sync
+  // with the metric definition in browser/components/metrics.yaml.
+  // See setDeferredResult for more information.
   CACHE_RESULT_SCALARS: {
     UNSET: 0,
     DOES_NOT_EXIST: 1,

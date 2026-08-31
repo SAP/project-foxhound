@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<script>
+  window.addEventListener("load", async () => {
+    const ctx = new OfflineAudioContext(12, 1024, 48000);
+    const a = new DynamicsCompressorNode(ctx);
+    const b = new ConstantSourceNode(ctx, {"offset": 7.574213933350201e+37});
+    b.connect(a, 0, 0);
+    b.start(0);
+    await ctx.startRendering();
+    document.documentElement.classList.remove("reftest-wait");
+  });
+</script>
+</html>

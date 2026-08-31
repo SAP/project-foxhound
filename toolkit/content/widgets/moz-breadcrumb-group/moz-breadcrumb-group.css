@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:host {
-  --breadcrumb-icon-size: var(--icon-size-xsmall);
-  --breadcrumb-gap: var(--space-small);
+@import url("chrome://global/content/elements/moz-breadcrumb.tokens.css");
 
+:host {
   display: flex;
 }
 
@@ -26,8 +25,8 @@ li {
   &:not(:last-child)::after {
     content: url("chrome://global/skin/icons/arrow-right-12.svg");
     display: inline-flex;
-    width: auto;
-    height: var(--breadcrumb-icon-size);
+    width: var(--breadcrumb-icon-size);
+    aspect-ratio: 1;
     -moz-context-properties: fill;
     fill: currentColor;
   }

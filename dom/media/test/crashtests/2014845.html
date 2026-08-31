@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+<title>HRTF NaN Elevation</title>
+</head>
+<script>
+async function triggerBug() {
+  const cfg = {
+    fx:0.043517067754535048, fy:0.794644976443179, fz:-0.6055126969995484,
+    ux:0.9912413881446818,   uy:0.0412998549923505, uz:0.1254385602859641,
+  };
+  // Create offline audio context with HRTF-native sample rate
+  let ctx = new OfflineAudioContext(2, 128, 44100);
+  // Set listener orientation to values producing |up| > 1.0
+  ctx.listener.setOrientation(
+    cfg.fx, cfg.fy, cfg.fz,   // front direction
+    cfg.ux, cfg.uy, cfg.uz    // up direction
+  );
+  ctx.listener.setPosition(0, 0, 0);
+
+  // Create audio source
+  let osc = ctx.createOscillator();
+  osc.frequency.value = 440;
+
+  // Create HRTF panner
+  let panner = ctx.createPanner();
+  panner.panningModel = 'HRTF';
+
+  // Position source along the computed 'up' direction
+  // This maximizes upProjection, causing acos to return NaN
+  panner.setPosition(cfg.ux, cfg.uy, cfg.uz);
+
+  osc.connect(panner);
+  panner.connect(ctx.destination);
+  osc.start(0);
+
+  await ctx.startRendering();
+
+  document.documentElement.removeAttribute("class");
+}
+triggerBug();
+</script>
+</html>

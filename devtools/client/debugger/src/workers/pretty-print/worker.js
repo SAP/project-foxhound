@@ -79,7 +79,7 @@ function prettyPrintInlineScript({
  * Get the source map for a pretty-print task
  *
  * @param {Integer} taskId: The taskId that was used to call prettyPrint
- * @returns {Object} A source map object
+ * @returns {object} A source map object
  */
 function getSourceMapForTask(taskId) {
   if (!sourceMapGeneratorByTaskId.has(taskId)) {

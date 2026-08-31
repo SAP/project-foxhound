@@ -17,7 +17,7 @@ richlistbox {
 }
 
 .name {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .description {

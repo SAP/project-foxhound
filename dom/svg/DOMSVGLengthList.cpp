@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGLengthList.h"
 
-#include "SVGElement.h"
-#include "DOMSVGLength.h"
-#include "nsError.h"
-#include "SVGAnimatedLengthList.h"
-#include "mozilla/dom/SVGLengthListBinding.h"
 #include <algorithm>
+
+#include "DOMSVGLength.h"
+#include "SVGAnimatedLengthList.h"
+#include "SVGElement.h"
+#include "mozilla/dom/SVGLengthListBinding.h"
+#include "nsError.h"
 
 // See the comment in this file's header.
 
@@ -72,7 +71,7 @@ void DOMSVGLengthList::IndexedSetter(uint32_t index, DOMSVGLength& newValue,
                                      ErrorResult& aRv) {
   // Need to take a ref to the return value so it does not leak.
   RefPtr<DOMSVGLength> ignored = ReplaceItem(newValue, index, aRv);
-  Unused << ignored;
+  (void)ignored;
 }
 
 JSObject* DOMSVGLengthList::WrapObject(JSContext* cx,
@@ -197,9 +196,8 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::InsertItemBefore(
     return nullptr;
   }
 
-  index = std::min(index, LengthNoFlush());
-  if (index >= DOMSVGLength::MaxListIndex()) {
-    aRv.ThrowIndexSizeError("Index out of range");
+  if (LengthNoFlush() >= DOMSVGLength::MaxListIndex()) {
+    aRv.ThrowIndexSizeError("List too long");
     return nullptr;
   }
 
@@ -221,6 +219,8 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::InsertItemBefore(
       return nullptr;
     }
   }
+
+  index = std::min(index, LengthNoFlush());
 
   AutoChangeLengthListNotifier notifier(this);
   // Now that we know we're inserting, keep animVal list in sync as necessary.

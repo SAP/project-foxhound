@@ -34,4 +34,6 @@ With the node picker
 
 To select an element in the page itself, activate the "node picker" by clicking its icon: |image1| (also called the *Select Element* icon). After that, as you move the mouse around the page, the element under the mouse is highlighted. Click the element to select it:
 
-Starting in Firefox 52, if you :kbd:`Shift` + click the element, then it is selected but the picker stays active. This lets you see the rules for the element in the CSS pane, but conveniently select another element in the page.
+If you :kbd:`Ctrl` (:kbd:`Cmd` on Mac) + click the element, then it is selected but the picker stays active. This lets you see the rules for the element in the CSS pane, but conveniently select another element in the page.
+
+Note that by default, the node picker will ignore all elements who can't consume pointer events (e.g. with ``inert`` attribute or ``pointer-events: none`` style). To select such element, hold :kbd:`Shift` while moving the picker.

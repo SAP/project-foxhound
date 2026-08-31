@@ -27,7 +27,7 @@ add_task(async function test_translations_actor_sync_update_models() {
   const { languageModelFiles: oldModels } = await modelsPromise;
 
   is(
-    decoder.decode(oldModels.model.buffer),
+    decoder.decode(await oldModels.model.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
   );
@@ -35,9 +35,10 @@ add_task(async function test_translations_actor_sync_update_models() {
   const useLexicalShortlist = Services.prefs.getBoolPref(
     "browser.translations.useLexicalShortlist"
   );
-  const recordsToCreate = createRecordsForLanguagePair("en", "es").filter(
-    ({ fileType }) => useLexicalShortlist || fileType !== "lex"
-  );
+  const recordsToCreate = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "es",
+  }).filter(({ fileType }) => useLexicalShortlist || fileType !== "lex");
   for (const newModelRecord of recordsToCreate) {
     newModelRecord.id = oldModels[newModelRecord.fileType].record.id;
     newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
@@ -57,7 +58,7 @@ add_task(async function test_translations_actor_sync_update_models() {
   const { model: updatedModel } = languageModelFiles;
 
   is(
-    decoder.decode(updatedModel.buffer),
+    decoder.decode(await updatedModel.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
     `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 model is downloaded.`
   );
@@ -87,7 +88,7 @@ add_task(async function test_translations_actor_sync_delete_models() {
   const { model } = languageModelFiles;
 
   is(
-    decoder.decode(model.buffer),
+    decoder.decode(await model.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
   );
@@ -136,12 +137,15 @@ add_task(async function test_translations_actor_sync_create_models() {
 
   const { languageModelFiles: originalFiles } = await modelsPromise;
   is(
-    decoder.decode(originalFiles.model.buffer),
+    decoder.decode(await originalFiles.model.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
   );
 
-  const recordsToCreate = createRecordsForLanguagePair("en", "fr");
+  const recordsToCreate = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "fr",
+  });
 
   await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {
     recordsToCreate,
@@ -157,19 +161,19 @@ add_task(async function test_translations_actor_sync_create_models() {
   const { vocab, lex, model } = updatedFiles;
 
   is(
-    decoder.decode(vocab.buffer),
+    decoder.decode(await vocab.blob.arrayBuffer()),
     `Mocked download: test-translation-models vocab.enfr.spm ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     "The en to fr vocab is downloaded."
   );
   is(
-    decoder.decode(model.buffer),
+    decoder.decode(await model.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enfr.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     "The en to fr model is downloaded."
   );
 
   if (Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)) {
     is(
-      decoder.decode(lex.buffer),
+      decoder.decode(await lex.blob.arrayBuffer()),
       `Mocked download: test-translation-models lex.50.50.enfr.s2t.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
       "The en to fr lex is downloaded."
     );
@@ -199,12 +203,15 @@ add_task(
 
     const { languageModelFiles: originalFiles } = await modelsPromise;
     is(
-      decoder.decode(originalFiles.model.buffer),
+      decoder.decode(await originalFiles.model.blob.arrayBuffer()),
       `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
       `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
     );
 
-    const recordsToCreate = createRecordsForLanguagePair("en", "es");
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
     }
@@ -223,19 +230,19 @@ add_task(
     const { vocab, lex, model } = await updatedFiles;
 
     is(
-      decoder.decode(vocab.buffer),
+      decoder.decode(await vocab.blob.arrayBuffer()),
       `Mocked download: test-translation-models vocab.enes.spm ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 vocab is downloaded.`
     );
     is(
-      decoder.decode(model.buffer),
+      decoder.decode(await model.blob.arrayBuffer()),
       `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 model is downloaded.`
     );
 
     if (Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)) {
       is(
-        decoder.decode(lex.buffer),
+        decoder.decode(await lex.blob.arrayBuffer()),
         `Mocked download: test-translation-models lex.50.50.enes.s2t.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
         "The en to es lex is downloaded."
       );
@@ -266,12 +273,15 @@ add_task(
 
     const { languageModelFiles: originalFiles } = await modelsPromise;
     is(
-      decoder.decode(originalFiles.model.buffer),
+      decoder.decode(await originalFiles.model.blob.arrayBuffer()),
       `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
       `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
     );
 
-    const recordsToCreate = createRecordsForLanguagePair("en", "es");
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = "2.0";
     }
@@ -290,19 +300,19 @@ add_task(
     const { vocab, lex, model } = updatedFiles;
 
     is(
-      decoder.decode(vocab.buffer),
+      decoder.decode(await vocab.blob.arrayBuffer()),
       `Mocked download: test-translation-models vocab.enes.spm ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 vocab is downloaded.`
     );
     is(
-      decoder.decode(model.buffer),
+      decoder.decode(await model.blob.arrayBuffer()),
       `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
     );
 
     if (Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)) {
       is(
-        decoder.decode(lex.buffer),
+        decoder.decode(await lex.blob.arrayBuffer()),
         `Mocked download: test-translation-models lex.50.50.enes.s2t.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
         "The en to es lex is downloaded."
       );
@@ -325,7 +335,10 @@ add_task(async function test_translations_actor_sync_rollback_models() {
     ],
   });
 
-  const newRecords = createRecordsForLanguagePair("en", "es");
+  const newRecords = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "es",
+  });
   for (const newModelRecord of newRecords) {
     newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
   }
@@ -343,7 +356,7 @@ add_task(async function test_translations_actor_sync_rollback_models() {
 
   const { languageModelFiles: originalFiles } = await modelsPromise;
   is(
-    decoder.decode(originalFiles.model.buffer),
+    decoder.decode(await originalFiles.model.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
     `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 model is downloaded.`
   );
@@ -362,19 +375,19 @@ add_task(async function test_translations_actor_sync_rollback_models() {
   const { vocab, lex, model } = rolledBackFiles;
 
   is(
-    decoder.decode(vocab.buffer),
+    decoder.decode(await vocab.blob.arrayBuffer()),
     `Mocked download: test-translation-models vocab.enes.spm ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 vocab is downloaded.`
   );
   is(
-    decoder.decode(model.buffer),
+    decoder.decode(await model.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
   );
 
   if (Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)) {
     is(
-      decoder.decode(lex.buffer),
+      decoder.decode(await lex.blob.arrayBuffer()),
       `Mocked download: test-translation-models lex.50.50.enes.s2t.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
       "The en to es lex is downloaded."
     );
@@ -447,7 +460,7 @@ add_task(async function test_transition_from_vocab_configurations() {
 
   const { languageModelFiles: originalFiles } = await modelsPromise;
   is(
-    decoder.decode(originalFiles.model.buffer),
+    decoder.decode(await originalFiles.model.blob.arrayBuffer()),
     `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0`,
     `The version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.0 model is downloaded.`
   );
@@ -456,11 +469,11 @@ add_task(async function test_transition_from_vocab_configurations() {
     info(
       `Publishing a new split-vocab configuration as version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`
     );
-    const recordsToCreate = createRecordsForLanguagePair(
-      "en",
-      "es",
-      /* splitVocab */ true
-    );
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+      splitVocab: true,
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`;
     }
@@ -484,24 +497,24 @@ add_task(async function test_transition_from_vocab_configurations() {
       `The shared vocab is undefined after upgrading to split vocab.`
     );
     is(
-      decoder.decode(srcvocab.buffer),
+      decoder.decode(await srcvocab.blob.arrayBuffer()),
       `Mocked download: test-translation-models srcvocab.enes.spm ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 srcvocab is downloaded.`
     );
     is(
-      decoder.decode(trgvocab.buffer),
+      decoder.decode(await trgvocab.blob.arrayBuffer()),
       `Mocked download: test-translation-models trgvocab.enes.spm ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 trgvocab is downloaded.`
     );
     is(
-      decoder.decode(model.buffer),
+      decoder.decode(await model.blob.arrayBuffer()),
       `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 model is downloaded.`
     );
 
     if (Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)) {
       is(
-        decoder.decode(lex.buffer),
+        decoder.decode(await lex.blob.arrayBuffer()),
         `Mocked download: test-translation-models lex.50.50.enes.s2t.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1`,
         `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.1 lex is downloaded.`
       );
@@ -512,11 +525,11 @@ add_task(async function test_transition_from_vocab_configurations() {
     info(
       `Publishing a new shared-vocab configuration as version ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2`
     );
-    const recordsToCreate = createRecordsForLanguagePair(
-      "en",
-      "es",
-      /* splitVocab */ false
-    );
+    const recordsToCreate = createRecordsForLanguagePair({
+      sourceLanguage: "en",
+      targetLanguage: "es",
+      splitVocab: false,
+    });
     for (const newModelRecord of recordsToCreate) {
       newModelRecord.version = `${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2`;
     }
@@ -546,18 +559,18 @@ add_task(async function test_transition_from_vocab_configurations() {
     );
 
     is(
-      decoder.decode(vocab.buffer),
+      decoder.decode(await vocab.blob.arrayBuffer()),
       `Mocked download: test-translation-models vocab.enes.spm ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2 shared vocab is downloaded.`
     );
     is(
-      decoder.decode(model.buffer),
+      decoder.decode(await model.blob.arrayBuffer()),
       `Mocked download: test-translation-models model.enes.intgemm.alphas.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2`,
       `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2 model is downloaded.`
     );
     if (Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)) {
       is(
-        decoder.decode(lex.buffer),
+        decoder.decode(await lex.blob.arrayBuffer()),
         `Mocked download: test-translation-models lex.50.50.enes.s2t.bin ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2`,
         `The ${TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX}.2 lex is downloaded.`
       );

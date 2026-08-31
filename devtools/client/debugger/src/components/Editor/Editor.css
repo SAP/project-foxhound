@@ -7,7 +7,6 @@
   --debug-line-error-border: rgb(255, 0, 0);
   --debug-expression-error-background: rgba(231, 116, 113, 0.3);
   --line-exception-background: hsl(344, 73%, 97%);
-  --highlight-line-duration: 5000ms;
 }
 
 .theme-dark .editor-wrapper {
@@ -177,25 +176,6 @@ html[dir="rtl"] .editor-mount {
   is already highlighted */
 .new-debug-line-error .CodeMirror-activeline-background {
   display: none;
-}
-.highlight-line .CodeMirror-line,
-/* For CM6 */
-.cm-editor .cm-line.highlight-line {
-  animation-name: fade-highlight-out;
-  animation-duration: var(--highlight-line-duration);
-  animation-timing-function: ease-out;
-  animation-fill-mode: forwards;
-}
-
-@keyframes fade-highlight-out {
-  0%,
-  30% {
-    /* We want to use a color with some transparency so text selection is visible through it */
-    background-color: var(--theme-contrast-background-alpha);
-  }
-  100% {
-    background-color: transparent;
-  }
 }
 
 .visible {

@@ -354,7 +354,35 @@ add_test(function test_PostTextData() {
     });
 });
 
+add_test(async function test_https() {
+  do_test_pending();
+
+  const { NodeHTTP2Server } = ChromeUtils.importESModule(
+    "resource://testing-common/NodeServer.sys.mjs"
+  );
+  let h2server = new NodeHTTP2Server();
+  await h2server.start();
+  await h2server.registerPathHandler("/test", (req, resp) => {
+    resp.writeHead(200);
+    resp.end("done");
+  });
+
+  fetch(`${h2server.origin()}/test`)
+    .then(async response => {
+      Assert.equal(await response.text(), "done");
+    })
+    .catch(e => {
+      Assert.ok(false, `Fetch failed ${e}`);
+    })
+    .finally(async () => {
+      await h2server.stop();
+      do_test_finished();
+      run_next_test();
+    });
+});
+
 function run_test() {
+  do_get_profile(); // So certificate installation works.
   // Set up an HTTP Server
   server = new HttpServer();
   server.start(-1);

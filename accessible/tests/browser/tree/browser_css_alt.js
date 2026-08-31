@@ -159,10 +159,14 @@ addAccessibleTask(
   #mixed::before {
     content: ${IMAGE} / "be" attr(data-alt);
   }
+  #emptyAlt::before {
+    content: ${IMAGE} / "";
+  }
 </style>
 <h1 id="noAlt">noAlt</h1>
 <h1 id="strings" class="strings1">inside</h1>
 <h1 id="mixed" data-alt="fore">inside</h1>
+<h1 id="emptyAlt">inside</h1>
   `,
   async function testImagePseudo(browser, docAcc) {
     testAccessibleTree(findAccessibleChildByID(docAcc, "noAlt"), {
@@ -187,6 +191,12 @@ addAccessibleTask(
         { role: ROLE_GRAPHIC, name: "before" },
         { role: ROLE_TEXT_LEAF, name: "inside" },
       ],
+    });
+
+    testAccessibleTree(findAccessibleChildByID(docAcc, "emptyAlt"), {
+      role: ROLE_HEADING,
+      name: "inside",
+      children: [{ role: ROLE_TEXT_LEAF, name: "inside" }],
     });
 
     info("Changing strings class to strings2");
@@ -237,10 +247,30 @@ addAccessibleTask(
   #mixed::before {
     content: "before" / "a" attr(data-alt);
   }
+  #empty::after {
+    content: "" / "alt";
+  }
+  #space::after {
+    content: " " / "alt";
+  }
+  #spaceAlt::before {
+    content: "" / " ";
+  }
+  #emptyAlt::before {
+    content: "before" / "";
+  }
+  #emptyBoth::before {
+    content: "" / "";
+  }
 </style>
 <h1 id="noAlt">noAlt</h1>
 <h1 id="strings" class="strings1">inside</h1>
 <h1 id="mixed" data-alt="lt">inside</h1>
+<h1 id="empty">inside</h1>
+<h1 id="space">inside</h1>
+<h1 id="spaceAlt">inside</h1>
+<h1 id="emptyAlt">inside</h1>
+<h1 id="emptyBoth">inside</h1>
   `,
   async function testTextPseudo(browser, docAcc) {
     testAccessibleTree(findAccessibleChildByID(docAcc, "noAlt"), {
@@ -268,6 +298,43 @@ addAccessibleTask(
         { role: ROLE_STATICTEXT, name: "alt" },
         { role: ROLE_TEXT_LEAF, name: "inside" },
       ],
+    });
+    const empty = findAccessibleChildByID(docAcc, "empty");
+    testAccessibleTree(empty, {
+      role: ROLE_HEADING,
+      name: "insidealt",
+      children: [
+        { role: ROLE_TEXT_LEAF, name: "inside" },
+        { role: ROLE_STATICTEXT, name: "alt" },
+      ],
+    });
+    const space = findAccessibleChildByID(docAcc, "space");
+    testAccessibleTree(space, {
+      role: ROLE_HEADING,
+      name: "insidealt",
+      children: [
+        { role: ROLE_TEXT_LEAF, name: "inside" },
+        { role: ROLE_STATICTEXT, name: "alt" },
+      ],
+    });
+    const spaceAlt = findAccessibleChildByID(docAcc, "spaceAlt");
+    testAccessibleTree(spaceAlt, {
+      role: ROLE_HEADING,
+      name: "inside",
+      children: [
+        { role: ROLE_STATICTEXT, name: " " },
+        { role: ROLE_TEXT_LEAF, name: "inside" },
+      ],
+    });
+    testAccessibleTree(findAccessibleChildByID(docAcc, "emptyAlt"), {
+      role: ROLE_HEADING,
+      name: "inside",
+      children: [{ role: ROLE_TEXT_LEAF, name: "inside" }],
+    });
+    testAccessibleTree(findAccessibleChildByID(docAcc, "emptyBoth"), {
+      role: ROLE_HEADING,
+      name: "inside",
+      children: [{ role: ROLE_TEXT_LEAF, name: "inside" }],
     });
 
     info("Changing strings class to strings2");

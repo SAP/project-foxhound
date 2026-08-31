@@ -9,7 +9,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
 import kotlinx.coroutines.test.runTest
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.locale.LocaleUseCases
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
@@ -26,6 +26,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.MockitoAnnotations.openMocks
 import org.mozilla.focus.settings.InstalledSearchEnginesSettingsFragment
 import java.util.Locale
+import kotlin.test.assertIs
 
 class LanguageMiddlewareTest {
 
@@ -42,13 +43,13 @@ class LanguageMiddlewareTest {
     private lateinit var mockLocaleUseCases: LocaleUseCases
 
     @Mock
-    private lateinit var mockMiddlewareContext: MiddlewareContext<LanguageScreenState, LanguageScreenAction>
-
-    @Mock
     private lateinit var mockNext: (LanguageScreenAction) -> Unit
 
     @Mock
     private lateinit var mockStorage: LanguageStorage
+
+    @Mock
+    private lateinit var mockStore: Store<LanguageScreenState, LanguageScreenAction>
 
     private lateinit var middleware: LanguageMiddleware
 
@@ -79,7 +80,7 @@ class LanguageMiddlewareTest {
         val selectedLanguage = Language("es-ES", "Español (España)", 0)
         val action = LanguageScreenAction.Select(selectedLanguage)
 
-        middleware.invoke(mockMiddlewareContext, mockNext, action)
+        middleware.invoke(mockStore, mockNext, action)
 
         verify(mockStorage).saveCurrentLanguageInSharePref(selectedLanguage.tag)
         @Suppress("DEPRECATION")
@@ -93,7 +94,7 @@ class LanguageMiddlewareTest {
         val selectedLanguage = Language("System Default", LanguageStorage.LOCALE_SYSTEM_DEFAULT, 0)
         val action = LanguageScreenAction.Select(selectedLanguage)
 
-        middleware.invoke(mockMiddlewareContext, mockNext, action)
+        middleware.invoke(mockStore, mockNext, action)
 
         verify(mockStorage).saveCurrentLanguageInSharePref(LanguageStorage.LOCALE_SYSTEM_DEFAULT)
         @Suppress("DEPRECATION")
@@ -110,14 +111,13 @@ class LanguageMiddlewareTest {
         val action = LanguageScreenAction.InitLanguages
         `when`(mockStorage.languages).thenReturn(languages)
         `when`(mockStorage.selectedLanguage).thenReturn(selectedLanguage)
-
-        middleware.invoke(mockMiddlewareContext, mockNext, action)
+        val mockStore = mock<Store<LanguageScreenState, LanguageScreenAction>>()
+        middleware.invoke(mockStore, mockNext, action)
 
         val dispatchedActionCaptor = argumentCaptor<LanguageScreenAction>()
-        verify(mockMiddlewareContext).dispatch(dispatchedActionCaptor.capture())
+        verify(mockStore).dispatch(dispatchedActionCaptor.capture())
         val dispatchedAction = dispatchedActionCaptor.value
-        assertTrue(dispatchedAction is LanguageScreenAction.UpdateLanguages)
-        dispatchedAction as LanguageScreenAction.UpdateLanguages
+        assertIs<LanguageScreenAction.UpdateLanguages>(dispatchedAction)
         assertEquals(languages, dispatchedAction.languageList)
         assertEquals(selectedLanguage, dispatchedAction.selectedLanguage)
     }
@@ -127,7 +127,7 @@ class LanguageMiddlewareTest {
         val action =
             LanguageScreenAction.UpdateLanguages(emptyList(), Language("en-US", "English (US)", 0))
 
-        middleware.invoke(mockMiddlewareContext, mockNext, action)
+        middleware.invoke(mockStore, mockNext, action)
 
         verify(mockNext).invoke(action)
     }

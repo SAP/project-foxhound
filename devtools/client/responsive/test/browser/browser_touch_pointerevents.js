@@ -44,13 +44,13 @@ async function testPointerEvents(ui) {
       "pointerdown"
     );
 
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       div,
       { type: "mousedown", isSynthesized: false },
       content
     );
     await pointerDownPromise;
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       div,
       { type: "mouseup", isSynthesized: false },
       content
@@ -59,14 +59,15 @@ async function testPointerEvents(ui) {
     info(
       "Check that a pointermove event was never dispatched from the mousemove event"
     );
-    await EventUtils.synthesizeMouseAtCenter(
+    EventUtils.synthesizeMouseAtCenter(
       div,
       { type: "mousemove", isSynthesized: false },
       content
     );
 
-    const win = content.document.defaultView;
-    const bg = win.getComputedStyle(div).getPropertyValue("background-color");
+    const bg = content
+      .getComputedStyle(div)
+      .getPropertyValue("background-color");
 
     is(
       bg,

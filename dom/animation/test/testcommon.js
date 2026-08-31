@@ -122,6 +122,7 @@ function assert_properties_equal(actual, expected) {
  * KeyframeEffectReadonly::GetProperties().
  * The method returns undefined as a value in case of missing keyframe.
  * Therefor, we can use undefined for |value| and |easing| parameter.
+ *
  * @param offset - keyframe offset. e.g. 0.1
  * @param value - any keyframe value. e.g. undefined '1px', 'center', 0.5
  * @param composite - 'replace', 'add', 'accumulate'
@@ -427,7 +428,7 @@ function addSVGElement(target, tag, attrs) {
   return element;
 }
 
-/*
+/**
  * Get Animation distance between two specified values for a specific property.
  *
  * @param target The target element.
@@ -480,7 +481,7 @@ async function waitForAnimationReadyToRestyle(aAnimation) {
   // coincide perfectly with the start time of the animation.  In this case no
   // restyling is needed in the frame so we have to wait one more frame.
   if (animationStartsRightNow(aAnimation)) {
-    await waitForNextFrame(aAnimation.ownerGlobal);
+    await waitForNextFrame(aAnimation.documentGlobal);
   }
 }
 

@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGAnimatedEnumeration.h"
 
-#include "mozilla/dom/SVGElement.h"
-#include "mozilla/SMILValue.h"
-#include "nsAtom.h"
-#include "nsError.h"
 #include "SMILEnumType.h"
 #include "SVGAttrTearoffTable.h"
+#include "mozilla/SMILValue.h"
+#include "mozilla/dom/SVGElement.h"
+#include "nsAtom.h"
+#include "nsError.h"
 
 using namespace mozilla::dom;
 
@@ -44,8 +42,8 @@ class MOZ_RAII AutoChangeEnumNotifier {
   bool mDoSetAttr;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<
-    SVGAnimatedEnumeration, SVGAnimatedEnumeration::DOMAnimatedEnum>
+constinit static SVGAttrTearoffTable<SVGAnimatedEnumeration,
+                                     SVGAnimatedEnumeration::DOMAnimatedEnum>
     sSVGAnimatedEnumTearoffTable;
 
 const SVGEnumMapping* SVGAnimatedEnumeration::GetMapping(
@@ -146,9 +144,9 @@ SVGAnimatedEnumeration::DOMAnimatedEnum::~DOMAnimatedEnum() {
   sSVGAnimatedEnumTearoffTable.RemoveTearoff(mVal);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedEnumeration::ToSMILAttr(
+std::unique_ptr<SMILAttr> SVGAnimatedEnumeration::ToSMILAttr(
     SVGElement* aSVGElement) {
-  return MakeUnique<SMILEnum>(this, aSVGElement);
+  return std::make_unique<SMILEnum>(this, aSVGElement);
 }
 
 nsresult SVGAnimatedEnumeration::SMILEnum::ValueFromString(
@@ -162,7 +160,7 @@ nsresult SVGAnimatedEnumeration::SMILEnum::ValueFromString(
       if (valAtom == mapping->mKey) {
         SMILValue val(SMILEnumType::Singleton());
         val.mU.mUint = mapping->mVal;
-        aValue = val;
+        aValue = std::move(val);
         return NS_OK;
       }
       mapping++;

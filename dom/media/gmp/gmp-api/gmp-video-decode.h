@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* Copyright (c) 2011, The WebRTC project authors. All rights reserved.
  * Copyright (c) 2014, Mozilla
  *
@@ -34,11 +33,12 @@
 #ifndef GMP_VIDEO_DECODE_h_
 #define GMP_VIDEO_DECODE_h_
 
-#include "gmp-errors.h"
-#include "gmp-video-frame-i420.h"
-#include "gmp-video-frame-encoded.h"
-#include "gmp-video-codec.h"
 #include <stdint.h>
+
+#include "gmp-errors.h"
+#include "gmp-video-codec.h"
+#include "gmp-video-frame-encoded.h"
+#include "gmp-video-frame-i420.h"
 
 // ALL METHODS MUST BE CALLED ON THE MAIN THREAD
 class GMPVideoDecoderCallback {

@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { Uptake } from "resource://normandy/lib/Uptake.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -78,7 +76,6 @@ export class BaseAction {
   fail(err) {
     switch (this.state) {
       case BaseAction.STATE_PREPARING: {
-        Uptake.reportAction(this.name, Uptake.ACTION_PRE_EXECUTION_ERROR);
         break;
       }
       default: {
@@ -123,7 +120,7 @@ export class BaseAction {
 
   /**
    * Execute the per-recipe behavior of this action for a given
-   * recipe.  Reports Uptake telemetry for the execution of the recipe.
+   * recipe.
    *
    * @param {Recipe} recipe
    * @param {BaseAction.suitability} suitability
@@ -141,18 +138,10 @@ export class BaseAction {
     }
 
     if (this.state !== BaseAction.STATE_READY) {
-      Uptake.reportRecipe(recipe, Uptake.RECIPE_ACTION_DISABLED);
       this.log.warn(
         `Skipping recipe ${recipe.name} because ${this.name} was disabled during preExecution.`
       );
       return;
-    }
-
-    let uptakeResult = BaseAction.suitabilityToUptakeStatus[suitability];
-    if (!uptakeResult) {
-      throw new Error(
-        `Coding error, no uptake status for suitability ${suitability}`
-      );
     }
 
     // If capabilties don't match, we can't even be sure that the arguments
@@ -162,7 +151,6 @@ export class BaseAction {
         recipe.arguments = this.validateArguments(recipe.arguments);
       } catch (error) {
         console.error(error);
-        uptakeResult = Uptake.RECIPE_EXECUTION_ERROR;
         suitability = BaseAction.suitability.ARGUMENTS_INVALID;
       }
     }
@@ -171,9 +159,7 @@ export class BaseAction {
       await this._processRecipe(recipe, suitability);
     } catch (err) {
       console.error(err);
-      uptakeResult = Uptake.RECIPE_EXECUTION_ERROR;
     }
-    Uptake.reportRecipe(recipe, uptakeResult);
   }
 
   /**
@@ -220,7 +206,6 @@ export class BaseAction {
     // _preExecute() here.
     this._ensurePreExecution();
 
-    let status;
     switch (this.state) {
       case BaseAction.STATE_FINALIZED: {
         throw new Error("Action has already been finalized");
@@ -228,9 +213,7 @@ export class BaseAction {
       case BaseAction.STATE_READY: {
         try {
           await this._finalize(options);
-          status = Uptake.ACTION_SUCCESS;
         } catch (err) {
-          status = Uptake.ACTION_POST_EXECUTION_ERROR;
           // Sometimes Error.message can be updated in place. This gives better messages when debugging errors.
           try {
             err.message = `Could not run postExecution hook for ${this.name}: ${err.message}`;
@@ -248,14 +231,12 @@ export class BaseAction {
         this.log.debug(
           `Skipping post-execution hook for ${this.name} because it is disabled.`
         );
-        status = Uptake.ACTION_SUCCESS;
         break;
       }
       case BaseAction.STATE_FAILED: {
         this.log.debug(
           `Skipping post-execution hook for ${this.name} because it failed during pre-execution.`
         );
-        // Don't report a status. A status should have already been reported by this.fail().
         break;
       }
       default: {
@@ -264,9 +245,6 @@ export class BaseAction {
     }
 
     this.state = BaseAction.STATE_FINALIZED;
-    if (status) {
-      Uptake.reportAction(this.name, status);
-    }
   }
 
   /**
@@ -326,13 +304,3 @@ BaseAction.suitability = {
 };
 
 BaseAction.suitabilitySet = new Set(Object.values(BaseAction.suitability));
-
-BaseAction.suitabilityToUptakeStatus = {
-  [BaseAction.suitability.SIGNATURE_ERROR]: Uptake.RECIPE_INVALID_SIGNATURE,
-  [BaseAction.suitability.CAPABILITIES_MISMATCH]:
-    Uptake.RECIPE_INCOMPATIBLE_CAPABILITIES,
-  [BaseAction.suitability.FILTER_MATCH]: Uptake.RECIPE_SUCCESS,
-  [BaseAction.suitability.FILTER_MISMATCH]: Uptake.RECIPE_DIDNT_MATCH_FILTER,
-  [BaseAction.suitability.FILTER_ERROR]: Uptake.RECIPE_FILTER_BROKEN,
-  [BaseAction.suitability.ARGUMENTS_INVALID]: Uptake.RECIPE_ARGUMENTS_INVALID,
-};

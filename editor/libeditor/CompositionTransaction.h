@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,10 +73,20 @@ class CompositionTransaction : public EditTransactionBase,
  protected:
   virtual ~CompositionTransaction() = default;
 
-  MOZ_CAN_RUN_SCRIPT nsresult SetSelectionForRanges();
+  virtual void UpdateTextNodeAndOffset(dom::Text& aText, uint32_t aOffset) {
+    MOZ_DIAGNOSTIC_ASSERT(GetTextNode() == &aText,
+                          "If mEditorBase is a TextEditor, we should work only "
+                          "with the single Text");
+    mOffset = aOffset;
+  }
 
-  // The offsets in the text node where the insertion should be placed.
+  MOZ_CAN_RUN_SCRIPT nsresult SetSelectionForRanges(dom::Text& aText,
+                                                    uint32_t aOffset);
+
+  // The offsets in the `Text` node where the insertion should be placed.
   uint32_t mOffset;
+  // The replace range in the original `Text` even if it's split and shrunken.
+  uint32_t mReplaceOffset;
   uint32_t mReplaceLength;
 
   // The range list.
@@ -117,6 +126,11 @@ class CompositionInTextNodeTransaction final : CompositionTransaction {
 
   // The text element to operate upon.
   RefPtr<dom::Text> mTextNode;
+
+  void UpdateTextNodeAndOffset(dom::Text& aText, uint32_t aOffset) final {
+    mTextNode = &aText;
+    CompositionTransaction::UpdateTextNodeAndOffset(aText, aOffset);
+  }
 
   friend class CompositionTransaction;
 };

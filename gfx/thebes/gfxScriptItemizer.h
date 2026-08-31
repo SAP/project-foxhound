@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,7 +50,7 @@
 #define GFX_SCRIPTITEMIZER_H
 
 #include <stdint.h>
-#include "mozilla/Attributes.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
 
 #define PAREN_STACK_DEPTH 32
@@ -60,31 +59,57 @@ class gfxScriptItemizer {
  public:
   using Script = mozilla::intl::Script;
 
-  gfxScriptItemizer() = default;
+  gfxScriptItemizer(const char16_t* aText, uint32_t aLength)
+      : textPtr(aText), textLength(aLength) {}
   gfxScriptItemizer(const gfxScriptItemizer& aOther) = delete;
   gfxScriptItemizer(gfxScriptItemizer&& aOther) = delete;
-
-  void SetText(const char16_t* aText, uint32_t aLength) {
-    textPtr._2b = aText;
-    textLength = aLength;
-    textIs8bit = false;
-  }
-
-  void SetText(const unsigned char* aText, uint32_t aLength) {
-    textPtr._1b = aText;
-    textLength = aLength;
-    textIs8bit = true;
-  }
 
   struct Run {
     uint32_t mOffset = 0;
     uint32_t mLength = 0;
     Script mScript = Script::COMMON;
-
-    MOZ_IMPLICIT operator bool() const { return mLength > 0; }
   };
 
+  bool Done() const { return scriptLimit >= textLength; }
+
   Run Next();
+
+  // clang-format off
+  // Extracted from UCD Scripts.txt data file:
+  // These are all the codepoints with Script=LATIN codepoints in the range from
+  // U+0000 to the first non-COMMON, non-LATIN code at U+02EA. Note that some of
+  // these ranges are contiguous, so we can use fewer range checks.
+  //
+  // 0041..005A    ; Latin # L&  [26] LATIN CAPITAL LETTER A..LATIN CAPITAL LETTER Z
+  // 0061..007A    ; Latin # L&  [26] LATIN SMALL LETTER A..LATIN SMALL LETTER Z
+  // 00AA          ; Latin # Lo       FEMININE ORDINAL INDICATOR
+  // 00BA          ; Latin # Lo       MASCULINE ORDINAL INDICATOR
+  // 00C0..00D6    ; Latin # L&  [23] LATIN CAPITAL LETTER A WITH GRAVE..LATIN CAPITAL LETTER O WITH DIAERESIS
+  // 00D8..00F6    ; Latin # L&  [31] LATIN CAPITAL LETTER O WITH STROKE..LATIN SMALL LETTER O WITH DIAERESIS
+  // 00F8..01BA    ; Latin # L& [195] LATIN SMALL LETTER O WITH STROKE..LATIN SMALL LETTER EZH WITH TAIL
+  // 01BB          ; Latin # Lo       LATIN LETTER TWO WITH STROKE
+  // 01BC..01BF    ; Latin # L&   [4] LATIN CAPITAL LETTER TONE FIVE..LATIN LETTER WYNN
+  // 01C0..01C3    ; Latin # Lo   [4] LATIN LETTER DENTAL CLICK..LATIN LETTER RETROFLEX CLICK
+  // 01C4..0293    ; Latin # L& [208] LATIN CAPITAL LETTER DZ WITH CARON..LATIN SMALL LETTER EZH WITH CURL
+  // 0294..0295    ; Latin # Lo   [2] LATIN LETTER GLOTTAL STOP..LATIN LETTER PHARYNGEAL VOICED FRICATIVE
+  // 0296..02AF    ; Latin # L&  [26] LATIN LETTER INVERTED GLOTTAL STOP..LATIN SMALL LETTER TURNED H WITH FISHHOOK AND TAIL
+  // 02B0..02B8    ; Latin # Lm   [9] MODIFIER LETTER SMALL H..MODIFIER LETTER SMALL Y
+  // 02E0..02E4    ; Latin # Lm   [5] MODIFIER LETTER SMALL GAMMA..MODIFIER LETTER SMALL REVERSED GLOTTAL STOP
+  // clang-format on
+  static constexpr uint32_t kFirstNonCommonOrLatin = 0x02EA;
+  static inline Script FastGetScriptCode(uint32_t aChar) {
+    MOZ_ASSERT(aChar < kFirstNonCommonOrLatin);
+    // Use the fact that unsigned underflow will wrap to a large number to
+    // handle each range with a single comparison, and reduce branching.
+    return ((aChar & ~0x0020) - 0x0041 <= 0x005A - 0x0041) ||  // ASCII uc & lc
+                   (aChar - 0x00C0 <= 0x00D6 - 0x00C0) ||
+                   (aChar - 0x00D8 <= 0x00F6 - 0x00D8) ||
+                   (aChar - 0x00F8 <= 0x02B8 - 0x00F8) ||
+                   ((aChar & ~0x0010) == 0x00AA) ||  // 0x00AA and 0x00BA
+                   (aChar - 0x02E0 <= 0x02E4 - 0x02E0)
+               ? Script::LATIN
+               : Script::COMMON;
+  }
 
  protected:
   void push(uint32_t endPairChar, Script newScriptCode);
@@ -96,12 +121,8 @@ class gfxScriptItemizer {
     Script scriptCode;
   };
 
-  union {
-    const char16_t* _2b;
-    const unsigned char* _1b;
-  } textPtr;
-  uint32_t textLength;
-  bool textIs8bit;
+  const char16_t* const textPtr;
+  uint32_t const textLength;
 
   uint32_t scriptStart = 0;
   uint32_t scriptLimit = 0;

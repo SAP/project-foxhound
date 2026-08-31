@@ -44,9 +44,10 @@ function getActorID(accessible) {
 /**
  * If accessible is cached recursively remove all its children and remove itself
  * from cache.
+ *
  * @param {Map}    cache      Previous state maintaining a cache of previously
  *                            fetched accessibles.
- * @param {Object} accessible Accessible object to remove from cache.
+ * @param {object} accessible Accessible object to remove from cache.
  */
 function cleanupChild(cache, accessible) {
   const actorID = getActorID(accessible);
@@ -66,9 +67,10 @@ function cleanupChild(cache, accessible) {
  * Determine if accessible in cache is stale. Accessible object is stale if its
  * cached children array has the size other than the value of its childCount
  * property that updates on accessible actor event.
+ *
  * @param {Map}    cache      Previous state maintaining a cache of previously
  *                             fetched accessibles.
- * @param {Object} accessible Accessible object to test for staleness.
+ * @param {object} accessible Accessible object to test for staleness.
  */
 function staleChildren(cache, accessible) {
   const cached = cache.get(getActorID(accessible));
@@ -111,10 +113,11 @@ function updateAncestry(cache, ancestry) {
 
 /**
  * Handles fetching of accessible children.
+ *
  * @param {Map}     cache  Previous state maintaining a cache of previously
  *                         fetched accessibles.
- * @param {Object}  action Redux action object.
- * @return {Object} updated state
+ * @param {object}  action Redux action object.
+ * @return {object} updated state
  */
 function onReceiveChildren(cache, action) {
   const { error, accessible, response: children } = action;

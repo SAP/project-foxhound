@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SDPPREF_H_
-#define _SDPPREF_H_
-
-#include "mozilla/Maybe.h"
-#include "mozilla/Preferences.h"
+#ifndef DOM_MEDIA_WEBRTC_SDP_SDPPREF_H_
+#define DOM_MEDIA_WEBRTC_SDP_SDPPREF_H_
 
 #include <string>
 #include <unordered_map>
+
+#include "mozilla/Maybe.h"
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 
@@ -37,7 +35,7 @@ class SdpPref {
 
   // How is the alternate used
   enum class AlternateParseModes {
-    Parallel,  // Alternate is always run, if A succedes it is used, otherwise B
+    Parallel,  // Alternate is always run, if A succeeds it is used, otherwise B
                // is used
     Failover,  // Alternate is only run on failure of the primary to parse
     Never,     // Alternate is never run; this is effectively a kill switch

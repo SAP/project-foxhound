@@ -4,7 +4,7 @@
 "use strict";
 
 /**
- * @fileOverview Checks that the MLBF updating logic works reasonably.
+ * @file Checks that the MLBF updating logic works reasonably.
  */
 
 Services.prefs.setBoolPref("extensions.blocklist.useMLBF", true);

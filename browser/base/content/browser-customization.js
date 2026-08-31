@@ -1,10 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
 
 /**
  * Customization handler prepares this browser window for entering and exiting
@@ -34,6 +30,10 @@ var CustomizationHandler = {
       childNode.setAttribute("disabled", true);
     }
 
+    if (!Services.policies.isAllowed("profileImport")) {
+      document.documentElement.setAttribute("disableprofileimport", "true");
+    }
+
     UpdateUrlbarSearchSplitterState();
 
     PlacesToolbarHelper.customizeStart();
@@ -51,7 +51,7 @@ var CustomizationHandler = {
     // Re-enable parts of the UI we disabled during the dialog
     let menubar = document.getElementById("main-menubar");
     for (let childNode of menubar.children) {
-      childNode.setAttribute("disabled", false);
+      childNode.removeAttribute("disabled");
     }
 
     gBrowser.selectedBrowser.focus();
@@ -106,13 +106,13 @@ var AutoHideMenubar = {
 
   init() {
     this._node.addEventListener("toolbarvisibilitychange", this);
-    if (this._node.getAttribute("autohide") == "true") {
+    if (this._node.hasAttribute("autohide")) {
       this._enable();
     }
   },
 
   _updateState() {
-    if (this._node.getAttribute("autohide") == "true") {
+    if (this._node.hasAttribute("autohide")) {
       this._enable();
     } else {
       this._disable();
@@ -164,7 +164,7 @@ var AutoHideMenubar = {
 
   _setInactiveAsync() {
     this._inactiveTimeout = setTimeout(() => {
-      if (this._node.getAttribute("autohide") == "true") {
+      if (this._node.hasAttribute("autohide")) {
         this._inactiveTimeout = null;
         this._node.setAttribute("inactive", "true");
       }

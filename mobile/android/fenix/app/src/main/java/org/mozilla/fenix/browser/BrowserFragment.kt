@@ -5,112 +5,168 @@
 package org.mozilla.fenix.browser
 
 import android.content.Context
+import android.content.Intent
+import android.hardware.SensorManager
 import android.os.StrictMode
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.content.res.AppCompatResources
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.browser.thumbnails.BrowserThumbnails
-import mozilla.components.browser.toolbar.BrowserToolbar
+import mozilla.components.concept.engine.HitResult
 import mozilla.components.concept.engine.permission.SitePermissions
-import mozilla.components.concept.toolbar.Toolbar
 import mozilla.components.feature.app.links.AppLinksUseCases
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.feature.readerview.ReaderViewFeature
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.tabs.WindowFeature
+import mozilla.components.lib.accelerometer.sensormanager.LifecycleAwareSensorManagerAccelerometer
+import mozilla.components.lib.shake.detectShakes
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.kotlin.isContentUrl
-import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.GleanMetrics.AddressToolbar
-import org.mozilla.fenix.GleanMetrics.ReaderMode
+import mozilla.components.support.utils.DefaultDateTimeProvider
+import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.store.BrowserScreenAction.ReaderModeStatusUpdated
+import org.mozilla.fenix.components.Components
+import org.mozilla.fenix.components.LensFeature
+import org.mozilla.fenix.components.QrScanFenixFeature
 import org.mozilla.fenix.components.TabCollectionStorage
-import org.mozilla.fenix.components.toolbar.BrowserToolbarComposable
-import org.mozilla.fenix.components.toolbar.BrowserToolbarView
-import org.mozilla.fenix.components.toolbar.FenixBrowserToolbarView
-import org.mozilla.fenix.components.toolbar.ToolbarMenu
-import org.mozilla.fenix.components.toolbar.ui.createShareBrowserAction
+import org.mozilla.fenix.components.VoiceSearchFeature
+import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
+import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
+import org.mozilla.fenix.components.metrics.installSourcePackage
+import org.mozilla.fenix.components.toolbar.gestures.ToolbarHorizontalGesturesHandler
+import org.mozilla.fenix.components.toolbar.gestures.ToolbarVerticalGesturesHandler
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
+import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.isLargeWindow
+import org.mozilla.fenix.ext.isGoogleSearchEngine
 import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeFragment
+import org.mozilla.fenix.ipprotection.store.IPProtectionOnboardingPrompt
 import org.mozilla.fenix.nimbus.FxNimbus
+import org.mozilla.fenix.onboarding.OnboardingFragmentDirections
+import org.mozilla.fenix.onboarding.OnboardingReason
+import org.mozilla.fenix.onboarding.OnboardingTelemetryRecorder
+import org.mozilla.fenix.onboarding.continuous.ContinuousOnboardingFeatureDefault
+import org.mozilla.fenix.onboarding.continuous.ContinuousOnboardingStageProviderDefault
+import org.mozilla.fenix.settings.downloads.DownloadLocationManager
 import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
 import org.mozilla.fenix.shortcut.PwaOnboardingObserver
-import org.mozilla.fenix.theme.ThemeManager
+import org.mozilla.fenix.termsofuse.store.Surface
+import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.ipprotection.store.Surface as IPProtectionSurface
 
 /**
  * Fragment used for browsing the web within the main app.
  */
 @Suppress("TooManyFunctions", "LargeClass")
-class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
+class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemInsetsPaddedFragment {
     private val windowFeature = ViewBoundFeatureWrapper<WindowFeature>()
     private val openInAppOnboardingObserver = ViewBoundFeatureWrapper<OpenInAppOnboardingObserver>()
     private val translationsBinding = ViewBoundFeatureWrapper<TranslationsBinding>()
+    private val translationsBannerIntegration = ViewBoundFeatureWrapper<TranslationsBannerIntegration>()
+    private val ipProtectionOnboardingPrompt = ViewBoundFeatureWrapper<IPProtectionOnboardingPrompt>()
+    private var qrScanFenixFeature: ViewBoundFeatureWrapper<QrScanFenixFeature>? =
+        ViewBoundFeatureWrapper<QrScanFenixFeature>()
+    private val qrScanLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            qrScanFenixFeature?.get()?.handleToolbarQrScanResults(result.resultCode, result.data)
+        }
+    private var voiceSearchFeature: ViewBoundFeatureWrapper<VoiceSearchFeature>? =
+        ViewBoundFeatureWrapper<VoiceSearchFeature>()
+    private val voiceSearchLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            voiceSearchFeature?.get()?.handleVoiceSearchResult(result.resultCode, result.data)
+        }
+    private var lensFeature: ViewBoundFeatureWrapper<LensFeature>? =
+        ViewBoundFeatureWrapper<LensFeature>()
+    private val lensLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            lensFeature?.get()?.handleCameraActivityResult(
+                result.resultCode,
+                result.data,
+                qrScanFenixFeature?.get(),
+            )
+        }
+    private val lensCameraPermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            lensFeature?.get()?.onCameraPermissionResult(isGranted)
+        }
 
-    private var readerModeAvailable = false
-    private var translationsAvailable = false
+    private val continuousOnboardingDefaultBrowserLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            continuousOnboardingFeature.onDefaultBrowserStepCompleted(
+                activity = requireActivity(),
+                resultCode = result.resultCode,
+            )
+        }
+
+    private val telemetryRecorder by lazy {
+        OnboardingTelemetryRecorder(
+            onboardingReason = if (requireComponents.settings.enablePersistentOnboarding) {
+                OnboardingReason.EXISTING_USER
+            } else {
+                OnboardingReason.NEW_USER
+            },
+            installSource = installSourcePackage(
+                packageManager = requireContext().application.packageManager,
+                packageName = requireContext().application.packageName,
+            ),
+        )
+    }
+
+    private val continuousOnboardingFeature by lazy {
+        val settings = requireComponents.settings
+        ContinuousOnboardingFeatureDefault(
+            settings = settings,
+            telemetryRecorder = telemetryRecorder,
+            stageProvider = ContinuousOnboardingStageProviderDefault(settings),
+            navigateToSyncSignIn = {
+                findNavController().nav(
+                    id = R.id.browserFragment,
+                    directions = OnboardingFragmentDirections.actionGlobalTurnOnSync(
+                        entrypoint = FenixFxAEntryPoint.NewUserOnboarding,
+                    ),
+                )
+            },
+        )
+    }
 
     private var pwaOnboardingObserver: PwaOnboardingObserver? = null
 
-    @VisibleForTesting
-    internal var homeAction: BrowserToolbar.Button? = null
-    private var forwardAction: BrowserToolbar.TwoStateButton? = null
-    private var backAction: BrowserToolbar.TwoStateButton? = null
-    private var refreshAction: BrowserToolbar.TwoStateButton? = null
-    private var isTablet: Boolean = false
-
-    @Suppress("LongMethod")
     override fun initializeUI(view: View, tab: SessionState) {
         super.initializeUI(view, tab)
 
         val context = requireContext()
         val components = context.components
+        val settings = components.settings
 
-        if (!context.settings().isTabStripEnabled && context.settings().isSwipeToolbarToSwitchTabsEnabled) {
-            binding.gestureLayout.addGestureListener(
-                ToolbarGestureHandler(
-                    activity = requireActivity(),
-                    contentLayout = binding.browserLayout,
-                    tabPreview = binding.tabPreview,
-                    toolbarLayout = browserToolbarView.layout,
-                    store = components.core.store,
-                    selectTabUseCase = components.useCases.tabsUseCases.selectTab,
-                    onSwipeStarted = {
-                        thumbnailsFeature.get()?.requestScreenshot()
-                    },
-                ),
-            )
-        }
+        setupToolbarSwipeBehavior(settings, components)
 
-        if (browserToolbarView is BrowserToolbarView) {
-            updateBrowserToolbarLeadingAndNavigationActions(
-                context = context,
-                isTablet = isLargeWindow(),
-            )
-            initBrowserToolbarViewActions(view)
-        } else {
-            (browserToolbarView as? BrowserToolbarComposable)?.let {
-                initBrowserToolbarComposableUpdates(view)
-            }
-        }
+        initBrowserToolbarComposableUpdates(view)
+        initTranslationsUpdates(context = context, rootView = view)
+        initIPProtectionOnboarding(context, view)
 
         thumbnailsFeature.set(
             feature = BrowserThumbnails(context, binding.engineView, components.core.store),
@@ -127,117 +183,147 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
             view = view,
         )
 
-        if (context.settings().shouldShowOpenInAppCfr) {
+        if (settings.shouldShowOpenInAppCfr) {
             openInAppOnboardingObserver.set(
                 feature = OpenInAppOnboardingObserver(
                     context = context,
                     store = context.components.core.store,
                     lifecycleOwner = this,
                     navController = findNavController(),
-                    settings = context.settings(),
+                    settings = settings,
                     appLinksUseCases = context.components.useCases.appLinksUseCases,
                     container = binding.browserLayout as ViewGroup,
-                    shouldScrollWithTopToolbar = !context.settings().shouldUseBottomToolbar,
+                    shouldScrollWithTopToolbar = !settings.shouldUseBottomToolbar,
                 ),
                 owner = this,
                 view = view,
             )
         }
+
+        setupShakeDetection()
+
+        continuousOnboardingFeature.maybeRunContinuousOnboarding(
+            activity = requireActivity(),
+            launcher = continuousOnboardingDefaultBrowserLauncher,
+        )
     }
 
-    private fun initBrowserToolbarViewActions(rootView: View) {
-        initReaderMode(rootView.context, rootView)
-        initTranslationsAction(rootView.context, rootView)
-        initSharePageAction(rootView.context)
+    private fun setupToolbarSwipeBehavior(settings: Settings, components: Components) {
+        if (!settings.isTabStripEnabled && settings.isSwipeToolbarToSwitchTabsEnabled) {
+            binding.gestureLayout.addGestureListener(
+                ToolbarHorizontalGesturesHandler(
+                    activity = requireActivity(),
+                    contentLayout = binding.browserLayout,
+                    tabPreview = binding.tabPreview,
+                    toolbarLayout = browserToolbar.layout,
+                    navBarLayout = browserNavigationBar?.layout,
+                    store = components.core.store,
+                    selectTabUseCase = components.useCases.tabsUseCases.selectTab,
+                    onSwipeStarted = {
+                        thumbnailsFeature.get()?.requestScreenshot()
+                    },
+                ),
+            )
+        }
+
+        if (settings.isSwipeToolbarToShowTabsEnabled) {
+            binding.gestureLayout.addGestureListener(
+                ToolbarVerticalGesturesHandler(
+                    appStore = components.appStore,
+                    toolbarLayout = browserToolbar.layout,
+                    navBarLayout = browserNavigationBar?.layout,
+                    toolbarPosition = settings.toolbarPosition,
+                    navController = findNavController(),
+                ),
+            )
+        }
+    }
+
+    private fun setupShakeDetection() {
+        val shouldSetupShake = requireComponents.core.summarizeFeatureSettings.canShowFeature &&
+                requireComponents.core.summarizationSettings.isGestureEnabled.value
+        if (!shouldSetupShake) {
+            return
+        }
+
+        val sensorManager = requireActivity().getSystemService(SensorManager::class.java) ?: return
+        val accelerometer = LifecycleAwareSensorManagerAccelerometer(sensorManager)
+        with(viewLifecycleOwner) {
+            lifecycle.addObserver(accelerometer)
+            lifecycleScope.launch {
+                viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    accelerometer.detectShakes()
+                        .collect {
+                            summarizeToolbarCfrBinding.get()?.maybeDismissCfr()
+                            navigateToSummarizationIfEligible()
+                        }
+                }
+            }
+        }
+    }
+
+    private suspend fun navigateToSummarizationIfEligible() {
+        findNavController().apply {
+            // If the shake gesture or the parent feature was disabled in the bottom sheet hosted
+            // settings but the fragment has not been recreated yet, we need to check both are still
+            // active before proceeding.
+            val summarizationSettings = requireComponents.core.summarizationSettings
+            val shakeEnabled = summarizationSettings.isFeatureEnabled.value &&
+                summarizationSettings.isGestureEnabled.value
+
+            if (!shakeEnabled) {
+                return
+            }
+
+            // We don't want to navigate to the summarization fragment if the current
+            // tab is private.
+            val isPrivate = getSafeCurrentTab()?.content?.private == true
+
+            // We don't want to navigate to the summarization fragment if the current
+            // tab is loading.
+            val isPageLoading = getSafeCurrentTab()?.content?.loading == true
+
+            // Since the summarization fragment is in a dialog, it's possible that we
+            // can still detect shakes in the background. Don't try to navigate twice.
+            val currentDestinationIsNotTheBrowser = currentDestination?.id != R.id.browserFragment
+
+            // evaluate this lazy, to try and avoid querying the engine unless necessary
+            val isEnglishContent: suspend () -> Boolean = {
+                getSafeCurrentTab()?.engineState?.engineSession?.let { session ->
+                    requireComponents.core.summarizationEligibilityChecker
+                        .checkLanguage(session)
+                        .getOrNull()
+                } ?: false
+            }
+
+            // this can be removed when we get rid of language gating
+            @Suppress("ComplexCondition")
+            if (isPrivate ||
+                isPageLoading ||
+                currentDestinationIsNotTheBrowser ||
+                !isEnglishContent()
+            ) {
+                return
+            }
+
+            navigate(
+                BrowserFragmentDirections.actionBrowserFragmentToSummarizationFragment(
+                    true,
+                ),
+            )
+        }
     }
 
     private fun initBrowserToolbarComposableUpdates(rootView: View) {
         initReaderModeUpdates(rootView.context, rootView)
-        initTranslationsUpdates(rootView.context, rootView)
-    }
-
-    private fun initSharePageAction(context: Context) {
-        // Only adding share page action if tab strip is disabled.
-        if (!context.settings().isTabStripEnabled && isLargeWindow()) {
-            val sharePageAction = BrowserToolbar.createShareBrowserAction(
-                context = context,
-            ) {
-                AddressToolbar.shareTapped.record((NoExtras()))
-                browserToolbarInteractor.onShareActionClicked()
-            }
-
-            (browserToolbarView as BrowserToolbarView).toolbar.addPageAction(sharePageAction)
-        }
-    }
-
-    private fun initTranslationsAction(context: Context, view: View) {
-        if (
-            !FxNimbus.features.translations.value().mainFlowToolbarEnabled
-        ) {
-            return
-        }
-
-        // Do not add translation page action if device doesn't have large window
-        val translationsAction = if (isLargeWindow()) {
-            Toolbar.ActionButton(
-                AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_translate_24,
-                ),
-                contentDescription = context.getString(R.string.browser_toolbar_translate),
-                iconTintColorResource = ThemeManager.resolveAttribute(R.attr.textPrimary, context),
-                visible = { translationsAvailable },
-                weight = { TRANSLATIONS_WEIGHT },
-                listener = {
-                    browserToolbarInteractor.onTranslationsButtonClicked()
-                },
-            )
-        } else {
-            null
-        }
-
-        translationsAction?.let {
-            (browserToolbarView as BrowserToolbarView).toolbar.addPageAction(it)
-        }
-
-        translationsBinding.set(
-            feature = TranslationsBinding(
-                browserStore = context.components.core.store,
-                appStore = context.components.appStore,
-                onTranslationStatusUpdate = {
-                    translationsAvailable = it.isTranslationPossible
-
-                    translationsAction?.let { action ->
-                        action.updateView(
-                            tintColorResource = if (it.isTranslated) {
-                                R.color.fx_mobile_icon_color_accent_violet
-                            } else {
-                                ThemeManager.resolveAttribute(R.attr.textPrimary, context)
-                            },
-                            contentDescription = if (it.isTranslated) {
-                                context.getString(
-                                    R.string.browser_toolbar_translated_successfully,
-                                    it.fromSelectedLanguage?.localizedDisplayName,
-                                    it.toSelectedLanguage?.localizedDisplayName,
-                                )
-                            } else {
-                                context.getString(R.string.browser_toolbar_translate)
-                            },
-                        )
-
-                        safeInvalidateBrowserToolbarView()
-                    }
-                },
-                onShowTranslationsDialog = browserToolbarInteractor::onTranslationsButtonClicked,
-            ),
-            owner = this,
-            view = view,
-        )
+        qrScanFenixFeature = QrScanFenixFeature.register(this, qrScanLauncher)
+        voiceSearchFeature = VoiceSearchFeature.register(this, voiceSearchLauncher)
+        lensFeature = LensFeature.register(this, lensLauncher, lensCameraPermissionLauncher)
     }
 
     private fun initReaderModeUpdates(context: Context, view: View) {
         readerViewFeature.set(
-            feature = context.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+            feature = context.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
                 ReaderViewFeature(
                     context = context,
                     engine = context.components.core.engine,
@@ -254,256 +340,73 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         )
     }
 
-    private fun initTranslationsUpdates(context: Context, view: View) {
-        if (!FxNimbus.features.translations.value().mainFlowToolbarEnabled) return
-
-        translationsBinding.set(
-            feature = TranslationsBinding(
+    private fun initTranslationsUpdates(context: Context, rootView: View) {
+        translationsBannerIntegration.set(
+            feature = TranslationsBannerIntegration(
+                settings = context.components.settings,
                 browserStore = context.components.core.store,
                 browserScreenStore = browserScreenStore,
-                appStore = context.components.appStore,
-                onTranslationStatusUpdate = {
-                    translationsAvailable = it.isTranslationPossible
+                binding = binding,
+                onExpand = {
+                    val directions =
+                        BrowserFragmentDirections.actionBrowserFragmentToTranslationsDialogFragment()
+                    findNavController().navigateSafe(R.id.browserFragment, directions)
                 },
-                onShowTranslationsDialog = browserToolbarInteractor::onTranslationsButtonClicked,
-                navController = findNavController(),
             ),
             owner = this,
-            view = view,
-        )
-    }
-
-    private fun initReaderMode(context: Context, view: View) {
-        val readerModeAction = BrowserToolbar.ToggleButton(
-            image = AppCompatResources.getDrawable(
-                context,
-                R.drawable.ic_readermode,
-            )!!,
-            imageSelected =
-            AppCompatResources.getDrawable(
-                context,
-                R.drawable.ic_readermode_selected,
-            )!!,
-            contentDescription = context.getString(R.string.browser_menu_read),
-            contentDescriptionSelected = context.getString(R.string.browser_menu_read_close),
-            visible = {
-                readerModeAvailable
-            },
-            weight = { READER_MODE_WEIGHT },
-            selected = getSafeCurrentTab()?.let {
-                activity?.components?.core?.store?.state?.findTab(it.id)?.readerState?.active
-            } ?: false,
-            listener = browserToolbarInteractor::onReaderModePressed,
+            view = rootView,
         )
 
-        (browserToolbarView as BrowserToolbarView).toolbar.addPageAction(readerModeAction)
-
-        readerViewFeature.set(
-            feature = context.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
-                ReaderViewFeature(
-                    context = context,
-                    engine = context.components.core.engine,
-                    store = context.components.core.store,
-                    controlsView = binding.readerViewControlsBar,
-                ) { available, active ->
-                    if (available) {
-                        ReaderMode.available.record(NoExtras())
-                    }
-
-                    (browserToolbarView as BrowserToolbarView).let {
-                        if (active) {
-                            it.toolbar.display.removeSecurityIndicator()
-                        } else {
-                            it.toolbar.display.addSecurityIndicator()
-                        }
-                    }
-
-                    readerModeAvailable = available
-                    readerModeAction.setSelected(active)
-                    safeInvalidateBrowserToolbarView()
-                }
-            },
-            owner = this,
-            view = view,
-        )
-    }
-
-    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun addHomeAction(context: Context) {
-        if (homeAction != null) return
-
-        homeAction = BrowserToolbar.Button(
-            imageDrawable = AppCompatResources.getDrawable(
-                context,
-                R.drawable.mozac_ic_home_24,
-            )!!,
-            contentDescription = context.getString(R.string.browser_toolbar_home),
-            iconTintColorResource = ThemeManager.resolveAttribute(R.attr.textPrimary, context),
-            listener = browserToolbarInteractor::onHomeButtonClicked,
-        ).also {
-            (_browserToolbarView as? BrowserToolbarView)?.toolbar?.addNavigationAction(it)
-        }
-    }
-
-    @VisibleForTesting
-    internal fun updateBrowserToolbarLeadingAndNavigationActions(
-        context: Context,
-        isTablet: Boolean,
-    ) {
-        addHomeAction(context = context)
-        updateTabletToolbarActions(isTablet = isTablet)
-        (browserToolbarView as? BrowserToolbarView)?.toolbar?.invalidateActions()
-    }
-
-    override fun onUpdateToolbarForConfigurationChange(toolbar: FenixBrowserToolbarView) {
-        super.onUpdateToolbarForConfigurationChange(toolbar)
-
-        if (browserToolbarView is BrowserToolbarView) {
-            updateBrowserToolbarLeadingAndNavigationActions(
-                context = requireContext(),
-                isTablet = isLargeWindow(),
+        if (FxNimbus.features.translations.value().mainFlowToolbarEnabled) {
+            translationsBinding.set(
+                feature = TranslationsBinding(
+                    browserStore = rootView.context.components.core.store,
+                    browserScreenStore = browserScreenStore,
+                    appStore = rootView.context.components.appStore,
+                    onTranslationStatusUpdate = {},
+                    onShowTranslationsDialog = ::openTranslationsDialogFromToolbar,
+                    navController = findNavController(),
+                ),
+                owner = this,
+                view = rootView,
             )
         }
     }
 
-    @VisibleForTesting
-    internal fun updateTabletToolbarActions(isTablet: Boolean) {
-        if (isTablet == this.isTablet) return
-
-        if (isTablet) {
-            addTabletActions(requireContext())
-        } else {
-            removeTabletActions()
-        }
-
-        this.isTablet = isTablet
+    private fun initIPProtectionOnboarding(context: Context, rootView: View) {
+        ipProtectionOnboardingPrompt.set(
+            feature = IPProtectionOnboardingPrompt(
+                repository = context.components.ipProtectionPromptRepository,
+                timeProvider = DefaultDateTimeProvider(),
+                store = context.components.ipProtection.store,
+                onShowOnboarding = {
+                    findNavController().navigate(
+                        BrowserFragmentDirections.actionGlobalIpProtectionDialog(IPProtectionSurface.BROWSER),
+                    )
+                },
+            ),
+            owner = this,
+            view = rootView,
+        )
     }
 
-    @VisibleForTesting
-    internal fun addNavigationActions(context: Context) {
-        val enableTint = ThemeManager.resolveAttribute(R.attr.textPrimary, context)
-        val disableTint = ThemeManager.resolveAttribute(R.attr.textDisabled, context)
-
-        if (backAction == null) {
-            backAction = BrowserToolbar.TwoStateButton(
-                primaryImage = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_back_24,
-                )!!,
-                primaryContentDescription = context.getString(R.string.browser_menu_back),
-                primaryImageTintResource = enableTint,
-                isInPrimaryState = { getSafeCurrentTab()?.content?.canGoBack ?: false },
-                secondaryImageTintResource = disableTint,
-                disableInSecondaryState = true,
-                longClickListener = {
-                    browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Back(viewHistory = true, isOnToolbar = true),
-                    )
-                },
-                listener = {
-                    browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Back(viewHistory = false, isOnToolbar = true),
-                    )
-                },
-            ).also {
-                (_browserToolbarView as? BrowserToolbarView)?.toolbar?.addNavigationAction(it)
-            }
-        }
-
-        if (forwardAction == null) {
-            forwardAction = BrowserToolbar.TwoStateButton(
-                primaryImage = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_forward_24,
-                )!!,
-                primaryContentDescription = context.getString(R.string.browser_menu_forward),
-                primaryImageTintResource = enableTint,
-                isInPrimaryState = { getSafeCurrentTab()?.content?.canGoForward ?: false },
-                secondaryImageTintResource = disableTint,
-                disableInSecondaryState = true,
-                longClickListener = {
-                    browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Forward(viewHistory = true, isOnToolbar = true),
-                    )
-                },
-                listener = {
-                    browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Forward(viewHistory = false, isOnToolbar = true),
-                    )
-                },
-            ).also {
-                (_browserToolbarView as? BrowserToolbarView)?.toolbar?.addNavigationAction(it)
-            }
-        }
-    }
-
-    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun addTabletActions(context: Context) {
-        addNavigationActions(context)
-
-        val enableTint = ThemeManager.resolveAttribute(R.attr.textPrimary, context)
-        if (refreshAction == null) {
-            refreshAction = BrowserToolbar.TwoStateButton(
-                primaryImage = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_arrow_clockwise_24,
-                )!!,
-                primaryContentDescription = context.getString(R.string.browser_menu_refresh),
-                primaryImageTintResource = enableTint,
-                isInPrimaryState = {
-                    getSafeCurrentTab()?.content?.loading == false
-                },
-                secondaryImage = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_stop,
-                )!!,
-                secondaryContentDescription = context.getString(R.string.browser_menu_stop),
-                disableInSecondaryState = false,
-                longClickListener = {
-                    browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Reload(bypassCache = true),
-                    )
-                },
-                listener = {
-                    if (getCurrentTab()?.content?.loading == true) {
-                        browserToolbarInteractor.onBrowserToolbarMenuItemTapped(ToolbarMenu.Item.Stop)
-                    } else {
-                        browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                            ToolbarMenu.Item.Reload(bypassCache = false),
-                        )
-                    }
-                },
-            ).also {
-                (_browserToolbarView as? BrowserToolbarView)?.toolbar?.addNavigationAction(it)
-            }
-        }
-    }
-
-    @VisibleForTesting
-    internal fun removeNavigationActions() {
-        forwardAction?.let {
-            (_browserToolbarView as? BrowserToolbarView)?.toolbar?.removeNavigationAction(it)
-        }
-        forwardAction = null
-        backAction?.let {
-            (_browserToolbarView as? BrowserToolbarView)?.toolbar?.removeNavigationAction(it)
-        }
-        backAction = null
-    }
-
-    @VisibleForTesting
-    internal fun removeTabletActions() {
-        removeNavigationActions()
-
-        refreshAction?.let {
-            (_browserToolbarView as? BrowserToolbarView)?.toolbar?.removeNavigationAction(it)
-        }
+    private fun openTranslationsDialogFromToolbar() {
+        Translations.action.record(Translations.ActionExtra("main_flow_toolbar"))
+        requireComponents.appStore.dispatch(SnackbarAction.SnackbarDismissed)
+        findNavController().navigateSafe(
+            R.id.browserFragment,
+            BrowserFragmentDirections.actionBrowserFragmentToTranslationsDialogFragment(),
+        )
     }
 
     override fun onStart() {
         super.onStart()
         val context = requireContext()
-        val settings = context.settings()
+        val settings = context.components.settings
+
+        if (context.components.appStore.state.longfoxEntryPointReady) {
+            context.components.appStore.dispatch(AppAction.UpdateShowFoxPeekAnimation(false))
+        }
 
         if (!settings.userKnowsAboutPwas) {
             pwaOnboardingObserver = PwaOnboardingObserver(
@@ -519,6 +422,12 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
 
         subscribeToTabCollections()
         updateLastBrowseActivity()
+
+        if (requireComponents.termsOfUseManager.shouldShowTermsOfUsePromptOnBrowserFragment()) {
+            findNavController().navigate(
+                BrowserFragmentDirections.actionGlobalTermsOfUseDialog(Surface.BROWSER),
+            )
+        }
     }
 
     override fun onStop() {
@@ -526,15 +435,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         updateLastBrowseActivity()
         updateHistoryMetadata()
         pwaOnboardingObserver?.stop()
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        isTablet = false
-        homeAction = null
-        forwardAction = null
-        backAction = null
-        refreshAction = null
     }
 
     private fun updateHistoryMetadata() {
@@ -571,21 +471,22 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 val cookieBannersStorage = requireComponents.core.cookieBannersStorage
                 val cookieBannerUIMode = cookieBannersStorage.getCookieBannerUIMode(
                     tab = tab,
-                    isFeatureEnabledInPrivateMode = requireContext().settings().shouldUseCookieBannerPrivateMode,
+                    isFeatureEnabledInPrivateMode = requireComponents.settings.shouldUseCookieBannerPrivateMode,
                     publicSuffixList = requireComponents.publicSuffixList,
                 )
                 withContext(Dispatchers.Main) {
                     runIfFragmentIsAttached {
                         val isTrackingProtectionEnabled =
                             tab.trackingProtection.enabled && !hasTrackingProtectionException
-                        val directions = if (requireContext().settings().enableUnifiedTrustPanel) {
+                        val directions = if (requireComponents.settings.enableUnifiedTrustPanel) {
                             BrowserFragmentDirections.actionBrowserFragmentToTrustPanelFragment(
                                 sessionId = tab.id,
                                 url = tab.content.url,
                                 title = tab.content.title,
-                                isSecured = tab.content.securityInfo.secure,
+                                isLocalPdf = tab.content.url.isContentUrl(),
+                                isSecured = tab.content.securityInfo.isSecure,
                                 sitePermissions = sitePermissions,
-                                certificateName = tab.content.securityInfo.issuer,
+                                certificate = tab.content.securityInfo.certificate,
                                 permissionHighlights = tab.content.permissionHighlights,
                                 isTrackingProtectionEnabled = isTrackingProtectionEnabled,
                                 cookieBannerUIMode = cookieBannerUIMode,
@@ -596,7 +497,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                                 url = tab.content.url,
                                 title = tab.content.title,
                                 isLocalPdf = tab.content.url.isContentUrl(),
-                                isSecured = tab.content.securityInfo.secure,
+                                isSecured = tab.content.securityInfo.isSecure,
                                 sitePermissions = sitePermissions,
                                 gravity = getAppropriateLayoutGravity(),
                                 certificateName = tab.content.securityInfo.issuer,
@@ -630,8 +531,8 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
             isNewCollection: Boolean = false,
         ) {
             val messageResId = when {
-                isNewCollection -> R.string.create_collection_tabs_saved_new_collection
-                tabSize == 1 -> R.string.create_collection_tab_saved
+                isNewCollection -> R.string.create_collection_tabs_saved_new_collection_2
+                tabSize == 1 -> R.string.create_collection_tab_saved_2
                 else -> return // Don't show snackbar for multiple tabs
             }
 
@@ -656,16 +557,45 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         )
 
         return ContextMenuCandidate.defaultCandidates(
-            context,
-            context.components.useCases.tabsUseCases,
-            context.components.useCases.contextMenuUseCases,
-            view,
-            ContextMenuSnackbarDelegate(),
+            context = context,
+            tabsUseCases = context.components.useCases.tabsUseCases,
+            contextMenuUseCases = context.components.useCases.contextMenuUseCases,
+            snackBarParentView = view,
+            snackbarDelegate = ContextMenuSnackbarDelegate(),
+            downloadsLocation = {
+                DownloadLocationManager(
+                    requireComponents.settings,
+                    requireContext().contentResolver,
+                ).defaultLocation
+            },
         ) + ContextMenuCandidate.createOpenInExternalAppCandidate(
             requireContext(),
             contextMenuCandidateAppLinksUseCases,
-        )
+        ) + createOpenWithGoogleLensCandidate(context)
     }
+
+    private fun createOpenWithGoogleLensCandidate(context: Context) = ContextMenuCandidate(
+        id = "fenix.contextmenu.open_with_google_lens",
+        label = context.getString(R.string.context_menu_open_image_with_google_lens),
+        showFor = { _, hitResult ->
+            val isImage = hitResult is HitResult.IMAGE || hitResult is HitResult.IMAGE_SRC
+            val selectedEngine = context.components.core.store.state.search.selectedOrDefaultSearchEngine
+            val settings = context.components.settings
+            isImage &&
+                hitResult.src.isHttpUrl() &&
+                settings.googleLensIntegrationEnabled &&
+                settings.googleLensIntegrationUserEnabled &&
+                selectedEngine.isGoogleSearchEngine()
+        },
+        action = { _, hitResult ->
+            context.components.appStore.dispatch(
+                AppAction.LensAction.LensRequestedWithImageUrl(hitResult.src),
+            )
+        },
+    )
+
+    private fun String.isHttpUrl(): Boolean =
+        startsWith("https://", ignoreCase = true) || startsWith("http://", ignoreCase = true)
 
     /**
      * Updates the last time the user was active on the [BrowserFragment].
@@ -674,20 +604,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
      */
     @VisibleForTesting
     internal fun updateLastBrowseActivity() {
-        requireContext().settings().lastBrowseActivity = System.currentTimeMillis()
-    }
-
-    companion object {
-        /**
-         * Indicates weight of a page action. The lesser the weight, the closer it is to the URL.
-         *
-         * A weight of -1 indicates the position is not cared for and the action will be appended at the end.
-         */
-        const val READER_MODE_WEIGHT = 1
-        const val TRANSLATIONS_WEIGHT = 2
-        const val REVIEW_QUALITY_CHECK_WEIGHT = 3
-        const val SHARE_WEIGHT = 4
-        const val RELOAD_WEIGHT = 5
-        const val OPEN_IN_ACTION_WEIGHT = 6
+        requireComponents.settings.lastBrowseActivity = System.currentTimeMillis()
     }
 }

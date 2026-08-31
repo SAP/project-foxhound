@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,16 +76,15 @@ nrappkit copyright:
    ekr@rtfm.com  Thu Dec 20 20:14:49 2001
 */
 #include "logging.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mediapacket.h"
+#include "mozilla/UniquePtr.h"
 
 // mozilla/utils.h defines this as well
 #ifdef UNIMPLEMENTED
 #  undef UNIMPLEMENTED
 #endif
 
-extern "C" {
+// clang-format off
 #include "nr_api.h"
 #include "async_wait.h"
 #include "async_timer.h"
@@ -97,11 +94,12 @@ extern "C" {
 #include "stun_util.h"
 #include "registry.h"
 #include "nr_socket_buffered_stun.h"
-}
-
-#include "stunserver.h"
+#include "addrs.h"
+// clang-format on
 
 #include <string>
+
+#include "stunserver.h"
 
 MOZ_MTLOG_MODULE("stunserver");
 
@@ -182,7 +180,7 @@ int nr_socket_wrapped_create(nr_socket* inner, nr_socket** outp) {
   int r = nr_socket_create_int(wrapped.get(), &nr_socket_wrapped_vtbl, outp);
   if (r) return r;
 
-  Unused << wrapped.release();
+  (void)wrapped.release();
   return 0;
 }
 
@@ -264,14 +262,14 @@ int TestStunServer::Initialize(int address_family) {
   int r;
   int i;
 
-  r = nr_stun_find_local_addresses(addrs, max_addrs, &addr_ct);
+  r = nr_stun_get_addrs(addrs, max_addrs, &addr_ct);
   if (r) {
     MOZ_MTLOG(ML_ERROR, "Couldn't retrieve addresses");
     return R_INTERNAL;
   }
 
-  // removes duplicates and, based on prefs, loopback and link_local addrs
-  r = nr_stun_filter_local_addresses(addrs, &addr_ct);
+  // removes duplicate, loopback, and link_local addrs
+  r = nr_stun_filter_addrs(addrs, true, true, &addr_ct);
   if (r) {
     MOZ_MTLOG(ML_ERROR, "Couldn't filter addresses");
     return R_INTERNAL;
@@ -339,7 +337,7 @@ int TestStunServer::Initialize(int address_family) {
 }
 
 UniquePtr<TestStunServer> TestStunServer::Create(int address_family) {
-  NR_reg_init(NR_REG_MODE_LOCAL);
+  NR_reg_init();
 
   UniquePtr<TestStunServer> server(new TestStunServer());
 
@@ -621,7 +619,7 @@ void TestStunTcpServer::accept_cb(NR_SOCKET s, int how, void* cb_arg) {
 }
 
 UniquePtr<TestStunTcpServer> TestStunTcpServer::Create(int address_family) {
-  NR_reg_init(NR_REG_MODE_LOCAL);
+  NR_reg_init();
 
   UniquePtr<TestStunTcpServer> server(new TestStunTcpServer());
 

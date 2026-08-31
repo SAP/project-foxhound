@@ -1,5 +1,8 @@
 "use strict";
-/* global NodeHTTPServer, NodeHTTPProxyServer*/
+
+const { NodeHTTPServer, NodeHTTPProxyServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
 
 // We don't normally allow localhost channels to be proxied, but this
 // is easier than updating all the certs and/or domains.

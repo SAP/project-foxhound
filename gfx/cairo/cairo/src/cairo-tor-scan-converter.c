@@ -1830,6 +1830,7 @@ _cairo_tor_scan_converter_add_polygon (void		*converter,
 				       const cairo_polygon_t *polygon)
 {
     cairo_tor_scan_converter_t *self = converter;
+    cairo_status_t status;
     int i;
 
 #if 0
@@ -1837,6 +1838,9 @@ _cairo_tor_scan_converter_add_polygon (void		*converter,
     _cairo_debug_print_polygon (file, polygon);
     fclose (file);
 #endif
+
+    if ((status = setjmp (self->jmp)))
+	return _cairo_scan_converter_set_error (self, _cairo_error (status));
 
     for (i = 0; i < polygon->num_edges; i++)
 	 glitter_scan_converter_add_edge (self->converter, &polygon->edges[i]);
@@ -1872,7 +1876,7 @@ _cairo_tor_scan_converter_create (int			xmin,
     cairo_tor_scan_converter_t *self;
     cairo_status_t status;
 
-    self = _cairo_malloc (sizeof(struct _cairo_tor_scan_converter));
+    self = _cairo_calloc (sizeof(struct _cairo_tor_scan_converter));
     if (unlikely (self == NULL)) {
 	status = _cairo_error (CAIRO_STATUS_NO_MEMORY);
 	goto bail_nomem;

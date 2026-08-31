@@ -1,0 +1,43 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Privacy: Anti-Tracking")
+
+XPIDL_SOURCES += [
+    "nsIContentClassifierRemoteSettingsClient.idl",
+    "nsIContentClassifierService.idl",
+]
+
+XPIDL_MODULE = "content-classifier"
+
+UNIFIED_SOURCES += [
+    "ContentClassifierService.cpp",
+]
+
+EXPORTS.mozilla += [
+    "ContentClassifierService.h",
+]
+
+LOCAL_INCLUDES += [
+    "/netwerk/base",
+    "/netwerk/protocol/http",
+    "/netwerk/url-classifier",
+]
+
+EXTRA_JS_MODULES += [
+    "ContentClassifierRemoteSettingsClient.sys.mjs",
+]
+
+XPCOM_MANIFESTS += [
+    "components.conf",
+]
+
+BROWSER_CHROME_MANIFESTS += [
+    "test/browser/browser.toml",
+]
+
+FINAL_LIBRARY = "xul"
+
+include("/ipc/chromium/chromium-config.mozbuild")

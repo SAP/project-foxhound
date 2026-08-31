@@ -47,18 +47,18 @@ add_setup(async () => {
   Services.locale.requestedLocales = ["gd"];
 
   SearchTestUtils.setRemoteSettingsConfig(CONFIG);
-  await Services.search.init();
+  await SearchService.init();
 });
 
 add_task(async function test_config_updated_engine_changes() {
-  let engines = await Services.search.getEngines();
+  let engines = await SearchService.getEngines();
   Assert.deepEqual(
-    engines.map(e => e.identifier),
+    engines.map(e => e.id),
     ["appDefault", "localeGD"],
     "Should have the correct engines installed"
   );
 
-  let engine = await Services.search.getEngineByName("GD Locale");
+  let engine = await SearchService.getEngineByName("GD Locale");
   Assert.equal(
     engine.getSubmission("test").uri.spec,
     "https://gd.wikipedia.com/search?q=test",
@@ -67,14 +67,14 @@ add_task(async function test_config_updated_engine_changes() {
 
   await promiseSetLocale("en");
 
-  engines = await Services.search.getEngines();
+  engines = await SearchService.getEngines();
   Assert.deepEqual(
-    engines.map(e => e.identifier),
+    engines.map(e => e.id),
     ["appDefault", "notGDLocale"],
     "Should have the correct engines installed after locale change"
   );
 
-  engine = await Services.search.getEngineByName("Not GD Locale");
+  engine = await SearchService.getEngineByName("Not GD Locale");
   Assert.equal(
     engine.getSubmission("test").uri.spec,
     "https://en.wikipedia.com/search?q=test",

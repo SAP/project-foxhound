@@ -4,321 +4,32 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const lazy = {};
-
-ChromeUtils.defineESModuleGetters(lazy, {
-  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
-  setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
-
 var gStringBundle = Services.strings.createBundle(
   "chrome://browser/locale/sitePermissions.properties"
 );
 
-/**
- * A helper module to manage temporary permissions.
- *
- * Permissions are keyed by browser, so methods take a Browser
- * element to identify the corresponding permission set.
- *
- * This uses a WeakMap to key browsers, so that entries are
- * automatically cleared once the browser stops existing
- * (once there are no other references to the browser object);
- */
-const TemporaryPermissions = {
-  // This is a three level deep map with the following structure:
-  //
-  // Browser => {
-  //   <baseDomain|origin>: {
-  //     <permissionID>: {state: Number, expireTimeout: Number}
-  //   }
-  // }
-  //
-  // Only the top level browser elements are stored via WeakMap. The WeakMap
-  // value is an object with URI baseDomains or origins as keys. The keys of
-  // that object are ids that identify permissions that were set for the
-  // specific URI. The final value is an object containing the permission state
-  // and the id of the timeout which will cause permission expiry.
-  // BLOCK permissions are keyed under baseDomain to prevent bypassing the block
-  // (see Bug 1492668). Any other permissions are keyed under origin.
-  _stateByBrowser: new WeakMap(),
-
-  // Extract baseDomain from uri. Fallback to hostname on conversion error.
-  _uriToBaseDomain(uri) {
-    try {
-      return Services.eTLD.getBaseDomain(uri);
-    } catch (error) {
-      if (
-        error.result !== Cr.NS_ERROR_HOST_IS_IP_ADDRESS &&
-        error.result !== Cr.NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS
-      ) {
-        throw error;
-      }
-      return uri.host;
-    }
-  },
-
-  /**
-   * Generate keys to store temporary permissions under. The strict key is
-   * origin, non-strict is baseDomain.
-   * @param {nsIPrincipal} principal - principal to derive keys from.
-   * @returns {Object} keys - Object containing the generated permission keys.
-   * @returns {string} keys.strict - Key to be used for strict matching.
-   * @returns {string} keys.nonStrict - Key to be used for non-strict matching.
-   * @throws {Error} - Throws if principal is undefined or no valid permission key can
-   * be generated.
-   */
-  _getKeysFromPrincipal(principal) {
-    return { strict: principal.origin, nonStrict: principal.baseDomain };
-  },
-
-  /**
-   * Sets a new permission for the specified browser.
-   * @returns {boolean} whether the permission changed, effectively.
-   */
-  set(
-    browser,
-    id,
-    state,
-    expireTimeMS,
-    principal = browser.contentPrincipal,
-    expireCallback
-  ) {
-    if (
-      !browser ||
-      !principal ||
-      !SitePermissions.isSupportedPrincipal(principal)
-    ) {
-      return false;
-    }
-    let entry = this._stateByBrowser.get(browser);
-    if (!entry) {
-      entry = { browser: Cu.getWeakReference(browser), uriToPerm: {} };
-      this._stateByBrowser.set(browser, entry);
-    }
-    let { uriToPerm } = entry;
-    // We store blocked permissions by baseDomain. Other states by origin.
-    let { strict, nonStrict } = this._getKeysFromPrincipal(principal);
-    let setKey;
-    let deleteKey;
-    // Differentiate between block and non-block permissions. If we store a
-    // block permission we need to delete old entries which may be set under
-    // origin before setting the new permission for baseDomain. For non-block
-    // permissions this is swapped.
-    if (state == SitePermissions.BLOCK) {
-      setKey = nonStrict;
-      deleteKey = strict;
-    } else {
-      setKey = strict;
-      deleteKey = nonStrict;
-    }
-
-    if (!uriToPerm[setKey]) {
-      uriToPerm[setKey] = {};
-    }
-
-    let expireTimeout = uriToPerm[setKey][id]?.expireTimeout;
-    let previousState = uriToPerm[setKey][id]?.state;
-    // If overwriting a permission state. We need to cancel the old timeout.
-    if (expireTimeout) {
-      lazy.clearTimeout(expireTimeout);
-    }
-    // Construct the new timeout to remove the permission once it has expired.
-    expireTimeout = lazy.setTimeout(() => {
-      let entryBrowser = entry.browser.get();
-      // Exit early if the browser is no longer alive when we get the timeout
-      // callback.
-      if (!entryBrowser || !uriToPerm[setKey]) {
+// Observer for browser-scoped permission changes. Dispatches
+// PermissionStateChange events on the associated browser element so that
+// UI consumers (identity panel, etc.) update.
+Services.obs.addObserver(
+  {
+    observe(subject, _topic, _data) {
+      let permission = subject.QueryInterface(Ci.nsIPermission);
+      let browserId = permission.browserId;
+      if (!browserId) {
         return;
       }
-      delete uriToPerm[setKey][id];
-      // Notify SitePermissions that a temporary permission has expired.
-      // Get the browser the permission is currently set for. If this.copy was
-      // used this browser is different from the original one passed above.
-      expireCallback(entryBrowser);
-    }, expireTimeMS);
-    uriToPerm[setKey][id] = {
-      expireTimeout,
-      state,
-    };
-
-    // If we set a permission state for a origin we need to reset the old state
-    // which may be set for baseDomain and vice versa. An individual permission
-    // must only ever be keyed by either origin or baseDomain.
-    let permissions = uriToPerm[deleteKey];
-    if (permissions) {
-      expireTimeout = permissions[id]?.expireTimeout;
-      if (expireTimeout) {
-        lazy.clearTimeout(expireTimeout);
+      let bc = BrowsingContext.getCurrentTopByBrowserId(browserId);
+      let browser = bc?.embedderElement;
+      if (browser?.documentGlobal) {
+        browser.dispatchEvent(
+          new browser.documentGlobal.CustomEvent("PermissionStateChange")
+        );
       }
-      delete permissions[id];
-    }
-
-    return state != previousState;
+    },
   },
-
-  /**
-   * Removes a permission with the specified id for the specified browser.
-   * @returns {boolean} whether the permission was removed.
-   */
-  remove(browser, id) {
-    if (
-      !browser ||
-      !SitePermissions.isSupportedPrincipal(browser.contentPrincipal) ||
-      !this._stateByBrowser.has(browser)
-    ) {
-      return false;
-    }
-    // Permission can be stored by any of the two keys (strict and non-strict).
-    // getKeysFromURI can throw. We let the caller handle the exception.
-    let { strict, nonStrict } = this._getKeysFromPrincipal(
-      browser.contentPrincipal
-    );
-    let { uriToPerm } = this._stateByBrowser.get(browser);
-    for (let key of [nonStrict, strict]) {
-      if (uriToPerm[key]?.[id] != null) {
-        let { expireTimeout } = uriToPerm[key][id];
-        if (expireTimeout) {
-          lazy.clearTimeout(expireTimeout);
-        }
-        delete uriToPerm[key][id];
-        // Individual permissions can only ever be keyed either strict or
-        // non-strict. If we find the permission via the first key run we can
-        // return early.
-        return true;
-      }
-    }
-    return false;
-  },
-
-  // Gets a permission with the specified id for the specified browser.
-  get(browser, id) {
-    if (
-      !browser ||
-      !browser.contentPrincipal ||
-      !SitePermissions.isSupportedPrincipal(browser.contentPrincipal) ||
-      !this._stateByBrowser.has(browser)
-    ) {
-      return null;
-    }
-    let { uriToPerm } = this._stateByBrowser.get(browser);
-
-    let { strict, nonStrict } = this._getKeysFromPrincipal(
-      browser.contentPrincipal
-    );
-    for (let key of [nonStrict, strict]) {
-      if (uriToPerm[key]) {
-        let permission = uriToPerm[key][id];
-        if (permission) {
-          return {
-            id,
-            state: permission.state,
-            scope: SitePermissions.SCOPE_TEMPORARY,
-          };
-        }
-      }
-    }
-    return null;
-  },
-
-  // Gets all permissions for the specified browser.
-  // Note that only permissions that apply to the current URI
-  // of the passed browser element will be returned.
-  getAll(browser) {
-    let permissions = [];
-    if (
-      !SitePermissions.isSupportedPrincipal(browser.contentPrincipal) ||
-      !this._stateByBrowser.has(browser)
-    ) {
-      return permissions;
-    }
-    let { uriToPerm } = this._stateByBrowser.get(browser);
-
-    let { strict, nonStrict } = this._getKeysFromPrincipal(
-      browser.contentPrincipal
-    );
-    for (let key of [nonStrict, strict]) {
-      if (uriToPerm[key]) {
-        let perms = uriToPerm[key];
-        for (let id of Object.keys(perms)) {
-          let permission = perms[id];
-          if (permission) {
-            permissions.push({
-              id,
-              state: permission.state,
-              scope: SitePermissions.SCOPE_TEMPORARY,
-            });
-          }
-        }
-      }
-    }
-
-    return permissions;
-  },
-
-  // Clears all permissions for the specified browser.
-  // Unlike other methods, this does NOT clear only for
-  // the currentURI but the whole browser state.
-
-  /**
-   * Clear temporary permissions for the specified browser. Unlike other
-   * methods, this does NOT clear only for the currentURI but the whole browser
-   * state.
-   * @param {Browser} browser - Browser to clear permissions for.
-   * @param {Number} [filterState] - Only clear permissions with the given state
-   * value. Defaults to all permissions.
-   */
-  clear(browser, filterState = null) {
-    let entry = this._stateByBrowser.get(browser);
-    if (!entry?.uriToPerm) {
-      return;
-    }
-
-    let { uriToPerm } = entry;
-    Object.entries(uriToPerm).forEach(([uriKey, permissions]) => {
-      Object.entries(permissions).forEach(
-        ([permId, { state, expireTimeout }]) => {
-          // We need to explicitly check for null or undefined here, because the
-          // permission state may be 0.
-          if (filterState != null) {
-            if (state != filterState) {
-              // Skip permission entry if it doesn't match the filter.
-              return;
-            }
-            delete permissions[permId];
-          }
-          // For the clear-all case we remove the entire browser entry, so we
-          // only need to clear the timeouts.
-          if (!expireTimeout) {
-            return;
-          }
-          lazy.clearTimeout(expireTimeout);
-        }
-      );
-      // If there are no more permissions, remove the entry from the URI map.
-      if (filterState != null && !Object.keys(permissions).length) {
-        delete uriToPerm[uriKey];
-      }
-    });
-
-    // We're either clearing all permissions or only the permissions with state
-    // == filterState. If we have a filter, we can only clean up the browser if
-    // there are no permission entries left in the map.
-    if (filterState == null || !Object.keys(uriToPerm).length) {
-      this._stateByBrowser.delete(browser);
-    }
-  },
-
-  // Copies the temporary permission state of one browser
-  // into a new entry for the other browser.
-  copy(browser, newBrowser) {
-    let entry = this._stateByBrowser.get(browser);
-    if (entry) {
-      entry.browser = Cu.getWeakReference(newBrowser);
-      this._stateByBrowser.set(newBrowser, entry);
-    }
-  },
-};
+  "browser-perm-changed"
+);
 
 // This hold a flag per browser to indicate whether we should show the
 // user a notification as a permission has been requested that has been
@@ -447,9 +158,6 @@ export var SitePermissions = {
   _permissionsArray: null,
   _defaultPrefBranch: Services.prefs.getBranch("permissions.default."),
 
-  // For testing use only.
-  _temporaryPermissions: TemporaryPermissions,
-
   /**
    * Gets all custom permissions for a given principal.
    * Install addon permission is excluded, check bug 1303108.
@@ -529,9 +237,19 @@ export var SitePermissions = {
   getAllForBrowser(browser) {
     let permissions = {};
 
-    for (let permission of TemporaryPermissions.getAll(browser)) {
-      permission.scope = this.SCOPE_TEMPORARY;
-      permissions[permission.id] = permission;
+    let browserId = browser.browserId;
+    if (browserId && this.isSupportedPrincipal(browser.contentPrincipal)) {
+      let bcPerms = Services.perms.getAllForBrowser(
+        browser.contentPrincipal,
+        browserId
+      );
+      for (let perm of bcPerms) {
+        permissions[perm.type] = {
+          id: perm.type,
+          state: perm.capability,
+          scope: this.SCOPE_TEMPORARY,
+        };
+      }
     }
 
     for (let permission of GloballyBlockedPermissions.getAll(browser)) {
@@ -552,7 +270,7 @@ export var SitePermissions = {
    * @param {Browser} browser
    *        The browser to fetch permission for.
    *
-   * @return {Array<Object>} a list of objects with the keys:
+   * @return {Array<object>} a list of objects with the keys:
    *           - id: the permissionID of the permission
    *           - state: a constant representing the current permission state
    *             (e.g. SitePermissions.ALLOW)
@@ -592,6 +310,7 @@ export var SitePermissions = {
 
   /**
    * Checks whether we support managing permissions for a specific scheme.
+   *
    * @param {string} scheme - Scheme to test.
    * @returns {boolean} Whether the scheme is supported.
    */
@@ -602,7 +321,7 @@ export var SitePermissions = {
   /**
    * Gets an array of all permission IDs.
    *
-   * @return {Array<String>} an array of all permission IDs.
+   * @return {Array<string>} an array of all permission IDs.
    */
   listPermissions() {
     if (this._permissionsArray === null) {
@@ -613,6 +332,7 @@ export var SitePermissions = {
 
   /**
    * Test whether a permission is managed by SitePermissions.
+   *
    * @param {string} type - Permission type.
    * @returns {boolean}
    */
@@ -721,12 +441,12 @@ export var SitePermissions = {
    *
    * @param {nsIPrincipal} principal
    *        The principal to check.
-   * @param {String} permissionID
+   * @param {string} permissionID
    *        The id of the permission.
    * @param {Browser} [browser] The browser object to check for temporary
    *        permissions.
    *
-   * @return {Object} an object with the keys:
+   * @return {object} an object with the keys:
    *           - state: The current state of the permission
    *             (e.g. SitePermissions.ALLOW)
    *           - scope: The scope of the permission
@@ -780,11 +500,19 @@ export var SitePermissions = {
       // This way, a temporary ALLOW or BLOCK trumps a persisted PROMPT. While
       // having overlap would be a bug (because any ALLOW or BLOCK user action should
       // really clear PROMPT), this order seems safer than the other way around.
-      let value = TemporaryPermissions.get(browser, permissionID);
-
-      if (value) {
-        result.state = value.state;
-        result.scope = this.SCOPE_TEMPORARY;
+      if (browser) {
+        let browserId = browser.browserId;
+        if (browserId) {
+          let tempPerm = Services.perms.getForBrowser(
+            principal ?? browser.contentPrincipal,
+            permissionID,
+            browserId
+          );
+          if (tempPerm) {
+            result.state = tempPerm.capability;
+            result.scope = this.SCOPE_TEMPORARY;
+          }
+        }
       }
     }
 
@@ -802,7 +530,7 @@ export var SitePermissions = {
    *        browser's contentPrincipal for permission keying. This can be
    *        helpful in situations where the browser has already navigated away
    *        from a site you want to set a permission for.
-   * @param {String} permissionID The id of the permission.
+   * @param {string} permissionID The id of the permission.
    * @param {SitePermissions state} state The state of the permission.
    * @param {SitePermissions scope} [scope] The scope of the permission.
    *        Defaults to SCOPE_PERSISTENT.
@@ -828,7 +556,7 @@ export var SitePermissions = {
     if (scope == this.SCOPE_GLOBAL && state == this.BLOCK) {
       if (GloballyBlockedPermissions.set(browser, permissionID)) {
         browser.dispatchEvent(
-          new browser.ownerGlobal.CustomEvent("PermissionStateChange")
+          new browser.documentGlobal.CustomEvent("PermissionStateChange")
         );
       }
       return;
@@ -861,26 +589,14 @@ export var SitePermissions = {
         throw new Error("expireTime must be a positive integer");
       }
 
-      if (
-        TemporaryPermissions.set(
-          browser,
+      let browserId = browser.browserId;
+      if (browserId) {
+        Services.perms.addFromPrincipalForBrowser(
+          principal ?? browser.contentPrincipal,
           permissionID,
           state,
-          expireTimeMS,
-          principal ?? browser.contentPrincipal,
-          // On permission expiry
-          origBrowser => {
-            if (!origBrowser.ownerGlobal) {
-              return;
-            }
-            origBrowser.dispatchEvent(
-              new origBrowser.ownerGlobal.CustomEvent("PermissionStateChange")
-            );
-          }
-        )
-      ) {
-        browser.dispatchEvent(
-          new browser.ownerGlobal.CustomEvent("PermissionStateChange")
+          browserId,
+          expireTimeMS
         );
       }
     } else if (this.isSupportedPrincipal(principal)) {
@@ -907,7 +623,7 @@ export var SitePermissions = {
    *
    * @param {nsIPrincipal} principal
    *        The principal to remove the permission for.
-   * @param {String} permissionID
+   * @param {string} permissionID
    *        The id of the permission.
    * @param {Browser} browser (optional)
    *        The browser object to remove temporary permissions on.
@@ -922,13 +638,15 @@ export var SitePermissions = {
       Services.perms.removeFromPrincipal(principal, permissionID);
     }
 
-    // TemporaryPermissions.get() deletes expired permissions automatically,
-    // if it hasn't expired, remove it explicitly.
-    if (TemporaryPermissions.remove(browser, permissionID)) {
-      // Send a PermissionStateChange event only if the permission hasn't expired.
-      browser.dispatchEvent(
-        new browser.ownerGlobal.CustomEvent("PermissionStateChange")
-      );
+    if (browser) {
+      let browserId = browser.browserId;
+      if (browserId) {
+        Services.perms.removeFromPrincipalForBrowser(
+          principal ?? browser.contentPrincipal,
+          permissionID,
+          browserId
+        );
+      }
     }
   },
 
@@ -939,21 +657,32 @@ export var SitePermissions = {
    *        The browser object to clear.
    */
   clearTemporaryBlockPermissions(browser) {
-    TemporaryPermissions.clear(browser, SitePermissions.BLOCK);
+    let browserId = browser.browserId;
+    if (browserId) {
+      Services.perms.removeByActionForBrowser(
+        browserId,
+        Services.perms.DENY_ACTION
+      );
+    }
   },
 
   /**
    * Copy all permissions that were temporarily saved on one
    * browser object to a new browser.
    *
-   * @param {Browser} browser
-   *        The browser object to copy from.
-   * @param {Browser} newBrowser
-   *        The browser object to copy to.
+   * @param {number} srcBrowserId
+   *        The source BrowserId (captured before any swap).
+   * @param {Browser} srcBrowser
+   *        The source browser object (for GloballyBlockedPermissions).
+   * @param {Browser} destBrowser
+   *        The destination browser object.
    */
-  copyTemporaryPermissions(browser, newBrowser) {
-    TemporaryPermissions.copy(browser, newBrowser);
-    GloballyBlockedPermissions.copy(browser, newBrowser);
+  copyTemporaryPermissions(srcBrowserId, srcBrowser, destBrowser) {
+    let destBrowserId = destBrowser.browserId;
+    if (srcBrowserId && destBrowserId && srcBrowserId !== destBrowserId) {
+      Services.perms.copyBrowserPermissions(srcBrowserId, destBrowserId);
+    }
+    GloballyBlockedPermissions.copy(srcBrowser, destBrowser);
   },
 
   /**
@@ -965,7 +694,7 @@ export var SitePermissions = {
    * @param {string} permissionID
    *        The permission to get the label for. May include second key.
    *
-   * @return {String} the localized label or null if none is available.
+   * @return {string} the localized label or null if none is available.
    */
   getPermissionLabel(permissionID) {
     let [id, key] = permissionID.split(this.PERM_KEY_DELIMITER);
@@ -1000,7 +729,7 @@ export var SitePermissions = {
    * @param {SitePermissions state} state
    *        The state to get the label for.
    *
-   * @return {String|null} the localized label or null if an
+   * @return {string | null} the localized label or null if an
    *         unknown state was passed.
    */
   getMultichoiceStateLabel(permissionID, state) {
@@ -1040,7 +769,7 @@ export var SitePermissions = {
    * @param {SitePermissions scope} scope (optional)
    *        The scope to get the label for.
    *
-   * @return {String|null} the localized label or null if an
+   * @return {string | null} the localized label or null if an
    *         unknown state was passed.
    */
   getCurrentStateLabel(state, id, scope = null) {
@@ -1207,6 +936,21 @@ let gPermissions = {
       exactHostMatch: true,
     },
 
+    "loopback-network": {
+      exactHostMatch: true,
+      labelID: "localhost",
+      get disabled() {
+        return !SitePermissions.localNetworkAccessPermissionsEnabled;
+      },
+    },
+
+    "local-network": {
+      exactHostMatch: true,
+      get disabled() {
+        return !SitePermissions.localNetworkAccessPermissionsEnabled;
+      },
+    },
+
     microphone: {
       exactHostMatch: true,
     },
@@ -1225,12 +969,38 @@ let gPermissions = {
     },
 
     popup: {
-      getDefault() {
-        return Services.prefs.getBoolPref("dom.disable_open_during_load")
-          ? SitePermissions.BLOCK
-          : SitePermissions.ALLOW;
+      // Contrary to the name, this permission controls exceptions for both the
+      // pop-up blocking and the framebusting intervention (also called
+      // "third-party redirects" in the UI).
+      // This permission is checked in WindowContext::CanShowPopup and
+      // WindowContext::CanFramebust.
+      get labelID() {
+        // Use a different label if one of the two prefs is disabled. The
+        // permission will only control the other pref in that case.
+        if (
+          SitePermissions.popupBlockerEnabled &&
+          !SitePermissions.framebustingInterventionEnabled
+        ) {
+          return "popup-only";
+        }
+        if (
+          !SitePermissions.popupBlockerEnabled &&
+          SitePermissions.framebustingInterventionEnabled
+        ) {
+          return "framebusting-only";
+        }
+        return "popup-and-framebusting";
       },
       states: [SitePermissions.ALLOW, SitePermissions.BLOCK],
+      get disabled() {
+        return (
+          !SitePermissions.popupBlockerEnabled &&
+          !SitePermissions.framebustingInterventionEnabled
+        );
+      },
+      getDefault() {
+        return SitePermissions.BLOCK;
+      },
     },
 
     install: {
@@ -1287,6 +1057,13 @@ let gPermissions = {
       },
     },
 
+    serial: {
+      exactHostMatch: true,
+      get disabled() {
+        return !SitePermissions.serialPermissionEnabled;
+      },
+    },
+
     "storage-access": {
       labelID: null,
       getDefault() {
@@ -1301,6 +1078,9 @@ let gPermissions = {
 
 SitePermissions.midiPermissionEnabled = Services.prefs.getBoolPref(
   "dom.webmidi.enabled"
+);
+SitePermissions.serialPermissionEnabled = Services.prefs.getBoolPref(
+  "dom.webserial.enabled"
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -1321,5 +1101,28 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "resistFingerprinting",
   "privacy.resistFingerprinting",
   false,
+  SitePermissions.invalidatePermissionList.bind(SitePermissions)
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  SitePermissions,
+  "localNetworkAccessPermissionsEnabled",
+  "network.lna.blocking",
+  false,
+  SitePermissions.invalidatePermissionList.bind(SitePermissions)
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  SitePermissions,
+  "popupBlockerEnabled",
+  "dom.disable_open_during_load",
+  true,
+  SitePermissions.invalidatePermissionList.bind(SitePermissions)
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  SitePermissions,
+  "framebustingInterventionEnabled",
+  "dom.security.framebusting_intervention.enabled",
+  true,
   SitePermissions.invalidatePermissionList.bind(SitePermissions)
 );

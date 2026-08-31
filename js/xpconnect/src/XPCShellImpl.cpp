@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -54,6 +51,10 @@
 #ifdef ANDROID
 #  include <android/log.h>
 #  include "XREShellData.h"
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/java/GeckoThreadWrappers.h"
 #endif
 
 #ifdef XP_WIN
@@ -172,7 +173,7 @@ static bool GetLocationProperty(JSContext* cx, unsigned argc, Value* vp) {
 #  endif
 
     nsCOMPtr<nsIFile> location;
-    Unused << NS_NewLocalFile(filenameString, getter_AddRefs(location));
+    (void)NS_NewLocalFile(filenameString, getter_AddRefs(location));
 
     if (!location && gWorkingDirectory) {
       // could be a relative path, try appending it to the cwd
@@ -180,7 +181,7 @@ static bool GetLocationProperty(JSContext* cx, unsigned argc, Value* vp) {
       nsAutoString absolutePath(*gWorkingDirectory);
       absolutePath.Append(filenameString);
 
-      Unused << NS_NewLocalFile(absolutePath, getter_AddRefs(location));
+      (void)NS_NewLocalFile(absolutePath, getter_AddRefs(location));
     }
 
     if (location) {
@@ -864,16 +865,16 @@ static bool ProcessArgs(AutoJSAPI& jsapi, char** argv, int argc,
    */
   argsObj = JS::NewArrayObject(cx, 0);
   if (!argsObj) {
-    return 1;
+    return true;
   }
   if (!JS_DefineProperty(cx, global, "arguments", argsObj, 0)) {
-    return 1;
+    return true;
   }
 
   for (int j = 0, length = argc - rootPosition; j < length; j++) {
     RootedString str(cx, JS_NewStringCopyZ(cx, argv[rootPosition++]));
     if (!str || !JS_DefineElement(cx, argsObj, j, str, JSPROP_ENUMERATE)) {
-      return 1;
+      return true;
     }
   }
 
@@ -1176,6 +1177,11 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
           aShellData->crashHelperSocket);
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
+      rv = CrashReporter::OOPInit(greBinDir);
+      if (NS_FAILED(rv)) {
+        printf("CrashReporter::OOPInit(): could not launch the crash helper\n");
+      }
+
       rv = CrashReporter::SetExceptionHandler(greBinDir, true);
       if (NS_FAILED(rv)) {
         printf("CrashReporter::SetExceptionHandler failed!\n");
@@ -1376,6 +1382,12 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
         obs->Observe(nullptr, "quit-application-forced", nullptr);
       }
 
+#ifdef MOZ_WIDGET_ANDROID
+      MOZ_ASSERT(jni::IsAvailable());
+      java::GeckoThread::CheckAndSetState(java::GeckoThread::State::RUNNING(),
+                                          java::GeckoThread::State::EXITING());
+#endif
+
       JS_DropPrincipals(cx, gJSPrincipals);
       JS_SetAllNonReservedSlotsToUndefined(glob);
       JS::RootedObject lexicalEnv(cx, JS_GlobalLexicalEnvironment(glob));
@@ -1401,6 +1413,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
   // holds.
   if (CrashReporter::GetEnabled()) {
     CrashReporter::UnsetExceptionHandler();
+    CrashReporter::OOPDeinit();
   }
 
   // This must precede NS_LogTerm(), otherwise xpcshell return non-zero

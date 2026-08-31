@@ -178,10 +178,10 @@ export class FxAccountsDevice {
    * multiple concurrent calls to `refreshDeviceList` will only refresh the
    * list once.
    *
-   * @param  {Boolean} [options.ignoreCached]
+   * @param  {boolean} [options.ignoreCached]
    *         If `true`, forces a refresh, even if the cached device list is
    *         still fresh. Defaults to `false`.
-   * @return {Promise<Boolean>}
+   * @return {Promise<boolean>}
    *         `true` if the list was refreshed, `false` if the cached list is
    *         fresh. Rejects if an error occurs refreshing the list or device
    *         push registration.
@@ -604,7 +604,7 @@ export class FxAccountsDevice {
           );
         });
         break;
-      case ON_DEVICE_DISCONNECTED_NOTIFICATION:
+      case ON_DEVICE_DISCONNECTED_NOTIFICATION: {
         let json = JSON.parse(data);
         if (!json.isLocalDevice) {
           // If we're the device being disconnected, don't bother fetching a new
@@ -617,6 +617,7 @@ export class FxAccountsDevice {
           });
         }
         break;
+      }
       case ONVERIFIED_NOTIFICATION:
         this.updateDeviceRegistrationIfNecessary().catch(error => {
           log.warn(

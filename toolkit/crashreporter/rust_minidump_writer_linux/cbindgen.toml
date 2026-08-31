@@ -12,3 +12,7 @@ documentation = false
 
 [export]
 exclude = ["fpregset_t"]
+
+[parse]
+parse_deps = true
+include = ["crash_helper_common"]

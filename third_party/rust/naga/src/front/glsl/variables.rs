@@ -7,9 +7,8 @@ use super::{
     Frontend, Result, Span,
 };
 use crate::{
-    AddressSpace, Binding, BuiltIn, Constant, Expression, GlobalVariable, Handle, Interpolation,
-    LocalVariable, ResourceBinding, Scalar, ScalarKind, ShaderStage, SwizzleComponent, Type,
-    TypeInner, VectorSize,
+    AddressSpace, Binding, BuiltIn, Constant, Expression, GlobalVariable, Handle, LocalVariable,
+    Override, ResourceBinding, Scalar, ShaderStage, SwizzleComponent, Type, TypeInner, VectorSize,
 };
 
 pub struct VarDeclaration<'a, 'key> {
@@ -35,6 +34,7 @@ struct BuiltInData {
 pub enum GlobalOrConstant {
     Global(Handle<GlobalVariable>),
     Constant(Handle<Constant>),
+    Override(Handle<Override>),
 }
 
 impl Frontend {
@@ -61,6 +61,7 @@ impl Frontend {
                 binding: None,
                 ty,
                 init: None,
+                memory_decorations: crate::MemoryDecorations::empty(),
             },
             meta,
         );
@@ -187,7 +188,7 @@ impl Frontend {
                         stride: 4,
                     },
                     builtin: match name {
-                        "gl_ClipDistance" => BuiltIn::ClipDistance,
+                        "gl_ClipDistance" => BuiltIn::ClipDistances,
                         "gl_CullDistance" => BuiltIn::CullDistance,
                         _ => unreachable!(),
                     },
@@ -200,11 +201,13 @@ impl Frontend {
                     "gl_BaseVertex" => BuiltIn::BaseVertex,
                     "gl_BaseInstance" => BuiltIn::BaseInstance,
                     "gl_PrimitiveID" => BuiltIn::PrimitiveIndex,
+                    "gl_BaryCoordEXT" => BuiltIn::Barycentric { perspective: true },
+                    "gl_BaryCoordNoPerspEXT" => BuiltIn::Barycentric { perspective: false },
                     "gl_InstanceIndex" => BuiltIn::InstanceIndex,
                     "gl_VertexIndex" => BuiltIn::VertexIndex,
                     "gl_SampleID" => BuiltIn::SampleIndex,
                     "gl_LocalInvocationIndex" => BuiltIn::LocalInvocationIndex,
-                    "gl_DrawID" => BuiltIn::DrawID,
+                    "gl_DrawID" => BuiltIn::DrawIndex,
                     _ => return Ok(None),
                 };
 
@@ -429,13 +432,8 @@ impl Frontend {
                 let location = qualifiers
                     .uint_layout_qualifier("location", &mut self.errors)
                     .unwrap_or(0);
-                let interpolation = qualifiers.interpolation.take().map(|(i, _)| i).or_else(|| {
-                    let kind = ctx.module.types[ty].inner.scalar_kind()?;
-                    Some(match kind {
-                        ScalarKind::Float => Interpolation::Perspective,
-                        _ => Interpolation::Flat,
-                    })
-                });
+
+                let interpolation = qualifiers.interpolation.take().map(|(i, _)| i);
                 let sampling = qualifiers.sampling.take().map(|(s, _)| s);
 
                 let handle = ctx.module.global_variables.append(
@@ -445,6 +443,7 @@ impl Frontend {
                         binding: None,
                         ty,
                         init,
+                        memory_decorations: crate::MemoryDecorations::empty(),
                     },
                     meta,
                 );
@@ -457,15 +456,20 @@ impl Frontend {
                         _ => None,
                     });
 
+                let mut binding = Binding::Location {
+                    location,
+                    interpolation,
+                    sampling,
+                    blend_src,
+                    per_primitive: false,
+                };
+
+                binding.apply_default_interpolation(&ctx.module.types[ty].inner);
+
                 let idx = self.entry_args.len();
                 self.entry_args.push(EntryArg {
                     name: name.clone(),
-                    binding: Binding::Location {
-                        location,
-                        interpolation,
-                        sampling,
-                        blend_src,
-                    },
+                    binding,
                     handle,
                     storage,
                 });
@@ -479,25 +483,69 @@ impl Frontend {
                 (GlobalOrConstant::Global(handle), lookup)
             }
             StorageQualifier::Const => {
-                let init = init.ok_or_else(|| Error {
-                    kind: ErrorKind::SemanticError("const values must have an initializer".into()),
-                    meta,
-                })?;
+                // Check if this is a specialization constant with constant_id
+                let constant_id = qualifiers.uint_layout_qualifier("constant_id", &mut self.errors);
 
-                let constant = Constant {
-                    name: name.clone(),
-                    ty,
-                    init,
-                };
-                let handle = ctx.module.constants.append(constant, meta);
+                if let Some(id) = constant_id {
+                    // This is a specialization constant - convert to Override
+                    let id: Option<u16> = match id.try_into() {
+                        Ok(v) => Some(v),
+                        Err(_) => {
+                            self.errors.push(Error {
+                                kind: ErrorKind::SemanticError(
+                                    format!(
+                                        "constant_id value {id} is too high (maximum is {})",
+                                        u16::MAX
+                                    )
+                                    .into(),
+                                ),
+                                meta,
+                            });
+                            None
+                        }
+                    };
 
-                let lookup = GlobalLookup {
-                    kind: GlobalLookupKind::Constant(handle, ty),
-                    entry_arg: None,
-                    mutable: false,
-                };
+                    let override_handle = ctx.module.overrides.append(
+                        Override {
+                            name: name.clone(),
+                            id,
+                            ty,
+                            init,
+                        },
+                        meta,
+                    );
 
-                (GlobalOrConstant::Constant(handle), lookup)
+                    let lookup = GlobalLookup {
+                        kind: GlobalLookupKind::Override(override_handle, ty),
+                        entry_arg: None,
+                        mutable: false,
+                    };
+
+                    (GlobalOrConstant::Override(override_handle), lookup)
+                } else {
+                    // Regular constant
+                    let init = init.ok_or_else(|| Error {
+                        kind: ErrorKind::SemanticError(
+                            "const values must have an initializer".into(),
+                        ),
+                        meta,
+                    })?;
+
+                    let constant = Constant {
+                        name: name.clone(),
+                        ty,
+                        init,
+                    };
+                    let handle = ctx.module.constants.append(constant, meta);
+
+                    let lookup = GlobalLookup {
+                        kind: GlobalLookupKind::Constant(handle, ty),
+                        entry_arg: None,
+                        mutable: false,
+                    };
+
+                    (GlobalOrConstant::Constant(handle), lookup)
+                }
             }
             StorageQualifier::AddressSpace(mut space) => {
                 match space {
@@ -553,7 +601,7 @@ impl Frontend {
                         TypeInner::Sampler { .. } => space = AddressSpace::Handle,
                         _ => {
                             if qualifiers.none_layout_qualifier("push_constant", &mut self.errors) {
-                                space = AddressSpace::PushConstant
+                                space = AddressSpace::Immediate
                             }
                         }
                     },
@@ -588,6 +636,7 @@ impl Frontend {
                         binding,
                         ty,
                         init,
+                        memory_decorations: crate::MemoryDecorations::empty(),
                     },
                     meta,
                 );

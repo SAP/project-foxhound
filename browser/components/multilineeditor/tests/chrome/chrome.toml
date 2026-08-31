@@ -1,0 +1,16 @@
+[DEFAULT]
+support-files = [
+  "../../../../../toolkit/content/tests/widgets/lit-test-helpers.js",
+]
+
+["test_multiline_editor_aria.html"]
+
+["test_multiline_editor_input.html"]
+
+["test_multiline_editor_placeholder_hints.html"]
+
+["test_multiline_editor_rendering.html"]
+
+["test_multiline_editor_selection.html"]
+
+["test_multiline_editor_value.html"]

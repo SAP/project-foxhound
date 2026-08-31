@@ -39,12 +39,14 @@ export class VulnerablePasswordAlert extends MozLitElement {
   static get properties() {
     return {
       hostname: { type: String, reflect: true },
+      changePasswordURL: { type: String },
     };
   }
 
   constructor() {
     super();
     this.hostname = "";
+    this.changePasswordURL = "";
   }
   render() {
     return html`
@@ -68,7 +70,7 @@ export class VulnerablePasswordAlert extends MozLitElement {
             data-l10n-args=${JSON.stringify({
               hostname: this.hostname,
             })}
-            href=${this.hostname}
+            href=${this.changePasswordURL || this.hostname}
             rel="noreferrer"
             target="_blank"
           ></a>
@@ -91,6 +93,8 @@ export class LoginBreachAlert extends MozLitElement {
     return {
       date: { type: Number, reflect: true },
       hostname: { type: String, reflect: true },
+      breachName: { type: String, reflect: true },
+      changePasswordURL: { type: String },
     };
   }
 
@@ -98,11 +102,27 @@ export class LoginBreachAlert extends MozLitElement {
     super();
     this.date = 0;
     this.hostname = "";
+    this.breachName = "";
+    this.changePasswordURL = "";
   }
 
   get displayHostname() {
     let url = URL.parse(this.hostname);
     return url?.hostname ?? this.hostname;
+  }
+
+  handleBreachLinkClick() {
+    document.dispatchEvent(
+      new CustomEvent("AboutLoginsRecordTelemetryEvent", {
+        bubbles: true,
+        detail: {
+          name: "breachAlertLinkClicked",
+          extra: {
+            breach_name: this.breachName || this.displayHostname,
+          },
+        },
+      })
+    );
   }
 
   render() {
@@ -129,9 +149,10 @@ export class LoginBreachAlert extends MozLitElement {
                 hostname: this.displayHostname,
               })
             )}
-            href=${this.hostname}
+            href=${this.changePasswordURL || this.hostname}
             rel="noreferrer"
             target="_blank"
+            @click=${this.handleBreachLinkClick}
           ></a>
         </div>
       </login-alert>

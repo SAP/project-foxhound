@@ -1,0 +1,15 @@
+{
+  "label": "acionafacil.com.br",
+  "bugs": {
+    "1902416": {
+      "issue": "unsupported-warning",
+      "matches": ["*://www.acionafacil.com.br/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "hide_alerts": ["chrome"]
+    }
+  ]
+}

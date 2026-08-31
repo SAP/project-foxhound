@@ -23,7 +23,7 @@ class VerifyToolsMixin(SingleTestMixin):
     """Utility functions for test verification."""
 
     def __init__(self):
-        super(VerifyToolsMixin, self).__init__()
+        super().__init__()
 
     @property
     def verify_enabled(self):

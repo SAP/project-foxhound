@@ -1,5 +1,3 @@
-/* -*- Mode: javascript; tab-width: 2; indent-tabs-mode: nil; js-indent-level: 2 -*- */
-
 requestLongerTimeout(3);
 
 const BASE_URI = "http://mochi.test:8888/browser/dom/file/ipc/tests/empty.html";

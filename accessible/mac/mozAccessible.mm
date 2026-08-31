@@ -1,9 +1,11 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#import <Accessibility/Accessibility.h>
+#import <ApplicationServices/ApplicationServices.h>
 
 #import "mozAccessible.h"
 #include "MOXAccessibleBase.h"
@@ -14,10 +16,10 @@
 #import "MOXTextMarkerDelegate.h"
 #import "MOXWebAreaAccessible.h"
 #import "mozTextAccessible.h"
-#import "mozRootAccessible.h"
 
 #include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
+#include "nsTextEquivUtils.h"
 #include "DocAccessibleParent.h"
 #include "Relation.h"
 #include "mozilla/a11y/Role.h"
@@ -25,12 +27,14 @@
 #include "mozilla/a11y/PDocAccessible.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "OuterDocAccessible.h"
+#include "nsIAccessibleAnnouncementEvent.h"
 #include "nsChildView.h"
 #include "TextLeafRange.h"
 #include "xpcAccessibleMacInterface.h"
 
 #include "nsRect.h"
 #include "nsCocoaUtils.h"
+#include "nsCocoaWindow.h"
 #include "nsCoord.h"
 #include "nsObjCExceptions.h"
 #include "nsWhitespaceTokenizer.h"
@@ -71,15 +75,30 @@ using namespace mozilla::a11y;
 #pragma mark - mozAccessible widget
 
 - (BOOL)hasRepresentedView {
-  return NO;
+  return [self representedView] != nil;
 }
 
 - (id)representedView {
-  return nil;
+  if (!mGeckoAccessible || !mGeckoAccessible->IsLocal()) {
+    // We only support representedView on local accessibles that
+    // might have associated native widgets.
+    return nil;
+  }
+
+  id view = static_cast<AccessibleWrap*>(mGeckoAccessible->AsLocal())
+                ->GetNativeWidget();
+
+  if (![view hasMozAccessible]) {
+    // The NSView does not have a reciprocal relationship.
+    return nil;
+  }
+
+  return view;
 }
 
 - (BOOL)isRoot {
-  return NO;
+  return mGeckoAccessible && mGeckoAccessible->IsLocal() &&
+         mGeckoAccessible->IsRoot();
 }
 
 #pragma mark -
@@ -157,8 +176,24 @@ using namespace mozilla::a11y;
     return groupPos.setSize == 0;
   }
 
+  if (selector == @selector(moxARIABrailleRoleDescription)) {
+    NSString* brailleRoleDescription =
+        utils::GetAccAttr(self, nsGkAtoms::aria_brailleroledescription);
+    return [brailleRoleDescription length] == 0;
+  }
+
+  if (selector == @selector(moxARIABrailleLabel)) {
+    NSString* brailleLabel =
+        utils::GetAccAttr(self, nsGkAtoms::aria_braillelabel);
+    return [brailleLabel length] == 0;
+  }
+
   if (selector == @selector(moxExpanded)) {
     return [self stateWithMask:states::EXPANDABLE] == 0;
+  }
+
+  if ([self blockTextFieldMethod:selector]) {
+    return YES;
   }
 
   return [super moxBlockSelector:selector];
@@ -198,11 +233,15 @@ using namespace mozilla::a11y;
   // Convert the given screen-global point in the cocoa coordinate system (with
   // origin in the bottom-left corner of the screen) into point in the Gecko
   // coordinate system (with origin in a top-left screen point).
+  NSScreen* scalingView = utils::GetNSScreenForAcc(self);
+  // Regardless of screen selected above, VO is only happy if we use the
+  // main screen height for Y coordinate conversion. This is consistent with
+  // moxFrame and GeckoTextMarkerRange::Bounds().
   NSScreen* mainView = [[NSScreen screens] objectAtIndex:0];
   NSPoint tmpPoint =
       NSMakePoint(point.x, [mainView frame].size.height - point.y);
   LayoutDeviceIntPoint geckoPoint = nsCocoaUtils::CocoaPointsToDevPixels(
-      tmpPoint, nsCocoaUtils::GetBackingScaleFactor(mainView));
+      tmpPoint, nsCocoaUtils::GetBackingScaleFactor(scalingView));
 
   Accessible* child = mGeckoAccessible->ChildAtPoint(
       geckoPoint.x, geckoPoint.y, Accessible::EWhichChildAtPoint::DeepestChild);
@@ -285,7 +324,42 @@ using namespace mozilla::a11y;
       [NSValue valueWithSize:NSMakeSize(frame.size.width, frame.size.height)];
 }
 
+static bool IsNonNativePopover(Accessible* aAccessible) {
+  if (!aAccessible->IsLocal() || aAccessible->TagName() != nsGkAtoms::panel) {
+    return false;
+  }
+
+  NSView* view =
+      static_cast<AccessibleWrap*>(aAccessible->AsLocal())->GetNativeWidget();
+  if (!view) {
+    return false;
+  }
+
+  NSWindow* window = [view window];
+  if ([window isKindOfClass:[PopupWindow class]] &&
+      ![(PopupWindow*)window usePopover]) {
+    return true;
+  }
+
+  return false;
+}
+
 - (NSString*)moxRole {
+  if (mRole == roles::ENTRY ||
+      (mGeckoAccessible->IsGeneric() && mGeckoAccessible->IsEditableRoot())) {
+    if ([self stateWithMask:states::MULTI_LINE]) {
+      // This is a special case where we have a separate role when an entry is a
+      // multiline text area.
+      return NSAccessibilityTextAreaRole;
+    }
+
+    return NSAccessibilityTextFieldRole;
+  }
+
+  if (IsNonNativePopover(mGeckoAccessible)) {
+    return NSAccessibilityPopoverRole;
+  }
+
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
              msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType, \
              nameRule)                                                      \
@@ -293,7 +367,7 @@ using namespace mozilla::a11y;
     return macRole;
 
   switch (mRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
     default:
       MOZ_ASSERT_UNREACHABLE("Unknown role.");
       return NSAccessibilityUnknownRole;
@@ -369,7 +443,7 @@ using namespace mozilla::a11y;
     }
 
   switch (mRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
   }
 
   // These are special. They map to roles::NOTHING
@@ -397,10 +471,10 @@ using namespace mozilla::a11y;
 
 struct RoleDescrMap {
   NSString* role;
-  const nsString description;
+  const nsLiteralString description;
 };
 
-MOZ_RUNINIT static const RoleDescrMap sRoleDescrMap[] = {
+static constexpr RoleDescrMap sRoleDescrMap[] = {
     {@"AXApplicationAlert", u"alert"_ns},
     {@"AXApplicationAlertDialog", u"alertDialog"_ns},
     {@"AXApplicationDialog", u"dialog"_ns},
@@ -472,6 +546,7 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
   switch (aAccessible->Role()) {
     case roles::PAGETAB:
     case roles::COMBOBOX_OPTION:
+    case roles::OPTION:
     case roles::PARENT_MENUITEM:
     case roles::MENUITEM:
       // These roles always supply a title.
@@ -537,16 +612,66 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 }
 
 - (NSString*)moxHelp {
+  nsAutoString desc;
+  EDescriptionValueFlag descFlag = mGeckoAccessible->Description(desc);
+
+  if (@available(macOS 11.0, *)) {
+    if (descFlag == eDescriptionFromARIA) {
+      return nil;
+    }
+  }
+
+  return nsCocoaUtils::ToNSString(desc);
+}
+
+- (NSArray*)moxCustomContent {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  // What needs to go here is actually the accDescription of an item.
-  // The MSAA acc_help method has nothing to do with this one.
-  nsAutoString helpText;
-  mGeckoAccessible->Description(helpText);
+  if (@available(macOS 11.0, *)) {
+    nsAutoString desc;
+    EDescriptionValueFlag descFlag = mGeckoAccessible->Description(desc);
 
-  return nsCocoaUtils::ToNSString(helpText);
+    if (!desc.IsEmpty() && descFlag == eDescriptionFromARIA) {
+      AXCustomContent* contentItem = [AXCustomContent
+          customContentWithLabel:@"description"
+                           value:nsCocoaUtils::ToNSString(desc)];
+      contentItem.importance = AXCustomContentImportanceHigh;
+      return @[ contentItem ];
+    }
+  }
+
+  return nil;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+- (NSArray*)moxCustomActions {
+  if (@available(macOS 13.0, *)) {
+    NSMutableArray<NSAccessibilityCustomAction*>* customActions =
+        [[[NSMutableArray alloc] init] autorelease];
+    Relation relatedActions(
+        mGeckoAccessible->RelationByType(RelationType::ACTION));
+    while (Accessible* target = relatedActions.Next()) {
+      if (target->HasPrimaryAction()) {
+        // Any ACTION related accesibles should be considered a custom action.
+        mozAccessible* nativeTarget = GetNativeFromGeckoAccessible(target);
+        if (nativeTarget) {
+          nsAutoString name;
+          // Use the name of the target as the action name.
+          target->Name(name);
+          NSAccessibilityCustomAction* action =
+              [[NSAccessibilityCustomAction alloc]
+                  initWithName:nsCocoaUtils::ToNSString(name)
+                        target:nativeTarget
+                      selector:@selector(moxPerformPress)];
+          [customActions addObject:action];
+        }
+      }
+    }
+    return customActions;
+  }
+
+  return nil;
 }
 
 - (NSWindow*)moxWindow {
@@ -565,8 +690,17 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 
   if (docAcc) nativeWindow = static_cast<NSWindow*>(docAcc->GetNativeWindow());
 
-  MOZ_ASSERT(nativeWindow || gfxPlatform::IsHeadless(),
-             "Couldn't get native window");
+  // We won't be able to fetch a native window if we're running in a headless
+  // environment, or if the AccService hasn't been started. The latter can
+  // happen in tests that enable a11y in the content but not parent processes,
+  // like devtools.
+  if (NS_WARN_IF(!nativeWindow && !gfxPlatform::IsHeadless() &&
+                 GetAccService())) {
+    // Sometimes we fail to get a native window for other reasons. We should
+    // investigate why this happens.
+    return nil;
+  }
+
   return nativeWindow;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
@@ -579,7 +713,11 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 
   if (![self isRoot]) {
     mozAccessible* parent = (mozAccessible*)[self moxUnignoredParent];
-    if (![parent isRoot]) {
+    if (![parent isRoot] &&
+        [parent respondsToSelector:@selector(disableChild:)]) {
+      // We may end up with an item in an NSChildView that we did not create.
+      // Verify `disableChild` is a valid dispatch, else this will throw an
+      // exception.
       return @(![parent disableChild:self]);
     }
   }
@@ -621,19 +759,10 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 
 - (NSValue*)moxFrame {
   MOZ_ASSERT(mGeckoAccessible);
-
-  LayoutDeviceIntRect rect = mGeckoAccessible->Bounds();
-  NSScreen* mainView = [[NSScreen screens] objectAtIndex:0];
-  CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(mainView);
-
-  return [NSValue
-      valueWithRect:NSMakeRect(
-                        static_cast<CGFloat>(rect.x) / scaleFactor,
-                        [mainView frame].size.height -
-                            static_cast<CGFloat>(rect.y + rect.height) /
-                                scaleFactor,
-                        static_cast<CGFloat>(rect.width) / scaleFactor,
-                        static_cast<CGFloat>(rect.height) / scaleFactor)];
+  auto rect = mGeckoAccessible->Bounds();
+  return
+      [NSValue valueWithRect:utils::GetCocoaScreenRectForAcc(
+                                 self, rect, /*aShouldUseCocoaCoords*/ true)];
 }
 
 - (NSString*)moxARIACurrent {
@@ -660,6 +789,14 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 - (NSNumber*)moxARIASetSize {
   GroupPos groupPos = mGeckoAccessible->GroupPosition();
   return @(groupPos.setSize);
+}
+
+- (NSString*)moxARIABrailleRoleDescription {
+  return utils::GetAccAttr(self, nsGkAtoms::aria_brailleroledescription);
+}
+
+- (NSString*)moxARIABrailleLabel {
+  return utils::GetAccAttr(self, nsGkAtoms::aria_braillelabel);
 }
 
 - (NSString*)moxARIARelevant {
@@ -776,8 +913,8 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 }
 
 - (id)moxEditableAncestor {
-  return [self moxFindAncestor:^BOOL(id moxAcc, BOOL* stop) {
-    return [moxAcc isKindOfClass:[mozTextAccessible class]];
+  return [self moxFindAncestor:^BOOL(id<MOXAccessible> moxAcc, BOOL* stop) {
+    return [moxAcc moxIsTextField];
   }];
 }
 
@@ -914,7 +1051,7 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
   nsIWidget* widget = [objOrView widget];
   widget->SynthesizeNativeMouseEvent(
       p, nsIWidget::NativeMouseMessage::ButtonDown, MouseButton::eSecondary,
-      nsIWidget::Modifiers::NO_MODIFIERS, nullptr);
+      nsIWidget::NativeModifiers::NO_MODIFIERS, nullptr);
 }
 
 - (void)moxPerformPress {
@@ -941,8 +1078,7 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
   // a random acc with the same ID) by checking:
   //  - The gecko acc is local, our a11y-announcement lives in browser.xhtml
   //  - The ID of the gecko acc is "a11y-announcement"
-  //  - The native acc is a direct descendent of the chrome window (ChildView in
-  //  a non-headless context, mozRootAccessible in a headless context).
+  //  - The native acc is a direct descendent of the chrome window.
   DocAccessible* maybeRoot = mGeckoAccessible->IsLocal()
                                  ? mGeckoAccessible->AsLocal()->Document()
                                  : nullptr;
@@ -953,8 +1089,12 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
     if (Accessible* announcement = mGeckoAccessible->FirstChild()) {
       announcement->Name(name);
     } else {
-      MOZ_ASSERT_UNREACHABLE(
-          "A11yUtil event received, but no announcement found?");
+      // This can happen if a modal dialog is opened, which removes everything
+      // else from the accessibility tree, and then the modal is dismissed,
+      // which inserts everything else again. This causes Gecko to fire an alert
+      // event on a11y-announcement (even though it's empty) since it was just
+      // shown.
+      NS_WARNING("A11yUtil event received, but no announcement found");
     }
 
     NSDictionary* info = @{
@@ -993,12 +1133,58 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 
   return relations;
 }
+- (void)maybeFireUAZoomChangeFocusEvent:(int)focusType {
+  if (!mGeckoAccessible) {
+    return;
+  }
 
-- (void)handleAccessibleTextChangeEvent:(NSString*)change
-                               inserted:(BOOL)isInserted
-                            inContainer:(Accessible*)container
-                                     at:(int32_t)start {
-  [self maybePostValidationErrorChanged];
+  auto bounds = mGeckoAccessible->Bounds();
+  if (bounds.IsEmpty()) {
+    if (auto parent = mGeckoAccessible->Parent()) {
+      auto parentBounds = parent->Bounds();
+      bounds.width = parentBounds.width;
+      bounds.height = parentBounds.height;
+    }
+    // UAZoom drops all events with rects that have height=0 or width=0. Ensure
+    // we don't send something empty by clamping to 1x1.
+    bounds.width = MAX(bounds.width, 1.0);
+    bounds.height = MAX(bounds.height, 1.0);
+  }
+
+  NSRect objectRect = utils::GetCocoaScreenRectForAcc(
+      self, bounds, /*aShouldUseCocoaCoords*/ false);
+
+  NSRect highlightRect = NSZeroRect;
+  if (auto* htb = mGeckoAccessible->AsHyperTextBase()) {
+    auto caretRect = htb->GetCaretRect().first;
+    highlightRect = utils::GetCocoaScreenRectForAcc(
+        self, caretRect, /*aShouldUseCocoaCoords*/ false);
+  }
+
+  NSValue* objValue = [NSValue valueWithRect:objectRect];
+  NSMutableDictionary* info =
+      [[@{@"AXRect" : objValue, @"AXFocusType" : @(focusType)} mutableCopy]
+          autorelease];
+
+  if (focusType == kUAZoomFocusTypeInsertionPoint) {
+    info[@"AXHighlightRect"] = [NSValue valueWithRect:highlightRect];
+  }
+
+  // This sends events via nsIObserverService to be consumed by our mochitests.
+  // We provide the acc to re-use the existing xpc logic and to more easily
+  // verify the event is correct, without diff'ing rects.
+  // Note the UAZoomChangeFocus call below is not associated with a
+  // mozAccessible; it takes raw rects.
+  xpcAccessibleMacEvent::FireEvent(self, @"MozUAZoomChangeFocus", info);
+
+  // Check if our desired AT is enabled before firing the
+  // event. Always fire the event for tests.
+  if (UAZoomEnabled()) {
+    UAZoomChangeFocus(
+        &objectRect,
+        focusType == kUAZoomFocusTypeInsertionPoint ? &highlightRect : NULL,
+        focusType);
+  }
 }
 
 - (void)handleAccessibleEvent:(uint32_t)eventType {
@@ -1006,10 +1192,22 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
     case nsIAccessibleEvent::EVENT_ALERT:
       [self maybePostA11yUtilNotification];
       break;
-    case nsIAccessibleEvent::EVENT_FOCUS:
+    case nsIAccessibleEvent::EVENT_FOCUS: {
       [self moxPostNotification:
                 NSAccessibilityFocusedUIElementChangedNotification];
+
+      // Notify macOS zoom/magnifier about focus change, if we're monitoring
+      if (PlatformShouldTrackFocusedAccLocation()) {
+        if (mGeckoAccessible->IsEditableRoot()) {
+          // If this acc is an editable root, use kUAZoomFocusTypeInsertionPoint
+          // to ensure the caret rect is sent, too.
+          [self maybeFireUAZoomChangeFocusEvent:kUAZoomFocusTypeInsertionPoint];
+        } else {
+          [self maybeFireUAZoomChangeFocusEvent:kUAZoomFocusTypeOther];
+        }
+      }
       break;
+    }
     case nsIAccessibleEvent::EVENT_MENUPOPUP_START:
       [self moxPostNotification:@"AXMenuOpened"];
       break;
@@ -1042,6 +1240,11 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
                  withUserInfo:userInfo];
       [self moxPostNotification:NSAccessibilitySelectedTextChangedNotification
                    withUserInfo:userInfo];
+
+      // Notify macOS zoom/magnifier about caret position, if we're tracking
+      if (PlatformShouldTrackFocusedAccLocation()) {
+        [self maybeFireUAZoomChangeFocusEvent:kUAZoomFocusTypeInsertionPoint];
+      }
       break;
     }
     case nsIAccessibleEvent::EVENT_LIVE_REGION_ADDED:
@@ -1052,16 +1255,39 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
       mIsLiveRegion = false;
       break;
     case nsIAccessibleEvent::EVENT_NAME_CHANGE: {
+      // Don't want to passively activate the cache because a name changed.
+      CacheDomainActivationBlocker cacheBlocker;
       nsAutoString nameNotUsed;
       if (ProvidesTitle(mGeckoAccessible, nameNotUsed)) {
         [self moxPostNotification:NSAccessibilityTitleChangedNotification];
       }
       break;
     }
-    case nsIAccessibleEvent::EVENT_LIVE_REGION_CHANGED:
+    case nsIAccessibleEvent::EVENT_LIVE_REGION_CHANGED: {
       MOZ_ASSERT(mIsLiveRegion);
       [self moxPostNotification:@"AXLiveRegionChanged"];
+      // For live region events originating from local accs, we also want to
+      // post an AXAnnouncementRequested notification. This is because:
+      // - The AXLiveRegionChanged notif above does not support an announcement
+      // string; we have to depend on VO's tree walking to compose the string
+      // correctly, and it often comes up empty which results in no
+      // announcement.
+      // - WebKit posts this notification for _every_ live region change,
+      // indicating perhaps it is necessary for VO to function properly. Chrome
+      // does not.
+      if (mGeckoAccessible->IsLocal()) {
+        if (NSString* announcementText =
+                [self composeAnnouncementMessageFromSubtree]) {
+          nsAutoString live;
+          nsAccUtils::GetLiveRegionSetting(mGeckoAccessible->AsLocal(), live);
+          uint16_t priority = live.EqualsLiteral("assertive")
+                                  ? nsIAccessibleAnnouncementEvent::ASSERTIVE
+                                  : nsIAccessibleAnnouncementEvent::POLITE;
+          [self handleAnnouncementEvent:announcementText priority:priority];
+        }
+      }
       break;
+    }
     case nsIAccessibleEvent::EVENT_ERRORMESSAGE_CHANGED: {
       // aria-errormessage was changed. If aria-invalid != "true", it means that
       // VoiceOver should (a) expose a new message or (b) remove an
@@ -1072,10 +1298,17 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 
       break;
     }
+    case nsIAccessibleEvent::EVENT_SHOW: {
+      if (IsNonNativePopover(mGeckoAccessible)) {
+        [self moxPostNotification:@"AXCreated"];
+      }
+      break;
+    }
   }
 }
 
 - (void)maybePostValidationErrorChanged {
+  CacheDomainActivationBlocker cacheBlocker;
   NSArray* relations =
       [self getRelationsByType:(mozilla::a11y::RelationType::ERRORMSG_FOR)];
   if ([relations count] > 0) {
@@ -1089,6 +1322,29 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
       }
     }
   }
+}
+
+- (NSString*)composeAnnouncementMessageFromSubtree {
+  nsAutoString text;
+  nsTextEquivUtils::GetTextEquivFromSubtree(mGeckoAccessible, text);
+  if (!text.IsEmpty()) {
+    return nsCocoaUtils::ToNSString(text);
+  }
+  NSString* label = [self moxLabel];
+  return [label length] ? label : nil;
+}
+
+- (void)handleAnnouncementEvent:(NSString*)announcement
+                       priority:(uint16_t)priority {
+  NSDictionary* info = @{
+    NSAccessibilityAnnouncementKey : announcement,
+    NSAccessibilityPriorityKey :
+                priority == nsIAccessibleAnnouncementEvent::ASSERTIVE
+        ? @(NSAccessibilityPriorityHigh)
+        : @(NSAccessibilityPriorityMedium)
+  };
+  [self moxPostNotification:NSAccessibilityAnnouncementRequestedNotification
+               withUserInfo:info];
 }
 
 - (void)expire {

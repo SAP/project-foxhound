@@ -9,14 +9,14 @@
  */
 #ifndef NET_DCSCTP_PACKET_PARAMETER_SSN_TSN_RESET_REQUEST_PARAMETER_H_
 #define NET_DCSCTP_PACKET_PARAMETER_SSN_TSN_RESET_REQUEST_PARAMETER_H_
-#include <stddef.h>
-#include <stdint.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "net/dcsctp/common/internal_types.h"
 #include "net/dcsctp/packet/parameter/parameter.h"
 #include "net/dcsctp/packet/tlv_trait.h"
@@ -41,7 +41,7 @@ class SSNTSNResetRequestParameter
       : request_sequence_number_(request_sequence_number) {}
 
   static std::optional<SSNTSNResetRequestParameter> Parse(
-      rtc::ArrayView<const uint8_t> data);
+      std::span<const uint8_t> data);
 
   void SerializeTo(std::vector<uint8_t>& out) const override;
   std::string ToString() const override;

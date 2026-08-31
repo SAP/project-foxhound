@@ -1,0 +1,12 @@
+---
+agent-skills-sync:
+    description: Keep .claude/skills and .agents/skills in sync
+    include:
+        - '.claude/skills'
+        - '.agents/skills'
+    extensions:
+        - md
+    support-files:
+        - 'tools/lint/agent-skills-sync/**'
+    type: global
+    payload: agent-skills-sync:lint

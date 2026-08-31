@@ -47,15 +47,13 @@ def fetch_balrog_xml(
     for channel in channels:
         results[channel] = {}
         for target in targets:
-            balrog_url = url.format_map(
-                {
-                    "url_base": url_base,
-                    "buildid": buildid,
-                    "channel": channel,
-                    "version": version,
-                    "target": target,
-                }
-            )
+            balrog_url = url.format_map({
+                "url_base": url_base,
+                "buildid": buildid,
+                "channel": channel,
+                "version": version,
+                "target": target,
+            })
 
             response = requests.get(balrog_url)
             response.raise_for_status()
@@ -203,7 +201,7 @@ def main():
 
     url_base = "https://aus5.mozilla.org"
     if args.staging:
-        url_base = "https://stage.balrog.nonprod.cloudops.mozgcp.net"
+        url_base = "https://stage.balrog.nonprod.webservices.mozgcp.net"
     if args.url is not None:
         url_base = args.url
     if url_base[-1] == "/":

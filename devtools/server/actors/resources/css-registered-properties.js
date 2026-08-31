@@ -183,7 +183,7 @@ class CSSRegisteredPropertiesWatcher {
     // Ignore event if property was registered from a global different from the target global.
     if (
       this.#targetActor.ignoreSubFrames &&
-      event.target.ownerGlobal !== this.#targetActor.window
+      event.target.documentGlobal !== this.#targetActor.window
     ) {
       return;
     }
@@ -212,7 +212,7 @@ class CSSRegisteredPropertiesWatcher {
   };
 
   /**
-   * @param {Array<Object>} updates: Array of update object, which have the following properties:
+   * @param {Array<object>} updates: Array of update object, which have the following properties:
    *        - {InspectorCSSPropertyDefinition} registeredProperty: The property definition
    *                                            of the updated property
    *        - {Object} resourceUpdates: An object containing all the fields that are

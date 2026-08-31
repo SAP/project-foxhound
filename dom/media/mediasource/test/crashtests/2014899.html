@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+function b64(s) {
+  var r = atob(s), a = new Uint8Array(r.length);
+  for (var i = 0; i < r.length; i++) a[i] = r.charCodeAt(i);
+  return a;
+}
+
+// Real init segment (438 bytes) + cluster with overflow timecode
+// clusterTimecode * timecodeScale(1000000) > INT64_MAX
+var d = b64('GkXfowEAAAAAAAAfQoaBAUL3gQFC8oEEQvOBCEKChHdlYm1Ch4ECQoWBAhhTgGcBAAAAAAGJVhFNm3RALU27i1OrhBVJqWZTrIHfTbuMU6uEFlSua1OsggEwTbuNU6uEHFO7a1OsgwGJAuwBAAAAAAAAowAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmAQAAAAAAAEUq17GDD0JATYCNTGF2ZjU1LjE5LjEwNFdBjUxhdmY1NS4xOS4xMDRzpJAvefc0o/W2GrjE2a/r2NcsRImIQK9AAAAAAAAWVK5rAQAAAAAAAEOuAQAAAAAAADrXgQFzxYEBnIEAIrWcg3VuZIaFVl9WUDiDgQEj44OEAfygVeABAAAAAAAADrCBoLqBeFSwgaBUuoF4H0O2dZznhghje9Ba96OIgQAAgAAAAACjiIEAIQAAAAAA');
+
+var v = document.createElement('video');
+v.muted = true;
+document.body.appendChild(v);
+var ms = new MediaSource();
+v.src = URL.createObjectURL(ms);
+ms.addEventListener('sourceopen', function() {
+  var sb = ms.addSourceBuffer('video/webm; codecs="vp8"');
+  sb.appendBuffer(d.buffer);
+});
+</script>
+</body>
+</html>

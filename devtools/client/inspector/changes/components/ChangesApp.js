@@ -132,7 +132,7 @@ class ChangesApp extends PureComponent {
    *
    * @param  {Array} selectors
    *         List of strings as versions of this rule's selector over time.
-   * @param  {Boolean} isNewRule
+   * @param  {boolean} isNewRule
    *         Whether the rule was created at runtime.
    * @return {Array}
    */

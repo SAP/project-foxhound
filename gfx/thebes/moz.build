@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -34,7 +32,7 @@ EXPORTS += [
     "gfxFontEntry.h",
     "gfxFontFeatures.h",
     "gfxFontInfoLoader.h",
-    "gfxFontPrefLangList.h",
+    "gfxFontPrefLangList.inc",
     "gfxFontSrcPrincipal.h",
     "gfxFontSrcURI.h",
     "gfxFontUtils.h",
@@ -53,8 +51,10 @@ EXPORTS += [
     "gfxQuad.h",
     "gfxQuaternion.h",
     "gfxRect.h",
+    "gfxScriptItemizer.h",
     "gfxSharedImageSurface.h",
     "gfxSkipChars.h",
+    "gfxSparseBitSet.h",
     "gfxSVGGlyphs.h",
     "gfxTextRun.h",
     "gfxTypes.h",
@@ -274,6 +274,7 @@ LOCAL_INCLUDES += [
     "/dom/media/platforms/apple",
     "/dom/xml",
     "/gfx/cairo/cairo/src",
+    "/image/encoders/jpeg",
     "/third_party/xsimd/include",
     "/widget/gtk",
 ]
@@ -296,6 +297,6 @@ LOCAL_INCLUDES += CONFIG["SKIA_INCLUDES"]
 
 DEFINES["GRAPHITE2_STATIC"] = True
 
-CXXFLAGS += ["-Werror=switch"]
+COMPILE_FLAGS["WARNINGS_CXXFLAGS"] += ["-Werror=switch"]
 
 include("/tools/fuzzing/libfuzzer-config.mozbuild")

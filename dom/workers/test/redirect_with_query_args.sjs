@@ -5,7 +5,7 @@
  *
  * So if the request is `/path/redirect_with_query_args.sjs?FOO.JS` the redirect
  * will be to `/path/foo.js?SECRET_DATA`.
- **/
+ */
 
 function handleRequest(request, response) {
   // The secret data to include in the redirect to make the redirect URL

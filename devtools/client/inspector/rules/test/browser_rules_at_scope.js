@@ -23,6 +23,8 @@ const TEST_URI = `
         @scope (:scope section) {
           :scope, [data-test="nested-scoped-inline-style"] {
             background: gold;
+            color: tomato;
+            color: green;
           }
         }
       }
@@ -49,131 +51,147 @@ add_task(async function () {
       encodeURIComponent(TEST_URI)
   );
   const { inspector, view } = await openRuleView();
-  await assertRules("main", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("main", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `:scope, [data-test="scoped-inline-style"]`,
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `:scope, ~~[data-test="scoped-inline-style"]~~`,
       ancestorRulesData: ["@scope {"],
+      declarations: [{ name: "border", value: "1px solid aqua" }],
     },
   ]);
 
-  await assertRules("main #a", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("main #a", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `div, [data-test="scoped-inline-style"]`,
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `div, ~~[data-test="scoped-inline-style"]~~`,
       ancestorRulesData: ["@scope {"],
+      declarations: [{ name: "background", value: "tomato" }],
     },
   ]);
 
-  await assertRules("main #a #a-child", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("main #a #a-child", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `:scope, [data-test="nested-scoped-inline-style"]`,
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `:scope, ~~[data-test="nested-scoped-inline-style"]~~`,
       ancestorRulesData: ["@scope {", "  @scope (:scope section) {"],
+      declarations: [
+        { name: "background", value: "gold" },
+        { name: "color", value: "tomato", overridden: true },
+        { name: "color", value: "green" },
+      ],
     },
   ]);
 
-  await assertRules("aside #b", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("aside #b", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `div, [data-test="start-and-end-inherit"]`,
-      ancestorRulesData: ["@scope (aside) to (.limit) {"],
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
     },
     {
-      selector: `div, [data-test="start-and-end"]`,
+      selector: `div, ~~[data-test="start-and-end-inherit"]~~`,
       ancestorRulesData: ["@scope (aside) to (.limit) {"],
+      declarations: [{ name: "color", value: "salmon" }],
     },
     {
-      selector: `div, [data-test="start-no-end"]`,
+      selector: `div, ~~[data-test="start-and-end"]~~`,
+      ancestorRulesData: ["@scope (aside) to (.limit) {"],
+      declarations: [{ name: "outline", value: "2px solid gold" }],
+    },
+    {
+      selector: `div, ~~[data-test="start-no-end"]~~`,
       ancestorRulesData: ["@scope (aside) {"],
+      declarations: [{ name: "box-shadow", value: "60px -16px teal" }],
     },
   ]);
 
-  await assertRules("aside #b > span", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("aside #b > span", inspector);
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
     {
       selector: `& span`,
       ancestorRulesData: [
         "@scope (aside) to (.limit) {",
         `  div, [data-test="start-and-end"] {`,
       ],
+      declarations: [{ name: "color", value: "cornflowerblue" }],
     },
     {
-      selector: `div, [data-test="start-and-end-inherit"]`,
-      inherited: true,
+      header: "Inherited from div#b",
+    },
+    {
+      selector: `div, ~~[data-test="start-and-end-inherit"]~~`,
       ancestorRulesData: ["@scope (aside) to (.limit) {"],
+      inherited: true,
+      declarations: [{ name: "color", value: "salmon", overridden: true }],
     },
   ]);
 
-  await assertRules("aside #c", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("aside #c", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `div, [data-test="start-no-end"]`,
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `div, ~~[data-test="start-no-end"]~~`,
       ancestorRulesData: ["@scope (aside) {"],
+      declarations: [{ name: "box-shadow", value: "60px -16px teal" }],
     },
     {
-      selector: `div, [data-test="start-and-end-inherit"]`,
-      inherited: true,
+      header: "Inherited from div#b",
+    },
+    {
+      selector: `div, ~~[data-test="start-and-end-inherit"]~~`,
       ancestorRulesData: ["@scope (aside) to (.limit) {"],
+      inherited: true,
+      declarations: [{ name: "color", value: "salmon" }],
     },
   ]);
 
-  await assertRules("aside #c > span", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("aside #c > span", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `div, [data-test="start-and-end-inherit"]`,
-      inherited: true,
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      header: "Inherited from div#b",
+    },
+    {
+      selector: `div, ~~[data-test="start-and-end-inherit"]~~`,
       ancestorRulesData: ["@scope (aside) to (.limit) {"],
+      inherited: true,
+      declarations: [{ name: "color", value: "salmon" }],
     },
   ]);
-
-  async function assertRules(nodeSelector, expectedRules) {
-    await selectNode(nodeSelector, inspector);
-    const rulesInView = Array.from(
-      view.element.querySelectorAll(".ruleview-rule")
-    );
-    is(
-      rulesInView.length,
-      expectedRules.length,
-      `[${nodeSelector}] All expected rules are displayed`
-    );
-
-    for (let i = 0; i < expectedRules.length; i++) {
-      const expectedRule = expectedRules[i];
-      info(`[${nodeSelector}] Checking rule #${i}: ${expectedRule.selector}`);
-
-      const selector = rulesInView[i].querySelector(
-        ".ruleview-selectors-container"
-      )?.innerText;
-
-      is(
-        selector,
-        expectedRule.selector,
-        `[${nodeSelector}] Expected selector for rule #${i}`
-      );
-
-      const isInherited = rulesInView[i].matches(
-        ".ruleview-header-inherited + .ruleview-rule"
-      );
-      if (expectedRule.inherited) {
-        ok(isInherited, `[${nodeSelector}] rule #${i} is inherited`);
-      } else {
-        ok(!isInherited, `[${nodeSelector}] rule #${i} is not inherited`);
-      }
-
-      if (expectedRule.ancestorRulesData == null) {
-        is(
-          getRuleViewAncestorRulesDataElementByIndex(view, i),
-          null,
-          `[${nodeSelector}] No ancestor rules data displayed for ${selector}`
-        );
-      } else {
-        is(
-          getRuleViewAncestorRulesDataTextByIndex(view, i),
-          expectedRule.ancestorRulesData.join("\n"),
-          `[${nodeSelector}] Expected ancestor rules data displayed for ${selector}`
-        );
-      }
-    }
-  }
 });

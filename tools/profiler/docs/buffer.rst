@@ -29,7 +29,7 @@ Profile Buffer Terminology
 ProfilerParent
   The main profiler machinery is installed in the parent process. It uses IPC to
   communicate to the child processes. The PProfiler is the actor which is used
-  to communicate across processes to coordinate things. See `ProfilerParent.h`_. The
+  to communicate across processes to coordinate things. See :searchfox:`ProfilerParent.h <tools/profiler/public/ProfilerParent.h>`. The
   ProfilerParent uses the DestroyReleasedChunksAtOrBefore message to control the
   overall chunk limit.
 
@@ -38,7 +38,7 @@ ProfilerChild
   DestroyReleasedChunksAtOrBefore.
 
 Entry
-  This is an individual entry in the `ProfileBuffer.h`_,. These entry sizes are not
+  This is an individual entry in the :searchfox:`ProfileBuffer.h <tools/profiler/core/ProfileBuffer.h>`,. These entry sizes are not
   related to the chunks sizes. An individual entry can straddle two different chunks.
   An entry can contain various pieces of data, like markers, samples, and stacks.
 
@@ -61,9 +61,7 @@ Recycled chunk
 .. _ProfileChunkManager: https://searchfox.org/mozilla-central/search?q=ProfileBufferChunkManager.h&path=&case=true&regexp=false
 .. _ProfileBufferChunk: https://searchfox.org/mozilla-central/search?q=ProfileBufferChunk&path=&case=true&regexp=false
 .. _ProfileBufferChunkManagerWithLocalLimit: https://searchfox.org/mozilla-central/search?q=ProfileBufferChunkManagerWithLocalLimit&case=true&path=
-.. _ProfilerParent.h: https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerParent.h
-.. _ProfilerChild.h: https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerChild.h
-.. _ProfileBuffer.h: https://searchfox.org/mozilla-central/source/tools/profiler/core/ProfileBuffer.h
+.. _ProfilerChild.h: :searchfox:`tools/profiler/public/ProfilerChild.h`
 .. _ProfileBuffer: https://searchfox.org/mozilla-central/search?q=ProfileBuffer&path=&case=true&regexp=false
 .. _ProfilerParent: https://searchfox.org/mozilla-central/search?q=ProfilerParent&path=&case=true&regexp=false
 .. _ProfilerChild: https://searchfox.org/mozilla-central/search?q=ProfilerChild&path=&case=true&regexp=false

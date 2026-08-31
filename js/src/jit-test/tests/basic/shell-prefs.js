@@ -20,6 +20,11 @@ assertEq(getPrefValue("tests.uint32-pref"), 123450);
 setPrefValue("tests.uint32-pref", 54321);
 assertEq(getPrefValue("tests.uint32-pref"), 54321);
 
+// Fuzzing-unsafe prefs can be changed normally when not using --fuzzing-safe.
+assertEq(getPrefValue("tests.fuzzing-unsafe-pref"), false);
+setPrefValue("tests.fuzzing-unsafe-pref", true);
+assertEq(getPrefValue("tests.fuzzing-unsafe-pref"), true);
+
 // But not prefs that are only set at startup
 assertErrorMessage(() => setPrefValue("site_based_pretenuring", true),
     Error, /startup pref/);

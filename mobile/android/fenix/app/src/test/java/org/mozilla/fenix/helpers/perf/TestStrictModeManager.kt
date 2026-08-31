@@ -9,7 +9,7 @@ import io.mockk.mockk
 import org.mozilla.fenix.perf.StrictModeManager
 
 /**
- * A test version of [StrictModeManager]. This class is difficult to mock because of [resetAfter]
+ * A test version of [StrictModeManager]. This class is difficult to mock because of [allowViolation]
  * so we provide a test implementation.
  */
 class TestStrictModeManager :
@@ -17,7 +17,7 @@ class TestStrictModeManager :
 
     // This method is hard to mock because this method needs to return the return value of the
     // function passed in.
-    override fun <R> resetAfter(policy: StrictMode.ThreadPolicy, functionBlock: () -> R): R {
+    override fun <R> allowViolation(allowFn: () -> StrictMode.ThreadPolicy, functionBlock: () -> R): R {
         return functionBlock()
     }
 }

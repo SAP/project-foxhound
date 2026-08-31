@@ -106,9 +106,10 @@ add_task(async function test_appmenu_extensions_opens_panel() {
   await SpecialPowers.popPrefEnv();
 });
 
-// When the Extensions Button is visible, it opens about:addons upon click.
+// When the Extensions Button is visible, it used to open about:addons upon
+// click, but now opens the extensions panel instead.
 // Do the same when the Extensions app menu item is clicked.
-// This behavior differs from test_appmenu_extensions_opens_panel.
+// This behavior is the same as test_appmenu_extensions_opens_panel.
 add_task(async function test_appmenu_extensions_opens_when_no_extensions() {
   // The test harness registers regular extensions so we need to mock the
   // `getActivePolicies` extension to simulate zero extensions installed.
@@ -122,29 +123,11 @@ add_task(async function test_appmenu_extensions_opens_when_no_extensions() {
   });
   await gCUITestUtils.openMainMenu();
 
-  const listener = () => {
-    ok(false, "Extensions Panel should not be shown");
-  };
-  gUnifiedExtensions.panel.addEventListener("popupshowing", listener);
-
-  // When the list of extensions is empty, the menu opens about:addons.
-  // Open a new non-newtab page so that about:addons will be opened in a new
-  // tab (instead of reusing the "current" new tab).
-  await BrowserTestUtils.withNewTab(
-    { gBrowser, url: "about:robots" },
-    async () => {
-      let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser, "about:addons");
-
-      assertExtensionsButtonHidden();
-      menuItemThatOpensExtensionsPanel().click();
-      assertExtensionsButtonHidden();
-      info("Verifying that about:addons is opened");
-      BrowserTestUtils.removeTab(await tabPromise);
-    }
-  );
-
   assertExtensionsButtonHidden();
-  gUnifiedExtensions.panel.removeEventListener("popupshowing", listener);
+  menuItemThatOpensExtensionsPanel().click();
+  is(PanelUI.panel.state, "closed", "Menu closed after clicking Extensions");
+  // assertExtensionsButtonVisible(); cannot be checked because button showing
+  // is async. We will check its visibility later, before closing the panel.
 
   Assert.deepEqual(
     Glean.extensionsButton.openViaAppMenu.testGetValue().map(e => e.extra),
@@ -156,6 +139,32 @@ add_task(async function test_appmenu_extensions_opens_when_no_extensions() {
     ],
     "extensions_button.open_via_app_menu telemetry on menu click"
   );
+
+  const listView = getListView();
+  await BrowserTestUtils.waitForEvent(listView, "ViewShown");
+  ok(PanelView.forNode(listView).active, "Extensions panel is shown");
+
+  // Sanity check to verify that the extensions list was indeed empty, by
+  // verifying that the empty state is shown. The content of the panel is
+  // verified by browser_unified_extensions_empty_panel.js.
+  const emptyStateBox = gUnifiedExtensions.panel.querySelector(
+    "#unified-extensions-empty-state"
+  );
+  ok(emptyStateBox, "Got container for empty panel state");
+  ok(BrowserTestUtils.isVisible(emptyStateBox), "Empty state is visible");
+  is(
+    emptyStateBox.querySelector("h2").getAttribute("data-l10n-id"),
+    "unified-extensions-empty-reason-zero-extensions-onboarding",
+    "Has header when the user does not have any extensions installed"
+  );
+
+  assertExtensionsButtonVisible();
+  assertExtensionsButtonTelemetry({ extensions_panel_showing: 1 });
+  await closeExtensionsPanel();
+  assertExtensionsButtonHidden();
+
+  // No more counters besides the one that we saw before in this test.
+  assertExtensionsButtonTelemetry({ extensions_panel_showing: 1 });
 
   await SpecialPowers.popPrefEnv();
 

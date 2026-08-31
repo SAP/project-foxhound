@@ -4,7 +4,7 @@
 
 package org.mozilla.focus.topsites
 
-import androidx.compose.material.Text
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,15 +12,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import org.mozilla.focus.R
+import org.mozilla.focus.ui.dialog.DialogButtonConfig
 import org.mozilla.focus.ui.dialog.DialogInputField
 import org.mozilla.focus.ui.dialog.FocusDialog
 
 /**
- * Display a dialog for renaming a top site
+ * Display a dialog for renaming a top site.
  *
- * @param currentName (event) Current top site name.
- * @param onConfirm (event) Perform top site rename.
- * @param onDismiss (event) Action to perform on dialog dismissal.
+ * @param currentName The current name of the top site.
+ * @param onConfirm Callback invoked when the user confirms the rename operation.
+ * The new name is passed as an argument.
+ * @param onDismiss Callback invoked when the dialog is dismissed, either by pressing
+ * the cancel button or by tapping outside the dialog.
  */
 @Composable
 fun RenameTopSiteDialog(
@@ -39,9 +42,14 @@ fun RenameTopSiteDialog(
             ) { newText -> text = newText }
         },
         onDismissRequest = { onDismiss.invoke() },
-        onConfirmRequest = { onConfirm.invoke(text) },
-        confirmButtonText = stringResource(android.R.string.ok),
-        dismissButtonText = stringResource(android.R.string.cancel),
-        isConfirmButtonEnabled = text.isNotEmpty(),
+        confirmButtonConfig = DialogButtonConfig(
+            text = stringResource(android.R.string.ok),
+            onClick = { onConfirm.invoke(text) },
+            enabled = text.isNotEmpty(),
+        ),
+        dismissButtonConfig = DialogButtonConfig(
+            text = stringResource(android.R.string.cancel),
+            onClick = { onDismiss.invoke() },
+        ),
     )
 }

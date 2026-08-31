@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,8 @@
 #include "nsXULAppAPI.h"
 
 namespace {
-mozilla::StaticRefPtr<mozilla::net::BackgroundChannelRegistrar> gSingleton;
+mozilla::StaticRefPtr<mozilla::net::BackgroundChannelRegistrar>
+    gBackgroundChannelRegistrarSingleton;
 }
 
 namespace mozilla {
@@ -34,13 +33,13 @@ BackgroundChannelRegistrar::~BackgroundChannelRegistrar() {
 }
 
 // static
-already_AddRefed<nsIBackgroundChannelRegistrar>
+already_AddRefed<BackgroundChannelRegistrar>
 BackgroundChannelRegistrar::GetOrCreate() {
-  if (!gSingleton) {
-    gSingleton = new BackgroundChannelRegistrar();
-    ClearOnShutdown(&gSingleton);
+  if (!gBackgroundChannelRegistrarSingleton) {
+    gBackgroundChannelRegistrarSingleton = new BackgroundChannelRegistrar();
+    ClearOnShutdown(&gBackgroundChannelRegistrarSingleton);
   }
-  return do_AddRef(gSingleton);
+  return do_AddRef(gBackgroundChannelRegistrarSingleton);
 }
 
 void BackgroundChannelRegistrar::NotifyChannelLinked(
@@ -48,6 +47,13 @@ void BackgroundChannelRegistrar::NotifyChannelLinked(
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aChannelParent);
   MOZ_ASSERT(aBgParent);
+
+  // Only link the two actors when they originate from the same content
+  // process, since the channel Id used as the key is supplied by
+  // the content process.
+  if (aChannelParent->GetContentParentId() != aBgParent->GetContentParentId()) {
+    return;
+  }
 
   aBgParent->LinkToChannel(aChannelParent);
   aChannelParent->OnBackgroundParentReady(aBgParent);
@@ -57,8 +63,22 @@ void BackgroundChannelRegistrar::NotifyChannelLinked(
 void BackgroundChannelRegistrar::DeleteChannel(uint64_t aKey) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  mChannels.Remove(aKey);
-  mBgChannels.Remove(aKey);
+  RefPtr<HttpChannelParent> channel;
+  mChannels.Remove(aKey, getter_AddRefs(channel));
+  RefPtr<HttpBackgroundChannelParent> bgChannel;
+  mBgChannels.Remove(aKey, getter_AddRefs(bgChannel));
+}
+
+void BackgroundChannelRegistrar::DeleteChannelIfMatches(
+    uint64_t aKey, HttpChannelParent* aExpected) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  RefPtr<HttpChannelParent> channel;
+  if (mChannels.GetWeak(aKey) == aExpected) {
+    mChannels.Remove(aKey, getter_AddRefs(channel));
+  }
+  RefPtr<HttpBackgroundChannelParent> bgChannel;
+  mBgChannels.Remove(aKey, getter_AddRefs(bgChannel));
 }
 
 void BackgroundChannelRegistrar::LinkHttpChannel(uint64_t aKey,

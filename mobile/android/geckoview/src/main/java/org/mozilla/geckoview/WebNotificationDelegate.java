@@ -7,9 +7,12 @@ package org.mozilla.geckoview;
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 
+/** Delegate for handling web notification events. */
 public interface WebNotificationDelegate {
   /**
-   * This is called when a new notification is created.
+   * This is called when a new notification is created. The implementations of this should call
+   * WebNotification.show or .dismiss, depending on whether the notification is successfully opened
+   * or not.
    *
    * @param notification The WebNotification received.
    */
@@ -17,7 +20,8 @@ public interface WebNotificationDelegate {
   default void onShowNotification(@NonNull final WebNotification notification) {}
 
   /**
-   * This is called when an existing notification is closed.
+   * This is called when an existing notification is closed. The implementations of this should call
+   * WebNotification.dismiss.
    *
    * @param notification The WebNotification received.
    */

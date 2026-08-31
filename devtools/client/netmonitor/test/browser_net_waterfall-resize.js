@@ -17,7 +17,7 @@ add_task(async function () {
   store.dispatch(Actions.batchEnable(false));
 
   const onEvents = waitForNetworkEvents(monitor, 2);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await onEvents;
 
   info("Resize waterfall column a first time");
@@ -66,7 +66,7 @@ add_task(async function () {
  *
  * @param {Document} doc
  *     Netmonitor document.
- * @param {function=} predicate
+ * @param {Function=} predicate
  *     Optional predicate to avoid returning erroneous width. On windows CI,
  *     the second measure is hard to get right, so we use the predicate to make
  *     sure we retrieve the good size.

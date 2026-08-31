@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 add_task(async function test_installWithPath() {
-  const addonPath = getSupportFilePath("amosigned.xpi");
+  const addonPath = getSupportFilePath("webextensions/amosigned.xpi");
   const addonId = await lazy.Addon.installWithPath(addonPath, true, false);
   try {
     is(addonId, "amosigned-xpi@tests.mozilla.org");
@@ -32,7 +32,7 @@ add_task(async function test_installWithPath_failure() {
 });
 
 add_task(async function test_installWithBase64() {
-  const addonPath = getSupportFilePath("amosigned.xpi");
+  const addonPath = getSupportFilePath("webextensions/amosigned.xpi");
   const addonBase64 = await readFileAsBase64(addonPath);
   const addonId = await lazy.Addon.installWithBase64(addonBase64, true, false);
   try {
@@ -52,7 +52,7 @@ add_task(async function test_installWithBase64_failure() {
 });
 
 add_task(async function test_uninstall() {
-  const addonPath = getSupportFilePath("amosigned.xpi");
+  const addonPath = getSupportFilePath("webextensions/amosigned.xpi");
   const file = new lazy.FileUtils.File(addonPath);
   await lazy.AddonManager.installTemporaryAddon(file);
   is(await lazy.Addon.uninstall("amosigned-xpi@tests.mozilla.org"), undefined);

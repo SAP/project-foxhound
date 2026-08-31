@@ -56,6 +56,6 @@ testWithTypedArrayConstructors(TA => {
     array.forEach(() => {});
     throw new Test262Error('forEach completed successfully');
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

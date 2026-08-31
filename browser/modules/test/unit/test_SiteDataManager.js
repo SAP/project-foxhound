@@ -125,6 +125,34 @@ add_task(async function testGetSites() {
   await SiteDataTestUtils.clear();
 });
 
+add_task(async function testHasSiteData() {
+  Assert.equal(
+    await SiteDataManager.hasSiteData("www.example.com"),
+    false,
+    "hasSiteData returns false with no data"
+  );
+
+  SiteDataTestUtils.addToCookies({
+    origin: EXAMPLE_ORIGIN,
+    name: "foo",
+    value: "bar",
+  });
+
+  Assert.equal(
+    await SiteDataManager.hasSiteData("www.example.com"),
+    true,
+    "hasSiteData returns true once a cookie exists"
+  );
+
+  Assert.equal(
+    await SiteDataManager.hasSiteData("no-data.example"),
+    false,
+    "hasSiteData returns false for a host with no data"
+  );
+
+  await SiteDataTestUtils.clear();
+});
+
 add_task(async function testGetTotalUsage() {
   await SiteDataManager.updateSites();
   let sites = await SiteDataManager.getSites();

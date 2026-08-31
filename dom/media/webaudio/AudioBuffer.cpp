@@ -1,25 +1,24 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioBuffer.h"
-#include "mozilla/dom/AudioBufferBinding.h"
-#include "jsfriendapi.h"
+
+#include <numeric>
+
+#include "AudioChannelFormat.h"
+#include "AudioNodeEngine.h"
+#include "AudioSegment.h"
 #include "js/ArrayBuffer.h"             // JS::StealArrayBufferContents
 #include "js/experimental/TypedData.h"  // JS_NewFloat32Array, JS_GetFloat32ArrayData, JS_GetTypedArrayLength, JS_GetArrayBufferViewBuffer
+#include "jsfriendapi.h"
 #include "mozilla/ErrorResult.h"
-#include "AudioSegment.h"
-#include "AudioChannelFormat.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/MemoryReporting.h"
-#include "AudioNodeEngine.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/dom/AudioBufferBinding.h"
 #include "nsPrintfCString.h"
 #include "nsTHashSet.h"
-#include <numeric>
 
 namespace mozilla::dom {
 
@@ -241,9 +240,9 @@ already_AddRefed<AudioBuffer> AudioBuffer::Create(
     AudioChunk&& aInitialContents) {
   AudioChunk initialContents = aInitialContents;
   ErrorResult rv;
-  RefPtr<AudioBuffer> buffer =
-      new AudioBuffer(aWindow, initialContents.ChannelCount(),
-                      initialContents.mDuration, aSampleRate, rv);
+  RefPtr<AudioBuffer> buffer = new AudioBuffer(
+      aWindow, initialContents.ChannelCount(),
+      AssertedCast<uint32_t>(initialContents.mDuration), aSampleRate, rv);
   if (rv.Failed()) {
     return nullptr;
   }

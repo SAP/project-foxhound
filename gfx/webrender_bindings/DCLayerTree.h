@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,12 @@
 #ifndef MOZILLA_GFX_DCLAYER_TREE_H
 #define MOZILLA_GFX_DCLAYER_TREE_H
 
+#include <windows.h>
+#include <deque>
+#include <dxgicommon.h>
 #include <dxgiformat.h>
 #include <unordered_map>
 #include <vector>
-#include <windows.h>
 
 #include "Colorspaces.h"
 #include "GLTypes.h"
@@ -24,6 +24,7 @@
 
 struct ID3D11Device;
 struct ID3D11DeviceContext;
+struct ID3D11Texture2D;
 struct ID3D11VideoDevice;
 struct ID3D11VideoContext;
 struct ID3D11VideoProcessor;
@@ -32,6 +33,7 @@ struct ID3D11VideoProcessorOutputView;
 struct IDCompositionColorMatrixEffect;
 struct IDCompositionFilterEffect;
 struct IDCompositionTableTransferEffect;
+struct IDCompositionTexture;
 struct IDCompositionDevice2;
 struct IDCompositionDevice3;
 struct IDCompositionSurface;
@@ -42,6 +44,17 @@ struct IDXGIResource;
 struct IDXGISwapChain1;
 struct IDCompositionVirtualSurface;
 struct IDCompositionRectangleClip;
+struct ID3D11VertexShader;
+struct ID3D11PixelShader;
+struct ID3D10Blob;
+typedef ID3D10Blob ID3DBlob;
+struct D3D11_SHADER_RESOURCE_VIEW_DESC;
+struct ID3D11Buffer;
+struct ID3D11InputLayout;
+struct ID3D11ShaderResourceView;
+struct ID3D11RasterizerState;
+struct ID3D11BlendState;
+struct ID3D11SamplerState;
 
 namespace mozilla {
 
@@ -60,9 +73,10 @@ namespace wr {
 #define VIRTUAL_SURFACE_SIZE (1024 * 1024)
 
 class DCLayerSurface;
-class DCTile;
+class DCLayerDCompositionTexture;
 class DCSurface;
 class DCSwapChain;
+class DCSurfaceDCompositionTextureOverlay;
 class DCSurfaceVideo;
 class DCSurfaceHandle;
 class RenderTextureHost;
@@ -72,15 +86,19 @@ class RenderDcompSurfaceTextureHost;
 struct GpuOverlayInfo {
   bool mSupportsOverlays = false;
   bool mSupportsHardwareOverlays = false;
+  bool mSupportsHardwareOverlayRGB10A2 = false;
+  bool mSupportsHardwareOverlayRGBA16F = false;
   DXGI_FORMAT mOverlayFormatUsed = DXGI_FORMAT_B8G8R8A8_UNORM;
-  DXGI_FORMAT mOverlayFormatUsedHdr = DXGI_FORMAT_R10G10B10A2_UNORM;
+  DXGI_FORMAT mOverlayFormatUsedHdr = DXGI_FORMAT_R16G16B16A16_FLOAT;
   UINT mNv12OverlaySupportFlags = 0;
   UINT mYuy2OverlaySupportFlags = 0;
   UINT mBgra8OverlaySupportFlags = 0;
   UINT mRgb10a2OverlaySupportFlags = 0;
+  UINT mRgba16fOverlaySupportFlags = 0;
 
   bool mSupportsVpSuperResolution = false;
   bool mSupportsVpAutoHDR = false;
+  bool mSupportsHDR = false;
 };
 
 // -
@@ -132,10 +150,10 @@ class DCLayerTree {
   void MaybeCommit();
   void WaitForCommitCompletion();
 
-  bool UseNativeCompositor() const;
+  bool UseCompositor() const;
   bool UseLayerCompositor() const;
   void DisableNativeCompositor();
-  void EnableAsyncScreenshot();
+  bool EnableAsyncScreenshot();
   bool GetAsyncScreenshotEnabled() const { return mEnableAsyncScreenshot; }
 
   // Interface for wr::Compositor
@@ -192,13 +210,18 @@ class DCLayerTree {
   GLuint GetOrCreateFbo(int aWidth, int aHeight);
 
   bool SupportsHardwareOverlays();
+  bool SupportsHardwareOverlayRGB10A2();
+  bool SupportsHardwareOverlayRGBA16F();
   DXGI_FORMAT GetOverlayFormatForSDR();
 
   bool SupportsSwapChainTearing();
+  bool UseDCLayerDCompositionTexture();
 
   void SetUsedOverlayTypeInFrame(DCompOverlayTypes aTypes);
 
   int GetFrameId() { return mCurrentFrame; }
+
+  void SetPendingCommit() { mPendingCommit = true; }
 
  protected:
   bool Initialize(HWND aHwnd, nsACString& aError);
@@ -213,8 +236,13 @@ class DCLayerTree {
   void ReleaseNativeCompositorResources();
   layers::OverlayInfo GetOverlayInfo();
 
-  bool mUseNativeCompositor = true;
+  enum class WebRenderOsCompositorKind {
+    LayerCompositor,
+  };
+
+  Maybe<WebRenderOsCompositorKind> mCompositorKind;
   bool mEnableAsyncScreenshot = false;
+  bool mEnableAsyncScreenshotInNextFrame = false;
   int mAsyncScreenshotLastFrameUsed = 0;
 
   RefPtr<gl::GLContext> mGL;
@@ -238,8 +266,6 @@ class DCLayerTree {
 
   bool mDebugCounter;
   bool mDebugVisualRedrawRegions;
-
-  Maybe<RefPtr<IDCompositionSurface>> mCurrentSurface;
 
   // The EGL image that is bound to the D3D texture provided by
   // DirectComposition.
@@ -298,46 +324,18 @@ class DCLayerTree {
 };
 
 /**
- Represents a single picture cache slice. Each surface contains some
- number of tiles. An implementation may choose to allocate individual
- tiles to render in to (as the current impl does), or allocate a large
- single virtual surface to draw into (e.g. the DirectComposition virtual
- surface API in future).
+ Represents a single picture cache slice.
  */
 class DCSurface {
  public:
-  const bool mIsVirtualSurface;
-
-  explicit DCSurface(wr::DeviceIntSize aTileSize,
-                     wr::DeviceIntPoint aVirtualOffset, bool aIsVirtualSurface,
-                     bool aIsOpaque, DCLayerTree* aDCLayerTree);
+  explicit DCSurface(bool aIsOpaque, DCLayerTree* aDCLayerTree);
   virtual ~DCSurface();
 
   virtual bool Initialize();
-  void CreateTile(int32_t aX, int32_t aY);
-  void DestroyTile(int32_t aX, int32_t aY);
   void SetClip(wr::DeviceIntRect aClipRect, wr::ClipRadius aClipRadius);
 
   IDCompositionVisual2* GetContentVisual() const { return mContentVisual; }
   IDCompositionVisual2* GetRootVisual() const { return mRootVisual; }
-  DCTile* GetTile(int32_t aX, int32_t aY) const;
-
-  struct TileKey {
-    TileKey(int32_t aX, int32_t aY) : mX(aX), mY(aY) {}
-
-    int32_t mX;
-    int32_t mY;
-  };
-
-  wr::DeviceIntSize GetTileSize() const { return mTileSize; }
-  wr::DeviceIntPoint GetVirtualOffset() const { return mVirtualOffset; }
-
-  IDCompositionVirtualSurface* GetCompositionSurface() const {
-    return mVirtualSurface;
-  }
-
-  void UpdateAllocatedRect();
-  void DirtyAllocatedRect();
 
   // Implement these if the inherited surface supports attaching external image.
   virtual void AttachExternalImage(wr::ExternalImageId aExternalImage) {
@@ -351,14 +349,40 @@ class DCSurface {
   virtual DCSurfaceHandle* AsDCSurfaceHandle() { return nullptr; }
   virtual DCLayerSurface* AsDCLayerSurface() { return nullptr; }
   virtual DCSwapChain* AsDCSwapChain() { return nullptr; }
+  virtual DCLayerDCompositionTexture* AsDCLayerDCompositionTexture() {
+    return nullptr;
+  }
+  virtual DCSurfaceDCompositionTextureOverlay*
+  AsDCSurfaceDCompositionTextureOverlay() {
+    return nullptr;
+  }
+
+  bool IsUpdated(const wr::CompositorSurfaceTransform& aTransform,
+                 const wr::DeviceIntRect& aClipRect,
+                 const wr::ImageRendering aImageRendering,
+                 const wr::DeviceIntRect& aRoundedClipRect,
+                 const wr::ClipRadius& aClipRadius);
 
  protected:
   DCLayerTree* mDCLayerTree;
 
-  struct TileKeyHashFn {
-    std::size_t operator()(const TileKey& aId) const {
-      return HashGeneric(aId.mX, aId.mY);
-    }
+  struct DCSurfaceData {
+    DCSurfaceData(const wr::CompositorSurfaceTransform& aTransform,
+                  const wr::DeviceIntRect& aClipRect,
+                  const wr::ImageRendering aImageRendering,
+                  const wr::DeviceIntRect& aRoundedClipRect,
+                  const wr::ClipRadius& aClipRadius)
+        : mTransform(aTransform),
+          mClipRect(aClipRect),
+          mImageRendering(aImageRendering),
+          mRoundedClipRect(aRoundedClipRect),
+          mClipRadius(aClipRadius) {}
+
+    wr::CompositorSurfaceTransform mTransform;
+    wr::DeviceIntRect mClipRect;
+    wr::ImageRendering mImageRendering;
+    wr::DeviceIntRect mRoundedClipRect;
+    wr::ClipRadius mClipRadius;
   };
 
   // Each surface creates two visuals. The root is where it gets attached
@@ -368,29 +392,19 @@ class DCSurface {
   // us to implement the simple rectangle clip on the content, and apply
   // the complex clip, if present, in a way that it's not affected by
   // the transform of the content visual.
-  //
-  // When using a virtual surface, it is directly attached to this
-  // child visual and the tiles do not own visuals.
-  //
-  // Whether mIsVirtualSurface is enabled is decided at DCSurface creation
-  // time based on the pref gfx.webrender.dcomp-use-virtual-surfaces
+
   RefPtr<IDCompositionVisual2> mRootVisual;
   RefPtr<IDCompositionVisual2> mContentVisual;
   RefPtr<IDCompositionRectangleClip> mClip;
 
-  wr::DeviceIntSize mTileSize;
   bool mIsOpaque;
-  bool mAllocatedRectDirty;
-  std::unordered_map<TileKey, UniquePtr<DCTile>, TileKeyHashFn> mDCTiles;
-  wr::DeviceIntPoint mVirtualOffset;
-  RefPtr<IDCompositionVirtualSurface> mVirtualSurface;
+  Maybe<DCSurfaceData> mDCSurfaceData;
 };
 
 class DCLayerSurface : public DCSurface {
  public:
   DCLayerSurface(bool aIsOpaque, DCLayerTree* aDCLayerTree)
-      : DCSurface(wr::DeviceIntSize{}, wr::DeviceIntPoint{}, false, aIsOpaque,
-                  aDCLayerTree) {}
+      : DCSurface(aIsOpaque, aDCLayerTree) {}
   virtual ~DCLayerSurface() = default;
 
   virtual void Bind(const wr::DeviceIntRect* aDirtyRects,
@@ -400,6 +414,50 @@ class DCLayerSurface : public DCSurface {
                        size_t aNumDirtyRects) = 0;
 
   DCLayerSurface* AsDCLayerSurface() override { return this; }
+};
+
+class DCLayerDCompositionTexture : public DCLayerSurface {
+ public:
+  DCLayerDCompositionTexture(wr::DeviceIntSize aSize, bool aIsOpaque,
+                             DCLayerTree* aDCLayerTree);
+  virtual ~DCLayerDCompositionTexture();
+
+  bool Initialize() override;
+
+  void Bind(const wr::DeviceIntRect* aDirtyRects,
+            size_t aNumDirtyRects) override;
+  bool Resize(wr::DeviceIntSize aSize) override;
+  void Present(const wr::DeviceIntRect* aDirtyRects,
+               size_t aNumDirtyRects) override;
+
+  DCLayerDCompositionTexture* AsDCLayerDCompositionTexture() override {
+    return this;
+  }
+
+  const size_t mSwapChainBufferCount;
+
+ private:
+  struct TextureHolder {
+    TextureHolder(ID3D11Texture2D* aTexture,
+                  IDCompositionTexture* aDCompositionTexture,
+                  EGLSurface aEGLSurface);
+    TextureHolder() = default;
+
+    RefPtr<ID3D11Texture2D> mTexture;
+    RefPtr<IDCompositionTexture> mDCompositionTexture;
+    EGLSurface mEGLSurface;
+  };
+
+  bool AllocateTextures();
+  void DestroyTextures();
+  UniquePtr<TextureHolder> GetNextTexture();
+  void UpdateCurrentTexture();
+
+  wr::DeviceIntSize mSize;
+  std::deque<UniquePtr<TextureHolder>> mAvailableTextureHolders;
+
+  UniquePtr<TextureHolder> mCurrentTextureHolder;
+  UniquePtr<TextureHolder> mPresentingTextureHolder;
 };
 
 class DCSwapChain : public DCLayerSurface {
@@ -454,10 +512,7 @@ class DCLayerCompositionSurface : public DCLayerSurface {
 class DCExternalSurfaceWrapper : public DCSurface {
  public:
   DCExternalSurfaceWrapper(bool aIsOpaque, DCLayerTree* aDCLayerTree)
-      : DCSurface(wr::DeviceIntSize{}, wr::DeviceIntPoint{},
-                  false /* virtual surface */, false /* opaque */,
-                  aDCLayerTree),
-        mIsOpaque(aIsOpaque) {}
+      : DCSurface(false /* opaque */, aDCLayerTree), mIsOpaque(aIsOpaque) {}
   virtual ~DCExternalSurfaceWrapper() = default;
 
   void AttachExternalImage(wr::ExternalImageId aExternalImage) override;
@@ -472,12 +527,39 @@ class DCExternalSurfaceWrapper : public DCSurface {
     return mSurface ? mSurface->AsDCSurfaceHandle() : nullptr;
   }
 
+  DCSurfaceDCompositionTextureOverlay* AsDCSurfaceDCompositionTextureOverlay()
+      override {
+    return mSurface ? mSurface->AsDCSurfaceDCompositionTextureOverlay()
+                    : nullptr;
+  }
+
  private:
   DCSurface* EnsureSurfaceForExternalImage(wr::ExternalImageId aExternalImage);
 
   UniquePtr<DCSurface> mSurface;
   const bool mIsOpaque;
   Maybe<ColorManagementChain> mCManageChain;
+};
+
+class DCSurfaceDCompositionTextureOverlay : public DCSurface {
+ public:
+  DCSurfaceDCompositionTextureOverlay(bool aIsOpaque,
+                                      DCLayerTree* aDCLayerTree);
+
+  void AttachExternalImage(wr::ExternalImageId aExternalImage) override;
+  void Present();
+
+  DCSurfaceDCompositionTextureOverlay* AsDCSurfaceDCompositionTextureOverlay()
+      override {
+    return this;
+  }
+
+ protected:
+  virtual ~DCSurfaceDCompositionTextureOverlay();
+
+  RefPtr<RenderTextureHost> mRenderTextureHost;
+  RefPtr<RenderTextureHost> mPrevRenderTextureHost;
+  int mSlowGetCount = 0;
 };
 
 class DCSurfaceVideo : public DCSurface {
@@ -494,9 +576,13 @@ class DCSurfaceVideo : public DCSurface {
  protected:
   virtual ~DCSurfaceVideo();
 
-  DXGI_FORMAT GetSwapChainFormat(bool aUseVpAutoHDR);
+  DXGI_FORMAT GetSwapChainFormat(bool aUseVpAutoHDR, bool aUseRGB10A2,
+                                 bool aUseRGBA16F);
   bool CreateVideoSwapChain(DXGI_FORMAT aFormat);
   bool CallVideoProcessorBlt();
+  bool ShaderBltSetup();
+  bool ShaderBlt(DXGI_COLOR_SPACE_TYPE inputColorSpace, const RECT& sourceRect,
+                 DXGI_COLOR_SPACE_TYPE outputColorSpace, const RECT& destRect);
   void ReleaseDecodeSwapChainResources();
 
   RefPtr<ID3D11VideoProcessorOutputView> mOutputView;
@@ -509,6 +595,10 @@ class DCSurfaceVideo : public DCSurface {
   DXGI_FORMAT mSwapChainFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
   bool mIsDRM = false;
   bool mFailedYuvSwapChain = false;
+  // Indicates if VideoProcessorBlt is unable to convert YUV HLG to RGB PQ.
+  bool mFailedVideoProcessorBltYUVHLGToRGBPQ = false;
+  // Indicates if VideoProcessorBlt is unable to convert YUV PQ to RGB PQ.
+  bool mFailedVideoProcessorBltYUVPQtoRGBPQ = false;
   RefPtr<RenderTextureHost> mRenderTextureHost;
   RefPtr<RenderTextureHost> mPrevTexture;
   RefPtr<RenderTextureHostUsageInfo> mRenderTextureHostUsageInfo;
@@ -517,6 +607,19 @@ class DCSurfaceVideo : public DCSurface {
   bool mUseVpAutoHDR = false;
   bool mVpAutoHDRFailed = false;
   bool mVpSuperResolutionFailed = false;
+  bool mContentIsHDR = false;
+  bool mUseHDR = false;
+  RefPtr<ID3D11VertexShader> mShaderBltVertexShader;
+  RefPtr<ID3DBlob> mShaderBltVSBlob;
+  RefPtr<ID3D11PixelShader> mShaderBltPixelShader;
+  RefPtr<ID3DBlob> mShaderBltPSBlob;
+  RefPtr<ID3D11Buffer> mShaderBltIndexBuffer;
+  RefPtr<ID3D11Buffer> mShaderBltVertexBuffer;
+  RefPtr<ID3D11InputLayout> mShaderBltInputLayout;
+  RefPtr<ID3D11RasterizerState> mShaderBltRasterizerState;
+  RefPtr<ID3D11BlendState> mShaderBltBlendState;
+  RefPtr<ID3D11Buffer> mShaderBltConstantBuffer;
+  RefPtr<ID3D11SamplerState> mShaderBltSamplerState;
 };
 
 /**
@@ -540,47 +643,6 @@ class DCSurfaceHandle : public DCSurface {
 
   RefPtr<RenderDcompSurfaceTextureHost> mDcompTextureHost;
 };
-
-class DCTile {
- public:
-  gfx::IntRect mValidRect;
-
-  DCLayerTree* mDCLayerTree;
-  // Indicates that when the first BeginDraw occurs on the surface it must be
-  // full size - required by dcomp on non-virtual surfaces.
-  bool mNeedsFullDraw;
-
-  explicit DCTile(DCLayerTree* aDCLayerTree);
-  ~DCTile();
-  bool Initialize(int aX, int aY, wr::DeviceIntSize aSize,
-                  bool aIsVirtualSurface, bool aIsOpaque,
-                  RefPtr<IDCompositionVisual2> mSurfaceVisual);
-  RefPtr<IDCompositionSurface> Bind(wr::DeviceIntRect aValidRect);
-  IDCompositionVisual2* GetVisual() { return mVisual; }
-
- protected:
-  // Size in pixels of this tile, some may be unused.  Set by Initialize.
-  wr::DeviceIntSize mSize;
-  // Whether the tile is composited as opaque (ignores alpha) or transparent.
-  // Set by Initialize.
-  bool mIsOpaque;
-  // Some code paths differ based on whether parent surface is virtual.
-  bool mIsVirtualSurface;
-  // Visual that displays the composition surface, or NULL if the tile belongs
-  // to a virtual surface.
-  RefPtr<IDCompositionVisual2> mVisual;
-  // Surface for the visual, or NULL if the tile has not had its first Bind or
-  // belongs to a virtual surface.
-  RefPtr<IDCompositionSurface> mCompositionSurface;
-
-  RefPtr<IDCompositionSurface> CreateCompositionSurface(wr::DeviceIntSize aSize,
-                                                        bool aIsOpaque);
-};
-
-static inline bool operator==(const DCSurface::TileKey& a0,
-                              const DCSurface::TileKey& a1) {
-  return a0.mX == a1.mX && a0.mY == a1.mY;
-}
 
 }  // namespace wr
 }  // namespace mozilla

@@ -1,0 +1,69 @@
+Neuter file descriptor ownership enforcement.
+
+This Linux-only feature isn't used by zucchini and adds dependencies on
+dlsym and RAW_LOG.
+---
+ base/files/scoped_file_linux.cc | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/base/files/scoped_file_linux.cc b/base/files/scoped_file_linux.cc
+index 61ee19f9c86d..b2adf99e55fd 100644
+--- a/base/files/scoped_file_linux.cc
++++ b/base/files/scoped_file_linux.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "base/files/scoped_file.h"
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #include <dlfcn.h>
+ 
+ #include <algorithm>
+@@ -47,22 +48,28 @@ void UpdateAndCheckFdOwnership(int fd, bool owned) {
+ }
+ 
+ }  // namespace
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ namespace base {
+ namespace internal {
+ 
+ // static
+ void ScopedFDCloseTraits::Acquire(const ScopedFD& owner, int fd) {
++#if !defined(MOZ_ZUCCHINI)
+   UpdateAndCheckFdOwnership(fd, /*owned=*/true);
++#endif  // !defined(MOZ_ZUCCHINI)
+ }
+ 
+ // static
+ void ScopedFDCloseTraits::Release(const ScopedFD& owner, int fd) {
++#if !defined(MOZ_ZUCCHINI)
+   UpdateAndCheckFdOwnership(fd, /*owned=*/false);
++#endif  // !defined(MOZ_ZUCCHINI)
+ }
+ 
+ }  // namespace internal
+ 
++#if !defined(MOZ_ZUCCHINI)
+ namespace subtle {
+ 
+ void EnableFDOwnershipEnforcement(bool enabled) {
+@@ -78,9 +85,11 @@ void ResetFDOwnership() {
+ bool IsFDOwned(int fd) {
+   return CanTrack(fd) && g_is_fd_owned[static_cast<size_t>(fd)];
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ }  // namespace base
+ 
++#if !defined(MOZ_ZUCCHINI)
+ using LibcCloseFuncPtr = int (*)(int);
+ 
+ // Load the libc close symbol to forward to from the close wrapper.
+@@ -110,3 +119,4 @@ __attribute__((visibility("default"), noinline)) int close(int fd) {
+ }
+ 
+ }  // extern "C"
++#endif  // !defined(MOZ_ZUCCHINI)
+-- 
+2.42.0.windows.2
+

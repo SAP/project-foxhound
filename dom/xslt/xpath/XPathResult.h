@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,16 +5,15 @@
 #ifndef mozilla_dom_XPathResult_h
 #define mozilla_dom_XPathResult_h
 
-#include "nsStubMutationObserver.h"
+#include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsTArray.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
-#include "nsString.h"
-#include "nsWrapperCache.h"
 #include "nsINode.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsString.h"
+#include "nsStubMutationObserver.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 class txAExprResult;
 

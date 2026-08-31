@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Title of a dialog for a notification permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_notification_title">%1$s beeksisa akka erganiif hayyamaa?</string>
+  <!-- Title of a dialog for a camera permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_camera_title">%1$s kaameraa kee akka fayyadaman hayyami?</string>
+  <!-- Title of a dialog for a microphone permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_microfone_title">%1$s maaykiroofoonii kee akka fayyadaman hayyami?</string>
+  <!-- Title of a dialog for a location permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_location_title">%1$s bakka kee akka fayyadaman hayyami?</string>
+  <!-- Title of a dialog for a camera and microphone permission request. %1$s is the domain name of the website. -->
+  <string name="mozac_feature_sitepermissions_camera_and_microphone">%1$sn kaameraa fi maaykiroofoonii keessan akka fayyadaman hayyamtuu?</string>
+  <!-- Title of a dialog for a local network access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_network_access_title">%1$sn meeshaalee neetworkii naannoo keessanii wajjin walqabatan irratti appii fi tajaajiloota akka argatan hayyamaa?</string>
+  <!-- Title of a dialog for a local device access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_device_access_title">%1$sn appii fi tajaajiloota biroo meeshaa kana irratti akka argatan hayyamuu?</string>
+  <!--
+    Option in a dialog for requesting a microphone permission, this option will give access to
+    the first microphone
+  -->
+  <string name="mozac_feature_sitepermissions_option_microphone_one">Maaykiroofoonii 1</string>
+  <!--
+    Option in a dialog for requesting a camera permission, this option will give access to
+    back facing camera
+  -->
+  <string name="mozac_feature_sitepermissions_back_facing_camera2">Kaameeraa duubaan ilaalu</string>
+  <!--
+    Option in a dialog for requesting a camera permission, this option will give access to
+    front facing camera
+  -->
+  <string name="mozac_feature_sitepermissions_selfie_camera2">Kaameeraa fuulduraa</string>
+  <!--
+    Text for a positive button in a permission request dialog, this button will give
+    access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_allow">Hayyamuu</string>
+  <!--
+    Text for a negative button in a permission request dialog, this button will do not give
+    access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_not_allow">Hin hayyaminaa</string>
+  <!--
+    Alternate variant of the text for a negative button in a permission request dialog,
+    this button will not give access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_block">Dhowwuu</string>
+  <!-- Message of a dialog offering more context about the app level notification permission request. %1$s will be replaced with the name of the app. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_message">Beeksisa %1$sn marsariitii kana irraa akka fudhatan hayyamuu qabda.</string>
+  <!-- Button label in a notification permission request dialog to dismiss the dialog. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_dismiss_label">Haqi</string>
+  <!-- Button label in a notification permission request dialog. It will let the user go to Android Settings to grant the permission. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_settings_label">Gara settingiiwwanii deemaa</string>
+  <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
+  <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site2">Murtee marsariitii kanaaf yaadadhaa</string>
+  <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
+  <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site4">Marsariitii kanaaf yaadadhaa</string>
+  <!-- Text for a positive button in a permission request dialog. This will always allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->
+  <string name="mozac_feature_sitepermissions_always_allow">Yeroo hunda</string>
+  <!-- Text for a negative button in a permission request dialog. This will never allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->
+  <string name="mozac_feature_sitepermissions_never_allow">Gonkumaa</string>
+  <!-- Title of a dialog to require to save data in persistent storage. %1$s will be replaced with the URL of the current page -->
+  <string name="mozac_feature_sitepermissions_persistent_storage_title">%1$s deetaa kuusaa itti fufiinsa qabu keessatti akka kuusan hayyamaa?</string>
+  <!-- Title of a dialog to use EME. %1$s will be replaced with the URL of the current page -->
+  <string name="mozac_feature_sitepermissions_media_key_system_access_title">%1$s qabiyyee DRM-to\'atame akka taphatan hayyamaa?</string>
+  <!--
+    Title of a dialog to use cross origin storage permission. %1$s is the name of the site URL (www.site1.example) trying to track the user's activity.
+    %2$s is the name of the site URL (www.site2.example) that the user is visiting.  This is the same domain name displayed in the address bar
+  -->
+  <string name="mozac_feature_sitepermissions_storage_access_title">%1$s kukii isaa %2$s irratti akka fayyadamu hayyamtaa?</string>
+  <!--
+    Message of a dialog offering more context about the cross origin storage permission.
+    %s is the name of the site URL (www.site1.example) trying to track the user's activity.
+  -->
+  <string name="mozac_feature_sitepermissions_storage_access_message">Yoo %s maaliif deetaa kana akka barbaadu ifa hin taane qaqqabummaa ugguruu barbaadda ta\'a.</string>
+  <!-- Text for a negative button in the storage access permission request dialog. This button will not give access to this permission. -->
+  <string name="mozac_feature_sitepermissions_storage_access_not_allow">Dhowwuu</string>
+  <!-- Clickable text that will open a new tab navigating the user to online documentation about specific features. -->
+  <string name="mozac_feature_sitepermissions_learn_more_title">Caalaatti baradhaa</string>
+</resources>

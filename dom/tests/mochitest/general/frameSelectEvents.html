@@ -640,12 +640,12 @@
           await testWithSynthesizingMouse(
             `Pressing the left mouse button in <${
                 textControl.tagName.toLocaleLowerCase()
-            }> should change selection of the document`,
+            }> shouldn't change selection of the document`,
             textControl,
             { x: 50 },
             "mousedown",
             {
-              selectionchangeOnDocument: 1,
+              selectionchangeOnDocument: 0,
             }
           );
 

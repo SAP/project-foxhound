@@ -1,0 +1,35 @@
+[package]
+name = "push"
+edition = "2021"
+version = "0.1.0"
+authors = ["jrconlin <me+crypt@jrconlin.com>", "Phil Jenvey <pjenvey@underboss.org>"]
+license = "MPL-2.0"
+exclude = ["/android", "/ios"]
+
+[dependencies]
+serde = "1"
+serde_json = "1"
+bincode = "1.2"
+lazy_static = "1.4"
+base64 = "0.21"
+rusqlite = { version = "0.37.0", features = ["bundled", "unlock_notify"] }
+url = "2.2"
+viaduct = { path = "../viaduct" }
+error-support = { path = "../support/error" }
+sql-support = { path = "../support/sql" }
+rc_crypto = { path = "../support/rc_crypto", features = ["ece"] }
+thiserror = "2"
+uniffi = { version = "0.31" }
+types = { path = "../support/types" }
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }
+
+[dev-dependencies]
+error-support = { path = "../support/error", features = ["testing"] }
+mockito = { version = "0.31", default-features = false }
+hex = "0.4"
+tempfile = "3.1.0"
+mockall = "0.12"
+viaduct-dev = { path = "../support/viaduct-dev" }
+nss-as = { path = "../support/rc_crypto/nss" }

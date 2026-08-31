@@ -1,59 +1,57 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsAboutProtocolUtils.h"
-#include "nsArray.h"
 #include "nsContentSecurityManager.h"
-#include "nsContentSecurityUtils.h"
-#include "nsContentPolicyUtils.h"
-#include "nsEscape.h"
-#include "nsDataHandler.h"
-#include "nsIChannel.h"
-#include "nsIContentPolicy.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsINode.h"
-#include "nsIStreamListener.h"
-#include "nsILoadInfo.h"
-#include "nsIMIMEService.h"
-#include "nsIOService.h"
-#include "nsContentUtils.h"
-#include "nsCORSListenerProxy.h"
-#include "nsIParentChannel.h"
-#include "nsIRedirectHistoryEntry.h"
-#include "nsIXULRuntime.h"
-#include "nsNetUtil.h"
-#include "nsReadableUtils.h"
-#include "nsSandboxFlags.h"
-#include "nsScriptSecurityManager.h"
-#include "nsIXPConnect.h"
 
+#include "js/RegExp.h"
+#include "jsapi.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/extensions/WebExtensionPolicy.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/Components.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_content.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "xpcpublic.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
+#include "nsAboutProtocolUtils.h"
+#include "nsArray.h"
+#include "nsCORSListenerProxy.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentSecurityUtils.h"
+#include "nsContentUtils.h"
+#include "nsDataHandler.h"
+#include "nsEscape.h"
+#include "nsIChannel.h"
+#include "nsIContentPolicy.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsILoadInfo.h"
+#include "nsIMIMEService.h"
+#include "nsINode.h"
+#include "nsIOService.h"
+#include "nsIParentChannel.h"
+#include "nsIRedirectHistoryEntry.h"
+#include "nsIStreamListener.h"
+#include "nsIXPConnect.h"
+#include "nsIXULRuntime.h"
 #include "nsMimeTypes.h"
-
-#include "jsapi.h"
-#include "js/RegExp.h"
+#include "nsNetUtil.h"
+#include "nsReadableUtils.h"
+#include "nsSandboxFlags.h"
+#include "nsScriptSecurityManager.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -152,7 +150,7 @@ void nsContentSecurityManager::ReportBlockedDataURI(nsIURI* aURI,
   const char* stringID =
       aIsRedirect ? "BlockRedirectToDataURI" : "BlockTopLevelDataURINavigation";
   nsresult rv = nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eSECURITY_PROPERTIES, stringID, params, errorText);
+      PropertiesFile::SECURITY_PROPERTIES, stringID, params, errorText);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -283,7 +281,8 @@ static nsresult DoCheckLoadURIChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
   // In practice, these DTDs are just used for localization, so applying the
   // same principal check as Fluent.
   if (aLoadInfo->InternalContentPolicyType() ==
-      nsIContentPolicy::TYPE_INTERNAL_DTD) {
+          nsIContentPolicy::TYPE_INTERNAL_DTD &&
+      mozilla::StaticPrefs::dom_fetch_allow_force_allowed_dtd()) {
     RefPtr<Document> doc;
     aLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
     bool allowed = false;
@@ -297,7 +296,8 @@ static nsresult DoCheckLoadURIChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
   // that need to access localization DTDs. We just allow through
   // TYPE_INTERNAL_FORCE_ALLOWED_DTD no matter what the triggering principal is.
   if (aLoadInfo->InternalContentPolicyType() ==
-      nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD) {
+          nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD &&
+      mozilla::StaticPrefs::dom_fetch_allow_force_allowed_dtd()) {
     return NS_OK;
   }
 
@@ -311,7 +311,7 @@ static nsresult DoCheckLoadURIChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
   if (addonPrincipal) {
     // call CheckLoadURIWithPrincipal() as below to continue other checks, but
     // with the addon principal.
-    triggeringPrincipal = addonPrincipal;
+    triggeringPrincipal = std::move(addonPrincipal);
   }
 
   // Only call CheckLoadURIWithPrincipal() using the TriggeringPrincipal and not
@@ -348,6 +348,47 @@ static nsresult DoSOPChecks(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   return NS_OK;
 }
 
+// Determine which principal to use in DoCORSChecks.  Normally, we do CORS
+// checks using the LoadingPrincipal (whose Origin comes from the host
+// document).  But under certain configurations/situations, we instead use
+// the TriggeringPrincipal() (whose Origin comes from the specific resource
+// that initiated the request).
+static nsIPrincipal* DeterminePrincipalForCORSChecks(nsILoadInfo* aLoadInfo) {
+  nsIPrincipal* const triggeringPrincipal = aLoadInfo->TriggeringPrincipal();
+
+  if (StaticPrefs::content_cors_use_triggering_principal()) {
+    // This pref forces us to use the TriggeringPrincipal.
+    // TODO(dholbert): Remove this special-case, perhaps right after we
+    // fix bug 1982916 which requires it for a test.
+    return triggeringPrincipal;
+  }
+
+  if (!StaticPrefs::extensions_content_web_accessible_enabled() &&
+      triggeringPrincipal->GetIsAddonOrExpandedAddonPrincipal()) {
+    // If we get here, then we know:
+    // * we want to allow MV2 WebExtensions to access their own resources
+    // regardless of whether those are listed in 'web_accessible_resources' in
+    // their manifest (this is nonstandard but it's a legacy thing we allow).
+    // * this load was initiated by a WebExtension (possibly running in a
+    // content script in the context of a web page).
+    //
+    // Hence: in this case, we use the TriggeringPrincipal for our CORS checks
+    // (so that a WebExtension requesting its own resources will be treated as
+    // same-origin, rather than being rejected as a cross-origin request from
+    // the page's origin).
+    //
+    // NOTE: Technically we should also check whether the extension uses MV2
+    // here, since this pref is specific to MV2. But that's not strictly
+    // necessary because we already unconditionally block MV3-WebExtension
+    // content-loads of this type at a different level (in
+    // nsScriptSecurityManager::CheckLoadURIWithPrincipal).
+    return triggeringPrincipal;
+  }
+
+  // Otherwise we use the LoadingPrincipal.
+  return aLoadInfo->GetLoadingPrincipal();
+}
+
 static nsresult DoCORSChecks(nsIChannel* aChannel, nsILoadInfo* aLoadInfo,
                              nsCOMPtr<nsIStreamListener>& aInAndOutListener) {
   MOZ_RELEASE_ASSERT(aInAndOutListener,
@@ -358,12 +399,11 @@ static nsresult DoCORSChecks(nsIChannel* aChannel, nsILoadInfo* aLoadInfo,
     return NS_OK;
   }
 
-  // We use the triggering principal here, rather than the loading principal
-  // to ensure that anonymous CORS content in the browser resources and in
-  // WebExtensions is allowed to load.
-  nsIPrincipal* principal = aLoadInfo->TriggeringPrincipal();
+  nsIPrincipal* principalForCORSCheck =
+      DeterminePrincipalForCORSChecks(aLoadInfo);
+
   RefPtr<nsCORSListenerProxy> corsListener = new nsCORSListenerProxy(
-      aInAndOutListener, principal,
+      aInAndOutListener, principalForCORSCheck,
       aLoadInfo->GetCookiePolicy() == nsILoadInfo::SEC_COOKIES_INCLUDE);
   // XXX: @arg: DataURIHandling::Allow
   // lets use  DataURIHandling::Allow for now and then decide on callsite basis.
@@ -473,6 +513,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     case ExtContentPolicy::TYPE_WEB_TRANSPORT:
     case ExtContentPolicy::TYPE_WEB_IDENTITY:
     case ExtContentPolicy::TYPE_JSON:
+    case ExtContentPolicy::TYPE_TEXT:
       break;
 
     case ExtContentPolicy::TYPE_INVALID:
@@ -1067,8 +1108,8 @@ nsresult nsContentSecurityManager::CheckAllowLoadInSystemPrivilegedContext(
 /* static */
 nsresult nsContentSecurityManager::CheckAllowLoadInPrivilegedAboutContext(
     nsIChannel* aChannel) {
-  // bail out if check is disabled
-  if (StaticPrefs::security_disallow_privilegedabout_remote_script_loads()) {
+  // If remote scripts aren't disallowed, then bail out.
+  if (!StaticPrefs::security_disallow_privilegedabout_remote_script_loads()) {
     return NS_OK;
   }
 
@@ -1206,7 +1247,7 @@ static nsresult CheckAllowFileProtocolScriptLoad(nsIChannel* aChannel) {
 
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
                                     "FILE_SCRIPT_BLOCKED"_ns, doc,
-                                    nsContentUtils::eSECURITY_PROPERTIES,
+                                    PropertiesFile::SECURITY_PROPERTIES,
                                     "BlockFileScriptWithWrongMimeType", params);
 
     return NS_ERROR_CONTENT_BLOCKED;
@@ -1274,7 +1315,7 @@ static nsresult CheckAllowExtensionProtocolScriptLoad(nsIChannel* aChannel) {
 
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
                                     "EXTENSION_SCRIPT_BLOCKED"_ns, doc,
-                                    nsContentUtils::eSECURITY_PROPERTIES,
+                                    PropertiesFile::SECURITY_PROPERTIES,
                                     "BlockExtensionScriptWithWrongExt", params);
 
     return NS_ERROR_CONTENT_BLOCKED;
@@ -1304,12 +1345,6 @@ static nsresult CheckAllowLoadByTriggeringRemoteType(nsIChannel* aChannel) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread(),
                         "Unexpected off-the-main-thread call to "
                         "CheckAllowLoadByTriggeringRemoteType");
-
-  // Due to the way that session history is handled without SHIP, we cannot run
-  // these checks when SHIP is disabled.
-  if (!mozilla::SessionHistoryInParent()) {
-    return NS_OK;
-  }
 
   nsAutoCString triggeringRemoteType;
   nsresult rv = loadInfo->GetTriggeringRemoteType(triggeringRemoteType);
@@ -1417,25 +1452,19 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
     DebugDoContentSecurityCheck(aChannel, loadInfo);
   }
 
-  nsresult rv = CheckAllowLoadInSystemPrivilegedContext(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckAllowLoadInSystemPrivilegedContext(aChannel));
 
-  rv = CheckAllowLoadInPrivilegedAboutContext(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckAllowLoadInPrivilegedAboutContext(aChannel));
 
   // We want to also check redirected requests to ensure
   // the target maintains the proper javascript file extensions.
-  rv = CheckAllowExtensionProtocolScriptLoad(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckAllowExtensionProtocolScriptLoad(aChannel));
 
-  rv = CheckChannelHasProtocolSecurityFlag(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckChannelHasProtocolSecurityFlag(aChannel));
 
-  rv = CheckAllowLoadByTriggeringRemoteType(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckAllowLoadByTriggeringRemoteType(aChannel));
 
-  rv = CheckForIncoherentResultPrincipal(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckForIncoherentResultPrincipal(aChannel));
 
   // if dealing with a redirected channel then we have already installed
   // streamlistener and redirect proxies and so we are done.
@@ -1445,24 +1474,19 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
 
   // make sure that only one of the five security flags is set in the loadinfo
   // e.g. do not require same origin and allow cross origin at the same time
-  rv = ValidateSecurityFlags(loadInfo);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(ValidateSecurityFlags(loadInfo));
 
   if (loadInfo->GetSecurityMode() ==
       nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT) {
-    rv = DoCORSChecks(aChannel, loadInfo, aInAndOutListener);
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_TRY(DoCORSChecks(aChannel, loadInfo, aInAndOutListener));
   }
 
-  rv = CheckChannel(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckChannel(aChannel));
 
   // Perform all ContentPolicy checks (MixedContent, CSP, ...)
-  rv = DoContentSecurityChecks(aChannel, loadInfo);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(DoContentSecurityChecks(aChannel, loadInfo));
 
-  rv = CheckAllowFileProtocolScriptLoad(aChannel);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(CheckAllowFileProtocolScriptLoad(aChannel));
 
   // now lets set the initialSecurityFlag for subsequent calls
   loadInfo->SetInitialSecurityCheckDone(true);
@@ -1498,7 +1522,7 @@ nsContentSecurityManager::AsyncOnChannelRedirect(
       aOldChannel, getter_AddRefs(oldPrincipal));
 
   nsCOMPtr<nsIURI> newURI;
-  Unused << NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
+  (void)NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
   NS_ENSURE_STATE(oldPrincipal && newURI);
 
   // Do not allow insecure redirects to data: URIs
@@ -1731,16 +1755,18 @@ nsresult nsContentSecurityManager::CheckForIncoherentResultPrincipal(
     return NS_OK;
   }
 
-  nsCOMPtr<nsIPrincipal> resultOrPrecursor;
+  nsCOMPtr<nsIPrincipal> result;
   nsresult rv = nsScriptSecurityManager::GetScriptSecurityManager()
                     ->GetChannelResultPrincipalIfNotSandboxed(
-                        aChannel, getter_AddRefs(resultOrPrecursor));
+                        aChannel, getter_AddRefs(result));
   NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_STATE(resultOrPrecursor);
+  NS_ENSURE_STATE(result);
 
-  if (nsCOMPtr<nsIPrincipal> precursor =
-          resultOrPrecursor->GetPrecursorPrincipal()) {
+  nsCOMPtr<nsIPrincipal> resultOrPrecursor;
+  if (nsCOMPtr<nsIPrincipal> precursor = result->GetPrecursorPrincipal()) {
     resultOrPrecursor = precursor;
+  } else {
+    resultOrPrecursor = result;
   }
 
   if (!resultOrPrecursor->GetIsContentPrincipal()) {
@@ -1758,6 +1784,35 @@ nsresult nsContentSecurityManager::CheckForIncoherentResultPrincipal(
   nsCOMPtr<nsIURI> channelURI;
   aChannel->GetURI(getter_AddRefs(channelURI));
   NS_ENSURE_STATE(channelURI);
+
+  if (channelURI->SchemeIs("data") && !result->GetIsNullPrincipal()) {
+    // Carve out for `ExtensionPolicyService::GetGeneratedBackgroundPageUrl`:
+    if (!BasePrincipal::Cast(result)->AddonPolicy()) {
+      MOZ_ASSERT_UNREACHABLE("data URI with a non-null principal");
+      return NS_ERROR_CONTENT_BLOCKED;
+    }
+
+    nsAutoCString triggeringRemoteType;
+    rv = loadInfo->GetTriggeringRemoteType(triggeringRemoteType);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (triggeringRemoteType != NOT_REMOTE_TYPE &&
+        triggeringRemoteType != EXTENSION_REMOTE_TYPE) {
+      MOZ_ASSERT_UNREACHABLE(
+          "Generated addon background page in incorrect process");
+      return NS_ERROR_CONTENT_BLOCKED;
+    }
+  }
+
+  if (NS_IsAboutSrcdoc(channelURI)) {
+    nsIPrincipal* loadingPrincipal = loadInfo->GetLoadingPrincipal();
+    if (!loadingPrincipal || !loadingPrincipal->Subsumes(result)) {
+      // This is fine for sandboxed srcdoc because result is unsandboxed.
+      MOZ_ASSERT_UNREACHABLE(
+          "about:srcdoc result principal not subsumed by embedder");
+      return NS_ERROR_CONTENT_BLOCKED;
+    }
+  }
 
   nsCOMPtr<nsIPrincipal> channelUriPrincipal =
       BasePrincipal::CreateContentPrincipal(channelURI, {});

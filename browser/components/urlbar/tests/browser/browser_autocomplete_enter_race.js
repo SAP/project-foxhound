@@ -13,13 +13,15 @@
 const DEFAULT_URL_SCHEME = "http://";
 
 add_setup(async function () {
-  let bm = await PlacesUtils.bookmarks.insert({
-    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
-    url: DEFAULT_URL_SCHEME + "/example.com/?q=%s",
-    title: "test",
-  });
+  // Add visits so that it can be autofilled.
+  await PlacesTestUtils.addVisits([
+    {
+      uri: DEFAULT_URL_SCHEME + "/example.com/?q=%s",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
   registerCleanupFunction(async function () {
-    await PlacesUtils.bookmarks.remove(bm);
     await PlacesUtils.history.clear();
   });
   await SpecialPowers.pushPrefEnv({
@@ -112,21 +114,18 @@ add_task(
 
     await SearchTestUtils.installSearchExtension();
 
-    let engine = Services.search.getEngineByName("Example");
-    let originalEngine = await Services.search.getDefault();
-    await Services.search.setDefault(
-      engine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-    );
+    let engine = SearchService.getEngineByName("Example");
+    let originalEngine = await SearchService.getDefault();
+    await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
     async function cleanup() {
       Preferences.set("browser.urlbar.suggest.history", suggestHistory);
       Preferences.set("browser.urlbar.suggest.bookmark", suggestBookmarks);
       Preferences.set("browser.urlbar.suggest.openpage", suggestOpenPages);
 
-      await Services.search.setDefault(
+      await SearchService.setDefault(
         originalEngine,
-        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+        SearchService.CHANGE_REASON.UNKNOWN
       );
     }
     registerCleanupFunction(cleanup);
@@ -185,11 +184,11 @@ add_task(
         },
       });
     });
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     EventUtils.sendString("x");
     EventUtils.synthesizeKey("KEY_Enter");
     await recievedResult;
-    Assert.less(Cu.now() - start, TIMEOUT);
+    Assert.less(ChromeUtils.now() - start, TIMEOUT);
   })
 );
 

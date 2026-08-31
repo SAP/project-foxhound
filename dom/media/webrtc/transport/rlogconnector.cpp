@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +5,8 @@
 /* Original author: bcampen@mozilla.com */
 
 #include "rlogconnector.h"
+
+#include <csi_platform.h>
 
 #include <cstdarg>
 #include <deque>
@@ -19,12 +18,8 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Sprintf.h"
-
-extern "C" {
-#include <csi_platform.h>
 #include "r_log.h"
 #include "registry.h"
-}
 
 /* Matches r_dest_vlog type defined in r_log.h */
 static int ringbuffer_vlog(int facility, int level, const char* format,
@@ -103,7 +98,7 @@ inline void RLogConnector::RemoveOld() {
 RLogConnector* RLogConnector::CreateInstance() {
   if (!instance) {
     instance = new RLogConnector;
-    NR_reg_init(NR_REG_MODE_LOCAL);
+    NR_reg_init();
     r_log_set_extra_destination(LOG_DEBUG, &ringbuffer_vlog);
   }
   return instance;

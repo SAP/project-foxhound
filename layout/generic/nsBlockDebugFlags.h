@@ -1,19 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBlockDebugFlags_h__
-#define nsBlockDebugFlags_h__
+#ifndef nsBlockDebugFlags_h_
+#define nsBlockDebugFlags_h_
 
 #undef NOISY_FIRST_LETTER  // enables debug output for first-letter specific
                            // layout
 #undef NOISY_FINAL_SIZE    // enables debug output for desired width/height
                            // computation, once all children have been reflowed
 #undef NOISY_REMOVE_FRAME
-#undef NOISY_COMBINED_AREA  // enables debug output for combined area
-                            // computation
 #undef NOISY_BLOCK_DIR_MARGINS
 #undef NOISY_REFLOW_REASON     // gives a little info about why each reflow was
                                // requested
@@ -23,4 +19,4 @@
                                // invalidate
 #undef REALLY_NOISY_REFLOW     // some extra debug info
 
-#endif  // nsBlockDebugFlags_h__
+#endif  // nsBlockDebugFlags_h_

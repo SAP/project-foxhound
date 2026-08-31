@@ -122,7 +122,6 @@ function getMessage(error, prefix = "") {
  *   truncate: truncate,
  *   stack: stack, // Optional, defaults to the current stack.
  * });
- *
  */
 Assert.AssertionError = function (options) {
   this.name = "AssertionError";
@@ -130,16 +129,23 @@ Assert.AssertionError = function (options) {
   this.expected = options.expected;
   this.operator = options.operator;
   this.message = getMessage(this, options.message, options.truncate);
-  // The part of the stack that comes from this module is not interesting.
   let stack = options.stack || Components.stack;
-  do {
-    stack = stack.asyncCaller || stack.caller;
-  } while (
-    stack &&
-    stack.filename &&
-    stack.filename.includes("Assert.sys.mjs")
-  );
-  this.stack = stack;
+  if (typeof stack == "string") {
+    this.stack = stack;
+  } else {
+    // The part of the stack that comes from this module is not interesting.
+    do {
+      stack = stack.asyncCaller || stack.caller;
+    } while (
+      stack &&
+      stack.filename &&
+      stack.filename.includes("Assert.sys.mjs")
+    );
+    this.stack = stack;
+  }
+  if (options.time !== undefined) {
+    this.time = options.time;
+  }
 };
 
 // assert.AssertionError instanceof Error
@@ -160,7 +166,7 @@ Assert.prototype._reporter = null;
  * @callback reporterFunc
  * @param {AssertionError|null} err
  *        An error object when the assertion failed, or null when it passed.
- * @param {String} message
+ * @param {string} message
  *        Message describing the assertion.
  * @param {Stack} stack
  *        Stack trace of the assertion function.
@@ -207,9 +213,9 @@ Assert.prototype.setReporter = function (reporterFunc) {
  *        The result of evaluating the assertion.
  * @param {*} [expected]
  *        Expected result from the test author.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
- * @param {String} [operator]
+ * @param {string} [operator]
  *        Operation qualifier used by the assertion method (ex: '==').
  * @param {boolean} [truncate=true]
  *        Whether or not ``actual`` and ``expected`` should be truncated when printing.
@@ -224,7 +230,8 @@ Assert.prototype.report = function (
   message,
   operator,
   truncate = true,
-  stack = null // Defaults to Components.stack in AssertionError.
+  stack = null, // Defaults to Components.stack in AssertionError.
+  time = undefined
 ) {
   // Although not ideal, we allow a "null" message due to the way some of the extension tests
   // work.
@@ -241,6 +248,7 @@ Assert.prototype.report = function (
     operator,
     truncate,
     stack,
+    time,
   });
   if (!this._reporter) {
     // If no custom reporter is set, throw the error.
@@ -261,7 +269,7 @@ Assert.prototype.report = function (
  *
  * @param {*} value
  *        Test subject to be evaluated as truthy.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.ok = function (value, message) {
@@ -286,7 +294,7 @@ Assert.prototype.ok = function (value, message) {
  *        Test subject to be evaluated as equivalent to ``expected``.
  * @param {*} expected
  *        Test reference to evaluate against ``actual``.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.equal = function equal(actual, expected, message) {
@@ -304,7 +312,7 @@ Assert.prototype.equal = function equal(actual, expected, message) {
  *        Test subject to be evaluated as NOT equivalent to ``expected``.
  * @param {*} expected
  *        Test reference to evaluate against ``actual``.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.notEqual = function notEqual(actual, expected, message) {
@@ -324,7 +332,7 @@ Assert.prototype.notEqual = function notEqual(actual, expected, message) {
  *        Test subject to be evaluated as equivalent to ``expected``, including nested properties.
  * @param {*} expected
  *        Test reference to evaluate against ``actual``.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.deepEqual = function deepEqual(actual, expected, message) {
@@ -347,7 +355,7 @@ Assert.prototype.deepEqual = function deepEqual(actual, expected, message) {
  *        properties.
  * @param {*} expected
  *        Test reference to evaluate against ``actual``.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.notDeepEqual = function notDeepEqual(
@@ -373,7 +381,7 @@ Assert.prototype.notDeepEqual = function notDeepEqual(
  *        Test subject to be evaluated as strictly equivalent to ``expected``.
  * @param {*} expected
  *        Test reference to evaluate against ``actual``.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.strictEqual = function strictEqual(actual, expected, message) {
@@ -388,7 +396,7 @@ Assert.prototype.strictEqual = function strictEqual(actual, expected, message) {
  *        Test subject to be evaluated as NOT strictly equivalent to ``expected``.
  * @param {*} expected
  *        Test reference to evaluate against ``actual``.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.notStrictEqual = function notStrictEqual(
@@ -458,7 +466,7 @@ function expectedException(actual, expected) {
  *        This parameter can be either a RegExp or a function. The function is
  *        either the error type's constructor, or it's a method that returns
  *        a boolean that describes the test outcome.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.throws = function (block, expected, message) {
@@ -521,7 +529,7 @@ Assert.prototype.throws = function (block, expected, message) {
  *        A promise that is expected to reject.
  * @param {?} [expected]
  *        Test reference to evaluate against the rejection result.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.rejects = function (promise, expected, message) {
@@ -596,11 +604,11 @@ function compareNumbers(expression, lhs, rhs, message, operator) {
  * The lhs must be greater than the rhs.
  * assert.greater(lhs, rhs, message_opt);
  *
- * @param {Number} lhs
+ * @param {number} lhs
  *        The left-hand side value.
- * @param {Number} rhs
+ * @param {number} rhs
  *        The right-hand side value.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the comparison result.
  */
 Assert.prototype.greater = function greater(lhs, rhs, message) {
@@ -611,11 +619,11 @@ Assert.prototype.greater = function greater(lhs, rhs, message) {
  * The lhs must be greater than or equal to the rhs.
  * assert.greaterOrEqual(lhs, rhs, message_opt);
  *
- * @param {Number} [lhs]
+ * @param {number} [lhs]
  *        The left-hand side value.
- * @param {Number} [rhs]
+ * @param {number} [rhs]
  *        The right-hand side value.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the comparison result.
  */
 Assert.prototype.greaterOrEqual = function greaterOrEqual(lhs, rhs, message) {
@@ -626,11 +634,11 @@ Assert.prototype.greaterOrEqual = function greaterOrEqual(lhs, rhs, message) {
  * The lhs must be less than the rhs.
  * assert.less(lhs, rhs, message_opt);
  *
- * @param {Number} [lhs]
+ * @param {number} [lhs]
  *        The left-hand side value.
- * @param {Number} [rhs]
+ * @param {number} [rhs]
  *        The right-hand side value.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the comparison result.
  */
 Assert.prototype.less = function less(lhs, rhs, message) {
@@ -641,11 +649,11 @@ Assert.prototype.less = function less(lhs, rhs, message) {
  * The lhs must be less than or equal to the rhs.
  * assert.lessOrEqual(lhs, rhs, message_opt);
  *
- * @param {Number} [lhs]
+ * @param {number} [lhs]
  *        The left-hand side value.
- * @param {Number} [rhs]
+ * @param {number} [rhs]
  *        The right-hand side value.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the comparison result.
  */
 Assert.prototype.lessOrEqual = function lessOrEqual(lhs, rhs, message) {
@@ -658,13 +666,13 @@ Assert.prototype.lessOrEqual = function lessOrEqual(lhs, rhs, message) {
  * string it will be interpreted as a regular expression so take care to escape
  * special characters such as "?" or "(" if you need the actual characters.
  *
- * @param {String} lhs
+ * @param {string} lhs
  *        The string to be tested.
- * @param {String|RegExp} rhs
+ * @param {string | RegExp} rhs
  *        The regular expression that the string will be tested with.
  *        Note that if passed as a string, this will be interpreted.
  *        as a regular expression.
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the comparison result.
  */
 Assert.prototype.stringMatches = function stringMatches(lhs, rhs, message) {
@@ -709,11 +717,11 @@ Assert.prototype.stringMatches = function stringMatches(lhs, rhs, message) {
 /**
  * The lhs must be a string that contains the rhs string.
  *
- * @param {String} lhs
+ * @param {string} lhs
  *        The string to be tested (haystack).
- * @param {String} rhs
+ * @param {string} rhs
  *        The string to be found (needle).
- * @param {String} [message]
+ * @param {string} [message]
  *        Short explanation of the expected result.
  */
 Assert.prototype.stringContains = function stringContains(lhs, rhs, message) {

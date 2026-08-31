@@ -11,13 +11,13 @@
 #include "rtc_base/openssl_session_cache.h"
 
 #include <openssl/ssl.h>
-#include <stdlib.h>
 
-#include <map>
-#include <memory>
+#include <cstdlib>
 
-#include "rtc_base/gunit.h"
-#include "rtc_base/openssl.h"
+#include "rtc_base/ssl_stream_adapter.h"
+#include "test/gtest.h"
+
+namespace webrtc {
 
 namespace {
 // Use methods that avoid X509 objects if possible.
@@ -45,8 +45,6 @@ SSL_SESSION* NewSslSession(SSL_CTX* ssl_ctx) {
 }
 
 }  // namespace
-
-namespace rtc {
 
 TEST(OpenSSLSessionCache, DTLSModeSetCorrectly) {
   SSL_CTX* ssl_ctx = NewDtlsContext();
@@ -110,4 +108,4 @@ TEST(OpenSSLSessionCache, AddToExistingReplacesPrevious) {
   SSL_CTX_free(ssl_ctx);
 }
 
-}  // namespace rtc
+}  // namespace webrtc

@@ -1,0 +1,19 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<script type="text/javascript">
+window.onload = function() {
+  const bc = SpecialPowers.wrap(BroadcastChannel)
+    .unpartitionedTestingChannel("sessionStorageTargetBlank");
+  bc.postMessage({
+    key1: sessionStorage.getItem("key1"),
+    length: sessionStorage.length,
+    hasOpener: !!window.opener,
+  });
+  bc.close();
+  parent.close();
+};
+</script>
+</head>
+<body>
+</body>
+</html>

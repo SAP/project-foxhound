@@ -7,9 +7,7 @@ from shlex import quote as shell_quote
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util import json
-from taskgraph.util.schema import resolve_keyed_by
 
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
@@ -24,12 +22,10 @@ def add_command(config, jobs):
             "python",
             "testing/mozharness/scripts/release/bouncer_check.py",
         ]
-        job["run"].update(
-            {
-                "using": "mach",
-                "mach": command,
-            }
-        )
+        job["run"].update({
+            "using": "mach",
+            "mach": command,
+        })
         yield job
 
 
@@ -53,39 +49,19 @@ def add_previous_versions(config, jobs):
 
 @transforms.add
 def handle_keyed_by(config, jobs):
-    """Resolve fields that can be keyed by project, etc."""
-    fields = [
-        "run.config",
-        "run.product-field",
-        "run.extra-config",
-    ]
-
+    """Build the bouncer-check command from resolved fields."""
     release_config = get_release_config(config)
     version = release_config["version"]
 
     for job in jobs:
-        for field in fields:
-            resolve_keyed_by(
-                item=job,
-                field=field,
-                item_name=job["name"],
-                **{
-                    "project": config.params["project"],
-                    "release-level": release_level(config.params["project"]),
-                    "release-type": config.params["release_type"],
-                },
-            )
-
         for cfg in job["run"]["config"]:
             job["run"]["mach"].extend(["--config", cfg])
 
         if config.kind == "cron-bouncer-check":
-            job["run"]["mach"].extend(
-                [
-                    "--product-field={}".format(job["run"]["product-field"]),
-                    "--products-url={}".format(job["run"]["products-url"]),
-                ]
-            )
+            job["run"]["mach"].extend([
+                "--product-field={}".format(job["run"]["product-field"]),
+                "--products-url={}".format(job["run"]["products-url"]),
+            ])
             del job["run"]["product-field"]
             del job["run"]["products-url"]
         elif config.kind == "release-bouncer-check":

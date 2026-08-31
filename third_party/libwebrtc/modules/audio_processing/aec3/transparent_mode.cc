@@ -10,8 +10,13 @@
 
 #include "modules/audio_processing/aec3/transparent_mode.h"
 
+#include <cstddef>
+#include <memory>
+
+#include "api/audio/echo_canceller3_config.h"
 #include "api/environment/environment.h"
 #include "api/field_trials_view.h"
+#include "modules/audio_processing/aec3/aec3_common.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -21,10 +26,6 @@ namespace {
 constexpr size_t kBlocksSinceConvergencedFilterInit = 10000;
 constexpr size_t kBlocksSinceConsistentEstimateInit = 10000;
 constexpr float kInitialTransparentStateProbability = 0.2f;
-
-bool DeactivateTransparentMode(const FieldTrialsView& field_trials) {
-  return field_trials.IsEnabled("WebRTC-Aec3TransparentModeKillSwitch");
-}
 
 bool ActivateTransparentModeHmm(const FieldTrialsView& field_trials) {
   return field_trials.IsEnabled("WebRTC-Aec3TransparentModeHmm");
@@ -231,8 +232,7 @@ class LegacyTransparentModeImpl : public TransparentMode {
 std::unique_ptr<TransparentMode> TransparentMode::Create(
     const Environment& env,
     const EchoCanceller3Config& config) {
-  if (config.ep_strength.bounded_erl ||
-      DeactivateTransparentMode(env.field_trials())) {
+  if (config.ep_strength.bounded_erl) {
     RTC_LOG(LS_INFO) << "AEC3 Transparent Mode: Disabled";
     return nullptr;
   }

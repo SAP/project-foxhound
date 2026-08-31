@@ -1,0 +1,83 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tests that moving the caret scrolls the content editable box even if the box is not scrollable</title>
+  <script src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+</head>
+<style>
+@font-face {
+  font-family: Ahem;
+  src: url("/tests/layout/base/tests/Ahem.ttf");
+}
+
+body {
+  margin: 0px;
+  padding: 0px;
+}
+#target {
+  width: 100%;
+  font: 14px/1 Ahem;
+}
+</style>
+<body>
+<div style="height: 80vh;"></div>
+<div id="target" contenteditable>1234567890</div>
+<script>
+async function test() {
+  const utils = SpecialPowers.getDOMWindowUtils(window);
+
+  is(window.scrollY, 0, "The initial scroll offset should be 0");
+  is(visualViewport.scale, 2.0, "The document should get scaled by 2.0");
+  is(visualViewport.pageTop, 0, "The initial visual viewport pageTop should be 0");
+
+  const target = document.querySelector("#target");
+
+  // Focus to the contenteditable element without scrolling.
+  const focusPromise = new Promise(resolve => {
+    target.addEventListener("focus", resolve, { once: true });
+  });
+  target.focus({ preventScroll: true });
+  await focusPromise;
+
+  let visualScrollPromise = new Promise(resolve => {
+    visualViewport.addEventListener("scroll", resolve, { once: true });
+  });
+  target.scrollIntoView({ block: "nearest" });
+  await visualScrollPromise;
+  ok(visualViewport.offsetTop > 0,
+    `visualViewport.offsetTop: ${visualViewport.offsetTop} should be greater than 0`);
+  const offsetTop = visualViewport.offsetTop;
+
+  // Visualy scroll back to (0, 0).
+  // Now the contentediable element is out of view.
+  utils.scrollToVisual(0, 0,
+                       utils.UPDATE_TYPE_MAIN_THREAD,
+                       utils.SCROLL_MODE_INSTANT);
+  await promiseApzFlushedRepaints();
+  is(visualViewport.offsetTop, 0);
+
+  visualScrollPromise = new Promise(resolve => {
+    visualViewport.addEventListener("scroll", resolve, { once: true });
+  });
+  const selection = window.getSelection();
+  selection.collapse(target.firstChild, 1);
+  // Now move the caret and then see whether the contenteditable element
+  // scrolled into the visual viewport.
+  synthesizeKey("KEY_ArrowLeft");
+  await visualScrollPromise;
+
+  isfuzzy(visualViewport.offsetTop, offsetTop, 1.0,
+    "The content editable box should be inside the visual viewport");
+}
+
+SpecialPowers.getDOMWindowUtils(window).setResolutionAndScaleTo(2.0);
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</body>
+</html>

@@ -20,7 +20,7 @@ Markers in the GeckoView Java codebase
 **************************************
 
 If you are in the GeckoView codebase, then you should have access to ``ProfilerController``.
-See the `ProfilerController Java file`_ (`javadoc`_) to find which methods you can use to
+See the :searchfox:`ProfilerController Java file <mobile/android/geckoview/src/main/java/org/mozilla/geckoview/ProfilerController.java>` (`javadoc`_) to find which methods you can use to
 instrument your source code.
 
 Here's an example:
@@ -60,8 +60,8 @@ Markers in the Fenix codebase
 *****************************
 
 If you are in the Fenix codebase, then you should have access to the Android
-components. The Android components includes a `Profiler interface here`_, with
-its corresponding `implementation here`_. You should be able to do everything
+components. The Android components includes a :searchfox:`Profiler interface here <mobile/android/android-components/components/concept/base/src/main/java/mozilla/components/concept/base/profiler/Profiler.kt>`, with
+its corresponding :searchfox:`implementation here <mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/profiler/Profiler.kt>`. You should be able to do everything
 you can do with the ``ProfilerController``. Here's an example on how to call them:
 
 .. code-block:: kotlin
@@ -95,7 +95,4 @@ profiler is active. Here's an example:
     components.core.engine.profiler?.addMarker("Marker Name", info)
   }
 
-.. _ProfilerController Java file: https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/ProfilerController.java
 .. _javadoc: https://mozilla.github.io/geckoview/javadoc/mozilla-central/org/mozilla/geckoview/ProfilerController.html
-.. _Profiler interface here: https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/concept/base/src/main/java/mozilla/components/concept/base/profiler/Profiler.kt
-.. _implementation here: https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/profiler/Profiler.kt

@@ -101,7 +101,7 @@ add_task(async function test_crash_page_not_in_history() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -133,7 +133,7 @@ add_task(async function test_revived_history_from_remote() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -181,7 +181,7 @@ add_task(async function test_revived_history_from_non_remote() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -228,7 +228,7 @@ add_task(async function test_revive_tab_from_session_store() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -239,7 +239,7 @@ add_task(async function test_revive_tab_from_session_store() {
   });
   let browser2 = newTab2.linkedBrowser;
   ok(browser2.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser2);
+  await BrowserTestUtils.browserLoaded(browser2, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -288,7 +288,7 @@ add_task(async function test_revive_all_tabs_from_session_store() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -366,7 +366,7 @@ add_task(async function test_close_tab_after_crash() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -397,7 +397,7 @@ add_task(async function test_hide_restore_all_button() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);
@@ -468,7 +468,7 @@ add_task(async function test_aboutcrashedtabzoom() {
   gBrowser.selectedTab = newTab;
   let browser = newTab.linkedBrowser;
   ok(browser.isRemoteBrowser, "Should be a remote browser");
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   BrowserTestUtils.startLoadingURIString(browser, PAGE_1);
   await promiseBrowserLoaded(browser);

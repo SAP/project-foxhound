@@ -74,7 +74,7 @@ this.tabpaint = class extends ExtensionAPI {
   receiveMessage(msg) {
     let browser = msg.target;
 
-    let gBrowser = browser.ownerGlobal.gBrowser;
+    let gBrowser = browser.documentGlobal.gBrowser;
 
     switch (msg.name) {
       case "TabPaint:Go": {
@@ -127,7 +127,7 @@ this.tabpaint = class extends ExtensionAPI {
     let win = BrowserWindowTracker.getTopWindow();
 
     TalosParentProfiler.subtestStart("TabPaint Parent Start");
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
 
     gBrowser.selectedTab = gBrowser.addTab(
       //win.performance.now() + win.performance.timing.navigationStart gives the UNIX timestamp.
@@ -162,7 +162,7 @@ this.tabpaint = class extends ExtensionAPI {
    */
   async openTabFromContent() {
     TalosParentProfiler.subtestStart("TabPaint Content Start");
-    let start_time = Cu.now();
+    let start_time = ChromeUtils.now();
 
     Services.mm.broadcastAsyncMessage("TabPaint:OpenFromContent");
 
@@ -207,7 +207,7 @@ this.tabpaint = class extends ExtensionAPI {
         }
       };
       Services.obs.addObserver(observer, BROWSER_FLUSH_TOPIC);
-      tab.ownerGlobal.gBrowser.removeTab(tab);
+      tab.documentGlobal.gBrowser.removeTab(tab);
     });
   }
 };

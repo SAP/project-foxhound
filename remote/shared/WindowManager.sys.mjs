@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -9,14 +11,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
   AnimationFramePromise: "chrome://remote/content/shared/Sync.sys.mjs",
   AppInfo: "chrome://remote/content/shared/AppInfo.sys.mjs",
+  BiMap: "chrome://remote/content/shared/BiMap.sys.mjs",
   BrowsingContextListener:
     "chrome://remote/content/shared/listeners/BrowsingContextListener.sys.mjs",
+  ChromeWindowListener:
+    "chrome://remote/content/shared/listeners/ChromeWindowListener.sys.mjs",
   DebounceCallback: "chrome://remote/content/marionette/sync.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
-  generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
-  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   TimedPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   UserContextManager:
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
@@ -30,38 +33,88 @@ ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
 const TIMEOUT_NO_WINDOW_MANAGER = 5000;
 
 /**
+ * @typedef {object} WindowRect
+ *
+ * @property {number} x
+ *     The x-coordinate of the window.
+ * @property {number} y
+ *     The y-coordinate of the window.
+ * @property {number} width
+ *     The width of the window.
+ * @property {number} height
+ *     The height of the window.
+ */
+
+/**
  * Provides helpers to interact with Window objects.
  *
  * @class WindowManager
  */
 class WindowManager {
+  #chromeWindowListener;
   #clientWindowIds;
   #contextListener;
+  #contextToWindowMap;
+  #tracking;
 
   constructor() {
-    // Maps ChromeWindow to uuid: WeakMap.<Object, string>
-    this._chromeWindowHandles = new WeakMap();
-
     /**
      * Keep track of the client window for any registered contexts. When the
      * contextDestroyed event is fired, the context is already destroyed so
      * we cannot query for the client window at that time.
      */
-    this.#clientWindowIds = new WeakMap();
+    this.#clientWindowIds = new lazy.BiMap();
 
+    // For content browsing contexts, the embedder element may already be
+    // gone by the time when it is getting discarded. To ensure we can still
+    // retrieve the corresponding chrome window, we maintain a mapping from
+    // each top-level content browsing context to its chrome window.
+    this.#contextToWindowMap = new WeakMap();
     this.#contextListener = new lazy.BrowsingContextListener();
-    this.#contextListener.on("attached", this.#onContextAttached);
-    this.#contextListener.startListening();
+
+    this.#tracking = false;
+
+    this.#chromeWindowListener = new lazy.ChromeWindowListener();
   }
 
-  get chromeWindowHandles() {
-    const chromeWindowHandles = [];
+  destroy() {
+    this.stopTracking();
+  }
 
-    for (const win of this.windows) {
-      chromeWindowHandles.push(this.getIdForWindow(win));
+  startTracking() {
+    if (this.#tracking) {
+      return;
     }
 
-    return chromeWindowHandles;
+    this.#chromeWindowListener.on("closed", this.#onChromeWindowClosed);
+    this.#chromeWindowListener.on("opened", this.#onChromeWindowOpened);
+    this.#chromeWindowListener.startListening();
+
+    this.#contextListener.on("attached", this.#onContextAttached);
+    this.#contextListener.startListening();
+
+    // Pre-fill the internal window id mapping.
+    this.windows.forEach(window => this.getIdForWindow(window));
+
+    this.#tracking = true;
+  }
+
+  stopTracking() {
+    if (!this.#tracking) {
+      return;
+    }
+
+    this.#chromeWindowListener.stopListening();
+    this.#chromeWindowListener.off("closed", this.#onChromeWindowClosed);
+    this.#chromeWindowListener.off("opened", this.#onChromeWindowOpened);
+
+    this.#contextListener.stopListening();
+    this.#contextListener.off("attached", this.#onContextAttached);
+
+    this.#clientWindowIds = new lazy.BiMap();
+    this.#contextToWindowMap = new WeakMap();
+
+    this.#tracking = false;
   }
 
   /**
@@ -84,111 +137,36 @@ class WindowManager {
   }
 
   /**
-   * Find a specific window matching the provided window handle.
+   * Retrieves an id for the given chrome window. The id is a dynamically
+   * generated uuid by the WindowManager and associated with the
+   * top-level browsing context of that chrome window.
    *
-   * @param {string} handle
-   *     The unique handle of either a chrome window or a content browser, as
-   *     returned by :js:func:`#getIdForBrowser` or :js:func:`#getIdForWindow`.
+   * @param {ChromeWindow} win
+   *     The chrome window for which we want to retrieve the id.
    *
-   * @returns {object} A window properties object,
-   *     @see :js:func:`GeckoDriver#getWindowProperties`
+   * @returns {string|null}
+   *     The unique id for this chrome window or `null` if not a valid window.
    */
-  findWindowByHandle(handle) {
-    for (const win of this.windows) {
-      // In case the wanted window is a chrome window, we are done.
-      const chromeWindowId = this.getIdForWindow(win);
-      if (chromeWindowId == handle) {
-        return this.getWindowProperties(win);
-      }
-
-      // Otherwise check if the chrome window has a tab browser, and that it
-      // contains a tab with the wanted window handle.
-      const tabBrowser = lazy.TabManager.getTabBrowser(win);
-      if (tabBrowser && tabBrowser.tabs) {
-        for (let i = 0; i < tabBrowser.tabs.length; ++i) {
-          let contentBrowser = lazy.TabManager.getBrowserForTab(
-            tabBrowser.tabs[i]
-          );
-          let contentWindowId = lazy.TabManager.getIdForBrowser(contentBrowser);
-
-          if (contentWindowId == handle) {
-            return this.getWindowProperties(win, { tabIndex: i });
-          }
-        }
-      }
+  getIdForWindow(win) {
+    if (win) {
+      return this.#clientWindowIds.getOrInsert(win);
     }
 
     return null;
   }
 
   /**
-   * A set of properties describing a window and that should allow to uniquely
-   * identify it. The described window can either be a Chrome Window or a
-   * Content Window.
+   * Retrieve the Chrome Window corresponding to the provided window id.
    *
-   * @typedef {object} WindowProperties
-   * @property {Window} win - The Chrome Window containing the window.
-   *     When describing a Chrome Window, this is the window itself.
-   * @property {string} id - The unique id of the containing Chrome Window.
-   * @property {boolean} hasTabBrowser - `true` if the Chrome Window has a
-   *     tabBrowser.
-   * @property {number} tabIndex - Optional, the index of the specific tab
-   *     within the window.
+   * @param {string} id
+   *     A unique id for the chrome window.
+   *
+   * @returns {ChromeWindow|undefined}
+   *     The chrome window found for this id, `null` if none
+   *     was found.
    */
-
-  /**
-   * Returns a WindowProperties object, that can be used with :js:func:`GeckoDriver#setWindowHandle`.
-   *
-   * @param {Window} win
-   *     The Chrome Window for which we want to create a properties object.
-   * @param {object} options
-   * @param {number} options.tabIndex
-   *     Tab index of a specific Content Window in the specified Chrome Window.
-   * @returns {WindowProperties} A window properties object.
-   */
-  getWindowProperties(win, options = {}) {
-    if (!Window.isInstance(win)) {
-      throw new TypeError("Invalid argument, expected a Window object");
-    }
-
-    return {
-      win,
-      id: this.getIdForWindow(win),
-      hasTabBrowser: !!lazy.TabManager.getTabBrowser(win),
-      tabIndex: options.tabIndex,
-    };
-  }
-
-  /**
-   * Returns the window ID for a specific browsing context.
-   *
-   * @param {BrowsingContext} context
-   *     The browsing context for which we want to retrieve the window ID.
-   *
-   * @returns {(string|undefined)}
-   *    The ID of the window associated with the browsing context.
-   */
-  getIdForBrowsingContext(context) {
-    const window = this.#getBrowsingContextWindow(context);
-
-    return window
-      ? this.getIdForWindow(window)
-      : this.#clientWindowIds.get(context);
-  }
-
-  /**
-   * Retrieves an id for the given chrome window. The id is a dynamically
-   * generated uuid associated with the window object.
-   *
-   * @param {window} win
-   *     The window object for which we want to retrieve the id.
-   * @returns {string} The unique id for this chrome window.
-   */
-  getIdForWindow(win) {
-    if (!this._chromeWindowHandles.has(win)) {
-      this._chromeWindowHandles.set(win, lazy.generateUUID());
-    }
-    return this._chromeWindowHandles.get(win);
+  getWindowById(id) {
+    return this.#clientWindowIds.getObject(id);
   }
 
   /**
@@ -223,8 +201,8 @@ class WindowManager {
    * @param {number} height
    *     The height of the window.
    *
-   * @returns {Promise}
-   *     A promise that resolves when the window geometry has been adjusted.
+   * @returns {Promise<WindowRect>}
+   *     A promise that resolves to the window rect when the window geometry has been adjusted.
    *
    * @throws {TimeoutError}
    *     Raised if the operating system fails to honor the requested move or resize.
@@ -249,22 +227,19 @@ class WindowManager {
       let posMatches = true;
 
       if (
-        width !== null &&
-        height !== null &&
-        (win.outerWidth !== width || win.outerHeight !== height)
+        (width !== null && win.outerWidth !== width) ||
+        (height !== null && win.outerHeight !== height)
       ) {
         sizeMatches = false;
       }
 
-      // Wayland doesn't support getting the window position.
       if (
-        x !== null &&
-        y !== null &&
-        (win.screenX !== x || win.screenY !== y)
+        (x !== null && win.screenX !== x) ||
+        (y !== null && win.screenY !== y)
       ) {
-        if (lazy.AppInfo.isWayland) {
+        if (lazy.AppInfo.isWayland && !lazy.AppInfo.isHeadless) {
           lazy.logger.info(
-            `Wayland doesn't support setting the window position`
+            `Wayland doesn't support setting the window position in headful mode`
           );
         } else {
           posMatches = false;
@@ -280,6 +255,14 @@ class WindowManager {
       return false;
     }
 
+    if (WindowState.from(win.windowState) !== WindowState.Normal) {
+      await this.restoreWindow(win);
+    }
+
+    lazy.logger.trace(
+      `Setting window geometry to ${width}x${height} @ (${x}, ${y})`
+    );
+
     if (!geometryMatches()) {
       // There might be more than one resize or MozUpdateWindowPos event due
       // to previous geometry changes, such as from restoreWindow(), so
@@ -290,17 +273,33 @@ class WindowManager {
       };
       const promises = [];
 
-      if (width !== null && height !== null) {
+      const resize = width !== null || height !== null;
+      if (resize) {
         promises.push(new lazy.EventPromise(win, "resize", options));
-        win.resizeTo(width, height);
       }
 
-      // Wayland doesn't support setting the window position.
-      if (!lazy.AppInfo.isWayland && x !== null && y !== null) {
+      // Wayland doesn't support setting the window position in headful mode.
+      const move =
+        !(lazy.AppInfo.isWayland && !lazy.AppInfo.isHeadless) &&
+        (x !== null || y !== null);
+
+      if (move) {
         promises.push(
           new lazy.EventPromise(win.windowRoot, "MozUpdateWindowPos", options)
         );
-        win.moveTo(x, y);
+      }
+
+      if (move && resize) {
+        win.moveResize(
+          x ?? win.screenX,
+          y ?? win.screenY,
+          width ?? win.outerWidth,
+          height ?? win.outerHeight
+        );
+      } else if (move) {
+        win.moveTo(x ?? win.screenX, y ?? win.screenY);
+      } else if (resize) {
+        win.resizeTo(width ?? win.outerWidth, height ?? win.outerHeight);
       }
 
       try {
@@ -316,6 +315,8 @@ class WindowManager {
         }
       }
     }
+
+    return this.getWindowRect(win);
   }
 
   /**
@@ -338,6 +339,47 @@ class WindowManager {
   }
 
   /**
+   * Returns the chrome window for a specific browsing context.
+   *
+   * @param {BrowsingContext} context
+   *    The browsing context for which we want to retrieve the window.
+   *
+   * @returns {ChromeWindow|null}
+   *    The chrome window associated with the browsing context.
+   *    Otherwise `null` is returned.
+   */
+  getChromeWindowForBrowsingContext(context) {
+    if (!context.isContent) {
+      // Chrome browsing contexts always have a chrome window set.
+      return context.topChromeWindow;
+    }
+
+    if (this.#contextToWindowMap.has(context.top)) {
+      return this.#contextToWindowMap.get(context.top);
+    }
+
+    return this.#setChromeWindowForBrowsingContext(context);
+  }
+
+  /**
+   * Gets the position and dimensions of the top-level browsing context.
+   *
+   * @param {ChromeWindow} win
+   *     The chrome window to get its rect from.
+   *
+   * @returns {WindowRect}
+   *     An object with the window position and dimension.
+   */
+  getWindowRect(win) {
+    return {
+      x: win.screenX,
+      y: win.screenY,
+      width: win.outerWidth,
+      height: win.outerHeight,
+    };
+  }
+
+  /**
    * Open a new browser window.
    *
    * @param {object=} options
@@ -351,8 +393,12 @@ class WindowManager {
    * @param {string=} options.userContextId
    *     The id of the user context which should own the initial tab of the new
    *     window.
-   * @returns {Promise}
+   *
+   * @returns {Promise<ChromeWindow>}
    *     A promise resolving to the newly created chrome window.
+   *
+   * @throws {UnsupportedOperationError}
+   *     When opening a new browser window is not supported.
    */
   async openBrowserWindow(options = {}) {
     let {
@@ -363,7 +409,7 @@ class WindowManager {
     } = options;
 
     switch (lazy.AppInfo.name) {
-      case "Firefox":
+      case "Firefox": {
         if (openerWindow === null) {
           // If no opener was provided, fallback to the topmost window.
           openerWindow = Services.wm.getMostRecentBrowserWindow();
@@ -405,7 +451,11 @@ class WindowManager {
           await this.focusWindow(openerWindow);
         }
 
-        return browser.ownerGlobal;
+        const chromeWindow = browser.documentGlobal;
+        await this.waitForChromeWindowLoaded(chromeWindow);
+
+        return chromeWindow;
+      }
 
       default:
         throw new lazy.error.UnsupportedOperationError(
@@ -419,18 +469,29 @@ class WindowManager {
   }
 
   /**
-   * Minimize the specified window.
+   * Fullscreen the specified window.
    *
    * @param {window} win
-   *     The window to minimize.
+   *     The window to fullscreen.
    *
-   * @returns {Promise}
-   *     A promise resolved when the window is minimized, or times out if no window manager is present.
+   * @returns {Promise<WindowRect>}
+   *     A promise that resolves to the window rect when the window is fullscreen.
    */
-  async minimizeWindow(win) {
-    if (WindowState.from(win.windowState) != WindowState.Minimized) {
-      await waitForWindowState(win, () => win.minimize());
+  async fullscreenWindow(win) {
+    const windowState = WindowState.from(win.windowState);
+
+    if (windowState !== WindowState.Fullscreen) {
+      switch (windowState) {
+        case WindowState.Maximized:
+        case WindowState.Minimized:
+          await this.restoreWindow(win);
+          break;
+      }
+
+      await waitForWindowState(win, () => (win.fullScreen = true));
     }
+
+    return this.getWindowRect(win);
   }
 
   /**
@@ -439,13 +500,52 @@ class WindowManager {
    * @param {window} win
    *     The window to maximize.
    *
-   * @returns {Promise}
-   *     A promise resolved when the window is maximized, or times out if no window manager is present.
+   * @returns {Promise<WindowRect>}
+   *     A promise that resolves to the window rect when the window is maximized.
    */
   async maximizeWindow(win) {
-    if (WindowState.from(win.windowState) != WindowState.Maximized) {
+    const windowState = WindowState.from(win.windowState);
+
+    if (windowState !== WindowState.Maximized) {
+      // Directly switching into maximize state does not always work.
+      // As such restore the window to normal state first.
+      switch (windowState) {
+        case WindowState.Fullscreen:
+        case WindowState.Minimized:
+          await this.restoreWindow(win);
+          break;
+      }
+
       await waitForWindowState(win, () => win.maximize());
     }
+
+    return this.getWindowRect(win);
+  }
+
+  /**
+   * Minimize the specified window.
+   *
+   * @param {window} win
+   *     The window to minimize.
+   *
+   * @returns {Promise<WindowRect>}
+   *     A promise that resolves to the window rect when the window is minimized.
+   */
+  async minimizeWindow(win) {
+    const windowState = WindowState.from(win.windowState);
+
+    if (windowState !== WindowState.Minimized) {
+      switch (windowState) {
+        case WindowState.Fullscreen:
+        case WindowState.Maximized:
+          await this.restoreWindow(win);
+          break;
+      }
+
+      await waitForWindowState(win, () => win.minimize());
+    }
+
+    return this.getWindowRect(win);
   }
 
   /**
@@ -454,89 +554,96 @@ class WindowManager {
    * @param {window} win
    *     The window to restore.
    *
-   * @returns {Promise}
-   *     A promise resolved when the window is restored, or times out if no window manager is present.
+   * @returns {Promise<WindowRect>}
+   *     A promise that resolves to the window rect when the window is restored.
    */
   async restoreWindow(win) {
-    if (WindowState.from(win.windowState) !== WindowState.Normal) {
-      await waitForWindowState(win, () => win.restore());
+    const windowState = WindowState.from(win.windowState);
+
+    if (windowState !== WindowState.Normal) {
+      const callback =
+        windowState === WindowState.Fullscreen
+          ? () => (win.fullScreen = false)
+          : () => win.restore();
+
+      await waitForWindowState(win, callback);
     }
+
+    return this.getWindowRect(win);
   }
 
   /**
-   * Sets the fullscreen state of the specified window.
+   * Wait until the browser window is initialized and loaded.
    *
-   * @param {window} win
-   *     The target window.
-   * @param {boolean} enable
-   *     Whether to enter fullscreen (true) or exit fullscreen (false).
+   * @param {ChromeWindow} window
+   *     The chrome window to check for completed loading.
    *
    * @returns {Promise}
-   *     A promise resolved when the window enters or exits fullscreen mode.
+   *     A promise that resolves when the chrome window finished loading.
    */
-  async setFullscreen(win, enable) {
-    const isFullscreen =
-      WindowState.from(win.windowState) === WindowState.Fullscreen;
-    if (enable !== isFullscreen) {
-      await waitForWindowState(win, () => (win.fullScreen = enable));
+  async waitForChromeWindowLoaded(window) {
+    const loaded =
+      window.document.readyState === "complete" &&
+      !window.document.isUncommittedInitialDocument;
+
+    if (!loaded) {
+      lazy.logger.trace(
+        `Chrome window not loaded yet. Waiting for "load" event`
+      );
+      await new lazy.EventPromise(window, "load");
+    }
+
+    // Only Firefox stores the delayed startup finished status, allowing
+    // it to be checked at any time. On Android, this is unnecessary
+    // because there is only a single window, and we already wait for
+    // that window during startup.
+    if (
+      lazy.AppInfo.isFirefox &&
+      window.document.documentURI === AppConstants.BROWSER_CHROME_URL &&
+      !(window.gBrowserInit && window.gBrowserInit.delayedStartupFinished)
+    ) {
+      lazy.logger.trace(
+        `Browser window not initialized yet. Waiting for startup finished`
+      );
+
+      // If it's a browser window wait for it to be fully initialized.
+      await lazy.waitForObserverTopic("browser-delayed-startup-finished", {
+        checkFn: subject => subject === window,
+      });
     }
   }
 
-  /**
-   * Wait until the initial application window has been opened and loaded.
-   *
-   * @returns {Promise<WindowProxy>}
-   *     A promise that resolved to the application window.
-   */
-  waitForInitialApplicationWindowLoaded() {
-    return new lazy.TimedPromise(
-      async resolve => {
-        // This call includes a fallback to "mail:3pane" as well.
-        const win = Services.wm.getMostRecentBrowserWindow();
+  #setChromeWindowForBrowsingContext(context) {
+    const chromeWindow = context.top.embedderElement?.documentGlobal;
+    if (chromeWindow) {
+      return this.#contextToWindowMap.getOrInsert(context.top, chromeWindow);
+    }
 
-        const windowLoaded = lazy.waitForObserverTopic(
-          "browser-delayed-startup-finished",
-          {
-            checkFn: subject => (win !== null ? subject == win : true),
-          }
-        );
-
-        // The current window has already been finished loading.
-        if (win && win.document.readyState == "complete") {
-          resolve(win);
-          return;
-        }
-
-        // Wait for the next browser/mail window to open and finished loading.
-        const { subject } = await windowLoaded;
-        resolve(subject);
-      },
-      {
-        errorMessage: "No applicable application window found",
-      }
-    );
+    return null;
   }
 
-  /**
-   * Returns the window for a specific browsing context.
-   *
-   * @param {BrowsingContext} context
-   *    The browsing context for which we want to retrieve the window.
-   *
-   * @returns {(window|undefined)}
-   *    The window associated with the browsing context.
-   */
-  #getBrowsingContextWindow(context) {
-    return lazy.AppInfo.isAndroid
-      ? context.top.embedderElement?.ownerGlobal
-      : context.topChromeWindow;
-  }
+  /* Event handlers */
 
   #onContextAttached = (_, data = {}) => {
     const { browsingContext } = data;
 
-    const window = this.#getBrowsingContextWindow(browsingContext);
-    this.#clientWindowIds.set(browsingContext, this.getIdForWindow(window));
+    if (!browsingContext.isContent) {
+      return;
+    }
+
+    this.#setChromeWindowForBrowsingContext(browsingContext);
+  };
+
+  #onChromeWindowClosed = (_, data = {}) => {
+    const { window } = data;
+
+    this.#clientWindowIds.deleteByObject(window);
+  };
+
+  #onChromeWindowOpened = (_, data = {}) => {
+    const { window } = data;
+
+    this.getIdForWindow(window);
   };
 }
 

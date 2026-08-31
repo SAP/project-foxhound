@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -182,6 +181,14 @@ bool TSFStaticSink::IsATOKActiveInternal() {
   //      Name of ATOK Passport (subscription) equals "ATOK".
   return StringBeginsWith(mActiveTIPKeyboardDescription, u"ATOK "_ns) ||
          mActiveTIPKeyboardDescription.EqualsLiteral("ATOK");
+}
+
+bool TSFStaticSink::IsSogouActive() {
+  return IsSimplifiedChinese() && ActiveTIP() == TextInputProcessorID::Sogou;
+}
+
+bool TSFStaticSink::IsWeChatIMEActive() {
+  return IsSimplifiedChinese() && ActiveTIP() == TextInputProcessorID::WeChat;
 }
 
 void TSFStaticSink::ComputeActiveTextInputProcessor() {
@@ -454,6 +461,24 @@ TextInputProcessorID TSFStaticSink::ComputeActiveTIPAsSimplifiedChinese() {
       {0xBA, 0x1D, 0x86, 0x67, 0x24, 0x6F, 0xDF, 0x8E}};
   if (mActiveTIPGUID == kMicrosoftWubiGUID) {
     return TextInputProcessorID::MicrosoftWubi;
+  }
+  // {E7EA138F-69F8-11D7-A6EA-00065B844311}
+  static constexpr GUID kSogouGUID = {
+      0xe7ea138f,
+      0x69f8,
+      0x11d7,
+      {0xa6, 0xea, 0x00, 0x06, 0x5b, 0x84, 0x43, 0x11}};
+  if (mActiveTIPGUID == kSogouGUID) {
+    return TextInputProcessorID::Sogou;
+  }
+  // {607FDF85-FCC8-4DBD-A365-41296F980C9C}
+  static constexpr GUID kWeChatGUID = {
+      0x607fdf85,
+      0xfcc8,
+      0x4dbd,
+      {0xa3, 0x65, 0x41, 0x29, 0x6f, 0x98, 0x0c, 0x9c}};
+  if (mActiveTIPGUID == kWeChatGUID) {
+    return TextInputProcessorID::WeChat;
   }
   // NOTE: There are some other Simplified Chinese TIPs installed in Windows:
   // * Chinese Simplified QuanPin (version 6.0)

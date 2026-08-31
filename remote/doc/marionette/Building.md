@@ -1,4 +1,4 @@
-# Building
+# Building Marionette
 
 Marionette is built into Firefox by default and ships in the official
 Firefox binary.  As Marionette is written in [XPCOM] flavoured
@@ -49,7 +49,6 @@ If you compile Firefox frequently you will also want to enable
 
 ```
 mk_add_options 'export RUSTC_WRAPPER=sccache'
-mk_add_options 'export CCACHE_CPP2=yes'
 ac_add_options --with-ccache
 ```
 

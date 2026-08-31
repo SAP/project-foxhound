@@ -29,7 +29,7 @@ class GraphImpl {
   stopTime = dataSet => (dataSet.latest() || { time: 0 }).time;
 
   // The default background color
-  bgColor = () => compStyle("--in-content-page-background");
+  bgColor = () => compStyle("--background-color-canvas");
   // The color to use for value graph lines
   valueLineColor = () => "grey";
   // The color to use for average graph lines and text
@@ -39,7 +39,7 @@ class GraphImpl {
   // The color to use for the min value
   minColor = () => "grey";
   // Title color
-  titleColor = () => compStyle("--in-content-page-color");
+  titleColor = () => compStyle("--text-color");
   // The color to use for a data point at a time.
   // The destination x coordinate and graph width are also provided.
   datumColor = () => "red";

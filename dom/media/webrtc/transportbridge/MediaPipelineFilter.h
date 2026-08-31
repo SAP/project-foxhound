@@ -1,20 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: softtabstop=2:shiftwidth=2:expandtab
- * */
+/* */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: bcampen@mozilla.com
 
-#ifndef mediapipelinefilter_h__
-#define mediapipelinefilter_h__
+#ifndef mediapipelinefilter_h_
+#define mediapipelinefilter_h_
 
-#include <cstddef>
 #include <stdint.h>
-#include <string>
 
 #include <set>
+#include <string>
 #include <vector>
 
 #include "api/rtp_parameters.h"
@@ -90,4 +87,4 @@ class MediaPipelineFilter {
 
 }  // end namespace mozilla
 
-#endif  // mediapipelinefilter_h__
+#endif  // mediapipelinefilter_h_

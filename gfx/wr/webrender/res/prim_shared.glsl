@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include rect,render_task,gpu_cache,transform
+#include rect,render_task,transform,image_source
 
 #define EXTEND_MODE_CLAMP  0
 #define EXTEND_MODE_REPEAT 1
@@ -10,7 +10,6 @@
 #define SUBPX_DIR_NONE        0
 #define SUBPX_DIR_HORIZONTAL  1
 #define SUBPX_DIR_VERTICAL    2
-#define SUBPX_DIR_MIXED       3
 
 #define RASTER_LOCAL            0
 #define RASTER_SCREEN           1

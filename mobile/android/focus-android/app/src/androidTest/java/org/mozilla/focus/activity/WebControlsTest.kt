@@ -4,7 +4,6 @@
 package org.mozilla.focus.activity
 
 import androidx.test.internal.runner.junit4.AndroidJUnit4ClassRunner
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Ignore
@@ -13,23 +12,27 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityIntentsTestRule
-import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.RetryTestRule
 import org.mozilla.focus.helpers.StringsHelper.GMAIL_APP
 import org.mozilla.focus.helpers.StringsHelper.PHONE_APP
-import org.mozilla.focus.helpers.TestAssetHelper
+import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
+import org.mozilla.focus.helpers.TestAssetHelper.htmlControlsPageAsset
 import org.mozilla.focus.helpers.TestHelper.assertNativeAppOpens
 import org.mozilla.focus.helpers.TestHelper.waitingTime
-import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 
 // These tests check that various web controls work properly
 @RunWith(AndroidJUnit4ClassRunner::class)
-class WebControlsTest : TestSetup() {
-    private lateinit var webServer: MockWebServer
+class WebControlsTest {
 
     private val featureSettingsHelper = FeatureSettingsHelper()
+
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
+    private val webServerRule get() = focusTestRule.mockWebServerRule
 
     @get:Rule
     val mActivityTestRule = MainActivityIntentsTestRule(showFirstRun = false)
@@ -39,26 +42,20 @@ class WebControlsTest : TestSetup() {
     val retryTestRule = RetryTestRule(3)
 
     @Before
-    override fun setUp() {
-        super.setUp()
-        webServer = MockWebServer().apply {
-            dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
-            start()
-        }
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
         featureSettingsHelper.setSearchWidgetDialogEnabled(false)
     }
 
     @After
     fun tearDown() {
-        webServer.shutdown()
         featureSettingsHelper.resetAllFeatureFlags()
     }
 
     @SmokeTest
     @Test
     fun verifyTextInputTest() {
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(htmlControlsPage) {
@@ -72,7 +69,7 @@ class WebControlsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyDropdownMenuTest() {
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(htmlControlsPage) {
@@ -87,7 +84,7 @@ class WebControlsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyExternalLinksTest() {
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(htmlControlsPage) {
@@ -101,7 +98,7 @@ class WebControlsTest : TestSetup() {
     @SmokeTest
     @Test
     fun emailLinkTest() {
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(htmlControlsPage) {
@@ -114,7 +111,7 @@ class WebControlsTest : TestSetup() {
     @SmokeTest
     @Test
     fun telephoneLinkTest() {
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(htmlControlsPage) {
@@ -127,8 +124,8 @@ class WebControlsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyDismissTextSelectionToolbarTest() {
-        val tab1Url = TestAssetHelper.getGenericTabAsset(webServer, 1).url
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val tab1Url = webServerRule.server.getGenericTabAsset(1).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(tab1Url) {
@@ -146,7 +143,7 @@ class WebControlsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifySelectTextTest() {
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(htmlControlsPage) {
@@ -161,14 +158,14 @@ class WebControlsTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyCalendarFormTest() {
-        val htmlControlsPage = TestAssetHelper.getHTMLControlsPageAsset(webServer).url
+        val htmlControlsPage = webServerRule.server.htmlControlsPageAsset.url
 
         searchScreen {
         }.loadPage(htmlControlsPage) {
             progressBar.waitUntilGone(waitingTime)
             clickCalendarForm()
             selectDate()
-            clickButtonWithText("OK")
+            clickButtonWithText("Set")
             clickSubmitDateButton()
             verifySelectedDate()
         }

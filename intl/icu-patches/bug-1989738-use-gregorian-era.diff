@@ -1,0 +1,155 @@
+# Use Gregorian eras for pre-Meiji dates in the Japanese calendar.
+
+diff --git a/intl/icu/source/data/locales/root.txt b/intl/icu/source/data/locales/root.txt
+--- a/intl/icu/source/data/locales/root.txt
++++ b/intl/icu/source/data/locales/root.txt
+@@ -2956,23 +2956,27 @@ root{
+             DateTimePatterns:alias{"/LOCALE/calendar/generic/DateTimePatterns"}
+             NoonMarker:alias{"/LOCALE/calendar/gregorian/NoonMarker"}
+             NoonMarkerNarrow:alias{"/LOCALE/calendar/gregorian/NoonMarkerNarrow"}
+             appendItems:alias{"/LOCALE/calendar/generic/appendItems"}
+             availableFormats:alias{"/LOCALE/calendar/generic/availableFormats"}
+             dayNames:alias{"/LOCALE/calendar/gregorian/dayNames"}
+             eras{
+                 abbreviated{
++                    0:alias{"/LOCALE/calendar/gregorian/eras/abbreviated/0"}
++                    1:alias{"/LOCALE/calendar/gregorian/eras/abbreviated/1"}
+                     232{"Meiji"}
+                     233{"Taishō"}
+                     234{"Shōwa"}
+                     235{"Heisei"}
+                     236{"Reiwa"}
+                 }
+                 narrow{
++                    0:alias{"/LOCALE/calendar/gregorian/eras/narrow/0"}
++                    1:alias{"/LOCALE/calendar/gregorian/eras/narrow/1"}
+                     232{"M"}
+                     233{"T"}
+                     234{"S"}
+                     235{"H"}
+                     236{"R"}
+                 }
+                 wide:alias{"/LOCALE/calendar/japanese/eras/abbreviated"}
+             }
+diff --git a/intl/icu/source/data/misc/supplementalData.txt b/intl/icu/source/data/misc/supplementalData.txt
+--- a/intl/icu/source/data/misc/supplementalData.txt
++++ b/intl/icu/source/data/misc/supplementalData.txt
+@@ -234,16 +234,30 @@ supplementalData:table(nofallback){
+                         1,
+                     }
+                 }
+             }
+             system{"solar"}
+         }
+         japanese{
+             eras{
++                0{
++                    end:intvector{
++                        0,
++                        12,
++                        31,
++                    }
++                }
++                1{
++                    start:intvector{
++                        1,
++                        1,
++                        1,
++                    }
++                }
+                 232{
+                     start:intvector{
+                         1868,
+                         10,
+                         23,
+                     }
+                 }
+                 233{
+diff --git a/intl/icu/source/i18n/dtfmtsym.cpp b/intl/icu/source/i18n/dtfmtsym.cpp
+--- a/intl/icu/source/i18n/dtfmtsym.cpp
++++ b/intl/icu/source/i18n/dtfmtsym.cpp
+@@ -1735,17 +1735,17 @@ struct CalendarDataSink : public Resourc
+             // Ignore '%variant' keys
+             if (keyUString.endsWith(kVariantTagUChar, UPRV_LENGTHOF(kVariantTagUChar))) {
+                 continue;
+             }
+ 
+             // == Handle String elements ==
+             if (value.getType() == URES_STRING) {
+                 // We are on a leaf, store the map elements into the stringMap
+-                if (i == 0) {
++                if (stringMap == nullptr) {
+                     // mapRefs will keep ownership of 'stringMap':
+                     stringMap = mapRefs.create(false, errorCode);
+                     if (stringMap == nullptr) {
+                         errorCode = U_MEMORY_ALLOCATION_ERROR;
+                         return;
+                     }
+                     maps.put(path, stringMap, errorCode);
+                     if (U_FAILURE(errorCode)) { return; }
+@@ -1799,17 +1799,17 @@ struct CalendarDataSink : public Resourc
+             if (arrays.get(path) != nullptr || maps.get(path) != nullptr) {
+                 // Drop the latest key on the path and continue
+                 path.retainBetween(0, pathLength);
+                 continue;
+             }
+ 
+             AliasType aliasType = processAliasFromValue(path, value, errorCode);
+             if (U_FAILURE(errorCode)) { return; }
+-            if (aliasType == SAME_CALENDAR) {
++            if (aliasType != NONE) {
+                 // Store the alias path and the current path on aliasPathPairs
+                 LocalPointer<UnicodeString> aliasRelativePathCopy(aliasRelativePath.clone(), errorCode);
+                 aliasPathPairs.adoptElement(aliasRelativePathCopy.orphan(), errorCode);
+                 if (U_FAILURE(errorCode)) { return; }
+                 LocalPointer<UnicodeString> pathCopy(path.clone(), errorCode);
+                 aliasPathPairs.adoptElement(pathCopy.orphan(), errorCode);
+                 if (U_FAILURE(errorCode)) { return; }
+ 
+diff --git a/intl/icu/source/i18n/japancal.cpp b/intl/icu/source/i18n/japancal.cpp
+--- a/intl/icu/source/i18n/japancal.cpp
++++ b/intl/icu/source/i18n/japancal.cpp
+@@ -219,16 +219,21 @@ int32_t JapaneseCalendar::handleGetExten
+ 
+ void JapaneseCalendar::handleComputeFields(int32_t julianDay, UErrorCode& status)
+ {
+     //Calendar::timeToFields(theTime, quick, status);
+     GregorianCalendar::handleComputeFields(julianDay, status);
+     int32_t year = internalGet(UCAL_EXTENDED_YEAR); // Gregorian year
+     int32_t eraCode = gJapaneseEraRules->getEraCode(year, internalGetMonth(status) + 1, internalGet(UCAL_DAY_OF_MONTH), status);
+ 
++    // No adjustment necessary for BC and AD eras.
++    if (eraCode == EEras::BC || eraCode == EEras::AD) {
++        return;
++    }
++
+     int32_t startYear = gJapaneseEraRules->getStartYear(eraCode, status) - 1;
+     if (U_FAILURE(status)) {
+         return;
+     }
+     if (uprv_add32_overflow(year, -startYear,  &year)) {
+         status = U_ILLEGAL_ARGUMENT_ERROR;
+         return;
+     }
+diff --git a/intl/icu/source/i18n/japancal.h b/intl/icu/source/i18n/japancal.h
+--- a/intl/icu/source/i18n/japancal.h
++++ b/intl/icu/source/i18n/japancal.h
+@@ -199,17 +199,17 @@ protected:
+      * era, if the current month is an ascension year and month.
+      * @param eyear the extended year
+      * @param mon the month in the year
+      * @param status Indicates the status.
+      * @internal
+      */
+     virtual int32_t getDefaultDayInMonth(int32_t eyear, int32_t month, UErrorCode& status) override;
+ 
+-    virtual bool isEra0CountingBackward() const override { return false; }
++    virtual bool isEra0CountingBackward() const override { return true; }
+ };
+ 
+ U_NAMESPACE_END
+ 
+ #endif /* #if !UCONFIG_NO_FORMATTING */
+ 
+ #endif
+ //eof

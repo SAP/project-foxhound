@@ -4,14 +4,9 @@ trojan-source:
     include:
         - .
     exclude:
-        - intl/lwbrk/rulebrk.c
         - testing/web-platform/tests/conformance-checkers/tools/ins-del-datetime.py
         - modules/freetype2/src/autofit/afblue.c
-        - modules/freetype2/builds/amiga/include/config/ftconfig.h
-        - modules/freetype2/builds/amiga/include/config/ftmodule.h
-        - modules/freetype2/builds/amiga/src/base/ftsystem.c
         - third_party/aom/test/dr_prediction_test.cc
-        - third_party/python/arrow/arrow/locales.py
         # TODO: Remove this when https://github.com/jaraco/zipp/pull/125 lands
         # to setuptools
         - third_party/python/setuptools/setuptools/_vendor/zipp/__init__.py
@@ -22,12 +17,15 @@ trojan-source:
         - third_party/rust/icu_provider/src/hello_world.rs
         - third_party/rust/icu_segmenter/src/grapheme.rs
         - third_party/rust/icu_segmenter/src/line.rs
-        - third_party/rust/error-chain/tests/tests.rs
+        - third_party/rust/ron/src/util/span_substring.rs
+        - third_party/rust/objc2-foundation/src/tests/string.rs
+        - third_party/rust/objc2-metal/src/generated/MTLCaptureManager.rs
         - third_party/rust/unicode-width/src/lib.rs
         - third_party/rust/unicode-width/tests/tests.rs
         - security/nss/gtests/mozpkix_gtest/pkixnames_tests.cpp
         - testing/web-platform/tests/webdriver/tests/bidi/input/perform_actions/key_tentative.py
         - testing/web-platform/tests/webdriver/tests/classic/perform_actions/key_tentative.py
+    include_third_party: true
     extensions:
         - .c
         - .cc
@@ -36,6 +34,7 @@ trojan-source:
         - .py
         - .rs
     support-files:
-        - 'tools/lint/trojan-source/**'
+        - 'tools/lint/mozcheck/**'
     type: external
-    payload: trojan-source:lint
+    payload: mozcheck:lint
+    check: trojan-source

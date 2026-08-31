@@ -23,10 +23,10 @@ samply record PERF_SPEW_DIR=/tmp IONPERF=src ~/code/obj-shell/dist/bin/js --enab
 
 For JIT profiling, the Gecko profiler currently has some shortcomings:
 
- - It's not available in the JS shell.
- - It doesn't label all JIT frames correctly, such as IC frames or trampolines.
- - It doesn't allow accessing the assembly code of jitted functions.
- - It doesn't allow accessing the JavaScript source code or IR code.
+- It's not available in the JS shell.
+- It doesn't label all JIT frames correctly, such as IC frames or trampolines.
+- It doesn't allow accessing the assembly code of jitted functions.
+- It doesn't allow accessing the JavaScript source code or IR code.
 
 [`samply`](https://github.com/mstange/samply) is an alternative to the Gecko
 profiler which can address these shortcomings, at least on Linux and macOS,
@@ -41,11 +41,11 @@ pointers whereas samply currently always uses DWARF unwinding.
 
 To record and view a profile, you have three options:
 
- 1. `samply record`: easiest to use, Firefox Profiler UI
- 2. `perf record` + `samply import perf.data`: more control + Firefox Profiler
-    UI
- 3. `perf record` + `perf report` / `perf annotate`: if you're already familiar
-    with perf's UI and don't mind it
+1. `samply record`: easiest to use, Firefox Profiler UI
+2. `perf record` + `samply import perf.data`: more control + Firefox Profiler
+   UI
+3. `perf record` + `perf report` / `perf annotate`: if you're already familiar
+   with perf's UI and don't mind it
 
 ## Setup
 
@@ -104,18 +104,20 @@ And with the JS shell:
  1. `samply record [env-vars] obj/dist/bin/js [flags] index.js`
  2. Wait for the shell to finish running index.js
  3. Wait for the profile to appear.
- 5. Interact with the profiler.
- 6. When done, press Ctrl+C on the terminal to stop the samply server.
+ 4. Interact with the profiler.
+ 5. When done, press Ctrl+C on the terminal to stop the samply server.
 
 ## Hints
 
- - On macOS, `samply` cannot record shell scripts or system applications because
- of signing restrictions. So `samply record ./mach run` will not work. But if
- `python3` is installed from homebrew, then `samply record python3` works. This is
- why I've been writing `samply record python3 ./mach run` rather than `samply
- record ./mach run` above.
- - Get more samples: In the source view and especially in the assembly view,
-    you'll often want more samples than what you get from a single run.
-    - In the browser, try running your workload multiple times.
-    - In the shell, run your workload multiple times by using `samply record
+- On macOS, `samply` cannot record shell scripts or system applications because
+
+  of signing restrictions. So `samply record ./mach run` will not work. But if
+  `python3` is installed from homebrew, then `samply record python3` works. This is
+  why I've been writing `samply record python3 ./mach run` rather than `samply
+  record ./mach run` above.
+
+- Get more samples: In the source view and especially in the assembly view,
+  you'll often want more samples than what you get from a single run.
+  - In the browser, try running your workload multiple times.
+  - In the shell, run your workload multiple times by using `samply record
     --iteration-count 10 --reuse-threads`.

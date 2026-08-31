@@ -30,7 +30,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   XreDirProvider: [
     "@mozilla.org/xre/directory-provider;1",
-    "nsIXREDirProvider",
+    Ci.nsIXREDirProvider,
   ],
 });
 
@@ -40,7 +40,7 @@ const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const processes = new Set();
 
 /**
- * @typedef {Object} BrowserToolboxLauncherArgs
+ * @typedef {object} BrowserToolboxLauncherArgs
  * @property {function} onRun - A function called when the process starts running.
  * @property {boolean} overwritePreferences - Set to force overwriting the toolbox
  *                     profile's preferences with the current set of preferences.
@@ -69,6 +69,7 @@ export class BrowserToolboxLauncher extends EventEmitter {
 
   /**
    * Figure out if there are any open Browser Toolboxes that'll need to be restored.
+   *
    * @return {boolean}
    */
   static getBrowserToolboxSessionState() {
@@ -273,7 +274,7 @@ export class BrowserToolboxLauncher extends EventEmitter {
   /**
    * Creates and initializes the profile & process for the remote debugger.
    *
-   * @param {Object} options
+   * @param {object} options
    * @param {boolean} options.forceMultiprocess: Set to true to force the Browser Toolbox to be in
    *                    multiprocess mode.
    */
@@ -439,6 +440,7 @@ export class BrowserToolboxLauncher extends EventEmitter {
 
 /**
  * Helper method for debugging.
+ *
  * @param string
  */
 function dumpn(str) {

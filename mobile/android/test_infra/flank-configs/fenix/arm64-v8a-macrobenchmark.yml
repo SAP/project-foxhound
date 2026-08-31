@@ -24,7 +24,7 @@ gcloud:
   performance-metrics: true
 
   test-targets:
-    - annotation org.mozilla.fenix.benchmark.BaselineProfileMacrobenchmark
+    - annotation org.mozilla.fenix.benchmark.BaselineProfileMacrobenchmark,org.mozilla.fenix.benchmark.TabsTrayMacrobenchmark
 
   device:
     - model: shiba

@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WebBrowserPersistDocumentChild_h__
-#define WebBrowserPersistDocumentChild_h__
+#ifndef WebBrowserPersistDocumentChild_h_
+#define WebBrowserPersistDocumentChild_h_
 
 #include "mozilla/PWebBrowserPersistDocumentChild.h"
 #include "nsCOMPtr.h"
@@ -53,4 +52,4 @@ class WebBrowserPersistDocumentChild final
 
 }  // namespace mozilla
 
-#endif  // WebBrowserPersistDocumentChild_h__
+#endif  // WebBrowserPersistDocumentChild_h_

@@ -13,21 +13,19 @@ from service_worker_utils import MarionetteServiceWorkerTestCase
 
 class ServiceWorkersDisabledTestCase(MarionetteServiceWorkerTestCase):
     def setUp(self):
-        super(ServiceWorkersDisabledTestCase, self).setUp()
+        super().setUp()
         self.install_service_worker("serviceworker/install_serviceworker.html")
 
     def tearDown(self):
         self.marionette.restart(in_app=False, clean=True)
-        super(ServiceWorkersDisabledTestCase, self).tearDown()
+        super().tearDown()
 
     def test_service_workers_disabled_at_startup(self):
         # self.marionette.set_pref sets preferences after startup.  Using it
         # here causes intermittent failures.
-        self.marionette.instance.profile.set_preferences(
-            {
-                "dom.serviceWorkers.enabled": False,
-            }
-        )
+        self.marionette.instance.profile.set_preferences({
+            "dom.serviceWorkers.enabled": False,
+        })
 
         self.marionette.restart()
 

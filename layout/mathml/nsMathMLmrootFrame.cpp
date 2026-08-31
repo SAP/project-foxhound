@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "gfxContext.h"
 #include "gfxMathTable.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 
@@ -73,7 +72,8 @@ nsMathMLmrootFrame::InheritAutomaticData(nsIFrame* aParent) {
 
   bool isRootWithIndex = GetContent()->IsMathMLElement(nsGkAtoms::mroot);
   if (!isRootWithIndex) {
-    mPresentationData.flags |= NS_MATHML_STRETCH_ALL_CHILDREN_VERTICALLY;
+    mPresentationData.flags +=
+        MathMLPresentationFlag::StretchAllChildrenVertically;
   }
 
   return NS_OK;
@@ -83,22 +83,8 @@ NS_IMETHODIMP
 nsMathMLmrootFrame::TransmitAutomaticData() {
   bool isRootWithIndex = GetContent()->IsMathMLElement(nsGkAtoms::mroot);
   if (isRootWithIndex) {
-    // 1. The REC says:
-    //    The <mroot> element increments scriptlevel by 2, and sets displaystyle
-    //    to "false", within index, but leaves both attributes unchanged within
-    //    base.
-    // 2. The TeXbook (Ch 17. p.141) says \sqrt is compressed
-    UpdatePresentationDataFromChildAt(1, 1, NS_MATHML_COMPRESSED,
-                                      NS_MATHML_COMPRESSED);
-    UpdatePresentationDataFromChildAt(0, 0, NS_MATHML_COMPRESSED,
-                                      NS_MATHML_COMPRESSED);
-
     PropagateFrameFlagFor(mFrames.LastChild(),
                           NS_FRAME_MATHML_SCRIPT_DESCENDANT);
-  } else {
-    // The TeXBook (Ch 17. p.141) says that \sqrt is cramped
-    UpdatePresentationDataFromChildAt(0, -1, NS_MATHML_COMPRESSED,
-                                      NS_MATHML_COMPRESSED);
   }
 
   return NS_OK;
@@ -160,9 +146,9 @@ void nsMathMLmrootFrame::GetRadicalXOffsets(nscoord aIndexWidth,
   }
 }
 
-nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
-                                   const PlaceFlags& aFlags,
-                                   ReflowOutput& aDesiredSize) {
+void nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
+                               const PlaceFlags& aFlags,
+                               ReflowOutput& aDesiredSize) {
   if (ShouldUseRowFallback()) {
     // report an error, encourage people to get their markups in order
     if (!aFlags.contains(PlaceFlag::MeasureOnly)) {
@@ -190,11 +176,7 @@ nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
     PlaceFlags flags = aFlags + PlaceFlag::MeasureOnly +
                        PlaceFlag::IgnoreBorderPadding +
                        PlaceFlag::DoNotAdjustForWidthAndHeight;
-    nsresult rv = nsMathMLContainerFrame::Place(aDrawTarget, flags, baseSize);
-    if (NS_FAILED(rv)) {
-      DidReflowChildren(PrincipalChildList().FirstChild());
-      return rv;
-    }
+    nsMathMLContainerFrame::Place(aDrawTarget, flags, baseSize);
     bmBase = baseSize.mBoundingMetrics;
   }
 
@@ -249,9 +231,8 @@ nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
     bmSqr.ascent = bmSqr.descent = 0;
   } else {
     mSqrChar.Stretch(this, aDrawTarget, fontSizeInflation,
-                     NS_STRETCH_DIRECTION_VERTICAL, contSize, radicalSize,
-                     NS_STRETCH_LARGER,
-                     StyleVisibility()->mDirection == StyleDirection::Rtl);
+                     StretchDirection::Vertical, contSize, radicalSize,
+                     MathMLStretchFlag::Larger, GetWritingMode().IsBidiRTL());
     // radicalSize have changed at this point, and should match with
     // the bounding metrics of the char
     mSqrChar.GetBoundingMetrics(bmSqr);
@@ -340,7 +321,7 @@ nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
 
   if (!aFlags.contains(PlaceFlag::MeasureOnly)) {
     nsPresContext* presContext = PresContext();
-    const bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
+    const bool isRTL = GetWritingMode().IsBidiRTL();
     nscoord borderPaddingInlineStart =
         isRTL ? borderPadding.right : borderPadding.left;
     nscoord dx, dy;
@@ -386,8 +367,6 @@ nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
 
   mReference.x = 0;
   mReference.y = aDesiredSize.BlockStartAscent();
-
-  return NS_OK;
 }
 
 void nsMathMLmrootFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {

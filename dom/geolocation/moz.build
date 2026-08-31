@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -40,22 +38,28 @@ if (
     CONFIG["OS_TARGET"] == "WINNT"
     and (CONFIG["CC_TYPE"] == "clang-cl" or CONFIG["MOZ_ARTIFACT_BUILDS"])
     and CONFIG["MOZ_BUILD_APP"] == "browser"
+    and CONFIG["NECKO_WIFI"]
 ):
     UNIFIED_SOURCES += [
         "GeolocationSystemWin.cpp",
     ]
-    EXTRA_JS_MODULES += [
-        "GeolocationUIUtilsWin.sys.mjs",
+elif CONFIG["OS_TARGET"] == "Darwin" and CONFIG["MOZ_BUILD_APP"] == "browser":
+    UNIFIED_SOURCES += [
+        "GeolocationSystemMac.mm",
     ]
-    XPCOM_MANIFESTS += [
-        "components.conf",
-    ]
-    XPIDL_SOURCES += ["nsIGeolocationUIUtilsWin.idl"]
-    XPIDL_MODULE = "dom_geolocation"
 else:
     UNIFIED_SOURCES += [
         "GeolocationSystem.cpp",
     ]
+
+MOZ_SRC_FILES += [
+    "GeolocationUIUtils.sys.mjs",
+]
+XPCOM_MANIFESTS += [
+    "components.conf",
+]
+XPIDL_SOURCES += ["nsIGeolocationUIUtils.idl"]
+XPIDL_MODULE = "dom_geolocation"
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

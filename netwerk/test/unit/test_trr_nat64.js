@@ -22,7 +22,7 @@ registerCleanupFunction(async () => {
 /**
  * Waits for an observer notification to fire.
  *
- * @param {String} topic The notification topic.
+ * @param {string} topic The notification topic.
  * @returns {Promise} A promise that fulfills when the notification is fired.
  */
 function promiseObserverNotification(topic, matchFunc) {

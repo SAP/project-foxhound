@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsContentSecurityManager_h___
-#define nsContentSecurityManager_h___
+#ifndef nsContentSecurityManager_h_
+#define nsContentSecurityManager_h_
 
 #include "mozilla/CORSMode.h"
-#include "nsIContentSecurityManager.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
+#include "nsIContentSecurityManager.h"
 #include "nsILoadInfo.h"
 
 class nsILoadInfo;
@@ -93,4 +91,4 @@ class nsContentSecurityManager : public nsIContentSecurityManager,
   virtual ~nsContentSecurityManager() = default;
 };
 
-#endif /* nsContentSecurityManager_h___ */
+#endif /* nsContentSecurityManager_h_ */

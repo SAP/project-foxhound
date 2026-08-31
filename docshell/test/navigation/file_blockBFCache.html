@@ -1,7 +1,7 @@
 <script>
 let keepAlive;
 window.onpageshow = (pageShow) => {
-  let bc = new BroadcastChannel("bfcache_blocking");
+  let bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("bfcache_blocking");
 
   bc.onmessage = async function(m) {
     switch(m.data.message) {
@@ -9,11 +9,12 @@ window.onpageshow = (pageShow) => {
         bc.close();
         location.href = m.data.url;
         break;
-      case "runScript":
+      case "runScript": {
         let test = new Function(`return ${m.data.fun};`)();
         keepAlive = await test.call(window);
         bc.postMessage({ type: "runScriptDone" });
         break;
+      }
       case "back":
         bc.close();
         history.back();

@@ -9,12 +9,6 @@ function test() {
 
   function testLoad() {
     let wgp = w.gBrowser.selectedBrowser.browsingContext.currentWindowGlobal;
-    if (wgp == origWgp) {
-      // Go back to polling
-      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-      setTimeout(testLoad, 10);
-      return;
-    }
     var prin = wgp.documentPrincipal;
     isnot(prin, null, "Loaded principal must not be null when adding " + uri);
     isnot(

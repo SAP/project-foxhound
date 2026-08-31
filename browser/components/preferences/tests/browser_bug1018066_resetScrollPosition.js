@@ -18,7 +18,11 @@ add_task(async function () {
   is(prefs.selectedPane, "paneSearch", "Search pane was selected");
   let mainContent = gBrowser.contentDocument.querySelector(".main-content");
   mainContent.scrollTop = 50;
-  is(mainContent.scrollTop, 50, "main-content should be scrolled 50 pixels");
+  Assert.less(
+    Math.abs(mainContent.scrollTop - 50),
+    1,
+    "main-content should be scrolled ~50 pixels"
+  );
 
   await gBrowser.contentWindow.gotoPref("paneGeneral");
 

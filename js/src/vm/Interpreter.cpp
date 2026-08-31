@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
@@ -23,17 +21,18 @@
 #include <string.h>
 
 #include "jsapi.h"
-#include "jsnum.h"
 
 #include "builtin/Array.h"
 #include "builtin/Eval.h"
 #include "builtin/ModuleObject.h"
+#include "builtin/Number.h"
 #include "builtin/Object.h"
 #include "builtin/Promise.h"
 #include "gc/GC.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Jit.h"
 #include "jit/JitRuntime.h"
+#include "jit/JitZone.h"
 #include "js/EnvironmentChain.h"      // JS::SupportUnscopables
 #include "js/experimental/JitInfo.h"  // JSJitInfo
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -70,6 +69,7 @@
 #endif
 #include "builtin/Boolean-inl.h"
 #include "debugger/DebugAPI-inl.h"
+#include "gc/WeakMap-inl.h"
 #include "vm/ArgumentsObject-inl.h"
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 #  include "vm/DisposableRecord-inl.h"
@@ -272,17 +272,6 @@ static inline bool GetLengthProperty(const Value& lval, MutableHandleValue vp) {
   return false;
 }
 
-static inline bool GetPropertyOperation(JSContext* cx,
-                                        Handle<PropertyName*> name,
-                                        HandleValue lval,
-                                        MutableHandleValue vp) {
-  if (name == cx->names().length && ::GetLengthProperty(lval, vp)) {
-    return true;
-  }
-
-  return GetProperty(cx, lval, name, vp);
-}
-
 static inline bool GetNameOperation(JSContext* cx, HandleObject envChain,
                                     Handle<PropertyName*> name, JSOp nextOp,
                                     MutableHandleValue vp) {
@@ -363,32 +352,40 @@ InterpreterFrame* RunState::pushInterpreterFrame(JSContext* cx) {
 
 static MOZ_ALWAYS_INLINE bool MaybeEnterInterpreterTrampoline(JSContext* cx,
                                                               RunState& state) {
+  AutoCheckRecursionLimit recursion(cx);
+  if (!recursion.check(cx)) {
+    return false;
+  }
+
 #ifdef NIGHTLY_BUILD
   if (jit::JitOptions.emitInterpreterEntryTrampoline &&
       cx->runtime()->hasJitRuntime()) {
-    js::jit::JitRuntime* jitRuntime = cx->runtime()->jitRuntime();
     JSScript* script = state.script();
-
-    uint8_t* codeRaw = nullptr;
-    auto p = jitRuntime->getInterpreterEntryMap()->lookup(script);
-    if (p) {
-      codeRaw = p->value().raw();
-    } else {
-      js::jit::JitCode* code =
-          jitRuntime->generateEntryTrampolineForScript(cx, script);
-      if (!code) {
-        ReportOutOfMemory(cx);
-        return false;
-      }
-
-      js::jit::EntryTrampoline entry(cx, code);
-      if (!jitRuntime->getInterpreterEntryMap()->put(script, entry)) {
-        ReportOutOfMemory(cx);
-        return false;
-      }
-      codeRaw = code->raw();
+    Zone* zone = script->zone();
+    jit::JitZone* jitZone = zone->getOrCreateJitZone(cx);
+    if (!jitZone) {
+      return false;
     }
 
+    jit::EntryTrampolineMap* map =
+        jitZone->getOrCreateInterpreterEntryMap(zone);
+    if (!map) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+
+    jit::JitRuntime* jitRuntime = cx->runtime()->jitRuntime();
+    auto ptr = map->lookupForAdd(script);
+    if (!ptr) {
+      jit::JitCode* code =
+          jitRuntime->generateEntryTrampolineForScript(cx, script);
+      if (!code || !map->relookupOrAdd(ptr, script, code)) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+    }
+
+    uint8_t* codeRaw = ptr->value()->raw();
     MOZ_ASSERT(codeRaw, "Should have a valid trampoline here.");
     // The C++ entry thunk is located at the vmInterpreterEntryOffset offset.
     codeRaw += jitRuntime->vmInterpreterEntryOffset();
@@ -864,12 +861,8 @@ bool js::ExecuteKernel(JSContext* cx, HandleScript script,
     return true;
   }
 
-  probes::StartExecution(script);
   ExecuteState state(cx, script, envChainArg, evalInFrame, result);
-  bool ok = RunScript(cx, state);
-  probes::StopExecution(script);
-
-  return ok;
+  return RunScript(cx, state);
 }
 
 bool js::Execute(JSContext* cx, HandleScript script, HandleObject envChain,
@@ -2946,7 +2939,7 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       ReservedRooted<Value> lval(&rootValue0, REGS.sp[-1]);
       MutableHandleValue res = REGS.stackHandleAt(-1);
       ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
-      if (!GetPropertyOperation(cx, name, lval, res)) {
+      if (!GetProperty(cx, lval, name, res)) {
         goto error;
       }
       cx->debugOnlyCheck(res);
@@ -4296,6 +4289,7 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       // AbstractGeneratorObject::resume takes care of setting the frame's
       // debuggee flag.
       MOZ_ASSERT_IF(REGS.fp()->script()->isDebuggee(), REGS.fp()->isDebuggee());
+      INIT_COVERAGE();
       COUNT_COVERAGE();
     }
     END_CASE(AfterYield)
@@ -4401,6 +4395,8 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     END_CASE(ImportMeta)
 
     CASE(DynamicImport) {
+      ImportPhase phase = ImportPhase(GET_UINT8(REGS.pc));
+
       ReservedRooted<Value> options(&rootValue0, REGS.sp[-1]);
       REGS.sp--;
 
@@ -4408,7 +4404,7 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       POP_COPY_TO(specifier);
 
       JSObject* promise =
-          StartDynamicModuleImport(cx, script, specifier, options);
+          StartDynamicModuleImport(cx, script, specifier, options, phase);
       if (!promise) goto error;
 
       PUSH_OBJECT(*promise);
@@ -4416,7 +4412,7 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     END_CASE(DynamicImport)
 
     CASE(EnvCallee) {
-      uint8_t numHops = GET_UINT8(REGS.pc);
+      uint16_t numHops = GET_ENVCOORD_HOPS(REGS.pc);
       JSObject* env = &REGS.fp()->environmentChain()->as<EnvironmentObject>();
       for (unsigned i = 0; i < numHops; i++) {
         env = &env->as<EnvironmentObject>().enclosingEnvironment();
@@ -4498,6 +4494,7 @@ error:
       goto successful_return_continuation;
 
     case ErrorReturnContinuation:
+      CheckForOOMStackTraceInterrupt(cx);
       interpReturnOK = false;
       goto return_continuation;
 
@@ -4513,8 +4510,8 @@ error:
       ReservedRooted<Value> exceptionStack(&rootValue1);
       if (!cx->getPendingException(&exception) ||
           !cx->getPendingExceptionStack(&exceptionStack)) {
-        interpReturnOK = false;
-        goto return_continuation;
+        exception = UndefinedValue();
+        exceptionStack = NullValue();
       }
       PUSH_COPY(exception);
       PUSH_COPY(exceptionStack);
@@ -5067,9 +5064,9 @@ bool js::SpreadCallOperation(JSContext* cx, HandleScript script, jsbytecode* pc,
   return true;
 }
 
-static bool OptimizeArrayIteration(JSObject* obj, JSContext* cx) {
-  // Optimize spread call by skipping spread operation when following
-  // conditions are met:
+static bool OptimizeGetIteratorForArray(JSObject* obj, JSContext* cx) {
+  // Implementation of JSOp::OptimizeSpreadCall and JSOp::GetIterator for packed
+  // arrays. Ensures the following conditions are met:
   //   * the argument is an array
   //   * the array has no hole
   //   * array[@@iterator] is not modified
@@ -5078,7 +5075,12 @@ static bool OptimizeArrayIteration(JSObject* obj, JSContext* cx) {
   //   * %ArrayIteratorPrototype%.next is not modified
   //   * %ArrayIteratorPrototype%.return is not defined
   //   * return is nowhere on the proto chain
-  return IsArrayWithDefaultIterator<MustBePacked::Yes>(obj, cx);
+  if (!IsArrayWithDefaultIterator<MustBePacked::Yes>(obj, cx)) {
+    return false;
+  }
+  // Also check optimizeGetIteratorBytecodeFuse for the current realm. See the
+  // OptimizeGetIteratorBytecodeFuse comment for why this is necessary.
+  return cx->realm()->realmFuses.optimizeGetIteratorBytecodeFuse.intact();
 }
 
 static bool OptimizeArgumentsSpreadCall(JSContext* cx, HandleObject obj,
@@ -5132,7 +5134,7 @@ bool js::OptimizeSpreadCall(JSContext* cx, HandleValue arg,
   }
 
   RootedObject obj(cx, &arg.toObject());
-  if (OptimizeArrayIteration(obj, cx)) {
+  if (OptimizeGetIteratorForArray(obj, cx)) {
     result.setObject(*obj);
     return true;
   }
@@ -5152,7 +5154,7 @@ bool js::OptimizeGetIterator(Value arg, JSContext* cx) {
   if (!arg.isObject()) {
     return false;
   }
-  return OptimizeArrayIteration(&arg.toObject(), cx);
+  return OptimizeGetIteratorForArray(&arg.toObject(), cx);
 }
 
 ArrayObject* js::ArrayFromArgumentsObject(JSContext* cx,

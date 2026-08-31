@@ -1,0 +1,173 @@
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Mon, 4 May 2026 19:30:00 +0000
+Subject: Bug 2034935 - Undelete deprecation of local_ssrc for recv streams.
+ r=webrtc-reviewers,dbaker
+
+This avoids regressing Teams.
+
+Differential Revision: https://phabricator.services.mozilla.com/D297529
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/bc8a96604aaa6f1fbcd58261bf4bd6692cca3d3f
+---
+ audio/audio_receive_stream.cc       |  2 +-
+ audio/channel_receive.cc            | 21 +++++++++------------
+ audio/channel_receive.h             |  3 ++-
+ call/flexfec_receive_stream_impl.cc |  4 ++++
+ call/receive_stream.h               |  4 +++-
+ video/rtp_video_stream_receiver2.cc | 15 +++++----------
+ 6 files changed, 24 insertions(+), 25 deletions(-)
+
+diff --git a/audio/audio_receive_stream.cc b/audio/audio_receive_stream.cc
+index 3ecfc8e67b..78274314c8 100644
+--- a/audio/audio_receive_stream.cc
++++ b/audio/audio_receive_stream.cc
+@@ -93,7 +93,7 @@ std::unique_ptr<voe::ChannelReceiveInterface> CreateChannelReceive(
+       config.jitter_buffer_min_delay_ms, config.enable_non_sender_rtt,
+       config.decoder_factory, std::move(config.frame_decryptor),
+       config.crypto_options, std::move(config.frame_transformer),
+-      config.rtp.rtcp_event_observer);
++      config.rtp.rtcp_event_observer, config.rtp.local_ssrc);
+ }
+ }  // namespace
+ 
+diff --git a/audio/channel_receive.cc b/audio/channel_receive.cc
+index 6b4d0e30a2..b913acd88e 100644
+--- a/audio/channel_receive.cc
++++ b/audio/channel_receive.cc
+@@ -130,7 +130,8 @@ class ChannelReceive : public ChannelReceiveInterface,
+                  scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+                  const CryptoOptions& crypto_options,
+                  scoped_refptr<FrameTransformerInterface> frame_transformer,
+-                 RtcpEventObserver* rtcp_event_observer);
++                 RtcpEventObserver* rtcp_event_observer,
++                 uint32_t local_ssrc);
+   ~ChannelReceive() override;
+ 
+   void SetSink(AudioSinkInterface* sink) override;
+@@ -559,7 +560,8 @@ ChannelReceive::ChannelReceive(
+     scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+     const CryptoOptions& crypto_options,
+     scoped_refptr<FrameTransformerInterface> frame_transformer,
+-    RtcpEventObserver* rtcp_event_observer)
++    RtcpEventObserver* rtcp_event_observer,
++    uint32_t local_ssrc)
+     : env_(env),
+       worker_thread_(TaskQueueBase::Current()),
+       rtp_receive_statistics_(ReceiveStatistics::Create(&env_.clock())),
+@@ -595,14 +597,8 @@ ChannelReceive::ChannelReceive(
+   if (frame_transformer)
+     InitFrameTransformerDelegate(std::move(frame_transformer));
+ 
+-  rtp_rtcp_ =
+-      ModuleRtpRtcpImpl2::CreateReceiveModule(env_, configuration, [this] {
+-        if (packet_router_ == nullptr) {
+-          return kFallbackRtcpSsrcForAudio;
+-        }
+-        return packet_router_->SsrcOfFirstSender().value_or(
+-            kFallbackRtcpSsrcForAudio);
+-      });
++  rtp_rtcp_ = ModuleRtpRtcpImpl2::CreateReceiveModule(
++      env_, configuration, [local_ssrc] { return local_ssrc; });
+   rtp_rtcp_->SetRemoteSSRC(remote_ssrc_);
+ 
+   // Ensure that RTCP is enabled for the created channel.
+@@ -1207,13 +1203,14 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
+     scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+     const CryptoOptions& crypto_options,
+     scoped_refptr<FrameTransformerInterface> frame_transformer,
+-    RtcpEventObserver* rtcp_event_observer) {
++    RtcpEventObserver* rtcp_event_observer,
++    uint32_t local_ssrc) {
+   return std::make_unique<ChannelReceive>(
+       env, neteq_factory, audio_device_module, rtcp_send_transport, remote_ssrc,
+       jitter_buffer_max_packets, jitter_buffer_fast_playout,
+       jitter_buffer_min_delay_ms, enable_non_sender_rtt, decoder_factory,
+       std::move(frame_decryptor), crypto_options, std::move(frame_transformer),
+-      rtcp_event_observer);
++      rtcp_event_observer, local_ssrc);
+ }
+ 
+ }  // namespace voe
+diff --git a/audio/channel_receive.h b/audio/channel_receive.h
+index 952784c168..baa3dffb4a 100644
+--- a/audio/channel_receive.h
++++ b/audio/channel_receive.h
+@@ -183,7 +183,8 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
+     scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+     const webrtc::CryptoOptions& crypto_options,
+     scoped_refptr<FrameTransformerInterface> frame_transformer,
+-    RtcpEventObserver* rtcp_event_observer);
++    RtcpEventObserver* rtcp_event_observer,
++    uint32_t local_ssrc);
+ 
+ }  // namespace voe
+ }  // namespace webrtc
+diff --git a/call/flexfec_receive_stream_impl.cc b/call/flexfec_receive_stream_impl.cc
+index 9e4431bdb1..7744fe1e09 100644
+--- a/call/flexfec_receive_stream_impl.cc
++++ b/call/flexfec_receive_stream_impl.cc
+@@ -122,6 +122,10 @@ FlexfecReceiveStreamImpl::FlexfecReceiveStreamImpl(
+            .outgoing_transport = config.rtcp_send_transport,
+            .rtt_stats = rtt_stats},
+           [packet_router] {
++            // Mozilla: Unreachable as Flexfec is not implemented.
++            //          When implementing, wire up signaled recvonly a=ssrc into
++            //          this recv_ssrsc_callback.
++            RTC_CHECK_NOTREACHED();
+             // Use the same logic as for the video receiver.
+             if (packet_router != nullptr) {
+               return packet_router->SsrcOfFirstSender().value_or(
+diff --git a/call/receive_stream.h b/call/receive_stream.h
+index 231f448056..4304685ddb 100644
+--- a/call/receive_stream.h
++++ b/call/receive_stream.h
+@@ -37,7 +37,9 @@ class ReceiveStreamInterface {
+     // This member is no longer used by WebRTC, but retained in order to
+     // allow downstream code to compile.
+     // TODO: issues.webrtc.org/41480926 - Delete when downstream changed.
+-    [[deprecated("No longer used")]] uint32_t local_ssrc = 0;
++    // Mozilla: Undeprecated to allow using the signaled send ssrc in RTCP for
++    //          recvonly m-sections to make Teams happy.
++    uint32_t local_ssrc = 0;
+   };
+ 
+  protected:
+diff --git a/video/rtp_video_stream_receiver2.cc b/video/rtp_video_stream_receiver2.cc
+index 9bbff9a156..a5e74e1a5b 100644
+--- a/video/rtp_video_stream_receiver2.cc
++++ b/video/rtp_video_stream_receiver2.cc
+@@ -129,7 +129,8 @@ std::unique_ptr<ModuleRtpRtcpImpl2> CreateRtpRtcpModule(
+     RtcpCnameCallback* rtcp_cname_callback,
+     PacketRouter* packet_router,
+     bool non_sender_rtt_measurement,
+-    RtcpEventObserver* rtcp_event_observer) {
++    RtcpEventObserver* rtcp_event_observer,
++    uint32_t local_ssrc) {
+   RtpRtcpInterface::Configuration configuration;
+   configuration.audio = false;
+   configuration.receiver_only = true;
+@@ -143,14 +144,7 @@ std::unique_ptr<ModuleRtpRtcpImpl2> CreateRtpRtcpModule(
+   configuration.non_sender_rtt_measurement = non_sender_rtt_measurement;
+ 
+   auto rtp_rtcp = ModuleRtpRtcpImpl2::CreateReceiveModule(
+-      env, configuration, [packet_router]() {
+-        if (packet_router) {
+-          return packet_router->SsrcOfFirstSender().value_or(
+-              kFallbackRtcpSsrcForVideo);
+-        } else {  // This happens at least in some test configurations.
+-          return kFallbackRtcpSsrcForVideo;
+-        }
+-      });
++      env, configuration, [local_ssrc] { return local_ssrc; });
+   rtp_rtcp->SetRTCPStatus(RtcpMode::kCompound);
+ 
+   return rtp_rtcp;
+@@ -323,7 +317,8 @@ RtpVideoStreamReceiver2::RtpVideoStreamReceiver2(
+           rtcp_cname_callback,
+           packet_router,
+           config_.rtp.rtcp_xr.receiver_reference_time_report,
+-          config_.rtp.rtcp_event_observer)),
++          config_.rtp.rtcp_event_observer,
++          config_.rtp.local_ssrc)),
+       nack_periodic_processor_(nack_periodic_processor),
+       complete_frame_callback_(complete_frame_callback),
+       keyframe_request_method_(config_.rtp.keyframe_method),

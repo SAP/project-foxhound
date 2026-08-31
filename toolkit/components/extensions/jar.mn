@@ -59,6 +59,7 @@ toolkit.jar:
 #ifndef ANDROID
     content/extensions/child/ext-identity.js (child/ext-identity.js)
 #endif
+    content/extensions/child/ext-publicSuffix.js (child/ext-publicSuffix.js)
     content/extensions/child/ext-runtime.js (child/ext-runtime.js)
     content/extensions/child/ext-scripting.js (child/ext-scripting.js)
     content/extensions/child/ext-storage.js (child/ext-storage.js)

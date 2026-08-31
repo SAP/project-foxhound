@@ -1,15 +1,13 @@
-
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: ekr@rtfm.com
 
-#include <iostream>
-#include <string>
 #include <algorithm>
 #include <functional>
+#include <iostream>
+#include <string>
 
 #ifdef XP_MACOSX
 // ensure that Apple Security kit enum goes before "sslproto.h"
@@ -17,29 +15,25 @@
 #  include <Security/CipherSuite.h>
 #endif
 
-#include "mozilla/UniquePtr.h"
-
-#include "sigslot.h"
-
+#include "dtlsidentity.h"
 #include "logging.h"
+#include "mediapacket.h"
+#include "mozilla/UniquePtr.h"
+#include "nricectx.h"
+#include "nricemediastream.h"
+#include "nsThreadUtils.h"
+#include "runnable_utils.h"
+#include "sigslot.h"
 #include "ssl.h"
 #include "sslexp.h"
 #include "sslproto.h"
-
-#include "nsThreadUtils.h"
-
-#include "mediapacket.h"
-#include "dtlsidentity.h"
-#include "nricectx.h"
-#include "nricemediastream.h"
+#include "stunserver.h"
 #include "transportflow.h"
 #include "transportlayer.h"
 #include "transportlayerdtls.h"
 #include "transportlayerice.h"
 #include "transportlayerlog.h"
 #include "transportlayerloopback.h"
-
-#include "runnable_utils.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
@@ -443,14 +437,6 @@ class TransportTestPeer : public sigslot::has_slots<> {
         gathering_complete_(false),
         digest_("sha-1"_ns),
         test_utils_(utils) {
-    NrIceCtx::InitializeGlobals(NrIceCtx::GlobalConfig());
-    ice_ctx_ = NrIceCtx::Create(name);
-    std::vector<NrIceStunServer> stun_servers;
-    UniquePtr<NrIceStunServer> server(NrIceStunServer::Create(
-        std::string((char*)"stun.services.mozilla.com"), 3478));
-    stun_servers.push_back(*server);
-    EXPECT_TRUE(NS_SUCCEEDED(ice_ctx_->SetStunServers(stun_servers)));
-
     dtls_->SetIdentity(identity_);
     dtls_->SetRole(offerer_ ? TransportLayerDtls::SERVER
                             : TransportLayerDtls::CLIENT);
@@ -463,6 +449,20 @@ class TransportTestPeer : public sigslot::has_slots<> {
   ~TransportTestPeer() {
     test_utils_->SyncDispatchToSTS(
         WrapRunnable(this, &TransportTestPeer::DestroyFlow));
+  }
+
+  void Init() {
+    test_utils_->SyncDispatchToSTS(
+        WrapRunnable(this, &TransportTestPeer::Init_s));
+  }
+
+  void Init_s() {
+    NrIceCtx::InitializeGlobals(NrIceCtx::GlobalConfig());
+    ice_ctx_ = NrIceCtx::Create(name_);
+    nsTArray<ParsedIceServer> stun_servers;
+    stun_servers.AppendElement(
+        MakeStunEntry("stun.services.mozilla.com", 3478));
+    EXPECT_TRUE(NS_SUCCEEDED(ice_ctx_->SetIceServers(stun_servers, false)));
   }
 
   void DestroyFlow() {
@@ -642,7 +642,7 @@ class TransportTestPeer : public sigslot::has_slots<> {
                             NrIceMediaStream::GatheringState state) {
     // We only use one stream, no need to check whether all streams are done
     // gathering.
-    Unused << aTransportId;
+    (void)aTransportId;
     if (state == NrIceMediaStream::ICE_STREAM_GATHER_COMPLETE) {
       GatheringComplete();
     }
@@ -840,6 +840,8 @@ class TransportTest : public MtransportTest {
     }
     p1_ = new TransportTestPeer(target_, "P1", test_utils_);
     p2_ = new TransportTestPeer(target_, "P2", test_utils_);
+    p1_->Init();
+    p2_->Init();
   }
 
   void SetupSrtp() {

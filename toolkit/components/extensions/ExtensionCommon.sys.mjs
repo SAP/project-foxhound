@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,7 +49,6 @@ var {
   DefaultMap,
   DefaultWeakMap,
   ExtensionError,
-  filterStack,
   getInnerWindowID,
   getUniqueId,
 } = ExtensionUtils;
@@ -75,9 +72,7 @@ function runSafeSyncWithoutClone(f, ...args) {
     dump(
       `Extension error: ${e} ${e?.fileName} ${
         e?.lineNumber
-      }\n[[Exception stack\n${
-        e?.stack ? filterStack(e) : undefined
-      }Current stack\n${filterStack(Error())}]]\n`
+      }\n[[Exception stack\n${e?.stack}Current stack\n${Error().stack}]]\n`
     );
     Cu.reportError(e);
   }
@@ -659,9 +654,7 @@ export class BaseContext {
       } catch (e) {
         Cu.reportError(e);
         dump(
-          `runSafe failure: cloning into ${
-            this.cloneScope
-          }: ${e}\n\n${filterStack(Error())}`
+          `runSafe failure: cloning into ${this.cloneScope}: ${e}\n\n${Error().stack}`
         );
       }
 
@@ -1834,6 +1827,7 @@ class SchemaAPIManager extends EventEmitter {
     );
 
     Object.assign(global, {
+      global, // This must be first, see bug 1977694.
       AppConstants,
       Cc,
       ChromeWorker,
@@ -1859,7 +1853,6 @@ class SchemaAPIManager extends EventEmitter {
       WebExtensionPolicy,
       XPCOMUtils,
       extensions: this,
-      global,
     });
 
     ChromeUtils.defineLazyGetter(global, "console", getConsole);
@@ -2209,11 +2202,7 @@ LocaleData.prototype = {
   },
 
   get acceptLanguages() {
-    let result = Services.prefs.getComplexValue(
-      "intl.accept_languages",
-      Ci.nsIPrefLocalizedString
-    ).data;
-    return result.split(/\s*,\s*/g);
+    return Services.locale.acceptLanguages.split(/\s*,\s*/g);
   },
 
   get uiLocale() {
@@ -2253,7 +2242,7 @@ LocaleData.prototype = {
  * content process).
  */
 class EventManager {
-  /*
+  /**
    * A persistent event must provide module and name.  Additionally the
    * module must implement primeListeners in the ExtensionAPI class.
    *
@@ -2371,7 +2360,7 @@ class EventManager {
     this.remove = new Map();
   }
 
-  /*
+  /**
    * Information about listeners to persistent events is associated with
    * the extension to which they belong.  Any extension thas has such
    * listeners has a property called `persistentListeners` that is a
@@ -3083,6 +3072,38 @@ function updateAllowedOrigins(policy, origins, isAdd) {
   policy.allowedOrigins = new MatchPatternSet(Array.from(patternMap.values()));
 }
 
+var GuardSets = {
+  _inits: null,
+  _defaults: [],
+
+  init(inits) {
+    this._inits = inits ?? Services.cpmm.sharedData.get("extensions/guards");
+    let def = this._inits?.get("*");
+    this._defaults = def ? [new ExtensionGuardSet(def)] : [];
+  },
+
+  /**
+   * Update enterprise guards cache and apply to all active extension.
+   */
+  updateAll(inits) {
+    this.init(inits);
+    WebExtensionPolicy.getActiveExtensions().forEach(p => this.updateFor(p));
+  },
+
+  /**
+   * Apply the current enterprise guards to a single policy.
+   *
+   * @param {WebExtensionPolicy} policy
+   */
+  updateFor(policy) {
+    if (this._inits === null) {
+      this.init();
+    }
+    let init = this._inits?.get(policy.id);
+    policy.guardSets = init ? [new ExtensionGuardSet(init)] : this._defaults;
+  },
+};
+
 export var ExtensionCommon = {
   BaseContext,
   CanOfAPIs,
@@ -3090,6 +3111,7 @@ export var ExtensionCommon = {
   ExtensionAPI,
   ExtensionAPIPersistent,
   EventEmitter,
+  GuardSets,
   LocalAPIImplementation,
   LocaleData,
   NoCloneSpreadArgs,

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,14 +8,13 @@
  *  This file defines a dirt-simple token bucket class.
  */
 
-#ifndef simpletokenbucket_h__
-#define simpletokenbucket_h__
+#ifndef simpletokenbucket_h_
+#define simpletokenbucket_h_
 
 #include <stdint.h>
 
-#include "prinrval.h"
-
 #include "m_cpp_utils.h"
+#include "prinrval.h"
 
 namespace mozilla {
 
@@ -51,4 +48,4 @@ class SimpleTokenBucket {
 
 }  // namespace mozilla
 
-#endif  // simpletokenbucket_h__
+#endif  // simpletokenbucket_h_

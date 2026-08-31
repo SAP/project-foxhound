@@ -16,7 +16,6 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.feature.readerview.ReaderViewFeature.Companion.READER_VIEW_EXTENSION_ID
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.webextensions.BuiltInWebExtensionController
 import org.junit.Assert.assertEquals
@@ -40,8 +39,8 @@ class ReaderViewMiddlewareTest {
         )
 
         val tab = createTab("https://www.mozilla.org", id = "test-tab")
-        store.dispatch(TabListAction.AddTabAction(tab)).joinBlocking()
-        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, mock())).joinBlocking()
+        store.dispatch(TabListAction.AddTabAction(tab))
+        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, mock()))
 
         val readerState = store.state.findTab(tab.id)!!.readerState
         assertTrue(readerState.connectRequired)
@@ -60,11 +59,11 @@ class ReaderViewMiddlewareTest {
             middleware = listOf(middleware),
         )
 
-        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession))
         assertSame(engineSession, store.state.findTab(tab.id)?.engineState?.engineSession)
         verify(controller, never()).disconnectPort(engineSession, READER_VIEW_EXTENSION_ID)
 
-        store.dispatch(EngineAction.UnlinkEngineSessionAction(tab.id)).joinBlocking()
+        store.dispatch(EngineAction.UnlinkEngineSessionAction(tab.id))
         assertNull(store.state.findTab(tab.id)?.engineState?.engineSession)
         verify(controller).disconnectPort(engineSession, READER_VIEW_EXTENSION_ID)
     }
@@ -88,7 +87,7 @@ class ReaderViewMiddlewareTest {
         assertFalse(store.state.findTab(tab2.id)!!.readerState.checkRequired)
         assertTrue(store.state.findTab(tab2.id)!!.readerState.readerable)
 
-        store.dispatch(TabListAction.SelectTabAction(tab2.id)).joinBlocking()
+        store.dispatch(TabListAction.SelectTabAction(tab2.id))
         assertFalse(store.state.findTab(tab1.id)!!.readerState.readerable)
         assertFalse(store.state.findTab(tab1.id)!!.readerState.checkRequired)
         assertFalse(store.state.findTab(tab1.id)!!.readerState.connectRequired)
@@ -106,7 +105,7 @@ class ReaderViewMiddlewareTest {
         )
         assertFalse(store.state.findTab(tab.id)!!.readerState.checkRequired)
 
-        store.dispatch(ContentAction.UpdateUrlAction(tab.id, "https://www.firefox.com")).joinBlocking()
+        store.dispatch(ContentAction.UpdateUrlAction(tab.id, "https://www.firefox.com"))
         assertTrue(store.state.findTab(tab.id)!!.readerState.checkRequired)
     }
 
@@ -123,10 +122,10 @@ class ReaderViewMiddlewareTest {
         )
         assertFalse(store.state.findTab(tab.id)!!.readerState.active)
 
-        store.dispatch(ContentAction.UpdateUrlAction(tab.id, "moz-extension://123?url=articleLink")).joinBlocking()
+        store.dispatch(ContentAction.UpdateUrlAction(tab.id, "moz-extension://123?url=articleLink"))
         assertTrue(store.state.findTab(tab.id)!!.readerState.active)
 
-        store.dispatch(ContentAction.UpdateUrlAction(tab.id, "https://www.firefox.com")).joinBlocking()
+        store.dispatch(ContentAction.UpdateUrlAction(tab.id, "https://www.firefox.com"))
         assertFalse(store.state.findTab(tab.id)!!.readerState.active)
         assertFalse(store.state.findTab(tab.id)!!.readerState.readerable)
         assertTrue(store.state.findTab(tab.id)!!.readerState.checkRequired)
@@ -154,7 +153,7 @@ class ReaderViewMiddlewareTest {
                 tab.id,
                 "moz-extension://123?url=https%3A%2F%2Fmozilla.org%2Farticle1",
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(store.state.findTab(tab.id)!!.readerState.active)
         assertEquals("https://mozilla.org/article1", store.state.findTab(tab.id)!!.content.url)
@@ -180,8 +179,34 @@ class ReaderViewMiddlewareTest {
                 tab.id,
                 activeUrl = "https://mozilla.org/article1",
             ),
-        ).joinBlocking()
+        )
 
         assertEquals("https://mozilla.org/article1", store.state.findTab(tab.id)!!.content.url)
+    }
+
+    @Test
+    fun `GIVEN navigating to a new URL WHEN that is not a reader mode URL THEN clear reader mode status for the tab`() {
+        val tab = createTab(
+            "https://www.mozilla.org",
+            id = "test-tab1",
+            readerState = ReaderState(
+                active = true,
+                baseUrl = "moz-extension://123",
+                activeUrl = "https://mozilla.org/article1",
+            ),
+        )
+        val store = BrowserStore(
+            initialState = BrowserState(tabs = listOf(tab)),
+            middleware = listOf(ReaderViewMiddleware()),
+        )
+
+        store.dispatch(
+            ContentAction.UpdateUrlAction(
+                tab.id,
+                "https://mozilla.org/article1",
+            ),
+        )
+
+        assertFalse(store.state.findTab(tab.id)!!.readerState.active)
     }
 }

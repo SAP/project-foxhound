@@ -14,7 +14,7 @@
 /**
  * Initialize a new `Emitter`.
  *
- * @api public
+ * @public
  */
 
 function Emitter(obj) {
@@ -26,9 +26,9 @@ function Emitter(obj) {
 /**
  * Mixin the emitter properties.
  *
- * @param {Object} obj
- * @return {Object}
- * @api private
+ * @param {object} obj
+ * @return {object}
+ * @private
  */
 
 function mixin(obj) {
@@ -41,10 +41,10 @@ function mixin(obj) {
 /**
  * Listen on the given `event` with `fn`.
  *
- * @param {String} event
+ * @param {string} event
  * @param {Function} fn
  * @return {Emitter}
- * @api public
+ * @public
  */
 
 Emitter.prototype.on = function (event, fn) {
@@ -56,7 +56,7 @@ Emitter.prototype.on = function (event, fn) {
 /**
  * Emit `event` with the given args.
  *
- * @param {String} event
+ * @param {string} event
  * @param {Mixed} ...
  * @return {Emitter}
  */

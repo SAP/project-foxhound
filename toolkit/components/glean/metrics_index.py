@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -27,8 +25,8 @@ gecko_metrics = [
     "docshell/base/metrics.yaml",
     "dom/base/use_counter_metrics.yaml",
     "dom/canvas/metrics.yaml",
-    "dom/crypto/metrics.yaml",
     "dom/geolocation/metrics.yaml",
+    "dom/indexedDB/metrics.yaml",
     "dom/localstorage/metrics.yaml",
     "dom/media/eme/metrics.yaml",
     "dom/media/hls/metrics.yaml",
@@ -43,7 +41,6 @@ gecko_metrics = [
     "dom/quota/metrics.yaml",
     "dom/security/metrics.yaml",
     "dom/serviceworkers/metrics.yaml",
-    "dom/storage/metrics.yaml",
     "dom/webauthn/metrics.yaml",
     "dom/workers/metrics.yaml",
     "editor/libeditor/metrics.yaml",
@@ -52,6 +49,7 @@ gecko_metrics = [
     "image/decoders/metrics.yaml",
     "intl/locale/metrics.yaml",
     "ipc/metrics.yaml",
+    "js/src/metrics.yaml",
     "js/xpconnect/metrics.yaml",
     "layout/base/metrics.yaml",
     "mobile/shared/modules/geckoview/metrics.yaml",
@@ -62,13 +60,12 @@ gecko_metrics = [
     "netwerk/metrics.yaml",
     "netwerk/protocol/http/metrics.yaml",
     "netwerk/protocol/websocket/metrics.yaml",
-    "parser/html/metrics.yaml",
     "parser/htmlparser/metrics.yaml",
     "security/certverifier/metrics.yaml",
     "security/ct/metrics.yaml",
     "security/manager/ssl/metrics.yaml",
     "security/sandbox/metrics.yaml",
-    "services/common/metrics.yaml",
+    "services/settings/metrics.yaml",
     "services/sync/modules/metrics.yaml",
     "startupcache/metrics.yaml",
     "storage/metrics.yaml",
@@ -76,13 +73,16 @@ gecko_metrics = [
     "toolkit/components/antitracking/metrics.yaml",
     "toolkit/components/backgroundhangmonitor/metrics.yaml",
     "toolkit/components/captchadetection/metrics.yaml",
+    "toolkit/components/cleardata/metrics.yaml",
     "toolkit/components/cookiebanners/metrics.yaml",
     "toolkit/components/doh/metrics.yaml",
     "toolkit/components/downloads/metrics.yaml",
     "toolkit/components/enterprisepolicies/metrics.yaml",
     "toolkit/components/extensions/metrics.yaml",
     "toolkit/components/formautofill/metrics.yaml",
+    "toolkit/components/gecko-trace/generated-metrics.yaml",
     "toolkit/components/glean/metrics.yaml",
+    "toolkit/components/ipprotection/metrics.yaml",
     "toolkit/components/mediasniffer/metrics.yaml",
     "toolkit/components/messaging-system/metrics.yaml",
     "toolkit/components/ml/metrics.yaml",
@@ -115,10 +115,14 @@ gecko_metrics = [
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 firefox_desktop_metrics = [
     "browser/actors/metrics.yaml",
+    "browser/components/aiwindow/metrics.yaml",
     "browser/components/asrouter/metrics.yaml",
     "browser/components/attribution/metrics.yaml",
     "browser/components/backup/metrics.yaml",
+    "browser/components/contentsharing/metrics.yaml",
     "browser/components/contextualidentity/metrics.yaml",
+    "browser/components/controlcenter/metrics.yaml",
+    "browser/components/customkeys/metrics.yaml",
     "browser/components/downloads/metrics.yaml",
     "browser/components/extensions/metrics.yaml",
     "browser/components/firefoxview/metrics.yaml",
@@ -138,6 +142,7 @@ firefox_desktop_metrics = [
     "browser/components/sessionstore/metrics.yaml",
     "browser/components/sidebar/metrics.yaml",
     "browser/components/tabbrowser/metrics.yaml",
+    "browser/components/tabnotes/metrics.yaml",
     "browser/components/taskbartabs/metrics.yaml",
     "browser/components/textrecognition/metrics.yaml",
     "browser/components/urlbar/metrics.yaml",
@@ -203,37 +208,39 @@ metrics_yamls = sorted(
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 gecko_pings = [
     "dom/pings.yaml",
+    "netwerk/pings.yaml",
     "toolkit/components/antitracking/bouncetrackingprotection/pings.yaml",
     "toolkit/components/backgroundhangmonitor/pings.yaml",
     "toolkit/components/captchadetection/pings.yaml",
+    "toolkit/components/gecko-trace/pings.yaml",
     "toolkit/components/glean/pings.yaml",
     "toolkit/components/resistfingerprinting/pings.yaml",
+    "toolkit/mozapps/extensions/pings.yaml",
 ]
 
 # Pings that are sent by Firefox Desktop.
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 firefox_desktop_pings = [
     "browser/components/asrouter/pings.yaml",
+    "browser/components/backup/pings.yaml",
     "browser/components/newtab/pings.yaml",
-    "browser/components/pocket/pings.yaml",
     "browser/components/profiles/pings.yaml",
     "browser/components/search/pings.yaml",
     "browser/components/urlbar/pings.yaml",
     "browser/modules/pings.yaml",
     "services/fxaccounts/pings.yaml",
     "services/sync/pings.yaml",
-    "toolkit/components/crashes/pings.yaml",
     "toolkit/components/nimbus/pings.yaml",
     "toolkit/components/reportbrokensite/pings.yaml",
     "toolkit/components/telemetry/pings.yaml",
     "toolkit/modules/pings.yaml",
     "toolkit/mozapps/update/shared_pings.yaml",
+    "toolkit/profile/pings.yaml",
 ]
 
 # Pings that are sent by the Firefox Desktop Background Update Task
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 background_update_pings = [
-    "toolkit/components/crashes/pings.yaml",
     "toolkit/mozapps/update/pings.yaml",
     "toolkit/mozapps/update/shared_pings.yaml",
 ]
@@ -242,7 +249,6 @@ background_update_pings = [
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 background_tasks_pings = [
     "toolkit/components/backgroundtasks/pings.yaml",
-    "toolkit/components/crashes/pings.yaml",
     "toolkit/components/nimbus/pings.yaml",
     "toolkit/mozapps/defaultagent/pings.yaml",
 ]

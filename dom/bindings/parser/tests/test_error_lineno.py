@@ -22,7 +22,7 @@ interface ?"""
         harness.check(len(lines), 3, "Expected number of lines in error message")
         harness.ok(
             lines[0].endswith("line 6:10"),
-            'First line of error should end with "line 6:10", but was "%s".' % lines[0],
+            f'First line of error should end with "line 6:10", but was "{lines[0]}".',
         )
         harness.check(
             lines[1],

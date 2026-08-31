@@ -26,7 +26,7 @@ const LABEL_HEIGHT = 20;
  * the load.
  *
  * @param {Document} doc the document element to use to create the image object
- * @param {String} imageUrl the url of the image to measure
+ * @param {string} imageUrl the url of the image to measure
  * @return {Promise} returns a promise that will resolve after the iamge load:
  *         - {Number} naturalWidth natural width of the loaded image
  *         - {Number} naturalHeight natural height of the loaded image
@@ -51,9 +51,9 @@ function getImageDimensions(doc, imageUrl) {
  *        The tooltip instance on which the image preview content should be set
  * @param {Document} doc
  *        A document element to create the HTML elements needed for the tooltip
- * @param {String} imageUrl
+ * @param {string} imageUrl
  *        Absolute URL of the image to display in the tooltip
- * @param {Object} options
+ * @param {object} options
  *        - {Number} naturalWidth mandatory, width of the image to display
  *        - {Number} naturalHeight mandatory, height of the image to display
  *        - {Number} maxDim optional, max width/height of the preview
@@ -123,7 +123,7 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
   tooltip.setContentSize({ width, height });
 }
 
-/*
+/**
  * Set the tooltip content of a provided HTMLTooltip instance to display a
  * fallback error message when an image preview tooltip can not be displayed.
  *

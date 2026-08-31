@@ -1,19 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsContentUtils.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/Sprintf.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/DOMEventTargetHelper.h"
+
+#include "MainThreadUtils.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/Likely.h"
+#include "mozilla/Sprintf.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Event.h"
+#include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "MainThreadUtils.h"
 
 namespace mozilla {
 
@@ -26,7 +25,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(DOMEventTargetHelper)
     char name[512];
     nsAutoString uri;
     if (tmp->GetOwnerWindow() && tmp->GetOwnerWindow()->GetExtantDoc()) {
-      Unused << tmp->GetOwnerWindow()->GetExtantDoc()->GetDocumentURI(uri);
+      (void)tmp->GetOwnerWindow()->GetExtantDoc()->GetDocumentURI(uri);
     }
 
     nsXPCOMCycleCollectionParticipant* participant = nullptr;
@@ -114,10 +113,6 @@ void DOMEventTargetHelper::DisconnectFromOwner() {
   }
 
   MaybeDontKeepAlive();
-}
-
-nsPIDOMWindowOuter* DOMEventTargetHelper::GetOwnerGlobalForBindingsInternal() {
-  return nsPIDOMWindowOuter::GetFromCurrentInner(GetOwnerWindow());
 }
 
 nsPIDOMWindowInner* DOMEventTargetHelper::GetWindowIfCurrent() const {

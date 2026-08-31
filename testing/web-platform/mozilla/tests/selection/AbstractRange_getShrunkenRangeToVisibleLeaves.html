@@ -1,0 +1,193 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Testing SelectionMovementUtils::Get(First|Last)VisiblePointAtLeaf</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/editing/include/editor-test-utils.js"></script>
+<script>
+"use strict";
+
+addEventListener("load", () => {
+  const container = document.getElementById("container");
+  // EditorTestUtils can initialize selection even without editable nodes so
+  // that we can use it.
+  const utils = new EditorTestUtils(container);
+  const greenImageSrc =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAIAAAACDbGyAAAAE0lEQVR4nGNk+M+ADJgYGCjiAwBPkgEJOTC6CgAAAABJRU5ErkJggg==";
+  for (const data of [
+    {
+      innerHTML: "{<div><span>abc</span></div>}",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span").firstChild,
+          startOffset: 0,
+          endContainer: container.querySelector("span").firstChild,
+          endOffset: "abc".length,
+        };
+      },
+    },
+    {
+      innerHTML: "{<div style=user-select:none><span>abc</span></div>}",
+      expectedRange: function () {
+        return {
+          startContainer: container,
+          startOffset: 0,
+          endContainer: container,
+          endOffset: 1,
+        };
+      },
+    },
+    {
+      innerHTML: "{<div><span style=user-select:none>abc</span></div>}",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("div"),
+          startOffset: 0,
+          endContainer: container.querySelector("div"),
+          endOffset: 1,
+        };
+      },
+    },
+    {
+      // Invisible <div>s should be ignored.
+      innerHTML: "{<div style=display:none>ABC</div><div><span>def</span></div><div style=display:none>GHI</div>}",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span").firstChild,
+          startOffset: 0,
+          endContainer: container.querySelector("span").firstChild,
+          endOffset: "def".length,
+        };
+      },
+    },
+    {
+      // First/last unselectable elements should be ignored.
+      innerHTML: "<div style=user-select:none>[ABC</div><div><span>def</span></div><div style=user-select:none>GHI]</div>",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span").firstChild,
+          startOffset: 0,
+          endContainer: container.querySelector("span").firstChild,
+          endOffset: "def".length,
+        };
+      },
+    },
+    {
+      innerHTML: "<div style=user-select:none>{<div><span style=user-select:text>abc</span></div>}</div>",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span").firstChild,
+          startOffset: 0,
+          endContainer: container.querySelector("span").firstChild,
+          endOffset: "abc".length,
+        };
+      },
+    },
+    {
+      innerHTML: "<div style=user-select:none>{<span>ABC</span><span style=user-select:text>def</span><span>GHI</span>}</div>",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span[style]").firstChild,
+          startOffset: 0,
+          endContainer: container.querySelector("span[style]").firstChild,
+          endOffset: "def".length,
+        };
+      },
+    },
+    {
+      innerHTML: "<div style=user-select:none>{<div><span style=user-select:text><span style=user-select:none>abc</span></span></div>}</div>",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span"),
+          startOffset: 0,
+          endContainer: container.querySelector("span"),
+          endOffset: 1,
+        };
+      },
+    },
+    {
+      // Don't collapse into the <img>
+      innerHTML: `{<span><img src=${greenImageSrc}></span>}`,
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span"),
+          startOffset: 0,
+          endContainer: container.querySelector("span"),
+          endOffset: 1,
+        };
+      },
+    },
+    {
+      // Don't collapse into the <input>
+      innerHTML: `{<span><input></span>}`,
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span"),
+          startOffset: 0,
+          endContainer: container.querySelector("span"),
+          endOffset: 1,
+        };
+      },
+    },
+    {
+      // Don't collapse into the <button>
+      innerHTML: `{<span><button>ABC</button></span>}`,
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span"),
+          startOffset: 0,
+          endContainer: container.querySelector("span"),
+          endOffset: 1,
+        };
+      },
+    },
+    {
+      // Treat the invisible <br> as invisible.
+      innerHTML: "{<div><span>abc</span><br></div>}",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span").firstChild,
+          startOffset: 0,
+          endContainer: container.querySelector("div"),
+          endOffset: 2,
+        };
+      },
+    },
+    {
+      // Treat the invisible <br> as invisible.
+      innerHTML: "{<div><span>abc<br></span></div>}",
+      expectedRange: function () {
+        return {
+          startContainer: container.querySelector("span").firstChild,
+          startOffset: 0,
+          endContainer: container.querySelector("span"),
+          endOffset: 2,
+        };
+      },
+    },
+  ]) {
+    test(
+      () => {
+        utils.setupEditingHost(data.innerHTML);
+        container.getBoundingClientRect();
+        assert_equals(
+          EditorTestUtils.getRangeDescription(
+            SpecialPowers.wrap(
+              getSelection().getRangeAt(0)
+            ).getShrunkenRangeToVisibleLeaves()
+          ),
+          EditorTestUtils.getRangeDescription(data.expectedRange())
+        );
+      },
+      `getShrunkenRangeToVisibleLeaves() when ${
+        data.innerHTML.replaceAll(greenImageSrc, "...")
+      }`
+    );
+  }
+}, {once: true});
+</script>
+</head>
+<body><div id="container"></div></body>
+</html>

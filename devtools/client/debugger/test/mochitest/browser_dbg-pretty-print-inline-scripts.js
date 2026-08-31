@@ -23,9 +23,8 @@ add_task(async function () {
   const dbg = await initDebugger(TEST_FILENAME);
 
   await selectSource(dbg, TEST_FILENAME);
-  clickElement(dbg, "prettyPrintButton");
+  await togglePrettyPrint(dbg);
 
-  await waitForSelectedSource(dbg, PRETTY_PRINTED_FILENAME);
   const prettyPrintedSource = findSourceContent(dbg, PRETTY_PRINTED_FILENAME);
 
   ok(prettyPrintedSource, "Pretty-printed source exists");
@@ -154,10 +153,8 @@ add_task(async function prettyPrintSingleLineDataUrl() {
   const dbg = await initDebuggerWithAbsoluteURL(TEST_URL);
 
   await selectSource(dbg, TEST_URL);
-  clickElement(dbg, "prettyPrintButton");
+  await togglePrettyPrint(dbg);
 
-  const prettySource = await waitForSource(dbg, PRETTY_PRINTED_URL);
-  await waitForSelectedSource(dbg, prettySource);
   const prettyPrintedSource = findSourceContent(dbg, PRETTY_PRINTED_URL);
 
   ok(prettyPrintedSource, "Pretty-printed source exists");
@@ -177,11 +174,33 @@ add_task(async function prettyPrintSingleLineDataUrl() {
   );
 });
 
+// Asserts that files which contain characters which are
+// encoded by two code units (surrogate pairs)
+add_task(async function prettyPrintHtmlWithSurrogatePairCharacters() {
+  const TEST_URL = `doc-pretty-print-with-emojis.html`;
+  const PRETTY_PRINTED_URL = `${TEST_URL}:formatted`;
+  const dbg = await initDebugger(TEST_URL);
+
+  await selectSource(dbg, TEST_URL);
+  await togglePrettyPrint(dbg);
+  const prettyPrintedSource = findSourceContent(dbg, PRETTY_PRINTED_URL);
+  ok(prettyPrintedSource, "Pretty-printed source exists");
+
+  info("Check that the HTML file was pretty-printed as expected");
+  const expectedPrettyHtml =
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /></head><body>\n🥁🤯<script>\nconsole.log('%', '🤯🤯🤯🤯🤯')\n</script>🥁</body>";
+  is(
+    prettyPrintedSource.value,
+    expectedPrettyHtml,
+    "HTML file is pretty printed as expected"
+  );
+});
+
 /**
  * Return the expected pretty-printed HTML. Lines starting with ➤ indicate breakable
  * lines for easier maintenance.
  *
- * @returns {String}
+ * @returns {string}
  */
 function getExpectedPrettyPrintedHtml() {
   return `<!-- This Source Code Form is subject to the terms of the Mozilla Public

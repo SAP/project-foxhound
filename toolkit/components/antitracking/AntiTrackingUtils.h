@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,13 +55,6 @@ class AntiTrackingUtils final {
   static bool CreateStorageFramePermissionKey(nsIPrincipal* aPrincipal,
                                               nsACString& aKey);
 
-  // Given and embedded URI, returns the permission for allowing storage access
-  // requests from that URI's site. This permission is site-scoped in two ways:
-  // the principal it is stored under and the suffix built from aURI are both
-  // the Site rather than Origin.
-  static bool CreateStorageRequestPermissionKey(nsIURI* aURI,
-                                                nsACString& aPermissionKey);
-
   // Returns true if the permission passed in is a storage access permission
   // for the passed in principal argument.
   static bool IsStorageAccessPermission(nsIPermission* aPermission,
@@ -73,9 +64,7 @@ class AntiTrackingUtils final {
   // and the storage permission key.
   static bool CheckStoragePermission(nsIPrincipal* aPrincipal,
                                      const nsAutoCString& aType,
-                                     bool aIsInPrivateBrowsing,
-                                     uint32_t* aRejectedReason,
-                                     uint32_t aBlockedReason);
+                                     bool aIsInPrivateBrowsing);
 
   // Returns the number of sites that give this principal's origin storage
   // access.
@@ -96,6 +85,20 @@ class AntiTrackingUtils final {
   static nsILoadInfo::StoragePermissionState GetStoragePermissionStateInParent(
       nsIChannel* aChannel);
 
+  // Upgrades the storage permission state from inactive to active. Used in
+  // Storage-Access-Headers
+  static nsresult ActivateStoragePermissionStateInParent(nsIChannel* aChannel);
+
+  // Parse Activate-Storage-Access response header, activate storage-access in
+  // frame if necessary returns whether the channel needs to reload after with
+  // access to unpartitioned cookies.
+  static bool ProcessStorageAccessHeadersShouldRetry(nsIChannel* aChannel);
+
+ private:
+  static nsresult ProcessStorageAccessHeaders(nsIChannel* aChannel,
+                                              bool* aOutReload);
+
+ public:
   // Returns the toplevel inner window id, returns 0 if this is a toplevel
   // window.
   static uint64_t GetTopLevelAntiTrackingWindowId(

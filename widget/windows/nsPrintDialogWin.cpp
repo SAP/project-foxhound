@@ -1,10 +1,11 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsPrintDialogWin.h"
 
+#include "mozilla/ScopeExit.h"
+#include "mozilla/dom/Promise.h"
 #include "nsArray.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
@@ -12,6 +13,7 @@
 #include "nsIBrowserChild.h"
 #include "nsIDialogParamBlock.h"
 #include "nsIDocShell.h"
+#include "nsIGlobalObject.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIPrintSettings.h"
 #include "nsIWebBrowserChrome.h"
@@ -22,13 +24,16 @@
 #include "nsServiceManagerUtils.h"
 #include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
+#include "nsThreadUtils.h"
 #include "WidgetUtils.h"
 #include "WinUtils.h"
+#include "xpcpublic.h"
 
 static const char* kPageSetupDialogURL =
     "chrome://global/content/printPageSetup.xhtml";
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using namespace mozilla::widget;
 
 /**
@@ -37,7 +42,7 @@ using namespace mozilla::widget;
 
 class ParamBlock {
  public:
-  ParamBlock() { mBlock = 0; }
+  ParamBlock() { mBlock = nullptr; }
   ~ParamBlock() { NS_IF_RELEASE(mBlock); }
   nsresult Init() {
     return CallCreateInstance(NS_DIALOGPARAMBLOCK_CONTRACTID, &mBlock);
@@ -67,26 +72,72 @@ nsPrintDialogServiceWin::Init() {
 NS_IMETHODIMP
 nsPrintDialogServiceWin::ShowPrintDialog(mozIDOMWindowProxy* aParent,
                                          bool aHaveSelection,
-                                         nsIPrintSettings* aSettings) {
+                                         nsIPrintSettings* aSettings,
+                                         JSContext* aCx, Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
   NS_ENSURE_ARG(aParent);
+  NS_ENSURE_ARG(aSettings);
+  NS_ENSURE_ARG(aCx);
+  NS_ENSURE_ARG(aPromise);
+
+  ErrorResult rvErr;
+  nsCOMPtr<nsIGlobalObject> global = xpc::CurrentNativeGlobal(aCx);
+  RefPtr<Promise> promise = Promise::Create(global, rvErr);
+  if (NS_WARN_IF(rvErr.Failed())) {
+    return rvErr.StealNSResult();
+  }
+
   RefPtr<nsIWidget> parentWidget =
       WidgetUtils::DOMWindowToWidget(nsPIDOMWindowOuter::From(aParent));
 
   ScopedRtlShimWindow shim(parentWidget.get());
-  NS_ASSERTION(shim.get(), "Couldn't get native window for PRint Dialog!");
+  NS_ASSERTION(shim.get(), "Couldn't get native window for Print Dialog!");
 
-  return NativeShowPrintDialog(shim.get(), aHaveSelection, aSettings);
+  nsresult rv = NativeShowPrintDialog(shim.get(), aHaveSelection, aSettings);
+  if (NS_SUCCEEDED(rv)) {
+    promise->MaybeResolveWithUndefined();
+  } else {
+    promise->MaybeReject(rv);
+  }
+  promise.forget(aPromise);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 nsPrintDialogServiceWin::ShowPageSetupDialog(mozIDOMWindowProxy* aParent,
-                                             nsIPrintSettings* aNSSettings) {
+                                             nsIPrintSettings* aNSSettings,
+                                             JSContext* aCx,
+                                             Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
   NS_ENSURE_ARG(aParent);
   NS_ENSURE_ARG(aNSSettings);
+  NS_ENSURE_ARG(aCx);
+  NS_ENSURE_ARG(aPromise);
+
+  ErrorResult rvErr;
+  nsCOMPtr<nsIGlobalObject> global = xpc::CurrentNativeGlobal(aCx);
+  RefPtr<Promise> promise = Promise::Create(global, rvErr);
+  if (NS_WARN_IF(rvErr.Failed())) {
+    return rvErr.StealNSResult();
+  }
+
+  // Resolve or reject `promise` on every exit path based on `rv`, so the
+  // body below can keep using the bare early-exit pattern.
+  nsresult rv = NS_OK;
+  auto resolveOnExit = MakeScopeExit([&rv, promise] {
+    if (NS_SUCCEEDED(rv)) {
+      promise->MaybeResolveWithUndefined();
+    } else {
+      promise->MaybeReject(rv);
+    }
+  });
+  promise.forget(aPromise);
 
   ParamBlock block;
-  nsresult rv = block.Init();
-  if (NS_FAILED(rv)) return rv;
+  rv = block.Init();
+  if (NS_FAILED(rv)) {
+    return NS_OK;
+  }
 
   block->SetInt(0, 0);
   rv = DoDialog(aParent, block, aNSSettings, kPageSetupDialogURL);
@@ -96,14 +147,14 @@ nsPrintDialogServiceWin::ShowPageSetupDialog(mozIDOMWindowProxy* aParent,
   if (NS_SUCCEEDED(rv)) {
     int32_t status;
     block->GetInt(0, &status);
-    return status == 0 ? NS_ERROR_ABORT : NS_OK;
+    rv = status == 0 ? NS_ERROR_ABORT : NS_OK;
   }
 
   // We don't call nsPrintSettingsService::MaybeSavePrintSettingsToPrefs here
   // since it's called for us in printPageSetup.js.  Maybe we should move that
   // call here for consistency with the other platforms though?
 
-  return rv;
+  return NS_OK;
 }
 
 nsresult nsPrintDialogServiceWin::DoDialog(mozIDOMWindowProxy* aParent,

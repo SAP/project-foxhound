@@ -6,7 +6,8 @@ context.oncomplete = function(e) {
     document.documentElement.removeAttribute("class");
 };
 // linearly dependent
-context.listener.setOrientation(0, 0, -6.311749985202524e+307, 0, 0, 6.311749985202524e+307);
+const FLT_MAX = 3.40282e+38;
+context.listener.setOrientation(0, 0, FLT_MAX, 0, 0, FLT_MAX);
 var panner = context.createPanner();
 panner.setPosition(1, 2, 3);
 panner.connect(context.destination);

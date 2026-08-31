@@ -884,7 +884,7 @@ bool ExceptionHandler::WriteMinidumpForChild(pid_t child,
   if (auxv_info) {
     minidump_writer_set_direct_auxv_dump_info(minidump_writer, auxv_info);
   }
-  if (!minidump_writer_dump(minidump_writer, nullptr)) {
+  if (!minidump_writer_dump(minidump_writer, /*extra_data*/ nullptr)) {
     return false;
   }
 #else

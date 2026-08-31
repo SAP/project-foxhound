@@ -20,7 +20,7 @@ info: |
   7. Return false.
 
 features: [Atomics, BigInt, SharedArrayBuffer, TypedArray]
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 ---*/
 
 testWithBigIntTypedArrayConstructors(function(TA) {
@@ -31,8 +31,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
     observed,
     'Atomics.isLockFree(TA.BYTES_PER_ELEMENT) returns the value of `observed` (Atomics.isLockFree(TA.BYTES_PER_ELEMENT))'
   );
-});
-
-
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

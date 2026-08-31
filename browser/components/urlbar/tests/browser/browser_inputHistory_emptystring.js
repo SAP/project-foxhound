@@ -74,7 +74,7 @@ add_task(async function test_history_no_search_terms() {
       async () => {
         info("Test opening panel on focus");
         gURLBar.blur();
-        EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {});
+        EventUtils.synthesizeMouseAtCenter(gURLBar, {});
       },
       async () => {
         info("Test opening panel on focus on a page");
@@ -88,7 +88,7 @@ add_task(async function test_history_no_search_terms() {
         );
         await BrowserTestUtils.browserLoaded(selectedBrowser);
         gURLBar.blur();
-        EventUtils.synthesizeMouseAtCenter(gURLBar.textbox, {});
+        EventUtils.synthesizeMouseAtCenter(gURLBar, {});
       },
     ]) {
       await do_test(openFn, pickMethod);

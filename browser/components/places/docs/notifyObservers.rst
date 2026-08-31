@@ -10,8 +10,8 @@ Generally - the Observer pattern follows a subscription model. A subscriber (com
 
 Each successful operation is noticed by observer for these events and passed to a subscriber.
 
-`PlacesObservers.webidl`_ a Global Singleton which provides utilities to observe or notify all events.
-`PlacesEvent.webidl`_ states all types of possible events and describes their features. In our case, events are:
+:searchfox:`PlacesObservers.webidl <dom/chrome-webidl/PlacesObservers.webidl>` a Global Singleton which provides utilities to observe or notify all events.
+:searchfox:`PlacesEvent.webidl <dom/chrome-webidl/PlacesEvent.webidl>` states all types of possible events and describes their features. In our case, events are:
 
   - ``“page-visited”`` - ``data: PlacesVisit`` Fired whenever a page is visited
   - ``“bookmark-added”`` - ``data: PlacesBookmarkAddition`` Fired whenever a bookmark (or a bookmark folder/separator) is created.
@@ -30,6 +30,3 @@ Each successful operation is noticed by observer for these events and passed to 
   - ``“page-rank-changed”`` - ``data: PlacesRanking`` Fired whenever pages ranking is changed.
   - ``“page-removed”`` - ``data: PlacesVisitRemoved`` Fired whenever a page or its visits are removed. This may be invoked when a page is removed from the store because it has no more visits, nor bookmarks. It may also be invoked when all or some of the page visits are removed, but the page itself is not removed from the store, because it may be bookmarked.
   - ``“purge-caches”`` - ``data: PlacesPurgeCaches`` Fired whenever changes happened that could not be observed through other notifications, for example a database fixup. When received, observers, especially data views, should drop any caches and reload from scratch.
-
-  .. _PlacesObservers.webidl: https://searchfox.org/mozilla-central/source/dom/chrome-webidl/PlacesObservers.webidl
-  .. _PlacesEvent.webidl: https://searchfox.org/mozilla-central/source/dom/chrome-webidl/PlacesEvent.webidl

@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SharedWorkerChild.h"
+
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/ErrorEventBinding.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SecurityPolicyViolationEvent.h"
 #include "mozilla/dom/SecurityPolicyViolationEventBinding.h"
-#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SharedWorker.h"
 #include "mozilla/dom/WebTransport.h"
 #include "mozilla/dom/WindowGlobalChild.h"
@@ -62,6 +61,20 @@ void SharedWorkerChild::SendFreeze() {
 void SharedWorkerChild::SendThaw() {
   if (mActive) {
     PSharedWorkerChild::SendThaw();
+  }
+}
+
+void SharedWorkerChild::SendSetLocaleOverride(
+    const nsACString& aLanguageOverride, const nsTArray<nsString>& aLanguages) {
+  if (mActive) {
+    PSharedWorkerChild::SendSetLocaleOverride(aLanguageOverride, aLanguages);
+  }
+}
+
+void SharedWorkerChild::SendUpdateTimezoneOverride(
+    const nsAString& aTimezoneOverride) {
+  if (mActive) {
+    PSharedWorkerChild::SendUpdateTimezoneOverride(nsString(aTimezoneOverride));
   }
 }
 

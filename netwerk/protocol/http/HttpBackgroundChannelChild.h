@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,7 +60,6 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   IPCResult RecvOnTransportAndData(const nsresult& aChannelStatus,
                                    const nsresult& aTransportStatus,
                                    const uint64_t& aOffset,
-                                   const uint32_t& aCount,
                                    const nsACString& aData,
                                    const nsACString& aTaint,
                                    const bool& aDataFromSocketProcess,
@@ -141,7 +137,7 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   // We need to know the first ODA will be from socket process or parent
   // process. This information is from OnStartRequest message from parent
   // process.
-  ODASource mFirstODASource;
+  ODASource mFirstODASource = ODA_PENDING;
 
   // Indicate whether HttpChannelChild::ProcessOnStopRequest is called.
   bool mOnStopRequestCalled = false;

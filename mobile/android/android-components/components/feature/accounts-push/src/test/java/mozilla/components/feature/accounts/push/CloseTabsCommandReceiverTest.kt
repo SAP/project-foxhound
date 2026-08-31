@@ -10,7 +10,6 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.sync.DeviceCommandIncoming
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -39,8 +38,6 @@ class CloseTabsCommandReceiverTest {
 
         receiver.receive(DeviceCommandIncoming.TabsClosed(null, urls))
 
-        browserStore.waitUntilIdle()
-
         assertTrue(browserStore.state.tabs.isEmpty())
         verify(observer).onTabsClosed(any())
         verify(observer, never()).onLastTabClosed()
@@ -54,8 +51,6 @@ class CloseTabsCommandReceiverTest {
         receiver.register(observer)
 
         receiver.receive(DeviceCommandIncoming.TabsClosed(null, listOf("https://mozilla.org")))
-
-        browserStore.waitUntilIdle()
 
         verify(observer, never()).onTabsClosed(any())
         verify(observer, never()).onLastTabClosed()
@@ -76,8 +71,6 @@ class CloseTabsCommandReceiverTest {
         processor.register(observer)
 
         processor.receive(DeviceCommandIncoming.TabsClosed(null, listOf("https://getfirefox.com")))
-
-        browserStore.waitUntilIdle()
 
         assertEquals(listOf("1"), browserStore.state.tabs.map { it.id })
         assertEquals("1", browserStore.state.selectedTabId)
@@ -100,8 +93,6 @@ class CloseTabsCommandReceiverTest {
         processor.register(observer)
 
         processor.receive(DeviceCommandIncoming.TabsClosed(null, listOf("https://getfirefox.com")))
-
-        browserStore.waitUntilIdle()
 
         assertTrue(browserStore.state.tabs.isEmpty())
         assertNull(browserStore.state.selectedTabId)
@@ -140,8 +131,6 @@ class CloseTabsCommandReceiverTest {
                 ),
             ),
         )
-
-        browserStore.waitUntilIdle()
 
         assertEquals(listOf("6"), browserStore.state.tabs.map { it.id })
         verify(observer).onTabsClosed(
@@ -194,8 +183,6 @@ class CloseTabsCommandReceiverTest {
             ),
         )
 
-        browserStore.waitUntilIdle()
-
         assertEquals(listOf("2", "5"), browserStore.state.tabs.map { it.id })
         assertNull(browserStore.state.selectedTabId)
         verify(observer).onTabsClosed(
@@ -236,8 +223,6 @@ class CloseTabsCommandReceiverTest {
                 ),
             ),
         )
-
-        browserStore.waitUntilIdle()
 
         assertEquals(listOf("2"), browserStore.state.tabs.map { it.id })
         verify(observer).onTabsClosed(

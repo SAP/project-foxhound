@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 3; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsOSHelperAppServiceChild_h__
-#define nsOSHelperAppServiceChild_h__
+#ifndef nsOSHelperAppServiceChild_h_
+#define nsOSHelperAppServiceChild_h_
 
 #include "nsExternalHelperAppService.h"
 
@@ -19,7 +18,7 @@ class nsIMIMEInfo;
  */
 class nsOSHelperAppServiceChild : public nsExternalHelperAppService {
  public:
-  nsOSHelperAppServiceChild() {};
+  nsOSHelperAppServiceChild() = default;
   virtual ~nsOSHelperAppServiceChild() = default;
 
   NS_IMETHOD GetProtocolHandlerInfoFromOS(const nsACString& aScheme,
@@ -45,4 +44,4 @@ class nsOSHelperAppServiceChild : public nsExternalHelperAppService {
                                nsIMIMEInfo** aMIMEInfo) override;
 };
 
-#endif  // nsOSHelperAppServiceChild_h__
+#endif  // nsOSHelperAppServiceChild_h_

@@ -48,6 +48,10 @@ enum class GlobalDirections(val navDirections: NavDirections, val destinationId:
         NavGraphDirections.actionGlobalAddonsManagementFragment(),
         R.id.addonsManagementFragment,
     ),
+    SettingsAIControls(
+        NavGraphDirections.actionGlobalAiControlsFragment(),
+        R.id.aiControlsFragment,
+    ),
     SettingsLogins(
         NavGraphDirections.actionGlobalSavedLoginsAuthFragment(),
         R.id.saveLoginSettingFragment,
@@ -63,5 +67,9 @@ enum class GlobalDirections(val navDirections: NavDirections, val destinationId:
     SettingsPrivateBrowsing(
         NavGraphDirections.actionGlobalPrivateBrowsingFragment(),
         R.id.privateBrowsingFragment,
+    ),
+    SettingsAppIcon(
+        NavGraphDirections.actionGlobalAppIconSelectionFragment(),
+        R.id.appIconSelectionFragment,
     ),
 }

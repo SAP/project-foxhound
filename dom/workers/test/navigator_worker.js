@@ -13,6 +13,7 @@ var supportedProps = [
   { name: "globalPrivacyControl", insecureContext: true },
   { name: "gpu", earlyBetaOrEarlier: true },
   { name: "gpu", windows: true },
+  { name: "gpu", mac: true, aarch64: true },
   { name: "platform", insecureContext: true },
   { name: "product", insecureContext: true },
   { name: "userAgent", insecureContext: true },
@@ -26,6 +27,7 @@ var supportedProps = [
   { name: "connection", insecureContext: true },
   { name: "permissions", insecureContext: true },
   "serviceWorker",
+  { name: "serial", android: false },
 ];
 
 self.onmessage = function (event) {

@@ -47,7 +47,7 @@ async function test() {
 
   // Start a smooth-scroll animation in the compositor and let it go a few
   // frames, so that there is some "user scrolling" going on (per the comment
-  // in AsyncPanZoomController::NotifyLayersUpdated)
+  // in AsyncPanZoomController::NotifyMainThreadTransaction)
   elm.scrollTop = 10;
   utils.advanceTimeAndRefresh(16);
   utils.advanceTimeAndRefresh(16);

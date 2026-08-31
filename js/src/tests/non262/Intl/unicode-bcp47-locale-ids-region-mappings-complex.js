@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // CLDR contains region mappings where the replacement region depends on the
 // likely subtags from the language and script subtags.
 //

@@ -15,7 +15,7 @@ info: |
       ...
   4. Return OrdinaryGetOwnProperty(O, P).
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -26,9 +26,9 @@ var keys = [
   "0.0000001"
 ];
 
-testWithBigIntTypedArrayConstructors(function(TA) {
+testWithBigIntTypedArrayConstructors(function(TA, makeCtorArg) {
   keys.forEach(function(key) {
-    var sample = new TA([42n, 43n]);
+    var sample = new TA(makeCtorArg([42n, 43n]));
 
     assert.sameValue(
       Object.getOwnPropertyDescriptor(sample, key),
@@ -45,6 +45,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
       "return value from a ordinary property key [" + key + "]"
     );
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

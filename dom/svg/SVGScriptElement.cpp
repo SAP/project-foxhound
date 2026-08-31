@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,11 @@
 
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchPriority.h"
-#include "nsGkAtoms.h"
-#include "nsNetUtil.h"
-#include "nsContentUtils.h"
 #include "mozilla/dom/SVGScriptElementBinding.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 #include "nsIScriptError.h"
+#include "nsNetUtil.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT_CHECK_PARSER(Script)
 
@@ -40,8 +38,7 @@ NS_IMPL_ISUPPORTS_INHERITED(SVGScriptElement, SVGScriptElementBase,
 // Implementation
 
 SVGScriptElement::SVGScriptElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    FromParser aFromParser)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo, FromParser aFromParser)
     : SVGScriptElementBase(std::move(aNodeInfo)), ScriptElement(aFromParser) {
   AddMutationObserver(this);
 }
@@ -94,7 +91,8 @@ void SVGScriptElement::SetCrossOrigin(const nsAString& aCrossOrigin,
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGScriptElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
@@ -139,11 +137,11 @@ void SVGScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
 
       if (!mUri) {
         AutoTArray<nsString, 2> params = {
-            isHref ? u"href"_ns : u"xlink:href"_ns, src};
+            isHref ? u"href"_ns : u"xlink:href"_ns, std::move(src)};
 
         nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "SVG"_ns,
                                         OwnerDoc(),
-                                        nsContentUtils::eDOM_PROPERTIES,
+                                        PropertiesFile::DOM_PROPERTIES,
                                         "ScriptSourceInvalidUri", params, loc);
       }
     } else {
@@ -151,7 +149,7 @@ void SVGScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
 
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, "SVG"_ns, OwnerDoc(),
-          nsContentUtils::eDOM_PROPERTIES, "ScriptSourceEmpty", params, loc);
+          PropertiesFile::DOM_PROPERTIES, "ScriptSourceEmpty", params, loc);
     }
 
     // At this point mUri will be null for invalid URLs.
@@ -191,7 +189,7 @@ nsresult SVGScriptElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (IsInComposedDoc()) {
-    MaybeProcessScript();
+    MaybeProcessScript(nullptr /* aParser */);
   }
 
   return NS_OK;

@@ -6,6 +6,27 @@ const STORAGE_MAX_EVENTS = 1000;
 
 var _consoleStorage = new Map();
 
+/**
+ * Check whether aId is the inner window ID of a window that no longer exists.
+ *
+ * @param string aId
+ *        The inner window ID to check.
+ * @returns boolean
+ *          true if aId identifies a destroyed inner window. Always returns
+ *          false in content processes.
+ */
+function _isDestroyedInnerWindow(aId) {
+  // Content processes rely on Nuking to sever references to destroyed-window
+  // globals, so this check is only meaningful in the parent process.
+  if (Services.appinfo.processType !== Services.appinfo.PROCESS_TYPE_DEFAULT) {
+    return false;
+  }
+  let innerId = Number(aId);
+  return (
+    Number.isInteger(innerId) && !WindowGlobalParent.getByInnerWindowId(innerId)
+  );
+}
+
 // NOTE: these listeners used to just be added as observers and notified via
 // Services.obs.notifyObservers. However, that has enough overhead to be a
 // problem for this. Using an explicit global array is much cheaper, and
@@ -149,17 +170,22 @@ ConsoleAPIStorageService.prototype = {
    *        A JavaScript object you want to store.
    */
   recordEvent: function CS_recordEvent(aId, aEvent) {
-    if (!_consoleStorage.has(aId)) {
-      _consoleStorage.set(aId, []);
-    }
+    // Skip the cache for late events from already-destroyed inner windows:
+    // caching would keep the destroyed window's global alive. Listeners
+    // (e.g. devtools) are still notified.
+    if (!_isDestroyedInnerWindow(aId)) {
+      if (!_consoleStorage.has(aId)) {
+        _consoleStorage.set(aId, []);
+      }
 
-    let storage = _consoleStorage.get(aId);
+      let storage = _consoleStorage.get(aId);
 
-    storage.push(aEvent);
+      storage.push(aEvent);
 
-    // truncate
-    if (storage.length > STORAGE_MAX_EVENTS) {
-      storage.shift();
+      // truncate
+      if (storage.length > STORAGE_MAX_EVENTS) {
+        storage.shift();
+      }
     }
 
     for (let { callback, clone } of _logEventListeners) {

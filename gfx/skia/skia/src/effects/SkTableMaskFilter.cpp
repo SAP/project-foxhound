@@ -29,8 +29,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 class SkMatrix;
+class SkPaint;
 
 class SkTableMaskFilterImpl : public SkMaskFilterBase {
 public:
@@ -39,7 +41,8 @@ public:
     SkMask::Format getFormat() const override;
     bool filterMask(SkMaskBuilder*, const SkMask&, const SkMatrix&, SkIPoint*) const override;
     SkMaskFilterBase::Type type() const override { return SkMaskFilterBase::Type::kTable; }
-    sk_sp<SkImageFilter> asImageFilter(const SkMatrix&) const override;
+    std::pair<sk_sp<SkImageFilter>, bool> asImageFilter(const SkMatrix&,
+                                                        const SkPaint&) const override;
 
 protected:
     ~SkTableMaskFilterImpl() override;
@@ -75,14 +78,22 @@ bool SkTableMaskFilterImpl::filterMask(SkMaskBuilder* dst, const SkMask& src,
     if (src.fFormat != SkMask::kA8_Format) {
         return false;
     }
-
+    // SkAlign4 overflows when too close to INT32_MAX, so reject when too big.
+    constexpr int32_t kMaxWidth = 1 << 30;
+    if (src.fBounds.width() > kMaxWidth) {
+        return false;
+    }
     dst->bounds() = src.fBounds;
     dst->rowBytes() = SkAlign4(dst->fBounds.width());
     dst->format() = SkMask::kA8_Format;
     dst->image() = nullptr;
 
     if (src.fImage) {
-        dst->image() = SkMaskBuilder::AllocImage(dst->computeImageSize());
+        auto imgSize = dst->computeImageSize();
+        if (imgSize == 0) {
+            return false;
+        }
+        dst->image() = SkMaskBuilder::AllocImage(imgSize);
 
         const uint8_t* srcP = src.fImage;
         uint8_t* dstP = dst->image();
@@ -128,12 +139,13 @@ sk_sp<SkFlattenable> SkTableMaskFilterImpl::CreateProc(SkReadBuffer& buffer) {
     return sk_sp<SkFlattenable>(SkTableMaskFilter::Create(table));
 }
 
-sk_sp<SkImageFilter> SkTableMaskFilterImpl::asImageFilter(const SkMatrix&) const {
+std::pair<sk_sp<SkImageFilter>, bool> SkTableMaskFilterImpl::asImageFilter(const SkMatrix&,
+                                                                           const SkPaint&) const {
     sk_sp<SkColorFilter> colorFilter = SkColorFilters::TableARGB(fTable,
                                                                  nullptr,
                                                                  nullptr,
                                                                  nullptr);
-    return SkImageFilters::ColorFilter(colorFilter, nullptr);
+    return std::make_pair(SkImageFilters::ColorFilter(colorFilter, nullptr), false);
 }
 ///////////////////////////////////////////////////////////////////////////////
 

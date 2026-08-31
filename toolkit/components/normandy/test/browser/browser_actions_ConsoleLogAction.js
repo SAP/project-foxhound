@@ -6,9 +6,6 @@ const { BaseAction } = ChromeUtils.importESModule(
 const { ConsoleLogAction } = ChromeUtils.importESModule(
   "resource://normandy/actions/ConsoleLogAction.sys.mjs"
 );
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 
 // Test that logging works
 add_task(async function logging_works() {
@@ -29,34 +26,23 @@ add_task(async function logging_works() {
 });
 
 // test that argument validation works
-decorate_task(
-  withStub(Uptake, "reportRecipe"),
-  async function arguments_are_validated({ reportRecipeStub }) {
-    const action = new ConsoleLogAction();
-    const infoStub = sinon.stub(action.log, "info");
+decorate_task(async function arguments_are_validated() {
+  const action = new ConsoleLogAction();
+  const infoStub = sinon.stub(action.log, "info");
 
-    try {
-      // message is required
-      let recipe = { id: 1, arguments: {} };
-      await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
-      is(action.lastError, null, "lastError should be null");
-      Assert.deepEqual(infoStub.args, [], "no message should be logged");
-      Assert.deepEqual(reportRecipeStub.args, [
-        [recipe, Uptake.RECIPE_EXECUTION_ERROR],
-      ]);
+  try {
+    // message is required
+    let recipe = { id: 1, arguments: {} };
+    await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
+    is(action.lastError, null, "lastError should be null");
+    Assert.deepEqual(infoStub.args, [], "no message should be logged");
 
-      reportRecipeStub.reset();
-
-      // message must be a string
-      recipe = { id: 1, arguments: { message: 1 } };
-      await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
-      is(action.lastError, null, "lastError should be null");
-      Assert.deepEqual(infoStub.args, [], "no message should be logged");
-      Assert.deepEqual(reportRecipeStub.args, [
-        [recipe, Uptake.RECIPE_EXECUTION_ERROR],
-      ]);
-    } finally {
-      infoStub.restore();
-    }
+    // message must be a string
+    recipe = { id: 1, arguments: { message: 1 } };
+    await action.processRecipe(recipe, BaseAction.suitability.FILTER_MATCH);
+    is(action.lastError, null, "lastError should be null");
+    Assert.deepEqual(infoStub.args, [], "no message should be logged");
+  } finally {
+    infoStub.restore();
   }
-);
+});

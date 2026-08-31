@@ -130,7 +130,9 @@ class BASE_EXPORT TracedValueJSON : public TracedValue {
  public:
   explicit TracedValueJSON(size_t capacity = 0) : TracedValue(capacity) {}
 
+#if !defined(MOZ_ZUCCHINI)
   std::unique_ptr<base::Value> ToBaseValue() const { return nullptr; }
+#endif  // !defined(MOZ_ZUCCHINI)
   std::string ToJSON() const { return ""; }
   std::string ToFormattedJSON() const { return ""; }
 };

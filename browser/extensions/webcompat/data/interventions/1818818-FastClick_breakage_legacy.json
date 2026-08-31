@@ -1,0 +1,25 @@
+{
+  "label": "FastClick breakage (legacy)",
+  "bugs": {
+    "1944004": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://*.chatiw.com/*"]
+    },
+    "1818818": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://*.wellcare.com/*"]
+    },
+    "2012965": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://www.coolstuffinc.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "js": ["disable_legacy_FastClick.js"]
+      }
+    }
+  ]
+}

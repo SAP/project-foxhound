@@ -25,7 +25,5 @@ please consult the documentation for the
 
    start/index
    concepts/index
-   collection/index
    data/index
    internals/index
-   obsolete/index

@@ -10,17 +10,27 @@
 
 #include "modules/desktop_capture/win/wgc_capturer_win.h"
 
-#include <string>
+#include <dxgi.h>
+#include <wrl/client.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
+#include "api/make_ref_counted.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capture_types.h"
 #include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/frame_texture.h"
+#include "modules/desktop_capture/full_screen_window_detector.h"
+#include "modules/desktop_capture/win/full_screen_win_application_handler.h"
+#include "modules/desktop_capture/win/screen_capture_utils.h"
 #include "modules/desktop_capture/win/test_support/test_window.h"
 #include "modules/desktop_capture/win/wgc_capture_session.h"
 #include "modules/desktop_capture/win/window_capture_utils.h"
-#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/thread.h"
@@ -28,7 +38,6 @@
 #include "rtc_base/win/scoped_com_initializer.h"
 #include "rtc_base/win/windows_version.h"
 #include "system_wrappers/include/metrics.h"
-#include "system_wrappers/include/sleep.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -51,6 +60,15 @@ constexpr int kSourceClosed = 1;
 
 constexpr char kCaptureTimeHistogram[] =
     "WebRTC.DesktopCapture.Win.WgcCapturerFrameTime";
+
+constexpr char kFullScreenDetectorResult[] =
+    "WebRTC.Screenshare.FullScreenDetectorResult";
+constexpr int detector_result_success = 1;
+constexpr int detector_result_failure_same_title_windows = 2;
+constexpr int detector_result_failure_slide_show_not_chosen = 3;
+
+constexpr char kCaptureFullscreenDetectorHistogram[] =
+    "WebRTC.Screenshare.DesktopCapturerFullscreenDetector";
 
 // The capturer keeps `kNumBuffers` in its frame pool, so we need to request
 // that many frames to clear those out. The next frame will have the new size
@@ -85,6 +103,22 @@ constexpr int kMaxTries = 50;
 
 }  // namespace
 
+class LogMessageMatcher : public LogSink {
+ public:
+  explicit LogMessageMatcher(const std::string& substring)
+      : substring_(substring) {}
+  bool matched() const { return matched_; }
+
+ private:
+  void OnLogMessage(const std::string& message) override {
+    if (message.find(substring_) != std::string::npos) {
+      matched_ = true;
+    }
+  }
+  std::string substring_;
+  bool matched_ = false;
+};
+
 class WgcCapturerWinTest : public ::testing::TestWithParam<CaptureType>,
                            public DesktopCapturer::Callback {
  public:
@@ -109,9 +143,9 @@ class WgcCapturerWinTest : public ::testing::TestWithParam<CaptureType>,
     source_id_ = GetTestWindowIdFromSourceList();
   }
 
-  void SetUpForScreenCapture() {
-    capturer_ = WgcCapturerWin::CreateRawScreenCapturer(
-        DesktopCaptureOptions::CreateDefault());
+  void SetUpForScreenCapture(const DesktopCaptureOptions& options =
+                                 DesktopCaptureOptions::CreateDefault()) {
+    capturer_ = WgcCapturerWin::CreateRawScreenCapturer(options);
     source_id_ = GetScreenIdFromSourceList();
   }
 
@@ -126,7 +160,7 @@ class WgcCapturerWinTest : public ::testing::TestWithParam<CaptureType>,
   // having GraphicsCaptureItem events (i.e. the Closed event) fire, and it more
   // closely resembles how capture works in the wild.
   void CreateWindowOnSeparateThread(int window_width, int window_height) {
-    window_thread_ = rtc::Thread::Create();
+    window_thread_ = Thread::Create();
     window_thread_->SetName(kWindowThreadName, nullptr);
     window_thread_->Start();
     SendTask(window_thread_.get(), [this, window_width, window_height]() {
@@ -267,7 +301,7 @@ class WgcCapturerWinTest : public ::testing::TestWithParam<CaptureType>,
  protected:
   std::unique_ptr<ScopedCOMInitializer> com_initializer_;
   DWORD window_thread_id_;
-  std::unique_ptr<rtc::Thread> window_thread_;
+  std::unique_ptr<Thread> window_thread_;
   WindowInfo window_info_;
   intptr_t source_id_;
   bool window_open_ = false;
@@ -331,11 +365,10 @@ TEST_P(WgcCapturerWinTest, CaptureTime) {
   capturer_->Start(this);
 
   int64_t start_time;
-  start_time = rtc::TimeNanos();
+  start_time = TimeNanos();
   capturer_->CaptureFrame();
 
-  int capture_time_ms =
-      (rtc::TimeNanos() - start_time) / rtc::kNumNanosecsPerMillisec;
+  int capture_time_ms = (TimeNanos() - start_time) / kNumNanosecsPerMillisec;
   EXPECT_EQ(result_, DesktopCapturer::Result::SUCCESS);
   EXPECT_TRUE(frame_);
 
@@ -366,7 +399,7 @@ TEST(WgcCapturerNoMonitorTest, NoMonitors) {
 
   // A bug in the DWM (Desktop Window Manager) prevents it from providing image
   // data if there are no displays attached. This was fixed in Windows 11.
-  if (rtc::rtc_win::GetVersion() < rtc::rtc_win::Version::VERSION_WIN11)
+  if (rtc_win::GetVersion() < rtc_win::Version::VERSION_WIN11)
     EXPECT_FALSE(IsWgcSupported(CaptureType::kWindow));
   else
     EXPECT_TRUE(IsWgcSupported(CaptureType::kWindow));
@@ -400,6 +433,56 @@ TEST_F(WgcCapturerMonitorTest, CaptureAllMonitors) {
   EXPECT_TRUE(capturer_->SelectSource(kFullDesktopScreenId));
 
   capturer_->Start(this);
+  DoCapture();
+  EXPECT_GT(frame_->size().width(), 0);
+  EXPECT_GT(frame_->size().height(), 0);
+}
+
+TEST_F(WgcCapturerMonitorTest, CaptureWithValidAdapterLuid) {
+  // Get the LUID of the first DXGI adapter on the system.
+  Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+  ASSERT_TRUE(SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))));
+  Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+  ASSERT_TRUE(SUCCEEDED(factory->EnumAdapters(0, &adapter)));
+  DXGI_ADAPTER_DESC desc;
+  ASSERT_TRUE(SUCCEEDED(adapter->GetDesc(&desc)));
+
+  LogMessageMatcher fallback_matcher("Failed to get adapter by LUID");
+  LogMessage::AddLogToStream(&fallback_matcher, LS_WARNING);
+
+  DesktopCaptureOptions options = DesktopCaptureOptions::CreateDefault();
+  options.set_d3d_device_luid(desc.AdapterLuid);
+  SetUpForScreenCapture(options);
+  EXPECT_TRUE(capturer_->SelectSource(kFullDesktopScreenId));
+
+  capturer_->Start(this);
+
+  LogMessage::RemoveLogToStream(&fallback_matcher);
+  EXPECT_FALSE(fallback_matcher.matched());
+
+  DoCapture();
+  EXPECT_GT(frame_->size().width(), 0);
+  EXPECT_GT(frame_->size().height(), 0);
+}
+
+TEST_F(WgcCapturerMonitorTest, CaptureWithInvalidAdapterLuid) {
+  // Use a non-zero but invalid LUID. The capturer should fall back to the
+  // default adapter and still capture successfully.
+  LUID invalid_luid = {0xFFFF, 0x7FFF};
+
+  LogMessageMatcher fallback_matcher("falling back to default adapter");
+  LogMessage::AddLogToStream(&fallback_matcher, LS_WARNING);
+
+  DesktopCaptureOptions options = DesktopCaptureOptions::CreateDefault();
+  options.set_d3d_device_luid(invalid_luid);
+  SetUpForScreenCapture(options);
+  EXPECT_TRUE(capturer_->SelectSource(kFullDesktopScreenId));
+
+  capturer_->Start(this);
+
+  LogMessage::RemoveLogToStream(&fallback_matcher);
+  EXPECT_TRUE(fallback_matcher.matched());
+
   DoCapture();
   EXPECT_GT(frame_->size().width(), 0);
   EXPECT_GT(frame_->size().height(), 0);
@@ -548,7 +631,7 @@ TEST_F(WgcCapturerWindowTest, CloseWindowMidCapture) {
     // Unlike GetMessage, PeekMessage will not hang if there are no messages in
     // the queue.
     PeekMessage(&msg, 0, 0, 0, PM_REMOVE);
-    SleepMs(1);
+    Thread::SleepMs(1);
   }
 
   EXPECT_FALSE(wgc_capturer->IsSourceBeingCaptured(source_id_));
@@ -567,6 +650,482 @@ TEST_F(WgcCapturerWindowTest, CloseWindowMidCapture) {
   EXPECT_GE(metrics::NumEvents(kCaptureSessionResultHistogram, kSourceClosed),
             1);
   EXPECT_EQ(result_, DesktopCapturer::Result::ERROR_PERMANENT);
+}
+
+class WgcCapturerFullScreenDetectorTest : public WgcCapturerWindowTest {
+ public:
+  void SetUp() override {
+    DesktopCaptureOptions result;
+    result.set_full_screen_window_detector(
+        make_ref_counted<FullScreenWindowDetector>(
+            [](DesktopCapturer::SourceId sourceId) {
+              return std::make_unique<FullScreenPowerPointHandler>(sourceId);
+            }));
+
+    capturer_ = WgcCapturerWin::CreateRawWindowCapturer(result);
+    wgc_capturer_ = static_cast<WgcCapturerWin*>(capturer_.get());
+
+    editor_window_ = CreateEditorWindow();
+    CreateSlideShowWindow();
+    WgcCapturerWindowTest::SetUp();
+  }
+
+  WindowInfo CreateEditorWindow() {
+    return CreateTestWindow(
+        L"My - Title - PowerPoint", kMediumWindowHeight, kMediumWindowWidth,
+        /*extended_styles=*/0, /*window_class=*/L"PPTFrameClass");
+  }
+
+  void CreateSlideShowWindow() {
+    slide_show_window_ =
+        CreateTestWindow(L"PowerPoint Slide Show - [My - Title]",
+                         kLargeWindowHeight, kLargeWindowWidth,
+                         /*extended_styles=*/0,
+                         /*window_class=*/L"screenClass");
+    ResizeTestWindowToFullScreen(slide_show_window_.hwnd);
+  }
+
+  WgcCapturerWin* wgc_capturer_;
+  WindowInfo editor_window_;
+  WindowInfo slide_show_window_;
+};
+
+TEST_F(WgcCapturerFullScreenDetectorTest,
+       CorrectSlideShowFoundForEditorWhenSlideShowCreatedAfter) {
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd));
+
+  EXPECT_TRUE(wgc_capturer_->SelectSource(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  wgc_capturer_->Start(this);
+  DoCapture();
+
+  EXPECT_FALSE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  EXPECT_TRUE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+
+  EXPECT_EQ(metrics::NumEvents(kCaptureFullscreenDetectorHistogram, true), 1);
+  EXPECT_EQ(
+      metrics::NumEvents(kFullScreenDetectorResult, detector_result_success),
+      1);
+  EXPECT_EQ(metrics::NumEvents(kFullScreenDetectorResult,
+                               detector_result_failure_slide_show_not_chosen),
+            0);
+}
+
+TEST_F(WgcCapturerFullScreenDetectorTest,
+       SlideShowNotFoundForEditorWhenSlideShowCreatedBefore) {
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd),
+      /*fullscreen_slide_show_started_after_capture_start=*/false);
+
+  EXPECT_TRUE(wgc_capturer_->SelectSource(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  wgc_capturer_->Start(this);
+  DoCapture();
+
+  EXPECT_TRUE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  EXPECT_FALSE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+
+  EXPECT_EQ(metrics::NumEvents(kCaptureFullscreenDetectorHistogram, true), 0);
+  EXPECT_EQ(
+      metrics::NumEvents(kFullScreenDetectorResult, detector_result_success),
+      0);
+  EXPECT_EQ(metrics::NumEvents(kFullScreenDetectorResult,
+                               detector_result_failure_slide_show_not_chosen),
+            1);
+}
+
+TEST_F(WgcCapturerFullScreenDetectorTest,
+       EditorNotFoundForSlideShowWithHeuristicOff) {
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd),
+      /*fullscreen_slide_show_started_after_capture_start=*/false,
+      /*use_heuristic_for_finding_editor=*/false);
+
+  EXPECT_TRUE(wgc_capturer_->SelectSource(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+  wgc_capturer_->Start(this);
+
+  // Call DoCapture() multiple times to update the window list and to allow
+  // finding the editor.
+  DoCapture();
+  DoCapture();
+  DoCapture();
+
+  EXPECT_FALSE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  EXPECT_TRUE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+
+  EXPECT_EQ(
+      wgc_capturer_->SelectedSourceId(),
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd));
+}
+
+TEST_F(WgcCapturerFullScreenDetectorTest, EditorFoundForSlideShow) {
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd),
+      /*fullscreen_slide_show_started_after_capture_start=*/false,
+      /*use_heuristic_for_finding_editor=*/true);
+
+  EXPECT_TRUE(wgc_capturer_->SelectSource(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+  wgc_capturer_->Start(this);
+
+  // Call DoCapture() multiple times to update the window list and to allow
+  // finding the editor.
+  DoCapture();
+  DoCapture();
+  DoCapture();
+
+  EXPECT_FALSE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  EXPECT_TRUE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+
+  EXPECT_EQ(wgc_capturer_->SelectedSourceId(),
+            reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd));
+}
+
+TEST_F(WgcCapturerFullScreenDetectorTest, LoggedOnlyOnce) {
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd));
+
+  EXPECT_TRUE(wgc_capturer_->SelectSource(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  wgc_capturer_->Start(this);
+  DoCapture();
+  DoCapture();
+
+  EXPECT_TRUE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+  EXPECT_EQ(metrics::NumEvents(kCaptureFullscreenDetectorHistogram, true), 1);
+  EXPECT_EQ(
+      metrics::NumEvents(kFullScreenDetectorResult, detector_result_success),
+      1);
+}
+
+TEST_F(WgcCapturerFullScreenDetectorTest,
+       SlideShowNotFoundWithMultipleSameTitleEditors) {
+  WindowInfo same_title_editor_window = CreateEditorWindow();
+  EXPECT_NE(editor_window_.hwnd, same_title_editor_window.hwnd);
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd));
+
+  EXPECT_TRUE(wgc_capturer_->SelectSource(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  wgc_capturer_->Start(this);
+  DoCapture();
+
+  EXPECT_TRUE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  EXPECT_FALSE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+  EXPECT_EQ(metrics::NumEvents(kCaptureFullscreenDetectorHistogram, true), 0);
+  EXPECT_EQ(
+      metrics::NumEvents(kFullScreenDetectorResult, detector_result_success),
+      0);
+  EXPECT_EQ(metrics::NumEvents(kFullScreenDetectorResult,
+                               detector_result_failure_same_title_windows),
+            1);
+}
+
+TEST_F(WgcCapturerFullScreenDetectorTest,
+       CaptureTiedToSlideShowIfSlideShowIsShared) {
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd));
+  wgc_capturer_->SetUpFullScreenDetectorForTest(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd));
+
+  EXPECT_TRUE(wgc_capturer_->SelectSource(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+  wgc_capturer_->Start(this);
+  DoCapture();
+
+  EXPECT_FALSE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(editor_window_.hwnd)));
+  EXPECT_TRUE(wgc_capturer_->IsSourceBeingCaptured(
+      reinterpret_cast<DesktopCapturer::SourceId>(slide_show_window_.hwnd)));
+  EXPECT_EQ(metrics::NumEvents(kCaptureFullscreenDetectorHistogram, true), 0);
+  EXPECT_EQ(
+      metrics::NumEvents(kFullScreenDetectorResult, detector_result_success),
+      0);
+  EXPECT_EQ(metrics::NumEvents(kFullScreenDetectorResult,
+                               detector_result_failure_slide_show_not_chosen),
+            0);
+}
+
+// Tests for the WGC texture mode (allow_wgc_using_texture).
+class WgcCapturerTextureTest : public ::testing::TestWithParam<CaptureType>,
+                               public DesktopCapturer::Callback {
+ public:
+  void SetUp() override {
+    com_initializer_ =
+        std::make_unique<ScopedCOMInitializer>(ScopedCOMInitializer::kMTA);
+    ASSERT_TRUE(com_initializer_->Succeeded());
+
+    if (!IsWgcSupported(GetParam())) {
+      RTC_LOG(LS_INFO)
+          << "Skipping WgcCapturerTextureTests on unsupported platforms.";
+      GTEST_SKIP();
+    }
+  }
+
+  void SetUpForWindowCapture(int window_width = kMediumWindowWidth,
+                             int window_height = kMediumWindowHeight) {
+    auto options = DesktopCaptureOptions::CreateDefault();
+    options.set_allow_wgc_using_texture(true);
+    capturer_ = WgcCapturerWin::CreateRawWindowCapturer(options);
+    CreateWindowOnSeparateThread(window_width, window_height);
+    StartWindowThreadMessageLoop();
+    source_id_ = GetTestWindowIdFromSourceList();
+  }
+
+  void SetUpForScreenCapture() {
+    auto options = DesktopCaptureOptions::CreateDefault();
+    options.set_allow_wgc_using_texture(true);
+    capturer_ = WgcCapturerWin::CreateRawScreenCapturer(options);
+    source_id_ = GetScreenIdFromSourceList();
+  }
+
+  void TearDown() override {
+    if (window_open_) {
+      CloseTestWindow();
+    }
+  }
+
+  void CreateWindowOnSeparateThread(int window_width, int window_height) {
+    window_thread_ = Thread::Create();
+    window_thread_->SetName(kWindowThreadName, nullptr);
+    window_thread_->Start();
+    SendTask(window_thread_.get(), [this, window_width, window_height]() {
+      window_thread_id_ = GetCurrentThreadId();
+      window_info_ =
+          CreateTestWindow(kWindowTitle, window_height, window_width);
+      window_open_ = true;
+
+      while (!IsWindowResponding(window_info_.hwnd)) {
+        RTC_LOG(LS_INFO) << "Waiting for test window to become responsive in "
+                            "WgcCapturerTextureTest.";
+      }
+
+      while (!IsWindowValidAndVisible(window_info_.hwnd)) {
+        RTC_LOG(LS_INFO) << "Waiting for test window to be visible in "
+                            "WgcCapturerTextureTest.";
+      }
+    });
+
+    ASSERT_TRUE(window_thread_->RunningForTest());
+    ASSERT_FALSE(window_thread_->IsCurrent());
+  }
+
+  void StartWindowThreadMessageLoop() {
+    window_thread_->PostTask([this]() {
+      MSG msg;
+      BOOL gm;
+      while ((gm = ::GetMessage(&msg, NULL, 0, 0)) != 0 && gm != -1) {
+        ::DispatchMessage(&msg);
+        if (msg.message == kDestroyWindow) {
+          DestroyTestWindow(window_info_);
+        }
+        if (msg.message == kQuitRunning) {
+          PostQuitMessage(0);
+        }
+      }
+    });
+  }
+
+  void CloseTestWindow() {
+    ::PostThreadMessage(window_thread_id_, kDestroyWindow, 0, 0);
+    ::PostThreadMessage(window_thread_id_, kQuitRunning, 0, 0);
+    window_thread_->Stop();
+    window_open_ = false;
+  }
+
+  DesktopCapturer::SourceId GetTestWindowIdFromSourceList() {
+    intptr_t src_id = 0;
+    do {
+      DesktopCapturer::SourceList sources;
+      EXPECT_TRUE(capturer_->GetSourceList(&sources));
+      auto it = std::find_if(
+          sources.begin(), sources.end(),
+          [&](const DesktopCapturer::Source& src) {
+            return src.id == reinterpret_cast<intptr_t>(window_info_.hwnd);
+          });
+      if (it != sources.end())
+        src_id = it->id;
+    } while (src_id != reinterpret_cast<intptr_t>(window_info_.hwnd));
+    return src_id;
+  }
+
+  DesktopCapturer::SourceId GetScreenIdFromSourceList() {
+    DesktopCapturer::SourceList sources;
+    EXPECT_TRUE(capturer_->GetSourceList(&sources));
+    EXPECT_GT(sources.size(), 0ULL);
+    return sources[0].id;
+  }
+
+  void DoCapture(int num_captures = 1) {
+    const int max_tries = num_captures == 1 ? 1 : kMaxTries;
+    int success_count = 0;
+    for (int i = 0; success_count < num_captures && i < max_tries; i++) {
+      capturer_->CaptureFrame();
+      if (result_ == DesktopCapturer::Result::ERROR_PERMANENT)
+        break;
+      if (result_ == DesktopCapturer::Result::SUCCESS)
+        success_count++;
+    }
+
+    total_successful_captures_ += success_count;
+    EXPECT_EQ(success_count, num_captures);
+    EXPECT_EQ(result_, DesktopCapturer::Result::SUCCESS);
+    EXPECT_TRUE(frame_);
+  }
+
+  // DesktopCapturer::Callback interface
+  void OnCaptureResult(DesktopCapturer::Result result,
+                       std::unique_ptr<DesktopFrame> frame) override {
+    result_ = result;
+    frame_ = std::move(frame);
+  }
+
+ protected:
+  std::unique_ptr<ScopedCOMInitializer> com_initializer_;
+  DWORD window_thread_id_;
+  std::unique_ptr<Thread> window_thread_;
+  WindowInfo window_info_;
+  intptr_t source_id_;
+  bool window_open_ = false;
+  DesktopCapturer::Result result_;
+  int total_successful_captures_ = 0;
+  std::unique_ptr<DesktopFrame> frame_;
+  std::unique_ptr<DesktopCapturer> capturer_;
+};
+
+// Verifies that the captured frame in texture mode has a non-null texture with
+// a valid handle, and that the CPU data pointer is null (texture-only frame).
+TEST_P(WgcCapturerTextureTest, CapturedFrameHasTexture) {
+  if (GetParam() == CaptureType::kWindow) {
+    SetUpForWindowCapture();
+  } else {
+    SetUpForScreenCapture();
+  }
+
+  EXPECT_TRUE(capturer_->SelectSource(source_id_));
+  capturer_->Start(this);
+  DoCapture();
+
+  ASSERT_NE(frame_, nullptr);
+  EXPECT_GT(frame_->size().width(), 0);
+  EXPECT_GT(frame_->size().height(), 0);
+  ASSERT_NE(frame_->texture(), nullptr);
+  EXPECT_NE(frame_->texture()->handle(), FrameTexture::kInvalidHandle);
+  // In texture mode, frame data should be null (no CPU copy).
+  EXPECT_EQ(frame_->data(), nullptr);
+}
+
+// Verifies that consecutive captures in texture mode each produce frames with
+// valid texture handles.
+TEST_P(WgcCapturerTextureTest, MultipleCapturesProduceValidTextures) {
+  if (GetParam() == CaptureType::kWindow) {
+    SetUpForWindowCapture();
+  } else {
+    SetUpForScreenCapture();
+  }
+
+  EXPECT_TRUE(capturer_->SelectSource(source_id_));
+  capturer_->Start(this);
+
+  for (int i = 0; i < 3; ++i) {
+    DoCapture();
+    ASSERT_NE(frame_, nullptr);
+    ASSERT_NE(frame_->texture(), nullptr);
+    EXPECT_NE(frame_->texture()->handle(), FrameTexture::kInvalidHandle);
+  }
+}
+
+// Verifies that the frame pool uses `kNumBuffersForTexture` buffers when
+// texture mode is enabled (verified indirectly by successfully capturing more
+// frames than kNumBuffers without starvation).
+TEST_P(WgcCapturerTextureTest, CaptureDoesNotStarveWithTextureBuffers) {
+  if (GetParam() == CaptureType::kWindow) {
+    SetUpForWindowCapture();
+  } else {
+    SetUpForScreenCapture();
+  }
+
+  EXPECT_TRUE(capturer_->SelectSource(source_id_));
+  capturer_->Start(this);
+
+  // Capture more frames than kNumBuffers to ensure the texture buffer count
+  // (kNumBuffersForTexture) is sufficient.
+  constexpr int kCaptures = WgcCaptureSession::kNumBuffersForTexture + 1;
+  for (int i = 0; i < kCaptures; ++i) {
+    DoCapture();
+    ASSERT_NE(frame_, nullptr);
+    ASSERT_NE(frame_->texture(), nullptr);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(SourceAgnosticTexture,
+                         WgcCapturerTextureTest,
+                         ::testing::Values(CaptureType::kWindow,
+                                           CaptureType::kScreen));
+
+// Window-specific texture mode tests.
+class WgcCapturerTextureWindowTest : public WgcCapturerTextureTest {
+ public:
+  void SetUp() override {
+    com_initializer_ =
+        std::make_unique<ScopedCOMInitializer>(ScopedCOMInitializer::kMTA);
+    ASSERT_TRUE(com_initializer_->Succeeded());
+
+    if (!IsWgcSupported(CaptureType::kWindow)) {
+      RTC_LOG(LS_INFO) << "Skipping WgcCapturerTextureWindowTest on "
+                          "unsupported platforms.";
+      GTEST_SKIP();
+    }
+  }
+};
+
+// Verifies that the cursor is embedded in the frame when texture mode is
+// enabled (since we cannot do cursor composition on texture).
+TEST_F(WgcCapturerTextureWindowTest, CursorEmbeddedInTextureMode) {
+  SetUpForWindowCapture();
+  EXPECT_TRUE(capturer_->SelectSource(source_id_));
+  capturer_->Start(this);
+  DoCapture();
+  ASSERT_NE(frame_, nullptr);
+  // When texture mode is enabled, cursor embedding should be forced on,
+  // so the frame should indicate it may contain the cursor.
+  EXPECT_TRUE(frame_->may_contain_cursor());
+}
+
+// Verifies capture continues to work after a window resize in texture mode.
+TEST_F(WgcCapturerTextureWindowTest, ResizeWindowMidTextureCapture) {
+  SetUpForWindowCapture(kSmallWindowWidth, kSmallWindowHeight);
+  EXPECT_TRUE(capturer_->SelectSource(source_id_));
+  capturer_->Start(this);
+  DoCapture();
+  ASSERT_NE(frame_, nullptr);
+  ASSERT_NE(frame_->texture(), nullptr);
+
+  // Resize the window.
+  ResizeTestWindow(window_info_.hwnd, kLargeWindowWidth, kLargeWindowHeight);
+
+  // We need more captures to flush the buffers and pick up the new size.
+  constexpr int kNumCapturesToFlushTextureBuffers =
+      WgcCaptureSession::kNumBuffersForTexture * 2 + 1;
+  DoCapture(kNumCapturesToFlushTextureBuffers);
+  ASSERT_NE(frame_, nullptr);
+  ASSERT_NE(frame_->texture(), nullptr);
+  EXPECT_NE(frame_->texture()->handle(), FrameTexture::kInvalidHandle);
+  EXPECT_GT(frame_->size().width(), 0);
+  EXPECT_GT(frame_->size().height(), 0);
 }
 
 }  // namespace webrtc

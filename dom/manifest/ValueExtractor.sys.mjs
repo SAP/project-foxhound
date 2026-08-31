@@ -15,7 +15,7 @@ export class ValueExtractor {
   /**
    * @param options
    *        The 'spec' object.
-   * @note  This function takes a 'spec' object and destructures it to extract
+   * Note: This function takes a 'spec' object and destructures it to extract
    *        a value. If the value is of the wrong type, it warns the developer
    *        and returns undefined.
    *        expectedType: is the type of a JS primitive (string, number, etc.)

@@ -25,5 +25,10 @@ package mozilla.components
     message = "This API is experimental and should only be used with caution. " +
         "Annotate with @OptIn to accept the risk.",
 )
-@Target(AnnotationTarget.CLASS, AnnotationTarget.FUNCTION, AnnotationTarget.CONSTRUCTOR)
+@Target(
+    AnnotationTarget.CLASS,
+    AnnotationTarget.FUNCTION,
+    AnnotationTarget.CONSTRUCTOR,
+    AnnotationTarget.PROPERTY,
+)
 annotation class ExperimentalAndroidComponentsApi

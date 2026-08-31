@@ -7,7 +7,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
+  Ci.nsITrackingDBService
 );
 
 const { AboutProtectionsParent } = ChromeUtils.importESModule(
@@ -86,7 +86,6 @@ add_task(async function checkTelemetryLoadEvents() {
       ["browser.contentblocking.database.enabled", false],
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
       ["browser.vpn_promo.enabled", false],
     ],
   });
@@ -181,7 +180,6 @@ add_task(async function checkTelemetryClickEvents() {
       ["browser.contentblocking.database.enabled", true],
       ["browser.contentblocking.report.monitor.enabled", true],
       ["browser.contentblocking.report.lockwise.enabled", true],
-      ["browser.contentblocking.report.proxy.enabled", true],
       ["browser.vpn_promo.enabled", false],
     ],
   });
@@ -267,7 +265,7 @@ add_task(async function checkTelemetryClickEvents() {
     `recorded telemetry for lw_open_button when there are breached passwords`
   );
   AboutProtectionsParent.setTestOverride(null);
-  Services.logins.removeLogin(TEST_LOGIN1);
+  await Services.logins.removeLoginAsync(TEST_LOGIN1);
   await BrowserTestUtils.removeTab(gBrowser.selectedTab);
   await BrowserTestUtils.reloadTab(tab);
 
@@ -784,7 +782,6 @@ add_task(async function checkTelemetryLoadEventForEntrypoint() {
       ["browser.contentblocking.database.enabled", false],
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
       ["browser.vpn_promo.enabled", false],
     ],
   });
@@ -895,7 +892,6 @@ add_task(async function checkTelemetryClickEventsVPN() {
       ["browser.contentblocking.database.enabled", false],
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
       ["browser.contentblocking.report.hide_vpn_banner", true],
       ["browser.contentblocking.report.vpn-android.url", ""],
       ["browser.contentblocking.report.vpn-ios.url", ""],
@@ -1026,7 +1022,6 @@ add_task(async function checkTelemetryEventsVPNBanner() {
       ["browser.contentblocking.database.enabled", false],
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
       ["browser.contentblocking.report.hide_vpn_banner", false],
       ["browser.contentblocking.report.vpn-promo.url", ""],
     ],

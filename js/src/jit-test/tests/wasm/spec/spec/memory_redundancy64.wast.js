@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/memory_redundancy64.wast
+// ./test/core/memory64/memory_redundancy64.wast
 
-// ./test/core/memory_redundancy64.wast:5
+// ./test/core/memory64/memory_redundancy64.wast:5
 let $0 = instantiate(`(module
   (memory i64 1 1)
 
@@ -70,26 +70,26 @@ let $0 = instantiate(`(module
   )
 )`);
 
-// ./test/core/memory_redundancy64.wast:59
+// ./test/core/memory64/memory_redundancy64.wast:59
 assert_return(() => invoke($0, `test_store_to_load`, []), [value("i32", 128)]);
 
-// ./test/core/memory_redundancy64.wast:60
+// ./test/core/memory64/memory_redundancy64.wast:60
 invoke($0, `zero_everything`, []);
 
-// ./test/core/memory_redundancy64.wast:61
+// ./test/core/memory64/memory_redundancy64.wast:61
 assert_return(() => invoke($0, `test_redundant_load`, []), [value("i32", 128)]);
 
-// ./test/core/memory_redundancy64.wast:62
+// ./test/core/memory64/memory_redundancy64.wast:62
 invoke($0, `zero_everything`, []);
 
-// ./test/core/memory_redundancy64.wast:63
+// ./test/core/memory64/memory_redundancy64.wast:63
 assert_return(
   () => invoke($0, `test_dead_store`, []),
   [value("f32", 0.000000000000000000000000000000000000000000049)],
 );
 
-// ./test/core/memory_redundancy64.wast:64
+// ./test/core/memory64/memory_redundancy64.wast:64
 invoke($0, `zero_everything`, []);
 
-// ./test/core/memory_redundancy64.wast:65
+// ./test/core/memory64/memory_redundancy64.wast:65
 assert_return(() => invoke($0, `malloc_aliasing`, []), [value("i32", 43)]);

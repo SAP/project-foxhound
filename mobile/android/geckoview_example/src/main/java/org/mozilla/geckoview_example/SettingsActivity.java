@@ -4,9 +4,11 @@
 
 package org.mozilla.geckoview_example;
 
+import android.os.Build;
 import android.os.Bundle;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import org.mozilla.geckoview_example.utils.WindowUtils;
 
@@ -15,7 +17,7 @@ public class SettingsActivity extends AppCompatActivity {
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_settings);
-    WindowUtils.setupPersistentInsets(getWindow());
+    WindowUtils.setupPersistentInsets(getWindow(), false);
 
     getSupportFragmentManager()
         .beginTransaction()
@@ -42,6 +44,13 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
       setPreferencesFromResource(R.xml.settings, rootKey);
+
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        final Preference edgeToEdge = findPreference(getString(R.string.key_edge_to_edge_enabled));
+        if (edgeToEdge != null) {
+          edgeToEdge.setEnabled(false);
+        }
+      }
     }
   }
 }

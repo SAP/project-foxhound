@@ -1,18 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const UNVISITED_BOOKMARK_BONUS = 140;
-
 function promiseRankingChanged() {
   return PlacesTestUtils.waitForNotification("pages-rank-changed");
 }
-
-add_task(async function setup() {
-  Services.prefs.setIntPref(
-    "places.frecency.unvisitedBookmarkBonus",
-    UNVISITED_BOOKMARK_BONUS
-  );
-});
 
 add_task(async function invalid_input_throws() {
   Assert.throws(

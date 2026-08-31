@@ -112,8 +112,7 @@ def find_update_packages(tmpdir):
             if future.exception() is not None:
                 logging.error(f"exception downloading {url}: {future.exception()}")
             else:
-                for pkg in future.result():
-                    yield pkg
+                yield from future.result()
 
 
 def main():

@@ -53,8 +53,7 @@ async function test_body() {
     "Newly created frames should use the new touchEventsOverride flag"
   );
 
-  // Wait for the non-transient about:blank to load.
-  await ContentTaskUtils.waitForEvent(newFrame, "load");
+  // about:blank in the iframe has loaded synchronously
   newFrameWin = newFrame.contentWindow;
   bc = newFrameWin.browsingContext;
   is(

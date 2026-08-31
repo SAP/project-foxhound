@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +24,6 @@
 #include "nsCategoryManagerUtils.h"
 #include "mozilla/dom/GeolocationPosition.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
@@ -36,6 +34,7 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/java/GeckoAppShellNatives.h"
@@ -53,7 +52,6 @@
 #include "AndroidSurfaceTexture.h"
 #include <android/log.h>
 #include <pthread.h>
-#include <wchar.h>
 
 #ifdef MOZ_GECKOVIEW_HISTORY
 #  include "nsNetUtil.h"
@@ -78,6 +76,7 @@
 #include "ScreenHelperAndroid.h"
 #include "WebExecutorSupport.h"
 #include "Base64UtilsSupport.h"
+#include "MozLogSupport.h"
 
 #ifdef DEBUG_ANDROID_EVENTS
 #  define EVLOG(args...) ALOG(args)
@@ -111,7 +110,7 @@ class WakeLockListener final : public nsIDOMMozWakeLockListener {
 };
 
 NS_IMPL_ISUPPORTS(WakeLockListener, nsIDOMMozWakeLockListener)
-MOZ_RUNINIT nsCOMPtr<nsIPowerManagerService> sPowerManagerService = nullptr;
+constinit nsCOMPtr<nsIPowerManagerService> sPowerManagerService{};
 StaticRefPtr<WakeLockListener> sWakeLockListener;
 
 class GeckoThreadSupport final
@@ -322,14 +321,15 @@ class GeckoAppShellSupport final
 
   static void NotifyAlertListener(jni::String::Param aName,
                                   jni::String::Param aTopic,
-                                  jni::String::Param aAction) {
-    if (!aName || !aTopic) {
+                                  jni::String::Param aAction,
+                                  jni::String::Param aOrigin) {
+    if (!aName || !aTopic || !aOrigin) {
       return;
     }
 
     widget::AndroidAlerts::NotifyListener(
         aName->ToString(), aTopic->ToCString().get(),
-        aAction ? Some(aAction->ToString()) : Nothing());
+        aAction ? Some(aAction->ToString()) : Nothing(), aOrigin->ToCString());
   }
 
   static bool IsParentProcess() { return XRE_IsParentProcess(); }
@@ -360,6 +360,11 @@ class GeckoAppShellSupport final
     }
 
     nsBaseAppShell::OnSystemTimezoneChange();
+  }
+
+  static void LogGpuProcessLaunchFailure(jni::String::Param aMessage) {
+    gfxCriticalNote << "Error launching GPU process: "
+                    << aMessage->ToCString().get();
   }
 };
 
@@ -427,6 +432,7 @@ nsAppShell::nsAppShell()
       GeckoThreadSupport::Init();
       GeckoAppShellSupport::Init();
       XPCOMEventTargetWrapper::Init();
+      mozilla::widget::MozLogSupport::Init();
 
       if (XRE_IsGPUProcess()) {
         mozilla::gl::AndroidSurfaceTexture::Init();
@@ -456,6 +462,7 @@ nsAppShell::nsAppShell()
     mozilla::widget::Base64UtilsSupport::Init();
     nsWindow::InitNatives();
     mozilla::gl::AndroidSurfaceTexture::Init();
+    mozilla::widget::MozLogSupport::Init();
 
     java::GeckoThread::SetState(java::GeckoThread::State::JNI_READY());
 

@@ -1,0 +1,15 @@
+{
+  "label": "gree.jp",
+  "bugs": {
+    "1975652": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://gree.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

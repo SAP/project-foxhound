@@ -24,17 +24,7 @@ add_task(async function test_measure() {
   await cookiesBackupResource.measure(tempDir);
 
   let cookiesMeasurement = Glean.browserBackup.cookiesSize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
 
-  // Compare glean vs telemetry measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.cookies_size",
-    cookiesMeasurement,
-    "Glean and telemetry measurements for cookies.sqlite should be equal"
-  );
-
-  // Compare glean measurements vs actual file sizes
   Assert.equal(
     cookiesMeasurement,
     EXPECTED_COOKIES_DB_SIZE,
@@ -131,19 +121,9 @@ add_task(async function test_backup_no_saved_history() {
   Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
   Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
 
-  let manifestEntry = await cookiesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    null,
-    "Should have gotten back a null ManifestEntry"
-  );
-
   Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with remember history disabled"
+    !CookiesBackupResource.canBackupResource,
+    "Should not be able to backup cookies"
   );
 
   // Now verify that the sanitize shutdown pref also prevents us from backing
@@ -152,7 +132,10 @@ add_task(async function test_backup_no_saved_history() {
   Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
 
   fakeConnection.backup.resetHistory();
-  manifestEntry = await cookiesBackupResource.backup(stagingPath, sourcePath);
+  let manifestEntry = await cookiesBackupResource.backup(
+    stagingPath,
+    sourcePath
+  );
   Assert.deepEqual(
     manifestEntry,
     null,

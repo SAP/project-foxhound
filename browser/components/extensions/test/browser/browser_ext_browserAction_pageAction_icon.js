@@ -1,18 +1,17 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 function testHiDpiImage(button, images1x, images2x, prop) {
-  let image = getRawListStyleImage(button);
+  const image = getRawListStyleImage(button);
   info(image);
   info(button.outerHTML);
-  let image1x = images1x[prop];
-  let image2x = images2x[prop];
-  is(
-    image,
-    `image-set(url("${image1x}") 1dppx, url("${image2x}") 2dppx)`,
-    prop
-  );
+  const image1x = images1x[prop];
+  const image2x = images2x[prop];
+  const backgroundImage =
+    image1x === image2x && prop === "browserActionImageURL"
+      ? `url("${image1x}")`
+      : `image-set(url("${image1x}") 1dppx, url("${image2x}") 2dppx)`;
+
+  is(image, backgroundImage, prop);
 }
 
 // Test that various combinations of icon details specs, for both paths

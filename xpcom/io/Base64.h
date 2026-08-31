@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_Base64_h__
-#define mozilla_Base64_h__
+#ifndef mozilla_Base64_h_
+#define mozilla_Base64_h_
 
 #include "nsString.h"
 
@@ -35,6 +33,8 @@ namespace mozilla {
 [[nodiscard]] nsresult Base64EncodeAppend(const nsACString& aBinary,
                                           nsAString& aBase64);
 
+[[nodiscard]] nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
+                                    Span<char> aBase64);
 [[nodiscard]] nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,
                                     char** aBase64);
 [[nodiscard]] nsresult Base64Encode(const char* aBinary, uint32_t aBinaryLen,

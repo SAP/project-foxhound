@@ -1,5 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,7 +6,10 @@
 
 #include "mozilla/java/GeckoAppShellWrappers.h"
 #include "nsArrayUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "nsISupportsUtils.h"
+#include "nsNetUtil.h"
+#include "nsStringEnumerator.h"
 
 using namespace mozilla;
 
@@ -134,7 +136,7 @@ nsMIMEInfoAndroid::SetFileExtensions(const nsACString& aExtensions) {
   aExtensions.EndReading(end);
   while (start != end) {
     nsACString::const_iterator cursor = start;
-    mozilla::Unused << FindCharInReadable(',', cursor, end);
+    (void)FindCharInReadable(',', cursor, end);
     AddUniqueExtension(Substring(start, cursor));
     // If a comma was found, skip it for the next search.
     start = cursor != end ? ++cursor : cursor;

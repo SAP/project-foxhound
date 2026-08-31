@@ -2,17 +2,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import ntpath
 import os
+
+HG_SHARE_BASE_DIR = ntpath.join(
+    ntpath.dirname(ntpath.normpath(os.environ["HG_CACHE"])),
+    "hg-shared",
+)
 
 config = {
     "default_actions": [
         "get-secrets",
         "build",
     ],
-    "vcs_share_base": os.path.join("y:", os.sep, "hg-shared"),
+    "vcs_share_base": HG_SHARE_BASE_DIR,
     "max_build_output_timeout": 60 * 80,
     "env": {
-        "HG_SHARE_BASE_DIR": os.path.join("y:", os.sep, "hg-shared"),
+        "HG_SHARE_BASE_DIR": HG_SHARE_BASE_DIR,
         "MOZBUILD_STATE_PATH": os.path.join(os.getcwd(), ".mozbuild"),
         "MOZ_CRASHREPORTER_NO_REPORT": "1",
         "MOZ_OBJDIR": "%(abs_obj_dir)s",
@@ -26,11 +32,6 @@ config = {
         "UPLOAD_PATH": os.path.join(os.getcwd(), "public", "build"),
     },
     "secret_files": [
-        {
-            "filename": "gls-gapi.data",
-            "secret_name": "project/releng/gecko/build/level-%(scm-level)s/gls-gapi.data",
-            "min_scm_level": 1,
-        },
         {
             "filename": "sb-gapi.data",
             "secret_name": "project/releng/gecko/build/level-%(scm-level)s/sb-gapi.data",

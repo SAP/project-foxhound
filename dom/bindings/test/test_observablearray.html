@@ -11,7 +11,7 @@
 <script>
 /* global TestInterfaceObservableArray */
 
-add_task(async function init() {
+add_setup(async function init() {
   await SpecialPowers.pushPrefEnv({set: [["dom.expose_test_interfaces", true]]});
 });
 
@@ -519,26 +519,259 @@ add_task(function testObservableArray_object() {
   }
 });
 
-add_task(function testObservableArray_xrays() {
+// Regression test for bug 2036318.
+add_task(function testObservableArray_prototype() {
+  let setCallbackCount = 0;
+  let deleteCallbackCount = 0;
+
+  let values = [];
+
   let m = new TestInterfaceObservableArray({
     setObjectCallback() {
-      ok(false, "Shouldn't reach setObjectCallback");
+      setCallbackCount++;
+    },
+    deleteObjectCallback() {
+      deleteCallbackCount++;
+    },
+  });
+
+  m.observableArrayObject = values;
+  let observableArray = m.observableArrayObject;
+
+  is(
+    Object.getPrototypeOf(observableArray),
+    Array.prototype,
+    "ObservableArray's prototype should be Array.prototype"
+  );
+  is(
+    observableArray.__proto__,
+    Array.prototype,
+    "ObservableArray's __proto__ should be Array.prototype"
+  );
+  is(observableArray.push, Array.prototype.push, "Inherits from Array proto");
+
+  Array.prototype.push.call(observableArray, {});
+  is(setCallbackCount, 1, "Mutated array with Array.prototype.push call");
+
+  let customProto = {
+    customLengthSetter(v) {
+      this.length = v;
+    },
+  };
+  Object.setPrototypeOf(observableArray, customProto);
+
+  is(
+    Object.getPrototypeOf(observableArray),
+    customProto,
+    "setPrototypeOf overrides prototype"
+  );
+  is(observableArray.push, undefined, "No longer inherits from Array proto");
+
+  is(deleteCallbackCount, 0, "No deletions before setting length");
+  observableArray.customLengthSetter(0);
+  is(deleteCallbackCount, 1, "Deletion after setting length to 0");
+
+  is(setCallbackCount, 1, "Setter count before Array.prototype.push call");
+  Array.prototype.push.call(observableArray, {});
+  is(setCallbackCount, 2, "Mutated array after Array.prototype.push call");
+
+  observableArray.__proto__ = Array.prototype;
+  observableArray.pop(observableArray, {});
+  is(deleteCallbackCount, 2, "Mutates with pop() after restoring Array proto");
+});
+
+add_task(async function testObservableArray_xrays() {
+  let setCallbackCount = 0;
+  let deleteCallbackCount = 0;
+  let m = new TestInterfaceObservableArray({
+    setBooleanCallback(value, index) {
+      setCallbackCount++;
+      if (setCallbackCount === 1) {
+        is(index, 0, "First boolean item");
+        is(value, true, "First boolean value from array assignment");
+      } else if (setCallbackCount === 2) {
+        is(index, 1, "Second boolean item");
+        is(value, false, "Second boolean value from array assignment");
+      } else if (setCallbackCount === 3) {
+        is(index, 2, "Third boolean item from array.push");
+        is(value, true, "Third value");
+      } else if (setCallbackCount === 4) {
+        is(index, 3, "Fourth boolean item from new index assignment");
+        is(value, true, "Fourth value");
+      } else if (setCallbackCount === 5) {
+        is(index, 3, "Fourth boolean item from updated index assignment");
+        is(deleteCallbackCount, 1, "Deleted before set when replacing index");
+        is(value, false, "Updated fourth value");
+      } else {
+        ok(false, `Unexpected ${setCallbackCount}, i=${index} value ${value}`);
+      }
+    },
+    deleteBooleanCallback(value, index) {
+      ++deleteCallbackCount;
+      if (deleteCallbackCount == 1) {
+        is(index, 3, "Fourth boolean item being deleted before replacement");
+        is(setCallbackCount, 4, "Delete before set when replacing index");
+      } else if (deleteCallbackCount == 2) {
+        is(index, 3, "Fourth boolean item being deleted via xray");
+      } else if (deleteCallbackCount == 3) {
+        is(index, 2, "Fourth boolean item being deleted via xray waiver");
+      } else {
+        ok(false, "Shouldn't reach deleteBooleanCallback again");
+      }
+    },
+  });
+
+  // Make sure that we test with real XrayWrappers.
+  // We cannot use SpecialPowers.wrap() because it is has test-specific
+  // behaviors that are not applicable to real Xrays. For example, the "delete"
+  // operator does not trigger the underlying JSXrayTraits::delete_.
+  window.getHelperForObservableArrayXrayTest = () => {
+    delete window.getHelperForObservableArrayXrayTest;
+    return {
+      getTestInterfaceObservableArray: () => m,
+      getRealLength: () => m.observableArrayBoolean.length,
+      getSetCount: () => setCallbackCount,
+      getDeleteCount: () => deleteCallbackCount,
+    };
+  };
+  await SpecialPowers.spawn(window, [], () => {
+    const {
+      getTestInterfaceObservableArray,
+      getRealLength,
+      getSetCount,
+      getDeleteCount,
+    } = content.wrappedJSObject.getHelperForObservableArrayXrayTest();
+    /* globals XPCNativeWrapper */
+    const wrapper = new XPCNativeWrapper(getTestInterfaceObservableArray());
+    ok(Cu.isXrayWrapper(wrapper), "Should be a wrapper");
+    let observableArray = wrapper.observableArrayBoolean;
+    ok(Cu.isXrayWrapper(observableArray), "observableArray is a wrapper");
+    is(observableArray.length, 0, "XrayWrapper should have a length");
+
+    wrapper.observableArrayBoolean = [true, false];
+    wrapper.observableArrayBoolean.push(true);
+    is(observableArray.length, 3, "XrayWrapper should have updated length");
+    is(getRealLength(), 3, "Target should have updated length");
+
+    wrapper.observableArrayBoolean[3] = true;
+    is(observableArray.length, 4, "XrayWrapper updated after indexed set");
+    is(getRealLength(), 4, "Target updated after indexed set");
+    is(getSetCount(), 4, "Seen all mutations that added items");
+
+    wrapper.observableArrayBoolean[3] = false;
+    is(getSetCount(), 5, "Seen mutation that updated existing item");
+    is(getDeleteCount(), 1, "Seen deletion as part of index replacement");
+
+    delete observableArray[3];
+    is(getDeleteCount(), 2, "Seen deletion when deleting from xray");
+    delete observableArray.wrappedJSObject[2];
+    is(getDeleteCount(), 3, "Seen deletion when deleting from xray waiver");
+    is(getSetCount(), 5, "No new mutations as part of deletion");
+
+    // Verify basic xray vision: non-standard functions are hidden.
+    const unwrapped = observableArray.wrappedJSObject;
+    unwrapped.propInt = 1;
+    unwrapped.propFunc = () => 2;
+    is(observableArray.propInt, 1, "Regular property is visible through xrays");
+    is(observableArray.propFunc, undefined, "Function member hidden from xray");
+
+    delete observableArray.propFunc;
+    is(unwrapped.propFunc(), 2, "propFunc not deleted from unwrapped");
+
+    // Verify semantics of JSXrayTraits::defineProperty.
+    try {
+      // Try to shadow Array.prototype.pop, even if it is the same function:
+      observableArray.pop = content.wrappedJSObject.Array.prototype.pop;
+      ok(false, "Should throw for attempting to assign a function to a wrapper");
+    } catch (e) {
+      is(
+        e.message,
+        "Not allowed to shadow non-own Xray-resolved property on [Object] or [Array] XrayWrapper",
+        "Got message for attempting to assign a function to a wrapper"
+      );
+    }
+  });
+});
+
+add_task(function testObservableArray_xrays_as_values() {
+  let setCallbackCount = 0;
+
+  let domWrapper = SpecialPowers.wrap(document.body);
+  ok(SpecialPowers.Cu.isXrayWrapper(domWrapper), "Should be a DOM wrapper");
+
+  let m = new TestInterfaceObservableArray({
+    setObjectCallback(value) {
+      setCallbackCount++;
+      ok(value === domWrapper, "Got wrapped object as is");
     },
     deleteObjectCallback() {
       ok(false, "Shouldn't reach deleteObjectCallback");
     },
   });
+  m.observableArrayObject = [domWrapper];
+  m.observableArrayObject.push(domWrapper);
 
-  let wrapper = SpecialPowers.wrap(m);
-  ok(SpecialPowers.Cu.isXrayWrapper(wrapper), "Should be a wrapper");
-  let observableArray = wrapper.observableArrayBoolean;
-  ok(!!observableArray, "Should not throw");
-  is("length" in observableArray, false, "Should be opaque");
+  is(setCallbackCount, 2, "Seen two DOM wrappers");
+});
 
-  try {
-    wrapper.observableArrayBoolean = [true, false, false];
-    ok(false, "Expected to throw, for now");
-  } catch (ex) {}
+add_task(async function testObservableArray_ccw() {
+  let win = window.open("file_dummy.html");
+  await new Promise(resolve => {
+    win.addEventListener("load", resolve, { once: true });
+  });
+  let m = new win.TestInterfaceObservableArray();
+  let values = [
+    {property1: false, property2: "property2"},
+    {property1: [], property2: 2},
+  ];
+
+  let descriptor = Object.getOwnPropertyDescriptor(TestInterfaceObservableArray.prototype, 'observableArrayObject');
+  descriptor.set.call(m, values);
+
+  let b = descriptor.get.call(m);
+  ok(Array.isArray(b), "observable array should be an array type");
+  is(b.length, 2, "length of observable array should be 2");
+  isDeeply(b, values, "check observable array values");
+
+  win.close();
+
+  SpecialPowers.forceGC();
+  SpecialPowers.forceCC();
+
+  b = descriptor.get.call(m);
+  ok(Array.isArray(b), "observable array should still be an array type");
+  is(b.length, 2, "length of observable array should still be 2");
+  isDeeply(b, values, "check observable array values again");
+  is(b.__proto__, win.Array.prototype, "Array.prototype is from the original realm");
+});
+
+add_task(async function testObservableArray_gc() {
+  let b;
+  (function() {
+    let m = new TestInterfaceObservableArray();
+    b = m.observableArrayObject;
+  })();
+
+  ok(Array.isArray(b), "observable array should be an array type");
+  is(b.length, 0, "length of observable array should be 0");
+
+  info("Force GC and CC");
+  SpecialPowers.forceShrinkingGC();
+  SpecialPowers.forceCC();
+  SpecialPowers.forceShrinkingGC();
+  SpecialPowers.forceCC();
+
+  info("Add a value to the observable array");
+  let value = {property1: false, property2: "property2"};
+  b[0] = value;
+  ok(Array.isArray(b), "observable array should be an array type");
+  is(b.length, 1, "length of observable array should be 1");
+  isDeeply(b, [value], "check observable array values");
+
+  info("Remove all values from the observable array");
+  b.length = 0;
+  ok(Array.isArray(b), "observable array should be an array type");
+  is(b.length, 0, "length of observable array should be 0");
 });
 
 </script>

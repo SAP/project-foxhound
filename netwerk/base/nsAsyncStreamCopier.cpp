@@ -351,8 +351,8 @@ nsAsyncStreamCopier::AsyncCopy(nsIRequestObserver* observer, nsISupports* ctx) {
     mIsPending = true;
   }
 
-  if (mObserver) {
-    rv = mObserver->OnStartRequest(AsRequest());
+  if (nsCOMPtr<nsIRequestObserver> observer = mObserver) {
+    rv = observer->OnStartRequest(AsRequest());
     if (NS_FAILED(rv)) Cancel(rv);
   }
 
@@ -402,5 +402,5 @@ void nsAsyncStreamCopier::AsyncCopyInternal() {
     return;  // release self
   }
 
-  Unused << self.forget();  // Will be released in OnAsyncCopyComplete
+  self.forget().leak();  // Will be released in OnAsyncCopyComplete
 }

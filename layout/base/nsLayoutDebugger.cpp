@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,7 +71,7 @@ static void PrintDisplayItemTo(nsDisplayListBuilder* aBuilder,
     string.Append('-');
     string.AppendInt((uint64_t)aItem);
     aStream << nsPrintfCString("<a href=\"javascript:ViewImage('%s')\">",
-                               string.BeginReading());
+                               string.get());
   }
 #endif
 
@@ -164,7 +162,7 @@ static void PrintDisplayItemTo(nsDisplayListBuilder* aBuilder,
     nsCString string(aItem->Name());
     string.Append('-');
     string.AppendInt((uint64_t)aItem);
-    aStream << nsPrintfCString("<br><img id=\"%s\">\n", string.BeginReading());
+    aStream << nsPrintfCString("<br><img id=\"%s\">\n", string.get());
   }
 #endif
 

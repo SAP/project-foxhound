@@ -38,7 +38,45 @@
 #  define static_assert(condition, message) PR_STATIC_ASSERT(condition)
 #endif
 
-CK_RV Test_C_Initialize(CK_VOID_PTR) { return CKR_OK; }
+// Auth state for slot 5 (an auth-required slot used by pk11_auth_unittest).
+// Reset in Test_C_Initialize so each module load starts fresh.
+// authSessionOpenCount is a refcount because all C_OpenSession calls on slot 5
+// return the same handle (5), so NSS's multiple speculative opens collapse to
+// one in our mock. Track them via counter to know when the session is truly
+// closed.
+//
+// NOTE: this global state is not synchronized, so the auth slot only behaves
+// correctly under single-threaded access. The pk11_auth_unittest tests are
+// single-threaded; if the auth slot is ever exercised from a multi-threaded
+// test (including when this module is loaded as thread-safe), this state would
+// need a lock.
+static const size_t kMaxAuthPinLen = 32;
+// Object handle of a CKA_ALWAYS_AUTHENTICATE private key on the auth slot, used
+// by pk11_auth_unittest to drive the sign/decrypt re-login paths. Must match
+// kAlwaysAuthPrivKeyHandle in pk11_auth_unittest.cc.
+static const CK_OBJECT_HANDLE kAlwaysAuthPrivKeyHandle = 6;
+static char authSoPin[kMaxAuthPinLen + 1];
+static size_t authSoPinLen;
+static char authUserPin[kMaxAuthPinLen + 1];
+static size_t authUserPinLen;
+static bool authUserPinInitialized;
+static CK_STATE authSessionState;
+static int authSessionOpenCount;
+
+static void ResetAuthState() {
+  memcpy(authSoPin, "0000", 5);
+  authSoPinLen = 4;
+  authUserPin[0] = '\0';
+  authUserPinLen = 0;
+  authUserPinInitialized = false;
+  authSessionState = CKS_RW_PUBLIC_SESSION;
+  authSessionOpenCount = 0;
+}
+
+CK_RV Test_C_Initialize(CK_VOID_PTR) {
+  ResetAuthState();
+  return CKR_OK;
+}
 
 CK_RV Test_C_Finalize(CK_VOID_PTR) { return CKR_OK; }
 
@@ -155,12 +193,13 @@ CK_RV Test_C_GetSlotList(CK_BBOOL limitToTokensPresent,
     return CKR_ARGUMENTS_BAD;
   }
 
-  CK_SLOT_ID slots[4];
+  CK_SLOT_ID slots[5];
   CK_ULONG slotCount = 0;
 
-  // We always return slot 2 and 4.
+  // We always return slots 2, 4, and 5.
   slots[slotCount++] = 2;
   slots[slotCount++] = 4;
+  slots[slotCount++] = 5;
 
   // Slot 1 is a removable slot where a token is present if
   // tokenPresent = CK_TRUE.
@@ -188,6 +227,7 @@ static const char TestSlotDescription[] = "Test PKCS11 Slot";
 static const char TestSlot2Description[] = "Test PKCS11 Slot 二";
 static const char TestSlot3Description[] = "Empty PKCS11 Slot";
 static const char TestSlot4Description[] = "Test PKCS11 Public Certs Slot";
+static const char TestSlot5Description[] = "Test PKCS11 Auth Slot";
 
 CK_RV Test_C_GetSlotInfo(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pInfo) {
   if (!pInfo) {
@@ -212,6 +252,10 @@ CK_RV Test_C_GetSlotInfo(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pInfo) {
       CopyString(pInfo->slotDescription, TestSlot4Description);
       pInfo->flags = CKF_TOKEN_PRESENT | CKF_REMOVABLE_DEVICE;
       break;
+    case 5:
+      CopyString(pInfo->slotDescription, TestSlot5Description);
+      pInfo->flags = CKF_TOKEN_PRESENT | CKF_REMOVABLE_DEVICE;
+      break;
     default:
       return CKR_ARGUMENTS_BAD;
   }
@@ -228,6 +272,7 @@ CK_RV Test_C_GetSlotInfo(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pInfo) {
 static const char TestTokenLabel[] = "Test PKCS11 Tokeñ Label";
 static const char TestToken2Label[] = "Test PKCS11 Tokeñ 2 Label";
 static const char TestToken4Label[] = "Test PKCS11 Public Certs Token";
+static const char TestToken5Label[] = "Test PKCS11 Auth Token";
 static const char TestTokenModel[] = "Test Model";
 
 CK_RV Test_C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo) {
@@ -238,12 +283,20 @@ CK_RV Test_C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo) {
   switch (slotID) {
     case 1:
       CopyString(pInfo->label, TestTokenLabel);
+      pInfo->flags = CKF_TOKEN_INITIALIZED;
       break;
     case 2:
       CopyString(pInfo->label, TestToken2Label);
+      pInfo->flags = CKF_TOKEN_INITIALIZED;
       break;
     case 4:
       CopyString(pInfo->label, TestToken4Label);
+      pInfo->flags = CKF_TOKEN_INITIALIZED;
+      break;
+    case 5:
+      CopyString(pInfo->label, TestToken5Label);
+      pInfo->flags = CKF_TOKEN_INITIALIZED | CKF_LOGIN_REQUIRED |
+                     (authUserPinInitialized ? CKF_USER_PIN_INITIALIZED : 0);
       break;
     default:
       return CKR_ARGUMENTS_BAD;
@@ -252,13 +305,12 @@ CK_RV Test_C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo) {
   CopyString(pInfo->manufacturerID, TestManufacturerID);
   CopyString(pInfo->model, TestTokenModel);
   memset(pInfo->serialNumber, 0, sizeof(pInfo->serialNumber));
-  pInfo->flags = CKF_TOKEN_INITIALIZED;
   pInfo->ulMaxSessionCount = 1;
   pInfo->ulSessionCount = 0;
   pInfo->ulMaxRwSessionCount = 1;
   pInfo->ulRwSessionCount = 0;
-  pInfo->ulMaxPinLen = 4;
-  pInfo->ulMinPinLen = 4;
+  pInfo->ulMaxPinLen = kMaxAuthPinLen;
+  pInfo->ulMinPinLen = 1;
   pInfo->ulTotalPublicMemory = 1024;
   pInfo->ulFreePublicMemory = 1024;
   pInfo->ulTotalPrivateMemory = 1024;
@@ -288,13 +340,50 @@ CK_RV Test_C_InitToken(CK_SLOT_ID, CK_UTF8CHAR_PTR, CK_ULONG, CK_UTF8CHAR_PTR) {
   return CKR_OK;
 }
 
-CK_RV Test_C_InitPIN(CK_SESSION_HANDLE, CK_UTF8CHAR_PTR, CK_ULONG) {
-  return CKR_FUNCTION_NOT_SUPPORTED;
+CK_RV Test_C_InitPIN(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pPin,
+                     CK_ULONG ulPinLen) {
+  if (hSession != 5) {
+    return CKR_FUNCTION_NOT_SUPPORTED;
+  }
+  if (authSessionState != CKS_RW_SO_FUNCTIONS) {
+    return CKR_USER_NOT_LOGGED_IN;
+  }
+  if (ulPinLen > kMaxAuthPinLen) {
+    return CKR_PIN_LEN_RANGE;
+  }
+  memcpy(authUserPin, pPin, ulPinLen);
+  authUserPin[ulPinLen] = '\0';
+  authUserPinLen = ulPinLen;
+  authUserPinInitialized = true;
+  return CKR_OK;
 }
 
-CK_RV Test_C_SetPIN(CK_SESSION_HANDLE, CK_UTF8CHAR_PTR, CK_ULONG,
-                    CK_UTF8CHAR_PTR, CK_ULONG) {
-  return CKR_FUNCTION_NOT_SUPPORTED;
+CK_RV Test_C_SetPIN(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pOldPin,
+                    CK_ULONG ulOldLen, CK_UTF8CHAR_PTR pNewPin,
+                    CK_ULONG ulNewLen) {
+  if (hSession != 5) {
+    return CKR_FUNCTION_NOT_SUPPORTED;
+  }
+  if (ulNewLen > kMaxAuthPinLen) {
+    return CKR_PIN_LEN_RANGE;
+  }
+  // If logged in as SO, change the SO pin; otherwise change the user pin.
+  bool changeSo = (authSessionState == CKS_RW_SO_FUNCTIONS);
+  char *targetPin = changeSo ? authSoPin : authUserPin;
+  size_t *targetLen = changeSo ? &authSoPinLen : &authUserPinLen;
+  if (!changeSo && !authUserPinInitialized) {
+    return CKR_USER_PIN_NOT_INITIALIZED;
+  }
+  if (ulOldLen != *targetLen || memcmp(pOldPin, targetPin, ulOldLen) != 0) {
+    return CKR_PIN_INCORRECT;
+  }
+  memcpy(targetPin, pNewPin, ulNewLen);
+  targetPin[ulNewLen] = '\0';
+  *targetLen = ulNewLen;
+  if (!changeSo) {
+    authUserPinInitialized = true;
+  }
+  return CKR_OK;
 }
 
 CK_RV Test_C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS, CK_VOID_PTR, CK_NOTIFY,
@@ -309,6 +398,13 @@ CK_RV Test_C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS, CK_VOID_PTR, CK_NOTIFY,
     case 4:
       *phSession = 4;
       break;
+    case 5:
+      *phSession = 5;
+      if (authSessionOpenCount == 0) {
+        authSessionState = CKS_RW_PUBLIC_SESSION;
+      }
+      authSessionOpenCount++;
+      break;
     default:
       return CKR_ARGUMENTS_BAD;
   }
@@ -316,7 +412,17 @@ CK_RV Test_C_OpenSession(CK_SLOT_ID slotID, CK_FLAGS, CK_VOID_PTR, CK_NOTIFY,
   return CKR_OK;
 }
 
-CK_RV Test_C_CloseSession(CK_SESSION_HANDLE) { return CKR_OK; }
+CK_RV Test_C_CloseSession(CK_SESSION_HANDLE hSession) {
+  if (hSession == 5) {
+    if (authSessionOpenCount > 0) {
+      authSessionOpenCount--;
+    }
+    if (authSessionOpenCount == 0) {
+      authSessionState = CKS_RW_PUBLIC_SESSION;
+    }
+  }
+  return CKR_OK;
+}
 
 CK_RV Test_C_CloseAllSessions(CK_SLOT_ID) { return CKR_OK; }
 
@@ -329,19 +435,30 @@ CK_RV Test_C_GetSessionInfo(CK_SESSION_HANDLE hSession,
   switch (hSession) {
     case 1:
       pInfo->slotID = 1;
+      pInfo->state = CKS_RO_PUBLIC_SESSION;
+      pInfo->flags = CKF_SERIAL_SESSION;
       break;
     case 2:
       pInfo->slotID = 2;
+      pInfo->state = CKS_RO_PUBLIC_SESSION;
+      pInfo->flags = CKF_SERIAL_SESSION;
       break;
     case 4:
       pInfo->slotID = 4;
+      pInfo->state = CKS_RO_PUBLIC_SESSION;
+      pInfo->flags = CKF_SERIAL_SESSION;
+      break;
+    case 5:
+      if (authSessionOpenCount == 0) {
+        return CKR_SESSION_HANDLE_INVALID;
+      }
+      pInfo->slotID = 5;
+      pInfo->state = authSessionState;
+      pInfo->flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
       break;
     default:
       return CKR_ARGUMENTS_BAD;
   }
-
-  pInfo->state = CKS_RO_PUBLIC_SESSION;
-  pInfo->flags = CKF_SERIAL_SESSION;
   return CKR_OK;
 }
 
@@ -354,11 +471,54 @@ CK_RV Test_C_SetOperationState(CK_SESSION_HANDLE, CK_BYTE_PTR, CK_ULONG,
   return CKR_FUNCTION_NOT_SUPPORTED;
 }
 
-CK_RV Test_C_Login(CK_SESSION_HANDLE, CK_USER_TYPE, CK_UTF8CHAR_PTR, CK_ULONG) {
-  return CKR_FUNCTION_NOT_SUPPORTED;
+CK_RV Test_C_Login(CK_SESSION_HANDLE hSession, CK_USER_TYPE userType,
+                   CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen) {
+  if (hSession != 5) {
+    return CKR_FUNCTION_NOT_SUPPORTED;
+  }
+  // CKU_USER logs the session in; CKU_CONTEXT_SPECIFIC re-authenticates an
+  // already-logged-in session for a CKA_ALWAYS_AUTHENTICATE operation. Both
+  // verify the user PIN; they differ only in the required starting state.
+  if (userType == CKU_USER || userType == CKU_CONTEXT_SPECIFIC) {
+    if (userType == CKU_CONTEXT_SPECIFIC) {
+      if (authSessionState != CKS_RW_USER_FUNCTIONS) {
+        return CKR_USER_NOT_LOGGED_IN;
+      }
+    } else if (authSessionState != CKS_RW_PUBLIC_SESSION) {
+      return CKR_USER_ALREADY_LOGGED_IN;
+    }
+    if (!authUserPinInitialized) {
+      return CKR_USER_PIN_NOT_INITIALIZED;
+    }
+    if (ulPinLen != authUserPinLen ||
+        memcmp(pPin, authUserPin, ulPinLen) != 0) {
+      return CKR_PIN_INCORRECT;
+    }
+    authSessionState = CKS_RW_USER_FUNCTIONS;
+    return CKR_OK;
+  }
+  if (userType == CKU_SO) {
+    if (authSessionState != CKS_RW_PUBLIC_SESSION) {
+      return CKR_USER_ALREADY_LOGGED_IN;
+    }
+    if (ulPinLen != authSoPinLen || memcmp(pPin, authSoPin, ulPinLen) != 0) {
+      return CKR_PIN_INCORRECT;
+    }
+    authSessionState = CKS_RW_SO_FUNCTIONS;
+    return CKR_OK;
+  }
+  return CKR_USER_TYPE_INVALID;
 }
 
-CK_RV Test_C_Logout(CK_SESSION_HANDLE) { return CKR_FUNCTION_NOT_SUPPORTED; }
+CK_RV Test_C_Logout(CK_SESSION_HANDLE hSession) {
+  if (hSession != 5) {
+    return CKR_FUNCTION_NOT_SUPPORTED;
+  }
+  // Lenient: NSS calls C_Logout speculatively in several paths and ignores
+  // the result, so always reset state instead of returning NOT_LOGGED_IN.
+  authSessionState = CKS_RW_PUBLIC_SESSION;
+  return CKR_OK;
+}
 
 CK_RV Test_C_CreateObject(CK_SESSION_HANDLE, CK_ATTRIBUTE_PTR, CK_ULONG,
                           CK_OBJECT_HANDLE_PTR) {
@@ -445,6 +605,21 @@ CK_RV Test_C_GetAttributeValue(CK_SESSION_HANDLE hSession,
         BYTEARRAY_CASE(CKA_SERIAL_NUMBER, certSerial)
         BYTEARRAY_CASE(CKA_ISSUER, certIssuer)
 
+        case CKA_ID: {
+          const unsigned char *idData = certs[hObject - 3].id;
+          CK_ULONG idLen = certs[hObject - 3].idLen;
+          if (pTemplate[count].pValue) {
+            if (pTemplate[count].ulValueLen >= idLen) {
+              memcpy(pTemplate[count].pValue, idData, idLen);
+            } else {
+              pTemplate[count].ulValueLen = CK_UNAVAILABLE_INFORMATION;
+            }
+          } else {
+            pTemplate[count].ulValueLen = idLen;
+          }
+          break;
+        }
+
         default:
           pTemplate[count].ulValueLen = CK_UNAVAILABLE_INFORMATION;
           break;
@@ -454,6 +629,35 @@ CK_RV Test_C_GetAttributeValue(CK_SESSION_HANDLE hSession,
     default:
       break;
     }
+  }
+  // Auth slot: a private key that always requires per-operation
+  // re-authentication (CKA_ALWAYS_AUTHENTICATE). CKA_PRIVATE is reported false
+  // to keep the test focused on the CKU_CONTEXT_SPECIFIC re-login path.
+  if (hSession == 5 && hObject == kAlwaysAuthPrivKeyHandle) {
+    for (CK_ULONG count = 0; count < ulCount; count++) {
+      CK_BBOOL value;
+      switch (pTemplate[count].type) {
+        case CKA_ALWAYS_AUTHENTICATE:
+          value = CK_TRUE;
+          break;
+        case CKA_PRIVATE:
+          value = CK_FALSE;
+          break;
+        default:
+          pTemplate[count].ulValueLen = CK_UNAVAILABLE_INFORMATION;
+          continue;
+      }
+      if (pTemplate[count].pValue) {
+        if (pTemplate[count].ulValueLen >= sizeof(value)) {
+          memcpy(pTemplate[count].pValue, &value, sizeof(value));
+        } else {
+          pTemplate[count].ulValueLen = CK_UNAVAILABLE_INFORMATION;
+        }
+      } else {
+        pTemplate[count].ulValueLen = sizeof(value);
+      }
+    }
+    return CKR_OK;
   }
   return CKR_FUNCTION_NOT_SUPPORTED;
 }
@@ -586,14 +790,29 @@ CK_RV Test_C_EncryptFinal(CK_SESSION_HANDLE, CK_BYTE_PTR, CK_ULONG_PTR) {
   return CKR_FUNCTION_NOT_SUPPORTED;
 }
 
-CK_RV Test_C_DecryptInit(CK_SESSION_HANDLE, CK_MECHANISM_PTR,
+CK_RV Test_C_DecryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR,
                          CK_OBJECT_HANDLE) {
+  if (hSession == 5) {
+    return CKR_OK;
+  }
   return CKR_FUNCTION_NOT_SUPPORTED;
 }
 
-CK_RV Test_C_Decrypt(CK_SESSION_HANDLE, CK_BYTE_PTR, CK_ULONG, CK_BYTE_PTR,
-                     CK_ULONG_PTR) {
-  return CKR_FUNCTION_NOT_SUPPORTED;
+CK_RV Test_C_Decrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR, CK_ULONG,
+                     CK_BYTE_PTR pData, CK_ULONG_PTR pulDataLen) {
+  if (hSession != 5) {
+    return CKR_FUNCTION_NOT_SUPPORTED;
+  }
+  // No real crypto: return a fixed dummy plaintext.
+  static const CK_BYTE kPlaintext[8] = {7, 6, 5, 4, 3, 2, 1, 0};
+  if (pData) {
+    if (*pulDataLen < sizeof(kPlaintext)) {
+      return CKR_BUFFER_TOO_SMALL;
+    }
+    memcpy(pData, kPlaintext, sizeof(kPlaintext));
+  }
+  *pulDataLen = sizeof(kPlaintext);
+  return CKR_OK;
 }
 
 CK_RV Test_C_DecryptUpdate(CK_SESSION_HANDLE, CK_BYTE_PTR, CK_ULONG,
@@ -626,13 +845,29 @@ CK_RV Test_C_DigestFinal(CK_SESSION_HANDLE, CK_BYTE_PTR, CK_ULONG_PTR) {
   return CKR_FUNCTION_NOT_SUPPORTED;
 }
 
-CK_RV Test_C_SignInit(CK_SESSION_HANDLE, CK_MECHANISM_PTR, CK_OBJECT_HANDLE) {
+CK_RV Test_C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR,
+                      CK_OBJECT_HANDLE) {
+  if (hSession == 5) {
+    return CKR_OK;
+  }
   return CKR_FUNCTION_NOT_SUPPORTED;
 }
 
-CK_RV Test_C_Sign(CK_SESSION_HANDLE, CK_BYTE_PTR, CK_ULONG, CK_BYTE_PTR,
-                  CK_ULONG_PTR) {
-  return CKR_FUNCTION_NOT_SUPPORTED;
+CK_RV Test_C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR, CK_ULONG,
+                  CK_BYTE_PTR pSignature, CK_ULONG_PTR pulSignatureLen) {
+  if (hSession != 5) {
+    return CKR_FUNCTION_NOT_SUPPORTED;
+  }
+  // No real crypto: return a fixed dummy signature.
+  static const CK_BYTE kSignature[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+  if (pSignature) {
+    if (*pulSignatureLen < sizeof(kSignature)) {
+      return CKR_BUFFER_TOO_SMALL;
+    }
+    memcpy(pSignature, kSignature, sizeof(kSignature));
+  }
+  *pulSignatureLen = sizeof(kSignature);
+  return CKR_OK;
 }
 
 CK_RV Test_C_SignUpdate(CK_SESSION_HANDLE, CK_BYTE_PTR, CK_ULONG) {

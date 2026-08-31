@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,16 +52,6 @@ void nsLookAndFeel::EnsureInit() {
   // otherwise we might instantiate the wrong application class, causing
   // exceptions to be thrown elsewhere.
   [GeckoNSApplication sharedApplication];
-  NSWindow* window =
-      [[NSWindow alloc] initWithContentRect:NSZeroRect
-                                  styleMask:NSWindowStyleMaskTitled
-                                    backing:NSBackingStoreBuffered
-                                      defer:NO];
-  auto release = MakeScopeExit([&] { [window release]; });
-
-  mRtl = window.windowTitlebarLayoutDirection ==
-         NSUserInterfaceLayoutDirectionRightToLeft;
-  mTitlebarHeight = std::ceil(window.frame.size.height);
 
   RecordTelemetry();
 
@@ -75,22 +64,22 @@ void nsLookAndFeel::RefreshImpl() {
 }
 
 static nscolor GetColorFromNSColor(NSColor* aColor) {
-  NSColor* deviceColor =
-      [aColor colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
-  return NS_RGBA((unsigned int)(deviceColor.redComponent * 255.0),
-                 (unsigned int)(deviceColor.greenComponent * 255.0),
-                 (unsigned int)(deviceColor.blueComponent * 255.0),
-                 (unsigned int)(deviceColor.alphaComponent * 255.0));
+  NSColor* srgbColor =
+      [aColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+  return NS_RGBA((unsigned int)round(srgbColor.redComponent * 255.0),
+                 (unsigned int)round(srgbColor.greenComponent * 255.0),
+                 (unsigned int)round(srgbColor.blueComponent * 255.0),
+                 (unsigned int)round(srgbColor.alphaComponent * 255.0));
 }
 
 static nscolor GetColorFromNSColorWithCustomAlpha(NSColor* aColor,
                                                   float alpha) {
-  NSColor* deviceColor =
-      [aColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
-  return NS_RGBA((unsigned int)(deviceColor.redComponent * 255.0),
-                 (unsigned int)(deviceColor.greenComponent * 255.0),
-                 (unsigned int)(deviceColor.blueComponent * 255.0),
-                 (unsigned int)(alpha * 255.0));
+  NSColor* srgbColor =
+      [aColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+  return NS_RGBA((unsigned int)round(srgbColor.redComponent * 255.0),
+                 (unsigned int)round(srgbColor.greenComponent * 255.0),
+                 (unsigned int)round(srgbColor.blueComponent * 255.0),
+                 (unsigned int)round(alpha * 255.0));
 }
 
 // Turns an opaque selection color into a partially transparent selection color,
@@ -468,13 +457,8 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::MacBigSurTheme:
       aResult = nsCocoaFeatures::OnBigSurOrLater();
       break;
-    case IntID::MacRTL:
-      EnsureInit();
-      aResult = mRtl;
-      break;
-    case IntID::MacTitlebarHeight:
-      EnsureInit();
-      aResult = mTitlebarHeight;
+    case IntID::MacTahoeTheme:
+      aResult = nsCocoaFeatures::OnTahoeOrLater();
       break;
     case IntID::AlertNotificationOrigin:
       aResult = NS_ALERT_TOP;

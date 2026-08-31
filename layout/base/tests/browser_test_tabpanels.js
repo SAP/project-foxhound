@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This test is based on
      https://searchfox.org/mozilla-central/rev/380b8fd795e7d96d8a5a3e6ec2b50a9f2b65854a/layout/base/tests/browser_test_oopif_reconstruct.js
 */

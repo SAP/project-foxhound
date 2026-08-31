@@ -109,12 +109,8 @@ add_task(async function testTempPermissionOnTabClose() {
     Services.scriptSecurityManager.createContentPrincipalFromOrigin(origin);
   let id = "geo";
 
-  ok(
-    !SitePermissions._temporaryPermissions._stateByBrowser.size,
-    "Temporary permission map should be empty initially."
-  );
-
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, origin);
+  let browserId = tab.linkedBrowser.browserId;
 
   SitePermissions.setForPrincipal(
     principal,
@@ -132,17 +128,19 @@ add_task(async function testTempPermissionOnTabClose() {
     }
   );
 
-  ok(
-    SitePermissions._temporaryPermissions._stateByBrowser.has(
-      tab.linkedBrowser
-    ),
-    "Temporary permission map should have an entry for the browser."
+  Assert.equal(
+    Services.perms.testForBrowser(principal, id, browserId),
+    Services.perms.DENY_ACTION,
+    "PermissionManager should have an entry for the browser."
   );
 
   BrowserTestUtils.removeTab(tab);
 
-  ok(
-    !SitePermissions._temporaryPermissions._stateByBrowser.size,
-    "Temporary permission map should be empty after closing the tab."
+  // After closing the tab, the browsing-context-discarded notification
+  // cleans up the browser-scoped permissions.
+  Assert.equal(
+    Services.perms.testForBrowser(principal, id, browserId),
+    Services.perms.UNKNOWN_ACTION,
+    "PermissionManager should no longer have an entry after tab close."
   );
 });

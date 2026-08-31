@@ -14,7 +14,7 @@ info: |
   ...
   15. Set O's [[ViewedArrayBuffer]] internal slot to buffer.
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -29,6 +29,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.sameValue(ta1.buffer, buffer);
   assert.sameValue(ta2.buffer, buffer);
   assert.sameValue(ta1.buffer, ta2.buffer);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

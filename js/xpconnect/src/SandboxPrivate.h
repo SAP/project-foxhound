@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __SANDBOXPRIVATE_H__
-#define __SANDBOXPRIVATE_H__
+#ifndef SANDBOXPRIVATE_H_
+#define SANDBOXPRIVATE_H_
 
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -93,7 +91,7 @@ class SandboxPrivate final : public nsIGlobalObject,
   nsISerialEventTarget* SerialEventTarget() const final {
     return mozilla::GetMainThreadSerialEventTarget();
   }
-  nsresult Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) const final {
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable) const final {
     return mozilla::SchedulerGroup::Dispatch(std::move(aRunnable));
   }
 
@@ -136,4 +134,4 @@ class SandboxPrivate final : public nsIGlobalObject,
   RefPtr<JS::loader::ModuleLoaderBase> mModuleLoader;
 };
 
-#endif  // __SANDBOXPRIVATE_H__
+#endif  // SANDBOXPRIVATE_H_

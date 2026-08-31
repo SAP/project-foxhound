@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsUpdateSyncManager.h"
 
-#include "mozilla/Unused.h"
 #include "mozilla/Services.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCRT.h"
@@ -44,8 +41,8 @@ already_AddRefed<nsUpdateSyncManager> nsUpdateSyncManager::GetSingleton() {
 NS_IMETHODIMP nsUpdateSyncManager::Observe(nsISupports* aSubject,
                                            const char* aTopic,
                                            const char16_t* aData) {
-  mozilla::Unused << aSubject;
-  mozilla::Unused << aData;
+  (void)aSubject;
+  (void)aData;
 
   // We want to hold the lock for as much of the lifetime of the app as we can,
   // so we observe xpcom-startup so we get constructed as early as possible,
@@ -91,6 +88,11 @@ nsresult nsUpdateSyncManager::OpenLock(nsIFile* anAppFile) {
   rv = appDirFile->GetPath(appDirPath);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  if (!mozilla::GetMultiInstanceLockFileName(UPDATE_LOCK_NAME_TOKEN,
+                                             appDirPath.get(), mLockFilePath)) {
+    return NS_ERROR_FAILURE;
+  }
+
   mLock =
       mozilla::OpenMultiInstanceLock(UPDATE_LOCK_NAME_TOKEN, appDirPath.get());
   NS_ENSURE_TRUE(mLock, NS_ERROR_FAILURE);
@@ -126,4 +128,9 @@ NS_IMETHODIMP nsUpdateSyncManager::IsOtherInstanceRunning(bool* aResult) {
 NS_IMETHODIMP nsUpdateSyncManager::ResetLock(nsIFile* anAppFile = nullptr) {
   ReleaseLock();
   return OpenLock(anAppFile);
+}
+
+NS_IMETHODIMP nsUpdateSyncManager::GetUpdateLockFilePath(nsAString& aPath) {
+  aPath = NS_ConvertUTF8toUTF16(mLockFilePath);
+  return NS_OK;
 }

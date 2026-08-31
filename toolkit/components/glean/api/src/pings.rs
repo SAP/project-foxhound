@@ -16,7 +16,7 @@ include!(mozbuild::objdir_path!(
 pub fn record_profiler_ping_marker(ping_name: &String) {
     use crate::private::profiler_utils::PingMarker;
     use crate::private::profiler_utils::TelemetryProfilerCategory;
-    if gecko_profiler::can_accept_markers() {
+    if gecko_profiler::current_thread_is_being_profiled_for_markers() {
         gecko_profiler::add_marker(
             "Ping::submit",
             TelemetryProfilerCategory,

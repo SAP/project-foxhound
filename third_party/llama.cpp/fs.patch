@@ -1,0 +1,156 @@
+diff --git a/ggml/src/ggml-backend-reg.cpp b/ggml/src/ggml-backend-reg.cpp
+index 2d93771fd1..343ad393cc 100644
+--- a/ggml/src/ggml-backend-reg.cpp
++++ b/ggml/src/ggml-backend-reg.cpp
+@@ -3,7 +3,7 @@
+ #include "ggml-impl.h"
+ #include <algorithm>
+ #include <cstring>
+-#include <filesystem>
++// #include <filesystem>
+ #include <memory>
+ #include <string>
+ #include <type_traits>
+@@ -76,7 +76,7 @@
+ 
+ #include "moz-overrides.h"
+ 
+-namespace fs = std::filesystem;
++// namespace fs = std::filesystem;
+ 
+ #if 0
+ static std::string path_str(const fs::path & path) {
+--- a/ggml/src/ggml-backend-reg.cpp
++++ b/ggml/src/ggml-backend-reg.cpp
+@@ -74,8 +74,11 @@
+ #    pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+ #endif
+ 
++#include "moz-overrides.h"
++
+ namespace fs = std::filesystem;
+ 
++#if 0
+ static std::string path_str(const fs::path & path) {
+     std::string u8path;
+     try {
+@@ -91,6 +94,7 @@
+     }
+     return u8path;
+ }
++#endif
+ 
+ #if defined(__clang__)
+ #    pragma clang diagnostic pop
+@@ -108,6 +112,7 @@
+     }
+ };
+ 
++#if 0
+ static dl_handle * dl_load_library(const fs::path & path) {
+     // suppress error dialogs for missing DLLs
+     DWORD old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
+@@ -119,6 +124,7 @@
+ 
+     return handle;
+ }
++#endif
+ 
+ static void * dl_get_sym(dl_handle * handle, const char * name) {
+     DWORD old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
+@@ -141,11 +147,13 @@
+     }
+ };
+ 
++#if 0
+ static void * dl_load_library(const fs::path & path) {
+     dl_handle * handle = dlopen(path.string().c_str(), RTLD_NOW | RTLD_LOCAL);
+ 
+     return handle;
+ }
++#endif
+ 
+ static void * dl_get_sym(dl_handle * handle, const char * name) {
+     return dlsym(handle, name);
+@@ -229,11 +237,12 @@
+         devices.push_back(device);
+     }
+ 
++    #if 0
+     ggml_backend_reg_t load_backend(const fs::path & path, bool silent) {
+         dl_handle_ptr handle { dl_load_library(path) };
+         if (!handle) {
+             if (!silent) {
+                 GGML_LOG_ERROR("%s: failed to load %s\n", __func__, path_str(path).c_str());
+             }
+             return nullptr;
+         }
+@@ -299,6 +308,7 @@
+         // remove backend
+         backends.erase(it);
+     }
++    #endif
+ };
+ 
+ static ggml_backend_registry & get_reg() {
+@@ -402,7 +412,8 @@
+     return ggml_backend_dev_init(dev, nullptr);
+ }
+ 
+-// Dynamic loading
++#if 0
++// Dynamic loading
+ ggml_backend_reg_t ggml_backend_load(const char * path) {
+     return get_reg().load_backend(path, false);
+ }
+@@ -412,7 +423,7 @@
+ }
+ 
+ static fs::path get_executable_path() {
+-#if defined(__APPLE__)
++  #if defined(__APPLE__)
+     // get executable path
+     std::vector<char> path;
+     uint32_t size;
+@@ -473,7 +484,9 @@
+     return {};
+ #endif
+ }
++#endif
+ 
++#if 0
+ static fs::path backend_filename_prefix() {
+ #ifdef _WIN32
+     return fs::u8path("ggml-");
+@@ -489,9 +502,11 @@
+     return fs::u8path(".so");
+ #endif
+ }
++#endif
+ 
+ static ggml_backend_reg_t ggml_backend_load_best(const char * name, bool silent, const char * user_search_path) {
+-    // enumerate all the files that match [lib]ggml-name-*.[so|dll] in the search paths
++  #if 0
++    // enumerate all the files that match [lib]ggml-name-*.[so|dll] in the search paths
+     const fs::path name_path = fs::u8path(name);
+     const fs::path file_prefix = backend_filename_prefix().native() + name_path.native() + fs::u8path("-").native();
+     const fs::path file_extension = backend_filename_extension();
+@@ -557,7 +572,10 @@
+         return nullptr;
+     }
+ 
++
+     return get_reg().load_backend(best_path, silent);
++    #endif
++    return nullptr;
+ }
+ 
+ void ggml_backend_load_all() {
+@@ -586,6 +604,6 @@
+     // check the environment variable GGML_BACKEND_PATH to load an out-of-tree backend
+     const char * backend_path = std::getenv("GGML_BACKEND_PATH");
+     if (backend_path) {
+-        ggml_backend_load(backend_path);
++        //ggml_backend_load(backend_path);
+     }
+ }

@@ -259,15 +259,19 @@ export var PromiseTestUtils = {
 
       // Report the error. This operation can throw an exception, depending on
       // the configuration of the test suite that handles the assertion. The
-      // first line of the message, including the latest call on the stack, is
-      // used to identify related test failures. To keep the first line similar
-      // between executions, we place the time-dependent rejection date on its
-      // own line, after all the other stack lines.
-      Assert.ok(
-        false,
-        `A promise chain failed to handle a rejection:` +
-          ` ${rejection.message} - stack: ${rejection.stack}` +
-          `Rejection date: ${rejection.date}`
+      // rejection stack and date are passed as the assertion's stack and time
+      // so that they show up in their own structured log fields rather than
+      // being baked into the failure message; this keeps otherwise identical
+      // failures fingerprinting to the same message.
+      Assert.report(
+        true,
+        undefined,
+        undefined,
+        `uncaught rejection: ${rejection.message}`,
+        undefined,
+        true,
+        rejection.stack,
+        rejection.date.getTime()
       );
     }
   },

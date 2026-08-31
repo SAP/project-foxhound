@@ -8,7 +8,7 @@
  */
 
 ChromeUtils.defineESModuleGetters(this, {
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
 });
 
 add_task(async function test_processAUMID() {

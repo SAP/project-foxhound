@@ -30,8 +30,9 @@ async function openContextMenuAt(browser, x, y) {
 
 /**
  * Open a context menu and get the pdfjs entries
- * @param {Object} browser
- * @param {Object} box
+ *
+ * @param {object} browser
+ * @param {object} box
  * @returns {Promise<Map<string,HTMLElement>>} the pdfjs menu entries.
  */
 function getContextMenuItems(browser, box) {
@@ -46,9 +47,10 @@ function getContextMenuItems(browser, box) {
         "context-pdfjs-copy",
         "context-pdfjs-paste",
         "context-pdfjs-delete",
-        "context-pdfjs-selectall",
-        "context-sep-pdfjs-selectall",
+        "context-pdfjs-select-all",
+        "context-sep-pdfjs-select-all",
         "context-pdfjs-highlight-selection",
+        "context-pdfjs-comment-selection",
       ];
 
       await openContextMenuAt(browser, x + width / 2, y + height / 2);
@@ -67,7 +69,8 @@ function getContextMenuItems(browser, box) {
 /**
  * Open a context menu on the element corresponding to the given selector
  * and returs the pdfjs menu entries.
- * @param {Object} browser
+ *
+ * @param {object} browser
  * @param {string} selector
  * @returns {Promise<Map<string,HTMLElement>>} the pdfjs menu entries.
  */
@@ -86,7 +89,8 @@ async function getContextMenuItemsOn(browser, selector) {
 
 /**
  * Hide the context menu.
- * @param {Object} browser
+ *
+ * @param {object} browser
  */
 async function hideContextMenu(browser) {
   await new Promise(resolve =>
@@ -120,6 +124,7 @@ async function clickOnItem(browser, items, entry) {
 
 /**
  * Asserts that the enabled pdfjs menuitems are the expected ones.
+ *
  * @param {Map<string,HTMLElement>} menuitems
  * @param {Array<string>} expected
  */
@@ -188,7 +193,7 @@ add_task(async function test_copy_paste_undo_redo() {
       let menuitems = await getContextMenuItems(browser, spanBox);
       assertMenuitems(menuitems, [
         "context-pdfjs-undo", // Last created editor is undoable
-        "context-pdfjs-selectall", // and selectable.
+        "context-pdfjs-select-all", // and selectable.
       ]);
       // Undo.
       await clickOnItem(browser, menuitems, "context-pdfjs-undo");
@@ -208,7 +213,7 @@ add_task(async function test_copy_paste_undo_redo() {
       // The editor removed thanks to "undo" is now redoable
       assertMenuitems(menuitems, [
         "context-pdfjs-redo",
-        "context-pdfjs-selectall",
+        "context-pdfjs-select-all",
       ]);
       await clickOnItem(browser, menuitems, "context-pdfjs-redo");
 
@@ -233,7 +238,7 @@ add_task(async function test_copy_paste_undo_redo() {
         "context-pdfjs-cut",
         "context-pdfjs-copy",
         "context-pdfjs-delete",
-        "context-pdfjs-selectall",
+        "context-pdfjs-select-all",
       ]);
 
       await clickOnItem(browser, menuitems, "context-pdfjs-cut");
@@ -252,7 +257,7 @@ add_task(async function test_copy_paste_undo_redo() {
       assertMenuitems(menuitems, [
         "context-pdfjs-undo",
         "context-pdfjs-paste",
-        "context-pdfjs-selectall",
+        "context-pdfjs-select-all",
       ]);
 
       await clickOnItem(browser, menuitems, "context-pdfjs-paste");
@@ -279,7 +284,7 @@ add_task(async function test_copy_paste_undo_redo() {
         "context-pdfjs-copy",
         "context-pdfjs-paste",
         "context-pdfjs-delete",
-        "context-pdfjs-selectall",
+        "context-pdfjs-select-all",
       ]);
 
       await clickOnItem(browser, menuitems, "context-pdfjs-delete");
@@ -332,7 +337,7 @@ add_task(async function test_copy_paste_undo_redo() {
       );
 
       menuitems = await getContextMenuItems(browser, spanBox);
-      await clickOnItem(browser, menuitems, "context-pdfjs-selectall");
+      await clickOnItem(browser, menuitems, "context-pdfjs-select-all");
       menuitems = await getContextMenuItems(browser, spanBox);
       await clickOnItem(browser, menuitems, "context-pdfjs-delete");
 
@@ -359,7 +364,10 @@ add_task(async function test_highlight_selection() {
     { gBrowser, url: "about:blank" },
     async function (browser) {
       await SpecialPowers.pushPrefEnv({
-        set: [["pdfjs.annotationEditorMode", 0]],
+        set: [
+          ["pdfjs.annotationEditorMode", 0],
+          ["pdfjs.enableComment", false],
+        ],
       });
 
       await waitAndCheckEmptyContextMenu(browser);
@@ -367,7 +375,7 @@ add_task(async function test_highlight_selection() {
 
       const changePromise = BrowserTestUtils.waitForContentEvent(
         browser,
-        "annotationeditorstateschanged",
+        "editingstateschanged",
         false,
         null,
         true
@@ -404,6 +412,67 @@ add_task(async function test_highlight_selection() {
         await countElements(browser, ".highlightEditor"),
         1,
         "An highlight editor must have been added"
+      );
+
+      await waitForPdfJSClose(browser);
+    }
+  );
+});
+
+add_task(async function test_comment_selection() {
+  makePDFJSHandler();
+
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:blank" },
+    async function (browser) {
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["pdfjs.annotationEditorMode", 0],
+          ["pdfjs.enableComment", true],
+        ],
+      });
+
+      await waitAndCheckEmptyContextMenu(browser);
+      const spanBox = await getSpanBox(browser, "and found references");
+
+      const changePromise = BrowserTestUtils.waitForContentEvent(
+        browser,
+        "editingstateschanged",
+        false,
+        null,
+        true
+      );
+      await clickAt(
+        browser,
+        spanBox.x + spanBox.width / 2,
+        spanBox.y + spanBox.height / 2,
+        2
+      );
+      await changePromise;
+      await TestUtils.waitForTick();
+
+      const mozBox = await getSpanBox(browser, "Mozilla automated testing");
+      const menuitems = await getContextMenuItems(browser, mozBox);
+
+      assertMenuitems(menuitems, [
+        "context-pdfjs-highlight-selection",
+        "context-pdfjs-comment-selection",
+      ]);
+
+      const telemetryPromise = BrowserTestUtils.waitForContentEvent(
+        browser,
+        "reporttelemetry",
+        false,
+        null,
+        true
+      );
+      await clickOnItem(browser, menuitems, "context-pdfjs-comment-selection");
+      await telemetryPromise;
+
+      await waitForSelector(
+        browser,
+        "#commentManagerDialog",
+        "The comment dialog must be visible"
       );
 
       await waitForPdfJSClose(browser);

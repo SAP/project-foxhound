@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 
 #include "HttpChannelChild.h"
 #include "mozilla/ExtensionPolicyService.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/StaticPrefs_extensions.h"
@@ -48,9 +45,6 @@ class ChannelEventWrapper : public ChannelEvent {
     return do_AddRef(mTarget);
   }
 
- protected:
-  ~ChannelEventWrapper() override = default;
-
  private:
   nsCOMPtr<nsIEventTarget> mTarget;
 };
@@ -61,9 +55,6 @@ class ChannelEventFunction final : public ChannelEventWrapper {
       : ChannelEventWrapper(aTarget), mFunc(std::move(aFunc)) {}
 
   void Run() override { mFunc(); }
-
- protected:
-  ~ChannelEventFunction() override = default;
 
  private:
   std::function<void()> mFunc;
@@ -77,11 +68,8 @@ class ChannelEventRunnable final : public ChannelEventWrapper {
 
   void Run() override {
     nsresult rv = mRunnable->Run();
-    Unused << NS_WARN_IF(NS_FAILED(rv));
+    (void)NS_WARN_IF(NS_FAILED(rv));
   }
-
- protected:
-  ~ChannelEventRunnable() override = default;
 
  private:
   RefPtr<Runnable> mRunnable;
@@ -182,7 +170,7 @@ void StreamFilterParent::Disconnect(const nsACString& aReason) {
   nsAutoCString reason(aReason);
 
   RefPtr<StreamFilterParent> self(this);
-  RunOnActorThread(FUNC, [self, reason] {
+  RunOnActorThread(FUNC, [self, reason = std::move(reason)] {
     if (self->IPCActive()) {
       self->mState = State::Disconnected;
       self->CheckResult(self->SendError(reason));
@@ -305,11 +293,11 @@ IPCResult StreamFilterParent::RecvClose() {
     RefPtr<StreamFilterParent> self(this);
     RunOnMainThread(FUNC, [=] {
       nsresult rv = self->EmitStopRequest(NS_OK);
-      Unused << NS_WARN_IF(NS_FAILED(rv));
+      (void)NS_WARN_IF(NS_FAILED(rv));
     });
   }
 
-  Unused << SendClosed();
+  (void)SendClosed();
   Destroy();
   return IPC_OK();
 }
@@ -336,7 +324,7 @@ IPCResult StreamFilterParent::RecvSuspend() {
     RunOnMainThread(FUNC, [=] {
       self->mChannel->Suspend();
 
-      RunOnActorThread(FUNC, [=] {
+      self->RunOnActorThread(FUNC, [=] {
         if (self->IPCActive()) {
           self->mState = State::Suspended;
           self->CheckResult(self->SendSuspended());
@@ -359,7 +347,7 @@ IPCResult StreamFilterParent::RecvResume() {
     RunOnMainThread(FUNC, [=] {
       self->mChannel->Resume();
 
-      RunOnActorThread(FUNC, [=] {
+      self->RunOnActorThread(FUNC, [=] {
         if (self->IPCActive()) {
           self->CheckResult(self->SendResumed());
         }
@@ -418,13 +406,13 @@ void StreamFilterParent::FinishDisconnect() {
     // This is not always the last flush. See below for the final flush.
     self->FlushBufferedData();
 
-    RunOnActorThread(FUNC, [=] {
+    self->RunOnActorThread(FUNC, [=] {
       if (self->mState != State::Closed) {
         self->mState = State::Disconnected;
       }
       // Despite having flushed buffers before, the buffer may be non-empty
       // if OnDataAvailable is called before entering state Disconnected.
-      RunOnIOThread(FUNC, [=] {
+      self->RunOnIOThread(FUNC, [=] {
         // If OnDataAvailable is called after entering state Disconnected,
         // it calls FlushBufferedData() if needed. But if that did not
         // happen, we need to flush the data here, now.
@@ -432,12 +420,12 @@ void StreamFilterParent::FinishDisconnect() {
           self->FlushBufferedData();
         }
       });
-      RunOnMainThread(FUNC, [=] {
+      self->RunOnMainThread(FUNC, [=] {
         if (self->mReceivedStop && !self->mSentStop) {
           nsresult rv = self->EmitStopRequest(NS_OK);
-          Unused << NS_WARN_IF(NS_FAILED(rv));
+          (void)NS_WARN_IF(NS_FAILED(rv));
         } else if (self->mLoadGroup && !self->mDisconnected) {
-          Unused << self->mLoadGroup->RemoveRequest(self, nullptr, NS_OK);
+          (void)self->mLoadGroup->RemoveRequest(self, nullptr, NS_OK);
         }
         self->mDisconnected = true;
       });
@@ -460,7 +448,7 @@ IPCResult StreamFilterParent::RecvWrite(Data&& aData) {
 
 void StreamFilterParent::WriteMove(Data&& aData) {
   nsresult rv = Write(aData);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 nsresult StreamFilterParent::Write(Data& aData) {
@@ -473,8 +461,8 @@ nsresult StreamFilterParent::Write(Data& aData) {
       NS_ASSIGNMENT_DEPEND);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv =
-      mOrigListener->OnDataAvailable(mChannel, stream, mOffset, aData.Length());
+  nsCOMPtr<nsIStreamListener> origListener = mOrigListener;
+  rv = origListener->OnDataAvailable(mChannel, stream, mOffset, aData.Length());
   NS_ENSURE_SUCCESS(rv, rv);
 
   mOffset += aData.Length();
@@ -602,7 +590,7 @@ StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
   if (aRequest != mChannel) {
     nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
     nsCOMPtr<nsILoadInfo> loadInfo = channel ? channel->LoadInfo() : nullptr;
-    mChannel = channel;
+    mChannel = std::move(channel);
 
     if (!(loadInfo &&
           loadInfo->RedirectChainIncludingInternalRedirects().IsEmpty())) {
@@ -613,7 +601,7 @@ StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
       RunOnActorThread(FUNC, [=] {
         if (self->IPCActive()) {
           self->mState = State::Disconnected;
-          CheckResult(self->SendError("Channel redirected"_ns));
+          self->CheckResult(self->SendError("Channel redirected"_ns));
         }
       });
     }
@@ -631,7 +619,7 @@ StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
       RunOnActorThread(FUNC, [=] {
         if (self->IPCActive()) {
           self->mState = State::Disconnected;
-          CheckResult(
+          self->CheckResult(
               self->SendError("Channel is delivering cached alt-data"_ns));
         }
       });
@@ -639,20 +627,21 @@ StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
   }
 
   if (!mDisconnected) {
-    Unused << mChannel->GetLoadGroup(getter_AddRefs(mLoadGroup));
+    (void)mChannel->GetLoadGroup(getter_AddRefs(mLoadGroup));
     if (mLoadGroup) {
-      Unused << mLoadGroup->AddRequest(this, nullptr);
+      (void)mLoadGroup->AddRequest(this, nullptr);
     }
   }
 
-  nsresult rv = mOrigListener->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> origListener = mOrigListener;
+  nsresult rv = origListener->OnStartRequest(aRequest);
 
   // Important: Do this only *after* running the next listener in the chain, so
   // that we get the final delivery target after any retargeting that it may do.
   if (nsCOMPtr<nsIThreadRetargetableRequest> req =
           do_QueryInterface(aRequest)) {
     nsCOMPtr<nsISerialEventTarget> thread;
-    Unused << req->GetDeliveryTarget(getter_AddRefs(thread));
+    (void)req->GetDeliveryTarget(getter_AddRefs(thread));
     if (thread) {
       mIOThread = std::move(thread);
     }
@@ -697,7 +686,7 @@ StreamFilterParent::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
       // request at the end of that process. Otherwise we need to
       // manually emit one here, since we won't be getting a response
       // from the child.
-      RunOnMainThread(FUNC, [=] {
+      self->RunOnMainThread(FUNC, [=] {
         if (!self->mSentStop) {
           self->EmitStopRequest(aStatusCode);
         }
@@ -712,10 +701,11 @@ nsresult StreamFilterParent::EmitStopRequest(nsresult aStatusCode) {
   MOZ_ASSERT(!mSentStop);
 
   mSentStop = true;
-  nsresult rv = mOrigListener->OnStopRequest(mChannel, aStatusCode);
+  nsCOMPtr<nsIStreamListener> origListener = mOrigListener;
+  nsresult rv = origListener->OnStopRequest(mChannel, aStatusCode);
 
   if (mLoadGroup && !mDisconnected) {
-    Unused << mLoadGroup->RemoveRequest(this, nullptr, aStatusCode);
+    (void)mLoadGroup->RemoveRequest(this, nullptr, aStatusCode);
   }
 
   return rv;
@@ -798,8 +788,9 @@ StreamFilterParent::OnDataAvailable(nsIRequest* aRequest,
     }
 
     mOffset += aCount;
-    return mOrigListener->OnDataAvailable(aRequest, aInputStream,
-                                          mOffset - aCount, aCount);
+    nsCOMPtr<nsIStreamListener> origListener = mOrigListener;
+    return origListener->OnDataAvailable(aRequest, aInputStream,
+                                         mOffset - aCount, aCount);
   }
 
   Data data;
@@ -875,22 +866,24 @@ void StreamFilterParent::AssertIsIOThread() { MOZ_ASSERT(IsIOThread()); }
 
 template <typename Function>
 void StreamFilterParent::RunOnMainThread(const char* aName, Function&& aFunc) {
-  mQueue->RunOrEnqueue(new ChannelEventFunction(mMainThread, std::move(aFunc)));
+  mQueue->RunOrEnqueue(MakeUnique<ChannelEventFunction>(
+      mMainThread, std::forward<Function>(aFunc)));
 }
 
 void StreamFilterParent::RunOnMainThread(already_AddRefed<Runnable> aRunnable) {
   mQueue->RunOrEnqueue(
-      new ChannelEventRunnable(mMainThread, std::move(aRunnable)));
+      MakeUnique<ChannelEventRunnable>(mMainThread, std::move(aRunnable)));
 }
 
 template <typename Function>
 void StreamFilterParent::RunOnIOThread(const char* aName, Function&& aFunc) {
-  mQueue->RunOrEnqueue(new ChannelEventFunction(mIOThread, std::move(aFunc)));
+  mQueue->RunOrEnqueue(MakeUnique<ChannelEventFunction>(
+      mIOThread, std::forward<Function>(aFunc)));
 }
 
 void StreamFilterParent::RunOnIOThread(already_AddRefed<Runnable> aRunnable) {
   mQueue->RunOrEnqueue(
-      new ChannelEventRunnable(mIOThread, std::move(aRunnable)));
+      MakeUnique<ChannelEventRunnable>(mIOThread, std::move(aRunnable)));
 }
 
 template <typename Function>

@@ -4,21 +4,23 @@
 
 package org.mozilla.fenix.translations.preferences.automatic
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.compose.list.RadioButtonListItem
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 
 /**
  * Firefox Automatic Translation Options preference screen.
@@ -37,12 +39,8 @@ fun AutomaticTranslationOptionsPreference(
         AutomaticTranslationOptionPreference.NeverTranslate(),
     )
     val selected = remember { mutableStateOf(selectedOption) }
-    Column(
-        modifier = Modifier
-            .background(
-                color = FirefoxTheme.colors.layer1,
-            ),
-    ) {
+
+    Surface {
         LazyColumn {
             items(optionsList) { item: AutomaticTranslationOptionPreference ->
                 RadioButtonListItem(
@@ -66,10 +64,12 @@ fun AutomaticTranslationOptionsPreference(
     }
 }
 
+@Preview
 @Composable
-@PreviewLightDark
-private fun AutomaticTranslationOptionsPreview() {
-    FirefoxTheme {
+private fun AutomaticTranslationOptionsPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         AutomaticTranslationOptionsPreference(
             selectedOption = AutomaticTranslationOptionPreference.AlwaysTranslate(),
             onItemClick = {},

@@ -55,7 +55,7 @@ add_task(async function () {
 
   info("Switch to the computed view");
   const onComputedViewReady = inspector.once("computed-view-refreshed");
-  selectComputedView(inspector);
+  await selectComputedView(inspector);
   await onComputedViewReady;
 
   info("Run the test again on the computed view");

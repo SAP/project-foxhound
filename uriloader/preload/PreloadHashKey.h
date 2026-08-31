@@ -2,21 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PreloadHashKey_h__
-#define PreloadHashKey_h__
+#ifndef PreloadHashKey_h_
+#define PreloadHashKey_h_
 
 #include "mozilla/CORSMode.h"
-#include "mozilla/css/SheetParsingMode.h"
 #include "js/loader/ScriptKind.h"
 #include "nsURIHashKey.h"
 
 class nsIPrincipal;
 
 namespace JS::loader {
-enum class ScriptKind;
+enum class ScriptKind : uint8_t;
 }
 
 namespace mozilla {
+
+enum class StyleOrigin : uint8_t;
 
 namespace css {
 class SheetLoadData;
@@ -55,8 +56,7 @@ class PreloadHashKey : public nsURIHashKey {
 
   // Construct key for "style"
   static PreloadHashKey CreateAsStyle(nsIURI* aURI, nsIPrincipal* aPrincipal,
-                                      CORSMode aCORSMode,
-                                      css::SheetParsingMode aParsingMode);
+                                      CORSMode aCORSMode);
   static PreloadHashKey CreateAsStyle(css::SheetLoadData&);
 
   // Construct key for "image"
@@ -98,10 +98,6 @@ class PreloadHashKey : public nsURIHashKey {
   struct {
     JS::loader::ScriptKind mScriptKind = JS::loader::ScriptKind::eClassic;
   } mScript;
-
-  struct {
-    css::SheetParsingMode mParsingMode = css::eAuthorSheetFeatures;
-  } mStyle;
 };
 
 }  // namespace mozilla

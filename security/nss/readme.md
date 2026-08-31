@@ -9,11 +9,10 @@ standards.
 ## Getting started
 
 In order to get started create a new directory on that you will be uses as your
-local work area, and check out NSS and NSPR. (Note that there's no git mirror of
-NSPR and you require mercurial to get the latest NSPR source.)
+local work area, and check out NSS and NSPR.
 
-    git clone https://github.com/nss-dev/nss.git
-    hg clone https://hg.mozilla.org/projects/nspr
+    git clone https://github.com/mozilla/nss
+    git clone https://github.com/mozilla/nspr
 
 NSS can also be cloned with mercurial
 
@@ -97,7 +96,7 @@ e.g. `NSS_TESTS=ssl_gtests ./all.sh` or by changing into the according directory
 and running the bash script there `cd ssl_gtests && ./ssl_gtests.sh`.  The
 following tests are available:
 
-    cipher lowhash libpkix cert dbtests tools fips sdr crmf smime ssl ocsp merge pkits chains ec gtests ssl_gtests bogo policy
+    cipher lowhash libpkix cert dbtests tools fips sdr smime ssl ocsp merge pkits chains ec gtests ssl_gtests bogo policy
 
 To make tests run faster it's recommended to set `NSS_CYCLES=standard` to run
 only the standard cycle.

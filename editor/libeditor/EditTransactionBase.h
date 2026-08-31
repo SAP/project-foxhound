@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,6 +60,8 @@ class EditTransactionBase : public nsITransaction {
   NS_DECL_GETASTRANSACTION_BASE(InsertTextTransaction)
   NS_DECL_GETASTRANSACTION_BASE(JoinNodesTransaction)
   NS_DECL_GETASTRANSACTION_BASE(MoveNodeTransaction)
+  NS_DECL_GETASTRANSACTION_BASE(MoveNodeTransactionBase)
+  NS_DECL_GETASTRANSACTION_BASE(MoveSiblingsTransaction)
   NS_DECL_GETASTRANSACTION_BASE(PlaceholderTransaction)
   NS_DECL_GETASTRANSACTION_BASE(ReplaceTextTransaction)
   NS_DECL_GETASTRANSACTION_BASE(SplitNodeTransaction)

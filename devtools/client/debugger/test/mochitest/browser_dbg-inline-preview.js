@@ -8,7 +8,6 @@
 
 add_task(async function testInlinePreviews() {
   await pushPref("devtools.debugger.features.inline-preview", true);
-  await pushPref("javascript.options.experimental.import_attributes", true);
 
   const dbg = await initDebugger(
     "doc-inline-preview.html",
@@ -57,71 +56,125 @@ add_task(async function testInlinePreviews() {
   await resume(dbg);
   await onReload;
 
-  await invokeFunctionAndAssertInlinePreview(dbg, "checkValues", [
-    { previews: [{ identifier: "a:", value: '""' }], line: 2 },
-    { previews: [{ identifier: "b:", value: "false" }], line: 3 },
-    { previews: [{ identifier: "c:", value: "undefined" }], line: 4 },
-    { previews: [{ identifier: "d:", value: "null" }], line: 5 },
-    { previews: [{ identifier: "e:", value: "Array []" }], line: 6 },
-    { previews: [{ identifier: "f:", value: "Object { }" }], line: 7 },
-    {
-      previews: [{ identifier: "reg:", value: "/^\\p{RGI_Emoji}$/v" }],
-      line: 8,
-    },
-    { previews: [{ identifier: "obj:", value: "Object { foo: 1 }" }], line: 9 },
-    {
-      previews: [
-        {
-          identifier: "bs:",
-          value: "Array(101) [ {…}, {…}, {…}, … ]",
-        },
-      ],
-      line: 13,
-    },
-  ]);
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "checkValues",
+    expectedInlinePreviews: [
+      { previews: [{ identifier: "a:", value: '""' }], line: 2 },
+      { previews: [{ identifier: "b:", value: "false" }], line: 3 },
+      { previews: [{ identifier: "c:", value: "undefined" }], line: 4 },
+      { previews: [{ identifier: "d:", value: "null" }], line: 5 },
+      { previews: [{ identifier: "e:", value: "Array []" }], line: 6 },
+      { previews: [{ identifier: "f:", value: "Object { }" }], line: 7 },
+      {
+        previews: [{ identifier: "reg:", value: "/^\\p{RGI_Emoji}$/v" }],
+        line: 8,
+      },
+      {
+        previews: [{ identifier: "obj:", value: "Object { foo: 1 }" }],
+        line: 9,
+      },
+      {
+        previews: [
+          {
+            identifier: "bs:",
+            value: "Array(101) [ {…}, {…}, {…}, … ]",
+          },
+        ],
+        line: 13,
+      },
+    ],
+  });
 
-  await invokeFunctionAndAssertInlinePreview(dbg, "columnWise", [
-    { previews: [{ identifier: "a:", value: '"a"' }], line: 21 },
-    { previews: [{ identifier: "b:", value: '"b"' }], line: 22 },
-    { previews: [{ identifier: "c:", value: '"c"' }], line: 23 },
-  ]);
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "columnWise",
+    expectedInlinePreviews: [
+      { previews: [{ identifier: "a:", value: '"a"' }], line: 21 },
+      { previews: [{ identifier: "b:", value: '"b"' }], line: 22 },
+      { previews: [{ identifier: "c:", value: '"c"' }], line: 23 },
+    ],
+  });
 
   // Check that referencing an object property previews the property, not the object (bug 1599917)
-  await invokeFunctionAndAssertInlinePreview(dbg, "objectProperties", [
-    {
-      previews: [
-        {
-          identifier: "obj:",
-          value: 'Object { hello: "world", a: {…} }',
-        },
-      ],
-      line: 29,
-    },
-    { previews: [{ identifier: "obj.hello:", value: '"world"' }], line: 30 },
-    { previews: [{ identifier: "obj.a.b:", value: '"c"' }], line: 31 },
-  ]);
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "objectProperties",
+    expectedInlinePreviews: [
+      {
+        previews: [
+          {
+            identifier: "obj:",
+            value: 'Object { hello: "world", a: {…} }',
+          },
+        ],
+        line: 29,
+      },
+      { previews: [{ identifier: "obj.hello:", value: '"world"' }], line: 30 },
+      { previews: [{ identifier: "obj.a.b:", value: '"c"' }], line: 31 },
+    ],
+  });
 
-  await invokeFunctionAndAssertInlinePreview(dbg, "classProperties", [
-    {
-      previews: [
-        { identifier: "i:", value: "2" },
-        { identifier: "this.x:", value: "1" },
-      ],
-      line: 43,
-    },
-    {
-      previews: [
-        { identifier: "self:", value: `Object { x: 1, #privateVar: 2 }` },
-      ],
-      line: 44,
-    },
-  ]);
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "classProperties",
+    expectedInlinePreviews: [
+      {
+        previews: [
+          { identifier: "i:", value: "2" },
+          { identifier: "this.x:", value: "1" },
+        ],
+        line: 43,
+      },
+      {
+        previews: [
+          { identifier: "self:", value: `Object { x: 1, #privateVar: 2 }` },
+        ],
+        line: 44,
+      },
+    ],
+  });
+
+  // Checks __proto__ variable/argument are displayed
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "protoArg",
+    fnArgs: ["tomato"],
+    expectedInlinePreviews: [
+      {
+        previews: [{ identifier: "__proto__:", value: `"tomato"` }],
+        line: 74,
+      },
+    ],
+  });
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "protoVar",
+    expectedInlinePreviews: [
+      {
+        previews: [{ identifier: "__proto__:", value: `"lemon"` }],
+        line: 79,
+      },
+    ],
+  });
+
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "innerBlockHoistedFuncDecl",
+    expectedInlinePreviews: [
+      { previews: [{ identifier: "foo:", value: "function foo()" }], line: 90 },
+    ],
+  });
 
   // Check inline previews for values within a module script
-  await invokeFunctionAndAssertInlinePreview(dbg, "runInModule", [
-    { previews: [{ identifier: "val:", value: "4" }], line: 20 },
-    { previews: [{ identifier: "ids:", value: "Array [ 1, 2 ]" }], line: 21 },
-  ]);
+  await invokeFunctionAndAssertInlinePreview({
+    dbg,
+    fnName: "runInModule",
+    expectedInlinePreviews: [
+      { previews: [{ identifier: "val:", value: "4" }], line: 20 },
+      { previews: [{ identifier: "ids:", value: "Array [ 1, 2 ]" }], line: 21 },
+    ],
+  });
 
   // Make sure the next breakpoint source is selected, parsed etc...
   // Bug 1974236: This should not be necessary.
@@ -189,10 +242,10 @@ add_task(async function testInlinePreviewsWithExplicitResourceManagement() {
   );
   await onPaused;
 
-  await invokeFunctionAndAssertInlinePreview(
+  await invokeFunctionAndAssertInlinePreview({
     dbg,
-    "explicitResourceManagement",
-    [
+    fnName: "explicitResourceManagement",
+    expectedInlinePreviews: [
       {
         previews: [
           {
@@ -202,18 +255,28 @@ add_task(async function testInlinePreviewsWithExplicitResourceManagement() {
         ],
         line: 3,
       },
-    ]
-  );
+      {
+        previews: [
+          {
+            identifier: "erm.foo:",
+            value: "42",
+          },
+        ],
+        line: 7,
+      },
+    ],
+  });
 
   await dbg.toolbox.closeToolbox();
 });
 
-async function invokeFunctionAndAssertInlinePreview(
+async function invokeFunctionAndAssertInlinePreview({
   dbg,
   fnName,
-  expectedInlinePreviews
-) {
-  invokeInTab(fnName);
+  fnArgs = [],
+  expectedInlinePreviews,
+}) {
+  invokeInTab(fnName, ...fnArgs);
   await assertInlinePreviews(dbg, expectedInlinePreviews, fnName);
   await resume(dbg);
 }

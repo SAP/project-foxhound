@@ -12,7 +12,7 @@ add_task(async function () {
   const { panel, tab } = await openNewTabAndApplicationPanel(TAB_URL);
   const doc = panel.panelWin.document;
 
-  selectPage(panel, "service-workers");
+  await selectPage(panel, "service-workers");
 
   info("Check for non-existing service worker");
   const isWorkerListEmpty = !!doc.querySelector(".js-registration-list-empty");

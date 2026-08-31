@@ -1,18 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: ekr@rtfm.com
 
-#ifndef mtransport_test_utils_h__
-#define mtransport_test_utils_h__
+#ifndef mtransport_test_utils_h_
+#define mtransport_test_utils_h_
 
 #include "nsCOMPtr.h"
-#include "nsNetCID.h"
-
 #include "nsISerialEventTarget.h"
+#include "nsNetCID.h"
 #include "nsPISocketTransportService.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
@@ -36,7 +33,7 @@ class MtransportTestUtils {
   nsresult SyncDispatchToSTS(nsIRunnable* aRunnable) {
     return SyncDispatchToSTS(do_AddRef(aRunnable));
   }
-  nsresult SyncDispatchToSTS(already_AddRefed<nsIRunnable>&& aRunnable) {
+  nsresult SyncDispatchToSTS(already_AddRefed<nsIRunnable> aRunnable) {
     return NS_DispatchAndSpinEventLoopUntilComplete(
         "MtransportTestUtils::SyncDispatchToSts"_ns, sts_target_,
         std::move(aRunnable));

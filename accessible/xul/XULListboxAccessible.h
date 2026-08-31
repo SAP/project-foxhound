@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_XULListboxAccessible_h__
-#define mozilla_a11y_XULListboxAccessible_h__
+#ifndef mozilla_a11y_XULListboxAccessible_h_
+#define mozilla_a11y_XULListboxAccessible_h_
 
 #include "BaseAccessibles.h"
 #include "mozilla/a11y/TableAccessible.h"
@@ -84,7 +83,7 @@ class XULListboxAccessible : public XULSelectControlAccessible,
   virtual LocalAccessible* ContainerWidget() const override;
 
  protected:
-  virtual ~XULListboxAccessible() {}
+  virtual ~XULListboxAccessible() = default;
 
   bool IsMulticolumn() const { return ColCount() > 1; }
 };
@@ -102,7 +101,7 @@ class XULListitemAccessible : public XULMenuitemAccessible {
   XULListitemAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // LocalAccessible
-  virtual void Description(nsString& aDesc) const override;
+  virtual EDescriptionValueFlag Description(nsString& aDesc) const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
   virtual uint64_t NativeInteractiveState() const override;

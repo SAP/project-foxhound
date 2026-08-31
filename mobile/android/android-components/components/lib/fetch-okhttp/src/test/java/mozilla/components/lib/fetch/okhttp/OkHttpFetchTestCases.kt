@@ -8,9 +8,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.concept.fetch.Client
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.tooling.fetch.tests.FetchTestCases
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class OkHttpFetchTestCases : FetchTestCases() {
@@ -22,6 +22,6 @@ class OkHttpFetchTestCases : FetchTestCases() {
     @Test
     fun `Client instance`() {
         // We need at least one test case defined here so that this is recognized as test class.
-        assertTrue(createNewClient() is OkHttpClient)
+        assertIs<OkHttpClient>(createNewClient())
     }
 }

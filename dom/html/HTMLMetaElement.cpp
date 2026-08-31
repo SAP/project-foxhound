@@ -1,22 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/HTMLMetaElement.h"
-#include "mozilla/dom/HTMLMetaElementBinding.h"
-#include "mozilla/dom/nsCSPService.h"
-#include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/ViewportMetaData.h"
+
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/HTMLMetaElementBinding.h"
+#include "mozilla/dom/ViewportMetaData.h"
+#include "mozilla/dom/nsCSPService.h"
+#include "mozilla/dom/nsCSPUtils.h"
 #include "nsContentUtils.h"
+#include "nsIXMLContentSink.h"
 #include "nsSandboxFlags.h"
 #include "nsStyleConsts.h"
-#include "nsIXMLContentSink.h"
 
 static mozilla::LazyLogModule gMetaElementLog("nsMetaElement");
 #define LOG(msg) MOZ_LOG(gMetaElementLog, mozilla::LogLevel::Debug, msg)
@@ -27,7 +26,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Meta)
 namespace mozilla::dom {
 
 HTMLMetaElement::HTMLMetaElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
 HTMLMetaElement::~HTMLMetaElement() = default;

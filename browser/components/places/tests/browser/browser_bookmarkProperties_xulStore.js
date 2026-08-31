@@ -33,7 +33,7 @@ add_task(async function () {
 
     tree.selectNode(firstFolder);
     info("Synthesize click on selected node to open it.");
-    synthesizeClickOnSelectedTreeCell(tree);
+    await synthesizeClickOnSelectedTreeCell(tree);
     info(`Get the hashed uri starts with "place:" and hash key&value pairs.`);
     let hashedKey = PlacesUIUtils.obfuscateUrlForXulStore(firstFolder.uri);
 

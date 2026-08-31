@@ -8,7 +8,6 @@ import android.view.LayoutInflater
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.R
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.content.ContextCompat.getColor
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,7 +19,6 @@ import mozilla.components.concept.menu.candidate.SmallMenuCandidate
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,6 +26,9 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.verify
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import androidx.appcompat.R as appcompatR
 
 @RunWith(AndroidJUnit4::class)
 class BrowserMenuItemToolbarTest {
@@ -81,17 +82,17 @@ class BrowserMenuItemToolbarTest {
     fun `items are added as ImageButton to view group`() {
         val buttons = listOf(
             BrowserMenuItemToolbar.Button(
-                R.drawable.abc_ic_ab_back_material,
+                appcompatR.drawable.abc_ic_ab_back_material,
                 "Button01",
             ) {},
             BrowserMenuItemToolbar.Button(
-                R.drawable.abc_ic_ab_back_material,
+                appcompatR.drawable.abc_ic_ab_back_material,
                 "Button02",
             ) {},
             BrowserMenuItemToolbar.TwoStateButton(
-                primaryImageResource = R.drawable.abc_ic_go_search_api_material,
+                primaryImageResource = appcompatR.drawable.abc_ic_go_search_api_material,
                 primaryContentDescription = "TwoStatePrimary",
-                secondaryImageResource = R.drawable.abc_ic_clear_material,
+                secondaryImageResource = appcompatR.drawable.abc_ic_clear_material,
                 secondaryContentDescription = "TwoStateSecondary",
             ) {},
         )
@@ -108,9 +109,9 @@ class BrowserMenuItemToolbarTest {
         val child2 = layout.getChildAt(1)
         val child3 = layout.getChildAt(2)
 
-        assertTrue(child1 is ImageButton)
-        assertTrue(child2 is ImageButton)
-        assertTrue(child3 is ImageButton)
+        assertIs<ImageButton>(child1)
+        assertIs<ImageButton>(child2)
+        assertIs<ImageButton>(child3)
 
         assertEquals("Button01", child1.contentDescription)
         assertEquals("Button02", child2.contentDescription)
@@ -121,9 +122,9 @@ class BrowserMenuItemToolbarTest {
     fun `Disabled Button is not enabled`() {
         val buttons = listOf(
             BrowserMenuItemToolbar.Button(
-                imageResource = R.drawable.abc_ic_go_search_api_material,
+                imageResource = appcompatR.drawable.abc_ic_go_search_api_material,
                 contentDescription = "Button01",
-                iconTintColorResource = R.color.accent_material_light,
+                iconTintColorResource = appcompatR.color.accent_material_light,
                 isEnabled = { false },
             ) {},
         )
@@ -144,7 +145,7 @@ class BrowserMenuItemToolbarTest {
         var isEnabled = false
         val buttons = listOf(
             BrowserMenuItemToolbar.Button(
-                imageResource = R.drawable.abc_ic_go_search_api_material,
+                imageResource = appcompatR.drawable.abc_ic_go_search_api_material,
                 contentDescription = "Button01",
                 isEnabled = { isEnabled },
             ) {},
@@ -169,9 +170,9 @@ class BrowserMenuItemToolbarTest {
     fun `Disabled TwoState Button in secondary state is disabled`() {
         val buttons = listOf(
             BrowserMenuItemToolbar.TwoStateButton(
-                primaryImageResource = R.drawable.abc_ic_go_search_api_material,
+                primaryImageResource = appcompatR.drawable.abc_ic_go_search_api_material,
                 primaryContentDescription = "TwoStateEnabled",
-                secondaryImageResource = R.drawable.abc_ic_clear_material,
+                secondaryImageResource = appcompatR.drawable.abc_ic_clear_material,
                 secondaryContentDescription = "TwoStateDisabled",
                 isInPrimaryState = { false },
                 disableInSecondaryState = true,
@@ -191,26 +192,26 @@ class BrowserMenuItemToolbarTest {
 
     @Test
     fun `TwoStateButton has primary and secondary state invoked`() {
-        val primaryResource = R.drawable.abc_ic_go_search_api_material
-        val secondaryResource = R.drawable.abc_ic_clear_material
+        val primaryResource = appcompatR.drawable.abc_ic_go_search_api_material
+        val secondaryResource = appcompatR.drawable.abc_ic_clear_material
 
         var reloadPageAction = BrowserMenuItemToolbar.TwoStateButton(
             primaryImageResource = primaryResource,
             primaryContentDescription = "primary",
-            primaryImageTintResource = R.color.accent_material_dark,
+            primaryImageTintResource = appcompatR.color.accent_material_dark,
             secondaryImageResource = secondaryResource,
             secondaryContentDescription = "secondary",
-            secondaryImageTintResource = R.color.accent_material_light,
+            secondaryImageTintResource = appcompatR.color.accent_material_light,
         ) {}
         assertTrue(reloadPageAction.isInPrimaryState.invoke())
 
         reloadPageAction = BrowserMenuItemToolbar.TwoStateButton(
             primaryImageResource = primaryResource,
             primaryContentDescription = "primary",
-            primaryImageTintResource = R.color.accent_material_dark,
+            primaryImageTintResource = appcompatR.color.accent_material_dark,
             secondaryImageResource = secondaryResource,
             secondaryContentDescription = "secondary",
-            secondaryImageTintResource = R.color.accent_material_light,
+            secondaryImageTintResource = appcompatR.color.accent_material_light,
             isInPrimaryState = { false },
         ) {}
         assertFalse(reloadPageAction.isInPrimaryState.invoke())
@@ -221,9 +222,9 @@ class BrowserMenuItemToolbarTest {
         var isInPrimaryState = true
         val buttons = listOf(
             BrowserMenuItemToolbar.TwoStateButton(
-                primaryImageResource = R.drawable.abc_ic_go_search_api_material,
+                primaryImageResource = appcompatR.drawable.abc_ic_go_search_api_material,
                 primaryContentDescription = "TwoStateEnabled",
-                secondaryImageResource = R.drawable.abc_ic_clear_material,
+                secondaryImageResource = appcompatR.drawable.abc_ic_clear_material,
                 secondaryContentDescription = "TwoStateDisabled",
                 isInPrimaryState = { isInPrimaryState },
             ) {},
@@ -247,9 +248,9 @@ class BrowserMenuItemToolbarTest {
     fun `TwoStateButton doesn't redraw if state hasn't changed`() {
         val isInPrimaryState = true
         val button = BrowserMenuItemToolbar.TwoStateButton(
-            primaryImageResource = R.drawable.abc_ic_go_search_api_material,
+            primaryImageResource = appcompatR.drawable.abc_ic_go_search_api_material,
             primaryContentDescription = "TwoStateEnabled",
-            secondaryImageResource = R.drawable.abc_ic_clear_material,
+            secondaryImageResource = appcompatR.drawable.abc_ic_clear_material,
             secondaryContentDescription = "TwoStateDisabled",
             isInPrimaryState = { isInPrimaryState },
             disableInSecondaryState = true,
@@ -271,7 +272,7 @@ class BrowserMenuItemToolbarTest {
         var callbackInvoked = false
 
         val button = BrowserMenuItemToolbar.Button(
-            R.drawable.abc_ic_ab_back_material,
+            appcompatR.drawable.abc_ic_ab_back_material,
             "Test",
         ) {
             callbackInvoked = true
@@ -303,7 +304,7 @@ class BrowserMenuItemToolbarTest {
         var callbackInvoked = false
 
         val button = BrowserMenuItemToolbar.Button(
-            R.drawable.abc_ic_ab_back_material,
+            appcompatR.drawable.abc_ic_ab_back_material,
             "Test",
             longClickListener = {
                 callbackInvoked = true
@@ -345,21 +346,21 @@ class BrowserMenuItemToolbarTest {
         val toolbarWithTwoState = BrowserMenuItemToolbar(
             listOf(
                 BrowserMenuItemToolbar.Button(
-                    R.drawable.abc_ic_ab_back_material,
+                    appcompatR.drawable.abc_ic_ab_back_material,
                     "Button01",
                     isEnabled = { isEnabled },
                     listener = listener,
                 ),
                 BrowserMenuItemToolbar.Button(
-                    R.drawable.abc_ic_ab_back_material,
+                    appcompatR.drawable.abc_ic_ab_back_material,
                     "Button02",
-                    iconTintColorResource = R.color.accent_material_light,
+                    iconTintColorResource = appcompatR.color.accent_material_light,
                     listener = listener,
                 ),
                 BrowserMenuItemToolbar.TwoStateButton(
-                    primaryImageResource = R.drawable.abc_ic_go_search_api_material,
+                    primaryImageResource = appcompatR.drawable.abc_ic_go_search_api_material,
                     primaryContentDescription = "TwoStatePrimary",
-                    secondaryImageResource = R.drawable.abc_ic_clear_material,
+                    secondaryImageResource = appcompatR.drawable.abc_ic_clear_material,
                     secondaryContentDescription = "TwoStateSecondary",
                     isInPrimaryState = { isInPrimaryState },
                     listener = listener,
@@ -380,7 +381,7 @@ class BrowserMenuItemToolbarTest {
                         "Button02",
                         icon = DrawableMenuIcon(
                             null,
-                            tint = getColor(testContext, R.color.accent_material_light),
+                            tint = getColor(testContext, appcompatR.color.accent_material_light),
                         ),
                         onClick = listener,
                     ),
@@ -416,7 +417,7 @@ class BrowserMenuItemToolbarTest {
                         "Button02",
                         icon = DrawableMenuIcon(
                             null,
-                            tint = getColor(testContext, R.color.accent_material_light),
+                            tint = getColor(testContext, appcompatR.color.accent_material_light),
                         ),
                         onClick = listener,
                     ),

@@ -256,13 +256,31 @@ assert_return(
   [i32x4([0x2, 0x2, 0x2, 0x2])],
 );
 
-// ./test/core/simd/simd_i32x4_dot_i16x8.wast:90
+// ./test/core/simd/simd_i32x4_dot_i16x8.wast:89
+assert_return(
+  () => invoke($0, `i32x4.dot_i16x8_s`, [
+    i16x8([0x8000, 0xffff, 0x8000, 0xffff, 0x8000, 0xffff, 0x8000, 0xffff]),
+    i16x8([0x8001, 0x0, 0x8001, 0x0, 0x8001, 0x0, 0x8001, 0x0]),
+  ]),
+  [i32x4([0x3fff8000, 0x3fff8000, 0x3fff8000, 0x3fff8000])],
+);
+
+// ./test/core/simd/simd_i32x4_dot_i16x8.wast:93
+assert_return(
+  () => invoke($0, `i32x4.dot_i16x8_s`, [
+    i16x8([0x6f, 0xde, 0x14d, 0x1bc, 0x22b, 0x29a, 0x309, 0x378]),
+    i16x8([0x457, 0x8ae, 0xd05, 0x115c, 0x15b3, 0x1a0a, 0x1e61, 0x22b8]),
+  ]),
+  [i32x4([0x9689d, 0x2f0b11, 0x72c915, 0xd4a2a9])],
+);
+
+// ./test/core/simd/simd_i32x4_dot_i16x8.wast:99
 assert_invalid(
   () => instantiate(`(module (func (result v128) (i32x4.dot_i16x8_s (i32.const 0) (f32.const 0.0))))`),
   `type mismatch`,
 );
 
-// ./test/core/simd/simd_i32x4_dot_i16x8.wast:94
+// ./test/core/simd/simd_i32x4_dot_i16x8.wast:103
 assert_invalid(
   () => instantiate(`(module
     (func \$i32x4.dot_i16x8_s-1st-arg-empty (result v128)
@@ -272,7 +290,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/simd/simd_i32x4_dot_i16x8.wast:102
+// ./test/core/simd/simd_i32x4_dot_i16x8.wast:111
 assert_invalid(
   () => instantiate(`(module
     (func \$i32x4.dot_i16x8_s-arg-empty (result v128)

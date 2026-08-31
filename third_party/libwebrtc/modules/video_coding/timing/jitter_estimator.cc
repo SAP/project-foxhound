@@ -10,22 +10,21 @@
 
 #include "modules/video_coding/timing/jitter_estimator.h"
 
-#include <math.h>
-#include <string.h>
-
 #include <algorithm>
-#include <cstdint>
+#include <cmath>
+#include <cstring>
 #include <optional>
 
+#include "absl/strings/string_view.h"
 #include "api/field_trials_view.h"
 #include "api/units/data_size.h"
 #include "api/units/frequency.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "modules/video_coding/timing/frame_delay_variation_kalman_filter.h"
 #include "modules/video_coding/timing/rtt_filter.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/numerics/safe_conversions.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -73,18 +72,18 @@ constexpr TimeDelta kMaxJitterEstimate = TimeDelta::Seconds(10);
 // decoding delay estimate.
 constexpr TimeDelta OPERATING_SYSTEM_JITTER = TimeDelta::Millis(10);
 
-// Time constant for reseting the NACK count.
+// Time constant for resetting the NACK count.
 constexpr TimeDelta kNackCountTimeout = TimeDelta::Seconds(60);
 
 // RTT mult activation.
-constexpr size_t kNackLimit = 3;
+constexpr int kNackLimit = 3;
+constexpr double kRttMult = 0.9;
+constexpr TimeDelta kRttMultAddCap = TimeDelta::Millis(200);
 
 // Frame rate estimate clamping limit.
 constexpr Frequency kMaxFramerateEstimate = Frequency::Hertz(200);
 
 }  // namespace
-
-constexpr char JitterEstimator::Config::kFieldTrialsKey[];
 
 JitterEstimator::Config JitterEstimator::Config::ParseAndValidate(
     absl::string_view field_trial) {
@@ -108,7 +107,9 @@ JitterEstimator::Config JitterEstimator::Config::ParseAndValidate(
     config.frame_size_window = 1;
   }
 
-  // General sanity checks.
+  // General validation checks.
+  // TODO(brandtr): We should probably unset the fields here rather than setting
+  // them to zero.
   if (config.num_stddev_delay_clamp && config.num_stddev_delay_clamp < 0.0) {
     RTC_LOG(LS_ERROR) << "Skipping invalid num_stddev_delay_clamp="
                       << *config.num_stddev_delay_clamp;
@@ -124,6 +125,16 @@ JitterEstimator::Config JitterEstimator::Config::ParseAndValidate(
     RTC_LOG(LS_ERROR) << "Skipping invalid num_stddev_size_outlier="
                       << *config.num_stddev_size_outlier;
     config.num_stddev_size_outlier = 0.0;
+  }
+  if (config.nack_limit && *config.nack_limit < 0) {
+    RTC_LOG(LS_ERROR) << "Skipping invalid nack_limit=" << *config.nack_limit;
+    config.nack_limit = std::nullopt;
+  }
+  if (config.nack_count_timeout &&
+      *config.nack_count_timeout <= TimeDelta::Zero()) {
+    RTC_LOG(LS_ERROR) << "Skipping invalid nack_count_timeout="
+                      << *config.nack_count_timeout;
+    config.nack_count_timeout = std::nullopt;
   }
 
   return config;
@@ -228,7 +239,8 @@ void JitterEstimator::UpdateEstimate(TimeDelta frame_delay,
       config_.num_stddev_delay_clamp.value_or(kNumStdDevDelayClamp);
   TimeDelta max_time_deviation =
       TimeDelta::Millis(num_stddev_delay_clamp * sqrt(var_noise_ms2_) + 0.5);
-  frame_delay.Clamp(-max_time_deviation, max_time_deviation);
+  frame_delay =
+      std::clamp(frame_delay, -max_time_deviation, max_time_deviation);
 
   double delay_deviation_ms =
       frame_delay.ms() -
@@ -422,24 +434,19 @@ void JitterEstimator::PostProcessEstimate() {
 
 // Returns the current filtered estimate if available,
 // otherwise tries to calculate an estimate.
-TimeDelta JitterEstimator::GetJitterEstimate(
-    double rtt_multiplier,
-    std::optional<TimeDelta> rtt_mult_add_cap) {
+TimeDelta JitterEstimator::GetEstimate() {
   TimeDelta jitter = CalculateEstimate() + OPERATING_SYSTEM_JITTER;
   Timestamp now = clock_->CurrentTime();
 
-  if (now - latest_nack_ > kNackCountTimeout)
+  if (now - latest_nack_ >
+      config_.nack_count_timeout.value_or(kNackCountTimeout)) {
     nack_count_ = 0;
+  }
 
   if (filter_jitter_estimate_ > jitter)
     jitter = filter_jitter_estimate_;
-  if (nack_count_ >= kNackLimit) {
-    if (rtt_mult_add_cap.has_value()) {
-      jitter += std::min(rtt_filter_.Rtt() * rtt_multiplier,
-                         rtt_mult_add_cap.value());
-    } else {
-      jitter += rtt_filter_.Rtt() * rtt_multiplier;
-    }
+  if (nack_count_ >= config_.nack_limit.value_or(kNackLimit)) {
+    jitter += std::min(rtt_filter_.Rtt() * kRttMult, kRttMultAddCap);
   }
 
   static const Frequency kJitterScaleLowThreshold = Frequency::Hertz(5);

@@ -1,0 +1,60 @@
+{
+  "color": {
+    "@base": {
+      "value": {
+        "light": "{color.gray.30}",
+        "dark": "{color.gray.45}",
+        "forcedColors": "CanvasText"
+      }
+    },
+    "transparent": {
+      "value": {
+        "default": "transparent",
+        "forcedColors": "CanvasText"
+      }
+    },
+    "deemphasized": {
+      "@base": {
+        "value": {
+          "light": "{color.gray.20}",
+          "dark": "{color.gray.55}",
+          "forcedColors": "CanvasText"
+        }
+      }
+    },
+    "interactive": {
+      "@base": {
+        "value": {
+          "light": "{color.gray.35}",
+          "dark": "{color.gray.45}",
+          "forcedColors": "ButtonText"
+        }
+      },
+      "disabled": {
+        "value": {
+          "light": "{color.gray.25}",
+          "dark": "{color.gray.60}",
+          "forcedColors": "GrayText"
+        }
+      }
+    },
+    "error": {
+      "value": {
+        "light": "{color.red.50}",
+        "dark": "{color.red.20}",
+        "forcedColors": "{border.color.@base}"
+      }
+    }
+  },
+  "radius": {
+    "large": {
+      "value": "12px"
+    },
+    "xlarge": {
+      "value": "16px"
+    },
+    "xxlarge": {
+      "value": "24px"
+    }
+  }
+}

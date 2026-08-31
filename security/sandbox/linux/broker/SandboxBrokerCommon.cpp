@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 #  define AUTO_PROFILER_THREAD_SLEEP
 #endif
 
+#include <array>  // for std::size
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -38,21 +37,25 @@
 
 namespace mozilla {
 
-const char* SandboxBrokerCommon::OperationDescription[] = {
-    "open",
-    "access",
-    "stat",
-    "chmod",
-    "link",
-    "symlink",
-    "mkdir",
-    "rename",
-    "rmdir",
-    "unlink",
-    "readlink",
-    "connect",
-    "connect-abstract",
-};
+// static
+unsigned SandboxBrokerCommon::OperationToInt(Operation aOp) {
+  MOZ_RELEASE_ASSERT(OperationIsValid(aOp));
+  return static_cast<unsigned>(aOp);
+}
+
+// static
+const char* SandboxBrokerCommon::OperationDescription(Operation aOp) {
+  static constexpr const char* kNames[] = {
+      "open",   "access", "stat",   "chmod",    "link",    "mkdir",
+      "rename", "rmdir",  "unlink", "readlink", "connect", "connect-abstract",
+  };
+
+  static_assert(
+      std::size(kNames) == static_cast<size_t>(SANDBOX_OP_MAX_VALUE) + 1,
+      "each Operation needs a name");
+
+  return kNames[OperationToInt(aOp)];
+}
 
 /* static */
 ssize_t SandboxBrokerCommon::RecvWithFd(int aFd, const iovec* aIO,

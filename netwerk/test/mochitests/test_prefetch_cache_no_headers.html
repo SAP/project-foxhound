@@ -1,0 +1,190 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=1527334
+-->
+<head>
+  <title>Test Prefetch Cache Reuse Without Cache Headers (Bug 1527334)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1527334">Bug 1527334</a>
+<p id="display"></p>
+<pre id="test">
+<script type="application/javascript">
+
+SimpleTest.waitForExplicitFinish();
+
+const SJS_PATH = "/tests/netwerk/test/mochitests/prefetch_cache.sjs";
+
+function getRequestCount(key) {
+  return fetch(`${SJS_PATH}?key=${key}&mode=count`)
+    .then(r => r.text())
+    .then(t => parseInt(t));
+}
+
+function resetCount(key) {
+  return fetch(`${SJS_PATH}?key=${key}&mode=reset`);
+}
+
+function prefetchAndWait(url) {
+  return new Promise((resolve, reject) => {
+    const link = document.createElement("link");
+    link.rel = "prefetch";
+    link.href = url;
+    link.addEventListener("load", () => resolve(link));
+    link.addEventListener("error", () => reject(new Error("prefetch failed")));
+    document.head.appendChild(link);
+  });
+}
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.addEventListener("load", () => {
+      script.remove();
+      resolve();
+    });
+    script.addEventListener("error", () => {
+      script.remove();
+      reject(new Error("script load failed"));
+    });
+    document.body.appendChild(script);
+  });
+}
+
+// Bug 1527334: Prefetch a resource with no cache headers.
+// ForceCacheEntryValidFor should be called, so a subsequent load
+// reuses the prefetched cache entry instead of re-fetching.
+async function testPrefetchCacheNoHeaders() {
+  const key = "no-headers-" + Date.now();
+  const url = `${SJS_PATH}?key=${key}&type=application/javascript`;
+
+  await resetCount(key);
+
+  const link = await prefetchAndWait(url);
+
+  let count = await getRequestCount(key);
+  is(count, 1, "No cache headers: prefetch made exactly one request");
+
+  await loadScript(url);
+
+  count = await getRequestCount(key);
+  is(count, 1,
+     "No cache headers: second load reused prefetched cache entry");
+
+  link.remove();
+}
+
+// Prefetch a resource with max-age=3600.
+// ForceCacheEntryValidFor should NOT be called because the response
+// already has cache headers. The normal cache mechanism handles reuse.
+async function testPrefetchCacheWithMaxAge() {
+  const key = "max-age-" + Date.now();
+  const url = `${SJS_PATH}?key=${key}&type=application/javascript&cache-control=max-age%3D3600`;
+
+  await resetCount(key);
+
+  const link = await prefetchAndWait(url);
+
+  let count = await getRequestCount(key);
+  is(count, 1, "max-age=3600: prefetch made exactly one request");
+
+  await loadScript(url);
+
+  count = await getRequestCount(key);
+  is(count, 1,
+     "max-age=3600: second load reused cache entry via normal caching");
+
+  link.remove();
+}
+
+// Prefetch a resource with no-store.
+// nsPrefetchService cancels the prefetch in OnStartRequest because no-store
+// has MustValidate = true, giving expTime = 0. The HTTP request is still sent
+// so the server count reaches 1, but the body is not downloaded and the cache
+// entry is doomed. The prefetch fires an error event rather than load.
+async function testPrefetchCacheNoStore() {
+  const key = "no-store-" + Date.now();
+  const url = `${SJS_PATH}?key=${key}&type=application/javascript&cache-control=no-store`;
+
+  await resetCount(key);
+
+  const link = await new Promise((resolve) => {
+    const l = document.createElement("link");
+    l.rel = "prefetch";
+    l.href = url;
+    l.addEventListener("load", () => resolve(l));
+    l.addEventListener("error", () => resolve(l));
+    document.head.appendChild(l);
+  });
+
+  let count = await getRequestCount(key);
+  is(count, 1, "no-store: prefetch made exactly one request");
+
+  await loadScript(url);
+
+  count = await getRequestCount(key);
+  is(count, 2,
+     "no-store: second load correctly re-fetched from server");
+
+  link.remove();
+}
+
+// Prefetch a resource with max-age=0 (immediately expired).
+// nsPrefetchService cancels the prefetch in OnStartRequest to avoid wasting
+// bandwidth on a response that must be revalidated. The HTTP request is still
+// sent so the server count reaches 1, but the body is not downloaded and the
+// cache entry is doomed, so the subsequent load re-fetches from the server.
+// Because the prefetch is cancelled, the link fires an error event, not load.
+async function testPrefetchCacheExpiredWithHeaders() {
+  const key = "max-age-0-" + Date.now();
+  const url = `${SJS_PATH}?key=${key}&type=application/javascript&cache-control=max-age%3D0`;
+
+  await resetCount(key);
+
+  const link = await new Promise((resolve) => {
+    const l = document.createElement("link");
+    l.rel = "prefetch";
+    l.href = url;
+    l.addEventListener("load", () => resolve(l));
+    l.addEventListener("error", () => resolve(l));
+    document.head.appendChild(l);
+  });
+
+  let count = await getRequestCount(key);
+  is(count, 1, "max-age=0: prefetch made exactly one request");
+
+  await loadScript(url);
+
+  count = await getRequestCount(key);
+  is(count, 2,
+     "max-age=0: second load re-fetched because server cache directive was respected");
+
+  link.remove();
+}
+
+async function runTests() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["network.prefetch-next", true],
+      ["network.prefetch-next.force-valid-for", 300],
+    ],
+  });
+
+  await testPrefetchCacheNoHeaders();
+  await testPrefetchCacheWithMaxAge();
+  await testPrefetchCacheNoStore();
+  await testPrefetchCacheExpiredWithHeaders();
+
+  SimpleTest.finish();
+}
+
+runTests();
+
+</script>
+</pre>
+</body>
+</html>

@@ -15,6 +15,10 @@ const { TestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TestUtils.sys.mjs"
 );
 
+const { NodeHTTPServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 add_setup(async function setup() {
   h2Port = Services.env.get("MOZHTTP2_PORT");
   Assert.notEqual(h2Port, null);

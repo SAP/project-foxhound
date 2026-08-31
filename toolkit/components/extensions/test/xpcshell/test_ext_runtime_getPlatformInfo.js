@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 function backgroundScript() {
@@ -9,6 +7,7 @@ function backgroundScript() {
       "aarch64",
       "arm",
       "ppc64",
+      "riscv64",
       "s390x",
       "sparc64",
       "x86-32",

@@ -60,9 +60,9 @@ add_task(async function test_pref_initial_value() {
     );
   }
 
-  await Services.search.init();
+  await SearchService.init();
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   let expectedCode =
     SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "enterprise" : "good&id=unique";
   let searchParams = new URL(engine.getSubmission("foo").uri.spec).searchParams;
@@ -85,7 +85,7 @@ add_task(async function test_pref_updated() {
   // Update the pref without re-init nor restart.
   defaultBranch.setCharPref("param.code", "supergood&id=unique123456");
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   let expectedCode =
     SearchUtils.MODIFIED_APP_CHANNEL == "esr"
       ? "enterprise"
@@ -107,7 +107,7 @@ add_task(
     // Note you can't delete a preference from the default branch.
     defaultBranch.setCharPref("param.code", "");
 
-    let engine = Services.search.getEngineById("preferenceEngine");
+    let engine = SearchService.getEngineById("preferenceEngine");
     Assert.equal(
       engine.getSubmission("foo").uri.spec,
       baseURL + "q=foo",
@@ -121,7 +121,7 @@ add_task(async function test_pref_updated_enterprise() {
   defaultBranch.setCharPref("param.code", "supergood&id=unique123456");
   await enableEnterprise();
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "code=enterprise&q=foo",

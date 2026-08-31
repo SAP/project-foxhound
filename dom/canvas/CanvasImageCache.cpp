@@ -1,19 +1,19 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasImageCache.h"
-#include "nsIImageLoadingContent.h"
-#include "nsExpirationTracker.h"
+
+#include "gfx2DGlue.h"
 #include "imgIRequest.h"
-#include "mozilla/dom/Element.h"
-#include "nsTHashtable.h"
-#include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/gfx/2D.h"
-#include "gfx2DGlue.h"
+#include "nsContentUtils.h"
+#include "nsExpirationTracker.h"
+#include "nsIImageLoadingContent.h"
+#include "nsTHashtable.h"
 
 namespace mozilla {
 
@@ -230,7 +230,8 @@ class CanvasImageCacheShutdownObserver final : public nsIObserver {
 };
 
 ImageCache::ImageCache()
-    : nsExpirationTracker<ImageCacheEntryData, 4>(GENERATION_MS, "ImageCache") {
+    : nsExpirationTracker<ImageCacheEntryData, 4>(GENERATION_MS,
+                                                  "ImageCache"_ns) {
   mImageCacheObserver = new ImageCacheObserver(this);
   MOZ_RELEASE_ASSERT(mImageCacheObserver,
                      "GFX: Can't alloc ImageCacheObserver");

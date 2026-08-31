@@ -35,7 +35,7 @@
 .message {
   background-color: var(--message-background-color);
   border: 1px solid var(--message-border-color);
-  border-radius: var(--base-unit);
+  border-radius: var(--border-radius-small);
   color: var(--message-color);
   display: grid;
   grid-column-gap: var(--base-unit);
@@ -58,7 +58,7 @@
 .message__body {
   align-self: center;
   font-size: var(--message-font-size);
-  font-weight: 400;
+  font-weight: normal;
   grid-area: body;
   line-height: 1.6;
 }

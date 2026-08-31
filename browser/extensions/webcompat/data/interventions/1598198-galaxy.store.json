@@ -1,0 +1,19 @@
+{
+  "label": "galaxy.store",
+  "bugs": {
+    "1598198": {
+      "issue": "broken-redirect",
+      "matches": [
+        "*://galaxy.store/*",
+        "*://dev.galaxy.store/*",
+        "*://stg.galaxy.store/*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Samsung_for_Samsung_devices"]
+    }
+  ]
+}

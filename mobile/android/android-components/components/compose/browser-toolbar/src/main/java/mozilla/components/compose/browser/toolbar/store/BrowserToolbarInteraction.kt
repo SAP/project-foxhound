@@ -21,6 +21,14 @@ sealed interface BrowserToolbarInteraction {
      */
     interface BrowserToolbarEvent : BrowserToolbarInteraction, BrowserToolbarAction {
         /**
+         * The interaction source of this event.
+         *
+         * @see [Source]
+         */
+        val source: Source
+            get() = Source.Unknown
+
+        /**
          * Convenience method to combine dispatching a [BrowserToolbarEvent] with
          * showing a [BrowserToolbarMenu] for the same user interaction.
          *
@@ -30,6 +38,49 @@ sealed interface BrowserToolbarInteraction {
             event = this,
             menu = menu,
         )
+
+        /**
+         * Possible sources of a [BrowserToolbarEvent].
+         */
+        sealed interface Source {
+            /**
+             * Sources representing parts of the address bar where an interaction originated.
+             *
+             * Use these to differentiate interactions on the browser/page start/end areas
+             * of the address bar.
+             */
+            sealed interface AddressBar : Source {
+                /**
+                 * The user interacted with a browser start toolbar element.
+                 */
+                data object BrowserStart : AddressBar
+
+                /**
+                 * The user interacted with a page start toolbar element.
+                 */
+                data object PageStart : AddressBar
+
+                /**
+                 * The user interacted with a page end toolbar element.
+                 */
+                data object PageEnd : AddressBar
+
+                /**
+                 * The user interacted with a browser end toolbar element.
+                 */
+                data object BrowserEnd : AddressBar
+            }
+
+            /**
+             * The user interacted with a navigation bar element.
+             */
+            data object NavigationBar : Source
+
+            /**
+             * Default/unknown source when none of the specific sources apply.
+             */
+            data object Unknown : Source
+        }
     }
 
     /**
@@ -94,7 +145,9 @@ sealed class BrowserToolbarMenuItem {
              * The [DrawableRes] as icon for this menu item.
              */
             @JvmInline
-            value class DrawableResIcon(@param:DrawableRes val resourceId: Int) : Icon
+            value class DrawableResIcon(
+                @param:DrawableRes val resourceId: Int,
+            ) : Icon
         }
 
         /**
@@ -111,7 +164,9 @@ sealed class BrowserToolbarMenuItem {
              * The [StringRes] to display as text in this menu item.
              */
             @JvmInline
-            value class StringResText(@param:StringRes val resourceId: Int) : Text
+            value class StringResText(
+                @param:StringRes val resourceId: Int,
+            ) : Text
         }
 
         /**
@@ -128,7 +183,9 @@ sealed class BrowserToolbarMenuItem {
              * The [StringRes] to use as content description of this menu item.
              */
             @JvmInline
-            value class StringResContentDescription(@param:StringRes val resourceId: Int) : ContentDescription
+            value class StringResContentDescription(
+                @param:StringRes val resourceId: Int,
+            ) : ContentDescription
         }
     }
 

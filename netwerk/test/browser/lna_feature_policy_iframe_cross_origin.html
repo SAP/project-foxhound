@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Cross-Origin Iframe</title>
+</head>
+<body>
+<h2>Cross-Origin Iframe (example.org)</h2>
+<div id="status">Ready</div>
+
+<script type="text/javascript">
+  // Auto-trigger fetch on load if rand parameter is present
+  window.addEventListener('load', function() {
+    const params = new URLSearchParams(location.search);
+    const rand = params.get("rand");
+
+    if (rand) {
+      const statusDiv = document.getElementById("status");
+      statusDiv.textContent = "Testing...";
+
+      fetch(`http://localhost:21555/?type=fetch&rand=${rand}`)
+        .then(response => {
+          statusDiv.textContent = "Success: " + response.status;
+          console.log("Fetch succeeded:", response.status);
+        })
+        .catch(error => {
+          statusDiv.textContent = "Error: " + error.message;
+          console.error("Fetch failed:", error);
+        });
+    }
+  });
+</script>
+</body>
+</html>

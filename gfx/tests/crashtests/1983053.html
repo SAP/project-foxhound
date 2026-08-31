@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<script>
+window.addEventListener("load", async () => {
+  // WebRender currently does not support rendering a stacking context snapshot
+  // with non-default imageRendering.
+  // In this case the imageRendering should be ignored but not cause a crash.
+  document.documentElement.style.imageRendering = "crisp-edges"
+  document.startViewTransition(async () => { })
+})
+</script>

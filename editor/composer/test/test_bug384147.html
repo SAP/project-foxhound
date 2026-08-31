@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=384147
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 384147 **/
+/** Test for Bug 384147 */
 
 SimpleTest.waitForExplicitFinish();
 
@@ -53,8 +53,11 @@ addLoadEvent(function() {
   sel.removeAllRanges();
   sel.selectAllChildren(editor.getElementsByTagName("li")[1]);
   document.execCommand("indent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 1");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 1"
+  );
 
   //  *** test 2 ***
   //  1. Item 1                     1. Item 1
@@ -65,8 +68,11 @@ addLoadEvent(function() {
   sel.removeAllRanges();
   sel.selectAllChildren(editor.getElementsByTagName("li")[2]);
   document.execCommand("indent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><ol><li>Item 3</li></ol></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 2");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><ol><li>Item 3</li></ol></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 2"
+  );
 
   //  *** test 3 ***
   //  1. Item 1                       1. Item 1
@@ -75,8 +81,11 @@ addLoadEvent(function() {
   //  * Item 4                        * Item 4
   //  * Item 5                        * Item 5
   document.execCommand("outdent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 3");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 3"
+  );
 
   //  *** test 4 ***
   //  1. Item 1                       1. Item 1
@@ -85,8 +94,11 @@ addLoadEvent(function() {
   //  * Item 4                        * Item 4
   //  * Item 5                        * Item 5
   document.execCommand("outdent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li></ol><li>Item 3</li></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 4");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li></ol><li>Item 3</li></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 4"
+  );
 
   //  *** test 5 ***
   //  1. Item 1                       1. Item 1
@@ -97,8 +109,11 @@ addLoadEvent(function() {
   sel.removeAllRanges();
   sel.selectAllChildren(editor.getElementsByTagName("li")[1]);
   document.execCommand("outdent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><li>Item 2</li><li>Item 3</li></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 5");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><li>Item 2</li><li>Item 3</li></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 5"
+  );
 
   //  *** test 6 ***
   //  1. Item 1                       1. Item 1
@@ -107,8 +122,11 @@ addLoadEvent(function() {
   //  * Item 4                        * Item 4
   //  * Item 5                        * Item 5
   document.execCommand("indent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li></ol><li>Item 3</li></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 6");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li></ol><li>Item 3</li></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 6"
+  );
 
   //  *** test 7 ***
   //  1. Item 1                       1. Item 1
@@ -119,8 +137,11 @@ addLoadEvent(function() {
   sel.removeAllRanges();
   sel.selectAllChildren(editor.getElementsByTagName("li")[2]);
   document.execCommand("indent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 7");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 7"
+  );
 
   // That covers the basics of merging lists on indent and outdent.
   // We also want to check that ul / ol lists won't be merged together,
@@ -134,8 +155,11 @@ addLoadEvent(function() {
   sel.removeAllRanges();
   sel.selectAllChildren(editor.getElementsByTagName("li")[3]);
   document.execCommand("indent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><ul><li>Item 4</li></ul><li>Item 5</li></ul>",
-    "html output doesn't match expected value in test 8");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><ul><li>Item 4</li></ul><li>Item 5</li></ul>",
+    "html output doesn't match expected value in test 8"
+  );
 
   // Better test merging with <ul> rather than <ol> too.
   //  *** test 9 ***
@@ -147,8 +171,11 @@ addLoadEvent(function() {
   sel.removeAllRanges();
   sel.selectAllChildren(editor.getElementsByTagName("li")[4]);
   document.execCommand("indent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><ul><li>Item 4</li><li>Item 5</li></ul></ul>",
-    "html output doesn't match expected value in test 9");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><ul><li>Item 4</li><li>Item 5</li></ul></ul>",
+    "html output doesn't match expected value in test 9"
+  );
 
   // Same test as test 8, but with outdent rather than indent.
   //  *** test 10 ***
@@ -160,8 +187,11 @@ addLoadEvent(function() {
   sel.removeAllRanges();
   sel.selectAllChildren(editor.getElementsByTagName("li")[3]);
   document.execCommand("outdent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><ul><li>Item 5</li></ul></ul>",
-    "html output doesn't match expected value in test 10");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><ul><li>Item 5</li></ul></ul>",
+    "html output doesn't match expected value in test 10"
+  );
 
   // Test indenting multiple items at once.  Hold down "shift" and select
   // upwards to get all the <ol> items and the first <ul> item.
@@ -177,8 +207,11 @@ addLoadEvent(function() {
   range.setEnd(editor.getElementsByTagName("li")[3], editor.getElementsByTagName("li")[3].childNodes.length);
   sel.addRange(range);
   document.execCommand("indent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><ol><li>Item 2</li><li>Item 3</li></ol></ol></ol><ul><ul><li>Item 4</li><li>Item 5</li></ul></ul>",
-    "html output doesn't match expected value in test 11");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><ol><li>Item 2</li><li>Item 3</li></ol></ol></ol><ul><ul><li>Item 4</li><li>Item 5</li></ul></ul>",
+    "html output doesn't match expected value in test 11"
+  );
 
   // Test outdenting multiple items at once.  Selection is already ready...
   //  *** test 12 ***
@@ -188,8 +221,11 @@ addLoadEvent(function() {
   //    * {\st}Item 4                 * Item 4
   //    * Item 5                        * Item 5
   document.execCommand("outdent", false, null);
-  ok(editor.innerHTML == "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><ul><li>Item 5</li></ul></ul>",
-    "html output doesn't match expected value in test 12");
+  is(
+    editor.innerHTML,
+    "<ol><li>Item 1</li><ol><li>Item 2</li><li>Item 3</li></ol></ol><ul><li>Item 4</li><ul><li>Item 5</li></ul></ul>",
+    "html output doesn't match expected value in test 12"
+  );
 
   SimpleTest.finish();
 });

@@ -1,0 +1,37 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+
+@template
+def PDFVerificationCertGen(name, specification):
+    if not CONFIG["COMPILE_ENVIRONMENT"]:
+        return
+
+    GENERATED_FILES += [name]
+    props = GENERATED_FILES[name]
+    props.script = "/security/manager/tools/pycms.py"
+    props.inputs = [specification]
+    files = TEST_HARNESS_FILES.xpcshell
+    for part in RELATIVEDIR.split("/"):
+        files = files[part]
+    files += ["!%s" % name]
+
+
+# The first argument is the output, the second argument is the specification used to generate the cms message
+# PDFVerificationCertGen('cert_correct.p7s', 'cert_correct.pkcs7spec')
+# PDFVerificationCertGen('no_certificate.p7s', 'no_certificate.pkcs7spec')
+# PDFVerificationCertGen('no_signer_info.p7s', 'no_signer_info.pkcs7spec')
+# PDFVerificationCertGen('md5_signer_info.p7s', 'md5_signer_info.pkcs7spec')
+# PDFVerificationCertGen('cert_sha2_wrong_len.p7s', 'cert_sha2_wrong_len.pkcs7spec')
+# PDFVerificationCertGen('two_correct_signatures.p7s', 'two_correct_signatures.pkcs7spec')
+# PDFVerificationCertGen('cert_with_incorrect_signature.p7s', 'cert_with_incorrect_signature.pkcs7spec')
+# PDFVerificationCertGen('one_correct_one_incorrect_hash.p7s', 'one_correct_one_incorrect_hash.pkcs7spec')
+# PDFVerificationCertGen('one_correct_one_incorrect_signature.p7s', 'one_correct_one_incorrect_signature.pkcs7spec')
+# PDFVerificationCertGen('certificate_two_data_inputs.p7s', 'certificate_two_data_inputs.pkcs7spec')
+# PDFVerificationCertGen('ca_expired.p7s', 'ca_expired.pkcs7spec')
+# PDFVerificationCertGen('correct_with_ca.p7s', 'correct_with_ca.pkcs7spec')
+
+# To generate a new entry, add PDFVerificationCertGen, run mach build and copy from
+# objdir/_tests/xpcshell/security/manager/ssl/tests/unit/test_pdf_verification/
+# to this directory.

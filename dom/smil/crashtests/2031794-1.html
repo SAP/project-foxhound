@@ -1,0 +1,15 @@
+<script>
+{
+  const animate = document.createElementNS("http://www.w3.org/2000/svg", "animate")
+  animate.setAttributeNS(null, "begin", "-1.3s")
+  setTimeout(() => {
+    const g = document.createElement("g")
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+    g.appendChild(svg)
+    document.documentElement.appendChild(g)
+    svg.setCurrentTime(9223372036854775808.2)
+    svg.appendChild(animate)
+    svg.setCurrentTime(3809864)
+  }, 400)
+}
+</script>

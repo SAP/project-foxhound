@@ -17,9 +17,8 @@ autofill-edit-payment-method-os-prompt-macos = show stored payment method inform
 autofill-edit-payment-method-os-prompt-windows = { -brand-short-name } is trying to show stored payment method information. Confirm access to this Windows account below.
 autofill-edit-payment-method-os-prompt-other = { -brand-short-name } is trying to show stored payment method information.
 
-# The links lead users to Form Autofill browser preferences.
-autofill-options-link = Form Autofill Options
-autofill-options-link-osx = Form Autofill Preferences
+# The link leads users to Form Autofill browser preferences.
+autofill-options-link = Form autofill options
 
 ## The credit card capture doorhanger
 
@@ -73,18 +72,6 @@ autofill-card-network-mastercard = MasterCard
 autofill-card-network-mir = MIR
 autofill-card-network-unionpay = Union Pay
 autofill-card-network-visa = Visa
-
-# The warning text that is displayed for informing users what categories are
-# about to be filled.  The text would be, for example,
-#   Also autofills organization, phone, email.
-# Variables:
-#   $categories - one or more of the categories, see autofill-category-X below
-autofill-phishing-warningmessage-extracategory = Also autofills { $categories }
-
-# Variation when all are in the same category.
-# Variables:
-#   $categories - one or more of the categories
-autofill-phishing-warningmessage = Autofills { $categories }
 
 # Used in autofill drop down suggestion to indicate what other categories Form Autofill will attempt to fill.
 autofill-category-address = address

@@ -17,7 +17,7 @@ const EXAMPLE_ORG_URI =
 add_task(async function () {
   await pushPref("devtools.browsertoolbox.scope", "everything");
 
-  const topWindow = Services.wm.getMostRecentWindow("navigator:browser");
+  const topWindow = Services.wm.getMostRecentBrowserWindow();
   is(
     topWindow.browsingContext.watchedByDevTools,
     false,

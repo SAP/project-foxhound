@@ -17,20 +17,20 @@
  */
 
 /**
- * @typedef {Object} StateProps
+ * @typedef {object} StateProps
  * @property {RecordingState} recordingState
  * @property {boolean?} isSupportedPlatform
  */
 
 /**
- * @typedef {Object} ThunkDispatchProps
+ * @typedef {object} ThunkDispatchProps
  * @property {typeof actions.reportProfilerReady} reportProfilerReady
  * @property {typeof actions.reportProfilerStarted} reportProfilerStarted
  * @property {typeof actions.reportProfilerStopped} reportProfilerStopped
  */
 
 /**
- * @typedef {Object} OwnProps
+ * @typedef {object} OwnProps
  * @property {PerfFront} perfFront
  * @property {RootTraits} traits
  */
@@ -56,7 +56,7 @@ const selectors = require("resource://devtools/client/performance-new/store/sele
  * suddenly becomes unavailable, it needs to react to those changes, and update the
  * recordingState in the store.
  *
- * @extends {React.PureComponent<Props>}
+ * @augments {React.PureComponent<Props>}
  */
 class ProfilerEventHandling extends PureComponent {
   componentDidMount() {

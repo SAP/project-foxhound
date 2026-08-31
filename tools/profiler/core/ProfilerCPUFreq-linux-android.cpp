@@ -23,7 +23,7 @@ ProfilerCPUFreq::ProfilerCPUFreq() {
     }
 
     int fd = open(buf, O_RDONLY);
-    if (NS_WARN_IF(!fd)) {
+    if (NS_WARN_IF(fd < 0)) {
       continue;
     }
 

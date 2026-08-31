@@ -10,7 +10,7 @@ info: |
   1. Let C be the this value.
   2. If IsConstructor(C) is false, throw a TypeError exception.
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -20,6 +20,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(TypeError, function() {
     from([]);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

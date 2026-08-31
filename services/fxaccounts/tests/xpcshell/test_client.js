@@ -557,7 +557,7 @@ add_task(async function test_accountKeys() {
           response.bodyOutputStream.write(emptyMessage, emptyMessage.length);
           break;
 
-        case 3:
+        case 3: {
           // Return gibberish to trigger client MAC error
           // Tweak a byte
           let garbageResponse = JSON.stringify({
@@ -569,6 +569,7 @@ add_task(async function test_accountKeys() {
             garbageResponse.length
           );
           break;
+        }
 
         case 4:
           // Trigger error for nonexistent account

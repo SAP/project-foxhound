@@ -23,10 +23,9 @@ devtools.responsive:
     data_reviews:
       - https://bugzil.la/1444497
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_RESPONSIVE_OPEN_TRIGGER
 
   toolbox_opened_first:
     type: counter
@@ -39,7 +38,6 @@ devtools.responsive:
     data_reviews:
       - https://bugzil.la/1444497
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
       - jryans@mozilla.com
     expires: never
-    telemetry_mirror: DEVTOOLS_RESPONSIVE_TOOLBOX_OPENED_FIRST

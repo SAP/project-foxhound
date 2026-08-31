@@ -70,18 +70,17 @@ function cleanup() {
 // Tests that the button is added to the bookmarks toolbar, and that clicking it triggers its action
 add_task(async function test_finish_setup_button() {
   const setPrefStub = sandbox.stub(SpecialMessageActions, "handleAction");
-  const tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser.ownerGlobal,
-    "about:newtab"
-  );
+  const tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    url: "about:blank",
+  });
 
   await BookmarksBarButton.showBookmarksBarButton(
-    tab.linkedBrowser.ownerGlobal,
+    tab.linkedBrowser,
     buttonMessage
   );
 
-  const win = tab.ownerGlobal;
-  const button = await getSetupButton(win);
+  const button = await getSetupButton(window);
 
   // Test button exists
   Assert.ok(button, "Finish setup button should be created");
@@ -125,7 +124,7 @@ add_task(async function test_feature_callout_open_on_pref() {
   const messageId = "FINISH_SETUP_CHECKLIST";
 
   await BookmarksBarButton.showBookmarksBarButton(
-    gBrowser.ownerGlobal,
+    gBrowser.selectedBrowser,
     buttonMessage
   );
 

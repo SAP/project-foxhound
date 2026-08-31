@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +20,10 @@ class IOThread : private base::Thread {
   // reference it (other than the main thread, which is responsible for the
   // lifetime of the IO Thread).
   static IOThread* Get() { return sSingleton; }
+
+  // Called during XPCOM component startup and shutdown.
+  static void Startup();
+  static void Shutdown();
 
   // Get the nsISerialEventTarget which should be used to dispatch events to run
   // on the IOThreadBase.
@@ -50,13 +52,17 @@ class IOThread : private base::Thread {
 
 // Background I/O thread used by the parent process.
 class IOThreadParent : public IOThread {
- public:
-  IOThreadParent();
-  ~IOThreadParent();
-
  protected:
   void Init() override;
   void CleanUp() override;
+
+ private:
+  friend class IOThread;
+
+  IOThreadParent();
+  ~IOThreadParent();
+
+  const IPC::Channel::ChannelKind* mChannelKind;
 };
 
 // Background I/O thread used by the child process.

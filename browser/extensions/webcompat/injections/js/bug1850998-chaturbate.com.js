@@ -11,17 +11,22 @@
  * this by pretending to not be Firefox for that specific check.
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixBug1850998) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1850998", {
+    configurable: false,
+    value: true,
+  });
 
-const proto = window.wrappedJSObject.RegExp.prototype;
-const descriptor = Object.getOwnPropertyDescriptor(proto, "test");
-const { value } = descriptor;
+  const proto = window.RegExp.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(proto, "test");
+  const { value } = descriptor;
 
-descriptor.value = exportFunction(function (test) {
-  if (this.source === "UCBrowser|Firefox|SamsungBrowser") {
-    return false;
-  }
-  return value.call(this, test);
-}, window);
+  descriptor.value = function (test) {
+    if (this.source === "UCBrowser|Firefox|SamsungBrowser") {
+      return false;
+    }
+    return value.call(this, test);
+  };
 
-Object.defineProperty(proto, "test", descriptor);
+  Object.defineProperty(proto, "test", descriptor);
+}

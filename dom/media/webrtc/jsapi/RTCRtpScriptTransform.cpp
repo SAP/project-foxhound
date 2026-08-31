@@ -1,29 +1,27 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "RTCRtpScriptTransform.h"
 
-#include "libwebrtcglue/FrameTransformerProxy.h"
-#include "jsapi/RTCTransformEventRunnable.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Worker.h"
-#include "mozilla/dom/RTCRtpScriptTransformBinding.h"
-#include "mozilla/dom/MessagePortBinding.h"
-#include "mozilla/Logging.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/RefPtr.h"
-#include "nsPIDOMWindow.h"
-#include "nsContentUtils.h"
-#include "nsCOMPtr.h"
-#include "nsDebug.h"
 #include "ErrorList.h"
-#include "nsWrapperCache.h"
-#include "nsISupports.h"
-#include "nsCycleCollectionParticipant.h"
 #include "js/RootingAPI.h"
+#include "jsapi/RTCTransformEventRunnable.h"
+#include "libwebrtcglue/FrameTransformerProxy.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Logging.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/MessagePortBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/RTCRtpScriptTransformBinding.h"
+#include "mozilla/dom/Worker.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDebug.h"
+#include "nsISupports.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 
@@ -64,8 +62,8 @@ already_AddRefed<RTCRtpScriptTransform> RTCRtpScriptTransform::Constructor(
   }
 
   auto newTransform = MakeRefPtr<RTCRtpScriptTransform>(ownerWindow);
-  RefPtr<RTCTransformEventRunnable> runnable =
-      new RTCTransformEventRunnable(aWorker, &newTransform->GetProxy());
+  RefPtr runnable =
+      MakeRefPtr<RTCTransformEventRunnable>(aWorker, &newTransform->GetProxy());
 
   if (aTransfer.WasPassed()) {
     aWorker.PostEventWithOptions(aGlobal.Context(), aOptions, aTransfer.Value(),
@@ -84,7 +82,7 @@ already_AddRefed<RTCRtpScriptTransform> RTCRtpScriptTransform::Constructor(
 }
 
 RTCRtpScriptTransform::RTCRtpScriptTransform(nsPIDOMWindowInner* aWindow)
-    : mWindow(aWindow), mProxy(new FrameTransformerProxy) {}
+    : mWindow(aWindow), mProxy(MakeRefPtr<FrameTransformerProxy>()) {}
 
 RTCRtpScriptTransform::~RTCRtpScriptTransform() {
   mProxy->ReleaseScriptTransformer();

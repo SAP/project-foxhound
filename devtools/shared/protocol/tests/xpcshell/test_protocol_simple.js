@@ -9,7 +9,6 @@
 
 var protocol = require("resource://devtools/shared/protocol.js");
 var { Arg, Option, RetVal } = protocol;
-var EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 const rootSpec = protocol.generateActorSpec({
   typeName: "root",
@@ -141,11 +140,11 @@ class RootActor extends protocol.Actor {
 
   testOneWay(a) {
     // Emit to show that we got this message, because there won't be a response.
-    EventEmitter.emit(this, "oneway", a);
+    this.emit("oneway", a);
   }
 
   emitFalsyOptions() {
-    EventEmitter.emit(this, "falsyOptions", { zero: 0, farce: false });
+    this.emit("falsyOptions", { zero: 0, farce: false });
   }
 }
 

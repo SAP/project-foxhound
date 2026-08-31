@@ -38,8 +38,8 @@ button > .button-box {
 
 .info-box-content {
   align-items: center;
-  background: var(--in-content-box-info-background);
-  border: 1px solid var(--in-content-border-color);
+  background: var(--background-color-box-info);
+  border: 1px solid var(--border-color);
   display: inline-flex;
   padding: 10px 15px;
 }
@@ -60,7 +60,7 @@ button > .button-box {
 
 .study {
   align-items: center;
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   flex-direction: row;
   padding: 10px;
@@ -72,7 +72,7 @@ button > .button-box {
 
 .study .study-status {
   color: var(--study-status-active-color);
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .study.disabled .study-status {
@@ -135,7 +135,7 @@ button > .button-box {
 }
 
 .study-name {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .study-header {
@@ -154,7 +154,7 @@ button > .button-box {
   background-color: rgb(128, 128, 128, 0.1);
   border-radius: 3px;
   box-sizing: border-box;
-  color: var(--in-content-text-color);
+  color: var(--text-color);
   font-size: 85%;
   font-family: "Fira Mono", "mono", monospace;
   padding: 0.05em 0.4em;

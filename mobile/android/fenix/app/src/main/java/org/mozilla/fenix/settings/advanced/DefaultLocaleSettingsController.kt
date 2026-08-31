@@ -7,6 +7,7 @@ package org.mozilla.fenix.settings.advanced
 import android.app.Activity
 import android.content.Context
 import android.os.Build
+import androidx.annotation.VisibleForTesting
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.locale.LocaleManager
@@ -14,12 +15,49 @@ import mozilla.components.support.locale.LocaleUseCases
 import org.mozilla.fenix.nimbus.FxNimbus
 import java.util.Locale
 
+/**
+ * Controller responsible for handling user interactions on the locale settings screen.
+ * This includes selecting a new locale, searching for a locale, and resetting to the
+ * system default locale.
+ */
 interface LocaleSettingsController {
+
+    /**
+     * Handles the selection of a new locale.
+     *
+     * @param locale The [Locale] selected by the user.
+     */
     fun handleLocaleSelected(locale: Locale)
+
+    /**
+     * Handles user input in the locale search field.
+     *
+     * @param query The search string typed by the user.
+     */
     fun handleSearchQueryTyped(query: String)
+
+    /**
+     * Handles the selection of the system's default locale.
+     */
     fun handleDefaultLocaleSelected()
 }
 
+/**
+ * Default implementation of [LocaleSettingsController].
+ *
+ * This class manages the logic for changing the application's language. It handles user interactions
+ * from the locale settings screen, such as selecting a new language or resetting to the system default.
+ * It coordinates with various stores and use cases to update the application state, refresh
+ * related components like search engines, and apply the new locale by recreating the activity.
+ *
+ * @param activity The current [Activity] context, required for recreating the UI and accessing resources.
+ * @param localeSettingsStore The store that manages the state for the locale settings UI, such as the
+ *        list of available locales and the current search query.
+ * @param browserStore The main browser store, used here to dispatch actions like refreshing search
+ *        engines when the locale changes.
+ * @param localeUseCase A set of use cases for managing the application's locale, including setting a new
+ *        locale or resetting to the system default.
+ */
 class DefaultLocaleSettingsController(
     private val activity: Activity,
     private val localeSettingsStore: LocaleSettingsStore,
@@ -35,18 +73,12 @@ class DefaultLocaleSettingsController(
         }
         localeSettingsStore.dispatch(LocaleSettingsAction.Select(locale))
         browserStore.dispatch(SearchAction.RefreshSearchEnginesAction)
-        LocaleManager.setNewLocale(activity, localeUseCase, locale)
-        LocaleManager.updateBaseConfiguration(activity, locale)
+        updateLocale(locale)
+        updateBaseConfiguration(activity, locale)
 
         // Invalidate cached values to use the new locale
         FxNimbus.features.nimbusValidation.withCachedValue(null)
-        activity.recreate()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            activity.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
-        } else {
-            @Suppress("DEPRECATION")
-            activity.overridePendingTransition(0, 0)
-        }
+        recreateActivity()
     }
 
     override fun handleDefaultLocaleSelected() {
@@ -55,11 +87,23 @@ class DefaultLocaleSettingsController(
         }
         localeSettingsStore.dispatch(LocaleSettingsAction.Select(localeSettingsStore.state.localeList[0]))
         browserStore.dispatch(SearchAction.RefreshSearchEnginesAction)
-        LocaleManager.resetToSystemDefault(activity, localeUseCase)
-        LocaleManager.updateBaseConfiguration(activity, localeSettingsStore.state.localeList[0])
+        resetToSystemDefault()
+        updateBaseConfiguration(activity, localeSettingsStore.state.localeList[0])
 
         // Invalidate cached values to use the default locale
         FxNimbus.features.nimbusValidation.withCachedValue(null)
+        recreateActivity()
+    }
+
+    override fun handleSearchQueryTyped(query: String) {
+        localeSettingsStore.dispatch(LocaleSettingsAction.Search(query))
+    }
+
+    /**
+     * Recreates the activity to apply locale changes and provides a smooth, instant transition.
+     */
+    @VisibleForTesting
+    internal fun recreateActivity() {
         activity.recreate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             activity.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
@@ -69,15 +113,29 @@ class DefaultLocaleSettingsController(
         }
     }
 
-    override fun handleSearchQueryTyped(query: String) {
-        localeSettingsStore.dispatch(LocaleSettingsAction.Search(query))
+    /**
+     * Sets the new application locale and updates the base configuration to apply it.
+     *
+     * @param locale The new [Locale] to set.
+     */
+    @VisibleForTesting
+    internal fun updateLocale(locale: Locale) {
+        LocaleManager.setNewLocale(activity, localeUseCase, locale)
+    }
+
+    /**
+     * Resets the application's locale to the system's default locale.
+     */
+    @VisibleForTesting
+    internal fun resetToSystemDefault() {
+        LocaleManager.resetToSystemDefault(activity, localeUseCase)
     }
 
     /**
      * Update the locale for the configuration of the app context's resources
      */
     @Suppress("Deprecation")
-    fun LocaleManager.updateBaseConfiguration(context: Context, locale: Locale) {
+    fun updateBaseConfiguration(context: Context, locale: Locale) {
         val resources = context.applicationContext.resources
         val config = resources.configuration
         config.setLocale(locale)

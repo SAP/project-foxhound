@@ -714,11 +714,9 @@ sec_pkcs7_encoder_sig_and_certs(SEC_PKCS7ContentInfo *cinfo,
                 if (digestalgtag == SECOID_GetAlgorithmTag(digestalgs[di]))
                     break;
             }
-            if (digestalgs[di] == NULL) {
-                /* XXX oops; do what? set an error? */
+            if (digestalgs[di] == NULL || digests[di] == NULL) {
                 return SECFailure;
             }
-            PORT_Assert(digests[di] != NULL);
 
             cert = signerinfo->cert;
             privkey = PK11_FindKeyByAnyCert(cert, pwfnarg);
@@ -786,8 +784,8 @@ sec_pkcs7_encoder_sig_and_certs(SEC_PKCS7ContentInfo *cinfo,
                     return SECFailure;
                 }
 
-                algid = SEC_GetSignatureAlgorithmOidTag(privkey->keyType,
-                                                        digestalgtag);
+                algid = SEC_GetSignatureAlgorithmOidTagByKey(privkey, NULL,
+                                                             digestalgtag);
                 if (algid == SEC_OID_UNKNOWN) {
                     PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
                     SECKEY_DestroyPrivateKey(privkey);

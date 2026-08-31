@@ -40,7 +40,7 @@ add_task(async function () {
         { id: "firefox", name: "Firefox", version: "1" },
         { id: "firefox_android", name: "Firefox Android", version: "1" },
       ],
-      url: "https://developer.mozilla.org/docs/Web/CSS/border-block-color",
+      url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/border-block-color",
     },
   ];
   await assertIssueList(selectedElementPane, expectedIssues);

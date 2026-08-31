@@ -1,0 +1,47 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Wed, 8 Oct 2025 17:49:00 +0000
+Subject: Bug 1980501 - use forward class decl rather than include
+ audio_state.h r?ng!
+
+This avoids code outside of libwebrtc inadvertently including
+rtc_base/containers/flat_set.h which uses c++20 features.  Once
+the rest of the Mozilla tree is compiling with c++20, we can
+remove this modification (see Bug 1768116).
+
+Differential Revision: https://phabricator.services.mozilla.com/D267993
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/9c487a574d218cc1c261b646c501db4d159754f0
+---
+ audio/audio_receive_stream.h | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/audio/audio_receive_stream.h b/audio/audio_receive_stream.h
+index 41a470f8b8..5e40cebfa9 100644
+--- a/audio/audio_receive_stream.h
++++ b/audio/audio_receive_stream.h
+@@ -34,7 +34,11 @@
+ #include "api/transport/rtp/rtp_source.h"
+ #include "api/units/time_delta.h"
+ #include "api/units/timestamp.h"
++// This can be removed after Bug 1768116 enables
++// c++20 builds across the entire Mozilla tree.
++#if !defined(WEBRTC_MOZILLA_BUILD)
+ #include "audio/audio_state.h"
++#endif
+ #include "call/audio_receive_stream.h"
+ #include "call/audio_state.h"
+ #include "call/syncable.h"
+@@ -47,6 +51,14 @@ class PacketRouter;
+ class RtpStreamReceiverControllerInterface;
+ class RtpStreamReceiverInterface;
+ 
++// This can be removed after Bug 1768116 enables
++// c++20 builds across the entire Mozilla tree.
++#if defined(WEBRTC_MOZILLA_BUILD)
++namespace internal {
++class AudioState;
++}
++#endif
++
+ namespace voe {
+ class ChannelReceiveInterface;
+ }  // namespace voe

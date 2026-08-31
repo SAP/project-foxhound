@@ -39,12 +39,12 @@
         app:layout_constraintTop_toBottomOf="@android:id/title"
         tools:text="hkjhdsfkjnfk"/>
 
-    <androidx.appcompat.widget.SwitchCompat
+    <com.google.android.material.materialswitch.MaterialSwitch
         android:id="@android:id/checkbox"
-        android:layout_width="48dp"
+        android:layout_width="52dp"
         android:layout_height="48dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
+        android:layout_marginStart="14dp"
+        android:layout_marginEnd="14dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@android:id/title"

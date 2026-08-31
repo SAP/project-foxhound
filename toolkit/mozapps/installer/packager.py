@@ -153,6 +153,11 @@ def main():
         help="Minify JavaScript files while packaging.",
     )
     parser.add_argument(
+        "--minify-pdfjs",
+        action="store_true",
+        help="Minify PDF.js JavaScript files while packaging.",
+    )
+    parser.add_argument(
         "--js-binary",
         help="Path to js binary. This is used to verify "
         "minified JavaScript. If this is not defined, "
@@ -223,15 +228,9 @@ def main():
         finder_args = dict(
             minify=args.minify,
             minify_js=args.minify_js,
+            minify_pdfjs=args.minify_pdfjs,
             ignore_broken_symlinks=args.ignore_broken_symlinks,
         )
-        if args.js_binary:
-            finder_args["minify_js_verify_command"] = [
-                args.js_binary,
-                os.path.join(
-                    os.path.abspath(os.path.dirname(__file__)), "js-compare-ast.js"
-                ),
-            ]
         finder = PackagerFileFinder(args.source, find_executables=True, **finder_args)
         if "NO_PKG_FILES" in os.environ:
             sinkformatter = NoPkgFilesRemover(formatter, args.manifest is not None)
@@ -259,7 +258,8 @@ def main():
         copier_items = [(p, f) for p, f in copier]
         for p, f in copier_items:
             if isinstance(f, ExecutableFile):
-                pdbname = os.path.splitext(p)[0] + ".pdb"
+                fpath = f.inputs()[0]
+                pdbname = os.path.splitext(fpath)[0] + ".pdb"
                 if os.path.exists(pdbname):
                     copier.add(
                         mozpath.join(mozpath.dirname(p), mozpath.basename(pdbname)),

@@ -5,6 +5,7 @@
 <script src="/resources/testharnessreport.js"></script>
 <script src="/css/support/numeric-testcommon.js"></script>
 <script src="/css/support/computed-testcommon.js"></script>
+<script src="../support/parsing-testcommon.js"></script>
 <style>
 :root {
   font-size: 10px;
@@ -41,6 +42,29 @@ test_math_used("calc(10em / 1rem)", "10", {"prop": "z-index"});
 test_math_used("calc(10em / 1px)", "100", {"prop": "z-index"});
 test_math_used("calc(1px / 10em * NaN)", "0", {"prop": "z-index"});
 
+// 10% -> 1px; 1px / 1px -> 1.
+test_math_used("calc(10% / 1px)", "1", {"prop": "line-height"});
+// 1% * 100% / 10% -> 10%.
+test_math_used("calc(1% * 100% / 10%)", "10%", {"prop": "line-height"});
+// 10% / 10% -> 1.
+test_math_used("calc(10% / 10%)", "1", {"prop": "line-height"});
+// 10% -> 1px; 1% -> 0.1px; 1px / 0.1px / 1px -> 10px.
+test_math_used("calc((10% * 1%) / 1px)", "10px");
+// 10% -> 1px; 1px * 1px / 1px * 10deg / 1deg / 10px -> 1.
+test_math_used("calc(10% * 10% / 1px * 10deg / 1deg / 10px)", "1", {"prop": "line-height"});
+// 10% -> 1px; 1px * 1px / 1px * 1deg / 1deg -> 1px.
+test_math_used("calc(10% * 10% / 1px * 1deg / 1deg)", "1px", {"prop": "line-height"});
+// 1px * 2deg / 1deg -> 2px.
+test_math_used("calc(1px * 2deg / 1deg)", "2px", {"prop": "line-height"});
+// 1px * 3deg / 1deg / 1px -> 3.
+test_math_used("calc(1px * 3deg / 1deg / 1px)", "3", {"prop": "line-height"});
+
+test_math_used("calc(1px * pow(50% / 1px, 1))", "50px", {"prop": "width"});
+test_invalid_value("width", "calc(1px * pow(tan(atan2(50%, 1px)), 1))");
+
+test_invalid_value("width", "calc((1% * 1deg) / 1px)");
+test_invalid_value("width", "calc((1% * 1% * 1%) / 1px)");
+
 testComputedValueGreaterOrLowerThan("width", "calc(1px * 10em / 0em)", REALLY_LARGE);
 testComputedValueGreaterOrLowerThan("width", "calc(1px / 1px * 10em * infinity)", REALLY_LARGE);
 testComputedValueGreaterOrLowerThan("margin-left", "calc(1px * 10em / -0em)", REALLY_LARGE_NEGATIVE);
@@ -55,4 +79,6 @@ test_math_used("calc(20cqw / 1rem)", "2", {"prop": "z-index"});
 
 testComputedValueGreaterOrLowerThan("animation-duration", "calc(2s / (10s - 10s) * 1s)", REALLY_LARGE);
 testTransformValuesCloseTo("rotate(calc((40em - 40px) / 1px * 1deg - 0.5turn))", 0.0001, "rotate(180deg)", "subtraction of angle unit: deg minus turn");
+test_invalid_value("width", "calc(1px * 1px" + " * 2".repeat(200) + ")");
+test_invalid_value("width", "calc(1px + 1em" + " + 1em".repeat(200) + ")");
 </script>

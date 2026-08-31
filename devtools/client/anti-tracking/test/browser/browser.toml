@@ -1,0 +1,11 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "head.js",
+  "resources/",
+  "!/devtools/client/shared/test/shared-head.js",
+]
+prefs = ["devtools.anti-tracking.enabled=true"]
+
+["browser_anti_tracking_panel.js"]

@@ -13,27 +13,27 @@ you want to investigate it yourself, or perhaps someone has asked you to
 use about:memory to generate "memory reports" so they can investigate
 a problem you are having. Follow these steps.
 
--   At the moment of interest (e.g. once Firefox's memory usage has
-    gotten high) open a new tab and type "about:memory" into the
-    address bar and hit "Enter".
--   If you are using a communication channel where files can be sent,
-    such as Bugzilla or email, click on the "Measure and save..."
-    button. This will open a file dialog that lets you save the memory
-    reports to a file of your choosing. (The filename will have a
-    `.json.gz` suffix.) You can then attach or upload the file
-    appropriately. The recipients will be able to view the contents of
-    this file within about:memory in their own Firefox instance.
--   If you are using a communication channel where only text can be
-    sent, such as a comment thread on a website, click on the
-    "Measure..." button. This will cause a tree-like structure to be
-    generated text within about:memory. This structure is just text, so
-    you can copy and paste some or all of this text into any kind of
-    text buffer. (You don't need to take a screenshot.) This text
-    contains fewer measurements than a memory reports file, but is often
-    good enough to diagnose problems. Don't click "Measure..."
-    repeatedly, because that will cause the memory usage of about:memory
-    itself to rise, due to it discarding and regenerating large numbers
-    of DOM nodes.
+- At the moment of interest (e.g. once Firefox's memory usage has
+  gotten high) open a new tab and type "about:memory" into the
+  address bar and hit "Enter".
+- If you are using a communication channel where files can be sent,
+  such as Bugzilla or email, click on the "Measure and save..."
+  button. This will open a file dialog that lets you save the memory
+  reports to a file of your choosing. (The filename will have a
+  `.json.gz` suffix.) You can then attach or upload the file
+  appropriately. The recipients will be able to view the contents of
+  this file within about:memory in their own Firefox instance.
+- If you are using a communication channel where only text can be
+  sent, such as a comment thread on a website, click on the
+  "Measure..." button. This will cause a tree-like structure to be
+  generated text within about:memory. This structure is just text, so
+  you can copy and paste some or all of this text into any kind of
+  text buffer. (You don't need to take a screenshot.) This text
+  contains fewer measurements than a memory reports file, but is often
+  good enough to diagnose problems. Don't click "Measure..."
+  repeatedly, because that will cause the memory usage of about:memory
+  itself to rise, due to it discarding and regenerating large numbers
+  of DOM nodes.
 
 Note that in both cases the generated data contains privacy-sensitive
 details such as the full list of the web pages you have open in other
@@ -144,35 +144,35 @@ been expanded and others collapsed for the sake of presentation.
 Some expertise is required to understand the full details here, but
 there are various things worth pointing out.
 
--   This "explicit" value at the root of the tree represents all the
-    memory allocated via explicit calls to allocation functions.
--   The "window-objects" sub-tree represents all JavaScript `window`
-    objects, which includes the browser tabs and UI windows. For
-    example, the "top(http://edition.cnn.com/, id=8)" sub-tree
-    represents the tab open to cnn.com, and
-    "top(chrome://browser/content/browser.xul, id=3)" represents the
-    main browser UI window.
--   Within each window's measurements are sub-trees for JavaScript
-    ("js-compartment(...)" and "js-zone(...)"), layout,
-    style-sheets, the DOM, and other things.
--   It's clear that the cnn.com tab is using more memory than the
-    techcrunch.com tab, which is using more than the arstechnica.com
-    tab.
--   Sub-trees with names like "(2 tiny)" are artificial nodes inserted
-    to allow insignificant sub-trees to be collapsed by default. If you
-    select the "verbose" checkbox before measuring, all trees will be
-    shown fully expanded and no artificial nodes will be inserted.
--   The "js-non-window" sub-tree represents JavaScript memory usage
-    that doesn't come from windows, but from the browser core.
--   The "heap-unclassified" value represents heap-allocated memory
-    that is not measured by any memory reporter. This is typically
-    10--20% of "explicit". If it gets higher, it indicates that
-    additional memory reporters should be added.
-    [DMD](./dmd.md)
-    can be used to determine where these memory reporters should be
-    added.
--   There are measurements for other content such as images and workers,
-    and for browser subsystems such as the startup cache and XPConnect.
+- This "explicit" value at the root of the tree represents all the
+  memory allocated via explicit calls to allocation functions.
+- The "window-objects" sub-tree represents all JavaScript `window`
+  objects, which includes the browser tabs and UI windows. For
+  example, the "top(<http://edition.cnn.com/>, id=8)" sub-tree
+  represents the tab open to cnn.com, and
+  "top(chrome://browser/content/browser.xul, id=3)" represents the
+  main browser UI window.
+- Within each window's measurements are sub-trees for JavaScript
+  ("js-compartment(...)" and "js-zone(...)"), layout,
+  style-sheets, the DOM, and other things.
+- It's clear that the cnn.com tab is using more memory than the
+  techcrunch.com tab, which is using more than the arstechnica.com
+  tab.
+- Sub-trees with names like "(2 tiny)" are artificial nodes inserted
+  to allow insignificant sub-trees to be collapsed by default. If you
+  select the "verbose" checkbox before measuring, all trees will be
+  shown fully expanded and no artificial nodes will be inserted.
+- The "js-non-window" sub-tree represents JavaScript memory usage
+  that doesn't come from windows, but from the browser core.
+- The "heap-unclassified" value represents heap-allocated memory
+  that is not measured by any memory reporter. This is typically
+  10--20% of "explicit". If it gets higher, it indicates that
+  additional memory reporters should be added.
+  [DMD](./dmd.md)
+  can be used to determine where these memory reporters should be
+  added.
+- There are measurements for other content such as images and workers,
+  and for browser subsystems such as the startup cache and XPConnect.
 
 Some add-on memory usage is identified, as the following example shows.
 
@@ -188,19 +188,19 @@ Some add-on memory usage is identified, as the following example shows.
 
 More things worth pointing out are as follows.
 
--   Some add-ons are identified by a name, such as Tree Style Tab.
-    Others are identified only by a hexadecimal identifier. You can look
-    in about:support to see which add-on a particular identifier belongs
-    to. For example, `59c81df5-4b7a-477b-912d-4e0fdf64e5f2` is
-    Chatzilla.
--   All JavaScript memory usage for an add-on is measured separately and
-    shown in this sub-tree.
--   For add-ons that use separate windows, such as Chatzilla, the memory
-    usage of those windows will show up in this sub-tree.
--   For add-ons that use XUL overlays, such as AdBlock Plus, the memory
-    usage of those overlays will not show up in this sub-tree; it will
-    instead be in the non-add-on sub-trees and won't be identifiable as
-    being caused by the add-on.
+- Some add-ons are identified by a name, such as Tree Style Tab.
+  Others are identified only by a hexadecimal identifier. You can look
+  in about:support to see which add-on a particular identifier belongs
+  to. For example, `59c81df5-4b7a-477b-912d-4e0fdf64e5f2` is
+  Chatzilla.
+- All JavaScript memory usage for an add-on is measured separately and
+  shown in this sub-tree.
+- For add-ons that use separate windows, such as Chatzilla, the memory
+  usage of those windows will show up in this sub-tree.
+- For add-ons that use XUL overlays, such as AdBlock Plus, the memory
+  usage of those overlays will not show up in this sub-tree; it will
+  instead be in the non-add-on sub-trees and won't be identifiable as
+  being caused by the add-on.
 
 #### Other Measurements
 
@@ -257,18 +257,18 @@ following example shows.
 
 Some measurements of note are as follows.
 
--   "resident". Physical memory usage. If you want a single
-    measurement to summarize memory usage, this is probably the best
-    one.
--   "vsize". Virtual memory usage. This is often much higher than any
-    other measurement (particularly on Mac). It only really matters on
-    32-bit platforms such as Win32. There is also
-    "vsize-max-contiguous" (not measured on all platforms, and not
-    shown in this example), which indicates the largest single chunk of
-    available virtual address space. If this number is low, it's likely
-    that memory allocations will fail due to lack of virtual address
-    space quite soon.
--   Various graphics-related measurements ("gfx-*"). The measurements
-    taken vary between platforms. Graphics is often a source of high
-    memory usage, and so these measurements can be helpful for detecting
-    such cases.
+- "resident". Physical memory usage. If you want a single
+  measurement to summarize memory usage, this is probably the best
+  one.
+- "vsize". Virtual memory usage. This is often much higher than any
+  other measurement (particularly on Mac). It only really matters on
+  32-bit platforms such as Win32. There is also
+  "vsize-max-contiguous" (not measured on all platforms, and not
+  shown in this example), which indicates the largest single chunk of
+  available virtual address space. If this number is low, it's likely
+  that memory allocations will fail due to lack of virtual address
+  space quite soon.
+- Various graphics-related measurements ("gfx-*"). The measurements
+  taken vary between platforms. Graphics is often a source of high
+  memory usage, and so these measurements can be helpful for detecting
+  such cases.

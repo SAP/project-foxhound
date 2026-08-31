@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,10 +22,6 @@ class AudioStreamTrack;
 namespace mozilla {
 
 /**
- * CrossGraphTransmitter and CrossGraphPort are currently unused, but intended
- * for connecting MediaTracks of different MediaTrackGraphs with different
- * sample rates or clock sources for bug 1674892.
- *
  * Create with MediaTrackGraph::CreateCrossGraphTransmitter()
  */
 class CrossGraphTransmitter : public ProcessedMediaTrack {

@@ -201,8 +201,8 @@ A site-specific video wrapper allows for the creation of custom scripts that the
 ``PictureInPictureChildVideoWrapper`` and ``videoWrapperScriptPath``
 --------------------------------------------------------------------
 ``PictureInPictureChildVideoWrapper`` is a special class that represents a video wrapper. It is defined in ``PictureInPictureChild.sys.mjs`` and maps to a ``videoWrapperScriptPath``, which is the path of the custom wrapper script to use.
-``videoWrapperScriptPath`` is defined in `browser/extensions/pictureinpicture/data/picture_in_picture_overrides.js <https://searchfox.org/mozilla-central/source/browser/extensions/pictureinpicture/data/picture_in_picture_overrides.js>`_ for a domain,
-and custom wrapper scripts are defined in `browser/extensions/pictureinpicture/video-wrappers <https://searchfox.org/mozilla-central/source/browser/extensions/pictureinpicture/video-wrappers>`_.
+``videoWrapperScriptPath`` is defined in :searchfox:`browser/extensions/pictureinpicture/data/picture_in_picture_overrides.js` for a domain,
+and custom wrapper scripts are defined in :searchfox:`browser/extensions/pictureinpicture/video-wrappers`.
 
 If a ``videoWrapperScriptPath`` is detected while initializing the Picture-in-Picture toggle or window, we immediately create a new instance of ``PictureInPictureChildVideoWrapper`` based on the given path, allowing us to run our custom scripts.
 
@@ -219,7 +219,7 @@ Adding a new site-specific video wrapper
 ----------------------------------------
 Creating a new wrapper script file
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Add a new JS file for the new video wrapper in `browser/extensions/pictureinpicture/video-wrappers <https://searchfox.org/mozilla-central/source/browser/extensions/pictureinpicture/video-wrappers>`_.
+Add a new JS file for the new video wrapper in :searchfox:`browser/extensions/pictureinpicture/video-wrappers`.
 The file must meet several requirements to get the wrapper working.
 
 **Script file requirements**:
@@ -260,7 +260,7 @@ Below is an example of a script file ``mock-wrapper.js`` that overrides an exist
 
 Declaring ``videoWrapperScriptPath``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Declare a property ``videoWrapperScriptPath`` for the site at `browser/extensions/pictureinpicture/data/picture_in_picture_overrides.js <https://searchfox.org/mozilla-central/source/browser/extensions/pictureinpicture/data/picture_in_picture_overrides.js>`_:
+Declare a property ``videoWrapperScriptPath`` for the site at :searchfox:`browser/extensions/pictureinpicture/data/picture_in_picture_overrides.js`:
 
 .. code-block:: js
 
@@ -338,7 +338,7 @@ Testing site-specific video wrappers
 ------------------------------------
 Automated Tests
 ^^^^^^^^^^^^^^^
-Automated tests for site specific wrappers are currently limited. New tests can be made in `browser/extensions/pictureinpicture/tests/browser <https://searchfox.org/mozilla-central/source/browser/extensions/pictureinpicture/tests/browser>`_ to ensure
+Automated tests for site specific wrappers are currently limited. New tests can be made in :searchfox:`browser/extensions/pictureinpicture/tests/browser` to ensure
 general functionality, but these are restricted to Firefox Nightly and do not test functionality on specific sites.
 
 Some challenges with writing tests include:

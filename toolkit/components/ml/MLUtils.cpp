@@ -1,15 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MLUtils.h"
 
-#include <algorithm>
-#include <cmath>
 #include "prsystem.h"
-#include "mozilla/Casting.h"
 #include <sys/types.h>
 #include "nsSystemInfo.h"
 
@@ -23,6 +18,7 @@
 #if defined(XP_LINUX)
 #  include <sys/sysinfo.h>
 #endif
+#include "mozilla/SSE.h"
 
 namespace mozilla::ml {
 
@@ -94,6 +90,18 @@ NS_IMETHODIMP MLUtils::GetOptimalCPUConcurrency(uint8_t* _retval) {
 #endif
 
   *_retval = cpuCount;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP MLUtils::CanUseLlamaCpp(bool* _retval) {
+#ifdef __x86_64__
+  *_retval = mozilla::supports_avx2();
+#elif defined(__aarch64__)
+  *_retval = true;
+#else
+  *_retval = false;
+#endif
 
   return NS_OK;
 }

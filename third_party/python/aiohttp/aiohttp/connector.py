@@ -229,6 +229,26 @@ class Connection:
         return self._protocol is None or not self._protocol.is_connected()
 
 
+class _ConnectTunnelConnection(Connection):
+    """Special connection wrapper for CONNECT tunnels that must never be pooled.
+
+    This connection wraps the proxy connection that will be upgraded with TLS.
+    It must never be released to the pool because:
+    1. Its 'closed' future will never complete, causing session.close() to hang
+    2. It represents an intermediate state, not a reusable connection
+    3. The real connection (with TLS) will be created separately
+    """
+
+    def release(self) -> None:
+        """Do nothing - don't pool or close the connection.
+
+        These connections are an intermediate state during the CONNECT tunnel
+        setup and will be cleaned up naturally after the TLS upgrade. If they
+        were to be pooled, they would never be properly closed, causing
+        session.close() to wait forever for their 'closed' future.
+        """
+
+
 class _TransportPlaceholder:
     """placeholder for BaseConnector.connect function"""
 
@@ -589,6 +609,32 @@ class BaseConnector:
 
         return total_remain
 
+    def _update_proxy_auth_header_and_build_proxy_req(
+        self, req: ClientRequest
+    ) -> ClientRequest:
+        """Set Proxy-Authorization header for non-SSL proxy requests and builds the proxy request for SSL proxy requests."""
+        url = req.proxy
+        assert url is not None
+        headers: Dict[str, str] = {}
+        if req.proxy_headers is not None:
+            headers = req.proxy_headers  # type: ignore[assignment]
+        headers[hdrs.HOST] = req.headers[hdrs.HOST]
+        proxy_req = ClientRequest(
+            hdrs.METH_GET,
+            url,
+            headers=headers,
+            auth=req.proxy_auth,
+            loop=self._loop,
+            ssl=req.ssl,
+        )
+        auth = proxy_req.headers.pop(hdrs.AUTHORIZATION, None)
+        if auth is not None:
+            if not req.is_ssl():
+                req.headers[hdrs.PROXY_AUTHORIZATION] = auth
+            else:
+                proxy_req.headers[hdrs.PROXY_AUTHORIZATION] = auth
+        return proxy_req
+
     async def connect(
         self, req: ClientRequest, traces: List["Trace"], timeout: "ClientTimeout"
     ) -> Connection:
@@ -597,12 +643,16 @@ class BaseConnector:
         if (conn := await self._get(key, traces)) is not None:
             # If we do not have to wait and we can get a connection from the pool
             # we can avoid the timeout ceil logic and directly return the connection
+            if req.proxy:
+                self._update_proxy_auth_header_and_build_proxy_req(req)
             return conn
 
         async with ceil_timeout(timeout.connect, timeout.ceil_threshold):
             if self._available_connections(key) <= 0:
                 await self._wait_for_available_connection(key, traces)
                 if (conn := await self._get(key, traces)) is not None:
+                    if req.proxy:
+                        self._update_proxy_auth_header_and_build_proxy_req(req)
                     return conn
 
             placeholder = cast(
@@ -1565,34 +1615,12 @@ class TCPConnector(BaseConnector):
     ) -> Tuple[asyncio.BaseTransport, ResponseHandler]:
         self._fail_on_no_start_tls(req)
         runtime_has_start_tls = self._loop_supports_start_tls()
-
-        headers: Dict[str, str] = {}
-        if req.proxy_headers is not None:
-            headers = req.proxy_headers  # type: ignore[assignment]
-        headers[hdrs.HOST] = req.headers[hdrs.HOST]
-
-        url = req.proxy
-        assert url is not None
-        proxy_req = ClientRequest(
-            hdrs.METH_GET,
-            url,
-            headers=headers,
-            auth=req.proxy_auth,
-            loop=self._loop,
-            ssl=req.ssl,
-        )
+        proxy_req = self._update_proxy_auth_header_and_build_proxy_req(req)
 
         # create connection to proxy server
         transport, proto = await self._create_direct_connection(
             proxy_req, [], timeout, client_error=ClientProxyConnectionError
         )
-
-        auth = proxy_req.headers.pop(hdrs.AUTHORIZATION, None)
-        if auth is not None:
-            if not req.is_ssl():
-                req.headers[hdrs.PROXY_AUTHORIZATION] = auth
-            else:
-                proxy_req.headers[hdrs.PROXY_AUTHORIZATION] = auth
 
         if req.is_ssl():
             if runtime_has_start_tls:
@@ -1612,7 +1640,7 @@ class TCPConnector(BaseConnector):
             key = req.connection_key._replace(
                 proxy=None, proxy_auth=None, proxy_headers_hash=None
             )
-            conn = Connection(self, key, proto, self._loop)
+            conn = _ConnectTunnelConnection(self, key, proto, self._loop)
             proxy_resp = await proxy_req.send(conn)
             try:
                 protocol = conn._protocol

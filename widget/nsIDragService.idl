@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -191,15 +190,7 @@ interface nsIDragService : nsISupports
    * True if this is a mock nsIDragService, created with
    * createMockDragController().
    */
-  readonly attribute boolean isMockService;
-
-%{ C++
-  bool IsMockService() {
-    bool ret = false;
-    MOZ_ALWAYS_SUCCEEDS(GetIsMockService(&ret));
-    return ret;
-  }
-%}
+  [infallible] readonly attribute boolean isMockService;
 
   /**
    * If this is true, mSessionIsSynthesizedForTests should not become true.
@@ -214,8 +205,3 @@ interface nsIDragService : nsISupports
    */
   [infallible] attribute boolean neverAllowSessionIsSynthesizedForTests;
 };
-
-
-%{ C++
-
-%}

@@ -19,7 +19,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  let elementRuleEditor = getRuleViewRuleEditor(view, 1);
+  let elementRuleEditor = getRuleViewRuleEditorAt(view, 1);
   is(
     elementRuleEditor.rule.textProps.length,
     1,
@@ -27,10 +27,18 @@ add_task(async function () {
   );
 
   info("Creating a new property but don't commit…");
-  const textProp = await addProperty(view, 1, "color", "red", {
-    commitValueWith: null,
-    blurNewProperty: false,
-  });
+  const textProp = await addProperty(
+    view,
+    1,
+    "color",
+    // using `lavender` so the autocomplete popup is visible after the call to addProperty,
+    // as there's another color starting with `lavender` (`lavenderblush`).
+    "lavender",
+    {
+      commitValueWith: null,
+      blurNewProperty: false,
+    }
+  );
 
   info("The autocomplete popup should be displayed, hit Escape to hide it");
   await waitFor(() => view.popup && view.popup.isOpen);
@@ -63,7 +71,7 @@ add_task(async function () {
     "Correct element has focus"
   );
 
-  elementRuleEditor = getRuleViewRuleEditor(view, 1);
+  elementRuleEditor = getRuleViewRuleEditorAt(view, 1);
   is(
     elementRuleEditor.rule.textProps.length,
     1,

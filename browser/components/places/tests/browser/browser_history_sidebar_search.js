@@ -1,3 +1,11 @@
+add_setup(async function setup() {
+  // This test covers the legacy implementation of the history sidebar
+  // Coverage for the new is at browser/components/sidebar/tests/browser/browser_history_sidebar.js
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+});
+
 add_task(async function test() {
   let sidebar = document.getElementById("sidebar");
 
@@ -19,7 +27,7 @@ add_task(async function test() {
   let places = [];
   for (let i = 0; i < pages.length; i++) {
     places.push({
-      uri: NetUtil.newURI(pages[i]),
+      uri: Services.io.newURI(pages[i]),
       visitDate: (time - i) * 1000,
       transition: PlacesUtils.history.TRANSITION_TYPED,
     });

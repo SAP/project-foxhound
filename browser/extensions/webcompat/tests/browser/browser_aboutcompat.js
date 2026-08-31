@@ -1,6 +1,15 @@
 "use strict";
 
+const EnableAllPref = "extensions.webcompat.enable_interventions";
+
 add_task(async function test_about_compat_loads_properly() {
+  // wait for all interventions to load before testing (can be quite slow on tsan builds).
+  await WebCompatExtension.interventionsSettled();
+
+  // toggle the global pref so we can check the disabled text is present.
+  Services.prefs.setBoolPref(EnableAllPref, false);
+  await WebCompatExtension.interventionsSettled();
+
   const tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: "about:compat",
@@ -14,23 +23,47 @@ add_task(async function test_about_compat_loads_properly() {
       "Expected origin of about:compat"
     );
 
-    await ContentTaskUtils.waitForCondition(
-      () => content.document.querySelector("#interventions tr[data-id]"),
-      "interventions are listed"
-    );
-    await ContentTaskUtils.waitForCondition(
-      () => content.document.querySelector("#smartblock tr[data-id]"),
-      "SmartBlock shims are listed"
-    );
-    ok(true, "Interventions are listed");
+    const disabledMsg = "[data-l10n-id=text-disabled-in-about-config]";
+
+    content.verifyAllInterventionsOff = async function () {
+      await ContentTaskUtils.waitForCondition(
+        () => content.document.querySelector(disabledMsg),
+        "interventions disabled by global pref message is shown"
+      );
+      ok(true, "interventions disabled by global pref message is shown");
+    };
+
+    content.verifyAllInterventionsOn = async function () {
+      await ContentTaskUtils.waitForCondition(
+        () => content.document.querySelector("#interventions [data-id]"),
+        "interventions are listed"
+      );
+      await ContentTaskUtils.waitForCondition(
+        () => content.document.querySelector("#smartblock [data-id]"),
+        "SmartBlock shims are listed"
+      );
+      ok(true, "Interventions and shims are listed");
+      ok(
+        !content.document.querySelector(disabledMsg),
+        "interventions disabled in about:config message is gone"
+      );
+    };
+
+    await content.verifyAllInterventionsOff();
+  });
+
+  // now enable the global pref, and check the rest of the UI.
+  Services.prefs.setBoolPref(EnableAllPref, true);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    await content.verifyAllInterventionsOn();
 
     // also choose an intervention and a shim with content-scripts, and confirm that toggling them
     // on and off works (by checking that their content-scripts are de-registered and re-registered).
     const bgWin = content.wrappedJSObject.browser.extension.getBackgroundPage();
-    const interventionWithContentScripts =
-      bgWin.interventions._availableInterventions.find(
-        i => i.active && i.interventions?.find(v => v.content_scripts)
-      );
+    const interventionWithContentScripts = bgWin.interventions
+      .getAvailableInterventions()
+      .find(i => i.active && i.interventions?.find(v => v.content_scripts));
     const shimWithContentScripts = [...bgWin.shims.shims.values()].find(
       s => s._contentScriptRegistrations.length
     );
@@ -44,8 +77,18 @@ add_task(async function test_about_compat_loads_properly() {
     }
 
     // both should have their content scripts registered at startup
-    const interventionRCSId = `webcompat intervention for ${interventionWithContentScripts.label}: ${JSON.stringify(interventionWithContentScripts.interventions[0].content_scripts)}`;
-    const shimRCSId = `shim-${shimWithContentScripts.id}-0`;
+
+    const { matches, excludeMatches } =
+      bgWin.interventions.getBlocksAndMatchesFor(
+        interventionWithContentScripts
+      );
+    const interventionRCSId =
+      bgWin.interventions.buildContentScriptsRegistrationsForIntervention(
+        interventionWithContentScripts,
+        matches,
+        excludeMatches
+      )[0].id;
+    const shimRCSId = `SmartBlock shim for ${shimWithContentScripts.id}: ${JSON.stringify(shimWithContentScripts.contentScripts[0])}`;
     ok(
       await findRegisteredScript(interventionRCSId),
       `Found registered script for intervention: '${interventionRCSId}'`
@@ -101,8 +144,8 @@ add_task(async function test_about_compat_loads_properly() {
 
     // toggle the intervention
     await testToggling(
-      `tr[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
-      `tr[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
+      `[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
+      `[data-id='${interventionWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
       interventionWithContentScripts,
       interventionRCSId,
       "intervention"
@@ -110,12 +153,25 @@ add_task(async function test_about_compat_loads_properly() {
 
     // toggle the shim
     await testToggling(
-      `tr[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
-      `tr[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
+      `[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-disable]`,
+      `[data-id='${shimWithContentScripts.id}'] button[data-l10n-id=label-enable]`,
       shimWithContentScripts,
       shimRCSId,
       "shim"
     );
+  });
+
+  // now try toggling the global pref again, to confirm things still work.
+  Services.prefs.setBoolPref(EnableAllPref, false);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    await content.verifyAllInterventionsOff();
+  });
+
+  Services.prefs.setBoolPref(EnableAllPref, true);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    await content.verifyAllInterventionsOn();
   });
 
   await BrowserTestUtils.removeTab(tab);

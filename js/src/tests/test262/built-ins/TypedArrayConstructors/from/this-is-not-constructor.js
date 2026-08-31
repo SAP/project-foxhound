@@ -20,6 +20,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.throws(TypeError, function() {
     TA.from.call(m, []);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

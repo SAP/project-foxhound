@@ -1,0 +1,8 @@
+key:default
+timestamp:20200101
+certificate:
+issuer:int
+subject:revoked-no-sct.example.com
+validity:20200101-20200201
+extension:subjectAlternativeName:revoked-no-sct.example.com
+extension:authorityInformationAccess:http://localhost:8888/

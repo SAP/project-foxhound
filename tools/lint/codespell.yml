@@ -36,7 +36,7 @@ codespell:
         - python/mach/docs/
         - python/mozlint/
         - python/mozperftest/perfdocs/
-        - remote/doc/
+        - remote/
         - security/manager/locales/en-US/
         - services/settings/docs/
         - taskcluster/docs/
@@ -64,6 +64,7 @@ codespell:
         - xpcom/docs/
     exclude:
         - devtools/docs/contributor/tools/storage/
+        - remote/test/puppeteer/
         - tools/lint/cpp/mingw-headers.txt
         - tools/lint/test/test_codespell.py
         - "**/package-lock.json"

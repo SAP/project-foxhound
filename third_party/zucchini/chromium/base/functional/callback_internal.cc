@@ -22,6 +22,9 @@ bool QueryCancellationTraitsForNonCancellables(
       return true;
   }
   NOTREACHED();
+#if defined(MOZ_ZUCCHINI)
+  return false;
+#endif  // defined(MOZ_ZUCCHINI)
 }
 
 }  // namespace

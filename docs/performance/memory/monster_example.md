@@ -62,15 +62,15 @@ makeMonstersButton.addEventListener("click", makeMonsters);
 The page contains a button: when you push the button, the code creates
 some monsters. Specifically:
 
--   the code creates an object with three properties, each an array:
-    -   one for fierce monsters
-    -   one for friendly monsters
-    -   one for monsters who haven't decided yet.
--   for each array, the code creates and appends 5000
-    randomly-initialized monsters. Each monster has:
-    -   a string, for the monster's name
-    -   a number representing the number of eyes it has
-    -   a number representing the number of tentacles it has.
+- the code creates an object with three properties, each an array:
+  - one for fierce monsters
+  - one for friendly monsters
+  - one for monsters who haven't decided yet.
+- for each array, the code creates and appends 5000
+  randomly-initialized monsters. Each monster has:
+  - a string, for the monster's name
+  - a number representing the number of eyes it has
+  - a number representing the number of tentacles it has.
 
 So the structure of the memory allocated on the JavaScript heap is an
 object containing three arrays, each containing 5000 objects (monsters),

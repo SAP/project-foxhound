@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty('Intl'))
-
 function IntlFallbackSymbol(constructor) {
     return Object.getOwnPropertySymbols(constructor.call(Object.create(constructor.prototype)))[0];
 }

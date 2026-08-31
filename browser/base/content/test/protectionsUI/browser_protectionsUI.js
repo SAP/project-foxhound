@@ -29,7 +29,6 @@ add_setup(async function () {
       // when landing on the page.
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
       ["privacy.trackingprotection.enabled", true],
       ["browser.urlbar.scotchBonnet.enableOverride", true],
     ],
@@ -49,7 +48,7 @@ add_setup(async function () {
 
 async function clickToggle(toggle) {
   let changed = BrowserTestUtils.waitForEvent(toggle, "toggle");
-  await EventUtils.synthesizeMouseAtCenter(toggle.buttonEl, {});
+  EventUtils.synthesizeMouseAtCenter(toggle.buttonEl, {});
   await changed;
 }
 
@@ -314,7 +313,7 @@ add_task(async function testMiniPanelClick() {
   let buttonEl = document.getElementById(
     "protections-popup-toast-panel-tp-on-desc"
   );
-  await EventUtils.synthesizeMouseAtCenter(buttonEl, {});
+  EventUtils.synthesizeMouseAtCenter(buttonEl, {});
 
   info("Waiting for mini panel to close");
   await popuphiddenPromise;
@@ -390,7 +389,7 @@ add_task(async function testToggleSwitchFlow() {
   let buttonEl = document.getElementById(
     "protections-popup-toast-panel-tp-off-desc"
   );
-  await EventUtils.synthesizeMouseAtCenter(buttonEl, {});
+  EventUtils.synthesizeMouseAtCenter(buttonEl, {});
   await popuphiddenPromise;
   await popupShownPromise;
 
@@ -453,7 +452,7 @@ add_task(async function testTrackingProtectionIcon() {
   let TPIcon = document.getElementById("tracking-protection-icon");
   // Check the icon url. It will show a shield icon if TP is enabled.
   is(
-    gBrowser.ownerGlobal
+    gBrowser.documentGlobal
       .getComputedStyle(TPIcon)
       .getPropertyValue("list-style-image"),
     `url("chrome://browser/skin/tracking-protection.svg")`,
@@ -472,7 +471,7 @@ add_task(async function testTrackingProtectionIcon() {
   // Check that the tracking protection icon should show a strike-through shield
   // icon after page is reloaded.
   is(
-    gBrowser.ownerGlobal
+    gBrowser.documentGlobal
       .getComputedStyle(TPIcon)
       .getPropertyValue("list-style-image"),
     `url("chrome://browser/skin/tracking-protection-disabled.svg")`,

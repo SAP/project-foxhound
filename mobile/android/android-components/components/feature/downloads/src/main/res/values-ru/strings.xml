@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_downloads_notification_channel">Загрузки</string>
@@ -10,43 +17,47 @@
   <!-- Summary text shown on an in progress download notification when the estimated time remaining is unknown. -->
   <string name="mozac_feature_downloads_time_remaining_unknown">неизвестное время</string>
   <!-- Text shown on the second row of a paused download notification. -->
-  <string name="mozac_feature_downloads_paused_notification_text">Загрузка приостановлена</string>
+  <string name="mozac_feature_downloads_paused_notification_text">Скачивание приостановлено</string>
   <!-- Text shown on the second row of an completed download notification. The filename is shown on the first row. -->
-  <string name="mozac_feature_downloads_completed_notification_text2">Загрузка завершена</string>
+  <string name="mozac_feature_downloads_completed_notification_text2">Скачивание завершено</string>
   <!-- Text shown on the second row of an failed download notification. The filename is shown on the first row. -->
-  <string name="mozac_feature_downloads_failed_notification_text2">Загрузка не удалась</string>
+  <string name="mozac_feature_downloads_failed_notification_text2">Скачивание не удалось</string>
   <!--
     Alert dialog confirmation before downloading a previously downloaded file, this is the title.
     %1$s will be replaced with the size of the file.
   -->
-  <string name="mozac_feature_downloads_again_dialog_title" tools:ignore="UnusedResources">Загрузить файл снова? (%1$s)</string>
+  <string name="mozac_feature_downloads_again_dialog_title">Скачать файл снова? (%1$s)</string>
   <!--
     Alert dialog confirmation before downloading a file, this is the title.
     %1$s will be replaced with the size of the file.
   -->
-  <string name="mozac_feature_downloads_dialog_title_3">Загрузить файл? (%1$s)</string>
+  <string name="mozac_feature_downloads_dialog_title_3">Скачать файл? (%1$s)</string>
   <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
-  <string name="mozac_feature_downloads_dialog_title_with_unknown_size">Загрузить файл?</string>
+  <string name="mozac_feature_downloads_dialog_title_with_unknown_size">Скачать файл?</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">Скачать файл снова?</string>
   <!-- Alert dialog confirmation before download a file, this is the positive action. -->
-  <string name="mozac_feature_downloads_dialog_download">Загрузить</string>
+  <string name="mozac_feature_downloads_dialog_download">Скачать</string>
   <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
-  <string name="mozac_feature_downloads_dialog_download_again" tools:ignore="UnusedResources">Загрузить снова</string>
+  <string name="mozac_feature_downloads_dialog_download_again">Скачать снова</string>
   <!-- Alert dialog confirmation before download a file, this is the negative action. -->
   <string name="mozac_feature_downloads_dialog_cancel">Отмена</string>
   <!--
     Alert dialog confirmation before downloading a previously downloaded file, this is the description.
     %1$s will be replaced with the name of the file.
   -->
-  <string name="mozac_feature_downloads_already_exists_dialog_title" tools:ignore="UnusedResources">%1$s уже существует.</string>
+  <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s уже существует.</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">Открыть существующий файл</string>
   <!--
     Alert dialog confirmation before downloading a file without network connection, this is the description.
     %1$s will be replaced with the name of the file.
   -->
-  <string name="mozac_feature_downloads_file_failure_no_connection" tools:ignore="UnusedResources">%1$s не был загружен.</string>
+  <string name="mozac_feature_downloads_file_failure_no_connection" tools:ignore="UnusedResources">%1$s не был скачан.</string>
   <!-- Alert dialog confirmation before downloading a file without network connection, this is the description. -->
   <string name="mozac_feature_downloads_file_check_connection" tools:ignore="UnusedResources">Проверьте подключение к Интернету и попробуйте снова.</string>
   <!-- Error shown when the user is trying to download a invalid file. %1$s will be replaced with the name of the app. -->
-  <string name="mozac_feature_downloads_file_not_supported2">%1$s не может загрузить этот тип файла</string>
+  <string name="mozac_feature_downloads_file_not_supported2">%1$s не может скачать этот тип файла</string>
   <!-- Message that appears when the downloaded file could not be opened. -->
   <string name="mozac_feature_downloads_could_not_open_file">Не удалось открыть файл</string>
   <!-- Message that appears when the downloaded file is a specific type (%1$s) that Android doesn't support opening. -->
@@ -68,11 +79,11 @@
   <!-- Message that appears when trying to download with an external app fails. %1$s will be replaced with the name the external app. -->
   <string name="mozac_feature_downloads_unable_to_open_third_party_app">Не удалось открыть %1$s</string>
   <!-- Text for the info dialog when write to storage permissions have been denied but user tries to download a file. -->
-  <string name="mozac_feature_downloads_write_external_storage_permissions_needed_message">Для загрузки файлов требуется разрешение на доступ к файлам и мультимедиа. Перейдите в системные настройки Android, выберите «Разрешения», затем выберите «Разрешить».</string>
+  <string name="mozac_feature_downloads_write_external_storage_permissions_needed_message">Для скачивания файлов требуется разрешение на доступ к файлам и мультимедиа. Перейдите в системные настройки Android, выберите «Разрешения», затем выберите «Разрешить».</string>
   <!-- Alert dialog confirmation before cancelling downloads, this is the title -->
   <string name="mozac_feature_downloads_cancel_active_downloads_warning_content_title">Отменить приватные загрузки?</string>
   <!-- Alert dialog confirmation before cancelling private downloads, this is the body. %1$s will be replaced with the name of the file. -->
-  <string name="mozac_feature_downloads_cancel_active_private_downloads_warning_content_body">Если вы сейчас закроете все приватные вкладки, загрузка %1$s будет отменена. Вы уверены, что хотите выйти из Приватного просмотра?</string>
+  <string name="mozac_feature_downloads_cancel_active_private_downloads_warning_content_body">Если вы сейчас закроете все приватные вкладки, скачивание %1$s будет отменено. Вы уверены, что хотите выйти из приватного просмотра?</string>
   <!-- Alert dialog confirmation before cancelling downloads, this is the positive action. -->
   <string name="mozac_feature_downloads_cancel_active_downloads_accept">Отменить загрузки</string>
   <!-- Alert dialog confirmation before cancelling downloads, this is the negative action. Leaves user in Private browsing -->

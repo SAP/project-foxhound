@@ -111,8 +111,8 @@ support-files = [
   "file_base_csp_img.sjs",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_base_header_csp_img.html"]
@@ -122,8 +122,8 @@ support-files = [
   "test_base_header_csp_img.html^headers^",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug102699.html"]
@@ -142,9 +142,9 @@ skip-if = [
 
 ["test_bug460437.xhtml"]
 skip-if = [
-  "xorigin && debug",
-  "http3",
   "http2",
+  "http3",
+  "debug && xorigin",
 ]
 
 ["test_bug502091.html"]
@@ -164,7 +164,9 @@ skip-if = [
 ["test_bug613662.html"]
 
 ["test_bug613662.xhtml"]
-skip-if = ["xorigin && debug"]
+skip-if = [
+  "debug && xorigin",
+]
 
 ["test_bug639362.html"]
 
@@ -174,16 +176,16 @@ skip-if = ["xorigin && debug"]
 
 ["test_bug655682.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug667533.html"]
 
 ["test_bug672453.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug688580.html"]

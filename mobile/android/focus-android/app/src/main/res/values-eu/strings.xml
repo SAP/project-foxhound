@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s(e)k agintea ematen dizu.</p> <p>Erabili nabigatzaile pribatu gisa: <ul> <li>Bilatu eta nabigatu aplikaziotik zuzenean</li> <li>Blokeatu jarraipen-elementuak (edo eguneratu ezarpenak jarraipen-elementuak baimentzeko)</li> <li>Ezabatu cookieak eta bilaketa- eta nabigatze-historia</li> </ul> </p> <p>Mozillak egina da %1$s. Internet osasuntsu eta irekia sustatzea da gure misioa.<br/> <a href=\"%2$s\">Argibide gehiago</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s(e)k agintea ematen dizu.</p>\n<p>Erabili nabigatzaile pribatu gisa:\n<ul>\n<li>Bilatu eta nabigatu aplikaziotik zuzenean</li>\n<li>Blokeatu jarraipen-elementuak (edo eguneratu ezarpenak jarraipen-elementuak baimentzeko)</li>\n<li>Ezabatu cookieak eta bilaketa- eta nabigatze-historia</li>\n</ul> </p>\n<p>Mozillak egina da %1$s. Internet osasuntsu eta irekia sustatzea da gure misioa.<br/>\n<a href=\"%2$s\">Argibide gehiago</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Argibide gehiago</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Pribatutasuna eta segurtasuna</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -242,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Itsatsi edo idatzi URLa</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Adibidea: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Adibidea: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Adibidea: adibidea.eus</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -314,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Egin %1$s nabigatzaile lehenetsia</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Bidali erabilera-datuak</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Argibide gehiago</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">%1$s denontzat eskaini eta hobetzeko beharrezkoa dena soilik biltzen ahalegintzen da Mozilla.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">%1$s denontzat eskaini eta hobetzeko beharrezkoa dena soilik biltzen ahalegintzen da Mozilla.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Eguneroko erabilpenaren ping-a</string>
-  <string name="preference_daily_usage_ping_description">Honek erabiltzaile aktiboen kopurua kalkulatzen laguntzen dio Mozillari.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Honek erabiltzaile aktiboen kopurua kalkulatzen laguntzen dio Mozillari.</string>
   <string name="preference_daily_usage_ping_learn_more">Argibide gehiago</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Pribatutasun-oharra</string>
@@ -462,21 +471,23 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Jarraitzearekin bat, %1$s onartzen dituzu.</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Jarraitzearekin bat, %1$s onartzen dituzu.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefoxen erabilera-baldintzak</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefoxen erabilera-baldintzak</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefoxi zure pribatutasunak axola dio. Irakurri gehiago gure %1$s.</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefoxi zure pribatutasunak axola dio. Irakurri gehiago gure %1$s.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Pribatutasun-oharrean</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Pribatutasun-oharrean</string>
+  <!-- New Onboarding flow first screen button label -->
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Jarraitu</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">Lotura erabilgarri</string>
   <!--
@@ -551,6 +562,8 @@
   <string name="tabs_tray_action_erase">Ezabatu nabigatze-historia</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Itxi beste fitxak</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Gehitu fitxa berria</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -571,6 +584,21 @@
   <string name="security_popup_security_verified">Egiaztatzailea: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Gunearen segurtasuna</string>
+  <!--
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Ziurtagiria honi jaulkia: %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">2024/1183 (EU) Araudian zehaztu bezala gauzatuta.</string>
   <string name="preference_autocomplete_duplicate_url_error">URLa badago lehendik ere</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Bilatu orrian</string>
@@ -801,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Itxi fitxa</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Bidali hutsegite-txostena Mozillara</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Bidali hutsegite-txostena Mozillara</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -871,7 +899,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Hau zerbitzariaren konfigurazio-errore batengatik edo norbait zerbitzariaren nortasuna hartzen ari delako izan daiteke. <br/><br/> Aurretik zerbitzari honetara behar bezala konektatu bazara, errorea behin-behinekoa izan daiteke.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Baten bat gunea ordezten saiatzen egon liteke eta jarraitzea arriskutsua izan liteke.</label> <br><br> <label>%1$sek ez du <b>%2$s</b> fidagarritzat jotzen ziurtagiriaren jaulkitzailea ezezaguna delako, ziurtagiria guneak berak sinatutakoa delako, edo zerbitzariak ez dituelako tarteko ziurtagiriak egoki bidaltzen.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Baten bat gunea ordezten saiatzen egon liteke eta jarraitzea arriskutsua izan liteke.</label> <br><br>\n<label>%1$sek ez du <b>%2$s</b> fidagarritzat jotzen ziurtagiriaren jaulkitzailea ezezaguna delako, ziurtagiria guneak berak sinatutakoa delako, edo zerbitzariak ez dituelako tarteko ziurtagiriak egoki bidaltzen.</label>]]></string>
   <!--
     Sessions List
 

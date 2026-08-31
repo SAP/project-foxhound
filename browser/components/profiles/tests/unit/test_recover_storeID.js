@@ -16,7 +16,8 @@ add_task(async function test_recover_storeID() {
 
   await IOUtils.makeDirectory(groupsPath);
   let dbFile = PathUtils.join(groupsPath, "foobar.sqlite");
-  let db = await Sqlite.openConnection({
+  // eslint-disable-next-line mozilla/valid-lazy
+  let db = await lazy.Sqlite.openConnection({
     path: dbFile,
     openNotExclusive: true,
   });

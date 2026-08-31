@@ -16,10 +16,13 @@
 #define PERFETTO_ENABLE_LEGACY_TRACE_EVENTS 1
 
 #include "rtc_base/system/rtc_export.h"
-#include "third_party/perfetto/include/perfetto/tracing/track_event.h"  // IWYU pragma: export
-#include "third_party/perfetto/include/perfetto/tracing/track_event_category_registry.h"
-#include "third_party/perfetto/include/perfetto/tracing/track_event_legacy.h"  // IWYU pragma: export
-
+// IWYU pragma: begin_exports
+#include "third_party/perfetto/include/perfetto/tracing/track_event.h"  // nogncheck
+// IWYU pragma: end_exports
+#include "third_party/perfetto/include/perfetto/tracing/track_event_category_registry.h"  // nogncheck
+// IWYU pragma: begin_exports
+#include "third_party/perfetto/include/perfetto/tracing/track_event_legacy.h"  // nogncheck
+// IWYU pragma: end_exports
 PERFETTO_DEFINE_TEST_CATEGORY_PREFIXES("webrtc-test");
 
 PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
@@ -27,8 +30,9 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
     RTC_EXPORT,
     perfetto::Category("webrtc"),
     perfetto::Category("webrtc_stats"),
-    perfetto::Category(TRACE_DISABLED_BY_DEFAULT("webrtc")),
-    perfetto::Category(TRACE_DISABLED_BY_DEFAULT("webrtc_stats")));
+    perfetto::Category(TRACE_DISABLED_BY_DEFAULT("webrtc")).SetTags("slow"),
+    perfetto::Category(TRACE_DISABLED_BY_DEFAULT("webrtc_stats"))
+        .SetTags("slow"));
 
 PERFETTO_USE_CATEGORIES_FROM_NAMESPACE(webrtc);
 

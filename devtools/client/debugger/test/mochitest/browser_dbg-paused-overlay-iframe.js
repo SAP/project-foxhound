@@ -35,19 +35,11 @@ add_task(async function () {
   await waitForPaused(dbg);
   ok(true, "debugger is paused");
 
-  let highlighterTestFront;
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    // We need to retrieve the highlighterTestFront for the frame target.
-    const iframeTarget = commands.targetCommand
-      .getAllTargets([commands.targetCommand.TYPES.FRAME])
-      .find(target => target.url.includes("example.org"));
-    highlighterTestFront = await iframeTarget.getFront("highlighterTest");
-  } else {
-    // When fission is disabled, we don't have a dedicated target for the remote frame.
-    // In this case, the overlay is displayed by the top-level target anyway, so we can
-    // get the corresponding highlighter test front.
-    highlighterTestFront = await getHighlighterTestFront(dbg.toolbox);
-  }
+  // We need to retrieve the highlighterTestFront for the frame target.
+  const iframeTarget = commands.targetCommand
+    .getAllTargets([commands.targetCommand.TYPES.FRAME])
+    .find(target => target.url.includes("example.org"));
+  const highlighterTestFront = await iframeTarget.getFront("highlighterTest");
 
   info("Check that the paused overlay is displayed");
   await waitFor(() => highlighterTestFront.isPausedDebuggerOverlayVisible());

@@ -7,7 +7,15 @@ package mozilla.components.compose.base.modifier
 import android.graphics.Rect
 import android.os.SystemClock
 import androidx.annotation.FloatRange
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -255,6 +263,41 @@ fun Modifier.horizontalFadeGradient(
             )
         },
 )
+
+/**
+ * Applies a shimmering skeleton loading effect to the current [Modifier].
+ *
+ * This can be used as a placeholder for UI elements while their content is loading.
+ *
+ * @param durationMillis The duration in milliseconds of the shimmer animation cycle.
+ * Defaults to `1000`.
+ * @param initialColor The starting color of the gradient animation. Defaults to [Color.LightGray].
+ * @param targetColor The ending color of the gradient animation. Defaults to [Color.White].
+ *
+ * @return A [Modifier] that displays a skeleton loader effect.
+ */
+@Composable
+fun Modifier.skeletonLoader(
+    durationMillis: Int = 1000,
+    initialColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    targetColor: Color = Color.White,
+): Modifier {
+    val transition = rememberInfiniteTransition(label = "infinite")
+
+    val color by transition.animateColor(
+        initialValue = initialColor,
+        targetValue = targetColor,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "color",
+    )
+
+    return drawBehind {
+        drawRect(color = color)
+    }
+}
 
 /**
  * Describes the direction of fade for [Modifier.horizontalFadeGradient].

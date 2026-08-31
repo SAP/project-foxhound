@@ -87,14 +87,21 @@ add_task(async function test_remote_fetch_and_ready() {
     "This prop does not exist before we sync"
   );
 
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["datareporting.healthreport.uploadEnabled", true],
+      ["app.shield.optoutstudies.enabled", true],
+    ],
+  });
+
   await ExperimentAPI.ready();
+  await ExperimentAPI._rsLoader.finishedUpdating();
 
   const { cleanup } = await setup();
 
   // Fake being initialized so we can update recipes
   // we don't need to start any timers
-  ExperimentAPI._rsLoader._enabled = true;
-  await ExperimentAPI._rsLoader.updateRecipes("browser_rsel_remote_defaults");
+  await ExperimentAPI._rsLoader.updateRecipes("test");
 
   Assert.equal(
     NimbusFeatures.foo.getVariable("remoteValue"),
@@ -210,6 +217,8 @@ add_task(async function test_remote_fetch_and_ready() {
 
   await cleanup();
   cleanupTestFeatures();
+
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_remote_fetch_on_updateRecipes() {
@@ -239,6 +248,7 @@ add_task(async function test_remote_fetch_on_updateRecipes() {
   Assert.ok(updateRecipesStub.calledOnce, "Timer calls function");
   Assert.equal(updateRecipesStub.firstCall.args[0], "timer", "Called by timer");
   sandbox.restore();
+  await SpecialPowers.popPrefEnv();
   // This will un-register the timer
   ExperimentAPI._rsLoader.disable();
   Services.prefs.clearUserPref(
@@ -435,6 +445,14 @@ add_task(async function remote_defaults_active_remote_defaults() {
   );
 
   const { cleanup } = await setup([rollout1, rollout2]);
+
+  SpecialPowers.pushPrefEnv({
+    set: [
+      ["datareporting.healthreport.uploadEnabled", true],
+      ["app.shield.optoutstudies.enabled", true],
+    ],
+  });
+
   await ExperimentAPI._rsLoader.updateRecipes("mochitest");
 
   Assert.ok(barFeature.getVariable("enabled"), "Enabled on first sync");
@@ -450,6 +468,8 @@ add_task(async function remote_defaults_active_remote_defaults() {
   ExperimentAPI.manager.store._deleteForTests("foo");
   ExperimentAPI.manager.store._deleteForTests("bar");
   await NimbusTestUtils.flushStore();
+
+  await SpecialPowers.popPrefEnv();
 
   await cleanup();
   cleanupTestFeatures();

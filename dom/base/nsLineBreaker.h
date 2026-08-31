@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,7 +63,7 @@ class nsILineBreakSink {
  */
 class nsLineBreaker {
  public:
-  nsLineBreaker();
+  nsLineBreaker() = default;
   ~nsLineBreaker();
 
   static inline bool IsSpace(char16_t u) {
@@ -260,10 +258,6 @@ class nsLineBreaker {
                              const char16_t* aTextLimit, uint8_t* aBreakState);
 
   inline constexpr bool IsSegmentSpace(char16_t u) const {
-    if (mLegacyBehavior) {
-      return nsLineBreaker::IsSpace(u);
-    }
-
     return u == 0x0020 ||  // SPACE u
            u == 0x0009 ||  // CHARACTER TABULATION
            u == 0x000D;    // CARRIAGE RETURN
@@ -304,8 +298,6 @@ class nsLineBreaker {
   // start using a linebreaker, but it may be set to true if the line-breaker
   // has been explicitly flushed mid-word.
   bool mWordContinuation = false;
-  // True if using old line segmenter.
-  const bool mLegacyBehavior;
 };
 
 #endif /*NSLINEBREAKER_H_*/

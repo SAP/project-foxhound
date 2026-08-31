@@ -334,22 +334,15 @@ function checkPayload(payload, reason, successfulPings) {
   checkPayloadInfo(payload.info, reason);
 
   Assert.greaterOrEqual(payload.simpleMeasurements.totalTime, 0);
-  Assert.equal(payload.simpleMeasurements.shutdownDuration, SHUTDOWN_TIME);
 
   let activeTicks = payload.simpleMeasurements.activeTicks;
   Assert.greaterOrEqual(activeTicks, 0);
 
-  if ("browser.timings.last_shutdown" in payload.processes.parent.scalars) {
-    Assert.equal(
-      payload.processes.parent.scalars["browser.timings.last_shutdown"],
-      SHUTDOWN_TIME
-    );
+  const lastShutdown = Glean.browserTimings.lastShutdown.testGetValue();
+  if (lastShutdown !== null) {
+    Assert.equal(lastShutdown, SHUTDOWN_TIME);
   }
 
-  Assert.equal(
-    payload.simpleMeasurements.failedProfileLockCount,
-    FAILED_PROFILE_LOCK_ATTEMPTS
-  );
   let profileDirectory = Services.dirsvc.get("ProfD", Ci.nsIFile);
   let failedProfileLocksFile = profileDirectory.clone();
   failedProfileLocksFile.append("Telemetry.FailedProfileLocks.txt");
@@ -357,14 +350,8 @@ function checkPayload(payload, reason, successfulPings) {
 
   let isWindows = "@mozilla.org/windows-registry-key;1" in Cc;
   if (isWindows) {
-    Assert.greater(
-      payload.simpleMeasurements.startupSessionRestoreReadBytes,
-      0
-    );
-    Assert.greater(
-      payload.simpleMeasurements.startupSessionRestoreWriteBytes,
-      0
-    );
+    Assert.greater(Glean.startupIo.read.sessionRestore.testGetValue(), 0);
+    Assert.greater(Glean.startupIo.write.sessionRestore.testGetValue(), 0);
   }
 
   const TELEMETRY_SEND_SUCCESS = "TELEMETRY_SEND_SUCCESS";
@@ -413,9 +400,8 @@ function checkPayload(payload, reason, successfulPings) {
   // Telemetry doesn't touch a memory reporter with these units that's
   // available on all platforms.
 
-  Assert.ok("MEMORY_TOTAL" in payload.histograms); // UNITS_BYTES
-  Assert.ok("MEMORY_JS_GC_HEAP" in payload.histograms); // UNITS_BYTES
-  Assert.ok("MEMORY_JS_COMPARTMENTS_SYSTEM" in payload.histograms); // UNITS_COUNT
+  Assert.notEqual(Glean.memory.total.testGetValue(), null); // UNITS_BYTES
+  Assert.notEqual(Glean.memory.jsCompartmentsSystem.testGetValue(), null); // UNITS_COUNT
 
   Assert.ok(
     "mainThread" in payload.slowSQL && "otherThreads" in payload.slowSQL
@@ -491,9 +477,10 @@ function write_fake_failedprofilelocks_file() {
   writeStringToFile(file, contents);
 }
 
-add_task(async function test_setup() {
+add_setup(async function () {
   // Addon manager needs a profile directory
   do_get_profile();
+  Services.fog.initializeFOG();
   await loadAddonManager(APP_ID, APP_NAME, APP_VERSION, PLATFORM_VERSION);
   finishAddonManagerStartup();
   fakeIntlReady();
@@ -640,9 +627,17 @@ add_task(async function test_simplePing() {
   // Check that we get the data we expect.
   let payload = ping.payload;
   Assert.equal(payload.info.sessionId, expectedSessionUUID);
+  Assert.equal(
+    Glean.legacyTelemetry.sessionId.testGetValue(),
+    expectedSessionUUID
+  );
   Assert.equal(payload.info.subsessionId, expectedSubsessionUUID);
   let sessionStartDate = new Date(payload.info.sessionStartDate);
   Assert.equal(sessionStartDate.toISOString(), expectedDate.toISOString());
+  Assert.equal(
+    Glean.legacyTelemetry.sessionStartDate.testGetValue().getTime(),
+    expectedDate.getTime()
+  );
   let subsessionStartDate = new Date(payload.info.subsessionStartDate);
   Assert.equal(subsessionStartDate.toISOString(), expectedDate.toISOString());
   Assert.equal(payload.info.subsessionLength, SESSION_DURATION_IN_MINUTES * 60);
@@ -2119,7 +2114,6 @@ add_task(async function test_pingExtendedStats() {
     "log",
     "slowSQL",
     "fileIOReports",
-    "lateWrites",
     "addonDetails",
   ];
 
@@ -2176,10 +2170,6 @@ add_task(async function test_pingExtendedStats() {
     );
   }
 
-  Assert.ok(
-    "addonManager" in ping.payload.simpleMeasurements,
-    "addonManager must be sent if the extended set is on."
-  );
   Assert.ok(
     !("UITelemetry" in ping.payload.simpleMeasurements),
     "UITelemetry must not be sent."

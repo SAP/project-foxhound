@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set ts=4 sw=4 sts=4 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,7 +62,7 @@ nsHttpTransaction* ToRealHttpTransaction(PHttpTransactionChild* aTrans) {
 
 mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvAddTransaction(
     PHttpTransactionChild* aTrans, const int32_t& aPriority) {
-  Unused << mConnMgr->AddTransaction(ToRealHttpTransaction(aTrans), aPriority);
+  (void)mConnMgr->AddTransaction(ToRealHttpTransaction(aTrans), aPriority);
   return IPC_OK();
 }
 
@@ -72,7 +70,7 @@ mozilla::ipc::IPCResult
 HttpConnectionMgrChild::RecvAddTransactionWithStickyConn(
     PHttpTransactionChild* aTrans, const int32_t& aPriority,
     PHttpTransactionChild* aTransWithStickyConn) {
-  Unused << mConnMgr->AddTransactionWithStickyConn(
+  (void)mConnMgr->AddTransactionWithStickyConn(
       ToRealHttpTransaction(aTrans), aPriority,
       ToRealHttpTransaction(aTransWithStickyConn));
   return IPC_OK();
@@ -80,8 +78,8 @@ HttpConnectionMgrChild::RecvAddTransactionWithStickyConn(
 
 mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvRescheduleTransaction(
     PHttpTransactionChild* aTrans, const int32_t& aPriority) {
-  Unused << mConnMgr->RescheduleTransaction(ToRealHttpTransaction(aTrans),
-                                            aPriority);
+  (void)mConnMgr->RescheduleTransaction(ToRealHttpTransaction(aTrans),
+                                        aPriority);
   return IPC_OK();
 }
 
@@ -95,7 +93,7 @@ HttpConnectionMgrChild::RecvUpdateClassOfServiceOnTransaction(
 
 mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvCancelTransaction(
     PHttpTransactionChild* aTrans, const nsresult& aReason) {
-  Unused << mConnMgr->CancelTransaction(ToRealHttpTransaction(aTrans), aReason);
+  (void)mConnMgr->CancelTransaction(ToRealHttpTransaction(aTrans), aReason);
   return IPC_OK();
 }
 
@@ -144,12 +142,6 @@ SpeculativeConnectionOverrider::GetParallelSpeculativeConnectLimit(
 }
 
 NS_IMETHODIMP
-SpeculativeConnectionOverrider::GetIsFromPredictor(bool* aIsFromPredictor) {
-  *aIsFromPredictor = mArgs.isFromPredictor();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 SpeculativeConnectionOverrider::GetAllow1918(bool* aAllow) {
   *aAllow = mArgs.allow1918();
   return NS_OK;
@@ -172,8 +164,8 @@ mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvSpeculativeConnect(
     trans = static_cast<AltSvcTransactionChild*>(*aTrans)->CreateTransaction();
   }
 
-  Unused << mConnMgr->SpeculativeConnect(cinfo, overrider, aCaps, trans,
-                                         aFetchHTTPSRR);
+  (void)mConnMgr->SpeculativeConnect(cinfo, overrider, aCaps, trans,
+                                     aFetchHTTPSRR);
   return IPC_OK();
 }
 
@@ -183,8 +175,8 @@ mozilla::ipc::IPCResult HttpConnectionMgrChild::RecvStartWebSocketConnection(
   child->Init(aListenerId);
   nsCOMPtr<nsIHttpUpgradeListener> listener =
       static_cast<nsIHttpUpgradeListener*>(child.get());
-  Unused << mConnMgr->CompleteUpgrade(
-      ToRealHttpTransaction(aTransWithStickyConn), listener);
+  (void)mConnMgr->CompleteUpgrade(ToRealHttpTransaction(aTransWithStickyConn),
+                                  listener);
   return IPC_OK();
 }
 

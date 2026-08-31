@@ -10,6 +10,7 @@ Network Security Services (NSS)
 
    build.rst
    community.rst
+   try.rst
    runbooks/index.rst
    legacy_extracts/index.rst
    releases/index.rst

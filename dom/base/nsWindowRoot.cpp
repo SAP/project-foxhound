@@ -1,38 +1,40 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsWindowRoot.h"
+
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/HTMLEditor.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/dom/WindowRootBinding.h"
-#include "nsCOMPtr.h"
-#include "nsWindowRoot.h"
-#include "nsPIDOMWindow.h"
-#include "nsPresContext.h"
-#include "nsString.h"
-#include "nsFrameLoaderOwner.h"
-#include "nsFrameLoader.h"
-#include "nsQueryActor.h"
-#include "nsGlobalWindowOuter.h"
-#include "nsFocusManager.h"
-#include "nsIContent.h"
-#include "nsIControllers.h"
-#include "nsIController.h"
-#include "nsQueryObject.h"
-#include "xpcpublic.h"
-#include "nsCycleCollectionParticipant.h"
+#include "mozilla/TextControlElement.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/dom/HTMLTextAreaElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/HTMLTextAreaElement.h"
 #include "mozilla/dom/JSActorService.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-
+#include "mozilla/dom/WindowRootBinding.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsFocusManager.h"
+#include "nsFrameLoader.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsFrameSelection.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsIContent.h"
+#include "nsIController.h"
+#include "nsIControllers.h"
+#include "nsPIDOMWindow.h"
+#include "nsPresContext.h"
+#include "nsQueryActor.h"
+#include "nsQueryObject.h"
+#include "nsString.h"
 #include "nsXULElement.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -112,17 +114,82 @@ void nsWindowRoot::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   // To keep mWindow alive
   aVisitor.mItemData = static_cast<nsISupports*>(mWindow);
   aVisitor.SetParentTarget(mParent, false);
+
+  // We need to handle eFocus and eBlur to set up selection. However, that
+  // needs to be done before dispatching the event to the DOM:
+  // https://w3c.github.io/uievents/#event-type-focus
+  // > The focus MUST be given to the element before the dispatch of this
+  // > event type.
+  // https://w3c.github.io/uievents/#event-type-blur
+  // > The focus MUST be taken from the element before the dispatch of this
+  // > event type.
+  // Therefore, we want the pre handler.
+  if (aVisitor.mEvent->IsTrusted() && (aVisitor.mEvent->mMessage == eFocus ||
+                                       aVisitor.mEvent->mMessage == eBlur)) {
+    aVisitor.mWantsPreHandleEvent = true;
+  }
 }
 
-nsresult nsWindowRoot::PostHandleEvent(EventChainPostVisitor& aVisitor) {
+nsresult nsWindowRoot::PreHandleEvent(EventChainVisitor& aVisitor) {
+  MOZ_ASSERT(aVisitor.mEvent->mMessage == eFocus ||
+             aVisitor.mEvent->mMessage == eBlur);
+  MOZ_ASSERT(aVisitor.mEvent->IsTrusted());
+
+  const nsCOMPtr<nsINode> targetNode = nsINode::FromEventTargetOrNull(
+      aVisitor.mEvent->GetOriginalDOMEventTarget());
+  if (!targetNode) {
+    return NS_OK;
+  }
+
+  const RefPtr<PresShell> presShell = targetNode->OwnerDoc()->GetPresShell();
+  if (!presShell) [[unlikely]] {
+    return NS_OK;
+  }
+
+  // Maintain selection state before HTMLEditor and/or TextEditor handles
+  // focus/blur below.
+  if (Document* const targetDocument = Document::FromNodeOrNull(targetNode)) {
+    if (aVisitor.mEvent->mMessage == eFocus) {
+      nsFrameSelection::WillFocusDocument(*presShell, *targetDocument);
+    } else {
+      nsFrameSelection::WillBlurDocument(*presShell, *targetDocument);
+    }
+  }
+  // If new focused element is a text control element in an editing host,
+  // both HTMLEditor and TextEditor need to handle the focus event for the
+  // backward compatibility. Then, we need to make HTMLEditor handle it
+  // first, then TextEditor will handle it below via
+  // TextControlElement::WillFocus().
+  if (aVisitor.mEvent->mMessage == eFocus) {
+    HTMLEditor::WillFocusNode(*presShell, targetNode);
+  }
+  // To keep the traditional behavior at blur, we should call
+  // HTMLEditor::OnBlur() before TextEditor::OnBlur() which is now called by
+  // TextControlElement::WillBlur() called below.
+  else {
+    HTMLEditor::WillBlurNode(*presShell, targetNode);
+  }
+
+  // Finally, set up selection of `TextEditor` if and only if the event target
+  // is a text control.
+  if (auto* const targetTextControlElement =
+          TextControlElement::FromNodeOrNull(targetNode)) {
+    if (targetTextControlElement->IsSingleLineTextControlOrTextArea()) {
+      if (aVisitor.mEvent->mMessage == eFocus) {
+        MOZ_KnownLive(targetTextControlElement)->WillFocus(*aVisitor.mEvent);
+      } else {
+        MOZ_KnownLive(targetTextControlElement)->WillBlur(*aVisitor.mEvent);
+      }
+    }
+  }
   return NS_OK;
 }
 
-nsPIDOMWindowOuter* nsWindowRoot::GetOwnerGlobalForBindingsInternal() {
-  return mWindow;
+nsGlobalWindowInner* nsWindowRoot::GetInnerWindow() {
+  return nsGlobalWindowInner::Cast(mWindow->GetCurrentInnerWindow());
 }
 
-nsIGlobalObject* nsWindowRoot::GetOwnerGlobal() const {
+nsIGlobalObject* nsWindowRoot::GetRelevantGlobal() const {
   nsCOMPtr<nsIGlobalObject> global =
       do_QueryInterface(mWindow->GetCurrentInnerWindow());
   // We're still holding a ref to it, so returning the raw pointer is ok...
@@ -146,24 +213,22 @@ nsresult nsWindowRoot::GetControllers(bool aForVisibleWindow,
   nsIContent* focusedContent = nsFocusManager::GetFocusedDescendant(
       mWindow, searchRange, getter_AddRefs(focusedWindow));
   if (focusedContent) {
-    RefPtr<nsXULElement> xulElement = nsXULElement::FromNode(focusedContent);
-    if (xulElement) {
-      ErrorResult rv;
-      *aResult = xulElement->GetControllers(rv);
+    if (auto* xulElement = nsXULElement::FromNode(focusedContent)) {
+      *aResult = xulElement->GetExtantControllers();
       NS_IF_ADDREF(*aResult);
-      return rv.StealNSResult();
+      return NS_OK;
     }
-
-    HTMLTextAreaElement* htmlTextArea =
-        HTMLTextAreaElement::FromNode(focusedContent);
-    if (htmlTextArea) return htmlTextArea->GetControllers(aResult);
-
-    HTMLInputElement* htmlInputElement =
-        HTMLInputElement::FromNode(focusedContent);
-    if (htmlInputElement) return htmlInputElement->GetControllers(aResult);
-
-    if (focusedContent->IsEditable() && focusedWindow)
+    auto* htmlTextArea = HTMLTextAreaElement::FromNode(focusedContent);
+    if (htmlTextArea) {
+      return htmlTextArea->GetControllers(aResult);
+    }
+    auto* htmlInputElement = HTMLInputElement::FromNode(focusedContent);
+    if (htmlInputElement) {
+      return htmlInputElement->GetControllers(aResult);
+    }
+    if (focusedContent->IsEditable() && focusedWindow) {
       return focusedWindow->GetControllers(aResult);
+    }
   } else {
     return focusedWindow->GetControllers(aResult);
   }

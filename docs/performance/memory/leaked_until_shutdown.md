@@ -46,6 +46,7 @@ With that confirmed, we need to re-run the test with a lot of environment variab
     MOZ_DISABLE_CONTENT_SANDBOX=t MOZ_CC_LOG_DIRECTORY=~/logs/emptylog/ MOZ_CC_LOG_ALL=1 MOZ_CC_LOG_PROCESS=main MOZ_CC_LOG_THREAD=main ./mach test --headless browser_tab_groups_empty.js
 
 Breaking this down:
+
 1. `MOZ_DISABLE_CONTENT_SANDBOX=t` disables the sandbox so that the content process can save logs to the disk. This isn't needed if you are only logging the parent process.
 2. `MOZ_CC_LOG_DIRECTORY=~/logs/emptylog/` sets the directory we are saving the logs to. Adjust it as appropriate. The directory must already exist.
 3. `MOZ_CC_LOG_ALL=1` logs every cycle collection while the browser is running. We have to do this because we can't tell in advance which CC will capture the state when the window is leaking. This means we will have many logs.
@@ -73,16 +74,14 @@ This tells us that 0x135153800 and 0x14b22fc00 are the addresses of the windows 
 
 Now we go to the directory where the CC logs were saved, and see which logs have the windows we're interested in, using the information about the PID and addresses we just gathered:
 
-```
-~/logs/emptylog % grep nsGlobalWindow cc-edges.90804* | grep 135153800
-cc-edges.90804-1.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
-cc-edges.90804-2.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
-cc-edges.90804-3.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
-cc-edges.90804-4.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
-cc-edges.90804-5.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
-cc-edges.90804-6.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
-cc-edges.90804-7.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
-```
+    ~/logs/emptylog % grep nsGlobalWindow cc-edges.90804* | grep 135153800
+    cc-edges.90804-1.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
+    cc-edges.90804-2.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
+    cc-edges.90804-3.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
+    cc-edges.90804-4.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
+    cc-edges.90804-5.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
+    cc-edges.90804-6.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
+    cc-edges.90804-7.log:0x135153800 [rc=2] nsGlobalWindowOuter # 30 outer
 
 The number in the file name indicates the order these logs were created in. `cc-edges.90804-7.log` is the final log that the windows appeared in, so that is probably the log for the CC where it was freed. We can confirm this by looking for the special `[garbage]` indicator in the log:
 
@@ -91,22 +90,20 @@ The number in the file name indicates the order these logs were created in. `cc-
 
 Because the window was cleaned up in log 7, we want to investigate log 6, because the window was still alive, but probably should have already been cleaned up. (The leak checking framework runs a bunch of CCs before the point where the window should be cleaned up.) To do this, we need the `find_roots` script [from here](https://github.com/amccreight/heapgraph/). You give this script the name of the log and the address of the object:
 
-```
-~/logs/emptylog % ~/tools/heapgraph/find_roots.py cc-edges.90804-6.log 0x14b22fc00
-Parsing cc-edges.90804-6.log. Done loading graph.
+    ~/logs/emptylog % ~/tools/heapgraph/find_roots.py cc-edges.90804-6.log 0x14b22fc00
+    Parsing cc-edges.90804-6.log. Done loading graph.
 
-0x135df8640 [LoadedScript]
-    --[mModuleRecord]--> 0x2cf45673da80 [JS Object (Module)]
-    --[**UNKNOWN SLOT 1**]--> 0x2cf45673dad8 [JS Object (ModuleEnvironmentObject)]
-    --[SessionStoreTestUtils]--> 0x39112798e660 [JS Object (Object)]
-    --[windowGlobal]--> 0x2cf45676e660 [JS Object (Proxy)]
-    --[baseshape_global, proxy target]--> 0x112cd36e8c90 [JS Object (Window)]
-    --[UnwrapDOMObject(obj)]--> 0x14b22fc00 [nsGlobalWindowInner # 31 inner chrome://browser/content/browser.xhtml]
+    0x135df8640 [LoadedScript]
+        --[mModuleRecord]--> 0x2cf45673da80 [JS Object (Module)]
+        --[**UNKNOWN SLOT 1**]--> 0x2cf45673dad8 [JS Object (ModuleEnvironmentObject)]
+        --[SessionStoreTestUtils]--> 0x39112798e660 [JS Object (Object)]
+        --[windowGlobal]--> 0x2cf45676e660 [JS Object (Proxy)]
+        --[baseshape_global, proxy target]--> 0x112cd36e8c90 [JS Object (Window)]
+        --[UnwrapDOMObject(obj)]--> 0x14b22fc00 [nsGlobalWindowInner # 31 inner chrome://browser/content/browser.xhtml]
 
-    Root 0x135df8640 is a ref counted object with 1 unknown edge(s).
-    known edges:
-        0x2cf45676e5f0 [JS Object (ScriptSource)]  --[]--> 0x135df8640
-```
+        Root 0x135df8640 is a ref counted object with 1 unknown edge(s).
+        known edges:
+            0x2cf45676e5f0 [JS Object (ScriptSource)]  --[]--> 0x135df8640
 
 What this ASCII art means is that there is a path from a `LoadedScript` object to the window.
 

@@ -17,6 +17,9 @@ import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.preference.PreferenceFragmentCompat
 
+/**
+ * Base class for all settings fragments in the app.
+ */
 abstract class BaseSettingsFragment : PreferenceFragmentCompat(), MenuProvider {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)

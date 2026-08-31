@@ -1,0 +1,8 @@
+[DEFAULT]
+subsuite = "integration"
+tags = "os_integration"
+run-if = [
+  "buildapp == 'browser'",
+]
+
+["test_persistent_contentscripts.py"]

@@ -30,7 +30,7 @@ async function runTest(input, url) {
   // FIXME: SpecialPowers.spawn currently crashes when trying to return
   // values containing input streams.
   /* eslint-disable no-shadow */
-  let dataBack = await ContentTask.spawn(browser, data, function (data) {
+  let dataBack = await SpecialPowers.spawn(browser, [data], function (data) {
     let dataBack = {
       inputStream: data.inputStream,
       check: true,
@@ -69,4 +69,60 @@ add_task(async function test() {
     await runTest("Hello world", URIs[i]);
     await runTest(a, URIs[i]);
   }
+});
+
+// Sending an nsIInputStream over a broadcasting message manager should fail,
+// as broadcasting message managers don't support transferring (bug 2023670).
+// The structured clone write will fail and GetParamsForMessage falls back to
+// JSON serialization, which drops the stream.
+add_task(async function test_broadcast_inputStream_fails() {
+  await BrowserTestUtils.withNewTab(
+    "http://example.com/browser/dom/base/test/empty.html",
+    async browser => {
+      let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+        Ci.nsIStringInputStream
+      );
+      stream.setByteStringData("hello");
+
+      // Register the listener in the content process first, and wait for
+      // that to complete before broadcasting, to avoid a race.
+      await SpecialPowers.spawn(browser, [], () => {
+        content._testPromise = new Promise(resolve => {
+          Services.cpmm.addMessageListener(
+            "test-inputstream",
+            function listener(msg) {
+              Services.cpmm.removeMessageListener("test-inputstream", listener);
+              resolve(msg.data);
+            }
+          );
+        });
+      });
+
+      let data = {
+        inputStream: stream,
+        sentinel: "hello",
+      };
+
+      Services.ppmm.broadcastAsyncMessage("test-inputstream", {
+        inputStream: stream,
+        sentinel: "hello",
+      });
+
+      let expectedResult = JSON.parse(JSON.stringify(data));
+
+      await SpecialPowers.spawn(
+        browser,
+        [expectedResult],
+        async expectedResult => {
+          let data = await content._testPromise;
+          is(data.sentinel, "hello", "Message was received");
+          Assert.deepEqual(
+            data,
+            expectedResult,
+            "The message is as-if it was round-tripped through JSON (which it was)"
+          );
+        }
+      );
+    }
+  );
 });

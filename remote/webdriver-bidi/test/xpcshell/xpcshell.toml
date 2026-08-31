@@ -1,3 +1,5 @@
 [DEFAULT]
 
+["test_ConsoleMessageFormatter.js"]
+
 ["test_WebDriverBiDiConnection.js"]

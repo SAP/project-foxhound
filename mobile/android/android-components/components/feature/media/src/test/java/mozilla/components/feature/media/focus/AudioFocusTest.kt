@@ -18,9 +18,9 @@ import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
@@ -31,9 +31,6 @@ import org.mockito.Mockito.verifyNoMoreInteractions
 @RunWith(AndroidJUnit4::class)
 class AudioFocusTest {
     private lateinit var audioManager: AudioManager
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setUp() {
@@ -134,6 +131,19 @@ class AudioFocusTest {
 
         verify(audioManager).requestAudioFocus(any())
         verify(mediaSessionState.controller).pause()
+    }
+
+    @Test
+    fun `WHEN AUDIOFOCUS_REQUEST_DELAYED is received THEN transient loss callback is invoked with true`() {
+        var notified = false
+        val store = BrowserStore(BrowserState(tabs = listOf(createTab("https://www.mozilla.org"))))
+        val audioFocus = AudioFocus(audioManager, store, onTransientFocusLoss = { notified = it })
+        doReturn(AudioManager.AUDIOFOCUS_REQUEST_DELAYED)
+            .`when`(audioManager).requestAudioFocus(any())
+
+        audioFocus.request("tabId")
+
+        assertTrue(notified)
     }
 
     @Test
@@ -359,5 +369,55 @@ class AudioFocusTest {
         audioFocus.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
         verify(mediaSessionState.controller, never()).play()
         verifyNoMoreInteractions(mediaSessionState.controller)
+    }
+
+    @Test
+    fun `WHEN AUDIOFOCUS_LOSS_TRANSIENT is received THEN transient loss callback is invoked with true`() {
+        var notified = false
+        val store = BrowserStore(BrowserState(tabs = listOf(createTab("https://www.mozilla.org"))))
+        val audioFocus = AudioFocus(audioManager, store, onTransientFocusLoss = { notified = it })
+
+        audioFocus.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+
+        assertTrue(notified)
+    }
+
+    @Test
+    fun `WHEN AUDIOFOCUS_GAIN is received after transient loss THEN transient loss callback is invoked with false`() {
+        var notified = true
+        val store = BrowserStore(BrowserState(tabs = listOf(createTab("https://www.mozilla.org"))))
+        val audioFocus = AudioFocus(audioManager, store, onTransientFocusLoss = { notified = it })
+
+        audioFocus.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        audioFocus.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+
+        assertFalse(notified)
+    }
+
+    @Test
+    fun `WHEN AUDIOFOCUS_LOSS is received THEN transient loss callback is invoked with false`() {
+        var notified = true
+        val store = BrowserStore(BrowserState(tabs = listOf(createTab("https://www.mozilla.org"))))
+        val audioFocus = AudioFocus(audioManager, store, onTransientFocusLoss = { notified = it })
+
+        audioFocus.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        audioFocus.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+
+        assertFalse(notified)
+    }
+
+    @Test
+    fun `WHEN audio focus is abandoned THEN transient loss callback is invoked with false`() {
+        doReturn(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            .`when`(audioManager).requestAudioFocus(any())
+
+        var notified = true
+        val store = BrowserStore(BrowserState(tabs = listOf(createTab("https://www.mozilla.org"))))
+        val audioFocus = AudioFocus(audioManager, store, onTransientFocusLoss = { notified = it })
+
+        audioFocus.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        audioFocus.abandon()
+
+        assertFalse(notified)
     }
 }

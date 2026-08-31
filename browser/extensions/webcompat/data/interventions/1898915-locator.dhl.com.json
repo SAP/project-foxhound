@@ -1,0 +1,18 @@
+{
+  "label": "locator.dhl.com",
+  "bugs": {
+    "1898915": {
+      "issue": "unsupported-warning",
+      "matches": ["*://locator.dhl.com/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": "[app-unsupported-browsers] { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

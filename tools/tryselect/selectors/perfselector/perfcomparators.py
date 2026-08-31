@@ -242,9 +242,11 @@ def get_comparator(comparator):
 
     members = inspect.getmembers(
         module,
-        lambda c: inspect.isclass(c)
-        and issubclass(c, BasePerfComparator)
-        and c != BasePerfComparator,
+        lambda c: (
+            inspect.isclass(c)
+            and issubclass(c, BasePerfComparator)
+            and c != BasePerfComparator
+        ),
     )
 
     if not members:

@@ -23,8 +23,8 @@ var desc = {
 
 Object.defineProperty(TypedArray.prototype, "length", desc);
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA([42, 43]);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg([42, 43]));
 
   Object.defineProperty(TA.prototype, "length", desc);
   Object.defineProperty(sample, "length", desc);
@@ -35,6 +35,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.sameValue(result[0], 42);
   assert.sameValue(result[1], 43);
   assert.sameValue(result.hasOwnProperty(2), false);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

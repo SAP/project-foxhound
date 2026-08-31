@@ -9,8 +9,7 @@ support-files = [
 
 ["test_intl_on_workers.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'", # Bug 1309447
-  "os == 'android' && android_version == '34' && processor == 'x86_64'", # Bug 1309447
+  "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1309447
 ]
 
 ["test_langPackMatcher.js"]

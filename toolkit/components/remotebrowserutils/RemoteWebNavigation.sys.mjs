@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -47,27 +46,18 @@ export class RemoteWebNavigation {
   }
 
   get canGoBack() {
-    if (Services.appinfo.sessionHistoryInParent) {
-      const sessionHistory = this._browser.browsingContext.sessionHistory;
-      return sessionHistory?.canGoBackFromEntryAtIndex(sessionHistory?.index);
-    }
-    return this._canGoBack;
+    const sessionHistory = this._browser.browsingContext.sessionHistory;
+    return sessionHistory?.canGoBackFromEntryAtIndex(sessionHistory?.index);
   }
 
   get canGoBackIgnoringUserInteraction() {
-    if (Services.appinfo.sessionHistoryInParent) {
-      const sessionHistory = this._browser.browsingContext.sessionHistory;
-      return sessionHistory?.index > 0;
-    }
-    return this._canGoBackIgnoringUserInteraction;
+    const sessionHistory = this._browser.browsingContext.sessionHistory;
+    return sessionHistory?.index > 0;
   }
 
   get canGoForward() {
-    if (Services.appinfo.sessionHistoryInParent) {
-      let sessionHistory = this._browser.browsingContext.sessionHistory;
-      return sessionHistory?.index < sessionHistory?.count - 1;
-    }
-    return this._canGoForward;
+    let sessionHistory = this._browser.browsingContext.sessionHistory;
+    return sessionHistory?.index < sessionHistory?.count - 1;
   }
 
   goBack(requireUserInteraction = false) {

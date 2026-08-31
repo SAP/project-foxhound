@@ -4,19 +4,10 @@
  */
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 description: |
-  pending
+  (eval)(...) is a direct eval, (1, eval)() isn't, etc.
 esid: pending
 ---*/
-//-----------------------------------------------------------------------------
-print("(eval)(...) is a direct eval, (1, eval)() isn't, etc.");
-
-/**************
- * BEGIN TEST *
- **************/
 
 /*
  * Justification:
@@ -69,9 +60,5 @@ function groupAndNaNTernary()
   return (0 / 0 ? null : eval)("t");
 }
 assert.sameValue(groupAndNaNTernary(), "global");
-
-/******************************************************************************/
-
-print("All tests passed!");
 
 reportCompare(0, 0);

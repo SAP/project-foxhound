@@ -7,14 +7,15 @@ package org.mozilla.fenix.helpers
 import android.os.Handler
 import android.os.Looper
 import androidx.test.platform.app.InstrumentationRegistry
-import okhttp3.mockwebserver.Dispatcher
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.RecordedRequest
+import mockwebserver3.Dispatcher
+import mockwebserver3.MockResponse
+import mockwebserver3.RecordedRequest
 import okio.Buffer
 import okio.source
 import java.io.IOException
-import java.io.InputStream
+
+private const val HTTP_OK = 200
+private const val HTTP_NOT_FOUND = 404
 
 /**
  * A [MockWebServer] [Dispatcher] that will return a generic search results page in the body of
@@ -23,7 +24,7 @@ import java.io.InputStream
  * If the dispatcher is unable to read a requested asset, it will fail the test by throwing an
  * Exception on the main thread.
  *
- * @sample [org.mozilla.fenix.ui.SearchTest]
+ * @see SearchMockServerRule
  */
 class SearchDispatcher : Dispatcher() {
     private val mainThreadHandler = Handler(Looper.getMainLooper())
@@ -31,34 +32,24 @@ class SearchDispatcher : Dispatcher() {
     override fun dispatch(request: RecordedRequest): MockResponse {
         val assetManager = InstrumentationRegistry.getInstrumentation().context.assets
         try {
-            // When we perform a search with the custom search engine, returns the generic4.html test page as search results
-            if (request.path!!.contains("searchResults.html?search=")) {
-                MockResponse().setResponseCode(HTTP_OK)
+            if (request.target.contains("searchResults.html?search=")) {
                 val path = "pages/generic4.html"
                 assetManager.open(path).use { inputStream ->
-                    return fileToResponse(inputStream)
+                    return MockResponse.Builder()
+                        .code(HTTP_OK)
+                        .body(Buffer().apply { writeAll(inputStream.source()) })
+                        .addHeader("content-type: text/html; charset=utf-8")
+                        .build()
                 }
             }
-            return MockResponse().setResponseCode(HTTP_NOT_FOUND)
+            return MockResponse(code = HTTP_NOT_FOUND)
         } catch (e: IOException) {
             // e.g. file not found.
             // We're on a background thread so we need to forward the exception to the main thread.
-            mainThreadHandler.postAtFrontOfQueue { throw e }
-            return MockResponse().setResponseCode(HTTP_NOT_FOUND)
+            mainThreadHandler.postAtFrontOfQueue {
+                throw IllegalStateException("Could not load asset for: ${request.target}", e)
+            }
+            return MockResponse(code = HTTP_NOT_FOUND)
         }
     }
-}
-
-@Throws(IOException::class)
-private fun fileToResponse(file: InputStream): MockResponse {
-    return MockResponse()
-        .setResponseCode(HTTP_OK)
-        .setBody(fileToBytes(file))
-}
-
-@Throws(IOException::class)
-private fun fileToBytes(file: InputStream): Buffer {
-    val result = Buffer()
-    result.writeAll(file.source())
-    return result
 }

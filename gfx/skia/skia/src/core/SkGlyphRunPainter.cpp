@@ -17,16 +17,19 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTArray.h"
+#include "src/core/SkDraw.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkMask.h"
+#include "src/core/SkMipmap.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkStrike.h"
 #include "src/core/SkStrikeSpec.h"
@@ -204,20 +207,20 @@ prepare_for_direct_bitmap_drawing(SkStrike* strike,
 }
 }  // namespace
 
-// -- SkGlyphRunListPainterCPU ---------------------------------------------------------------------
-SkGlyphRunListPainterCPU::SkGlyphRunListPainterCPU(const SkSurfaceProps& props,
-                                                   SkColorType colorType,
-                                                   SkColorSpace* cs)
+namespace skcpu {
+GlyphRunListPainter::GlyphRunListPainter(const SkSurfaceProps& props,
+                                         SkColorType colorType,
+                                         SkColorSpace* cs)
         : fDeviceProps{props}
         , fBitmapFallbackProps{props.cloneWithPixelGeometry(kUnknown_SkPixelGeometry)}
         , fColorType{colorType}
         , fScalerContextFlags{compute_scaler_context_flags(cs)} {}
 
-void SkGlyphRunListPainterCPU::drawForBitmapDevice(SkCanvas* canvas,
-                                                   const BitmapDevicePainter* bitmapDevice,
-                                                   const sktext::GlyphRunList& glyphRunList,
-                                                   const SkPaint& paint,
-                                                   const SkMatrix& drawMatrix) {
+void GlyphRunListPainter::drawForBitmapDevice(SkCanvas* canvas,
+                                              const BitmapDevicePainter* bitmapDevice,
+                                              const sktext::GlyphRunList& glyphRunList,
+                                              const SkPaint& paint,
+                                              const SkMatrix& drawMatrix) {
     STArray<64, const SkGlyph*> acceptedPackedGlyphIDs;
     STArray<64, SkPoint> acceptedPositions;
     STArray<64, SkGlyphID> rejectedGlyphIDs;
@@ -288,10 +291,10 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(SkCanvas* canvas,
                         m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
                                             translate.x(), translate.y());
 
-                        SkPath deviceOutline;
-                        path->transform(m, &deviceOutline);
-                        deviceOutline.setIsVolatile(true);
-                        canvas->drawPath(deviceOutline, pathPaint);
+                        SkPathBuilder builder;
+                        builder.addPath(*path, m);
+                        builder.setIsVolatile(true);
+                        canvas->drawPath(builder.detach(), pathPaint);
                     }
                 }
             }
@@ -409,7 +412,8 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(SkCanvas* canvas,
 
                 // Draw the bitmap using the rect from the scaled cache, and not the source
                 // rectangle for the glyph.
-                bitmapDevice->drawBitmap(bm, translate, nullptr, SkFilterMode::kLinear, paint);
+                bitmapDevice->drawBitmap(
+                        bm, translate, nullptr, SkFilterMode::kLinear, paint, nullptr);
             }
         }
 
@@ -417,3 +421,4 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(SkCanvas* canvas,
         //  rejects in a more sophisticated stage.
     }
 }
+}  // namespace skcpu

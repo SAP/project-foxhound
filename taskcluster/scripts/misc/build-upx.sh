@@ -1,26 +1,27 @@
 #!/bin/bash
 set -x -e -v
 
-WORKSPACE=$HOME/workspace
-INSTALL_DIR=$WORKSPACE/upx
+PROJECT="upx"
 
-mkdir -p $INSTALL_DIR/bin
+if [[ -d "$MOZ_FETCHES_DIR/cmake" ]]; then
+    export PATH="$(cd "$MOZ_FETCHES_DIR/cmake" && pwd)/bin:${PATH}"
+fi
 
-cd $WORKSPACE
+if [[ $(uname -o) == "Msys" ]]; then
+  SUFFIX=".exe"
+  . "$GECKO_PATH/taskcluster/scripts/misc/vs-setup.sh"
+else
+  SUFFIX=""
+fi
 
-git clone -n https://github.com/upx/upx.git upx-clone
-cd upx-clone
-# https://github.com/upx/upx/releases/tag/v3.95
-git checkout 7a3637ff5a800b8bcbad20ae7f668d8c8449b014 # Asserts integrity of the clone (right?)
-git submodule update --init --recursive
-cd src
-make -j$(nproc) CXXFLAGS_WERROR=
-cp upx.out $INSTALL_DIR/bin/upx
+pushd "${MOZ_FETCHES_DIR}/${PROJECT}"
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
+cmake --build build/release --parallel $(nproc)
+popd
 
-# --------------
+mkdir -p "${PROJECT}/bin"
+mv "${MOZ_FETCHES_DIR}/${PROJECT}/build/release/upx${SUFFIX}" "${PROJECT}/bin/"
+tar -acf "${PROJECT}.tar.zst" "${PROJECT}"
 
-cd $WORKSPACE
-tar caf upx.tar.zst upx
-
-mkdir -p $UPLOAD_DIR
-cp upx.tar.* $UPLOAD_DIR
+mkdir -p "$UPLOAD_DIR"
+mv "${PROJECT}.tar.zst" "$UPLOAD_DIR"

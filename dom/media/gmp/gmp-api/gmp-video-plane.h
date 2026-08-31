@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* Copyright (c) 2011, The WebRTC project authors. All rights reserved.
  * Copyright (c) 2014, Mozilla
  *
@@ -34,8 +33,9 @@
 #ifndef GMP_VIDEO_PLANE_h_
 #define GMP_VIDEO_PLANE_h_
 
-#include "gmp-errors.h"
 #include <stdint.h>
+
+#include "gmp-errors.h"
 
 // The implementation backing this interface uses shared memory for the
 // buffer(s). This means it can only be used by the "owning" process.

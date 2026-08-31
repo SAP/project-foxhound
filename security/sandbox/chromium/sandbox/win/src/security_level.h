@@ -1,9 +1,9 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright 2006-2008 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SANDBOX_SRC_SECURITY_LEVEL_H_
-#define SANDBOX_SRC_SECURITY_LEVEL_H_
+#ifndef SANDBOX_WIN_SRC_SECURITY_LEVEL_H_
+#define SANDBOX_WIN_SRC_SECURITY_LEVEL_H_
 
 #include <stdint.h>
 
@@ -43,6 +43,8 @@ enum IntegrityLevel {
 // ----------------------------|--------------|----------------|----------|
 // USER_LOCKDOWN               | Null Sid     | All            | None     |
 // ----------------------------|--------------|----------------|----------|
+// USER_LOCKDOWN_WITH_TRAVERSE | Null Sid     | All            | Traverse |
+// ----------------------------|--------------|----------------|----------|
 // USER_RESTRICTED             | RESTRICTED   | All            | Traverse |
 // ----------------------------|--------------|----------------|----------|
 // USER_LIMITED                | Users        | All except:    | Traverse |
@@ -66,14 +68,6 @@ enum IntegrityLevel {
 //                             | User         | Authent-users  |          |
 //                             |              | User           |          |
 // ----------------------------|--------------|----------------|----------|
-// USER_NON_ADMIN              | None         | All except:    | Traverse |
-//                             |              | Users          |          |
-//                             |              | Everyone       |          |
-//                             |              | Interactive    |          |
-//                             |              | Local          |          |
-//                             |              | Authent-users  |          |
-//                             |              | User           |          |
-// ----------------------------|--------------|----------------|----------|
 // USER_RESTRICTED_SAME_ACCESS | All          | None           | All      |
 // ----------------------------|--------------|----------------|----------|
 // USER_UNPROTECTED            | None         | None           | All      |
@@ -84,18 +78,17 @@ enum IntegrityLevel {
 // applied to the target process depends both on the token level selected
 // and on the broker token itself.
 //
-//  The LOCKDOWN and RESTRICTED are designed to allow access to almost
-//  nothing that has security associated with and they are the recommended
-//  levels to run sandboxed code specially if there is a chance that the
-//  broker is process might be started by a user that belongs to the Admins
-//  or power users groups.
+// The LOCKDOWN level is designed to allow access to almost nothing that has
+// security associated with and they are the recommended levels to run sandboxed
+// code specially if there is a chance that the broker is process might be
+// started by a user that belongs to the Admins or power users groups.
 enum TokenLevel {
   USER_LOCKDOWN = 0,
+  USER_LOCKDOWN_WITH_TRAVERSE,
   USER_RESTRICTED,
   USER_LIMITED,
   USER_INTERACTIVE,
   USER_RESTRICTED_NON_ADMIN,
-  USER_NON_ADMIN,
   USER_RESTRICTED_SAME_ACCESS,
   USER_UNPROTECTED,
   USER_LAST
@@ -108,47 +101,32 @@ enum TokenLevel {
 //  JobLevel        |General                            |Quota               |
 //                  |restrictions                       |restrictions        |
 // -----------------|---------------------------------- |--------------------|
-// JOB_NONE         | No job is assigned to the         | None               |
-//                  | sandboxed process.                |                    |
+// kUnprotected     | None                              | *Kill on Job close.|
 // -----------------|---------------------------------- |--------------------|
-// JOB_UNPROTECTED  | None                              | *Kill on Job close.|
-// -----------------|---------------------------------- |--------------------|
-// JOB_INTERACTIVE  | *Forbid system-wide changes using |                    |
+// kInteractive     | *Forbid system-wide changes using |                    |
 //                  |  SystemParametersInfo().          | *Kill on Job close.|
 //                  | *Forbid the creation/switch of    |                    |
 //                  |  Desktops.                        |                    |
 //                  | *Forbids calls to ExitWindows().  |                    |
 // -----------------|---------------------------------- |--------------------|
-// JOB_LIMITED_USER | Same as INTERACTIVE_USER plus:    | *One active process|
+// kLimitedUser     | Same as kInteractive plus:        | *One active process|
 //                  | *Forbid changes to the display    |  limit.            |
 //                  |  settings.                        | *Kill on Job close.|
 // -----------------|---------------------------------- |--------------------|
-// JOB_RESTRICTED   | Same as LIMITED_USER plus:        | *One active process|
+// kLockdown        | Same as kLimitedUser plus:        | *One active process|
 //                  | * No read/write to the clipboard. |  limit.            |
 //                  | * No access to User Handles that  | *Kill on Job close.|
-//                  |   belong to other processes.      |                    |
-//                  | * Forbid message broadcasts.      |                    |
+//                  |   belong to other processes.      | *Kill on unhandled |
+//                  | * Forbid message broadcasts.      |  exception.        |
 //                  | * Forbid setting global hooks.    |                    |
 //                  | * No access to the global atoms   |                    |
 //                  |   table.                          |                    |
 // -----------------|-----------------------------------|--------------------|
-// JOB_LOCKDOWN     | Same as RESTRICTED                | *One active process|
-//                  |                                   |  limit.            |
-//                  |                                   | *Kill on Job close.|
-//                  |                                   | *Kill on unhandled |
-//                  |                                   |  exception.        |
-//                  |                                   |                    |
+//
 // In the context of the above table, 'user handles' refers to the handles of
 // windows, bitmaps, menus, etc. Files, treads and registry handles are kernel
 // handles and are not affected by the job level settings.
-enum JobLevel {
-  JOB_LOCKDOWN = 0,
-  JOB_RESTRICTED,
-  JOB_LIMITED_USER,
-  JOB_INTERACTIVE,
-  JOB_UNPROTECTED,
-  JOB_NONE
-};
+enum class JobLevel { kLockdown = 0, kLimitedUser, kInteractive, kUnprotected };
 
 // These flags correspond to various process-level mitigations (eg. ASLR and
 // DEP). Most are implemented via UpdateProcThreadAttribute() plus flags for
@@ -282,6 +260,34 @@ const MitigationFlags MITIGATION_IMAGE_LOAD_PREFER_SYS32 = 0x00100000;
 const MitigationFlags MITIGATION_RESTRICT_INDIRECT_BRANCH_PREDICTION =
     0x00200000;
 
+// Turns off CET for the process. This allows chrome.exe to
+// be turned 'on' using IFEO or through build settings but children we know to
+// have issues can be turned off. Corresponds to
+// PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_ALWAYS_OFF.
+const MitigationFlags MITIGATION_CET_DISABLED = 0x00400000;
+
+// Enable KTM component mitigation. When enabled, it locks down all function
+// calls to consume the kernel transaction manager.
+const MitigationFlags MITIGATION_KTM_COMPONENT = 0x00800000;
+
+// CET in default state (i.e. not disabled where it is supported) and
+// CetDynamicApisOutOfProcOnly will be false inside the process. Should not
+// be mixed with MITIGATION_CET_DISABLED or MITIGATION_DYNAMIC_CODE_DISABLE
+// as it does not make sense without CET, nor where dynamic code cannot be
+// created in the first place. Corresponds to
+// PROCESS_CREATION_MITIGATION_POLICY2_CET_DYNAMIC_APIS_OUT_OF_PROC_ONLY_ALWAYS_OFF.
+const MitigationFlags MITIGATION_CET_ALLOW_DYNAMIC_APIS = 0x01000000;
+
+// CET in strict mode. Be cautious if applying to processes that might
+// include third party code. Corresponds to
+// PROCESS_CREATION_MITIGATION_POLICY2_CET_USER_SHADOW_STACKS_STRICT_MODE.
+const MitigationFlags MITIGATION_CET_STRICT_MODE = 0x02000000;
+
+// Prevents application from sending FSCTL* control codes to NtFsControlFile,
+// with a few exceptions for named pipes as documented on MSDN. Corresponds to
+// PROCESS_CREATION_MITIGATION_POLICY2_FSCTL_SYSTEM_CALL_DISABLE_ALWAYS_ON.
+const MitigationFlags MITIGATION_FSCTL_DISABLED = 0x04000000;
+
 // Begin Mozilla-added flags.
 // Working down from the high bit to avoid conflict with new upstream flags.
 
@@ -297,4 +303,4 @@ const MitigationFlags MITIGATION_CET_COMPAT_MODE = 0x40000000;
 
 }  // namespace sandbox
 
-#endif  // SANDBOX_SRC_SECURITY_LEVEL_H_
+#endif  // SANDBOX_WIN_SRC_SECURITY_LEVEL_H_

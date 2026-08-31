@@ -12,16 +12,28 @@
 
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "api/async_dns_resolver.h"
+#include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
+#include "rtc_base/ip_address.h"
+#include "rtc_base/platform_thread.h"  // IWYU pragma: keep
 #include "rtc_base/ref_counted_object.h"
+#include "rtc_base/socket_address.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/thread_annotations.h"
 
+#if defined(WEBRTC_WIN)
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 namespace webrtc {
 // This file contains a default implementation of
-// webrtc::AsyncDnsResolverInterface, for use when there is no need for special
+// AsyncDnsResolverInterface, for use when there is no need for special
 // treatment.
 
 class AsyncDnsResolverResultImpl : public AsyncDnsResolverResult {
@@ -32,7 +44,7 @@ class AsyncDnsResolverResultImpl : public AsyncDnsResolverResult {
 
  private:
   friend class AsyncDnsResolver;
-  RTC_NO_UNIQUE_ADDRESS webrtc::SequenceChecker sequence_checker_;
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker sequence_checker_;
   SocketAddress addr_ RTC_GUARDED_BY(sequence_checker_);
   std::vector<IPAddress> addresses_ RTC_GUARDED_BY(sequence_checker_);
   int error_ RTC_GUARDED_BY(sequence_checker_);
@@ -41,7 +53,7 @@ class AsyncDnsResolverResultImpl : public AsyncDnsResolverResult {
 class RTC_EXPORT AsyncDnsResolver : public AsyncDnsResolverInterface {
  public:
   AsyncDnsResolver();
-  ~AsyncDnsResolver();
+  ~AsyncDnsResolver() override;
   // Start address resolution of the hostname in `addr`.
   void Start(const SocketAddress& addr,
              absl::AnyInvocable<void()> callback) override;
@@ -52,11 +64,18 @@ class RTC_EXPORT AsyncDnsResolver : public AsyncDnsResolverInterface {
   const AsyncDnsResolverResult& result() const override;
 
  private:
-  class State;
-  ScopedTaskSafety safety_;          // To check for client going away
-  rtc::scoped_refptr<State> state_;  // To check for "this" going away
+  class StateImpl;
+  using State = FinalRefCountedObject<StateImpl>;
+  scoped_refptr<State> state_;  // To check for the target task queue going away
   AsyncDnsResolverResultImpl result_;
-  absl::AnyInvocable<void()> callback_;
+  absl::AnyInvocable<void() &&> callback_;
+#if defined(WEBRTC_WIN)
+  OVERLAPPED ol_ = {};
+  HANDLE cancel_ = nullptr;
+  PADDRINFOEXW addr_info_ = nullptr;
+  PlatformThread worker_;
+#endif
+  ScopedTaskSafety safety_;  // To check for client going away. Must be last.
 };
 
 }  // namespace webrtc

@@ -10,7 +10,7 @@
  *
  * This module is loaded lazily by devtools-clhandler.js, once the first
  * browser window is ready (i.e. fired browser-delayed-startup-finished event)
- **/
+ */
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -80,10 +80,10 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
 
   /**
    * This function is for the benefit of Tools:DevToolbox in
-   * browser/base/content/browser-sets.inc and should not be used outside
+   * browser/base/content/browser-sets.inc.xhtml and should not be used outside
    * of there
    */
-  // used by browser-sets.inc, command
+  // used by browser-sets.inc.xhtml, command
   toggleToolboxCommand(gBrowser, startTime) {
     const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
@@ -244,15 +244,15 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
    *
    * @param  {Window} window
    *         The top level browser window from which the key shortcut is pressed.
-   * @param  {Object} key
+   * @param  {object} key
    *         Key object describing the key shortcut being pressed. It comes
    *         from devtools-startup.js's KeyShortcuts array. The useful fields here
    *         are:
    *         - `toolId` used to identify a toolbox's panel like inspector or webconsole,
    *         - `id` used to identify any other key shortcuts like about:debugging
-   * @param {Number} startTime
+   * @param {number} startTime
    *        Optional, indicates the time at which the key event fired. This is a
-   *        `Cu.now()` timing.
+   *        `ChromeUtils.now()` timing.
    */
   async onKeyShortcut(window, key, startTime) {
     // Avoid to open devtools when the about:devtools-toolbox page is showing
@@ -282,31 +282,33 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
       case "browserToolbox":
         lazy.BrowserToolboxLauncher.init();
         break;
-      case "browserConsole":
+      case "browserConsole": {
         const {
           BrowserConsoleManager,
         } = require("resource://devtools/client/webconsole/browser-console-manager.js");
         BrowserConsoleManager.openBrowserConsoleOrFocus();
         break;
+      }
       case "responsiveDesignMode":
         ResponsiveUIManager.toggle(window, window.gBrowser.selectedTab, {
           trigger: "shortcut",
         });
         break;
-      case "javascriptTracingToggle":
+      case "javascriptTracingToggle": {
         const toolbox = gDevTools.getToolboxForTab(window.gBrowser.selectedTab);
         if (!toolbox) {
           break;
         }
         await toolbox.commands.tracerCommand.toggle();
         break;
+      }
     }
   },
 
   /**
    * Open a tab on "about:debugging", optionally pre-select a given tab.
    */
-  // Used by browser-sets.inc, command
+  // Used by browser-sets.inc.xhtml, command
   openAboutDebugging(gBrowser, hash) {
     const url = "about:debugging" + (hash ? "#" + hash : "");
     gBrowser.selectedTab = gBrowser.addTrustedTab(url);
@@ -425,7 +427,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
 
   hasToolboxOpened(win) {
     const tab = win.gBrowser.selectedTab;
-    for (const commands of gDevTools._toolboxesPerCommands.keys()) {
+    for (const commands of gDevTools.toolboxesPerCommands.keys()) {
       if (commands.descriptorFront.localTab == tab) {
         return true;
       }
@@ -488,7 +490,6 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
    *        The chrome window containing about:devtools-toolbox. Will match
    *        toolbox.topWindow.
    * @return {Toolbox} The toolbox instance loaded in about:devtools-toolbox
-   *
    */
   _getAboutDevtoolsToolbox(win) {
     if (!gDevToolsBrowser._isAboutDevtoolsToolbox(win)) {
@@ -526,7 +527,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
     BrowserMenus.removeMenus(win.document);
 
     // Destroy toolboxes for closed window
-    for (const [commands, toolbox] of gDevTools._toolboxesPerCommands) {
+    for (const [commands, toolbox] of gDevTools.toolboxesPerCommands) {
       if (
         commands.descriptorFront.localTab?.ownerDocument?.defaultView == win
       ) {
@@ -592,7 +593,7 @@ gDevTools
   .forEach(def => gDevToolsBrowser._addToolToWindows(def));
 // and the new ones.
 gDevTools.on("tool-registered", function (toolId) {
-  const toolDefinition = gDevTools._tools.get(toolId);
+  const toolDefinition = gDevTools.tools.get(toolId);
   // If the tool has been registered globally, add to all the
   // available windows.
   if (toolDefinition) {

@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,11 +10,11 @@ const lazy = {};
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   WinTaskSvc: [
     "@mozilla.org/win-task-scheduler-service;1",
-    "nsIWinTaskSchedulerService",
+    Ci.nsIWinTaskSchedulerService,
   ],
   XreDirProvider: [
     "@mozilla.org/xre/directory-provider;1",
-    "nsIXREDirProvider",
+    Ci.nsIXREDirProvider,
   ],
 });
 
@@ -237,7 +236,6 @@ export var WinImpl = {
    *
    * copied from quoteString() in toolkit/modules/subproces/subprocess_worker_win.js
    *
-   *
    * @see https://msdn.microsoft.com/en-us/library/17w5ykft(v=vs.85).aspx
    *
    * @param {string} str
@@ -276,7 +274,7 @@ export var WinImpl = {
    * @param id
    *        A string representing the identifier of the task to format
    *
-   * @param {Object} options
+   * @param {object} options
    *        Optional, as are all of its properties:
    *        {
    *            options.nameVersion

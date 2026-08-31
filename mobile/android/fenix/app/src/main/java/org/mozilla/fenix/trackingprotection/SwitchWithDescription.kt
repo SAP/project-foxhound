@@ -11,16 +11,16 @@ import android.widget.CompoundButton
 import android.widget.TextView
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.content.res.AppCompatResources
-import androidx.appcompat.widget.SwitchCompat
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.withStyledAttributes
+import com.google.android.material.materialswitch.MaterialSwitch
 import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelativeWithIntrinsicBounds
 import org.mozilla.fenix.R
 
 private const val DEFAULT_DRAWABLE: Int = 0
 
 /**
- * Add a [SwitchCompat] widget with description that will vary depending on switch status.
+ * Add a [MaterialSwitch] widget with description that will vary depending on switch status.
  */
 class SwitchWithDescription @JvmOverloads constructor(
     context: Context,
@@ -28,7 +28,7 @@ class SwitchWithDescription @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : ConstraintLayout(context, attrs, defStyleAttr) {
 
-    private lateinit var switchWidget: SwitchCompat
+    private lateinit var switchWidget: MaterialSwitch
     private lateinit var titleWidget: TextView
     private lateinit var descriptionWidget: TextView
     private lateinit var descriptionOn: String

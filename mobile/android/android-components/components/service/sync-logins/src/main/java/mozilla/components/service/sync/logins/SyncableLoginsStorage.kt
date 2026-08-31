@@ -5,6 +5,11 @@
 package mozilla.components.service.sync.logins
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.core.content.edit
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.WorkManager
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +24,8 @@ import mozilla.components.concept.storage.KeyGenerationReason
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
 import mozilla.components.concept.storage.LoginsStorage
+import mozilla.components.concept.storage.constraints
+import mozilla.components.concept.storage.periodicStorageWorkRequest
 import mozilla.components.concept.sync.SyncableStore
 import mozilla.components.lib.dataprotect.SecureAbove22Preferences
 import mozilla.components.support.base.log.logger.Logger
@@ -29,6 +36,9 @@ const val DB_NAME = "logins2.sqlite"
 
 // Name of our preferences file
 const val PREFS_NAME = "logins"
+
+// Name of key that checks if we've cleaned undecryptable keys
+const val UNDECRYPTABLE_LOGINS_CLEANED_KEY = "logins_undecryptable_cleaned"
 
 /**
  * The telemetry ping from a successful sync
@@ -46,14 +56,6 @@ typealias SyncTelemetryPing = mozilla.appservices.sync15.SyncTelemetryPing
  * concrete `LoginsApiException`.
  */
 typealias LoginsApiException = mozilla.appservices.logins.LoginsApiException
-
-/**
- * This indicates that the authentication information (e.g. the [SyncUnlockInfo])
- * provided to [AsyncLoginsStorage.sync] is invalid. This often indicates that it's
- * stale and should be refreshed with FxA (however, care should be taken not to
- * get into a loop refreshing this information).
- */
-typealias SyncAuthInvalidException = mozilla.appservices.logins.LoginsApiException.SyncAuthInvalid
 
 /**
  * This is thrown if `update()` is performed with a record whose GUID
@@ -85,9 +87,16 @@ typealias InvalidKey = mozilla.appservices.logins.LoginsApiException.InvalidKey
 class SyncableLoginsStorage(
     private val context: Context,
     private val securePrefs: Lazy<SecureAbove22Preferences>,
+    private val coroutineDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : LoginsStorage, SyncableStore, AutoCloseable {
     private val logger = Logger("SyncableLoginsStorage")
-    private val coroutineContext by lazy { Dispatchers.IO }
+    private val coroutineContext by lazy { coroutineDispatcher }
+    private val prefs: SharedPreferences by lazy {
+        context.getSharedPreferences(
+            "sync.logins.prefs",
+            Context.MODE_PRIVATE,
+        )
+    }
     val crypto by lazy { LoginsCrypto(context, securePrefs.value, this) }
 
     private val conn: Deferred<DatabaseLoginsStorage> = CoroutineScope(coroutineContext).async {
@@ -116,9 +125,13 @@ class SyncableLoginsStorage(
     /**
      * "Warms up" this storage layer by establishing the database connection.
      */
-    suspend fun warmUp() = withContext(coroutineContext) {
+    override suspend fun warmUp() = withContext(coroutineContext) {
         logElapsedTime(logger, "Warming up storage") { conn.await() }
         Unit
+    }
+
+    override suspend fun runMaintenance(dbSizeLimit: UInt) {
+         getStorage().runMaintenance()
     }
 
     /**
@@ -168,6 +181,16 @@ class SyncableLoginsStorage(
     }
 
     /**
+     * Counts logins in the database.
+     * @throws [LoginsApiException] if the storage is locked, and on unexpected
+     *              errors (IO failure, rust panics, etc)
+     */
+    @Throws(LoginsApiException::class)
+    override suspend fun count(): Long = withContext(coroutineContext) {
+        getStorage().count()
+    }
+
+    /**
      * @throws [InvalidRecordException] if the record is invalid.
      * @throws [InvalidKey] if the encryption key can't decrypt the login
      * @throws [LoginsApiException] if the storage is locked, and on unexpected
@@ -176,6 +199,18 @@ class SyncableLoginsStorage(
     @Throws(InvalidKey::class, InvalidRecordException::class, LoginsApiException::class)
     override suspend fun add(entry: LoginEntry) = withContext(coroutineContext) {
         getStorage().add(entry.toLoginEntry()).toLogin()
+    }
+
+    /**
+     * @throws [InvalidRecordException] if the record is invalid.
+     * @throws [InvalidKey] if the encryption key can't decrypt the login
+     * @throws [LoginsApiException] if the storage is locked, and on unexpected
+     *              errors (IO failure, rust panics, etc)
+     */
+    @Throws(InvalidKey::class, InvalidRecordException::class, LoginsApiException::class)
+    override suspend fun addMany(entries: List<LoginEntry>) = withContext(coroutineContext) {
+        val asEntries = entries.map { it.toLoginEntry() }
+        getStorage().addMany(asEntries).map { it.toLoginResult() }
     }
 
     /**
@@ -208,6 +243,9 @@ class SyncableLoginsStorage(
 
     override fun registerWithSyncManager() {
         CoroutineScope(coroutineContext).launch {
+            // before registering with the syncmanager we should delete undecryptable logins
+            // sync will do the right thing and get them from the server if any were still valid
+            runUndecryptableCleanupIfNeeded()
             tryWithStorageOr(Unit) { registerWithSyncManager() }
         }
     }
@@ -242,6 +280,51 @@ class SyncableLoginsStorage(
         } catch (e: LoginsApiException) {
             logger.error("Error during logins operation", e)
             default
+        }
+    }
+
+    /**
+     * If we've lost the encryption key or other issues that prevent us from decrypting
+     * existing logins, we run a cleanup to purge those records. We only need to do
+     * this once for existing undecryptable records and if ever user needs
+     * new keys, the new generation flow will automatically do this for us
+     * @throws [LoginsApiException] On unexpected errors (IO failure, rust panics, etc)
+     */
+    @Throws(LoginsApiException::class)
+    suspend fun runUndecryptableCleanupIfNeeded() = withContext(coroutineContext) {
+        // We use an int preference here to track if we've already ran the cleanup,
+        // and to allow us to run it again by bumping the value of the check
+        var cleanedPref = prefs.getInt(UNDECRYPTABLE_LOGINS_CLEANED_KEY, 0)
+        if (cleanedPref < 1) {
+            tryWithStorageOr(Unit) {
+                deleteUndecryptableLoginsAndRecordMetrics()
+            }
+            prefs.edit { putInt(UNDECRYPTABLE_LOGINS_CLEANED_KEY, ++cleanedPref) }
+        }
+    }
+
+    /**
+     * Enqueues a periodic storage maintenance worker to WorkManager.
+     */
+    override fun registerStorageMaintenanceWorker() {
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            SyncableLoginsStorageWorker.UNIQUE_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            periodicStorageWorkRequest<SyncableLoginsStorageWorker>(
+                tag = SyncableLoginsStorageWorker.UNIQUE_NAME,
+            ) {
+                constraints {
+                    setRequiresBatteryNotLow(true)
+                    setRequiresDeviceIdle(true)
+                }
+            },
+        )
+    }
+
+    override fun unregisterStorageMaintenanceWorker(uniqueWorkName: String) {
+        WorkManager.getInstance(context).also {
+            it.cancelUniqueWork(SyncableLoginsStorageWorker.UNIQUE_NAME)
+            it.cancelAllWorkByTag(SyncableLoginsStorageWorker.UNIQUE_NAME)
         }
     }
 }

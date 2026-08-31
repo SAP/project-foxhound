@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+<title>Bug 2014896 - PannerNode LinearGainFunction NaN crash</title>
+</head>
+<body>
+<script>
+async function triggerBug() {
+  const ctx = new OfflineAudioContext(2, 44100, 44100);
+  const panner = ctx.createPanner();
+  panner.distanceModel = 'linear';
+  panner.panningModel = 'equalpower';
+  panner.maxDistance = 1.0;
+  panner.rolloffFactor = 1.0;
+  panner.positionX.value = 10;
+  panner.positionY.value = 10;
+  panner.positionZ.value = 10;
+  const osc = ctx.createOscillator();
+  osc.frequency.value = 440;
+  osc.connect(panner);
+  panner.connect(ctx.destination);
+  osc.start(0);
+  await ctx.startRendering();
+  document.documentElement.className = '';
+}
+triggerBug();
+</script>
+</body>
+</html>

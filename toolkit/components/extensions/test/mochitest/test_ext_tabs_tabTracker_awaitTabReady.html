@@ -1,0 +1,621 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test internal tabTracker.awaitTabReady method</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+</head>
+<body>
+
+<script type="text/javascript">
+"use strict";
+
+// These tests verify that the tabTracker.awaitTabReady() helper eventually
+// resolves; not too early, not too late. The timing is verified by calling
+// testTabTracker.awaitTabReady() in individual test tasks (and keeping track
+// of the tab's innerWindowId immediately after tabTracker.awaitTabReady()
+// resolves). Then before wrapping up the test task, we call
+// testTabTracker.verifyConsistentIdDeltas() which verifies that the observed
+// innerWindowId matches what we expect. Moreover, it also verifies that the
+// last reported innerWindowId is stable.
+//
+// This provides the following test coverage:
+// - tabTracker.awaitTabReady never gets stuck (tested by absence of timeouts),
+//   regression test for https://bugzilla.mozilla.org/show_bug.cgi?id=1653876
+// - When tabTracker.awaitTabReady resolves, it is not too early (tested by
+//   verifying that there is an innerWindowId and that it is stable past the
+//   end of the test, and in test_204_with_delay).
+// - When tabTracker.awaitTabReady resolves, it is not too late (besides the
+//   absence of test timeouts, we also test in test_without_tabs_create that
+//   we do not block unnecessarily for tabs created without tabs.create).
+
+function loadExtensionWithTestHelper({ background, manifest }) {
+  return ExtensionTestUtils.loadExtension({
+    isPrivileged: true,
+    background,
+    manifest: {
+      experiment_apis: {
+        testTabTracker: {
+          schema: "schema.json",
+          parent: {
+            scopes: ["addon_parent"],
+            script: "testTabTracker.js",
+            paths: [["testTabTracker"]],
+          },
+        },
+      },
+      ...manifest,
+    },
+    files: {
+      "schema.json": JSON.stringify([
+        {
+          namespace: "testTabTracker",
+          functions: [
+            {
+              name: "awaitTabReady",
+              description: "Invokes internal tabTracker.awaitTabReady",
+              type: "function",
+              async: true,
+              parameters: [
+                { name: "tabId", type: "integer" },
+              ],
+            },
+            {
+              name: "verifyConsistentIdDeltas",
+              description: "Verifies that the observed innerWindowId are matching expectations",
+              type: "function",
+              async: true,
+              parameters: [
+                {
+                  name: "expectedIdDeltas",
+                  type: "array",
+                  items: {
+                    type: "string",
+                    // gone: innerWindowId unavailable.
+                    // new: innerWindowId not seen before
+                    // same: innerWindowId same as last awaitTabReady call.
+                    enum: ["gone", "new", "same"],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+      "testTabTracker.js": () => {
+        /* globals ExtensionAPI, ExtensionUtils */
+        const { ExtensionParent } = ChromeUtils.importESModule(
+          "resource://gre/modules/ExtensionParent.sys.mjs"
+        );
+        const { tabTracker } = ExtensionParent.apiManager.global;
+
+        // Returns an identifier for the tab's content. innerWindowId is a
+        // good choice because it is tied to the loaded document.
+        function getTabInnerId(nativeTab) {
+          return nativeTab.linkedBrowser?.browsingContext?.currentWindowContext?.innerWindowId;
+        }
+
+        this.testTabTracker = class extends ExtensionAPI {
+          getAPI() {
+            let seenInnerWindowIds = [];
+            let lastNativeTab;
+            return {
+              testTabTracker: {
+                awaitTabReady: async tabId => {
+                  // Note: real extension APIs should use tabManager.get()
+                  // instead of tabTracker.get() for additional validation.
+                  // Here we are testing tabTracker internals, so we directly
+                  // use tabTracker.
+                  const nativeTab = tabTracker.getTab(tabId);
+                  // Logging for debugging in case the call gets stuck:
+                  dump(`awaitTabReady, before: ${tabId}\n`);
+                  await tabTracker.awaitTabReady(nativeTab);
+                  let id = getTabInnerId(nativeTab);
+                  dump(`awaitTabReady, after: ${tabId} innerWindowId=${id}\n`);
+                  seenInnerWindowIds.push(id);
+                  lastNativeTab = nativeTab;
+                },
+                verifyConsistentIdDeltas: async expectedIdDeltas => {
+                  let actualIdDeltas = seenInnerWindowIds.map((id, index) => {
+                    if (!id) {
+                      return "gone";
+                    } else if (id === seenInnerWindowIds[index - 1]) {
+                      return "same";
+                    }
+                    return "new";
+                  });
+                  let expected = expectedIdDeltas.join(",");
+                  let actual = actualIdDeltas.join(",");
+                  // Logic equivalent to browser.test.assertEq:
+                  this.extension.emit(
+                    "test-eq",
+                    expected === actual,
+                    "verifyConsistentIdDeltas: Got expected ID deltas",
+                    expected,
+                    actual
+                  );
+                  // Wait a little bit and check again, to verify that the
+                  // identifier is stable. The timeout is arbitrarily chosen:
+                  // long enough to have a chance at catching unexpected
+                  // outcomes, but short enough to not be a nuisance.
+                  await ExtensionUtils.promiseTimeout(100);
+                  let expectedId = seenInnerWindowIds.at(-1);
+                  let actualId = getTabInnerId(lastNativeTab);
+                  this.extension.emit(
+                    "test-eq",
+                    expectedId === actualId,
+                    "verifyConsistentIdDeltas: Last ID is stable",
+                    expectedId,
+                    actualId
+                  );
+                }
+              },
+            };
+          }
+        };
+      },
+    },
+  });
+}
+
+async function resetServerStateBeforeDelayedRequests() {
+  // The /delayed and /finish endpoints can be out of order. To prevent any
+  // stray state from previous tests from affecting the new test, reset the
+  // server-side state.
+  await fetch(
+    "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?reset"
+  );
+}
+
+add_task(async function test_normal_load() {
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      let tab = await browser.tabs.create({
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?200ok",
+      });
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved after normal load");
+
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved again on repeated call");
+
+      // Do another roundtrip to the server, so that we are pretty sure that the response was handled.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?200ok");
+
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Should still resolve after roundtrip");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(
+        ["new", "same", "same"]
+      );
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_tabs_create_about_blank() {
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      const tab = await browser.tabs.create({ url: "about:blank" });
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved after about:blank load");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_tabs_create_default_newtab() {
+  let extension = loadExtensionWithTestHelper({
+    manifest: {
+      permissions: ["tabs"], // To read the tab URL.
+    },
+    async background() {
+      const EXPECTED_DEFAULT_URL = navigator.userAgent.includes("Android") ? "about:blank" : "about:newtab";
+
+      let tab = await browser.tabs.create({});
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved after default new tab");
+
+      tab = await browser.tabs.get(tab.id);
+      browser.test.assertEq(
+        EXPECTED_DEFAULT_URL,
+        tab.url,
+        "Expected default tab URL"
+      );
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_tabs_create_moz_extension_url() {
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      const tab = await browser.tabs.create({ url: "manifest.json" });
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved after loading extension tab");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_tabs_create_view_source_url() {
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      const tab = await browser.tabs.create({
+        url: "view-source:https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?200ok",
+      });
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved after loading view-source:-URL");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_204_without_delay() {
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      let tab = await browser.tabs.create({
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs",
+      });
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved after load with HTTP 204");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_204_with_delay() {
+  await resetServerStateBeforeDelayedRequests();
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      let tab = await browser.tabs.create({
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?delayed",
+      });
+      let ready = false;
+      let promise = browser.testTabTracker.awaitTabReady(tab.id);
+      promise.then(() => {
+        ready = true;
+      });
+
+      // Do a roundtrip to the parent to make sure that the awaitTabReady call
+      // above is expected to have been processed.
+      await browser.test.assertRejects(
+        browser.testTabTracker.awaitTabReady(-123),
+        "Invalid tab ID: -123",
+        "awaitTabReady for invalid tab rejected"
+      );
+      browser.test.assertFalse(ready, "Not immediately resolved as ready");
+
+      // Wait a bit (roundtrip to server) so we know that the initial tab
+      // creation request has been processed.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?200ok");
+      browser.test.assertFalse(ready, "Should not resolve before response");
+
+      // Now release the request for real.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?finish");
+      await promise;
+      browser.test.assertTrue(ready, "Resolved after delayed load completed");
+
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved on repeat after 204 load");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new", "same"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_with_create_discarded() {
+  if (navigator.userAgent.includes("Android")) {
+    // TODO bug 1402338: Remove skip if tabs.discard is supported.
+    todo(false, "tabs.discard not supported on Android (bug 1402338).");
+    return;
+  }
+  await resetServerStateBeforeDelayedRequests();
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      let tab = await browser.tabs.create({
+        discarded: true,
+        // Note: url won't be loaded due to discarded:true.
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?delayed",
+      });
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved immediately for discarded tab");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["gone"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_after_tabs_discard_call() {
+  if (navigator.userAgent.includes("Android")) {
+    // TODO bug 1402338: Remove skip if tabs.discard is supported.
+    todo(false, "tabs.discard not supported on Android (bug 1402338).");
+    return;
+  }
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      let tab = await browser.tabs.create({
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?200ok",
+        active: false, // Need to be non-active so we can discard later.
+      });
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved immediately for normal load");
+
+      await browser.tabs.discard(tab.id);
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved on repeat for discarded tab");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new", "gone"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_discard_while_waiting() {
+  if (navigator.userAgent.includes("Android")) {
+    // TODO bug 1402338: Remove skip if tabs.discard is supported.
+    todo(false, "tabs.discard not supported on Android (bug 1402338).");
+    return;
+  }
+  await resetServerStateBeforeDelayedRequests();
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      let tab = await browser.tabs.create({
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?delayed",
+        active: false, // Need to be non-active so we can discard later.
+      });
+      let promise = browser.testTabTracker.awaitTabReady(tab.id);
+      // Wait a bit (roundtrip to server) so we know that the initial tab
+      // creation request has been processed.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?200ok");
+
+      await browser.tabs.discard(tab.id);
+      browser.test.log("Should resolve after discard");
+      await promise;
+      browser.test.assertTrue(true, "Resolved after discard");
+
+      // Now release the request to balance the initial "delayed" call.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?finish");
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved on repeat for discarded tab");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["gone", "gone"]);
+
+      await browser.tabs.remove(tab.id);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+add_task(async function test_remove_while_waiting() {
+  await resetServerStateBeforeDelayedRequests();
+  let extension = loadExtensionWithTestHelper({
+    async background() {
+      let tab = await browser.tabs.create({
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?delayed",
+      });
+      let promise = browser.testTabTracker.awaitTabReady(tab.id);
+      // Wait a bit (roundtrip to server) so we know that the initial tab
+      // creation request has been processed.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?200ok");
+
+      await browser.tabs.remove(tab.id);
+      browser.test.log("Should resolve after tab removal");
+      await promise;
+      browser.test.assertTrue(true, "Resolved after tab removal");
+
+      // Now release the request to balance the initial "delayed" call.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?finish");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["gone"]);
+
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+// All other tests here test tabs.create(), this test verifies that when a tab
+// is opened without extension API, that awaitTabReady resolves immediately.
+add_task(async function test_without_tabs_create() {
+  await resetServerStateBeforeDelayedRequests();
+  let extension = loadExtensionWithTestHelper({
+    manifest: {
+      permissions: ["tabs", "webRequest", "webRequestBlocking"],
+      host_permissions: ["*://example.com/*"],
+    },
+    async background() {
+      let receivedResponse = false;
+      browser.webRequest.onHeadersReceived.addListener(
+        () => {
+          receivedResponse = true;
+        },
+        { urls: ["*://example.com/*test_without_tabs_create"] },
+        ["blocking"]
+      );
+      const tab = await new Promise(resolve => {
+        browser.tabs.onCreated.addListener(resolve);
+        browser.test.sendMessage("ready_to_observe_tab");
+      });
+
+      // When a tab is created with tabs.create(), we wait until the load was
+      // committed (to support existing extensions that call tabs APIs such as
+      // tabs.executeScript after calling tabs.create). We however do not need
+      // such a long wait for arbitrary tabs, and resolve quickly, before the
+      // (delayed) response was received.
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertFalse(
+        receivedResponse,
+        "Resolved without waiting for response when not using tabs.create()"
+      );
+
+      // Note: the server takes care of waiting for /delayed request before
+      // finishing. This is relevant because we open the tab without waiting
+      // for it to load, so for all we know the server has not even seen the
+      // request yet.
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?finish");
+
+      // Poll until we know that the load was committed to the tab.
+      while (true) {
+        await new Promise(r => setTimeout(r, 10));
+        if (!receivedResponse) {
+          browser.test.log("Waiting for tab to load, no response yet");
+          continue;
+        }
+        let { status, url } = await browser.tabs.get(tab.id);
+        if (status == "complete" && url.includes("test_without_tabs_create")) {
+          break;
+        }
+        browser.test.log(`Waiting for tab to load, ${status} at ${url}`);
+      }
+      browser.test.assertTrue(true, "Document loaded in tab")
+
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertTrue(true, "Resolved on repeat (after response)");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new", "new"]);
+
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("ready_to_observe_tab");
+
+  let tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?delayed&200ok&test_without_tabs_create",
+    /* waitForLoad */ false
+  );
+
+  await extension.awaitMessage("done");
+  await extension.unload();
+
+  await AppTestDelegate.removeTab(window, tab);
+});
+
+add_task(async function test_duplicate() {
+  if (navigator.userAgent.includes("Android")) {
+    // TODO bug 1817780: Remove skip if tabs.duplicate is supported.
+    todo(false, "tabs.duplicate not supported on Android (bug 1817780).");
+    return;
+  }
+  await resetServerStateBeforeDelayedRequests();
+  let extension = loadExtensionWithTestHelper({
+    manifest: {
+      permissions: ["tabs", "webRequest", "webRequestBlocking"],
+      host_permissions: ["*://example.com/*"],
+    },
+    async background() {
+      let receivedResponseCount = 0;
+      browser.webRequest.onHeadersReceived.addListener(
+        () => {
+          ++receivedResponseCount;
+        },
+        { urls: ["*://example.com/*test_duplicate"] },
+        ["blocking"]
+      );
+      let tab = await browser.tabs.create({
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?delayed&test_duplicate",
+      });
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?finish");
+      await browser.testTabTracker.awaitTabReady(tab.id);
+      browser.test.assertEq(1, receivedResponseCount, "Server responded once");
+
+      let duplicatedTab = await browser.tabs.duplicate(tab.id);
+      let promise = browser.testTabTracker.awaitTabReady(duplicatedTab.id);
+      let ready = false;
+      promise.then(() => {
+        ready = true;
+        browser.test.assertEq(
+          2,
+          receivedResponseCount,
+          "Should only resolve after server has responded"
+        );
+      });
+      // Wait a little bit before responding; if tabs.duplicate() were to
+      // unexpectedly resolve too early, we would catch it now.
+      await new Promise(r => setTimeout(r, 50));
+      await fetch("https://example.com/tests/toolkit/components/extensions/test/mochitest/file_204_no_content.sjs?finish");
+      await promise;
+      browser.test.assertTrue(ready, "Resolved after server response");
+
+      await browser.testTabTracker.verifyConsistentIdDeltas(["new", "new"]);
+
+      await browser.tabs.remove([duplicatedTab.id, tab.id]);
+      browser.test.sendMessage("done");
+    },
+  });
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+</script>
+
+</body>
+</html>

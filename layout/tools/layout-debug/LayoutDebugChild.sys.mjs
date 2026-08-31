@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,12 +14,13 @@ export class LayoutDebugChild extends JSWindowActorChild {
       this._debuggingTools.init(this.contentWindow);
     }
     switch (msg.name) {
-      case "LayoutDebug:Call":
+      case "LayoutDebug:Call": {
         let pid = Services.appinfo.processID;
         dump(`[${pid} ${this.contentWindow.location}]\n`);
         this._debuggingTools[msg.data.name](msg.data.arg);
         dump("\n");
         break;
+      }
       default:
         throw `unknown message ${msg.name} sent to LayoutDebugChild`;
     }

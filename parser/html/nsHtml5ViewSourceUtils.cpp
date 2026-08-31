@@ -10,7 +10,7 @@
 // static
 nsHtml5HtmlAttributes* nsHtml5ViewSourceUtils::NewBodyAttributes() {
   nsHtml5HtmlAttributes* bodyAttrs = new nsHtml5HtmlAttributes(0);
-  nsHtml5String id = nsHtml5Portability::newStringFromLiteral("viewsource");
+  nsHtml5String id = nsHtml5String::FromStaticAtom(nsGkAtoms::viewsource);
   bodyAttrs->addAttribute(nsHtml5AttributeName::ATTR_ID, id, -1);
 
   int32_t tabSize = mozilla::StaticPrefs::view_source_tab_size();
@@ -28,7 +28,7 @@ nsHtml5HtmlAttributes* nsHtml5ViewSourceUtils::NewBodyAttributes() {
 // static
 nsHtml5HtmlAttributes* nsHtml5ViewSourceUtils::NewLinkAttributes() {
   nsHtml5HtmlAttributes* linkAttrs = new nsHtml5HtmlAttributes(0);
-  nsHtml5String rel = nsHtml5Portability::newStringFromLiteral("stylesheet");
+  nsHtml5String rel = nsHtml5String::FromStaticAtom(nsGkAtoms::stylesheet);
   linkAttrs->addAttribute(nsHtml5AttributeName::ATTR_REL, rel, -1);
   nsHtml5String type = nsHtml5Portability::newStringFromLiteral("text/css");
   linkAttrs->addAttribute(nsHtml5AttributeName::ATTR_TYPE, type, -1);
@@ -41,7 +41,7 @@ nsHtml5HtmlAttributes* nsHtml5ViewSourceUtils::NewLinkAttributes() {
 // static
 nsHtml5HtmlAttributes* nsHtml5ViewSourceUtils::NewMetaViewportAttributes() {
   nsHtml5HtmlAttributes* metaVpAttrs = new nsHtml5HtmlAttributes(0);
-  nsHtml5String name = nsHtml5Portability::newStringFromLiteral("viewport");
+  nsHtml5String name = nsHtml5String::FromStaticAtom(nsGkAtoms::viewport);
   metaVpAttrs->addAttribute(nsHtml5AttributeName::ATTR_NAME, name, -1);
   nsHtml5String content =
       nsHtml5Portability::newStringFromLiteral("width=device-width");

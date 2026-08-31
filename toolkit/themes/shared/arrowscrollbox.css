@@ -23,17 +23,36 @@ slot {
 
 toolbarbutton {
   color: inherit;
+  /* Width of list-style-image SVG and padding-block used to calculate
+   * --scrollbutton-height in menu.css.
+   */
   list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
+  padding: 2px;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: 1;
-  padding: 2px;
   /* Make sure we draw on top of our scrollbox, since otherwise the up button
    * won't be hittable */
   position: relative;
 
   &[disabled] {
-    fill-opacity: var(--toolbarbutton-disabled-opacity);
+    fill-opacity: var(--toolbarbutton-opacity-disabled);
+  }
+
+  > .toolbarbutton-icon {
+    padding: var(--arrowscrollbox-scrollicon-padding, 0);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    border-radius: var(--arrowscrollbox-scrollicon-border-radius, 0);
+    background-color: var(--arrowscrollbox-scrollicon-background-color, transparent);
+    transition: var(--arrowscrollbox-scrollicon-transition, none);
+  }
+
+  &:not([disabled]):hover > .toolbarbutton-icon {
+    background-color: var(--arrowscrollbox-scrollicon-hover-background-color, transparent);
+
+    :active > & {
+      background-color: var(--arrowscrollbox-scrollicon-active-background-color, transparent);
+    }
   }
 
   :host([orient="horizontal"]) > & {

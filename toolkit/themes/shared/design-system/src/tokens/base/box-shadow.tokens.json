@@ -1,0 +1,44 @@
+{
+  "level-1": {
+    "value": "0 0 1px {box-shadow.color.darker.layer-1}, 0 1px 2px {box-shadow.color.darker.layer-2}"
+  },
+  "level-2": {
+    "value": "0 0.25px 0.75px {box-shadow.color.lighter.layer-1}, 0 2px 6px {box-shadow.color.lighter.layer-2}"
+  },
+  "level-3": {
+    "value": "0 0.375px 1.5px {box-shadow.color.lighter.layer-1}, 0 3px 12px {box-shadow.color.lighter.layer-2}"
+  },
+  "level-4": {
+    "value": "0 0.5px 2px {box-shadow.color.lighter.layer-1}, 0 4px 16px {box-shadow.color.lighter.layer-2}"
+  },
+  "color": {
+    "darker": {
+      "layer-1": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.15)",
+          "dark": "rgba(0, 0, 0, 0.2)"
+        }
+      },
+      "layer-2": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.2)",
+          "dark": "rgba(0, 0, 0, 0.4)"
+        }
+      }
+    },
+    "lighter": {
+      "layer-1": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.03)",
+          "dark": "rgba(0, 0, 0, 0.15)"
+        }
+      },
+      "layer-2": {
+        "value": {
+          "light": "rgba(0, 0, 0, 0.05)",
+          "dark": "rgba(0, 0, 0, 0.2)"
+        }
+      }
+    }
+  }
+}

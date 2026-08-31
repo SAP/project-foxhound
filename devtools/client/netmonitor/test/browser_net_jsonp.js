@@ -32,7 +32,7 @@ add_task(async function () {
     const requestsListStatus = requestItem.querySelector(".status-code");
     EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
     await waitUntil(() => requestsListStatus.title);
-    await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
+    await waitForDOM(requestItem, ".requests-list-timings-total");
   }
 
   await verifyRequestItemTarget(
@@ -80,7 +80,7 @@ add_task(async function () {
 
   testJsonSectionInResponseTab(`"Hello JSONP!"`);
 
-  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  wait = waitForDOM(document, "#response-panel .cm-content");
   let rawResponseToggle = document.querySelector(
     "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
@@ -113,7 +113,7 @@ add_task(async function () {
 
   testJsonSectionInResponseTab(`"Hello weird JSONP!"`);
 
-  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  wait = waitForDOM(document, "#response-panel .cm-content");
   rawResponseToggle = document.querySelector(
     "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
@@ -161,7 +161,7 @@ add_task(async function () {
       "The response json view has the intened visibility and correct title."
     );
     is(
-      tabpanel.querySelector(".CodeMirror-code") === null,
+      tabpanel.querySelector(".cm-content") === null,
       false,
       "The response editor has the intended visibility."
     );

@@ -10,8 +10,8 @@ requestLongerTimeout(3);
  * Helper function for testing that BTP gets enabled/disabled for a specific
  * cookie behavior.
  *
- * @param {Number} cookieBehavior - One of Ci.nsICookieService.BEHAVIOR* values.
- * @param {Number} privateBrowsingId - Run test in private/non-private mode.
+ * @param {number} cookieBehavior - One of Ci.nsICookieService.BEHAVIOR* values.
+ * @param {number} privateBrowsingId - Run test in private/non-private mode.
  */
 async function runTestCookieBehavior(
   cookieBehavior,
@@ -54,7 +54,6 @@ add_setup(async function () {
         "privacy.bounceTrackingProtection.mode",
         Ci.nsIBounceTrackingProtection.MODE_ENABLED,
       ],
-      ["privacy.bounceTrackingProtection.requireStatefulBounces", true],
       ["privacy.bounceTrackingProtection.bounceTrackingGracePeriodSec", 0],
     ],
   });
@@ -94,13 +93,13 @@ add_task(async function test_cookie_behaviors() {
       true
     );
     await runTestCookieBehavior(
-      Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+      Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       pbId,
       true
     );
   }
   Assert.equal(
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
     Ci.nsICookieService.BEHAVIOR_LAST,
     "test covers all cookie behaviors"
   );

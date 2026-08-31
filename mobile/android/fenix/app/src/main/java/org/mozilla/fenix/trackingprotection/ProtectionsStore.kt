@@ -14,6 +14,7 @@ import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.R
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * The [Store] for holding the [ProtectionsState] and applying [ProtectionsAction]s.
@@ -143,7 +144,7 @@ enum class CookieBannerUIMode(
      */
     ENABLE(
         R.string.reduce_cookie_banner_on_for_site,
-        R.drawable.ic_cookies_enabled,
+        iconsR.drawable.mozac_ic_cookies_24,
     ),
 
     /**
@@ -152,7 +153,7 @@ enum class CookieBannerUIMode(
      */
     DISABLE(
         R.string.reduce_cookie_banner_off_for_site,
-        R.drawable.ic_cookies_disabled,
+        iconsR.drawable.mozac_ic_cookies_slash_24,
     ),
 
     /**
@@ -160,7 +161,7 @@ enum class CookieBannerUIMode(
      */
     SITE_NOT_SUPPORTED(
         R.string.reduce_cookie_banner_unsupported_site,
-        R.drawable.ic_cookies_disabled,
+        iconsR.drawable.mozac_ic_cookies_slash_24,
     ),
 
     /**
@@ -169,7 +170,7 @@ enum class CookieBannerUIMode(
      */
     REQUEST_UNSUPPORTED_SITE_SUBMITTED(
         R.string.reduce_cookie_banner_unsupported_site_request_submitted_2,
-        R.drawable.ic_cookies_disabled,
+        iconsR.drawable.mozac_ic_cookies_slash_24,
     ),
 
     /**
@@ -179,7 +180,7 @@ enum class CookieBannerUIMode(
 }
 
 /**
- * The 6 categories of Tracking Protection to display
+ * The categories of Tracking Protection to display.
  */
 enum class TrackingProtectionCategory(
     @param:StringRes val title: Int,
@@ -189,37 +190,27 @@ enum class TrackingProtectionCategory(
     SOCIAL_MEDIA_TRACKERS(
         R.string.etp_social_media_trackers_title,
         R.string.etp_social_media_trackers_description,
-        R.drawable.mozac_ic_social_tracker_24,
+        iconsR.drawable.mozac_ic_social_tracker_24,
     ),
     CROSS_SITE_TRACKING_COOKIES(
         R.string.etp_cookies_title,
         R.string.etp_cookies_description,
-        R.drawable.mozac_ic_cookies_24,
+        iconsR.drawable.mozac_ic_cookies_24,
     ),
     CRYPTOMINERS(
         R.string.etp_cryptominers_title,
         R.string.etp_cryptominers_description,
-        R.drawable.mozac_ic_cryptominer_24,
+        iconsR.drawable.mozac_ic_cryptominer_24,
     ),
     FINGERPRINTERS(
         R.string.etp_known_fingerprinters_title,
         R.string.etp_known_fingerprinters_description,
-        R.drawable.mozac_ic_fingerprinter_24,
+        iconsR.drawable.mozac_ic_fingerprinter_24,
     ),
     TRACKING_CONTENT(
         R.string.etp_tracking_content_title,
         R.string.etp_tracking_content_description,
-        R.drawable.mozac_ic_warning_fill_24,
-    ),
-    REDIRECT_TRACKERS(
-        R.string.etp_redirect_trackers_title,
-        R.string.etp_redirect_trackers_description,
-        R.drawable.mozac_ic_external_link_24,
-    ),
-    SUSPECTED_FINGERPRINTERS(
-        R.string.etp_suspected_fingerprinters_title,
-        R.string.etp_suspected_fingerprinters_description,
-        R.drawable.mozac_ic_fingerprinter_24,
+        iconsR.drawable.mozac_ic_warning_fill_24,
     ),
 }
 

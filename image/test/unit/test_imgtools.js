@@ -95,35 +95,11 @@ function compareArrays(aArray1, aArray2) {
   }
 }
 
-/*
- * checkExpectedError
- *
- * Checks to see if a thrown error was expected or not, and if it
- * matches the expected value.
- */
-function checkExpectedError(aExpectedError, aActualError) {
-  if (aExpectedError) {
-    if (!aActualError) {
-      throw new Error("Didn't throw as expected (" + aExpectedError + ")");
-    }
-
-    if (!aExpectedError.test(aActualError)) {
-      throw new Error("Threw (" + aActualError + "), not (" + aExpectedError);
-    }
-
-    // We got the expected error, so make a note in the test log.
-    dump("...that error was expected.\n\n");
-  } else if (aActualError) {
-    throw new Error("Threw unexpected error: " + aActualError);
-  }
-}
-
 function run_test() {
   try {
     /* ========== 0 ========== */
     var testnum = 0;
     var testdesc = "imgITools setup";
-    var err = null;
 
     var imgTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
 
@@ -174,7 +150,7 @@ function run_test() {
     var refName = "image1png16x16.jpg";
     var refFile = do_get_file(refName);
     istream = getFileInputStream(refFile);
-    Assert.equal(istream.available(), 1050);
+    Assert.equal(istream.available(), 1051);
     var referenceBytes = streamToArray(istream);
 
     // compare the encoder's output to the reference file.
@@ -239,7 +215,7 @@ function run_test() {
       }
       refFile = do_get_file(refName);
       istream = getFileInputStream(refFile);
-      Assert.equal(istream.available(), AppConstants.USE_LIBZ_RS ? 941 : 955);
+      Assert.equal(istream.available(), AppConstants.USE_LIBZ_RS ? 938 : 955);
       referenceBytes = streamToArray(istream);
 
       // compare the encoder's output to the reference file.
@@ -308,7 +284,7 @@ function run_test() {
       : "image3ico32x32.png";
     refFile = do_get_file(refName);
     istream = getFileInputStream(refFile);
-    Assert.equal(istream.available(), AppConstants.USE_LIBZ_RS ? 2285 : 2280);
+    Assert.equal(istream.available(), AppConstants.USE_LIBZ_RS ? 2283 : 2280);
     referenceBytes = streamToArray(istream);
 
     // compare the encoder's output to the reference file.
@@ -829,34 +805,26 @@ function run_test() {
 
     istream = getFileInputStream(imgFile);
     Assert.equal(istream.available(), 17759);
-    var errsrc = "none";
 
-    try {
-      buffer = NetUtil.readInputStreamToString(istream, istream.available());
-      container = imgTools.decodeImageFromBuffer(
-        buffer,
-        buffer.length,
-        inMimeType
-      );
+    // bug413512.ico is a malformed favicon: five of its six resources have a
+    // corrupt BITMAPINFOHEADER, but the first resource is a valid 16x16 BMP.
+    // The decoder should recover that one resource and decode the file
+    // successfully rather than failing outright.
+    buffer = NetUtil.readInputStreamToString(istream, istream.available());
+    container = imgTools.decodeImageFromBuffer(
+      buffer,
+      buffer.length,
+      inMimeType
+    );
+    Assert.equal(container.width, 16);
+    Assert.equal(container.height, 16);
 
-      // We expect to hit an error during encoding because the ICO header of the
-      // image is fine, but the actual resources are corrupt. Since
-      // decodeImageFromBuffer() only performs a metadata decode, it doesn't decode
-      // far enough to realize this, but we'll find out when we do a full decode
-      // during encodeImage().
-      try {
-        istream = imgTools.encodeImage(container, "image/png");
-      } catch (e) {
-        err = e;
-        errsrc = "encode";
-      }
-    } catch (e) {
-      err = e;
-      errsrc = "decode";
-    }
-
-    Assert.equal(errsrc, "encode");
-    checkExpectedError(/NS_ERROR_FAILURE/, err);
+    istream = imgTools.encodeImage(container, "image/png");
+    Assert.greater(
+      istream.available(),
+      0,
+      "should be able to decode and encode bug413512.ico"
+    );
 
     /* ========== bug 815359  ========== */
     testnum = 815359;

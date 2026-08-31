@@ -16,7 +16,6 @@ ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
 export function registerProcessDataActor() {
   try {
     ChromeUtils.registerProcessActor("WebDriverProcessData", {
-      kind: "JSProcessActor",
       child: {
         esModuleURI:
           "chrome://remote/content/shared/webdriver/process-actors/WebDriverProcessDataChild.sys.mjs",

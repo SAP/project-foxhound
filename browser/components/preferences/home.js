@@ -7,32 +7,21 @@
 /* import-globals-from main.js */
 
 // HOME PAGE
+const { BLANK_HOMEPAGE_URL } = ChromeUtils.importESModule(
+  "chrome://browser/content/preferences/config/home-startup.mjs",
+  { global: "current" }
+);
 
-/*
- * Preferences:
- *
- * browser.startup.homepage
- * - the user's home page, as a string; if the home page is a set of tabs,
- *   this will be those URLs separated by the pipe character "|"
- * browser.newtabpage.enabled
- * - determines that is shown on the user's new tab page.
- *   true = Activity Stream is shown,
- *   false = about:blank is shown
- */
-
-Preferences.addAll([
-  { id: "browser.startup.homepage", type: "wstring" },
-  { id: "pref.browser.homepage.disable_button.current_page", type: "bool" },
-  { id: "pref.browser.homepage.disable_button.bookmark_page", type: "bool" },
-  { id: "pref.browser.homepage.disable_button.restore_default", type: "bool" },
-  { id: "browser.newtabpage.enabled", type: "bool" },
-]);
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  HomePage: "resource:///modules/HomePage.sys.mjs",
+});
 
 const HOMEPAGE_OVERRIDE_KEY = "homepage_override";
 const URL_OVERRIDES_TYPE = "url_overrides";
 const NEW_TAB_KEY = "newTabURL";
-
-const BLANK_HOMEPAGE_URL = "chrome://browser/content/blanktab.html";
+const RESET_DEFAULTS_BUTTON_ENABLED = false;
 
 var gHomePane = {
   HOME_MODE_FIREFOX_HOME: "0",
@@ -48,20 +37,8 @@ var gHomePane = {
     );
   },
 
-  get isPocketNewtabEnabled() {
-    const value = Services.prefs.getStringPref(
-      "browser.newtabpage.activity-stream.discoverystream.config",
-      ""
-    );
-    if (value) {
-      try {
-        return JSON.parse(value).enabled;
-      } catch (e) {
-        console.error("Failed to parse Discovery Stream pref.");
-      }
-    }
-
-    return false;
+  get isResetDefaultsButtonEnabled() {
+    return RESET_DEFAULTS_BUTTON_ENABLED;
   },
 
   async syncToNewTabPref() {
@@ -131,6 +108,7 @@ var gHomePane = {
 
   /**
    *  _updateMenuInterface: adds items to or removes them from the menulists
+   *
    * @param {string} selectId Optional Id of the menulist to add or remove items from.
    *                          If not included this will update both home and newtab menus.
    */
@@ -187,11 +165,9 @@ var gHomePane = {
         );
         if (!currentOption) {
           let option = document.createXULElement("menuitem");
-          option.classList.add("addon-with-favicon");
           option.value = addon.id;
           option.label = addon.name;
           menupopup.append(option);
-          option.querySelector("image").src = addon.iconURL;
         }
         let setting = extensionOptions.find(o => o.id == addon.id);
         if (
@@ -283,6 +259,7 @@ var gHomePane = {
   /**
    * _renderCustomSettings: Hides or shows the UI for setting a custom
    * homepage URL
+   *
    * @param {obj} options
    * @param {bool} options.shouldShow Should the custom UI be shown?
    * @param {bool} options.isControlled Is an extension controlling the home page?
@@ -323,6 +300,7 @@ var gHomePane = {
 
   /**
    * _isHomePageDefaultValue
+   *
    * @returns {bool} Is the homepage set to the default pref value?
    */
   _isHomePageDefaultValue() {
@@ -334,6 +312,7 @@ var gHomePane = {
 
   /**
    * isHomePageBlank
+   *
    * @returns {bool} Is the homepage set to about:blank?
    */
   isHomePageBlank() {
@@ -346,6 +325,7 @@ var gHomePane = {
 
   /**
    * _isTabAboutPreferencesOrSettings: Is a given tab set to about:preferences or about:settings?
+   *
    * @param {Element} aTab A tab element
    * @returns {bool} Is the linkedBrowser of aElement set to about:preferences or about:settings?
    */
@@ -358,6 +338,7 @@ var gHomePane = {
 
   /**
    * _getTabsForHomePage
+   *
    * @returns {Array} An array of current tabs
    */
   _getTabsForHomePage() {
@@ -438,7 +419,7 @@ var gHomePane = {
       this._renderCustomSettings();
       this._setInputDisabledStates(false);
     } else {
-      if (HomePage.get().startsWith("moz-extension:")) {
+      if (ExtensionUtils.isExtensionUrl(HomePage.get())) {
         controllingExtension = await getControllingExtension(
           PREF_SETTING_TYPE,
           HOMEPAGE_OVERRIDE_KEY
@@ -610,9 +591,8 @@ var gHomePane = {
    * Check all Home Tab preferences for user set values.
    */
   _changedHomeTabDefaultPrefs() {
-    // If Discovery Stream is enabled Firefox Home Content preference options are hidden
     const homeContentChanged =
-      !this.isPocketNewtabEnabled &&
+      this.isResetDefaultsButtonEnabled &&
       this.homePanePrefs.some(pref => pref.hasUserValue);
     const newtabPref = Preferences.get(this.NEWTAB_ENABLED_PREF);
     const extensionControlled = Preferences.get(
@@ -651,13 +631,17 @@ var gHomePane = {
    */
   restoreDefaultPrefsForHome() {
     this.restoreDefaultHomePage();
-    // If Discovery Stream is enabled Firefox Home Content preference options are hidden
-    if (!this.isPocketNewtabEnabled) {
+    if (this.isResetDefaultsButtonEnabled) {
       this.homePanePrefs.forEach(pref => Services.prefs.clearUserPref(pref.id));
     }
   },
 
   init() {
+    // The redesign renders the home pane via setting-pane elements;
+    // the legacy XUL-based init must not run alongside it.
+    if (Services.prefs.getBoolPref("browser.settings-redesign.enabled")) {
+      return;
+    }
     // Event Listeners
     document
       .getElementById("homePageUrl")

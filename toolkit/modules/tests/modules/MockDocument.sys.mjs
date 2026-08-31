@@ -22,7 +22,7 @@ export const MockDocument = {
       parsedDoc = parser.parseFromString(aContent, aType);
     }
 
-    // Assign ownerGlobal to documentElement as well for the form-less
+    // Assign documentGlobal to documentElement as well for the form-less
     // inputs treating it as rootElement.
     this.mockOwnerGlobalProperty(parsedDoc.documentElement);
 
@@ -57,7 +57,7 @@ export const MockDocument = {
   },
 
   mockOwnerGlobalProperty(aElement) {
-    Object.defineProperty(aElement, "ownerGlobal", {
+    Object.defineProperty(aElement, "documentGlobal", {
       value: {
         UIEvent: Event,
         Event,

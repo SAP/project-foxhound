@@ -4,7 +4,10 @@
 
 package mozilla.components.feature.downloads.fake
 
+import android.content.Context
 import mozilla.components.feature.downloads.FileSystemHelper
+import mozilla.components.support.utils.DownloadFileUtils
+import kotlin.Boolean
 
 class FakeFileSystemHelper(
     private val availableBitesInDirectory: Long = 0L,

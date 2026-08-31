@@ -31,6 +31,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.sameValue(delete sample.undef, true, 'The value of `delete sample.undef` is true');
   assert.sameValue(delete sample[key], true, 'The value of `delete sample.string` is true');
   assert.sameValue(delete sample["undef"], true, 'The value of `delete sample.undef` is true');
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

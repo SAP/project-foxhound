@@ -1,0 +1,15 @@
+{
+  "label": "useinsider.com",
+  "bugs": {
+    "1989241": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.useinsider.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

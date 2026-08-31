@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import filecmp
 import os
 import shutil
 import tempfile
@@ -18,9 +19,33 @@ class BackupTest(MarionetteTestCase):
     def setUp(self):
         MarionetteTestCase.setUp(self)
 
-        # We need to force the "browser.backup.log" pref already set to true
-        # before Firefox starts in order for it to be displayed.
-        self.marionette.enforce_gecko_prefs({"browser.backup.log": True})
+        # Profile backup is disabled while SQLite at-rest encryption is on, so
+        # the backup feature under test is unavailable then. We cannot just
+        # force the pref off: under a global encryption-on build the initial
+        # session already created an encrypted profile, and restarting with
+        # encryption off cannot reopen it. Skip instead -- on the shipping
+        # (encryption-off) configuration this is a no-op and the test runs.
+        if self.marionette.get_pref("security.storage.encryption.sqlite.enabled"):
+            self.skipTest(
+                "Profile backup is disabled when SQLite at-rest encryption is enabled"
+            )
+
+        # We need to force the service to be enabled because it's disabled
+        # by default for Marionette. Also "browser.backup.log" has to be set
+        # to true before Firefox starts in order for it to be displayed.
+        self.marionette.enforce_gecko_prefs({
+            "browser.backup.enabled": True,
+            "browser.backup.log": True,
+            "browser.backup.archive.enabled": True,
+            "browser.backup.restore.enabled": True,
+            # Necessary to test Session Restore from backup, which relies on
+            # the crash restore mechanism.
+            "browser.sessionstore.resume_from_crash": True,
+            "browser.newtabpage.activity-stream.testing.shouldInitializeFeeds": True,
+            # Prevent WallpaperFeed from fetching Remote Settings attachments
+            # from the CDN, which is blocked in CI test environments.
+            "browser.newtabpage.activity-stream.newtabWallpapers.enabled": False,
+        })
 
         self.marionette.set_context("chrome")
 
@@ -45,6 +70,7 @@ class BackupTest(MarionetteTestCase):
         self.add_test_history()
         self.add_test_preferences()
         self.add_test_permissions()
+        self.add_test_newtab_wallpaper()
 
         # We want to make sure that any payment methods in this testing profile
         # are properly encrypted using OSKeyStore, and that the encrypted
@@ -86,6 +112,11 @@ class BackupTest(MarionetteTestCase):
         # to be flushed to disk and to be made ready for backup
         self.marionette.restart()
 
+        # We want to validate that TabState is flushed before serializing the
+        # backup, so run this test in the same browser instance we invoke the
+        # backup in.
+        self.add_test_sessionstore()
+
         # Put the OSKeyStore label back, since it would have been cleared
         # from memory during the restart.
         self.marionette.execute_script(
@@ -112,10 +143,8 @@ class BackupTest(MarionetteTestCase):
           }
 
           let [archiveDestPath, recoveryCode, outerResolve] = arguments;
-          bs.setParentDirPath(archiveDestPath);
-
           (async () => {
-
+            await bs.setParentDirPath(archiveDestPath);
             await bs.enableEncryption(recoveryCode);
 
             let { archivePath } = await bs.createBackup();
@@ -155,11 +184,11 @@ class BackupTest(MarionetteTestCase):
 
         # Recover the created backup into a new profile directory. Also get out
         # the client ID of this profile, because we're going to want to make
-        # sure that this client ID is inherited by the recovered profile.
+        # sure that this client ID is not inherited from the intermediate profile.
         [
             newProfileName,
             newProfilePath,
-            expectedClientID,
+            intermediateClientID,
             osKeyStoreLabel,
         ] = self.marionette.execute_async_script(
             """
@@ -187,24 +216,24 @@ class BackupTest(MarionetteTestCase):
             const ORIGINAL_STORE_LABEL = OSKeyStore.STORE_LABEL;
             OSKeyStore.STORE_LABEL = "test-" + Math.random().toString(36).substr(2);
 
-            let newProfile = await bs.recoverFromBackupArchive(archivePath, recoveryCode, false, recoveryPath, newProfileRootPath);
+            let newProfile = await bs.recoverFromBackupArchive(archivePath, recoveryCode, false, recoveryPath, newProfileRootPath, true);
 
             if (!newProfile) {
               throw new Error("Could not create recovery profile.");
             }
 
-            let expectedClientID = await ClientID.getClientID();
+            let intermediateClientID = await ClientID.getClientID();
 
-            return [newProfile.name, newProfile.rootDir.path, expectedClientID, OSKeyStore.STORE_LABEL];
+            return [newProfile.name, newProfile.rootDir.path, intermediateClientID, OSKeyStore.STORE_LABEL];
           })().then(outerResolve);
         """,
             script_args=[archivePath, recoveryCode, recoveryPath],
         )
 
-        print("Recovery name: %s" % newProfileName)
-        print("Recovery path: %s" % newProfilePath)
-        print("Expected clientID: %s" % expectedClientID)
-        print("Persisting fake OSKeyStore label: %s" % osKeyStoreLabel)
+        print(f"Recovery name: {newProfileName}")
+        print(f"Recovery path: {newProfilePath}")
+        print(f"Intermediate clientID: {intermediateClientID}")
+        print(f"Persisting fake OSKeyStore label: {osKeyStoreLabel}")
 
         self.marionette.quit()
         originalProfile = self.marionette.instance.profile
@@ -212,9 +241,8 @@ class BackupTest(MarionetteTestCase):
         self.marionette.start_session()
         self.marionette.set_context("chrome")
 
-        # Ensure that all postRecovery actions have completed, and that
-        # encryption is enabled.
-        encryptionEnabled = self.marionette.execute_async_script(
+        # Ensure that all postRecovery actions have completed.
+        self.marionette.execute_async_script(
             """
           const { BackupService } = ChromeUtils.importESModule("resource:///modules/backup/BackupService.sys.mjs");
           let bs = BackupService.get();
@@ -225,13 +253,9 @@ class BackupTest(MarionetteTestCase):
           let [outerResolve] = arguments;
           (async () => {
             await bs.postRecoveryComplete;
-
-            await bs.loadEncryptionState();
-            return bs.state.encryptionEnabled;
           })().then(outerResolve);
         """
         )
-        self.assertTrue(encryptionEnabled)
 
         self.verify_recovered_test_cookie()
         self.verify_recovered_test_login()
@@ -246,6 +270,8 @@ class BackupTest(MarionetteTestCase):
         self.verify_recovered_preferences()
         self.verify_recovered_permissions()
         self.verify_recovered_payment_methods(osKeyStoreLabel)
+        self.verify_recovered_sessionstore()
+        self.verify_recovered_newtab_wallpaper()
 
         # Clean up the temporary OSKeyStore label
         self.marionette.execute_async_script(
@@ -262,8 +288,8 @@ class BackupTest(MarionetteTestCase):
             script_args=[osKeyStoreLabel],
         )
 
-        # Now also ensure that the recovered profile inherited the client ID
-        # from the profile that initiated recovery.
+        # Now also ensure that the recovered profile new client ID and not that
+        # one from the intermediate profile that initiated recovery.
         recoveredClientID = self.marionette.execute_async_script(
             """
           const { ClientID } = ChromeUtils.importESModule("resource://gre/modules/ClientID.sys.mjs");
@@ -273,7 +299,7 @@ class BackupTest(MarionetteTestCase):
           })().then(outerResolve);
         """
         )
-        self.assertEqual(recoveredClientID, expectedClientID)
+        self.assertNotEqual(recoveredClientID, intermediateClientID)
 
         self.marionette.quit()
         self.marionette.instance.profile = originalProfile
@@ -298,10 +324,80 @@ class BackupTest(MarionetteTestCase):
         mozfile.remove(archivePath)
         mozfile.remove(recoveryPath)
 
+    def test_backup_disablement_in_new_session(self):
+        archiveDestPath = os.path.join(
+            tempfile.gettempdir(), "backup-dest-disable-test"
+        )
+
+        [archivePath, lastBackupFileName] = self.marionette.execute_async_script(
+            """
+          const { BackupService } = ChromeUtils.importESModule("resource:///modules/backup/BackupService.sys.mjs");
+          let bs = BackupService.init();
+          if (!bs) {
+            throw new Error("Could not get initialized BackupService.");
+          }
+
+          let [archiveDestPath, outerResolve] = arguments;
+
+          (async () => {
+            await bs.setParentDirPath(archiveDestPath);
+            bs.setScheduledBackups(true);
+            let { archivePath } = await bs.createBackup();
+            if (!archivePath) {
+              throw new Error("Could not create backup.");
+            }
+
+            let lastBackupFileName = Services.prefs.getStringPref("browser.backup.scheduled.last-backup-file", "");
+            return [archivePath, lastBackupFileName];
+          })().then(outerResolve);
+        """,
+            script_args=[archiveDestPath],
+        )
+
+        print(f"Created backup at: {archivePath}")
+        print(f"Last backup filename: {lastBackupFileName}")
+
+        self.marionette.quit()
+        self.marionette.start_session()
+        self.marionette.set_context("chrome")
+
+        if os.path.exists(archivePath):
+            print(f"File size: {os.path.getsize(archivePath)} bytes")
+
+        self.marionette.execute_async_script(
+            """
+
+          ChromeUtils.defineESModuleGetters(this, {
+            BackupService: "resource:///modules/backup/BackupService.sys.mjs",
+            ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
+          });
+
+          let bs = BackupService.init();
+          if (!bs) {
+            throw new Error("Could not get initialized BackupService.");
+          }
+
+          let [outerResolve] = arguments;
+          (async () => {
+            await ASRouterTargeting.Environment.backupsInfo;
+            await bs.cleanupBackupFiles();
+            bs.setScheduledBackups(false);
+          })().then(outerResolve);
+        """,
+            script_args=[],
+        )
+
+        archiveDeletedAfterDisable = not os.path.exists(archivePath)
+        self.assertTrue(
+            archiveDeletedAfterDisable,
+            f"Backup file should be deleted after disabling backups. Path: {archivePath}, exists: {os.path.exists(archivePath)}",
+        )
+
     def add_test_cookie(self):
         self.marionette.execute_async_script(
             """
           let [outerResolve] = arguments;
+
           (async () => {
             // We'll just add a single cookie, and then make sure that it shows
             // up on the other side.
@@ -333,7 +429,8 @@ class BackupTest(MarionetteTestCase):
           })().then(outerResolve);
         """
         )
-        self.assertEqual(cookiesLength, 1)
+        # Expect cookies to be removed from the backup.
+        self.assertEqual(cookiesLength, 0)
 
     def add_test_login(self):
         self.marionette.execute_async_script(
@@ -341,7 +438,7 @@ class BackupTest(MarionetteTestCase):
           let [outerResolve] = arguments;
           (async () => {
             // Let's start with adding a single password
-            Services.logins.removeAllLogins();
+            await Services.logins.removeAllLoginsAsync();
 
             const nsLoginInfo = new Components.Constructor(
               "@mozilla.org/login-manager/loginInfo;1",
@@ -757,6 +854,21 @@ class BackupTest(MarionetteTestCase):
         """
         )
 
+    def add_test_newtab_wallpaper(self):
+        wallpaperPath = os.path.join(os.path.dirname(__file__), "newtab-wallpaper.png")
+        self.marionette.execute_async_script(
+            """
+          let [wallpaperPath, outerResolve] = arguments;
+          (async () => {
+            let feed = AboutNewTab.activityStream.store.feeds.get("feeds.wallpaperfeed");
+            let wallpaperFile = await File.createFromNsIFile(await IOUtils.getFile(wallpaperPath));
+            await feed.wallpaperUpload(wallpaperFile, "light");
+            Services.prefs.setStringPref("browser.newtabpage.activity-stream.newtabWallpapers.wallpaper", "custom");
+          })().then(outerResolve);
+        """,
+            script_args=[wallpaperPath],
+        )
+
     def verify_recovered_permissions(self):
         permissionExists = self.marionette.execute_script(
             """
@@ -850,3 +962,44 @@ class BackupTest(MarionetteTestCase):
             script_args=[osKeyStoreLabel],
         )
         self.assertTrue(cardExists)
+
+    def add_test_sessionstore(self):
+        with self.marionette.using_context("content"):
+            self.marionette.navigate("about:mozilla")
+
+    def verify_recovered_sessionstore(self):
+        [tabCount, url] = self.marionette.execute_script(
+            """
+          const { SessionStore } = ChromeUtils.importESModule(
+            "resource:///modules/sessionstore/SessionStore.sys.mjs"
+          );
+          const session = SessionStore.getCurrentState(true);
+          const win = session.windows[0];
+          const tabLen = win.tabs.length;
+          const tab = win.tabs[0];
+          const entry = tab.entries[0];
+          const url = entry.url;
+          return [tabLen, url];
+        """
+        )
+
+        self.assertEqual(tabCount, 1)
+        self.assertEqual(url, "about:mozilla")
+
+    def verify_recovered_newtab_wallpaper(self):
+        [isCustom, wallpaperPath] = self.marionette.execute_script(
+            """
+          const isCustom = Services.prefs.getStringPref("browser.newtabpage.activity-stream.newtabWallpapers.wallpaper", "") == "custom";
+          const wallpaperUUID = Services.prefs.getStringPref("browser.newtabpage.activity-stream.newtabWallpapers.customWallpaper.uuid", "");
+          const wallpaperPath = PathUtils.join(PathUtils.profileDir, "wallpaper", wallpaperUUID);
+          return [isCustom, wallpaperPath];
+        """
+        )
+
+        self.assertTrue(isCustom)
+        expectedWallpaperPath = os.path.join(
+            os.path.dirname(__file__), "newtab-wallpaper.png"
+        )
+        self.assertTrue(
+            filecmp.cmp(wallpaperPath, expectedWallpaperPath, shallow=False)
+        )

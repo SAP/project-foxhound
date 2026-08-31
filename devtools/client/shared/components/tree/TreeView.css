@@ -36,7 +36,7 @@
 
 .treeTable .treeLabelCell::after {
   content: ":";
-  color: var(--object-color);
+  color: var(--theme-comment);
 }
 
 .treeTable .treeValueCell.inputEnabled {

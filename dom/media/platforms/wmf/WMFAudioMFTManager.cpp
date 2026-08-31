@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFAudioMFTManager.h"
+
+#include "BufferReader.h"
 #include "MediaInfo.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
 #include "WMFUtils.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
-#include "nsTArray.h"
-#include "BufferReader.h"
 #include "mozilla/ScopeExit.h"
+#include "nsTArray.h"
 
-#define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define LOG(...) MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
 
 namespace mozilla {
 
@@ -42,8 +41,8 @@ WMFAudioMFTManager::WMFAudioMFTManager(const AudioInfo& aConfig)
       mRemainingEncoderDelay = mEncoderDelay =
           aacCodecSpecificData.mEncoderDelayFrames;
       mTotalMediaFrames = aacCodecSpecificData.mMediaFrameCount;
-      LOG("AudioMFT decoder: Found AAC decoder delay (%" PRIu32
-          "frames) and total media frames (%" PRIu64 " frames)\n",
+      LOG("AudioMFT decoder: Found AAC decoder delay ({}frames) and total "
+          "media frames ({} frames)\n",
           mEncoderDelay, mTotalMediaFrames);
     } else {
       // Gracefully handle failure to cover all codec specific cases above. Once
@@ -79,6 +78,7 @@ const GUID& WMFAudioMFTManager::GetMediaSubtypeGUID() {
 }
 
 bool WMFAudioMFTManager::Init() {
+  AUTO_PROFILER_LABEL("WMFAudioMFTManager::Init", MEDIA_PLAYBACK);
   NS_ENSURE_TRUE(StreamTypeIsAudio(mStreamType), false);
 
   RefPtr<MFTDecoder> decoder(new MFTDecoder());
@@ -128,7 +128,7 @@ bool WMFAudioMFTManager::Init() {
   hr = outputType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 32);
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
-  hr = decoder->SetMediaTypes(inputType, outputType);
+  hr = decoder->SetMediaTypes(inputType, outputType, MFAudioFormat_Float);
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
   mDecoder = decoder;
@@ -193,7 +193,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutput) {
       return hr;
     }
     if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
-      hr = mDecoder->FindDecoderOutputType();
+      hr = mDecoder->FindDecoderOutputType(MFAudioFormat_Float);
       NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
       hr = UpdateOutputType();
       NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
@@ -257,8 +257,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutput) {
   }
 
   if (oldAudioRate != mAudioRate) {
-    LOG("Audio rate changed from %" PRIu32 " to %" PRIu32, oldAudioRate,
-        mAudioRate);
+    LOG("Audio rate changed from {} to {}", oldAudioRate, mAudioRate);
   }
 
   AlignedAudioBuffer audioData(numSamples);
@@ -274,7 +273,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutput) {
 
   const bool isAudioRateChangedToHigher = oldAudioRate < mAudioRate;
   if (IsPartialOutput(duration, isAudioRateChangedToHigher)) {
-    LOG("Encounter a partial frame?! duration shrinks from %s to %s",
+    LOG("Encounter a partial frame?! duration shrinks from {} to {}",
         mLastOutputDuration.ToString().get(), duration.ToString().get());
     return MF_E_TRANSFORM_NEED_MORE_INPUT;
   }
@@ -285,7 +284,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutput) {
   mLastOutputDuration = aOutput->mDuration;
 
 #ifdef LOG_SAMPLE_DECODE
-  LOG("Decoded audio sample! timestamp=%lld duration=%lld currentLength=%u",
+  LOG("Decoded audio sample! timestamp={} duration={} currentLength={}",
       pts.ToMicroseconds(), duration.ToMicroseconds(), currentLength);
 #endif
 

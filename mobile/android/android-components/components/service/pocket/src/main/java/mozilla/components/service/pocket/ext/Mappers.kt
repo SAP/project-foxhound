@@ -7,9 +7,6 @@ package mozilla.components.service.pocket.ext
 import androidx.annotation.VisibleForTesting
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStoryCaps
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStoryShim
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import mozilla.components.service.pocket.PocketStory.SponsoredContentCallbacks
 import mozilla.components.service.pocket.PocketStory.SponsoredContentFrequencyCaps
@@ -18,8 +15,6 @@ import mozilla.components.service.pocket.mars.db.SponsoredContentEntity
 import mozilla.components.service.pocket.recommendations.api.ContentRecommendationResponseItem
 import mozilla.components.service.pocket.recommendations.db.ContentRecommendationEntity
 import mozilla.components.service.pocket.recommendations.db.ContentRecommendationImpression
-import mozilla.components.service.pocket.spocs.api.ApiSpoc
-import mozilla.components.service.pocket.spocs.db.SpocEntity
 import mozilla.components.service.pocket.stories.api.PocketApiStory
 import mozilla.components.service.pocket.stories.db.PocketLocalStoryTimesShown
 import mozilla.components.service.pocket.stories.db.PocketStoryEntity
@@ -67,48 +62,6 @@ internal fun PocketStoryEntity.toPocketRecommendedStory(): PocketRecommendedStor
  */
 internal fun PocketRecommendedStory.toPartialTimeShownUpdate(): PocketLocalStoryTimesShown =
     PocketLocalStoryTimesShown(url, timesShown)
-
-/**
- * Map sponsored Pocket stories to the object type that we persist locally.
- */
-internal fun ApiSpoc.toLocalSpoc(): SpocEntity =
-    SpocEntity(
-        id = id,
-        url = url,
-        title = title,
-        imageUrl = imageSrc,
-        sponsor = sponsor,
-        clickShim = shim.click,
-        impressionShim = shim.impression,
-        priority = priority,
-        lifetimeCapCount = caps.lifetimeCount,
-        flightCapCount = caps.flightCount,
-        flightCapPeriod = caps.flightPeriod,
-    )
-
-/**
- * Map Room entities to the object type that we expose to service clients.
- */
-internal fun SpocEntity.toPocketSponsoredStory(
-    impressions: List<Long> = emptyList(),
-) = PocketSponsoredStory(
-    id = id,
-    title = title,
-    url = url,
-    imageUrl = imageUrl,
-    sponsor = sponsor,
-    shim = PocketSponsoredStoryShim(
-        click = clickShim,
-        impression = impressionShim,
-    ),
-    priority = priority,
-    caps = PocketSponsoredStoryCaps(
-        currentImpressions = impressions,
-        lifetimeCount = lifetimeCapCount,
-        flightCount = flightCapCount,
-        flightPeriod = flightCapPeriod,
-    ),
-)
 
 /**
  * Maps the sponsored content Room entities to the object type we expose to service clients.

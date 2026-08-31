@@ -48,21 +48,22 @@ async function testClearData(clearSiteData, clearCache) {
   Assert.greater(quotaUsage, 0, "The quota usage should not be 0");
   Assert.greater(totalUsage, 0, "The total usage should not be 0");
 
-  let initialSizeLabelValue = await SpecialPowers.spawn(
-    gBrowser.selectedBrowser,
-    [],
-    async function () {
-      let sizeLabel = content.document.getElementById("totalSiteDataSize");
-      return sizeLabel.textContent;
-    }
+  let doc = gBrowser.selectedBrowser.contentDocument;
+  let siteDataSizeItem = doc.getElementById("siteDataSize");
+  await TestUtils.waitForCondition(
+    () =>
+      doc.l10n.getAttributes(siteDataSizeItem).id === "sitedata-total-size3",
+    "Should show calculated site data size, not the calculating state"
+  );
+  let initialSizeLabelValue = JSON.stringify(
+    doc.l10n.getAttributes(siteDataSizeItem)
   );
 
-  let doc = gBrowser.selectedBrowser.contentDocument;
   let clearSiteDataButton = doc.getElementById("clearSiteDataButton");
 
   let url = "chrome://browser/content/sanitize_v2.xhtml";
   let dialogOpened = promiseLoadSubDialog(url);
-  clearSiteDataButton.doCommand();
+  clearSiteDataButton.click();
   let dialogWin = await dialogOpened;
 
   // Convert the usage numbers in the same way the UI does it to assert
@@ -162,16 +163,11 @@ async function testClearData(clearSiteData, clearCache) {
 
   if (clearCache || clearSiteData) {
     // Check that the size label in about:preferences updates after we cleared data.
-    await SpecialPowers.spawn(
-      gBrowser.selectedBrowser,
-      [{ initialSizeLabelValue }],
-      async function (opts) {
-        let sizeLabel = content.document.getElementById("totalSiteDataSize");
-        await ContentTaskUtils.waitForCondition(
-          () => sizeLabel.textContent != opts.initialSizeLabelValue,
-          "Site data size label should have updated."
-        );
-      }
+    await TestUtils.waitForCondition(
+      () =>
+        JSON.stringify(doc.l10n.getAttributes(siteDataSizeItem)) !==
+        initialSizeLabelValue,
+      "Site data size label should have updated."
     );
   }
 
@@ -190,10 +186,6 @@ async function testClearData(clearSiteData, clearCache) {
 }
 
 add_setup(function () {
-  SpecialPowers.pushPrefEnv({
-    set: [["privacy.sanitize.useOldClearHistoryDialog", false]],
-  });
-
   // The tests in this file all test specific interactions with the new clear
   // history dialog and can't be split up.
   requestLongerTimeout(2);
@@ -234,7 +226,7 @@ add_task(async function testPersistentStorage() {
 
   let url = "chrome://browser/content/sanitize_v2.xhtml";
   let dialogOpened = promiseLoadSubDialog(url);
-  clearSiteDataButton.doCommand();
+  clearSiteDataButton.click();
   let dialogWin = await dialogOpened;
   let dialogClosed = BrowserTestUtils.waitForEvent(dialogWin, "unload");
 

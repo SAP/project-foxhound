@@ -53,4 +53,16 @@ describe("Discovery Stream <SafeAnchor>", () => {
 
     assert.calledOnce(onLinkClickStub);
   });
+  it("should render data-is-sponsored-link='false' when isSponsored is false", () => {
+    const wrapper = shallow(<SafeAnchor isSponsored={false} />);
+    assert.equal(wrapper.find("a").prop("data-is-sponsored-link"), false);
+  });
+  it("should render data-is-sponsored-link='false' when isSponsored is not provided", () => {
+    const wrapper = shallow(<SafeAnchor />);
+    assert.equal(wrapper.find("a").prop("data-is-sponsored-link"), false);
+  });
+  it("should render data-is-sponsored-link='true' when isSponsored is true", () => {
+    const wrapper = shallow(<SafeAnchor isSponsored={true} />);
+    assert.equal(wrapper.find("a").prop("data-is-sponsored-link"), true);
+  });
 });

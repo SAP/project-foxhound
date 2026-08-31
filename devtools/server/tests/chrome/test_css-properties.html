@@ -38,7 +38,7 @@ window.onload = function() {
     ok(!cssProperties.isKnown("--foo bar"),
       "A CSS variable with spaces fails");
 
-    const marginProps = ["auto", "inherit", "initial", "unset", "revert", "revert-layer"];
+    const marginProps = ["auto", ...InspectorUtils.getCSSWideKeywords()];
     if(SpecialPowers.getBoolPref("layout.css.anchor-positioning.enabled")) {
       marginProps.push("anchor-size");
     }

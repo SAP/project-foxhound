@@ -27,7 +27,7 @@ function Spinner(props, context) {
      * Initializes a spinner. Set the default states and properties, cache
      * element references, create the HTML markup, and add event listeners.
      *
-     * @param  {Object} props [Properties passed in from parent]
+     * @param  {object} props [Properties passed in from parent]
      *         {
      *           {Function} setValue: Takes a value and set the state to
      *             the parent component.
@@ -35,7 +35,7 @@ function Spinner(props, context) {
      *             as localized strings.
      *           {Number} viewportSize [optional]: Number of items in a
      *             viewport.
-     *           {Boolean} hideButtons [optional]: Hide up & down buttons
+     *           {Boolean} hideButtons [optional]: Hide Prev & Next buttons
      *           {Number} rootFontSize [optional]: Used to support zoom in/out
      *         }
      */
@@ -58,7 +58,6 @@ function Spinner(props, context) {
 
       this.state = {
         items: [],
-        isScrolling: false,
       };
       this.props = {
         setValue,
@@ -73,8 +72,8 @@ function Spinner(props, context) {
       this.elements = {
         container: spinnerElement.querySelector(".spinner-container"),
         spinner: spinnerElement.querySelector(".spinner"),
-        up: spinnerElement.querySelector(".up"),
-        down: spinnerElement.querySelector(".down"),
+        prev: spinnerElement.querySelector(".prev"),
+        next: spinnerElement.querySelector(".next"),
         itemsViewElements: [],
       };
 
@@ -84,11 +83,11 @@ function Spinner(props, context) {
       // its properties to assistive technology
       this.elements.spinner.setAttribute("role", "spinbutton");
       this.elements.spinner.setAttribute("tabindex", "0");
-      // Remove up/down buttons from the focus order, because a keyboard-only
+      // Remove Prev/Next buttons from the focus order, because a keyboard-only
       // user can adjust values by pressing Up/Down arrow keys on a spinbutton,
       // otherwise it creates extra, redundant tab order stops for users
-      this.elements.up.setAttribute("tabindex", "-1");
-      this.elements.down.setAttribute("tabindex", "-1");
+      this.elements.prev.setAttribute("tabindex", "-1");
+      this.elements.next.setAttribute("tabindex", "-1");
 
       if (id) {
         this.elements.container.id = id;
@@ -106,7 +105,7 @@ function Spinner(props, context) {
      * It checks if the items have changed and updates the spinner.
      * If only the value has changed, smooth scrolls to the new value.
      *
-     * @param {Object} newState [The new spinner state]
+     * @param {object} newState [The new spinner state]
      *        {
      *          {Number/String} value: The centered value
      *          {Array} items: The list of items for display
@@ -151,7 +150,7 @@ function Spinner(props, context) {
       }
 
       // Show selection even if it's passed down from the parent
-      if ((isValueSet && !isInvalid) || this.state.index) {
+      if ((isValueSet && !isInvalid) || this.state.index !== undefined) {
         this._updateSelection();
       } else {
         this._removeSelection();
@@ -189,10 +188,17 @@ function Spinner(props, context) {
           this.state.index > itemsView.length - viewportSize
         ) {
           this._scrollTo(this.state.value, true);
+          // We have the correct value in state, but the selected element is
+          // still the one from before the scroll jump.
+          this._updateSelection();
         }
       }
-
-      this.elements.spinner.classList.add("scrolling");
+      if (this.elements.spinner.scrollTop != this.state.lastScrollTop) {
+        // If scrolling did not actually happen, don't add the scrolling class
+        // because we can't count on receiving a corresponding scrollend event.
+        this.state.lastScrollTop = this.elements.spinner.scrollTop;
+        this.elements.spinner.classList.add("scrolling");
+      }
     },
 
     /**
@@ -214,7 +220,9 @@ function Spinner(props, context) {
       const { items, isInfiniteScroll } = this.state;
 
       // Prepends null elements so the selected value is centered in spinner
-      let itemsView = new Array(viewportTopOffset).fill({}).concat(items);
+      let itemsView = new Array(viewportTopOffset)
+        .fill({ hidden: true })
+        .concat(items);
 
       if (items.length >= viewportSize && isInfiniteScroll) {
         // To achieve infinite scroll, we move the scroll position back to the
@@ -246,7 +254,7 @@ function Spinner(props, context) {
      * Make sure the number or child elements is the same as length
      * and keep the elements' references for updating textContent
      *
-     * @param {Number} length [The number of child elements]
+     * @param {number} length [The number of child elements]
      * @param {DOMElement} parent [The parent element reference]
      */
     _prepareNodes(length, parent) {
@@ -288,7 +296,7 @@ function Spinner(props, context) {
     /**
      * Set the display string and class name to the elements.
      *
-     * @param {Array<Object>} items
+     * @param {Array<object>} items
      *        [{
      *          {Number/String} value: The value in its original form
      *          {Boolean} enabled: Whether or not the item is enabled
@@ -301,7 +309,14 @@ function Spinner(props, context) {
       items.forEach((item, index) => {
         elements[index].textContent =
           item.value != undefined ? getDisplayString(item.value) : "";
-        elements[index].className = item.enabled ? "" : "disabled";
+        const classList = [];
+        if (!item.enabled) {
+          classList.push("disabled");
+        }
+        if (item.hidden) {
+          classList.push("hidden");
+        }
+        elements[index].className = classList.join(" ");
       });
     },
 
@@ -321,12 +336,13 @@ function Spinner(props, context) {
 
     /**
      * Handle events
+     *
      * @param  {DOMEvent} event
      */
     handleEvent(event) {
       const { mouseState = {}, index, itemsView } = this.state;
       const { viewportTopOffset, setValue } = this.props;
-      const { spinner, up, down } = this.elements;
+      const { spinner, prev, next } = this.elements;
 
       switch (event.type) {
         case "scroll": {
@@ -343,13 +359,13 @@ function Spinner(props, context) {
             layerX: event.layerX,
             layerY: event.layerY,
           };
-          if (event.target == up) {
+          if (event.target == prev) {
             // An "active" class is needed to simulate :active pseudo-class
             // because element is not focused.
             event.target.classList.add("active");
             this._smoothScrollToIndex(index - 1);
           }
-          if (event.target == down) {
+          if (event.target == next) {
             event.target.classList.add("active");
             this._smoothScrollToIndex(index + 1);
           }
@@ -362,7 +378,7 @@ function Spinner(props, context) {
         }
         case "mouseup": {
           this.state.mouseState.down = false;
-          if (event.target == up || event.target == down) {
+          if (event.target == prev || event.target == next) {
             event.target.classList.remove("active");
           }
           if (event.target.parentNode == spinner) {
@@ -471,8 +487,9 @@ function Spinner(props, context) {
 
     /**
      * Find the index by offset
-     * @param {Number} offset: Offset value in pixel.
-     * @return {Number}  Index number
+     *
+     * @param {number} offset: Offset value in pixel.
+     * @return {number}  Index number
      */
     _getIndexByOffset(offset) {
       return Math.round(offset / (ITEM_HEIGHT * this.props.rootFontSize));
@@ -483,8 +500,8 @@ function Spinner(props, context) {
      * If centering is true, find the index closest to the center.
      *
      * @param {Number/String} value: The value to find
-     * @param {Boolean} centering: Whether or not to find the value closest to center
-     * @return {Number} index of the value, returns -1 if value is not found
+     * @param {boolean} centering: Whether or not to find the value closest to center
+     * @return {number} index of the value, returns -1 if value is not found
      */
     _getScrollIndex(value, centering) {
       const { itemsView } = this.state;
@@ -523,8 +540,8 @@ function Spinner(props, context) {
     /**
      * Scroll to a value based on the index
      *
-     * @param  {Number} index: Index number
-     * @param  {Boolean} smooth: Whether or not scroll should be smooth by default
+     * @param  {number} index: Index number
+     * @param  {boolean} smooth: Whether or not scroll should be smooth by default
      */
     _scrollToIndex(index, smooth) {
       // Do nothing if the value is not found
@@ -546,8 +563,8 @@ function Spinner(props, context) {
      * Scroll to a value.
      *
      * @param  {Number/String} value: Value to scroll to
-     * @param  {Boolean} centering: Whether or not to scroll to center location
-     * @param  {Boolean} smooth: Whether or not scroll should be smooth by default
+     * @param  {boolean} centering: Whether or not to scroll to center location
+     * @param  {boolean} smooth: Whether or not scroll should be smooth by default
      */
     _scrollTo(value, centering, smooth) {
       const index = this._getScrollIndex(value, centering);
@@ -576,7 +593,7 @@ function Spinner(props, context) {
       }
 
       this.elements.selected = itemsViewElements[currentItemIndex];
-      if (itemsView[currentItemIndex] && itemsView[currentItemIndex].enabled) {
+      if (itemsView[currentItemIndex]) {
         this.elements.selected.classList.add("selection");
       }
     },
@@ -596,9 +613,9 @@ function Spinner(props, context) {
      * Compares arrays of objects. It assumes the structure is an array of
      * objects, and objects in a and b have the same number of properties.
      *
-     * @param  {Array<Object>} a
-     * @param  {Array<Object>} b
-     * @return {Boolean}  Returns true if a and b are different
+     * @param  {Array<object>} a
+     * @param  {Array<object>} b
+     * @return {boolean}  Returns true if a and b are different
      */
     _isArrayDiff(a, b) {
       // Check reference first, exit early if reference is the same.
@@ -625,8 +642,8 @@ function Spinner(props, context) {
      * appropriate index and centers it, while preventing default behavior and
      * stopping event propagation.
      *
-     * @param {Object} event: Keyboard event
-     * @param {Number} index: The index of the expected next item
+     * @param {object} event: Keyboard event
+     * @param {number} index: The index of the expected next item
      */
     _setValueForSpinner(event, index) {
       this._smoothScrollToIndex(index);

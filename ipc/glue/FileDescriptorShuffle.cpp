@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,10 @@
 #include <algorithm>
 #include <unistd.h>
 #include <fcntl.h>
+
+#ifdef DEBUG
+#  include <numeric>
+#endif
 
 namespace mozilla {
 namespace ipc {
@@ -60,7 +62,7 @@ bool FileDescriptorShuffle::Init(MappingRef aMapping) {
     // Try to find a value that will create a nontrivial partition.
     int fd0 = aMapping[0].first;
     int fdn = aMapping.rbegin()->first;
-    maxDst = std::max(maxDst, (fd0 + fdn) / 2);
+    maxDst = std::max(maxDst, std::midpoint(fd0, fdn));
   }
 #endif
 

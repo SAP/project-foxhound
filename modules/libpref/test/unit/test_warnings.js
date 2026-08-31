@@ -7,8 +7,8 @@ function makeBuffer(length) {
 }
 
 /**
- * @resolves |true| if execution proceeded without warning,
- * |false| if there was a warning.
+ * @returns {Promise<boolean>}
+ *   True if execution proceeded without warning, false if there was a warning.
  */
 function checkWarning(pref, buffer) {
   return new Promise(resolve => {

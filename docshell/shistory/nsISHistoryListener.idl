@@ -1,11 +1,11 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
 
+interface nsISHEntry;
 interface nsIURI;
 
 /**
@@ -85,4 +85,14 @@ interface nsISHistoryListener : nsISupports
    * @param aNumEvicted - number of content viewers evicted
    */
   void OnDocumentViewerEvicted(in unsigned long aNumEvicted);
+
+  /**
+   * Called whenever a session history update has been committed.
+   */
+  void OnHistoryCommit();
+
+  /**
+   * Called whenever a session history entry has been updated.
+   */
+  void OnEntryUpdated(in nsISHEntry aEntry);
 };

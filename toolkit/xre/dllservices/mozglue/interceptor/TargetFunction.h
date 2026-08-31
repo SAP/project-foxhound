@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -11,10 +9,10 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/interceptor/MMPolicies.h"
 
-#include "mozilla/Types.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
 
 #include <memory>
@@ -479,7 +477,7 @@ class ReadOnlyTargetBytes<MMPolicyOutOfProcess> {
 
   ReadOnlyTargetBytes(const ReadOnlyTargetBytes& aOther)
       : mMMPolicy(aOther.mMMPolicy), mBase(aOther.mBase) {
-    Unused << mLocalBytes.appendAll(aOther.mLocalBytes);
+    (void)mLocalBytes.appendAll(aOther.mLocalBytes);
   }
 
   ReadOnlyTargetBytes(const ReadOnlyTargetBytes& aOther,
@@ -489,8 +487,8 @@ class ReadOnlyTargetBytes<MMPolicyOutOfProcess> {
       return;
     }
 
-    Unused << mLocalBytes.append(aOther.mLocalBytes.begin() + aOffsetFromOther,
-                                 aOther.mLocalBytes.end());
+    (void)mLocalBytes.append(aOther.mLocalBytes.begin() + aOffsetFromOther,
+                             aOther.mLocalBytes.end());
   }
 
   void EnsureLimit(uint32_t aDesiredLimit) {
@@ -819,7 +817,7 @@ class MOZ_STACK_CLASS ReadOnlyTargetFunction final {
 
   uint32_t GetOffset() const { return mOffset; }
 
-  uintptr_t OffsetToAbsolute(const uint8_t aOffset) const {
+  uintptr_t OffsetToAbsolute(const int8_t aOffset) const {
     return mTargetBytes->GetBase() + mOffset + aOffset;
   }
 

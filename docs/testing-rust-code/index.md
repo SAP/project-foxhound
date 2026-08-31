@@ -16,7 +16,7 @@ crates. Which method should be used depends on the circumstances.
 
 If a Mozilla crate has "normal" Rust tests (i.e. `#[test]` functions that run
 with `cargo test`), you can add the crate's name to `RUST_TESTS` in
-[toolkit/library/rust/moz.build](https://searchfox.org/mozilla-central/source/toolkit/library/rust/moz.build).
+[toolkit/library/rust/moz.build](https://searchfox.org/firefox-main/source/toolkit/library/rust/moz.build).
 (Cargo features can be activated for Rust tests by adding them to
 `RUST_TEST_FEATURES` in the same file.)
 
@@ -37,6 +37,7 @@ example.
 
 Another way to unit test a Mozilla crate is by writing a GTest that uses FFI to
 call into Rust code. This requires the following steps.
+
 - Create a new test crate whose name is the same as the name of crate being
   tested, with a `-gtest` suffix.
 - Add to the test crate a Rust file, a C++ file containing GTest `TEST()`
@@ -44,12 +45,12 @@ call into Rust code. This requires the following steps.
   references the Rust file, and a `moz.build` file that references the C++
   file.
 - Add an entry to the `[dependencies]` section in
-  [toolkit/library/gtest/rust/Cargo.toml](https://searchfox.org/mozilla-central/source/toolkit/library/gtest/rust/Cargo.toml).
+  [toolkit/library/gtest/rust/Cargo.toml](https://searchfox.org/firefox-main/source/toolkit/library/gtest/rust/Cargo.toml).
 - Add an `extern crate` entry to
-  [toolkit/library/gtest/rust/lib.rs](https://searchfox.org/mozilla-central/source/toolkit/library/gtest/rust/lib.rs).
+  [toolkit/library/gtest/rust/lib.rs](https://searchfox.org/firefox-main/source/toolkit/library/gtest/rust/lib.rs).
 
 See
-[xpcom/rust/gtest/nsstring/](https://searchfox.org/mozilla-central/source/xpcom/rust/gtest/nsstring)
+[xpcom/rust/gtest/nsstring/](https://searchfox.org/firefox-main/source/xpcom/rust/gtest/nsstring)
 for a simple example. (Note that the `moz.build` file is in the parent
 directory for that crate.)
 
@@ -68,6 +69,7 @@ these crates are sufficiently well-tested elsewhere.
 In theory, Rust code is debuggable much like C++ code, using standard tools
 like `gdb`, `rr`, and the Microsoft Visual Studio Debugger. In practice, the
 experience can be worse, because shortcomings such as the following can occur.
+
 - Inability to print local variables, even in non-optimized builds.
 - Inability to call generic functions.
 - Missing line numbers and stack frames.
@@ -86,9 +88,11 @@ the `log` crate can be used. In order of importance, they are: `error!`,
 `warn!`, `info!`, `debug!`, `trace!`.
 
 For example, to show all log messages of `info` level or higher, run:
+
 ```
 RUST_LOG=info firefox
 ```
+
 Module-level logging can also be specified, see the [documentation] for the
 `env_logger` crate for details.
 
@@ -107,15 +111,19 @@ Rust logging can also be forwarded to the [Gecko logger] for capture via
 - When parsing modules from `MOZ_LOG`, modules containing `::` are considered
   to be Rust modules. To log everything in a top-level module like
   `neqo_transport`, specify it as `neqo_transport::*`. For example:
+
 ```
 MOZ_LOG=timestamp,sync,nsHostResolver:5,neqo_transport::*:5,proxy:5 firefox
 ```
+
 - When logging from a submodule the `::*` is allowed but isn't necessary.
   So these two lines are equivalent:
+
 ```
 MOZ_LOG=timestamp,sync,neqo_transport::recovery:5 firefox
 MOZ_LOG=timestamp,sync,neqo_transport::recovery::*:5 firefox
 ```
+
 - `debug!` and `trace!` logs will not appear in non-debug builds. This is due
   to our use of the `release_max_level_info` feature in the `log` crate.
 

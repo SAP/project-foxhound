@@ -1,0 +1,77 @@
+schema: 1
+
+bugzilla:
+  product: Core
+  component: Graphics
+
+origin:
+  name: Cairo
+
+  description: "Cairo: Multi-platform 2D graphics library"
+
+  url: https://www.cairographics.org
+
+  release: 1.18.4 (2025-03-08T13:23:25.000+00:00).
+  revision: 1.18.4
+
+  license: 'MPL-1.1'
+  license-file: 'COPYING-MPL-1.1'
+
+vendoring:
+  url: https://gitlab.freedesktop.org/cairo/cairo
+  source-hosting: gitlab
+  tracking: tag
+  vendor-directory: gfx/cairo/cairo
+
+  exclude:
+    - boilerplate
+    - build
+    - doc
+    - ".git*"
+    - "meson*"
+    - "src/meson*"
+    - perf
+    - subprojects
+    - test
+    - util
+
+  patches:
+    - patches/0001-Allow-cairo_public-to-be-predefined.patch
+    - patches/0002-Work-around-lack-of-full-configure-support-for-xrend.patch
+    - patches/0003-Avoid-register-keyword-for-C-compatibility.patch
+    - patches/0004-Expose-cairo_font_options_-get-set-_lcd_filter-as-pu.patch
+    - patches/0005-Add-API-for-setting-subpixel-antialiasing.patch
+    - patches/0006-Add-synth_flags-parameter-to-cairo_ft_font_face_crea.patch
+    - patches/0007-Integrate-cairo-ft-font-with-Gecko-SharedFTFace.patch
+    - patches/0008-Look-up-FreeType-variation-APIs-at-runtime.patch
+    - patches/0009-Add-cairo_quartz_surface_get_image.patch
+    - patches/0010-Add-LINK-tag-support-to-the-quartz-surface-backend.patch
+    - patches/0011-Add-named-destination-support-to-cairo-quartz-surfac.patch
+    - patches/0012-Prefer-named-destinations-over-URI-links-in-cairo-qu.patch
+    - patches/0013-Avoid-potential-null-deref-crash-in-active_edges.patch
+    - patches/0014-Build-fixes-for-iOS.patch
+    - patches/0015-Guard-FT_COLOR_H-and-related-FreeType-fontconfig-sym.patch
+    - patches/0016-Adapt-cairo-quartz-for-iOS-builds.patch
+    - patches/0017-Don-t-prematurely-clear-cairo_quartz_image_surface_t.patch
+    - patches/0018-Add-ifdef-guards-around-mingw-specific-__CRT_UUID_DE.patch
+    - patches/0019-Add-cairo_win32_surface-APIs-wanted-for-gecko.patch
+    - patches/0020-Handle-CAIRO_FORMAT_A8-in-_cairo_surface_to_cgimage-.patch
+    - patches/0021-Fix-cairo-build-bustage-with-Windows-SDK-26100.patch
+    - patches/0022-Invert-sign-of-delta-y-when-computing-glyph-advances.patch
+    - patches/0023-Catch-potential-failure-during-add_polygon.patch
+    - patches/0024-Check-subroutine-offset-in-private-dict.patch
+    - patches/0025-Range-check-FDSelect-value-during-CFF-subsetting.patch
+    - patches/0026-Revert-cairo-quartz-.-ch-to-the-pre-1.18.0-Mozilla-m.patch
+    - patches/0027-Bug-2029325-Reject-negative-sub_num-during-CFF-subse.patch
+    - patches/0028-Bug-2029463-Range-check-string-id-during-subsetting..patch
+    - patches/0029-Add-configuration-files-needed-for-Firefox-s-mozbuil.patch
+    - patches/0030-Bug-2027883-Fix-integer-overflow-in-cairo-PDF-surfac.patch
+    - patches/0031-Bug-2029910-Cairo-avoid-overflow-rendering-FreeType-.patch
+
+updatebot:
+  maintainer-phab: "#gfx-reviewers"
+  maintainer-bz: jimb@mozilla.com
+  tasks:
+    - type: vendoring
+      enabled: true
+      frequency: 1 week

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,6 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
-#include "mozilla/WindowsVersion.h"
 #include "mozilla/glean/GfxMetrics.h"
 #include "nsPrintfCString.h"
 #include "FxROutputHandler.h"
@@ -557,13 +554,6 @@ RenderedFrameId RenderCompositorANGLE::EndFrame(
     mFirstPresent = false;
   }
 
-  if (mDisablingNativeCompositor) {
-    // During disabling native compositor, we need to wait all gpu tasks
-    // complete. Otherwise, rendering window could cause white flash.
-    WaitForPreviousGraphicsCommandsFinishedQuery(/* aWaitAll */ true);
-    mDisablingNativeCompositor = false;
-  }
-
   if (mDCLayerTree) {
     mDCLayerTree->MaybeUpdateDebug();
     mDCLayerTree->MaybeCommit();
@@ -828,7 +818,7 @@ gfx::DeviceResetReason RenderCompositorANGLE::IsContextLost(bool aForce) {
 }
 
 bool RenderCompositorANGLE::UseCompositor() const {
-  return mDCLayerTree && mDCLayerTree->UseNativeCompositor();
+  return mDCLayerTree && mDCLayerTree->UseCompositor();
 }
 
 bool RenderCompositorANGLE::UseLayerCompositor() const {
@@ -836,14 +826,12 @@ bool RenderCompositorANGLE::UseLayerCompositor() const {
 }
 
 bool RenderCompositorANGLE::SupportAsyncScreenshot() {
-  return !UseCompositor() && !mDisablingNativeCompositor;
+  return !UseCompositor();
 }
 
-bool RenderCompositorANGLE::ShouldUseNativeCompositor() {
-  return UseCompositor();
-}
+bool RenderCompositorANGLE::ShouldUseNativeCompositor() { return false; }
 
-bool RenderCompositorANGLE::ShouldUseLayerCompositor() {
+bool RenderCompositorANGLE::ShouldUseLayerCompositor() const {
   return UseLayerCompositor();
 }
 
@@ -947,33 +935,11 @@ void RenderCompositorANGLE::GetWindowProperties(WindowProperties* aProperties) {
   aProperties->enable_screenshot = enable_screenshot;
 }
 
-void RenderCompositorANGLE::EnableNativeCompositor(bool aEnable) {
-  // XXX Re-enable native compositor is not handled yet.
-  MOZ_RELEASE_ASSERT(!mDisablingNativeCompositor);
-  MOZ_RELEASE_ASSERT(!aEnable);
-  LOG("RenderCompositorANGLE::EnableNativeCompositor() aEnable %d", aEnable);
-
-  if (!UseCompositor()) {
-    return;
-  }
-
-  mDCLayerTree->DisableNativeCompositor();
-
-  if (!RecreateNonNativeCompositorSwapChain()) {
-    gfxCriticalNote << "Failed to re-create SwapChain";
-    RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
-    return;
-  }
-
-  mDisablingNativeCompositor = true;
-}
-
 bool RenderCompositorANGLE::EnableAsyncScreenshot() {
   if (!UseLayerCompositor()) {
     return false;
   }
-  mDCLayerTree->EnableAsyncScreenshot();
-  return true;
+  return mDCLayerTree->EnableAsyncScreenshot();
 }
 
 bool RenderCompositorANGLE::RecreateNonNativeCompositorSwapChain() {
@@ -1008,7 +974,13 @@ void RenderCompositorANGLE::InitializeUsePartialPresent() {
 
 bool RenderCompositorANGLE::UsePartialPresent() { return mUsePartialPresent; }
 
-bool RenderCompositorANGLE::RequestFullRender() { return mFullRender; }
+bool RenderCompositorANGLE::RequestFullRender() {
+  // XXX Remove when partial update is supported.
+  if (UseLayerCompositor() && mDCLayerTree->UseDCLayerDCompositionTexture()) {
+    return true;
+  }
+  return mFullRender;
+}
 
 uint32_t RenderCompositorANGLE::GetMaxPartialPresentRects() {
   if (!mUsePartialPresent) {

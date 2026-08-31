@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +5,17 @@
 #ifndef mozilla_dom_ElementInternals_h
 #define mozilla_dom_ElementInternals_h
 
+#include "AttrArray.h"
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/CustomStateSet.h"
 #include "mozilla/dom/ElementInternalsBinding.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/CustomStateSet.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsGkAtoms.h"
 #include "nsIConstraintValidation.h"
 #include "nsIFormControl.h"
 #include "nsWrapperCache.h"
-#include "AttrArray.h"
-#include "nsGkAtoms.h"
 
 #define ARIA_REFLECT_ATTR(method, attr)                             \
   void Get##method(nsAString& aValue) const {                       \
@@ -45,7 +43,6 @@
     SetAttrElements(nsGkAtoms::attr, aElements);                     \
   }
 
-class nsINodeList;
 class nsGenericHTMLElement;
 
 namespace mozilla::dom {
@@ -54,6 +51,7 @@ class DocGroup;
 class HTMLElement;
 class HTMLFieldSetElement;
 class HTMLFormElement;
+class NodeList;
 class ShadowRoot;
 class ValidityState;
 
@@ -61,7 +59,7 @@ class ElementInternals final : public nsIFormControl,
                                public nsIConstraintValidation,
                                public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_AMBIGUOUS(ElementInternals,
                                                         nsIFormControl)
 
@@ -77,7 +75,7 @@ class ElementInternals final : public nsIFormControl,
   void SetFormValue(const Nullable<FileOrUSVStringOrFormData>& aValue,
                     const Optional<Nullable<FileOrUSVStringOrFormData>>& aState,
                     ErrorResult& aRv);
-  mozilla::dom::HTMLFormElement* GetForm(ErrorResult& aRv) const;
+  mozilla::dom::Element* GetFormForBindings(ErrorResult& aRv) const;
   void SetValidity(const ValidityStateFlags& aFlags,
                    const Optional<nsAString>& aMessage,
                    const Optional<NonNull<nsGenericHTMLElement>>& aAnchor,
@@ -88,7 +86,7 @@ class ElementInternals final : public nsIFormControl,
                             ErrorResult& aRv) const;
   bool CheckValidity(ErrorResult& aRv);
   bool ReportValidity(ErrorResult& aRv);
-  already_AddRefed<nsINodeList> GetLabels(ErrorResult& aRv) const;
+  already_AddRefed<NodeList> GetLabels(ErrorResult& aRv) const;
   nsGenericHTMLElement* GetValidationAnchor(ErrorResult& aRv) const;
   CustomStateSet* States();
 
@@ -96,7 +94,10 @@ class ElementInternals final : public nsIFormControl,
   mozilla::dom::HTMLFieldSetElement* GetFieldSet() override {
     return mFieldSet;
   }
-  mozilla::dom::HTMLFormElement* GetForm() const override { return mForm; }
+  mozilla::dom::Element* GetFormForBindings() const override;
+  mozilla::dom::HTMLFormElement* GetFormInternal() const override {
+    return mForm;
+  }
   void SetForm(mozilla::dom::HTMLFormElement* aForm) override;
   void ClearForm(bool aRemoveFromForm, bool aUnbindOrDelete) override;
   NS_IMETHOD Reset() override;
@@ -193,7 +194,7 @@ class ElementInternals final : public nsIFormControl,
 
   nsresult SetAttr(nsAtom* aName, const nsAString& aValue);
 
-  bool GetAttrElements(nsAtom* aAttr, nsTArray<Element*>& aElements);
+  Maybe<nsTArray<RefPtr<Element>>> GetAttrElements(nsAtom* aAttr);
 
   const AttrArray& GetAttrs() const { return mAttrs; }
 

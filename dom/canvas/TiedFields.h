@@ -5,9 +5,9 @@
 #ifndef DOM_CANVAS_TIED_FIELDS_H
 #define DOM_CANVAS_TIED_FIELDS_H
 
-#include "TupleUtils.h"
-
 #include <array>
+
+#include "TupleUtils.h"
 
 namespace mozilla {
 

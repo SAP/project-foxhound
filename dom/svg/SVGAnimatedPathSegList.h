@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #ifndef DOM_SVG_SVGANIMATEDPATHSEGLIST_H_
 #define DOM_SVG_SVGANIMATEDPATHSEGLIST_H_
 
-#include "mozilla/Attributes.h"
+#include <memory>
+
+#include "SVGPathData.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
-#include "SVGPathData.h"
 
 namespace mozilla {
 
@@ -46,7 +44,7 @@ class SVGAnimatedPathSegList final {
   SVGAnimatedPathSegList& operator=(const SVGAnimatedPathSegList& aOther) {
     mBaseVal = aOther.mBaseVal;
     if (aOther.mAnimVal) {
-      mAnimVal = MakeUnique<SVGPathData>(*aOther.mAnimVal);
+      mAnimVal = std::make_unique<SVGPathData>(*aOther.mAnimVal);
     }
     return *this;
   }
@@ -92,7 +90,7 @@ class SVGAnimatedPathSegList final {
 
   bool IsAnimating() const { return !!mAnimVal; }
 
-  UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(dom::SVGElement* aElement);
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
 
@@ -103,7 +101,7 @@ class SVGAnimatedPathSegList final {
   // the empty string (<set to="">).
 
   SVGPathData mBaseVal;
-  UniquePtr<SVGPathData> mAnimVal;
+  std::unique_ptr<SVGPathData> mAnimVal;
 
   struct SMILAnimatedPathSegList : public SMILAttr {
    public:

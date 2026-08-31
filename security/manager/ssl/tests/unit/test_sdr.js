@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -6,20 +5,6 @@
 // Tests various aspects of the nsISecretDecoderRing implementation.
 
 do_get_profile();
-
-let gSetPasswordShownCount = 0;
-
-// Mock implementation of nsITokenPasswordDialogs.
-const gTokenPasswordDialogs = {
-  setPassword(ctx, tokenName) {
-    gSetPasswordShownCount++;
-    info(`setPassword() called; shown ${gSetPasswordShownCount} times`);
-    info(`tokenName: ${tokenName}`);
-    return false; // Returning false means "the user didn't cancel".
-  },
-
-  QueryInterface: ChromeUtils.generateQI(["nsITokenPasswordDialogs"]),
-};
 
 let gMockPrompter = {
   promptPassword() {
@@ -97,31 +82,6 @@ add_task(function testEncryptString() {
     /NS_ERROR_ILLEGAL_VALUE/,
     "decryptString() should throw if given non-Base64 input"
   );
-
-  // Test calling changePassword() pops up the appropriate dialog.
-  // Note: On Android, nsITokenPasswordDialogs is apparently not implemented,
-  //       which also seems to prevent us from mocking out the interface.
-  if (AppConstants.platform != "android") {
-    let tokenPasswordDialogsCID = MockRegistrar.register(
-      "@mozilla.org/nsTokenPasswordDialogs;1",
-      gTokenPasswordDialogs
-    );
-    registerCleanupFunction(() => {
-      MockRegistrar.unregister(tokenPasswordDialogsCID);
-    });
-
-    equal(
-      gSetPasswordShownCount,
-      0,
-      "changePassword() dialog should have been shown zero times"
-    );
-    sdr.changePassword();
-    equal(
-      gSetPasswordShownCount,
-      1,
-      "changePassword() dialog should have been shown exactly once"
-    );
-  }
 });
 
 add_task(async function testAsyncEncryptStrings() {
@@ -250,12 +210,12 @@ add_task(async function testAsyncDecryptInvalidStrings() {
 });
 
 add_task(async function testAsyncDecryptLoggedOut() {
-  // Set a master password.
-  let token = Cc["@mozilla.org/security/pk11tokendb;1"]
-    .getService(Ci.nsIPK11TokenDB)
-    .getInternalKeyToken();
-  token.initPassword("password");
-  token.logoutSimple();
+  // Set a primary password.
+  let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+    Ci.nsIPKCS11Token
+  );
+  token.changePassword("", "password");
+  token.logout();
 
   let sdr = Cc["@mozilla.org/security/sdr;1"].getService(
     Ci.nsISecretDecoderRing
@@ -268,5 +228,4 @@ add_task(async function testAsyncDecryptLoggedOut() {
   );
 
   token.reset();
-  token.initPassword("");
 });

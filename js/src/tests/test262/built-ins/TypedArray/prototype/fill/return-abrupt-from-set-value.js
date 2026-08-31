@@ -47,8 +47,8 @@ includes: [testTypedArray.js]
 features: [TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA([42]);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg([42]));
   var obj = {
     valueOf: function() {
       throw new Test262Error();
@@ -58,6 +58,6 @@ testWithTypedArrayConstructors(function(TA) {
   assert.throws(Test262Error, function() {
     sample.fill(obj);
   });
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

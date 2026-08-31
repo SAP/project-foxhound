@@ -40,9 +40,8 @@ class NoAnimationPanel extends Component {
       dom.p(null, L10N.getStr("panel.noAnimation")),
       dom.button({
         className:
-          "animation-element-picker devtools-button" +
+          "animation-element-picker devtools-button devtools-button-standalone" +
           (elementPickerEnabled ? " checked" : ""),
-        "data-standalone": true,
         onClick: event => {
           event.stopPropagation();
           toggleElementPicker();

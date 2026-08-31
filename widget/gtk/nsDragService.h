@@ -1,19 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDragService_h__
-#define nsDragService_h__
+#ifndef nsDragService_h_
+#define nsDragService_h_
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsBaseDragService.h"
 #include "nsCOMArray.h"
 #include "nsIObserver.h"
 #include <gtk/gtk.h>
 #include "nsITimer.h"
 #include "GUniquePtr.h"
+#include "nsClipboard.h"
 
 class nsICookieJarSettings;
 class nsWindow;
@@ -39,7 +39,7 @@ class DragData final {
       ConvertToMozURIList();
     }
   }
-  explicit DragData(GdkAtom aDataFlavor, gchar** aDragUris);
+  explicit DragData(GdkAtom aDataFlavor, mozilla::GUniquePtr<char*> aDragUris);
 
   GdkAtom GetFlavor() const { return mDataFlavor; }
 
@@ -101,22 +101,20 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   // nsIDragSession
   NS_IMETHOD SetCanDrop(bool aCanDrop) override;
   NS_IMETHOD GetCanDrop(bool* aCanDrop) override;
+
+  // Spins event loop, called from JS.
+  // Can lead to another round of drag_motion events.
   NS_IMETHOD GetNumDropItems(uint32_t* aNumItems) override;
   NS_IMETHOD GetData(nsITransferable* aTransferable,
                      uint32_t aItemIndex) override;
   NS_IMETHOD IsDataFlavorSupported(const char* aDataFlavor,
                                    bool* _retval) override;
 
-  // Update Drag&Drop state according child process state.
-  // UpdateDragEffect() is called by IPC bridge when child process
-  // accepts/denies D&D operation and uses stored
-  // mTargetDragContextForRemote context.
-  NS_IMETHOD UpdateDragEffect() override;
-
   nsAutoCString GetDebugTag() const;
 
   MOZ_CAN_RUN_SCRIPT nsresult
   EndDragSessionImpl(bool aDoneDrag, uint32_t aKeyModifiers) override;
+  MOZ_CAN_RUN_SCRIPT void EndDragSessionMainThread();
 
   class AutoEventLoop {
     RefPtr<nsDragSession> mSession;
@@ -131,21 +129,46 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
 
   static int GetLoopDepth() { return sEventLoopDepth; };
 
+  static bool IsTextFlavor(GdkAtom aFlavor);
+
+  virtual void ScheduleLeaveEvent() = 0;
+
  protected:
   // mScheduledTask indicates what signal has been received from GTK and
   // so what needs to be dispatched when the scheduled task is run.  It is
   // eDragTaskNone when there is no task scheduled (but the
   // previous task may still not have finished running).
-  enum DragTask {
+  enum DragTaskType {
     eDragTaskNone,
     eDragTaskMotion,
     eDragTaskLeave,
-    eDragTaskDrop,
-    eDragTaskSourceEnd
+    eDragTaskDrop
   };
 
-  void ReplyToDragMotion(GdkDragContext* aDragContext, guint aTime);
-  void ReplyToDragMotion();
+  struct DragTask {
+    DragTask(DragTaskType aType = eDragTaskNone, nsWindow* aWindow = nullptr,
+             const mozilla::LayoutDeviceIntPoint& aWindowPoint =
+                 mozilla::LayoutDeviceIntPoint(),
+             guint aTime = 0);
+    virtual ~DragTask() = default;
+
+    virtual void Reset() = 0;
+    virtual uintptr_t GetContextID() = 0;
+
+    DragTaskType mType;
+    RefPtr<nsWindow> mWindow;
+    mozilla::LayoutDeviceIntPoint mWindowPoint;
+    guint mTime;
+  };
+  // Next drag task in queue
+  mozilla::UniquePtr<DragTask> mNextScheduledTask;
+  bool mScheduledTaskIsRunning = false;
+
+  // Recent drag task, always present.
+  // If empty it's mType = eDragTaskNone.
+  mozilla::UniquePtr<DragTask> mRecentTask;
+
+  gboolean Schedule(mozilla::UniquePtr<DragTask> aTask);
 
   void GetDragFlavors(nsTArray<nsCString>& aFlavors);
   // this will get the native data from the last target given a
@@ -155,32 +178,48 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   // this will reset all of the target vars
   void TargetResetData(void);
 
-  // is the current target drag context contain a list?
-  bool IsTargetContextList(void);
+  virtual void SetRemoteContext() = 0;
 
-  // Ensure our data cache belongs to aDragContext and clear the cache if
-  // aDragContext is different than mCachedDragContext.
-  void EnsureCachedDataValidForContext(GdkDragContext* aDragContext);
+  virtual void DropFinish(bool aSucceed) = 0;
+
+  // X11/Wayland specific EndDragSessionImpl handler.
+  virtual void EndDragSessionImplBackend() = 0;
+
+  // is the current target drag context contain a list?
+  virtual bool IsTargetContextList(void) = 0;
 
   static gboolean TaskRemoveTempFiles(gpointer data);
 
   bool RemoveTempFiles();
 
+  // We can't overload SetDragAction()/GetDragAction() with
+  // the same type of param (int) so use Gtk() suffix.
+  void SetDragActionGtk(GdkDragAction aGdkAction);
+  GdkDragAction GetDragActionGtk();
+
+#ifdef MOZ_LOGGING
+  const char* GetDragServiceTaskName(DragTaskType aTask);
+#endif
+
+  MOZ_CAN_RUN_SCRIPT gboolean RunScheduledTask();
+  static MOZ_CAN_RUN_SCRIPT int RunScheduledTaskCallback(void* aData);
+  MOZ_CAN_RUN_SCRIPT void RunScheduledTask(mozilla::UniquePtr<DragTask> aTask);
+  MOZ_CAN_RUN_SCRIPT void DispatchMotionEvents();
+  void DispatchDropEvent();
+  static uint32_t GetCurrentModifiers();
+
+  void SetCachedDragContext(uintptr_t aDragContextID);
+
+  virtual void ReplyToDragMotion() = 0;
+  virtual void UpdateDragAction() = 0;
+
+  bool mDragTaskSourceFinished = false;
+
   // Where the drag begins. We need to keep it open on Wayland.
   RefPtr<nsWindow> mSourceWindow;
 
-  // mTargetWindow and mTargetWindowPoint record the position of the last
-  // eDragTaskMotion or eDragTaskDrop task that was run or is still running.
-  // mTargetWindow is cleared once the drag has completed or left.
-  RefPtr<nsWindow> mTargetWindow;
-
   // our source data items
   nsCOMPtr<nsIArray> mSourceDataItems;
-
-  // mTargetWidget and mTargetDragContext are set only while dispatching
-  // motion or drop events.  mTime records the corresponding timestamp.
-  RefPtr<GtkWidget> mTargetWidget;
-  RefPtr<GdkDragContext> mTargetDragContext;
 
   // last data received and its length
   void* mTargetDragData = nullptr;
@@ -189,17 +228,6 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   // have we received our drag data?
   bool mTargetDragDataReceived = false;
 
-  // When we route D'n'D request to child process
-  // (by EventStateManager::DispatchCrossProcessEvent)
-  // we save GdkDragContext to mTargetDragContextForRemote.
-  // When we get a reply from child process we use
-  // the stored GdkDragContext to send reply to OS.
-  //
-  // We need to store GdkDragContext because mTargetDragContext is cleared
-  // after every D'n'D event.
-  RefPtr<GdkDragContext> mTargetDragContextForRemote;
-  guint mTargetTime;
-
   mozilla::GUniquePtr<gchar*> mTargetDragUris = nullptr;
 
   nsTHashMap<nsCStringHashKey, mozilla::GUniquePtr<gchar*>> mCachedUris;
@@ -207,19 +235,6 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   // We cache all data for the current drag context,
   // because waiting for the data in GetTargetDragData can be very slow.
   nsTHashMap<nsCStringHashKey, nsTArray<uint8_t>> mCachedData;
-
-  DragTask mScheduledTask = eDragTaskNone;
-  bool mScheduledTaskIsRunning = false;
-
-  // mPendingWindow, mPendingWindowPoint, mPendingDragContext, and
-  // mPendingTime, carry information from the GTK signal that will be used
-  // when the scheduled task is run.  mPendingWindow and mPendingDragContext
-  // will be nullptr if the scheduled task is eDragTaskLeave.
-  RefPtr<nsWindow> mPendingWindow;
-  mozilla::LayoutDeviceIntPoint mPendingWindowPoint;
-  RefPtr<GdkDragContext> mPendingDragContext;
-
-  guint mPendingTime;
 
   // mTaskSource is the GSource id for the task that is either scheduled
   // or currently running.  It is 0 if no task is scheduled or running.
@@ -232,12 +247,6 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   // the url of the temporary file that has been created in the current drag
   // session
   nsTArray<nsCString> mTempFileUrls;
-
-  // mCachedData are tied to mCachedDragContext. mCachedDragContext is not
-  // ref counted and may be already deleted on Gtk side.
-  // We used it for mCachedData invalidation only and can't be used for
-  // any D&D operation.
-  uintptr_t mCachedDragContext = 0;
 
   // How deep we're nested in event loops
   static int sEventLoopDepth;
@@ -286,22 +295,7 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
 
   // Methods called from nsWindow to handle responding to GTK drag
   // destination signals
-
-  void TargetDataReceived(GtkWidget* aWidget, GdkDragContext* aContext, gint aX,
-                          gint aY, GtkSelectionData* aSelection_data,
-                          guint aInfo, guint32 aTime);
-
-  gboolean ScheduleMotionEvent(nsWindow* aWindow, GdkDragContext* aDragContext,
-                               mozilla::LayoutDeviceIntPoint aWindowPoint,
-                               guint aTime);
-  void ScheduleLeaveEvent();
-  gboolean ScheduleDropEvent(nsWindow* aWindow, GdkDragContext* aDragContext,
-                             mozilla::LayoutDeviceIntPoint aWindowPoint,
-                             guint aTime);
-
-  nsWindow* GetMostRecentDestWindow() {
-    return mScheduledTask == eDragTaskNone ? mTargetWindow : mPendingWindow;
-  }
+  virtual nsWindow* GetMostRecentDestWindow() = 0;
 
   //  END PUBLIC API
 
@@ -324,47 +318,35 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   bool SourceDataAppendURLFileItem(nsACString& aURI, nsITransferable* aItem);
   bool SourceDataAppendURLItem(nsITransferable* aItem, bool aExternalDrop,
                                nsACString& aURI);
-
   void SourceBeginDrag(GdkDragContext* aContext);
 
   // set the drag icon during drag-begin
   void SetDragIcon(GdkDragContext* aContext);
 
+  void MarkAsActive() { mActive = true; }
+  bool IsActive() const { return mActive; }
+
  protected:
   virtual ~nsDragSession();
 
- private:
   // target/destination side vars
   // These variables keep track of the state of the current drag.
 
-  // mCachedDragData/mCachedDragFlavors are tied to mCachedDragContext.
-  // mCachedDragContext is not ref counted and may be already deleted
+  // mCachedDragData/mCachedDragFlavors are tied to mCachedDragContextID.
+  // mCachedDragContextID is not ref counted and may be already deleted
   // on Gtk side.
   // We used it for mCachedDragData/mCachedDragFlavors invalidation
   // only and can't be used for any D&D operation.
+  uintptr_t mCachedDragContextID = 0;
   nsTHashMap<void*, RefPtr<DragData>> mCachedDragData;
-  nsTArray<GdkAtom> mCachedDragFlavors;
+  mozilla::ClipboardTargets mCachedDragFlavors;
 
-  void SetCachedDragContext(GdkDragContext* aDragContext);
-
-  mozilla::LayoutDeviceIntPoint mTargetWindowPoint;
-
-  // Track gtk_drag_get_data() requests here.
-  RefPtr<GdkDragContext> mWaitingForDragDataContext;
-
-  bool IsDragFlavorAvailable(GdkAtom aRequestedFlavor);
+  virtual bool IsDragFlavorAvailable(GdkAtom aRequestedFlavor) = 0;
 
   // this will get the native data from the last target given a
   // specific flavor
   RefPtr<DragData> GetDragData(GdkAtom aRequestedFlavor);
-
-  // source side vars
-
-  // the source of our drags
-  GtkWidget* mHiddenWidget;
-
-  // get a list of the sources in gtk's format
-  GtkTargetList* GetSourceList(void);
+  virtual bool GetDragDataImpl(GdkAtom aRequestedFlavor) = 0;
 
   // attempts to create a semi-transparent drag image. Returns TRUE if
   // successful, FALSE if not
@@ -373,22 +355,16 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
                       int32_t aYOffset,
                       const mozilla::LayoutDeviceIntRect& dragRect);
 
-  gboolean Schedule(DragTask aTask, nsWindow* aWindow,
-                    GdkDragContext* aDragContext,
-                    mozilla::LayoutDeviceIntPoint aWindowPoint, guint aTime);
+  // source side vars
 
-  // Callback for g_idle_add_full() to run mScheduledTask.
-  MOZ_CAN_RUN_SCRIPT static gboolean TaskDispatchCallback(gpointer data);
-  MOZ_CAN_RUN_SCRIPT gboolean RunScheduledTask();
-  MOZ_CAN_RUN_SCRIPT void DispatchMotionEvents();
-  void UpdateDragAction(GdkDragContext* aDragContext);
-  void UpdateDragAction();
+  // the source of our drags
+  GtkWidget* mHiddenWidget;
+  // Workaround for Bug 1979719. We consider D&D session running only after
+  // first "move" event on Wayland.
+  bool mActive = false;
 
-#ifdef MOZ_LOGGING
-  const char* GetDragServiceTaskName(DragTask aTask);
-#endif
-  gboolean DispatchDropEvent();
-  static uint32_t GetCurrentModifiers();
+  // get a list of the sources in gtk's format
+  GtkTargetList* GetSourceList(void);
 
   nsresult CreateTempFile(nsITransferable* aItem, nsACString& aURI);
 };
@@ -398,11 +374,16 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
  */
 class nsDragService : public nsBaseDragService {
  public:
+  nsDragService();
+
   static already_AddRefed<nsDragService> GetInstance();
   nsIDragSession* StartDragSession(nsISupports* aWidgetProvider) override;
 
  protected:
   already_AddRefed<nsIDragSession> CreateDragSession() override;
+#ifdef MOZ_WAYLAND
+  RefPtr<mozilla::RetrievalContext> mContext;
+#endif
 };
 
-#endif  // nsDragService_h__
+#endif  // nsDragService_h_

@@ -12,13 +12,13 @@ const { Pool } = require("devtools/shared/protocol");
  *
  * Like the Pool, this is a protocol object that can manage the lifetime of other protocol
  * objects. Pools are used on both sides of the connection to help coordinate lifetimes.
- *
- * @param conn
- *   Is a DevToolsServerConnection.  Must have
- *   addActorPool, removeActorPool, and poolFor.
- * @constructor
  */
 class LazyPool extends Pool {
+  /**
+   * @param conn
+   *   Is a DevToolsServerConnection.  Must have
+   *   addActorPool, removeActorPool, and poolFor.
+   */
   constructor(conn) {
     super(conn);
   }
@@ -105,50 +105,49 @@ exports.createExtraActors = createExtraActors;
 /**
  * Creates an "actor-like" object which responds in the same way as an ordinary actor
  * but has fewer capabilities (ie, does not manage lifetimes or have it's own pool).
- *
- *
- * @param factories
- *     An object whose own property names are the names of properties to add to
- *     some reply packet (say, a target actor grip or the "listTabs" response
- *     form), and whose own property values are actor constructor functions, as
- *     documented for addTargetScopedActor
- *
- * @param parent
- *     The parent TargetActor with which the new actors
- *     will be associated. It should support whatever API the |factories|
- *     constructor functions might be interested in, as it is passed to them.
- *     For the sake of CommonCreateExtraActors itself, it should have at least
- *     the following properties:
- *
- *     - _extraActors
- *        An object whose own property names are factory table (and packet)
- *        property names, and whose values are no-argument actor constructors,
- *        of the sort that one can add to a Pool.
- *
- *     - conn
- *        The DevToolsServerConnection in which the new actors will participate.
- *
- *     - actorID
- *        The actor's name, for use as the new actors' parentID.
- * @param pool
- *     An object which implements the protocol.js Pool interface, and has the
- *     following properties
- *
- *     - manage
- *       a function which adds a given actor to an actor pool
  */
 
-function LazyActor(factory, parent, pool) {
-  this._options = factory.options;
-  this._parentActor = parent;
-  this._name = factory.name;
-  this._pool = pool;
+class LazyActor {
+  /**
+   * @param factory
+   *     An object whose own property names are the names of properties to add to
+   *     some reply packet (say, a target actor grip or the "listTabs" response
+   *     form), and whose own property values are actor constructor functions, as
+   *     documented for addTargetScopedActor
+   *
+   * @param parent
+   *     The parent TargetActor with which the new actors
+   *     will be associated. It should support whatever API the |factories|
+   *     constructor functions might be interested in, as it is passed to them.
+   *     For the sake of CommonCreateExtraActors itself, it should have at least
+   *     the following properties:
+   *
+   *     - _extraActors
+   *        An object whose own property names are factory table (and packet)
+   *        property names, and whose values are no-argument actor constructors,
+   *        of the sort that one can add to a Pool.
+   *
+   *     - conn
+   *        The DevToolsServerConnection in which the new actors will participate.
+   *
+   *     - actorID
+   *        The actor's name, for use as the new actors' parentID.
+   * @param pool
+   *     An object which implements the protocol.js Pool interface, and has the
+   *     following properties
+   *
+   *     - manage
+   *       a function which adds a given actor to an actor pool
+   */
+  constructor(factory, parent, pool) {
+    this._options = factory.options;
+    this._parentActor = parent;
+    this._name = factory.name;
+    this._pool = pool;
 
-  // needed for taking a place in a pool
-  this.typeName = factory.name;
-}
-
-LazyActor.prototype = {
+    // needed for taking a place in a pool
+    this.typeName = factory.name;
+  }
   loadModule(id) {
     const options = this._options;
     try {
@@ -159,7 +158,7 @@ LazyActor.prototype = {
         `Unable to load actor module '${options.id}'\n${e.message}\n${e.stack}\n`
       );
     }
-  },
+  }
 
   getConstructor() {
     const options = this._options;
@@ -180,14 +179,14 @@ LazyActor.prototype = {
       );
     }
     return constructor;
-  },
+  }
 
   /**
    * Return the parent pool for this lazy actor.
    */
   getParent() {
     return this.conn && this.conn.poolFor(this.actorID);
-  },
+  }
 
   /**
    * This will only happen if the actor is destroyed before it is created
@@ -200,7 +199,7 @@ LazyActor.prototype = {
     if (parent) {
       parent.unmanage(this);
     }
-  },
+  }
 
   createActor() {
     // Fetch the actor constructor
@@ -219,5 +218,5 @@ LazyActor.prototype = {
     this._pool.manage(instance);
 
     return instance;
-  },
-};
+  }
+}

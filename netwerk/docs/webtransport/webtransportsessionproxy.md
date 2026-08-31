@@ -2,7 +2,7 @@
 
 WebTransportSessionProxy is introduced to enable the creation of a Http3WebTransportSession and coordination of actions that are performed on the main thread and on the socket thread.
 
-WebTransportSessionProxy can be in different states and the following diagram depicts the transition between the states. “MT” and “ST” mean: the action is happening on the main and socket thread. More details about this class can be found in [WebTransportSessionProxy.h](https://searchfox.org/mozilla-central/source/netwerk/protocol/webtransport/WebTransportSessionProxy.h).
+WebTransportSessionProxy can be in different states and the following diagram depicts the transition between the states. “MT” and “ST” mean: the action is happening on the main and socket thread. More details about this class can be found in [WebTransportSessionProxy.h](https://searchfox.org/firefox-main/source/netwerk/protocol/webtransport/WebTransportSessionProxy.h).
 
 ```{mermaid}
 graph TD

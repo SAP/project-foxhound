@@ -21,7 +21,6 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.browser.state.state.recover.toRecoverableTab
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 import java.util.UUID
@@ -41,40 +40,40 @@ class UndoMiddleware(
     private var clearJob: Job? = null
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
-        val state = context.state
+        val state = store.state
 
         when (action) {
             // Remember removed tabs
             is TabListAction.RemoveAllNormalTabsAction -> onTabsRemoved(
-                context,
+                store,
                 state.normalTabs,
                 state.selectedTabId,
             )
             is TabListAction.RemoveAllPrivateTabsAction -> onTabsRemoved(
-                context,
+                store,
                 state.privateTabs,
                 state.selectedTabId,
             )
             is TabListAction.RemoveAllTabsAction -> {
                 if (action.recoverable) {
-                    onTabsRemoved(context, state.tabs, state.selectedTabId)
+                    onTabsRemoved(store, state.tabs, state.selectedTabId)
                 }
             }
             is TabListAction.RemoveTabAction -> state.findTab(action.tabId)?.let {
-                onTabsRemoved(context, listOf(it), state.selectedTabId)
+                onTabsRemoved(store, listOf(it), state.selectedTabId)
             }
             is TabListAction.RemoveTabsAction -> {
                 action.tabIds.mapNotNull { state.findTab(it) }.let {
-                    onTabsRemoved(context, it, state.selectedTabId)
+                    onTabsRemoved(store, it, state.selectedTabId)
                 }
             }
 
             // Restore
-            is UndoAction.RestoreRecoverableTabs -> restore(context.store, context.state)
+            is UndoAction.RestoreRecoverableTabs -> restore(store, store.state)
 
             // Do nothing when an action different from above is passed in.
             else -> { }
@@ -84,7 +83,7 @@ class UndoMiddleware(
     }
 
     private fun onTabsRemoved(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabs: List<SessionState>,
         selectedTabId: String?,
     ) {
@@ -93,7 +92,7 @@ class UndoMiddleware(
         val recoverableTabs = mutableListOf<RecoverableTab>()
         tabs.forEach { tab ->
             if (tab is TabSessionState) {
-                val index = context.state.tabs.indexOfFirst { it.id == tab.id }
+                val index = store.state.tabs.indexOfFirst { it.id == tab.id }
                 recoverableTabs.add(tab.toRecoverableTab(index))
             }
         }
@@ -109,11 +108,9 @@ class UndoMiddleware(
             recoverableTabs.find { it.state.id == selectedTabId }?.state?.id
         }
 
-        context.dispatch(
+        store.dispatch(
             UndoAction.AddRecoverableTabs(tag, recoverableTabs, selectionToRestore),
         )
-
-        val store = context.store
 
         clearJob = waitScope.launch {
             delay(clearAfterMillis)
@@ -133,15 +130,17 @@ class UndoMiddleware(
 
         val undoHistory = state.undoHistory
         val tabs = undoHistory.tabs
-        if (tabs.isEmpty()) {
-            logger.debug("No recoverable tabs for undo.")
+        val tabPartitions = undoHistory.tabPartitions
+        if (tabs.isEmpty() && tabPartitions.isEmpty()) {
+            logger.debug("No recoverable tabs or tab partitions for undo.")
             return@launch
         }
 
         store.dispatch(
             TabListAction.RestoreAction(
-                tabs,
+                tabs = tabs,
                 restoreLocation = TabListAction.RestoreAction.RestoreLocation.AT_INDEX,
+                tabPartitions = tabPartitions,
             ),
         )
 

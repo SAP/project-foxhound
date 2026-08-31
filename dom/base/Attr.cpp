@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,26 +7,25 @@
  */
 
 #include "mozilla/dom/Attr.h"
-#include "mozilla/dom/AttrBinding.h"
-#include "mozilla/dom/Element.h"
+
+#include "NodeUbiReporting.h"
+#include "mozAutoDocUpdate.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/InternalMutationEvent.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "nsContentCreatorFunctions.h"
-#include "mozilla/dom/TrustedTypesConstants.h"
-#include "mozilla/dom/TrustedTypeUtils.h"
-#include "nsError.h"
-#include "nsUnicharUtils.h"
-#include "nsDOMString.h"
-#include "nsIContentInlines.h"
+#include "mozilla/dom/AttrBinding.h"
 #include "mozilla/dom/Document.h"
-#include "nsGkAtoms.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "nsCOMArray.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "nsIContentInlines.h"
 #include "nsNameSpaceManager.h"
 #include "nsTextNode.h"
-#include "mozAutoDocUpdate.h"
+#include "nsUnicharUtils.h"
 #include "nsWrapperCacheInlines.h"
-#include "NodeUbiReporting.h"
 
 namespace mozilla::dom {
 
@@ -36,7 +33,7 @@ namespace mozilla::dom {
 bool Attr::sInitialized;
 
 Attr::Attr(nsDOMAttributeMap* aAttrMap,
-           already_AddRefed<dom::NodeInfo>&& aNodeInfo, const nsAString& aValue)
+           already_AddRefed<dom::NodeInfo> aNodeInfo, const nsAString& aValue)
     : nsINode(std::move(aNodeInfo)), mAttrMap(aAttrMap), mValue(aValue) {
   MOZ_ASSERT(mNodeInfo, "We must get a nodeinfo here!");
   MOZ_ASSERT(mNodeInfo->NodeType() == ATTRIBUTE_NODE, "Wrong nodeType");
@@ -194,7 +191,7 @@ void Attr::SetNodeValue(const nsAString& aNodeValue, ErrorResult& aError) {
 void Attr::GetNodeValueInternal(nsAString& aNodeValue) { GetValue(aNodeValue); }
 
 void Attr::SetNodeValueInternal(const nsAString& aNodeValue,
-                                ErrorResult& aError) {
+                                ErrorResult& aError, MutationEffectOnScript) {
   SetValueInternal(aNodeValue, aError);
 }
 
@@ -229,7 +226,7 @@ void Attr::GetTextContentInternal(nsAString& aTextContent,
 
 void Attr::SetTextContentInternal(const nsAString& aTextContent,
                                   nsIPrincipal* aSubjectPrincipal,
-                                  ErrorResult& aError) {
+                                  ErrorResult& aError, MutationEffectOnScript) {
   SetValueInternal(aTextContent, aError);
 }
 

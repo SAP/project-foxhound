@@ -6,8 +6,8 @@
 #define BUFFER_STREAM_H_
 
 #include "ByteStream.h"
-#include "nsTArray.h"
 #include "MediaResource.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 class MediaByteBuffer;
@@ -23,10 +23,10 @@ class BufferStream : public ByteStream,
   BufferStream();
   explicit BufferStream(mozilla::MediaByteBuffer* aBuffer);
 
-  virtual bool ReadAt(int64_t aOffset, void* aData, size_t aLength,
-                      size_t* aBytesRead) override;
-  virtual bool CachedReadAt(int64_t aOffset, void* aData, size_t aLength,
-                            size_t* aBytesRead) override;
+  virtual nsresult ReadAt(int64_t aOffset, void* aData, size_t aLength,
+                          size_t* aBytesRead) override;
+  virtual nsresult CachedReadAt(int64_t aOffset, void* aData, size_t aLength,
+                                size_t* aBytesRead) override;
   virtual bool Length(int64_t* aLength) override;
 
   virtual void DiscardBefore(int64_t aOffset) override;

@@ -403,3 +403,89 @@ add_task(async function test_datepicker_value_higher_than_max() {
 
   await helper.tearDown();
 });
+
+/**
+ * Test that date picker validation is not offset by the local time zone
+ */
+add_task(async function test_datepicker_value_max_behind_utc() {
+  const maxValue = "2001-01-02";
+  const inputValue = "2001-01-01";
+
+  // Set a time zone behind UTC
+  SpecialPowers.Cu.getJSTestingFunctions().setTimeZone("PST8PDT");
+
+  await helper.openPicker(
+    `data:text/html, <input type='date' value="${inputValue}" max="${maxValue}">`
+  );
+
+  let changePromise = helper.promiseChange();
+
+  // Attempt to select the maximum day.
+  helper.click(helper.getElement(DAYS_VIEW).children[0].children[2]);
+
+  await changePromise;
+
+  let value = await SpecialPowers.spawn(
+    helper.tab.linkedBrowser,
+    [],
+    async () => content.document.querySelector("input").value
+  );
+
+  Assert.equal(value, "2001-01-02", "The maximum date is selected");
+
+  await helper.tearDown();
+});
+
+/**
+ * Test that month/year picker validation is not offset by the local time zone
+ */
+add_task(async function test_datepicker_minmax_monthyear_behind_utc() {
+  const maxValue = "2027-01-01";
+  const minValue = "2026-01-01";
+  const inputValue = "2027-01-01";
+
+  // Set a time zone behind UTC
+  SpecialPowers.Cu.getJSTestingFunctions().setTimeZone("PST8PDT");
+
+  await helper.openPicker(
+    `data:text/html, <input type='date' value="${inputValue}" max="${maxValue}" min="${minValue}">`
+  );
+
+  // Show the month/year spinners
+  helper.click(helper.getElement(MONTH_YEAR));
+
+  let months = [];
+  let years = [];
+  for (const child of helper.getChildren(SPINNER_MONTH)) {
+    if (child.className == "spinner") {
+      months = [
+        ...new Set(
+          Array.from(child.children)
+            .filter(item => !item.classList.contains("disabled"))
+            .map(item => item.textContent)
+        ),
+      ];
+    }
+  }
+  for (const child of helper.getChildren(SPINNER_YEAR)) {
+    if (child.className == "spinner") {
+      years = Array.from(child.children)
+        .filter(item => !item.classList.contains("disabled"))
+        .map(item => item.textContent);
+    }
+  }
+
+  Assert.deepEqual(
+    months,
+    ["Jan"],
+    "The valid months are available in the picker"
+  );
+
+  Assert.deepEqual(
+    years,
+    ["2026", "2027"],
+    "The valid years are available in the picker"
+  );
+
+  await helper.tearDown();
+});

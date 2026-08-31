@@ -14,9 +14,10 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.plus
 import mozilla.components.lib.state.ext.consumeFrom
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.databinding.FragmentExceptionsBinding
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 
@@ -24,7 +25,7 @@ import org.mozilla.fenix.ext.showToolbar
  * Displays a list of sites that are exempted from saving logins,
  * along with controls to remove the exception.
  */
-class LoginExceptionsFragment : Fragment() {
+class LoginExceptionsFragment : Fragment(), SystemInsetsPaddedFragment {
     private lateinit var exceptionsStore: ExceptionsFragmentStore
     private lateinit var exceptionsView: LoginExceptionsView
     private lateinit var exceptionsInteractor: LoginExceptionsInteractor
@@ -44,11 +45,9 @@ class LoginExceptionsFragment : Fragment() {
             container,
             false,
         )
-        exceptionsStore = StoreProvider.get(this) {
-            ExceptionsFragmentStore(
-                ExceptionsFragmentState(items = emptyList()),
-            )
-        }
+        exceptionsStore = fragmentStore(ExceptionsFragmentState(items = emptyList())) {
+            ExceptionsFragmentStore(it)
+        }.value
         exceptionsInteractor = DefaultLoginExceptionsInteractor(
             ioScope = viewLifecycleOwner.lifecycleScope + Dispatchers.IO,
             loginExceptionStorage = requireComponents.core.loginExceptionStorage,

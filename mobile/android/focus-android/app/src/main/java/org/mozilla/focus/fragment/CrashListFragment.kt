@@ -18,7 +18,7 @@ import org.mozilla.focus.ext.components
 /**
  * Fragment showing list of past crashes.
  */
-class CrashListFragment(private val paddingNeeded: Boolean = false) : AbstractCrashListFragment() {
+class CrashListFragment : AbstractCrashListFragment() {
     override val reporter: CrashReporter by lazy { requireContext().components.crashReporter }
 
     override fun onCrashServiceSelected(url: String) {
@@ -33,7 +33,9 @@ class CrashListFragment(private val paddingNeeded: Boolean = false) : AbstractCr
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        if (paddingNeeded) {
+        val showAll = arguments?.getBoolean(ARG_SHOW_ALL, false) ?: false
+
+        if (showAll) {
             val originalTopPadding = view.paddingTop
 
             ViewCompat.setOnApplyWindowInsetsListener(view) { _, windowInsets ->
@@ -43,5 +45,10 @@ class CrashListFragment(private val paddingNeeded: Boolean = false) : AbstractCr
                 windowInsets
             }
         }
+    }
+
+    companion object {
+        const val FRAGMENT_TAG = "crash-list-fragment"
+        const val ARG_SHOW_ALL = "show_all"
     }
 }

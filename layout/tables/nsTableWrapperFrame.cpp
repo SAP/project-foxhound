@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +9,10 @@
 #include "LayoutConstants.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "nsCSSRendering.h"
 #include "nsDisplayList.h"
 #include "nsFrameManager.h"
-#include "nsGkAtoms.h"
 #include "nsGridContainerFrame.h"
 #include "nsHTMLParts.h"
 #include "nsIContent.h"
@@ -27,20 +26,6 @@
 
 using namespace mozilla;
 using namespace mozilla::layout;
-
-nscoord nsTableWrapperFrame::SynthesizeFallbackBaseline(
-    mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
-  const auto marginBlockEnd = GetLogicalUsedMargin(aWM).BEnd(aWM);
-  if (aWM.IsCentralBaseline()) {
-    return (BSize(aWM) + marginBlockEnd) / 2;
-  }
-  // Our fallback baseline is the block-end margin-edge, with respect to the
-  // given writing mode.
-  if (aBaselineGroup == BaselineSharingGroup::Last) {
-    return -marginBlockEnd;
-  }
-  return BSize(aWM) + marginBlockEnd;
-}
 
 Maybe<nscoord> nsTableWrapperFrame::GetNaturalBaselineBOffset(
     WritingMode aWM, BaselineSharingGroup aBaselineGroup,
@@ -218,8 +203,8 @@ nscoord nsTableWrapperFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
 }
 
 LogicalSize nsTableWrapperFrame::InnerTableShrinkWrapSize(
-    gfxContext* aRenderingContext, nsTableFrame* aTableFrame, WritingMode aWM,
-    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const SizeComputationInput& aSizingInput, nsTableFrame* aTableFrame,
+    WritingMode aWM, const LogicalSize& aCBSize, nscoord aAvailableISize,
     const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) const {
   MOZ_ASSERT(InnerTableFrame() == aTableFrame);
 
@@ -229,7 +214,7 @@ LogicalSize nsTableWrapperFrame::InnerTableShrinkWrapSize(
   Maybe<LogicalMargin> collapsePadding;
   aTableFrame->GetCollapsedBorderPadding(collapseBorder, collapsePadding);
 
-  SizeComputationInput input(aTableFrame, aRenderingContext, aWM,
+  SizeComputationInput input(aTableFrame, aSizingInput.mRenderingContext, aWM,
                              aCBSize.ISize(aWM), collapseBorder,
                              collapsePadding);
   LogicalSize marginSize(aWM);  // Inner table doesn't have any margin
@@ -250,11 +235,10 @@ LogicalSize nsTableWrapperFrame::InnerTableShrinkWrapSize(
   //    nsTableFrame::ComputeSize().
   StyleSizeOverrides innerOverrides = ComputeSizeOverridesForInnerTable(
       aTableFrame, aSizeOverrides, bpSize, /* aBSizeOccupiedByCaption = */ 0);
-  auto size =
-      aTableFrame
-          ->ComputeSize(aRenderingContext, aWM, aCBSize, aAvailableISize,
-                        marginSize, bpSize, innerOverrides, aFlags)
-          .mLogicalSize;
+  auto size = aTableFrame
+                  ->ComputeSize(input, aWM, aCBSize, aAvailableISize,
+                                marginSize, bpSize, innerOverrides, aFlags)
+                  .mLogicalSize;
   size.ISize(aWM) += bpSize.ISize(aWM);
   if (size.BSize(aWM) != NS_UNCONSTRAINEDSIZE) {
     size.BSize(aWM) += bpSize.BSize(aWM);
@@ -263,21 +247,21 @@ LogicalSize nsTableWrapperFrame::InnerTableShrinkWrapSize(
 }
 
 LogicalSize nsTableWrapperFrame::CaptionShrinkWrapSize(
-    gfxContext* aRenderingContext, nsIFrame* aCaptionFrame, WritingMode aWM,
-    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const SizeComputationInput& aSizingInput, nsIFrame* aCaptionFrame,
+    WritingMode aWM, const LogicalSize& aCBSize, nscoord aAvailableISize,
     ComputeSizeFlags aFlags) const {
   MOZ_ASSERT(aCaptionFrame != mFrames.FirstChild());
 
   AutoMaybeDisableFontInflation an(aCaptionFrame);
 
-  SizeComputationInput input(aCaptionFrame, aRenderingContext, aWM,
+  SizeComputationInput input(aCaptionFrame, aSizingInput.mRenderingContext, aWM,
                              aCBSize.ISize(aWM));
   LogicalSize marginSize = input.ComputedLogicalMargin(aWM).Size(aWM);
   LogicalSize bpSize = input.ComputedLogicalBorderPadding(aWM).Size(aWM);
 
   auto size = aCaptionFrame
-                  ->ComputeSize(aRenderingContext, aWM, aCBSize,
-                                aAvailableISize, marginSize, bpSize, {}, aFlags)
+                  ->ComputeSize(input, aWM, aCBSize, aAvailableISize,
+                                marginSize, bpSize, {}, aFlags)
                   .mLogicalSize;
   size.ISize(aWM) += (marginSize.ISize(aWM) + bpSize.ISize(aWM));
   if (size.BSize(aWM) != NS_UNCONSTRAINEDSIZE) {
@@ -290,7 +274,7 @@ StyleSize nsTableWrapperFrame::ReduceStyleSizeBy(
     const StyleSize& aStyleSize, const nscoord aAmountToReduce) const {
   MOZ_ASSERT(aStyleSize.ConvertsToLength(), "Only handles 'Length' StyleSize!");
   const nscoord size = std::max(0, aStyleSize.ToLength() - aAmountToReduce);
-  return StyleSize::LengthPercentage(LengthPercentage::FromAppUnits(size));
+  return StyleSize::FromAppUnits(size);
 }
 
 StyleSizeOverrides nsTableWrapperFrame::ComputeSizeOverridesForInnerTable(
@@ -306,7 +290,7 @@ StyleSizeOverrides nsTableWrapperFrame::ComputeSizeOverridesForInnerTable(
 
   const auto wm = aTableFrame->GetWritingMode();
   LogicalSize areaOccupied(wm, 0, aBSizeOccupiedByCaption);
-  if (aTableFrame->StylePosition()->mBoxSizing == StyleBoxSizing::Content) {
+  if (aTableFrame->StylePosition()->mBoxSizing == StyleBoxSizing::ContentBox) {
     // If the inner table frame has 'box-sizing: content', enlarge the occupied
     // area by adding border & padding because they should also be subtracted
     // from the size overrides.
@@ -339,12 +323,12 @@ StyleSizeOverrides nsTableWrapperFrame::ComputeSizeOverridesForInnerTable(
 
 /* virtual */
 nsIFrame::SizeComputationResult nsTableWrapperFrame::ComputeSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   auto result = nsContainerFrame::ComputeSize(
-      aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
+      aSizingInput, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
       aSizeOverrides, aFlags);
 
   if (aSizeOverrides.mApplyOverridesVerbatim &&
@@ -355,8 +339,8 @@ nsIFrame::SizeComputationResult nsTableWrapperFrame::ComputeSize(
     // and block-size, since we don't inherit those properties from inner table,
     // and authors can't target them with styling.)
     auto size =
-        ComputeAutoSize(aRenderingContext, aWM, aCBSize, aAvailableISize,
-                        aMargin, aBorderPadding, aSizeOverrides, aFlags);
+        ComputeAutoSize(aSizingInput, aWM, aCBSize, aAvailableISize, aMargin,
+                        aBorderPadding, aSizeOverrides, aFlags);
     result.mLogicalSize = size;
   }
 
@@ -365,10 +349,10 @@ nsIFrame::SizeComputationResult nsTableWrapperFrame::ComputeSize(
 
 /* virtual */
 LogicalSize nsTableWrapperFrame::ComputeAutoSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   nscoord kidAvailableISize = aAvailableISize - aMargin.ISize(aWM);
   NS_ASSERTION(aBorderPadding.IsAllZero(),
                "Table wrapper frames cannot have borders or paddings");
@@ -382,14 +366,14 @@ LogicalSize nsTableWrapperFrame::ComputeAutoSize(
   // Match the logic in Reflow() that sets aside space for the caption.
   Maybe<StyleCaptionSide> captionSide = GetCaptionSide();
 
-  const LogicalSize innerTableSize = InnerTableShrinkWrapSize(
-      aRenderingContext, InnerTableFrame(), aWM, aCBSize, kidAvailableISize,
-      aSizeOverrides, flags);
+  const LogicalSize innerTableSize =
+      InnerTableShrinkWrapSize(aSizingInput, InnerTableFrame(), aWM, aCBSize,
+                               kidAvailableISize, aSizeOverrides, flags);
   if (!captionSide) {
     return innerTableSize;
   }
   const LogicalSize captionSize =
-      CaptionShrinkWrapSize(aRenderingContext, GetCaption(), aWM, aCBSize,
+      CaptionShrinkWrapSize(aSizingInput, GetCaption(), aWM, aCBSize,
                             innerTableSize.ISize(aWM), flags);
   const nscoord iSize =
       std::max(innerTableSize.ISize(aWM), captionSize.ISize(aWM));
@@ -406,11 +390,6 @@ Maybe<StyleCaptionSide> nsTableWrapperFrame::GetCaptionSide() const {
     return Nothing();
   }
   return Some(GetCaption()->StyleTableBorder()->mCaptionSide);
-}
-
-StyleVerticalAlignKeyword nsTableWrapperFrame::GetCaptionVerticalAlign() const {
-  const auto& va = GetCaption()->StyleDisplay()->mVerticalAlign;
-  return va.IsKeyword() ? va.AsKeyword() : StyleVerticalAlignKeyword::Top;
 }
 
 nscoord nsTableWrapperFrame::ComputeFinalBSize(

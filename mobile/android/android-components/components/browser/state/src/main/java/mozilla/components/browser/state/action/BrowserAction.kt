@@ -19,15 +19,17 @@ import mozilla.components.browser.state.state.LoadRequestState
 import mozilla.components.browser.state.state.MediaSessionState
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.SearchState
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabGroup
+import mozilla.components.browser.state.state.TabPartition
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.TrackingProtectionState
 import mozilla.components.browser.state.state.UndoHistoryState
 import mozilla.components.browser.state.state.WebExtensionState
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.state.content.FindResultState
+import mozilla.components.browser.state.state.content.PermissionHighlightsState
 import mozilla.components.browser.state.state.content.ShareResourceState
 import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
 import mozilla.components.browser.state.state.recover.RecoverableTab
@@ -217,27 +219,38 @@ sealed class TabListAction : BrowserAction() {
      * @property tabId the ID of the tab to remove.
      * @property selectParentIfExists whether or not a parent tab should be
      * selected if one exists, defaults to true.
+     * @property excludedTabIds a list of tab IDs that should be ignored when selecting a fallback tab.
      */
-    data class RemoveTabAction(val tabId: String, val selectParentIfExists: Boolean = true) :
-        TabListAction()
+    data class RemoveTabAction(
+        val tabId: String,
+        val selectParentIfExists: Boolean = true,
+        val excludedTabIds: Set<String> = emptySet(),
+    ) : TabListAction()
 
     /**
      * Removes the [TabSessionState]s with the given [tabId]s from the list of sessions.
      *
      * @property tabIds the IDs of the tabs to remove.
+     * @property excludedTabIds a list of tab IDs that should be ignored when selecting a fallback tab.
      */
-    data class RemoveTabsAction(val tabIds: List<String>) : TabListAction()
+    data class RemoveTabsAction(
+        val tabIds: List<String>,
+        val excludedTabIds: Set<String> = emptySet(),
+    ) : TabListAction()
 
     /**
      * Restores state from a (partial) previous state.
      *
      * @property tabs the [TabSessionState]s to restore.
      * @property selectedTabId the ID of the tab to select.
+     * @property restoreLocation [RestoreLocation] indicating where to restore [tabs].
+     * @property tabPartitions a mapping of IDs to the corresponding [TabPartition].
      */
     data class RestoreAction(
         val tabs: List<RecoverableTab>,
         val selectedTabId: String? = null,
         val restoreLocation: RestoreLocation,
+        val tabPartitions: Map<String, TabPartition> = emptyMap(),
     ) : TabListAction() {
 
         /**
@@ -324,7 +337,7 @@ sealed class TabGroupAction : BrowserAction() {
     data class AddTabsAction(
         val partition: String,
         val group: String,
-        val tabIds: List<String>,
+        val tabIds: Set<String>,
     ) : TabGroupAction()
 
     /**
@@ -350,7 +363,7 @@ sealed class TabGroupAction : BrowserAction() {
     data class RemoveTabsAction(
         val partition: String,
         val group: String,
-        val tabIds: List<String>,
+        val tabIds: Set<String>,
     ) : TabGroupAction()
 }
 
@@ -393,6 +406,17 @@ sealed class LastAccessAction : BrowserAction() {
     data class UpdateLastAccessAction(
         val tabId: String,
         val lastAccess: Long = System.currentTimeMillis(),
+    ) : LastAccessAction()
+
+    /**
+     * Updates the [TabSessionState.lastVisibleAt] timestamp of the tab with the given [tabId].
+     *
+     * @property tabId the ID of the tab to update.
+     * @property lastVisibleAt the timestamp when the tab was last visible to the user.
+     */
+    data class UpdateLastVisibleAtAction(
+        val tabId: String,
+        val lastVisibleAt: Long,
     ) : LastAccessAction()
 
     /**
@@ -512,6 +536,28 @@ sealed class ContentAction : BrowserAction() {
             UpdatePermissionHighlightsStateAction()
 
         /**
+         * Updates the [PermissionHighlightsState.localDeviceAccessChanged] property with the
+         * given [tabId]
+         *
+         * @property tabId The affected tab id
+         * @property value The value indicating whether or not the local device access permission
+         * has changed
+         */
+        data class LocalDeviceAccessChangedAction(val tabId: String, val value: Boolean) :
+            UpdatePermissionHighlightsStateAction()
+
+        /**
+         * Updates the [PermissionHighlightsState.localNetworkAccessChanged] property with the
+         * given [tabId]
+         *
+         * @property tabId The affected tab id
+         * @property value The value indicating whether or not the local network access permission
+         * has changed
+         */
+        data class LocalNetworkAccessChangedAction(val tabId: String, val value: Boolean) :
+            UpdatePermissionHighlightsStateAction()
+
+        /**
          * Updates the autoPlayAudibleChanged property of the [PermissionHighlightsState]
          * with the given [tabId].
          */
@@ -583,11 +629,11 @@ sealed class ContentAction : BrowserAction() {
     ) : ContentAction()
 
     /**
-     * Updates the [SecurityInfoState] of the [ContentState] with the given [sessionId].
+     * Updates the [SecurityInfo] of the [ContentState] with the given [sessionId].
      */
     data class UpdateSecurityInfoAction(
         val sessionId: String,
-        val securityInfo: SecurityInfoState,
+        val securityInfo: SecurityInfo,
     ) : ContentAction()
 
     /**
@@ -1016,6 +1062,15 @@ sealed class TranslationsAction : BrowserAction() {
     ) : TranslationsAction()
 
     /**
+     * Sets whether the translations feature is enabled and should be shown to the user.
+     *
+     * @property isTranslationsEnabled Whether the translations feature is enabled.
+     */
+    data class SetTranslationsEnabledAction(
+        val isTranslationsEnabled: Boolean,
+    ) : TranslationsAction()
+
+    /**
      * Sets whether the device architecture supports translations or not on
      * [BrowserState.translationEngine].
      *
@@ -1285,6 +1340,26 @@ sealed class WebExtensionAction : BrowserAction() {
     ) : WebExtensionAction()
 
     /**
+     * Passes url and title necessary for opening options page via [WebExtensionState].
+     * And keeps track of the last instance used to display an extension options page.
+     * optionsPageInstanceId keeps repeated requests distinguishable when the observer
+     * misses the cleared state.
+     */
+    data class UpdateOptionsPageSessionAction(
+        val extensionId: String,
+        val optionsPageInstanceId: String,
+        val optionsPageUrl: String,
+        val extensionTranslatedName: String,
+    ) : WebExtensionAction()
+
+    /**
+     * Clears the state of an options page session.
+     */
+    data class ClearOptionsPageSession(
+        val extensionId: String,
+    ) : WebExtensionAction()
+
+    /**
      * Updates a tab-specific browser action that belongs to the given [sessionId] and [extensionId] on the
      * [TabSessionState.extensionState].
      */
@@ -1528,6 +1603,13 @@ sealed class EngineAction : BrowserAction() {
      * Purges the back/forward history of all tabs and custom tabs.
      */
     object PurgeHistoryAction : EngineAction()
+
+    /**
+     * Flushes the most recent state of the session with the provided [tabId].
+     */
+    data class FlushEngineSessionStateAction(
+        override val tabId: String,
+    ) : EngineAction(), ActionWithTab
 }
 
 /**
@@ -1674,8 +1756,11 @@ sealed class DownloadAction : BrowserAction() {
 
     /**
      * Updates the [BrowserState] to remove the download with the provided [downloadId].
+     * @param downloadId The ID of the download to remove.
+     * @param removeFromDisk If true, forcibly deletes the file from storage. If false, only removes
+     * from history. If null, falls back to the global user preference.
      */
-    data class RemoveDownloadAction(val downloadId: String) : DownloadAction()
+    data class RemoveDownloadAction(val downloadId: String, val removeFromDisk: Boolean? = null) : DownloadAction()
 
     /**
      * Updates the [BrowserState] to remove all downloads.
@@ -1829,8 +1914,18 @@ sealed class SearchAction : BrowserAction() {
         val additionalAvailableSearchEngines: List<SearchEngine>,
         val userSelectedSearchEngineId: String?,
         val userSelectedSearchEngineName: String?,
+        val userSelectedPrivateSearchEngineId: String?,
+        val userSelectedPrivateSearchEngineName: String?,
         val regionDefaultSearchEngineId: String,
         val regionSearchEnginesOrder: List<String>,
+        val searchEnginesConfigurationId: Int?,
+    ) : SearchAction()
+
+    /**
+     * Indicates that a new search engines configuration is available for the application to use.
+     */
+    data class SearchConfigurationAvailabilityChanged(
+        val isNewSearchConfigurationAvailable: Boolean,
     ) : SearchAction()
 
     /**
@@ -1851,6 +1946,21 @@ sealed class SearchAction : BrowserAction() {
         val searchEngineId: String,
         val searchEngineName: String?,
     ) : SearchAction()
+
+    /**
+     * Updates [BrowserState.search] to update [SearchState.userSelectedPrivateSearchEngineId] and
+     * [SearchState.userSelectedPrivateSearchEngineName].
+     */
+    data class SelectPrivateSearchEngineAction(
+        val searchEngineId: String,
+        val searchEngineName: String?,
+    ) : SearchAction()
+
+    /**
+     * Clears the private browsing search engine override, causing it to fall back to the
+     * normal default search engine.
+     */
+    object ClearPrivateSearchEngineAction : SearchAction()
 
     /**
      * Shows a previously hidden, bundled search engine in [SearchState.regionSearchEngines] again
@@ -1943,4 +2053,19 @@ sealed class DefaultDesktopModeAction : BrowserAction() {
      * Updates the global default for desktop browsing mode.
      */
     data class DesktopModeUpdated(val newValue: Boolean) : DefaultDesktopModeAction()
+}
+
+/**
+ * [BrowserAction] implementations related to requesting system-level permissions.
+ */
+sealed class SystemPermissionRequestAction : BrowserAction() {
+    /**
+     * Indicates that a system permission request is currently in progress.
+     */
+    object SystemPermissionStateRequestInProgress : SystemPermissionRequestAction()
+
+    /**
+     * Indicates that there is no system permission request currently in progress.
+     */
+    object SystemPermissionStateRequestNotInProgress : SystemPermissionRequestAction()
 }

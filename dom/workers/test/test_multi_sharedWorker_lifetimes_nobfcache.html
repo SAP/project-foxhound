@@ -15,7 +15,7 @@
           const windowRelativeURL = "multi_sharedWorker_frame_nobfcache.html";
           const storedData = "0123456789abcdefghijklmnopqrstuvwxyz";
           var bc, bc2;
-          bc = new BroadcastChannel("bugSharedWorkerLiftetime");
+          bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("bugSharedWorkerLiftetime");
           bc.onmessage = (event) => {
             var msg = event.data;
             var command = msg.command;
@@ -29,7 +29,7 @@
               sendToGenerator(msg.workerMessage);
             }
           }
-          bc2 = new BroadcastChannel("navigate");
+          bc2 = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("navigate");
           bc2.onmessage = (event) => {
             if (event.data.command == "loaded") {
               sendToGenerator();
@@ -97,28 +97,7 @@
         }
 
         SimpleTest.waitForExplicitFinish();
-        if (isXOrigin) {
-          // Bug 1746646: Make mochitests work with TCP enabled (cookieBehavior = 5)
-          // Acquire storage access permission here so that the BroadcastChannel used to
-          // communicate with the opened windows works in xorigin tests. Otherwise,
-          // the iframe containing this page is isolated from first-party storage access,
-          // which isolates BroadcastChannel communication.
-          SpecialPowers.wrap(document).notifyUserGestureActivation();
-          SpecialPowers.pushPrefEnv({
-            set: [["privacy.partition.always_partition_third_party_non_cookie_storage", false]],
-          }).then(() => {
-            SpecialPowers.pushPermissions([{'type': 'storageAccessAPI', 'allow': 1, 'context': document}], () =>{
-              SpecialPowers.wrap(document).requestStorageAccess().then(() => {
-                runTest();
-              }).then(() => {
-                SpecialPowers.removePermission("3rdPartyStorage^http://mochi.test:8888", "http://mochi.xorigin-test:8888");
-              });
-            });
-          });
-        } else {
-          runTest();
-        }
-
+        runTest();
       </script>
   </head>
   <body>

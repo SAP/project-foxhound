@@ -87,14 +87,14 @@ const perfMetadata = {
   },
 };
 
-requestLongerTimeout(120);
+requestLongerTimeout(60);
 
 // To run locally
 // pip install huggingface-hub
 // huggingface-cli download {model_id} --local-dir MOZ_ML_LOCAL_DIR/onnx-models/{model_id}/{revision}
 
 // Update your test in
-// Then run:  ./mach lint -l perfdocs --fix .
+// Then run:  ./mach perfdocs --generate
 // This will auto-generate docs
 async function run_summarizer_with_perf({
   taskName,

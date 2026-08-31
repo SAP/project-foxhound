@@ -34,15 +34,3 @@ body {
     transform: scaleY(-1);
   }
 }
-
-.hint-box {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hint {
-  max-width: 40em;
-  font-size: 1.2em;
-  text-align: center;
-}

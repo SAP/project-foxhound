@@ -32,7 +32,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "PushServiceComponent",
   "@mozilla.org/push/Service;1",
-  "nsIPushService"
+  Ci.nsIPushService
 );
 
 const servicePrefs = new Preferences("dom.push.");
@@ -68,7 +68,7 @@ Services.obs.addObserver(function observe(subject, topic) {
  * Gates a function so that it is called only after the wrapper is called a
  * given number of times.
  *
- * @param {Number} times The number of wrapper calls before |func| is called.
+ * @param {number} times The number of wrapper calls before |func| is called.
  * @param {Function} func The function to gate.
  * @returns {Function} The gated function wrapper.
  */
@@ -102,7 +102,7 @@ function waterfall(...callbacks) {
 /**
  * Waits for an observer notification to fire.
  *
- * @param {String} topic The notification topic.
+ * @param {string} topic The notification topic.
  * @returns {Promise} A promise that fulfills when the notification is fired.
  */
 function promiseObserverNotification(topic, matchFunc) {
@@ -124,8 +124,8 @@ function promiseObserverNotification(topic, matchFunc) {
  * argument. If the original value is a function, the proxy returns a wrapper
  * that calls the stub; otherwise, the stub is called as a getter.
  *
- * @param {Object} target The object to wrap.
- * @param {Object} stubs An object containing stubbed values and functions.
+ * @param {object} target The object to wrap.
+ * @param {object} stubs An object containing stubbed values and functions.
  * @returns {Proxy} A proxy that returns stubs for property gets.
  */
 function makeStub(target, stubs) {
@@ -153,7 +153,7 @@ function makeStub(target, stubs) {
  * Sets default PushService preferences. All pref names are prefixed with
  * `dom.push.`; any additional preferences will override the defaults.
  *
- * @param {Object} [prefs] Additional preferences to set.
+ * @param {object} [prefs] Additional preferences to set.
  */
 function setPrefs(prefs = {}) {
   let defaultPrefs = Object.assign(
@@ -310,7 +310,7 @@ MockWebSocket.prototype = {
    * onAcknowledge() synchronously. Throws if the message is not a string.
    * Used by the tests to respond to client commands.
    *
-   * @param {String} msg The message to send to the client.
+   * @param {string} msg The message to send to the client.
    */
   serverSendMsg(msg) {
     if (typeof msg != "string") {
@@ -326,8 +326,8 @@ MockWebSocket.prototype = {
    * Closes the server end of the connection, calling onServerClose()
    * followed by onStop(). Used to test abrupt connection termination.
    *
-   * @param {Number} [statusCode] The WebSocket connection close code.
-   * @param {String} [reason] The connection close reason.
+   * @param {number} [statusCode] The WebSocket connection close code.
+   * @param {string} [reason] The connection close reason.
    */
   serverClose(statusCode, reason = "") {
     if (!isFinite(statusCode)) {

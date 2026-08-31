@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -81,6 +79,18 @@ class AppleVTDecoder final : public MediaDataDecoder,
     return ConversionRequired::kNeedNone;
   }
 
+  Maybe<PropertyValue> GetDecodeProperty(PropertyName aName) const override {
+    // Some Intel GPU has long decoding time and needs more frames queued to
+    // play smoothly. See bug 1230641.
+    static constexpr uint32_t kMinNumOutputBuffers = 10;
+    switch (aName) {
+      case PropertyName::MinNumVideoBuffers:
+        return Some(PropertyValue(kMinNumOutputBuffers));
+      default:
+        return MediaDataDecoder::GetDecodeProperty(aName);
+    }
+  }
+
   // Access from the taskqueue and the decoder's thread.
   // OutputFrame is thread-safe.
   void OutputFrame(CVPixelBufferRef aImage, AppleFrameRef aFrameRef);
@@ -112,6 +122,7 @@ class AppleVTDecoder final : public MediaDataDecoder,
   const gfx::TransferFunction mTransferFunction;
   const gfx::ColorRange mColorRange;
   const gfx::ColorDepth mColorDepth;
+  const Maybe<gfx::HDRMetadata> mHDRMetadata;
 
   // Method to set up the decompression session.
   MediaResult InitializeSession();

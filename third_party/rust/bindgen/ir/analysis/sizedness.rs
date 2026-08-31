@@ -24,13 +24,14 @@ use std::{cmp, ops};
 ///
 /// We initially assume that all types are `ZeroSized` and then update our
 /// understanding as we learn more about each type.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub(crate) enum SizednessResult {
     /// The type is zero-sized.
     ///
     /// This means that if it is a C++ type, and is not being used as a base
     /// member, then we must add an `_address` byte to enforce the
     /// unique-address-per-distinct-object-instance rule.
+    #[default]
     ZeroSized,
 
     /// Whether this type is zero-sized or not depends on whether a type
@@ -62,12 +63,6 @@ pub(crate) enum SizednessResult {
     NonZeroSized,
 }
 
-impl Default for SizednessResult {
-    fn default() -> Self {
-        SizednessResult::ZeroSized
-    }
-}
-
 impl SizednessResult {
     /// Take the least upper bound of `self` and `rhs`.
     pub(crate) fn join(self, rhs: Self) -> Self {
@@ -85,20 +80,20 @@ impl ops::BitOr for SizednessResult {
 
 impl ops::BitOrAssign for SizednessResult {
     fn bitor_assign(&mut self, rhs: SizednessResult) {
-        *self = self.join(rhs)
+        *self = self.join(rhs);
     }
 }
 
 /// An analysis that computes the sizedness of all types.
 ///
 /// * For types with known sizes -- for example pointers, scalars, etc... --
-/// they are assigned `NonZeroSized`.
+///   they are assigned `NonZeroSized`.
 ///
 /// * For compound structure types with one or more fields, they are assigned
-/// `NonZeroSized`.
+///   `NonZeroSized`.
 ///
 /// * For compound structure types without any fields, the results of the bases
-/// are `join`ed.
+///   are `join`ed.
 ///
 /// * For type parameters, `DependsOnTypeParam` is assigned.
 #[derive(Debug)]
@@ -110,7 +105,7 @@ pub(crate) struct SizednessAnalysis<'ctx> {
     sized: HashMap<TypeId, SizednessResult>,
 }
 
-impl<'ctx> SizednessAnalysis<'ctx> {
+impl SizednessAnalysis<'_> {
     fn consider_edge(kind: EdgeKind) -> bool {
         // These are the only edges that can affect whether a type is
         // zero-sized or not.
@@ -132,7 +127,7 @@ impl<'ctx> SizednessAnalysis<'ctx> {
         id: TypeId,
         result: SizednessResult,
     ) -> ConstrainResult {
-        trace!("inserting {:?} for {:?}", result, id);
+        trace!("inserting {result:?} for {id:?}");
 
         if let SizednessResult::ZeroSized = result {
             return ConstrainResult::Same;
@@ -155,9 +150,9 @@ impl<'ctx> SizednessAnalysis<'ctx> {
     }
 
     fn forward(&mut self, from: TypeId, to: TypeId) -> ConstrainResult {
-        match self.sized.get(&from).cloned() {
+        match self.sized.get(&from) {
             None => ConstrainResult::Same,
-            Some(r) => self.insert(to, r),
+            Some(r) => self.insert(to, *r),
         }
     }
 }
@@ -196,17 +191,14 @@ impl<'ctx> MonotoneFramework for SizednessAnalysis<'ctx> {
         self.ctx
             .allowlisted_items()
             .iter()
-            .cloned()
             .filter_map(|id| id.as_type_id(self.ctx))
             .collect()
     }
 
     fn constrain(&mut self, id: TypeId) -> ConstrainResult {
-        trace!("constrain {:?}", id);
+        trace!("constrain {id:?}");
 
-        if let Some(SizednessResult::NonZeroSized) =
-            self.sized.get(&id).cloned()
-        {
+        if let Some(SizednessResult::NonZeroSized) = self.sized.get(&id) {
             trace!("    already know it is not zero-sized");
             return ConstrainResult::Same;
         }
@@ -327,7 +319,7 @@ impl<'ctx> MonotoneFramework for SizednessAnalysis<'ctx> {
     {
         if let Some(edges) = self.dependencies.get(&id) {
             for ty in edges {
-                trace!("enqueue {:?} into worklist", ty);
+                trace!("enqueue {ty:?} into worklist");
                 f(*ty);
             }
         }

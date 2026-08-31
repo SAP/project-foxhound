@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "serviceWorkerManager",
   "@mozilla.org/serviceworkers/manager;1",
-  "nsIServiceWorkerManager"
+  Ci.nsIServiceWorkerManager
 );
 
 if (Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_CONTENT) {

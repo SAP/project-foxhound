@@ -1,0 +1,95 @@
+From 79a71884e55cab2bbdb2ca0c59cfb2c14104af11 Mon Sep 17 00:00:00 2001
+From: Mike Hommey <mh+mozilla@glandium.org>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 14/29] Build fixes for iOS
+
+---
+ src/cairo-quartz-font.c  | 7 +++++++
+ src/cairo-quartz-image.h | 2 --
+ src/cairo-quartz.h       | 9 +++++++++
+ 3 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/src/cairo-quartz-font.c b/src/cairo-quartz-font.c
+index b1a6fd7f5..9c0eac367 100644
+--- a/src/cairo-quartz-font.c
++++ b/src/cairo-quartz-font.c
+@@ -65,7 +65,9 @@
+ 
+ /* These are private functions */
+ static bool (*CGContextGetAllowsFontSmoothingPtr) (CGContextRef) = NULL;
++#ifdef CAIRO_HAS_QUARTZ_ATSUFONTID
+ static ATSFontRef (*FMGetATSFontRefFromFontPtr) (FMFont iFont) = NULL;
++#endif /* CAIRO_HAS_QUARTZ_ATSUFONTID */
+ 
+ static cairo_bool_t _cairo_quartz_font_symbol_lookup_done = FALSE;
+ /* Cairo's transformations assume a unit-scaled font. */
+@@ -92,7 +94,9 @@ quartz_font_ensure_symbols(void)
+     CGContextGetAllowsFontSmoothingPtr =
+ 	dlsym (RTLD_DEFAULT, "CGContextGetAllowsFontSmoothing");
+ 
++#ifdef CAIRO_HAS_QUARTZ_ATSUFONTID
+     FMGetATSFontRefFromFontPtr = dlsym(RTLD_DEFAULT, "FMGetATSFontRefFromFont");
++#endif /* CAIRO_HAS_QUARTZ_ATSUFONTID */
+ 
+     _cairo_quartz_font_symbol_lookup_done = TRUE;
+ }
+@@ -806,6 +810,7 @@ _cairo_quartz_scaled_font_get_ct_font (cairo_scaled_font_t *abstract_font)
+ /*
+  * compat with old ATSUI backend
+  */
++#ifdef CAIRO_HAS_QUARTZ_ATSUFONTID
+ 
+ /**
+  * cairo_quartz_font_face_create_for_atsu_font_id:
+@@ -849,3 +854,5 @@ cairo_atsui_font_face_create_for_atsu_font_id (ATSUFontID font_id)
+ {
+     return cairo_quartz_font_face_create_for_atsu_font_id (font_id);
+ }
++
++#endif /* CAIRO_HAS_QUARTZ_ATSUFONTID */
+diff --git a/src/cairo-quartz-image.h b/src/cairo-quartz-image.h
+index 0dd5abb4f..9e8409c11 100644
+--- a/src/cairo-quartz-image.h
++++ b/src/cairo-quartz-image.h
+@@ -40,8 +40,6 @@
+ 
+ #if CAIRO_HAS_QUARTZ_IMAGE_SURFACE
+ 
+-#include <Carbon/Carbon.h>
+-
+ CAIRO_BEGIN_DECLS
+ 
+ cairo_public cairo_surface_t *
+diff --git a/src/cairo-quartz.h b/src/cairo-quartz.h
+index 14482424a..d79d1c102 100644
+--- a/src/cairo-quartz.h
++++ b/src/cairo-quartz.h
+@@ -40,7 +40,14 @@
+ 
+ #if CAIRO_HAS_QUARTZ_SURFACE
+ 
++#if CAIRO_HAS_QUARTZ_CORE_GRAPHICS
++#include <CoreGraphics/CoreGraphics.h>
++#include <CoreText/CoreText.h>
++#endif
++
++#if CAIRO_HAS_QUARTZ_APPLICATION_SERVICES
+ #include <ApplicationServices/ApplicationServices.h>
++#endif
+ 
+ CAIRO_BEGIN_DECLS
+ 
+@@ -69,8 +76,10 @@ cairo_quartz_surface_get_image (cairo_surface_t *surface);
+ cairo_public cairo_font_face_t *
+ cairo_quartz_font_face_create_for_cgfont (CGFontRef font);
+ 
++#if CAIRO_HAS_QUARTZ_ATSUFONTID
+ cairo_public cairo_font_face_t *
+ cairo_quartz_font_face_create_for_atsu_font_id (ATSUFontID font_id);
++#endif /* CAIRO_HAS_QUARTZ_ATSUFONTID */
+ 
+ #endif /* CAIRO_HAS_QUARTZ_FONT */
+ 
+-- 
+2.53.0
+

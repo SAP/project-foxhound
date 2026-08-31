@@ -117,6 +117,10 @@
   outline: 0 !important;
 }
 
+.computed-other-property-selector {
+  color: var(--theme-body-color);
+}
+
 .computed-other-property-value::before {
   content: "";
   display: inline-block;

@@ -25,7 +25,6 @@ formautofill.creditcards:
       - autofill@lists.mozilla.org
       - passwords-dev@mozilla.org
     expires: never
-    telemetry_mirror: FORMAUTOFILL_CREDITCARDS_AUTOFILL_PROFILES_COUNT
 
 formautofill:
   form_submission_heuristic:
@@ -42,12 +41,14 @@ formautofill:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1902180
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1933866
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1969173
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1999871
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2041172
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1874829#c4
     notification_emails:
       - autofill@lists.mozilla.org
       - passwords-dev@mozilla.org
-    expires: 148
+    expires: 160
 
   iframe_layout_detection:
     type: event
@@ -109,7 +110,6 @@ formautofill:
       - autofill@lists.mozilla.org
       - passwords-dev@mozilla.org
     expires: never
-    telemetry_mirror: FORMAUTOFILL_AVAILABILITY
 
   prompt_shown_os_reauth:
     type: event
@@ -197,7 +197,6 @@ address:
           The flowId.
         type: string
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Show_CaptureDoorhanger
 
   show_update_doorhanger:
     type: event
@@ -211,7 +210,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Show_UpdateDoorhanger
 
   show_edit_doorhanger:
     type: event
@@ -225,7 +223,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Show_EditDoorhanger
 
   save_capture_doorhanger:
     type: event
@@ -239,7 +236,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Save_CaptureDoorhanger
 
   save_update_doorhanger:
     type: event
@@ -253,7 +249,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Save_UpdateDoorhanger
 
   save_edit_doorhanger:
     type: event
@@ -267,7 +262,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Save_EditDoorhanger
 
   update_capture_doorhanger:
     type: event
@@ -281,7 +275,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Update_CaptureDoorhanger
 
   update_update_doorhanger:
     type: event
@@ -295,7 +288,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Update_UpdateDoorhanger
 
   update_edit_doorhanger:
     type: event
@@ -309,7 +301,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Update_EditDoorhanger
 
   cancel_capture_doorhanger:
     type: event
@@ -323,7 +314,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Cancel_CaptureDoorhanger
 
   cancel_update_doorhanger:
     type: event
@@ -337,7 +327,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Cancel_UpdateDoorhanger
 
   cancel_edit_doorhanger:
     type: event
@@ -351,7 +340,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Cancel_EditDoorhanger
 
   disable_capture_doorhanger:
     type: event
@@ -365,7 +353,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Disable_CaptureDoorhanger
 
   disable_update_doorhanger:
     type: event
@@ -379,7 +366,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Disable_UpdateDoorhanger
 
   disable_edit_doorhanger:
     type: event
@@ -393,7 +379,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Disable_EditDoorhanger
 
   pref_capture_doorhanger:
     type: event
@@ -407,7 +392,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Pref_CaptureDoorhanger
 
   pref_update_doorhanger:
     type: event
@@ -421,7 +405,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Pref_UpdateDoorhanger
 
   pref_edit_doorhanger:
     type: event
@@ -435,7 +418,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_Pref_EditDoorhanger
 
   learn_more_capture_doorhanger:
     type: event
@@ -449,7 +431,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_LearnMore_CaptureDoorhanger
 
   learn_more_update_doorhanger:
     type: event
@@ -463,7 +444,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_LearnMore_UpdateDoorhanger
 
   learn_more_edit_doorhanger:
     type: event
@@ -477,7 +457,6 @@ address:
     expires: never
     extra_keys: *address_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Address_LearnMore_EditDoorhanger
 
   show_manage:
     type: event
@@ -499,7 +478,6 @@ address:
           The `value` of the event. Mirrors to the Legacy Telemetry
           event's `value` parameter.
         type: string
-    telemetry_mirror: Address_Show_Manage
 
   add_manage:
     type: event
@@ -512,7 +490,6 @@ address:
     notification_emails: *address_manage_emails
     expires: never
     extra_keys: *address_manage_extra
-    telemetry_mirror: Address_Add_Manage
 
   delete_manage:
     type: event
@@ -525,7 +502,6 @@ address:
     notification_emails: *address_manage_emails
     expires: never
     extra_keys: *address_manage_extra
-    telemetry_mirror: Address_Delete_Manage
 
   show_entry_manage:
     type: event
@@ -538,7 +514,6 @@ address:
     notification_emails: *address_manage_emails
     expires: never
     extra_keys: *address_manage_extra
-    telemetry_mirror: Address_ShowEntry_Manage
 
   edit_manage:
     type: event
@@ -551,7 +526,6 @@ address:
     notification_emails: *address_manage_emails
     expires: never
     extra_keys: *address_manage_extra
-    telemetry_mirror: Address_Edit_Manage
 
   detected_address_form:
     type: event
@@ -611,7 +585,6 @@ address:
         description: >
           country result
         type: string
-    telemetry_mirror: Address_Detected_AddressForm
 
   popup_shown_address_form:
     type: event
@@ -635,7 +608,6 @@ address:
         description: >
           Name of the field being affected by the method, filled when method is `popup_shown` or `filled_modified`.
         type: string
-    telemetry_mirror: Address_PopupShown_AddressForm
 
   filled_address_form:
     type: event
@@ -687,7 +659,6 @@ address:
         description: >
           country result
         type: string
-    telemetry_mirror: Address_Filled_AddressForm
 
   filled_on_fields_update_address_form:
     type: event
@@ -827,7 +798,6 @@ address:
         description: >
           Name of the field being affected by the method
         type: string
-    telemetry_mirror: Address_FilledModified_AddressForm
 
   submitted_address_form:
     type: event
@@ -880,7 +850,6 @@ address:
         description: >
           country result
         type: string
-    telemetry_mirror: Address_Submitted_AddressForm
 
   cleared_address_form:
     type: event
@@ -904,7 +873,6 @@ address:
         description: >
           Name of the field being affected by the method
         type: string
-    telemetry_mirror: Address_Cleared_AddressForm
 
   detected_address_form_ext:
     type: event
@@ -957,7 +925,6 @@ address:
         description: >
           telephone
         type: string
-    telemetry_mirror: Address_Detected_AddressFormExt
 
   filled_address_form_ext:
     type: event
@@ -972,7 +939,6 @@ address:
     notification_emails: *address_detected_ext_emails
     expires: never
     extra_keys: *address_detected_ext_extra
-    telemetry_mirror: Address_Filled_AddressFormExt
 
   submitted_address_form_ext:
     type: event
@@ -987,7 +953,6 @@ address:
     notification_emails: *address_detected_ext_emails
     expires: never
     extra_keys: *address_detected_ext_extra
-    telemetry_mirror: Address_Submitted_AddressFormExt
 
 creditcard:
   show_capture_doorhanger:
@@ -1018,7 +983,6 @@ creditcard:
           The flowId.
         type: string
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Show_CaptureDoorhanger
 
   show_update_doorhanger:
     type: event
@@ -1032,7 +996,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Show_UpdateDoorhanger
 
   save_capture_doorhanger:
     type: event
@@ -1046,7 +1009,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Save_CaptureDoorhanger
 
   save_update_doorhanger:
     type: event
@@ -1060,7 +1022,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Save_UpdateDoorhanger
 
   update_capture_doorhanger:
     type: event
@@ -1074,7 +1035,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Update_CaptureDoorhanger
 
   update_update_doorhanger:
     type: event
@@ -1088,7 +1048,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Update_UpdateDoorhanger
 
   cancel_capture_doorhanger:
     type: event
@@ -1102,7 +1061,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Cancel_CaptureDoorhanger
 
   cancel_update_doorhanger:
     type: event
@@ -1116,7 +1074,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Cancel_UpdateDoorhanger
 
   disable_capture_doorhanger:
     type: event
@@ -1130,7 +1087,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Disable_CaptureDoorhanger
 
   disable_update_doorhanger:
     type: event
@@ -1144,7 +1100,6 @@ creditcard:
     expires: never
     extra_keys: *creditcard_show_extra
     no_lint: [COMMON_PREFIX]
-    telemetry_mirror: Creditcard_Disable_UpdateDoorhanger
 
   show_manage:
     type: event
@@ -1173,7 +1128,6 @@ creditcard:
           The `value` of the event. Mirrors to the Legacy Telemetry
           event's `value` parameter.
         type: string
-    telemetry_mirror: Creditcard_Show_Manage
 
   add_manage:
     type: event
@@ -1187,7 +1141,6 @@ creditcard:
     notification_emails: *creditcard_manage_emails
     expires: never
     extra_keys: *creditcard_manage_extra
-    telemetry_mirror: Creditcard_Add_Manage
 
   delete_manage:
     type: event
@@ -1201,7 +1154,6 @@ creditcard:
     notification_emails: *creditcard_manage_emails
     expires: never
     extra_keys: *creditcard_manage_extra
-    telemetry_mirror: Creditcard_Delete_Manage
 
   show_entry_manage:
     type: event
@@ -1215,7 +1167,6 @@ creditcard:
     notification_emails: *creditcard_manage_emails
     expires: never
     extra_keys: *creditcard_manage_extra
-    telemetry_mirror: Creditcard_ShowEntry_Manage
 
   edit_manage:
     type: event
@@ -1229,7 +1180,6 @@ creditcard:
     notification_emails: *creditcard_manage_emails
     expires: never
     extra_keys: *creditcard_manage_extra
-    telemetry_mirror: Creditcard_Edit_Manage
 
   detected_cc_form_v2:
     type: event
@@ -1286,7 +1236,6 @@ creditcard:
         description: >
           Name of the field being affected by the method. Used by `popup_shown` and `filled_modified` methods.
         type: string
-    telemetry_mirror: Creditcard_Detected_CcFormV2
 
   popup_shown_cc_form_v2:
     type: event
@@ -1300,7 +1249,6 @@ creditcard:
     notification_emails: *creditcard_detected_emails
     expires: never
     extra_keys: *creditcard_detected_extra
-    telemetry_mirror: Creditcard_PopupShown_CcFormV2
 
   filled_cc_form_v2:
     type: event
@@ -1314,7 +1262,6 @@ creditcard:
     notification_emails: *creditcard_detected_emails
     expires: never
     extra_keys: *creditcard_detected_extra
-    telemetry_mirror: Creditcard_Filled_CcFormV2
 
   filled_on_fields_update_cc_form_v2:
     type: event
@@ -1367,7 +1314,6 @@ creditcard:
     notification_emails: *creditcard_detected_emails
     expires: never
     extra_keys: *creditcard_detected_extra
-    telemetry_mirror: Creditcard_FilledModified_CcFormV2
 
   submitted_cc_form_v2:
     type: event
@@ -1381,7 +1327,6 @@ creditcard:
     notification_emails: *creditcard_detected_emails
     expires: never
     extra_keys: *creditcard_detected_extra
-    telemetry_mirror: Creditcard_Submitted_CcFormV2
 
   cleared_cc_form_v2:
     type: event
@@ -1395,7 +1340,6 @@ creditcard:
     notification_emails: *creditcard_detected_emails
     expires: never
     extra_keys: *creditcard_detected_extra
-    telemetry_mirror: Creditcard_Cleared_CcFormV2
 
   detected_cc_number_fields_count:
     type: labeled_counter
@@ -1447,44 +1391,6 @@ creditcard:
           "autofill" - when autofilling credit cards
         type: string
 
-formautofill.ml:
-  field_infer_result:
-    type: event
-    description: >
-      Captures the result from both ML-based model and existing heuristics for autofill field classification.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1928369
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1928369
-    notification_emails:
-      - autofill@lists.mozilla.org
-    expires: never
-    extra_keys:
-      infer_field_name:
-        description: The inferred result by the existing autofill heuristics.
-        type: string
-      infer_reason:
-        description: The inference method. Possible values are `autocomplete`, `fathom`, `regex-heuristic`, or `update-heuristic`.
-        type: string
-      is_valid_section:
-        description: Whether the inferred field is in a valid credit card or address section.
-        type: boolean
-      fathom_infer_label:
-        description: The inferred result by the Fathom model.
-        type: string
-      fathom_infer_score:
-        description: The score of the inferred result by the Fathom model.
-        type: string
-      ml_revision:
-        description: The revision for the ML autofill model.
-        type: string
-      ml_infer_label:
-        description: The inferred result by the autofill ML model.
-        type: string
-      ml_infer_score:
-        description: The score of the inferred result by the autofill ML model.
-        type: string
-
 formautofill.addresses:
   autofill_profiles_count:
     type: quantity
@@ -1501,4 +1407,3 @@ formautofill.addresses:
       - passwords-dev@mozilla.org
     expires: never
     unit: address autofill profiles
-    telemetry_mirror: FORMAUTOFILL_ADDRESSES_AUTOFILL_PROFILES_COUNT

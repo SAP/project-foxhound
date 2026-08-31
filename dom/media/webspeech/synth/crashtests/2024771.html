@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+function go() {
+  let voices = speechSynthesis.getVoices();
+  if (voices.length === 0) {
+    speechSynthesis.onvoiceschanged = go;
+    return;
+  }
+  speechSynthesis.onvoiceschanged = null;
+
+  let teresa = voices.find(v => v.voiceURI === "urn:moz-tts:fake:teresa");
+  if (!teresa) {
+    document.documentElement.removeAttribute("class");
+    return;
+  }
+
+  let utt = new SpeechSynthesisUtterance("x");
+  utt.voice = teresa;
+
+  utt.onstart = () => {
+    setTimeout(() => {
+      speechSynthesis.pause();
+    }, 0);
+  };
+
+  utt.onpause = () => {
+    speechSynthesis.cancel();
+    try {
+      FuzzingFunctions.cycleCollect();
+      FuzzingFunctions.cycleCollect();
+      FuzzingFunctions.garbageCollect();
+      FuzzingFunctions.cycleCollect();
+      FuzzingFunctions.cycleCollect();
+    } catch(e) {}
+    document.documentElement.removeAttribute("class");
+  };
+
+  speechSynthesis.speak(utt);
+}
+window.onload = go;
+</script>
+</body>
+</html>

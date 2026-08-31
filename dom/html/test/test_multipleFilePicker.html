@@ -27,7 +27,7 @@ foo.addEventListener('click', _ => {
 });
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(SpecialPowers.wrap(window).browsingContext);
+MockFilePicker.init();
 
 let pickerCount = 0;
 

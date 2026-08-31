@@ -1,0 +1,15 @@
+{
+  "label": "sales-crowd.jp",
+  "bugs": {
+    "1902400": {
+      "issue": "unsupported-warning",
+      "matches": ["*://sales-crowd.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

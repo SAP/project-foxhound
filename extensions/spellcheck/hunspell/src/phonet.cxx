@@ -27,18 +27,16 @@
                 Porting from Aspell to Hunspell using C-like structs
 */
 
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <ctype.h>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
+#include <cctype>
 
 #include "csutil.hxx"
 #include "phonet.hxx"
 
 void init_phonet_hash(phonetable& parms) {
-  for (int i = 0; i < HASHSIZE; i++) {
-    parms.hash[i] = -1;
-  }
+  memset(parms.hash, 0xff, HASHSIZE * sizeof(int));
 
   for (int i = 0; parms.rules[i][0] != '\0'; i += 2) {
     /**  set hash value  **/
@@ -70,14 +68,13 @@ static int myisalpha(char ch) {
 /*  convert string to uppercase before this call       */
 std::string phonet(const std::string& inword, phonetable& parms) {
 
-  int i, k = 0, p, z;
-  int k0, n0, p0 = -333;
+  int i, k = 0, p, z, k0, n0, p0 = -333;
   char c;
-  typedef unsigned char uchar;
+  using uchar = unsigned char;
 
   size_t len = inword.size();
   if (len > MAXPHONETUTF8LEN)
-    return std::string();
+    return {};
   char word[MAXPHONETUTF8LEN + 1];
   strncpy(word, inword.c_str(), MAXPHONETUTF8LEN);
   word[MAXPHONETUTF8LEN] = '\0';
@@ -98,19 +95,19 @@ std::string phonet(const std::string& inword, phonetable& parms) {
         const char*s = parms.rules[n].c_str();
         s++; /**  important for (see below)  "*(s-1)"  **/
 
-        while (*s != '\0' && word[i + k] == *s && !isdigit((unsigned char)*s) &&
-               strchr("(-<^$", *s) == NULL) {
+        while (*s != '\0' && word[i + k] == *s && !isdigit((unsigned char)*s) && strchr("(-<^$", *s) == nullptr) {
           k++;
           s++;
         }
         if (*s == '(') {
           /**  check letters in "(..)"  **/
           if (myisalpha(word[i + k])  // ...could be implied?
-              && strchr(s + 1, word[i + k]) != NULL) {
+              && strchr(s + 1, word[i + k]) != nullptr) {
             k++;
-            while (*s != ')')
+            while (*s && *s != ')')
               s++;
-            s++;
+            if (*s == ')')
+              s++;
           }
         }
         p0 = (int)*s;
@@ -147,16 +144,13 @@ std::string phonet(const std::string& inword, phonetable& parms) {
               p0 = 5;
               s = parms.rules[n0].c_str();
               s++;
-              while (*s != '\0' && word[i + k0] == *s &&
-                     !isdigit((unsigned char)*s) &&
-                     strchr("(-<^$", *s) == NULL) {
+              while (*s != '\0' && word[i + k0] == *s && !isdigit((unsigned char)*s) && strchr("(-<^$", *s) == nullptr) {
                 k0++;
                 s++;
               }
               if (*s == '(') {
                 /**  check letters  **/
-                if (myisalpha(word[i + k0]) &&
-                    strchr(s + 1, word[i + k0]) != NULL) {
+                if (myisalpha(word[i + k0]) && strchr(s + 1, word[i + k0]) != nullptr) {
                   k0++;
                   while (*s != ')' && *s != '\0')
                     s++;
@@ -204,10 +198,7 @@ std::string phonet(const std::string& inword, phonetable& parms) {
 
           /**  replace string  **/
           s = parms.rules[n + 1].c_str();
-          p0 = (!parms.rules[n].empty() &&
-                strchr(parms.rules[n].c_str() + 1, '<') != NULL)
-                   ? 1
-                   : 0;
+          p0 = (!parms.rules[n].empty() && strchr(parms.rules[n].c_str() + 1, '<') != nullptr) ? 1 : 0;
           if (p0 == 1 && z == 0) {
             /**  rule with '<' is used  **/
             if (!target.empty() && *s != '\0' &&
@@ -238,8 +229,7 @@ std::string phonet(const std::string& inword, phonetable& parms) {
             }
             /**  new "actual letter"  **/
             c = *s;
-            if (!parms.rules[n].empty() &&
-                strstr(parms.rules[n].c_str() + 1, "^^") != NULL) {
+            if (!parms.rules[n].empty() && strstr(parms.rules[n].c_str() + 1, "^^") != nullptr) {
               if (c != '\0') {
                 target.push_back(c);
               }

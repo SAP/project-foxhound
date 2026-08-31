@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.crashes
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import mozilla.components.lib.crash.store.CrashReportCache
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.lib.crash.store.TimeInMillis
@@ -53,7 +51,7 @@ class SettingsCrashReportCache(private val settings: Settings) : CrashReportCach
         CrashReportOption.Never
     }
 
-    override suspend fun setReportOption(option: CrashReportOption) = withContext(Dispatchers.IO) {
+    override suspend fun setReportOption(option: CrashReportOption) {
         settings.crashReportChoice = option.toString()
     }
 }

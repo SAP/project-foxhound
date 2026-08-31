@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +13,7 @@ class ErrorResult;
 
 namespace dom {
 struct GPUComputePassDescriptor;
+enum class PredefinedColorSpace : uint8_t;
 template <typename T>
 class Sequence;
 using GPUExtent3D = RangeEnforcedUnsignedLongSequenceOrGPUExtent3DDict;
@@ -57,6 +57,9 @@ ffi::WGPUStencilFaceState ConvertStencilFaceState(
 
 ffi::WGPUDepthStencilState ConvertDepthStencilState(
     const dom::GPUDepthStencilState& aDesc);
+
+ffi::WGPUPredefinedColorSpace ConvertPredefinedColorSpace(
+    const dom::PredefinedColorSpace& aColorSpace);
 
 mozilla::Maybe<mozilla::Buffer<uint32_t>> GetDynamicOffsetsFromArray(
     const dom::Uint32Array& aDynamicOffsetsData,

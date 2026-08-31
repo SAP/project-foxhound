@@ -5,19 +5,22 @@
 package org.mozilla.gecko.media;
 
 import android.util.Log;
+import androidx.annotation.OptIn;
+import androidx.media3.common.C;
+import androidx.media3.common.Format;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.decoder.DecoderInputBuffer;
+import androidx.media3.exoplayer.BaseRenderer;
+import androidx.media3.exoplayer.ExoPlaybackException;
+import androidx.media3.exoplayer.FormatHolder;
+import androidx.media3.exoplayer.source.SampleStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import org.mozilla.geckoview.BuildConfig;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.BaseRenderer;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.C;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.ExoPlaybackException;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.Format;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.FormatHolder;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.RendererCapabilities;
-import org.mozilla.thirdparty.com.google.android.exoplayer2.decoder.DecoderInputBuffer;
 
+@OptIn(markerClass = UnstableApi.class)
 public abstract class GeckoHlsRendererBase extends BaseRenderer {
   protected static final int QUEUED_INPUT_SAMPLE_DURATION_THRESHOLD = 1000000; // 1sec
   protected final FormatHolder mFormatHolder = new FormatHolder();
@@ -60,7 +63,7 @@ public abstract class GeckoHlsRendererBase extends BaseRenderer {
 
   private DecoderInputBuffer mBufferForRead =
       new DecoderInputBuffer(DecoderInputBuffer.BUFFER_REPLACEMENT_MODE_NORMAL);
-  private final DecoderInputBuffer mFlagsOnlyBuffer = DecoderInputBuffer.newFlagsOnlyInstance();
+  private final DecoderInputBuffer mNoDataBuffer = DecoderInputBuffer.newNoDataInstance();
 
   protected void assertTrue(final boolean condition) {
     if (DEBUG && !condition) {
@@ -198,10 +201,14 @@ public abstract class GeckoHlsRendererBase extends BaseRenderer {
       mInitialized = true;
     } catch (final OutOfMemoryError e) {
       throw ExoPlaybackException.createForRenderer(
-          new RuntimeException(e),
+          e,
+          getName(),
           getIndex(),
           mFormats.isEmpty() ? null : getFormat(mFormats.size() - 1),
-          RendererCapabilities.FORMAT_HANDLED);
+          C.FORMAT_HANDLED,
+          null,
+          false,
+          ExoPlaybackException.ERROR_CODE_DECODER_INIT_FAILED);
     }
   }
 
@@ -232,7 +239,7 @@ public abstract class GeckoHlsRendererBase extends BaseRenderer {
     // Read data from HlsMediaSource
     int result = C.RESULT_NOTHING_READ;
     try {
-      result = readSource(mFormatHolder, mBufferForRead, false);
+      result = readSource(mFormatHolder, mBufferForRead, 0);
     } catch (final Exception e) {
       Log.e(LOGTAG, "[feedInput] Exception when readSource :", e);
       return false;
@@ -275,16 +282,12 @@ public abstract class GeckoHlsRendererBase extends BaseRenderer {
   }
 
   private void readFormat() throws ExoPlaybackException {
-    mFlagsOnlyBuffer.clear();
-    final int result = readSource(mFormatHolder, mFlagsOnlyBuffer, true);
+    mNoDataBuffer.clear();
+    final int result =
+        readSource(mFormatHolder, mNoDataBuffer, /* readFlags= */ SampleStream.FLAG_REQUIRE_FORMAT);
     if (result == C.RESULT_FORMAT_READ) {
       onInputFormatChanged(mFormatHolder.format);
     }
-  }
-
-  @Override
-  protected void onEnabled(final boolean joining) {
-    // Do nothing.
   }
 
   @Override
@@ -304,7 +307,8 @@ public abstract class GeckoHlsRendererBase extends BaseRenderer {
   }
 
   @Override
-  protected synchronized void onPositionReset(final long positionUs, final boolean joining) {
+  protected synchronized void onPositionReset(
+      final long positionUs, final boolean joining, final boolean sampleStreamIsResetToKeyFrame) {
     if (DEBUG) {
       Log.d(LOGTAG, "onPositionReset : positionUs = " + positionUs);
     }

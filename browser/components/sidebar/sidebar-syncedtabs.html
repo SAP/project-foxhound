@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src resource: chrome:; object-src 'none'; img-src data: chrome:;"
+      content="default-src resource: chrome:; object-src 'none'; img-src data: chrome: moz-remote-image:;"
     />
     <meta name="color-scheme" content="light dark" />
     <title data-l10n-id="sidebar-syncedtabs-title"></title>
@@ -43,6 +43,8 @@
       src="chrome://browser/content/sidebar/sidebar-syncedtabs.mjs"
     ></script>
     <script src="chrome://browser/content/contentTheme.js"></script>
+    <script src="chrome://global/content/globalOverlay.js"></script>
+    <script src="chrome://global/content/editMenuOverlay.js"></script>
   </head>
 
   <body>

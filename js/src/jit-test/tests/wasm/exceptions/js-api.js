@@ -97,6 +97,13 @@ assertErrorMessage(
   /first argument must be a WebAssembly.Tag/
 );
 
+// Per spec, creating a new wasm exception with a JSTag value is rejected.
+assertErrorMessage(
+  () => new WebAssembly.Exception(WebAssembly.JSTag, [42]),
+  TypeError,
+  /cannot wrap a WebAssembly.JSTag exception/
+);
+
 const { tag1, tag2, tag3, tag4, tag5, tag6, tag7, tag8, tag9 } = wasmEvalText(
   `(module
      (tag (export "tag1") (param))
@@ -151,6 +158,16 @@ assertErrorMessage(
   TypeError,
   /second argument must be an object/
 );
+
+// WebAssembly.Global getter and setter both reject non-exposable types.
+{
+  const inst = wasmEvalText(`(module
+    (global (export "g") (mut nullexnref) (ref.null noexn))
+  )`);
+  const g = inst.exports.g;
+  assertErrorMessage(() => g.value, TypeError, /cannot pass value to or from JS/);
+  assertErrorMessage(() => { g.value = null; }, TypeError, /cannot pass value to or from JS/);
+}
 
 // Exnref cannot cross the JS/wasm boundary as a function parameter.
 var inst = wasmEvalText(`

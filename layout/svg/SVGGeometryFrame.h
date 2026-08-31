@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +7,8 @@
 
 #include "gfxMatrix.h"
 #include "gfxRect.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DisplaySVGItem.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/ISVGDisplayableFrame.h"
 #include "nsIFrame.h"
 
@@ -66,7 +64,7 @@ class SVGGeometryFrame final : public nsIFrame, public ISVGDisplayableFrame {
             nsIFrame* aPrevInFlow) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
@@ -92,13 +90,14 @@ class SVGGeometryFrame final : public nsIFrame, public ISVGDisplayableFrame {
                 imgDrawingParams& aImgParams) override;
   nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
   void ReflowSVG() override;
-  void NotifySVGChanged(uint32_t aFlags) override;
+  void NotifySVGChanged(ChangeFlags aFlags) override;
   SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
-                              uint32_t aFlags) override;
+                              SVGBBoxFlags aFlags) override;
   bool IsDisplayContainer() override { return false; }
 
-  enum { eRenderFill = 1, eRenderStroke = 2 };
-  void Render(gfxContext* aContext, uint32_t aRenderComponents,
+  enum class RenderFlag { Fill, Stroke };
+  using RenderFlags = EnumSet<RenderFlag>;
+  void Render(gfxContext* aContext, RenderFlags aRenderComponents,
               const gfxMatrix& aTransform, imgDrawingParams& aImgParams);
 
   bool CreateWebRenderCommands(

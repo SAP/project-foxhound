@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Emulation of prefers-reduced-motion (bug 1916589)</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+<style>
+  #test {
+    animation: spin 1s linear infinite;
+    opacity: 1;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  }
+
+  @keyframes spin {
+    from {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+</style>
+<div id="test"></div>
+<script>
+  function getTestElementComputedStyle() {
+    return getComputedStyle(document.getElementById("test"));
+  }
+
+  function getAnimationName() {
+    return getTestElementComputedStyle().animationName;
+  }
+
+  const bc = SpecialPowers.wrap(window).browsingContext.top;
+  ok('prefersReducedMotionOverride' in bc, "API should exist");
+  is(bc.prefersReducedMotionOverride, "none", "Override shouldn't be active.");
+
+  const initialExpectedName = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "spin";
+
+  const animationName = getAnimationName();
+  info(`Original animationName is "${animationName}"`);
+  is(animationName, initialExpectedName, `base animationName is '${initialExpectedName}'`);
+
+  bc.prefersReducedMotionOverride = "reduce";
+  is(getAnimationName(), "none", `Active emulation works, animationName is now 'none'`);
+
+  bc.prefersReducedMotionOverride = "no-preference";
+  is(getAnimationName(), "spin", `Setting to 'no-preference' reverts to original, animationName is back to 'spin'`);
+
+  bc.prefersReducedMotionOverride = "none";
+  is(getAnimationName(), initialExpectedName, `Clearing the override restores the original preference state`);
+</script>
+</attachment>

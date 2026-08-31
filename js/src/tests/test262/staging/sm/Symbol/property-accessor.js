@@ -4,9 +4,7 @@
  */
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js, deepEqual.js]
-flags:
-  - noStrict
+includes: [compareArray.js]
 description: |
   pending
 esid: pending
@@ -31,19 +29,18 @@ for (var i = 0; i < 9; i++) {
     assert.sameValue(obj[sym] = i, i);
     expected.push(i);
 }
-assert.deepEqual(sets, expected);
+assert.compareArray(sets, expected);
 
 // increment operator
 gets = 0;
 sets = [];
 assert.sameValue(obj[sym]++, 1);
-assert.deepEqual(sets, [2]);
+assert.compareArray(sets, [2]);
 
 // assignment
 gets = 0;
 sets = [];
 assert.sameValue(obj[sym] *= 12, 12);
-assert.deepEqual(sets, [12]);
-
+assert.compareArray(sets, [12]);
 
 reportCompare(0, 0);

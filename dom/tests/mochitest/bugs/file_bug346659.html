@@ -1,0 +1,69 @@
+<script>
+function assert(cond, msg) {
+  console.assert(cond, msg);
+  if (!cond) {
+    (window.opener || window.parent).postMessage({ type: 'error', msg }, '*');
+    throw new Error(msg);
+  }
+}
+
+function assert_if(when, cond, msg) {
+  if (when) assert(cond, msg);
+}
+
+addEventListener("load", () => {
+  const params = new URLSearchParams(location.search);
+  const testId = params.get("testId");
+  const type = params.get("type");
+  const method = params.get("method") || 'load';
+  const childHost = params.get("childHost") || location.host;
+
+  assert(type == 'popup' || type == 'iframe', 'type must be popup or iframe');
+  assert(method == 'write' || method == 'load', 'method must be write or load');
+  assert(testId != null && !isNaN(testId), 'must provide testId');
+  assert_if(method == 'write', !params.get("childHost"), 'childHost does not apply for method=write');
+
+  let childURL = new URL(`bug346659-echoer.html?${testId}`, document.baseURI);
+  childURL.host = childHost;
+
+  if (method == 'write') {
+    childURL = new URL('about:blank');
+  }
+
+  let childWindow;
+  if (type == 'popup') {
+    childWindow = window.open(childURL);
+  } else if (type == 'iframe') {
+    const iframe = document.createElement("iframe");
+    iframe.src = childURL;
+    document.body.append(iframe);
+    childWindow = iframe.contentWindow;
+  }
+  childWindow.x = testId;
+
+  if (method == 'write') {
+    try {
+      childWindow.document.write(`
+        <script>
+          const testNum = decodeURIComponent(window.location.search.substring(1));
+          (window.opener || window.parent).postMessage("${testId} - " + window.x, "*");
+          window.close();
+        </scr`+`ipt>
+      `)
+    } catch (e) {
+      if (e.name != "SecurityError" || e.code != 18) {
+        assert(false, `Unknown error ${e.name}: ${e.message}`);
+      }
+      // Security error on cross-site write() is fine
+      childWindow.close();
+    }
+  }
+})
+
+addEventListener("message", ({ data }) => {
+  // forward further to test
+  (window.opener || window.parent).postMessage(data, "*");
+  // We expect to be done once we received a message
+  window.close();
+})
+</script>

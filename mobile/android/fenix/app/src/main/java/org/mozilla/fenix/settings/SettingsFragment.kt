@@ -5,32 +5,32 @@
 package org.mozilla.fenix.settings
 
 import android.annotation.SuppressLint
-import android.content.ActivityNotFoundException
 import android.content.DialogInterface
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.edit
-import androidx.core.net.toUri
 import androidx.fragment.app.activityViewModels
-import androidx.lifecycle.Observer
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavDirections
 import androidx.navigation.findNavController
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.SwitchPreference
+import androidx.preference.SwitchPreferenceCompat
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -41,49 +41,69 @@ import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
 import mozilla.components.feature.addons.ui.AddonFilePicker
+import mozilla.components.feature.ipprotection.store.IPProtectionStore
+import mozilla.components.feature.ipprotection.store.state.isEligible
+import mozilla.components.service.fxrelay.eligibility.Eligible
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.android.view.showKeyboard
+import mozilla.components.support.utils.BuildManufacturerChecker
+import mozilla.components.support.utils.DateTimeProvider
+import mozilla.components.support.utils.DefaultDateTimeProvider
+import mozilla.components.support.utils.ext.navigateToDefaultBrowserAppsSettings
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.Addons
 import org.mozilla.fenix.GleanMetrics.CookieBanners
 import org.mozilla.fenix.GleanMetrics.Events
+import org.mozilla.fenix.GleanMetrics.SettingsSearch
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
 import org.mozilla.fenix.GleanMetrics.Translations
+import org.mozilla.fenix.GleanMetrics.Vpn
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.databinding.AmoCollectionOverrideDialogBinding
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.navigateToNotificationsSettings
-import org.mozilla.fenix.ext.openSetDefaultBrowserOption
+import org.mozilla.fenix.ext.openInNewTab
 import org.mozilla.fenix.ext.requireComponents
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
+import org.mozilla.fenix.ext.showToolbarWithIconButton
+import org.mozilla.fenix.home.maybeNavigateToSystemSetToDefaultAction
+import org.mozilla.fenix.home.maybeRequestDefaultBrowserPrompt
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.perf.ProfilerViewModel
+import org.mozilla.fenix.perf.ProfilerViewModelFactory
 import org.mozilla.fenix.settings.account.AccountUiView
 import org.mozilla.fenix.snackbar.FenixSnackbarDelegate
 import org.mozilla.fenix.snackbar.SnackbarBinding
 import org.mozilla.fenix.utils.Settings
+import java.lang.ref.WeakReference
 import kotlin.system.exitProcess
+import mozilla.components.ui.icons.R as iconsR
 import org.mozilla.fenix.GleanMetrics.Settings as SettingsMetrics
 
+/**
+ * Main settings screen.
+ */
 @Suppress("LargeClass", "TooManyFunctions")
-class SettingsFragment : PreferenceFragmentCompat() {
+class SettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment {
 
     private val args by navArgs<SettingsFragmentArgs>()
     private lateinit var accountUiView: AccountUiView
     private lateinit var addonFilePicker: AddonFilePicker
     private lateinit var components: Components
-    private val profilerViewModel: ProfilerViewModel by activityViewModels()
+    private val profilerViewModel: ProfilerViewModel by activityViewModels {
+        ProfilerViewModelFactory(requireActivity().application)
+    }
     private val snackbarBinding = ViewBoundFeatureWrapper<SnackbarBinding>()
+    private val dateTimeProvider: DateTimeProvider by lazy { DefaultDateTimeProvider() }
 
     @VisibleForTesting
     internal val accountObserver = object : AccountObserver {
@@ -146,7 +166,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 getString(R.string.pref_key_search_bookmarks),
                 getString(R.string.pref_key_search_browsing_history),
                 getString(R.string.pref_key_show_clipboard_suggestions),
-                getString(R.string.pref_key_show_search_engine_shortcuts),
                 getString(R.string.pref_key_open_links_in_a_private_tab),
                 getString(R.string.pref_key_sync_logins),
                 getString(R.string.pref_key_sync_bookmarks),
@@ -155,7 +174,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 getString(R.string.pref_key_show_search_suggestions_in_private),
                 getString(R.string.pref_key_show_trending_search_suggestions),
                 getString(R.string.pref_key_show_recent_search_suggestions),
-                getString(R.string.pref_key_show_shortcuts_suggestions),
             )
         }
 
@@ -171,17 +189,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
             }
 
-        profilerViewModel.getProfilerState().observe(
-            this,
-            Observer<Boolean> {
-                updateProfilerUI(it)
-            },
-        )
-
         findPreference<Preference>(
             getPreferenceKey(R.string.pref_key_translation),
         )?.isVisible = FxNimbus.features.translations.value().globalSettingsEnabled &&
             components.core.store.state.translationEngine.isEngineSupported == true
+
+        findPreference<Preference>(
+            getPreferenceKey(R.string.pref_key_page_summaries),
+        )?.isVisible = components.settings.shakeToSummarizeFeatureFlagEnabled
+
+        findPreference<Preference>(
+            getPreferenceKey(R.string.pref_key_ai_controls),
+        )?.isVisible = requireComponents.settings.aiControlsFeatureFlagEnabled
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -190,6 +209,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                profilerViewModel.isProfilerActive.collect { isActive ->
+                    updateProfilerUI(isActive)
+                }
+            }
+        }
+
         snackbarBinding.set(
             feature = SnackbarBinding(
                 context = requireContext(),
@@ -215,23 +243,37 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         val title = nimbusValidation.settingsTitle
         val suffix = nimbusValidation.settingsPunctuation
+        val toolbarTitle = "$title$suffix"
 
-        showToolbar("$title$suffix")
+        val showSearch = !args.searchInProgress
+
+        if (showSearch) {
+            showToolbarWithIconButton(
+                title = toolbarTitle,
+                contentDescription = getString(R.string.settings_search_button_content_description),
+                iconResId = iconsR.drawable.mozac_ic_search_24,
+                onClick = {
+                    SettingsSearch.opened.record()
+                    findNavController().navigate(R.id.action_settingsFragment_to_settingsSearchFragment)
+                },
+            )
+        } else {
+            showToolbar(toolbarTitle)
+        }
 
         // Account UI state is updated as part of `onCreate`. To not do it twice in a row, we only
         // update it here if we're not going through the `onCreate->onStart->onResume` lifecycle chain.
         update(
             shouldUpdateAccountUIState = !creatingFragment,
-            settings = requireContext().settings(),
+            settings = requireComponents.settings,
         )
 
         requireView().findViewById<RecyclerView>(R.id.recycler_view)
             ?.hideInitialScrollBar(viewLifecycleOwner.lifecycleScope)
 
         args.preferenceToScrollTo?.let {
-            scrollToPreference(it)
+            scrollToPreferenceWithHighlight(it)
         }
-
         // Consider finish of `onResume` to be the point at which we consider this fragment as 'created'.
         creatingFragment = false
     }
@@ -300,7 +342,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     @SuppressLint("InflateParams")
-    @Suppress("ComplexMethod", "LongMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     override fun onPreferenceTreeClick(preference: Preference): Boolean {
         // Hide the scrollbar so the animation looks smoother
         val recyclerView = requireView().findViewById<RecyclerView>(R.id.recycler_view)
@@ -348,6 +390,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToSavedLoginsAuthFragment()
             }
 
+            resources.getString(R.string.pref_key_email_masks) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToEmailMasksSettingsFragment()
+            }
+
             resources.getString(R.string.pref_key_credit_cards) -> {
                 SettingsMetrics.autofill.record()
                 SettingsFragmentDirections.actionSettingsFragmentToAutofillSettingFragment()
@@ -366,6 +412,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToTranslationsSettingsFragment()
             }
 
+            resources.getString(R.string.pref_key_page_summaries) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToPageSummariesSettingsFragment()
+            }
+
+            resources.getString(R.string.pref_key_ai_controls) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToAiControlsFragment()
+            }
+
             // Privacy and security preferences
             resources.getString(R.string.pref_key_private_browsing) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToPrivateBrowsingFragment()
@@ -373,6 +427,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             resources.getString(R.string.pref_key_https_only_settings) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToHttpsOnlyFragment()
+            }
+
+            resources.getString(R.string.pref_key_ip_protection_settings) -> {
+                Vpn.settingsPageTapped.record(Vpn.SettingsPageTappedExtra(entrypoint = "Settings"))
+                SettingsFragmentDirections.actionSettingsFragmentToIpProtectionFragment(
+                    entrypoint = FenixFxAEntryPoint.IPProtectionSettings,
+                )
             }
 
             resources.getString(R.string.pref_key_tracking_protection_settings) -> {
@@ -424,7 +485,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     .inflate(R.layout.amo_collection_override_dialog, null)
 
                 val binding = AmoCollectionOverrideDialogBinding.bind(dialogView)
-                AlertDialog.Builder(context).apply {
+                MaterialAlertDialogBuilder(context).apply {
                     setTitle(context.getString(R.string.preferences_customize_extension_collection))
                     setView(dialogView)
                     setNegativeButton(R.string.customize_addon_collection_cancel) { dialog: DialogInterface, _ ->
@@ -432,8 +493,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     }
 
                     setPositiveButton(R.string.customize_addon_collection_ok) { _, _ ->
-                        context.settings().overrideAmoUser = binding.customAmoUser.text.toString()
-                        context.settings().overrideAmoCollection =
+                        context.components.settings.overrideAmoUser = binding.customAmoUser.text.toString()
+                        context.components.settings.overrideAmoCollection =
                             binding.customAmoCollection.text.toString()
 
                         Toast.makeText(
@@ -450,8 +511,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         )
                     }
 
-                    binding.customAmoCollection.setText(context.settings().overrideAmoCollection)
-                    binding.customAmoUser.setText(context.settings().overrideAmoUser)
+                    binding.customAmoCollection.setText(context.components.settings.overrideAmoCollection)
+                    binding.customAmoUser.setText(context.components.settings.overrideAmoUser)
                     binding.customAmoUser.requestFocus()
                     binding.customAmoUser.showKeyboard()
                     create().withCenterAlignedButtons()
@@ -464,6 +525,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToLinkSharingFragment()
             }
 
+            resources.getString(R.string.pref_key_remote_improvements) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToRemoteImprovementsFragment()
+            }
+
             resources.getString(R.string.pref_key_open_links_in_apps) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToOpenLinksInAppsFragment()
             }
@@ -472,23 +537,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToOpenDownloadsSettingsFragment()
             }
 
+            resources.getString(R.string.pref_key_firefox_labs) -> {
+                SettingsMetrics.firefoxLabs.record()
+                SettingsFragmentDirections.actionSettingsFragmentToFirefoxLabsFragment()
+            }
+
             resources.getString(R.string.pref_key_sync_debug) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToSyncDebugFragment()
             }
 
             // About preferences
             resources.getString(R.string.pref_key_rate) -> {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, SupportUtils.RATE_APP_URL.toUri()))
-                } catch (e: ActivityNotFoundException) {
-                    // Device without the play store installed.
-                    // Opening the play store website.
-                    (activity as HomeActivity).openToBrowserAndLoad(
-                        searchTermOrURL = SupportUtils.FENIX_PLAY_STORE_URL,
-                        newTab = true,
-                        from = BrowserDirection.FromSettings,
-                    )
-                }
+                components.playStoreReviewPromptController.tryLaunchPlayStoreReview(requireActivity(), ::openInNewTab)
                 null
             }
 
@@ -502,18 +562,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
 
             // Only displayed when secret settings are enabled
-            resources.getString(R.string.pref_key_secret_debug_info) -> {
-                SettingsFragmentDirections.actionSettingsFragmentToSecretInfoSettingsFragment()
-            }
-
-            // Only displayed when secret settings are enabled
             resources.getString(R.string.pref_key_nimbus_experiments) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToNimbusExperimentsFragment()
             }
 
             // Only displayed when secret settings are enabled
             resources.getString(R.string.pref_key_start_profiler) -> {
-                if (profilerViewModel.getProfilerState().value == true) {
+                if (profilerViewModel.isProfilerActive.value) {
                     SettingsFragmentDirections.actionSettingsFragmentToStopProfilerDialog()
                 } else {
                     SettingsFragmentDirections.actionSettingsFragmentToStartProfilerDialog()
@@ -542,7 +597,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        preferenceRemoteDebugging?.isVisible = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+        preferenceRemoteDebugging?.isVisible = true
         preferenceRemoteDebugging?.setOnPreferenceChangeListener<Boolean> { preference, newValue ->
             settings.preferences.edit { putBoolean(preference.key, newValue) }
             requireComponents.core.engine.settings.remoteDebuggingEnabled = newValue
@@ -566,11 +621,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 getPreferenceKey(R.string.pref_key_debug_settings),
             )?.isVisible = showSecretDebugMenuThisSession
             findPreference<Preference>(
-                getPreferenceKey(R.string.pref_key_secret_debug_info),
-            )?.isVisible = showSecretDebugMenuThisSession
-            findPreference<Preference>(
                 getPreferenceKey(R.string.pref_key_sync_debug),
             )?.isVisible = showSecretDebugMenuThisSession
+            findPreference<Preference>(
+                getPreferenceKey(R.string.pref_key_firefox_labs),
+            )?.isVisible = enableFirefoxLabs
             preferenceStartProfiler?.isVisible = showSecretDebugMenuThisSession &&
                 (components.core.engine.profiler?.isProfilerActive() != null)
         }
@@ -583,6 +638,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         )
         setupGeckoLogsPreference(settings)
         setupHttpsOnlyPreferences(settings)
+        setupIPProtectionPreferences(components.ipProtection.store)
         setupNotificationPreference(
             NotificationManagerCompat.from(requireContext()).areNotificationsEnabled(),
         )
@@ -592,7 +648,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setupHomepagePreference(settings)
         setupTrackingProtectionPreference(settings)
         setupDnsOverHttpsPreference(settings)
+        setupEmailMaskPreference(settings, requireComponents)
     }
+
+    private val setToDefaultPromptRequestLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            with(requireContext()) {
+                maybeNavigateToSystemSetToDefaultAction(result.resultCode, components.settings, dateTimeProvider) {
+                    navigateToDefaultBrowserAppsSettings(BuildManufacturerChecker())
+                }
+            }
+        }
 
     /**
      * For >=Q -> Use new RoleManager API to show in-app browser switching dialog.
@@ -601,7 +667,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
      */
     private fun getClickListenerForMakeDefaultBrowser(): Preference.OnPreferenceClickListener {
         return Preference.OnPreferenceClickListener {
-            activity?.openSetDefaultBrowserOption()
+            maybeRequestDefaultBrowserPrompt(
+                WeakReference((requireActivity() as? HomeActivity)),
+                setToDefaultPromptRequestLauncher,
+            )
             true
         }
     }
@@ -733,10 +802,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     @VisibleForTesting
+    internal fun setupEmailMaskPreference(settings: Settings, components: Components) {
+        findPreference<Preference>(getPreferenceKey(R.string.pref_key_email_masks))?.let {
+            it.isVisible = settings.isEmailMaskFeatureEnabled &&
+                    components.relayEligibilityStore.state.eligibilityState is Eligible
+        }
+    }
+
+    @VisibleForTesting
     internal fun setupCookieBannerPreference(settings: Settings) {
         FxNimbus.features.cookieBanners.recordExposure()
         if (settings.shouldShowCookieBannerUI) {
-            with(requirePreference<SwitchPreference>(R.string.pref_key_cookie_banner_private_mode)) {
+            with(requirePreference<SwitchPreferenceCompat>(R.string.pref_key_cookie_banner_private_mode)) {
                 isVisible = settings.shouldShowCookieBannerUI
 
                 onPreferenceChangeListener = object : SharedPreferenceUpdater() {
@@ -788,6 +865,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     getString(R.string.preferences_https_only_on_private)
                 else -> null
             }
+    }
+
+    @VisibleForTesting
+    internal fun setupIPProtectionPreferences(ipProtectionStore: IPProtectionStore) {
+        findPreference<IPProtectionPreference>(
+            getPreferenceKey(R.string.pref_key_ip_protection_settings),
+        )?.apply {
+            isVisible = ipProtectionStore.state.isEligible
+            showBetaBadge = FxNimbus.features.ipProtection.value().showBetaBadge
+        }
     }
 
     private fun updateProfilerUI(profilerStatus: Boolean) {

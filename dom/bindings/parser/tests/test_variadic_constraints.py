@@ -18,7 +18,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Should have thrown on variadic argument followed by required " "argument.",
+        "Should have thrown on variadic argument followed by required argument.",
     )
 
     parser = parser.reset()
@@ -37,7 +37,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Should have thrown on variadic argument followed by optional " "argument.",
+        "Should have thrown on variadic argument followed by optional argument.",
     )
 
     parser = parser.reset()
@@ -57,7 +57,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Should have thrown on variadic argument explicitly flagged as " "optional.",
+        "Should have thrown on variadic argument explicitly flagged as optional.",
     )
 
     parser = parser.reset()

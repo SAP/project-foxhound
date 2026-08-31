@@ -39,11 +39,10 @@ loader.lazyRequireGetter(
   true
 );
 
-const MDN_LINK_PARAMS = new URLSearchParams({
-  utm_source: "devtools",
-  utm_medium: "inspector-compatibility",
-  utm_campaign: "default",
-});
+const { getMdnLinkParams } = ChromeUtils.importESModule(
+  "resource://devtools/shared/mdn.mjs"
+);
+const MDN_LINK_PARAMS = getMdnLinkParams("inspector-compatibility");
 
 class IssueItem extends PureComponent {
   static get propTypes() {

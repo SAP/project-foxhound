@@ -13,7 +13,6 @@
 #include "nsCOMArray.h"
 #include "nsTArray.h"
 #include "nsTHashMap.h"
-#include "mozilla/Attributes.h"
 
 #define ZIPWRITER_CONTRACTID "@mozilla.org/zipwriter;1"
 #define ZIPWRITER_CID \

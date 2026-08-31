@@ -36,6 +36,10 @@ add_task(async function () {
     "resource://devtools/client/shared/vendor/react-redux.js",
     "resource://devtools/client/shared/vendor/redux.js",
     "resource://devtools/client/shared/redux/subscriber.js",
+    "resource://devtools/client/shared/redux/middleware/ignore.js",
+    "resource://devtools/client/shared/redux/middleware/promise.js",
+    "resource://devtools/client/shared/redux/middleware/thunk.js",
+    "resource://devtools/client/shared/redux/middleware/wait-service.js",
 
     // React components loaded from Toolbox and Panel BrowserLoaders
     "resource://devtools/client/shared/components/menu/MenuButton.js",

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AudioSession type fixture (HTMLMediaElement + AudioContext + Web Speech)</title>
+</head>
+<body>
+<video id="audible_video" src="gizmo.mp4" loop></video>
+<script>
+let speechUtt;
+window.startSpeech = () => new Promise(resolve => {
+  speechUtt = new SpeechSynthesisUtterance("audio session type compute walk");
+  // Fake synth voice (available when media.webspeech.synth.test is
+  // enabled) that fires "start" but never auto-fires "end", so the
+  // utterance stays audible until cancelSpeech() is called.
+  speechUtt.lang = "it-IT-noend";
+  speechUtt.addEventListener("start", () => resolve(), { once: true });
+  speechSynthesis.speak(speechUtt);
+});
+window.cancelSpeech = () => {
+  if (speechUtt) {
+    speechSynthesis.cancel();
+    speechUtt = null;
+  }
+};
+</script>
+</body>
+</html>

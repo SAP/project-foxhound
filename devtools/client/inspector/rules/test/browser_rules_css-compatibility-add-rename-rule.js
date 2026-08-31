@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -14,7 +13,7 @@ const TEST_URI = `
 <style>
   body {
     user-select: none;
-    text-decoration-skip: none;
+    stroke-color: red;
     clip: auto;
   }
 </style>
@@ -31,8 +30,8 @@ const TEST_DATA_INITIAL = [
           value: "none",
           expected: COMPATIBILITY_TOOLTIP_MESSAGE.default,
         },
-        "text-decoration-skip": {
-          value: "none",
+        "stroke-color": {
+          value: "red",
           expected: COMPATIBILITY_TOOLTIP_MESSAGE.experimental,
         },
         clip: {
@@ -59,8 +58,8 @@ const TEST_DATA_ADD_RULE = [
           value: "none",
           expected: COMPATIBILITY_TOOLTIP_MESSAGE.default,
         },
-        "text-decoration-skip": {
-          value: "none",
+        "stroke-color": {
+          value: "red",
           expected: COMPATIBILITY_TOOLTIP_MESSAGE.experimental,
         },
         clip: {
@@ -86,8 +85,8 @@ const TEST_DATA_RENAME_RULE = [
         "background-color": {
           value: "green",
         },
-        "text-decoration-skip": {
-          value: "none",
+        "stroke-color": {
+          value: "red",
           expected: COMPATIBILITY_TOOLTIP_MESSAGE.experimental,
         },
         clip: {

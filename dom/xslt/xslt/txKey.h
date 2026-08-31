@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txKey_h__
-#define txKey_h__
+#ifndef txKey_h_
+#define txKey_h_
 
 #include "nsTHashtable.h"
 #include "txExpandedNameMap.h"
 #include "txList.h"
 #include "txNodeSet.h"
-#include "txXSLTPatterns.h"
 #include "txXMLUtils.h"
+#include "txXSLTPatterns.h"
 
 class txPattern;
 class Expr;
@@ -69,11 +68,12 @@ struct txIndexedKeyHashEntry : public PLDHashEntryHdr {
   using KeyType = const txIndexedKeyHashKey&;
   using KeyTypePointer = const txIndexedKeyHashKey*;
 
-  explicit txIndexedKeyHashEntry(KeyTypePointer aKey)
-      : mKey(*aKey), mIndexed(false) {}
+  explicit txIndexedKeyHashEntry(KeyTypePointer aKey) : mKey(*aKey) {}
 
   txIndexedKeyHashEntry(const txIndexedKeyHashEntry& entry)
-      : mKey(entry.mKey), mIndexed(entry.mIndexed) {}
+      : mKey(entry.mKey),
+        mIndexed(entry.mIndexed),
+        mIsBeingIndexed(entry.mIsBeingIndexed) {}
 
   bool KeyEquals(KeyTypePointer aKey) const;
 
@@ -84,7 +84,8 @@ struct txIndexedKeyHashEntry : public PLDHashEntryHdr {
   enum { ALLOW_MEMMOVE = true };
 
   txIndexedKeyHashKey mKey;
-  bool mIndexed;
+  bool mIndexed = false;
+  bool mIsBeingIndexed = false;
 };
 
 using txIndexedKeyHash = nsTHashtable<txIndexedKeyHashEntry>;
@@ -183,4 +184,4 @@ class txKeyHash {
   RefPtr<txNodeSet> mEmptyNodeSet;
 };
 
-#endif  // txKey_h__
+#endif  // txKey_h_

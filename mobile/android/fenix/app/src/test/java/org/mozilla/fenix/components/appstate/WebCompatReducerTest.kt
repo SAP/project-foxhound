@@ -34,7 +34,7 @@ class WebCompatReducerTest {
 
     @Test
     fun `WHEN the web compat state is reset THEN the web compat data in AppState should be reset`() {
-        val expected = AppState()
+        val expected = AppState(webCompatState = null)
         val actual = WebCompatReducer.reduce(
             state = AppState(
                 webCompatState = WebCompatState(
@@ -42,6 +42,7 @@ class WebCompatReducerTest {
                     enteredUrl = "www.mozilla.org/3",
                     reason = "slow",
                     problemDescription = "problem description",
+                    includeEtpBlockedUrls = true,
                 ),
             ),
             action = WebCompatAction.WebCompatStateReset,
@@ -58,6 +59,7 @@ class WebCompatReducerTest {
                 enteredUrl = "www.mozilla.org/3",
                 reason = "slow",
                 problemDescription = "problem description",
+                includeEtpBlockedUrls = true,
             ),
             snackbarState = SnackbarState.None(),
         )

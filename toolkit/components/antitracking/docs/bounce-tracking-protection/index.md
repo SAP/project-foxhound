@@ -20,8 +20,8 @@ Mozilla also has a [specification position on Bounce Tracking Mitigations](https
 
 BTP detects bounce trackers by looking at navigation timing. It establishes the
 concept of an extended navigation which can encompass a chain of short-lived
-redirects. These short-lived redirects are commonly used by bounce trackers. If
-a site accesses cookies or storage in such a short-lived redirect it gets added
+redirects. These short-lived redirects are commonly used by bounce trackers. Any
+site that appears as an intermediary in such a short-lived redirect gets added
 to a classification list. Classified bounce trackers have their cookies, site
 data and cache purged periodically. In order to avoid false positives and
 purging data that may be important for users, sites which the user directly
@@ -52,14 +52,17 @@ classDiagram
     class BounceTrackingProtection {
         - mBounceTrackingPurgeTimer: nsITimer
         - mStorage: BounceTrackingProtectionStorage
-        - mStorageObserver: BounceTrackingStorageObserver
     }
 
     note for BounceTrackingProtection "Singleton class to manage the feature."
 
-    class BounceTrackingProtectionStorage {
-        - mStateGlobal : nsTHashMap&lt;OriginAttributesHashKey, RefPtr&lt;BounceTrackingStateGlobal&gt;&gt;
-        - mDatabaseFile : nsCOMPtr&lt;nsIFile&gt;
+    class BounceTrackingAllowList {
+        <!-- [...] -->
+    }
+
+    class nsIBTPExceptionList {
+        <!-- Bug 1930704: Empty classes lead to build errors. Adding a comment inside the class fixes the issue -->
+        <!-- [...] -->
     }
 
     class BounceTrackingStateGlobal {
@@ -71,18 +74,16 @@ classDiagram
     note for BounceTrackingStateGlobal "Manages the global maps for bounce tracker candidates
                                         and user activation for a specific OriginAttributes dict."
 
-    class BounceTrackingStorageObserver {
-        <!-- [...] -->
+    class BounceTrackingProtectionStorage {
+        - mStateGlobal : nsTHashMap&lt;OriginAttributesHashKey, RefPtr&lt;BounceTrackingStateGlobal&gt;&gt;
+        - mDatabaseFile : nsCOMPtr&lt;nsIFile&gt;
     }
 
-    note for BounceTrackingStorageObserver "Listens to cookie/storage access
-                                            and notifies BounceTrackingState"
 
     class BounceTrackingRecord {
         - mInitialHost: nsAutoCString
         - mBounceHosts: nsTHashSet&lt;nsCStringHashKey&gt;
         - mFinalHost: nsAutoCString
-        - mStorageAccessHosts: nsTHashSet&lt;nsCStringHashKey&gt;
     }
 
     note for BounceTrackingRecord "Encapsulates the per-tab navigation state
@@ -100,14 +101,6 @@ classDiagram
         - mBounceTrackingState: BounceTrackingState
     }
 
-    class nsIBTPExceptionList {
-        <!-- Bug 1930704: Empty classes lead to build errors. Adding a comment inside the class fixes the issue -->
-        <!-- [...] -->
-    }
-
-    class BounceTrackingAllowList {
-        <!-- [...] -->
-    }
 
     class DocumentLoadListener{
         <!-- [...] -->
@@ -117,11 +110,9 @@ classDiagram
                                          and therefore a BounceTrackingState"
 
     BounceTrackingProtection *-- BounceTrackingProtectionStorage
-    BounceTrackingProtection *-- BounceTrackingStorageObserver
     BounceTrackingState --o BounceTrackingProtection
     BounceTrackingState --> BounceTrackingProtection : RecordStatefulBounces() on extended nav end
     BounceTrackingState *-- BounceTrackingRecord
-    BounceTrackingStorageObserver --> BounceTrackingState : Storage access signals
     BrowsingContextWebProgress *-- BounceTrackingState
     BounceTrackingStateGlobal --* BounceTrackingProtectionStorage
     BounceTrackingStateGlobal --> BounceTrackingProtectionStorage : Persists state changes in storage.
@@ -146,14 +137,9 @@ fully disabled and `1` is fully enabled. See
 [nsIBounceTrackingProtection.idl](https://searchfox.org/mozilla-central/rev/ec342a3d481d9ac3324d1041e05eefa6b61392d2/toolkit/components/antitracking/bouncetrackingprotection/nsIBounceTrackingProtection.idl#10-42)
 for a full list of options.
 
-When classifying sites, BTP also looks at whether the site accessed cookies or
-storage in the redirect. Whether cookies or storage access is considered is
-controlled by the `privacy.bounceTrackingProtection.requireStatefulBounces`
-pref.
-
 # Nimbus Integration
 A subset of the BTP prefs can be controlled via Nimbus. See definition here:
-[FeatureManifest.yaml](https://searchfox.org/mozilla-central/source/toolkit/components/nimbus/FeatureManifest.yaml#:~:text=bounceTrackingProtection).
+[FeatureManifest.yaml](https://searchfox.org/firefox-main/source/toolkit/components/nimbus/FeatureManifest.yaml#:~:text=bounceTrackingProtection).
 
 ## Logging
 

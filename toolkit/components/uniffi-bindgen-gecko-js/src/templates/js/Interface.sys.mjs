@@ -77,19 +77,30 @@ export class {{ int.self_type.ffi_converter }} extends FfiConverter {
 //
 // Export the FFIConverter object to make external types work.
 export class {{ int.self_type.ffi_converter }} extends FfiConverter {
-    // lift works like a regular interface
-    static lift(value) {
-        const opts = {};
-        opts[constructUniffiObject] = value;
-        return new {{ int.js_class_name }}(opts);
+    static lift(handle) {
+        if (handle instanceof UniFFIPointer) {
+          // Rust handle.  Construct an object from it
+          const opts = {};
+          opts[constructUniffiObject] = handle;
+          return new {{ int.js_class_name }}(opts);
+        } else {
+          // JS handle.  Get the JS object from the callback handler
+          return {{ vtable.js_handler_var }}.takeCallbackObj(handle)
+        }
     }
 
-    // lower treats value like a callback interface
     static lower(value) {
-        if (!(value instanceof {{ int.interface_base_class.name }})) {
-            throw new UniFFITypeError("expected '{{ int.interface_base_class.name }}' subclass");
+        const ptr = value[uniffiObjectPtr];
+        if (ptr instanceof UniFFIPointer) {
+          // Rust-implemented interface, return the ptr.  The C++ code will clone it.
+          return ptr;
+        } else {
+          // JS-implemented interface, store the object in the handle map and return the handle
+          if (!(value instanceof {{ int.interface_base_class.name }})) {
+              throw new UniFFITypeError("expected '{{ int.interface_base_class.name }}' subclass");
+          }
+          return {{ vtable.js_handler_var }}.storeCallbackObj(value)
         }
-        return {{ vtable.js_handler_var }}.storeCallbackObj(value)
     }
 
     // lowerReceiver is used when calling methods on an interface we got from Rust, 
@@ -103,11 +114,16 @@ export class {{ int.self_type.ffi_converter }} extends FfiConverter {
     }
 
     static read(dataStream) {
-        return this.lift(dataStream.readPointer({{ int.object_id }}));
+        return this.lift(dataStream.readHandleOrPointer({{ int.object_id }}))
     }
 
     static write(dataStream, value) {
-        dataStream.writePointer({{ int.object_id }}, this.lower(value));
+        if (value[uniffiObjectPtr] instanceof UniFFIPointer) {
+          // Rust-implemented interface, return the ptr.
+          dataStream.writePointer({{ int.object_id }}, this.lower(value));
+        } else {
+          dataStream.writeInt64(this.lower(value))
+        }
     }
 
     static computeSize(value) {

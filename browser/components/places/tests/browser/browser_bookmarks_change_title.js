@@ -6,33 +6,8 @@
 const TEST_URL = "about:buildconfig";
 const titleAfterFirstUpdate = "BookmarkStar title";
 
-function getToolbarNodeForItemGuid(aItemGuid) {
-  var children = document.getElementById("PlacesToolbarItems").children;
-  for (let child of children) {
-    if (aItemGuid == child._placesNode.bookmarkGuid) {
-      return child;
-    }
-  }
-  return null;
-}
-
-// Setup.
 add_setup(async function () {
-  let toolbar = document.getElementById("PersonalToolbar");
-  let wasCollapsed = toolbar.collapsed;
-
-  // Uncollapse the personal toolbar if needed.
-  if (wasCollapsed) {
-    await promiseSetToolbarVisibility(toolbar, true);
-  }
-
-  registerCleanupFunction(async () => {
-    // Collapse the personal toolbar if needed.
-    if (wasCollapsed) {
-      await promiseSetToolbarVisibility(toolbar, false);
-    }
-    await PlacesUtils.bookmarks.eraseEverything();
-  });
+  await ensureBookmarksToolbarIsVisibleAndPopulated();
 });
 
 add_task(async function test_change_title_from_BookmarkStar() {

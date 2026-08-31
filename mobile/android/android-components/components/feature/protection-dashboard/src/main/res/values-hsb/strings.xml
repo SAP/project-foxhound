@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Title shown in the protection dashboard indicating the user is protected -->
+  <string name="mozac_protections_dashboard_youre_protected">Sće škitany</string>
+  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
+    <!--
+      Label shown below the tracker count in the dashboard. The count is displayed separately
+      above this string and is used to select the correct plural form. Do not include the number in
+      the translation.
+    -->
+    <item quantity="one">Přesćěhowak, kotryž je so tutón tydźeń zablokował</item>
+    <item quantity="two">Přesćěhowakaj, kotrejž stej so tutón tydźeń zablokowałoj</item>
+    <item quantity="few">Přesćěhowaki, kotrež su so tutón tydźeń zablokowali</item>
+    <item quantity="other">Přesćěhowaki, kotrež su so tutón tydźeń zablokowali</item>
+  </plurals>
+  <plurals name="mozac_protections_dashboard_data_saved">
+    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
+    <item quantity="one">%1$d MB zalutowany</item>
+    <item quantity="two">%1$d MB zalutowanej</item>
+    <item quantity="few">%1$d MB zalutowane</item>
+    <item quantity="other">%1$d MB zalutowanych</item>
+  </plurals>
+  <!-- Section header for tracker category breakdown -->
+  <string name="protections_dashboard_where_they_came_from">Zwotkelž su přišli</string>
+  <!-- Tracker category: Advertising trackers -->
+  <string name="protections_dashboard_category_ads">Wabjenje</string>
+  <!-- Tracker category: Analytics trackers -->
+  <string name="protections_dashboard_category_analytics">Analytika</string>
+  <!-- Tracker category: Social media trackers -->
+  <string name="protections_dashboard_category_social">Socialne syće</string>
+  <!-- Tracker category: Other trackers -->
+  <string name="protections_dashboard_category_others">Druhe</string>
+  <!-- Title shown in the protection dashboard header next to the shield icon -->
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Přesćěhowaki, kotrež su so tutón tydźeń zablokowali</string>
+  <!--
+    Title shown when no trackers have been blocked yet
+    %1$s will be replaced by the app name (e.g. Firefox Focus)
+  -->
+  <string name="mozac_protections_dashboard_empty_title">%1$s přesćěhowaki blokuje, mjeztym zo přehladujeće.</string>
+  <!-- Subtitle shown when no trackers have been blocked yet -->
+  <string name="mozac_protections_dashboard_empty_subtitle">Budźeće je tu widźeć.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">%1$d přesćěhowak zablokowany wot %2$s</item>
+    <item quantity="two">%1$d přesćěhowakaj zablokowanej wot %2$s</item>
+    <item quantity="few">%1$d přesćěhowaki zablokowane wot %2$s</item>
+    <item quantity="other">%1$d přesćěhowakow zablokowane wot %2$s</item>
+  </plurals>
+</resources>

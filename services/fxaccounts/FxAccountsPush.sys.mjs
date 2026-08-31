@@ -25,7 +25,7 @@ import {
  *
  * @param [options]
  *        Object, custom options that used for testing
- * @constructor
+ * @class
  */
 export function FxAccountsPushService(options = {}) {
   this.log = log;
@@ -179,8 +179,9 @@ FxAccountsPushService.prototype = {
     this.log.trace("FxAccountsPushService _onPushMessage");
     if (!message.data) {
       // Use the empty signal to check the verification state of the account right away
-      this.log.debug("empty push message - checking account status");
-      this.fxai.checkVerificationStatus();
+      this.log.debug(
+        "empty push message, but oauth doesn't require checking account status - ignoring"
+      );
       return;
     }
     let payload = message.data.json();

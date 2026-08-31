@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html class="reftest-wait" reftest-async-scroll
+      reftest-displayport-x="0" reftest-displayport-y="0"
+      reftest-displayport-w="800" reftest-displayport-h="2000"
+      reftest-async-scroll-x="0">
+<head>
+  <title>Sticky element async scrolled after partial display list update</title>
+  <style>
+    html {
+      scrollbar-width: none;
+    }
+    body {
+      margin: 0;
+      height: 4000px;
+    }
+    #sticky {
+      position: sticky;
+      top: 0;
+    }
+    .red {
+      color: red;
+    }
+  </style>
+</head>
+<nav id="sticky">STICKY ELEMENT</nav>
+<a id="another">ANOTHER ELEMENT</a>
+<script>
+  function promiseFrame(aWindow = window) {
+    return new Promise(resolve => {
+      aWindow.requestAnimationFrame(resolve);
+    });
+  }
+  function promiseAfterPaint() {
+    return new Promise(resolve => {
+      window.addEventListener("MozAfterPaint", resolve, { once: true });
+    });
+  }
+  async function doTest() {
+    // Trigger an initial paint of the sticky item.
+    // This ensures retained-DL has something to reuse without
+    // rebuilding the sticky item.
+    sticky.classList.add("red");
+    sticky.getBoundingClientRect();
+    await promiseAfterPaint();
+
+    // Trigger a hit test on the sticky frame. Without the fix, this causes
+    // the sticky frame as being incorrectly marked as "not active".
+    document.elementFromPoint(
+      sticky.getBoundingClientRect().x + 2,
+      sticky.getBoundingClientRect().y + 2);
+    await promiseFrame();
+
+    // Make a change to the page rendering that doesn't affect the sticky item.
+    // This ensures we rebuild the WebRender display list, but
+    // not the Gecko display item, causing the WebRender display list
+    // build to observe the incorrectly stored "not active" state
+    // in the previous step.
+    another.classList.add("red");
+    // Finally, async scroll the incorrect WebRender display list
+    // and take a snapshot in that state.
+    document.documentElement.setAttribute("reftest-async-scroll-y", "200");
+    document.documentElement.classList.remove('reftest-wait');
+  }
+  document.addEventListener("MozReftestInvalidate", doTest, false);
+</script>

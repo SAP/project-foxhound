@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@ namespace layers {
 // relevant to APZ.
 //
 // There are two types of information bits propagated using this class. One
-// type is propagated "downwards" (from a process entry point like nsBaseWidget
+// type is propagated "downwards" (from a process entry point like nsIWidget
 // or BrowserChild) into deeper code that is run during complicated operations
 // like event dispatch. The other type is information that is propagated
 // "upwards", from the deeper code back to the entry point.

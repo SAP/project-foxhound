@@ -282,7 +282,7 @@
   async function testCustomInterface() {
     class SimpleElement extends MozXULElement {
       get disabled() {
-        return this.getAttribute("disabled") == "true";
+        return this.hasAttribute("disabled");
       }
 
       set disabled(val) {
@@ -345,7 +345,7 @@
     is(document.activeElement.id, "four", "Tab 3");
 
     twoElement.disabled = true;
-    is(twoElement.getAttribute("disabled"), "true", "two disabled after change");
+    ok(twoElement.hasAttribute("disabled"), "two disabled after change");
 
     synthesizeKey("VK_TAB", { shiftKey: true });
     is(document.activeElement.id, "one", "Tab 1");

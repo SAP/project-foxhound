@@ -9,11 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,15 +24,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.feature.tab.collections.TabCollection
 import org.mozilla.fenix.R
-import org.mozilla.fenix.R.drawable
 import org.mozilla.fenix.R.string
 import org.mozilla.fenix.compose.ContextualMenu
 import org.mozilla.fenix.compose.MenuItem
@@ -40,17 +41,25 @@ import org.mozilla.fenix.compose.list.ExpandableListHeader
 import org.mozilla.fenix.ext.getIconColor
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Rectangular shape with all corners rounded used to display a collapsed collection.
  */
-private val collapsedCollectionShape = RoundedCornerShape(8.dp)
+private val collapsedCollectionShape: Shape
+    @Composable
+    get() = MaterialTheme.shapes.small
 
 /**
  * Rectangular shape with only the top corners rounded used to display an expanded collection with other views
  * placed immediately below this which can be shown immediately next to it, with no visible separation.
  */
-private val expandedCollectionShape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+private val expandedCollectionShape: Shape
+    @Composable
+    get() = MaterialTheme.shapes.small.copy(
+        bottomStart = CornerSize(0.dp),
+        bottomEnd = CornerSize(0.dp),
+    )
 
 /**
  * Displays an individual [TabCollection].
@@ -86,7 +95,7 @@ fun Collection(
             )
             .height(48.dp),
         shape = if (isExpanded) expandedCollectionShape else collapsedCollectionShape,
-        colors = CardDefaults.cardColors(containerColor = FirefoxTheme.colors.layer2),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceBright),
         elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
     ) {
         Row(
@@ -95,7 +104,7 @@ fun Collection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = painterResource(drawable.ic_tab_collection),
+                painter = painterResource(iconsR.drawable.mozac_ic_collection_24),
                 contentDescription = null,
                 modifier = Modifier.padding(
                     start = 16.dp,
@@ -116,11 +125,11 @@ fun Collection(
                     Row {
                         IconButton(
                             onClick = { onCollectionShareTabsClicked(collection) },
+                            contentDescription = stringResource(string.share_button_content_description),
                         ) {
                             Icon(
-                                painter = painterResource(drawable.ic_share),
-                                contentDescription = stringResource(string.share_button_content_description),
-                                tint = FirefoxTheme.colors.iconPrimary,
+                                painter = painterResource(iconsR.drawable.mozac_ic_share_android_24),
+                                contentDescription = null,
                             )
                         }
 
@@ -128,13 +137,13 @@ fun Collection(
                             onClick = {
                                 isMenuExpanded = !isMenuExpanded
                             },
+                            contentDescription = stringResource(
+                                string.collection_menu_button_content_description,
+                            ),
                         ) {
                             Icon(
-                                painter = painterResource(drawable.ic_menu),
-                                contentDescription = stringResource(
-                                    string.collection_menu_button_content_description,
-                                ),
-                                tint = FirefoxTheme.colors.iconPrimary,
+                                painter = painterResource(iconsR.drawable.mozac_ic_ellipsis_vertical_24),
+                                contentDescription = null,
                             )
 
                             ContextualMenu(

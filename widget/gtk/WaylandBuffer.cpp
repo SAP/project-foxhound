@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,7 +89,7 @@ WaylandShmPool::~WaylandShmPool() {
 
 WaylandBuffer::WaylandBuffer(const LayoutDeviceIntSize& aSize) : mSize(aSize) {}
 
-bool WaylandBuffer::IsAttached() const {
+bool WaylandBuffer::IsAttached(const WaylandSurfaceLock& aSurfaceLock) const {
   for (const auto& transaction : mBufferTransactions) {
     if (transaction->IsAttached()) {
       return true;
@@ -99,9 +98,10 @@ bool WaylandBuffer::IsAttached() const {
   return false;
 }
 
-BufferTransaction* WaylandBuffer::GetTransaction() {
+BufferTransaction* WaylandBuffer::GetTransaction(
+    const WaylandSurfaceLock& aSurfaceLock) {
   for (const auto& transaction : mBufferTransactions) {
-    if (transaction->IsDetached()) {
+    if (transaction->CanRecycle(aSurfaceLock.GetWaylandSurface())) {
       LOGWAYLAND("WaylandBuffer::GetTransaction() [%p] reuse transaction [%d]",
                  (void*)this, (int)mBufferTransactions.Length());
       return transaction;
@@ -120,20 +120,22 @@ BufferTransaction* WaylandBuffer::GetTransaction() {
 
   LOGWAYLAND(
       "WaylandBuffer::GetTransaction() create new [%p] wl_buffer [%p] "
-      "transactions [%d] external buffer [%d]",
+      "transactions [%d] external buffer [%d] WaylandSurface [%p]",
       (void*)this, buffer, (int)mBufferTransactions.Length(),
-      !!mExternalWlBuffer);
+      !!mExternalWlBuffer, aSurfaceLock.GetWaylandSurface());
 
   auto* transaction = new BufferTransaction(this, buffer, !!mExternalWlBuffer);
   mBufferTransactions.AppendElement(transaction);
   return transaction;
 }
 
-void WaylandBuffer::RemoveTransaction(RefPtr<BufferTransaction> aTransaction) {
+void WaylandBuffer::RemoveTransaction(const WaylandSurfaceLock& aSurfaceLock,
+                                      RefPtr<BufferTransaction> aTransaction) {
   LOGWAYLAND("WaylandBuffer::RemoveTransaction() [%p]", (void*)aTransaction);
   [[maybe_unused]] bool removed =
       mBufferTransactions.RemoveElement(aTransaction);
   MOZ_DIAGNOSTIC_ASSERT(removed);
+  MOZ_DIAGNOSTIC_ASSERT(!mBufferTransactions.Contains(aTransaction));
 }
 
 void WaylandBuffer::SetExternalWLBuffer(wl_buffer* aWLBuffer) {
@@ -185,7 +187,7 @@ WaylandBufferSHM::WaylandBufferSHM(const LayoutDeviceIntSize& aSize)
 
 WaylandBufferSHM::~WaylandBufferSHM() {
   LOGWAYLAND("WaylandBufferSHM::~WaylandBufferSHM() [%p]\n", (void*)this);
-  MOZ_RELEASE_ASSERT(!IsAttached());
+  MOZ_RELEASE_ASSERT(mBufferTransactions.IsEmpty());
 }
 
 already_AddRefed<gfx::DrawTarget> WaylandBufferSHM::Lock() {
@@ -204,6 +206,7 @@ void WaylandBufferSHM::Clear() {
 #ifdef MOZ_LOGGING
 void WaylandBufferSHM::DumpToFile(const char* aHint) {
   if (!mDumpSerial) {
+    NS_WARNING("mDumpSerial is not set!");
     return;
   }
 
@@ -254,7 +257,7 @@ already_AddRefed<WaylandBufferDMABUF> WaylandBufferDMABUF::CreateRGBA(
 already_AddRefed<WaylandBufferDMABUF> WaylandBufferDMABUF::CreateExternal(
     RefPtr<DMABufSurface> aSurface) {
   const auto size =
-      LayoutDeviceIntSize(aSurface->GetWidth(), aSurface->GetWidth());
+      LayoutDeviceIntSize(aSurface->GetWidth(), aSurface->GetHeight());
   RefPtr<WaylandBufferDMABUF> buffer = new WaylandBufferDMABUF(size);
 
   LOGWAYLAND("WaylandBufferDMABUF::CreateExternal() [%p] UID %d [%d x %d]",
@@ -284,12 +287,13 @@ WaylandBufferDMABUF::WaylandBufferDMABUF(const LayoutDeviceIntSize& aSize)
 WaylandBufferDMABUF::~WaylandBufferDMABUF() {
   LOGWAYLAND("WaylandBufferDMABUF::~WaylandBufferDMABUF [%p] UID %d\n",
              (void*)this, mDMABufSurface ? mDMABufSurface->GetUID() : -1);
-  MOZ_RELEASE_ASSERT(!IsAttached());
+  MOZ_RELEASE_ASSERT(mBufferTransactions.IsEmpty());
 }
 
 #ifdef MOZ_LOGGING
 void WaylandBufferDMABUF::DumpToFile(const char* aHint) {
   if (!mDumpSerial) {
+    NS_WARNING("mDumpSerial is not set!");
     return;
   }
   nsCString filename;
@@ -331,12 +335,15 @@ wl_buffer* BufferTransaction::BufferBorrowLocked(
     const WaylandSurfaceLock& aSurfaceLock) {
   LOGWAYLAND(
       "BufferTransaction::BufferBorrow() [%p] widget [%p] WaylandSurface [%p] "
-      "(old %p) "
       "WaylandBuffer [%p]",
       this, aSurfaceLock.GetWaylandSurface()->GetLoggingWidget(),
-      aSurfaceLock.GetWaylandSurface(), mSurface.get(), mBuffer.get());
+      aSurfaceLock.GetWaylandSurface(), mBuffer.get());
 
+  MOZ_DIAGNOSTIC_ASSERT(
+      !mSurface || mSurface == aSurfaceLock.GetWaylandSurface(),
+      "Can't transfer transaction between WaylandSurfaces!");
   MOZ_DIAGNOSTIC_ASSERT(mBufferState == BufferState::Detached);
+
   mSurface = aSurfaceLock.GetWaylandSurface();
 
   // We don't take reference to this. Some compositors doesn't send
@@ -466,7 +473,7 @@ void BufferTransaction::DeleteLocked(const WaylandSurfaceLock& aSurfaceLock) {
 
   // This can destroy us
   RefPtr grip{this};
-  mBuffer->RemoveTransaction(this);
+  mBuffer->RemoveTransaction(aSurfaceLock, this);
   mBuffer = nullptr;
 }
 

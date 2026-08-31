@@ -94,7 +94,9 @@ internal class MenuButton(
         impl.onDismiss = onDismiss
     }
 
-    fun setColorFilter(@ColorInt color: Int) = impl.setColorFilter(color)
+    fun setColorFilter(
+        @ColorInt color: Int,
+    ) = impl.setColorFilter(color)
 
     /**
      * Hides the menu button.

@@ -28,17 +28,7 @@ add_task(async function test_measure() {
 
   let formHistoryMeasurement =
     Glean.browserBackup.formHistorySize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
 
-  // Compare glean vs telemetry measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.form_history_size",
-    formHistoryMeasurement,
-    "Glean and telemetry measurements for formhistory.sqlite should be equal"
-  );
-
-  // Compare glean measurements vs actual file sizes
   Assert.equal(
     formHistoryMeasurement,
     EXPECTED_FORM_HISTORY_DB_SIZE,
@@ -131,18 +121,23 @@ add_task(async function test_backup_no_saved_history() {
   };
   sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
 
-  // First, we'll try with browsing history in general being disabled.
-  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
-  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
+  Services.prefs.setBoolPref(FORM_HISTORY_CLEARED_ON_SHUTDOWN_PREF, true);
+  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
 
-  let manifestEntry = await formHistoryBackupResource.backup(
-    stagingPath,
-    sourcePath
+  Assert.ok(
+    !FormHistoryBackupResource.canBackupResource,
+    "Cannot backup form history since it is being cleared on shutdown"
   );
-  Assert.deepEqual(
-    manifestEntry,
-    null,
-    "Should have gotten back a null ManifestEntry"
+
+  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
+  Services.prefs.setBoolPref(FORM_HISTORY_CLEARED_ON_SHUTDOWN_PREF, false);
+
+  // We'll try with browsing history in general being disabled.
+  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
+
+  Assert.ok(
+    !FormHistoryBackupResource.canBackupResource,
+    "Cannot backup form history since it is being cleared on shutdown"
   );
 
   Assert.ok(
@@ -150,13 +145,15 @@ add_task(async function test_backup_no_saved_history() {
     "No sqlite connections should have been made with remember history disabled"
   );
 
-  // Now verify that the sanitize shutdown pref also prevents us from backing
-  // up form history
   Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, true);
-  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
+
+  Assert.ok(
+    FormHistoryBackupResource.canBackupResource,
+    "We should be allowed to backup this resource now"
+  );
 
   fakeConnection.backup.resetHistory();
-  manifestEntry = await formHistoryBackupResource.backup(
+  let manifestEntry = await formHistoryBackupResource.backup(
     stagingPath,
     sourcePath
   );
@@ -185,41 +182,12 @@ add_task(async function test_backup_no_saved_history() {
  */
 add_task(async function test_backup_private_browsing() {
   let sandbox = sinon.createSandbox();
-
-  let formHistoryBackupResource = new FormHistoryBackupResource();
-  let sourcePath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "FormHistoryBackupResource-source-test"
-  );
-  let stagingPath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "FormHistoryBackupResource-staging-test"
-  );
-
-  let fakeConnection = {
-    backup: sandbox.stub().resolves(true),
-    close: sandbox.stub().resolves(true),
-  };
-  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
   sandbox.stub(PrivateBrowsingUtils, "permanentPrivateBrowsing").value(true);
 
-  let manifestEntry = await formHistoryBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    null,
-    "Should have gotten back a null ManifestEntry"
-  );
-
   Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with permanent private browsing enabled"
+    !FormHistoryBackupResource.canBackupResource,
+    "Cannot backup form history since Private Browsing is enabled"
   );
-
-  await maybeRemovePath(stagingPath);
-  await maybeRemovePath(sourcePath);
 
   sandbox.restore();
 });

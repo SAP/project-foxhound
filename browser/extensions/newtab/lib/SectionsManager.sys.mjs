@@ -30,9 +30,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * `${feed_pref_name}.options`.
  */
 
-const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
+const BUILT_IN_SECTIONS = () => ({
   "feeds.section.topstories": options => ({
     id: "topstories",
+    // Remove this `pref:` block when removing legacy settings.
     pref: {
       titleString: {
         id: "home-prefs-recommended-by-header-generic",
@@ -52,16 +53,6 @@ const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
                   "home-prefs-recommended-by-option-sponsored-stories",
                 icon: "icon-info",
                 eventSource: "POCKET_SPOCS",
-              },
-            ]
-          : []),
-        ...(pocketNewtab.recentSavesEnabled
-          ? [
-              {
-                name: "showRecentSaves",
-                titleString: "home-prefs-recommended-by-option-recent-saves",
-                icon: "icon-info",
-                eventSource: "POCKET_RECENT_SAVES",
               },
             ]
           : []),
@@ -107,6 +98,7 @@ const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
   }),
   "feeds.section.highlights": () => ({
     id: "highlights",
+    // Remove this `pref:` block when removing legacy settings.
     pref: {
       titleString: {
         id: "home-prefs-recent-activity-header",

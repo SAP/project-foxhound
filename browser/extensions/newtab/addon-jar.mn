@@ -14,11 +14,27 @@ browser.jar:
 * builtin-addons/newtab/data/content/abouthomecache/page.html.template (./data/content/abouthomecache/page.html.template)
 * builtin-addons/newtab/data/content/abouthomecache/script.js.template (./data/content/abouthomecache/script.js.template)
   builtin-addons/newtab/data/data/content/assets/  (./data/content/assets/*)
+  builtin-addons/newtab/data/content/vendor.bundle.js (./data/content/vendor.bundle.js)
   builtin-addons/newtab/data/content/activity-stream.bundle.js (./data/content/activity-stream.bundle.js)
   builtin-addons/newtab/data/content/newtab-render.js (./data/content/newtab-render.js)
+  builtin-addons/newtab/data/content/remote-renderer-host.html (./data/content/remote-renderer-host.html)
+  builtin-addons/newtab/data/content/bundled-renderer-index.js (./data/content/bundled-renderer-index.js)
+  builtin-addons/newtab/data/content/bundled-renderer.css (./data/content/bundled-renderer.css)
   builtin-addons/newtab/data/css/activity-stream.css (./css/activity-stream.css)
+  builtin-addons/newtab/data/css/nova/activity-stream.css (./css/nova/activity-stream.css)
   builtin-addons/newtab/prerendered/activity-stream.html (./prerendered/activity-stream.html)
 #ifndef RELEASE_OR_BETA
   builtin-addons/newtab/prerendered/activity-stream-debug.html (./prerendered/activity-stream-debug.html)
 #endif
   builtin-addons/newtab/prerendered/activity-stream-noscripts.html (./prerendered/activity-stream-noscripts.html)
+
+# The following are resources that exist in other component folders that are
+# included in the newtab resources at build time. Specifically, these are for
+# external UI components maintained by other teams that have the ability to
+# "train-hop" with the rest of newtab.
+  builtin-addons/newtab/data/data/content/external-components/asrouter-newtab-multistage/asrouter-newtab-multistage.bundle.js (../../components/asrouter/content/components/asrouter-newtab-multistage/asrouter-newtab-multistage.bundle.js)
+  builtin-addons/newtab/data/data/content/external-components/asrouter-newtab-multistage/asrouter-newtab-multistage.css (../../components/asrouter/content/components/asrouter-newtab-multistage/asrouter-newtab-multistage.css)
+  builtin-addons/newtab/data/data/content/external-components/asrouter-newtab-message/asrouter-newtab-message.mjs (../../components/asrouter/content/components/asrouter-newtab-message/asrouter-newtab-message.mjs)
+  builtin-addons/newtab/data/data/content/external-components/asrouter-newtab-message/asrouter-newtab-message.css (../../components/asrouter/content/components/asrouter-newtab-message/asrouter-newtab-message.css)
+  builtin-addons/newtab/data/data/content/external-components/asrouter-newtab-message/ASRouterNewTabMessageChild.sys.mjs (../../components/asrouter/content/components/asrouter-newtab-message/ASRouterNewTabMessageChild.sys.mjs)
+  builtin-addons/newtab/data/data/content/external-components/asrouter-newtab-message/ASRouterNewTabMessageParent.sys.mjs (../../components/asrouter/content/components/asrouter-newtab-message/ASRouterNewTabMessageParent.sys.mjs)

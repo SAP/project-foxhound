@@ -6,7 +6,6 @@ package mozilla.components.feature.addons.menu
 
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.engine.webextension.Action
 import mozilla.components.concept.menu.candidate.AsyncDrawableMenuIcon
@@ -15,14 +14,14 @@ import mozilla.components.concept.menu.candidate.TextStyle
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
-@ExperimentalCoroutinesApi
 class WebExtensionActionMenuCandidateTest {
 
     private val baseAction = Action(
@@ -84,7 +83,7 @@ class WebExtensionActionMenuCandidateTest {
         assertTrue(candidate.containerStyle.isEnabled)
 
         assertNull(candidate.start)
-        assertTrue(candidate.end is TextMenuIcon)
+        assertIs<TextMenuIcon>(candidate.end)
 
         assertEquals(
             TextMenuIcon(
@@ -112,7 +111,7 @@ class WebExtensionActionMenuCandidateTest {
         assertEquals("action", candidate.text)
         assertFalse(candidate.containerStyle.isEnabled)
 
-        assertTrue(candidate.start is AsyncDrawableMenuIcon)
+        assertIs<AsyncDrawableMenuIcon>(candidate.start)
         assertNull(candidate.end)
 
         val start = candidate.start as AsyncDrawableMenuIcon

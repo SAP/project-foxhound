@@ -1,0 +1,62 @@
+Adds back the ability to allow just querying of file attributes to the config.
+We currently use this for shader cache rules.
+
+diff --git a/sandbox/win/src/filesystem_policy.cc b/sandbox/win/src/filesystem_policy.cc
+--- a/sandbox/win/src/filesystem_policy.cc
++++ b/sandbox/win/src/filesystem_policy.cc
+@@ -114,24 +114,27 @@ bool FileSystemPolicy::GenerateRules(con
+                           GENERIC_EXECUTE | READ_CONTROL;
+     DWORD restricted_flags = ~allowed_flags;
+     open.AddNumberMatch(IF_NOT, OpenFile::ACCESS, restricted_flags, AND);
+     open.AddNumberMatch(IF, OpenFile::OPENONLY, true, EQUAL);
+     create.AddNumberMatch(IF_NOT, OpenFile::ACCESS, restricted_flags, AND);
+     create.AddNumberMatch(IF, OpenFile::OPENONLY, true, EQUAL);
+   }
+ 
+-  if (!create.AddStringMatch(IF, OpenFile::NAME, name, CASE_INSENSITIVE) ||
+-      !policy->AddRule(IpcTag::NTCREATEFILE, &create)) {
+-    return false;
+-  }
++  // Create and open are not allowed for query.
++  if (semantics != FileSemantics::kAllowQuery) {
++    if (!create.AddStringMatch(IF, OpenFile::NAME, name, CASE_INSENSITIVE) ||
++        !policy->AddRule(IpcTag::NTCREATEFILE, &create)) {
++      return false;
++    }
+ 
+-  if (!open.AddStringMatch(IF, OpenFile::NAME, name, CASE_INSENSITIVE) ||
+-      !policy->AddRule(IpcTag::NTOPENFILE, &open)) {
+-    return false;
++    if (!open.AddStringMatch(IF, OpenFile::NAME, name, CASE_INSENSITIVE) ||
++        !policy->AddRule(IpcTag::NTOPENFILE, &open)) {
++      return false;
++    }
+   }
+ 
+   if (!query.AddStringMatch(IF, OpenFile::NAME, name, CASE_INSENSITIVE) ||
+       !policy->AddRule(IpcTag::NTQUERYATTRIBUTESFILE, &query)) {
+     return false;
+   }
+ 
+   if (!query_full.AddStringMatch(IF, OpenFile::NAME, name, CASE_INSENSITIVE) ||
+diff --git a/sandbox/win/src/sandbox_policy.h b/sandbox/win/src/sandbox_policy.h
+--- a/sandbox/win/src/sandbox_policy.h
++++ b/sandbox/win/src/sandbox_policy.h
+@@ -28,16 +28,17 @@ enum class Desktop {
+ };
+ 
+ // Allowable semantics when an AllowFileAccess() rule is matched.
+ enum class FileSemantics {
+   kAllowAny,       // Allows open or create for any kind of access that
+                    // the file system supports.
+   kAllowReadonly,  // Allows open or create with read access only
+                    // (includes access to query the attributes of a file).
++  kAllowQuery,     // Allows access to query the attributes of a file.
+ };
+ 
+ // Policy configuration that can be shared over multiple targets of the same tag
+ // (see BrokerServicesBase::CreatePolicy(tag)). Methods in TargetConfig will
+ // only need to be called the first time a TargetPolicy object with a given tag
+ // is configured.
+ //
+ // We need [[clang::lto_visibility_public]] because instances of this class are

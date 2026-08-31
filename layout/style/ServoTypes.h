@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +7,10 @@
 #ifndef mozilla_ServoTypes_h
 #define mozilla_ServoTypes_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "X11UndefineNone.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TypedEnumBits.h"
-#include "nsCSSPropertyID.h"
 #include "nsCoord.h"
 
 namespace mozilla {
@@ -76,6 +74,7 @@ enum class UpdateAnimationsTasks : uint8_t {
   DisplayChangedFromNone = 1 << 4,
   ScrollTimelines = 1 << 5,
   ViewTimelines = 1 << 6,
+  TimelineScopes = 1 << 7,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(UpdateAnimationsTasks)
@@ -127,7 +126,7 @@ class ServoStyleSetSizes {
 struct DeclarationBlockMutationClosure {
   // The callback function. The first argument is `data`, the second is the
   // property id that changed.
-  void (*function)(void*, nsCSSPropertyID) = nullptr;
+  void (*function)(void*, NonCustomCSSPropertyId) = nullptr;
   void* data = nullptr;
 };
 

@@ -3,12 +3,6 @@
 
 "use strict";
 
-/* import-globals-from helper-telemetry.js */
-Services.scriptloader.loadSubScript(
-  CHROME_URL_ROOT + "helper-telemetry.js",
-  this
-);
-
 const RUNTIME_ID = "test-runtime-id";
 const RUNTIME_NAME = "Test Runtime";
 const RUNTIME_DEVICE_NAME = "Test Device";
@@ -20,11 +14,13 @@ const RUNTIME_DEVICE_NAME = "Test Device";
 add_task(async function testUsbRuntimeUpdates() {
   // enable USB devices mocks
   const mocks = new Mocks();
-  setupTelemetryTest();
+  Services.fog.testResetFOG();
 
   const { tab, document } = await openAboutDebugging();
 
-  const sessionId = getOpenEventSessionId();
+  const sessionId =
+    Glean.devtoolsMain.openAdbgAboutdebugging.testGetValue()[0].extra
+      .session_id;
   ok(!isNaN(sessionId), "Open event has a valid session id");
 
   const usbClient = mocks.createUSBRuntime(RUNTIME_ID, {
@@ -40,9 +36,10 @@ add_task(async function testUsbRuntimeUpdates() {
   await waitForRuntimePage(RUNTIME_NAME, document);
 
   info("Read telemetry events to flush unrelated events");
-  const evts = readAboutDebuggingEvents();
-  const runtimeAddedEvent = evts.filter(e => e.method === "runtime_added")[0];
-  const telemetryRuntimeId = runtimeAddedEvent.extras.runtime_id;
+  const telemetryRuntimeId =
+    Glean.devtoolsMain.runtimeAddedAboutdebugging.testGetValue()[0].extra
+      .runtime_id;
+  Services.fog.testResetFOG();
 
   info("Click on the toggle button and wait until the text is updated");
   const promptButton = document.querySelector(
@@ -51,42 +48,33 @@ add_task(async function testUsbRuntimeUpdates() {
   promptButton.click();
   await waitUntil(() => promptButton.textContent.includes("Enable"));
 
-  checkTelemetryEvents(
-    [
-      {
-        method: "update_conn_prompt",
-        extras: { prompt_enabled: "false", runtime_id: telemetryRuntimeId },
-      },
-    ],
-    sessionId
-  );
+  let upEvents =
+    Glean.devtoolsMain.updateConnPromptAboutdebugging.testGetValue();
+  Assert.equal(1, upEvents.length);
+  Assert.equal("false", upEvents[0].extra.prompt_enabled);
+  Assert.equal(telemetryRuntimeId, upEvents[0].extra.runtime_id);
+  Assert.equal(sessionId, upEvents[0].extra.session_id);
+  Services.fog.testResetFOG();
 
   info("Click on the toggle button again and check we log the correct value");
   promptButton.click();
   await waitUntil(() => promptButton.textContent.includes("Disable"));
 
-  checkTelemetryEvents(
-    [
-      {
-        method: "update_conn_prompt",
-        extras: { prompt_enabled: "true", runtime_id: telemetryRuntimeId },
-      },
-    ],
-    sessionId
-  );
+  upEvents = Glean.devtoolsMain.updateConnPromptAboutdebugging.testGetValue();
+  Assert.equal(1, upEvents.length);
+  Assert.equal("true", upEvents[0].extra.prompt_enabled);
+  Assert.equal(telemetryRuntimeId, upEvents[0].extra.runtime_id);
+  Assert.equal(sessionId, upEvents[0].extra.session_id);
+  Services.fog.testResetFOG();
 
   info("Open the profiler dialog");
   await openProfilerDialog(usbClient, document);
 
-  checkTelemetryEvents(
-    [
-      {
-        method: "show_profiler",
-        extras: { runtime_id: telemetryRuntimeId },
-      },
-    ],
-    sessionId
-  );
+  const proEvents =
+    Glean.devtoolsMain.showProfilerAboutdebugging.testGetValue();
+  Assert.equal(1, proEvents.length);
+  Assert.equal(telemetryRuntimeId, proEvents[0].extra.runtime_id);
+  Assert.equal(sessionId, proEvents[0].extra.session_id);
 
   info("Remove runtime");
   mocks.removeRuntime(RUNTIME_ID);

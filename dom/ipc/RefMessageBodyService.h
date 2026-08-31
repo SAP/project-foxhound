@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +6,11 @@
 #define mozilla_dom_RefMessageBodyService_h
 
 #include <cstdint>
+
 #include "js/TypeDecls.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticMutex.h"
-#include "mozilla/UniquePtr.h"
 #include "nsHashKeys.h"
 #include "nsID.h"
 #include "nsISupports.h"
@@ -75,8 +73,7 @@ class RefMessageBody final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefMessageBody)
 
-  RefMessageBody(const nsID& aPortID,
-                 UniquePtr<ipc::StructuredCloneData>&& aCloneData);
+  RefMessageBody(const nsID& aPortID, ipc::StructuredCloneData* aCloneData);
 
   const nsID& PortID() const { return mPortID; }
 
@@ -98,7 +95,7 @@ class RefMessageBody final {
   // different threads.
   Mutex mMutex MOZ_UNANNOTATED;
 
-  UniquePtr<ipc::StructuredCloneData> mCloneData;
+  RefPtr<ipc::StructuredCloneData> mCloneData;
 
   // When mCount reaches mMaxCount, this object is released by the service.
   Maybe<uint32_t> mMaxCount;
@@ -107,7 +104,9 @@ class RefMessageBody final {
 
 class RefMessageBodyService final {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefMessageBodyService)
+  MozExternalRefCountType AddRef();
+  MozExternalRefCountType Release();
+  using HasThreadSafeRefCnt = std::true_type;
 
   static already_AddRefed<RefMessageBodyService> GetOrCreate();
 
@@ -124,6 +123,9 @@ class RefMessageBodyService final {
  private:
   explicit RefMessageBodyService(const StaticMutexAutoLock& aProofOfLock);
   ~RefMessageBodyService();
+
+ protected:
+  ::mozilla::ThreadSafeAutoRefCnt mRefCnt;
 
   static RefMessageBodyService* GetOrCreateInternal(
       const StaticMutexAutoLock& aProofOfLock);

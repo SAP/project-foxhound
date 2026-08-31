@@ -8,7 +8,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "IdentityCredentialStorageService",
   "@mozilla.org/browser/identity-credential-storage-service;1",
-  "nsIIdentityCredentialStorageService"
+  Ci.nsIIdentityCredentialStorageService
 );
 
 const TEST_URL = "https://example.com/";
@@ -496,4 +496,33 @@ add_task(async function test_loginStatus_subdocument_subresource_headers() {
     setLoginStatusViaSubdocumentSubresource,
     "subresource header in frame"
   );
+});
+
+add_task(async function test_loginStatus_js_disconnected_doc_crash() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
+  let complete = await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [],
+    async function () {
+      const doc1 = new content.Document();
+      const iframe = content.document.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "iframe"
+      );
+      content.document.documentElement.appendChild(iframe);
+      const cw = iframe.contentWindow;
+      const element = content.document.querySelector("*");
+      doc1.adoptNode(element);
+
+      try {
+        await cw.navigator.login.setStatus("logged-out");
+      } catch (_) {}
+      try {
+        await cw.navigator.login.setStatus("logged-in");
+      } catch (_) {}
+      return true;
+    }
+  );
+  Assert.ok(complete, "Did not crash");
+  await BrowserTestUtils.removeTab(tab);
 });

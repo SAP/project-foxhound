@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,12 +5,12 @@
 #ifndef MOZILLA_SCRATCHBUFFER_H_
 #define MOZILLA_SCRATCHBUFFER_H_
 
+#include <algorithm>
+
 #include "AudioSegment.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/UniquePtr.h"
 #include "nsDebug.h"
-
-#include <algorithm>
 
 namespace mozilla {
 
@@ -83,9 +82,16 @@ class AudioCallbackBufferWrapper {
    * Write some frames to the internal buffer. Free space in the buffer should
    * be checked prior to calling these.
    */
+  void WriteSilence(const uint32_t aFrames) {
+    MOZ_ASSERT(aFrames <= Available(),
+               "Writing more than we can in the audio buffer.");
+
+    std::fill_n(mBuffer + mSampleWriteOffset, aFrames, static_cast<T>(0));
+    mSampleWriteOffset += FramesToSamples(mChannels, aFrames);
+  }
   void WriteFrames(T* aBuffer, uint32_t aFrames) {
     MOZ_ASSERT(aFrames <= Available(),
-               "Writing more that we can in the audio buffer.");
+               "Writing more than we can in the audio buffer.");
 
     PodCopy(mBuffer + mSampleWriteOffset, aBuffer,
             FramesToSamples(mChannels, aFrames));
@@ -93,7 +99,7 @@ class AudioCallbackBufferWrapper {
   }
   void WriteFrames(const AudioChunk& aChunk, uint32_t aFrames) {
     MOZ_ASSERT(aFrames <= Available(),
-               "Writing more that we can in the audio buffer.");
+               "Writing more than we can in the audio buffer.");
 
     InterleaveAndConvertBuffer(aChunk.ChannelData<T>().Elements(), aFrames,
                                aChunk.mVolume, aChunk.ChannelCount(),
@@ -167,6 +173,8 @@ class SpillBuffer {
     return this->operator=(aOther);
   }
 
+  bool IsEmpty() const { return mPosition == 0; }
+  void Empty() { mPosition = 0; }
   /* Empty the spill buffer into the buffer of the audio callback. This returns
    * the number of frames written. */
   uint32_t Empty(AudioCallbackBufferWrapper<T>& aBuffer) {

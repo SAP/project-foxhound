@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +15,7 @@
 #include "mozilla/Components.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIStringBundle.h"
+#include "nsPIDOMWindowInlines.h"
 
 using namespace mozilla::a11y;
 
@@ -31,7 +29,7 @@ ApplicationAccessible::ApplicationAccessible()
 ////////////////////////////////////////////////////////////////////////////////
 // nsIAccessible
 
-ENameValueFlag ApplicationAccessible::Name(nsString& aName) const {
+ENameValueFlag ApplicationAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   nsCOMPtr<nsIStringBundleService> bundleService =
@@ -56,8 +54,10 @@ ENameValueFlag ApplicationAccessible::Name(nsString& aName) const {
   return eNameOK;
 }
 
-void ApplicationAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag ApplicationAccessible::Description(
+    nsString& aDescription) const {
   aDescription.Truncate();
+  return eDescriptionOK;
 }
 
 void ApplicationAccessible::Value(nsString& aValue) const { aValue.Truncate(); }
@@ -67,7 +67,7 @@ uint64_t ApplicationAccessible::State() {
 }
 
 already_AddRefed<AccAttributes> ApplicationAccessible::NativeAttributes() {
-  RefPtr<AccAttributes> attributes = new AccAttributes();
+  auto attributes = MakeRefPtr<AccAttributes>();
   return attributes.forget();
 }
 
@@ -111,7 +111,7 @@ uint64_t ApplicationAccessible::NativeState() const { return 0; }
 
 KeyBinding ApplicationAccessible::AccessKey() const { return KeyBinding(); }
 
-void ApplicationAccessible::Init() {
+void ApplicationAccessible::CreateInitialDocs() {
   // Basically children are kept updated by Append/RemoveChild method calls.
   // However if there are open windows before accessibility was started
   // then we need to make sure root accessibles for open windows are created so

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +8,8 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsError.h"
-#include "txExpandedName.h"
 #include "nsTArray.h"
+#include "txExpandedName.h"
 
 class txExpandedNameMap_base {
  protected:
@@ -127,7 +126,7 @@ class txOwningExpandedNameMap : public txExpandedNameMap_base {
 
   nsresult set(const txExpandedName& aKey, E* aValue) {
     mozilla::UniquePtr<E> oldValue;
-    return setItem(aKey, (void*)aValue, getter_Transfers(oldValue));
+    return setItem(aKey, (void*)aValue, mozilla::getter_Transfers(oldValue));
   }
 
   E* get(const txExpandedName& aKey) const { return (E*)getItem(aKey); }

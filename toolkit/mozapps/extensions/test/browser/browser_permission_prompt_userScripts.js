@@ -12,12 +12,6 @@ const { PERMISSION_L10N } = ChromeUtils.importESModule(
 
 AddonTestUtils.initMochitest(this);
 
-add_setup(async () => {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.userScripts.mv3.enabled", true]],
-  });
-});
-
 function loadExtensionWithPermissions(addonId) {
   function extensionScript() {
     browser.test.onMessage.addListener(async (msg, perm) => {

@@ -113,6 +113,7 @@
                         android:layout_gravity="center_vertical"
                         android:layout_marginStart="6dp"
                         android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurface"
                         tools:text="Reviews: 591,642" />
                 </LinearLayout>
             </LinearLayout>

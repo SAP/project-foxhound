@@ -1,0 +1,8 @@
+[package]
+name = "locale_glue"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[dependencies]
+icu_locale = { version = "2.1.1", features = ["compiled_data"] }

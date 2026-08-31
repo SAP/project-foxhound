@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,7 @@
 #include "nsNetUtil.h"
 #include "mozilla/UniquePtr.h"
 
-nsChromeRegistryContent::nsChromeRegistryContent() {}
+nsChromeRegistryContent::nsChromeRegistryContent() = default;
 
 void nsChromeRegistryContent::RegisterRemoteChrome(
     const nsTArray<ChromePackage>& aPackages,
@@ -64,9 +62,9 @@ void nsChromeRegistryContent::RegisterPackage(const ChromePackage& aPackage) {
 
   mozilla::UniquePtr<PackageEntry> entry = mozilla::MakeUnique<PackageEntry>();
   entry->flags = aPackage.flags;
-  entry->contentBaseURI = content;
-  entry->localeBaseURI = locale;
-  entry->skinBaseURI = skin;
+  entry->contentBaseURI = std::move(content);
+  entry->localeBaseURI = std::move(locale);
+  entry->skinBaseURI = std::move(skin);
 
   mPackagesHash.InsertOrUpdate(aPackage.package, std::move(entry));
 }

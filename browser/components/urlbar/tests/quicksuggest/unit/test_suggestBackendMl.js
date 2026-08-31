@@ -7,7 +7,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  MLSuggest: "resource:///modules/urlbar/private/MLSuggest.sys.mjs",
+  MLSuggest: "moz-src:///browser/components/urlbar/private/MLSuggest.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -26,7 +26,7 @@ add_setup(async function init() {
   // Enable Suggest but not the ML backend yet.
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     prefs: [
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
     ],
   });
@@ -54,14 +54,14 @@ add_task(async function zeroDelay() {
   // the elapsed time is small. Some CI machines are really slow, so this might
   // take longer than you think. Use a generous expected upper bound of 1s
   // (1000ms).
-  let startMs = Cu.now();
+  let startMs = ChromeUtils.now();
   enableMl(true);
   await TestUtils.waitForCondition(
     () => gInitializeStub.callCount > 0,
     "Waiting for initialize to be called"
   );
 
-  let elapsedMs = Cu.now() - startMs;
+  let elapsedMs = ChromeUtils.now() - startMs;
   Assert.less(
     elapsedMs,
     1000,

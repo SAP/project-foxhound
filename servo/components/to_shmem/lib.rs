@@ -219,7 +219,6 @@ impl<T: ToShmem> ToShmem for Range<T> {
     }
 }
 
-
 impl<T: ToShmem, U: ToShmem> ToShmem for (T, U) {
     fn to_shmem(&self, builder: &mut SharedMemoryBuilder) -> Result<Self> {
         Ok(ManuallyDrop::new((
@@ -577,9 +576,7 @@ impl ToShmem for smallbitvec::SmallBitVec {
             },
             InternalStorage::Inline(x) => InternalStorage::Inline(x),
         };
-        Ok(ManuallyDrop::new(unsafe {
-            Self::from_storage(storage)
-        }))
+        Ok(ManuallyDrop::new(unsafe { Self::from_storage(storage) }))
     }
 }
 
@@ -594,6 +591,13 @@ impl<Static: string_cache::StaticAtomSet> ToShmem for string_cache::Atom<Static>
             "If servo wants to share stylesheets across processes, \
              then ToShmem for Atom needs to be implemented"
         )
+    }
+}
+
+impl ToShmem for std::sync::atomic::AtomicBool {
+    fn to_shmem(&self, _: &mut SharedMemoryBuilder) -> Result<Self> {
+        use std::sync::atomic::Ordering;
+        Ok(ManuallyDrop::new(Self::new(self.load(Ordering::Relaxed))))
     }
 }
 

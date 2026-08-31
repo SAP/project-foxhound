@@ -26,16 +26,10 @@ bool FissionAutostart();
 // Returns whether or not we are currently enrolled in the fission experiment.
 bool FissionExperimentEnrolled();
 
-// Returns true if FissionAutostart() is true or
-// fission.disableSessionHistoryInParent is false.
-bool SessionHistoryInParent();
-
-// Returns true if SessionHistoryInParent() is true and
-// browser.sessionstore.disable_platform_collection is false.
+// Returns true if browser.sessionstore.disable_platform_collection is false.
 bool SessionStorePlatformCollection();
 
-// Returns true if SessionHistoryInParent() returns true and
-// fission.bfcacheInParent is true.
+// Returns true if fission.bfcacheInParent is true.
 bool BFCacheInParent();
 }
 
@@ -85,7 +79,7 @@ interface nsIXULRuntime : nsISupports
     MissingWebRender = 2,
     OperatingSystemNotSupported = 3,
     PrefNotSet = 4,  // no longer used
-    MissingRemoteWebGL = 5,
+    //MissingRemoteWebGL = 5,
     MissingNonNativeTheming = 6,
     DisabledByEnvVar = 7,  // - MOZ_ENABLE_WIN32K is set
     //DisabledBySafeMode = 8,
@@ -158,11 +152,6 @@ interface nsIXULRuntime : nsISupports
    */
   readonly attribute nsIXULRuntime_FissionDecisionStatus fissionDecisionStatus;
   readonly attribute ACString fissionDecisionStatusString;
-
-  /**
-   * Whether session history is stored in the parent process.
-   */
-  readonly attribute boolean sessionHistoryInParent;
 
   /**
    * Whether Gecko code drives session store collection data.
@@ -288,6 +277,15 @@ interface nsIXULRuntime : nsISupports
    * fastload data to be re-created.
    */
   void invalidateCachesOnRestart();
+
+  /**
+   * Record in the profile's compatibility.ini that this profile's SQLite
+   * databases are encrypted (security.storage.encryption.sqlite.enabled).
+   * Read back on the next startup so the apprunner can refuse to launch a
+   * build whose pref would open the now-encrypted databases as plaintext.
+   * Append-only and idempotent.
+   */
+  void markProfileEncryptedDatabases();
 
   /**
    * Modification time of the profile lock before the profile was locked on

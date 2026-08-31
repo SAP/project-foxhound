@@ -7,36 +7,48 @@
 loadScripts({ name: "role.js", dir: MOCHITESTS_DIR });
 
 ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
+});
+
+ChromeUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
+  return Cc["@mozilla.org/places/frecency-recalculator;1"].getService(
+    Ci.nsIObserver
+  ).wrappedJSObject;
 });
 
 // Check that the URL bar manages accessibility
 // selection notifications appropriately on startup (new window).
 async function runTests() {
+  // XXX: See bug 2016839
   let focused = waitForEvent(
     EVENT_FOCUS,
-    event => event.accessible.role == ROLE_ENTRY
+    event => event.accessible.role == ROLE_EDITCOMBOBOX
   );
   info("Creating new window");
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
-  let bookmark = await PlacesUtils.bookmarks.insert({
-    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
-    title: "addons",
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-    url: Services.io.newURI("http://www.addons.mozilla.org/"),
-  });
+  await PlacesTestUtils.addVisits([
+    {
+      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      uri: "http://www.addons.mozilla.org/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
+  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   registerCleanupFunction(async function () {
     await BrowserTestUtils.closeWindow(newWin);
-    await PlacesUtils.bookmarks.remove(bookmark);
+    await PlacesUtils.history.clear();
   });
   info("Focusing window");
   newWin.focus();
   await focused;
 
+  // XXX: See bug 2016839
   let caretMoved = waitForEvent(
     EVENT_TEXT_CARET_MOVED,
-    event => event.accessible.role == ROLE_ENTRY
+    event => event.accessible.role == ROLE_EDITCOMBOBOX
   );
 
   info("Autofilling after typing `a` in new window URL bar.");

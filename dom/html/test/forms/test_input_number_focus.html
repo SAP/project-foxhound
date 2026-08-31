@@ -34,7 +34,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1268556
  * Checks that adding an element and immediately focusing it triggers exactly
  * one "focus" event and no "blur" events. The same for switching
  * `style.display` from `none` to `block`.
- **/
+ */
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {
   test_focus_redirects_to_text_control_but_not_for_activeElement();

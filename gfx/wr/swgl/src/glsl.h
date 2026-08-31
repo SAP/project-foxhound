@@ -399,6 +399,9 @@ struct vec2_scalar {
   friend vec2_scalar operator/(vec2_scalar a, float b) {
     return vec2_scalar(a.x / b, a.y / b);
   }
+  friend vec2_scalar operator/(float a, vec2_scalar b) {
+    return vec2_scalar(a / b.x, a / b.y);
+  }
   friend vec2_scalar operator/(vec2_scalar a, vec2_scalar b) {
     return vec2_scalar(a.x / b.x, a.y / b.y);
   }
@@ -559,6 +562,7 @@ struct vec2 {
 
   friend vec2 operator/(vec2 a, vec2 b) { return vec2(a.x / b.x, a.y / b.y); }
   friend vec2 operator/(vec2 a, Float b) { return vec2(a.x / b, a.y / b); }
+  friend vec2 operator/(Float a, vec2 b) { return vec2(a / b.x, a / b.y); }
 
   friend vec2 operator-(vec2 a, vec2 b) { return vec2(a.x - b.x, a.y - b.y); }
   friend vec2 operator-(vec2 a, Float b) { return vec2(a.x - b, a.y - b); }
@@ -796,6 +800,14 @@ SI float pow(float x, float y) { return powf(x, y); }
 
 Float pow(Float x, Float y) {
   return if_then_else((x == 0) | (x == 1), x, approx_pow2(approx_log2(x) * y));
+}
+
+vec2 pow(vec2 a, vec2 b) {
+  return vec2(pow(a.x, b.x), pow(a.y, b.y));
+}
+
+vec2_scalar pow(vec2_scalar a, vec2_scalar b) {
+  return vec2_scalar(pow(a.x, b.x), pow(a.y, b.y));
 }
 
 #define exp __glsl_exp

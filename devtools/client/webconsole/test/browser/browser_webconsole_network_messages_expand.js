@@ -3,6 +3,10 @@
 
 "use strict";
 
+const {
+  EVENTS,
+} = require("resource://devtools/client/netmonitor/src/constants.js");
+
 const TEST_FILE = "test-network-request.html";
 const TEST_PATH =
   "https://example.com/browser/devtools/client/webconsole/test/browser/";
@@ -69,7 +73,7 @@ add_task(async function task() {
     "An empty notice is displayed instead of the response content"
   );
   const responseContent = messageNode.querySelector(
-    "#response-panel .editor-row-container .CodeMirror"
+    "#response-panel .editor-row-container .cm-editor"
   );
   ok(!responseContent, "Response content is really not displayed");
 
@@ -164,7 +168,7 @@ async function testRequest(messageNode) {
   const requestPanel = messageNode.querySelector("#request-panel");
   await waitForSourceEditor(requestPanel);
   const requestContent = requestPanel.querySelector(
-    ".panel-container .CodeMirror"
+    ".panel-container .cm-editor"
   );
   ok(requestContent, "Request content is available");
   ok(
@@ -184,7 +188,7 @@ async function testResponse(messageNode) {
   const responsePanel = messageNode.querySelector("#response-panel");
   await waitForSourceEditor(responsePanel);
   const responseContent = messageNode.querySelector(
-    "#response-panel .editor-row-container .CodeMirror"
+    "#response-panel .editor-row-container .cm-editor"
   );
   ok(responseContent, "Response content is available");
   ok(responseContent.textContent, "Response text is available");
@@ -236,13 +240,7 @@ async function testSecurity(messageNode) {
 // Waiting helpers
 
 async function waitForPayloadReady(hud) {
-  return hud.ui.once("network-request-payload-ready");
-}
-
-async function waitForSourceEditor(panel) {
-  return waitUntil(() => {
-    return !!panel.querySelector(".CodeMirror");
-  });
+  return hud.ui.once(EVENTS.PAYLOAD_READY);
 }
 
 async function waitForRequestUpdates(hud) {

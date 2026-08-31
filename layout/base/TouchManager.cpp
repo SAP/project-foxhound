@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -21,7 +19,6 @@
 #include "nsIContent.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
-#include "nsView.h"
 
 using namespace mozilla::dom;
 
@@ -74,17 +71,12 @@ void TouchManager::EvictTouchPoint(RefPtr<Touch>& aTouch,
   if (node) {
     Document* doc = node->GetComposedDoc();
     if (doc && (!aLimitToDocument || aLimitToDocument == doc)) {
-      PresShell* presShell = doc->GetPresShell();
-      if (presShell) {
-        nsIFrame* frame = presShell->GetRootFrame();
-        if (frame) {
-          nsCOMPtr<nsIWidget> widget =
-              frame->GetView()->GetNearestWidget(nullptr);
-          if (widget) {
+      if (PresShell* presShell = doc->GetPresShell()) {
+        if (nsIFrame* frame = presShell->GetRootFrame()) {
+          if (nsCOMPtr<nsIWidget> widget = frame->GetNearestWidget()) {
             WidgetTouchEvent event(true, eTouchEnd, widget);
             event.mTouches.AppendElement(aTouch);
-            nsEventStatus status;
-            widget->DispatchEvent(&event, status);
+            widget->DispatchEvent(&event);
           }
         }
       }
@@ -124,33 +116,36 @@ nsIFrame* TouchManager::SetupTarget(WidgetTouchEvent* aEvent,
     return aFrame;
   }
 
+  Document* doc = aFrame->PresShell()->GetDocument();
+  const bool renderBlocked =
+      doc && doc->RenderingSuppressedForViewTransitions();
+
   nsIFrame* target = aFrame;
   for (int32_t i = aEvent->mTouches.Length(); i;) {
     --i;
     dom::Touch* touch = aEvent->mTouches[i];
 
     int32_t id = touch->Identifier();
-    if (!TouchManager::HasCapturedTouch(id)) {
-      // find the target for this touch
-      RelativeTo relativeTo{aFrame};
-      nsPoint eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(
-          aEvent, touch->mRefPoint, relativeTo);
-      target = FindFrameTargetedByInputEvent(aEvent, relativeTo, eventPoint);
-      if (target) {
-        nsIContent* targetContent = target->GetContentForEvent(aEvent);
-        touch->SetTouchTarget(targetContent
-                                  ? targetContent->GetAsElementOrParentElement()
-                                  : nullptr);
-      } else {
-        aEvent->mTouches.RemoveElementAt(i);
-      }
-    } else {
+    if (TouchManager::HasCapturedTouch(id)) {
       // This touch is an old touch, we need to ensure that is not
       // marked as changed and set its target correctly
       touch->mChanged = false;
       RefPtr<dom::Touch> oldTouch = TouchManager::GetCapturedTouch(id);
       if (oldTouch) {
         touch->SetTouchTarget(oldTouch->mOriginalTarget);
+      }
+    } else if (MOZ_UNLIKELY(renderBlocked)) {
+      touch->SetTouchTarget(doc->GetRootElement());
+    } else {
+      // find the target for this touch
+      RelativeTo relativeTo{aFrame};
+      nsPoint eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+          aEvent, touch->mRefPoint, relativeTo);
+      target = FindFrameTargetedByInputEvent(aEvent, relativeTo, eventPoint);
+      if (target) {
+        touch->SetTouchTarget(target->GetEventTargetContent(aEvent));
+      } else {
+        aEvent->mTouches.RemoveElementAt(i);
       }
     }
   }
@@ -236,10 +231,7 @@ nsIFrame* TouchManager::SuppressInvalidPointsAndGetTargetedFrame(
         touch->mIsTouchEventSuppressed = true;
       } else {
         targetFrame = newTargetFrame;
-        nsIContent* newTargetContent = targetFrame->GetContentForEvent(aEvent);
-        touch->SetTouchTarget(
-            newTargetContent ? newTargetContent->GetAsElementOrParentElement()
-                             : nullptr);
+        touch->SetTouchTarget(targetFrame->GetEventTargetContent(aEvent));
       }
     }
     if (targetFrame) {
