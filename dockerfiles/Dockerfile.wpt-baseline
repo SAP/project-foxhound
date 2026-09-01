@@ -18,7 +18,7 @@ FROM ${TOOLCHAIN_IMAGE} AS source
 # Merge-base of this branch and firefox-release: Firefox 153.0.
 #   git merge-base mine/experimental-fixes origin/firefox-release
 ARG FIREFOX_REPO=https://github.com/SAP/project-foxhound.git
-ARG FIREFOX_SHA=f1b6c0f86b96
+ARG FIREFOX_SHA=f1b6c0f86b96b7e0688c26f65803576f27cdaf88
 
 WORKDIR /home/foxhound/firefox
 RUN git init -q . \
