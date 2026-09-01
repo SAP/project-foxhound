@@ -244,9 +244,14 @@ Element* DocumentOrShadowRoot::GetElementById(
   }
 
   if (IdentifierMapEntry* entry = mIdentifierMap.GetEntry(aElementId)) {
-    Element* element = entry->GetIdElement();
-    element->TaintSelectorOperation("document.getElementById", aElementId);
-    return element;
+    // GetIdElement() may be null even though the map has an entry for this id:
+    // entries are retained for ids that are merely *referenced* (for instance by
+    // named access on the window object, or by an IDREF attribute) and then
+    // carry an empty element list.
+    if (Element* element = entry->GetIdElement()) {
+      element->TaintSelectorOperation("document.getElementById", aElementId);
+      return element;
+    }
   }
 
   return nullptr;
@@ -259,9 +264,11 @@ Element* DocumentOrShadowRoot::GetElementById(nsAtom* aElementId) const {
   }
 
   if (IdentifierMapEntry* entry = mIdentifierMap.GetEntry(aElementId)) {
-    Element* element = entry->GetIdElement();
-    element->TaintSelectorOperation("document.getElementById", nsAtomString(aElementId));
-    return element;
+    // See the comment on the nsAString overload above: this can be null.
+    if (Element* element = entry->GetIdElement()) {
+      element->TaintSelectorOperation("document.getElementById", nsAtomString(aElementId));
+      return element;
+    }
   }
 
   return nullptr;
