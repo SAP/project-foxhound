@@ -1,0 +1,195 @@
+# syntax=docker/dockerfile:1.7
+#
+# Build project "Foxhound" and run the full web-platform-test suite against it,
+# entirely locally -- no taskcluster, no Mozilla infrastructure.
+#
+# The WPT tests themselves are vendored in-tree under testing/web-platform/tests,
+# and wptrunner resolves the web-platform.test hostnames via the Gecko pref
+# network.dns.localDomains, so no /etc/hosts surgery and no test checkout is
+# needed at run time. Network is only required while building the image.
+#
+# The source is cloned inside the image, so the build context is just this
+# directory -- don't hand Docker the whole gecko tree.
+#
+#   docker build -f dockerfiles/Dockerfile.wpt -t foxhound-wpt dockerfiles/
+#   docker run --rm --init --shm-size=2g -v "$PWD/wpt-results:/results" foxhound-wpt
+#
+# See README.wpt.md for the full set of knobs.
+
+ARG UBUNTU_VERSION=24.04
+
+##############################################################################
+# Stage 1: system packages + the Firefox build toolchain via `mach bootstrap`
+##############################################################################
+FROM ubuntu:${UBUNTU_VERSION} AS toolchain
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    SHELL=/bin/bash \
+    TZ=UTC
+
+# NOTE: we deliberately do NOT use `mach bootstrap` to obtain the compiler.
+# Bootstrap downloads prebuilt clang/nasm/node from the Mozilla taskcluster
+# index, and that index only resolves for recent mozilla-central tips -- on a
+# Foxhound tree, or on a tagged release commit, it fails with
+# "Could not find artifacts for a toolchain build named `toolchain-linux64-clang`".
+# Everything Firefox 142 needs is in the Ubuntu 24.04 archive anyway:
+#   rust >= 1.90 (MINIMUM_RUST_VERSION), cbindgen >= 0.29.4, node >= 12.22, nasm.
+# The one exception is clang: Firefox 153 requires llvm >= 19 and Ubuntu 24.04
+# only ships 18.1.3, so we pull clang from apt.llvm.org rather than the archive.
+# The result is still a build with no dependency on Mozilla infrastructure.
+ARG LLVM_VERSION=20
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl wget git mercurial gnupg \
+        python3 python3-dev python3-venv python3-pip \
+        build-essential pkg-config m4 perl \
+        unzip zip bzip2 xz-utils file procps sudo locales tzdata ccache \
+        nasm yasm \
+        nodejs npm \
+    # --- gecko build dependencies (pkg_check_modules in */moz.configure) ---
+        libgtk-3-dev libglib2.0-dev libpango1.0-dev libcairo2-dev \
+        libgdk-pixbuf-2.0-dev libdbus-glib-1-dev libdbus-1-dev \
+        libpulse-dev libasound2-dev \
+        libx11-dev libx11-xcb-dev libxcb1-dev libxt-dev libxext-dev \
+        libxcomposite-dev libxdamage-dev libxfixes-dev libxrandr-dev \
+        libxrender-dev libxi-dev libxtst-dev libxss-dev libxcursor-dev \
+        libfontconfig1-dev libfreetype-dev \
+        libdrm-dev libgbm-dev libegl-dev libgl-dev \
+        libxkbcommon-dev libwayland-dev \
+        libffi-dev libssl-dev \
+    # --- running the browser headlessly under Xvfb ---
+        xvfb xauth x11-utils libgl1 libegl1 \
+        fontconfig fonts-dejavu-core fonts-liberation \
+        fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# clang >= 19 from apt.llvm.org, and make the unsuffixed names point at it so
+# mozconfig's `llvm-config --libdir` and CC=clang resolve to the right toolchain.
+RUN . /etc/os-release \
+    && curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key \
+         | gpg --dearmor -o /usr/share/keyrings/llvm.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-${LLVM_VERSION} main" \
+         > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+         clang-${LLVM_VERSION} lld-${LLVM_VERSION} \
+         llvm-${LLVM_VERSION}-dev libclang-${LLVM_VERSION}-dev \
+    && for t in clang clang++ lld ld.lld llvm-config llvm-strip llvm-objdump llvm-readelf llvm-ar llvm-ranlib llvm-nm; do \
+         ln -sf /usr/bin/${t}-${LLVM_VERSION} /usr/local/bin/${t} 2>/dev/null \
+           || ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/${t} /usr/local/bin/${t}; \
+       done \
+    && clang --version && llvm-config --version \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build and run as a normal user: `mach bootstrap` expects to be able to sudo,
+# and Firefox refuses some operations when running as uid 0.
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN if getent passwd ${USER_UID} >/dev/null; then \
+        userdel -r "$(getent passwd ${USER_UID} | cut -d: -f1)" 2>/dev/null || true; \
+    fi \
+    && groupadd -g ${USER_GID} foxhound 2>/dev/null || true \
+    && useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash foxhound \
+    && echo 'foxhound ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/foxhound \
+    && chmod 0440 /etc/sudoers.d/foxhound
+
+USER foxhound
+ENV HOME=/home/foxhound \
+    MOZBUILD_STATE_PATH=/home/foxhound/.mozbuild \
+    PATH=/home/foxhound/.cargo/bin:$PATH \
+    MOZ_NOSPAM=1 \
+    SHELL=/bin/bash
+
+# Pinned to the version .PLAYWRIGHT_VERSION names as known-good for this tree.
+ARG RUST_VERSION=1.90.0
+ARG CBINDGEN_VERSION=0.29.4
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}" \
+    && rustc --version \
+    && cargo install cbindgen --locked --version "${CBINDGEN_VERSION}" \
+    && cbindgen --version \
+    && rm -rf /home/foxhound/.cargo/registry
+
+##############################################################################
+# Stage 2: source checkout
+##############################################################################
+FROM toolchain AS source
+
+ARG FOXHOUND_REPO=https://github.com/SAP/project-foxhound.git
+ARG FOXHOUND_REF=main
+# Bump to force a re-clone when the branch has moved.
+ARG FOXHOUND_CACHE_BUST=0
+
+WORKDIR /home/foxhound/foxhound
+RUN git clone --depth=1 --branch "${FOXHOUND_REF}" "${FOXHOUND_REPO}" . \
+    && git rev-parse HEAD > /home/foxhound/foxhound-revision.txt
+
+##############################################################################
+# Stage 3: build Foxhound with the test harness enabled
+##############################################################################
+FROM source AS build
+
+# Parallelism for the compile. Leave empty to let the build system decide.
+ARG BUILD_JOBS=
+
+RUN cp taintfox_mozconfig_ubuntu .mozconfig \
+    && { \
+         echo ''; \
+         echo '# --- added by dockerfiles/Dockerfile.wpt ---'; \
+         echo '# wptrunner needs specialpowers@mozilla.org.xpi, geckodriver (wdspec)'; \
+         echo '# and the staged objdir/_tests tree, all of which come from --enable-tests.'; \
+         echo 'ac_add_options --enable-tests'; \
+         echo 'ac_add_options --with-ccache=/usr/bin/ccache'; \
+         echo '# Build with the distro toolchain; never reach for taskcluster.'; \
+         echo 'ac_add_options --disable-bootstrap'; \
+         echo 'ac_add_options --enable-linker=lld'; \
+         echo "ac_add_options --with-libclang-path=$(llvm-config --libdir)"; \
+         echo 'export CC=clang'; \
+         echo 'export CXX=clang++'; \
+         if [ -n "${BUILD_JOBS}" ]; then echo "mk_add_options MOZ_PARALLEL_BUILD=${BUILD_JOBS}"; fi; \
+       } >> .mozconfig \
+    && cat .mozconfig
+
+RUN --mount=type=cache,target=/home/foxhound/.ccache,uid=1000,gid=1000 \
+    ./mach build
+
+# Build the WPT manifest offline. Without this, the first `mach wpt` run tries to
+# fetch a prebuilt manifest from taskcluster; --no-download keeps us local and
+# --rebuild generates it from the vendored tests (a few minutes, one time).
+RUN ./mach wpt-manifest-update --no-download --rebuild
+
+# Sanity check: the binary exists and reports the Foxhound version.
+RUN ./obj-tf-release/dist/bin/foxhound --version
+
+##############################################################################
+# Stage 4: runtime
+##############################################################################
+FROM build AS foxhound-wpt
+
+COPY --chown=foxhound:foxhound wpt-run.sh /usr/local/bin/wpt-run
+COPY --chown=foxhound:foxhound wpt-compare.py /usr/local/bin/wpt-compare
+USER root
+RUN chmod +x /usr/local/bin/wpt-run /usr/local/bin/wpt-compare \
+    && mkdir -p /results && chown foxhound:foxhound /results
+USER foxhound
+
+WORKDIR /home/foxhound/foxhound
+
+# Where wptreport JSON / structured logs are written.
+VOLUME ["/results"]
+
+# Split the suite across N containers with WPT_TOTAL_CHUNKS/WPT_THIS_CHUNK.
+ENV WPT_TOTAL_CHUNKS=1 \
+    WPT_THIS_CHUNK=1 \
+    WPT_CHUNK_TYPE=dir_hash \
+    WPT_PROCESSES=4 \
+    WPT_RETRY_UNEXPECTED=1 \
+    WPT_TAINT=on \
+    WPT_RESULTS_DIR=/results \
+    WPT_SSL_TYPE=openssl \
+    WPT_SCREEN=1920x1080x24
+
+ENTRYPOINT ["/usr/local/bin/wpt-run"]
+CMD []

@@ -1,0 +1,92 @@
+# syntax=docker/dockerfile:1.7
+#
+# Stock Firefox control build for the Foxhound WPT comparison.
+#
+# Builds *pristine upstream Firefox* from the exact commit that Foxhound's main
+# branch is based on, using a mozconfig that mirrors taintfox_mozconfig_ubuntu
+# option for option (minus Foxhound branding and app name). Same compiler, same
+# configure flags, same vendored WPT checkout -- the only difference is the
+# Foxhound commits.
+#
+# Requires the shared toolchain image:
+#   docker build -f dockerfiles/Dockerfile.wpt --target toolchain -t foxhound-wpt-toolchain dockerfiles/
+#   docker build -f dockerfiles/Dockerfile.wpt-baseline -t firefox-wpt-baseline dockerfiles/
+
+ARG TOOLCHAIN_IMAGE=foxhound-wpt-toolchain
+FROM ${TOOLCHAIN_IMAGE} AS source
+
+# Merge-base of this branch and firefox-release: Firefox 153.0.
+#   git merge-base mine/experimental-fixes origin/firefox-release
+ARG FIREFOX_REPO=https://github.com/SAP/project-foxhound.git
+ARG FIREFOX_SHA=f1b6c0f86b96
+
+WORKDIR /home/foxhound/firefox
+RUN git init -q . \
+    && git remote add origin "${FIREFOX_REPO}" \
+    && git fetch --depth=1 origin "${FIREFOX_SHA}" \
+    && git checkout -q FETCH_HEAD \
+    && git rev-parse HEAD > /home/foxhound/firefox-revision.txt \
+    && echo "Firefox version: $(cat browser/config/version.txt)"
+
+FROM source AS build
+
+ARG BUILD_JOBS=
+
+# Mirrors taintfox_mozconfig_ubuntu. Every option that can affect test results
+# -- sandbox, wasm sandboxing, release mode, tests, signing -- is kept identical
+# so the diff against Foxhound isolates taint tracking rather than build config.
+RUN { \
+      echo 'ac_add_options --disable-updater'; \
+      echo 'MOZ_REQUIRE_SIGNING='; \
+      echo 'export MOZ_PACKAGE_JSSHELL=1'; \
+      echo 'mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-ff-release'; \
+      echo 'ac_add_options --disable-sandbox'; \
+      echo 'ac_add_options --without-wasm-sandboxed-libraries'; \
+      echo 'ac_add_options --disable-crashreporter'; \
+      echo 'ac_add_options --disable-backgroundtasks'; \
+      echo 'ac_add_options --enable-release'; \
+      echo 'ac_add_options --enable-js-shell'; \
+      echo 'ac_add_options --enable-tests'; \
+      echo 'ac_add_options --with-ccache=/usr/bin/ccache'; \
+      echo 'ac_add_options --disable-bootstrap'; \
+      echo 'ac_add_options --enable-linker=lld'; \
+      echo "ac_add_options --with-libclang-path=$(llvm-config --libdir)"; \
+      echo 'export CC=clang'; \
+      echo 'export CXX=clang++'; \
+      if [ -n "${BUILD_JOBS}" ]; then echo "mk_add_options MOZ_PARALLEL_BUILD=${BUILD_JOBS}"; fi; \
+    } > .mozconfig \
+    && cat .mozconfig
+
+RUN --mount=type=cache,target=/home/foxhound/.ccache,uid=1000,gid=1000 \
+    ./mach build
+
+RUN ./mach wpt-manifest-update --no-download --rebuild
+
+RUN ./obj-ff-release/dist/bin/firefox --version
+
+FROM build AS firefox-wpt-baseline
+
+COPY --chown=foxhound:foxhound wpt-run.sh /usr/local/bin/wpt-run
+COPY --chown=foxhound:foxhound wpt-compare.py /usr/local/bin/wpt-compare
+USER root
+RUN chmod +x /usr/local/bin/wpt-run /usr/local/bin/wpt-compare \
+    && mkdir -p /results && chown foxhound:foxhound /results \
+    && ln -sf /home/foxhound/firefox-revision.txt /home/foxhound/foxhound-revision.txt
+USER foxhound
+
+WORKDIR /home/foxhound/firefox
+VOLUME ["/results"]
+
+ENV SRC_DIR=/home/foxhound/firefox \
+    WPT_TOTAL_CHUNKS=1 \
+    WPT_THIS_CHUNK=1 \
+    WPT_CHUNK_TYPE=dir_hash \
+    WPT_PROCESSES=4 \
+    WPT_RETRY_UNEXPECTED=1 \
+    WPT_TAINT=none \
+    WPT_RESULTS_DIR=/results \
+    WPT_SSL_TYPE=openssl \
+    WPT_SCREEN=1920x1080x24
+
+ENTRYPOINT ["/usr/local/bin/wpt-run"]
+CMD []
