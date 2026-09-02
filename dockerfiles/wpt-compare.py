@@ -54,7 +54,7 @@ def main():
                         help="also write the structured diff here")
     parser.add_argument("--include-list", dest="include_out",
                         help="write the differing test ids here, one per line, "
-                             "ready to feed back as `mach wpt --include-list`")
+                             "ready to feed back as `mach wpt --include-file`")
     parser.add_argument("--quiet", action="store_true",
                         help="print only the summary, not the per-test diff")
     parser.add_argument("--no-retries", dest="use_retries", action="store_false",
