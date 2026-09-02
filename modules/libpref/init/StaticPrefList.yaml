@@ -6791,6 +6791,20 @@
   mirror: always
 
 #---------------------------------------------------------------------------
+# Prefs starting with "foxhound."
+#---------------------------------------------------------------------------
+
+# Foxhound: percent-encode the characters that would normally be escaped when
+# serialising a URL segment. Turning this off keeps taint ranges aligned with
+# the unescaped source string, at the cost of diverging from the URL spec.
+#
+# Read from nsStandardURL::nsSegmentEncoder off the main thread, hence atomic.
+- name: foxhound.escapeURL
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+#---------------------------------------------------------------------------
 # Prefs starting with "full-screen-api."
 #---------------------------------------------------------------------------
 
