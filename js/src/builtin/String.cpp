@@ -1019,7 +1019,9 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
   }
 
   JSString* res = NewDependentString(cx, str, begin, len);
-  res->setTaint(cx, newTaint);
+  if (res) {
+    res->setTaint(cx, newTaint);
+  }
   return res;
 }
 
