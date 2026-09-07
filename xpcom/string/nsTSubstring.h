@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,8 +18,8 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Span.h"
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
 
+#include "nsISupports.h"
 #include "nsTStringRepr.h"
 
 #include "Taint.h"
@@ -41,13 +39,6 @@ template <typename T>
 class nsTString;
 template <typename T>
 class nsTSubstring;
-
-template <typename T>
-struct type_identity {
-  using type = T;
-};
-template <typename T>
-using type_identity_t = typename type_identity<T>::type;
 
 namespace mozilla {
 
@@ -183,8 +174,8 @@ class BulkWriteHandle final {
   mozilla::Result<mozilla::Ok, nsresult> RestartBulkWrite(
       size_type aCapacity, size_type aPrefixToPreserve, bool aAllowShrinking) {
     MOZ_ASSERT(mString);
-    MOZ_TRY_VAR(mCapacity, mString->StartBulkWriteImpl(
-                               aCapacity, aPrefixToPreserve, aAllowShrinking));
+    mCapacity = MOZ_TRY(mString->StartBulkWriteImpl(
+        aCapacity, aPrefixToPreserve, aAllowShrinking));
     return mozilla::Ok();
   }
 
@@ -209,7 +200,7 @@ class BulkWriteHandle final {
       return;
     }
     if (aAllowShrinking) {
-      mozilla::Unused << mString->StartBulkWriteImpl(aLength, aLength, true);
+      (void)mString->StartBulkWriteImpl(aLength, aLength, true);
     }
     mString->FinishBulkWriteImpl(aLength);
     mString = nullptr;
@@ -366,7 +357,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   }
 
   iterator BeginWriting(const fallible_t&) {
-    return EnsureMutable() ? base_string_type::mData : iterator(0);
+    return EnsureMutable() ? base_string_type::mData : iterator(nullptr);
   }
 
   iterator EndWriting() {
@@ -380,7 +371,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   iterator EndWriting(const fallible_t&) {
     return EnsureMutable()
                ? (base_string_type::mData + base_string_type::mLength)
-               : iterator(0);
+               : iterator(nullptr);
   }
 
   /**
@@ -406,6 +397,15 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
    * @return  64-bit int rep of string value, and possible (out) error code
    */
   int64_t ToInteger64(nsresult* aErrorCode, uint32_t aRadix = 10) const;
+
+  /**
+   * Perform string to 64-bit uint conversion.
+   * @param   aErrorCode will contain error if one occurs
+   * @param   aRadix is the radix to use. Only 10 and 16 are supported.
+   * @return  64-bit uint rep of string value, and possible (out) error code
+   */
+  uint64_t ToUnsignedInteger64(nsresult* aErrorCode,
+                               uint32_t aRadix = 10) const;
 
   /**
    * assignment
@@ -435,14 +435,14 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     aBuffer->AddRef();
     Assign(already_AddRefed<mozilla::StringBuffer>(aBuffer), aLength);
   }
-  void NS_FASTCALL Assign(already_AddRefed<mozilla::StringBuffer> aBuffer,
-                          size_type aLength) {
+  void Assign(already_AddRefed<mozilla::StringBuffer> aBuffer,
+              size_type aLength) {
     mozilla::StringBuffer* buffer = aBuffer.take();
     auto* data = reinterpret_cast<char_type*>(buffer->Data());
-    MOZ_DIAGNOSTIC_ASSERT(data[aLength] == char_type(0),
-                          "data should be null terminated");
+    MOZ_ASSERT(data[aLength] == char_type(0), "data should be null terminated");
     Finalize();
-    SetData(data, aLength, DataFlags::REFCOUNTED | DataFlags::TERMINATED);
+    SetData(data, aLength,
+            DataFlags::STRINGBUFFER | DataFlags::OWNED | DataFlags::TERMINATED);
     SetTaint(buffer->Taint());
   }
 
@@ -758,7 +758,8 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
 
   template <typename... Args>
   void AppendFmt(
-      fmt::basic_format_string<char_type, type_identity_t<Args>...> aFormatStr,
+      fmt::basic_format_string<char_type, std::type_identity_t<Args>...>
+          aFormatStr,
       Args&&... aArgs) {
     AppendVfmt(
         aFormatStr,
@@ -782,7 +783,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     // left unoptimized (could be optimized as call to AssignLiteral),
     // because it's rare/nonexistent. If you add that optimization,
     // please be sure to also check that
-    // !(base_string_type::mDataFlags & DataFlags::REFCOUNTED)
+    // !(base_string_type::mDataFlags & DataFlags::OWNED)
     // to avoid undoing the effects of SetCapacity().
     Append(aStr, N - 1);
   }
@@ -793,7 +794,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     // left unoptimized (could be optimized as call to AssignLiteral),
     // because it's rare/nonexistent. If you add that optimization,
     // please be sure to also check that
-    // !(base_string_type::mDataFlags & DataFlags::REFCOUNTED)
+    // !(base_string_type::mDataFlags & DataFlags::OWNED)
     // to avoid undoing the effects of SetCapacity().
     return Append(aStr, N - 1, aFallible);
   }
@@ -1193,7 +1194,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
    * clears the pointer without releasing the buffer.
    */
   void ForgetSharedBuffer() {
-    if (this->mDataFlags & DataFlags::REFCOUNTED) {
+    if (this->mDataFlags & DataFlags::STRINGBUFFER) {
       SetToEmptyBuffer();
 
       // Foxhound: clear taint here.
@@ -1202,20 +1203,29 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   }
 
   /**
-   * If the string uses a reference-counted buffer, this method returns a
-   * pointer to it without incrementing the buffer's refcount.
+   * If the string data points to a StringBuffer (either owned or not), this
+   * method returns a pointer to it without incrementing the buffer's refcount.
    */
   mozilla::StringBuffer* GetStringBuffer() const {
-    if (this->mDataFlags & DataFlags::REFCOUNTED) {
+    if (this->mDataFlags & DataFlags::STRINGBUFFER) {
       return mozilla::StringBuffer::FromData(this->mData);
     }
     return nullptr;
   }
 
+  /**
+   * If the string data points to an owned StringBuffer (a string buffer that
+   * `this` is keeping alive), this method returns a pointer to it without
+   * incrementing the buffer's refcount.
+   */
+  mozilla::StringBuffer* GetOwnedStringBuffer() const {
+    return this->mDataFlags & DataFlags::OWNED ? GetStringBuffer() : nullptr;
+  }
+
  protected:
   constexpr void AssertValid() {
-    MOZ_DIAGNOSTIC_ASSERT(!(this->mClassFlags & ClassFlags::INVALID_MASK));
-    MOZ_DIAGNOSTIC_ASSERT(!(this->mDataFlags & DataFlags::INVALID_MASK));
+    MOZ_ASSERT(!(this->mClassFlags & ClassFlags::INVALID_MASK));
+    MOZ_ASSERT(!(this->mDataFlags & DataFlags::INVALID_MASK));
     MOZ_ASSERT(!(this->mClassFlags & ClassFlags::NULL_TERMINATED) ||
                    (this->mDataFlags & DataFlags::TERMINATED),
                "String classes whose static type guarantees a null-terminated "
@@ -1283,7 +1293,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
 
  protected:
   // default initialization
-  nsTSubstring()
+  constexpr nsTSubstring()
       : base_string_type(char_traits::sEmptyBuffer, 0, DataFlags::TERMINATED,
                          ClassFlags(0), EmptyTaint) {
     AssertValid();
@@ -1313,15 +1323,15 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
    */
   nsTSubstring(char_type* aData, size_type aLength, DataFlags aDataFlags,
                ClassFlags aClassFlags)
-#if defined(NS_BUILD_REFCNT_LOGGING)
-#  define XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE
-      ;
-#else
-#  undef XPCOM_STRING_CONSTRUCTOR_OUT_OF_LINE
-  : base_string_type(aData, aLength, aDataFlags, aClassFlags) {
+      : base_string_type(aData, aLength, aDataFlags, aClassFlags) {
+#ifdef NS_BUILD_REFCNT_LOGGING
+    if ((aDataFlags & DataFlags::OWNED) &&
+        !(aDataFlags & DataFlags::STRINGBUFFER)) {
+      MOZ_LOG_CTOR(aData, "StringAdopt", 1);
+    }
+#endif
     AssertValid();
   }
-#endif /* NS_BUILD_REFCNT_LOGGING */
 
   void SetToEmptyBuffer() {
     base_string_type::mData = char_traits::sEmptyBuffer;
@@ -1344,12 +1354,29 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     base_string_type::mTaint = aTaint;
   }
 
+  static void ReleaseData(void* aData, DataFlags aFlags) {
+    if (aFlags & DataFlags::OWNED) {
+      if (aFlags & DataFlags::STRINGBUFFER) {
+        mozilla::StringBuffer::FromData(aData)->Release();
+      } else {
+        // Treat this as destruction of a "StringAdopt" object for leak
+        // tracking purposes.
+        MOZ_LOG_DTOR(aData, "StringAdopt", 1);
+        free(aData);
+      }
+    }
+    // otherwise, nothing to do.
+  }
+
   /**
    * this function releases mData and does not change the value of
    * any of its member variables.  in other words, this function acts
    * like a destructor.
    */
-  void NS_FASTCALL Finalize();
+  void Finalize() {
+    this->mTaint.clear();
+    ReleaseData(this->mData, this->mDataFlags);
+  }
 
  public:
   StringTaint& Taint() { return base_string_type::mTaint; }

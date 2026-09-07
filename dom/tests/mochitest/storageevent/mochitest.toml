@@ -13,26 +13,26 @@ support-files = [
 
 ["test_storageLocalStorageEventCheckNoPropagation.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storageLocalStorageEventCheckPropagation.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storageNotifications.html"]
 
 ["test_storageSessionStorageEventCheckNoPropagation.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storageSessionStorageEventCheckPropagation.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]

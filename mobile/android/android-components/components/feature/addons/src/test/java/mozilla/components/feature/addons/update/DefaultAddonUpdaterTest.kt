@@ -18,8 +18,8 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.engine.gecko.webextension.GeckoWebExtension
 import mozilla.components.concept.engine.webextension.DisabledFlags
 import mozilla.components.concept.engine.webextension.Metadata
@@ -33,11 +33,8 @@ import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.worker.Frequency
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.components.support.test.whenever
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers
@@ -49,8 +46,7 @@ import java.util.concurrent.TimeUnit
 @RunWith(AndroidJUnit4::class)
 class DefaultAddonUpdaterTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setUp() {
@@ -61,7 +57,7 @@ class DefaultAddonUpdaterTest {
     }
 
     @Test
-    fun `registerForFutureUpdates - schedule work for future update`() = runTestOnMain {
+    fun `registerForFutureUpdates - schedule work for future update`() = runTest(testDispatcher) {
         val frequency = Frequency(1, TimeUnit.DAYS)
         val updater = DefaultAddonUpdater(testContext, frequency, mock())
         val addonId = "addonId"
@@ -85,7 +81,7 @@ class DefaultAddonUpdaterTest {
     }
 
     @Test
-    fun `update - schedule work for immediate update`() = runTestOnMain {
+    fun `update - schedule work for immediate update`() = runTest(testDispatcher) {
         val updater = DefaultAddonUpdater(
             testContext,
             notificationsDelegate = mock(),
@@ -406,10 +402,9 @@ class DefaultAddonUpdaterTest {
     }
 
     @Test
-    fun `unregisterForFutureUpdates - will remove scheduled work for future update`() = runTestOnMain {
+    fun `unregisterForFutureUpdates - will remove scheduled work for future update`() = runTest(testDispatcher) {
         val frequency = Frequency(1, TimeUnit.DAYS)
-        val updater = DefaultAddonUpdater(testContext, frequency, mock())
-        updater.scope = CoroutineScope(Dispatchers.Main)
+        val updater = DefaultAddonUpdater(testContext, frequency, mock(), testDispatcher)
 
         val addonId = "addonId"
 
@@ -430,6 +425,7 @@ class DefaultAddonUpdaterTest {
         assertExtensionIsRegisteredFoUpdates(updater, addonId)
 
         updater.unregisterForFutureUpdates(addonId)
+        testDispatcher.scheduler.advanceUntilIdle()
 
         workData = workManager.getWorkInfosForUniqueWork(workId).await()
         assertEquals(WorkInfo.State.CANCELLED, workData.first().state)
@@ -455,7 +451,7 @@ class DefaultAddonUpdaterTest {
     }
 
     @Test
-    fun `registerForFutureUpdates - will register only unregistered extensions`() = runTestOnMain {
+    fun `registerForFutureUpdates - will register only unregistered extensions`() = runTest(testDispatcher) {
         val updater = DefaultAddonUpdater(
             testContext,
             notificationsDelegate = mock(),
@@ -479,7 +475,7 @@ class DefaultAddonUpdaterTest {
     }
 
     @Test
-    fun `registerForFutureUpdates - will not register built-in and unsupported extensions`() = runTestOnMain {
+    fun `registerForFutureUpdates - will not register built-in and unsupported extensions`() = runTest(testDispatcher) {
         val updater = DefaultAddonUpdater(
             testContext,
             notificationsDelegate = mock(),

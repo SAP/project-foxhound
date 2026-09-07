@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,7 +76,7 @@ NS_IMETHODIMP
 TemporaryAccessGrantObserver::Observe(nsISupports* aSubject, const char* aTopic,
                                       const char16_t* aData) {
   if (strcmp(aTopic, NS_TIMER_CALLBACK_TOPIC) == 0) {
-    Unused << mPM->RemoveFromPrincipal(mPrincipal, mType);
+    (void)mPM->RemoveFromPrincipal(mPrincipal, mType);
 
     MOZ_ASSERT(sObservers);
     sObservers->Remove(std::make_pair(mPrincipal, mType));

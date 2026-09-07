@@ -257,6 +257,12 @@ fun String.tryGetHostFromUrl(): String = try {
 }
 
 /**
+ * Parse and extract the host component if this [String] is valid URL. Otherwise returns the trimmed string.
+ * Subdomains (e.g. "www.") are preserved.
+ */
+fun String.extractHostUrl(): String = toNormalizedUrl().toUri().host ?: trim()
+
+/**
  * Returns `true` if this string is a valid URL that contains [searchParameters] in its query parameters.
  */
 fun String.urlContainsQueryParameters(searchParameters: String): Boolean = try {

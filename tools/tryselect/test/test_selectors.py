@@ -73,26 +73,24 @@ def target_task_set():
 @pytest.fixture
 def full_task_set(target_task_set):
     full_task_set = deepcopy(target_task_set)
-    full_task_set.update(
-        {
-            "test/bar-opt": {
-                "kind": "test",
-                "label": "test/bar-opt",
-                "attributes": {},
-                "task": {},
-                "optimization": {},
-                "dependencies": {},
-            },
-            "test/bar-debug": {
-                "kind": "test",
-                "label": "test/bar-debug",
-                "attributes": {},
-                "task": {},
-                "optimization": {},
-                "dependencies": {},
-            },
-        }
-    )
+    full_task_set.update({
+        "test/bar-opt": {
+            "kind": "test",
+            "label": "test/bar-opt",
+            "attributes": {},
+            "task": {},
+            "optimization": {},
+            "dependencies": {},
+        },
+        "test/bar-debug": {
+            "kind": "test",
+            "label": "test/bar-debug",
+            "attributes": {},
+            "task": {},
+            "optimization": {},
+            "dependencies": {},
+        },
+    })
     return full_task_set
 
 
@@ -245,7 +243,7 @@ def full_task_set(target_task_set):
                 """
               preset saved, run with: --preset=foo
               Commit message:
-              Fuzzy query='test&query='opt&query='test
+              Fuzzy (preset: foo) query='test&query='opt&query='test
 
               mach try command: `./mach try fuzzy --preset foo -xq 'test`
 
@@ -624,7 +622,7 @@ def full_task_set(target_task_set):
                 """
               preset saved, run with: --preset=foo
               Commit message:
-              Fuzzy query='foo
+              Fuzzy (preset: foo) query='foo
 
               mach try command: `./mach try fuzzy --preset foo`
 
@@ -648,7 +646,7 @@ def full_task_set(target_task_set):
               }
 
               Commit message:
-              Fuzzy query='foo
+              Fuzzy (preset: foo) query='foo
 
               mach try command: `./mach try --preset foo`
 
@@ -686,14 +684,14 @@ def full_task_set(target_task_set):
             "fuzzy",
             [
                 ["try", "fuzzy", "--save", "foo", "-q", "'foo", "--rebuild", "5"],
-                ["try", "fuzzy", "--preset", "foo", "-q" "'build"],
-                ["try", "fuzzy", "--preset", "foo", "-xq" "'opt"],
+                ["try", "fuzzy", "--preset", "foo", "-q'build"],
+                ["try", "fuzzy", "--preset", "foo", "-xq'opt"],
             ],
             dedent(
                 """
               preset saved, run with: --preset=foo
               Commit message:
-              Fuzzy query='foo&query='build
+              Fuzzy (preset: foo) query='foo&query='build
 
               mach try command: `./mach try fuzzy --preset foo -q'build`
 
@@ -718,7 +716,7 @@ def full_task_set(target_task_set):
               }
 
               Commit message:
-              Fuzzy query='foo&query='opt
+              Fuzzy (preset: foo) query='foo&query='opt
 
               mach try command: `./mach try fuzzy --preset foo -xq'opt`
 
@@ -760,7 +758,7 @@ def full_task_set(target_task_set):
                 """
               preset saved, run with: --preset=foo
               Commit message:
-              Fuzzy query='foo
+              Fuzzy (preset: foo) query='foo
 
               mach try command: `./mach try fuzzy --preset foo --gecko-profile-features=nostacksampling,cpu`
 
@@ -810,7 +808,7 @@ def full_task_set(target_task_set):
                 """
               preset saved, run with: --preset=foo
               Commit message:
-              Fuzzy query='foo
+              Fuzzy (preset: foo) query='foo
 
               mach try command: `./mach try fuzzy --preset foo`
 
@@ -862,7 +860,6 @@ def test_run_mach(
     """These tests were initially converted from the `cramtest` framework. It's
     likely there is duplication of test coverage between here and the specific
     selector tests."""
-    mocker.patch("tryselect.push.display_push_estimates")
     capfd.readouterr()
     if isinstance(commands[0], str):
         commands = [commands]

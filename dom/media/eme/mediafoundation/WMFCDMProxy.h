@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,14 @@
 #ifndef DOM_MEDIA_EME_MEDIAFOUNDATION_WMFCDMPROXY_H_
 #define DOM_MEDIA_EME_MEDIAFOUNDATION_WMFCDMPROXY_H_
 
-#include "mozilla/CDMProxy.h"
 #include "mozilla/CDMCaps.h"
+#include "mozilla/CDMProxy.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/MediaKeys.h"
-#include "mozilla/dom/MediaKeySession.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WMFCDMImpl.h"
-
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/MediaKeySession.h"
+#include "mozilla/dom/MediaKeys.h"
 #include "nsString.h"
 
 namespace dom {
@@ -38,8 +35,8 @@ class WMFCDMProxy : public CDMProxy {
             const nsAString& aTopLevelOrigin, const nsAString& aName) override;
 
   void CreateSession(uint32_t aCreateSessionToken,
-                     MediaKeySessionType aSessionType, PromiseId aPromiseId,
-                     const nsAString& aInitDataType,
+                     dom::MediaKeySessionType aSessionType,
+                     PromiseId aPromiseId, const nsAString& aInitDataType,
                      nsTArray<uint8_t>& aInitData) override;
 
   void LoadSession(PromiseId aPromiseId, dom::MediaKeySessionType aSessionType,
@@ -64,7 +61,7 @@ class WMFCDMProxy : public CDMProxy {
 
   void Shutdown() override;
 
-  void Terminated() override {}
+  void Terminated() override;
 
   void OnSetSessionId(uint32_t aCreateSessionToken,
                       const nsAString& aSessionId) override {}
@@ -79,7 +76,8 @@ class WMFCDMProxy : public CDMProxy {
   void OnExpirationChange(const nsAString& aSessionId,
                           UnixTime aExpiryTime) override;
 
-  void OnSessionClosed(const nsAString& aSessionId) override {}
+  void OnSessionClosed(const nsAString& aSessionId,
+                       dom::MediaKeySessionClosedReason aReason) override;
 
   void OnSessionError(const nsAString& aSessionId, nsresult aException,
                       uint32_t aSystemCode, const nsAString& aMsg) override {}

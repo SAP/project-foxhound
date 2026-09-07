@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_GFX_FILTERNODESOFTWARE_H_
-#define _MOZILLA_GFX_FILTERNODESOFTWARE_H_
+#ifndef MOZILLA_GFX_FILTERNODESOFTWARE_H_
+#define MOZILLA_GFX_FILTERNODESOFTWARE_H_
 
 #include "Filters.h"
 #include "mozilla/Mutex.h"
@@ -61,9 +59,6 @@ class FilterNodeSoftware : public FilterNode,
   // FilterInvalidationListener implementation
   void FilterInvalidated(FilterNodeSoftware* aFilter) override;
 
- protected:
-  // The following methods are intended to be overriden by subclasses.
-
   /**
    * Translates a *FilterInputs enum value into an index for the
    * mInputFilters / mInputSurfaces arrays. Returns -1 for invalid inputs.
@@ -71,6 +66,9 @@ class FilterNodeSoftware : public FilterNode,
    * InputIndex(enumValue) is -1, we abort.
    */
   virtual int32_t InputIndex(uint32_t aInputEnumIndex) { return -1; }
+
+ protected:
+  // The following methods are intended to be overriden by subclasses.
 
   /**
    * Every filter node has an output rect, which can also be infinite. The
@@ -301,7 +299,7 @@ class FilterNodeColorMatrixSoftware : public FilterNodeSoftware {
 
  private:
   Matrix5x4 mMatrix;
-  AlphaMode mAlphaMode;
+  AlphaMode mAlphaMode = ALPHA_MODE_PREMULTIPLIED;
 };
 
 class FilterNodeFloodSoftware : public FilterNodeSoftware {
@@ -353,14 +351,20 @@ class FilterNodeComponentTransferSoftware : public FilterNodeSoftware {
   IntRect MapRectToSource(const IntRect& aRect, const IntRect& aMax,
                           FilterNode* aSourceNode) override;
 
+  // Contains the mapping from one colour value to another.
+  using LookupTable = std::array<uint8_t, 256>;
+  // feComponentTransfer can have up to 4 colour channels:
+  // red, green, blue and alpha.
+  using LookupTables = std::array<LookupTable, 4>;
+
  protected:
   already_AddRefed<DataSourceSurface> Render(const IntRect& aRect) override;
   IntRect GetOutputRectInRect(const IntRect& aRect) override;
   int32_t InputIndex(uint32_t aInputEnumIndex) override;
   void RequestFromInputsForRect(const IntRect& aRect) override;
-  virtual void GenerateLookupTable(ptrdiff_t aComponent,
-                                   uint8_t aTables[4][256], bool aDisabled);
-  virtual void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) = 0;
+  virtual void GenerateLookupTable(ptrdiff_t aComponent, LookupTables& aTables,
+                                   bool aDisabled);
+  virtual bool FillLookupTable(ptrdiff_t aComponent, LookupTable& aTable) = 0;
 
   bool mDisableR;
   bool mDisableG;
@@ -379,11 +383,11 @@ class FilterNodeTableTransferSoftware
                     uint32_t aSize) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, LookupTable& aTable) override;
 
  private:
-  void FillLookupTableImpl(std::vector<Float>& aTableValues,
-                           uint8_t aTable[256]);
+  bool FillLookupTableImpl(const std::vector<Float>& aTableValues,
+                           LookupTable& aTable);
 
   std::vector<Float> mTableR;
   std::vector<Float> mTableG;
@@ -402,11 +406,11 @@ class FilterNodeDiscreteTransferSoftware
                     uint32_t aSize) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, LookupTable& aTable) override;
 
  private:
-  void FillLookupTableImpl(std::vector<Float>& aTableValues,
-                           uint8_t aTable[256]);
+  bool FillLookupTableImpl(const std::vector<Float>& aTableValues,
+                           LookupTable& aTable);
 
   std::vector<Float> mTableR;
   std::vector<Float> mTableG;
@@ -425,10 +429,10 @@ class FilterNodeLinearTransferSoftware
   void SetAttribute(uint32_t aIndex, Float aValue) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, LookupTable& aTable) override;
 
  private:
-  void FillLookupTableImpl(Float aSlope, Float aIntercept, uint8_t aTable[256]);
+  bool FillLookupTableImpl(Float aSlope, Float aIntercept, LookupTable& aTable);
 
   Float mSlopeR;
   Float mSlopeG;
@@ -451,11 +455,11 @@ class FilterNodeGammaTransferSoftware
   void SetAttribute(uint32_t aIndex, Float aValue) override;
 
  protected:
-  void FillLookupTable(ptrdiff_t aComponent, uint8_t aTable[256]) override;
+  bool FillLookupTable(ptrdiff_t aComponent, LookupTable& aTable) override;
 
  private:
-  void FillLookupTableImpl(Float aAmplitude, Float aExponent, Float aOffset,
-                           uint8_t aTable[256]);
+  bool FillLookupTableImpl(Float aAmplitude, Float aExponent, Float aOffset,
+                           LookupTable& aTable);
 
   Float mAmplitudeR;
   Float mAmplitudeG;
@@ -502,6 +506,7 @@ class FilterNodeConvolveMatrixSoftware : public FilterNodeSoftware {
                                                CoordType aKernelUnitLengthX,
                                                CoordType aKernelUnitLengthY);
 
+  MarginDouble GetInflateSourceMargin() const;
   IntRect InflatedSourceRect(const IntRect& aDestRect);
   IntRect InflatedDestRect(const IntRect& aSourceRect);
 
@@ -765,6 +770,9 @@ class FilterNodeLightingSoftware : public FilterNodeSoftware {
                                                CoordType aKernelUnitLengthX,
                                                CoordType aKernelUnitLengthY);
 
+  MarginDouble GetInflateSourceMargin() const;
+  IntRect InflatedSourceRect(const IntRect& aDestRect);
+
   LightType mLight;
   LightingType mLighting;
   Float mSurfaceScale;
@@ -779,4 +787,4 @@ class FilterNodeLightingSoftware : public FilterNodeSoftware {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _MOZILLA_GFX_FILTERNODESOFTWARE_H_
+#endif  // MOZILLA_GFX_FILTERNODESOFTWARE_H_

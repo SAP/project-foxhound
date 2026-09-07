@@ -51,7 +51,6 @@ class DefaultSelectionActionDelegate(
 
     override fun getAllActions(): Array<String> = customActions
 
-    @SuppressWarnings("ComplexMethod")
     override fun isActionAvailable(id: String, selectedText: String): Boolean {
         val isPrivate = searchAdapter.isPrivateSession()
         return (id == SHARE && shareTextClicked != null) ||

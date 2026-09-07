@@ -260,13 +260,18 @@ PrefStore.prototype = {
     }
   },
 
-  _setAllPrefs(values) {
+  async _setAllPrefs(values) {
     const selectedThemeIDPref = "extensions.activeThemeID";
+    const pendingThemePref = "extensions.pendingActiveThemeID";
     let selectedThemeIDBefore = this._prefs.getStringPref(
       selectedThemeIDPref,
-      null
+      ""
     );
     let selectedThemeIDAfter = selectedThemeIDBefore;
+    // Clear the pending theme pref that might've hung around
+    if (this._prefs.prefHasUserValue(pendingThemePref)) {
+      this._prefs.clearUserPref(pendingThemePref);
+    }
 
     // Update 'services.sync.prefs.sync.foo.pref' before 'foo.pref', otherwise
     // _isSynced returns false when 'foo.pref' doesn't exist (e.g., on a new device).
@@ -294,7 +299,7 @@ PrefStore.prototype = {
           break;
 
         // default is to just set the pref
-        default:
+        default: {
           if (value == null) {
             // Pref has gone missing. The best we can do is reset it.
             if (this._prefs.prefHasUserValue(pref)) {
@@ -346,6 +351,7 @@ PrefStore.prototype = {
           ) {
             this._prefs.setBoolPref(PREF_SYNC_SEEN_PREFIX + pref, true);
           }
+        }
       }
     }
     // Themes are a little messy. Themes which have been installed are handled
@@ -353,9 +359,15 @@ PrefStore.prototype = {
     // So if there's a new default theme ID and that ID corresponds to a
     // system addon, then we arrange to enable that addon here.
     if (selectedThemeIDBefore != selectedThemeIDAfter) {
-      this._maybeEnableBuiltinTheme(selectedThemeIDAfter).catch(e => {
+      // We need to await before continuing here because enabling theme-addons
+      // also sets the extensions.activeThemeId pref, if we don't
+      // there are scenarios where the prefs thought we didn't
+      // actually set the pref and could cause unintended theme resets
+      try {
+        await this._maybeEnableBuiltinTheme(selectedThemeIDAfter);
+      } catch (e) {
         this._log.error("Failed to maybe update the default theme", e);
-      });
+      }
     }
   },
 
@@ -373,8 +385,12 @@ PrefStore.prototype = {
       this._log.trace(`Enabling builtin theme '${themeId}'`);
       await addon.enable();
     } else {
+      // We set this pref if the theme is not built-in and instead need to pass it
+      // to the addons engine and enable, see addonutils for more info
+      this._prefs.setStringPref("extensions.pendingActiveThemeID", themeId);
       this._log.trace(
-        `Have incoming theme ID of '${themeId}' but it's not a builtin theme`
+        `Have incoming theme ID of '${themeId}' but it's not a builtin theme,
+        setting extensions.pendingActiveThemeID so addons engine can enable it`
       );
     }
   },
@@ -422,7 +438,7 @@ PrefStore.prototype = {
 
     this._log.trace("Received pref updates, applying...");
     this._incomingPrefs = record.value;
-    this._setAllPrefs(record.value);
+    await this._setAllPrefs(record.value);
   },
 
   async wipe() {

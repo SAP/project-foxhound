@@ -1,5 +1,3 @@
-// vim: set ts=8 sts=4 et sw=4 tw=99:
-
 function testSetTypedInt8Array(k) {
     var ar = new Int8Array(8);
     ar[k+5] = { };

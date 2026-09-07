@@ -3,11 +3,11 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { BookmarkJSONUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/BookmarkJSONUtils.sys.mjs"
-);
 const { PlacesBackupResource } = ChromeUtils.importESModule(
   "resource:///modules/backup/PlacesBackupResource.sys.mjs"
+);
+const { PlacesDBUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesDBUtils.sys.mjs"
 );
 
 registerCleanupFunction(() => {
@@ -41,23 +41,7 @@ add_task(async function test_measure() {
 
   let placesMeasurement = Glean.browserBackup.placesSize.testGetValue();
   let faviconsMeasurement = Glean.browserBackup.faviconsSize.testGetValue();
-  let scalars = TelemetryTestUtils.getProcessScalars("parent", false, false);
 
-  // Compare glean vs telemetry measurements
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.places_size",
-    placesMeasurement,
-    "Glean and telemetry measurements for places.sqlite should be equal"
-  );
-  TelemetryTestUtils.assertScalar(
-    scalars,
-    "browser.backup.favicons_size",
-    faviconsMeasurement,
-    "Glean and telemetry measurements for favicons.sqlite should be equal"
-  );
-
-  // Compare glean measurements vs actual file sizes
   Assert.equal(
     placesMeasurement,
     EXPECTED_PLACES_DB_SIZE,
@@ -79,12 +63,6 @@ add_task(async function test_measure() {
  */
 add_task(async function test_backup() {
   Services.fog.testResetFOG();
-  const placesTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_PLACES_TIME_MS"
-  );
-  const faviconsTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_FAVICONS_TIME_MS"
-  );
   let sandbox = sinon.createSandbox();
 
   let placesBackupResource = new PlacesBackupResource();
@@ -109,6 +87,7 @@ add_task(async function test_backup() {
     close: sandbox.stub().resolves(true),
   };
   sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
+  sandbox.stub(PlacesDBUtils, "removeDownloadsMetadataFromDb");
 
   let manifestEntry = await placesBackupResource.backup(
     stagingPath,
@@ -120,6 +99,10 @@ add_task(async function test_backup() {
     "PlacesBackupResource.backup should return null as its ManifestEntry"
   );
 
+  Assert.ok(
+    PlacesDBUtils.removeDownloadsMetadataFromDb.calledOnce,
+    "PlacesDBUtils.removeDownloadsMetadataFromDb was called"
+  );
   Assert.ok(
     fakeConnection.backup.calledTwice,
     "Backup should have been called twice"
@@ -139,8 +122,6 @@ add_task(async function test_backup() {
   // Validate timing metrics
   assertSingleTimeMeasurement(Glean.browserBackup.placesTime.testGetValue());
   assertSingleTimeMeasurement(Glean.browserBackup.faviconsTime.testGetValue());
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 1);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 1);
 
   await maybeRemovePath(stagingPath);
   await maybeRemovePath(sourcePath);
@@ -149,20 +130,13 @@ add_task(async function test_backup() {
 });
 
 /**
- * Tests that the backup method correctly creates a compressed bookmarks JSON file when users
- * don't want history saved, even on shutdown.
+ * Tests that we don't backup history is the user is clearing browsing history
+ * on shutdown.
  */
 add_task(async function test_backup_no_saved_history() {
   Services.fog.testResetFOG();
-  const placesTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_PLACES_TIME_MS"
-  );
-  const faviconsTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_FAVICONS_TIME_MS"
-  );
   let sandbox = sinon.createSandbox();
 
-  let placesBackupResource = new PlacesBackupResource();
   let sourcePath = await IOUtils.createUniqueDirectory(
     PathUtils.tempDir,
     "PlacesBackupResource-source-test"
@@ -185,22 +159,13 @@ add_task(async function test_backup_no_saved_history() {
   Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
   Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
 
-  let manifestEntry = await placesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    { bookmarksOnly: true },
-    "Should have gotten back a ManifestEntry indicating that we only copied " +
-      "bookmarks"
+  Assert.ok(
+    !PlacesBackupResource.canBackupResource,
+    "Cannot backup places when history is disabled"
   );
 
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with remember history disabled"
-  );
-  await assertFilesExist(stagingPath, [{ path: "bookmarks.jsonlz4" }]);
+  // PlacesBackupResource should not be called when canBackupResource is false
+  // The test is just verifying the check works correctly
   // Validate no timing metrics
   Assert.equal(
     Glean.browserBackup.placesTime.testGetValue(),
@@ -212,32 +177,21 @@ add_task(async function test_backup_no_saved_history() {
     null,
     "Should not have timed favicons backup when it did not occur"
   );
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 0);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 0);
-
-  await IOUtils.remove(PathUtils.join(stagingPath, "bookmarks.jsonlz4"));
 
   /**
-   * Now verify that the sanitize shutdown pref alone affects backup file type for places,
-   * even if the user is okay with remembering history while browsing.
+   * Now verify that the sanitize shutdown pref also prevents backup of places.
    */
   Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, true);
   Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
-
-  fakeConnection.backup.resetHistory();
-  manifestEntry = await placesBackupResource.backup(stagingPath, sourcePath);
-  Assert.deepEqual(
-    manifestEntry,
-    { bookmarksOnly: true },
-    "Should have gotten back a ManifestEntry indicating that we only copied " +
-      "bookmarks"
-  );
+  Services.prefs.setBoolPref(HISTORY_CLEARED_ON_SHUTDOWN_PREF, true);
 
   Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with sanitize shutdown enabled"
+    !PlacesBackupResource.canBackupResource,
+    "Cannot backup places when sanitizeOnShutdown and history cleared on shutdown are enabled"
   );
-  await assertFilesExist(stagingPath, [{ path: "bookmarks.jsonlz4" }]);
+
+  // PlacesBackupResource should not be called when canBackupResource is false
+  // The test is just verifying the check works correctly
   // Validate no timing metrics
   Assert.equal(
     Glean.browserBackup.placesTime.testGetValue(),
@@ -249,8 +203,6 @@ add_task(async function test_backup_no_saved_history() {
     null,
     "Should not have timed favicons backup when it did not occur"
   );
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 0);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 0);
 
   await maybeRemovePath(stagingPath);
   await maybeRemovePath(sourcePath);
@@ -258,23 +210,16 @@ add_task(async function test_backup_no_saved_history() {
   sandbox.restore();
   Services.prefs.clearUserPref(HISTORY_ENABLED_PREF);
   Services.prefs.clearUserPref(SANITIZE_ON_SHUTDOWN_PREF);
+  Services.prefs.clearUserPref(HISTORY_CLEARED_ON_SHUTDOWN_PREF);
 });
 
 /**
- * Tests that the backup method correctly creates a compressed bookmarks JSON file when
- * permanent private browsing mode is enabled.
+ * Tests that we don't backup history if permanent private browsing is enabled
  */
 add_task(async function test_backup_private_browsing() {
   Services.fog.testResetFOG();
-  const placesTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_PLACES_TIME_MS"
-  );
-  const faviconsTimeHistogram = TelemetryTestUtils.getAndClearHistogram(
-    "BROWSER_BACKUP_FAVICONS_TIME_MS"
-  );
   let sandbox = sinon.createSandbox();
 
-  let placesBackupResource = new PlacesBackupResource();
   let sourcePath = await IOUtils.createUniqueDirectory(
     PathUtils.tempDir,
     "PlacesBackupResource-source-test"
@@ -291,22 +236,13 @@ add_task(async function test_backup_private_browsing() {
   sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
   sandbox.stub(PrivateBrowsingUtils, "permanentPrivateBrowsing").value(true);
 
-  let manifestEntry = await placesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    { bookmarksOnly: true },
-    "Should have gotten back a ManifestEntry indicating that we only copied " +
-      "bookmarks"
+  Assert.ok(
+    !PlacesBackupResource.canBackupResource,
+    "Cannot backup places when permanent private browsing is enabled"
   );
 
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with permanent private browsing enabled"
-  );
-  await assertFilesExist(stagingPath, [{ path: "bookmarks.jsonlz4" }]);
+  // PlacesBackupResource should not be called when canBackupResource is false
+  // The test is just verifying the check works correctly
   // Validate no timing metrics
   Assert.equal(
     Glean.browserBackup.placesTime.testGetValue(),
@@ -318,8 +254,6 @@ add_task(async function test_backup_private_browsing() {
     null,
     "Should not have timed favicons backup when it did not occur"
   );
-  assertHistogramMeasurementQuantity(placesTimeHistogram, 0);
-  assertHistogramMeasurementQuantity(faviconsTimeHistogram, 0);
 
   await maybeRemovePath(stagingPath);
   await maybeRemovePath(sourcePath);
@@ -367,63 +301,33 @@ add_task(async function test_recover() {
 });
 
 /**
- * Test that the recover method correctly copies bookmarks.jsonlz4 from the recovery
- * directory into the destination profile directory.
+ * Tests the canBackupResource method with various pref configurations.
  */
-add_task(async function test_recover_bookmarks_only() {
-  let sandbox = sinon.createSandbox();
-  let placesBackupResource = new PlacesBackupResource();
-  let recoveryPath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PlacesBackupResource-recovery-test"
-  );
-  let destProfilePath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PlacesBackupResource-test-profile"
-  );
-  let bookmarksImportStub = sandbox
-    .stub(BookmarkJSONUtils, "importFromFile")
-    .resolves(true);
-
-  await createTestFiles(recoveryPath, [{ path: "bookmarks.jsonlz4" }]);
-
-  // The backup method is expected to detect bookmarks import only
-  let postRecoveryEntry = await placesBackupResource.recover(
-    { bookmarksOnly: true },
-    recoveryPath,
-    destProfilePath
-  );
-
-  let expectedBookmarksPath = PathUtils.join(recoveryPath, "bookmarks.jsonlz4");
-
-  // Expect the bookmarks backup file path to be passed from recover()
-  Assert.deepEqual(
-    postRecoveryEntry,
-    { bookmarksBackupPath: expectedBookmarksPath },
-    "PlacesBackupResource.recover should return the expected post recovery entry"
-  );
-
-  // Ensure that files stored in a places backup are not copied to the new profile during recovery
-  for (let placesFile of [
-    "places.sqlite",
-    "favicons.sqlite",
-    "bookmarks.jsonlz4",
-  ]) {
-    Assert.ok(
-      !(await IOUtils.exists(PathUtils.join(destProfilePath, placesFile))),
-      `${placesFile} should not exist in the new profile`
-    );
-  }
-
-  // Now pretend that BackupService called the postRecovery method
-  await placesBackupResource.postRecovery(postRecoveryEntry);
+add_task(async function test_canBackupResource() {
   Assert.ok(
-    bookmarksImportStub.calledOnce,
-    "BookmarkJSONUtils.importFromFile was called in the postRecovery step"
+    PlacesBackupResource.canBackupResource,
+    "Should be able to backup by default"
   );
 
-  await maybeRemovePath(recoveryPath);
-  await maybeRemovePath(destProfilePath);
+  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
+  Assert.ok(
+    !PlacesBackupResource.canBackupResource,
+    "Cannot backup when history is disabled"
+  );
+  Services.prefs.clearUserPref(HISTORY_ENABLED_PREF);
 
-  sandbox.restore();
+  Assert.ok(
+    PlacesBackupResource.canBackupResource,
+    "Should be able to backup after clearing pref"
+  );
+
+  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
+  Services.prefs.setBoolPref(HISTORY_CLEARED_ON_SHUTDOWN_PREF, true);
+  Assert.ok(
+    !PlacesBackupResource.canBackupResource,
+    "Cannot backup when sanitizeOnShutdown and history cleared on shutdown are enabled"
+  );
+
+  Services.prefs.clearUserPref(SANITIZE_ON_SHUTDOWN_PREF);
+  Services.prefs.clearUserPref(HISTORY_CLEARED_ON_SHUTDOWN_PREF);
 });

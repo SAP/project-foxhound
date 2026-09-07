@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FFVPXRuntimeLinker.h"
+
 #include "FFmpegLibWrapper.h"
 #include "FFmpegLog.h"
 #include "mozilla/FileUtils.h"
@@ -18,14 +17,17 @@ namespace mozilla {
 template <int V>
 class FFmpegDecoderModule {
  public:
-  static void Init(FFmpegLibWrapper*);
-  static already_AddRefed<PlatformDecoderModule> Create(FFmpegLibWrapper*);
+  static void Init(const FFmpegLibWrapper*);
+  static already_AddRefed<PlatformDecoderModule> Create(
+      const FFmpegLibWrapper*);
 };
 
 template <int V>
 class FFmpegEncoderModule {
  public:
-  static already_AddRefed<PlatformEncoderModule> Create(FFmpegLibWrapper*);
+  static void Init(const FFmpegLibWrapper*);
+  static already_AddRefed<PlatformEncoderModule> Create(
+      const FFmpegLibWrapper*);
 };
 
 static FFmpegLibWrapper sFFVPXLib;
@@ -62,7 +64,7 @@ static PRLibrary* MozAVLink(nsIFile* aFile) {
   PRLibrary* lib = PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_LOCAL);
 #endif
   if (!lib) {
-    FFMPEGV_LOG("unable to load library %s", aFile->HumanReadablePath().get());
+    FFMPEGV_LOG("unable to load library {}", aFile->HumanReadablePath().get());
   }
   return lib;
 }
@@ -80,6 +82,7 @@ bool FFVPXRuntimeLinker::Init() {
   if (sLinkStatus) {
     if (sLinkStatus == LinkStatus_SUCCEEDED) {
       FFmpegDecoderModule<FFVPX_VERSION>::Init(&sFFVPXLib);
+      FFmpegEncoderModule<FFVPX_VERSION>::Init(&sFFVPXLib);
     }
     return sLinkStatus == LinkStatus_SUCCEEDED;
   }
@@ -89,6 +92,12 @@ bool FFVPXRuntimeLinker::Init() {
 #ifdef XP_WIN
   PathString path =
       GetLibraryFilePathname(LXUL_DLL, (PRFuncPtr)&FFVPXRuntimeLinker::Init);
+#elif defined(ANDROID)
+  // On Android, libxul is either pulled from the APK or from a temporary folder
+  // for gtests/fuzzing. libmozavutil and libmozavcodec are always in the APK,
+  // so let's use libmozglue instead to find the base pathname.
+  PathString path = GetLibraryFilePathname(
+      MOZ_DLL_PREFIX "mozglue" MOZ_DLL_SUFFIX, (PRFuncPtr)&malloc);
 #else
   PathString path =
       GetLibraryFilePathname(XUL_DLL, (PRFuncPtr)&FFVPXRuntimeLinker::Init);
@@ -101,10 +110,11 @@ bool FFVPXRuntimeLinker::Init() {
     return false;
   }
 
+#ifndef ANDROID
   if (getenv("MOZ_RUN_GTEST")
-#ifdef FUZZING
+#  ifdef FUZZING
       || getenv("FUZZER")
-#endif
+#  endif
   ) {
     // The condition above is the same as in
     // xpcom/glue/standalone/nsXPCOMGlue.cpp. This means we can't reach here
@@ -117,6 +127,7 @@ bool FFVPXRuntimeLinker::Init() {
     }
     libFile = parent;
   }
+#endif
 
   if (NS_FAILED(libFile->SetNativeLeafName(MOZ_DLL_PREFIX
                                            "mozavutil" MOZ_DLL_SUFFIX ""_ns))) {
@@ -130,10 +141,11 @@ bool FFVPXRuntimeLinker::Init() {
   }
   sFFVPXLib.mAVCodecLib = MozAVLink(libFile);
   FFmpegLibWrapper::LinkResult res = sFFVPXLib.Link();
-  FFMPEGP_LOG("Link result: %s", ToString(res).c_str());
+  FFMPEGP_LOG("Link result: {}", ToString(res).c_str());
   if (res == FFmpegLibWrapper::LinkResult::Success) {
     sLinkStatus = LinkStatus_SUCCEEDED;
     FFmpegDecoderModule<FFVPX_VERSION>::Init(&sFFVPXLib);
+    FFmpegEncoderModule<FFVPX_VERSION>::Init(&sFFVPXLib);
     return true;
   }
   return false;

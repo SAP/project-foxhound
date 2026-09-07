@@ -36,7 +36,7 @@ add_setup(async function () {
 add_task(async function test_urlbar() {
   Assert.ok(!gURLBar.searchMode, "Not in search mode initially.");
 
-  let focusPromise = BrowserTestUtils.waitForEvent(gURLBar, "focus");
+  let focusPromise = BrowserTestUtils.waitForEvent(gURLBar.inputField, "focus");
   EventUtils.synthesizeKey("k", { accelKey: true });
   await focusPromise;
   Assert.equal(
@@ -53,12 +53,15 @@ add_task(async function test_urlbar() {
 add_task(async function test_searchBar() {
   let searchBar = await gCUITestUtils.addSearchBar();
 
-  let focusPromise = BrowserTestUtils.waitForEvent(searchBar.textbox, "focus");
+  let focusPromise = BrowserTestUtils.waitForEvent(
+    searchBar.inputField,
+    "focus"
+  );
   EventUtils.synthesizeKey("k", { accelKey: true });
   await focusPromise;
   Assert.equal(
     document.activeElement,
-    searchBar.textbox,
+    searchBar.inputField,
     "Focused the search bar."
   );
 
@@ -93,7 +96,10 @@ add_task(async function test_popup() {
   // Due to Bug 1953787, CTRL+K does not work inside library windows on
   // platforms other than mac, so we call SearchUIUtils.webSearch directly.
   if (AppConstants.platform == "macosx") {
-    let focusPromise = BrowserTestUtils.waitForEvent(gURLBar, "focus");
+    let focusPromise = BrowserTestUtils.waitForEvent(
+      gURLBar.inputField,
+      "focus"
+    );
     EventUtils.synthesizeKey("k", { accelKey: true }, libraryWin);
     await focusPromise;
   } else {

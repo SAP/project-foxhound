@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -7,11 +5,8 @@
 #ifndef BASE_MESSAGE_LOOP_H_
 #define BASE_MESSAGE_LOOP_H_
 
-#include <deque>
 #include <queue>
 #include <string>
-#include <vector>
-#include <map>
 
 #include "base/message_pump.h"
 #include "base/observer_list.h"
@@ -22,6 +17,8 @@
 // We need this to declare base::MessagePumpWin::Dispatcher, which we should
 // really just eliminate.
 #  include "base/message_pump_win.h"
+#elif defined(XP_DARWIN)
+#  include "base/message_pump_kqueue.h"
 #else
 #  include "base/message_pump_libevent.h"
 #endif
@@ -84,7 +81,7 @@ class MessageLoop : public base::MessagePump::Delegate {
   //
   class DestructionObserver {
    public:
-    virtual ~DestructionObserver() {}
+    virtual ~DestructionObserver() = default;
     virtual void WillDestroyCurrentMessageLoop() = 0;
   };
 
@@ -305,11 +302,7 @@ class MessageLoop : public base::MessagePump::Delegate {
           nestable(aOther.nestable) {}
 
     // std::priority_queue<T>::top is dumb, so we have to have this.
-    PendingTask(const PendingTask& aOther)
-        : task(aOther.task),
-          delayed_run_time(aOther.delayed_run_time),
-          sequence_num(aOther.sequence_num),
-          nestable(aOther.nestable) {}
+    PendingTask(const PendingTask& aOther) = default;
     PendingTask& operator=(const PendingTask& aOther) {
       task = aOther.task;
       delayed_run_time = aOther.delayed_run_time;
@@ -328,6 +321,10 @@ class MessageLoop : public base::MessagePump::Delegate {
 #if defined(XP_WIN)
   base::MessagePumpWin* pump_win() {
     return static_cast<base::MessagePumpWin*>(pump_.get());
+  }
+#elif defined(XP_DARWIN)
+  base::MessagePumpKqueue* pump_kqueue() {
+    return static_cast<base::MessagePumpKqueue*>(pump_.get());
   }
 #else
   base::MessagePumpLibevent* pump_libevent() {
@@ -461,7 +458,7 @@ class MessageLoopForUI : public MessageLoop {
   // Returns the MessageLoopForUI of the current thread.
   static MessageLoopForUI* current() {
     MessageLoop* loop = MessageLoop::current();
-    if (!loop) return NULL;
+    if (!loop) return nullptr;
     Type type = loop->type();
     DCHECK(type == MessageLoop::TYPE_UI ||
            type == MessageLoop::TYPE_MOZILLA_PARENT ||
@@ -526,6 +523,28 @@ class MessageLoopForIO : public MessageLoop {
   base::MessagePumpForIO* pump_io() {
     return static_cast<base::MessagePumpForIO*>(pump_.get());
   }
+
+#elif defined(XP_DARWIN)
+
+  typedef base::MessagePumpKqueue::Watcher Watcher;
+  typedef base::MessagePumpKqueue::FileDescriptorWatcher FileDescriptorWatcher;
+  typedef base::MessagePumpKqueue::MachPortWatcher MachPortWatcher;
+  typedef base::MessagePumpKqueue::MachPortWatchController
+      MachPortWatchController;
+
+  enum Mode {
+    WATCH_READ = base::MessagePumpKqueue::WATCH_READ,
+    WATCH_WRITE = base::MessagePumpKqueue::WATCH_WRITE,
+    WATCH_READ_WRITE = base::MessagePumpKqueue::WATCH_READ_WRITE
+  };
+
+  // Please see MessagePumpKqueue for definition.
+  bool WatchFileDescriptor(int fd, bool persistent, Mode mode,
+                           FileDescriptorWatcher* controller,
+                           Watcher* delegate);
+  bool WatchMachReceivePort(mach_port_t port,
+                            MachPortWatchController* controller,
+                            MachPortWatcher* delegate);
 
 #else
   typedef base::MessagePumpLibevent::Watcher Watcher;

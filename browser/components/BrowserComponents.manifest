@@ -9,30 +9,95 @@
 
 category app-startup nsBrowserGlue @mozilla.org/browser/browserglue;1 application={ec8030f7-c20a-464f-9b0e-13a3a9e97384} application={aa3c5121-dab2-40e2-81ca-7ea25febc110}
 
+category first-startup-new-profile resource:///modules/AboutNewTabResourceMapping.sys.mjs AboutNewTabResourceMapping.firstStartupNewProfile
+
 # Browser global components initializing before UI startup
 category browser-before-ui-startup resource:///modules/sessionstore/SessionStore.sys.mjs SessionStore.init
 category browser-before-ui-startup resource:///modules/BuiltInThemes.sys.mjs BuiltInThemes.maybeInstallActiveBuiltInTheme
 #ifdef MOZ_NORMANDY
 category browser-before-ui-startup resource://normandy/Normandy.sys.mjs Normandy.init
 #endif
-category browser-before-ui-startup resource:///modules/ResetPBMPanel.sys.mjs ResetPBMPanel.init
+category browser-before-ui-startup moz-src:///browser/components/privatebrowsing/ResetPBMPanel.sys.mjs ResetPBMPanel.init
 category browser-before-ui-startup resource:///modules/AboutHomeStartupCache.sys.mjs AboutHomeStartupCache.init
 category browser-before-ui-startup resource:///modules/AccountsGlue.sys.mjs AccountsGlue.init
+category browser-before-ui-startup moz-src:///browser/modules/ObserverForwarder.sys.mjs ObserverForwarder.init
 
 # Browser window lifecycle consumers
-category browser-window-domcontentloaded-before-tabbrowser resource:///modules/BrowserDOMWindow.sys.mjs BrowserDOMWindow.setupInWindow
-category browser-window-domcontentloaded resource:///modules/BrowserWindowTracker.sys.mjs BrowserWindowTracker.track
-category browser-window-domcontentloaded resource:///modules/CustomizableUI.sys.mjs CustomizableUI.handleNewBrowserWindow
+category browser-window-before-initial-xul-layout-document-preparation chrome://browser/content/browser-customization.js AutoHideMenubar.init
 
-category browser-window-delayed-startup resource:///modules/ContentAnalysis.sys.mjs ContentAnalysis.initialize
+category browser-window-before-initial-xul-layout resource://gre/modules/LightweightThemeConsumer.sys.mjs LightweightThemeConsumer.init
+category browser-window-before-initial-xul-layout moz-src:///browser/themes/ToolbarIconColor.sys.mjs ToolbarIconColor.init
+category browser-window-before-initial-xul-layout chrome://browser/content/browser-customtitlebar.js CustomTitlebar.init
+
+# The two categories below are specific to Tabbrowser creation. For consumers that need to initialize during
+# 'DOMContentLoaded', use 'browser-window-domcontentloaded' instead.
+category browser-window-domcontentloaded-before-tabbrowser resource:///modules/BrowserDOMWindow.sys.mjs BrowserDOMWindow.setupInWindow
+category browser-window-domcontentloaded-tabbrowser chrome://browser/content/tabbrowser/tabbrowser.js Tabbrowser.create
+
+category browser-window-domcontentloaded resource:///modules/BrowserWindowTracker.sys.mjs BrowserWindowTracker.track
+category browser-window-domcontentloaded moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs CustomizableUI.handleNewBrowserWindow
+category browser-window-domcontentloaded chrome://browser/content/browser-addons.js gUnifiedExtensions.init
+category browser-window-domcontentloaded chrome://browser/content/browser.js FirefoxViewHandler.init
+
+category browser-window-load-before-sessionstore-init chrome://browser/content/browser-captivePortal.js CaptivePortalWatcher.init
+category browser-window-load-before-sessionstore-init resource:///modules/ZoomUI.sys.mjs ZoomUI.init
+category browser-window-load-before-sessionstore-init chrome://browser/content/sidebar/browser-sidebar.js SidebarController.init
+category browser-window-load-before-sessionstore-init chrome://browser/content/downloads/indicator.js DownloadsButton.init
+
+# The category manager uses the entry name (the URL below) as a unique key
+# per category, so consumers sharing the same module need a `#<id>` suffix
+# to avoid overwriting each other. BrowserUtils.callModulesFromCategory
+# strips the suffix before using the URL.
+category browser-window-load chrome://browser/content/browser.js#gUIDensity gUIDensity.init
+category browser-window-load chrome://browser/content/browser.js#Win10TabletModeUpdater Win10TabletModeUpdater.init
+category browser-window-load chrome://browser/content/browser.js#CombinedStopReload CombinedStopReload.ensureInitialized
+category browser-window-load moz-src:///browser/modules/PrivateBrowsingUI.sys.mjs PrivateBrowsingUI.init
+category browser-window-load resource:///modules/taskbartabs/TaskbarTabsChrome.sys.mjs TaskbarTabsChrome.init
+category browser-window-load chrome://browser/content/browser-pageActions.js BrowserPageActions.init
+category browser-window-load chrome://browser/content/browser-toolbarKeyNav.js ToolbarKeyboardNavigator.init
+category browser-window-load moz-src:///browser/components/customkeys/CustomKeys.sys.mjs CustomKeys.initWindow
+
+category browser-window-delayed-startup moz-src:///browser/components/contentanalysis/content/ContentAnalysis.sys.mjs ContentAnalysis.initialize
 category browser-window-delayed-startup resource:///modules/HomePage.sys.mjs HomePage.delayedStartup
 category browser-window-delayed-startup moz-src:///browser/components/genai/LinkPreview.sys.mjs LinkPreview.init
-category browser-window-delayed-startup resource:///modules/ReportBrokenSite.sys.mjs ReportBrokenSite.init
+category browser-window-delayed-startup moz-src:///browser/components/reportbrokensite/ReportBrokenSite.sys.mjs ReportBrokenSite.init
 category browser-window-delayed-startup moz-src:///browser/components/search/SearchUIUtils.sys.mjs SearchUIUtils.init
 category browser-window-delayed-startup resource:///modules/taskbartabs/TaskbarTabsPageAction.sys.mjs TaskbarTabsPageAction.init
 
-category browser-window-unload resource:///modules/BrowserDOMWindow.sys.mjs BrowserDOMWindow.teardownInWindow
+category browser-window-location-change chrome://browser/content/browser-places.js BookmarkingUI.onLocationChange
+category browser-window-location-change chrome://browser/content/browser-sitePermissionPanel.js gPermissionPanel.onLocationChange
+category browser-window-location-change chrome://browser/content/browser-siteProtections.js gProtectionsHandler.onLocationChange
+category browser-window-location-change chrome://browser/content/browser-pageActions.js BrowserPageActions.onLocationChange
+category browser-window-location-change moz-src:///browser/components/urlbar/UrlbarProviderSearchTips.sys.mjs UrlbarProviderSearchTips.onLocationChange
+category browser-window-location-change moz-src:///browser/components/urlbar/ActionsProviderContextualSearch.sys.mjs ActionsProviderContextualSearch.onLocationChange
+category browser-window-location-change resource:///modules/asrouter/CFRPageActions.sys.mjs CFRPageActions.onLocationChange
+category browser-window-location-change resource:///actors/AboutReaderParent.sys.mjs AboutReaderParent.onLocationChange
+category browser-window-location-change resource://gre/actors/TranslationsParent.sys.mjs TranslationsParent.onLocationChange
+category browser-window-location-change resource://gre/modules/PictureInPicture.sys.mjs PictureInPicture.onLocationChange
+
+category browser-window-unload-begin chrome://browser/content/browser-customtitlebar.js CustomTitlebar.uninit
+category browser-window-unload-begin moz-src:///browser/themes/ToolbarIconColor.sys.mjs ToolbarIconColor.uninit
+category browser-window-unload-begin moz-src:///browser/components/reportbrokensite/ReportBrokenSite.sys.mjs ReportBrokenSite.uninit
+category browser-window-unload-begin chrome://browser/content/browser.js gUIDensity.uninit
+
+category browser-window-unload chrome://browser/content/downloads/indicator.js DownloadsButton.uninit
+category browser-window-unload chrome://browser/content/sidebar/browser-sidebar.js SidebarController.uninit
+category browser-window-unload chrome://browser/content/browser-captivePortal.js CaptivePortalWatcher.uninit
+category browser-window-unload moz-src:///browser/components/customkeys/CustomKeys.sys.mjs CustomKeys.uninitWindow
+category browser-window-unload chrome://browser/content/browser-toolbarKeyNav.js ToolbarKeyboardNavigator.uninit
+# `#<id>` suffix disambiguates multiple consumers in the same module; see
+# the comment in `browser-window-load` above.
+category browser-window-unload chrome://browser/content/browser.js#Win10TabletModeUpdater Win10TabletModeUpdater.uninit
+category browser-window-unload chrome://browser/content/browser.js#CombinedStopReload CombinedStopReload.uninit
+category browser-window-unload chrome://browser/content/browser-addons.js gUnifiedExtensions.uninit
+category browser-window-unload chrome://browser/content/browser.js#FirefoxViewHandler FirefoxViewHandler.uninit
 category browser-window-unload moz-src:///browser/components/tabbrowser/NewTabPagePreloading.sys.mjs NewTabPagePreloading.removePreloadedBrowser
+
+# The category below is specific to Tabbrowser destruction. For consumers that need to uninitialize during
+# window unload, use 'browser-window-unload' instead.
+category browser-window-unload-tabbrowser chrome://browser/content/tabbrowser/tabbrowser.js Tabbrowser.destroy
+
+category browser-window-final-unload resource:///modules/BrowserDOMWindow.sys.mjs BrowserDOMWindow.teardownInWindow
 
 # App startup consumers
 
@@ -47,29 +112,36 @@ category browser-first-window-ready moz-src:///toolkit/profile/ProfilesDatastore
 category browser-first-window-ready resource:///modules/profiles/SelectableProfileService.sys.mjs SelectableProfileService.init
 category browser-first-window-ready moz-src:///browser/components/protections/ContentBlockingPrefs.sys.mjs ContentBlockingPrefs.init
 category browser-first-window-ready resource://gre/modules/CaptchaDetectionPingUtils.sys.mjs CaptchaDetectionPingUtils.init
-category browser-first-window-ready resource:///modules/ipprotection/IPProtection.sys.mjs IPProtection.init
+category browser-first-window-ready moz-src:///browser/components/ipprotection/IPProtectionHelpers.sys.mjs IPProtectionActivator.init
+category browser-first-window-ready moz-src:///browser/components/customizableui/SearchWidgetTracker.sys.mjs SearchWidgetTracker.init
 #ifdef MOZ_SANDBOX
 #ifdef XP_LINUX
 category browser-first-window-ready resource://gre/modules/SandboxUtils.sys.mjs SandboxUtils.maybeWarnAboutMissingUserNamespaces
 #endif
+category browser-window-delayed-startup resource://gre/modules/SandboxUtils.sys.mjs SandboxUtils.maybeWarnAboutDisabledContentSandbox
+category browser-first-window-ready resource://gre/modules/SandboxUtils.sys.mjs SandboxUtils.observeContentSandboxPref
 #endif
 
 category browser-idle-startup moz-src:///browser/components/places/PlacesUIUtils.sys.mjs PlacesUIUtils.unblockToolbars
 category browser-idle-startup resource:///modules/BuiltInThemes.sys.mjs BuiltInThemes.ensureBuiltInThemes
 category browser-idle-startup resource://gre/modules/RFPHelper.sys.mjs RFPHelper.init
 category browser-idle-startup resource://gre/modules/Blocklist.sys.mjs Blocklist.loadBlocklistAsync
+category browser-idle-startup resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs RemoteSecuritySettings.init
 category browser-idle-startup moz-src:///browser/components/tabbrowser/TabUnloader.sys.mjs TabUnloader.init
 category browser-idle-startup resource:///modules/GenAI.sys.mjs GenAI.init
-category browser-idle-startup resource:///modules/QuickSuggest.sys.mjs QuickSuggest.init
-category browser-idle-startup resource:///modules/UrlbarSearchTermsPersistence.sys.mjs UrlbarSearchTermsPersistence.init
+category browser-idle-startup moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs QuickSuggest.init
+category browser-idle-startup moz-src:///browser/components/urlbar/UrlbarSearchTermsPersistence.sys.mjs UrlbarSearchTermsPersistence.init
 category browser-idle-startup moz-src:///browser/components/search/SERPCategorization.sys.mjs SERPCategorization.init
 category browser-idle-startup resource://gre/modules/ContentRelevancyManager.sys.mjs ContentRelevancyManager.init
 category browser-idle-startup resource://gre/modules/ColorwayThemeMigration.sys.mjs ColorwayThemeMigration.maybeWarn
+category browser-idle-startup resource://gre/modules/AppServicesTracing.sys.mjs RustLogForwarder.init
 #ifdef MOZ_UPDATER
 category browser-idle-startup resource://gre/modules/UpdateListener.sys.mjs UpdateListener.maybeShowUnsupportedNotification
+category browser-idle-startup resource:///modules/UpdatePolicyEnforcer.sys.mjs UpdatePolicyEnforcer.registerObservers
 #endif
 #ifdef XP_WIN
 category browser-idle-startup resource:///modules/WindowsJumpLists.sys.mjs WinTaskbarJumpList.startup
+category browser-idle-startup resource:///modules/DefaultWindowsLaunchOnLogin.sys.mjs DefaultWindowsLaunchOnLogin.maybeEnableOnFirstRun
 #endif
 #if defined(XP_WIN) || defined(XP_MACOSX)
 category browser-idle-startup moz-src:///browser/components/shell/StartupOSIntegration.sys.mjs StartupOSIntegration.onStartupIdle
@@ -83,7 +155,7 @@ category browser-best-effort-idle-startup moz-src:///browser/components/StartupT
 # App shutdown consumers
 category browser-quit-application-granted resource:///modules/BrowserUsageTelemetry.sys.mjs BrowserUsageTelemetry.uninit
 category browser-quit-application-granted moz-src:///browser/components/places/Interactions.sys.mjs Interactions.uninit
-category browser-quit-application-granted resource:///modules/pagedata/PageDataService.sys.mjs PageDataService.uninit
+category browser-quit-application-granted moz-src:///browser/components/pagedata/PageDataService.sys.mjs PageDataService.uninit
 category browser-quit-application-granted resource://gre/modules/PageThumbs.sys.mjs PageThumbs.uninit
 category browser-quit-application-granted resource://gre/modules/NewTabUtils.sys.mjs NewTabUtils.uninit
 category browser-quit-application-granted resource://normandy/Normandy.sys.mjs Normandy.uninit
@@ -94,7 +166,9 @@ category browser-quit-application-granted moz-src:///browser/components/search/S
 #ifdef MOZ_UPDATER
 category browser-quit-application-granted resource://gre/modules/UpdateListener.sys.mjs UpdateListener.reset
 #endif
-category browser-quit-application-granted resource:///modules/UrlbarSearchTermsPersistence.sys.mjs UrlbarSearchTermsPersistence.uninit
-category browser-quit-application-granted resource:///modules/ipprotection/IPProtection.sys.mjs IPProtection.uninit
+category browser-quit-application-granted moz-src:///browser/components/urlbar/UrlbarSearchTermsPersistence.sys.mjs UrlbarSearchTermsPersistence.uninit
+category browser-quit-application-granted moz-src:///browser/components/ipprotection/IPProtectionHelpers.sys.mjs IPProtectionActivator.uninit
 
 category search-service-notification moz-src:///browser/components/search/SearchUIUtils.sys.mjs SearchUIUtils.showSearchServiceNotification
+
+category browser-newtab-external-component moz-src:///browser/components/search/SearchUIUtils.sys.mjs SearchNewTabComponentsRegistrant

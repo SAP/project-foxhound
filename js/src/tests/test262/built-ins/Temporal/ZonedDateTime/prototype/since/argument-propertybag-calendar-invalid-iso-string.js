@@ -1,11 +1,10 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2025 Brage Hogstad, University of Bergen. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.zoneddatetime.prototype.since
-description: >
-  An ISO string that cannot be converted to a calendar ID should throw a RangeError
+description: Invalid ISO string as calendar should throw RangeError
 features: [Temporal]
 ---*/
 
@@ -13,11 +12,13 @@ const timeZone = "UTC";
 const instance = new Temporal.ZonedDateTime(0n, timeZone);
 
 const invalidStrings = [
-  ["", "empty string"]
+  ["", "empty string"],
+  ["1997-12-04[u-ca=notacal]", "Unknown calendar"],
+  ["notacal", "Unknown calendar"],
 ];
 
-for (const [calendar, description] of invalidStrings) {
-  const arg = { year: 2019, monthCode: "M11", day: 1, calendar };
+for (const [cal, description] of invalidStrings) {
+  const arg = { year: 1970, monthCode: "M11", day: 18, calendar: cal };
   assert.throws(
     RangeError,
     () => instance.since(arg),

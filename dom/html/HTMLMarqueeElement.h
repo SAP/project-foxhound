@@ -1,19 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef HTMLMarqueeElement_h___
-#define HTMLMarqueeElement_h___
+#ifndef HTMLMarqueeElement_h_
+#define HTMLMarqueeElement_h_
 
-#include "mozilla/Attributes.h"
-#include "nsGenericHTMLElement.h"
 #include "nsContentUtils.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
 class HTMLMarqueeElement final : public nsGenericHTMLElement {
  public:
-  explicit HTMLMarqueeElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
+  explicit HTMLMarqueeElement(already_AddRefed<dom::NodeInfo> aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLMarqueeElement, marquee);
@@ -121,4 +118,4 @@ class HTMLMarqueeElement final : public nsGenericHTMLElement {
 
 }  // namespace mozilla::dom
 
-#endif /* HTMLMarqueeElement_h___ */
+#endif /* HTMLMarqueeElement_h_ */

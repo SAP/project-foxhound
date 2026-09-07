@@ -1,0 +1,15 @@
+{
+  "label": "workflow.base.vn",
+  "bugs": {
+    "1743754": {
+      "issue": "broken-login",
+      "matches": ["*://workflow.base.vn/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -146,14 +146,14 @@ class WaterfallBackground {
   /**
    * Retrieve a color defined for the provided theme as a rgba array.
    *
-   * @param {String} colorVariableName
+   * @param {string} colorVariableName
    *        The name of the variable defining the color
    * @return {Array} RGBA array for the color.
    */
   getThemeColorAsRgba(colorVariableName) {
     const colorStr = getCssVariableColor(
       colorVariableName,
-      document.ownerGlobal
+      document.documentGlobal
     );
     const { r, g, b, a } =
       InspectorUtils.colorToRGBA(colorStr) ||

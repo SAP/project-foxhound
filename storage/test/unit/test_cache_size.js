@@ -23,10 +23,16 @@ function check_size(dbOpener, file, pageSize, expectedCacheSize) {
   let db = dbOpener(file);
   db.executeSimpleSQL("PRAGMA page_size = " + pageSize);
 
-  // Check the page size change worked.
+  // Check the page size change worked. obfsvfs (the default VFS under SQLite
+  // encryption) forces a fixed page size and ignores the change, so the
+  // requested page size only takes effect on a plaintext database.
+  let encrypted = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
   let stmt = db.createStatement("PRAGMA page_size");
   Assert.ok(stmt.executeStep());
-  Assert.equal(stmt.row.page_size, pageSize);
+  Assert.equal(stmt.row.page_size, encrypted ? db.defaultPageSize : pageSize);
   stmt.finalize();
 
   // Create a simple table.

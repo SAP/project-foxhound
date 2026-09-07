@@ -24,8 +24,8 @@ add_task(async function test_multiple_windows() {
   await extension.startup();
 
   let docEl = window.document.documentElement;
-  let toolbox = document.querySelector("#navigator-toolbox");
-  let computedStyle = window.getComputedStyle(toolbox);
+  let body = document.body;
+  let computedStyle = window.getComputedStyle(body);
 
   Assert.ok(docEl.hasAttribute("lwtheme"), "LWT attribute should be set");
   Assert.ok(
@@ -40,8 +40,8 @@ add_task(async function test_multiple_windows() {
   // Now we'll open a new window to see if the theme is also applied there.
   let window2 = await BrowserTestUtils.openNewBrowserWindow();
   docEl = window2.document.documentElement;
-  toolbox = window2.document.querySelector("#navigator-toolbox");
-  computedStyle = window.getComputedStyle(toolbox);
+  body = window2.document.body;
+  computedStyle = window2.getComputedStyle(body);
 
   Assert.ok(docEl.hasAttribute("lwtheme"), "LWT attribute should be set");
   Assert.ok(

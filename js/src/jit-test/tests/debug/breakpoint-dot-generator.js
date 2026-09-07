@@ -12,7 +12,7 @@ const script = dg.makeDebuggeeValue(g.func).script;
 //
 // 00000:  Generator                       # GENERATOR
 // 00001:  SetAliasedVar ".generator"      # GENERATOR
-// 00006:  InitialYield 0                  # RVAL GENERATOR RESUMEKIND
+// 00007:  InitialYield 0                  # RVAL GENERATOR RESUMEKIND
 
 // Setting a breakpoint at `SetAliasedVar ".generator"` should be disallow.
 let caught = false;
@@ -27,7 +27,7 @@ assertEq(caught, true);
 
 // Setting breakpoints to other opcodes should be allowed.
 script.setBreakpoint(0, {});
-script.setBreakpoint(6, {});
+script.setBreakpoint(7, {});
 
 // Offset 1 shouldn't be exposed.
 assertEq(script.getPossibleBreakpoints().some(p => p.offset == 1), false);

@@ -1,0 +1,20 @@
+[DEFAULT]
+dupe-manifest = true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = ["head.js"]
+tags = "os_integration"
+
+["browser_homepage_default.js"]
+
+["browser_homepages_filter_aboutpreferences.js"]
+
+["browser_homepages_use_bookmark.js"]
+
+["browser_hometab_restore_defaults.js"]
+https_first_disabled = true
+
+["browser_newtab_menu.js"]
+
+["browser_startup_browser_restore_session.js"]

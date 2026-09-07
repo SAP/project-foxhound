@@ -27,7 +27,8 @@ add_task(async function test_aria_roles() {
       "view-recentlyclosed[slot=recentlyclosed]"
     );
     await TestUtils.waitForCondition(
-      () => recentlyClosedComponent.fullyUpdated
+      () => recentlyClosedComponent.fullyUpdated,
+      "The recently closed component to be fully updated"
     );
     let recentlyClosedEmptyState = recentlyClosedComponent.emptyState;
     let descriptionEls = recentlyClosedEmptyState.descriptionEls;
@@ -88,7 +89,8 @@ add_task(async function test_aria_roles() {
     // Purge session history to ensure recently closed empty state is shown
     Services.obs.notifyObservers(null, "browser:purge-session-history");
     await TestUtils.waitForCondition(
-      () => recentlyClosedComponent.fullyUpdated
+      () => recentlyClosedComponent.fullyUpdated,
+      "The recently closed component to be fully updated"
     );
     await tab();
     ok(
@@ -104,7 +106,7 @@ add_task(async function test_aria_roles() {
     );
     await tab();
     ok(
-      syncedTabsEmptyState.querySelector("button").matches(":focus"),
+      syncedTabsEmptyState.querySelector("moz-button").matches(":focus"),
       "Focus should be on button element of the synced tabs empty state"
     );
   });

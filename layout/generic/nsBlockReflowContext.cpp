@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -413,19 +411,35 @@ bool nsBlockReflowContext::PlaceBlock(const ReflowInput& aReflowInput,
   // always fits. If the block-size is unconstrained then it always fits,
   // even if there's some sort of integer overflow that makes bCoord +
   // mMetrics.BSize() appear to go beyond the available block size.
+  const nscoord fragmentBStart = mBCoord - backupContainingBlockAdvance;
   if (!empty && !aForceFit &&
       mSpace.BSize(mWritingMode) != NS_UNCONSTRAINEDSIZE) {
-    nscoord bEnd =
-        mBCoord - backupContainingBlockAdvance + mMetrics.BSize(mWritingMode);
+    const nscoord bSize = mMetrics.BSize(mWritingMode);
+    const nscoord bEnd = fragmentBStart + bSize;
     if (bEnd > mSpace.BEnd(mWritingMode)) {
       // didn't fit, we must acquit.
       mFrame->DidReflow(mPresContext, &aReflowInput);
       return false;
     }
+    if (bSize == 0 && aReflowStatus.IsIncomplete() &&
+        fragmentBStart == mSpace.BStart(mWritingMode) &&
+        !mFrame->HasAbsolutelyPositionedChildren()) {
+      // Reject a zero-height fragment of an incomplete block when it is the
+      // first content in the fragmentainer. Per CSS Fragmentation spec, a
+      // Class C break point exists only when there is a non-zero gap between
+      // the content edge of a block container box and the outer edges of its
+      // child content. If the fragment is at the very start of the available
+      // space (no preceding siblings, no clearance gap, no margin gap), there
+      // is no such gap, so we push the block to the next fragmentainer.
+      // Exception: keep a zero-height fragment that serves as the containing
+      // block origin for absolutely-positioned children.
+      // https://www.w3.org/TR/css-break-3/#end-block
+      mFrame->DidReflow(mPresContext, &aReflowInput);
+      return false;
+    }
   }
 
-  aLine->SetBounds(mWritingMode, mICoord,
-                   mBCoord - backupContainingBlockAdvance,
+  aLine->SetBounds(mWritingMode, mICoord, fragmentBStart,
                    mMetrics.ISize(mWritingMode), mMetrics.BSize(mWritingMode),
                    mContainerSize);
 

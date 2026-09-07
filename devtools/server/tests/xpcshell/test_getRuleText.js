@@ -5,7 +5,7 @@
 
 const {
   getRuleText,
-} = require("resource://devtools/server/actors/utils/style-utils.js");
+} = require("resource://devtools/server/actors/stylesheets/style-utils.js");
 
 const TEST_DATA = [
   {

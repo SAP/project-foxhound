@@ -13,6 +13,9 @@ transforms:
 kind-dependencies:
     - repackage
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - linux64-shippable/opt
 
@@ -25,8 +28,6 @@ tasks:
         treeherder:
             tier: 3
         description-suffix: 'autograph-stage mar signing test'
-        required_signoffs:
-            - mar-signing
         run-on-projects: []
         shippable: false
         attributes:

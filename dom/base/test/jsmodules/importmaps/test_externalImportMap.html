@@ -4,6 +4,7 @@
 <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <script>
+// eslint-disable-next-line no-unused-vars
 let gotMsg = false;
 let console = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
 let listener = {
@@ -26,16 +27,20 @@ console.registerListener(listener);
 <script src="external_importMap.js" type="importmap" onload="scriptLoaded()" onerror="scriptError()"></script>
 
 <script>
+// eslint-disable-next-line no-unused-vars
 function testLoaded() {
   SimpleTest.waitForExplicitFinish();
+  /* global gotMsg */
   ok(gotMsg, "Should have got the console warning.");
   SimpleTest.finish();
 }
 
+// eslint-disable-next-line no-unused-vars
 function scriptLoaded() {
   ok(false, "Loading external import map script should have failed.");
 }
 
+// eslint-disable-next-line no-unused-vars
 function scriptError() {
   ok(true, "Loading external import map script failed.");
 }

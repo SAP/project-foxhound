@@ -5,7 +5,7 @@ Adding a check
 
 After you've completed a matcher using clang-query, it's time to take it to the next step and turn it into C++ and run it on the whole m-c codebase and see what happens.
 
-Clang plugins live in `build/clang-plugin <https://searchfox.org/mozilla-central/source/build/clang-plugin>`_ and here we'll cover what is needed to add one. To see how the most recent check was added, you can look at the log for `Checks.inc <https://hg.mozilla.org/mozilla-central/log/tip/build/clang-plugin/Checks.inc>`_ which is one of the necessary files to edit.  That's also what we'll be covering next.
+Clang plugins live in :searchfox:`build/clang-plugin` and here we'll cover what is needed to add one. To see how the most recent check was added, you can look at the log for `Checks.inc <https://hg.mozilla.org/mozilla-central/log/tip/build/clang-plugin/Checks.inc>`_ which is one of the necessary files to edit.  That's also what we'll be covering next.
 
 Boilerplate Steps to Add a New Check
 ------------------------------------
@@ -14,7 +14,7 @@ First pick a name. Pick something that makes sense without punctuation, in no mo
 
 #. Add it alphabetically in build/clang-plugin/Checks.inc, ChecksIncludes.inc, and moz.build
 #. ``cd build/clang-plugin && touch MissingElseInEnumComparisons.h MissingElseInEnumComparisons.cpp``
-#. Copy the contents of an existing, simple .h file (e.g. `build/clang-plugin/ScopeChecker.h <https://searchfox.org/mozilla-central/source/build/clang-plugin/ScopeChecker.h>`_) and edit the class name and header guards.
+#. Copy the contents of an existing, simple .h file (e.g. :searchfox:`build/clang-plugin/ScopeChecker.h`) and edit the class name and header guards.
 #. Create the following boilerplate for your implementation:
 
 ::

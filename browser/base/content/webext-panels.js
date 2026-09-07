@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -69,17 +68,9 @@ function getBrowser(panel) {
   let readyPromise;
   if (panel.extension.remote) {
     browser.setAttribute("remote", "true");
-    let oa = E10SUtils.predictOriginAttributes({ browser });
     browser.setAttribute(
       "remoteType",
-      E10SUtils.getRemoteTypeForURI(
-        panel.uri,
-        /* remote */ true,
-        /* fission */ false,
-        E10SUtils.EXTENSION_REMOTE_TYPE,
-        null,
-        oa
-      )
+      ChromeUtils.predictRemoteTypeForURI(panel.uri, { window })
     );
     browser.setAttribute("maychangeremoteness", "true");
 
@@ -91,9 +82,9 @@ function getBrowser(panel) {
   stack.appendChild(browser);
 
   browser.addEventListener(
-    "DoZoomEnlargeBy10",
+    "DoZoomEnlarge",
     () => {
-      let { ZoomManager } = browser.ownerGlobal;
+      let { ZoomManager } = browser.documentGlobal;
       let zoom = browser.fullZoom;
       zoom += 0.1;
       if (zoom > ZoomManager.MAX) {
@@ -104,9 +95,9 @@ function getBrowser(panel) {
     true
   );
   browser.addEventListener(
-    "DoZoomReduceBy10",
+    "DoZoomReduce",
     () => {
-      let { ZoomManager } = browser.ownerGlobal;
+      let { ZoomManager } = browser.documentGlobal;
       let zoom = browser.fullZoom;
       zoom -= 0.1;
       if (zoom < ZoomManager.MIN) {
@@ -118,7 +109,7 @@ function getBrowser(panel) {
   );
   browser.addEventListener("DOMWindowClose", event => {
     if (panel.viewType == "sidebar") {
-      windowRoot.ownerGlobal.SidebarController.hide();
+      windowRoot.window.SidebarController.hide();
     }
     // Prevent DOMWindowClose events originated from
     // extensions sidebar and devtools panels to bubble up

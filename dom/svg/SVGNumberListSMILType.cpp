@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGNumberListSMILType.h"
 
-#include "mozilla/FloatingPoint.h"
+#include <math.h>
+
+#include "SVGNumberList.h"
 #include "mozilla/SMILValue.h"
 #include "nsMathUtils.h"
-#include "SVGNumberList.h"
-#include <math.h>
 
 /* The "identity" number list for a given number list attribute (the effective
  * number list that is used if an attribute value is not specified) varies
@@ -189,14 +187,14 @@ nsresult SVGNumberListSMILType::Interpolate(const SMILValue& aStartVal,
 
   if (start.Length() != end.Length()) {
     MOZ_ASSERT(start.Length() == 0, "Not an identity value");
-    for (uint32_t i = 0; i < end.Length(); ++i) {
-      result[i] = aUnitDistance * end[i];
-    }
+    std::transform(end.begin(), end.end(), result.begin(),
+                   [&aUnitDistance](float e) { return e * aUnitDistance; });
     return NS_OK;
   }
-  for (uint32_t i = 0; i < end.Length(); ++i) {
-    result[i] = start[i] + (end[i] - start[i]) * aUnitDistance;
-  }
+  std::transform(start.begin(), start.end(), end.begin(), result.begin(),
+                 [&aUnitDistance](float s, float e) {
+                   return std::lerp(s, e, aUnitDistance);
+                 });
   return NS_OK;
 }
 

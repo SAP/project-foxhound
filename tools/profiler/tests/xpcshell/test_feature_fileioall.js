@@ -91,14 +91,15 @@ add_task(async () => {
 });
 
 /**
- * @typedef {Object} TestConfig
- * @prop {Array} features The list of profiler features
- * @prop {string[]} threadsFilter The list of threads to profile
- * @prop {string} filename A filename to trigger a write operation
+ * @typedef {object} TestConfig
+ * @property {Array} features The list of profiler features
+ * @property {string[]} threadsFilter The list of threads to profile
+ * @property {string} filename A filename to trigger a write operation
  */
 
 /**
  * Start the profiler and get FileIO markers.
+ *
  * @param {TestConfig}
  * @returns {Profile}
  */

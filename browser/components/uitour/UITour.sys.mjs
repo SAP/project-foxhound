@@ -8,14 +8,19 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
-  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
+  AppProvidedConfigEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
@@ -44,15 +49,6 @@ const BACKGROUND_PAGE_ACTIONS_ALLOWED = new Set([
 ]);
 const MAX_BUTTONS = 4;
 
-// Array of which colorway/theme ids can be activated.
-ChromeUtils.defineLazyGetter(lazy, "COLORWAY_IDS", () =>
-  [...lazy.BuiltInThemes.builtInThemeMap.keys()].filter(
-    id =>
-      id.endsWith("-colorway@mozilla.org") &&
-      !lazy.BuiltInThemes.themeIsExpired(id)
-  )
-);
-
 // Prefix for any target matching a search engine.
 const TARGET_SEARCHENGINE_PREFIX = "searchEngine-";
 
@@ -80,6 +76,8 @@ export var UITour = {
   },
 
   _annotationPanelMutationObservers: new WeakMap(),
+
+  _initForBrowserObserverAdded: false,
 
   highlightEffects: ["random", "wobble", "zoom", "color", "focus-outline"],
   targets: new Map([
@@ -148,7 +146,9 @@ export var UITour = {
       {
         infoPanelOffsetX: 18,
         infoPanelPosition: "after_start",
-        query: "#searchbar",
+        query: Services.prefs.getBoolPref("browser.search.widget.new")
+          ? "#searchbar-new"
+          : "#searchbar",
         widgetName: "search-container",
       },
     ],
@@ -156,8 +156,12 @@ export var UITour = {
       "searchIcon",
       {
         query: aDocument => {
-          let searchbar = aDocument.getElementById("searchbar");
-          return searchbar.querySelector(".searchbar-search-button");
+          if (!Services.prefs.getBoolPref("browser.search.widget.new")) {
+            let searchbar = aDocument.getElementById("searchbar");
+            return searchbar.querySelector(".searchbar-search-button");
+          }
+          let searchbar = aDocument.getElementById("searchbar-new");
+          return searchbar.querySelector(".searchmode-switcher");
         },
         widgetName: "search-container",
       },
@@ -178,7 +182,7 @@ export var UITour = {
     [
       "urlbar",
       {
-        query: "#urlbar",
+        query: "#urlbar-container",
         widgetName: "urlbar-container",
       },
     ],
@@ -191,6 +195,12 @@ export var UITour = {
           let node = aDocument.getElementById("star-button-box");
           return node && !node.hidden ? node : null;
         },
+      },
+    ],
+    [
+      "profilesAppMenuButton",
+      {
+        query: "#appMenu-profiles-button",
       },
     ],
   ]),
@@ -232,7 +242,7 @@ export var UITour = {
 
   onPageEvent(aEvent, aBrowser) {
     let browser = aBrowser;
-    let window = browser.ownerGlobal;
+    let window = browser.documentGlobal;
 
     // Does the window have tabs? We need to make sure since windowless browsers do
     // not have tabs.
@@ -482,6 +492,26 @@ export var UITour = {
         break;
       }
 
+      case "showFirefoxAccountsForAIWindow": {
+        // if user "Blocked" Smart Window feature from AI Control or global AI Control default
+        // override Smart Window feature to "available"
+        if (lazy.AIWindow.isBlocked) {
+          Services.prefs.setStringPref(
+            "browser.ai.control.smartWindow",
+            "available"
+          );
+        }
+
+        lazy.AIWindow.launchWindow(browser).then(success => {
+          if (!success) {
+            lazy.log.warn(
+              "showFirefoxAccountsForAIWindow: Failed to launch Smart Window"
+            );
+          }
+        });
+        break;
+      }
+
       case "showConnectAnotherDevice": {
         lazy.FxAccounts.config
           .promiseConnectDeviceURI(data.entrypoint || "uitour")
@@ -529,6 +559,14 @@ export var UITour = {
         break;
       }
 
+      case "pinToTaskbar": {
+        let shell = window.getShellService();
+        if (shell) {
+          shell.pinToTaskbar().catch(console.error);
+        }
+        break;
+      }
+
       case "setTreatmentTag": {
         let name = data.name;
         let value = data.value;
@@ -553,36 +591,10 @@ export var UITour = {
         targetPromise.then(target => {
           let searchbar = target.node;
           searchbar.value = data.term;
-          searchbar.updateGoButtonVisibility();
+          if (!Services.prefs.getBoolPref("browser.search.widget.new")) {
+            searchbar.updateGoButtonVisibility();
+          }
         });
-        break;
-      }
-
-      case "openSearchPanel": {
-        let targetPromise = this.getTarget(window, "search");
-        targetPromise
-          .then(target => {
-            let searchbar = target.node;
-
-            if (searchbar.textbox.open) {
-              this.sendPageCallback(browser, data.callbackID);
-            } else {
-              let onPopupShown = () => {
-                searchbar.textbox.popup.removeEventListener(
-                  "popupshown",
-                  onPopupShown
-                );
-                this.sendPageCallback(browser, data.callbackID);
-              };
-
-              searchbar.textbox.popup.addEventListener(
-                "popupshown",
-                onPopupShown
-              );
-              searchbar.openSuggestionsPanel();
-            }
-          })
-          .catch(console.error);
         break;
       }
 
@@ -611,7 +623,7 @@ export var UITour = {
         // was generated originally. If the browser where the UI tour is loaded
         // is windowless, just ignore the request to close the tab. The request
         // is also ignored if this is the only tab in the window.
-        let tabBrowser = browser.ownerGlobal.gBrowser;
+        let tabBrowser = browser.documentGlobal.gBrowser;
         if (tabBrowser && tabBrowser.browsers.length > 1) {
           tabBrowser.removeTab(tabBrowser.getTabForBrowser(browser));
         }
@@ -647,8 +659,10 @@ export var UITour = {
     }
     this.tourBrowsersByWindow.get(window).add(aBrowser);
 
-    Services.obs.addObserver(this, "message-manager-close");
-
+    if (!this._initForBrowserObserverAdded) {
+      this._initForBrowserObserverAdded = true;
+      Services.obs.addObserver(this, "message-manager-close");
+    }
     window.addEventListener("SSWindowClosing", this);
   },
 
@@ -656,7 +670,7 @@ export var UITour = {
     lazy.log.debug("handleEvent: type =", aEvent.type, "event =", aEvent);
     switch (aEvent.type) {
       case "TabSelect": {
-        let window = aEvent.target.ownerGlobal;
+        let window = aEvent.target.documentGlobal;
 
         // Teardown the browser of the tab we just switched away from.
         if (aEvent.detail && aEvent.detail.previousTab) {
@@ -894,7 +908,7 @@ export var UITour = {
   },
 
   isElementVisible(aElement) {
-    let targetStyle = aElement.ownerGlobal.getComputedStyle(aElement);
+    let targetStyle = aElement.documentGlobal.getComputedStyle(aElement);
     return (
       !aElement.ownerDocument.hidden &&
       targetStyle.display != "none" &&
@@ -955,7 +969,7 @@ export var UITour = {
     let targetElement = aTarget.node;
     // Use the widget for filtering if it exists since the target may be the icon inside.
     if (aTarget.widgetName) {
-      let doc = aTarget.node.ownerGlobal.document;
+      let doc = aTarget.node.documentGlobal.document;
       targetElement =
         doc.getElementById(aTarget.widgetName) ||
         lazy.PanelMultiView.getViewNode(doc, aTarget.widgetName);
@@ -1491,7 +1505,7 @@ export var UITour = {
   },
 
   _hideAnnotationsForPanel(aEvent, aShouldClosePanel, aTargetPositionCallback) {
-    let win = aEvent.target.ownerGlobal;
+    let win = aEvent.target.documentGlobal;
     let hideHighlightMethod = null;
     let hideInfoMethod = null;
     if (aShouldClosePanel) {
@@ -1568,19 +1582,21 @@ export var UITour = {
       case "availableTargets":
         this.getAvailableTargets(aBrowser, aWindow, aCallbackID);
         break;
-      case "colorway":
-        this.sendPageCallback(aBrowser, aCallbackID, lazy.COLORWAY_IDS);
-        break;
       case "search":
       case "selectedSearchEngine":
-        Services.search
-          .getVisibleEngines()
+        lazy.SearchService.getVisibleEngines()
           .then(engines => {
+            let { defaultEngine } = lazy.SearchService;
             this.sendPageCallback(aBrowser, aCallbackID, {
-              searchEngineIdentifier: Services.search.defaultEngine.identifier,
+              searchEngineIdentifier:
+                defaultEngine instanceof lazy.AppProvidedConfigEngine
+                  ? defaultEngine.id
+                  : null,
               engines: engines
-                .filter(engine => engine.identifier)
-                .map(engine => TARGET_SEARCHENGINE_PREFIX + engine.identifier),
+                .filter(
+                  engine => engine instanceof lazy.AppProvidedConfigEngine
+                )
+                .map(engine => TARGET_SEARCHENGINE_PREFIX + engine.id),
             });
           })
           .catch(() => {
@@ -1624,6 +1640,38 @@ export var UITour = {
           lazy.ResetProfile.resetSupported()
         );
         break;
+      case "aiControls":
+        this.sendPageCallback(aBrowser, aCallbackID, {
+          default: Services.prefs.getStringPref(
+            "browser.ai.control.default",
+            "available"
+          ),
+          translations: Services.prefs.getStringPref(
+            "browser.ai.control.translations",
+            "default"
+          ),
+          pdfjsAltText: Services.prefs.getStringPref(
+            "browser.ai.control.pdfjsAltText",
+            "default"
+          ),
+          smartTabGroups: Services.prefs.getStringPref(
+            "browser.ai.control.smartTabGroups",
+            "default"
+          ),
+          linkPreviewKeyPoints: Services.prefs.getStringPref(
+            "browser.ai.control.linkPreviewKeyPoints",
+            "default"
+          ),
+          sidebarChatbot: Services.prefs.getStringPref(
+            "browser.ai.control.sidebarChatbot",
+            "default"
+          ),
+          smartWindow: Services.prefs.getStringPref(
+            "browser.ai.control.smartWindow",
+            "default"
+          ),
+        });
+        break;
       default:
         lazy.log.error(
           "getConfiguration: Unknown configuration requested: " + aConfiguration
@@ -1632,10 +1680,10 @@ export var UITour = {
     }
   },
 
-  async setConfiguration(aWindow, aConfiguration, aValue) {
+  async setConfiguration(aWindow, aConfiguration, _aValue) {
     switch (aConfiguration) {
       case "defaultBrowser":
-        // Ignore aValue in this case because the default browser can only
+        // Ignore _aValue in this case because the default browser can only
         // be set, not unset.
         try {
           let shell = aWindow.getShellService();
@@ -1643,22 +1691,6 @@ export var UITour = {
             await shell.setDefaultBrowser(false);
           }
         } catch (e) {}
-        break;
-      case "colorway":
-        // Potentially revert to a previous theme.
-        let toEnable = this._prevTheme;
-
-        // Activate the allowed colorway.
-        if (lazy.COLORWAY_IDS.includes(aValue)) {
-          // Save the previous theme if this is the first activation.
-          if (!this._prevTheme) {
-            this._prevTheme = (
-              await lazy.AddonManager.getAddonsByTypes(["theme"])
-            ).find(theme => theme.isActive);
-          }
-          toEnable = await lazy.AddonManager.getAddonByID(aValue);
-        }
-        toEnable?.enable();
         break;
       default:
         lazy.log.error(
@@ -1797,11 +1829,15 @@ export var UITour = {
       } catch (e) {}
       appinfo.defaultBrowser = isDefaultBrowser;
 
+      try {
+        let shell = aWindow.getShellService();
+        if (shell) {
+          appinfo.needsPin = await shell.doesAppNeedPin();
+        }
+      } catch (e) {}
+
       let canSetDefaultBrowserInBackground = true;
-      if (
-        AppConstants.platform == "win" ||
-        AppConstants.isPlatformAndVersionAtLeast("macosx", "10.10")
-      ) {
+      if (AppConstants.platform == "win" || AppConstants.platform == "macosx") {
         canSetDefaultBrowserInBackground = false;
       } else if (AppConstants.platform == "linux") {
         // The ShellService may not exist on some versions of Linux.
@@ -1915,7 +1951,7 @@ export var UITour = {
       if (observer) {
         return;
       }
-      let win = aPanelEl.ownerGlobal;
+      let win = aPanelEl.documentGlobal;
       observer = new win.MutationObserver(this._annotationMutationCallback);
       this._annotationPanelMutationObservers.set(aPanelEl, observer);
       let observerOptions = {
@@ -1950,20 +1986,15 @@ export var UITour = {
     }
   },
 
-  selectSearchEngine(aID) {
-    return new Promise((resolve, reject) => {
-      Services.search.getVisibleEngines().then(engines => {
-        for (let engine of engines) {
-          if (engine.identifier == aID) {
-            Services.search
-              .setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UITOUR)
-              .finally(resolve);
-            return;
-          }
-        }
-        reject("selectSearchEngine could not find engine with given ID");
-      });
-    });
+  async selectSearchEngine(id) {
+    let engine = lazy.SearchService.getEngineById(id);
+    if (!engine || engine.hidden) {
+      throw new Error("selectSearchEngine could not find engine with given ID");
+    }
+    return lazy.SearchService.setDefault(
+      engine,
+      lazy.SearchService.CHANGE_REASON.UITOUR
+    );
   },
 
   notify(eventName, params) {

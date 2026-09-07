@@ -57,7 +57,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=570144
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 570144 **/
+/** Test for Bug 570144 */
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTests);
 
@@ -91,29 +91,29 @@ function testSection(element, context, shouldCreateLI, shouldCreateP) {
 
   const ol = element.querySelector("ol");
   try2split(ol);
-  is(ol.querySelectorAll("li").length, nbLI, msgLI);
-  is(ol.querySelectorAll("p").length, nbP, msgP);
+  is(ol.querySelectorAll("li").length, nbLI, `ol: ${msgLI}`);
+  is(ol.querySelectorAll("p").length, nbP, `ol: ${msgP}`);
 
   const ul = element.querySelector("ul");
   try2split(ul);
-  is(ul.querySelectorAll("li").length, nbLI, msgLI);
-  is(ul.querySelectorAll("p").length, nbP, msgP);
+  is(ul.querySelectorAll("li").length, nbLI, `ul: ${msgLI}`);
+  is(ul.querySelectorAll("p").length, nbP, `ul: ${msgP}`);
 
   const dl = element.querySelector("dl");
   try2split(dl);
-  is(dl.querySelectorAll("dt").length, nbLI, msgDT);
-  is(dl.querySelectorAll("dd").length, 1, msgDD);
-  is(dl.querySelectorAll("p").length, nbP, msgP);
+  is(dl.querySelectorAll("dt").length, nbLI, `dl: ${msgDT}`);
+  is(dl.querySelectorAll("dd").length, 1, `dl: ${msgDD}`);
+  is(
+    dl.querySelectorAll("p").length,
+    shouldCreateLI ? dl.querySelectorAll("dd").length : nbP,
+    `dl: ${msgP}`
+  );
 }
 
 function runTests() {
   testSection(document.getElementById("test1"), "editable paragraph in list item", false, false);
   testSection(document.getElementById("test2"), "paragraph in editable list item", false, true);
-  testSection(document.getElementById("test3"), "paragraph in editable list", true, false);
-  /* Note: concerning #test3, it would be preferrable that [Return] creates
-   * another paragraph in another list item (i.e. last argument = 'true').
-   * Currently it just creates an empty list item, which is acceptable.
-   */
+  testSection(document.getElementById("test3"), "paragraph in editable list", true, true);
   SimpleTest.finish();
 }
 

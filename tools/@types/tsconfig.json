@@ -3,7 +3,41 @@
 
   "compilerOptions": {
     "noEmit": true,
-    "target": "es2024",
-    "types": ["gecko"]
+    "libReplacement": true,
+    // We don't default to `esnext`, as not everything is necessarily available
+    // in Firefox just yet. This also allows for separation of TypeScript upgrades
+    // from target updates.
+    "target": "es2025",
+    // Add extra librarys for items we support. See the full list of TypeScript
+    // support libraries at https://github.com/microsoft/TypeScript/tree/main/src/lib
+    "lib": [
+      "dom",
+      "ESNext.Array",
+      "ESNext.Date",
+      "ESNext.Collection",
+      // Not yet - https://bugzilla.mozilla.org/show_bug.cgi?id=1905229
+      // "ESNext.Decorators",
+      "ESNext.Disposable",
+      "ESNext.Error",
+      "ESNext.Intl",
+      "ESNext.Sharedmemory",
+      "ESNext.Temporal",
+      "ESNext.TypedArrays"
+    ],
+
+    // Using `unknown` for catch variables causes us to need to check if
+    // everything is an `Error` (or appropriate object) before using properties
+    // from them. We have lint rules that ensure that we throw objects, which are
+    // generally assumed to be `Error` or `Components.Exception` derived.
+    //
+    // Ideally TypeScript would provide us a way to say that we expect these
+    // all to be `Error`-based, so that we didn't have to do the additional checks.
+    // However, they don't currently. These are a couple of relevant issues:
+    // - https://github.com/microsoft/TypeScript/issues/42596
+    // - https://github.com/microsoft/TypeScript/issues/20024
+    //
+    // For now, we've decided to turn this off, so that we don't have to add
+    // extra validation for things where we already know what the object type is.
+    "useUnknownInCatchVariables": false
   }
 }

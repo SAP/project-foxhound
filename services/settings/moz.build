@@ -25,6 +25,7 @@ EXTRA_JS_MODULES["services-settings"] += [
     "RemoteSettingsWorker.sys.mjs",
     "SharedUtils.sys.mjs",
     "SyncHistory.sys.mjs",
+    "UptakeTelemetry.sys.mjs",
     "Utils.sys.mjs",
 ]
 

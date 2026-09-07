@@ -1,0 +1,60 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Core :: Storage: IndexedDB'
+
+idb.maintenance:
+  fallback_fullrestore_metadata:
+    type: counter
+    description: >
+      Tracks the number of times we need to fallback to restore metadata object by reading
+      metadata-v2 file on disk when performing idle-maintenance on IDB database.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980177
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980177
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - storage-telemetry@mozilla.com
+    expires: never
+
+  metadata_restored:
+    type: counter
+    description: >
+      Counts the number of times we failed to load metadata object and had to restore it
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980177
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980177
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - storage-telemetry@mozilla.com
+    expires: never
+
+  unknown_metadata:
+    type: counter
+    description: >
+      Increments upon encountering an unknown metadata object when performing
+      idle-maintenance on IDB database. During idle-maintenance, we iterate
+      over idb directories/files and construct a metadata object by calling
+      QuotaManager::GetOriginMetadata or LoadFullOriginMetadataWithRestore.
+      It seems that in some cases, the metadata object we get here can be
+      invalid and this metric is used to track those instances.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980177
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1980177
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - storage-telemetry@mozilla.com
+    expires: never

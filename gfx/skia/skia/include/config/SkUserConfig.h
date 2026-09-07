@@ -88,6 +88,7 @@
 //#define SK_HISTOGRAM_BOOLEAN(name, sample)
 //#define SK_HISTOGRAM_ENUMERATION(name, sampleEnum, enumSize)
 //#define SK_HISTOGRAM_EXACT_LINEAR(name, sample, valueMax)
+//#define SK_HISTOGRAM_CUSTOM_EXACT_LINEAR(name, sample, value_min, value_max, bucket_count)
 //#define SK_HISTOGRAM_MEMORY_KB(name, sample)
 //#define SK_HISTOGRAM_CUSTOM_COUNTS(name, sample, countMin, countMax, bucketCount)
 //#define SK_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(name, sampleUSec, minUSec, maxUSec, bucketCount)
@@ -121,6 +122,22 @@
  */
 //#define SK_API __declspec(dllexport)
 
+/*
+ * If using DNG support, set the version of the dng_sdk being compiled against here
+ * following the versioning scheme of dng_tag_valus.h
+ * eg, DNG 1.4 is 0x01040000, DNG 1.7.1 is 0x01070100, etc...
+ * If unspecified, DNG SDK 1.4 is assumed
+ */
+// #define SK_DNG_VERSION 0x01040000
+
+/*
+ * By default, Skia uses SIMD operations for many internal calculations, especially
+ * for the CPU backend. These defines can be set to disable SIMD in SkVx and
+ * SkRasterPipeline, respectively.
+ */
+// #define SKVX_DISABLE_SIMD
+// #define SKRP_CPU_SCALAR
+
 #define MOZ_SKIA
 
 // On all platforms we have this byte order
@@ -136,6 +153,10 @@
 #define I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN
 
 #define SK_SUPPORT_GPU 0
+
+#define SK_ENABLE_LEGACY_SHADERCONTEXT
+
+#define SK_DISABLE_LEGACY_PNG_WRITEBUFFER
 
 #define SK_DISABLE_SLOW_DEBUG_VALIDATION 1
 
@@ -154,5 +175,12 @@
 #endif
 
 #define SK_DISABLE_LEGACY_IMAGE_READBUFFER
+
+#define SK_GAMMA_EXPONENT 1.0
+#define SK_GAMMA_CONTRAST 0.0
+
+#if defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
+#  define SK_GAMMA_APPLY_TO_A8
+#endif
 
 #endif

@@ -57,7 +57,7 @@ class HistoryAdapter(
         if (itemCount > 0) notifyItemChanged(0)
     }
 
-    @Suppress("ComplexMethod")
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod")
     override fun onBindViewHolder(holder: HistoryListItemViewHolder, position: Int) {
         val current = getItem(position) ?: return
         var isPendingDeletion = false

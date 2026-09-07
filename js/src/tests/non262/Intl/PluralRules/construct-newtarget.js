@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Test subclassing %Intl.PluralRules% works correctly.
 class MyPluralRules extends Intl.PluralRules {}
 

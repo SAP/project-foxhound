@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OmxPlatformLayer.h"
 
-#include "OmxDataDecoder.h"
 #include "OMX_Component.h"
 #include "OMX_VideoExt.h"  // For VP8.
+#include "OmxDataDecoder.h"
 
 #ifdef MOZ_OMX
 #  include "PureOmxPlatformLayer.h"
@@ -20,14 +18,14 @@
 #  undef LOG
 #endif
 
-#define LOG(arg, ...)                        \
-  MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, \
-          ("OmxPlatformLayer -- %s: " arg, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...)                            \
+  MOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, \
+              "OmxPlatformLayer -- {}: " arg, __func__, ##__VA_ARGS__)
 
-#define RETURN_IF_ERR(err)     \
-  if (err != OMX_ErrorNone) {  \
-    LOG("error: 0x%08x", err); \
-    return err;                \
+#define RETURN_IF_ERR(err)                              \
+  if (err != OMX_ErrorNone) {                           \
+    LOG("error: 0x{:08x}", static_cast<uint32_t>(err)); \
+    return err;                                         \
   }
 
 // Common OMX decoder configuration code.
@@ -80,7 +78,7 @@ static OMX_ERRORTYPE ConfigAudioOutputPort(OmxPlatformLayer& aOmx,
       aOmx.SetParameter(OMX_IndexParamAudioPcm, &pcmParams, sizeof(pcmParams));
   RETURN_IF_ERR(err);
 
-  LOG("Config OMX_IndexParamAudioPcm, channel %lu, sample rate %lu",
+  LOG("Config OMX_IndexParamAudioPcm, channel {}, sample rate {}",
       pcmParams.nChannels, pcmParams.nSamplingRate);
 
   return OMX_ErrorNone;
@@ -104,9 +102,10 @@ class OmxAacConfig : public OmxAudioConfig {
                             sizeof(aacProfile));
     RETURN_IF_ERR(err);
 
-    LOG("Config OMX_IndexParamAudioAac, channel %lu, sample rate %lu, profile "
-        "%d",
-        aacProfile.nChannels, aacProfile.nSampleRate, aacProfile.eAACProfile);
+    LOG("Config OMX_IndexParamAudioAac, channel {}, sample rate {}, profile "
+        "{}",
+        aacProfile.nChannels, aacProfile.nSampleRate,
+        static_cast<int>(aacProfile.eAACProfile));
 
     return ConfigAudioOutputPort(aOmx, aInfo);
   }
@@ -128,7 +127,7 @@ class OmxMp3Config : public OmxAudioConfig {
         aOmx.SetParameter(OMX_IndexParamAudioMp3, &mp3Param, sizeof(mp3Param));
     RETURN_IF_ERR(err);
 
-    LOG("Config OMX_IndexParamAudioMp3, channel %lu, sample rate %lu",
+    LOG("Config OMX_IndexParamAudioMp3, channel {}, sample rate {}",
         mp3Param.nChannels, mp3Param.nSampleRate);
 
     return ConfigAudioOutputPort(aOmx, aInfo);
@@ -211,7 +210,7 @@ class OmxCommonVideoConfig : public OmxVideoConfig {
         def.format.video.eColorFormat = OMX_COLOR_FormatUnused;
         if (def.nBufferSize < MIN_VIDEO_INPUT_BUFFER_SIZE) {
           def.nBufferSize = aInfo.mImage.width * aInfo.mImage.height;
-          LOG("Change input buffer size to %lu", def.nBufferSize);
+          LOG("Change input buffer size to {}", def.nBufferSize);
         }
       } else {
         def.format.video.eCompressionFormat = OMX_VIDEO_CodingUnused;

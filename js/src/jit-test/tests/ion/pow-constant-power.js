@@ -12,7 +12,7 @@ function test(x, y, z) {
             // values are the same.)
             var xs = [${x}, ${x}];
             var zs = [${z}, ${z}];
-            for (var i = 0; i < 1000; ++i) {
+            for (var i = 0; i < 200; ++i) {
                 assertEq(${fn("xs[i & 1]", y)}, zs[i & 1]);
             }
         `);

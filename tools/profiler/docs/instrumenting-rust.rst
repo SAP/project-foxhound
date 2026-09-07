@@ -114,7 +114,7 @@ Adding a stack frame label:
         bar
     }
 
-See the list of all profiling categories in the `profiling_categories.yaml`_ file.
+See the list of all profiling categories in the :searchfox:`profiling_categories.yaml <mozglue/baseprofiler/build/profiling_categories.yaml>` file.
 
 Adding Markers
 --------------
@@ -232,8 +232,8 @@ Name, category, options.
 1. Marker name
     The first argument is the name of this marker. This will be displayed in most places
     the marker is shown. It can be a literal string, or any dynamic string.
-2. `Profiling category pair`_
-    A category + subcategory pair from the `the list of categories`_.
+2. :searchfox:`Profiling category pair <__GENERATED__/tools/profiler/rust-api/src/gecko_bindings/profiling_categories.rs>`
+    A category + subcategory pair from the :searchfox:`the list of categories <mozglue/baseprofiler/build/profiling_categories.yaml>`.
     ``gecko_profiler_category!`` macro should be used to create a profiling category
     pair since it's easier to use, e.g. ``gecko_profiler_category!(JavaScript, Parsing)``.
     Second parameter can be omitted to use the default subcategory directly.
@@ -425,9 +425,6 @@ needs to be implemented:
 
     :ref:`See the C++ markers guide for more details about it <marker-type-display-schema>`.
 
-.. _profiling_categories.yaml: https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/build/profiling_categories.yaml
-.. _Profiling category pair: https://searchfox.org/mozilla-central/source/__GENERATED__/tools/profiler/rust-api/src/gecko_bindings/profiling_categories.rs
-.. _the list of categories: https://searchfox.org/mozilla-central/source/mozglue/baseprofiler/build/profiling_categories.yaml
 .. _MarkerOptions: https://searchfox.org/mozilla-central/define?q=rust_analyzer::cargo::gecko_profiler::0_1_0::options::marker::MarkerOptions
 .. _MarkerTiming: https://searchfox.org/mozilla-central/define?q=rust_analyzer::cargo::gecko_profiler::0_1_0::options::marker::MarkerTiming
 .. _MarkerStack: https://searchfox.org/mozilla-central/define?q=rust_analyzer::cargo::gecko_profiler::0_1_0::options::marker::[MarkerStack]

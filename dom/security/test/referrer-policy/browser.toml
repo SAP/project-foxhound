@@ -2,7 +2,9 @@
 support-files = ["referrer_page.sjs"]
 
 ["browser_referrer_disallow_cross_site_relaxing.js"]
-skip-if = ["asan"] # too slow
+skip-if = [
+  "asan", # too slow
+]
 
 ["browser_referrer_telemetry.js"]
 

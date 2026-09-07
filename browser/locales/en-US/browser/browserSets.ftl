@@ -107,6 +107,9 @@ nav-stop-shortcut =
 ai-chatbot-sidebar-shortcut =
     .key = X
 
+open-tabs-sidebar-shortcut2 =
+    .key = U
+
 toggle-sidebar-shortcut =
     .key = Z
 

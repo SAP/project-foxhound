@@ -6,12 +6,6 @@ const { ObjectUtils } = ChromeUtils.importESModule(
 
 const IS_ANDROID = AppConstants.platform == "android";
 
-const TELEMETRY_COMPONENT = "remotesettings";
-const TELEMETRY_EVENTS_FILTERS = {
-  category: "uptake.remotecontent.result",
-  method: "uptake",
-};
-
 let server;
 let client;
 let clientWithDump;
@@ -32,17 +26,15 @@ async function clear_state() {
   await clientWithDump.db.clear();
 
   // Clear events snapshot.
-  TelemetryTestUtils.assertEvents([], {}, { process: "dummy" });
+  Services.telemetry.snapshotEvents(Ci.nsITelemetry.DATASET_ALL_CHANNELS, true);
+  Services.fog.testResetFOG();
+  enableUptakeMetric();
 }
 
 add_task(() => {
   // Set up an HTTP Server
   server = new HttpServer();
   server.start(-1);
-
-  // Pretend we are in nightly channel to make sure all telemetry events are sent.
-  let oldGetChannel = Policy.getChannel;
-  Policy.getChannel = () => "nightly";
 
   // Point the blocklist clients to use this local HTTP server.
   Services.prefs.setStringPref(
@@ -75,7 +67,6 @@ add_task(() => {
   server.registerPathHandler("/fake-x5u", handleResponse);
 
   registerCleanupFunction(() => {
-    Policy.getChannel = oldGetChannel;
     server.stop(() => {});
   });
 });
@@ -93,8 +84,8 @@ add_task(async function test_records_obtained_from_server_are_stored_in_db() {
   const timestamp = await client.db.getLastModified();
   equal(timestamp, 3000, "timestamp was stored");
 
-  const { signature } = await client.db.getMetadata();
-  equal(signature.signature, "abcdef", "metadata was stored");
+  const { signatures } = await client.db.getMetadata();
+  equal(signatures[0].signature, "abcdef", "metadata was stored");
 });
 add_task(clear_state);
 
@@ -166,10 +157,6 @@ add_task(async function test_throws_when_network_is_offline() {
   const backupOffline = Services.io.offline;
   try {
     Services.io.offline = true;
-    const startSnapshot = getUptakeTelemetrySnapshot(
-      TELEMETRY_COMPONENT,
-      clientWithDump.identifier
-    );
     let error;
     try {
       await clientWithDump.maybeSync(2000);
@@ -178,15 +165,14 @@ add_task(async function test_throws_when_network_is_offline() {
     }
     equal(error.name, "NetworkOfflineError");
 
-    const endSnapshot = getUptakeTelemetrySnapshot(
-      TELEMETRY_COMPONENT,
-      clientWithDump.identifier
-    );
-    const expectedIncrements = {
-      [UptakeTelemetry.STATUS.SYNC_START]: 1,
-      [UptakeTelemetry.STATUS.NETWORK_OFFLINE_ERROR]: 1,
-    };
-    checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+    assertTelemetryEvents([
+      {
+        value: UptakeTelemetry.STATUS.SYNC_START,
+      },
+      {
+        value: UptakeTelemetry.STATUS.NETWORK_OFFLINE_ERROR,
+      },
+    ]);
   } finally {
     Services.io.offline = backupOffline;
   }
@@ -205,10 +191,6 @@ add_task(async function test_sync_event_is_sent_even_if_up_to_date() {
   await clear_state();
 
   // Now, simulate that server data wasn't changed since dump was released.
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    clientWithDump.identifier
-  );
   let received;
   clientWithDump.on("sync", ({ data }) => (received = data));
 
@@ -216,16 +198,14 @@ add_task(async function test_sync_event_is_sent_even_if_up_to_date() {
 
   ok(!!received.current.length, "Dump records are listed as created");
   equal(received.current.length, received.created.length);
-
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    clientWithDump.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.UP_TO_DATE]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.UP_TO_DATE,
+    },
+  ]);
 });
 add_task(clear_state);
 
@@ -815,7 +795,7 @@ add_task(async function test_inspect_method() {
   equal(mainBucket, "main");
   equal(serverURL, `http://localhost:${server.identity.primaryPort}/v1`);
   equal(defaultSigner, rsSigner);
-  equal(serverTimestamp, '"5000"');
+  equal(serverTimestamp, "5000");
 
   // A collection is listed in .inspect() if it has local data or if there
   // is a JSON dump for it.
@@ -947,41 +927,45 @@ add_task(clear_state);
 
 add_task(async function test_telemetry_reports_up_to_date() {
   await client.maybeSync(2000);
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
+
+  const expectedTelemetry = [
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.SUCCESS,
+    },
+  ];
+  assertTelemetryEvents(expectedTelemetry);
 
   await client.maybeSync(3000);
 
   // No Telemetry was sent.
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
+  assertTelemetryEvents(
+    expectedTelemetry.concat([
+      {
+        value: UptakeTelemetry.STATUS.SYNC_START,
+      },
+      {
+        value: UptakeTelemetry.STATUS.UP_TO_DATE,
+      },
+    ])
   );
-  const expectedIncrements = { [UptakeTelemetry.STATUS.UP_TO_DATE]: 1 };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
 });
 add_task(clear_state);
 
 add_task(async function test_telemetry_if_sync_succeeds() {
   // We test each client because Telemetry requires preleminary declarations.
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-
   await client.maybeSync(2000);
 
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.SUCCESS]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.SUCCESS,
+    },
+  ]);
 });
 add_task(clear_state);
 
@@ -989,41 +973,24 @@ add_task(
   async function test_synchronization_duration_is_reported_in_uptake_status() {
     await client.maybeSync(2000);
 
-    TelemetryTestUtils.assertEvents(
-      [
-        [
-          "uptake.remotecontent.result",
-          "uptake",
-          "remotesettings",
-          UptakeTelemetry.STATUS.SYNC_START,
-          {
-            source: client.identifier,
-            trigger: "manual",
-          },
-        ],
-        [
-          "uptake.remotecontent.result",
-          "uptake",
-          "remotesettings",
-          UptakeTelemetry.STATUS.SUCCESS,
-          {
-            source: client.identifier,
-            duration: v => v > 0,
-            trigger: "manual",
-          },
-        ],
-      ],
-      TELEMETRY_EVENTS_FILTERS
-    );
+    assertTelemetryEvents([
+      {
+        value: UptakeTelemetry.STATUS.SYNC_START,
+        source: client.identifier,
+        trigger: "manual",
+      },
+      {
+        value: UptakeTelemetry.STATUS.SUCCESS,
+        source: client.identifier,
+        trigger: "manual",
+        duration: d => parseInt(d) > 0,
+      },
+    ]);
   }
 );
 add_task(clear_state);
 
 add_task(async function test_telemetry_reports_if_application_fails() {
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
   client.on("sync", () => {
     throw new Error("boom");
   });
@@ -1032,87 +999,68 @@ add_task(async function test_telemetry_reports_if_application_fails() {
     await client.maybeSync(2000);
   } catch (e) {}
 
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.APPLY_ERROR]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.APPLY_ERROR,
+    },
+  ]);
 });
 add_task(clear_state);
 
 add_task(async function test_telemetry_reports_if_sync_fails() {
   await client.db.importChanges({}, 9999);
 
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-
   try {
     await client.maybeSync(10000);
   } catch (e) {}
 
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.SERVER_ERROR]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.SERVER_ERROR,
+    },
+  ]);
 });
 add_task(clear_state);
 
 add_task(async function test_telemetry_reports_if_parsing_fails() {
   await client.db.importChanges({}, 10000);
 
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-
   try {
     await client.maybeSync(10001);
   } catch (e) {}
 
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.PARSE_ERROR]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.PARSE_ERROR,
+    },
+  ]);
 });
 add_task(clear_state);
 
 add_task(async function test_telemetry_reports_if_fetching_signature_fails() {
   await client.db.importChanges({}, 11000);
 
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-
   try {
     await client.maybeSync(11001);
   } catch (e) {}
 
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.SERVER_ERROR]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.SERVER_ERROR,
+    },
+  ]);
 });
 add_task(clear_state);
 
@@ -1121,25 +1069,20 @@ add_task(async function test_telemetry_reports_unknown_errors() {
   client.db.getLastModified = () => {
     throw new Error("Internal");
   };
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
 
   try {
     await client.maybeSync(2000);
   } catch (e) {}
 
   client.db.getLastModified = backup;
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.UNKNOWN_ERROR]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.UNKNOWN_ERROR,
+    },
+  ]);
 });
 add_task(clear_state);
 
@@ -1150,25 +1093,20 @@ add_task(async function test_telemetry_reports_indexeddb_as_custom_1() {
   client.db.getLastModified = () => {
     throw new Error(msg);
   };
-  const startSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
 
   try {
     await client.maybeSync(2000);
   } catch (e) {}
 
   client.db.getLastModified = backup;
-  const endSnapshot = getUptakeTelemetrySnapshot(
-    TELEMETRY_COMPONENT,
-    client.identifier
-  );
-  const expectedIncrements = {
-    [UptakeTelemetry.STATUS.SYNC_START]: 1,
-    [UptakeTelemetry.STATUS.CUSTOM_1_ERROR]: 1,
-  };
-  checkUptakeTelemetry(startSnapshot, endSnapshot, expectedIncrements);
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+    },
+    {
+      value: UptakeTelemetry.STATUS.CUSTOM_1_ERROR,
+    },
+  ]);
 });
 add_task(clear_state);
 
@@ -1184,33 +1122,20 @@ add_task(async function test_telemetry_reports_error_name_as_event_nightly() {
     await client.maybeSync(2000);
   } catch (e) {}
 
-  TelemetryTestUtils.assertEvents(
-    [
-      [
-        "uptake.remotecontent.result",
-        "uptake",
-        "remotesettings",
-        UptakeTelemetry.STATUS.SYNC_START,
-        {
-          source: client.identifier,
-          trigger: "manual",
-        },
-      ],
-      [
-        "uptake.remotecontent.result",
-        "uptake",
-        "remotesettings",
-        UptakeTelemetry.STATUS.UNKNOWN_ERROR,
-        {
-          source: client.identifier,
-          trigger: "manual",
-          duration: v => v >= 0,
-          errorName: "ThrownError",
-        },
-      ],
-    ],
-    TELEMETRY_EVENTS_FILTERS
-  );
+  assertTelemetryEvents([
+    {
+      value: UptakeTelemetry.STATUS.SYNC_START,
+      source: client.identifier,
+      trigger: "manual",
+    },
+    {
+      value: UptakeTelemetry.STATUS.UNKNOWN_ERROR,
+      source: client.identifier,
+      trigger: "manual",
+      errorName: "ThrownError",
+      duration: d => parseInt(d) >= 0,
+    },
+  ]);
 
   client.db.getLastModified = backup;
 });
@@ -1515,10 +1440,12 @@ wNuvFqc=
           metadata: {
             id: "password-fields",
             last_modified: 1234,
-            signature: {
-              signature: "abcdef",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "abcdef",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           changes: [
             {
@@ -1530,7 +1457,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=3001&_since=%223000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=3001&_since=3000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1542,7 +1469,7 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {},
+            signatures: [{}],
           },
           timestamp: 4000,
           changes: [
@@ -1561,7 +1488,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=4001&_since=%224000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=4001&_since=4000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1573,7 +1500,7 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {},
+            signatures: [{}],
           },
           timestamp: 5000,
           changes: [
@@ -1584,7 +1511,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10000&_since=%229999%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10000&_since=9999":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1599,7 +1526,7 @@ wNuvFqc=
           error: "Service Unavailable",
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10001&_since=%2210000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=10001&_since=10000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1611,7 +1538,7 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: "<invalid json",
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=11001&_since=%2211000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=11001&_since=11000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1680,10 +1607,12 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {
-              signature: "some-sig",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "some-sig",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           timestamp: 3000,
           changes: [
@@ -1696,7 +1625,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=1337&_since=%223000%22":
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=1337&_since=3000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1708,10 +1637,12 @@ wNuvFqc=
         status: { status: 200, statusText: "OK" },
         responseBody: {
           metadata: {
-            signature: {
-              signature: "some-sig",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "some-sig",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           timestamp: 3001,
           changes: [
@@ -1738,10 +1669,12 @@ wNuvFqc=
         metadata: {
           id: "language-dictionaries",
           last_modified: 1234,
-          signature: {
-            signature: "xyz",
-            x5u: `http://localhost:${port}/fake-x5u`,
-          },
+          signatures: [
+            {
+              signature: "xyz",
+              x5u: `http://localhost:${port}/fake-x5u`,
+            },
+          ],
         },
         changes: [
           {
@@ -1777,10 +1710,12 @@ wNuvFqc=
           metadata: {
             id: "with-local-fields",
             last_modified: 1234,
-            signature: {
-              signature: "xyz",
-              x5u: `http://localhost:${port}/fake-x5u`,
-            },
+            signatures: [
+              {
+                signature: "xyz",
+                x5u: `http://localhost:${port}/fake-x5u`,
+              },
+            ],
           },
           changes: [
             {
@@ -1790,7 +1725,7 @@ wNuvFqc=
           ],
         },
       },
-    "GET:/v1/buckets/main/collections/with-local-fields/changeset?_expected=3000&_since=%222000%22":
+    "GET:/v1/buckets/main/collections/with-local-fields/changeset?_expected=3000&_since=2000":
       {
         sampleHeaders: [
           "Access-Control-Allow-Origin: *",
@@ -1803,7 +1738,7 @@ wNuvFqc=
         responseBody: {
           timestamp: 3000,
           metadata: {
-            signature: {},
+            signatures: [{}],
           },
           changes: [
             {

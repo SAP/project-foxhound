@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -186,89 +184,17 @@ enum class VRControllerType : uint8_t {
   _end
 };
 
-}  // namespace gfx
-
-template <class T>
-bool IsEnumCase(T);
-
-template <>
-inline constexpr bool IsEnumCase<gfx::VRControllerType>(
-    const gfx::VRControllerType raw) {
-  switch (raw) {
-    case gfx::VRControllerType::_empty:
-    case gfx::VRControllerType::HTCVive:
-    case gfx::VRControllerType::HTCViveCosmos:
-    case gfx::VRControllerType::HTCViveFocus:
-    case gfx::VRControllerType::HTCViveFocusPlus:
-    case gfx::VRControllerType::MSMR:
-    case gfx::VRControllerType::ValveIndex:
-    case gfx::VRControllerType::OculusGo:
-    case gfx::VRControllerType::OculusTouch:
-    case gfx::VRControllerType::OculusTouch2:
-    case gfx::VRControllerType::OculusTouch3:
-    case gfx::VRControllerType::PicoGaze:
-    case gfx::VRControllerType::PicoG2:
-    case gfx::VRControllerType::PicoNeo2:
-    case gfx::VRControllerType::_end:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
-
 // -
 
 enum class TargetRayMode : uint8_t { Gaze, TrackedPointer, Screen };
-
-}  // namespace gfx
-template <>
-inline constexpr bool IsEnumCase<gfx::TargetRayMode>(
-    const gfx::TargetRayMode raw) {
-  switch (raw) {
-    case gfx::TargetRayMode::Gaze:
-    case gfx::TargetRayMode::TrackedPointer:
-    case gfx::TargetRayMode::Screen:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
 
 // -
 
 enum class GamepadMappingType : uint8_t { _empty, Standard, XRStandard };
 
-}  // namespace gfx
-template <>
-inline constexpr bool IsEnumCase<gfx::GamepadMappingType>(
-    const gfx::GamepadMappingType raw) {
-  switch (raw) {
-    case gfx::GamepadMappingType::_empty:
-    case gfx::GamepadMappingType::Standard:
-    case gfx::GamepadMappingType::XRStandard:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
-
 // -
 
 enum class VRDisplayBlendMode : uint8_t { Opaque, Additive, AlphaBlend };
-
-}  // namespace gfx
-template <>
-inline constexpr bool IsEnumCase<gfx::VRDisplayBlendMode>(
-    const gfx::VRDisplayBlendMode raw) {
-  switch (raw) {
-    case gfx::VRDisplayBlendMode::Opaque:
-    case gfx::VRDisplayBlendMode::Additive:
-    case gfx::VRDisplayBlendMode::AlphaBlend:
-      return true;
-  }
-  return false;
-}
-namespace gfx {
 
 // -
 
@@ -476,18 +402,18 @@ struct VRDisplayState {
   VRDisplayBlendMode blendMode;
   std::array<uint8_t, 5> _padding2;
   std::array<VRFieldOfView, VRDisplayState::NumEyes> eyeFOV;
-  static_assert(std::is_pod<VRFieldOfView>::value);
+  static_assert(std::is_trivial_v<VRFieldOfView>);
   std::array<Point3D_POD, VRDisplayState::NumEyes> eyeTranslation;
-  static_assert(std::is_pod<Point3D_POD>::value);
+  static_assert(std::is_trivial_v<Point3D_POD>);
   IntSize_POD eyeResolution;
-  static_assert(std::is_pod<IntSize_POD>::value);
+  static_assert(std::is_trivial_v<IntSize_POD>);
   float nativeFramebufferScaleFactor;
   bool suppressFrames;
   bool isConnected;
   bool isMounted;
   uint8_t _padding3;
   FloatSize_POD stageSize;
-  static_assert(std::is_pod<FloatSize_POD>::value);
+  static_assert(std::is_trivial_v<FloatSize_POD>);
   // We can't use a Matrix4x4 here unless we ensure it's a POD type
   std::array<float, 16> sittingToStandingTransform;
   uint64_t lastSubmittedFrameId;
@@ -518,7 +444,7 @@ struct VRDisplayState {
   void Clear() { memset(this, 0, sizeof(VRDisplayState)); }
 #endif
 };
-static_assert(std::is_pod<VRDisplayState>::value);
+static_assert(std::is_trivial_v<VRDisplayState>);
 
 struct VRControllerState {
   std::array<char, kVRControllerNameMaxLen> controllerName;
@@ -709,11 +635,10 @@ struct VRSystemState {
   VRHMDSensorState sensorState;
   std::array<VRControllerState, kVRControllerMaxCount> controllerState;
 };
-static_assert(std::is_pod<VRDisplayState>::value);
-static_assert(std::is_pod<VRHMDSensorState>::value);
-static_assert(std::is_pod<VRControllerState>::value);
-
-static_assert(std::is_pod<VRSystemState>::value);
+static_assert(std::is_trivial_v<VRDisplayState>);
+static_assert(std::is_trivial_v<VRHMDSensorState>);
+static_assert(std::is_trivial_v<VRControllerState>);
+static_assert(std::is_trivial_v<VRSystemState>);
 
 enum class VRFxEventType : uint8_t {
   NONE = 0,
@@ -842,13 +767,12 @@ struct VRExternalShmem {
 
 // As we are memcpy'ing VRExternalShmem and its members around, it must be a POD
 // type
-static_assert(std::is_pod<VRSystemState>::value);
-static_assert(std::is_pod<VRBrowserState>::value);
-static_assert(std::is_pod<VRWindowState>::value);
-static_assert(std::is_pod<VRTelemetryState>::value);
-
-static_assert(std::is_pod<VRExternalShmem>::value,
-              "VRExternalShmem must be a POD type.");
+static_assert(std::is_trivial_v<VRSystemState>);
+static_assert(std::is_trivial_v<VRBrowserState>);
+static_assert(std::is_trivial_v<VRWindowState>);
+static_assert(std::is_trivial_v<VRTelemetryState>);
+static_assert(std::is_trivial_v<VRExternalShmem>,
+              "VRExternalShmem must be a trivial type.");
 
 }  // namespace gfx
 }  // namespace mozilla

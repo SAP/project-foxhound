@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,22 +12,24 @@
 #include "content_decryption_module_ext.h"
 #include "gmp-api/gmp-entrypoints.h"
 #include "gmp-api/gmp-video-codec.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/HelperMacros.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/dom/KeySystemNames.h"
 
 #ifdef XP_WIN
-#  include "WinUtils.h"
-#  include "nsWindowsDllInterceptor.h"
-#  include <windows.h>
 #  include <strsafe.h>
+#  include <windows.h>
+
 #  include <unordered_map>
 #  include <vector>
+
+#  include "WinUtils.h"
+#  include "nsWindowsDllInterceptor.h"
 #else
-#  include <sys/types.h>
-#  include <sys/stat.h>
-#  include <unistd.h>
 #  include <fcntl.h>
+#  include <sys/stat.h>
+#  include <sys/types.h>
+#  include <unistd.h>
 #endif
 
 const GMPPlatformAPI* sPlatform = nullptr;
@@ -50,8 +51,8 @@ ChromiumCDMAdapter::ChromiumCDMAdapter(
 void ChromiumCDMAdapter::SetAdaptee(PRLibrary* aLib) { mLib = aLib; }
 
 void* ChromiumCdmHost(int aHostInterfaceVersion, void* aUserData) {
-  GMP_LOG_DEBUG("ChromiumCdmHostFunc(%d, %p)", aHostInterfaceVersion,
-                aUserData);
+  GMP_LOG_DEBUG("ChromiumCdmHostFunc({}, {})", aHostInterfaceVersion,
+                fmt::ptr(aUserData));
   if (aHostInterfaceVersion != cdm::Host_11::kVersion) {
     return nullptr;
   }
@@ -59,8 +60,8 @@ void* ChromiumCdmHost(int aHostInterfaceVersion, void* aUserData) {
 }
 
 void* ChromiumCdmHostCompat(int aHostInterfaceVersion, void* aUserData) {
-  GMP_LOG_DEBUG("ChromiumCdmHostCompatFunc(%d, %p)", aHostInterfaceVersion,
-                aUserData);
+  GMP_LOG_DEBUG("ChromiumCdmHostCompatFunc({}, {})", aHostInterfaceVersion,
+                fmt::ptr(aUserData));
   if (aHostInterfaceVersion != cdm::Host_10::kVersion) {
     return nullptr;
   }
@@ -94,7 +95,7 @@ GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
       files.AppendElement(TakeToCDMHostFile(hostFile));
     }
     bool result = verify(files.Elements(), files.Length());
-    GMP_LOG_DEBUG("%s VerifyCdmHost_0 returned %d", __func__, result);
+    GMP_LOG_DEBUG("{} VerifyCdmHost_0 returned {}", __func__, result);
     MOZ_DIAGNOSTIC_ASSERT(result, "Verification failed!");
   }
 #endif
@@ -122,9 +123,9 @@ GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
           aKeySystem.EqualsLiteral("fake"),
       "Should not get an unrecognized key system. Why didn't it get "
       "blocked by MediaKeySystemAccess?");
-  GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %s) this=0x%p",
-                aAPIName, aHostAPI, aPluginAPI,
-                PromiseFlatCString(aKeySystem).get(), this);
+  GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPGetAPI({}, 0x{}, 0x{}, {}) this=0x{}",
+                aAPIName, fmt::ptr(aHostAPI), fmt::ptr(aPluginAPI),
+                PromiseFlatCString(aKeySystem).get(), fmt::ptr(this));
 
   int version;
   GetCdmHostFunc getCdmHostFunc;
@@ -137,9 +138,9 @@ GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
   } else {
     MOZ_ASSERT_UNREACHABLE("We only support and expect cdm10/11!");
     GMP_LOG_DEBUG(
-        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p) this=0x%p got "
+        "ChromiumCDMAdapter::GMPGetAPI({}, 0x{}, 0x{}) this=0x{} got "
         "unsupported CDM version!",
-        aAPIName, aHostAPI, aPluginAPI, this);
+        aAPIName, fmt::ptr(aHostAPI), fmt::ptr(aPluginAPI), fmt::ptr(this));
     return GMPGenericErr;
   }
 
@@ -147,9 +148,9 @@ GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
       PR_FindFunctionSymbol(mLib, "CreateCdmInstance"));
   if (!create) {
     GMP_LOG_DEBUG(
-        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p) this=0x%p "
+        "ChromiumCDMAdapter::GMPGetAPI({}, 0x{}, 0x{}) this=0x{} "
         "FAILED to find CreateCdmInstance",
-        aAPIName, aHostAPI, aPluginAPI, this);
+        aAPIName, fmt::ptr(aHostAPI), fmt::ptr(aPluginAPI), fmt::ptr(this));
     return GMPGenericErr;
   }
 
@@ -157,12 +158,13 @@ GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
                      getCdmHostFunc, aHostAPI);
   if (!cdm) {
     GMP_LOG_DEBUG(
-        "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p) this=0x%p "
-        "FAILED to create cdm version %d",
-        aAPIName, aHostAPI, aPluginAPI, this, version);
+        "ChromiumCDMAdapter::GMPGetAPI({}, 0x{}, 0x{}) this=0x{} "
+        "FAILED to create cdm version {}",
+        aAPIName, fmt::ptr(aHostAPI), fmt::ptr(aPluginAPI), fmt::ptr(this),
+        version);
     return GMPGenericErr;
   }
-  GMP_LOG_DEBUG("cdm: 0x%p, version: %d", cdm, version);
+  GMP_LOG_DEBUG("cdm: 0x{}, version: {}", fmt::ptr(cdm), version);
   *aPluginAPI = cdm;
 
   return *aPluginAPI ? GMPNoErr : GMPNotImplementedErr;
@@ -220,7 +222,9 @@ DWORD WINAPI QueryDosDeviceWHook(LPCWSTR lpDeviceName, LPWSTR lpTargetPath,
   }
   PodCopy(lpTargetPath, device.c_str(), device.size());
   lpTargetPath[device.size()] = 0;
-  GMP_LOG_DEBUG("QueryDosDeviceWHook %S -> %S", lpDeviceName, lpTargetPath);
+  GMP_LOG_DEBUG("QueryDosDeviceWHook {} -> {}",
+                NS_ConvertUTF16toUTF8(lpDeviceName).get(),
+                NS_ConvertUTF16toUTF8(lpTargetPath).get());
   return device.size();
 }
 

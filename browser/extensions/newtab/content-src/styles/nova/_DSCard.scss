@@ -1,0 +1,161 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+// @nova-cleanup(merge-styles): Move to components/DiscoveryStreamComponents/CardSections/_CardSections.scss
+
+.nova-enabled .ds-card-grid:not(.ds-section-grid) .ds-card {
+  &:not(.placeholder) {
+    box-shadow: var(--card-box-shadow);
+  }
+
+  &:hover,
+  &:active,
+  &:focus-within {
+    box-shadow: var(--card-box-shadow-hover);
+  }
+
+  .meta .excerpt {
+    display: none;
+  }
+
+  --nova-stp-inset: var(--space-medium);
+
+  @include nova-card-stp-controls; // defined in nova/_CardSections.scss
+}
+
+.nova-enabled .ds-card-grid:not(.ds-section-grid) .ds-card.ds-spoc {
+  .img-wrapper {
+    padding: var(--space-large) var(--space-large) 0;
+  }
+
+  .img img {
+    border-radius: var(--border-radius-medium);
+  }
+
+  .meta {
+    padding: var(--space-medium) var(--space-large) var(--space-medium);
+
+    .title {
+      font-size: var(--font-size-small);
+    }
+  }
+}
+
+.nova-enabled .ds-card-grid:not(.ds-section-grid) .ds-card:not(.ds-spoc, .ds-spoc-rectangle) {
+  &:not(.placeholder) {
+    .img-wrapper > .ds-image.img > img {
+      border-radius: var(--border-radius-medium);
+    }
+  }
+
+  .ds-card-link {
+    gap: var(--space-medium);
+    padding: var(--space-large) var(--space-large) var(--space-medium);
+  }
+
+  .meta {
+    padding: 0;
+    min-height: 72px;
+    gap: var(--space-small);
+
+    .info-wrap .title {
+      font-size: var(--font-size-small);
+      margin-block-end: 0;
+    }
+
+    .sections-card-footer {
+      margin-block-start: auto;
+      min-height: var(--size-item-medium);
+      padding-inline-end: var(--space-xxlarge);
+    }
+  }
+}
+
+.nova-enabled .ds-card.sections-card-ui {
+  .sections-card-footer .source-wrapper {
+    gap: calc(var(--space-xsmall) + var(--space-xxsmall));
+    max-width: none;
+
+    img {
+      width: var(--icon-size);
+      height: var(--icon-size);
+      margin-inline-end: 0;
+      border-radius: var(--border-radius-circle);
+    }
+  }
+}
+
+.nova-enabled .ds-card-grid,
+.nova-enabled .ds-section-grid {
+  // Intentionally duplicated classname to match specificity of classic MREC rules
+  .ds-card.ds-spoc-rectangle.ds-spoc-rectangle {
+    .ds-card-link {
+      padding-block-start: var(--space-small);
+    }
+
+    .ds-image {
+      padding-block-start: 0;
+      height: var(--mrec-height);
+      width: var(--mrec-width);
+      margin-inline: auto;
+    }
+
+    .img-wrapper .ds-image img {
+      border-radius: 0;
+    }
+
+    .meta {
+      padding-block-start: 0;
+
+      .title {
+        font-size: var(--font-size-small);
+        margin-block-end: var(--space-xxsmall);
+      }
+
+      .excerpt {
+        display: none;
+      }
+    }
+
+    --nova-stp-inset: var(--space-xxsmall);
+
+    @include nova-card-stp-controls; // defined in nova/_CardSections.scss
+
+  }
+}
+
+// The shared selectors above lack the specificity to override the classic
+// section-card-medium rule; .ds-section-grid.ds-card-grid matches it.
+.nova-enabled .ds-card-grid,
+.nova-enabled .ds-section-grid.ds-card-grid {
+  .ds-card.ds-spoc-rectangle.ds-spoc-rectangle {
+    .card-stp-button-hover-background .card-stp-button-position-wrapper {
+      inset-inline-end: var(--space-medium);
+    }
+  }
+}
+
+.nova-enabled .ds-card.ds-spoc {
+  .story-footer {
+    margin-block: 0;
+    height: unset;
+
+    .source-wrapper {
+      gap: var(--space-small);
+      margin-block-end: var(--space-xsmall);
+    }
+
+    .ds-spoc-separator {
+      width: 3px;
+      height: 3px;
+      border-radius: var(--border-radius-circle);
+      background-color: currentColor;
+      color: var(--text-color-deemphasized);
+    }
+
+    .ds-spoc-sponsored {
+      font-size: var(--font-size-small);
+    }
+  }
+}

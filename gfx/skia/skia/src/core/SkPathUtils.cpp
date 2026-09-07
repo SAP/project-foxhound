@@ -10,26 +10,18 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkStrokeRec.h"
 #include "src/core/SkMatrixPriv.h"
 
 namespace skpathutils {
 
-bool FillPathWithPaint(const SkPath& src, const SkPaint& paint, SkPath* dst) {
-    return skpathutils::FillPathWithPaint(src, paint, dst, nullptr, 1);
-}
-
-bool FillPathWithPaint(const SkPath& src, const SkPaint& paint, SkPath* dst,
-                       const SkRect* cullRect, SkScalar resScale) {
-    return skpathutils::FillPathWithPaint(src, paint, dst, cullRect,
-                                          SkMatrix::Scale(resScale, resScale));
-}
-
-bool FillPathWithPaint(const SkPath& src, const SkPaint& paint, SkPath* dst,
+bool FillPathWithPaint(const SkPath& origSrc, const SkPaint& paint, SkPathBuilder* builder,
                        const SkRect* cullRect, const SkMatrix& ctm) {
-    if (!src.isFinite()) {
-        dst->reset();
+    if (!origSrc.isFinite()) {
+        builder->reset();
         return false;
     }
 
@@ -43,51 +35,35 @@ bool FillPathWithPaint(const SkPath& src, const SkPaint& paint, SkPath* dst,
     }
 #endif
 
-    const SkPath* srcPtr = &src;
-    SkPath tmpPath;
-
+    const SkPath* srcPtr = &origSrc;
+    SkPath pathStorage;
     SkPathEffect* pe = paint.getPathEffect();
-    if (pe && pe->filterPath(&tmpPath, src, &rec, cullRect, ctm)) {
-        srcPtr = &tmpPath;
+    if (pe && pe->filterPath(builder, origSrc, &rec, cullRect, ctm)) {
+        pathStorage = builder->detach();
+        srcPtr = &pathStorage;
+    }
+    if (!rec.applyToPath(builder, *srcPtr)) {
+        *builder = *srcPtr;
     }
 
-    if (!rec.applyToPath(dst, *srcPtr)) {
-        if (srcPtr == &tmpPath) {
-            // If path's were copy-on-write, this trick would not be needed.
-            // As it is, we want to save making a deep-copy from tmpPath -> dst
-            // since we know we're just going to delete tmpPath when we return,
-            // so the swap saves that copy.
-            dst->swap(tmpPath);
-        } else {
-            *dst = *srcPtr;
-        }
-    }
-
-    if (!dst->isFinite()) {
-        dst->reset();
-        return false;
+    if (!builder->isFinite()) {
+        builder->reset();
     }
     return !rec.isHairlineStyle();
 }
 
+bool FillPathWithPaint(const SkPath& src, const SkPaint& paint, SkPathBuilder* dst) {
+    return FillPathWithPaint(src, paint, dst, nullptr, SkMatrix::I());
+}
+
+SkPath FillPathWithPaint(const SkPath& src, const SkPaint& paint, bool* isFillPtr) {
+    SkPathBuilder builder;
+    bool isFill = FillPathWithPaint(src, paint, &builder);
+    if (isFillPtr) {
+        *isFillPtr = isFill;
+    }
+    return builder.detach();
+}
+
+
 } // namespace skpathutils
-
-bool FillPathWithPaint(const SkPath& src,
-                       const SkPaint& paint,
-                       SkPath* dst,
-                       const SkRect* cullRect,
-                       SkScalar resScale) {
-    return skpathutils::FillPathWithPaint(src, paint, dst, cullRect, resScale);
-}
-
-bool FillPathWithPaint(const SkPath& src,
-                       const SkPaint& paint,
-                       SkPath* dst,
-                       const SkRect* cullRect,
-                       const SkMatrix& ctm) {
-    return skpathutils::FillPathWithPaint(src, paint, dst, cullRect, ctm);
-}
-
-bool FillPathWithPaint(const SkPath& src, const SkPaint& paint, SkPath* dst) {
-    return skpathutils::FillPathWithPaint(src, paint, dst);
-}

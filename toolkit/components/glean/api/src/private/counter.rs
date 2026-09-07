@@ -25,7 +25,7 @@ pub enum CounterMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_namer!(CounterMetric);
+define_metric_namer!(CounterMetric);
 
 impl CounterMetric {
     /// Create a new counter metric.
@@ -151,7 +151,7 @@ impl Counter for CounterMetric {
         };
 
         #[cfg(feature = "with_gecko")]
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker(
                 "Counter::add",
                 super::profiler_utils::TelemetryProfilerCategory,
@@ -160,31 +160,6 @@ impl Counter for CounterMetric {
                     id, None, amount,
                 ),
             );
-        }
-    }
-
-    /// **Test-only API.**
-    ///
-    /// Get the currently stored value as an integer.
-    /// This doesn't clear the stored value.
-    ///
-    /// ## Arguments
-    ///
-    /// * `ping_name` - the storage name to look into.
-    ///
-    /// ## Return value
-    ///
-    /// Returns the stored value or `None` if nothing stored.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<i32> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            CounterMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            CounterMetric::Child(meta) => {
-                panic!(
-                    "Cannot get test value for {:?} in non-parent process!",
-                    meta.id
-                )
-            }
         }
     }
 
@@ -212,6 +187,35 @@ impl Counter for CounterMetric {
     }
 }
 
+#[inherent]
+impl glean::TestGetValue for CounterMetric {
+    type Output = i32;
+
+    /// **Test-only API.**
+    ///
+    /// Get the currently stored value as an integer.
+    /// This doesn't clear the stored value.
+    ///
+    /// ## Arguments
+    ///
+    /// * `ping_name` - the storage name to look into.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the stored value or `None` if nothing stored.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<i32> {
+        match self {
+            CounterMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            CounterMetric::Child(meta) => {
+                panic!(
+                    "Cannot get test value for {:?} in non-parent process!",
+                    meta.id
+                )
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{common_test::*, ipc, metrics};
@@ -223,7 +227,12 @@ mod test {
         let metric = &metrics::test_only_ipc::a_counter;
         metric.add(1);
 
-        assert_eq!(1, metric.test_get_value("test-ping").unwrap());
+        assert_eq!(
+            1,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -260,7 +269,9 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            45 == parent_metric.test_get_value("test-ping").unwrap(),
+            45 == parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "Values from the 'processes' should be summed"
         );
     }

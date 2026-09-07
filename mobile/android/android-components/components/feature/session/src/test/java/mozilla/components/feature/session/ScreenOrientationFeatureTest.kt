@@ -6,10 +6,18 @@ package mozilla.components.feature.session
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.content.res.Resources
+import android.os.Build
 import mozilla.components.concept.engine.Engine
+import mozilla.components.concept.engine.activity.OrientationDelegate
+import mozilla.components.concept.engine.activity.OrientationDelegate.LockResult
 import mozilla.components.support.test.mock
-import org.junit.Assert.assertTrue
+import mozilla.components.support.test.whenever
+import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class ScreenOrientationFeatureTest {
@@ -34,14 +42,42 @@ class ScreenOrientationFeatureTest {
     }
 
     @Test
-    fun `WHEN asked to set a screen orientation THEN set it on the activity property and return true`() {
+    fun `WHEN asked to set a screen orientation THEN set it on the activity property and return SUCCESS`() {
         val activity = mock<Activity>()
+        val configuration = Configuration()
+        configuration.smallestScreenWidthDp = 320
+        val resources = mock<Resources>()
+        doReturn(configuration).`when`(resources).configuration
+        doReturn(resources).`when`(activity).resources
         val feature = ScreenOrientationFeature(mock(), activity)
 
         val result = feature.onOrientationLock(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
 
         verify(activity).requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        assertTrue(result)
+        assertEquals(LockResult.SUCCESS, result)
+    }
+
+    @Test
+    fun `WHEN asked to set a screen orientation on large screen Android 16+ THEN return NOT_SUPPORTED`() {
+        val activity = mock<Activity>()
+        val resources = mock<Resources>()
+        val configuration = Configuration().apply {
+            smallestScreenWidthDp = 700
+        }
+
+        whenever(activity.resources).thenReturn(resources)
+        whenever(resources.configuration).thenReturn(configuration)
+
+        val feature = ScreenOrientationFeature(
+            engine = mock(),
+            activity = activity,
+            buildVersionProvider = { Build.VERSION_CODES.BAKLAVA },
+        )
+
+        val result = feature.onOrientationLock(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+
+        assertEquals(LockResult.NOT_SUPPORTED, result)
+        verify(activity, never()).requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
 
     @Test

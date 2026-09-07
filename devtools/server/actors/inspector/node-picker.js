@@ -61,8 +61,8 @@ class NodePicker {
    * or `pointer-events: none` style).
    *
    * @param {MouseEvent} event
-   * @param {Boolean} shiftKey: If passed, will override event.shiftKey
-   * @returns {Object} An object compatible with the disconnectedNode type.
+   * @param {boolean} shiftKey: If passed, will override event.shiftKey
+   * @returns {object} An object compatible with the disconnectedNode type.
    */
   _findAndAttachElement(event, shiftKey = event.shiftKey) {
     // originalTarget allows access to the "real" element before any retargeting
@@ -144,7 +144,7 @@ class NodePicker {
    *
    * @param {Event} event
    *          The event to allow
-   * @return {Boolean}
+   * @return {boolean}
    */
   _isEventAllowed({ view }) {
     // Allow "non multiprocess" browser toolbox to inspect documents loaded in the parent
@@ -160,7 +160,7 @@ class NodePicker {
    * Returns true if the passed event original target is in the RemoteNodePickerNotice.
    *
    * @param {Event} event
-   * @returns {Boolean}
+   * @returns {boolean}
    */
   _isEventInRemoteNodePickerNotice(event) {
     return (
@@ -225,7 +225,7 @@ class NodePicker {
    * mousemove event handler
    *
    * @param {MouseEvent} event
-   * @param {Boolean} shiftKeyOverride: If passed, will override event.shiftKey in _findAndAttachElement
+   * @param {boolean} shiftKeyOverride: If passed, will override event.shiftKey in _findAndAttachElement
    */
   _onHovered(event, shiftKeyOverride) {
     // If the hovered node is a remote frame, then we need to let the event through
@@ -389,6 +389,7 @@ class NodePicker {
    * @param callback The function to call with suppressed events, or null.
    */
   _setSuppressedEventListener(callback) {
+    // The related document may already have been destroyed, or moved to another origin/process.
     if (!this._targetActor?.window?.document) {
       return;
     }
@@ -400,15 +401,25 @@ class NodePicker {
   }
 
   _startPickerListeners() {
+    // All the following DOM Events will be cancelled to avoid reaching the web page.
+    const cancelledEvents = [
+      "dblclick",
+      "mouseenter",
+      "mousedown",
+      "mouseover",
+      "mouseup",
+      "mouseout",
+      "mouseleave",
+    ];
     const eventsToSuppress = [
       { type: "click", handler: this._onPick },
-      { type: "dblclick", handler: this._preventContentEvent },
       { type: "keydown", handler: this._onKeyDown },
       { type: "keyup", handler: this._onKeyUp },
-      { type: "mousedown", handler: this._preventContentEvent },
       { type: "mousemove", handler: this._onHovered },
-      { type: "mouseup", handler: this._preventContentEvent },
     ];
+    for (const type of cancelledEvents) {
+      eventsToSuppress.push({ type, handler: this._preventContentEvent });
+    }
 
     const target = this._targetActor.chromeEventHandler;
     this.#eventListenersAbortController = new AbortController();

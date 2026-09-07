@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +25,7 @@ class SystemProxyConfig final {
 
   nsresult GetProxyForURI(const nsACString& aHost, nsACString& aResult);
   nsresult GetPACURI(nsACString& aResult);
+  bool IsDirect() const { return mHost.IsEmpty() && mPacUrl.IsEmpty(); }
 
  private:
   nsCString mHost;
@@ -118,6 +118,13 @@ NS_IMETHODIMP nsAndroidSystemProxySettings::SetSystemProxyInfo(
     const nsTArray<nsCString>& aExclusionList) {
   mSystemProxyConfig = mozilla::Some(
       SystemProxyConfig(aHost, aPort, aPacFileUrl, aExclusionList));
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsAndroidSystemProxySettings::GetSystemProxyDirect(
+    bool* aResult) {
+  *aResult = !mozilla::toolkit::system::HasProxyEnvVars() &&
+             (!mSystemProxyConfig || mSystemProxyConfig->IsDirect());
   return NS_OK;
 }
 

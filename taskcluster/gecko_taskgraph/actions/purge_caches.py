@@ -27,8 +27,6 @@ def purge_caches_action(parameters, graph_config, input, task_group_id, task_id)
     task = get_task_definition(task_id)
     if task["payload"].get("cache"):
         for cache in task["payload"]["cache"]:
-            purge_cache(
-                task["provisionerId"], task["workerType"], cache, use_proxy=True
-            )
+            purge_cache(task["provisionerId"], task["workerType"], cache)
     else:
         logger.info("Task has no caches. Will not clear anything!")

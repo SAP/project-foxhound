@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<style>
+@keyframes anim {
+  from { margin-left: 0px; }
+  to { margin-left: 100px; }
+}
+#scroller {
+  width: 200px;
+  height: 200px;
+  overflow: scroll;
+  scroll-timeline-name: --st
+}
+#content {
+  height: 500px;
+}
+#target {
+  width: 100px;
+  height: 100px;
+  background: green;
+  animation-name: anim;
+  animation-timeline: --st;
+  animation-range: 75% 25%;
+}
+</style>
+<script>
+</script>
+<div id="scroller">
+  <div id="content">
+    <div id="target"></div>
+  </div>
+</div>

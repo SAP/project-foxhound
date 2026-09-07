@@ -1,0 +1,15 @@
+{
+  "label": "larksuite.com",
+  "bugs": {
+    "2001936": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.larksuite.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

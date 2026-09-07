@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,10 +38,10 @@ interface nsIURIFixupInfo : nsISupports
   attribute nsIURI fixedURI;
 
   /**
-   * The name of the keyword search provider used to provide a keyword search;
+   * The id of the search engine used to provide a keyword search;
    * empty string if no keyword search was done.
    */
-  attribute AString keywordProviderName;
+  attribute AString keywordProviderId;
 
   /**
    * The keyword as used for the search (post trimming etc.)
@@ -74,7 +73,7 @@ interface nsIURIFixupInfo : nsISupports
   attribute AUTF8String originalInput;
 
   /**
-   * The POST data to submit with the returned URI (see nsISearchSubmission).
+   * The POST data to submit with the returned URI.
    */
   attribute nsIInputStream postData;
 };

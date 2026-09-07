@@ -42,7 +42,7 @@ async function testSteps() {
       // The profile contains unknown files and unknown directories placed
       // across the repositories, origin directories and client directories.
       // The file make_unknownFiles.js was run locally, specifically it was
-      // temporarily enabled in xpcshell.ini and then executed:
+      // temporarily enabled in xpcshell.toml and then executed:
       // mach test --interactive dom/quota/test/xpcshell/make_unknownFiles.js
       installPackage("unknownFiles_profile");
 

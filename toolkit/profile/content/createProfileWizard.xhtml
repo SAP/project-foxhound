@@ -24,12 +24,17 @@
       rel="localization"
       href="toolkit/global/createProfileWizard.ftl"
     />
+    <html:link rel="localization" href="toolkit/global/textActions.ftl" />
   </linkset>
 
   <script src="chrome://global/content/customElements.js" />
   <script src="chrome://global/content/globalOverlay.js" />
   <script src="chrome://global/content/editMenuOverlay.js" />
   <script src="chrome://mozapps/content/profile/createProfileWizard.js" />
+
+#ifdef XP_MACOSX
+#include ../../content/editMenubar.inc.xhtml
+#endif
 
   <wizard>
     <stringbundle

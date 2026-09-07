@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 3; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +39,7 @@ const nsLiteralString kSpace(u" ");
 
 nsChromeTreeOwner::nsChromeTreeOwner() : mAppWindow(nullptr) {}
 
-nsChromeTreeOwner::~nsChromeTreeOwner() {}
+nsChromeTreeOwner::~nsChromeTreeOwner() = default;
 
 //*****************************************************************************
 // nsChromeTreeOwner::nsISupports
@@ -233,14 +232,6 @@ nsChromeTreeOwner::GetHasPrimaryContent(bool* aResult) {
 // nsChromeTreeOwner::nsIBaseWindow
 //*****************************************************************************
 
-NS_IMETHODIMP nsChromeTreeOwner::InitWindow(nsIWidget* parentWidget, int32_t x,
-                                            int32_t y, int32_t cx, int32_t cy) {
-  // Ignore widget parents for now.  Don't think those are a valid thing to
-  // call.
-  NS_ENSURE_SUCCESS(SetPositionAndSize(x, y, cx, cy, 0), NS_ERROR_FAILURE);
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsChromeTreeOwner::Destroy() {
   NS_ENSURE_STATE(mAppWindow);
   return mAppWindow->Destroy();
@@ -317,11 +308,6 @@ nsChromeTreeOwner::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
     return NS_ERROR_NOT_IMPLEMENTED;
   }
   return GetRootShellSize(aCX, aCY);
-}
-
-NS_IMETHODIMP nsChromeTreeOwner::Repaint(bool aForce) {
-  NS_ENSURE_STATE(mAppWindow);
-  return mAppWindow->Repaint(aForce);
 }
 
 NS_IMETHODIMP nsChromeTreeOwner::GetParentWidget(nsIWidget** aParentWidget) {

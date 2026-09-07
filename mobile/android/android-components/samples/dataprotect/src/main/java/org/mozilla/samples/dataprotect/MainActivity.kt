@@ -5,10 +5,12 @@
 package org.mozilla.samples.dataprotect
 
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.lib.dataprotect.SecureAbove22Preferences
+import mozilla.components.support.ktx.android.view.setupPersistentInsets
 
 class MainActivity : AppCompatActivity() {
     @Suppress("MagicNumber")
@@ -20,6 +22,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        enableEdgeToEdge()
+        window.setupPersistentInsets()
 
         val prefs = SecureAbove22Preferences(this, "secret-data-storage")
 

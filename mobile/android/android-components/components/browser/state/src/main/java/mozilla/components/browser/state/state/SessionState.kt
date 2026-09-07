@@ -162,7 +162,6 @@ interface SessionState {
 /**
  * Describes a category of an external package.
  */
-@Suppress("MagicNumber")
 enum class PackageCategory(val id: Int) {
     UNKNOWN(-1),
     GAME(0),

@@ -1,7 +1,7 @@
 <!doctype html>
 <script>
   var bcName = "zoomRestoreBfcache" + window.location.search;
-  var bc = new BroadcastChannel(bcName);
+  var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel(bcName);
   if (window.location.search == "?2") {
     bc.onmessage = (msgEvent) => {
       var msg = msgEvent.data;
@@ -15,7 +15,7 @@
         }
         case "case2action": {
           SpecialPowers.spawnChrome([], () => {
-            const FullZoom = this.browsingContext.embedderElement.ownerGlobal.FullZoom;
+            const FullZoom = this.browsingContext.embedderElement.documentGlobal.FullZoom;
             FullZoom.setZoom(2.0);
           });
           SpecialPowers.setFullZoom(window, 2);
@@ -55,7 +55,7 @@
             // available then that will fail. So we don't wait here for the devicePixelRatio
             // to change if FullZoom is not available, and test_zoom_restore_bfcache.html
             // will mark this test as todo.
-            return "FullZoom" in this.browsingContext.embedderElement.ownerGlobal;
+            return "FullZoom" in this.browsingContext.embedderElement.documentGlobal;
           }).then((hasFullZoom) => {
             function waitUntilZoomLevelRestored() {
               // Zoom level is updated asynchronously when bfcache lives in the
@@ -73,7 +73,7 @@
         }
         case "close": {
           SpecialPowers.spawnChrome([], () => {
-            const FullZoom = this.browsingContext.embedderElement.ownerGlobal.FullZoom;
+            const FullZoom = this.browsingContext.embedderElement.documentGlobal.FullZoom;
             FullZoom.setZoom(1.0);
           });
           bc.postMessage({command: "closed"});

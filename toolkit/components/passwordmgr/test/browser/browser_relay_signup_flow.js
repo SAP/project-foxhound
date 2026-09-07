@@ -52,7 +52,8 @@ add_task(async function test_default_displays_Relay_to_signed_in_browser() {
 });
 
 add_task(
-  async function test_site_not_on_allowList_still_shows_Relay_to_signed_in_browser() {
+  async function test_site_not_on_allowList_still_shows_Relay_to_browser_that_already_enabled() {
+    await setupRelayScenario("enabled");
     const sandbox = stubFxAccountsToSimulateSignedIn();
     const rsSandbox = await stubRemoteSettingsAllowList([
       { domain: "not-example.org" },
@@ -69,7 +70,7 @@ add_task(
         const relayItem = getRelayItemFromACPopup(popup);
         Assert.ok(
           relayItem,
-          "Relay item SHOULD be present in the autocomplete popup when the site is not on the allow-list, if the user is signed into the browser."
+          "Relay item SHOULD be present in the autocomplete popup when the site is not on the allow-list, if the browser previously enabled Relay."
         );
       }
     );
@@ -98,7 +99,7 @@ add_task(
         await clickRelayItemAndWaitForPopup(acPopup);
 
         const primaryButton = notificationPopup.querySelector(
-          "button.popup-notification-primary-button"
+          "moz-button.popup-notification-primary-button"
         );
 
         await clickButtonAndWaitForPopupToClose(primaryButton);
@@ -106,7 +107,7 @@ add_task(
         await verifyConfirmationHint(
           browser,
           true,
-          "identity-icon-box",
+          "trust-icon-container",
           "confirmation-hint-firefox-relay-mask-created"
         );
 

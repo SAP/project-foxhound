@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_NavigationHistoryEntry_h___
-#define mozilla_dom_NavigationHistoryEntry_h___
+#ifndef mozilla_dom_NavigationHistoryEntry_h_
+#define mozilla_dom_NavigationHistoryEntry_h_
 
 #include "mozilla/DOMEventTargetHelper.h"
 
 class nsIGlobalObject;
-class nsStructuredCloneContainer;
+class nsIStructuredCloneContainer;
 
 namespace mozilla::dom {
 
@@ -30,11 +28,11 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
   void GetKey(nsAString& aResult) const;
   void GetId(nsAString& aResult) const;
   int64_t Index() const;
+  void SetIndex(int64_t aIndex) { mIndex = aIndex; }
   bool SameDocument() const;
 
   void GetState(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
                 ErrorResult& aRv) const;
-  void SetState(nsStructuredCloneContainer* aState);
 
   IMPL_EVENT_HANDLER(dispose);
 
@@ -47,7 +45,15 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
 
   const nsID& Key() const;
 
-  nsStructuredCloneContainer* GetNavigationState() const;
+  nsIStructuredCloneContainer* GetNavigationAPIState() const;
+  void SetNavigationAPIState(nsIStructuredCloneContainer* aState);
+
+  class SessionHistoryInfo* SessionHistoryInfo() { return mSHInfo.get(); }
+
+  void ResetIndexForDisposal();
+
+  MOZ_CAN_RUN_SCRIPT
+  void FireDisposeEvent();
 
  private:
   ~NavigationHistoryEntry();
@@ -57,10 +63,10 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
   bool HasActiveDocument() const;
 
   // https://html.spec.whatwg.org/#nhe-she
-  UniquePtr<SessionHistoryInfo> mSHInfo;
+  UniquePtr<class SessionHistoryInfo> mSHInfo;
   int64_t mIndex;
 };
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_NavigationHistoryEntry_h___
+#endif  // mozilla_dom_NavigationHistoryEntry_h_

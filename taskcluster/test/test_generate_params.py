@@ -29,7 +29,7 @@ def get_graph_from_spec(tmpdir_factory):
     # entirely as having already run
     env = os.environ.copy()
     env.pop("MOZ_AUTOMATION", None)
-    subprocess.run(cmd, cwd=GECKO, env=env)
+    subprocess.run(cmd, check=False, cwd=GECKO, env=env)
     assert len(outdir.listdir()) > 0
 
     def inner(param_spec):

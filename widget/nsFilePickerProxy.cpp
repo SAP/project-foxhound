@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +26,8 @@ nsFilePickerProxy::~nsFilePickerProxy() = default;
 
 NS_IMETHODIMP
 nsFilePickerProxy::Init(BrowsingContext* aBrowsingContext,
-                        const nsAString& aTitle, nsIFilePicker::Mode aMode) {
+                        const nsAString& aTitle, nsIFilePicker::Mode aMode,
+                        nsISupports* aGlobal) {
   BrowserChild* browserChild =
       BrowserChild::GetFrom(aBrowsingContext->GetDocShell());
   if (!browserChild) {
@@ -35,6 +35,7 @@ nsFilePickerProxy::Init(BrowsingContext* aBrowsingContext,
   }
 
   mBrowsingContext = aBrowsingContext;
+  mGlobal = do_QueryInterface(aGlobal);
   mMode = aMode;
 
   browserChild->SendPFilePickerConstructor(this, aTitle, aMode,
@@ -144,25 +145,22 @@ nsFilePickerProxy::Open(nsIFilePickerShownCallback* aCallback) {
 
 mozilla::ipc::IPCResult nsFilePickerProxy::Recv__delete__(
     const MaybeInputData& aData, const nsIFilePicker::ResultCode& aResult) {
-  auto* inner = mBrowsingContext->GetDOMWindow()
-                    ? mBrowsingContext->GetDOMWindow()->GetCurrentInnerWindow()
-                    : nullptr;
-
-  if (NS_WARN_IF(!inner)) {
+  auto* global = GetRelevantGlobal();
+  if (NS_WARN_IF(!global)) {
     return IPC_OK();
   }
 
   if (aData.type() == MaybeInputData::TInputBlobs) {
     const nsTArray<IPCBlob>& blobs = aData.get_InputBlobs().blobs();
-    for (uint32_t i = 0; i < blobs.Length(); ++i) {
-      RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(blobs[i]);
+    for (const IPCBlob& blob : blobs) {
+      RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(blob);
       NS_ENSURE_TRUE(blobImpl, IPC_OK());
 
       if (!blobImpl->IsFile()) {
         return IPC_OK();
       }
 
-      RefPtr<File> file = File::Create(inner->AsGlobal(), blobImpl);
+      RefPtr<File> file = File::Create(global, blobImpl);
       if (NS_WARN_IF(!file)) {
         return IPC_OK();
       }
@@ -178,7 +176,7 @@ mozilla::ipc::IPCResult nsFilePickerProxy::Recv__delete__(
       return IPC_OK();
     }
 
-    RefPtr<Directory> directory = Directory::Create(inner->AsGlobal(), file);
+    RefPtr<Directory> directory = Directory::Create(global, file);
     MOZ_ASSERT(directory);
 
     OwningFileOrDirectory* element = mFilesOrDirectories.AppendElement();
@@ -194,7 +192,7 @@ mozilla::ipc::IPCResult nsFilePickerProxy::Recv__delete__(
         return IPC_OK();
       }
 
-      RefPtr<File> file = File::Create(inner->AsGlobal(), blobImpl);
+      RefPtr<File> file = File::Create(global, blobImpl);
       if (NS_WARN_IF(!file)) {
         return IPC_OK();
       }
@@ -277,8 +275,7 @@ class SimpleEnumerator final : public nsSimpleEnumerator {
 NS_IMETHODIMP
 nsFilePickerProxy::GetDomFileOrDirectoryEnumerator(
     nsISimpleEnumerator** aDomfiles) {
-  RefPtr<SimpleEnumerator> enumerator =
-      new SimpleEnumerator(mFilesOrDirectories);
+  auto enumerator = mozilla::MakeRefPtr<SimpleEnumerator>(mFilesOrDirectories);
   enumerator.forget(aDomfiles);
   return NS_OK;
 }
@@ -308,8 +305,8 @@ NS_IMETHODIMP
 nsFilePickerProxy::GetDomFilesInWebKitDirectory(
     nsISimpleEnumerator** aDomfiles) {
 #ifdef MOZ_WIDGET_ANDROID
-  RefPtr<SimpleEnumerator> enumerator =
-      new SimpleEnumerator(mFilesInWebKitDirectory);
+  auto enumerator =
+      mozilla::MakeRefPtr<SimpleEnumerator>(mFilesInWebKitDirectory);
   enumerator.forget(aDomfiles);
   return NS_OK;
 #else

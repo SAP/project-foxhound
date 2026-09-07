@@ -5,3 +5,14 @@
 .testcanvas {
   border: 1px solid #2600ff;
 }
+
+/* MathML diagnostic element font sizes */
+.mathml-font16 {
+  font-size: 16px;
+}
+.mathml-font20 {
+  font-size: 20px;
+}
+.mathml-font48 {
+  font-size: 48px;
+}

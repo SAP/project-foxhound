@@ -29,15 +29,6 @@ add_task(async function () {
     ".webconsole-evaluation-selector-button"
   );
 
-  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-    is(
-      evaluationContextSelectorButton,
-      null,
-      "context selector is only displayed when Fission or EFT is enabled"
-    );
-    return;
-  }
-
   setInputValue(hud, "document.location.host");
   await waitForEagerEvaluationResult(hud, `"example.com"`);
 
@@ -154,7 +145,7 @@ async function testUseInConsole(
   await wait(100);
 
   const onConsoleReady = inspector.once("console-var-ready");
-  const menu = inspector.markup.contextMenu._openMenu({
+  const menu = inspector.markup.contextMenu.openMenu({
     target: container.tagLine,
   });
   const useInConsoleItem = menu.items.find(

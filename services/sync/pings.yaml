@@ -21,9 +21,9 @@ sync:
       Ping submitted due to app shutdown.
     schedule: |
       12h have elapsed since the previous ping.
-    idchanged: |
+    idchange: |
       The ID of the user or device has changed.
-      Probably means a different user has logged in.
+      Probably means a user signed out, or a different user has logged in.
   include_client_id: false
   send_if_empty: false
   bugs:

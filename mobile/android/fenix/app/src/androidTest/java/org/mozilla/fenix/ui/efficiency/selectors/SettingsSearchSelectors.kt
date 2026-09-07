@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.selectors
 
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
@@ -11,5 +15,15 @@ object SettingsSearchSelectors {
         groups = listOf("requiredForPage"),
     )
 
-    val all = listOf(SETTINGS_SEARCH_TITLE)
+    val DEFAULT_SEARCH_ENGINE_SETTING_OPTION = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_TEXT,
+        value = "Default search engine",
+        description = "Default search engine option",
+        groups = listOf("requiredForPage"),
+    )
+
+    val all = listOf(
+        SETTINGS_SEARCH_TITLE,
+        DEFAULT_SEARCH_ENGINE_SETTING_OPTION,
+    )
 }

@@ -1,9 +1,10 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
-
 ChromeUtils.defineESModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
+  AppProvidedConfigEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   EnterprisePolicyTesting:
     "resource://testing-common/EnterprisePolicyTesting.sys.mjs",
   ExtensionTestUtils:
@@ -16,9 +17,11 @@ ChromeUtils.defineESModuleGetters(this, {
     "resource://services-settings/RemoteSettingsClient.sys.mjs",
   SearchEngineClassification:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSearch.sys.mjs",
+  SearchEngineInstallError:
+    "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   SearchEngineSelector:
     "moz-src:///toolkit/components/search/SearchEngineSelector.sys.mjs",
-  SearchService: "resource://gre/modules/SearchService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SearchSettings: "moz-src:///toolkit/components/search/SearchSettings.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
@@ -38,7 +41,7 @@ const RemoteSettingsUtils = Utils;
 updateAppInfo({ name: "XPCShell", version: "48", platformVersion: "48" });
 
 // We generally also need a profile set-up, for saving search settings etc.
-do_get_profile();
+do_get_profile(true);
 
 SearchTestUtils.init(this);
 
@@ -415,16 +418,20 @@ function useCustomGeoServer(region, waitToRespond = Promise.resolve()) {
 
 /**
  * @typedef {object} TelemetryDetails
+ * @property {string} providerId
+ *   The provider id of the search engine.
+ * @property {string} partnerCode
+ *   The partner code of the search engine.
+ * @property {boolean} overriddenByThirdParty
+ *   If the engine is overridden by a third party.
  * @property {string} engineId
  *   The telemetry ID for the search engine.
- * @property {string} [displayName]
+ * @property {string} displayName
  *   The search engine's display name.
- * @property {string} [loadPath]
+ * @property {string} loadPath
  *   The load path for the search engine.
- * @property {string} [submissionUrl]
+ * @property {string} submissionUrl
  *   The submission URL for the search engine.
- * @property {string} [verified]
- *   Whether the search engine is verified.
  */
 
 /**
@@ -433,9 +440,9 @@ function useCustomGeoServer(region, waitToRespond = Promise.resolve()) {
  *
  * @param {object} expected
  *   An object containing telemetry details for normal and private engines.
- * @param {TelemetryDetails} expected.normal
+ * @param {Partial<TelemetryDetails>} expected.normal
  *   An object with the expected details for the normal search engine.
- * @param {TelemetryDetails} [expected.private]
+ * @param {Partial<TelemetryDetails>} [expected.private]
  *   An object with the expected details for the private search engine.
  */
 async function assertGleanDefaultEngine(expected) {
@@ -455,7 +462,21 @@ async function assertGleanDefaultEngine(expected) {
         `Should have set ${property} correctly`
       );
     }
-    if (expected.private && property in expected.private) {
+    if (!expected.private) {
+      let expectedValue;
+      if (property === "overriddenByThirdParty") {
+        expectedValue = false;
+      } else if (property === "submissionUrl") {
+        expectedValue = "blank:";
+      } else {
+        expectedValue = "";
+      }
+      Assert.equal(
+        Glean.searchEnginePrivate[property].testGetValue(),
+        expectedValue,
+        `Private engine ${property} should be unset`
+      );
+    } else if (property in expected.private) {
       Assert.equal(
         Glean.searchEnginePrivate[property].testGetValue(),
         expected.private[property] ?? "",
@@ -466,7 +487,7 @@ async function assertGleanDefaultEngine(expected) {
 }
 
 /**
- * Loads a new enterprise policy, and re-initialise the search service
+ * Loads a new enterprise policy, and re-initialises the search service
  * with the new policy. Also waits for the search service to write the settings
  * file to disk.
  *
@@ -474,15 +495,7 @@ async function assertGleanDefaultEngine(expected) {
  *   The enterprise policy to use.
  */
 async function setupPolicyEngineWithJson(policy) {
-  Services.search.wrappedJSObject.reset();
-
-  await this.EnterprisePolicyTesting.setupPolicyEngineWithJson(policy);
-
-  let settingsWritten = SearchTestUtils.promiseSearchNotification(
-    "write-settings-to-disk-complete"
-  );
-  await Services.search.init();
-  await settingsWritten;
+  await this.EnterprisePolicyTesting.setupPolicyEngineWithJsonForSearch(policy);
 }
 
 /**
@@ -504,11 +517,19 @@ async function enableEnterprise() {
  * A simple observer to ensure we get only the expected notifications.
  */
 class SearchObserver {
-  constructor(expectedNotifications, returnEngineForNotification = false) {
+  /**
+   *
+   * @param {Array<[string, string|null]>} expectedNotifications
+   *   An array of [notificationType, engineName] tuples. Use null for
+   *   engineName if we don't care which engine triggered the notification.
+   */
+  constructor(expectedNotifications) {
     this.observer = this.observer.bind(this);
     this.deferred = Promise.withResolvers();
-    this.expectedNotifications = expectedNotifications;
-    this.returnEngineForNotification = returnEngineForNotification;
+    this.expectedNotifications = expectedNotifications.map(([type, name]) => {
+      return { type, name };
+    });
+    this.receivedNotifications = [];
 
     Services.obs.addObserver(this.observer, SearchUtils.TOPIC_ENGINE_MODIFIED);
 
@@ -520,10 +541,18 @@ class SearchObserver {
   }
 
   handleTimeout() {
+    let stillExpecting = this.expectedNotifications
+      .map(n => `[type: ${n.type}, name: ${n.name}]`)
+      .join(", ");
+    let received = this.receivedNotifications
+      .map(n => `[type: ${n.type}, name: ${n.engineName}]`)
+      .join(", ");
+
     this.deferred.reject(
       new Error(
-        "Waiting for Notifications timed out, only received: " +
-          this.expectedNotifications.join(",")
+        `Waiting for Notifications timed out:
+          still expecting - [${stillExpecting || "(none)"}]
+          received - [${received || "(none);"}]`
       )
     );
   }
@@ -534,20 +563,25 @@ class SearchObserver {
       0,
       "Should be expecting a notification"
     );
-    Assert.equal(
-      data,
-      this.expectedNotifications[0],
-      "Should have received the next expected notification"
+
+    let engine = subject.wrappedJSObject;
+    let engineName = engine.name;
+    this.receivedNotifications.push({ type: data, engineName });
+
+    let matchIndex = this.expectedNotifications.findIndex(
+      expected =>
+        expected.type == data &&
+        (expected.name == null || expected.name == engineName)
     );
 
-    if (
-      this.returnEngineForNotification &&
-      data == this.returnEngineForNotification
-    ) {
-      this.engineToReturn = subject.QueryInterface(Ci.nsISearchEngine);
+    if (matchIndex == -1) {
+      info(
+        `SearchObserver received unexpected notification: ${data}, ${engineName}`
+      );
+      return;
     }
 
-    this.expectedNotifications.shift();
+    this.expectedNotifications.splice(matchIndex, 1);
 
     if (!this.expectedNotifications.length) {
       clearTimeout(this.timeout);
@@ -571,7 +605,7 @@ let updatePromise = SearchTestUtils.promiseSearchNotification(
 );
 
 registerCleanupFunction(async () => {
-  if (Services.search.isInitialized) {
+  if (SearchService.isInitialized) {
     await updatePromise;
   }
 });
@@ -634,53 +668,51 @@ async function assertSelectorEnginesEqualsExpected(
   expectedEngines,
   message
 ) {
-  engineSelector._configuration = null;
+  engineSelector.clearCachedConfigurationForTests();
   SearchTestUtils.setRemoteSettingsConfig(config);
 
   if (expectedEngines.length) {
     let { engines } = await engineSelector.fetchEngineConfiguration(userEnv);
 
-    if (SearchUtils.rustSelectorFeatureGate) {
-      // Add default parameters to match the selector output.
-      for (let i = 0; i < expectedEngines.length; i++) {
-        expectedEngines[i] = {
-          aliases: [],
-          charset: "UTF-8",
-          optional: false,
-          partnerCode: "",
-          telemetrySuffix: "",
-          orderHint: null,
-          clickUrl: null,
-          isNewUntil: null,
-          ...expectedEngines[i],
-        };
-        expectedEngines[i].classification =
-          expectedEngines[i].classification == "general"
-            ? SearchEngineClassification.GENERAL
-            : SearchEngineClassification.UNKNOWN;
+    // Add default parameters to match the selector output.
+    for (let i = 0; i < expectedEngines.length; i++) {
+      expectedEngines[i] = {
+        aliases: [],
+        charset: "UTF-8",
+        optional: false,
+        partnerCode: "",
+        telemetrySuffix: "",
+        orderHint: null,
+        clickUrl: null,
+        isNewUntil: null,
+        ...expectedEngines[i],
+      };
+      expectedEngines[i].classification =
+        expectedEngines[i].classification == "general"
+          ? SearchEngineClassification.GENERAL
+          : SearchEngineClassification.UNKNOWN;
 
-        expectedEngines[i].urls = {
-          suggestions: null,
-          trending: null,
-          searchForm: null,
-          visualSearch: null,
-          ...expectedEngines[i].urls,
+      expectedEngines[i].urls = {
+        suggestions: null,
+        trending: null,
+        searchForm: null,
+        visualSearch: null,
+        ...expectedEngines[i].urls,
+      };
+      expectedEngines[i].urls.search = {
+        method: "GET",
+        ...expectedEngines[i].urls.search,
+      };
+      if (!expectedEngines[i].urls.search.params) {
+        expectedEngines[i].urls.search.params = [];
+      }
+      for (let j = 0; j < expectedEngines[i].urls.search.params.length; j++) {
+        expectedEngines[i].urls.search.params[j] = {
+          enterpriseValue: null,
+          experimentConfig: null,
+          value: null,
+          ...expectedEngines[i].urls.search.params[j],
         };
-        expectedEngines[i].urls.search = {
-          method: "GET",
-          ...expectedEngines[i].urls.search,
-        };
-        if (!expectedEngines[i].urls.search.params) {
-          expectedEngines[i].urls.search.params = [];
-        }
-        for (let j = 0; j < expectedEngines[i].urls.search.params.length; j++) {
-          expectedEngines[i].urls.search.params[j] = {
-            enterpriseValue: null,
-            experimentConfig: null,
-            value: null,
-            ...expectedEngines[i].urls.search.params[j],
-          };
-        }
       }
     }
 

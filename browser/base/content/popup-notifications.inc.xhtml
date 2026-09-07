@@ -39,12 +39,16 @@
         <description id="webRTC-all-windows-shared" hidden="true" data-l10n-id="popup-all-windows-shared"></description>
       </popupnotificationcontent>
 
-      <popupnotificationcontent id="webRTC-preview" orient="vertical" hidden="true">
-        <html:video id="webRTC-previewVideo" tabindex="-1"/>
+      <popupnotificationcontent id="webRTC-preview-section" orient="vertical">
+        <!-- <webrtc-preview> gets inserted here lazily by WebRTCParent.sys.mjs -->
         <vbox id="webRTC-previewWarningBox">
           <description id="webRTC-previewWarning"/>
           <hbox>
-            <label id="webRTC-previewWarning-learnMore" is="text-link" class="popup-notification-learnmore-link"/>
+            <html:a id="webRTC-previewWarning-learnMore"
+                    is="moz-support-link"
+                    support-page="screenshare-safety"
+                    class="popup-notification-learnmore-link"
+          ></html:a>
           </hbox>
         </vbox>
       </popupnotificationcontent>
@@ -72,34 +76,41 @@
       </popupnotificationcontent>
     </popupnotification>
 
+    <popupnotification id="webSerial-choosePort-notification" hidden="true">
+      <popupnotificationcontent id="webSerial-selectPort" orient="vertical">
+        <label id="webSerial-selectPort-label"
+               data-l10n-id="webserial-select-port-label"
+               control="webSerial-selectPort-menulist"/>
+        <menulist id="webSerial-selectPort-menulist" size="large">
+          <menupopup id="webSerial-selectPort-menupopup"/>
+        </menulist>
+        <description id="webSerial-no-ports-available"
+                     hidden="true"
+                     data-l10n-id="webserial-no-ports-available"/>
+      </popupnotificationcontent>
+    </popupnotification>
+
     <popupnotification id="servicesInstall-notification" hidden="true">
       <popupnotificationcontent orient="vertical" align="start">
         <!-- XXX bug 974146, tests are looking for this, can't remove yet. -->
       </popupnotificationcontent>
     </popupnotification>
 
+    <html:link rel="stylesheet" href="chrome://browser/content/passwordmgr/login-doorhanger-username-field.css"/>
     <popupnotification id="password-notification" hidden="true">
       <popupnotificationcontent orient="vertical">
-        <label data-l10n-id="panel-save-update-username" control="password-notification-username" class="password-notification-label"></label>
-        <stack>
-          <html:input id="password-notification-username"
-                      type="text"
-                      class="ac-has-end-icon"
-                      autocompletesearch="login-doorhanger-username"
-                      autocompletepopup="PopupAutoComplete"
-                      is="autocomplete-input"
-                      maxrows="10"
-                      maxdropmarkerrows="10"/>
-          <dropmarker id="password-notification-username-dropmarker"
-                      class="ac-dropmarker"/>
-        </stack>
-        <label data-l10n-id="panel-save-update-password" control="password-notification-password" class="password-notification-label"></label>
-        <stack>
-          <html:input id="password-notification-password" type="password"/>
-          <dropmarker id="password-notification-password-dropmarker"
-                      class="ac-dropmarker"
-                      hidden="true"/>
-        </stack>
+        <html:login-doorhanger-username-field id="password-notification-username"
+                                 data-l10n-id="panel-save-update-username-2"
+                                 data-l10n-attrs="label"
+                                 class="login-doorhanger-field"
+                                 autocompletesearch="login-doorhanger-username"
+                                 autocompletepopup="PopupAutoComplete"
+                                 maxrows="10"
+                                 maxdropmarkerrows="10"></html:login-doorhanger-username-field>
+        <html:moz-input-password id="password-notification-password"
+                                 data-l10n-id="panel-save-update-password-2"
+                                 data-l10n-attrs="label"
+                                 class="login-doorhanger-field"/>
       </popupnotificationcontent>
     </popupnotification>
 
@@ -258,49 +269,15 @@
     <popupnotification id="relay-integration-offer-notification" hidden="true">
       <popupnotificationcontent orient="vertical">
         <html:div>
-          <html:p data-l10n-id="firefox-relay-offer-why-to-use-relay"></html:p>
-          <html:p id="firefox-relay-offer-what-relay-provides" data-l10n-id="firefox-relay-offer-what-relay-provides" data-l10n-args='{"useremail": ""}'></html:p>
-          <html:p id="firefox-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice">
-            <label id="firefox-relay-offer-tos-url" is="text-link" data-l10n-name="tos-url"/>
-            <label id="firefox-relay-offer-privacy-url" is="text-link" data-l10n-name="privacy-url"/>
+          <html:p data-l10n-id="firefox-relay-offer-why-to-use-relay-1">
+            <label class="firefox-relay-learn-more-url" is="text-link" data-l10n-name="firefox-relay-learn-more-url"/>
+            <label class="firefox-fxa-and-relay-offer-domain" data-l10n-name="firefox-fxa-and-relay-offer-domain"/>
           </html:p>
-        </html:div>
-      </popupnotificationcontent>
-    </popupnotification>
-
-    <popupnotification id="fxa-and-relay-integration-offer-notification" hidden="true">
-      <popupnotificationcontent orient="vertical">
-        <html:div>
-          <html:p data-l10n-id="firefox-relay-offer-why-to-use-relay"></html:p>
-          <html:p class="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-and-fxa-popup-notification-second-sentence-control"></html:p>
-          <html:p id="firefox-fxa-and-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice-control">
+          <html:p id="firefox-relay-offer-what-relay-provides" data-l10n-id="firefox-relay-offer-what-relay-provides" data-l10n-args='{"useremail": ""}'></html:p>
+          <html:p id="firefox-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice-1">
             <label class="firefox-fxa-and-relay-offer-tos-url" is="text-link" data-l10n-name="tos-url"/>
             <label class="firefox-fxa-and-relay-offer-privacy-url" is="text-link" data-l10n-name="privacy-url"/>
           </html:p>
-        </html:div>
-      </popupnotificationcontent>
-    </popupnotification>
-
-    <popupnotification id="fxa-and-relay-integration-offer-basic-info-notification" hidden="true">
-      <popupnotificationcontent orient="vertical">
-        <html:div>
-          <html:p data-l10n-id="firefox-relay-and-fxa-popup-notification-first-sentence-basic-info">
-            <label class="firefox-relay-learn-more-url" is="text-link" data-l10n-name="firefox-relay-learn-more-url"/>
-            <label class="firefox-fxa-and-relay-offer-domain" data-l10n-name="firefox-fxa-and-relay-offer-domain"/>
-          </html:p>
-          <html:p class="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-and-fxa-popup-notification-second-sentence-basic-info"></html:p>
-        </html:div>
-      </popupnotificationcontent>
-    </popupnotification>
-
-    <popupnotification id="fxa-and-relay-integration-offer-with-domain-notification" hidden="true">
-      <popupnotificationcontent orient="vertical">
-        <html:div>
-          <html:p data-l10n-id="firefox-relay-and-fxa-popup-notification-first-sentence-with-domain">
-            <label class="firefox-relay-learn-more-url" is="text-link" data-l10n-name="firefox-relay-learn-more-url"/>
-            <label class="firefox-fxa-and-relay-offer-domain" data-l10n-name="firefox-fxa-and-relay-offer-domain"/>
-          </html:p>
-          <html:p class="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-and-fxa-popup-notification-second-sentence-with-domain"></html:p>
         </html:div>
       </popupnotificationcontent>
     </popupnotification>
@@ -312,7 +289,7 @@
             <label class="firefox-relay-learn-more-url" is="text-link" data-l10n-name="firefox-relay-learn-more-url"/>
             <label class="firefox-fxa-and-relay-offer-domain" data-l10n-name="firefox-fxa-and-relay-offer-domain"/>
           </html:p>
-          <html:p class="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-and-fxa-popup-notification-second-sentence-with-domain"></html:p>
+          <html:p class="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-and-fxa-popup-notification-second-sentence-with-domain-and-value-prop"></html:p>
         </html:div>
       </popupnotificationcontent>
     </popupnotification>
@@ -325,28 +302,6 @@
         </html:div>
       </popupnotificationcontent>
     </popupnotification>
-
-    <template id="firefox-relay-header">
-      <html:div class="relay-integration-header">
-          <html:div />
-          <html:div>
-            <html:span>Firefox</html:span>
-            <html:span> Relay</html:span>
-          </html:div>
-        </html:div>
-    </template>
-
-    <template id="firefox-relay-header-basic-info">
-      <html:div class="relay-integration-header-variation">
-        <html:p data-l10n-id="firefox-relay-and-fxa-popup-notification-header-basic-info"></html:p>
-      </html:div>
-    </template>
-
-    <template id="firefox-relay-header-with-domain">
-      <html:div class="relay-integration-header-variation">
-        <html:p data-l10n-id="firefox-relay-and-fxa-popup-notification-header-with-domain"></html:p>
-      </html:div>
-    </template>
 
     <template id="firefox-relay-header-with-domain-and-value-prop">
       <html:div class="relay-integration-header-variation">

@@ -9,7 +9,7 @@ That {doc}`viaduct` must be initialized during application startup.
 ## Async
 
 The Remote Settings API is synchronous, which means calling it directly will block the current
-thread.  To deal with this, all current consumers wrap the API in order to make it async.  For
+thread. To deal with this, all current consumers wrap the API in order to make it async. For
 details on this wrapping, see the consumer code itself.
 
 ## Importing items
@@ -24,19 +24,19 @@ import mozilla.appservices.remotesettings.RemoteSettingsServer
 import mozilla.appservices.remotesettings.RemoteSettingsService
 ```
 
-
 ```swift
 import MozillaAppServices
 ```
+
 :::
 
 ## Application-level setup
 
-Applications should create an app-wide `RemoteSettingsService`.  This manages which
+Applications should create an app-wide `RemoteSettingsService`. This manages which
 remote settings server to make requests to, syncing data with that server, etc.
 
-`RemoteSettingsService` instances are created using a config.  The name is because there is an
-older/semi-deprecated `RemoteSettingsConfig` class.  The DISCO team plans to rename this class and
+`RemoteSettingsService` instances are created using a config. The name is because there is an
+older/semi-deprecated `RemoteSettingsConfig` class. The DISCO team plans to rename this class and
 remove the `2` once we move consumers over to the new API.
 
 :::{tab-set-code}
@@ -70,6 +70,7 @@ let config = RemoteSettingsConfig2(
 
 let appWideRemoteSettingsService = RemoteSettingsService(config: config)
 ```
+
 :::
 
 ## Creating Remote Settings clients
@@ -86,19 +87,18 @@ val remoteSettingsClient = appWideRemoteSettingsService.makeClient("my-collectio
 ```swift
 let remoteSettingsClient = appWideRemoteSettingsService.makeClient(collection: "my-collection")
 ```
-:::
 
+:::
 
 ## Getting records
 
-`RemoteSettingsClient` instances can be used to fetch remote settings records.  Records have some standard attributes
+`RemoteSettingsClient` instances can be used to fetch remote settings records. Records have some standard attributes
 (`id`, `lastModified`, etc) and also have the `fields` attribute which stores all other JSON data
 serialized as a string.
 
 `getRecords` does not make a network request, instead it returns the last synced data with the
-server.  This makes it safe to call in early startup where starting up a new network request is not
-desirable.  However, this means that it returns a nullable value, which must be checked.
-
+server. This makes it safe to call in early startup where starting up a new network request is not
+desirable. However, this means that it returns a nullable value, which must be checked.
 
 :::{tab-set-code}
 
@@ -123,9 +123,10 @@ func processRecords(remoteSettingsClient: RemoteSettingsClient) {
     }
 }
 ```
+
 :::
 
-`getRecordsMap` works similarly, but it returns a map with the record ID as the key.  Again,
+`getRecordsMap` works similarly, but it returns a map with the record ID as the key. Again,
 this value is nullable since the client may not have synced any data yet.
 
 :::{tab-set-code}
@@ -151,20 +152,20 @@ func valueOfFeature(remoteSettingsClient: RemoteSettingsClient): Bool {
     }
 }
 ```
+
 :::
 
-Both `getRecords` and `getRecordsMap` input an optional `syncIfEmpty` parameter.  Pass
+Both `getRecords` and `getRecordsMap` input an optional `syncIfEmpty` parameter. Pass
 `syncIfEmpty=true` to sync records with the server if they haven't been synced before. Even with
 this parameter, you should still check for null, which will be returned if the network request
-fails.  `syncIfEmpty` should be used with caution, since there can be a delay in fetching the
-setting.  For example, it could delay UI updates.
+fails. `syncIfEmpty` should be used with caution, since there can be a delay in fetching the
+setting. For example, it could delay UI updates.
 
 ## Getting attachment data
 
-`RemoteSettingsRecord` instances have an optional attachment field.  If present, you can download
-the attachment data as a byte array using `RemoteSettingsClient.getAttachment`.  This will make a
+`RemoteSettingsRecord` instances have an optional attachment field. If present, you can download
+the attachment data as a byte array using `RemoteSettingsClient.getAttachment`. This will make a
 network request unless the attachment data is cached.
-
 
 :::{tab-set-code}
 
@@ -184,13 +185,14 @@ network request unless the attachment data is cached.
         // do something with the attachment data
     }
 ```
+
 :::
 
 ## Syncing with the server
 
-Use `RemoteSettingsService.sync()` to synchronize remote settings data with the server.  This will
+Use `RemoteSettingsService.sync()` to synchronize remote settings data with the server. This will
 fetch remote settings data for all clients created with the `RemoteSettingsService` that are still
-alive.  This synchronization can take a significant amount of time and should probably be run in a
+alive. This synchronization can take a significant amount of time and should probably be run in a
 worker queue.
 
 ## Exception handling
@@ -198,9 +200,9 @@ worker queue.
 The Remote Settings component defines the following error hierarchy:
 
 - **RemoteSettingsError**: Base error
-    - **RemoteSettingsError.Network(reason: string)**: Network error while making a request
-    - **RemoteSettingsError.Backoff(seconds: int)**: The server requested a request backoff of at least [seconds]
-    - **RemoteSettingsError.Other(reason: string)**: Catch-all for other remote settings errors
+  - **RemoteSettingsError.Network(reason: string)**: Network error while making a request
+  - **RemoteSettingsError.Backoff(seconds: int)**: The server requested a request backoff of at least [seconds]
+  - **RemoteSettingsError.Other(reason: string)**: Catch-all for other remote settings errors
 
 How this works depends on the language:
 
@@ -246,9 +248,10 @@ func remoteSettingsPeriodicSync() {
     }
 }
 ```
+
 :::
 
-`RemoteSettingsClient.getRecords` and `RemoteSettingsClient.getRecordsMap` never throw.  If they
+`RemoteSettingsClient.getRecords` and `RemoteSettingsClient.getRecordsMap` never throw. If they
 encounter an error, they will record it using internal metrics/error reports then return `null`.
 The reason for this is that code that calls those methods will certainly handle exceptions in the
 same way as `null` and this avoids duplicating that code.
@@ -256,8 +259,8 @@ same way as `null` and this avoids duplicating that code.
 ## Preventing nulls with scheduled downloads
 
 The Remote Settings module has a system in place where we download Remote Settings collections on a
-regular basis and store the data inside the library itself.  This data is used as a fallback
-whenever `getRecords` or `getRecordsMap` would return `null`.  This can simplified consumer, since
+regular basis and store the data inside the library itself. This data is used as a fallback
+whenever `getRecords` or `getRecordsMap` would return `null`. This can simplified consumer, since
 it doesn't need an extra branch to handle missing data. This also can reduce network traffic, since
 we only need to fetch new records if they've been updated since the last download.
 

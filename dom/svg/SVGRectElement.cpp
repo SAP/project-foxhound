@@ -1,19 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGRectElement.h"
+
+#include <algorithm>
+
+#include "SVGGeometryProperty.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGRectElementBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Matrix.h"
-#include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/PathHelpers.h"
+#include "mozilla/gfx/Rect.h"
 #include "nsGkAtoms.h"
-#include "SVGGeometryProperty.h"
-#include <algorithm>
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Rect)
 
@@ -30,23 +30,23 @@ JSObject* SVGRectElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGRectElement::sLengthInfo[6] = {
     {nsGkAtoms::x, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::rx, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::ry, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y}};
+     SVGLength::Axis::Y}};
 
 //----------------------------------------------------------------------
 // Implementation
 
 SVGRectElement::SVGRectElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGRectElementBase(std::move(aNodeInfo)) {}
 
 bool SVGRectElement::IsAttributeMapped(const nsAtom* aAttribute) const {
@@ -239,6 +239,25 @@ already_AddRefed<Path> SVGRectElement::BuildPath(PathBuilder* aBuilder) {
   return aBuilder->Finish();
 }
 
+Maybe<bool> SVGRectElement::HasCtxDependentLength() const {
+  bool hasCtxDependentLength = false;
+  if (SVGGeometryProperty::DoForComputedStyle(
+          this, [&](const ComputedStyle* style) {
+            const nsStyleSVGReset* styleSVGReset = style->StyleSVGReset();
+            const nsStylePosition* stylePosition = style->StylePosition();
+
+            hasCtxDependentLength = styleSVGReset->mX.HasPercent() ||
+                                    styleSVGReset->mY.HasPercent() ||
+                                    styleSVGReset->mRx.HasPercent() ||
+                                    styleSVGReset->mRy.HasPercent() ||
+                                    stylePosition->mWidth.HasPercent() ||
+                                    stylePosition->mHeight.HasPercent();
+          })) {
+    return Some(hasCtxDependentLength);
+  }
+  return Nothing();
+}
+
 bool SVGRectElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
                                            const ComputedStyle& aOldStyle) {
   const auto& newSVGReset = *aNewStyle.StyleSVGReset();
@@ -252,7 +271,8 @@ bool SVGRectElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
          newSVGReset.mRy != oldSVGReset.mRy;
 }
 
-nsCSSPropertyID SVGRectElement::GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum) {
+NonCustomCSSPropertyId SVGRectElement::GetCSSPropertyIdForAttrEnum(
+    uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case ATTR_X:
       return eCSSProperty_x;

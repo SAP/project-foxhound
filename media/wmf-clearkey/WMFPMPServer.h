@@ -23,12 +23,14 @@ class WMFPMPServer final
           IMFGetService, Microsoft::WRL::FtmBase> {
  public:
   WMFPMPServer() = default;
-  ~WMFPMPServer() = default;
+  ~WMFPMPServer() { Shutdown(); }
   WMFPMPServer(const WMFPMPServer&) = delete;
   WMFPMPServer& operator=(const WMFPMPServer&) = delete;
 
   HRESULT RuntimeClassInitialize(
       ABI::Windows::Foundation::Collections::IPropertySet* aPropertyPmp);
+
+  void Shutdown();
 
   // IInspectable
   STDMETHODIMP GetIids(ULONG* aIidCount, IID** aIids) override;

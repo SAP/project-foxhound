@@ -41,23 +41,21 @@ async function test(targetOrigin) {
     await content.window.wrappedJSObject.promiseApzFlushedRepaints();
   });
 
-  let scrollEventPromise = new Promise(resolve => {
-    window.addEventListener("scroll", resolve, { once: true });
+  window.addEventListener("scroll", () => {
+    ok(false, "The parent document should never be scrolled");
   });
 
   await synthesizeNativeWheel(iframe, 100, 100, 0, -10);
-  await scrollEventPromise;
   await waitToClearOutAnyPotentialScrolls(window);
 
-  ok(window.scrollY > 0,
+  is(window.scrollY, 0,
      "Mouse wheel scrolling on an OOP iframe where the iframe document is " +
-     "not scrollable but has overscroll-behavior: none property should be " +
-     "handed off to the parent");
+     "not scrollable should respect overscroll-behavior properties");
 
   // Make sure the wheel scrolling has finished.
   await waitToClearOutAnyPotentialScrolls(window);
 
-  // Make the iframe document scrollable and try to scroll up on the iframe
+  // Make the iframe document scrollable and try to scroll down on the iframe
   // document.
   await SpecialPowers.spawn(iframe, [], async () => {
     content.document.body.style = "height: 500vh;";
@@ -79,28 +77,23 @@ async function test(targetOrigin) {
     await content.window.wrappedJSObject.promiseApzFlushedRepaints();
   });
 
-  const scrollPos = window.scrollY;
-
   // Send a mousemove event on the iframe to finish the last wheel event block.
   await synthesizeNativeMouseEventWithAPZ({
     type: "mousemove",
     target: iframe,
     offsetX: 100,
-    offsetY: 100 + scrollPos,
+    offsetY: 100,
   });
   await mousemoveEventPromise;
 
-  // Try to scroll up by a new wheel event on the iframe.
-  await synthesizeNativeWheel(iframe, 100, 100 + scrollPos, 0, 10);
+  // Try to scroll down by a new wheel event on the iframe.
+  await synthesizeNativeWheel(iframe, 100, 100, 0, -10);
   await waitToClearOutAnyPotentialScrolls(window);
 
   // The wheel event should not be handed off to the root scroller since the
   // iframe document has `overscroll-behavior-y: none`.
-  is(window.scrollY, scrollPos,
+  is(window.scrollY, 0,
      "The root scroller's position should never be changed");
-
-  // Restore the root scroll position for the next test case.
-  window.scrollTo(0, 0);
 }
 
 waitUntilApzStable()

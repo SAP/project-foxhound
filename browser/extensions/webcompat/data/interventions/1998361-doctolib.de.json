@@ -1,0 +1,19 @@
+{
+  "label": "doctolib.de",
+  "bugs": {
+    "1998361": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.doctolib.de/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": ".MuiDrawer-root:has(#app_description) { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": ["hide_browser_notice"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

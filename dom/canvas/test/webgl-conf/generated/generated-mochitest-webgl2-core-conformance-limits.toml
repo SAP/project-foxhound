@@ -1,0 +1,34 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/limits/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__limits__gl-line-width.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+]
+
+["test_2_conformance__limits__gl-max-texture-dimensions.html"]
+
+["test_2_conformance__limits__gl-min-attribs.html"]
+
+["test_2_conformance__limits__gl-min-textures.html"]
+
+["test_2_conformance__limits__gl-min-uniforms.html"]

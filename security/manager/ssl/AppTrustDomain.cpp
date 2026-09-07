@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,8 +11,6 @@
 #include "certt.h"
 // }
 #include "certdb.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Casting.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozpkix/pkixnss.h"
@@ -254,7 +250,6 @@ pkix::Result AppTrustDomain::DigestBuf(Input item, DigestAlgorithm digestAlg,
 pkix::Result AppTrustDomain::CheckRevocation(EndEntityOrCA, const CertID&, Time,
                                              Duration,
                                              /*optional*/ const Input*,
-                                             /*optional*/ const Input*,
                                              /*optional*/ const Input*) {
   // We don't currently do revocation checking. If we need to distrust an Apps
   // certificate, we will use the active distrust mechanism.
@@ -325,13 +320,6 @@ pkix::Result AppTrustDomain::VerifyECDSASignedData(
 pkix::Result AppTrustDomain::CheckValidityIsAcceptable(
     Time /*notBefore*/, Time /*notAfter*/, EndEntityOrCA /*endEntityOrCA*/,
     KeyPurposeId /*keyPurpose*/) {
-  return Success;
-}
-
-pkix::Result AppTrustDomain::NetscapeStepUpMatchesServerAuth(
-    Time /*notBefore*/,
-    /*out*/ bool& matches) {
-  matches = false;
   return Success;
 }
 

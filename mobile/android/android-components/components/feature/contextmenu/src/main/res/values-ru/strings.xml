@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Text for context menu item to open the link in a new tab. -->
   <string name="mozac_feature_contextmenu_open_link_in_new_tab">Открыть ссылку в новой вкладке</string>
@@ -7,13 +14,15 @@
   <!-- Text for context menu item to open the image in a new tab. -->
   <string name="mozac_feature_contextmenu_open_image_in_new_tab">Открыть изображение в новой вкладке</string>
   <!-- Text for context menu item to save / download the link. -->
-  <string name="mozac_feature_contextmenu_download_link">Загрузить по ссылке</string>
+  <string name="mozac_feature_contextmenu_download_link">Скачать по ссылке</string>
   <!-- Text for context menu item to share the link with an other app. -->
   <string name="mozac_feature_contextmenu_share_link">Поделиться ссылкой</string>
   <!-- Text for context menu item to share the image with an other app. -->
   <string name="mozac_feature_contextmenu_share_image">Поделиться изображением</string>
   <!-- Text for context menu item to copy the link to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_link">Копировать ссылку</string>
+  <!-- Text for context menu item to copy the link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link_text">Копировать текст ссылки</string>
   <!-- Text for context menu item to copy the URL pointing to the image to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_image_location">Копировать ссылку на изображение</string>
   <!-- Text for context menu item to save / download the image. -->
@@ -28,6 +37,8 @@
   <string name="mozac_feature_contextmenu_snackbar_new_private_tab_opened">Открыта новая приватная вкладка</string>
   <!-- Text for confirmation "snackbar" shown after copying a link or image URL to the clipboard. -->
   <string name="mozac_feature_contextmenu_snackbar_link_copied">Ссылка скопирована в буфер обмена</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_text_copied">Текст ссылки скопирован в буфер обмена</string>
   <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
   <string name="mozac_feature_contextmenu_snackbar_action_switch">Перейти</string>
   <!-- Text for context menu item to open the link in an external app. -->

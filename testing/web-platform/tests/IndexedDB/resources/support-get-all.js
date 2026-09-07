@@ -159,6 +159,13 @@ function index_get_all_test_setup(storeName, callback, testDescription) {
                 expectedRecords.push({key: attr, primaryKey: letter, value});
               }
             });
+            // Records were pushed in primary-key order; sort into index-key
+            // cursor order (index key ASC, then primary key ASC within each
+            // index key) so that filterWithGetAllRecordsOptions works correctly.
+            expectedRecords.sort((a, b) => {
+              const keyCmp = indexedDB.cmp(a.key, b.key);
+              return keyCmp !== 0 ? keyCmp : indexedDB.cmp(a.primaryKey, b.primaryKey);
+            });
             return;
           }
           case 'empty': {
@@ -412,30 +419,6 @@ function assert_large_array_equals(actual, expected, description) {
   const array_string = actual.join(',');
   const expected_string = expected.join(',');
   assert_equals(array_string, expected_string, description);
-}
-
-// Verifies a record from the results of `getAllRecords()`.
-function assert_record_equals(actual_record, expected_record) {
-  assert_class_string(
-      actual_record, 'IDBRecord', 'The record must be an IDBRecord');
-  assert_idl_attribute(
-      actual_record, 'key', 'The record must have a key attribute');
-  assert_idl_attribute(
-      actual_record, 'primaryKey',
-      'The record must have a primaryKey attribute');
-  assert_idl_attribute(
-      actual_record, 'value', 'The record must have a value attribute');
-
-  // Verify the key properties.
-  assert_equals(
-      actual_record.primaryKey, expected_record.primaryKey,
-      'The record must have the expected primaryKey');
-  assert_equals(
-      actual_record.key, expected_record.key,
-      'The record must have the expected key');
-
-  // Verify the value.
-  assert_idb_value_equals(actual_record.value, expected_record.value);
 }
 
 // Verifies two IDB values are equal.  The expected value may be a primitive, an

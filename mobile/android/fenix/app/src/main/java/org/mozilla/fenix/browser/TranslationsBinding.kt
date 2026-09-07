@@ -6,6 +6,8 @@ package org.mozilla.fenix.browser
 
 import androidx.annotation.VisibleForTesting
 import androidx.navigation.NavController
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -40,6 +42,8 @@ import org.mozilla.fenix.translations.TranslationsFlowState
  * @param onTranslationStatusUpdate Invoked when the translation status of the current page is updated.
  * @param onShowTranslationsDialog Invoked when [TranslationDialogBottomSheet]
  * should be automatically shown to the user.
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 class TranslationsBinding(
     private val browserStore: BrowserStore,
@@ -48,9 +52,10 @@ class TranslationsBinding(
     private val navController: NavController? = null,
     private val onTranslationStatusUpdate: (PageTranslationStatus) -> Unit = { _ -> },
     private val onShowTranslationsDialog: () -> Unit = { },
-) : AbstractBinding<BrowserState>(browserStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<BrowserState>(browserStore, mainDispatcher) {
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     override suspend fun onState(flow: Flow<BrowserState>) {
         // Browser level flows
         val browserFlow = flow.mapNotNull { state -> state }
@@ -80,6 +85,8 @@ class TranslationsBinding(
                 val translateToLanguages =
                     browserTranslationsState.supportedLanguages?.toLanguages
                 val isEngineSupported = browserTranslationsState.isEngineSupported
+                val isTranslationsEnabled = browserTranslationsState.isTranslationsEnabled
+                val isTranslationsActive = isEngineSupported == true && isTranslationsEnabled
 
                 // Session Translations State Behavior (Tab)
                 val sessionTranslationsState = state.sessionState.translationsState
@@ -92,7 +99,8 @@ class TranslationsBinding(
                             isTranslateProcessing = false,
                         ),
                     )
-                } else if (isEngineSupported == true && sessionTranslationsState.isTranslated) {
+                // The already translated case
+                } else if (isTranslationsActive && sessionTranslationsState.isTranslated) {
                     val fromSelected =
                         sessionTranslationsState.translationEngineState?.initialFromLanguage(
                             translateFromLanguages,
@@ -113,7 +121,8 @@ class TranslationsBinding(
                             ),
                         )
                     }
-                } else if (isEngineSupported == true && sessionTranslationsState.isExpectedTranslate) {
+                // A translation is processing or expected to process
+                } else if (isTranslationsActive && sessionTranslationsState.isExpectedTranslate) {
                     onTranslationStateUpdated(
                         PageTranslationStatus(
                             isTranslationPossible = true,
@@ -130,8 +139,8 @@ class TranslationsBinding(
                         ),
                     )
                 }
-
-                if (isEngineSupported == true && sessionTranslationsState.isOfferTranslate) {
+                // A translation offer is expected
+                if (isTranslationsActive && sessionTranslationsState.isOfferTranslate) {
                     browserStore.dispatch(
                         TranslationsAction.TranslateOfferAction(
                             tabId = state.sessionState.id,
@@ -141,8 +150,9 @@ class TranslationsBinding(
                     offerToTranslateCurrentPage()
                 }
 
+                // Trigger automatic popup to show errors
                 if (
-                    isEngineSupported == true &&
+                    isTranslationsActive &&
                     sessionTranslationsState.isExpectedTranslate &&
                     sessionTranslationsState.translationError != null
                 ) {

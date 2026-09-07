@@ -337,9 +337,8 @@ var tests = [
     },
     onShown(popup) {
       let notification = popup.children[0];
-      is(
-        notification.getAttribute("secondarybuttonhidden"),
-        "true",
+      ok(
+        notification.hasAttribute("secondarybuttonhidden"),
         "secondary button is hidden"
       );
       ok(

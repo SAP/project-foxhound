@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Ensure formatRange() uses a proleptic Gregorian calendar.
 // ICU bug: https://unicode-org.atlassian.net/browse/ICU-20705
 

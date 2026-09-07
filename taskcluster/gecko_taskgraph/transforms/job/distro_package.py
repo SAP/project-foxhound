@@ -5,14 +5,12 @@
 Support for running spidermonkey jobs via dedicated scripts
 """
 
-
 import os
 import re
+from typing import Literal, Optional
 
 import taskgraph
 from taskgraph.util.schema import Schema
-from taskgraph.util.taskcluster import get_root_url
-from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph import GECKO
 from gecko_taskgraph.transforms.job import run_job_using
@@ -22,53 +20,52 @@ from gecko_taskgraph.util.hash import hash_path
 DSC_PACKAGE_RE = re.compile(".*(?=_)")
 SOURCE_PACKAGE_RE = re.compile(r".*(?=[-_]\d)")
 
-source_definition = {
-    Required("url"): str,
-    Required("sha256"): str,
-}
 
-common_schema = Schema(
-    {
-        # URL/SHA256 of a source file to build, which can either be a source
-        # control (.dsc), or a tarball.
-        Required(Any("dsc", "tarball")): source_definition,
-        # Package name. Normally derived from the source control or tarball file
-        # name. Use in case the name doesn't match DSC_PACKAGE_RE or
-        # SOURCE_PACKAGE_RE.
-        Optional("name"): str,
-        # Patch to apply to the extracted source.
-        Optional("patch"): str,
-        # Command to run before dpkg-buildpackage.
-        Optional("pre-build-command"): str,
-        # Architecture to build the package for.
-        Optional("arch"): str,
-        # List of package tasks to get build dependencies from.
-        Optional("packages"): [str],
-        # What resolver to use to install build dependencies. The default
-        # (apt-get) is good in most cases, but in subtle cases involving
-        # a *-backports archive, its solver might not be able to find a
-        # solution that satisfies the build dependencies.
-        Optional("resolver"): Any("apt-get", "aptitude"),
-        # Base work directory used to set up the task.
-        Required("workdir"): str,
-    }
-)
+class SourceDefinition(Schema, kw_only=True):
+    url: str
+    sha256: str
 
-debian_schema = common_schema.extend(
-    {
-        Required("using"): "debian-package",
-        # Debian distribution
-        Required("dist"): str,
-    }
-)
 
-ubuntu_schema = common_schema.extend(
-    {
-        Required("using"): "ubuntu-package",
-        # Ubuntu distribution
-        Required("dist"): str,
-    }
-)
+class CommonSchema(Schema, kw_only=True):
+    # URL/SHA256 of a source file to build, which can either be a source
+    # control (.dsc), or a tarball.
+    dsc: Optional[SourceDefinition] = None
+    tarball: Optional[SourceDefinition] = None
+    # Package name. Normally derived from the source control or tarball file
+    # name. Use in case the name doesn't match DSC_PACKAGE_RE or
+    # SOURCE_PACKAGE_RE.
+    name: Optional[str] = None
+    # Patch to apply to the extracted source.
+    patch: Optional[str] = None
+    # Command to run before dpkg-buildpackage.
+    pre_build_command: Optional[str] = None
+    # Architecture to build the package for.
+    arch: Optional[str] = None
+    # List of package tasks to get build dependencies from.
+    packages: Optional[list[str]] = None
+    # What resolver to use to install build dependencies. The default
+    # (apt-get) is good in most cases, but in subtle cases involving
+    # a *-backports archive, its solver might not be able to find a
+    # solution that satisfies the build dependencies.
+    resolver: Optional[Literal["apt-get", "aptitude"]] = None
+    # Base work directory used to set up the task.
+    workdir: str
+
+    def __post_init__(self):
+        if self.dsc is None and self.tarball is None:
+            raise ValueError("Either 'dsc' or 'tarball' must be provided")
+
+
+class DebianSchema(CommonSchema, kw_only=True):
+    using: Literal["debian-package"]
+    # Debian distribution
+    dist: str
+
+
+class UbuntuSchema(CommonSchema, kw_only=True):
+    using: Literal["ubuntu-package"]
+    # Ubuntu distribution
+    dist: str
 
 
 def common_package(config, job, taskdesc, distro, version):
@@ -100,8 +97,7 @@ def common_package(config, job, taskdesc, distro, version):
     elif "tarball" in run:
         src = run["tarball"]
         unpack = (
-            "mkdir {package} && "
-            "tar -C {package} -axf {src_file} --strip-components=1"
+            "mkdir {package} && tar -C {package} -axf {src_file} --strip-components=1"
         )
         package_re = SOURCE_PACKAGE_RE
     else:
@@ -156,10 +152,11 @@ def common_package(config, job, taskdesc, distro, version):
         "-x",
         "-c",
         # Add sources for packages coming from other package tasks.
-        "/usr/local/sbin/setup_packages.sh {root_url} $PACKAGES && "
+        "/usr/local/sbin/setup_packages.sh $TASKCLUSTER_ROOT_URL $PACKAGES && "
         "apt-get update && "
         # Upgrade packages that might have new versions in package tasks.
-        "apt-get dist-upgrade && " "cd /tmp && "
+        "apt-get dist-upgrade && "
+        "cd /tmp && "
         # Get, validate and extract the package source.
         "(dget -d -u {src_url} || exit 100) && "
         'echo "{src_sha256}  {src_file}" | sha256sum -c && '
@@ -178,7 +175,6 @@ def common_package(config, job, taskdesc, distro, version):
         # Make the artifacts directory usable as an APT repository.
         "apt-ftparchive sources apt | gzip -c9 > apt/Sources.gz && "
         "apt-ftparchive packages apt | gzip -c9 > apt/Packages.gz".format(
-            root_url=get_root_url(False),
             package=package,
             src_url=src_url,
             src_file=src_file,
@@ -215,7 +211,7 @@ def common_package(config, job, taskdesc, distro, version):
         }
 
 
-@run_job_using("docker-worker", "debian-package", schema=debian_schema)
+@run_job_using("docker-worker", "debian-package", schema=DebianSchema)
 def docker_worker_debian_package(config, job, taskdesc):
     run = job["run"]
     version = {
@@ -225,11 +221,12 @@ def docker_worker_debian_package(config, job, taskdesc):
         "buster": 10,
         "bullseye": 11,
         "bookworm": 12,
+        "trixie": 13,
     }[run["dist"]]
     common_package(config, job, taskdesc, "debian", version)
 
 
-@run_job_using("docker-worker", "ubuntu-package", schema=ubuntu_schema)
+@run_job_using("docker-worker", "ubuntu-package", schema=UbuntuSchema)
 def docker_worker_ubuntu_package(config, job, taskdesc):
     run = job["run"]
     version = {

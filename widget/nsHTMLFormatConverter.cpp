@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,13 +67,6 @@ nsHTMLFormatConverter::CanConvert(const char* aFromDataFlavor,
     } else if (!nsCRT::strcmp(aToDataFlavor, kTextMime)) {
       *_retval = true;
     }
-#if NOT_NOW
-    // pinkerton
-    // no one uses this flavor right now, so it's just slowing things down. If
-    // anyone cares I can put it back in.
-    else if (toFlavor.Equals(kAOLMailMime))
-      *_retval = true;
-#endif
   }
   return NS_OK;
 
@@ -100,9 +92,10 @@ nsHTMLFormatConverter::Convert(const char* aFromDataFlavor,
                                nsISupports* aFromData,
                                const char* aToDataFlavor,
                                nsISupports** aToData) {
-  if (!aToData) return NS_ERROR_INVALID_ARG;
+  if (!aToData) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
-  nsresult rv = NS_OK;
   *aToData = nullptr;
 
   if (!nsCRT::strcmp(aFromDataFlavor, kHTMLMime)) {
@@ -118,43 +111,32 @@ nsHTMLFormatConverter::Convert(const char* aFromDataFlavor,
     }
 
     nsAutoString dataStr;
-    dataWrapper0->GetData(dataStr);  // COPY #1
+    dataWrapper0->GetData(dataStr);
     // note: conversion to text/plain is done inside the clipboard. we do not
     // need to worry about it here.
     if (toFlavor.Equals(kHTMLMime) || toFlavor.Equals(kTextMime)) {
-      nsresult res;
-      if (toFlavor.Equals(kHTMLMime)) {
-        int32_t dataLen = dataStr.Length() * 2;
-        nsPrimitiveHelpers::CreatePrimitiveForData(toFlavor, dataStr.get(),
-                                                   dataLen, aToData);
-      } else {
-        nsAutoString outStr;
-        res = ConvertFromHTMLToUnicode(dataStr, outStr);
-        if (NS_SUCCEEDED(res)) {
-          int32_t dataLen = outStr.Length() * 2;
-          nsPrimitiveHelpers::CreatePrimitiveForData(toFlavor, outStr.get(),
-                                                     dataLen, aToData);
+      nsAutoString outStr = dataStr;
+
+      if (toFlavor.Equals(kTextMime)) {
+        nsresult res = ConvertFromHTMLToUnicode(dataStr, outStr);
+        if (NS_FAILED(res)) {
+          return NS_ERROR_FAILURE;
         }
       }
-    }  // else if HTML or Unicode
-    else if (toFlavor.Equals(kAOLMailMime)) {
-      nsAutoString outStr;
-      if (NS_SUCCEEDED(ConvertFromHTMLToAOLMail(dataStr, outStr))) {
-        int32_t dataLen = outStr.Length() * 2;
-        nsPrimitiveHelpers::CreatePrimitiveForData(toFlavor, outStr.get(),
-                                                   dataLen, aToData);
+
+      auto len = outStr.Length();
+      if (len > std::numeric_limits<size_t>::max() / 2) {
+        return NS_ERROR_FAILURE;
       }
-    }  // else if AOL mail
-    else {
-      rv = NS_ERROR_FAILURE;
+      size_t dataLen = len * 2;
+      nsPrimitiveHelpers::CreatePrimitiveForData(toFlavor, outStr.get(),
+                                                 dataLen, aToData);
+      return NS_OK;
     }
-  }  // if we got html mime
-  else
-    rv = NS_ERROR_FAILURE;
+  }
 
-  return rv;
-
-}  // Convert
+  return NS_ERROR_FAILURE;
+}
 
 //
 // ConvertFromHTMLToUnicode

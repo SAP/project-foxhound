@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env webextensions */
-/* eslint-disable no-unsanitized/property */ /* bug 1903144 */
 /* import-globals-from readability/readability-0.4.2.js */
 /* import-globals-from readability/JSDOMParser-0.4.2.js */
 
@@ -61,7 +59,36 @@ class ReaderView {
       { title: this.getTitle(result) }
     );
 
-    document.body.outerHTML = this.createHtmlBody(article);
+    const sanitizer = new Sanitizer({
+      allowAttributes: {
+        class: ["*"],
+        id: ["*"],
+        src: ["img", "audio", "video", "source"],
+        srcset: ["img", "source"],
+        sizes: ["img", "source"],
+        alt: ["img"],
+        href: ["a"],
+        rel: ["a"],
+        dir: ["*"],
+        lang: ["*"],
+        title: ["*"],
+        width: ["img", "video", "table", "td", "th", "col", "colgroup"],
+        height: ["img", "video"],
+        colspan: ["td", "th"],
+        rowspan: ["td", "th"],
+        scope: ["th"],
+        datetime: ["del", "ins", "time"],
+        cite: ["blockquote", "del", "ins", "q"],
+        start: ["ol"],
+        reversed: ["ol"],
+        value: ["li"],
+        open: ["details"],
+        type: ["a", "ol", "li", "source"],
+        target: ["a"],
+      },
+    });
+
+    document.body.setHTML(this.createHtmlBody(article), { sanitizer });
 
     this.setFontSize(options.fontSize);
     this.setFontType(options.fontType);
@@ -226,12 +253,12 @@ class ReaderView {
       ["fr", { cpm: 998, variance: 126 }],
       ["he", { cpm: 833, variance: 130 }],
       ["it", { cpm: 950, variance: 140 }],
-      ["jw", { cpm: 357, variance: 56 }],
+      ["ja", { cpm: 357, variance: 56 }],
       ["nl", { cpm: 978, variance: 143 }],
       ["pl", { cpm: 916, variance: 126 }],
       ["pt", { cpm: 913, variance: 145 }],
       ["ru", { cpm: 986, variance: 175 }],
-      ["sk", { cpm: 885, variance: 145 }],
+      ["sl", { cpm: 885, variance: 145 }],
       ["sv", { cpm: 917, variance: 156 }],
       ["tr", { cpm: 1054, variance: 156 }],
       ["zh", { cpm: 255, variance: 29 }],

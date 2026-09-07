@@ -1,15 +1,29 @@
 "use strict";
 // This test checks whether the new tab page color properties work.
 
+// @nova-cleanup(remove-pref): Remove novaEnabled detection
+// @nova-cleanup(remove-conditional): Remove novaEnabled check; always use .nova-outer-wrapper
+const outerWrapperClass = Services.prefs.getBoolPref(
+  "browser.newtabpage.activity-stream.nova.enabled",
+  false
+)
+  ? ".nova-outer-wrapper"
+  : ".outer-wrapper";
+
 function waitForAboutNewTabReady(browser, url) {
   // Stop-gap fix for https://bugzilla.mozilla.org/show_bug.cgi?id=1697196#c24
-  return SpecialPowers.spawn(browser, [url], async url => {
-    let doc = content.document;
-    await ContentTaskUtils.waitForCondition(
-      () => doc.querySelector(".outer-wrapper"),
-      `Waiting for page wrapper to be initialized at ${url}`
-    );
-  });
+  return SpecialPowers.spawn(
+    browser,
+    [url, outerWrapperClass],
+    async (url, wrapperClass) => {
+      let doc = content.document;
+
+      await ContentTaskUtils.waitForCondition(
+        () => doc.querySelector(wrapperClass),
+        `Waiting for page wrapper to be initialized at ${url}`
+      );
+    }
+  );
 }
 
 /**
@@ -27,41 +41,46 @@ async function test_ntp_theme(theme, isBrightText) {
 
   let browser = gBrowser.selectedBrowser;
   let { originalBackground, originalCardBackground, originalColor } =
-    await SpecialPowers.spawn(browser, [], function () {
-      let doc = content.document;
-      ok(
-        !doc.documentElement.hasAttribute("lwt-newtab"),
-        `New tab page should not have lwt-newtab attribute`
-      );
-      ok(
-        !doc.documentElement.hasAttribute("lwtheme"),
-        `New tab page should not have lwtheme attribute`
-      );
-      ok(
-        !doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
-        `New tab page not should have lwt-newtab-brighttext attribute`
-      );
+    await SpecialPowers.spawn(
+      browser,
+      [outerWrapperClass],
+      function (wrapperClass) {
+        let doc = content.document;
+        ok(
+          !doc.documentElement.hasAttribute("lwt-newtab"),
+          `New tab page should not have lwt-newtab attribute`
+        );
+        ok(
+          !doc.documentElement.hasAttribute("lwtheme"),
+          `New tab page should not have lwtheme attribute`
+        );
+        ok(
+          !doc.documentElement.hasAttribute("lwt-newtab-brighttext"),
+          `New tab page not should have lwt-newtab-brighttext attribute`
+        );
 
-      return {
-        originalBackground: content.getComputedStyle(doc.body).backgroundColor,
-        originalCardBackground: content.getComputedStyle(
-          doc.querySelector(".top-site-outer .tile")
-        ).backgroundColor,
-        originalColor: content.getComputedStyle(
-          doc.querySelector(".outer-wrapper")
-        ).color,
-        // We check the value of --newtab-link-primary-color directly because the
-        // elements on which it is applied are hard to test. It is most visible in
-        // the "learn more" link in the Pocket section. We cannot show the Pocket
-        // section since it hits the network, and the usual workarounds to change
-        // its backend only work in browser/. This variable is also used in
-        // the Edit Top Site modal, but showing/hiding that is very verbose and
-        // would make this test almost unreadable.
-        originalLinks: content
-          .getComputedStyle(doc.documentElement)
-          .getPropertyValue("--newtab-link-primary-color"),
-      };
-    });
+        return {
+          originalBackground: content.getComputedStyle(doc.body)
+            .backgroundColor,
+          originalCardBackground: content.getComputedStyle(
+            doc.querySelector(".top-site-outer .tile")
+          ).backgroundColor,
+          originalColor: content.getComputedStyle(
+            doc.querySelector(wrapperClass)
+          ).color,
+          // We check the value of --newtab-link-primary-color directly because the
+          // elements on which it is applied are hard to test. It is most visible in
+          // the "learn more" link in the Pocket section. We cannot show the Pocket
+          // section since it hits the network, and the usual workarounds to change
+          // its backend only work in browser/. This variable is also used in
+          // the Edit Top Site modal, but showing/hiding that is very verbose and
+          // would make this test almost unreadable.
+          originalLinks: content
+            .getComputedStyle(doc.documentElement)
+            .getPropertyValue("--newtab-link-primary-color"),
+        };
+      }
+    );
 
   await extension.startup();
 
@@ -81,6 +100,7 @@ async function test_ntp_theme(theme, isBrightText) {
         background: hexToCSS(theme.colors.ntp_background),
         card_background: hexToCSS(theme.colors.ntp_card_background),
         color: hexToCSS(theme.colors.ntp_text),
+        wrapperClass: outerWrapperClass,
       },
     ],
     async function ({
@@ -89,6 +109,7 @@ async function test_ntp_theme(theme, isBrightText) {
       background,
       card_background,
       color,
+      wrapperClass,
     }) {
       let doc = content.document;
       is(
@@ -121,7 +142,7 @@ async function test_ntp_theme(theme, isBrightText) {
           "New tab page card background should be set."
         );
         is(
-          content.getComputedStyle(doc.querySelector(".outer-wrapper")).color,
+          content.getComputedStyle(doc.querySelector(wrapperClass)).color,
           color,
           "New tab page text color should be set."
         );
@@ -140,9 +161,15 @@ async function test_ntp_theme(theme, isBrightText) {
         originalBackground,
         originalCardBackground,
         originalColor,
+        wrapperClass: outerWrapperClass,
       },
     ],
-    function ({ originalBackground, originalCardBackground, originalColor }) {
+    function ({
+      originalBackground,
+      originalCardBackground,
+      originalColor,
+      wrapperClass,
+    }) {
       let doc = content.document;
       ok(
         !doc.documentElement.hasAttribute("lwt-newtab"),
@@ -169,7 +196,7 @@ async function test_ntp_theme(theme, isBrightText) {
         "New tab page card background should be reset."
       );
       is(
-        content.getComputedStyle(doc.querySelector(".outer-wrapper")).color,
+        content.getComputedStyle(doc.querySelector(wrapperClass)).color,
         originalColor,
         "New tab page text color should be reset."
       );

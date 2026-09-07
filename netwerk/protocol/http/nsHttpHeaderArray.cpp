@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 ci et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,14 +41,17 @@ nsresult nsHttpHeaderArray::SetHeader(
   MOZ_ASSERT(
       (variety == eVarietyResponse) || (variety == eVarietyRequestDefault) ||
           (variety == eVarietyRequestOverride) ||
+          (variety == eVarietyResponseOverride) ||
           (variety == eVarietyRequestEnforceDefault),
       "Net original headers can only be set using SetHeader_internal().");
 
   nsEntry* entry = nullptr;
   int32_t index = LookupEntry(header, &entry);
 
-  // If an empty value is received and we aren't merging headers discard it
-  if (value.IsEmpty() && header != nsHttp::X_Frame_Options) {
+  // If an empty value is received and we aren't merging headers discard it,
+  // unless we're overriding
+  if (value.IsEmpty() && header != nsHttp::X_Frame_Options &&
+      variety != eVarietyResponseOverride) {
     if (!merge && entry) {
       if (entry->variety == eVarietyResponseNetOriginalAndResponse) {
         MOZ_ASSERT(variety == eVarietyResponse);
@@ -79,7 +80,8 @@ nsresult nsHttpHeaderArray::SetHeader(
   if (!IsIgnoreMultipleHeader(header)) {
     // Replace the existing string with the new value
     if (entry->variety == eVarietyResponseNetOriginalAndResponse) {
-      MOZ_ASSERT(variety == eVarietyResponse);
+      MOZ_ASSERT(variety == eVarietyResponse ||
+                 variety == eVarietyResponseOverride);
       entry->variety = eVarietyResponseNetOriginal;
       return SetHeader_internal(header, headerName, value, variety);
     }
@@ -280,10 +282,12 @@ nsresult nsHttpHeaderArray::GetOriginalHeader(const nsHttpAtom& aHeader,
 
       MOZ_ASSERT((entry.variety == eVarietyResponseNetOriginalAndResponse) ||
                      (entry.variety == eVarietyResponseNetOriginal) ||
-                     (entry.variety == eVarietyResponse),
+                     (entry.variety == eVarietyResponse) ||
+                     (entry.variety == eVarietyResponseOverride),
                  "This must be a response header.");
       index++;
-      if (entry.variety == eVarietyResponse) {
+      if (entry.variety == eVarietyResponse ||
+          entry.variety == eVarietyResponseOverride) {
         continue;
       }
 
@@ -401,17 +405,11 @@ nsresult nsHttpHeaderArray::ParseHeaderLine(const nsACString& line,
 
 void nsHttpHeaderArray::Flatten(nsACString& buf, bool pruneProxyHeaders,
                                 bool pruneTransients) {
-  uint32_t i, count = mHeaders.Length();
-  for (i = 0; i < count; ++i) {
-    const nsEntry& entry = mHeaders[i];
-    // Skip original header.
-    if (entry.variety == eVarietyResponseNetOriginal) {
-      continue;
-    }
-    // prune proxy headers if requested
-    if (pruneProxyHeaders && ((entry.header == nsHttp::Proxy_Authorization) ||
-                              (entry.header == nsHttp::Proxy_Connection))) {
-      continue;
+  auto shouldInclude = [&](const nsEntry& entry) {
+    if (entry.variety == eVarietyResponseNetOriginal) return false;
+    if (pruneProxyHeaders && (entry.header == nsHttp::Proxy_Authorization ||
+                              entry.header == nsHttp::Proxy_Connection)) {
+      return false;
     }
     if (pruneTransients &&
         (entry.value.IsEmpty() || entry.header == nsHttp::Connection ||
@@ -425,9 +423,23 @@ void nsHttpHeaderArray::Flatten(nsACString& buf, bool pruneProxyHeaders,
          // XXX this will cause problems when we start honoring
          // Cache-Control: no-cache="set-cookie", what to do?
          entry.header == nsHttp::Set_Cookie)) {
-      continue;
+      return false;
     }
+    return true;
+  };
 
+  uint32_t totalSize = 0;
+  for (const auto& entry : mHeaders) {
+    if (!shouldInclude(entry)) continue;
+    totalSize += (entry.headerNameOriginal.IsEmpty()
+                      ? entry.header.val().Length()
+                      : entry.headerNameOriginal.Length()) +
+                 2 + entry.value.Length() + 2;
+  }
+  buf.SetCapacity(buf.Length() + totalSize);
+
+  for (const auto& entry : mHeaders) {
+    if (!shouldInclude(entry)) continue;
     if (entry.headerNameOriginal.IsEmpty()) {
       buf.Append(entry.header.val());
     } else {
@@ -440,20 +452,23 @@ void nsHttpHeaderArray::Flatten(nsACString& buf, bool pruneProxyHeaders,
 }
 
 void nsHttpHeaderArray::FlattenOriginalHeader(nsACString& buf) {
-  uint32_t i, count = mHeaders.Length();
-  for (i = 0; i < count; ++i) {
-    const nsEntry& entry = mHeaders[i];
-    // Skip changed header.
-    if (entry.variety == eVarietyResponse) {
-      continue;
-    }
+  uint32_t totalSize = 0;
+  for (const auto& entry : mHeaders) {
+    if (entry.variety == eVarietyResponse) continue;
+    totalSize += (entry.headerNameOriginal.IsEmpty()
+                      ? entry.header.val().Length()
+                      : entry.headerNameOriginal.Length()) +
+                 2 + entry.value.Length() + 2;
+  }
+  buf.SetCapacity(buf.Length() + totalSize);
 
+  for (const auto& entry : mHeaders) {
+    if (entry.variety == eVarietyResponse) continue;
     if (entry.headerNameOriginal.IsEmpty()) {
       buf.Append(entry.header.val());
     } else {
       buf.Append(entry.headerNameOriginal);
     }
-
     buf.AppendLiteral(": ");
     buf.Append(entry.value);
     buf.AppendLiteral("\r\n");

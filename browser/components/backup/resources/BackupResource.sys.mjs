@@ -19,6 +19,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "places.history.enabled",
   true
 );
+
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "isSanitizeOnShutdownEnabled",
@@ -26,19 +27,27 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "isHistoryClearedOnShutdown",
+  "privacy.clearOnShutdown_v2.browsingHistoryAndDownloads",
+  false
+);
+
 // Convert from bytes to kilobytes (not kibibytes).
 export const BYTES_IN_KB = 1000;
 
 /**
- * Convert bytes to the nearest 10th kilobyte to make the measurements fuzzier.
+ * Convert bytes to the nearest multiple of 10 kilobytes to make the measurements fuzzier.
+ * Returns 1 if size is < 5 kB.
  *
  * @param {number} bytes - size in bytes.
- * @returns {number} - size in kilobytes rounded to the nearest 10th kilobyte.
+ * @returns {number} - size in kilobytes, rounded to the nearest multiple of 10
  */
 export function bytesToFuzzyKilobytes(bytes) {
   let sizeInKb = Math.ceil(bytes / BYTES_IN_KB);
-  let nearestTenthKb = Math.round(sizeInKb / 10) * 10;
-  return Math.max(nearestTenthKb, 1);
+  let nearestTenKb = Math.round(sizeInKb / 10) * 10;
+  return Math.max(nearestTenKb, 1);
 }
 
 /**
@@ -108,9 +117,9 @@ export class BackupResource {
       return null;
     }
 
-    let nearestTenthKb = bytesToFuzzyKilobytes(size);
+    let nearestTenKb = bytesToFuzzyKilobytes(size);
 
-    return nearestTenthKb;
+    return nearestTenKb;
   }
 
   /**
@@ -151,9 +160,9 @@ export class BackupResource {
       }
 
       if (childSize >= 0) {
-        let nearestTenthKb = bytesToFuzzyKilobytes(childSize);
+        let nearestTenKb = bytesToFuzzyKilobytes(childSize);
 
-        size += nearestTenthKb;
+        size += nearestTenKb;
       }
 
       if (childType == "directory") {
@@ -244,12 +253,40 @@ export class BackupResource {
    *
    * @returns {boolean}
    */
-  static canBackupHistory() {
-    return (
-      !lazy.PrivateBrowsingUtils.permanentPrivateBrowsing &&
-      !lazy.isSanitizeOnShutdownEnabled &&
-      lazy.isBrowsingHistoryEnabled
-    );
+
+  /**
+   * Returns true if the resource is enabled for backup based on different
+   * browser preferences and configurations. Otherwise, returns false.
+   *
+   * @returns {boolean}
+   */
+  static get canBackupResource() {
+    // This is meant to be overridden if a resource requires checks; default is true.
+    return true;
+  }
+
+  /**
+   * Helper function to see if we are going to be backing up and restoring places.sqlite
+   *
+   * @returns {boolean}
+   */
+  static get backingUpPlaces() {
+    if (
+      lazy.PrivateBrowsingUtils.permanentPrivateBrowsing ||
+      !lazy.isBrowsingHistoryEnabled
+    ) {
+      return false;
+    }
+
+    if (!lazy.isSanitizeOnShutdownEnabled) {
+      return true;
+    }
+
+    if (lazy.isHistoryClearedOnShutdown) {
+      return false;
+    }
+
+    return true;
   }
 
   constructor() {}

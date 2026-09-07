@@ -1,15 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/PaymentRequest.h"
+
 #include "BasicCardPayment.h"
+#include "PaymentResponse.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
+#include "mozilla/dom/MerchantValidationEvent.h"
 #include "mozilla/dom/PaymentMethodChangeEvent.h"
-#include "mozilla/dom/PaymentRequest.h"
 #include "mozilla/dom/PaymentRequestChild.h"
 #include "mozilla/dom/PaymentRequestManager.h"
 #include "mozilla/dom/RootedDictionary.h"
@@ -17,18 +19,15 @@
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/LocaleService.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIDUtils.h"
-#include "nsImportModule.h"
 #include "nsIRegion.h"
 #include "nsIScriptError.h"
 #include "nsIURLParser.h"
+#include "nsImportModule.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
-#include "nsGlobalWindowInner.h"
-#include "mozilla/dom/MerchantValidationEvent.h"
-#include "PaymentResponse.h"
 
 using mozilla::intl::LocaleService;
 
@@ -700,7 +699,7 @@ already_AddRefed<Promise> PaymentRequest::CanMakePayment(ErrorResult& aRv) {
     return nullptr;
   }
 
-  nsIGlobalObject* global = GetOwnerGlobal();
+  nsIGlobalObject* global = GetRelevantGlobal();
   RefPtr<Promise> promise = Promise::Create(global, aRv);
   if (aRv.Failed()) {
     return nullptr;
@@ -729,7 +728,7 @@ already_AddRefed<Promise> PaymentRequest::Show(
     return nullptr;
   }
 
-  nsIGlobalObject* global = GetOwnerGlobal();
+  nsIGlobalObject* global = GetRelevantGlobal();
   nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(global);
   Document* doc = win->GetExtantDoc();
 
@@ -847,7 +846,7 @@ already_AddRefed<Promise> PaymentRequest::Abort(ErrorResult& aRv) {
     return nullptr;
   }
 
-  nsIGlobalObject* global = GetOwnerGlobal();
+  nsIGlobalObject* global = GetRelevantGlobal();
   RefPtr<Promise> promise = Promise::Create(global, aRv);
   if (aRv.Failed()) {
     return nullptr;
@@ -1163,7 +1162,7 @@ void PaymentRequest::RejectedCallback(JSContext* aCx,
 }
 
 bool PaymentRequest::InFullyActiveDocument() {
-  nsIGlobalObject* global = GetOwnerGlobal();
+  nsIGlobalObject* global = GetRelevantGlobal();
   if (!global) {
     return false;
   }

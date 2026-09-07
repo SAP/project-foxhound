@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -167,6 +166,13 @@ class VideoOutput : public DirectMediaTrackListener {
     SendFramesEnsureLocked();
   }
   void NotifyRemoved(MediaTrackGraph* aGraph) override {
+    if (NS_IsMainThread()) {
+      mAttachment = State::Detached;
+    } else {
+      aGraph->DispatchToMainThreadStableState(NS_NewRunnableFunction(
+          "VideoOutput::NotifyRemoved",
+          [this, self = RefPtr(this)] { mAttachment = State::Detached; }));
+    }
     // Doesn't need locking by mMutex, since the direct listener is removed from
     // the track before we get notified.
     if (mFrames.Length() <= 1) {
@@ -246,6 +252,10 @@ class VideoOutput : public DirectMediaTrackListener {
   const RefPtr<VideoFrameContainer> mVideoFrameContainer;
   const RefPtr<AbstractThread> mMainThread;
   const ProducerID mProducerID = ImageContainer::AllocateProducerID();
+
+  // Main thread only.
+  enum class State : uint8_t { Attached, Detaching, Detached };
+  Watchable<State> mAttachment = {State::Detached, "VideoOutput::mAttachment"};
 };
 
 /**

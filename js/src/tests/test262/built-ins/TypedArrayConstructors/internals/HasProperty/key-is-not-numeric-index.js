@@ -18,14 +18,14 @@ includes: [testTypedArray.js]
 features: [Reflect, TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
-  var sample = new TA(1);
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
+  var sample = new TA(makeCtorArg(1));
 
   assert.sameValue(Reflect.has(sample, "foo"), false);
 
   Object.defineProperty(sample, "foo", { value: 42 });
 
   assert.sameValue(Reflect.has(sample, "foo"), true);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

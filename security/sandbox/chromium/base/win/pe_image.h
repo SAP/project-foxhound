@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright 2010 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,10 +15,6 @@
 
 #include <stdint.h>
 
-#if defined(_WIN32_WINNT_WIN8)
-// The Windows 8 SDK defines FACILITY_VISUALCPP in winerror.h.
-#undef FACILITY_VISUALCPP
-#endif
 #include <delayimp.h>
 
 namespace base {
@@ -26,7 +22,12 @@ namespace win {
 
 // This class is a wrapper for the Portable Executable File Format (PE).
 // Its main purpose is to provide an easy way to work with imports and exports
-// from a file, mapped in memory as image.
+// from a file, mapped in memory as image. A PEImage object is constructed from
+// a loaded PE file by passing the HMODULE to the constructor. Loading a PE file
+// as an image will execute code and should only be done with trusted images.
+// Parsing of untrusted PE files is better done with PeImageReader.
+// PEImage can only parse PE files that match the bitness of the process.
+// See also PEImageAsData.
 class PEImage {
  public:
   // Callback to enumerate sections.
@@ -111,7 +112,7 @@ class PEImage {
 
   // Returns the header for a given section.
   // returns NULL if there is no such section.
-  PIMAGE_SECTION_HEADER GetSectionHeader(UINT section) const;
+  PIMAGE_SECTION_HEADER GetSectionHeader(WORD section) const;
 
   // Returns the size of a given directory entry or 0 if |directory| is out of
   // bounds.

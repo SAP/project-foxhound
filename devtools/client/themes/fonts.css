@@ -167,6 +167,11 @@
   padding: 3px;
   margin-inline-start: -3px;
   border-radius: 3px;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: calc(3lh + 3px);
+  -webkit-line-clamp: 3;
 }
 
 .font-name:hover {
@@ -503,7 +508,8 @@
 .font dl {
   display: grid;
   grid-template-columns: auto 1fr;
-  column-gap: 4px;
+  /* Make the gap the width of the twisty so we can place it in the gap */
+  column-gap: var(--devtools-twisty-size);
   row-gap: 2px;
   margin-block: 8px;
   grid-column: 1 / -1;
@@ -512,10 +518,10 @@
     margin-inline-start: 0;
     word-break: initial;
 
-    /* Offset the expand button so the text of truncated strings still line up with the
-       other values in the grid */
+    /* Offset the expand button to place it inside the gap, so the text of truncated
+       strings still line up with the other values in the grid */
     .theme-twisty {
-      margin-inline-start: -14px;
+      margin-inline-start: calc(-1 * var(--devtools-twisty-size));
     }
   }
 

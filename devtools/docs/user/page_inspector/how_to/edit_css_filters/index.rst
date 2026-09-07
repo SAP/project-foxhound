@@ -2,7 +2,7 @@
 Edit CSS filters
 ================
 
-`CSS filter <https://developer.mozilla.org/en-US/docs/Web/CSS/filter>`_ properties in the :ref:`Rules view <page_inspector_ui_tour_rules_view>` have a circular gray and white swatch next to them:
+`CSS filter <https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/filter>`_ properties in the :ref:`Rules view <page_inspector_ui_tour_rules_view>` have a circular gray and white swatch next to them:
 
 .. image:: click_to_edit_filter.png
   :class: border
@@ -24,7 +24,7 @@ Once you have added an effect, enter the settings you want and then press :kbd:`
 Saving filter presets
 *********************
 
-From Firefox 42 onwards, you can also add filters to a list of presets. The list of presets will be preserved between browser sessions, making it easy to apply the settings in the future. You can save the current filter to the preset list:
+You can also add filters to a list of presets. The list of presets will be preserved between browser sessions, making it easy to apply the settings in the future. You can save the current filter to the preset list:
 
 
 1. Click to edit the filter, display the preset list by clicking the icon as shown below.

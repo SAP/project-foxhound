@@ -1,0 +1,122 @@
+schema: 1
+
+bugzilla:
+  product: "Core"
+  component: "Graphics: ImageLib"
+
+origin:
+  name: "libjpeg-turbo"
+  description: "JPEG image codec with SIMD acceleration"
+
+  url: "https://libjpeg-turbo.org"
+  license: ['IJG', 'BSD-3-Clause']
+
+  release: 3.1.4.1 (2026-03-27T14:13:00-04:00).
+
+  revision: "3.1.4.1"
+
+  license-file: LICENSE.md
+
+updatebot:
+  maintainer-phab: tnikkel
+  maintainer-bz: tnikkel@gmail.com
+  tasks:
+    - type: vendoring
+      enabled: True
+      needinfo: ["tnikkel@gmail.com"]
+
+vendoring:
+  url: https://github.com/libjpeg-turbo/libjpeg-turbo
+  source-hosting: github
+  tracking: tag
+
+  exclude:
+    # Build system support files
+    - src/jconfig.txt
+    - src/libjpeg.map.in
+    # Test files (in src/; test/ directory is excluded below)
+    - src/bmpsizetest.c
+    - src/jcstest.c
+    - src/strtest.c
+    # SIMD coverage test tool (not needed by Firefox)
+    - simd/simdcoverage.c
+    # Standalone utility programs and TurboJPEG API (not used by Firefox)
+    - src/cdjpeg.c
+    - src/cdjpeg.h
+    - src/cderror.h
+    - src/cjpeg.c
+    - src/cmyk.h
+    - src/djpeg.c
+    - src/example.c
+    - src/jdatadst-tj.c
+    - src/jdatasrc-tj.c
+    - src/jpegtran.c
+    - src/rdbmp.c
+    - src/rdcolmap.c
+    - src/rdgif.c
+    - src/rdjpgcom.c
+    - src/rdppm.c
+    - src/rdswitch.c
+    - src/rdtarga.c
+    - src/tjbench.c
+    - src/tjcomp.c
+    - src/tjdecomp.c
+    - src/tjtran.c
+    - src/tjunittest.c
+    - src/tjutil.c
+    - src/tjutil.h
+    - src/transupp.c
+    - src/transupp.h
+    - src/turbojpeg.c
+    - src/turbojpeg-mapfile
+    - src/turbojpeg-mapfile.jni
+    - src/turbojpeg-mp.c
+    - src/turbojpeg.h
+    - src/wrbmp.c
+    - src/wrgif.c
+    - src/wrjpgcom.c
+    - src/wrppm.c
+    - src/wrtarga.c
+    # Root-level documentation
+    - BUILDING.md
+    # Directories not needed in the Firefox tree
+    - cmakescripts
+    - doc
+    - fuzz
+    - java
+    - jna
+    - release
+    - sharedlib
+    - src/md5
+    - test
+    - testimages
+    - win
+    # Wrapper template and utility wrappers not needed by Firefox
+    - src/wrapper/template.c
+    - src/wrapper/rdcolmap-8.c
+    - src/wrapper/rdcolmap-12.c
+    - src/wrapper/rdppm-8.c
+    - src/wrapper/rdppm-12.c
+    - src/wrapper/rdppm-16.c
+    - src/wrapper/wrgif-8.c
+    - src/wrapper/wrgif-12.c
+    - src/wrapper/wrppm-8.c
+    - src/wrapper/wrppm-12.c
+    - src/wrapper/wrppm-16.c
+
+  keep:
+    - jconfig.h
+    - jconfigint.h
+    - jversion.h
+    - simd/arm/neon-compat.h
+    - MOZCHANGES
+    - update.py
+    - src/wrapper/moz.build
+
+  patches:
+    - mozilla.diff
+
+  post-patch-actions:
+    - action: run-script
+      script: '{yaml_dir}/update.py'
+      cwd: '{yaml_dir}'

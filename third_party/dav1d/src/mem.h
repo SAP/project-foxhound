@@ -65,8 +65,8 @@ enum AllocationType {
 };
 
 typedef struct Dav1dMemPoolBuffer {
-    void *data;
     struct Dav1dMemPoolBuffer *next;
+    size_t size;
 } Dav1dMemPoolBuffer;
 
 typedef struct Dav1dMemPool {
@@ -101,15 +101,22 @@ static inline void *dav1d_alloc_aligned_internal(const size_t sz, const size_t a
     // must be an integral multiple of alignment.
     return aligned_alloc(align, ROUND_UP(sz, align));
 #else
-#error No aligned allocation functions are available
+    void *const buf = malloc(sz + align + sizeof(void *));
+    if (!buf) return NULL;
+
+    void *const ptr = (void *)(((uintptr_t)buf + sizeof(void *) + align - 1) & ~(align - 1));
+    ((void **)ptr)[-1] = buf;
+    return ptr;
 #endif
 }
 
 static inline void dav1d_free_aligned_internal(void *ptr) {
 #ifdef _WIN32
     _aligned_free(ptr);
-#else
+#elif HAVE_POSIX_MEMALIGN || HAVE_MEMALIGN || HAVE_ALIGNED_ALLOC
     free(ptr);
+#else
+    if (ptr) free(((void **)ptr)[-1]);
 #endif
 }
 
@@ -129,8 +136,8 @@ void dav1d_log_alloc_stats(Dav1dContext *c);
 #define dav1d_free_aligned(ptr) dav1d_free_aligned_internal(ptr)
 #endif /* TRACK_HEAP_ALLOCATIONS */
 
-void dav1d_mem_pool_push(Dav1dMemPool *pool, Dav1dMemPoolBuffer *buf);
-Dav1dMemPoolBuffer *dav1d_mem_pool_pop(Dav1dMemPool *pool, size_t size);
+void dav1d_mem_pool_push(Dav1dMemPool *pool, void *ptr);
+void *dav1d_mem_pool_pop(Dav1dMemPool *pool, size_t size);
 int dav1d_mem_pool_init(enum AllocationType type, Dav1dMemPool **pool);
 void dav1d_mem_pool_end(Dav1dMemPool *pool);
 

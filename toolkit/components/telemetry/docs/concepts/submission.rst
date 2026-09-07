@@ -28,7 +28,7 @@ Any new ping submissions and "idle-daily" events reset this behavior as a safety
 
 Pingsender
 ==========
-Some pings (e.g. :doc:`crash pings <../data/crash-ping>` and :doc:`main pings <../data/main-ping>` with reason `shutdown`) are submitted using the :doc:`../internals/pingsender`.
+Some pings (e.g. :doc:`main pings <../data/main-ping>` with reason `shutdown`) are submitted using the :doc:`../internals/pingsender`.
 
 The pingsender tries to send each ping once and, if it fails, no additional attempt is performed: ``TelemetrySend`` will take care of retrying using the previously described submission logic.
 

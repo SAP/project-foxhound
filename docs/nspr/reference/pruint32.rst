@@ -19,4 +19,4 @@ Description
 
 May be defined as an unsigned ``int`` or an unsigned ``long``, depending
 on the platform. For syntax details for each platform, see
-`prtypes.h <https://searchfox.org/mozilla-central/source/nsprpub/pr/include/prtypes.h>`__.
+:searchfox:`prtypes.h <nsprpub/pr/include/prtypes.h>`.

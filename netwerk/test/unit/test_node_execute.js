@@ -5,6 +5,10 @@
 
 "use strict";
 
+const { NodeServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 add_task(async function test_execute() {
   function f() {
     return "bla";
@@ -84,4 +88,24 @@ add_task(async function test_execute() {
         `forked process without handler sent: {"error":"","errorStack":""}\n`
       )
     );
+});
+
+add_task(async function test_promise() {
+  let id = await NodeServer.fork();
+  registerCleanupFunction(async () => {
+    await NodeServer.kill(id);
+  });
+
+  function p1() {
+    return new Promise(resolve => resolve(10));
+  }
+  equal(await NodeServer.execute(id, p1), undefined);
+  equal(await NodeServer.execute(id, `p1()`), 10);
+
+  function p2() {
+    return new Promise((resolve, reject) => reject("this is a rejection"));
+  }
+
+  equal(await NodeServer.execute(id, p2), undefined);
+  await Assert.rejects(NodeServer.execute(id, `p2()`), /this is a rejection/);
 });

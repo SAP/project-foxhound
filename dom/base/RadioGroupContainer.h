@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 #include "nsClassHashtable.h"
 
 class nsIContent;
-class nsIRadioVisitor;
 
 namespace mozilla::dom {
 
@@ -26,9 +23,17 @@ class RadioGroupContainer final {
                        nsCycleCollectionTraversalCallback& cb);
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
-  using VisitCallback = std::function<bool(HTMLInputElement*)>;
-  void WalkRadioGroup(const nsAString& aName, const VisitCallback& aCallback);
-  nsresult WalkRadioGroup(const nsAString& aName, nsIRadioVisitor* aVisitor);
+  template <typename VisitCallback>
+  void WalkRadioGroup(const nsAString& aName, VisitCallback&& aCallback,
+                      const HTMLInputElement* aExcludedElement) {
+    nsRadioGroupStruct* radioGroup = GetOrCreateRadioGroup(aName);
+    for (HTMLInputElement* button : GetButtonsInGroup(radioGroup)) {
+      if (button != aExcludedElement && !aCallback(button)) {
+        return;
+      }
+    }
+  }
+
   void SetCurrentRadioButton(const nsAString& aName, HTMLInputElement* aRadio);
   HTMLInputElement* GetCurrentRadioButton(const nsAString& aName);
   nsresult GetNextRadioButton(const nsAString& aName, const bool aPrevious,
@@ -48,6 +53,9 @@ class RadioGroupContainer final {
   nsRadioGroupStruct* GetOrCreateRadioGroup(const nsAString& aName);
 
  private:
+  Span<const RefPtr<HTMLInputElement>> GetButtonsInGroup(
+      nsRadioGroupStruct* aGroup) const;
+
   nsClassHashtable<nsStringHashKey, nsRadioGroupStruct> mRadioGroups;
 };
 

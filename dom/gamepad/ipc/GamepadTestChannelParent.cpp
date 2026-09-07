@@ -1,15 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GamepadTestChannelParent.h"
 
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/GamepadPlatformService.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -49,7 +46,7 @@ void GamepadTestChannelParent::AddGamepadToPlatformService(
       a.num_buttons(), a.num_axes(), a.num_haptics(), a.num_lights(),
       a.num_touches());
 
-  Unused << SendReplyGamepadHandle(aPromiseId, handle);
+  (void)SendReplyGamepadHandle(aPromiseId, handle);
 }
 
 void GamepadTestChannelParent::OnMonitoringStateChanged(bool aNewState) {
@@ -122,7 +119,7 @@ mozilla::ipc::IPCResult GamepadTestChannelParent::RecvGamepadTestEvent(
       NS_WARNING("Unknown event type.");
       return IPC_FAIL_NO_REASON(this);
   }
-  Unused << SendReplyGamepadHandle(aID, handle);
+  (void)SendReplyGamepadHandle(aID, handle);
   return IPC_OK();
 }
 

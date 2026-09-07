@@ -56,7 +56,7 @@ export const ToolbarIconColor = {
   },
 
   handleEvent(event) {
-    const window = event.target.ownerGlobal;
+    const window = event.target;
     switch (event.type) {
       case "activate":
       case "deactivate":
@@ -98,7 +98,7 @@ export const ToolbarIconColor = {
         break;
     }
 
-    let toolbarSelector = ".browser-toolbar:not([collapsed=true])";
+    let toolbarSelector = ".browser-toolbar:not([collapsed])";
     if (Services.appinfo.nativeMenubar) {
       toolbarSelector += ":not([type=menubar])";
     }

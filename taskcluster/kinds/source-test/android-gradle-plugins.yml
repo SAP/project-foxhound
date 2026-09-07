@@ -1,0 +1,56 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    attributes:
+        build_platform: android
+        build_type: opt
+        code-review: true
+    platform:
+        - linux2404-64/opt
+    treeherder:
+        kind: test
+        tier: 2
+    worker-type: t-linux-docker
+    worker:
+        docker-image: {in-tree: android-build}
+        max-run-time: 1800
+    run-on-repo-type: [hg]
+    fetches:
+        toolchain:
+            - linux64-android-gradle-dependencies
+            - linux64-android-sdk-linux-repack
+            - linux64-jdk-repack
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
+    run:
+        using: mach-gradle
+
+apilint:
+    description: "APILint Gradle plugin tests"
+    treeherder:
+        symbol: android(apilint)
+    run:
+        gradle-project: mobile/android/gradle/plugins/apilint
+        gradle-args:
+            - test
+    when:
+        files-changed:
+            - "mobile/android/gradle/plugins/apilint/**"
+            - "mobile/android/gradle/mozconfig.gradle"
+            - "mobile/android/gradle/mach_env.gradle"
+
+ac-dependencies:
+    description: "Android Components dependencies plugin tests"
+    treeherder:
+        symbol: android(ac-deps)
+    run:
+        gradle-project: mobile/android/android-components/plugins/dependencies
+        gradle-args:
+            - test
+    when:
+        files-changed:
+            - "mobile/android/android-components/plugins/dependencies/**"
+            - "mobile/android/gradle/mozconfig.gradle"
+            - "mobile/android/gradle/mach_env.gradle"

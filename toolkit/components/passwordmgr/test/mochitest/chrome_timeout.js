@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 const timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
 addMessageListener("setTimeout", msg => {
   timer.init(

@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -276,11 +275,9 @@ var BookmarkPropertiesPanel = {
     // mutations and resize the dialog accordingly.
     this._mutationObserver = new MutationObserver(mutations => {
       for (let { target, oldValue } of mutations) {
-        let hidden = target.getAttribute("hidden") == "true";
-        if (
-          target.classList.contains("hideable") &&
-          hidden != (oldValue == "true")
-        ) {
+        let hidden = target.hasAttribute("hidden");
+        let wasHidden = oldValue !== null;
+        if (target.classList.contains("hideable") && hidden != wasHidden) {
           // To support both kind of dialogs (window and dialog-box) we need
           // both resizeBy and sizeToContent, otherwise either the dialog
           // doesn't resize, or it gets empty unused space.

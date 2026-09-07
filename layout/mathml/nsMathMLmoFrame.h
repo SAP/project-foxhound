@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLmoFrame_h___
-#define nsMathMLmoFrame_h___
+#ifndef nsMathMLmoFrame_h_
+#define nsMathMLmoFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLChar.h"
 #include "nsMathMLTokenFrame.h"
 
@@ -26,7 +23,7 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
   friend nsIFrame* NS_NewMathMLmoFrame(mozilla::PresShell* aPresShell,
                                        ComputedStyle* aStyle);
 
-  eMathMLFrameType GetMathMLFrameType() override;
+  MathMLFrameType GetMathMLFrameType() override;
 
   void DidSetComputedStyle(ComputedStyle* aOldStyle) override;
 
@@ -46,8 +43,8 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   void MarkIntrinsicISizesDirty() override;
 
@@ -55,24 +52,25 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
                                 ReflowOutput& aDesiredSize) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   // This method is called by the parent frame to ask <mo>
   // to stretch itself.
   NS_IMETHOD
-  Stretch(DrawTarget* aDrawTarget, nsStretchDirection aStretchDirection,
+  Stretch(DrawTarget* aDrawTarget, StretchDirection aStretchDirection,
           nsBoundingMetrics& aContainerSize,
           ReflowOutput& aDesiredStretchSize) override;
 
-  nsresult ChildListChanged(int32_t aModType) override {
+  nsresult ChildListChanged() override {
     ProcessTextData();
-    return nsMathMLContainerFrame::ChildListChanged(aModType);
+    return nsMathMLContainerFrame::ChildListChanged();
   }
+
+  nscoord ItalicCorrection() final;
 
  protected:
   explicit nsMathMLmoFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
       : nsMathMLTokenFrame(aStyle, aPresContext, kClassID),
-        mFlags(0),
         mMinSize(0),
         mMaxSize(0) {}
   virtual ~nsMathMLmoFrame();
@@ -95,6 +93,8 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
 
   // helper to double check thar our char should be rendered as a selected char
   bool IsFrameInSelection(nsIFrame* aFrame);
+
+  nscoord FixInterFrameSpacing(ReflowOutput& aDesiredSize) final;
 };
 
-#endif /* nsMathMLmoFrame_h___ */
+#endif /* nsMathMLmoFrame_h_ */

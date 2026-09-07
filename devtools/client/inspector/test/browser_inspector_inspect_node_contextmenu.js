@@ -82,8 +82,8 @@ add_task(async function () {
  * Pick a given element on the page with the 'Inspect Element' context menu entry and check
  * that the expected node is selected in the markup view.
  *
- * @param {Object} options
- * @param {Array<String>} options.selector: The selector of the element in the frame we
+ * @param {object} options
+ * @param {Array<string>} options.selector: The selector of the element in the frame we
  *                        want to select
  * @param {Function} options.nodeFrontGetter: A function that will be executed to retrieve
  *                   the nodeFront that should be selected as a result of the 'Inspect Element' action.
@@ -110,8 +110,8 @@ async function testContextMenuWithinFrame({ selector, nodeFrontGetter }) {
 /**
  * Select a specific document in the toolbox frame picker
  *
- * @param {String} frameUrl: The frame URL to select
- * @param {Number} expectedFramesCount: The number of frames that should be displayed in
+ * @param {string} frameUrl: The frame URL to select
+ * @param {number} expectedFramesCount: The number of frames that should be displayed in
  *                 the frame picker
  */
 async function changeToolboxToFrame(frameUrl, expectedFramesCount) {

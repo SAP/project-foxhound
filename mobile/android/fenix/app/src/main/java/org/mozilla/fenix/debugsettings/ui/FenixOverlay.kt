@@ -8,28 +8,38 @@ import android.content.Intent
 import android.os.StrictMode
 import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.concept.integrity.IntegrityClient
 import mozilla.components.concept.storage.CreditCardsAddressesStorage
 import mozilla.components.concept.storage.LoginsStorage
-import mozilla.components.lib.state.ext.observeAsState
 import mozilla.telemetry.glean.Glean
 import org.mozilla.fenix.R
-import org.mozilla.fenix.debugsettings.addresses.AddressesDebugLocalesRepository
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.ClientUUID
+import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.components
+import org.mozilla.fenix.debugsettings.addresses.AddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.addresses.AddressesTools
-import org.mozilla.fenix.debugsettings.addresses.FakeAddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.FakeAddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.addresses.FakeCreditCardsAddressesStorage
-import org.mozilla.fenix.debugsettings.addresses.SharedPrefsAddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.SharedPrefsAddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsPreferencesMiddleware
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsState
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
@@ -38,16 +48,22 @@ import org.mozilla.fenix.debugsettings.gleandebugtools.DefaultGleanDebugToolsSto
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsMiddleware
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsState
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsStore
+import org.mozilla.fenix.debugsettings.integrity.FakeClientUUID
 import org.mozilla.fenix.debugsettings.logins.FakeLoginsStorage
 import org.mozilla.fenix.debugsettings.logins.LoginsTools
 import org.mozilla.fenix.debugsettings.navigation.DebugDrawerRoute
 import org.mozilla.fenix.debugsettings.store.DebugDrawerAction
 import org.mozilla.fenix.debugsettings.store.DebugDrawerNavigationMiddleware
 import org.mozilla.fenix.debugsettings.store.DebugDrawerStore
+import org.mozilla.fenix.debugsettings.store.DebugDrawerTelemetryMiddleware
 import org.mozilla.fenix.debugsettings.store.DrawerStatus
+import org.mozilla.fenix.debugsettings.tabs.TabGroupTools
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.tabgroups.storage.data.TabGroup
+import org.mozilla.fenix.tabgroups.storage.data.TabGroupData
+import org.mozilla.fenix.tabgroups.storage.repository.TabGroupRepository
+import org.mozilla.fenix.theme.DefaultThemeProvider
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.theme.Theme
 
 /**
  * Overlay for presenting Fenix-wide debugging content.
@@ -55,23 +71,27 @@ import org.mozilla.fenix.theme.Theme
  * @param browserStore [BrowserStore] used to access [BrowserState].
  * @param loginsStorage [LoginsStorage] used to access logins for [LoginsTools].
  * @param inactiveTabsEnabled Whether the inactive tabs feature is enabled.
+ * @param tabGroupRepository [TabGroupRepository] used to access and modify tab groups for [TabGroupTools].
  */
 @Composable
 fun FenixOverlay(
     browserStore: BrowserStore,
     loginsStorage: LoginsStorage,
     inactiveTabsEnabled: Boolean,
+    tabGroupRepository: TabGroupRepository,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     FenixOverlay(
         browserStore = browserStore,
+        appStore = context.components.appStore,
         cfrToolsStore = CfrToolsStore(
             middlewares = listOf(
                 CfrToolsPreferencesMiddleware(
                     cfrPreferencesRepository = DefaultCfrPreferencesRepository(
                         context = LocalContext.current,
+                        settings = components.settings,
                         lifecycleOwner = lifecycleOwner,
                         coroutineScope = lifecycleOwner.lifecycleScope,
                     ),
@@ -93,50 +113,55 @@ fun FenixOverlay(
                         intent.data = debugViewLink.toUri()
                         context.startActivity(intent)
                     },
-                    showToast = { pingType ->
-                        val toast = Toast.makeText(
-                            context,
-                            context.getString(
-                                R.string.glean_debug_tools_send_ping_toast_message,
-                                pingType,
-                            ),
-                            Toast.LENGTH_LONG,
-                        )
-                        toast.show()
+                    showToast = stringResource(R.string.glean_debug_tools_send_ping_toast_message).let { template ->
+                        { pingType: String ->
+                            Toast.makeText(context, template.format(pingType), Toast.LENGTH_LONG).show()
+                        }
                     },
                 ),
             ),
         ),
         loginsStorage = loginsStorage,
-        addressesDebugLocalesRepository = context.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
-            SharedPrefsAddressesDebugLocalesRepository(
-                context,
-            )
-        },
+        addressesDebugRegionRepository =
+            context.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
+                SharedPrefsAddressesDebugRegionRepository(context)
+            },
         creditCardsAddressesStorage = context.components.core.autofillStorage,
         inactiveTabsEnabled = inactiveTabsEnabled,
+        clientUUID = context.components.clientUUID,
+        integrityClient = context.components.integrityClient,
+        tabGroupRepository = tabGroupRepository,
     )
 }
 
 /**
  * Overlay for presenting Fenix-wide debugging content.
  *
+ * @param appStore [AppStore] used to dispatch [AppAction] actions.
  * @param browserStore [BrowserStore] used to access [BrowserState].
  * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
  * @param gleanDebugToolsStore [GleanDebugToolsStore] used to access [GleanDebugToolsState].
  * @param loginsStorage [LoginsStorage] used to access logins for [LoginsTools].
- * @param addressesDebugLocalesRepository used to control storage for [AddressesTools].
+ * @param addressesDebugRegionRepository used to control storage for [AddressesTools].
  * @param creditCardsAddressesStorage used to access addresses for [AddressesTools].
+ * @param clientUUID used to test an [IntegrityClient].
+ * @param integrityClient used to test an [IntegrityClient].
+ * @param tabGroupRepository [TabGroupRepository] used to access and modify tab groups for [TabGroupTools].
  * @param inactiveTabsEnabled Whether the inactive tabs feature is enabled.
  */
+@Suppress("LongParameterList")
 @Composable
 private fun FenixOverlay(
+    appStore: AppStore,
     browserStore: BrowserStore,
     cfrToolsStore: CfrToolsStore,
     gleanDebugToolsStore: GleanDebugToolsStore,
     loginsStorage: LoginsStorage,
-    addressesDebugLocalesRepository: AddressesDebugLocalesRepository,
+    addressesDebugRegionRepository: AddressesDebugRegionRepository,
     creditCardsAddressesStorage: CreditCardsAddressesStorage,
+    clientUUID: ClientUUID,
+    integrityClient: IntegrityClient,
+    tabGroupRepository: TabGroupRepository,
     inactiveTabsEnabled: Boolean,
 ) {
     val navController = rememberNavController()
@@ -149,27 +174,36 @@ private fun FenixOverlay(
                     navController = navController,
                     scope = coroutineScope,
                 ),
+                DebugDrawerTelemetryMiddleware(),
             ),
         )
+    }
+
+    LaunchedEffect(Unit) {
+        debugDrawerStore.dispatch(DebugDrawerAction.ViewAppeared)
     }
 
     val debugDrawerDestinations = remember {
         DebugDrawerRoute.generateDebugDrawerDestinations(
             debugDrawerStore = debugDrawerStore,
+            appStore = appStore,
             browserStore = browserStore,
             cfrToolsStore = cfrToolsStore,
             gleanDebugToolsStore = gleanDebugToolsStore,
             inactiveTabsEnabled = inactiveTabsEnabled,
             loginsStorage = loginsStorage,
-            addressesDebugLocalesRepository = addressesDebugLocalesRepository,
+            addressesDebugRegionRepository = addressesDebugRegionRepository,
             creditCardsAddressesStorage = creditCardsAddressesStorage,
+            clientUUID = clientUUID,
+            integrityClient = integrityClient,
+            tabGroupRepository = tabGroupRepository,
         )
     }
-    val drawerStatus by debugDrawerStore.observeAsState(initialValue = DrawerStatus.Closed) { state ->
-        state.drawerStatus
-    }
+    val drawerStatus by remember {
+        debugDrawerStore.stateFlow.map { state -> state.drawerStatus }
+    }.collectAsState(initial = DrawerStatus.Closed)
 
-    FirefoxTheme(theme = Theme.getTheme(allowPrivateTheme = false)) {
+    FirefoxTheme(theme = DefaultThemeProvider.provideTheme()) {
         DebugOverlay(
             navController = navController,
             drawerStatus = drawerStatus,
@@ -188,13 +222,37 @@ private fun FenixOverlay(
 }
 
 @PreviewLightDark
+@Suppress("EmptyFunctionBlock")
 @Composable
 private fun FenixOverlayPreview() {
     val selectedTab = createTab("https://mozilla.org")
+
+    val mockTabGroupRepository = object : TabGroupRepository {
+        override val tabGroupDataFlow: Flow<TabGroupData>
+            get() = flowOf()
+
+        override suspend fun createTabGroupWithTabs(tabGroup: TabGroup, tabIds: List<String>) {}
+        override suspend fun closeTabGroup(tabGroupId: String) {}
+        override suspend fun openTabGroup(tabGroupId: String) {}
+        override suspend fun closeAllTabGroups() {}
+        override suspend fun deleteTabGroupById(tabGroupId: String) {}
+        override suspend fun deleteTabGroupsById(ids: List<String>) {}
+        override suspend fun addTabGroupAssignment(tabId: String, tabGroupId: String) {}
+        override suspend fun addTabsToTabGroup(tabGroupId: String, tabIds: List<String>) {}
+        override suspend fun updateTabGroupAssignment(tabId: String, tabGroupId: String) {}
+        override suspend fun deleteTabGroupAssignmentById(tabId: String) {}
+        override suspend fun deleteTabGroupAssignmentsById(tabIds: List<String>) {}
+        override suspend fun deleteAllTabGroupAssignmentsForGroup(tabGroupId: String) {}
+        override suspend fun deleteAllTabGroupData() {}
+        override suspend fun addNewTabGroup(tabGroup: TabGroup) {}
+        override suspend fun updateTabGroup(tabGroup: TabGroup) {}
+    }
+
     FenixOverlay(
         browserStore = BrowserStore(
             BrowserState(selectedTabId = selectedTab.id, tabs = listOf(selectedTab)),
         ),
+        appStore = org.mozilla.fenix.components.AppStore(),
         cfrToolsStore = CfrToolsStore(),
         gleanDebugToolsStore = GleanDebugToolsStore(
             initialState = GleanDebugToolsState(
@@ -210,7 +268,10 @@ private fun FenixOverlayPreview() {
         ),
         inactiveTabsEnabled = true,
         loginsStorage = FakeLoginsStorage(),
-        addressesDebugLocalesRepository = FakeAddressesDebugLocalesRepository(),
+        addressesDebugRegionRepository = FakeAddressesDebugRegionRepository(),
         creditCardsAddressesStorage = FakeCreditCardsAddressesStorage(),
+        clientUUID = FakeClientUUID(),
+        integrityClient = IntegrityClient.testSuccess,
+        tabGroupRepository = mockTabGroupRepository,
     )
 }

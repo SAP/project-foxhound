@@ -1,0 +1,63 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": {
+          "light": "{color.white.@base}",
+          "dark": "rgb(66, 65, 77)",
+          "nativeTheme": "Field"
+        }
+      },
+      "dimmed": {
+        "@base": {
+          "value": "{background.color.dimmed.@base}"
+        },
+        "further": {
+          "value": "{background.color.dimmed.further}"
+        }
+      }
+    }
+  },
+  "border": {
+    "color": {
+      "value": {
+        "light": "rgb(240, 240, 244)",
+        "dark": "rgb(82, 82, 94)",
+        "nativeTheme": "ThreeDShadow"
+      }
+    },
+    "radius": {
+      "value": "{border.radius.medium}"
+    }
+  },
+  "box": {
+    "shadow": {
+      "@base": {
+        "value": "0 0 {panel.box.shadow.margin} hsla(0, 0%, 0%, 0.2)"
+      },
+      "margin": {
+        "value": "4px"
+      }
+    }
+  },
+  "padding": {
+    "@base": {
+      "value": "16px"
+    },
+    "block": {
+      "value": "4px"
+    }
+  },
+  "text": {
+    "color": {
+      "value": {
+        "light": "{color.black.@base}",
+        "dark": "rgb(251, 251, 254)",
+        "nativeTheme": "FieldText"
+      }
+    }
+  },
+  "width": {
+    "value": "initial"
+  }
+}

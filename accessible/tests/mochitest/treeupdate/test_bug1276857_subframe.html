@@ -3,6 +3,7 @@
 <head>
   <title>DOM mutations test</title>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+  <script type="application/javascript" src="../common.js"></script>
   <script type="application/javascript" src="../role.js"></script>
 </head>
 <body>
@@ -25,8 +26,8 @@
   <div id="c2"><div id="c2_c" role="presentation"></div></div>
 
   <script>
-    var gShadowRoot = document.getElementById("c2_c").attachShadow({mode: "open"});
-    var tmpl = document.getElementById("tmpl");
+    const gShadowRoot = document.getElementById("c2_c").attachShadow({mode: "open"});
+    const tmpl = document.getElementById("tmpl");
     gShadowRoot.appendChild(document.importNode(tmpl.content, true));
   </script>
 </body>

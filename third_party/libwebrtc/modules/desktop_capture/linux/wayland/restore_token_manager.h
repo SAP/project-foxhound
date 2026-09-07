@@ -11,11 +11,12 @@
 #ifndef MODULES_DESKTOP_CAPTURE_LINUX_WAYLAND_RESTORE_TOKEN_MANAGER_H_
 #define MODULES_DESKTOP_CAPTURE_LINUX_WAYLAND_RESTORE_TOKEN_MANAGER_H_
 
-#include <mutex>
 #include <string>
 #include <unordered_map>
 
 #include "modules/desktop_capture/desktop_capturer.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -36,9 +37,11 @@ class RestoreTokenManager {
   RestoreTokenManager() = default;
   ~RestoreTokenManager() = default;
 
-  DesktopCapturer::SourceId last_source_id_ = 0;
+  Mutex mutex_;
+  DesktopCapturer::SourceId last_source_id_ RTC_GUARDED_BY(mutex_) = 0;
 
-  std::unordered_map<DesktopCapturer::SourceId, std::string> restore_tokens_;
+  std::unordered_map<DesktopCapturer::SourceId, std::string> restore_tokens_
+      RTC_GUARDED_BY(mutex_);
 };
 
 }  // namespace webrtc

@@ -8,5 +8,6 @@ python-sites:
         - .txt
     support-files:
         - 'tools/lint/python-sites/**'
+        - 'taskcluster/requirements.in'
     type: external
     payload: python-sites:lint

@@ -95,14 +95,16 @@ async def pip_activates_properly(client, also_test_fullscreen_button=False):
     )
 
 
-@pytest.mark.only_platforms("fenix")
+@pytest.mark.only_platforms("android")
+@pytest.mark.actual_platform_required
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
     assert await pip_activates_properly(client, True)
 
 
-@pytest.mark.only_platforms("fenix")
+@pytest.mark.only_platforms("android")
+@pytest.mark.actual_platform_required
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):

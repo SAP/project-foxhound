@@ -25,7 +25,14 @@ fi
 if [ "$upload" = "1" ]; then
     (
         cd "$OBJDIR/dist/bin"
-        zip "$UPLOAD_DIR/target.jsshell.zip" {js,jsapi-tests,js-gdb.py,libnspr4.so,libplds4.so,libplc4.so}
+        zip "$UPLOAD_DIR/target.jsshell.zip" \
+            js{,.exe} \
+            jsapi-tests{,.exe} \
+            js-gdb.py \
+            {,lib}nspr4.{so,dll,dylib} \
+            {,lib}plds4.{so,dll,dylib} \
+            {,lib}plc4.{so,dll,dylib} \
+            {,lib}mozglue.{so,dll,dylib}
     )
     cp -L "$OBJDIR/mozinfo.json" "$UPLOAD_DIR/target.mozinfo.json"
 

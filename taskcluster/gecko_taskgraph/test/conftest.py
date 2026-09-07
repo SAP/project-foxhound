@@ -56,7 +56,7 @@ def actions_json(graph_config):
     return render_actions_json(Parameters(strict=False), graph_config, decision_task_id)
 
 
-def fake_loader(kind, path, config, parameters, loaded_tasks):
+def fake_loader(kind, path, config, parameters, loaded_tasks, write_artifacts):
     for i in range(3):
         dependencies = {}
         if i >= 1:
@@ -71,8 +71,12 @@ def fake_loader(kind, path, config, parameters, loaded_tasks):
                 "i": i,
                 "metadata": {"name": f"t-{i}"},
                 "deadline": "soon",
+                "provisionerId": "prov",
+                "workerType": "linux",
             },
             "dependencies": dependencies,
+            "if-dependencies": [],
+            "soft-dependencies": [],
         }
         if "task-defaults" in config:
             task = merge(config["task-defaults"], task)
@@ -119,11 +123,15 @@ class WithFakeKind(TaskGraphGenerator):
             yield FakeKind.create(kind_name, cfg, graph_config)
 
 
+class FakeGraphConfig(GraphConfig):
+    def register(self):
+        pass
+
+
 def fake_load_graph_config(root_dir):
-    graph_config = GraphConfig(
+    graph_config = FakeGraphConfig(
         {"trust-domain": "test-domain", "taskgraph": {}}, root_dir
     )
-    graph_config.__dict__["register"] = lambda: None
     return graph_config
 
 
@@ -182,19 +190,18 @@ def maketgg(monkeypatch):
         target_tasks_mod._target_task_methods["test_method"] = target_tasks_method
         monkeypatch.setattr(optimize_mod, "registry", fake_registry)
 
-        parameters = FakeParameters(
-            {
-                "_kinds": kinds,
-                "backstop": False,
-                "enable_always_target": False,
-                "target_tasks_method": "test_method",
-                "test_manifest_loader": "default",
-                "try_mode": None,
-                "try_task_config": {},
-                "tasks_for": "hg-push",
-                "project": "mozilla-central",
-            }
-        )
+        parameters = FakeParameters({
+            "_kinds": kinds,
+            "backstop": False,
+            "enable_always_target": False,
+            "level": 1,
+            "target_tasks_method": "test_method",
+            "test_manifest_loader": "default",
+            "try_mode": None,
+            "try_task_config": {},
+            "tasks_for": "hg-push",
+            "project": "mozilla-central",
+        })
         parameters.update(params)
 
         monkeypatch.setattr(generator_mod, "load_graph_config", fake_load_graph_config)

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,14 +7,13 @@
 
 #include <limits>
 #include <math.h>
-#include <new>
 #include <utility>
-#include "COLRFonts.h"
 #include "ThebesRLBoxTypes.h"
-#include "gfxFontUtils.h"
 #include "gfxFontVariations.h"
 #include "gfxRect.h"
 #include "gfxTypes.h"
+#include "gfxSparseBitSet.h"
+#include "gfxFontUtils.h"
 #include "gfxFontFeatures.h"
 #include "harfbuzz/hb.h"
 #include "mozilla/AlreadyAddRefed.h"
@@ -28,7 +26,6 @@
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
-#include "nsTHashMap.h"
 #include "nsDebug.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
@@ -91,14 +88,15 @@ class gfxCharacterMap : public gfxSparseBitSet {
   // new reference, or completes the release first!)
   void Release() {
     MOZ_ASSERT(int32_t(mRefCnt) > 0, "dup release");
-    // We can't safely read this after we've decremented mRefCnt, so save it
-    // in a local variable here. Note that the value is never reset to false
+    // We can't safely read mShared and mHash after we've decremented mRefCnt,
+    // so save them in locals here. Note that mShared is never reset to false
     // once it has been set to true (when recording the cmap in the shared
     // table), so there's no risk of this resulting in a "false positive" when
     // tested later. A "false negative" is possible but harmless; it would
     // just mean we miss an opportunity to release a reference from the shared
-    // cmap table.
+    // cmap table. mHash is set once before sharing and never changes.
     bool isShared = mShared;
+    uint32_t hash = mHash;
 
     // Ensure we only access mRefCnt once, for consistency if the object is
     // being used by multiple threads.
@@ -111,7 +109,13 @@ class gfxCharacterMap : public gfxSparseBitSet {
     if (isShared) {
       MOZ_ASSERT(count > 0);
       if (count == 1) {
-        NotifyMaybeReleased(this);
+        // After --mRefCnt (above), `this` may be freed at any time (by another
+        // thread racing us into MaybeRemoveCmap and deleting first, or by the
+        // gfxPlatformFontList destructor's teardown path). We must not
+        // dereference `this` from here on. Pass the captured hash by value so
+        // MaybeRemoveCmap can perform the hashtable lookup without
+        // dereferencing the potentially-dangling pointer.
+        NotifyMaybeReleased(this, hash);
       }
       return;
     }
@@ -125,10 +129,14 @@ class gfxCharacterMap : public gfxSparseBitSet {
     }
   }
 
-  gfxCharacterMap() = default;
+  explicit gfxCharacterMap(uint32_t aReserveBlocks)
+      : gfxSparseBitSet(aReserveBlocks) {}
 
   explicit gfxCharacterMap(const gfxSparseBitSet& aOther)
       : gfxSparseBitSet(aOther) {}
+
+  gfxCharacterMap(const gfxCharacterMap&) = delete;
+  gfxCharacterMap& operator=(const gfxCharacterMap&) = delete;
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     return gfxSparseBitSet::SizeOfExcludingThis(aMallocSizeOf);
@@ -157,7 +165,7 @@ class gfxCharacterMap : public gfxSparseBitSet {
 
   void CalcHash() { mHash = GetChecksum(); }
 
-  static void NotifyMaybeReleased(gfxCharacterMap* aCmap);
+  static void NotifyMaybeReleased(gfxCharacterMap* aCmap, uint32_t aHash);
 
   // Only used when clearing the shared-cmap hashtable during shutdown.
   void ClearSharedFlag() {
@@ -166,10 +174,6 @@ class gfxCharacterMap : public gfxSparseBitSet {
   }
 
   mozilla::ThreadSafeAutoRefCnt mRefCnt;
-
- private:
-  gfxCharacterMap(const gfxCharacterMap&) = delete;
-  gfxCharacterMap& operator=(const gfxCharacterMap&) = delete;
 };
 
 // Info on an individual font feature, for reporting available features
@@ -213,7 +217,14 @@ class gfxFontEntry {
   const nsCString& Name() const { return mName; }
 
   // family name
-  const nsCString& FamilyName() const { return mFamilyName; }
+  const nsCString FamilyName() const MOZ_EXCLUDES(mLock) {
+    mozilla::AutoReadLock lock(mLock);
+    return mFamilyName;
+  }
+  void SetFamilyName(const nsCString& aName) MOZ_EXCLUDES(mLock) {
+    mozilla::AutoWriteLock lock(mLock);
+    mFamilyName = aName;
+  }
 
   // The following two methods may be relatively expensive, as they
   // will (usually, except on Linux) load and parse the 'name' table;
@@ -378,21 +389,19 @@ class gfxFontEntry {
       mBlob = aFontEntry->GetFontTable(aTag);
     }
     ~AutoTable() { hb_blob_destroy(mBlob); }
+
+    AutoTable(const AutoTable&) = delete;
+    AutoTable& operator=(const AutoTable&) = delete;
+
     operator hb_blob_t*() const { return mBlob; }
 
    private:
     hb_blob_t* mBlob;
-    // not implemented:
-    AutoTable(const AutoTable&) = delete;
-    AutoTable& operator=(const AutoTable&) = delete;
   };
 
   // Return a font instance for a particular style. This may be a newly-
-  // created instance, or a font already in the global cache.
-  // We can't return a UniquePtr here, because we may be returning a shared
-  // cached instance; but we also don't return already_AddRefed, because
-  // the caller may only need to use the font temporarily and doesn't need
-  // a strong reference.
+  // created instance, or a font already in the global cache. We need a
+  // strong reference because this may be called on DOM worker threads.
   already_AddRefed<gfxFont> FindOrMakeFont(
       const gfxFontStyle* aStyle, gfxCharacterMap* aUnicodeRangeMap = nullptr);
 
@@ -448,7 +457,7 @@ class gfxFontEntry {
     hb_face_t* mFace;
   };
 
-  AutoHBFace GetHBFace() {
+  virtual AutoHBFace GetHBFace() {
     return AutoHBFace(hb_face_create_for_tables(HBGetTable, this, nullptr));
   }
 
@@ -492,7 +501,8 @@ class gfxFontEntry {
 
   // Used for reporting on individual font entries in the user font cache,
   // which are not present in the platform font list.
-  size_t ComputedSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  virtual size_t ComputedSizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf);
 
   // Used when checking for complex script support, to mask off cmap ranges
   struct ScriptRange {
@@ -562,7 +572,7 @@ class gfxFontEntry {
   }
 
   nsCString mName;
-  nsCString mFamilyName;
+  nsCString mFamilyName MOZ_GUARDED_BY(mLock);
 
   // These are mutable so that we can take a read lock within a const method.
   mutable mozilla::RWLock mLock;
@@ -606,9 +616,10 @@ class gfxFontEntry {
 
   // bitvector of substitution space features per script, one each
   // for default and non-default features
-  uint32_t mDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) / 32];
-  uint32_t
-      mNonDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) / 32];
+  uint32_t mDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) /
+                                    32] MOZ_GUARDED_BY(mFeatureInfoLock);
+  uint32_t mNonDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) /
+                                       32] MOZ_GUARDED_BY(mFeatureInfoLock);
 
   mozilla::Atomic<uint32_t> mUVSOffset;
 
@@ -749,13 +760,6 @@ class gfxFontEntry {
   // Usually, only one of these will actually be created for any given font
   // entry, depending on the font tables that are present.
 
-  // hb_face_t is refcounted internally, so each shaper that's using it will
-  // bump the ref count when it acquires the face, and "destroy" (release) it
-  // in its destructor. The font entry has only this non-owning reference to
-  // the face; when the face is deleted, it will tell the font entry to forget
-  // it, so that a new face will be created next time it is needed.
-  mozilla::Atomic<hb_face_t*> mHBFace;
-
   static hb_blob_t* HBGetTable(hb_face_t* face, uint32_t aTag, void* aUserData);
 
   // Callback that the hb_face will use to tell us when it is being deleted.
@@ -791,12 +795,6 @@ class gfxFontEntry {
 
   friend class gfxFontEntryCallbacks;
 
-  // For memory reporting: size of user-font data belonging to this entry.
-  // We record this in the font entry because the actual data block may be
-  // handed over to platform APIs, so that it would become difficult (and
-  // platform-specific) to measure it directly at report-gathering time.
-  uint32_t mComputedSizeOfUserFont = 0;
-
   // Font's unitsPerEm from the 'head' table, if available (will be set to
   // kInvalidUPEM for non-sfnt font formats)
   uint16_t mUnitsPerEm = 0;
@@ -810,96 +808,35 @@ class gfxFontEntry {
   int16_t mXMax = std::numeric_limits<int16_t>::max();
   int16_t mYMax = std::numeric_limits<int16_t>::max();
 
- private:
-  /**
-   * Font table hashtable, to support GetFontTable for harfbuzz.
-   *
-   * The harfbuzz shaper (and potentially other clients) needs access to raw
-   * font table data. This needs to be cached so that it can be used
-   * repeatedly (each time we construct a text run; in some cases, for
-   * each character/glyph within the run) without re-fetching large tables
-   * every time.
-   *
-   * Because we may instantiate many gfxFonts for the same physical font
-   * file (at different sizes), we should ensure that they can share a
-   * single cached copy of the font tables. To do this, we implement table
-   * access and sharing on the fontEntry rather than the font itself.
-   *
-   * The default implementation uses GetFontTable() to read font table
-   * data into byte arrays, and wraps them in blobs which are registered in
-   * a hashtable.  The hashtable can then return pre-existing blobs to
-   * harfbuzz.
-   *
-   * Harfbuzz will "destroy" the blobs when it is finished with them.  When
-   * the last blob reference is removed, the FontTableBlobData user data
-   * will remove the blob from the hashtable if still registered.
-   */
-
-  class FontTableBlobData;
-
-  /**
-   * FontTableHashEntry manages the entries of hb_blob_t's containing font
-   * table data.
-   *
-   * This is used to share font tables across fonts with the same
-   * font entry (but different sizes) for use by HarfBuzz.  The hashtable
-   * does not own a strong reference to the blob, but keeps a weak pointer,
-   * managed by FontTableBlobData.  Similarly FontTableBlobData keeps only a
-   * weak pointer to the hashtable, managed by FontTableHashEntry.
-   */
-
-  class FontTableHashEntry : public nsUint32HashKey {
+ protected:
+  // Font table cache, used only by backend implementations that are not able
+  // to provide a cheap GetFontTable() that wraps already-cached data.
+  class FontTableBlob {
    public:
-    // Declarations for nsTHashtable
-
-    typedef nsUint32HashKey KeyClass;
-    typedef KeyClass::KeyType KeyType;
-    typedef KeyClass::KeyTypePointer KeyTypePointer;
-
-    explicit FontTableHashEntry(KeyTypePointer aTag)
-        : KeyClass(aTag), mSharedBlobData(nullptr), mBlob(nullptr) {}
-
-    // NOTE: This assumes the new entry belongs to the same hashtable as
-    // the old, because the mHashtable pointer in mSharedBlobData (if
-    // present) will not be updated.
-    FontTableHashEntry(FontTableHashEntry&& toMove)
-        : KeyClass(std::move(toMove)),
-          mSharedBlobData(std::move(toMove.mSharedBlobData)),
-          mBlob(std::move(toMove.mBlob)) {
-      toMove.mSharedBlobData = nullptr;
-      toMove.mBlob = nullptr;
+    FontTableBlob() = default;
+    explicit FontTableBlob(nsTArray<uint8_t>&& aData);
+    FontTableBlob(const FontTableBlob& aOther) = delete;
+    FontTableBlob(FontTableBlob&& aOther)
+        : mData(std::move(aOther.mData)), mBlob(std::move(aOther.mBlob)) {
+      aOther.mBlob = nullptr;
     }
 
-    ~FontTableHashEntry() { Clear(); }
-
-    // FontTable/Blob API
-
-    // Transfer (not copy) elements of aTable to a new hb_blob_t and
-    // return ownership to the caller.  A weak reference to the blob is
-    // recorded in the font entry's table cache so that others may use
-    // the same table.
-    hb_blob_t* ShareTableAndGetBlob(nsTArray<uint8_t>&& aTable,
-                                    gfxFontEntry* aFontEntry);
-
-    // Return a strong reference to the blob.
-    // Callers must hb_blob_destroy the returned blob.
-    hb_blob_t* GetBlob() const;
-
-    void Clear();
+    ~FontTableBlob() { hb_blob_destroy(mBlob); }
+    hb_blob_t* GetBlob() const { return hb_blob_reference(mBlob); }
 
     size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
-   private:
-    static void DeleteFontTableBlobData(void* aBlobData);
-    // not implemented
-    FontTableHashEntry& operator=(FontTableHashEntry& toCopy);
-
-    FontTableBlobData* mSharedBlobData;
-    hb_blob_t* mBlob;
+   protected:
+    nsTArray<uint8_t> mData;
+    hb_blob_t* mBlob = nullptr;
   };
 
-  using FontTableCache = nsTHashtable<FontTableHashEntry>;
-  mozilla::UniquePtr<FontTableCache> mFontTableCache MOZ_GUARDED_BY(mLock);
+  using FontTableCache = nsTHashMap<uint32_t, FontTableBlob>;
+  // Get the font table cache, if this backend uses it. Backends or individual
+  // font entries that don't want to use the cache just return nullptr.
+  // If aCreate is false, a new cache will not be created, but if one already
+  // exists it will be returned.
+  virtual FontTableCache* GetFontTableCache(bool aCreate) = 0;
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(gfxFontEntry::RangeFlags)
@@ -1021,10 +958,11 @@ class gfxFontFamily {
         Name().EqualsLiteral("Times New Roman")) {
       aFontEntry->mIgnoreGDEF = true;
     }
-    if (aFontEntry->mFamilyName.IsEmpty()) {
-      aFontEntry->mFamilyName = Name();
+    const nsCString entryFamily = aFontEntry->FamilyName();
+    if (entryFamily.IsEmpty()) {
+      aFontEntry->SetFamilyName(Name());
     } else {
-      MOZ_ASSERT(aFontEntry->mFamilyName.Equals(Name()));
+      MOZ_ASSERT(entryFamily.Equals(Name()));
     }
     aFontEntry->mSkipDefaultFeatureSpaceCheck = mSkipDefaultFeatureSpaceCheck;
     mAvailableFonts.AppendElement(aFontEntry);

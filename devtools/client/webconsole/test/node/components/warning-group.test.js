@@ -43,7 +43,7 @@ describe("WarningGroup component:", () => {
 
     const {
       timestampString,
-    } = require("resource://devtools/client/webconsole/utils/l10n.js");
+    } = require("resource://devtools/shared/webconsole/l10n.js");
     expect(wrapper.find(".timestamp").text()).toBe(
       timestampString(mockMessage.timeStamp)
     );

@@ -11,7 +11,6 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 add_setup(() => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
 });
 
@@ -1099,18 +1098,6 @@ add_task(
         action: { type: "block" },
       },
     ];
-
-    if (!Services.appinfo.sessionHistoryInParent) {
-      // POST detection relies on SHIP being enabled. This is true by default,
-      // but there are some test configurations with SHIP disabled. When SHIP
-      // is disabled, all methods are interpreted as GET instead of POST.
-      // Rewrite the rule to specifically match the POST requests that are
-      // misinterpreted as GET, to verify that the request evaluation by DNR is
-      // functional (opposed to throwing errors).
-      rules[0].condition.requestMethods = ["get"];
-      rules[0].condition.urlFilter = "do_post|";
-      info(`WARNING: SHIP is disabled. POST will be misinterpreted as GET`);
-    }
 
     const extension = await loadExtensionWithDNRRules(rules);
 

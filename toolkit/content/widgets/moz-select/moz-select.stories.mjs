@@ -14,6 +14,7 @@ export default {
         "moz-select-label",
         "moz-select-description",
         "moz-select-long-label",
+        "moz-select-aria-label",
       ],
       control: { type: "select" },
     },
@@ -31,8 +32,10 @@ moz-select-long-label =
 moz-select-description =
   .label = Select an option
   .description = This is a description for the select dropdown
+moz-select-aria-label =
+  .aria-label = Select an option
 moz-option-1 =
-    .label = Option 1
+    .label = Option 1 Option 1 Option 1 Option 1 Option 1
 moz-option-2 =
     .label = Option 2
 moz-option-3 =
@@ -109,34 +112,45 @@ const Template = ({
   options = useOtherOptions ? OTHER_OPTIONS : DEFAULT_OPTIONS,
   hasSlottedSupportLink,
   ellipsized,
+  disabledOption,
+  hiddenOption,
+  withSeparator,
+  inputLayout,
 }) => html`
-  <div style="width:300px">
-    <moz-select
-      name=${name}
-      value=${ifDefined(value || null)}
-      iconsrc=${ifDefined(iconSrc || null)}
-      ?disabled=${disabled}
-      data-l10n-id=${l10nId}
-      support-page=${ifDefined(supportPage || null)}
-      accesskey=${ifDefined(accessKey || null)}
-      class=${classMap({ "text-truncated-ellipsis": ellipsized })}
-    >
-      ${hasSlottedDescription
-        ? html`<div slot="description">${description}</div>`
-        : ""}
-      ${hasSlottedSupportLink
-        ? html`<a slot="support-link" href="www.example.com">Click me!</a>`
-        : ""}
-      ${options.map(
-        opt =>
-          html`<moz-option
+  <style>
+    moz-select {
+      --select-max-width: 225px;
+    }
+  </style>
+  <moz-select
+    name=${name}
+    value=${ifDefined(value || null)}
+    iconsrc=${ifDefined(iconSrc || null)}
+    ?disabled=${disabled}
+    data-l10n-id=${l10nId}
+    support-page=${ifDefined(supportPage || null)}
+    accesskey=${ifDefined(accessKey || null)}
+    inputlayout=${ifDefined(inputLayout)}
+    class=${classMap({ "text-truncated-ellipsis": ellipsized })}
+  >
+    ${hasSlottedDescription
+      ? html`<div slot="description">${description}</div>`
+      : ""}
+    ${hasSlottedSupportLink
+      ? html`<a slot="support-link" href="www.example.com">Click me!</a>`
+      : ""}
+    ${options.map(
+      (opt, i) =>
+        html`${i == 2 && withSeparator ? html`<hr />` : ""}
+          <moz-option
             value=${opt.value}
             data-l10n-id=${opt.l10nId}
             iconsrc=${opt.iconSrc}
+            ?disabled=${disabledOption && i == 1}
+            ?hidden=${hiddenOption && i == 2}
           ></moz-option>`
-      )}
-    </moz-select>
-  </div>
+    )}
+  </moz-select>
 `;
 
 export const Default = Template.bind({});
@@ -153,12 +167,22 @@ Default.args = {
   useOtherOptions: false,
   hasSlottedSupportLink: false,
   ellipsized: false,
+  disabledOption: false,
+  hiddenOption: false,
+  withSeparator: false,
+  inputLayout: null,
 };
 
 export const WithIcon = Template.bind({});
 WithIcon.args = {
   ...Default.args,
   iconSrc: "chrome://global/skin/icons/highlights.svg",
+};
+
+export const WithAriaLabel = Template.bind({});
+WithAriaLabel.args = {
+  ...Default.args,
+  l10nId: "moz-select-aria-label",
 };
 
 export const WithDescription = Template.bind({});
@@ -224,4 +248,50 @@ WithEllipsizedLabel.args = {
   ...Default.args,
   ellipsized: true,
   l10nId: "moz-select-long-label",
+};
+
+export const WithDisabledOption = Template.bind({});
+WithDisabledOption.args = {
+  ...Default.args,
+  disabledOption: true,
+};
+
+export const WithHiddenOption = Template.bind({});
+WithHiddenOption.args = {
+  ...Default.args,
+  hiddenOption: true,
+};
+
+export const WithSeparator = Template.bind({});
+WithSeparator.args = {
+  ...Default.args,
+  withSeparator: true,
+};
+
+export const InlineEndLayout = Template.bind({});
+InlineEndLayout.args = {
+  ...Default.args,
+  inputLayout: "inline-end",
+};
+
+export const InlineEndWithDescription = Template.bind({});
+InlineEndWithDescription.args = {
+  ...Default.args,
+  inputLayout: "inline-end",
+  l10nId: "moz-select-description",
+};
+
+export const InlineEndWithSupportLink = Template.bind({});
+InlineEndWithSupportLink.args = {
+  ...Default.args,
+  inputLayout: "inline-end",
+  l10nId: "moz-select-description",
+  supportPage: "support-page",
+};
+
+export const InlineEndDisabled = Template.bind({});
+InlineEndDisabled.args = {
+  ...Default.args,
+  inputLayout: "inline-end",
+  disabled: true,
 };

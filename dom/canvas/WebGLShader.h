@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +5,13 @@
 #ifndef WEBGL_SHADER_H_
 #define WEBGL_SHADER_H_
 
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "GLDefs.h"
-#include "mozilla/MemoryReporting.h"
-
 #include "WebGLObjectModel.h"
+#include "mozilla/MemoryReporting.h"
 
 namespace mozilla {
 

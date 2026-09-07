@@ -1,50 +1,50 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageDocument.h"
+
+#include <algorithm>
+
+#include "DocumentInlines.h"
+#include "ImageBlocker.h"
+#include "imgIContainer.h"
+#include "imgINotificationObserver.h"
+#include "imgIRequest.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/ImageDocumentBinding.h"
-#include "mozilla/dom/HTMLImageElement.h"
-#include "mozilla/dom/MouseEvent.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "nsICSSDeclaration.h"
-#include "nsObjectLoadingContent.h"
-#include "nsRect.h"
-#include "nsIImageLoadingContent.h"
-#include "nsGenericHTMLElement.h"
-#include "nsDocShell.h"
-#include "DocumentInlines.h"
-#include "ImageBlocker.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/HTMLImageElement.h"
+#include "mozilla/dom/ImageDocumentBinding.h"
+#include "mozilla/dom/MouseEvent.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsDOMCSSDeclaration.h"
 #include "nsDOMTokenList.h"
-#include "nsIDOMEventListener.h"
-#include "nsIFrame.h"
+#include "nsDocShell.h"
+#include "nsError.h"
+#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "imgIRequest.h"
-#include "imgIContainer.h"
-#include "imgINotificationObserver.h"
-#include "nsPresContext.h"
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
-#include "nsContentPolicyUtils.h"
-#include "nsPIDOMWindow.h"
-#include "nsError.h"
-#include "nsURILoader.h"
+#include "nsIDOMEventListener.h"
 #include "nsIDocShell.h"
 #include "nsIDocumentViewer.h"
+#include "nsIFrame.h"
+#include "nsIImageLoadingContent.h"
+#include "nsObjectLoadingContent.h"
+#include "nsPIDOMWindow.h"
+#include "nsPresContext.h"
+#include "nsRect.h"
 #include "nsThreadUtils.h"
-#include "nsContentUtils.h"
-#include "mozilla/Preferences.h"
-#include <algorithm>
+#include "nsURILoader.h"
 
 namespace mozilla::dom {
 
@@ -530,7 +530,7 @@ void ImageDocument::UpdateRemoteStyle(StyleImageRendering aImageRendering) {
             aImageRendering));
   }
 
-  nsCOMPtr<nsICSSDeclaration> style = mImageContent->Style();
+  nsCOMPtr<nsDOMCSSDeclaration> style = mImageContent->Style();
   switch (aImageRendering) {
     case StyleImageRendering::Auto:
     case StyleImageRendering::Smooth:
@@ -711,7 +711,7 @@ void ImageDocument::ResetZoomLevel() {
 
   if (RefPtr<BrowsingContext> bc = GetBrowsingContext()) {
     // Resetting the zoom level on a discarded browsing context has no effect.
-    Unused << bc->SetFullZoom(mOriginalZoomLevel);
+    (void)bc->SetFullZoom(mOriginalZoomLevel);
   }
 }
 

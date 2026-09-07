@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "description": "Terser JavaScript minifier for Mozilla builds",
+  "private": true,
+  "dependencies": {
+    "terser": "5.44.0"
+  }
+}

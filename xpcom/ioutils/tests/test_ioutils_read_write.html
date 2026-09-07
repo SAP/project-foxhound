@@ -195,6 +195,24 @@
       await cleanup(destFileName, backupFileName);
     });
 
+    add_task(async function test_write_tmp_append() {
+      info("Testing writing with tmpFile (for atomicity) and mode: append");
+
+      const encoder = new TextEncoder();
+
+      const fileName = PathUtils.join(PathUtils.tempDir, "test_write_tmp_append.txt");
+      const tmpPath = `${fileName}.tmp`;
+
+      const originalContents = encoder.encode("Hello");
+      const appendContents = encoder.encode(", world!");
+
+      await IOUtils.write(fileName, originalContents);
+      await IOUtils.write(fileName, appendContents, { mode: "append", tmpPath });
+
+      ok(await fileHasTextContents(fileName, "Hello, world!"));
+      await cleanup(fileName);
+    });
+
     add_task(async function test_partial_read() {
       const tmpFileName = PathUtils.join(PathUtils.tempDir, "test_ioutils_partial_read.tmp");
       const bytes = Uint8Array.of(...new Array(50).keys());

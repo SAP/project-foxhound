@@ -10,36 +10,18 @@
 
 #include "api/audio_codecs/opus/audio_encoder_multi_channel_opus_config.h"
 
+#include <cstddef>
+#include <vector>
+
+#include "api/audio_codecs/audio_encoder.h"
+
 namespace webrtc {
 
-namespace {
-constexpr int kDefaultComplexity = 9;
-}  // namespace
-
-AudioEncoderMultiChannelOpusConfig::AudioEncoderMultiChannelOpusConfig()
-    : frame_size_ms(kDefaultFrameSizeMs),
-      num_channels(1),
-      application(ApplicationMode::kVoip),
-      bitrate_bps(32000),
-      fec_enabled(false),
-      cbr_enabled(false),
-      dtx_enabled(false),
-      max_playback_rate_hz(48000),
-      complexity(kDefaultComplexity),
-      num_streams(-1),
-      coupled_streams(-1) {}
-AudioEncoderMultiChannelOpusConfig::AudioEncoderMultiChannelOpusConfig(
-    const AudioEncoderMultiChannelOpusConfig&) = default;
-AudioEncoderMultiChannelOpusConfig::~AudioEncoderMultiChannelOpusConfig() =
-    default;
-AudioEncoderMultiChannelOpusConfig&
-AudioEncoderMultiChannelOpusConfig::operator=(
-    const AudioEncoderMultiChannelOpusConfig&) = default;
 
 bool AudioEncoderMultiChannelOpusConfig::IsOk() const {
   if (frame_size_ms <= 0 || frame_size_ms % 10 != 0)
     return false;
-  if (num_channels >= 255) {
+  if (num_channels > AudioEncoder::kMaxNumberOfChannels) {
     return false;
   }
   if (bitrate_bps < kMinBitrateBps || bitrate_bps > kMaxBitrateBps)

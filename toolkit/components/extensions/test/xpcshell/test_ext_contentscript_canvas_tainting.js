@@ -20,6 +20,15 @@ server.registerPathHandler("/pixel.html", (request, response) => {
   `);
 });
 
+add_setup(() => {
+  // Allow background scripts to load http images without trying to upgrade.
+  // This can be removed if the server above supports https (bug 1742061).
+  Services.prefs.setBoolPref(
+    "security.mixed_content.upgrade_display_content",
+    false
+  );
+});
+
 add_task(async function test_contentscript_canvas_tainting() {
   async function contentScript() {
     let canvas = document.createElement("canvas");
@@ -125,4 +134,93 @@ add_task(async function test_contentscript_canvas_tainting() {
 
   await contentPage.close();
   await extension.unload();
+});
+
+async function do_test_all_urls_permission(manifest_version) {
+  async function canReadFromCrossOriginImage() {
+    let canvas = document.createElement("canvas");
+    let ctx = canvas.getContext("2d");
+    document.body.appendChild(canvas);
+    let img = document.createElement("img");
+    img.src = "http://red.example.com/data/pixel_red.gif";
+    await img.decode();
+    ctx.drawImage(img, 0, 0, 1, 1);
+
+    try {
+      let { data } = ctx.getImageData(0, 0, 1, 1);
+      browser.test.assertEq(
+        data.slice(0, 3).join(),
+        "255,0,0",
+        "Expected canvas data when read"
+      );
+      return true;
+    } catch (e) {
+      browser.test.assertEq(
+        e.message,
+        "The operation is insecure.",
+        "Expected error message when canvas read fails."
+      );
+      return false;
+    }
+  }
+  async function background(canReadFromCrossOriginImage) {
+    browser.runtime.onInstalled.addListener(async () => {
+      browser.test.assertTrue(
+        await canReadFromCrossOriginImage(),
+        "Background script can read from canvas with <all_urls>"
+      );
+      browser.test.sendMessage("done:bg");
+    });
+  }
+  async function contentScript(canReadFromCrossOriginImage) {
+    // In MV3 it could be reasonable to assertFalse here, if we want to reduce
+    // the power of host permissions in MV3, see bug 2032951.
+    browser.test.assertTrue(
+      await canReadFromCrossOriginImage(),
+      "Content script can read from canvas with <all_urls>"
+    );
+    browser.test.sendMessage("done:contentscript");
+  }
+  const extensionData = {
+    manifest: {
+      manifest_version,
+      host_permissions: ["<all_urls>"],
+      content_scripts: [
+        {
+          matches: ["http://green.example.com/pixel.html"],
+          js: ["cs.js"],
+        },
+      ],
+    },
+    background: `(${background})(${canReadFromCrossOriginImage})`,
+    files: {
+      "cs.js": `(${contentScript})(${canReadFromCrossOriginImage})`,
+    },
+  };
+  if (manifest_version === 3) {
+    extensionData.manifest.content_security_policy = {
+      // Override CSP to drop MV3's default 'upgrade-insecure-requests' to
+      // enable us to load the test image (from http).
+      extension_pages: "script-src 'self'",
+    };
+  }
+
+  let extension = ExtensionTestUtils.loadExtension(extensionData);
+  await extension.startup();
+  await extension.awaitMessage("done:bg");
+  let contentPage = await ExtensionTestUtils.loadContentPage(
+    "http://green.example.com/pixel.html"
+  );
+  await extension.awaitMessage("done:contentscript");
+
+  await contentPage.close();
+  await extension.unload();
+}
+
+add_task(async function test_all_urls_permission_mv2() {
+  await do_test_all_urls_permission(2);
+});
+
+add_task(async function test_all_urls_permission_mv3() {
+  await do_test_all_urls_permission(3);
 });

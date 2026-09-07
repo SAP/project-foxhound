@@ -1,0 +1,94 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-ext"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/glsl/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__glsl__functions__glsl-function-abs.html"]
+
+["test_conformance__glsl__functions__glsl-function-acos.html"]
+
+["test_conformance__glsl__functions__glsl-function-asin.html"]
+
+["test_conformance__glsl__functions__glsl-function-atan-xy.html"]
+
+["test_conformance__glsl__functions__glsl-function-atan.html"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
+
+["test_conformance__glsl__functions__glsl-function-ceil.html"]
+
+["test_conformance__glsl__functions__glsl-function-clamp-float.html"]
+
+["test_conformance__glsl__functions__glsl-function-clamp-gentype.html"]
+
+["test_conformance__glsl__functions__glsl-function-cos.html"]
+
+["test_conformance__glsl__functions__glsl-function-cross.html"]
+
+["test_conformance__glsl__functions__glsl-function-distance.html"]
+
+["test_conformance__glsl__functions__glsl-function-dot.html"]
+
+["test_conformance__glsl__functions__glsl-function-faceforward.html"]
+
+["test_conformance__glsl__functions__glsl-function-floor.html"]
+
+["test_conformance__glsl__functions__glsl-function-fract.html"]
+
+["test_conformance__glsl__functions__glsl-function-length.html"]
+
+["test_conformance__glsl__functions__glsl-function-max-float.html"]
+
+["test_conformance__glsl__functions__glsl-function-max-gentype.html"]
+
+["test_conformance__glsl__functions__glsl-function-min-float.html"]
+
+["test_conformance__glsl__functions__glsl-function-min-gentype.html"]
+
+["test_conformance__glsl__functions__glsl-function-mix-float.html"]
+
+["test_conformance__glsl__functions__glsl-function-mix-gentype.html"]
+
+["test_conformance__glsl__functions__glsl-function-mod-float.html"]
+
+["test_conformance__glsl__functions__glsl-function-mod-gentype.html"]
+
+["test_conformance__glsl__functions__glsl-function-normalize.html"]
+
+["test_conformance__glsl__functions__glsl-function-reflect.html"]
+
+["test_conformance__glsl__functions__glsl-function-sign.html"]
+
+["test_conformance__glsl__functions__glsl-function-sin.html"]
+
+["test_conformance__glsl__functions__glsl-function-smoothstep-float.html"]
+
+["test_conformance__glsl__functions__glsl-function-smoothstep-gentype.html"]
+
+["test_conformance__glsl__functions__glsl-function-step-float.html"]
+
+["test_conformance__glsl__functions__glsl-function-step-gentype.html"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64'",
+]
+
+["test_conformance__glsl__functions__glsl-function.html"]

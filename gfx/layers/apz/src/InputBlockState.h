@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -533,7 +531,8 @@ class TouchBlockState : public CancelableBlockState {
    */
   bool UpdateSlopState(const MultiTouchInput& aInput,
                        bool aApzcCanConsumeEvents);
-  bool IsInSlop() const;
+  enum class InSlop : bool { No, Yes };
+  InSlop IsInSlop() const;
   bool ForLongTap() const { return mForLongTap; }
   void SetForLongTap() { mForLongTap = true; }
   bool WasLongTapProcessed() const { return mLongTapWasProcessed; }
@@ -572,6 +571,27 @@ class TouchBlockState : public CancelableBlockState {
   const char* Type() override;
   TimeDuration GetTimeSinceBlockStart() const;
   bool IsTargetOriginallyConfirmed() const;
+
+  /**
+   * Returns true iff |aEvent| is the touchmove on which this block needs
+   * to wait for a content response (again) because:
+   *   1) this is the first touchmove bailing out of slop (|aWasInSlop|
+   *      is Yes), i.e. the block was in slop before |aEvent| arrived;
+   *   2) a long-tap event was already fired (or is waiting for its content
+   *      response);
+   *   3) there are APZ-aware event listeners (i.e. the target was not
+   *      originally confirmed) and;
+   *   4) the event block has not yet been prevented.
+   *
+   * Example scenario: content has two event listeners, one for `touchstart`
+   * and one for `touchmove`, and the `touchmove` handler calls
+   * preventDefault(). If the user keeps touching at a point until a long-tap
+   * event fires and then starts moving their finger, APZ has to wait for a
+   * content response twice -- once for `touchstart` and once for the first
+   * `touchmove` after the long-tap.
+   */
+  bool NeedsContentResponseAfterLongTap(const MultiTouchInput& aEvent,
+                                        InSlop aWasInSlop) const;
 
  private:
   nsTArray<TouchBehaviorFlags> mAllowedTouchBehaviors;

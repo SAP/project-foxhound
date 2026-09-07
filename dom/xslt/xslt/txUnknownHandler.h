@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txUnknownHandler_h___
-#define txUnknownHandler_h___
+#ifndef txUnknownHandler_h_
+#define txUnknownHandler_h_
 
 #include "txBufferingHandler.h"
 #include "txOutputFormat.h"
@@ -34,4 +33,4 @@ class txUnknownHandler : public txBufferingHandler {
   bool mFlushed;
 };
 
-#endif /* txUnknownHandler_h___ */
+#endif /* txUnknownHandler_h_ */

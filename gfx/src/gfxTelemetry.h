@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef gfx_src_gfxTelemetry_h__
-#define gfx_src_gfxTelemetry_h__
+#ifndef gfx_src_gfxTelemetry_h_
+#define gfx_src_gfxTelemetry_h_
 
 #include <cstdint>
 
@@ -90,4 +88,4 @@ enum class TelemetryDeviceCode : uint32_t { Content = 0, Image = 1, D2D1 = 2 };
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // gfx_src_gfxTelemetry_h__
+#endif  // gfx_src_gfxTelemetry_h_

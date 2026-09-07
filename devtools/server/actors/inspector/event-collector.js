@@ -7,16 +7,16 @@
 
 "use strict";
 
-const {
-  isAfterPseudoElement,
-  isBeforePseudoElement,
-  isMarkerPseudoElement,
-  isNativeAnonymous,
-} = require("resource://devtools/shared/layout/utils.js");
 const Debugger = require("Debugger");
 const {
   EXCLUDED_LISTENER,
 } = require("resource://devtools/server/actors/inspector/constants.js");
+loader.lazyRequireGetter(
+  this,
+  "isUserDefinedEventName",
+  "resource://devtools/server/actors/events/events.js",
+  true
+);
 
 // eslint-disable-next-line
 const JQUERY_LIVE_REGEX =
@@ -219,7 +219,7 @@ class MainEventCollector {
    *
    * @param  {DOMNode} node
    *         The not for which we want to check for event listeners.
-   * @return {Boolean}
+   * @return {boolean}
    *         true if the node has event listeners, false otherwise.
    */
   hasListeners(node) {
@@ -233,9 +233,9 @@ class MainEventCollector {
    *
    * @param  {DOMNode} node
    *         The not for which we want to get event listeners.
-   * @param  {Object} options
+   * @param  {object} options
    *         An object for passing in options.
-   * @param  {Boolean} [options.checkOnly = false]
+   * @param  {boolean} [options.checkOnly = false]
    *         Don't get any listeners but return true when the first event is
    *         found.
    * @return {Array}
@@ -263,7 +263,7 @@ class MainEventCollector {
       typeof node.nodeName !== "undefined" &&
       node.nodeName.toLowerCase() === "html"
     ) {
-      listenersTargets.push(node.ownerGlobal, node, node.parentNode);
+      listenersTargets.push(node.documentGlobal, node, node.parentNode);
     } else {
       listenersTargets.push(node);
     }
@@ -289,16 +289,17 @@ class MainEventCollector {
       return null;
     }
 
-    const global = this.unwrap(node.ownerGlobal);
+    const global = this.unwrap(node.documentGlobal);
     if (!global) {
       return null;
     }
 
-    const hasJQuery = global.jQuery?.fn?.jquery;
-
-    if (hasJQuery) {
-      return global.jQuery;
-    }
+    try {
+      const hasJQuery = global.jQuery?.fn?.jquery;
+      if (hasJQuery) {
+        return global.jQuery;
+      }
+    } catch (e) {}
     return null;
   }
 
@@ -419,15 +420,7 @@ class JQueryEventCollector extends MainEventCollector {
     const jQuery = this.getJQuery(node);
     const handlers = [];
 
-    // If jQuery is not on the page, if this is an anonymous node or a pseudo
-    // element we need to return early.
-    if (
-      !jQuery ||
-      isNativeAnonymous(node) ||
-      isMarkerPseudoElement(node) ||
-      isBeforePseudoElement(node) ||
-      isAfterPseudoElement(node)
-    ) {
+    if (!jQuery || node.isNativeAnonymous) {
       if (checkOnly) {
         return false;
       }
@@ -535,7 +528,7 @@ class JQueryLiveEventCollector extends MainEventCollector {
       // Live events are added to the document and bubble up to all elements.
       // Any element matching the specified selector will trigger the live
       // event.
-      const win = this.unwrap(node.ownerGlobal);
+      const win = this.unwrap(node.documentGlobal);
       let events = null;
 
       try {
@@ -806,7 +799,7 @@ class EventCollector {
    *
    * @param  {DOMNode} node
    *         The node to be checked for events.
-   * @return {Boolean}
+   * @return {boolean}
    *         True if the node has event listeners, false otherwise.
    */
   hasEventListeners(node) {
@@ -837,7 +830,7 @@ class EventCollector {
    *
    * @param  {DOMNode} node
    *         The node for which events are to be gathered.
-   * @return {Array<Object>}
+   * @return {Array<object>}
    *         An array containing objects in the following format:
    *         {
    *           {String} type: The event type, e.g. "click"
@@ -923,6 +916,7 @@ class EventCollector {
    *             enabled: true
    *             sourceActor: "sourceActor.1234",
    *             nsIEventListenerInfo: nsIEventListenerInfo {…},
+   *             isUserDefined: false,
    *           }
    */
   // eslint-disable-next-line complexity
@@ -948,7 +942,7 @@ class EventCollector {
       const hide = listener.hide || {};
       const override = listener.override || {};
       const tags = listener.tags || "";
-      const type = listener.type || "";
+      const type = override.type || listener.type || "";
       const enabled = !!listener.enabled;
       let functionSource = handler.toString();
       let line = 0;
@@ -1051,7 +1045,7 @@ class EventCollector {
       }
 
       eventObj = {
-        type: override.type || type,
+        type,
         handler: override.handler || functionSource.trim(),
         origin: override.origin || origin,
         tags: override.tags || tags,
@@ -1064,6 +1058,7 @@ class EventCollector {
         sourceActor,
         nsIEventListenerInfo: listener.nsIEventListenerInfo,
         enabled,
+        isUserDefined: isUserDefinedEventName(type),
       };
 
       // Hide the debugger icon for DOM0 and native listeners. DOM0 listeners are

@@ -19,11 +19,12 @@ recently-closed-panel-reopen-all-windows = Reopen all windows
 ##
 
 # Variables:
-#   $tabCount (Number): Number of other tabs
+#   $tabCount (Number): Number of tabs that were open in the closed window
 #   $winTitle (String): Window title
-recently-closed-undo-close-window-label =
+#   $closedAt (Number): Milliseconds since epoch when the window was closed
+recently-closed-window-panel-tooltip =
     { $tabCount ->
         [0] { $winTitle }
-        [one] { $winTitle } (and { $tabCount } other tab)
-       *[other] { $winTitle } (and { $tabCount } other tabs)
+        [one] { $winTitle } ({ $tabCount } tab, closed at { DATETIME($closedAt, dateStyle: "short", timeStyle: "short") })
+       *[other] { $winTitle } ({ $tabCount } tabs, closed at { DATETIME($closedAt, dateStyle: "short", timeStyle: "short") })
     }

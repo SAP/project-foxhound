@@ -13,33 +13,33 @@ functions.
 Mouse input
 -----------
 
-.. js:autofunction:: sendMouseEvent
+.. js:autofunction:: EventUtils.sendMouseEvent
 .. js:autofunction:: EventUtils.synthesizeMouse
-.. js:autofunction:: synthesizeMouseAtCenter
-.. js:autofunction:: synthesizeNativeMouseEvent
-.. js:autofunction:: synthesizeMouseExpectEvent
+.. js:autofunction:: EventUtils.synthesizeMouseAtCenter
+.. js:autofunction:: EventUtils.synthesizeNativeMouseEvent
+.. js:autofunction:: EventUtils.synthesizeMouseExpectEvent
 
-.. js:autofunction:: synthesizeWheel
+.. js:autofunction:: EventUtils.synthesizeWheel
 .. js:autofunction:: EventUtils.synthesizeWheelAtPoint
-.. js:autofunction:: sendWheelAndPaint
-.. js:autofunction:: sendWheelAndPaintNoFlush
+.. js:autofunction:: EventUtils.sendWheelAndPaint
+.. js:autofunction:: EventUtils.sendWheelAndPaintNoFlush
 
 Keyboard input
 --------------
 
-.. js:autofunction:: sendKey
+.. js:autofunction:: EventUtils.sendKey
 .. js:autofunction:: EventUtils.sendChar
-.. js:autofunction:: sendString
+.. js:autofunction:: EventUtils.sendString
 .. js:autofunction:: EventUtils.synthesizeKey
-.. js:autofunction:: synthesizeNativeKey
-.. js:autofunction:: synthesizeKeyExpectEvent
+.. js:autofunction:: EventUtils.synthesizeNativeKey
+.. js:autofunction:: EventUtils.synthesizeKeyExpectEvent
 
 Drag and drop
 -------------
 
-.. js:autofunction:: synthesizeDragOver
-.. js:autofunction:: synthesizeDrop
-.. js:autofunction:: synthesizeDropAfterDragOver
-.. js:autofunction:: synthesizePlainDragAndDrop
-.. js:autofunction:: synthesizePlainDragAndCancel
-.. js:autofunction:: sendDragEvent
+.. js:autofunction:: EventUtils.synthesizeDragOver
+.. js:autofunction:: EventUtils.synthesizeDrop
+.. js:autofunction:: EventUtils.synthesizeDropAfterDragOver
+.. js:autofunction:: EventUtils.synthesizePlainDragAndDrop
+.. js:autofunction:: EventUtils.synthesizePlainDragAndCancel
+.. js:autofunction:: EventUtils.sendDragEvent

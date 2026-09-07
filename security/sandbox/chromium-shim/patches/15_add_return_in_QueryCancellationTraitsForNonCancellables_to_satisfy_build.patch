@@ -6,10 +6,10 @@
 # Parent  71ac3df6aadbce233034b169646b66160c5944dc
 Bug 1552160: Add return after NOTREACHED() in QueryCancellationTraitsForNonCancellables to prevent build error. r=jld
 
-diff --git a/base/callback_internal.cc b/base/callback_internal.cc
---- a/base/callback_internal.cc
-+++ b/base/callback_internal.cc
-@@ -16,16 +16,17 @@ bool QueryCancellationTraitsForNonCancel
+diff --git a/base/functional/callback_internal.cc b/base/functional/callback_internal.cc
+--- a/base/functional/callback_internal.cc
++++ b/base/functional/callback_internal.cc
+@@ -17,16 +17,17 @@ bool QueryCancellationTraitsForNonCancel
      BindStateBase::CancellationQueryMode mode) {
    switch (mode) {
      case BindStateBase::IS_CANCELLED:

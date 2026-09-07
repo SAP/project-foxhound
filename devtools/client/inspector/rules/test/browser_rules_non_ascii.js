@@ -19,7 +19,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#q", inspector);
 
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
 
   const expected = [{ name: "color", overridden: false }];
 

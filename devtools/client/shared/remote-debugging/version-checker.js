@@ -37,9 +37,9 @@ function getMajorVersion(platformVersion) {
  * version of Firefox. Backward compatibility policy for devtools supports at most 2
  * versions older than the current version.
  *
- * @param {String} localVersion
+ * @param {string} localVersion
  *        The version of the local Firefox instance, eg "67.0"
- * @return {Object}
+ * @return {object}
  *         - minVersion {String} the minimum supported version, eg "65.0a1"
  *         - maxVersion {String} the first unsupported version, eg "68.0a1"
  */

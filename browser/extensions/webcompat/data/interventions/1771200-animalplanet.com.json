@@ -1,0 +1,15 @@
+{
+  "label": "animalplanet.com",
+  "bugs": {
+    "1771200": {
+      "issue": "broken-videos",
+      "matches": ["*://*.animalplanet.com/video/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

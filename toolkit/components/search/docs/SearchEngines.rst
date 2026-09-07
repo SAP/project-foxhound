@@ -1,24 +1,34 @@
 ==============
 Search Engines
 ==============
-This document describes the four main type of search engines the Firefox
-serves to the user, enabling users to search the internet with different
+This document describes the five types of search engines that Firefox
+serves to users, enabling them to search the internet with different
 search providers. The types of search engines are:
 
-- Application Provided Search Engines
-- Add-on Search Engines
-- Open Search Engines
-- Enterprise Policy Engines
+- Config Search Engine (abstract)
 
-These are all represented by `similarly named classes`_ which inherit from
-the ``SearchEngine`` class and implement the :searchfox:`nsISearchEngine.idl <toolkit/components/search/nsISearchService.idl>`
-interface.
+  - App-Provided Config Engine
+  - User-Installed Config Engine
 
-Application Provided Search Engines
-===================================
-Application Provided Search Engines are engines provided by the application to
-the user as part of the configuration for the user's locale and region.
-These engines are managed through the `Search Configuration`_ file hosted on Remote Settings.
+- Add-on Search Engine
+- Open Search Engine
+- User Search Engine
+- Enterprise Policy Engine
+
+These are all implemented by `similarly named classes`_ which inherit from
+the ``SearchEngine`` class.
+
+Config Search Engines
+=====================
+Config Search Engines are engines provided by the `Search Configuration`_
+file hosted on Remote Settings. There are two types of Config Search Engines
+that are identical except for their availability:
+
+- App-Provided Config Engines are automatically installed depending on the
+  user's locale and region. Which engines are available in which regions is
+  also specified in the `Search Configuration`_.
+- User-Installed Config Engines can be installed manually and allow users to
+  use Config Engines that would otherwise not be available in their region.
 
 Add-on Search Engines
 =====================
@@ -93,6 +103,14 @@ Bugzilla icon to make a search directly on bugzilla.mozilla.org.
    :align: center
 
 See the `Autodiscovery MDN Documentation`_ for more information on Autodiscovery.
+
+User Search Engines
+=====================
+User Search Engines represent search engines that can be manually specified in
+``about:settings``. Users can enter any URL with a ``%s`` that will be replaced
+by the search terms. They allow users to add websites that do not support OpenSearch
+and do not have search add-ons.
+
 
 Enterprise Policy Engines
 =========================

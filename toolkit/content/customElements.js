@@ -236,7 +236,7 @@
           }
         }
       }
-      /*
+      /**
        * A declarative way to wire up attribute inheritance and automatically generate
        * the `observedAttributes` getter.  For example, if you returned:
        *    {
@@ -346,10 +346,10 @@
         }
       }
 
-      /*
+      /**
        * Implements attribute value inheritance by child elements.
        *
-       * @param {array} list
+       * @param {Array} list
        *        An array of (to-element-selector, to-attr) pairs.
        * @param {string} attr
        *        An attribute to propagate.
@@ -694,15 +694,11 @@
   MozElements.BaseControlMixin = Base => {
     class BaseControl extends Base {
       get disabled() {
-        return this.getAttribute("disabled") == "true";
+        return this.hasAttribute("disabled");
       }
 
       set disabled(val) {
-        if (val) {
-          this.setAttribute("disabled", "true");
-        } else {
-          this.removeAttribute("disabled");
-        }
+        this.toggleAttribute("disabled", !!val);
       }
 
       get tabIndex() {
@@ -793,7 +789,6 @@
       ["menulist", "chrome://global/content/elements/menulist.js"],
       ["named-deck", "chrome://global/content/elements/named-deck.js"],
       ["named-deck-button", "chrome://global/content/elements/named-deck.js"],
-      ["panel-list", "chrome://global/content/elements/panel-list.js"],
       ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
       [
         "printpreview-pagination",
@@ -834,8 +829,16 @@
         "chrome://global/content/elements/moz-input-color.mjs",
       ],
       [
+        "moz-input-email",
+        "chrome://global/content/elements/moz-input-email.mjs",
+      ],
+      [
         "moz-input-folder",
         "chrome://global/content/elements/moz-input-folder.mjs",
+      ],
+      [
+        "moz-input-number",
+        "chrome://global/content/elements/moz-input-number.mjs",
       ],
       [
         "moz-input-password",
@@ -845,15 +848,21 @@
         "moz-input-search",
         "chrome://global/content/elements/moz-input-search.mjs",
       ],
+      ["moz-input-tel", "chrome://global/content/elements/moz-input-tel.mjs"],
       ["moz-input-text", "chrome://global/content/elements/moz-input-text.mjs"],
+      ["moz-input-url", "chrome://global/content/elements/moz-input-url.mjs"],
       ["moz-label", "chrome://global/content/elements/moz-label.mjs"],
       [
         "moz-message-bar",
         "chrome://global/content/elements/moz-message-bar.mjs",
       ],
-      ["moz-promo", "chrome://global/content/elements/moz-promo.mjs"],
       ["moz-option", "chrome://global/content/elements/moz-select.mjs"],
+      [
+        "moz-page-header",
+        "chrome://global/content/elements/moz-page-header.mjs",
+      ],
       ["moz-page-nav", "chrome://global/content/elements/moz-page-nav.mjs"],
+      ["moz-promo", "chrome://global/content/elements/moz-promo.mjs"],
       ["moz-radio", "chrome://global/content/elements/moz-radio-group.mjs"],
       [
         "moz-radio-group",
@@ -864,6 +873,7 @@
         "chrome://global/content/elements/moz-reorderable-list.mjs",
       ],
       ["moz-select", "chrome://global/content/elements/moz-select.mjs"],
+      ["moz-textarea", "chrome://global/content/elements/moz-textarea.mjs"],
       [
         "moz-support-link",
         "chrome://global/content/elements/moz-support-link.mjs",
@@ -877,6 +887,7 @@
         "moz-visual-picker-item",
         "chrome://global/content/elements/moz-visual-picker.mjs",
       ],
+      ["panel-list", "chrome://global/content/elements/panel-list.mjs"],
     ];
     document.addEventListener(
       "DOMContentLoaded",
@@ -889,7 +900,23 @@
             customElements.setElementCreationCallback(
               tag,
               function customElementCreationCallback() {
-                ChromeUtils.importESModule(script, { global: "current" });
+                try {
+                  ChromeUtils.importESModule(script, { global: "current" });
+                } catch (e) {
+                  // If the module is imported also by the regular module
+                  // loader as part of <script> tags or the dynamic import
+                  // before this point, and if the import failed due to, e.g.
+                  // the channel get cancelled, the module record keeps the
+                  // import error for the script URI, and
+                  // ChromeUtils.importESModule fails to import the module.
+                  //
+                  // Given that the CustomElementRegistry expects the callback
+                  // not to throw, and also it to define a custom element,
+                  // report the error here and define an empty implementation,
+                  // assuming the page is getting discarded anyway.
+                  console.error("Failed to import custom element module", e);
+                  customElements.define(tag, class extends MozHTMLElement {});
+                }
               }
             );
           }

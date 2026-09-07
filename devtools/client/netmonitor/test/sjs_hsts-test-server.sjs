@@ -10,13 +10,16 @@ function handleRequest(request, response) {
   if (request.queryString === "reset") {
     // Reset the HSTS policy, prevent influencing other tests
     response.setStatusLine(request.httpVersion, 200, "OK");
+    response.setHeader("Content-Type", "text/plain", false);
     response.setHeader("Strict-Transport-Security", "max-age=0");
     response.write("Resetting HSTS");
   } else if (request.scheme === "http") {
     response.setStatusLine(request.httpVersion, 302, "Found");
+    response.setHeader("Content-Type", "text/plain", false);
     response.setHeader("Location", "https://" + request.host + request.path);
   } else {
     response.setStatusLine(request.httpVersion, 200, "OK");
+    response.setHeader("Content-Type", "text/plain", false);
     response.setHeader("Strict-Transport-Security", "max-age=100");
     response.write("Page was accessed over HTTPS!");
   }

@@ -43,7 +43,7 @@ function promiseImageDownloaded() {
   return new Promise(resolve => {
     let fileName;
     let MockFilePicker = SpecialPowers.MockFilePicker;
-    MockFilePicker.init(window.browsingContext);
+    MockFilePicker.init();
 
     function onTransferComplete(downloadSuccess) {
       ok(

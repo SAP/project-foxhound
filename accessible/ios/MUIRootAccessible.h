@@ -1,9 +1,11 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef ACCESSIBLE_IOS_MUIROOTACCESSIBLE_H_
+#define ACCESSIBLE_IOS_MUIROOTACCESSIBLE_H_
 
 #import "MUIAccessible.h"
 
@@ -27,3 +29,5 @@
 - (id)representedView;
 
 @end
+
+#endif  // ACCESSIBLE_IOS_MUIROOTACCESSIBLE_H_

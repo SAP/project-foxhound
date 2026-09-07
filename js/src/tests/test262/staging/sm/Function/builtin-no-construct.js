@@ -4,20 +4,16 @@
  */
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 description: |
   pending
 esid: pending
+includes: [nativeErrors.js]
 ---*/
+
 function checkMethod(method) {
-    try {
+    assert.throws(TypeError, function() {
         new method();
-        assert.sameValue(0, 1, "not reached " + method);
-    } catch (e) {
-        assert.sameValue(e.message.indexOf(" is not a constructor") === -1, false);
-    }
+    });
 }
 
 function checkMethods(proto) {
@@ -38,9 +34,8 @@ checkMethods(Math);
 checkMethods(Proxy);
 
 var builtin_ctors = [
-    Object, Function, Array, String, Boolean, Number, Date, RegExp, Error,
-    EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError,
-];
+    Object, Function, Array, String, Boolean, Number, Date, RegExp
+].concat(nativeErrors);
 
 for (var i = 0; i < builtin_ctors.length; i++) {
     checkMethods(builtin_ctors[i]);
@@ -55,6 +50,5 @@ var builtin_funcs = [
 for (var i = 0; i < builtin_funcs.length; i++) {
     checkMethod(builtin_funcs[i]);
 }
-
 
 reportCompare(0, 0);

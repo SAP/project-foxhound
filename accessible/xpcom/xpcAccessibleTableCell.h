@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +22,9 @@ class xpcAccessibleTableCell : public xpcAccessibleHyperText,
   explicit xpcAccessibleTableCell(Accessible* aIntl)
       : xpcAccessibleHyperText(aIntl) {}
 
+  xpcAccessibleTableCell(const xpcAccessibleTableCell&) = delete;
+  xpcAccessibleTableCell& operator=(const xpcAccessibleTableCell&) = delete;
+
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessibleTableCell
@@ -37,13 +38,10 @@ class xpcAccessibleTableCell : public xpcAccessibleHyperText,
   NS_IMETHOD IsSelected(bool* aSelected) final;
 
  protected:
-  virtual ~xpcAccessibleTableCell() {}
+  virtual ~xpcAccessibleTableCell() = default;
 
  private:
   TableCellAccessible* Intl() { return mIntl->AsTableCell(); }
-
-  xpcAccessibleTableCell(const xpcAccessibleTableCell&) = delete;
-  xpcAccessibleTableCell& operator=(const xpcAccessibleTableCell&) = delete;
 };
 
 }  // namespace a11y

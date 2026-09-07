@@ -1,20 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_InputType_h__
-#define mozilla_dom_InputType_h__
+#ifndef mozilla_dom_InputType_h_
+#define mozilla_dom_InputType_h_
 
 #include <stdint.h>
+
 #include "mozilla/Decimal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/UniquePtr.h"
+#include "nsError.h"
 #include "nsIConstraintValidation.h"
 #include "nsString.h"
-#include "nsError.h"
 
 // This must come outside of any namespace, or else it won't overload with the
 // double based version in nsMathUtils.h
@@ -78,12 +77,15 @@ class InputType {
 
   MOZ_CAN_RUN_SCRIPT virtual void MinMaxStepAttrChanged() {}
 
+  enum class Localized : bool { No = false, Yes };
+
   /**
    * Convert a string to a Decimal number in a type specific way,
    * http://www.whatwg.org/specs/web-apps/current-work/multipage/the-input-element.html#concept-input-value-string-number
    * ie parse a date string to a timestamp if type=date,
    * or parse a number string to its value if type=number.
    * @param aValue the string to be parsed.
+   * @param Localized whether to accept localized numbers for type=number
    */
   struct StringToNumberResult {
     // The result decimal. Successfully parsed if it's finite.
@@ -92,10 +94,9 @@ class InputType {
     // type=number), or the value parses using the regular HTML rules.
     bool mLocalized = false;
   };
-  virtual StringToNumberResult ConvertStringToNumber(
-      const nsAString& aValue) const;
+  virtual StringToNumberResult ConvertStringToNumber(const nsAString& aValue,
+                                                     Localized) const;
 
-  enum class Localized : bool { No = false, Yes };
   /**
    * Convert a Decimal to a string in a type specific way, ie convert a
    * timestamp to a date string if type=date or append the number string
@@ -239,4 +240,4 @@ class InputType {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_InputType_h__ */
+#endif /* mozilla_dom_InputType_h_ */

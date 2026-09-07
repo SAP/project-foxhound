@@ -62,20 +62,18 @@ def mocks():
     responses.add(
         responses.GET,
         re.compile(secrets),
-        body=json.dumps(
-            {
-                "secret": {
-                    "influx_host": "influxdb",
-                    "influx_port": 0,
-                    "influx_user": "admin",
-                    "influx_password": "pass",
-                    "influx_db": "db",
-                    "grafana_key": "xxx",
-                    "grafana_host": "grafana",
-                    "grafana_port": 0,
-                }
+        body=json.dumps({
+            "secret": {
+                "influx_host": "influxdb",
+                "influx_port": 0,
+                "influx_user": "admin",
+                "influx_password": "pass",
+                "influx_db": "db",
+                "grafana_key": "xxx",
+                "grafana_host": "grafana",
+                "grafana_port": 0,
             }
-        ),
+        }),
         status=200,
     )
 

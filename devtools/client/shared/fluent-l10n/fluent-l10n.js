@@ -14,8 +14,9 @@ class FluentL10n {
   /**
    * Initializes the wrapper, generating the bundles for the given resource ids.
    * It can optionally add the right attributes to the document element.
+   *
    * @param {Array} resourceIds
-   * @param {Object} [options]
+   * @param {object} [options]
    * @param {boolean} [options.setAttributesOnDocument]
    */
   async init(resourceIds, { setAttributesOnDocument } = {}) {

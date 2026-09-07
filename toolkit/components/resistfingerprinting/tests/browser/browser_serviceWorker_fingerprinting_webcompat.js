@@ -7,7 +7,8 @@
 runTestInFirstAndThirdPartyContexts(
   "ServiceWorkers - Ensure the fingerprinting WebCompat overrides the fingerprinting protection in third-party context.",
   async win => {
-    let SPOOFED_HW_CONCURRENCY = 2;
+    let SPOOFED_HW_CONCURRENCY =
+      SpecialPowers.Services.appinfo.OS == "Darwin" ? 8 : 4;
 
     // Register service worker for the first-party window.
     if (!win.sw) {
@@ -90,7 +91,8 @@ runTestInFirstAndThirdPartyContexts(
 runTestInFirstAndThirdPartyContexts(
   "ServiceWorkers - Ensure the fingerprinting WebCompat overrides the fingerprinting protection in third-party context with FPI enabled.",
   async win => {
-    let SPOOFED_HW_CONCURRENCY = 2;
+    let SPOOFED_HW_CONCURRENCY =
+      SpecialPowers.Services.appinfo.OS == "Darwin" ? 8 : 4;
 
     // Register service worker for the first-party window.
     if (!win.sw) {

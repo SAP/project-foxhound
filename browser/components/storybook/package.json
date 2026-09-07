@@ -2,10 +2,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "status:json": "node ./component-status/build-components-status.mjs",
     "analyze": "cem analyze",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build-storybook": "npm run analyze && storybook build",
-    "storybook": "npm run analyze && storybook dev -p 5703 --no-open"
+    "build-storybook": "npm run status:json && npm run analyze && storybook build",
+    "storybook": "npm run status:json && npm run analyze && storybook dev -p 5703 --no-open"
   },
   "author": "",
   "license": "MPL-2.0",
@@ -20,6 +21,7 @@
     "@storybook/addon-actions": "^7.6.4",
     "@storybook/addon-essentials": "^7.6.4",
     "@storybook/addon-links": "^7.6.4",
+    "@storybook/addon-themes": "^7.5.1",
     "@storybook/web-components": "^7.6.4",
     "@storybook/web-components-webpack5": "^7.6.4",
     "babel-loader": "^8.2.3",

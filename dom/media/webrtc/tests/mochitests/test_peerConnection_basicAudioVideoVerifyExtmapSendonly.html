@@ -31,6 +31,7 @@
           ["1", "urn:ietf:params:rtp-hdrext:ssrc-audio-level", ""],
           ["2", "urn:ietf:params:rtp-hdrext:csrc-audio-level", "recvonly"],
           ["3", "urn:ietf:params:rtp-hdrext:sdes:mid", ""],
+          ["7", "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01", ""],
         ];
         // *Ugh* ...
         ok(JSON.stringify(audio) ===
@@ -67,6 +68,7 @@
           extensions. */
           ["1", "urn:ietf:params:rtp-hdrext:ssrc-audio-level",""],
           ["3", "urn:ietf:params:rtp-hdrext:sdes:mid",""],
+          ["7", "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01", ""],
         ];
         // *Ugh* ...
         ok(JSON.stringify(audio) ===

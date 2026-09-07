@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,18 +19,23 @@
 #include "nsIContentPolicy.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/net/NeckoChild.h"
 #include "../protocol/http/nsHttpHandler.h"
 
 #include "nsIFileURL.h"
 #include "nsIURIMutator.h"
 #include "nsIFile.h"
 #include "nsIMIMEService.h"
+#include "nsStringStream.h"
 #include "prio.h"
 #include <algorithm>
 
+#ifdef XP_WIN
+#  include <windows.h>
+#endif
+
 #include "mozilla/Components.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -243,7 +246,7 @@ nsresult nsFileChannel::Init() {
   NS_ENSURE_STATE(mLoadInfo);
 
   RefPtr<nsHttpHandler> handler = nsHttpHandler::GetInstance();
-  MOZ_ALWAYS_SUCCEEDS(handler->NewChannelId(mChannelId));
+  mChannelId = handler->NewChannelId();
 
   // If we have a link file, we should resolve its target right away.
   // This is to protect against a same origin attack where the same link file
@@ -270,8 +273,7 @@ nsresult nsFileChannel::Init() {
     nsCOMPtr<nsIURL> targetURL = do_QueryInterface(targetURI);
     nsAutoCString queryString;
     if (origURL && targetURL && NS_SUCCEEDED(origURL->GetQuery(queryString))) {
-      Unused
-          << NS_MutateURI(targetURI).SetQuery(queryString).Finalize(targetURI);
+      (void)NS_MutateURI(targetURI).SetQuery(queryString).Finalize(targetURI);
     }
 
     SetURI(targetURI);
@@ -324,8 +326,65 @@ nsresult nsFileChannel::MakeFileInputStream(nsIFile* file,
   return rv;
 }
 
+#ifdef XP_WIN
+static nsresult MakeWindowsDriveListingStream(nsIInputStream** aResult,
+                                              nsACString& aContentType,
+                                              int64_t& aContentLength) {
+  DWORD len = 0;
+  UniquePtr<WCHAR[]> buf;
+  for (;;) {
+    DWORD result = GetLogicalDriveStringsW(len, buf.get());
+    if (result == 0) {
+      return NS_ERROR_FAILURE;
+    }
+    if (result <= len) {
+      break;
+    }
+    len = result;
+    buf = MakeUnique<WCHAR[]>(len);
+  }
+
+  nsCString listing;
+  listing.AppendLiteral(
+      "200: filename content-length last-modified file-type\n");
+
+  for (WCHAR* drive = buf.get(); *drive; drive += wcslen(drive) + 1) {
+    listing.AppendLiteral("201: ");
+    listing.Append((char)drive[0]);
+    listing.AppendLiteral(
+        ":/ 0 Thu,%2001%20Jan%201970%2000:00:00%20GMT DIRECTORY\n");
+  }
+
+  aContentType.AssignLiteral(APPLICATION_HTTP_INDEX_FORMAT);
+  aContentLength = listing.Length();
+  return NS_NewCStringInputStream(aResult, listing);
+}
+#endif
+
 nsresult nsFileChannel::OpenContentStream(bool async, nsIInputStream** result,
                                           nsIChannel** channel) {
+#ifdef XP_WIN
+  {
+    nsCOMPtr<nsIURI> uri = URI();
+    nsAutoCString path;
+    if (NS_SUCCEEDED(uri->GetFilePath(path)) && path.EqualsLiteral("/")) {
+      nsCOMPtr<nsIInputStream> stream;
+      nsAutoCString contentType;
+      int64_t contentLength = 0;
+      nsresult rv = MakeWindowsDriveListingStream(getter_AddRefs(stream),
+                                                  contentType, contentLength);
+      if (NS_FAILED(rv)) return rv;
+      mContentLength = contentLength;
+      if (!HasContentTypeHint()) {
+        SetContentType(contentType);
+      }
+      EnableSynthesizedProgressEvents(true);
+      stream.forget(result);
+      return NS_OK;
+    }
+  }
+#endif
+
   // NOTE: the resulting file is a clone, so it is safe to pass it to the
   //       file input stream which will be read on a background thread.
   nsCOMPtr<nsIFile> file;
@@ -469,7 +528,7 @@ nsresult nsFileChannel::FixupContentLength(bool async) {
 // nsFileChannel::nsISupports
 
 NS_IMPL_ISUPPORTS_INHERITED(nsFileChannel, nsBaseChannel, nsIUploadChannel,
-                            nsIFileChannel, nsIIdentChannel)
+                            nsIFileChannel, nsIIdentChannel, nsIChildChannel)
 
 //-----------------------------------------------------------------------------
 // nsFileChannel::nsIFileChannel
@@ -484,28 +543,59 @@ nsFileChannel::GetFile(nsIFile** file) {
 }
 
 nsresult nsFileChannel::MaybeSendFileOpenNotification() {
+  // We never send the notification unless we're in a content process.
+  if (!IsNeckoChild()) {
+    return NS_OK;
+  }
+
+  // Ignore system-principal triggered file channel loads unless they're for a
+  // toplevel document load.
+  if (mLoadInfo->TriggeringPrincipal()->IsSystemPrincipal() &&
+      mLoadInfo->GetExternalContentPolicyType() !=
+          ExtContentPolicyType::TYPE_DOCUMENT) {
+    return NS_OK;
+  }
+
+  uint32_t loadFlags = 0;
+  MOZ_ALWAYS_SUCCEEDS(GetLoadFlags(&loadFlags));
+
+  LoadInfoArgs loadInfoArgs;
+  MOZ_ALWAYS_SUCCEEDS(
+      mozilla::ipc::LoadInfoToLoadInfoArgs(mLoadInfo, &loadInfoArgs));
+
+  FileChannelInfo fileChannelInfo(mURI, nsBaseChannel::OriginalURI(), loadFlags,
+                                  loadInfoArgs, mContentType, mChannelId);
+  gNeckoChild->SendNotifyFileChannelOpened(fileChannelInfo);
+  return NS_OK;
+}
+
+/* static */
+nsresult nsFileChannel::DoNotifyFileChannelOpened(
+    const nsACString& aRemoteType,
+    const mozilla::net::FileChannelInfo& aFileChannelInfo) {
+  nsCOMPtr<nsIObserverService> obsService = components::Observer::Service();
+  if (!obsService) {
+    return NS_OK;
+  }
+
   nsCOMPtr<nsILoadInfo> loadInfo;
-  nsresult rv = GetLoadInfo(getter_AddRefs(loadInfo));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsresult rv = mozilla::ipc::LoadInfoArgsToLoadInfo(
+      aFileChannelInfo.loadInfo(), aRemoteType, getter_AddRefs(loadInfo));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  bool isTopLevel;
-  rv = loadInfo->GetIsTopLevelLoad(&isTopLevel);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  // Re-create a file channel in the parent process to notify
+  // file-channel-opened observers.
+  RefPtr<nsFileChannel> channel;
+  channel = new nsFileChannel(aFileChannelInfo.uri());
+  channel->SetURI(aFileChannelInfo.uri());
+  channel->SetOriginalURI(aFileChannelInfo.originalURI());
+  channel->SetLoadFlags(aFileChannelInfo.loadFlags());
+  channel->SetLoadInfo(loadInfo);
+  channel->SetContentType(aFileChannelInfo.contentType());
+  MOZ_ALWAYS_SUCCEEDS(channel->SetChannelId(aFileChannelInfo.channelId()));
 
-  uint64_t browsingContextID;
-  rv = loadInfo->GetBrowsingContextID(&browsingContextID);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  if ((browsingContextID != 0 && isTopLevel) ||
-      !loadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {
-    NotifyListeners();
-  }
+  obsService->NotifyObservers(static_cast<nsIIdentChannel*>(channel),
+                              "file-channel-opened", nullptr);
   return NS_OK;
 }
 
@@ -556,8 +646,20 @@ nsFileChannel::SetChannelId(uint64_t aChannelId) {
   return NS_OK;
 }
 
-nsresult nsFileChannel::NotifyListeners() {
-  // Nothing to do here, this will be handled in
-  // FileChannelChild::NotifyListeners.
+//-----------------------------------------------------------------------------
+// nsFileChannel::nsIChildChannel
+
+NS_IMETHODIMP
+nsFileChannel::ConnectParent(uint32_t aId) {
+  if (!IsNeckoChild()) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  gNeckoChild->SendConnectBaseChannel(aId);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsFileChannel::CompleteRedirectSetup(nsIStreamListener* aListener) {
+  return AsyncOpen(aListener);
 }

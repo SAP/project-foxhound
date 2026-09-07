@@ -134,7 +134,7 @@ add_task(async function testChart() {
   EventUtils.sendMouseEvent(
     { type: "dblclick" },
     middlePoint,
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   let newValue = await onWidgetUpdated;
@@ -159,7 +159,7 @@ add_task(async function testChart() {
   EventUtils.sendMouseEvent(
     { type: "dblclick" },
     panel.querySelector(`svg.chart .control-points-group .control-point`),
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   let raceWinner = await Promise.race([onWidgetUpdated, onTimeout]);
   is(
@@ -183,7 +183,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     panel.querySelector(`svg.chart`),
     { clickCount: 2, shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   newValue = await onWidgetUpdated;
@@ -210,7 +210,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     panel.querySelector(`svg.chart .control-points-group .control-point`),
     { type: "mousedown" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   EventUtils.synthesizeMouse(
@@ -218,7 +218,7 @@ add_task(async function testChart() {
     svgRect.width / 3,
     svgRect.height / 3,
     { type: "mousemove", shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   newValue = await onWidgetUpdated;
   is(
@@ -249,7 +249,7 @@ add_task(async function testChart() {
     svgRect.width,
     svgRect.height / 3,
     { type: "mousemove", shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   newValue = await onWidgetUpdated;
   is(
@@ -273,7 +273,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     svgEl,
     { type: "mouseup" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   onTimeout = wait(1000).then(() => timeoutRes);
@@ -281,7 +281,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     svgEl,
     { type: "mousemove" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   raceWinner = await Promise.race([onWidgetUpdated, onTimeout]);
   is(raceWinner, timeoutRes, "Dragging is disabled after mouseup");
@@ -295,7 +295,7 @@ add_task(async function testChart() {
     svgRect.width / 3,
     svgRect.height - 1,
     { clickCount: 2, shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   newValue = await onWidgetUpdated;
@@ -325,7 +325,7 @@ add_task(async function testChart() {
       `svg.chart .control-points-group .control-point:nth-of-type(2)`
     ),
     { type: "mousedown" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   EventUtils.synthesizeMouse(
@@ -333,7 +333,7 @@ add_task(async function testChart() {
     0,
     svgRect.height / 3,
     { type: "mousemove", shiftKey: true },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
   newValue = await onWidgetUpdated;
   is(
@@ -358,7 +358,7 @@ add_task(async function testChart() {
   EventUtils.synthesizeMouseAtCenter(
     svgEl,
     { type: "mouseup" },
-    widget.parent.ownerGlobal
+    widget.parent.documentGlobal
   );
 
   info(
@@ -400,8 +400,8 @@ add_task(async function testChart() {
  * Check that the svg chart line and control points are placed where we expect them.
  *
  * @param {ToolipPanel} panel
- * @param {Array<Array<Number>>} expectedPoints: Array of coordinated
- * @param {String} messagePrefix
+ * @param {Array<Array<number>>} expectedPoints: Array of coordinated
+ * @param {string} messagePrefix
  */
 function checkChartState(panel, expectedPoints, messagePrefix = "") {
   const svgLine = panel.querySelector("svg.chart .chart-linear");
@@ -439,10 +439,10 @@ function checkChartState(panel, expectedPoints, messagePrefix = "") {
  * Checks if the property in the rule view has the expected state
  *
  * @param {RuleView} view
- * @param {String} selector
- * @param {String} property
- * @param {String} expectedLinearValue: Expected value in the rule view
- * @param {String} expectedComputedLinearValue: Expected computed value. Defaults to expectedLinearValue.
+ * @param {string} selector
+ * @param {string} property
+ * @param {string} expectedLinearValue: Expected value in the rule view
+ * @param {string} expectedComputedLinearValue: Expected computed value. Defaults to expectedLinearValue.
  * @returns {Element|null}
  */
 async function checkRuleView(
@@ -476,8 +476,8 @@ async function checkRuleView(
  * Returns the linear easing swatch for a rule (defined by its selector), and a property.
  *
  * @param {RuleView} view
- * @param {String} selector
- * @param {String} property
+ * @param {string} selector
+ * @param {string} property
  * @returns {Element|null}
  */
 function getRuleViewLinearEasingSwatch(view, selector, property) {

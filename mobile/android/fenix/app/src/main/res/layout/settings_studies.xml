@@ -28,14 +28,14 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="@string/preference_experiments_summary_2"
-        android:textColor="?attr/textSecondary"
-        android:textColorLink="?textAccent"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textColorLink="?attr/colorTertiary"
         app:layout_constraintEnd_toEndOf="@id/studiesTitle"
         app:layout_constraintHorizontal_bias="0.5"
         app:layout_constraintStart_toStartOf="@id/studiesTitle"
         app:layout_constraintTop_toBottomOf="@id/studiesTitle" />
 
-    <androidx.appcompat.widget.SwitchCompat
+    <com.google.android.material.materialswitch.MaterialSwitch
         android:id="@+id/studies_switch"
         style="@style/QuickSettingsText.Icon"
         android:layout_width="wrap_content"

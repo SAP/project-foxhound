@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,6 @@
 #include "CompositionTransaction.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/Logging.h"
-#include "mozilla/ToString.h"
 #include "mozilla/dom/Selection.h"
 #include "nsGkAtoms.h"
 #include "nsQueryObject.h"
@@ -37,6 +35,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PlaceholderTransaction,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mEditorBase);
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mStartSel);
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mEndSel);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(PlaceholderTransaction,

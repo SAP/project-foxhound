@@ -13,45 +13,83 @@ body {
   display: flex;
   flex-direction: column;
   font: message-box;
-  font-size: 14px;
-  width: 28rem;
+  font-size: 15px;
+  width: 28.5rem;
   height: 100vh;
-  justify-content: center;
+  justify-content: safe center;
   margin: auto;
+  color: #15141a;
 }
 
 img {
   width: 80px;
   height: 80px;
   align-self: center;
+  margin-block-end: 0.75rem;
 }
 
 h1 {
   text-align: center;
+  font-weight: 600;
+  margin-block: 1rem;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+strong {
+  font-weight: 600;
 }
 
 a {
-  color: #0060df;
+  color: #285ed7;
 }
 
-ul {
+dl {
+  border: 1px solid #cfcfd8;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-block: 0.75rem;
+  padding: 0.5rem 1rem;
+
+  & > * {
+    margin-block: 0.25rem;
+  }
+}
+
+dt {
+  font-weight: 600;
+  float: inline-start;
+  clear: inline-start;
+  margin-inline-end: 0.25rem;
+}
+
+dd {
+  float: inline-start;
+  margin-inline: 0;
+}
+
+#backup-file-path-value {
+  background-color: #f9f9fb;
+  border: 1px solid #cfcfd8;
+  border-radius: 4px;
+  padding: 0.5rem;
+  clear: inline-start;
+  margin-block: 0.5rem;
+}
+
+ol {
+  font-size: 17px;
+  font-weight: 600;
+  list-style-position: inside;
   padding-inline-start: 0;
-}
-
-ul > li {
-  list-style-type: none;
-  margin-block: 0.35rem;
-}
-
-hr {
-  border-color: #f0f0f4;
-  border-style: solid;
-  border-width: 1px 0 0 0;
-  margin: 0;
+  margin-block: 0.75rem;
 }
 
 ol > li {
-  margin-block: 1.5rem;
+  margin-block: 1rem;
 }
 
 a.button-link {
@@ -60,9 +98,9 @@ a.button-link {
   border: 1px solid transparent;
   border-radius: 4px;
   background-color: #0060df;
-  padding: calc(2 * 0.267rem) calc(4 * 0.267rem);
-  font-size: inherit;
-  margin-inline-start: 18px;
+  font-size: 13px;
+  margin-inline-start: 0.75rem;
+  padding: 0.5rem 1rem;
   text-decoration: none;
 
   &:hover {

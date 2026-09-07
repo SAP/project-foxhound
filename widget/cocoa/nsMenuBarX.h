@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 
 #include "nsISupports.h"
@@ -32,9 +30,12 @@ class Element;
 
 // ApplicationMenuDelegate is used to receive Cocoa notifications.
 @interface ApplicationMenuDelegate : NSObject <NSMenuDelegate> {
-  nsMenuBarX* mApplicationMenu;  // weak ref
+  nsMenuBarX* mApplicationMenu;       // weak ref
+  NSMenuItem* mSetAsDefaultMenuItem;  // weak ref
 }
 - (id)initWithApplicationMenu:(nsMenuBarX*)aApplicationMenu;
+- (NSMenuItem*)setAsDefaultMenuItem;
+- (void)setSetAsDefaultMenuItem:(NSMenuItem*)menuItem;
 @end
 
 // Objective-C class used for menu items to allow Gecko to override their
@@ -89,6 +90,7 @@ class nsMenuBarX : public nsMenuParentX,
   // We save them here for use in command handling.
   RefPtr<nsIContent> mAboutItemContent;
   RefPtr<nsIContent> mPrefItemContent;
+  RefPtr<nsIContent> mSetAsDefaultItemContent;
   RefPtr<nsIContent> mAccountItemContent;
   RefPtr<nsIContent> mQuitItemContent;
 
@@ -118,6 +120,7 @@ class nsMenuBarX : public nsMenuParentX,
   // nsMenuParentX
   void MenuChildChangedVisibility(const MenuChild& aChild,
                                   bool aIsVisible) override;
+  size_t NestingDepth() override { return 0; }
 
  protected:
   virtual ~nsMenuBarX();

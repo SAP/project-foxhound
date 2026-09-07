@@ -36,10 +36,7 @@ for (const control of document.querySelectorAll("input, textarea")) {
     control.placeholder = "bar";
   });
 
-  // Removing the placeholder attribute reframes right now.
-  //
-  // TODO: Could maybe be avoided with some more work.
-  expectReframe(true, () => {
+  expectReframe(false, () => {
     control.removeAttribute("placeholder");
   });
 }

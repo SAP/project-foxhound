@@ -12,12 +12,17 @@ include "mozilla/net/NrIceStunAddrMessageUtils.h";
 include "mozilla/media/webrtc/WebrtcIPCTraits.h";
 using mozilla::StringVector from "mozilla/media/webrtc/WebrtcIPCTraits.h";
 using mozilla::CandidateInfo from "mozilla/media/webrtc/WebrtcIPCTraits.h";
+using mozilla::IceCandidateErrorInfo from "mozilla/media/webrtc/WebrtcIPCTraits.h";
 using mozilla::DtlsDigestList from "mozilla/media/webrtc/WebrtcIPCTraits.h";
+using SSLKEAType from "mozilla/media/webrtc/WebrtcIPCTraits.h";
+using mozilla::TransportLayerState from "mozilla/media/webrtc/WebrtcIPCTraits.h";
 using std::string from "string";
 using struct mozilla::dom::RTCStatsCollection from "mozilla/dom/RTCStatsReportBinding.h";
 using WebrtcGlobalLog from "mozilla/media/webrtc/WebrtcGlobal.h";
 using mozilla::dom::RTCIceServer from "mozilla/dom/RTCConfigurationBinding.h";
 using mozilla::dom::RTCIceTransportPolicy from "mozilla/dom/RTCConfigurationBinding.h";
+using mozilla::dom::RTCIceGathererState from "mozilla/dom/RTCIceTransportBinding.h";
+using mozilla::dom::RTCIceTransportState from "mozilla/dom/RTCIceTransportBinding.h";
 
 // ParamTraits stuff for our own classes
 using mozilla::MediaPacket from "transport/mediapacket.h";
@@ -64,7 +69,7 @@ parent:
                           string remotePwd,
                           uint8_t[] keyDer,
                           uint8_t[] certDer,
-                          int authType,
+                          SSLKEAType authType,
                           bool dtlsClient,
                           DtlsDigestList digests,
                           bool privacyRequested);
@@ -87,13 +92,15 @@ parent:
 
 child:
   async OnCandidate(string transportId, CandidateInfo candidateInfo);
+  async OnCandidateError(IceCandidateErrorInfo errorInfo);
   async OnAlpnNegotiated(string alpn);
-  async OnGatheringStateChange(string transportId, int state);
-  async OnConnectionStateChange(string transportId, int state);
+  async OnGatheringStateChange(string transportId, RTCIceGathererState state);
+  async OnConnectionStateChange(string transportId, RTCIceTransportState state);
   async OnPacketReceived(string transportId, MediaPacket packet);
   async OnEncryptedSending(string transportId, MediaPacket packet);
-  async OnStateChange(string transportId, int state);
-  async OnRtcpStateChange(string transportId, int state);
+  async OnStateChange(string transportId, TransportLayerState state,
+                      uint8_t[][] remoteCerts);
+  async OnRtcpStateChange(string transportId, TransportLayerState state);
 
 #endif // MOZ_WEBRTC
 };

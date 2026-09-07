@@ -55,7 +55,7 @@ Presets defined here are your own personal collection of presets. You can modify
 Shared Presets
 ~~~~~~~~~~~~~~
 
-You can also check presets into mozilla-central in `tools/tryselect/try_presets.yml`_. These presets
+You can also check presets into mozilla-central in :searchfox:`tools/tryselect/try_presets.yml`. These presets
 will be available to all users of ``mach try``, so please be mindful when editing this file. Make
 sure the name of the preset is scoped appropriately (i.e doesn't contain any team or module specific
 terminology). It is good practice to prefix the preset name with the name of the team or module that
@@ -81,5 +81,3 @@ The ``selector`` key (required) allows ``mach try`` to determine which subcomman
 The ``description`` key (optional in user presets but required for shared presets) is a human
 readable string describing what the preset selects and when to use it. All other values in the
 preset are forwarded to the specified selector as is.
-
-.. _tools/tryselect/try_presets.yml: https://searchfox.org/mozilla-central/source/tools/tryselect/try_presets.yml

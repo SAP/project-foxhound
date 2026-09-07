@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -230,8 +228,7 @@ already_AddRefed<SourceSurface> DrawTarget::IntoLuminanceSource(
   }
 
   // Create alpha channel mask for output
-  RefPtr<SourceSurfaceAlignedRawData> destMaskSurface =
-      new SourceSurfaceAlignedRawData;
+  RefPtr destMaskSurface = MakeRefPtr<SourceSurfaceAlignedRawData>();
   if (!destMaskSurface->Init(size, SurfaceFormat::A8, false, 0)) {
     return nullptr;
   }
@@ -259,7 +256,7 @@ already_AddRefed<SourceSurface> DrawTarget::IntoLuminanceSource(
   return destMaskSurface.forget();
 }
 
-void DrawTarget::Blur(const AlphaBoxBlur& aBlur) {
+void DrawTarget::Blur(const GaussianBlur& aBlur) {
   uint8_t* data;
   IntSize size;
   int32_t stride;
@@ -269,10 +266,7 @@ void DrawTarget::Blur(const AlphaBoxBlur& aBlur) {
     return;
   }
 
-  // Sanity check that the blur size matches the draw target.
-  MOZ_ASSERT(size == aBlur.GetSize());
-  MOZ_ASSERT(stride == aBlur.GetStride());
-  aBlur.Blur(data);
+  aBlur.Blur(data, stride, size, format);
 
   ReleaseBits(data);
 }
@@ -298,7 +292,7 @@ bool DrawTarget::Unrotate(IntPoint aRotation) {
 }
 
 int32_t ShadowOptions::BlurRadius() const {
-  return AlphaBoxBlur::CalculateBlurRadius(Point(mSigma, mSigma)).width;
+  return GaussianBlur::CalculateBlurRadius(Point(mSigma, mSigma)).width;
 }
 
 void DrawTarget::DrawShadow(const Path* aPath, const Pattern& aPattern,

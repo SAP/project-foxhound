@@ -5,8 +5,6 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  ContextDescriptorType:
-    "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   SessionDataCategory:
     "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
@@ -76,7 +74,7 @@ export class EventsDispatcher {
 
     const listeners = this.#listenersByEventName.get(name);
     for (const { contextDescriptor } of listeners.values()) {
-      if (this.#matchesContext(contextInfo, contextDescriptor)) {
+      if (this.#matchesRelatedContexts([contextInfo], contextDescriptor)) {
         return true;
       }
     }
@@ -227,33 +225,21 @@ export class EventsDispatcher {
     };
   }
 
-  #matchesContext(contextInfo, contextDescriptor) {
-    if (contextDescriptor.type === lazy.ContextDescriptorType.All) {
-      return true;
-    }
+  #matchesRelatedContexts(relatedContexts, contextDescriptor) {
+    const browsingContexts = relatedContexts.map(contextInfo =>
+      BrowsingContext.get(contextInfo.contextId)
+    );
 
-    if (
-      contextDescriptor.type === lazy.ContextDescriptorType.TopBrowsingContext
-    ) {
-      const eventBrowsingContext = BrowsingContext.get(contextInfo.contextId);
-      return eventBrowsingContext?.browserId === contextDescriptor.id;
-    }
-
-    if (contextDescriptor.type === lazy.ContextDescriptorType.UserContext) {
-      const eventBrowsingContext = BrowsingContext.get(contextInfo.contextId);
-      return (
-        eventBrowsingContext?.originAttributes.userContextId ===
-        contextDescriptor.id
-      );
-    }
-
-    return false;
+    return this.#messageHandler.contextsMatchDescriptor(
+      browsingContexts,
+      contextDescriptor
+    );
   }
 
-  #onMessageHandlerEvent = (name, event, contextInfo) => {
+  #onMessageHandlerEvent = (name, event, relatedContexts) => {
     const listeners = this.#listenersByEventName.get(name);
     for (const { callbacks, contextDescriptor } of listeners.values()) {
-      if (!this.#matchesContext(contextInfo, contextDescriptor)) {
+      if (!this.#matchesRelatedContexts(relatedContexts, contextDescriptor)) {
         continue;
       }
 

@@ -1,0 +1,15 @@
+{
+  "label": "ncvtmis.gov.in",
+  "bugs": {
+    "2035485": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://ncvtmis.gov.in/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

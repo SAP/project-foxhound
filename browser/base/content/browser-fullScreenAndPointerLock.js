@@ -1,10 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
 
 var PointerlockFsWarning = {
   _element: null,
@@ -45,19 +41,39 @@ var PointerlockFsWarning = {
       let timeout = Services.prefs.getIntPref(
         "pointer-lock-api.warning.timeout"
       );
-      this.show(aOrigin, "pointerlock-warning", timeout, 0);
+      this.show(aOrigin, "pointerlock-warning", timeout, 0, false);
     }
   },
 
-  showFullScreen(aOrigin) {
-    let timeout = Services.prefs.getIntPref("full-screen-api.warning.timeout");
+  _getTimeout(keyboardLockEnabled) {
+    if (keyboardLockEnabled) {
+      return Services.prefs.getIntPref(
+        "full-screen-api.keyboardlock-warning.timeout"
+      );
+    }
+    return Services.prefs.getIntPref("full-screen-api.warning.timeout");
+  },
+
+  // Show info that top level has entered fullscreen. Ultimately, it is always
+  // ancestors who are in control of what is displayed on screen.
+  // By always displaying the top level, we try to make that clear to the user.
+  showFullScreen(browsingContext, keyboardLockEnabled) {
+    const origin =
+      browsingContext.top.currentWindowGlobal.documentPrincipal.originNoSuffix;
+    const timeout = this._getTimeout(keyboardLockEnabled);
     let delay = Services.prefs.getIntPref("full-screen-api.warning.delay");
-    this.show(aOrigin, "fullscreen-warning", timeout, delay);
+    this.show(
+      origin,
+      "fullscreen-warning",
+      timeout,
+      delay,
+      keyboardLockEnabled
+    );
   },
 
   // Shows a warning that the site has entered fullscreen or
   // pointer lock for a short duration.
-  show(aOrigin, elementId, timeout, delay) {
+  show(aOrigin, elementId, timeout, delay, keyboardLockEnabled) {
     if (!this._element) {
       this._element = document.getElementById(elementId);
       // Setup event listeners
@@ -103,10 +119,9 @@ var PointerlockFsWarning = {
     } else {
       textElem.removeAttribute("hidden");
       // Document's principal's URI has a host. Display a warning including it.
-      let { DownloadUtils } = ChromeUtils.importESModule(
-        "resource://gre/modules/DownloadUtils.sys.mjs"
-      );
-      let displayHost = DownloadUtils.getURIHost(uri.spec)[0];
+      let displayHost = BrowserUtils.formatURIForDisplay(uri, {
+        onlyBaseDomain: true,
+      });
       let l10nString = {
         "fullscreen-warning": "fullscreen-warning-domain",
         "pointerlock-warning": "pointerlock-warning-domain",
@@ -114,6 +129,25 @@ var PointerlockFsWarning = {
       document.l10n.setAttributes(textElem, l10nString, {
         domain: displayHost,
       });
+    }
+
+    let buttonElement = this._element.querySelector("#fullscreen-exit-button");
+    if (buttonElement) {
+      if (AppConstants.platform == "macosx") {
+        document.l10n.setAttributes(
+          buttonElement,
+          keyboardLockEnabled
+            ? "fullscreen-keyboardlock-exit-mac-button"
+            : "fullscreen-exit-mac-button"
+        );
+      } else {
+        document.l10n.setAttributes(
+          buttonElement,
+          keyboardLockEnabled
+            ? "fullscreen-keyboardlock-exit-button"
+            : "fullscreen-exit-button"
+        );
+      }
     }
 
     this._element.dataset.identity =
@@ -133,6 +167,7 @@ var PointerlockFsWarning = {
 
   /**
    * Close the full screen or pointerlock warning.
+   *
    * @param {('fullscreen-warning'|'pointerlock-warning')} elementId - Id of the
    * warning element to close. If the id does not match the currently shown
    * warning this is a no-op.
@@ -154,6 +189,10 @@ var PointerlockFsWarning = {
     this._element
       .querySelector(".pointerlockfswarning-domain-text")
       .removeAttribute("data-l10n-id");
+    let buttonElement = this._element.querySelector("#fullscreen-exit-button");
+    if (buttonElement) {
+      buttonElement.removeAttribute("data-l10n-id");
+    }
     // Remove all event listeners
     this._element.removeEventListener("transitionend", this);
     this._element.removeEventListener("transitioncancel", this);
@@ -293,6 +332,44 @@ var PointerLock = {
   },
 };
 
+/*
+ * So that the PiP doesn't interfere with the fullscreen notification,
+ * move and resize it to a safe place.
+ */
+function moveDocumentPiPForFullscreen(win) {
+  const { availLeft, availTop, availHeight, availWidth } = win.screen;
+
+  // This is less than the limit for documentPictureInPicture.requestWindow(),
+  // but let's limit extent to 50% screen size when in fullscreen.
+  const maxWidth = availWidth * 0.5;
+  const maxHeight = availHeight * 0.5;
+
+  const newWidth = Math.min(win.outerWidth, maxWidth);
+  const newHeight = Math.min(win.outerHeight, maxHeight);
+
+  win.resizeTo(newWidth, newHeight);
+
+  // Move to lower right, see DocumentPictureInPicture::CalcInitialPos
+  // With the difference, that we use the outer size here.
+  const xMost = availLeft + availWidth;
+  const yMost = availTop + availHeight;
+
+  const offset = 100;
+  const newX = Math.max(availLeft, xMost - newWidth - offset);
+  const newY = Math.max(availTop, yMost - newHeight - offset);
+
+  win.moveTo(newX, newY);
+}
+
+function moveAllDocumentPiPForFullscreen() {
+  const windowList = Services.wm.getEnumerator("navigator:browser");
+  for (const win of windowList) {
+    if (win.browsingContext?.isDocumentPiP) {
+      moveDocumentPiPForFullscreen(win);
+    }
+  }
+}
+
 var FullScreen = {
   init() {
     XPCOMUtils.defineLazyPreferenceGetter(
@@ -346,11 +423,7 @@ var FullScreen = {
     // Toggle the View:FullScreen command, which controls elements like the
     // fullscreen menuitem, and menubars.
     let fullscreenCommand = document.getElementById("View:FullScreen");
-    if (enterFS) {
-      fullscreenCommand.setAttribute("checked", enterFS);
-    } else {
-      fullscreenCommand.removeAttribute("checked");
-    }
+    fullscreenCommand.toggleAttribute("checked", enterFS);
 
     if (AppConstants.platform == "macosx") {
       // Make sure the menu items are adjusted.
@@ -391,6 +464,8 @@ var FullScreen = {
       if (!document.fullscreenElement) {
         this.hideNavToolbox(true);
       }
+
+      moveAllDocumentPiPForFullscreen();
     } else {
       this.showNavToolbox(false);
       // This is needed if they use the context menu to quit fullscreen
@@ -412,6 +487,7 @@ var FullScreen = {
   /**
    * Shifts the browser toolbar down when it is moused over on macOS in
    * fullscreen.
+   *
    * @param {number} shiftSize
    *   A distance, in pixels, by which to shift the browser toolbar down.
    */
@@ -424,13 +500,16 @@ var FullScreen = {
     // shiftSize is sent from Cocoa widget code as a very precise double. We
     // don't need that kind of precision in our CSS.
     shiftSize = shiftSize.toFixed(2);
-    gNavToolbox.classList.toggle("fullscreen-with-menubar", shiftSize > 0);
-
-    let transform = shiftSize > 0 ? `translateY(${shiftSize}px)` : "";
-    gNavToolbox.style.transform = transform;
-    gURLBar.textbox.style.transform = gURLBar.textbox.hasAttribute("breakout")
-      ? transform
-      : "";
+    let translate = shiftSize > 0 ? `0 ${shiftSize}px` : "";
+    gNavToolbox.classList.toggle("fullscreen-floating-toolbox", shiftSize > 0);
+    gNavToolbox.style.translate = translate;
+    gURLBar.style.translate = gURLBar.hasAttribute("breakout") ? translate : "";
+    let searchbar = document.getElementById("searchbar-new");
+    if (searchbar) {
+      searchbar.style.translate = searchbar.hasAttribute("breakout")
+        ? translate
+        : "";
+    }
     if (shiftSize > 0) {
       // If the mouse tracking missed our fullScreenToggler, then the toolbox
       // might not have been shown before the menubar is animated down. Make
@@ -561,7 +640,10 @@ var FullScreen = {
       let notifications = PopupNotifications.getNotification(
         this._permissionNotificationIDs
       ).filter(n => !n.dismissed);
-      PopupNotifications.remove(notifications, true);
+      PopupNotifications.remove(
+        notifications,
+        /* withoutUserResponse = */ true
+      );
       if (notifications.length) {
         this._logWarningPermissionPromptFS("promptCanceled");
       }
@@ -690,7 +772,6 @@ var FullScreen = {
    * If found, that ancestor actor and the browsing context for its child which
    * was in process are returned. Otherwise [request origin, null].
    *
-   *
    * @param {JSWindowActorParent} aActor
    *        The actor that called this function.
    * @param {bool} aUseCache
@@ -768,7 +849,7 @@ var FullScreen = {
   },
 
   _isRemoteBrowser(aBrowser) {
-    return gMultiProcessBrowser && aBrowser.getAttribute("remote") == "true";
+    return gMultiProcessBrowser && aBrowser.hasAttribute("remote");
   },
 
   getMouseTargetRect() {
@@ -840,7 +921,7 @@ var FullScreen = {
 
   // Autohide helpers for the context menu item
   updateAutohideMenuitem(aItem) {
-    aItem.setAttribute(
+    aItem.toggleAttribute(
       "checked",
       Services.prefs.getBoolPref("browser.fullscreen.autohide")
     );
@@ -879,7 +960,11 @@ var FullScreen = {
     }
 
     this._isChromeCollapsed = false;
-    Services.obs.notifyObservers(null, "fullscreen-nav-toolbox", "shown");
+    Services.obs.notifyObservers(
+      gNavToolbox,
+      "fullscreen-nav-toolbox",
+      "shown"
+    );
   },
 
   hideNavToolbox(aAnimate = false) {
@@ -943,7 +1028,11 @@ var FullScreen = {
     gNavToolbox.style.marginTop =
       -gNavToolbox.getBoundingClientRect().height + "px";
     this._isChromeCollapsed = true;
-    Services.obs.notifyObservers(null, "fullscreen-nav-toolbox", "hidden");
+    Services.obs.notifyObservers(
+      gNavToolbox,
+      "fullscreen-nav-toolbox",
+      "hidden"
+    );
 
     MousePosTracker.removeListener(this);
   },

@@ -36,10 +36,11 @@ function startTests() {
       linkShouldWork: false },
   ];
   var currentTest;
+  var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("bug674770");
   function runNextTest() {
-    localStorage.removeItem("clicked");
     currentTest = tests.shift();
     if (!currentTest) {
+      bc.close();
       SimpleTest.finish();
       return;
     }
@@ -47,13 +48,11 @@ function startTests() {
     synthesizeMouseAtCenter(currentTest.target(), { button: 1 });
   }
 
-
-  addEventListener("storage", function(e) {
-    is(e.key, "clicked", currentTest.description + "Key should always be 'clicked'");
-    is(e.newValue, "true", currentTest.description + "Value should always be 'true'");
+  bc.onmessage = function(e) {
+    is(e.data, "clicked", currentTest.description + "Value should always be 'clicked'");
     ok(currentTest.linkShouldWork, currentTest.description + "The click operation on the link " + (currentTest.linkShouldWork ? "should work" : "shouldn't work"));
     SimpleTest.executeSoon(runNextTest);
-  }, false);
+  };
 
   SpecialPowers.wrap(window).addEventListener("auxclick", function(aEvent) {
     // When the click event should cause default action, e.g., opening the link,
@@ -63,7 +62,7 @@ function startTests() {
     // we cannot check defaultPrevented value when the link should work as is
     // if there is no way to detect if it's running in e10s mode or not.
     // So, let's skip checking Event.defaultPrevented value when the link should
-    // work.  In such case, we should receive "storage" event later.
+    // work.  In such case, we should receive a message on the channel later.
     if (currentTest.linkShouldWork) {
       return;
     }
@@ -71,7 +70,7 @@ function startTests() {
     ok(SpecialPowers.defaultPreventedInAnyGroup(aEvent),
        currentTest.description + "The default action should be consumed because the link should work as is");
     if (SpecialPowers.defaultPreventedInAnyGroup(aEvent)) {
-      // In this case, "storage" event won't be fired.
+      // In this case, the channel message won't be sent.
       SimpleTest.executeSoon(runNextTest);
     }
   }, { mozSystemGroup: true });

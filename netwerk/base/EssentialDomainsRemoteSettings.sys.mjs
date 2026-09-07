@@ -12,6 +12,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 export const ESSENTIAL_DOMAINS_REMOTE_BUCKET = "moz-essential-domain-fallbacks";
 
+/**
+ * Manages essential domain fallback mappings sourced from Remote Settings.
+ */
 export class EssentialDomainsRemoteSettings {
   #initialized = false;
   #fallbackDomains;
@@ -85,7 +88,7 @@ export class EssentialDomainsRemoteSettings {
    *
    * @param {boolean} [firstTime]
    *   Internal boolean to indicate if this is the first time check or not.
-   * @returns {array}
+   * @returns {Array}
    *   An array of objects in the database, or an empty array if none
    *   could be obtained.
    */

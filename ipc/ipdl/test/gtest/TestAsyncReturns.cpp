@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,7 +55,7 @@ class TestAsyncReturnsParent : public PTestAsyncReturnsParent {
 IPDL_TEST(TestAsyncReturns, NoReturn) {
   mActor->SendNoReturn(
       [](bool unused) { FAIL() << "resolve handler should not be called"; },
-      [=](ResponseRejectReason&& aReason) {
+      [this](ResponseRejectReason&& aReason) {
         if (aReason != ResponseRejectReason::ResolverDestroyed) {
           FAIL() << "reject with wrong reason";
         }
@@ -67,7 +65,7 @@ IPDL_TEST(TestAsyncReturns, NoReturn) {
 
 IPDL_TEST(TestAsyncReturns, PingPong) {
   mActor->SendPing(
-      [=](bool one) {
+      [this](bool one) {
         EXPECT_TRUE(one);
         mActor->Close();
       },

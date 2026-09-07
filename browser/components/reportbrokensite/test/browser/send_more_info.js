@@ -35,9 +35,12 @@ async function reformatExpectedWebCompatInfo(tab, overrides) {
   const { antitracking, languages, useragentString } = tabInfo;
 
   const addons = overrides.addons || [];
+  const category = overrides.category || "";
   const experiments = overrides.experiments || [];
   const atOverrides = overrides.antitracking;
   const blockList = atOverrides?.blockList ?? antitracking.blockList;
+  const blockedOrigins =
+    atOverrides?.blockedOrigins ?? antitracking.blockedOrigins ?? [];
   const hasMixedActiveContentBlocked =
     atOverrides?.hasMixedActiveContentBlocked ??
     antitracking.hasMixedActiveContentBlocked;
@@ -63,69 +66,66 @@ async function reformatExpectedWebCompatInfo(tab, overrides) {
   // ignore the console log unless explicily testing for it.
   const consoleLog = overrides.consoleLog ?? (() => true);
 
-  const finalPrefs = {};
-  for (const [key, pref] of Object.entries({
-    cookieBehavior: "network.cookie.cookieBehavior",
-    forcedAcceleratedLayers: "layers.acceleration.force-enabled",
-    globalPrivacyControlEnabled: "privacy.globalprivacycontrol.enabled",
-    installtriggerEnabled: "extensions.InstallTrigger.enabled",
-    opaqueResponseBlocking: "browser.opaqueResponseBlocking",
-    resistFingerprintingEnabled: "privacy.resistFingerprinting",
-    softwareWebrender: "gfx.webrender.software",
-    thirdPartyCookieBlockingEnabled:
-      "network.cookie.cookieBehavior.optInPartitioning",
-    thirdPartyCookieBlockingEnabledInPbm:
-      "network.cookie.cookieBehavior.optInPartitioning.pbmode",
-  })) {
-    if (key in prefs) {
-      finalPrefs[pref] = prefs[key];
-    }
-  }
-
   const reformatted = {
     blockList,
+    category,
     details: {
       additionalData: {
-        addons,
-        applicationName,
-        blockList,
-        buildId: snapshot.application.buildID,
-        devicePixelRatio: parseInt(devicePixelRatio),
-        experiments,
-        finalUserAgent: useragentString,
-        fissionEnabled,
-        gfxData: {
-          devices(actual) {
-            const devices = getExpectedGraphicsDevices(snapshot);
-            return compareGraphicsDevices(devices, actual);
+        browserInfo: {
+          addons,
+          app: {
+            applicationName,
+            buildId: snapshot.application.buildID,
+            defaultLocales: snapshot.intl.localeService.available,
+            defaultUseragentString,
+            fissionEnabled,
+            osArchitecture,
+            osName,
+            osVersion,
+            updateChannel,
+            version,
           },
-          drivers(actual) {
-            const drvs = getExpectedGraphicsDrivers(snapshot);
-            return compareGraphicsDrivers(drvs, actual);
+          experiments,
+          graphics: {
+            devicePixelRatio: parseFloat(devicePixelRatio),
+            devices(actual) {
+              const devices = getExpectedGraphicsDevices(snapshot);
+              return compareGraphicsDevices(devices, actual);
+            },
+            drivers(actual) {
+              const drvs = getExpectedGraphicsDrivers(snapshot);
+              return compareGraphicsDrivers(drvs, actual);
+            },
+            features(actual) {
+              const features = getExpectedGraphicsFeatures(snapshot);
+              return areObjectsEqual(actual, features);
+            },
+            hasTouchScreen,
+            monitors(actual) {
+              return areObjectsEqual(actual, gfxInfo.getMonitors());
+            },
           },
-          features(actual) {
-            const features = getExpectedGraphicsFeatures(snapshot);
-            return areObjectsEqual(actual, features);
-          },
-          hasTouchScreen,
-          monitors(actual) {
-            return areObjectsEqual(actual, gfxInfo.getMonitors());
+          prefs,
+          system: {
+            isTablet: getSysinfoProperty("tablet", false),
+            memory: browserInfo.system.memory,
           },
         },
-        hasMixedActiveContentBlocked,
-        hasMixedDisplayContentBlocked,
-        hasTrackingContentBlocked,
-        btpHasPurgedSite,
-        isPB: isPrivateBrowsing,
-        etpCategory,
-        languages,
-        locales: snapshot.intl.localeService.available,
-        memoryMB: browserInfo.system.memory,
-        osArchitecture,
-        osName,
-        osVersion,
-        prefs: finalPrefs,
-        version,
+        tabInfo: {
+          antitracking: {
+            blockList,
+            blockedOrigins,
+            btpHasPurgedSite,
+            etpCategory,
+            hasMixedActiveContentBlocked,
+            hasMixedDisplayContentBlocked,
+            hasTrackingContentBlocked,
+            isPrivateBrowsing,
+          },
+          frameworks,
+          languages,
+          useragentString,
+        },
       },
       blockList,
       channel: updateChannel,
@@ -147,57 +147,16 @@ async function reformatExpectedWebCompatInfo(tab, overrides) {
     utm_source: "desktop-reporter",
   };
 
-  const { gfxData } = reformatted.details.additionalData;
-  for (const optional of [
-    "direct2DEnabled",
-    "directWriteEnabled",
-    "directWriteVersion",
-    "clearTypeParameters",
-    "targetFrameRate",
-  ]) {
-    if (optional in snapshot.graphics) {
-      gfxData[optional] = snapshot.graphics[optional];
-    }
-  }
-
   // We only care about this pref on Linux right now on webcompat.com.
   if (AppConstants.platform != "linux") {
-    delete finalPrefs["layers.acceleration.force-enabled"];
+    delete prefs.forcedAcceleratedLayers;
   } else {
     reformatted.details["layers.acceleration.force-enabled"] =
-      finalPrefs["layers.acceleration.force-enabled"];
+      prefs.forcedAcceleratedLayers;
   }
 
-  // Only bother adding the security key if it has any data
-  if (Object.values(security).filter(e => e).length) {
-    reformatted.details.additionalData.sec = security;
-  }
-
-  const expectedCodecs = snapshot.media.codecSupportInfo
-    .replaceAll(" NONE", "")
-    .split("\n")
-    .sort()
-    .join("\n");
-  if (expectedCodecs) {
-    reformatted.details.additionalData.gfxData.codecSupport = rawActual => {
-      const actual = Object.entries(rawActual)
-        .map(
-          ([
-            name,
-            { hardwareDecode, softwareDecode, hardwareEncode, softwareEncode },
-          ]) =>
-            (
-              `${name} ` +
-              `${softwareDecode ? "SWDEC " : ""}` +
-              `${hardwareDecode ? "HWDEC " : ""}` +
-              `${softwareEncode ? "SWENC " : ""}` +
-              `${hardwareEncode ? "HWENC " : ""}`
-            ).trim()
-        )
-        .sort()
-        .join("\n");
-      return areObjectsEqual(actual, expectedCodecs);
-    };
+  if (security) {
+    reformatted.details.additionalData.browserInfo.security = security;
   }
 
   if (blockList != "basic") {
@@ -234,42 +193,58 @@ async function reformatExpectedWebCompatInfo(tab, overrides) {
 
 async function testSendMoreInfo(tab, menu, expectedOverrides = {}) {
   const url = expectedOverrides.url ?? menu.win.gBrowser.currentURI.spec;
+  const reason = expectedOverrides.reason || "load";
   const description = expectedOverrides.description ?? "";
 
-  let rbs = await menu.openAndPrefillReportBrokenSite(url, description);
+  let rbs = await menu.openReportBrokenSiteToDetailsPanel({
+    url,
+    reason,
+    description,
+  });
+
+  if (expectedOverrides?.screenshotOptOut) {
+    const { screenshotToggle } = rbs;
+    await isVisible(screenshotToggle);
+    screenshotToggle.pressed = false;
+    await isNotPressed(screenshotToggle);
+  }
 
   const receivedData = await rbs.clickSendMoreInfo();
   await checkWebcompatComPayload(
     tab,
     url,
+    reason,
     description,
     expectedOverrides,
     receivedData
   );
 
-  // re-opening the panel, the url and description should be reset
+  // re-opening the panel, the url, reason, and description should be reset
   rbs = await menu.openReportBrokenSite();
-  rbs.isMainViewResetToCurrentTab();
+  rbs.isProperlyReset();
   rbs.close();
 }
 
 async function testWebcompatComFallback(tab, menu) {
+  ViewState.get(menu.win.document).reset();
   const url = menu.win.gBrowser.currentURI.spec;
   const receivedData =
     await menu.clickReportBrokenSiteAndAwaitWebCompatTabData();
-  await checkWebcompatComPayload(tab, url, "", {}, receivedData);
+  await checkWebcompatComPayload(tab, url, "", "", {}, receivedData);
   menu.close();
 }
 
 async function checkWebcompatComPayload(
   tab,
   url,
+  reason,
   description,
   expectedOverrides,
   receivedData
 ) {
   const expected = await reformatExpectedWebCompatInfo(tab, expectedOverrides);
-  expected.url = url;
+  expected.url = URL.parse(url).href;
+  expected.category = reason;
   expected.description = description;
 
   // sanity checks
@@ -278,28 +253,41 @@ async function checkWebcompatComPayload(
   const { additionalData } = details;
   ok(message.url?.length, "Got a URL");
   ok(["basic", "strict"].includes(details.blockList), "Got a blockList");
-  ok(additionalData.applicationName?.length, "Got an app name");
-  ok(additionalData.osArchitecture?.length, "Got an OS arch");
-  ok(additionalData.osName?.length, "Got an OS name");
-  ok(additionalData.osVersion?.length, "Got an OS version");
-  ok(additionalData.version?.length, "Got an app version");
+  const { app } = additionalData.browserInfo;
+  ok(app.applicationName?.length, "Got an app name");
+  ok(app.osArchitecture?.length, "Got an OS arch");
+  ok(app.osName?.length, "Got an OS name");
+  ok(app.osVersion?.length, "Got an OS version");
+  ok(app.version?.length, "Got an app version");
   ok(details.channel?.length, "Got an app channel");
   ok(details.defaultUserAgent?.length, "Got a default UA string");
-  ok(additionalData.finalUserAgent?.length, "Got a final UA string");
+  if (!expectedOverrides.expectNoTabDetails) {
+    ok(additionalData.tabInfo.useragentString?.length, "Got a final UA string");
+  }
 
-  // If we're sending any tab-specific data (which includes console logs),
-  // check that there is also a valid screenshot.
-  if ("consoleLog" in details) {
+  // Check that if there is also a screenshot, that it is valid.
+  const { screenshot } = receivedData;
+  if (expectedOverrides?.screenshotOptOut) {
+    ok(
+      !screenshot,
+      "opted out of a screenshot, so it ought to not be included"
+    );
+  }
+  if (screenshot) {
     const isScreenshotValid = await new Promise(done => {
       var image = new Image();
       image.onload = () => done(image.width > 0);
       image.onerror = () => done(false);
-      image.src = receivedData.screenshot;
+      image.src = screenshot;
     });
     ok(isScreenshotValid, "Got a valid screenshot");
   }
 
   filterFrameworkDetectorFails(message.details, expected.details);
+
+  if (expectedOverrides.expectNoTabDetails) {
+    removeTabSpecificInfo(expected.details.additionalData.tabInfo);
+  }
 
   ok(areObjectsEqual(message, expected), "sent info matches expectations");
 }

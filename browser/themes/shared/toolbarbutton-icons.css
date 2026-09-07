@@ -75,6 +75,14 @@
   list-style-image: url("chrome://browser/skin/synced-tabs.svg");
 }
 
+#send-tab-button {
+  list-style-image: url("chrome://browser/skin/send-tab-20.svg");
+
+  &:-moz-locale-dir(rtl) {
+    transform: scaleX(-1);
+  }
+}
+
 #characterencoding-button {
   list-style-image: url("chrome://browser/skin/characterEncoding.svg");
 }
@@ -189,22 +197,23 @@
   list-style-image: url("chrome://browser/skin/login.svg");
 }
 
+#share-tab-button {
+  list-style-image: url("chrome://browser/skin/share.svg");
+}
+
 #sidebar-button {
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media not -moz-pref("sidebar.revamp") {
-    list-style-image: url("chrome://browser/skin/sidebars.svg");
+    list-style-image: url("chrome://browser/skin/sidebar-collapsed.svg");
 
     &:-moz-locale-dir(ltr)[sidebar-positionend],
     &:-moz-locale-dir(rtl):not([sidebar-positionend]) {
-      list-style-image: url("chrome://browser/skin/sidebars-right.svg");
+      list-style-image: url("chrome://browser/skin/sidebar-collapsed-right.svg");
     }
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.revamp") {
     list-style-image: url("chrome://browser/skin/sidebar-collapsed.svg");
 
-    /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("sidebar.verticalTabs") {
       &:hover {
         list-style-image: url("chrome://browser/skin/sidebar-expanded.svg");
@@ -223,7 +232,6 @@
     &:-moz-locale-dir(rtl):not([sidebar-positionend]) {
       list-style-image: url("chrome://browser/skin/sidebar-collapsed-right.svg");
 
-      /* stylelint-disable-next-line media-query-no-invalid */
       @media -moz-pref("sidebar.verticalTabs") {
         &:hover {
           list-style-image: url("chrome://browser/skin/sidebar-expanded-right.svg");
@@ -256,33 +264,30 @@
 /* Bookmark toolbar buttons and menu items */
 
 .bookmark-item {
-  list-style-image: url("chrome://global/skin/icons/defaultFavicon.svg");
-  -moz-context-properties: fill;
-  fill: currentColor;
+  --bookmark-item-icon: url("chrome://global/skin/icons/defaultFavicon.svg");
+  --menuitem-icon: var(--bookmark-item-icon);
 
   &:is(toolbarbutton) {
     -moz-context-properties: fill, fill-opacity;
     fill: var(--toolbarbutton-icon-fill);
+    list-style-image: var(--bookmark-item-icon);
   }
 
-  &[container] {
-    list-style-image: url("chrome://global/skin/icons/folder.svg");
+  &[container],
+  &[hostContainer] {
+    --bookmark-item-icon: url("chrome://global/skin/icons/folder.svg");
   }
 
   &[query] {
-    list-style-image: url("chrome://browser/skin/places/folder-smart.svg");
+    --bookmark-item-icon: url("chrome://browser/skin/places/folder-smart.svg");
   }
 
   &[tagContainer] {
-    list-style-image: url("chrome://browser/skin/places/tag.svg");
+    --bookmark-item-icon: url("chrome://browser/skin/places/tag.svg");
   }
 
   &[dayContainer] {
-    list-style-image: url("chrome://browser/skin/history.svg");
-  }
-
-  &[hostContainer] {
-    list-style-image: url("chrome://global/skin/icons/folder.svg");
+    --bookmark-item-icon: url("chrome://browser/skin/history.svg");
   }
 }
 
@@ -317,5 +322,100 @@
 }
 
 #ipprotection-button {
-  list-style-image: url("chrome://browser/content/logos/vpn.svg");
+  list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#off");
+  -moz-context-properties: fill, stroke, fill-opacity;
+
+  &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+    list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-off.svg");
+  }
+
+  &.ipprotection-on {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#on");
+    stroke: var(--icon-color-success);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-on.svg");
+      fill: var(--icon-color-success);
+    }
+  }
+
+  &.ipprotection-network-error {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#info");
+    stroke: var(--icon-color-information);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://global/skin/icons/info-filled.svg");
+      fill: var(--icon-color-information);
+    }
+  }
+
+  &.ipprotection-error {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#error");
+    stroke: var(--icon-color-critical);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-error.svg");
+      fill: var(--icon-color-critical);
+    }
+  }
+
+  &.ipprotection-excluded {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#excluded");
+    stroke: var(--icon-color-success);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-excluded.svg");
+      fill: transparent;
+      stroke: var(--icon-color-success);
+    }
+  }
+
+  &.ipprotection-paused {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-states.svg#paused");
+    fill: var(--icon-color);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-paused.svg");
+    }
+  }
+}
+
+#tab-groups-button {
+  list-style-image: url("chrome://browser/skin/tabbrowser/tab-groups.svg");
+}
+
+#taskbar-tabs-favicon {
+  margin: auto 8px;
+  height: var(--icon-size);
+  width: var(--icon-size);
+
+  :root:not([taskbartab]) & {
+    display: none;
+  }
+}
+
+#taskbar-tabs-audio {
+  /* This is only visible in Taskbar Tabs windows; see ':root[taskbartab] toolbar' in
+   * toolbarbuttons.css. */
+  display: none;
+
+  &[soundplaying] {
+    list-style-image: url("chrome://global/skin/media/audio.svg");
+  }
+
+  &[muted] {
+    list-style-image: url("chrome://global/skin/media/audio-muted.svg");
+  }
+}
+
+#smartwindow-ask-button-inner {
+  list-style-image: url("chrome://browser/content/aiwindow/assets/ask-icon.svg");
+
+  &[aria-expanded="true"] {
+    list-style-image: url("chrome://global/skin/icons/close.svg");
+  }
+}
+
+#document-pip-return-to-opener-button {
+  list-style-image: url("chrome://global/skin/media/picture-in-picture-closed.svg");
 }

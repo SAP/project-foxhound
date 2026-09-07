@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef SHELL_WINDOWSUSERCHOICE_H__
-#define SHELL_WINDOWSUSERCHOICE_H__
+#ifndef SHELL_WINDOWSUSERCHOICE_H_
+#define SHELL_WINDOWSUSERCHOICE_H_
 
 #include <windows.h>
 
@@ -124,4 +123,4 @@ bool CheckProgIDExists(const wchar_t* aProgID);
 nsresult GetMsixProgId(const wchar_t* assoc,
                        mozilla::UniquePtr<wchar_t[]>& aProgId);
 
-#endif  // SHELL_WINDOWSUSERCHOICE_H__
+#endif  // SHELL_WINDOWSUSERCHOICE_H_

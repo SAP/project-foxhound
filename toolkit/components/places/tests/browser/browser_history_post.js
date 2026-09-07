@@ -1,6 +1,6 @@
 const PAGE_URI =
   "https://example.com/tests/toolkit/components/places/tests/browser/history_post.html";
-const SJS_URI = NetUtil.newURI(
+const SJS_URI = Services.io.newURI(
   "https://example.com/tests/toolkit/components/places/tests/browser/history_post.sjs"
 );
 

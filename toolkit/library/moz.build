@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -29,6 +27,7 @@ def Libxul(name, output_category=None):
         "avrt.dll",
         "comdlg32.dll",
         "credui.dll",
+        "crypt32.dll",
         "d3d11.dll",
         "D3DCompiler_47.dll",
         "dhcpcsvc.dll",
@@ -41,6 +40,7 @@ def Libxul(name, output_category=None):
         "iphlpapi.dll",
         "msi.dll",
         "msimg32.dll",
+        "ncrypt.dll",
         "netapi32.dll",
         "ole32.dll",
         "oleaut32.dll",
@@ -56,6 +56,7 @@ def Libxul(name, output_category=None):
         "wininet.dll",
         "winmm.dll",
         "winspool.drv",
+        "wintrust.dll",
         "wtsapi32.dll",
     ]
 
@@ -89,16 +90,7 @@ def Libxul(name, output_category=None):
 
     OS_LIBS += CONFIG["LIBATOMIC_LIBS"]
 
-    # TouchBar-related classes are only available in the 10.12.2 SDK and later.
-    # We need to weak link these classes until we've upgraded our SDK to at
-    # least 10.12.2.
-    # We're also linking against libresolv to solve bug 1367932.
     if CONFIG["OS_ARCH"] == "Darwin":
-        LDFLAGS += ["-Wl,-U,_OBJC_CLASS_$_NSTouchBar"]
-        LDFLAGS += ["-Wl,-U,_OBJC_CLASS_$_NSSharingServicePickerTouchBarItem"]
-        LDFLAGS += ["-Wl,-U,_OBJC_METACLASS_$_NSTouchBar"]
-        LDFLAGS += ["-Wl,-U,_OBJC_CLASS_$_NSCustomTouchBarItem"]
-        LDFLAGS += ["-Wl,-U,_OBJC_CLASS_$_NSPopoverTouchBarItem"]
         LDFLAGS += ["-lresolv"]
         LDFLAGS += ["-Wl,-rpath,@executable_path/../Frameworks/ChannelPrefs.framework"]
 
@@ -109,6 +101,11 @@ def Libxul(name, output_category=None):
 
     if name == "xul-real":
         SYMBOLS_FILE = "../libxul.symbols"
+
+    # Disable full lto for xul-gtest, it takes a lot of time with no clear
+    # benefit.
+    if name == "xul-gtest" and CONFIG["MOZ_LTO_FAT"]:
+        LDFLAGS += ["-fno-lto"]
 
 
 # The real libxul definition is in ./build/moz.build, but we define a
@@ -141,8 +138,9 @@ if CONFIG["OS_ARCH"] == "WINNT" and CONFIG["CC_TYPE"] not in ("clang", "gcc"):
 DIRS += [
     "build",
     "buildid_reader",
-    "gtest",
 ]
+
+TEST_DIRS += ["gtest"]
 
 # js needs to come after xul for now, because it is an archive and its content
 # is discarded when it comes first.
@@ -151,6 +149,7 @@ USE_LIBS += [
 ]
 
 USE_LIBS += [
+    "abseil",
     "gkcodecs",
     "lgpllibs",
     "nspr",
@@ -158,6 +157,17 @@ USE_LIBS += [
     "psshparser",
     "sqlite",
 ]
+
+# nss-rs references FREEBL_GetVector; freebl3 is not folded into nss3, so it
+# must be an explicit dependency. This cannot go into security/moz.build,
+# because in fold_libs mode, freebl3 itself links against nspr4, which is
+# folded into nss3, creating a nss3 → freebl3 → nss3 circular dependency.
+# For system NSS, freebl is linked by the nss-rs build.rs via pkg-config instead.
+if not CONFIG["MOZ_SYSTEM_NSS"]:
+    if CONFIG["OS_TARGET"] == "Linux":
+        USE_LIBS += ["freeblpriv3"]
+    else:
+        USE_LIBS += ["freebl3"]
 
 if not CONFIG["USE_LIBZ_RS"]:
     USE_LIBS += [
@@ -205,33 +215,36 @@ if CONFIG["MOZ_WEBRTC"]:
             "wininet",
         ]
 
+if CONFIG["OS_ARCH"] == "Darwin":
+    OS_LIBS += [
+        "-framework AudioToolbox",
+        "-framework AVFoundation",
+        "-framework CoreFoundation",
+        "-framework CoreMedia",
+        "-framework CoreVideo",
+        "-framework Foundation",
+        "-framework MediaPlayer",
+        "-framework Metal",
+        "-framework QuartzCore",
+        "-framework Security",
+    ]
+
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     OS_LIBS += [
-        "-framework Foundation",
-        "-framework CoreFoundation",
-        "-framework CoreLocation",
-        "-framework QuartzCore",
+        "-framework AddressBook",
+        "-framework AppKit",
+        "-framework ApplicationServices",
+        "-framework AudioUnit",
         "-framework Carbon",
         "-framework CoreAudio",
-        "-framework CoreVideo",
-        "-framework AudioToolbox",
-        "-framework AudioUnit",
-        "-framework AddressBook",
-        "-framework OpenGL",
-        "-framework Security",
-        "-framework ServiceManagement",
-        "-framework CoreServices",
-        "-framework ApplicationServices",
-        "-framework AppKit",
+        "-framework CoreLocation",
         "-framework CoreMIDI",
-        "-framework SystemConfiguration",
-        "-framework AVFoundation",
-        "-framework CoreMedia",
+        "-framework CoreServices",
         "-framework IOKit",
+        "-framework OpenGL",
+        "-framework ServiceManagement",
+        "-framework SystemConfiguration",
         "-weak_framework ScreenCaptureKit",
-        "-F%s" % CONFIG["MACOS_PRIVATE_FRAMEWORKS_DIR"],
-        "-framework CoreUI",
-        "-framework CoreSymbolication",
         "cups",
     ]
     USE_LIBS += [
@@ -240,17 +253,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "uikit":
     OS_LIBS += [
-        "-framework Foundation",
-        "-framework CoreFoundation",
         "-framework CoreGraphics",
         "-framework CoreText",
-        "-framework AVFoundation",
-        "-framework AudioToolbox",
-        "-framework CoreMedia",
-        "-framework CoreVideo",
         "-framework OpenGLES",
-        "-framework QuartzCore",
-        "-framework Security",
     ]
 
 if CONFIG["MOZ_WMF"]:
@@ -268,6 +273,7 @@ if CONFIG["OS_ARCH"] == "FreeBSD":
 if CONFIG["OS_ARCH"] == "WINNT":
     OS_LIBS += [
         "crypt32",
+        "d2d1",
         "gdi32",
         "shell32",
         "ntdll",
@@ -340,14 +346,6 @@ if CONFIG["OS_ARCH"] == "FreeBSD":
         "util",
     ]
 
-if CONFIG["OS_ARCH"] == "Darwin":
-    OS_LIBS += [
-        # Link to Metal as required by the Metal gfx-hal backend
-        "-weak_framework Metal",
-        "-weak_framework MediaPlayer",
-    ]
-
-
 if CONFIG["OS_ARCH"] == "WINNT":
     OS_LIBS += [
         "shell32",
@@ -401,6 +399,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "usp10",
         "oleaut32",
     ]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+    OS_LIBS += ["mediandk"]
 
 # The buildid is refreshed on every (incremental) build. But we want to avoid
 # rebuilding libxul every time, so instead of having a source file that

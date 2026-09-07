@@ -11,7 +11,7 @@
  */
 
 const fs = require("fs");
-const URL = "https://searchfox.org/mozilla-central/source/";
+const URL = "https://searchfox.org/firefox-main/source/";
 
 const HEADER = `/**
  * NOTE: Do not modify this file by hand.

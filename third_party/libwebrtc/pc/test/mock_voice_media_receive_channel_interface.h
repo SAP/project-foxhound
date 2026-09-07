@@ -13,10 +13,11 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <set>
 #include <type_traits>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
+#include "api/audio_options.h"
 #include "api/call/audio_sink.h"
 #include "api/crypto/frame_decryptor_interface.h"
 #include "api/frame_transformer_interface.h"
@@ -30,7 +31,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "test/gmock.h"
 
-namespace cricket {
+namespace webrtc {
 
 class MockVoiceMediaReceiveChannelInterface
     : public VoiceMediaReceiveChannelInterface {
@@ -42,21 +43,21 @@ class MockVoiceMediaReceiveChannelInterface
   // VoiceMediaReceiveChannelInterface
   MOCK_METHOD(bool,
               SetReceiverParameters,
-              (const AudioReceiverParameters& params),
+              (const webrtc::AudioReceiverParameters& params),
               (override));
-  MOCK_METHOD(webrtc::RtpParameters,
+  MOCK_METHOD(RtpParameters,
               GetRtpReceiverParameters,
               (uint32_t ssrc),
               (const, override));
-  MOCK_METHOD(std::vector<webrtc::RtpSource>,
+  MOCK_METHOD(std::vector<RtpSource>,
               GetSources,
               (uint32_t ssrc),
               (const, override));
-  MOCK_METHOD(webrtc::RtpParameters,
+  MOCK_METHOD(RtpParameters,
               GetDefaultRtpReceiveParameters,
               (),
               (const, override));
-  MOCK_METHOD(void, SetPlayout, (bool playout), (override));
+  MOCK_METHOD(void, SetReceive, (bool receive), (override));
   MOCK_METHOD(bool,
               SetOutputVolume,
               (uint32_t ssrc, double volume),
@@ -64,20 +65,25 @@ class MockVoiceMediaReceiveChannelInterface
   MOCK_METHOD(bool, SetDefaultOutputVolume, (double volume), (override));
   MOCK_METHOD(void,
               SetRawAudioSink,
-              (uint32_t ssrc, std::unique_ptr<webrtc::AudioSinkInterface> sink),
+              (uint32_t ssrc, std::unique_ptr<AudioSinkInterface> sink),
               (override));
   MOCK_METHOD(void,
               SetDefaultRawAudioSink,
-              (std::unique_ptr<webrtc::AudioSinkInterface> sink),
+              (std::unique_ptr<AudioSinkInterface> sink),
               (override));
   MOCK_METHOD(bool,
               GetStats,
-              (VoiceMediaReceiveInfo * stats, bool reset_legacy),
+              (webrtc::VoiceMediaReceiveInfo * stats, bool reset_legacy),
               (override));
-  MOCK_METHOD(webrtc::RtcpMode, RtcpMode, (), (const, override));
-  MOCK_METHOD(void, SetRtcpMode, (webrtc::RtcpMode mode), (override));
+  MOCK_METHOD(absl::AnyInvocable<std::optional<VoiceMediaReceiveInfo>()>,
+              GetStatsTask,
+              (bool reset_legacy),
+              (override));
+  MOCK_METHOD(::webrtc::RtcpMode, RtcpMode, (), (const, override));
+  MOCK_METHOD(void, SetRtcpMode, (::webrtc::RtcpMode mode), (override));
   MOCK_METHOD(void, SetReceiveNackEnabled, (bool enabled), (override));
   MOCK_METHOD(void, SetReceiveNonSenderRttEnabled, (bool enabled), (override));
+  MOCK_METHOD(bool, SetOptions, (const AudioOptions& options), (override));
 
   // MediaReceiveChannelInterface
   MOCK_METHOD(VideoMediaReceiveChannelInterface*,
@@ -88,40 +94,38 @@ class MockVoiceMediaReceiveChannelInterface
               AsVoiceReceiveChannel,
               (),
               (override));
-  MOCK_METHOD(webrtc::MediaType, media_type, (), (const, override));
-  MOCK_METHOD(bool, AddRecvStream, (const StreamParams& sp), (override));
+  MOCK_METHOD(MediaType, media_type, (), (const, override));
+  MOCK_METHOD(bool,
+              AddRecvStream,
+              (const webrtc::StreamParams& sp),
+              (override));
   MOCK_METHOD(bool, RemoveRecvStream, (uint32_t ssrc), (override));
   MOCK_METHOD(void, ResetUnsignaledRecvStream, (), (override));
+  MOCK_METHOD(absl::AnyInvocable<void() &&>,
+              GetResetUnsignaledRecvStreamTask,
+              (),
+              (override));
   MOCK_METHOD(void,
               SetInterface,
-              (MediaChannelNetworkInterface * iface),
+              (webrtc::MediaChannelNetworkInterface * iface),
               (override));
-  MOCK_METHOD(void,
-              OnPacketReceived,
-              (const webrtc::RtpPacketReceived& packet),
-              (override));
+  MOCK_METHOD(void, OnPacketReceived, (RtpPacketReceived packet), (override));
   MOCK_METHOD(std::optional<uint32_t>,
               GetUnsignaledSsrc,
               (),
               (const, override));
-  MOCK_METHOD(void,
-              ChooseReceiverReportSsrc,
-              (const std::set<uint32_t>& choices),
-              (override));
   MOCK_METHOD(void, OnDemuxerCriteriaUpdatePending, (), (override));
   MOCK_METHOD(void, OnDemuxerCriteriaUpdateComplete, (), (override));
-  MOCK_METHOD(
-      void,
-      SetFrameDecryptor,
-      (uint32_t ssrc,
-       rtc::scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor),
-      (override));
-  MOCK_METHOD(
-      void,
-      SetDepacketizerToDecoderFrameTransformer,
-      (uint32_t ssrc,
-       rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer),
-      (override));
+  MOCK_METHOD(void,
+              SetFrameDecryptor,
+              (uint32_t ssrc,
+               scoped_refptr<FrameDecryptorInterface> frame_decryptor),
+              (override));
+  MOCK_METHOD(void,
+              SetDepacketizerToDecoderFrameTransformer,
+              (uint32_t ssrc,
+               scoped_refptr<FrameTransformerInterface> frame_transformer),
+              (override));
   MOCK_METHOD(bool,
               SetBaseMinimumPlayoutDelayMs,
               (uint32_t ssrc, int delay_ms),
@@ -134,6 +138,7 @@ class MockVoiceMediaReceiveChannelInterface
 
 static_assert(!std::is_abstract_v<MockVoiceMediaReceiveChannelInterface>, "");
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // PC_TEST_MOCK_VOICE_MEDIA_RECEIVE_CHANNEL_INTERFACE_H_

@@ -9,6 +9,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
 });
 
+// These match the serialization scheme used for header key/value pairs in
+// nsHttpHeaderArray::FlattenOriginalHeader.
+const RESPONSE_HEADER_KEY_VALUE_DELIMETER = ": ";
+const RESPONSE_HEADER_DELIMETER = "\r\n";
+const RESPONSE_HEADER_METADATA_ELEMENT = "original-response-headers";
+
 /**
  * Parent process JSActor for handling cache lookups for moz-cachged-ohttp
  * protocol. This actor handles cache operations that require parent process
@@ -61,12 +67,28 @@ export class MozCachedOHTTPParent extends JSProcessActorParent {
         throw new Error("Cache entry is empty.");
       }
 
+      let headersStrings = cacheEntry
+        .getMetaDataElement(RESPONSE_HEADER_METADATA_ELEMENT)
+        .split(RESPONSE_HEADER_DELIMETER);
+      let headersObj = {};
+      for (let headersString of headersStrings) {
+        let delimeterIndex = headersString.indexOf(
+          RESPONSE_HEADER_KEY_VALUE_DELIMETER
+        );
+        let key = headersString.substring(0, delimeterIndex);
+        let value = headersString.substring(
+          delimeterIndex + RESPONSE_HEADER_KEY_VALUE_DELIMETER.length
+        );
+        headersObj[key] = value;
+      }
+
       // Cache hit - return input stream for reading
       const inputStream = cacheEntry.openInputStream(0);
 
       return {
         success: true,
         inputStream,
+        headersObj,
       };
     } catch (e) {
       // Cache miss or error - proceed without caching
@@ -108,6 +130,20 @@ export class MozCachedOHTTPParent extends JSProcessActorParent {
       switch (msg.data.name) {
         case "DoomCacheEntry": {
           cacheEntry.asyncDoom(null);
+          break;
+        }
+        case "WriteOriginalResponseHeaders": {
+          let headers = new Headers(msg.data.headersObj);
+          let headersStrings = [];
+          for (let [key, value] of headers.entries()) {
+            headersStrings.push(
+              `${key}${RESPONSE_HEADER_KEY_VALUE_DELIMETER}${value}`
+            );
+          }
+          cacheEntry.setMetaDataElement(
+            RESPONSE_HEADER_METADATA_ELEMENT,
+            headersStrings.join(RESPONSE_HEADER_DELIMETER)
+          );
           break;
         }
         case "WriteCacheExpiry": {

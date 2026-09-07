@@ -38,6 +38,23 @@
             "url": "https://bookmark6.example.com/"
           }
         ]
+      },
+      {
+        "name": "Bookmark 7",
+        "url": "https://bookmark7.example.com/",
+        "favicon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII="
+      },
+      {
+        "name": "Bookmarklet",
+        "url": "javascript:document.title='bookmarklet ran';void(0)"
+      },
+      {
+        "name": "Schemeless",
+        "url": "schemeless.example.com"
+      },
+      {
+        "name": "Invalid",
+        "url": "not a url"
       }
     ]
   }

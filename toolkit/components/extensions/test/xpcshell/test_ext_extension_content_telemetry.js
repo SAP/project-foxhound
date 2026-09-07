@@ -1,10 +1,7 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-const HISTOGRAM = "WEBEXT_CONTENT_SCRIPT_INJECTION_MS";
-const HISTOGRAM_KEYED = "WEBEXT_CONTENT_SCRIPT_INJECTION_MS_BY_ADDONID";
 const GLEAN_METRIC_ID = "contentScriptInjection";
+const GLEAN_LABELED_METRIC_ID = "contentScriptInjectionByAddonid";
 
 const server = createHttpServer();
 server.registerDirectory("/data/", do_get_file("data"));
@@ -52,27 +49,17 @@ add_task(async function test_telemetry() {
   // Make sure to force flushing glean fog data from child processes before
   // resetting the already collected data.
   await Services.fog.testFlushAllChildren();
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
-  let process = "content";
-
-  // Assert unified telemetry data.
-  if (AppConstants.platform != "android") {
-    ok(
-      !(HISTOGRAM in getSnapshots(process)),
-      `No data recorded for histogram: ${HISTOGRAM}.`
-    );
-    ok(
-      !(HISTOGRAM_KEYED in getKeyedSnapshots(process)),
-      `No data recorded for keyed histogram: ${HISTOGRAM_KEYED}.`
-    );
-  }
-
-  // Assert glean telemetry data.
   assertGleanMetricsNoSamples({
     metricId: GLEAN_METRIC_ID,
     gleanMetric: Glean.extensionsTiming[GLEAN_METRIC_ID],
     gleanMetricConstructor: GleanTimingDistribution,
+  });
+  assertGleanLabeledMetricEmpty({
+    metricId: GLEAN_LABELED_METRIC_ID,
+    gleanMetric: Glean.extensionsTiming[GLEAN_LABELED_METRIC_ID],
+    gleanMetricLabels: [],
   });
 
   await extension1.startup();
@@ -80,23 +67,18 @@ add_task(async function test_telemetry() {
 
   info(`Started extension with id ${extensionId}`);
 
-  // Assert unified telemetry data.
-  if (AppConstants.platform != "android") {
-    ok(
-      !(HISTOGRAM in getSnapshots(process)),
-      `No data recorded for histogram after startup: ${HISTOGRAM}.`
-    );
-    ok(
-      !(HISTOGRAM_KEYED in getKeyedSnapshots(process)),
-      `No data recorded for keyed histogram: ${HISTOGRAM_KEYED}.`
-    );
-  }
-
-  // Assert glean telemetry data.
+  // After starting the extension we still expect no content script
+  // telemetry data to be found collected yet.
+  await Services.fog.testFlushAllChildren();
   assertGleanMetricsNoSamples({
     metricId: GLEAN_METRIC_ID,
     gleanMetric: Glean.extensionsTiming[GLEAN_METRIC_ID],
     gleanMetricConstructor: GleanTimingDistribution,
+  });
+  assertGleanLabeledMetricEmpty({
+    metricId: GLEAN_LABELED_METRIC_ID,
+    gleanMetric: Glean.extensionsTiming[GLEAN_LABELED_METRIC_ID],
+    gleanMetricLabels: [],
   });
 
   let contentPage = await ExtensionTestUtils.loadContentPage(
@@ -104,29 +86,8 @@ add_task(async function test_telemetry() {
   );
   await extension1.awaitMessage("content-script-run");
 
-  // Assert unified telemetry data.
-  if (AppConstants.platform != "android") {
-    await promiseTelemetryRecorded(HISTOGRAM, process, 1);
-    await promiseKeyedTelemetryRecorded(
-      HISTOGRAM_KEYED,
-      process,
-      extensionId,
-      1
-    );
-
-    equal(
-      valueSum(getSnapshots(process)[HISTOGRAM].values),
-      1,
-      `Data recorded for histogram: ${HISTOGRAM}.`
-    );
-    equal(
-      valueSum(getKeyedSnapshots(process)[HISTOGRAM_KEYED][extensionId].values),
-      1,
-      `Data recorded for histogram: ${HISTOGRAM_KEYED} with key ${extensionId}.`
-    );
-  }
-
-  // Assert glean telemetry data.
+  // Assert the content script has been executed, verify
+  // the expected glean telemetry data has been collected.
   await Services.fog.testFlushAllChildren();
   assertGleanMetricsSamplesCount({
     metricId: GLEAN_METRIC_ID,
@@ -134,6 +95,15 @@ add_task(async function test_telemetry() {
     gleanMetricConstructor: GleanTimingDistribution,
     expectedSamplesCount: 1,
   });
+  const ext1ContentScriptInjectionSum =
+    Glean.extensionsTiming[GLEAN_LABELED_METRIC_ID].testGetValue()?.[
+      extensionId
+    ]?.sum;
+  Assert.greater(
+    ext1ContentScriptInjectionSum,
+    0,
+    `Expect ${GLEAN_LABELED_METRIC_ID} data for extension1 to be found`
+  );
 
   await contentPage.close();
   await extension1.unload();
@@ -143,25 +113,8 @@ add_task(async function test_telemetry() {
 
   info(`Started extension with id ${extensionId2}`);
 
-  // Assert unified telemetry data.
-  if (AppConstants.platform != "android") {
-    equal(
-      valueSum(getSnapshots(process)[HISTOGRAM].values),
-      1,
-      `No new data recorded for histogram after extension2 startup: ${HISTOGRAM}.`
-    );
-    equal(
-      valueSum(getKeyedSnapshots(process)[HISTOGRAM_KEYED][extensionId].values),
-      1,
-      `No new data recorded for histogram after extension2 startup: ${HISTOGRAM_KEYED} with key ${extensionId}.`
-    );
-    ok(
-      !(extensionId2 in getKeyedSnapshots(process)[HISTOGRAM_KEYED]),
-      `No data recorded for histogram after startup: ${HISTOGRAM_KEYED} with key ${extensionId2}.`
-    );
-  }
-
-  // Assert glean telemetry data.
+  // Assert no additional telemetry data yet for these metrics
+  // after extension2 startup.
   await Services.fog.testFlushAllChildren();
   assertGleanMetricsSamplesCount({
     metricId: GLEAN_METRIC_ID,
@@ -170,42 +123,29 @@ add_task(async function test_telemetry() {
     expectedSamplesCount: 1,
     message: "No new data recorded yet after extension 2 startup",
   });
+  Assert.equal(
+    Glean.extensionsTiming[GLEAN_LABELED_METRIC_ID].testGetValue()?.[
+      extensionId
+    ]?.sum,
+    ext1ContentScriptInjectionSum,
+    `Expect no new ${GLEAN_LABELED_METRIC_ID} data for extension1 data to be found`
+  );
+  Assert.equal(
+    Glean.extensionsTiming[GLEAN_LABELED_METRIC_ID].testGetValue()?.[
+      extensionId2
+    ]?.sum,
+    null,
+    `Expect no ${GLEAN_LABELED_METRIC_ID} data for extension2 data to be found`
+  );
 
   contentPage = await ExtensionTestUtils.loadContentPage(
     `${BASE_URL}/file_sample.html`
   );
   await extension2.awaitMessage("content-script-run");
 
-  // Assert unified telemetry data.
-  if (AppConstants.platform != "android") {
-    await promiseTelemetryRecorded(HISTOGRAM, process, 2);
-    await promiseKeyedTelemetryRecorded(
-      HISTOGRAM_KEYED,
-      process,
-      extensionId2,
-      1
-    );
-
-    equal(
-      valueSum(getSnapshots(process)[HISTOGRAM].values),
-      2,
-      `Data recorded for histogram: ${HISTOGRAM}.`
-    );
-    equal(
-      valueSum(getKeyedSnapshots(process)[HISTOGRAM_KEYED][extensionId].values),
-      1,
-      `No new data recorded for histogram: ${HISTOGRAM_KEYED} with key ${extensionId}.`
-    );
-    equal(
-      valueSum(
-        getKeyedSnapshots(process)[HISTOGRAM_KEYED][extensionId2].values
-      ),
-      1,
-      `Data recorded for histogram: ${HISTOGRAM_KEYED} with key ${extensionId2}.`
-    );
-  }
-
-  // Assert glean telemetry data.
+  // Assert on the additional telemetry data for these metrics
+  // expected to be collected after extension2 content script
+  // execution.
   await Services.fog.testFlushAllChildren();
   assertGleanMetricsSamplesCount({
     metricId: GLEAN_METRIC_ID,
@@ -214,6 +154,20 @@ add_task(async function test_telemetry() {
     expectedSamplesCount: 2,
     message: "New data recorded after extension 2 content script injection",
   });
+  Assert.equal(
+    Glean.extensionsTiming[GLEAN_LABELED_METRIC_ID].testGetValue()?.[
+      extensionId
+    ]?.sum,
+    ext1ContentScriptInjectionSum,
+    `Expect no new ${GLEAN_LABELED_METRIC_ID} data for extension1 data to be found`
+  );
+  Assert.greater(
+    Glean.extensionsTiming[GLEAN_LABELED_METRIC_ID].testGetValue()?.[
+      extensionId2
+    ]?.sum,
+    0,
+    `Expect ${GLEAN_LABELED_METRIC_ID} data for extension2 to be found`
+  );
 
   await contentPage.close();
   await extension2.unload();

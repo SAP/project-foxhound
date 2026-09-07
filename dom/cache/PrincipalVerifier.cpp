@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/PrincipalVerifier.h"
 
+#include "CacheCommon.h"
 #include "ErrorList.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/QMResult.h"
 #include "mozilla/dom/cache/ManagerId.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/BasePrincipal.h"
-#include "CacheCommon.h"
+#include "mozilla/ipc/PBackgroundParent.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
@@ -98,6 +97,12 @@ void PrincipalVerifier::VerifyOnMainThread() {
   QM_TRY_INSPECT(
       const auto& principal, PrincipalInfoToPrincipal(mPrincipalInfo), QM_VOID,
       [this](const nsresult result) { DispatchToInitiatingThread(result); });
+
+  if (NS_WARN_IF(mHandle && !ValidatePrincipalCouldPotentiallyBeLoadedBy(
+                                principal, mHandle->GetRemoteType(), {}))) {
+    DispatchToInitiatingThread(NS_ERROR_FAILURE);
+    return;
+  }
 
   // We disallow null principal on the client side, but double-check here.
   if (NS_WARN_IF(principal->GetIsNullPrincipal())) {

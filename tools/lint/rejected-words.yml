@@ -3,9 +3,14 @@ avoid-blacklist-and-whitelist:
     description: "Use words like 'skip', 'select', 'allow' or 'deny' instead"
     level: error
     include: ['.']
-    type: regex
-    payload: (black|white)[-_]?list
-    ignore-case: true
+    type: external
+    payload: mozcheck:lint
+    check: rejected-words
+    check-config:
+        regex-pattern: (black|white)[-_]?list
+        ignore-case: true
+    support-files:
+        - 'tools/lint/mozcheck/**'
     # Based on codespell with idl and webidl added.
     extensions:
         - js
@@ -47,6 +52,8 @@ avoid-blacklist-and-whitelist:
         - browser/components/enterprisepolicies/Policies.sys.mjs
         - browser/components/migration/ChromeMigrationUtils.sys.mjs
         - browser/components/migration/ChromeProfileMigrator.sys.mjs
+        - browser/components/preferences/config/privacy.mjs
+        - browser/components/preferences/config/permissions-data.mjs
         - browser/components/preferences/privacy.inc.xhtml
         - browser/components/preferences/privacy.js
         - browser/components/resistfingerprinting/test/mochitest/test_bug1354633_media_error.html
@@ -56,7 +63,8 @@ avoid-blacklist-and-whitelist:
         - browser/components/tabbrowser/test/browser/tabs/browser_new_file_whitelisted_http_tab.js
         - browser/components/tabbrowser/test/browser/tabs/browser_tab_drag_drop_perwindow.js
         - browser/components/urlbar/tests/browser/browser_searchSingleWordNotification.js
-        - browser/components/urlbar/tests/browser/browser_UrlbarInput_trimURLs.js
+        - browser/components/urlbar/tests/browser/browser_trust_panel.js
+        - browser/components/urlbar/tests/browser-UrlbarInput/browser_trimURLs.js
         - browser/components/urlbar/tests/unit/test_providerHeuristicFallback.js
         - browser/components/urlbar/tests/unit/test_search_suggestions.js
         - browser/components/urlbar/tests/unit/test_tokenizer.js
@@ -77,8 +85,8 @@ avoid-blacklist-and-whitelist:
         - devtools/client/debugger/test/mochitest/examples/ember/quickstart/dist/assets/vendor.js
         - devtools/client/debugger/test/mochitest/examples/react/build/main.js
         - devtools/client/debugger/test/mochitest/examples/react/build/service-worker.js
-        - devtools/client/inspector/markup/test/lib_babel_6.21.0_min.js
-        - devtools/client/inspector/markup/test/lib_react_dom_15.4.1.js
+        - devtools/client/inspector/markup/test/events/lib_babel_6.21.0_min.js
+        - devtools/client/inspector/markup/test/events/lib_react_dom_15.4.1.js
         - docshell/base/nsDocShell.cpp
         - docshell/base/URIFixup.sys.mjs
         - docshell/test/unit/test_URIFixup_info.js
@@ -97,7 +105,6 @@ avoid-blacklist-and-whitelist:
         - dom/bindings/RemoteObjectProxy.cpp
         - dom/events/EventStateManager.cpp
         - dom/events/KeyboardEvent.cpp
-        - dom/html/MediaError.cpp
         - dom/indexedDB/ActorsParent.cpp
         - dom/ipc/ContentParent.cpp
         - dom/ipc/URLClassifierParent.cpp
@@ -111,6 +118,7 @@ avoid-blacklist-and-whitelist:
         - dom/media/autoplay/test/mochitest/file_autoplay_policy_key_blacklist.html
         - dom/media/autoplay/test/mochitest/test_autoplay_policy_key_blacklist.html
         - dom/media/autoplay/test/mochitest/test_autoplay_policy_permission.html
+        - dom/media/mediaelement/MediaError.cpp
         - dom/media/webm/WebMDecoder.cpp
         - dom/media/webrtc/transport/stun_socket_filter.cpp
         - dom/media/webrtc/transport/test/ice_unittest.cpp
@@ -153,7 +161,6 @@ avoid-blacklist-and-whitelist:
         - layout/tools/reftest/selftest/conftest.py
         - mobile/android/android-components/docs/changelog.md
         - mobile/android/app/geckoview-prefs.js
-        - mobile/android/fenix/app/src/main/java/org/mozilla/fenix/ext/Bitmap.kt
         - mobile/android/fenix/app/src/main/java/org/mozilla/fenix/perf/StrictModeManager.kt
         - mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/preferences/downloadlanguages/DownloadLanguagesFeature.kt
         - mobile/android/fenix/app/src/test/java/org/mozilla/fenix/translations/preferences/downloadlanguages/DownloadLanguagesFeatureTest.kt
@@ -270,14 +277,14 @@ avoid-blacklist-and-whitelist:
         - toolkit/mozapps/extensions/test/xpcshell/rs-blocklist/test_gfxBlocklist_prefs.js
         - toolkit/mozapps/extensions/test/xpcshell/test_permissions.js
         - toolkit/mozapps/extensions/test/xpcshell/test_permissions_prefs.js
-        - toolkit/mozapps/extensions/test/xpinstall/browser_bug645699.js
-        - toolkit/mozapps/extensions/test/xpinstall/browser_doorhanger_installs.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile3.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4_postDownload.js
         - toolkit/mozapps/extensions/test/xpinstall/head.js
         - tools/fuzzing/messagemanager/MessageManagerFuzzer.cpp
         - tools/fuzzing/messagemanager/MessageManagerFuzzer.h
+        - tools/lint/mozcheck/src/batch.rs
+        - tools/lint/mozcheck/src/rejected_words.rs
         - tools/lint/rejected-words.yml
         - widget/android/GfxInfo.cpp
         - widget/GfxInfoBase.cpp
@@ -301,11 +308,17 @@ avoid-gobbledygook:
     description: "American English colloquialism. Use 'nonsense' instead."
     level: error
     include: ['.']
-    type: regex
-    payload: \b(gobbledy)?-?gook
-    ignore-case: true
+    type: external
+    payload: mozcheck:lint
+    check: rejected-words
+    check-config:
+        regex-pattern: \b(gobbledy)?-?gook
+        ignore-case: true
+    support-files:
+        - 'tools/lint/mozcheck/**'
     exclude:
         - extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/orig/en_US-custom.dic
         - extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/utf8/en-US-utf8.dic
         - extensions/spellcheck/locales/en-US/hunspell/en-US.dic
+        - taskcluster/test/params
         - tools/lint/rejected-words.yml

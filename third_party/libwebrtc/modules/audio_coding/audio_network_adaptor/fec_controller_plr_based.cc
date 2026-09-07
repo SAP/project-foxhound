@@ -10,9 +10,14 @@
 
 #include "modules/audio_coding/audio_network_adaptor/fec_controller_plr_based.h"
 
-#include <string>
+#include <memory>
+#include <optional>
 #include <utility>
 
+#include "api/environment/environment.h"
+#include "common_audio/smoothing_filter.h"
+#include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor_config.h"
+#include "modules/audio_coding/audio_network_adaptor/util/threshold_curve.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -28,16 +33,20 @@ FecControllerPlrBased::Config::Config(
       time_constant_ms(time_constant_ms) {}
 
 FecControllerPlrBased::FecControllerPlrBased(
+    const Environment& env,
     const Config& config,
     std::unique_ptr<SmoothingFilter> smoothing_filter)
-    : config_(config),
+    : env_(env),
+      config_(config),
       fec_enabled_(config.initial_fec_enabled),
       packet_loss_smoother_(std::move(smoothing_filter)) {
   RTC_DCHECK(config_.fec_disabling_threshold <= config_.fec_enabling_threshold);
 }
 
-FecControllerPlrBased::FecControllerPlrBased(const Config& config)
+FecControllerPlrBased::FecControllerPlrBased(const Environment& env,
+                                             const Config& config)
     : FecControllerPlrBased(
+          env,
           config,
           std::make_unique<SmoothingFilterImpl>(config.time_constant_ms)) {}
 
@@ -49,7 +58,8 @@ void FecControllerPlrBased::UpdateNetworkMetrics(
     uplink_bandwidth_bps_ = network_metrics.uplink_bandwidth_bps;
   if (network_metrics.uplink_packet_loss_fraction) {
     packet_loss_smoother_->AddSample(
-        *network_metrics.uplink_packet_loss_fraction);
+        *network_metrics.uplink_packet_loss_fraction,
+        env_.clock().CurrentTime());
   }
 }
 
@@ -57,7 +67,8 @@ void FecControllerPlrBased::MakeDecision(AudioEncoderRuntimeConfig* config) {
   RTC_DCHECK(!config->enable_fec);
   RTC_DCHECK(!config->uplink_packet_loss_fraction);
 
-  const auto& packet_loss = packet_loss_smoother_->GetAverage();
+  const auto& packet_loss =
+      packet_loss_smoother_->GetAverage(env_.clock().CurrentTime());
 
   fec_enabled_ = fec_enabled_ ? !FecDisablingDecision(packet_loss)
                               : FecEnablingDecision(packet_loss);

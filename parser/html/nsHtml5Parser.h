@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,13 +22,25 @@
 #include "nsHtml5StreamListener.h"
 #include "nsCharsetSource.h"
 
-class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
+class nsHtml5Parser final : public nsIParser,
+                            public nsSupportsWeakReference,
+                            public nsIStreamListener {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsHtml5Parser, nsIParser)
 
   nsHtml5Parser();
+
+  // about:blank-only
+  NS_IMETHOD OnStartRequest(nsIRequest* aRequest) override;
+
+  // about:blank-only and exists only for interface compat.
+  NS_IMETHOD OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStream,
+                             uint64_t aSourceOffset, uint32_t aLength) override;
+
+  // about:blank-only and exists only for interface compat.
+  NS_IMETHOD OnStopRequest(nsIRequest* aRequest, nsresult aStatus) override;
 
   /* Start nsIParser */
   /**
@@ -177,6 +188,12 @@ class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
    */
   virtual bool IsScriptCreated() override;
 
+  /**
+   * True iff this is an about:blank-mode HTML5 parser
+   * (i.e. a parser for non-initial about:blank).
+   */
+  virtual bool IsAboutBlankMode() override;
+
   /* End nsIParser  */
 
   // Not from an external interface
@@ -235,6 +252,12 @@ class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
   // State variables
 
   /**
+   * This parser is parsing (non-initial) about:blank for viewing (not View
+   * Source or data)
+   */
+  bool mAboutBlankMode;
+
+  /**
    * Whether the last character tokenized was a carriage return (for CRLF)
    */
   bool mLastWasCR;
@@ -261,6 +284,11 @@ class nsHtml5Parser final : public nsIParser, public nsSupportsWeakReference {
    * matching DecrementScriptNestingLevel.
    */
   int32_t mScriptNestingLevel;
+
+  /**
+   * True if Terminate() has been called.
+   */
+  bool mTerminationStarted;
 
   /**
    * True if document.close() has been called.

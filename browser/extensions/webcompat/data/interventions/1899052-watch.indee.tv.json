@@ -1,0 +1,15 @@
+{
+  "label": "watch.indee.tv",
+  "bugs": {
+    "1899052": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://watch.indee.tv/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

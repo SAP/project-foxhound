@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +29,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   proxyService: [
     "@mozilla.org/network/protocol-proxy-service;1",
-    "nsIProtocolProxyService",
+    Ci.nsIProtocolProxyService,
   ],
 });
 
@@ -146,7 +144,6 @@ export class ContentPage {
       Ci.nsIWebNavigation
     );
 
-    chromeShell.createAboutBlankDocumentViewer(system, system);
     this.windowlessBrowser.browsingContext.useGlobalHistory = false;
     let loadURIOptions = {
       triggeringPrincipal: system,
@@ -163,7 +160,7 @@ export class ContentPage {
 
     let chromeDoc = await promiseDocumentLoaded(chromeShell.document);
 
-    let { SpecialPowers } = chromeDoc.ownerGlobal;
+    let { SpecialPowers } = chromeDoc.documentGlobal;
     SpecialPowers.xpcshellScope = XPCShellContentUtils.currentScope;
     SpecialPowers.setAsDefaultAssertHandler();
 
@@ -222,7 +219,7 @@ export class ContentPage {
   }
 
   get SpecialPowers() {
-    return this.browser.ownerGlobal.SpecialPowers;
+    return this.browser.documentGlobal.SpecialPowers;
   }
 
   loadFrameScript(func) {
@@ -244,10 +241,15 @@ export class ContentPage {
   async loadURL(url, redirectUrl = undefined) {
     await this.browserReady;
 
+    let browserLoadedPromise = promiseBrowserLoaded(
+      this.browser,
+      url,
+      redirectUrl
+    );
     this.browser.fixupAndLoadURIString(url, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
-    return promiseBrowserLoaded(this.browser, url, redirectUrl);
+    return browserLoadedPromise;
   }
 
   async fetch(...args) {
@@ -259,6 +261,16 @@ export class ContentPage {
 
   spawn(params, task) {
     return this.SpecialPowers.spawn(this.browser, params, task);
+  }
+
+  async reload(options = {}) {
+    await this.browserReady;
+
+    const flags = options.bypassCache
+      ? Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE
+      : Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
+    this.browser.reloadWithFlags(flags);
+    return promiseBrowserLoaded(this.browser, this.browser.currentURI.spec);
   }
 
   // Get a SpecialPowersForProcess instance associated with the content process

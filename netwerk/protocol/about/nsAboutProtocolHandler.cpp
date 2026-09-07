@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "base/basictypes.h"
-#include "mozilla/ArrayUtils.h"
 
 #include "nsAboutProtocolHandler.h"
 #include "nsIURI.h"
@@ -21,7 +19,6 @@
 #include "nsIChannel.h"
 #include "nsIScriptError.h"
 #include "nsIClassInfoImpl.h"
-#include "DefaultURI.h"
 
 #include "mozilla/ipc/URIUtils.h"
 
@@ -29,28 +26,6 @@ namespace mozilla {
 namespace net {
 
 static NS_DEFINE_CID(kNestedAboutURICID, NS_NESTEDABOUTURI_CID);
-
-static bool IsSafeToLinkForUntrustedContent(nsIURI* aURI) {
-  nsAutoCString path;
-  aURI->GetPathQueryRef(path);
-
-  int32_t f = path.FindChar('#');
-  if (f >= 0) {
-    path.SetLength(f);
-  }
-
-  f = path.FindChar('?');
-  if (f >= 0) {
-    path.SetLength(f);
-  }
-
-  ToLowerCase(path);
-
-  // The about modules for these URL types have the
-  // URI_SAFE_FOR_UNTRUSTED_CONTENT and MAKE_LINKABLE flags set.
-  return path.EqualsLiteral("blank") || path.EqualsLiteral("logo") ||
-         path.EqualsLiteral("srcdoc");
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -105,46 +80,34 @@ nsresult nsAboutProtocolHandler::CreateNewURI(const nsACString& aSpec,
                                               nsIURI* aBaseURI,
                                               nsIURI** aResult) {
   *aResult = nullptr;
-  nsresult rv;
 
   // Use a simple URI to parse out some stuff first
   nsCOMPtr<nsIURI> url;
-  rv = NS_MutateURI(new nsSimpleURI::Mutator()).SetSpec(aSpec).Finalize(url);
+  MOZ_TRY(
+      NS_MutateURI(new nsSimpleURI::Mutator()).SetSpec(aSpec).Finalize(url));
 
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsAutoCString name;
+  MOZ_TRY(NS_GetAboutModuleName(url, name));
 
-  if (IsSafeToLinkForUntrustedContent(url)) {
+  // The about modules for these URL types have the
+  // URI_SAFE_FOR_UNTRUSTED_CONTENT and MAKE_LINKABLE flags set.
+  if (name.EqualsLiteral("blank") || name.EqualsLiteral("srcdoc")) {
     // We need to indicate that this baby is safe.  Use an inner URI that
     // no one but the security manager will see.  Make sure to preserve our
     // path, in case someone decides to hardcode checks for particular
     // about: URIs somewhere.
     nsAutoCString spec;
-    rv = url->GetPathQueryRef(spec);
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_TRY(url->GetPathQueryRef(spec));
 
     spec.InsertLiteral("moz-safe-about:", 0);
 
     nsCOMPtr<nsIURI> inner;
-    rv = NS_NewURI(getter_AddRefs(inner), spec);
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_TRY(NS_NewURI(getter_AddRefs(inner), spec));
 
-    rv = NS_MutateURI(new nsNestedAboutURI::Mutator())
-             .Apply(&nsINestedAboutURIMutator::InitWithBase, inner, aBaseURI)
-             .SetSpec(aSpec)
-             .Finalize(url);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  // use DefaultURI to check for validity when we have possible hostnames
-  // since nsSimpleURI doesn't know about hostnames
-  auto pos = aSpec.Find("about:/");
-  if (pos != kNotFound) {
-    rv = NS_MutateURI(new mozilla::net::DefaultURI::Mutator())
-             .SetSpec(aSpec)
-             .Finalize(url);
-    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_TRY(NS_MutateURI(new nsNestedAboutURI::Mutator())
+                .Apply(&nsINestedAboutURIMutator::InitWithBase, inner, aBaseURI)
+                .SetSpec(aSpec)
+                .Finalize(url));
   }
 
   url.swap(*aResult);
@@ -223,7 +186,7 @@ nsAboutProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
     nsContentUtils::ReportToConsole(
         nsIScriptError::warningFlag, "Security by Default"_ns,
         nullptr,  // aDocument
-        nsContentUtils::eNECKO_PROPERTIES, "APIDeprecationWarning", params);
+        PropertiesFile::NECKO_PROPERTIES, "APIDeprecationWarning", params);
     (*result)->SetLoadInfo(aLoadInfo);
   }
 
@@ -354,8 +317,7 @@ nsNestedAboutURI::Write(nsIObjectOutputStream* aStream) {
   return NS_OK;
 }
 
-NS_IMETHODIMP_(void)
-nsNestedAboutURI::Serialize(mozilla::ipc::URIParams& aParams) {
+void nsNestedAboutURI::Serialize(mozilla::ipc::URIParams& aParams) {
   using namespace mozilla::ipc;
 
   NestedAboutURIParams params;

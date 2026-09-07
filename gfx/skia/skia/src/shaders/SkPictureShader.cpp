@@ -38,7 +38,7 @@ class SkDiscardableMemory;
 
 sk_sp<SkShader> SkPicture::makeShader(SkTileMode tmx, SkTileMode tmy, SkFilterMode filter,
                                       const SkMatrix* localMatrix, const SkRect* tile) const {
-    if (localMatrix && !localMatrix->invert(nullptr)) {
+    if (localMatrix && !localMatrix->invert()) {
         return nullptr;
     }
     return SkPictureShader::Make(sk_ref_sp(this), tmx, tmy, filter, localMatrix, tile);
@@ -235,7 +235,8 @@ SkPictureShader::CachedImageInfo SkPictureShader::CachedImageInfo::Make(
 
     return {true,
             tileScale,
-            SkMatrix::RectToRect(bounds, SkRect::MakeIWH(tileSize.width(), tileSize.height())),
+            SkMatrix::RectToRectOrIdentity(bounds,
+                                           SkRect::MakeIWH(tileSize.width(), tileSize.height())),
             SkImageInfo::Make(tileSize, imgCT, kPremul_SkAlphaType, imgCS),
             props};
 }
@@ -245,14 +246,16 @@ sk_sp<SkImage> SkPictureShader::CachedImageInfo::makeImage(sk_sp<SkSurface> surf
     if (!surf) {
         return nullptr;
     }
+
     auto canvas = surf->getCanvas();
     canvas->concat(matrixForDraw);
     canvas->drawPicture(pict);
-    return surf->makeImageSnapshot();
+
+    return surf->makeTemporaryImage();
 }
 
-// Returns a cached image shader, which wraps a single picture tile at the given
-// CTM/local matrix.  Also adjusts the local matrix for tile scaling.
+// Returns a cached image shader, which wraps a single picture tile at the given CTM/local matrix.
+// Also adjusts the local matrix for tile scaling.
 sk_sp<SkShader> SkPictureShader::rasterShader(const SkMatrix& totalM,
                                               SkColorType dstColorType,
                                               SkColorSpace* dstColorSpace,

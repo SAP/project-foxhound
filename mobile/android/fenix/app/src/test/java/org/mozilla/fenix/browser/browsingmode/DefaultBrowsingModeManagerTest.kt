@@ -9,6 +9,7 @@ import io.mockk.MockKAnnotations
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.just
 import io.mockk.verify
 import org.junit.Assert.assertEquals
@@ -26,7 +27,7 @@ class DefaultBrowsingModeManagerTest {
 
     @MockK lateinit var settings: Settings
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     lateinit var onModeChange: (BrowsingMode) -> Unit
 
     @get:Rule

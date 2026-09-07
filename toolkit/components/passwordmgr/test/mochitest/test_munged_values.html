@@ -13,8 +13,8 @@
 const DEFAULT_ORIGIN = window.location.origin;
 
 function removeAllUserFacingLoginsInParent() {
-  runInParent(function removeAllUserFacingLogins() {
-    Services.logins.removeAllUserFacingLogins();
+  runInParent(async function removeAllUserFacingLogins() {
+    await Services.logins.removeAllUserFacingLoginsAsync();
   });
 }
 
@@ -31,7 +31,7 @@ async function addSingleLogin() {
 /**
  *  For any test including the character "!", generate a version of that test for every known munge
  *  character.
- **/
+ */
  function generateTestCases(test) {
   const MUNGE_CHARS = ["*", ".", "•"];
 

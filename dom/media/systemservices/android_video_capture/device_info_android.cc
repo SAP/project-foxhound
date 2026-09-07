@@ -10,15 +10,13 @@
 
 #include "device_info_android.h"
 
-#include <algorithm>
-#include <string>
 #include <sstream>
+#include <string>
 #include <vector>
 
-#include "rtc_base/logging.h"
 #include "modules/utility/include/helpers_android.h"
-
 #include "mozilla/jni/Utils.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 

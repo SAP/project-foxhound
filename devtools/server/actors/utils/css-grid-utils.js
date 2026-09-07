@@ -7,7 +7,7 @@
 /**
  * Returns the grid fragment array with all the grid fragment data stringifiable.
  *
- * @param  {Object} fragments
+ * @param  {object} fragments
  *         Grid fragment object.
  * @return {Array} representation with the grid fragment data stringifiable.
  */

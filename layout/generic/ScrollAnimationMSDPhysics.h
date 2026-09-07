@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define mozilla_layout_ScrollAnimationMSDPhysics_h_
 
 #include "ScrollAnimationPhysics.h"
+#include "mozilla/layers/APZPublicUtils.h"
 #include "mozilla/layers/AxisPhysicsMSDModel.h"
 
 namespace mozilla {
@@ -16,9 +15,12 @@ namespace mozilla {
 // adapts the animation duration based on the scrolling rate.
 class ScrollAnimationMSDPhysics final : public ScrollAnimationPhysics {
  public:
-  typedef mozilla::layers::AxisPhysicsMSDModel AxisPhysicsMSDModel;
+  using AxisPhysicsMSDModel = mozilla::layers::AxisPhysicsMSDModel;
+  using ScrollAnimationKind = mozilla::layers::apz::ScrollAnimationKind;
 
-  explicit ScrollAnimationMSDPhysics(const nsPoint& aStartPos);
+  explicit ScrollAnimationMSDPhysics(ScrollAnimationKind aAnimationKind,
+                                     const nsPoint& aStartPos,
+                                     nscoord aSmallestVisibleIncrement);
 
   void Update(const TimeStamp& aTime, const nsPoint& aDestination,
               const nsSize& aCurrentVelocity) override;
@@ -32,10 +34,7 @@ class ScrollAnimationMSDPhysics final : public ScrollAnimationPhysics {
   // units, relative to the scroll frame.
   nsPoint PositionAt(const TimeStamp& aTime) override;
 
-  bool IsFinished(const TimeStamp& aTime) override {
-    SimulateUntil(aTime);
-    return mModelX.IsFinished(1) && mModelY.IsFinished(1);
-  }
+  bool IsFinished(const TimeStamp& aTime) override;
 
  protected:
   // A wrapper around AxisPhysicsMSDModel which takes additional steps to avoid
@@ -50,7 +49,11 @@ class ScrollAnimationMSDPhysics final : public ScrollAnimationPhysics {
   };
 
   double ComputeSpringConstant(const TimeStamp& aTime);
+  double GetDampingRatio() const;
   void SimulateUntil(const TimeStamp& aTime);
+
+  ScrollAnimationKind mAnimationKind;
+  nscoord mSmallestVisibleIncrement;
 
   TimeStamp mPreviousEventTime;
   TimeDuration mPreviousDelta;

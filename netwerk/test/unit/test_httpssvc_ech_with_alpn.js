@@ -26,6 +26,10 @@ add_setup(async function setup() {
   Services.prefs.setBoolPref("network.dns.http3_echconfig.enabled", false);
   Services.prefs.setIntPref("network.http.speculative-parallel-limit", 0);
   Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRONLY);
+  // The hosts here only have IPv4. Disable IPv6 so we don't issue an AAAA
+  // lookup, which would open an extra DoH connection and skew the handshake
+  // telemetry checks below.
+  Services.prefs.setBoolPref("network.dns.disableIPv6", true);
 
   // Set the server to always select http/1.1
   Services.env.set("MOZ_TLS_ECH_ALPN_FLAG", 1);
@@ -48,6 +52,7 @@ registerCleanupFunction(async () => {
     "network.dns.echconfig.fallback_to_origin_when_all_failed"
   );
   Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
+  Services.prefs.clearUserPref("network.dns.disableIPv6");
   Services.prefs.clearUserPref("network.dns.port_prefixed_qname_https_rr");
   Services.env.set("MOZ_TLS_ECH_ALPN_FLAG", "");
   if (trrServer) {

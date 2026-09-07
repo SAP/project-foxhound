@@ -1,4 +1,5 @@
 # libpref
+
 libpref is a generic key/value store that is used to implement *prefs*, a term
 that encompasses a variety of things.
 
@@ -21,6 +22,7 @@ The C++ API is in the `Preferences` class. The XPIDL API is in the
 ## High-level design
 
 ### Keys
+
 Keys (a.k.a. *pref names*) are 8-bit strings, and ASCII in practice. The
 convention is to use a dotted segmented form, e.g. `foo.bar.baz`, but the
 segments have no built-in meaning.
@@ -39,6 +41,7 @@ Some prefs only make sense when considered in combination with other prefs.
 Many pref names are known at compile time, but some are computed at runtime.
 
 ### Basic values
+
 The basic types of pref values are bools, 32-bit ints, and 8-bit C strings.
 
 Strings are used to encode many types of data: identifiers, alphanumeric IDs,
@@ -72,6 +75,7 @@ Prefs can be locked. This prevents them from being given a user value, or
 hides the existing user value if there is one.
 
 ### Complex values
+
 There is API support for some complex values.
 
 `nsIFile` objects are handled by storing the filename as a string, similar to
@@ -87,6 +91,7 @@ When set, the given value just overwrites the user value, like a string pref.
 `nsIRelativeFilePref` objects are only used in comm-central.
 
 ### Pref Branches
+
 XPIDL-based access to prefs is via `nsIPrefBranch`/`nsPrefBranch`, which
 lets you specify a branch of the pref tree (e.g. `font.`) and pref names work
 relative to that point.
@@ -95,6 +100,7 @@ This API can be used from C++, but for C++ code there is also direct access
 through the `Preferences` class, which uses absolute pref names.
 
 ### Threads
+
 For the most part, all the basic API functions only work on the main thread.
 However, there are two exceptions to this.
 
@@ -107,6 +113,7 @@ The broad exception is that static prefs can have a cached copy of a pref value
 that can be accessed from other threads. See below.
 
 ### Notifications
+
 There is a notification API for being told when a pref's value changes. C++
 code can register a callback function and JS code can register an observer (via
 `nsIObserver`, which requires XPCOM). In both cases, the registered entity
@@ -117,6 +124,7 @@ can be observed by adding a `font.` prefix-matching observer.
 See also the section on static prefs below.
 
 ### Static prefs
+
 There is a special kind of pref called a static pref. Static prefs are defined
 in `StaticPrefList.yaml`. See that file for more documentation.
 
@@ -128,12 +136,12 @@ such as `firefox.js`.
 
 Each static pref has a *mirror* kind.
 
-* `always`: A C++ *mirror variable* is associated with the pref. The variable
+- `always`: A C++ *mirror variable* is associated with the pref. The variable
   is always kept in sync with the pref value. This kind is common.
-* `once`: A C++ mirror variable is associated with the pref. The variable is
+- `once`: A C++ mirror variable is associated with the pref. The variable is
   synced once with the pref's value at startup, and then does not change. This
   kind is less common, and mostly used for graphics prefs.
-* `never`: No C++ mirror variable is associated with the pref. This is much
+- `never`: No C++ mirror variable is associated with the pref. This is much
   like a normal pref.
 
 An `always` or `once` static pref can only be used for prefs with
@@ -163,22 +171,25 @@ the deletion. The cleanest solution is probably to disallow static prefs from
 being deleted.
 
 ### Sanitized Prefs
+
 We restrict certain prefs from entering web content subprocesses. In these
 processes, a preference may be marked as 'Sanitized' to indicate that it may
 or may not have a user value, but that value is not present in this process.
 In the parent process no pref is marked as Sanitized.
 
 Pref Sanitization is used for two purposes:
+
  1. To protect private user data that may be stored in preferences from a
     Spectre adversary.
  2. To reduce IPC use and thread wake-ups for commonly modified preferences.
 
 A pref is sanitized from entering the web content process if it matches a
-denylist _or_ it is a dynamically-named string preference (that is not
+denylist *or* it is a dynamically-named string preference (that is not
 exempted via an allowlist), See `ShouldSanitizePreference` in
 `Preferences.cpp`.
 
 ### Loading and Saving
+
 Default pref values are initialized from various pref data files. Notable ones
 include:
 
@@ -231,6 +242,7 @@ during and shortly after startup, which can result in 10s of MiBs of disk
 activity.
 
 ### about:support
+
 about:support contains an "Important Modified Preferences" table. It contains
 all prefs that (a) have had their value changed from the default, and (b) whose
 prefix match a allowlist in `Troubleshoot.sys.mjs`. The allowlist matching is to
@@ -240,6 +252,7 @@ avoid exposing pref values that might be privacy-sensitive.
 themselves. Having an attribute on a pref definition would be better.
 
 ### Sync
+
 On desktop, a pref is synced onto a device via Sync if there is an
 accompanying `services.sync.prefs.sync.`-prefixed pref. I.e. the pref
 `foo.bar` is synced if the pref `services.sync.prefs.sync.foo.bar` exists
@@ -267,6 +280,7 @@ vs. a notebook).
 Prefs are not synced on mobile.
 
 ### Rust
+
 Static prefs mirror variables can be accessed from Rust code via the
 `static_prefs::pref!` macro, for prefs which opt into this using
 `rust: true`. Other prefs currently cannot be accessed. Parts
@@ -274,6 +288,7 @@ of libpref's C++ API could be made accessible to Rust code fairly
 straightforwardly via C bindings, either hand-made or generated.
 
 ### Cost of a pref
+
 The cost of a single pref is low, but the cost of several thousand prefs is
 reasonably high, and includes the following.
 
@@ -292,10 +307,11 @@ reasonably high, and includes the following.
 - Sync cost, for synced prefs.
 
 ### Guidelines
+
 We have far too many prefs. This is at least partly because we have had, for a
 long time, a culture of "when in doubt, add a pref". Also, we don't have any
 system — either technical or cultural — for removing unnecessary prefs. See
-[bug 90440] (https://bugzilla.mozilla.org/show_bug.cgi?id=90440) for a pref
+[bug 90440] (<https://bugzilla.mozilla.org/show_bug.cgi?id=90440>) for a pref
 that was unused for 17 years.
 
 In short, prefs are Firefox's equivalent of the Windows Registry: a dumping
@@ -332,6 +348,7 @@ kinds. They arguably shouldn't prefs at all, and should be stored via some
 other mechanism.
 
 ## Low-level details
+
 The key idea is that the prefs database consists of two pieces. The first is an
 initial snapshot of pref values that is created when the first child process is
 created. This snapshot is stored in immutable, shared memory, and shared by all
@@ -349,6 +366,7 @@ Not all child processes need access to prefs. Those that do include web content
 processes, the GPU process, and the RDD process.
 
 ### Parent process startup
+
 The parent process initially has only a hash table.
 
 Early in startup, the parent process loads all of the static prefs and default
@@ -369,11 +387,12 @@ process. They exist so that all child processes can be given the same `once`
 values as the parent process.
 
 ### Child process startup (parent side)
+
 When the first child process is created, the parent process serializes most of
 its hash table into a shared, immutable snapshot. This snapshot is stored in a
 shared memory region managed by a `SharedPrefMap` instance.
 
-Sanitized preferences (matching _either_ the denylist of the dynamically named
+Sanitized preferences (matching *either* the denylist of the dynamically named
 heuristic) are not included in the shared memory region. After building the
 shared memory region, the parent process clears the hash table and then
 re-enters sanitized prefs into it. Besides the sanitized prefs, the hash table
@@ -390,6 +409,7 @@ The parent process passes two file descriptors to the child process, one for
 each region of memory. The snapshot is the same for all child processes.
 
 ### Child process startup (child side)
+
 Early in child process startup, the prefs service maps in and deserializes both
 shared memory regions sent from the parent process, but defers further
 initialization until requested by XPCOM initialization. Once that happens,
@@ -407,6 +427,7 @@ appropriate. `once` mirror variable are initialized from the special frozen
 pref values.
 
 ### Pref lookups
+
 Each prefs database has both a hash table and a shared memory snapshot. A given
 pref may have an entry in either or both of these. If a pref exists in both,
 the hash table entry takes precedence.
@@ -423,6 +444,7 @@ in the hash table is skipped. The combined result of the two iterations
 represents the full contents of the prefs database.
 
 ### Pref changes
+
 Pref changes can only be initiated in the parent process. All API methods that
 modify prefs fail noisily (with `NS_ERROR`) if run outside the parent
 process.
@@ -445,7 +467,7 @@ want to waste memory creating an unnecessary hash table entry.
 
 Content processes must be told about any visible pref value changes. (A change
 to a default value that is hidden by a user value is unimportant.) When this
-happens, `ContentParent` detects the change (via an observer).  Sanitized prefs
+happens, `ContentParent` detects the change (via an observer). Sanitized prefs
 do not produce an update; and for string prefs it also checks the value(s)
 don't exceed 4 KiB. If the checks pass, it sends an IPC message
 (`PreferenceUpdate`) to the child process, and the child process updates the
@@ -459,6 +481,7 @@ process and child processes. E.g. see
 [bug 1303051](https://bugzilla.mozilla.org/show_bug.cgi?id=1303051#c28).
 
 ### Pref deletions
+
 Pref deletion is more complicated. If a pref to be deleted exists only in the
 hash table of the parent process, its entry can simply be removed. If it exists
 in the shared snapshot, however, its hash table entry needs to be kept (or

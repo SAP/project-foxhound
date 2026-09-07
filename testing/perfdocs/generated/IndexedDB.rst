@@ -51,13 +51,13 @@ How to add more tests?
   * Under the ``[test_name]`` section, specify the test parameters as a sequence of ``--browsertime.key=value`` arguments as a value of ``browsertime_args =``
   * Under the ``[test_name]`` section, override any other values as needed
 
-* Add test as a subtest to run for Desktop ``taskcluster/kinds/test/browsertime-desktop.yml`` (maybe also for mobile)
+* Add test as a subtest to run for Desktop ``taskcluster/kinds/browsertime/desktop.yml`` (maybe also for mobile)
 * Add test documentation to ``testing/raptor/raptor/perfdocs/config.yml``
 
 * Generated files:
 
   * Run ``./mach lint --warnings --outgoing --fix`` to regenerate the documentation and task files, and warn about omissions
-  * Running ``./mach lint -l perfdocs --fix .`` may also be needed
+  * Running ``./mach perfdocs --generate`` may also be needed
 
 * Testing:
 

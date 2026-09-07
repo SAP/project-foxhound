@@ -51,27 +51,33 @@ httpServer.registerPathHandler(
   "/doc-html-preview.html",
   (request, response) => {
     response.setStatusLine(request.httpVersion, 200, "OK");
+    response.setHeader("Content-Type", "text/html", false);
     response.write(TEST_HTML);
   }
 );
 httpServer.registerPathHandler("/fetch-1.html", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html", false);
   response.write(FETCH_CONTENT_1);
 });
 httpServer.registerPathHandler("/fetch-2.html", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html", false);
   response.write(FETCH_CONTENT_2);
 });
 httpServer.registerPathHandler("/fetch-3.html", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html", false);
   response.write(FETCH_CONTENT_3);
 });
 httpServer.registerPathHandler("/fetch-4.html", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html", false);
   response.write(FETCH_CONTENT_4);
 });
 httpServer.registerPathHandler("/redirect.html", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html", false);
   response.write("Redirected!");
 });
 
@@ -87,7 +93,7 @@ add_task(async function task() {
   await pushPref("test.events.async.enabled", true);
 
   const hud = await openNewTabAndConsole(TEST_URL);
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await expandNetworkRequestAndWaitForHtmlView({
     hud,
@@ -162,7 +168,7 @@ async function expandNetworkRequestAndWaitForHtmlView({
   const rawToggleEl = node.querySelector(".devtools-checkbox-toggle");
   ok(!rawToggleEl.checked, "Raw toggle isn't checked by default");
   rawToggleEl.click();
-  await waitFor(() => node.querySelector(".CodeMirror"));
+  await waitFor(() => node.querySelector(".cm-editor"));
   ok(true, "The CodeMirror instance is rendered");
 }
 

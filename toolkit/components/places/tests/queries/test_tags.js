@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -435,8 +433,8 @@ const TEST_URI = uri("http://example.com/");
 /**
  * Adds a bookmark.
  *
- * @param aURI
- *        URI of the page (an nsIURI)
+ * @param {nsIURI} aURI
+ *   URI of the page.
  */
 function addBookmark(aURI) {
   return PlacesUtils.bookmarks.insert({
@@ -458,10 +456,10 @@ async function task_cleanDatabase() {
  * Sets up a query with the specified tags, converts it to a URI, and makes sure
  * the URI is what we expect it to be.
  *
- * @param aTags
- *        The query's tags will be set to those in this array
- * @param aTagsAreNot
- *        The query's tagsAreNot property will be set to this
+ * @param {string[]} aTags
+ *   The query's tags will be set to those in this array.
+ * @param {boolean} aTagsAreNot
+ *   The query's tagsAreNot property will be set to this.
  */
 function checkQueryURI(aTags, aTagsAreNot) {
   var pairs = (aTags || []).sort().map(t => QUERY_KEY_TAG + "=" + encodeTag(t));
@@ -480,10 +478,10 @@ function checkQueryURI(aTags, aTagsAreNot) {
  * A bookmark is added and tagged before the callback is called, and afterward
  * the database is cleared.
  *
- * @param aTags
- *        A bookmark will be added and tagged with this array of tags
- * @param aCallback
- *        A task function that will be called after the bookmark has been tagged
+ * @param {string[]} aTags
+ *   A bookmark will be added and tagged with this array of tags.
+ * @param {(uri: nsIURI) => Promise<void>} aCallback
+ *   A task function that will be called after the bookmark has been tagged.
  */
 async function task_doWithBookmark(aTags, aCallback) {
   await addBookmark(TEST_URI);
@@ -499,9 +497,10 @@ async function task_doWithBookmark(aTags, aCallback) {
  * but encodeURIComponent() comes close, only missing some punctuation.  This
  * function takes care of all of that.
  *
- * @param  aTag
- *         A tag name to encode
- * @return A UTF-8 escaped string suitable for inclusion in a query URI
+ * @param {string} aTag
+ *   A tag name to encode.
+ * @returns {string}
+ *   A UTF-8 escaped string suitable for inclusion in a query URI.
  */
 function encodeTag(aTag) {
   return encodeURIComponent(aTag).replace(
@@ -514,12 +513,10 @@ function encodeTag(aTag) {
  * Executes the given query and compares the results to the given URIs.
  * See queryResultsAre().
  *
- * @param aQuery
- *        An nsINavHistoryQuery
- * @param aQueryOpts
- *        An nsINavHistoryQueryOptions
- * @param aExpectedURIs
- *        Array of URIs (as strings) that aResultRoot should contain
+ * @param {nsINavHistoryQuery} aQuery
+ * @param {nsINavHistoryQueryOptions} aQueryOpts
+ * @param {string[]} aExpectedURIs
+ *   Array of URIs (as strings) that aResultRoot should contain.
  */
 function executeAndCheckQueryResults(aQuery, aQueryOpts, aExpectedURIs) {
   var root = PlacesUtils.history.executeQuery(aQuery, aQueryOpts).root;
@@ -533,11 +530,11 @@ function executeAndCheckQueryResults(aQuery, aQueryOpts, aExpectedURIs) {
  * set to aTags.  aTags may be null, in which case setTags() is not called at
  * all on the query.
  *
- * @param  aTags
- *         The query's tags will be set to those in this array
- * @param  aTagsAreNot
- *         The query's tagsAreNot property will be set to this
- * @return [query, queryOptions]
+ * @param {string[]} aTags
+ *   The query's tags will be set to those in this array.
+ * @param {boolean} aTagsAreNot
+ *   The query's tagsAreNot property will be set to this.
+ * @returns {[nsINavHistoryQuery, nsINavHistoryQueryOptions]}
  */
 function makeQuery(aTags, aTagsAreNot) {
   aTagsAreNot = !!aTagsAreNot;
@@ -576,10 +573,10 @@ function makeQuery(aTags, aTagsAreNot) {
 /**
  * Ensures that the URIs of aResultRoot are the same as those in aExpectedURIs.
  *
- * @param aResultRoot
- *        The nsINavHistoryContainerResultNode root of an nsINavHistoryResult
- * @param aExpectedURIs
- *        Array of URIs (as strings) that aResultRoot should contain
+ * @param {nsINavHistoryContainerResultNode} aResultRoot
+ *   The root of an nsINavHistoryResult.
+ * @param {string[]} aExpectedURIs
+ *   Array of URIs (as strings) that aResultRoot should contain.
  */
 function queryResultsAre(aResultRoot, aExpectedURIs) {
   var rootWasOpen = aResultRoot.containerOpen;
@@ -599,11 +596,10 @@ function queryResultsAre(aResultRoot, aExpectedURIs) {
 /**
  * Converts the given query into its query URI.
  *
- * @param  aQuery
- *         An nsINavHistoryQuery
- * @param  aQueryOpts
- *         An nsINavHistoryQueryOptions
- * @return The query's URI
+ * @param {nsINavHistoryQuery} aQuery
+ * @param {nsINavHistoryQueryOptions} aQueryOpts
+ * @returns {string}
+ *   The query's URI.
  */
 function queryURI(aQuery, aQueryOpts) {
   return PlacesUtils.history.queryToQueryString(aQuery, aQueryOpts);
@@ -612,6 +608,10 @@ function queryURI(aQuery, aQueryOpts) {
 /**
  * Ensures that the arrays contain the same elements and, optionally, in the
  * same order.
+ *
+ * @param {*[]} aArr1
+ * @param {*[]} aArr2
+ * @param {boolean} aIsOrdered
  */
 function setsAreEqual(aArr1, aArr2, aIsOrdered) {
   Assert.equal(aArr1.length, aArr2.length);

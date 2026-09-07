@@ -1,7 +1,9 @@
 [DEFAULT]
 head = "head_libmar.js"
 support-files = ["data/**"]
-run-if = ["!msix"] # Updates are disabled for MSIX builds
+run-if = [
+  "os != 'android' && !msix", # Updates are disabled for MSIX builds
+]
 
 ["test_create.js"]
 

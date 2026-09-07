@@ -8,7 +8,7 @@
 
 add_task(async function () {
   await openTabAndSetupStorage(
-    MAIN_DOMAIN_SECURED + "storage-empty-objectstores.html"
+    MAIN_URL_SECURED + "storage-empty-objectstores.html"
   );
 
   const contextMenu =
@@ -18,17 +18,13 @@ add_task(async function () {
   info("test state before delete");
   await checkState([
     [
-      ["indexedDB", "https://test1.example.org"],
+      ["indexedDB", MAIN_ORIGIN_SECURED],
       ["idb1 (default)", "idb2 (default)"],
     ],
   ]);
 
   info("do the delete");
-  const deletedDb = [
-    "indexedDB",
-    "https://test1.example.org",
-    "idb1 (default)",
-  ];
+  const deletedDb = ["indexedDB", MAIN_ORIGIN_SECURED, "idb1 (default)"];
 
   await selectTreeItem(deletedDb);
 
@@ -48,7 +44,5 @@ add_task(async function () {
   await eventWait;
 
   info("test state after delete");
-  await checkState([
-    [["indexedDB", "https://test1.example.org"], ["idb2 (default)"]],
-  ]);
+  await checkState([[["indexedDB", MAIN_ORIGIN_SECURED], ["idb2 (default)"]]]);
 });

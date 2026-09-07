@@ -8,7 +8,7 @@
 "use strict";
 
 const { NodeServer } = ChromeUtils.importESModule(
-  "resource://testing-common/httpd.sys.mjs"
+  "resource://testing-common/NodeServer.sys.mjs"
 );
 
 add_task(async function killOnEnd() {

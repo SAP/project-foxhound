@@ -107,8 +107,10 @@ tests.push({
 });
 
 function test() {
-  /** Test for Bug 589246 - Closed window state getting corrupted when closing
-      and reopening last browser window without exiting browser **/
+  /**
+   * Test for Bug 589246 - Closed window state getting corrupted when closing
+   * and reopening last browser window without exiting browser
+   */
   waitForExplicitFinish();
   // windows opening & closing, so extending the timeout
   requestLongerTimeout(2);

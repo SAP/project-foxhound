@@ -1,0 +1,15 @@
+{
+  "label": "hrm.online.comarch.pl",
+  "bugs": {
+    "1898960": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://hrm.online.comarch.pl/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

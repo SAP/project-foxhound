@@ -27,8 +27,11 @@ add_task(async function () {
     "content is really a net error page."
   );
 
-  const netErrorNode = await getNodeFront(".container", inspector);
-  ok(netErrorNode, "The inspector can get a node front from the neterror page");
+  const netErrorNode = await getNodeFront("body", inspector);
+  ok(
+    netErrorNode,
+    "The inspector can get a node front from the body of the neterror page"
+  );
 
   info("Navigate to a valid url");
   await navigateTo(TEST_URL_2);

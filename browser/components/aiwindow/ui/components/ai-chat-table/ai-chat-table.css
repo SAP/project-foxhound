@@ -1,0 +1,44 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.table-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.table-scroll-container {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.table-copy-button {
+  inset-block-start: var(--space-xsmall);
+  inset-inline-end: var(--space-xsmall);
+  opacity: 0;
+  position: absolute;
+  transition: var(--transition);
+
+  @media not (forced-colors) {
+    --button-icon-fill: light-dark(var(--color-gray-70), var(--color-white));
+    --button-padding: var(--space-xsmall);
+    --button-background-color-ghost-hover: light-dark(var(--color-violet-0), color-mix(in srgb, var(--color-violet-20) 24%, transparent));
+    --button-background-color-ghost-active: light-dark(var(--color-violet-10), color-mix(in srgb, var(--color-violet-0) 24%, transparent));
+
+    /* stylelint-disable-next-line media-query-no-invalid */
+    @media -moz-pref("browser.nova.enabled") {
+      --button-icon-fill: var(--smartwindow-icon-color-accent-primary-desaturated);
+    }
+  }
+}
+
+.table-wrapper:hover .table-copy-button,
+.table-copy-button:focus {
+  opacity: 1;
+}
+
+::slotted(table) {
+  border-collapse: collapse;
+  font-size: inherit;
+  width: 100%;
+}

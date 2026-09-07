@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 
 #include "FileSystemDatabaseManager.h"
 #include "FileSystemParentTypes.h"
-#include "mozilla/Result.h"
 #include "mozilla/dom/FileSystemDataManager.h"
 #include "mozilla/dom/FileSystemHelpers.h"
 #include "mozilla/dom/FileSystemLog.h"
@@ -124,6 +121,9 @@ void FileSystemAccessHandle::UnregisterControlActor(
 bool FileSystemAccessHandle::IsOpen() const { return !mClosed; }
 
 RefPtr<BoolPromise> FileSystemAccessHandle::BeginClose() {
+  if (mClosed) {
+    return BoolPromise::CreateAndResolve(true, __func__);
+  }
   MOZ_ASSERT(IsOpen());
 
   LOG(("Closing AccessHandle"));

@@ -16,7 +16,7 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 const { saveToDisk, alwaysAsk, handleInternally, useSystemDefault } =
   Ci.nsIHandlerInfo;
 const MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 async function testPdfFilePicker() {
   await BrowserTestUtils.withNewTab(

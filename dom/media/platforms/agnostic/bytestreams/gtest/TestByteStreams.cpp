@@ -1,17 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
-
-#include "gtest/gtest.h"
 
 #include "AnnexB.h"
 #include "BufferReader.h"
 #include "ByteWriter.h"
 #include "H264.h"
 #include "H265.h"
-#include "mozilla/Types.h"
+#include "gtest/gtest.h"
+#include "mozilla/EndianUtils.h"
 
 namespace mozilla {
 
@@ -111,6 +108,43 @@ static const uint8_t sHvccBytesBuffer[] = {
     0 /* rbsp */,
 };
 
+// Extend the shared fake HVCC extradata with a single PREFIX_SEI_NUT so tests
+// can exercise WMF-specific SEI filtering without relying on external media.
+static already_AddRefed<MediaByteBuffer> GetHvccExtraDataWithPrefixSEI(
+    uint8_t aPayloadType, size_t aPayloadSize) {
+  RefPtr<MediaByteBuffer> extradata = new MediaByteBuffer;
+  extradata->AppendElements(sHvccBytesBuffer, std::size(sHvccBytesBuffer));
+
+  auto rv = HVCCConfig::Parse(extradata);
+  EXPECT_TRUE(rv.isOk());
+  if (rv.isErr()) {
+    return nullptr;
+  }
+
+  const HVCCConfig hvcc = rv.unwrap();
+  nsTArray<H265NALU> nalus;
+  for (const auto& nalu : hvcc.mNALUs) {
+    nalus.AppendElement(nalu);
+  }
+
+  nsTArray<uint8_t> seiNalu;
+  seiNalu.AppendElement(0x4e);
+  seiNalu.AppendElement(0x01);
+  seiNalu.AppendElement(aPayloadType);
+
+  size_t payloadSize = aPayloadSize;
+  while (payloadSize >= 0xff) {
+    seiNalu.AppendElement(0xff);
+    payloadSize -= 0xff;
+  }
+  seiNalu.AppendElement(static_cast<uint8_t>(payloadSize));
+  seiNalu.AppendElements(aPayloadSize);
+  seiNalu.AppendElement(0x80);
+
+  nalus.AppendElement(H265NALU(seiNalu.Elements(), seiNalu.Length()));
+  return H265::CreateNewExtraData(hvcc, nalus);
+}
+
 // Create a HVCC sample, which contain fake data, in given size.
 static already_AddRefed<MediaRawData> GetHVCCSample(uint32_t aSampleSize) {
   if (aSampleSize < 4) {
@@ -206,7 +240,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
         << "AnnexB sample should be the same size as the AVCC sample -- the 4 "
            "byte NAL length data (AVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB)";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
 
@@ -223,7 +257,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
            "byte NAL length data (AVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB) and SPS data is not added as the frame is not a "
            "keyframe";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
 
@@ -237,7 +271,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
     EXPECT_GT(rawDataClone->Size(), rawData->Size())
         << "AnnexB sample should be larger than the AVCC sample because we've "
            "added SPS data";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
     // We could verify the SPS and PPS data we add, but we don't have great
     // tooling to do so. Consider doing so in future.
@@ -275,7 +309,7 @@ TEST(AnnexB, AVCCToAnnexBConversion)
     EXPECT_EQ(rawCryptoDataClone->mCrypto.mEncryptedSizes[0],
               rawCryptoData->mCrypto.mEncryptedSizes[0])
         << "Conversion should not affect encrypted sizes";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawCryptoDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawCryptoDataClone))
         << "The sample should be AnnexB following conversion";
   }
 }
@@ -293,7 +327,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
         << "AnnexB sample should be the same size as the HVCC sample -- the 4 "
            "byte NAL length data (HVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB)";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
   {
@@ -309,7 +343,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
            "byte NAL length data (HVCC) is replaced with 4 bytes of NAL "
            "separator (AnnexB) and SPS data is not added as the frame is not a "
            "keyframe";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
   }
   {
@@ -322,7 +356,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
     EXPECT_GT(rawDataClone->Size(), rawData->Size())
         << "AnnexB sample should be larger than the HVCC sample because we've "
            "added SPS data";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
         << "The sample should be AnnexB following conversion";
     // We could verify the SPS and PPS data we add, but we don't have great
     // tooling to do so. Consider doing so in future.
@@ -359,7 +393,7 @@ TEST(AnnexB, HVCCToAnnexBConversion)
     EXPECT_EQ(rawCryptoDataClone->mCrypto.mEncryptedSizes[0],
               rawCryptoData->mCrypto.mEncryptedSizes[0])
         << "Conversion should not affect encrypted sizes";
-    EXPECT_TRUE(AnnexB::IsAnnexB(rawCryptoDataClone))
+    EXPECT_TRUE(AnnexB::IsAnnexB(*rawCryptoDataClone))
         << "The sample should be AnnexB following conversion";
   }
 }
@@ -875,6 +909,39 @@ TEST(H264, CreateNewExtraData)
   EXPECT_TRUE(res.isErr());
 }
 
+TEST(H264, AnnexBExtractExtraDataForAVCC)
+{
+  // First create an AnnexB config
+  const uint8_t annexBBytesBuffer[]{// AnnexB delimiter
+                                    0x00, 0x00, 0x00, 0x01,
+                                    // SPS NAL unit
+                                    0x67, 0x64, 0x00, 0x1F,
+                                    // AnnexB delimiter
+                                    0x00, 0x00, 0x00, 0x01,
+                                    // PPS NAL unit
+                                    0x68, 0xCE};
+  auto annexBExtradata = MakeRefPtr<mozilla::MediaByteBuffer>();
+  annexBExtradata->AppendElements(annexBBytesBuffer,
+                                  std::size(annexBBytesBuffer));
+
+  // Extract the AVCC extradata from the AnnexB bytestream
+  auto avccExtradata = AnnexB::ExtractExtraDataForAVCC(*annexBExtradata);
+  ASSERT_TRUE(!!avccExtradata);
+
+  // Now parse that extradata to make sure it matches the original AnnexB
+  auto res = AVCCConfig::Parse(avccExtradata);
+  ASSERT_TRUE(res.isOk());
+  auto avcc = res.unwrap();
+  EXPECT_EQ(avcc.NumSPS(), 1u);
+  EXPECT_EQ(avcc.NumSPSExt(), 0u);
+  EXPECT_EQ(avcc.NumPPS(), 1u);
+  EXPECT_EQ(avcc.NALUSize(), 4);
+  EXPECT_EQ(avcc.mConfigurationVersion, 1u);
+  EXPECT_EQ(avcc.mAVCProfileIndication, 100u);
+  EXPECT_EQ(avcc.mProfileCompatibility, 0u);
+  EXPECT_EQ(avcc.mAVCLevelIndication, 31u);
+}
+
 TEST(H265, HVCCParsingSuccess)
 {
   {
@@ -1166,6 +1233,39 @@ TEST(H265, HVCCToAnnexB)
   EXPECT_EQ(pps.mNALU.Length(), 3u);
 }
 
+TEST(H265, HVCCToAnnexBExtraDataWithSmallPrefixSEI)
+{
+  RefPtr<MediaByteBuffer> extradata = GetHvccExtraDataWithPrefixSEI(137, 32);
+  RefPtr<MediaByteBuffer> annexBExtraData =
+      AnnexB::ConvertHVCCExtraDataToAnnexB(extradata);
+
+  const size_t delimiterBytesSize = 4;
+  // sHvccBytesBuffer has SPS (8 bytes) and PPS (3 bytes).
+  // 37 = 2 (NALU header) + 1 (payloadType) + 1 (payloadSize) + 32 (payload)
+  //      + 1 (RBSP stop bit)
+  const size_t expectedLength = (delimiterBytesSize + 8) +
+                                (delimiterBytesSize + 3) +
+                                (delimiterBytesSize + 37);
+  EXPECT_EQ(annexBExtraData->Length(), expectedLength);
+}
+
+TEST(H265, HVCCToAnnexBExtraDataSkipsUserDataUnregisteredPrefixSEIOnWindows)
+{
+  RefPtr<MediaByteBuffer> extradata = GetHvccExtraDataWithPrefixSEI(5, 32);
+  RefPtr<MediaByteBuffer> annexBExtraData =
+      AnnexB::ConvertHVCCExtraDataToAnnexB(extradata);
+
+  const size_t delimiterBytesSize = 4;
+  const size_t spsAndPpsLength =
+      (delimiterBytesSize + 8) + (delimiterBytesSize + 3);
+#ifdef MOZ_WMF
+  EXPECT_EQ(annexBExtraData->Length(), spsAndPpsLength);
+#else
+  EXPECT_EQ(annexBExtraData->Length(),
+            spsAndPpsLength + delimiterBytesSize + 37);
+#endif
+}
+
 TEST(H265, AnnexBToHVCC)
 {
   RefPtr<MediaRawData> rawData{GetHVCCSample(128)};
@@ -1173,7 +1273,7 @@ TEST(H265, AnnexBToHVCC)
   Result<Ok, nsresult> result =
       AnnexB::ConvertHVCCSampleToAnnexB(rawDataClone, /* aAddSps */ false);
   EXPECT_TRUE(result.isOk()) << "HVCC to AnnexB Conversion should succeed";
-  EXPECT_TRUE(AnnexB::IsAnnexB(rawDataClone))
+  EXPECT_TRUE(AnnexB::IsAnnexB(*rawDataClone))
       << "The sample should be AnnexB following conversion";
 
   auto rv = AnnexB::ConvertSampleToHVCC(rawDataClone);
@@ -1398,6 +1498,186 @@ TEST(H265, ColorPrimariesTest)
   EXPECT_TRUE(rv.isOk());
   auto sps = rv.unwrap();
   EXPECT_EQ(sps.ColorPrimaries(), 9 /* CP_BT2020 */);
+}
+
+static constexpr float kSEIPrimariesDivisor = 50000.0f;
+
+static void AppendU16BE(nsTArray<uint8_t>& aDest, uint16_t aValue) {
+  aDest.AppendElement(static_cast<uint8_t>(aValue >> 8));
+  aDest.AppendElement(static_cast<uint8_t>(aValue & 0xff));
+}
+
+static void AppendU32BE(nsTArray<uint8_t>& aDest, uint32_t aValue) {
+  aDest.AppendElement(static_cast<uint8_t>(aValue >> 24));
+  aDest.AppendElement(static_cast<uint8_t>((aValue >> 16) & 0xff));
+  aDest.AppendElement(static_cast<uint8_t>((aValue >> 8) & 0xff));
+  aDest.AppendElement(static_cast<uint8_t>(aValue & 0xff));
+}
+
+// Build a PREFIX_SEI_NUT NALU with SEI type 137 (mastering display) and/or
+// type 144 (CLL) payloads depending on the flags.
+// Values: primaries raw=50000 → 1.0f, luminance raw=10000 → 1.0f.
+static nsTArray<uint8_t> BuildSEINALU(bool aInclude137, bool aInclude144) {
+  nsTArray<uint8_t> nalu;
+  // 2-byte NALU header: nal_unit_type=39 (PREFIX_SEI_NUT), nuh_temporal_id=1
+  nalu.AppendElement(0x4E);  // (39 << 1) | 0
+  nalu.AppendElement(0x01);  // nuh_temporal_id_plus1=1
+
+  if (aInclude137) {
+    // SEI type 137 (mastering display colour volume), payload size 24
+    nalu.AppendElement(137);  // payloadType
+    nalu.AppendElement(24);   // payloadSize
+    // H.265 primary order: G[0], B[1], R[2] — values chosen as 50000 = 1.0f
+    AppendU16BE(nalu, 50000);     // G x
+    AppendU16BE(nalu, 25000);     // G y
+    AppendU16BE(nalu, 15000);     // B x
+    AppendU16BE(nalu, 7500);      // B y
+    AppendU16BE(nalu, 35000);     // R x
+    AppendU16BE(nalu, 17500);     // R y
+    AppendU16BE(nalu, 15635);     // white point x
+    AppendU16BE(nalu, 16450);     // white point y
+    AppendU32BE(nalu, 10000000);  // max luminance (10000000/10000 = 1000.0f)
+    AppendU32BE(nalu, 100);       // min luminance (100/10000 = 0.01f)
+  }
+
+  if (aInclude144) {
+    // SEI type 144 (content light level), payload size 4
+    nalu.AppendElement(144);  // payloadType
+    nalu.AppendElement(4);    // payloadSize
+    AppendU16BE(nalu, 1000);  // max CLL
+    AppendU16BE(nalu, 400);   // max FALL
+  }
+
+  // RBSP trailing bits
+  nalu.AppendElement(0x80);
+  return nalu;
+}
+
+TEST(H265, ParseSEIHDRMetadata_Type137Only)
+{
+  auto naluData = BuildSEINALU(true, false);
+  H265NALU nalu{naluData.Elements(), static_cast<uint32_t>(naluData.Length())};
+  auto result = H265::ParseSEIHDRMetadata(nalu);
+  ASSERT_TRUE(result.isSome());
+  const auto& hdr = result.value();
+
+  ASSERT_TRUE(hdr.mSmpte2086.isSome());
+  const auto& s = hdr.mSmpte2086.value();
+  // R primaries (raw G[0]=50000,25000 → Green; B[1]=15000,7500 → Blue;
+  //              R[2]=35000,17500 → Red — remapped per H.265 §D.3.4 Table D.2)
+  EXPECT_FLOAT_EQ(s.displayPrimaryRed.x, 35000.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.displayPrimaryRed.y, 17500.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.displayPrimaryGreen.x, 50000.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.displayPrimaryGreen.y, 25000.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.displayPrimaryBlue.x, 15000.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.displayPrimaryBlue.y, 7500.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.whitePoint.x, 15635.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.whitePoint.y, 16450.0f / kSEIPrimariesDivisor);
+  EXPECT_FLOAT_EQ(s.maxLuminance, 1000.0f);
+  EXPECT_FLOAT_EQ(s.minLuminance, 0.01f);
+  EXPECT_TRUE(hdr.mContentLightLevel.isNothing());
+}
+
+TEST(H265, ParseSEIHDRMetadata_Type144Only)
+{
+  auto naluData = BuildSEINALU(false, true);
+  H265NALU nalu{naluData.Elements(), static_cast<uint32_t>(naluData.Length())};
+  auto result = H265::ParseSEIHDRMetadata(nalu);
+  ASSERT_TRUE(result.isSome());
+  const auto& hdr = result.value();
+
+  EXPECT_TRUE(hdr.mSmpte2086.isNothing());
+  ASSERT_TRUE(hdr.mContentLightLevel.isSome());
+  EXPECT_EQ(hdr.mContentLightLevel->maxContentLightLevel, 1000u);
+  EXPECT_EQ(hdr.mContentLightLevel->maxFrameAverageLightLevel, 400u);
+}
+
+TEST(H265, ParseSEIHDRMetadata_Type137And144)
+{
+  auto naluData = BuildSEINALU(true, true);
+  H265NALU nalu{naluData.Elements(), static_cast<uint32_t>(naluData.Length())};
+  auto result = H265::ParseSEIHDRMetadata(nalu);
+  ASSERT_TRUE(result.isSome());
+  const auto& hdr = result.value();
+
+  EXPECT_TRUE(hdr.mSmpte2086.isSome());
+  EXPECT_TRUE(hdr.mContentLightLevel.isSome());
+}
+
+TEST(H265, ParseSEIHDRMetadata_NoHDRSEI)
+{
+  // A NALU with only user_data_unregistered (type 5) — no HDR SEI types
+  nsTArray<uint8_t> naluData;
+  naluData.AppendElement(0x4E);  // PREFIX_SEI_NUT header byte 1
+  naluData.AppendElement(0x01);  // header byte 2
+  naluData.AppendElement(5);     // payloadType = user_data_unregistered
+  naluData.AppendElement(2);     // payloadSize = 2
+  naluData.AppendElement(0xDE);
+  naluData.AppendElement(0xAD);
+  naluData.AppendElement(0x80);  // RBSP trailing bits
+
+  H265NALU nalu{naluData.Elements(), static_cast<uint32_t>(naluData.Length())};
+  auto result = H265::ParseSEIHDRMetadata(nalu);
+  EXPECT_TRUE(result.isNothing());
+}
+
+TEST(H265, ParseSEIHDRMetadata_WrongPayloadSize)
+{
+  // SEI type 137 with wrong payload size (not 24) — should be skipped.
+  nsTArray<uint8_t> naluData;
+  naluData.AppendElement(0x4E);
+  naluData.AppendElement(0x01);
+  naluData.AppendElement(137);  // payloadType = mastering display
+  naluData.AppendElement(5);    // wrong payloadSize (should be 24)
+  naluData.AppendElement(0x00);
+  naluData.AppendElement(0x01);
+  naluData.AppendElement(0x02);
+  naluData.AppendElement(0x03);
+  naluData.AppendElement(0x04);
+  naluData.AppendElement(0x80);  // RBSP trailing bits
+
+  H265NALU nalu{naluData.Elements(), static_cast<uint32_t>(naluData.Length())};
+  auto result = H265::ParseSEIHDRMetadata(nalu);
+  EXPECT_TRUE(result.isNothing());
+}
+
+TEST(H265, ParseSEIHDRMetadata_WrongCLLPayloadSize)
+{
+  // SEI type 144 with wrong payload size (not 4) — should be skipped.
+  nsTArray<uint8_t> naluData;
+  naluData.AppendElement(0x4E);
+  naluData.AppendElement(0x01);
+  naluData.AppendElement(144);  // payloadType = content light level
+  naluData.AppendElement(2);    // wrong payloadSize (should be 4)
+  naluData.AppendElement(0x03);
+  naluData.AppendElement(0xE8);
+  naluData.AppendElement(0x80);  // RBSP trailing bits
+
+  H265NALU nalu{naluData.Elements(), static_cast<uint32_t>(naluData.Length())};
+  auto result = H265::ParseSEIHDRMetadata(nalu);
+  EXPECT_TRUE(result.isNothing());
+}
+
+TEST(H265, CompareSPSLessConfigs)
+{
+  auto base = MakeRefPtr<MediaByteBuffer>();
+  base->AppendElements(sHvccBytesBuffer, std::size(sHvccBytesBuffer));
+  auto baseRv = HVCCConfig::Parse(base);
+  ASSERT_TRUE(baseRv.isOk());
+  const HVCCConfig hvcc = baseRv.unwrap();
+
+  RefPtr<MediaByteBuffer> extraData1 = H265::CreateNewExtraData(hvcc, {});
+  RefPtr<MediaByteBuffer> extraData2 = H265::CreateNewExtraData(hvcc, {});
+  ASSERT_NE(extraData1.get(), extraData2.get());
+
+  auto config1 = HVCCConfig::Parse(extraData1);
+  auto config2 = HVCCConfig::Parse(extraData2);
+  ASSERT_TRUE(config1.isOk());
+  ASSERT_TRUE(config2.isOk());
+  EXPECT_EQ(config1.unwrap().NumSPS(), 0u);
+  EXPECT_EQ(config2.unwrap().NumSPS(), 0u);
+
+  EXPECT_TRUE(H265::CompareExtraData(extraData1, extraData2));
 }
 
 }  // namespace mozilla

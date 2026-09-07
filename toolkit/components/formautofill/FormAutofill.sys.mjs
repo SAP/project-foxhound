@@ -218,10 +218,6 @@ export const FormAutofill = {
       prefix: logPrefix,
     });
   },
-
-  get isMLExperimentEnabled() {
-    return FormAutofill._isMLEnabled && FormAutofill._isMLExperimentEnabled;
-  },
 };
 
 // TODO: Bug 1747284. Use Region.home instead of reading "browser.serach.region"
@@ -328,27 +324,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   FormAutofill,
   "_isAutofillAddressesAvailableInExperiment",
   "extensions.formautofill.addresses.experiments.enabled"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  FormAutofill,
-  "_isMLEnabled",
-  "browser.ml.enable",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  FormAutofill,
-  "_isMLExperimentEnabled",
-  "extensions.formautofill.ml.experiment.enabled",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  FormAutofill,
-  "MLModelRevision",
-  "extensions.formautofill.ml.experiment.modelRevision",
-  null
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(

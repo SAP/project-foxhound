@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ConsoleInstance.h"
+
 #include "Console.h"
-#include "mozilla/dom/ConsoleBinding.h"
-#include "mozilla/Preferences.h"
 #include "ConsoleCommon.h"
 #include "ConsoleUtils.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/ConsoleBinding.h"
 #include "nsContentUtils.h"
 
 namespace mozilla::dom {
@@ -183,8 +182,8 @@ METHOD(GroupCollapsed, u"groupCollapsed")
 #undef METHOD
 
 void ConsoleInstance::GroupEnd(JSContext* aCx) {
-  const Sequence<JS::Value> data;
   RefPtr<Console> console(mConsole);
+  const Sequence<JS::Value> data;
   console->MethodInternal(aCx, Console::MethodGroupEnd, u"groupEnd"_ns, data);
 }
 
@@ -257,14 +256,15 @@ void ConsoleInstance::CountReset(JSContext* aCx, const nsAString& aLabel) {
 }
 
 void ConsoleInstance::Clear(JSContext* aCx) {
-  const Sequence<JS::Value> data;
   RefPtr<Console> console(mConsole);
+  const Sequence<JS::Value> data;
   console->MethodInternal(aCx, Console::MethodClear, u"clear"_ns, data);
 }
 
 bool ConsoleInstance::ShouldLog(ConsoleLogLevel aLevel) {
   return mConsole->mCurrentLogLevel <=
-         mConsole->WebIDLLogLevelToInteger(aLevel);
+             mConsole->WebIDLLogLevelToInteger(aLevel) ||
+         mConsole->ShouldLogToMozLog(aLevel);
 }
 
 void ConsoleInstance::ReportForServiceWorkerScope(const nsAString& aScope,

@@ -67,6 +67,8 @@ function get_video_decoding_suspend_promise(browser, reload) {
 function get_video_decoding_resume_promise(browser) {
   let suspend = false;
   let reload = false;
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   return ContentTask.spawn(
     browser,
     { suspend, reload },
@@ -110,7 +112,7 @@ add_task(async function resume_and_suspend_background_video_decoding() {
   info("- open new background tab -");
   let tab = BrowserTestUtils.addTab(window.gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  await BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   info("- before loading media, we shoudn't send the tab hover msg for tab -");
   await check_should_not_send_unselected_tab_hover_msg(browser);

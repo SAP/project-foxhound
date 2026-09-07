@@ -21,6 +21,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.DarkActionBar"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         tools:ignore="DataExtractionRules,UnusedAttribute"
         android:name=".GleanApplication"
         android:dataExtractionRules="@xml/data_extraction_rules">

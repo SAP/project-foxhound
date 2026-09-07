@@ -83,6 +83,7 @@ to put queries for layout or style information.
 ## Detecting and avoiding synchronous style flushes
 
 ### What are style flushes?
+
 When CSS is applied to a document (HTML or XUL, it doesn’t matter), the
 browser does calculations to figure out which CSS styles will apply to
 each element. This happens the first time the page loads and the CSS is
@@ -129,7 +130,6 @@ make this simpler.
 If you want to queue up some JavaScript to run after the next *natural*
 style and layout flush, try:
 
-
     // Suppose we want to get the computed "display" style of some node without
     // causing a style flush. We could do it this way:
     async function nodeIsDisplayNone(node) {
@@ -147,7 +147,6 @@ for a more advanced example of getting layout information, and then
 setting it safely, without causing flushes.
 
 bestpractices.html#detecting-and-avoiding-synchronous-reflow
-
 
 *promiseDocumentFlushed* is only available to privileged script, and
 should be called on the inner window of a top-level frame. Calling it on
@@ -251,7 +250,6 @@ it's a double-whammy.
 Here’s a simple example, cribbed from [this blog post by Paul
 Rouget](http://paulrouget.com/e/fxoshud):
 
-
     div1.style.margin = "200px";        // Line 1
     var height1 = div1.clientHeight;    // Line 2
     div2.classList.add("foobar");       // Line 3
@@ -343,7 +341,6 @@ has not been written to, and layout and style information queries are
 still cheap. This can be done by using a *setTimeout* or dispatching a
 runnable inside a *requestAnimationFrame* callback, for example:
 
-
     requestAnimationFrame(() => {
       setTimeout(() => {
         // This code will be run ASAP after Style and Layout information have
@@ -419,11 +416,11 @@ a sync reflow.
 ### Writing tests to ensure you don’t add more unintentional reflow
 
 The interface
-[nsIReflowObserver](https://searchfox.org/mozilla-central/source/docshell/base/nsIReflowObserver.idl)
+[nsIReflowObserver](https://searchfox.org/firefox-main/source/docshell/base/nsIReflowObserver.idl)
 lets us detect both interruptible and uninterruptible reflows. A number
 of tests have been written that exercise various functions of the
 browser [opening tabs](http://searchfox.org/mozilla-central/rev/78cefe75fb43195e7f5aee1d8042b8d8fc79fc70/browser/base/content/test/general/browser_tabopen_reflows.js),
-[opening windows](http://searchfox.org/mozilla-central/source/browser/base/content/test/general/browser_windowopen_reflows.js)
+[opening windows](http://searchfox.org/firefox-main/source/browser/base/content/test/general/browser_windowopen_reflows.js)
 and ensure that we don’t add new uninterruptible reflows accidentally
 while those actions occur.
 
@@ -475,7 +472,6 @@ so changes don't cause reflow. The API is straightforward:
 This example has been cribbed from [davidwalsh’s blog
 post](https://davidwalsh.name/documentfragment):
 
-
     // Create the fragment
 
     var frag = document.createDocumentFragment();
@@ -501,11 +497,11 @@ The Gecko profiler is your best friend when diagnosing performance
 problems and looking for bottlenecks. There’s plenty of excellent
 documentation on MDN about the Gecko profiler:
 
--  [Basic instructions for gathering and sharing a performance profile](reporting_a_performance_problem.md)
+- [Basic instructions for gathering and sharing a performance profile](reporting_a_performance_problem.md)
 
--  [Advanced profile analysis](https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Profiling_with_the_Built-in_Profiler)
+- [Advanced profile analysis](https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Profiling_with_the_Built-in_Profiler)
 
-## Don’t guess—measure.
+## Don’t guess—measure
 
 If you’re working on a performance improvement, this should go without
 saying: ensure that what you care about is actually improving by
@@ -571,7 +567,7 @@ more](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structure
 without having to do conversions for JSON compatibility.
 
 A Promise-based wrapper for IndexedDB,
-[IndexedDB.sys.mjs](http://searchfox.org/mozilla-central/source/toolkit/modules/IndexedDB.sys.mjs)
+[IndexedDB.sys.mjs](http://searchfox.org/firefox-main/source/toolkit/modules/IndexedDB.sys.mjs)
 is available for chrome code.
 
 ## Test on weak hardware

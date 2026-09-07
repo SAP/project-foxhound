@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -15,8 +14,6 @@ interface CompositionEvent : UIEvent
   constructor(DOMString type, optional CompositionEventInit eventInitDict = {});
 
   readonly attribute DOMString? data;
-  // locale is currently non-standard
-  readonly attribute DOMString  locale;
 
  /**
   * ranges is trying to expose TextRangeArray in Gecko so a
@@ -36,6 +33,5 @@ partial interface CompositionEvent
                                  optional boolean canBubbleArg = false,
                                  optional boolean cancelableArg = false,
                                  optional Window? viewArg = null,
-                                 optional DOMString? dataArg = null,
-                                 optional DOMString localeArg = "");
+                                 optional DOMString? dataArg = null);
 };

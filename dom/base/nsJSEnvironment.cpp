@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,64 +5,73 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#include "nsError.h"
 #include "nsJSEnvironment.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsPIDOMWindow.h"
-#include "nsDOMCID.h"
-#include "nsIXPConnect.h"
+
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "nsAtom.h"
 #include "nsCOMPtr.h"
-#include "nsISupportsPrimitives.h"
-#include "nsReadableUtils.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollector.h"
+#include "nsDOMCID.h"
 #include "nsDOMJSUtils.h"
-#include "nsJSUtils.h"
+#include "nsError.h"
+#include "nsIConsoleService.h"
+#include "nsIContent.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsPresContext.h"
-#include "nsIConsoleService.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIObserverService.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsISupportsPrimitives.h"
 #include "nsITimer.h"
-#include "nsAtom.h"
-#include "nsContentUtils.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/HoldDropJSObjects.h"
-#include "nsIContent.h"
-#include "nsCycleCollector.h"
-#include "nsXPCOMCIDInternal.h"
+#include "nsIXPConnect.h"
+#include "nsJSUtils.h"
+#include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
+#include "nsPresContext.h"
+#include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTextFormatter.h"
+#include "nsXPCOMCIDInternal.h"
 #ifdef XP_WIN
 #  include <process.h>
 #  define getpid _getpid
 #else
 #  include <unistd.h>  // for getpid()
 #endif
-#include "xpcpublic.h"
-
-#include "jsapi.h"
+#include "AccessCheck.h"
+#include "CCGCScheduler.h"
+#include "WrapperFactory.h"
 #include "js/Array.h"               // JS::NewArrayObject
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/PropertySpec.h"
 #include "js/SliceBudget.h"
 #include "js/Wrapper.h"
-#include "nsIArray.h"
-#include "CCGCScheduler.h"
-#include "WrapperFactory.h"
-#include "nsGlobalWindowInner.h"
-#include "nsGlobalWindowOuter.h"
+#include "jsapi.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ContentEvents.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/CycleCollectorStats.h"
+#include "mozilla/EventStateManager.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MainThreadIdlePeriod.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/Element.h"
@@ -73,27 +80,19 @@
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
+#include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TimeoutManager.h"
-#include "mozilla/CycleCollectedJSRuntime.h"
-#include "nsRefreshDriver.h"
-#include "nsJSPrincipals.h"
-#include "AccessCheck.h"
-#include "mozilla/Logging.h"
-#include "prthread.h"
-
-#include "mozilla/Preferences.h"
 #include "mozilla/glean/DomMetrics.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
-#include "mozilla/ContentEvents.h"
-#include "mozilla/CycleCollectedJSContext.h"
 #include "nsCycleCollectionNoteRootCallback.h"
-#include "nsViewManager.h"
-#include "mozilla/EventStateManager.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/ProfilerMarkers.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsIArray.h"
+#include "nsJSPrincipals.h"
+#include "nsRefreshDriver.h"
+#include "prthread.h"
+#include "xpcpublic.h"
 #if defined(MOZ_MEMORY)
+#  include "mozilla/TaskController.h"
 #  include "mozmemory.h"
 #endif
 
@@ -400,7 +399,7 @@ void DispatchScriptErrorEvent(nsPIDOMWindowInner* win,
                               xpc::ErrorReport* xpcReport,
                               JS::Handle<JS::Value> exception,
                               JS::Handle<JSObject*> exceptionStack) {
-  nsContentUtils::AddScriptRunner(new ScriptErrorEvent(
+  nsContentUtils::AddScriptRunner(MakeAndAddRef<ScriptErrorEvent>(
       win, rootingCx, xpcReport, exception, exceptionStack));
 }
 
@@ -1268,7 +1267,11 @@ void nsJSContext::EndCycleCollectionCallback(
   else if (
       StaticPrefs::
           dom_memory_foreground_content_processes_have_larger_page_cache()) {
-    jemalloc_free_dirty_pages();
+    if (auto* tc = TaskController::Get()) {
+      tc->RequestIdleMemoryCleanup("CC completed");
+    } else {
+      jemalloc_free_dirty_pages();
+    }
   }
 #endif
 }
@@ -1380,16 +1383,6 @@ void nsJSContext::MaybeRunNextCollectorSlice(nsIDocShell* aDocShell,
   if (!rootDocument ||
       rootDocument->GetReadyStateEnum() != Document::READYSTATE_COMPLETE ||
       rootDocument->IsInBackgroundWindow()) {
-    return;
-  }
-
-  PresShell* presShell = rootDocument->GetPresShell();
-  if (!presShell) {
-    return;
-  }
-
-  nsViewManager* vm = presShell->GetViewManager();
-  if (!vm) {
     return;
   }
 
@@ -1548,14 +1541,18 @@ static void DOMGCSliceCallback(JSContext* aCx, JS::GCProgress aProgress,
       }
 
       MOZ_ASSERT(sCurrentGCStartTime);
-      glean::dom::gc_in_progress.AccumulateRawDuration(TimeStamp::Now() -
-                                                       sCurrentGCStartTime);
+      glean::dom::gc_in_progress.ProcessGet().AccumulateRawDuration(
+          TimeStamp::Now() - sCurrentGCStartTime);
 
 #if defined(MOZ_MEMORY)
       if (freeDirty &&
           StaticPrefs::
               dom_memory_foreground_content_processes_have_larger_page_cache()) {
-        jemalloc_free_dirty_pages();
+        if (auto* tc = TaskController::Get()) {
+          tc->RequestIdleMemoryCleanup("GC completed");
+        } else {
+          jemalloc_free_dirty_pages();
+        }
       }
 #endif
       break;
@@ -1820,8 +1817,9 @@ void nsJSContext::EnsureStatics() {
 
   JS::SetCreateGCSliceBudgetCallback(jsapi.cx(), CreateGCSliceBudget);
 
-  JS::InitDispatchsToEventLoop(jsapi.cx(), DispatchToEventLoop,
-                               DelayedDispatchToEventLoop, nullptr);
+  JS::InitAsyncTaskCallbacks(jsapi.cx(), DispatchToEventLoop,
+                             DelayedDispatchToEventLoop, nullptr, nullptr,
+                             nullptr);
 
   JS::InitConsumeStreamCallback(jsapi.cx(), ConsumeStream,
                                 FetchUtil::ReportJSStreamError);
@@ -1874,6 +1872,13 @@ void nsJSContext::EnsureStatics() {
       SetMemoryPrefChangedCallbackInt,
       "javascript.options.mem.gc_max_parallel_marking_threads",
       (void*)JSGC_MAX_MARKING_THREADS);
+
+#ifdef JS_GC_CONCURRENT_MARKING
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackBool,
+      "javascript.options.mem.gc_experimental_concurrent_marking",
+      (void*)JSGC_CONCURRENT_MARKING_ENABLED);
+#endif
 
   Preferences::RegisterCallbackAndCall(
       SetMemoryGCSliceTimePrefChangedCallback,
@@ -2069,7 +2074,7 @@ class nsJSArgArray final : public nsIJSArgArray {
                nsresult* prv);
 
   // nsISupports
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsJSArgArray,
                                                          nsIJSArgArray)
 

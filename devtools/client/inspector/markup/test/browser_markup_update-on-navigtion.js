@@ -50,8 +50,10 @@ add_task(async function () {
   }
 
   function assertMarkupViewIsEmpty() {
-    const markupViewFrame =
-      inspector._markupFrame.contentDocument.getElementById("root");
+    const markupViewFrame = inspector.panelDoc
+      .getElementById("markup-box")
+      .querySelector(`iframe`)
+      .contentDocument.getElementById("root");
     is(markupViewFrame.childNodes.length, 0, "The markup-view is unloaded");
   }
 });

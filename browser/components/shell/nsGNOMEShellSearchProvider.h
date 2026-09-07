@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsGNOMEShellSearchProvider_h__
-#define __nsGNOMEShellSearchProvider_h__
+#ifndef _nsGNOMEShellSearchProvider_h_
+#define _nsGNOMEShellSearchProvider_h_
 
 #include <gio/gio.h>
 
@@ -152,4 +149,4 @@ class nsGNOMEShellSearchProvider {
 
 nsGNOMEShellHistoryService* GetGNOMEShellHistoryService();
 
-#endif  // __nsGNOMEShellSearchProvider_h__
+#endif  // _nsGNOMEShellSearchProvider_h_

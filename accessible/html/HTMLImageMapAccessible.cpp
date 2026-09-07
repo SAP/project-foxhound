@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -65,7 +64,7 @@ void HTMLImageMapAccessible::UpdateChildAreas(bool aDoFireEvents) {
     nsIContent* areaContent = imageMapObj->GetAreaAt(idx);
     LocalAccessible* area = mChildren.SafeElementAt(idx);
     if (!area || area->GetContent() != areaContent) {
-      RefPtr<LocalAccessible> area = new HTMLAreaAccessible(areaContent, mDoc);
+      auto area = MakeRefPtr<HTMLAreaAccessible>(areaContent, mDoc);
       mDoc->BindToDocument(area, aria::GetRoleMap(areaContent->AsElement()));
 
       if (!InsertChildAt(idx, area)) {
@@ -123,20 +122,20 @@ ENameValueFlag HTMLAreaAccessible::NativeName(nsString& aName) const {
   ENameValueFlag nameFlag = LocalAccessible::NativeName(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
-  if (!mContent->AsElement()->GetAttr(nsGkAtoms::alt, aName)) {
-    Value(aName);
-  }
-
+  mContent->AsElement()->GetAttr(nsGkAtoms::alt, aName);
   return eNameOK;
 }
 
-void HTMLAreaAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag HTMLAreaAccessible::Description(
+    nsString& aDescription) const {
   aDescription.Truncate();
 
   // Still to do - follow IE's standard here
   RefPtr<dom::HTMLAreaElement> area =
       dom::HTMLAreaElement::FromNodeOrNull(mContent);
   if (area) area->GetShape(aDescription);
+
+  return eDescriptionOK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

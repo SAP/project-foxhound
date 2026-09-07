@@ -1,0 +1,15 @@
+{
+  "label": "my.murj.com",
+  "bugs": {
+    "1898949": {
+      "issue": "unsupported-warning",
+      "matches": ["*://my.murj.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

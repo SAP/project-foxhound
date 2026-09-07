@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,11 @@
 #ifndef _include_mozilla_gfx_ipc_GPUProcessHost_h_
 #define _include_mozilla_gfx_ipc_GPUProcessHost_h_
 
-#include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/ipc/TaskFactory.h"
+#include "mozilla/media/MediaUtils.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/java/CompositorSurfaceManagerWrappers.h"
@@ -61,17 +58,19 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   // Launch the subprocess asynchronously. On failure, false is returned.
   // Otherwise, true is returned, and the OnProcessLaunchComplete listener
-  // callback will be invoked either when a connection has been established, or
-  // if a connection could not be established due to an asynchronous error.
+  // callback will be invoked either when a connection has been established and
+  // process initialization is complete, or if a connection could not be
+  // established due to an asynchronous error.
   //
   // @param aExtraOpts (geckoargs::ChildProcessArgs)
   //        Extra options to pass to the subprocess.
   bool Launch(geckoargs::ChildProcessArgs aExtraOpts);
 
   // If the process is being launched, block until it has launched and
-  // connected. If a launch task is pending, it will fire immediately.
+  // connected, and any initialization has completed. If a launch task is
+  // pending, it will fire immediately.
   //
-  // Returns true if the process is successfully connected; false otherwise.
+  // Returns true if the process is successfully initialized; false otherwise.
   bool WaitForLaunch();
 
   // Inform the process that it should clean up its resources and shut down.
@@ -96,6 +95,11 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   bool IsConnected() const { return !!mGPUChild; }
 
+  bool IsLaunchOomError() const {
+    MonitorAutoLock lock(mMonitor);
+    return mLaunchOomError;
+  }
+
   // Return the time stamp for when we tried to launch the GPU process. This is
   // currently used for Telemetry so that we can determine how long GPU
   // processes take to spin up. Note this doesn't denote a successful launch,
@@ -118,15 +122,24 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   java::CompositorSurfaceManager::Param GetCompositorSurfaceManager();
 #endif
 
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  static MacSandboxType GetMacSandboxType() { return MacSandboxType_GPU; };
+#endif
+
  private:
   ~GPUProcessHost();
 
-  // Called on the main thread.
-  void OnChannelConnectedTask();
-  void OnChannelErrorTask();
-
   // Called on the main thread after a connection has been established.
+  // Creates the PGPU endpoints and begins asynchronous initialization.
   void InitAfterConnect(bool aSucceeded);
+  // Called on the main thread after post-connection initialization tasks have
+  // completed asynchronously.
+  void OnAsyncInitComplete();
+  // Synchronously completes any outstanding post-connection initialization
+  // tasks which have not yet completed asynchronously.
+  bool CompleteInitSynchronously();
+
+  void OnProcessLaunchError(const base::LaunchError aError) override;
 
   // Called on the main thread when the mGPUChild actor is shutting down.
   void OnChannelClosed();
@@ -136,12 +149,19 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   void DestroyProcess();
 
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  static bool sLaunchWithMacSandbox;
+  bool IsMacSandboxLaunchEnabled() override { return sLaunchWithMacSandbox; }
+
+  // Override so we can turn on GPU process-specific sandbox logging
+  bool FillMacSandboxInfo(MacSandboxInfo& aInfo) override;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(GPUProcessHost);
 
   Listener* mListener;
-  mozilla::ipc::TaskFactory<GPUProcessHost> mTaskFactory;
 
-  enum class LaunchPhase { Unlaunched, Waiting, Complete };
+  enum class LaunchPhase { Unlaunched, Waiting, Connected, Complete };
   LaunchPhase mLaunchPhase;
 
   RefPtr<GPUChild> mGPUChild;
@@ -151,8 +171,17 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
 
   bool mShutdownRequested;
   bool mChannelClosed;
+  bool mLaunchOomError MOZ_GUARDED_BY(mMonitor) = false;
 
   TimeStamp mLaunchTime;
+
+  // Set to true on construction and to false just prior deletion.
+  // The GPUProcessHost isn't refcounted; so we can capture this by value in
+  // lambdas along with a strong reference to mLiveToken and check if that value
+  // is true before accessing "this".
+  // While a reference to mLiveToken can be taken on any thread; its value can
+  // only be read on the main thread.
+  const RefPtr<media::Refcountable<bool>> mLiveToken;
 
 #ifdef MOZ_WIDGET_ANDROID
   // Binder interface used to send compositor surfaces to GPU process. There is

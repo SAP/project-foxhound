@@ -1,0 +1,52 @@
+{
+  "color": {
+    "@base": {
+      "value": "{text.color.@base}"
+    },
+    "information": {
+      "value": {
+        "light": "{color.violet.50}",
+        "dark": "{color.violet.20}",
+        "forcedColors": "{icon.color.@base}"
+      }
+    },
+    "success": {
+      "value": {
+        "light": "{color.green.50}",
+        "dark": "{color.green.20}",
+        "forcedColors": "{icon.color.@base}"
+      }
+    },
+    "warning": {
+      "value": {
+        "light": "{color.yellow.50}",
+        "dark": "{color.yellow.20}",
+        "forcedColors": "{icon.color.@base}"
+      }
+    },
+    "critical": {
+      "value": {
+        "light": "{color.red.50}",
+        "dark": "{color.red.20}",
+        "forcedColors": "{icon.color.@base}"
+      }
+    }
+  },
+  "size": {
+    "xsmall": {
+      "value": "{size.item.xsmall}"
+    },
+    "small": {
+      "value": "{size.item.small}"
+    },
+    "medium": {
+      "value": "20px"
+    },
+    "large": {
+      "value": "{size.item.medium}"
+    },
+    "xlarge": {
+      "value": "{size.item.large}"
+    }
+  }
+}

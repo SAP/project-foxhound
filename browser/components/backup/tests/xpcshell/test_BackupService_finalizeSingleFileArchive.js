@@ -9,7 +9,7 @@ let gMatchingRegex;
 
 add_setup(async () => {
   gMatchingRegex = new RegExp(
-    `^${BackupService.BACKUP_FILE_NAME}_[a-z0-9-]+_[0-9_-]+.html$`
+    `^${BackupService.BACKUP_FILE_NAME}_[a-z0-9-]+(_[a-zA-Z0-9-]+)?_[0-9.-]+.html$`
   );
   gTestSourcePath = await IOUtils.createUniqueDirectory(
     PathUtils.tempDir,
@@ -82,7 +82,7 @@ add_task(async function test_filename() {
 add_task(async function test_remove_old_files() {
   const OLDER_BACKUP = PathUtils.join(
     gTestDestPath,
-    `FirefoxBackup_${FAKE_METADATA.profileName}_20200101-0000.html`
+    `FirefoxBackup_${FAKE_METADATA.profileName}_20200101-000000.000.html`
   );
   await IOUtils.writeUTF8(OLDER_BACKUP, "test");
 
@@ -102,7 +102,7 @@ add_task(async function test_remove_old_files() {
 add_task(async function test_remove_old_files_other_profile() {
   const OLDER_BACKUP = PathUtils.join(
     gTestDestPath,
-    `FirefoxBackup_SomeOtherProfile_20200101-0000.html`
+    `FirefoxBackup_SomeOtherProfile_20200101-000000.000.html`
   );
   await IOUtils.writeUTF8(OLDER_BACKUP, "test");
 
@@ -113,4 +113,54 @@ add_task(async function test_remove_old_files_other_profile() {
       "Older backup from another profile was not deleted."
     );
   });
+});
+
+/**
+ * Tests that the storeID is included in the filename when present.
+ */
+add_task(async function test_filename_with_storeID() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(SelectableProfileService, "storeID").get(() => "abc123-store");
+  try {
+    await testFinalizeSingleFileArchive(FAKE_METADATA, async movedFile => {
+      Assert.ok(movedFile.match(gMatchingRegex));
+      Assert.ok(
+        movedFile.includes("abc123-store"),
+        "Filename should contain the storeID."
+      );
+    });
+  } finally {
+    sandbox.restore();
+  }
+});
+
+/**
+ * Tests that profiles with the same name but different storeIDs don't remove
+ * each other's backups.
+ */
+add_task(async function test_same_profile_name_different_storeID() {
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(SelectableProfileService, "storeID").get(() => "store-AAA");
+
+  const OTHER_STORE_BACKUP = PathUtils.join(
+    gTestDestPath,
+    `FirefoxBackup_${FAKE_METADATA.profileName}_store-BBB_20200101-000000.000.html`
+  );
+  await IOUtils.writeUTF8(OTHER_STORE_BACKUP, "test");
+
+  try {
+    await testFinalizeSingleFileArchive(FAKE_METADATA, async movedFile => {
+      Assert.ok(movedFile.match(gMatchingRegex));
+      Assert.ok(
+        movedFile.includes("store-AAA"),
+        "Filename should contain the storeID store-AAA."
+      );
+      Assert.ok(
+        await IOUtils.exists(OTHER_STORE_BACKUP),
+        "Backup from the same profile name but different storeID was not deleted."
+      );
+    });
+  } finally {
+    sandbox.restore();
+  }
 });

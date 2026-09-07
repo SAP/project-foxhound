@@ -4,7 +4,7 @@
 const NAME = "Test Alias Engine";
 
 add_setup(async function () {
-  await Services.search.init();
+  await SearchService.init();
 });
 
 add_task(async function upgrade_with_configuration_change_test() {
@@ -15,8 +15,8 @@ add_task(async function upgrade_with_configuration_change_test() {
   });
   await settingsFileWritten;
 
-  let engine = await Services.search.getEngineByAlias("test");
+  let engine = await SearchService.getEngineByAlias("test");
   Assert.equal(engine?.name, NAME, "Can be fetched by either alias");
-  engine = await Services.search.getEngineByAlias("alias");
+  engine = await SearchService.getEngineByAlias("alias");
   Assert.equal(engine?.name, NAME, "Can be fetched by either alias");
 });

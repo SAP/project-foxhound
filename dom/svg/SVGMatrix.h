@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,9 +39,10 @@
 #include "gfxMatrix.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
 
 namespace mozilla::dom {
+
+struct DOMMatrix2DInit;
 
 /**
  * DOM wrapper for an SVG matrix.
@@ -83,7 +82,8 @@ class SVGMatrix final : public nsWrapperCache {
   void SetE(float aE, ErrorResult& aRv);
   float F() const { return static_cast<float>(GetMatrix()._32); }
   void SetF(float aF, ErrorResult& aRv);
-  already_AddRefed<SVGMatrix> Multiply(SVGMatrix& aMatrix);
+  already_AddRefed<SVGMatrix> Multiply(const DOMMatrix2DInit& aMatrix,
+                                       ErrorResult& aRv);
   already_AddRefed<SVGMatrix> Inverse(ErrorResult& aRv);
   already_AddRefed<SVGMatrix> Translate(float x, float y);
   already_AddRefed<SVGMatrix> Scale(float scaleFactor);
@@ -101,7 +101,7 @@ class SVGMatrix final : public nsWrapperCache {
   ~SVGMatrix() = default;
 
   const gfxMatrix& GetMatrix() const {
-    return mTransform ? mTransform->Matrixgfx() : mMatrix;
+    return mTransform ? mTransform->Transform().GetMatrix() : mMatrix;
   }
 
   void SetMatrix(const gfxMatrix& aMatrix) {

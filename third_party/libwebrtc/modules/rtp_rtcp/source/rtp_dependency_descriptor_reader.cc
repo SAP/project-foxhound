@@ -9,7 +9,11 @@
  */
 #include "modules/rtp_rtcp/source/rtp_dependency_descriptor_reader.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -20,7 +24,7 @@
 namespace webrtc {
 
 RtpDependencyDescriptorReader::RtpDependencyDescriptorReader(
-    rtc::ArrayView<const uint8_t> raw_data,
+    std::span<const uint8_t> raw_data,
     const FrameDependencyStructure* structure,
     DependencyDescriptor* descriptor)
     : descriptor_(descriptor), buffer_(raw_data) {

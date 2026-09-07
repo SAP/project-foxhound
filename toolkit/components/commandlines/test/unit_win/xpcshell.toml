@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = ""
 support-files = [
   "!/toolkit/components/commandlines/test/unit/data/test_bug410156.desktop",

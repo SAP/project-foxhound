@@ -1,18 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for HTML <frameset> elements */
 
-#ifndef nsHTMLFrameset_h___
-#define nsHTMLFrameset_h___
+#ifndef nsHTMLFrameset_h_
+#define nsHTMLFrameset_h_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/UniquePtr.h"
 #include "nsColor.h"
 #include "nsContainerFrame.h"
+#include "nsTArray.h"
 
 class nsIContent;
 class nsPresContext;
@@ -120,16 +117,16 @@ class nsHTMLFramesetFrame final : public nsContainerFrame {
   void RecalculateBorderResize();
 
  protected:
-  void Scale(nscoord aDesired, int32_t aNumIndicies, int32_t* aIndicies,
-             int32_t aNumItems, int32_t* aItems);
+  void Scale(nscoord aDesired, int32_t aNumIndicies,
+             const nsTArray<int32_t>& aIndicies, nsTArray<int32_t>& aItems);
 
   void CalculateRowCol(nsPresContext* aPresContext, nscoord aSize,
-                       int32_t aNumSpecs, const nsFramesetSpec* aSpecs,
-                       nscoord* aValues);
+                       const mozilla::Span<const nsFramesetSpec>& aSpecs,
+                       nsTArray<nscoord>& aValues);
 
   void GenerateRowCol(nsPresContext* aPresContext, nscoord aSize,
-                      int32_t aNumSpecs, const nsFramesetSpec* aSpecs,
-                      nscoord* aValues, nsString& aNewAttr);
+                      const mozilla::Span<const nsFramesetSpec>& aSpecs,
+                      const nsTArray<nscoord>& aValues, nsString& aNewAttr);
 
   virtual void GetDesiredSize(nsPresContext* aPresContext,
                               const ReflowInput& aReflowInput,
@@ -158,7 +155,7 @@ class nsHTMLFramesetFrame final : public nsContainerFrame {
 
   void ReflowPlaceChild(nsIFrame* aChild, nsPresContext* aPresContext,
                         const ReflowInput& aReflowInput, nsPoint& aOffset,
-                        nsSize& aSize, nsIntPoint* aCellIndex = 0);
+                        nsSize& aSize, nsIntPoint* aCellIndex = nullptr);
 
   bool CanResize(bool aVertical, bool aLeft);
 
@@ -166,27 +163,28 @@ class nsHTMLFramesetFrame final : public nsContainerFrame {
 
   void SetBorderResize(nsHTMLFramesetBorderFrame* aBorderFrame);
 
-  template <typename T, class D = mozilla::DefaultDelete<T>>
-  using UniquePtr = mozilla::UniquePtr<T, D>;
+  int32_t NumRows() const;
+  int32_t NumCols() const;
 
   nsFramesetDrag mDrag;
   nsBorderColor mEdgeColors;
   nsHTMLFramesetBorderFrame* mDragger;
   nsHTMLFramesetFrame* mTopLevelFrameset;
-  UniquePtr<nsHTMLFramesetBorderFrame*[]> mVerBorders;  // vertical borders
-  UniquePtr<nsHTMLFramesetBorderFrame*[]> mHorBorders;  // horizontal borders
-  UniquePtr<nsFrameborder[]>
+  nsTArray<nsHTMLFramesetBorderFrame*> mVerBorders;  // vertical borders
+  nsTArray<nsHTMLFramesetBorderFrame*> mHorBorders;  // horizontal borders
+  nsTArray<nsFrameborder>
       mChildFrameborder;  // the frameborder attr of children
-  UniquePtr<nsBorderColor[]> mChildBorderColors;
-  UniquePtr<nscoord[]> mRowSizes;  // currently computed row sizes
-  UniquePtr<nscoord[]> mColSizes;  // currently computed col sizes
+  nsTArray<nsBorderColor> mChildBorderColors;
+  nsTArray<nscoord> mRowSizes;  // currently computed row sizes
+  nsTArray<nscoord> mColSizes;  // currently computed col sizes
   mozilla::LayoutDeviceIntPoint mFirstDragPoint;
-  int32_t mNumRows;
-  int32_t mNumCols;
   int32_t mNonBorderChildCount;
   int32_t mNonBlankChildCount;
   int32_t mEdgeVisibility;
   nsFrameborder mParentFrameborder;
+  // If this is true, then we've been Init()'d, but haven't been reflowed, so
+  // there's some extra work to do in the first reflow.
+  bool mNeedFirstReflowWork = false;
   nscolor mParentBorderColor;
   int32_t mParentBorderWidth;
   int32_t mPrevNeighborOrigSize;  // used during resize

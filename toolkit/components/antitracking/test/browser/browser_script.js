@@ -85,8 +85,8 @@ add_task(async function () {
             ok(false, "Unknown message");
           });
 
-          content.document.body.appendChild(ifr);
           ifr.src = obj.page;
+          content.document.body.appendChild(ifr);
         });
 
       await assertBlocked();
@@ -158,8 +158,8 @@ add_task(async function () {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
 
       info("Triggering a 3rd party script...");
@@ -207,8 +207,8 @@ add_task(async function () {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
     }
   );

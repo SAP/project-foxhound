@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,6 +31,9 @@ class xpcAccessibleDocument : public xpcAccessibleHyperText,
     MOZ_ASSERT(aIntl->IsDoc());
   }
 
+  xpcAccessibleDocument(const xpcAccessibleDocument&) = delete;
+  xpcAccessibleDocument& operator=(const xpcAccessibleDocument&) = delete;
+
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessibleDocument
@@ -56,7 +57,7 @@ class xpcAccessibleDocument : public xpcAccessibleHyperText,
   virtual void Shutdown() override;
 
  protected:
-  virtual ~xpcAccessibleDocument() {}
+  virtual ~xpcAccessibleDocument() = default;
 
  private:
   DocAccessible* Intl() {
@@ -88,9 +89,6 @@ class xpcAccessibleDocument : public xpcAccessibleHyperText,
   friend class DocAccessible;
   friend class RemoteAccessible;
   friend class xpcAccessibleGeneric;
-
-  xpcAccessibleDocument(const xpcAccessibleDocument&) = delete;
-  xpcAccessibleDocument& operator=(const xpcAccessibleDocument&) = delete;
 
   nsTHashMap<nsPtrHashKey<const void>, xpcAccessibleGeneric*> mCache;
   bool mRemote;

@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
 
@@ -15,6 +14,7 @@ pub mod ffi {
         icu::collections::codepointinvlist::CodePointInversionListBuilder,
         Struct
     )]
+    #[diplomat::attr(demo_gen, disable)] // mutable
     pub struct CodePointSetBuilder(
         pub icu_collections::codepointinvlist::CodePointInversionListBuilder,
     );

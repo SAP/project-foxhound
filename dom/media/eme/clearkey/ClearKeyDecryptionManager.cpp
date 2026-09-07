@@ -19,8 +19,8 @@
 #include <assert.h>
 #include <string.h>
 
-#include <vector>
 #include <algorithm>
+#include <vector>
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Span.h"
@@ -29,8 +29,8 @@
 using namespace cdm;
 
 bool AllZero(const std::vector<uint32_t>& aBytes) {
-  return all_of(aBytes.begin(), aBytes.end(),
-                [](uint32_t b) { return b == 0; });
+  return std::all_of(aBytes.begin(), aBytes.end(),
+                     [](uint32_t b) { return b == 0; });
 }
 
 class ClearKeyDecryptor : public RefCounted {
@@ -264,6 +264,12 @@ Status ClearKeyDecryptor::Decrypt(uint8_t* aBuffer, uint32_t aBufferSize,
   // IV is allowed.
   assert(aMetadata.mIV.size() == 8 || aMetadata.mIV.size() == 16 ||
          (aMetadata.mIV.empty() && AllZero(aMetadata.mCipherBytes)));
+
+  if (aMetadata.mIV.size() > CENC_KEY_LEN) {
+    CK_LOGD("ClearKeyDecryptor::Decrypt unexpected IV size %zu",
+            aMetadata.mIV.size());
+    return Status::kDecryptError;
+  }
 
   std::vector<uint8_t> iv(aMetadata.mIV);
   iv.insert(iv.end(), CENC_KEY_LEN - aMetadata.mIV.size(), 0);

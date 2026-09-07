@@ -1,0 +1,23 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "../browser/head-common.js",
+  "head.js",
+]
+
+["browser_emptyResultSet.js"]
+
+["browser_removedSelectedElement.js"]
+
+["browser_resultDisplay.js"]
+
+["browser_resultTypes_display.js"]
+support-files = [
+  "../browser/print_postdata.sjs",
+  "../browser/searchSuggestionEngine.xml",
+  "../browser/searchSuggestionEngine.sjs",
+]
+
+["browser_reusable.js"]
+
+["browser_selectionByMouse.js"]

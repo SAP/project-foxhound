@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -41,7 +39,9 @@ else:
 
 DevToolsModules(
     "analyze-input-string.js",
+    "formatMessageParametersAndText.sys.mjs",
     "js-property-provider.js",
+    "l10n.js",
     "messages.js",
     "parser-helper.js",
 )

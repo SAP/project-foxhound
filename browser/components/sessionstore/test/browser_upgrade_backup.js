@@ -1,10 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 const Paths = SessionFile.Paths;
 const PREF_UPGRADE = "browser.sessionstore.upgradeBackup.latestBuildID";
 const PREF_MAX_UPGRADE_BACKUPS =
@@ -88,7 +84,10 @@ add_task(async function test_upgrade_backup() {
 
 add_task(async function test_upgrade_backup_removal() {
   let test = prepareTest();
-  let maxUpgradeBackups = Preferences.get(PREF_MAX_UPGRADE_BACKUPS, 3);
+  let maxUpgradeBackups = Services.prefs.getIntPref(
+    PREF_MAX_UPGRADE_BACKUPS,
+    3
+  );
   info("Let's see if we remove backups if there are too many");
   await SessionFile.wipe();
   await IOUtils.writeJSON(Paths.clean, test.contents, {

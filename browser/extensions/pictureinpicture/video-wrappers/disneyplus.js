@@ -5,6 +5,11 @@
 "use strict";
 
 class PictureInPictureVideoWrapper {
+  constructor(video) {
+    this.player =
+      video.closest("disney-web-player").wrappedJSObject.mediaPlayer;
+  }
+
   setCaptionContainerObserver(video, updateCaptionsFunction) {
     // Handle Disney+ (US)
     let container = document.querySelector(".TimedTextOverlay");
@@ -68,6 +73,62 @@ class PictureInPictureVideoWrapper {
 
   removeCaptionContainerObserver() {
     this.captionsObserver?.disconnect();
+  }
+
+  play() {
+    this.player.play();
+  }
+
+  pause() {
+    this.player.pause();
+  }
+
+  getPaused() {
+    return this.player.playbackStatus.paused;
+  }
+
+  getEnded() {
+    return this.player.playbackStatus.ended;
+  }
+
+  getDuration() {
+    return Math.floor(this.player.heartbeat.playbackDuration / 1000);
+  }
+
+  getCurrentTime() {
+    return Math.floor(this.player.heartbeat.playheadPosition / 1000);
+  }
+
+  setCurrentTime(video, position) {
+    this.player.seek(position * 1000);
+  }
+
+  getVolume() {
+    return this.player.volume.level / 100;
+  }
+
+  setVolume(video, volume) {
+    this.player.volume.level = volume * 100;
+  }
+
+  isMuted(video) {
+    if (!this.muteButton) {
+      this.muteButton =
+        video.ownerDocument.querySelector("toggle-mute-button").wrappedJSObject;
+    }
+    return this.muteButton.store.volume.muted;
+  }
+
+  setMuted(video, shouldMute) {
+    if (shouldMute) {
+      this.player.volume.mute();
+    } else {
+      this.player.volume.unmute();
+    }
+  }
+
+  isLive() {
+    return this.player.isLive;
   }
 }
 

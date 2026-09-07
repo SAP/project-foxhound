@@ -14,16 +14,16 @@ use std::{
 };
 
 use common::{assert_dscp, connected_server, default_server, generate_ticket};
-use neqo_common::{hex_with_len, qdebug, qtrace, Datagram, Encoder, Role};
-use neqo_crypto::{generate_ech_keys, AuthenticationStatus};
+use neqo_common::{Datagram, Encoder, Role, hex_with_len, qdebug, qtrace};
 use neqo_transport::{
-    server::ValidateAddress, CloseReason, ConnectionParameters, Error, State, StreamType,
-    MIN_INITIAL_PACKET_SIZE,
+    CloseReason, ConnectionParameters, Error, MIN_INITIAL_PACKET_SIZE, State, StreamType,
+    server::ValidateAddress,
 };
+use nss::{AuthenticationStatus, RecordProtectionOps as _, generate_ech_keys};
 use test_fixture::{
-    assertions, damage_ech_config, datagram, default_client,
+    CountingConnectionIdGenerator, assertions, damage_ech_config, datagram, default_client,
     header_protection::{self, decode_initial_header, initial_aead_and_hp},
-    now, split_datagram,
+    now,
 };
 
 #[test]
@@ -271,6 +271,7 @@ fn new_token_expired() {
 
 #[test]
 fn retry_after_initial() {
+    neqo_common::log::init(None);
     let mut server = default_server();
     let mut retry_server = default_server();
     retry_server.set_validation(ValidateAddress::Always);
@@ -280,17 +281,13 @@ fn retry_after_initial() {
     let cinit2 = client.process_output(now()).dgram(); // Initial
     assert!(cinit.is_some() && cinit2.is_some());
     _ = server.process(cinit.clone(), now()).dgram(); // Initial
-    let server_flight = server.process(cinit2, now()).dgram(); // Initial
-    assert!(server_flight.is_some());
-
-    let dgram = client.process(server_flight, now()).dgram();
-    let server_flight = server.process(dgram, now()).dgram();
+    let server_initial = server.process(cinit2, now()).dgram().unwrap();
+    let server_handshake = server.process_output(now()).dgram().unwrap();
 
     // We need to have the client just process the Initial.
-    let (server_initial, _other) = split_datagram(server_flight.as_ref().unwrap());
     let dgram = client.process(Some(server_initial), now()).dgram();
     assert!(dgram.is_some());
-    assert!(*client.state() != State::Connected);
+    assert_ne!(*client.state(), State::Connected);
 
     let retry = retry_server.process(cinit, now()).dgram(); // Retry!
     assert!(retry.is_some());
@@ -300,8 +297,8 @@ fn retry_after_initial() {
     let junk = client.process(retry, now()).dgram();
     assert!(junk.is_none());
 
-    // Either way, the client should still be able to process the server flight and connect.
-    let dgram = client.process(server_flight, now()).dgram();
+    // Either way, the client should still be able to process the server handshake and connect.
+    let dgram = client.process(Some(server_handshake), now()).dgram();
     assert!(dgram.is_some()); // Drop this one.
     assert!(test_fixture::maybe_authenticate(&mut client));
     let dgram = server.process(dgram, now()).dgram();
@@ -416,7 +413,7 @@ fn vn_after_retry() {
 
     let mut encoder = Encoder::default();
     encoder.encode_byte(0x80);
-    encoder.encode(&[0; 4]); // Zero version == VN.
+    encoder.encode([0; 4]); // Zero version == VN.
     encoder.encode_vec(1, &client.odcid().unwrap()[..]);
     encoder.encode_vec(1, &[]);
     encoder.encode_uint(4, 0x5a5a_6a6a_u64);
@@ -441,8 +438,11 @@ fn vn_after_retry() {
 // long enough connection ID.
 #[test]
 fn mitm_retry() {
-    // This test decrypts packets and hence does not work with MLKEM enabled.
-    let mut client = test_fixture::new_client(ConnectionParameters::default().mlkem(false));
+    // This test decrypts packets and hence does not work with MLKEM and packet number randomization
+    // enabled.
+    let mut client = test_fixture::new_client::<CountingConnectionIdGenerator>(
+        ConnectionParameters::default().mlkem(false),
+    );
     let mut retry_server = default_server();
     retry_server.set_validation(ValidateAddress::Always);
     let mut server = default_server();
@@ -462,14 +462,13 @@ fn mitm_retry() {
         decode_initial_header(&client_initial2, Role::Client).unwrap();
 
     // Now we have enough information to make keys.
-    let (aead, hp) = initial_aead_and_hp(d_cid, Role::Client);
+    let (aead_enc, aead_dec, hp) = initial_aead_and_hp(d_cid, Role::Client);
     let (header, pn) = header_protection::remove(&hp, protected_header, payload);
     let pn_len = header.len() - protected_header.len();
 
     // Decrypt.
-    assert_eq!(pn, 1);
     let mut plaintext_buf = vec![0; client_initial2.len()];
-    let plaintext = aead
+    let plaintext = aead_dec
         .decrypt(pn, &header, &payload[pn_len..], &mut plaintext_buf)
         .unwrap();
 
@@ -490,13 +489,14 @@ fn mitm_retry() {
         .as_ref()
         .to_vec();
     notoken_packet.resize_with(MIN_INITIAL_PACKET_SIZE, u8::default);
-    aead.encrypt(
-        pn,
-        &notoken_header,
-        plaintext,
-        &mut notoken_packet[notoken_header.len()..],
-    )
-    .unwrap();
+    aead_enc
+        .encrypt(
+            pn,
+            &notoken_header,
+            plaintext,
+            &mut notoken_packet[notoken_header.len()..],
+        )
+        .unwrap();
     // Unlike with decryption, don't truncate.
     // All MIN_INITIAL_PACKET_SIZE bytes are needed to reach the minimum datagram size.
 
@@ -528,4 +528,74 @@ fn mitm_retry() {
         }
     ));
     assert_dscp(&client.stats());
+}
+
+/// Server should reject Initial with DCID < 8 bytes.
+#[test]
+fn retry_short_dcid() {
+    let mut client = test_fixture::new_client::<CountingConnectionIdGenerator>(
+        ConnectionParameters::default().mlkem(false),
+    );
+    let mut server = default_server();
+    server.set_validation(ValidateAddress::Always);
+
+    let client_initial1 = client.process_output(now()).dgram().unwrap();
+    let (protected_header, d_cid, s_cid, payload) =
+        decode_initial_header(&client_initial1, Role::Client).unwrap();
+
+    let short_dcid = &[0x01, 0x02, 0x03, 0x04];
+
+    // Decrypt with the original DCID.
+    let (_, aead_orig, hp_orig) = initial_aead_and_hp(d_cid, Role::Client);
+    let (header, pn) = header_protection::remove(&hp_orig, protected_header, payload);
+    let pn_len = header.len() - protected_header.len();
+
+    let mut plaintext_buf = vec![0; client_initial1.len()];
+    let plaintext = aead_orig
+        .decrypt(pn, &header, &payload[pn_len..], &mut plaintext_buf)
+        .unwrap();
+
+    // Re-encode with short DCID.
+    let mut enc = Encoder::with_capacity(header.len());
+    enc.encode(&header[..5])
+        .encode_vec(1, short_dcid)
+        .encode_vec(1, s_cid)
+        .encode_vvec(&[])
+        .encode_varint(u64::try_from(payload.len()).unwrap());
+    let pn_offset = enc.len();
+    let short_dcid_header = enc.encode_uint(pn_len, pn).as_ref().to_vec();
+
+    // Encrypt with keys derived from short DCID.
+    let (aead_short, _, hp_short) = initial_aead_and_hp(short_dcid, Role::Client);
+    let mut short_dcid_packet = Encoder::with_capacity(MIN_INITIAL_PACKET_SIZE)
+        .encode(&short_dcid_header)
+        .as_ref()
+        .to_vec();
+    short_dcid_packet.resize_with(MIN_INITIAL_PACKET_SIZE, u8::default);
+    aead_short
+        .encrypt(
+            pn,
+            &short_dcid_header,
+            plaintext,
+            &mut short_dcid_packet[short_dcid_header.len()..],
+        )
+        .unwrap();
+    header_protection::apply(
+        &hp_short,
+        &mut short_dcid_packet,
+        pn_offset..(pn_offset + pn_len),
+    );
+
+    let dgram_with_short_dcid = Datagram::new(
+        client_initial1.source(),
+        client_initial1.destination(),
+        client_initial1.tos(),
+        short_dcid_packet,
+    );
+
+    let retry = server.process(Some(dgram_with_short_dcid), now()).dgram();
+    assert!(
+        retry.is_none(),
+        "Server should drop Initial with short DCID"
+    );
 }

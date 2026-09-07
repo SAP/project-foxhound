@@ -939,6 +939,7 @@ add_task(async function test_collect_attribution_data_for_amo() {
       Assert.deepEqual(gleanEvents[0], {
         addon_id: addonId,
         addon_type: "extension",
+        hashed_addon_id: expectedHashedAddonId,
         ...expectedAmoAttribution,
       });
     }
@@ -1031,7 +1032,8 @@ add_task(async function test_collect_attribution_data_for_amo_with_long_id() {
     [
       {
         addon_type: "extension",
-        addon_id: AMTelemetry.getTrimmedString(addonId),
+        addon_id: addonId,
+        hashed_addon_id: expectedHashedAddonId,
         utm_content: "utm-content-value",
       },
     ],
@@ -1090,7 +1092,8 @@ add_task(async function test_collect_attribution_data_for_rtamo() {
     [
       {
         addon_type: "extension",
-        addon_id: AMTelemetry.getTrimmedString(addonId),
+        addon_id: addonId,
+        hashed_addon_id: expectedHashedAddonId,
       },
     ],
     "Got the expected install_stats Glean event."

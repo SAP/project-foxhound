@@ -26,6 +26,9 @@ const {
   bindActionCreators,
 } = require("resource://devtools/client/shared/vendor/redux.js");
 const {
+  START_IGNORE_ACTION,
+} = require("resource://devtools/client/shared/redux/middleware/ignore.js");
+const {
   l10n,
 } = require("resource://devtools/client/application/src/modules/l10n.js");
 
@@ -85,13 +88,30 @@ window.Application = {
       canDebugServiceWorkers && services.features.doesDebuggerSupportWorkers
     );
 
-    this.onResourceAvailable = this.onResourceAvailable.bind(this);
-    await this._commands.resourceCommand.watchResources(
-      [this._commands.resourceCommand.TYPES.DOCUMENT_EVENT],
-      {
-        onAvailable: this.onResourceAvailable,
-      }
+    const { resourceCommand } = this._commands;
+    this._watchedResources = [resourceCommand.TYPES.DOCUMENT_EVENT];
+    const isSessionHistoryPanelEnabled = Services.prefs.getBoolPref(
+      "devtools.application.sessionHistory.enabled",
+      false
     );
+    if (isSessionHistoryPanelEnabled) {
+      if (
+        resourceCommand.hasResourceCommandSupport(
+          resourceCommand.TYPES.SESSION_HISTORY
+        )
+      ) {
+        this._watchedResources.push(resourceCommand.TYPES.SESSION_HISTORY);
+      } else {
+        this.actions.disableSessionHistory();
+      }
+    }
+
+    this.onResourcesAvailable = this.onResourcesAvailable.bind(this);
+    this.onResourcesUpdated = this.onResourcesUpdated.bind(this);
+    await resourceCommand.watchResources(this._watchedResources, {
+      onAvailable: this.onResourcesAvailable,
+      onUpdated: this.onResourcesUpdated,
+    });
 
     // Render the root Application component.
     this.mount = document.querySelector("#mount");
@@ -117,27 +137,53 @@ window.Application = {
     this.actions.resetManifest();
   },
 
-  onResourceAvailable(resources) {
-    // Only consider top level document, and ignore remote iframes top document
-    const hasDocumentDomComplete = resources.some(
-      resource =>
-        resource.resourceType ===
-          this._commands.resourceCommand.TYPES.DOCUMENT_EVENT &&
+  onResourcesAvailable(resources) {
+    const { resourceCommand } = this._commands;
+    for (const resource of resources) {
+      if (
+        resource.resourceType === resourceCommand.TYPES.DOCUMENT_EVENT &&
         resource.name === "dom-complete" &&
+        // Only consider top level document, and ignore remote iframes top document
         resource.targetFront.isTopLevel
-    );
-    if (hasDocumentDomComplete) {
-      this.handleOnNavigate(); // update domain and manifest for the new target
+      ) {
+        this.handleOnNavigate(); // update domain and manifest for the new target
+      }
+
+      if (resource.resourceType === resourceCommand.TYPES.SESSION_HISTORY) {
+        this.actions.setAvailableSessionHistory(resource);
+      }
+    }
+  },
+
+  onResourcesUpdated(updates) {
+    const { resourceCommand } = this._commands;
+    for (const { resource, update } of updates) {
+      if (resource.resourceType === resourceCommand.TYPES.SESSION_HISTORY) {
+        // A single entry changed (e.g. title or URL update for an existing entry).
+        if (update.resourceUpdates.sessionHistoryEntry) {
+          this.actions.updateSessionHistoryEntry(
+            update.resourceUpdates.sessionHistoryEntry
+          );
+        } else if (update.resourceUpdates.sessionHistory) {
+          // The full session history changed (e.g. navigation added or removed entries).
+          this.actions.updateSessionHistory(
+            update.resourceUpdates.sessionHistory
+          );
+        }
+      }
     }
   },
 
   destroy() {
+    // Prevents any further action from being dispatched
+    this.store.dispatch(START_IGNORE_ACTION);
+
     this.workersListener.removeListener();
 
-    this._commands.resourceCommand.unwatchResources(
-      [this._commands.resourceCommand.TYPES.DOCUMENT_EVENT],
-      { onAvailable: this.onResourceAvailable }
-    );
+    this._commands.resourceCommand.unwatchResources(this._watchedResources, {
+      onAvailable: this.onResourcesAvailable,
+      onUpdated: this.onResourcesUpdated,
+    });
 
     unmountComponentAtNode(this.mount);
     this.mount = null;

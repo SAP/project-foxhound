@@ -7,6 +7,10 @@ package org.mozilla.focus.settings.permissions.permissionoptions
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 
+/**
+ * Feature that checks for hardware permissions (e.g., camera, microphone) when the site permission
+ * options screen is started.
+ */
 class HardwarePermissionCheckFeature(
     val storage: SitePermissionOptionsStorage,
     val store: SitePermissionOptionsScreenStore,

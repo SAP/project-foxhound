@@ -26,11 +26,11 @@ loader.lazyRequireGetter(
 /**
  * Update the data used for the autocomplete popup in the console input (JsTerm).
  *
- * @param {Boolean} force: True to force a call to the server (as opposed to retrieve
+ * @param {boolean} force: True to force a call to the server (as opposed to retrieve
  *                         from the cache).
- * @param {Array<String>} getterPath: Array representing the getter access (i.e.
+ * @param {Array<string>} getterPath: Array representing the getter access (i.e.
  *                                    `a.b.c.d.` is described as ['a', 'b', 'c', 'd'] ).
- * @param {Array<String>} expressionVars: Array of the variables defined in the expression.
+ * @param {Array<string>} expressionVars: Array of the variables defined in the expression.
  */
 function autocompleteUpdate(force, getterPath, expressionVars) {
   return async ({ dispatch, getState, webConsoleUI, hud }) => {
@@ -95,12 +95,14 @@ function autocompleteUpdate(force, getterPath, expressionVars) {
 
 /**
  * Combine or replace authorizedEvaluations with the newly authorized getter path, if any.
- * @param {Array<Array<String>>} authorizedEvaluations Existing authorized evaluations (may
+ *
+ * @param {Array<Array<string>>} authorizedEvaluations Existing authorized evaluations (may
  * be updated in place)
- * @param {Array<String>} getterPath The new getter path
- * @param {{[String]: String}} mappedVars Map of original to generated variable names.
- * @returns {Array<Array<String>>} The updated authorized evaluations (the original array,
- * if it was updated in place) */
+ * @param {Array<string>} getterPath The new getter path
+ * @param {{[string]: string}} mappedVars Map of original to generated variable names.
+ * @returns {Array<Array<string>>} The updated authorized evaluations (the original array,
+ * if it was updated in place)
+ */
 function updateAuthorizedEvaluations(
   authorizedEvaluations,
   getterPath,
@@ -145,10 +147,11 @@ function updateAuthorizedEvaluations(
 
 /**
  * Apply source mapping to the autocomplete input.
- * @param {String} rawInput The input to map.
- * @param {{[String]: String}} mappedVars Map of original to generated variable names.
+ *
+ * @param {string} rawInput The input to map.
+ * @param {{[string]: string}} mappedVars Map of original to generated variable names.
  * @param {WebConsole} hud A reference to the webconsole hud.
- * @returns {String} The source-mapped expression to autocomplete.
+ * @returns {string} The source-mapped expression to autocomplete.
  */
 async function getMappedInput(rawInput, mappedVars, hud) {
   if (!mappedVars || !Object.keys(mappedVars).length) {
@@ -204,7 +207,7 @@ function autocompleteClear() {
  * Called when the autocompletion data should be retrieved from the cache (i.e.
  * client-side).
  *
- * @param {String} input: The input used to filter the cached data.
+ * @param {string} input: The input used to filter the cached data.
  */
 function autoCompleteDataRetrieveFromCache(input) {
   return {
@@ -221,7 +224,7 @@ function generateRequestId() {
 /**
  * Action that fetch autocompletion data from the server.
  *
- * @param {Object} Object of the following shape:
+ * @param {object} Object of the following shape:
  *        - {String} input: the expression that we want to complete.
  *        - {String} frameActorId: The id of the frame we want to autocomplete in.
  *        - {Boolean} force: true if the user forced an autocompletion (with Ctrl+Space).
@@ -307,11 +310,12 @@ function autocompleteDataFetch({
 /**
  * Replace generated variable names in an unsafe getter path with their original
  * counterparts.
- * @param {Array<String>} getterPath Array of properties leading up to and including the
+ *
+ * @param {Array<string>} getterPath Array of properties leading up to and including the
  * unsafe getter.
- * @param {String} originalExpression The expression that was evaluated, before mapping.
- * @param {{[String]: String}} mappedVars Map of original to generated variable names.
- * @returns {Array<String>} An updated getter path containing original variables.
+ * @param {string} originalExpression The expression that was evaluated, before mapping.
+ * @param {{[string]: string}} mappedVars Map of original to generated variable names.
+ * @returns {Array<string>} An updated getter path containing original variables.
  */
 function unmapGetterPath(getterPath, originalExpression, mappedVars) {
   // We know that the original expression is a sequence of property accesses, that only
@@ -339,7 +343,7 @@ function unmapGetterPath(getterPath, originalExpression, mappedVars) {
 /**
  * Called when we receive the autocompletion data from the server.
  *
- * @param {Object} Object of the following shape:
+ * @param {object} Object of the following shape:
  *        - {Integer} id: The autocompletion request id. This will be used in the reducer
  *                        to check that we update the state with the last request results.
  *        - {String} input: the expression that we want to complete.

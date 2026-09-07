@@ -25,7 +25,15 @@ add_task(async () => {
   PingServer.clearRequests();
   GleanPings.testOhttpPing.submit();
 
-  let ping = await PingServer.promiseNextPing();
+  let ping;
+  // We might get some health pings first, so skip those.
+  while (true) {
+    let request = await PingServer.promiseNextRequest();
+    if (request.path.includes("test-ohttp-ping")) {
+      ping = decodeRequestPayload(request);
+      break;
+    }
+  }
 
   ok(!("client_info" in ping), "No client_info allowed.");
   ok(!("ping_info" in ping), "No ping_info allowed.");

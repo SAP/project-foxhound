@@ -21,6 +21,7 @@ const ReferrerInfo = Components.Constructor(
 );
 
 let h2Port;
+let trrServer;
 
 add_setup(async function setup() {
   trr_test_setup();
@@ -30,13 +31,13 @@ add_setup(async function setup() {
     false
   );
 
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
 
   Services.prefs.setCharPref(
     "network.trr.uri",
-    "https://foo.example.com:" + h2Port + "/httpssvc_as_altsvc"
+    "https://foo.example.com:" + h2Port + "/doh?httpssvc_as_altsvc=1"
   );
 
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);

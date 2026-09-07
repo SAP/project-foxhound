@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 // Simple gestures support
 //
 // As per bug #412486, web content must not be allowed to receive any
@@ -718,14 +715,22 @@ var gHistorySwipeAnimation = {
     }
 
     let box = null;
+    let isCancelPath = false;
     if (!this._prevBox.collapsed) {
       box = this._prevBox;
     } else if (!this._nextBox.collapsed) {
       box = this._nextBox;
+    } else if (this._lastVisibleBox) {
+      box = this._lastVisibleBox;
+      box.collapsed = false;
+      box.style.translate = this._lastVisibleTranslate;
+      isCancelPath = true;
     }
     if (box != null) {
       this._isStoppingAnimation = true;
-      box.style.transition = "opacity 0.35s 0.35s cubic-bezier(.25,.1,0.25,1)";
+      box.style.transition = isCancelPath
+        ? "opacity 0.2s linear"
+        : "opacity 0.35s 0.35s cubic-bezier(.25,.1,0.25,1)";
       box.addEventListener("transitionend", this, true);
       box.style.opacity = 0;
       window.getComputedStyle(box).opacity;
@@ -813,6 +818,14 @@ var gHistorySwipeAnimation = {
         this._nextBox.querySelector("svg").classList.remove("will-navigate");
       }
     } else {
+      // Preserve a fade target for the aVal == 0 cancel-collapse path.
+      if (!this._prevBox.collapsed) {
+        this._lastVisibleBox = this._prevBox;
+        this._lastVisibleTranslate = this._prevBox.style.translate;
+      } else if (!this._nextBox.collapsed) {
+        this._lastVisibleBox = this._nextBox;
+        this._lastVisibleTranslate = this._nextBox.style.translate;
+      }
       this._prevBox.collapsed = true;
       this._nextBox.collapsed = true;
       this._prevBox.style.translate = "none";
@@ -922,6 +935,8 @@ var gHistorySwipeAnimation = {
   _removeBoxes: function HSA__removeBoxes() {
     this._prevBox = null;
     this._nextBox = null;
+    this._lastVisibleBox = null;
+    this._lastVisibleTranslate = "";
     if (this._container) {
       this._container.remove();
     }

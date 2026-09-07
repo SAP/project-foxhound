@@ -4,11 +4,13 @@
 
 package org.mozilla.fenix.ui.efficiency.tests
 
+import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 
 class SearchTest : BaseTest() {
 
+    @Ignore("Covered by verifyNavigationReachability[0: SearchBarPage (TBD)")
     @Test
     fun homeSearchBarItemsTest() {
         // Given: App is loaded with default settings
@@ -23,6 +25,7 @@ class SearchTest : BaseTest() {
     }
 
     // TestRail link:
+    @Ignore("Covered by verifyNavigationReachability[0: SearchBarPage (TBD)")
     @Test
     fun browserSearchBarItemsTest() {
         // Given: App is loaded with default settings

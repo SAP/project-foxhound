@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -46,9 +44,6 @@ enum class ObjectFlag : uint32_t {
   // If set, the object may have a non-writable property or an accessor
   // property.
   //
-  // * This is only set for PlainObjects because we only need it for these
-  //   objects and setting it for other objects confuses insertInitialShape.
-  //
   // * This flag does not account for properties named "__proto__". This is
   //   because |Object.prototype| has a "__proto__" accessor property and we
   //   don't want to include it because it would result in the flag being set on
@@ -83,16 +78,28 @@ enum class ObjectFlag : uint32_t {
   NeedsProxyGetSetResultValidation = 1 << 13,
 
   // There exists a property on this object which has fuse semantics associated
-  // with it, and thus we must trap on changes to said property.
-  HasFuseProperty = 1 << 14,
+  // with it. Changes to this object may require popping a per-realm Fuse. This
+  // is used for builtin prototypes and constructors.
+  HasRealmFuseProperty = 1 << 14,
 
-  // This is just holding the place of the flag for bug 1844878 which was
-  // temporarily backed out in bug 1980081.
-  HasPreservedWrapperDummy = 1 << 15,
+  // If set, this object may have an ObjectFuse associated with it that JIT code
+  // can use to bake in constant property values of this object. Changes to this
+  // object may require popping this per-Object fuse. See also the ObjectFuse
+  // SMDOC comment in ObjectFuse.h.
+  HasObjectFuse = 1 << 15,
+
+  // If set, we have already called the preserveWrapper hook for this object.
+  // This should only be set if `obj->getClass()->preservesWrapper()` is true.
+  HasPreservedWrapper = 1 << 16,
 
   // If set, the object may have an accessor property where the getter or setter
   // is a non-JSFunction callable object.
-  HasNonFunctionAccessor = 1 << 16,
+  HasNonFunctionAccessor = 1 << 17,
+
+  // If set, the object is a regexp that was constructed using a non-standard
+  // constructor. This excludes it from IsOptimizableRegExpObject.
+  // If we run out of flag bits, this would be a good flag to try aliasing.
+  LegacyFeaturesDisabled = 1 << 18,
 };
 
 using ObjectFlags = EnumFlags<ObjectFlag>;

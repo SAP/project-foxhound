@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,7 +53,7 @@ class EncoderAgent final {
       const RefPtr<const EncoderConfigurationChangeList>& aConfigChange);
   RefPtr<ShutdownPromise> Shutdown();
   using EncodePromise = MediaDataEncoder::EncodePromise;
-  RefPtr<EncodePromise> Encode(MediaData* aInput);
+  RefPtr<EncodePromise> Encode(nsTArray<RefPtr<MediaData>>&& aInputs);
   // WebCodecs's flush() flushes out all the pending encoded data in the
   // encoder. It's called Drain internally.
   RefPtr<EncodePromise> Drain();
@@ -68,11 +66,10 @@ class EncoderAgent final {
   // Push out all the data in the MediaDataEncoder's pipeline.
   // TODO: MediaDataEncoder should implement this, instead of asking call site
   // to run `Drain` multiple times.
-  RefPtr<EncodePromise> Dry();
-  void DryUntilDrain();
+  void Dry(MediaDataEncoder::EncodedData&& aPendingOutputs);
 
   MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING_AT_CLASS_SCOPE(
-      State, (Unconfigured, Configuring, Configured, Encoding, Flushing,
+      State, (Unconfigured, Configuring, Configured, Encoding, Draining,
               ShuttingDown, Error));
   void SetState(State aState);
 
@@ -103,7 +100,6 @@ class EncoderAgent final {
   // Drain
   MozPromiseRequestHolder<EncodePromise> mDrainRequest;
   MozPromiseHolder<EncodePromise> mDrainPromise;
-  MediaDataEncoder::EncodedData mDrainData;
 };
 
 }  // namespace mozilla

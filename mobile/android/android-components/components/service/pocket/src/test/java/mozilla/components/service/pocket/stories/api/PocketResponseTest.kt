@@ -5,18 +5,18 @@
 package mozilla.components.service.pocket.stories.api
 
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertIs
 
 class PocketResponseTest {
     @Test
     fun `GIVEN a null argument WHEN wrap is called THEN a Failure is returned`() {
-        assertTrue(PocketResponse.wrap(null) is PocketResponse.Failure)
+        assertIs<PocketResponse.Failure<*>>(PocketResponse.wrap(null))
     }
 
     @Test
     fun `GIVEN an empty Collection argument WHEN wrap is called THEN a Failure is returned`() {
-        assertTrue(PocketResponse.wrap(emptyList<Any>()) is PocketResponse.Failure<*>)
+        assertIs<PocketResponse.Failure<*>>(PocketResponse.wrap(emptyList<Any>()))
     }
 
     @Test
@@ -25,13 +25,13 @@ class PocketResponseTest {
 
         val result = PocketResponse.wrap(argument)
 
-        assertTrue(result is PocketResponse.Success)
-        assertSame(argument, (result as PocketResponse.Success).data)
+        assertIs<PocketResponse.Success<*>>(result)
+        assertSame(argument, result.data)
     }
 
     @Test
     fun `GIVEN an empty String argument WHEN wrap is called THEN a Failure is returned`() {
-        assertTrue(PocketResponse.wrap("") is PocketResponse.Failure<String>)
+        assertIs<PocketResponse.Failure<*>>(PocketResponse.wrap(""))
     }
 
     @Test
@@ -40,8 +40,8 @@ class PocketResponseTest {
 
         val result = PocketResponse.wrap(argument)
 
-        assertTrue(result is PocketResponse.Success)
-        assertSame(argument, (result as PocketResponse.Success).data)
+        assertIs<PocketResponse.Success<*>>(result)
+        assertSame(argument, result.data)
     }
 
     @Test
@@ -50,7 +50,7 @@ class PocketResponseTest {
 
         val result = PocketResponse.wrap(argument)
 
-        assertTrue(result is PocketResponse.Success)
-        assertSame(argument, (result as PocketResponse.Success).data)
+        assertIs<PocketResponse.Success<*>>(result)
+        assertSame(argument, result.data)
     }
 }

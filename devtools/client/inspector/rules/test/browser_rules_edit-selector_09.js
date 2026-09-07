@@ -32,34 +32,20 @@ add_task(async function () {
   await testAddMatchedRule(view, "span, div");
 });
 
-async function testEditSelector(view, name) {
+async function testEditSelector(view, newSelector) {
   info("Test editing existing selector fields");
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
-  info("Focusing an existing selector name in the rule-view");
-  const editor = await focusEditableField(view, ruleEditor.selectorText);
+  await editSelectorForRuleEditor(view, ruleEditor, newSelector);
 
-  is(
-    inplaceEditor(ruleEditor.selectorText),
-    editor,
-    "The selector editor got focused"
-  );
-
-  info("Entering a new selector name and committing");
-  editor.input.value = name;
-
-  info("Waiting for rule view to update");
-  const onRuleViewChanged = once(view, "ruleview-changed");
-
-  info("Entering the commit key");
-  EventUtils.synthesizeKey("KEY_Enter");
-  await onRuleViewChanged;
-
-  ok(getRuleViewRule(view, name), "Rule with " + name + " selector exists.");
   ok(
-    getRuleViewRuleEditor(view, 1).element.getAttribute("unmatched"),
-    "Rule with " + name + " does not match the current element."
+    getRuleViewRule(view, newSelector),
+    `Rule with ${newSelector} selector exists.`
+  );
+  ok(
+    getRuleViewRuleEditorAt(view, 1).element.getAttribute("unmatched"),
+    `Rule with ${newSelector} does not match the current element.`
   );
 }
 
@@ -78,33 +64,16 @@ async function testAddImportantProperty(view) {
   );
 }
 
-async function testAddMatchedRule(view, name) {
+async function testAddMatchedRule(view, selector) {
   info("Test adding a matching selector");
 
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
-  info("Focusing an existing selector name in the rule-view");
-  const editor = await focusEditableField(view, ruleEditor.selectorText);
-
-  is(
-    inplaceEditor(ruleEditor.selectorText),
-    editor,
-    "The selector editor got focused"
-  );
-
-  info("Entering a new selector name and committing");
-  editor.input.value = name;
-
-  info("Waiting for rule view to update");
-  const onRuleViewChanged = once(view, "ruleview-changed");
-
-  info("Entering the commit key");
-  EventUtils.synthesizeKey("KEY_Enter");
-  await onRuleViewChanged;
+  await editSelectorForRuleEditor(view, ruleEditor, selector);
 
   is(
-    getRuleViewRuleEditor(view, 1).element.getAttribute("unmatched"),
+    getRuleViewRuleEditorAt(view, 1).element.getAttribute("unmatched"),
     "false",
-    "Rule with " + name + " does match the current element."
+    `Rule with ${selector} does match the current element.`
   );
 }

@@ -132,8 +132,9 @@ jobs:
 
       - name: Bootstrap
         run: |
-          cp "taintfox_mozconfig_win" ".mozconfig"    
-          Add-Content -Path .mozconfig -Value 'mk_add_options MOZ_PARALLEL_BUILD=4'
+          cp "taintfox_mozconfig_win" ".mozconfig"
+          Add-Content -Path .mozconfig -Value 'mk_add_options MOZ_PARALLEL_BUILD=2'
+          Add-Content -Path .mozconfig -Value 'ac_add_options --disable-lto'
           .\mach.ps1  --no-interactive bootstrap --application-choice=browser
           $env:RUST_VERSION=$((((Get-Content .\.PLAYWRIGHT_VERSION | select-string RUST_VERSION)  -Split "=")[1] -Split '"')[1])
           echo "Installing $env:RUST_VERSION from .PLAYWRIGHT_VERSION"
@@ -171,15 +172,16 @@ jobs:
         with:
           fetch-depth: 1
 
+
       - name: Bootstrap
         run: |
-          cp "taintfox_mozconfig_ubuntu" ".mozconfig"    
+          cp "taintfox_mozconfig_ubuntu" ".mozconfig"
           python3.11 ./mach --no-interactive bootstrap --application-choice=browser
           source .PLAYWRIGHT_VERSION
           echo "Installing ${RUST_VERSION} from .PLAYWRIGHT_VERSION"
           rustup install ${RUST_VERSION}
           rustup default ${RUST_VERSION}
-      
+
       - name: Build
         run: |
           python3.11 ./mach build

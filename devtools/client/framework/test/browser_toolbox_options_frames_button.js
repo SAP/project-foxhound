@@ -53,12 +53,6 @@ add_task(async function () {
   framesButton = doc.getElementById("command-button-frames");
   ok(framesButton, "Frames button is rendered again.");
 
-  // Do not run the rest of this test when both fission and EFT is disabled as
-  // it prevents creating a target for the iframe
-  if (!isFissionEnabled() || !isEveryFrameTargetEnabled()) {
-    return;
-  }
-
   info("Navigate to a page with frames, the frames button should be enabled.");
   await navigateTo(TEST_URL_FRAMES);
 

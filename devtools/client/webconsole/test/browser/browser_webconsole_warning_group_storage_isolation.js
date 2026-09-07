@@ -22,7 +22,7 @@ const STORAGE_ISOLATION_GROUP_LABEL =
 const COOKIE_BEHAVIOR_PREF = "network.cookie.cookieBehavior";
 const COOKIE_BEHAVIOR_PARTITION_FOREIGN = 5;
 
-pushPref("devtools.webconsole.groupWarningMessages", true);
+pushPref("devtools.webconsole.groupSimilarMessages", true);
 
 async function cleanUp() {
   await new Promise(resolve => {

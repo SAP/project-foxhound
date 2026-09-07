@@ -1,0 +1,29 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace = 'mozilla.components.feature.example'
+}
+
+dependencies {
+    implementation platform(libs.androidx.compose.bom)
+
+    implementation project(":components:support-base")
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.lifecycle.runtime
+    implementation libs.kotlinx.coroutines
+    implementation libs.androidx.test.junit
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit4
+    testImplementation libs.robolectric
+    testImplementation libs.kotlinx.coroutines.test
+}
+
+apply from: '../../../common-config.gradle'
+apply from: '../../../publish.gradle'
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

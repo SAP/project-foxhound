@@ -4,7 +4,6 @@
 
 package mozilla.components.service.fxa
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.sync.ServiceResult
 import mozilla.components.service.fxa.manager.FxaAccountManager
@@ -20,8 +19,8 @@ import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
+import kotlin.test.assertIs
 
-@ExperimentalCoroutinesApi // for runTest
 class UtilsKtTest {
     @Test
     fun `handleFxaExceptions form 1 returns correct data back`() = runTest {
@@ -69,7 +68,7 @@ class UtilsKtTest {
                 { "fail" },
                 { error ->
                     assertEquals("oops", error.message)
-                    assertTrue(error is FxaNetworkException)
+                    assertIs<FxaNetworkException>(error)
                     "pass!"
                 },
             ),
@@ -108,7 +107,7 @@ class UtilsKtTest {
                 { "fail" },
                 { error ->
                     assertEquals("dunno", error.message)
-                    assertTrue(error is FxaUnspecifiedException)
+                    assertIs<FxaUnspecifiedException>(error)
                     "pass!"
                 },
             ),
@@ -149,7 +148,6 @@ class UtilsKtTest {
 
         assertTrue(
             handleFxaExceptions(mock(), "test op") {
-                Unit
             },
         )
 

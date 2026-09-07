@@ -29,11 +29,6 @@ sealed class MenuAction : Action {
     data object AddBookmark : MenuAction()
 
     /**
-     * [MenuAction] dispatched when reader view should be toggled active or dismiss.
-     */
-    data object ToggleReaderView : MenuAction()
-
-    /**
      * [MenuAction] dispatched when reader view customization controls should be displayed.
      */
     data object CustomizeReaderView : MenuAction()
@@ -83,6 +78,11 @@ sealed class MenuAction : Action {
     data object FindInPage : MenuAction()
 
     /**
+     * [MenuAction] dispatched to move the current private tab to a non-private tab.
+     */
+    data object MoveToNonPrivateTab : MenuAction()
+
+    /**
      * [MenuAction] dispatched when it's a new installation of Firefox.
      */
     data object MenuBanner : MenuAction()
@@ -91,11 +91,6 @@ sealed class MenuAction : Action {
      * [MenuAction] dispatched when menu banner should be dismissed.
      */
     data object DismissMenuBanner : MenuAction()
-
-    /**
-     * [MenuAction] dispatched when a private tab is open in normal tab.
-     */
-    data object OpenInRegularTab : MenuAction()
 
     /**
      * [MenuAction] dispatched when the extension state is updated.
@@ -143,16 +138,6 @@ sealed class MenuAction : Action {
     ) : MenuAction()
 
     /**
-     * [MenuAction] dispatched when we what to show manage extensions menu item.
-     *
-     * @property isVisible Indicates if manage extensions menu item
-     * should be displayed to the user.
-     */
-    data class UpdateManageExtensionsMenuItemVisibility(
-        val isVisible: Boolean,
-    ) : MenuAction()
-
-    /**
      * [MenuAction] dispatched when an addon installation was completed with success.
      *
      * @property addon The [Addon] that was installed.
@@ -168,25 +153,6 @@ sealed class MenuAction : Action {
      */
     data class InstallAddonFailed(
         val addon: Addon,
-    ) : MenuAction()
-
-    /**
-     * [MenuAction] dispatched when extensions promotion banner onboarding should be visible or not.
-     *
-     * @property showExtensionsOnboarding Show extensions promotion banner onboarding.
-     */
-    data class UpdateShowExtensionsOnboarding(
-        val showExtensionsOnboarding: Boolean,
-    ) : MenuAction()
-
-    /**
-     * [MenuAction] dispatched when disabled extensions promotion banner onboarding should be visible or not.
-     *
-     * @property showDisabledExtensionsOnboarding Show extensions promotion banner onboarding when
-     * all installed extensions have been disabled.
-     */
-    data class UpdateShowDisabledExtensionsOnboarding(
-        val showDisabledExtensionsOnboarding: Boolean,
     ) : MenuAction()
 
     /**
@@ -221,6 +187,30 @@ sealed class MenuAction : Action {
     data object OnCFRDismiss : MenuAction()
 
     /**
+     * [MenuAction] dispatched when the menu is clicked.
+     */
+    data object OnMoreMenuClicked : MenuAction()
+
+    /**
+     * [MenuAction] dispatched to record that the summarize page menu has been exposed to the user
+     */
+    data object OnSummarizationMenuExposed : MenuAction()
+
+    /**
+     * [MenuAction] dispatched to initialize the state of the summarize page menu.
+     *
+     * @property state The [SummarizationMenuState] to set up
+     */
+    data class InitializeSummarizationMenuState(val state: SummarizationMenuState) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched to update the IP protection menu item state.
+     *
+     * @property state The new [IPProtectionMenuState].
+     */
+    data class UpdateIPProtectionMenuState(val state: IPProtectionMenuState) : MenuAction()
+
+    /**
      * [MenuAction] dispatched when a navigation event occurs for a specific destination.
      */
     sealed class Navigate : MenuAction() {
@@ -242,6 +232,11 @@ sealed class MenuAction : Action {
         data object Settings : Navigate()
 
         /**
+         * [Navigate] action dispatched when navigating to the wallpaper settings.
+         */
+        data object Wallpaper : Navigate()
+
+        /**
          * [Navigate] action dispatched when navigating to bookmarks.
          */
         data object Bookmarks : Navigate()
@@ -260,11 +255,6 @@ sealed class MenuAction : Action {
          * [Navigate] action dispatched when navigating to passwords.
          */
         data object Passwords : Navigate()
-
-        /**
-         * [Navigate] action dispatched when navigating to release notes.
-         */
-        data object ReleaseNotes : Navigate()
 
         /**
          * [Navigate] action dispatched when navigating to edit the existing bookmark.
@@ -306,11 +296,6 @@ sealed class MenuAction : Action {
         data object DiscoverMoreExtensions : Navigate()
 
         /**
-         * [Navigate] action dispatched when navigating to the SUMO page for installing add-ons.
-         */
-        data object ExtensionsLearnMore : Navigate()
-
-        /**
          * [Navigate] action dispatched when navigating to the given [addon] details.
          *
          * @property addon The [Addon] details to display.
@@ -332,6 +317,11 @@ sealed class MenuAction : Action {
          * [Navigate] action dispatched when the user clicks to report a broken site.
          */
         data object WebCompatReporter : Navigate()
+
+        /**
+         * [Navigate] action dispatched when the user clicks to summarize the current page.
+         */
+        data object Summarizer : Navigate()
 
         /**
          * [Navigate] action dispatched when navigating back from the current page.
@@ -364,5 +354,10 @@ sealed class MenuAction : Action {
          * [Navigate] action dispatched when stopping the current page from loading.
          */
         data object Stop : Navigate()
+
+        /**
+         * [Navigate] action dispatched when navigating to the IP Protection settings screen.
+         */
+        data object IPProtectionSettings : Navigate()
     }
 }

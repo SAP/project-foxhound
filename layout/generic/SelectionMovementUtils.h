@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,12 +23,27 @@ namespace intl {
 class BidiEmbeddingLevel;
 }
 
-struct MOZ_STACK_CLASS PrimaryFrameData {
-  // The frame which should be used to layout the caret.
+struct MOZ_STACK_CLASS FrameAndOffset {
+  [[nodiscard]] nsIContent* GetFrameContent() const {
+    return mFrame ? mFrame->GetContent() : nullptr;
+  }
+
+  operator nsIFrame*() const { return mFrame; }
+
+  explicit operator bool() const { return !!mFrame; }
+  [[nodiscard]] bool operator!() const { return !mFrame; }
+
+  nsIFrame* operator->() const {
+    MOZ_ASSERT(mFrame);
+    return mFrame;
+  }
+
   nsIFrame* mFrame = nullptr;
-  // The offset in content of mFrame.  This is valid only when mFrame is not
-  // nullptr.
+  // The offset in mFrame->GetContent().
   uint32_t mOffsetInFrameContent = 0;
+};
+
+struct MOZ_STACK_CLASS PrimaryFrameData : public FrameAndOffset {
   // Whether the caret should be put before or after the point. This is valid
   // only when mFrame is not nullptr.
   CaretAssociationHint mHint{0};  // Before
@@ -82,13 +95,47 @@ class SelectionMovementUtils final {
    * that frame.
    *
    * @param aNode input parameter for the node to look at
-   *              TODO: Make this `const nsIContent*` for `ContentEventHandler`.
    * @param aOffset offset into above node.
-   * @param aReturnOffset will contain offset into frame.
    */
-  static nsIFrame* GetFrameForNodeOffset(nsIContent* aNode, uint32_t aOffset,
-                                         CaretAssociationHint aHint,
-                                         uint32_t* aReturnOffset = nullptr);
+  static FrameAndOffset GetFrameForNodeOffset(const nsIContent* aNode,
+                                              uint32_t aOffset,
+                                              CaretAssociationHint aHint);
+
+  /**
+   * Return the first visible point in or at a leaf node in aRange or the first
+   * unselectable content if aRange starts from a selectable container. E.g.,
+   * return the start of the first visible `Text` or the position of the first
+   * visible leaf element.  I.e., the result may be a good point to put a UI for
+   * showing something around the start boundary.
+   *
+   * NOTE: This won't return any boundary point in subtrees from the tree
+   * containing the start container of aRange due to ContentIteratorBase's
+   * limitation. See bug 2001511.
+   *
+   * @param aRange Must not be collapsed because this returns a point in aRange
+   * so that this requires the limitation of scanning forward.
+   * @return A position in a `Text` or a position at an element.
+   */
+  [[nodiscard]] static RawRangeBoundary GetFirstVisiblePointAtLeaf(
+      const dom::AbstractRange& aRange);
+
+  /**
+   * Return the last visible point in or at a leaf node in aRange or the last
+   * unselectable content if aRange ends in a selectable container. E.g., return
+   * the end of the last visible `Text` or the position of the last visible leaf
+   * element. I.e., the result may be a good point to put a UI for showing
+   * something around the end boundary.
+   *
+   * NOTE: This won't return any boundary point in subtrees of the tree
+   * containing the end container of aRange due to ContentIteratorBase's
+   * limitation. See bug 2001511.
+   *
+   * @param aRange Must not be collapsed because this returns a point in aRange
+   * so that this requires the limitation of scanning forward.
+   * @return A position in a `Text` or a position at an element.
+   */
+  [[nodiscard]] static RawRangeBoundary GetLastVisiblePointAtLeaf(
+      const dom::AbstractRange& aRange);
 
   /**
    * GetPrevNextBidiLevels will return the frames and associated Bidi levels of
@@ -140,6 +187,7 @@ class SelectionMovementUtils final {
       case eSelectWordNoSpace:
       case eSelectBeginLine:
       case eSelectEndLine:
+      case eSelectParagraph:
         return true;
       case eSelectLine:
         return false;

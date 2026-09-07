@@ -244,8 +244,8 @@ add_task(async function () {
 /**
  *
  * @param {WebConsole} hud
- * @param {String} expected
- * @param {String} assertionMessage
+ * @param {string} expected
+ * @param {string} assertionMessage
  */
 function checkMessages(hud, expected, assertionMessage) {
   const expectedMessages = expected

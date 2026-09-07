@@ -40,4 +40,36 @@ function run_test() {
     "MOZILLA_PKIX_ERROR_INSUFFICIENT_CERTIFICATE_TRANSPARENCY",
     "GetErrorName should work for PKIX errors"
   );
+
+  xpcom = nssErrorsService.getXPCOMFromNSSError(SEC_ERROR_EXPIRED_CERTIFICATE);
+  Assert.ok(
+    nssErrorsService.isErrorOverridable(xpcom),
+    "SEC_ERROR_EXPIRED_CERTIFICATE should be overridable"
+  );
+
+  xpcom = nssErrorsService.getXPCOMFromNSSError(SSL_ERROR_BAD_CERT_DOMAIN);
+  Assert.ok(
+    nssErrorsService.isErrorOverridable(xpcom),
+    "SSL_ERROR_BAD_CERT_DOMAIN should be overridable"
+  );
+
+  xpcom = nssErrorsService.getXPCOMFromNSSError(
+    MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT
+  );
+  Assert.ok(
+    nssErrorsService.isErrorOverridable(xpcom),
+    "MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT should be overridable"
+  );
+
+  xpcom = nssErrorsService.getXPCOMFromNSSError(SEC_ERROR_BAD_SIGNATURE);
+  Assert.ok(
+    !nssErrorsService.isErrorOverridable(xpcom),
+    "SEC_ERROR_BAD_SIGNATURE should NOT be overridable"
+  );
+
+  Assert.throws(
+    () => nssErrorsService.isErrorOverridable(Cr.NS_ERROR_NET_TIMEOUT),
+    /NS_ERROR_FAILURE/,
+    "testing a non-security error code should throw"
+  );
 }

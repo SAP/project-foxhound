@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -175,7 +174,7 @@ CookieParser::~CookieParser() {
 
     set-cookie    = "Set-Cookie:" cookies
     cookies       = cookie *( cookie-sep cookie )
-    cookie        = [NAME "="] VALUE *(";" cookie-av)    ; cookie NAME/VALUE must come first
+    cookie        = NAME ["=" VALUE] *(";" cookie-av)    ; cookie NAME/VALUE must come first
     NAME          = token                                ; cookie name
     VALUE         = value                                ; cookie value
     cookie-av     = token ["=" value]
@@ -331,13 +330,16 @@ void CookieParser::ParseAttributes(nsCString& aCookieHeader,
   bool equalsFound;
 
   // extract cookie <NAME> & <VALUE> (first attribute), and copy the strings.
-  // note: if there's no '=', we assume token is <VALUE>. this is required by
-  //       some sites (see bug 169091).
-  // XXX fix the parser to parse according to <VALUE> grammar for this case
+  // if there's no '=', behavior depends on the valueless_cookie pref:
+  // - when true (default): treat the token as <NAME> with an empty value,
+  //   aligning with Safari's behavior contrary to the spec.
+  // - when false: treat the token as <VALUE> with an empty name (legacy).
   GetTokenValue(cookieStart, cookieEnd, tokenString, tokenValue, equalsFound);
   if (equalsFound) {
     mCookieData.name() = tokenString;
     mCookieData.value() = tokenValue;
+  } else if (StaticPrefs::network_cookie_valueless_cookie()) {
+    mCookieData.name() = tokenString;
   } else {
     mCookieData.value() = tokenString;
   }
@@ -498,9 +500,9 @@ bool CookieParser::ParseMaxAgeAttribute(const nsACString& aMaxage,
 bool CookieParser::GetExpiry(CookieStruct& aCookieData,
                              const nsACString& aExpires,
                              const nsACString& aMaxage,
-                             int64_t aCurrentTimeInMSec,
                              const nsACString& aDateHeader, bool aFromHttp) {
-  int64_t maxageCap = StaticPrefs::network_cookie_maxageCap();
+  int64_t creationTimeInMSec =
+      aCookieData.creationTimeInUSec() / int64_t(PR_USEC_PER_MSEC);
 
   /* Determine when the cookie should expire. This is done by taking the
    * difference between the server time and the time the server wants the cookie
@@ -514,12 +516,10 @@ bool CookieParser::GetExpiry(CookieStruct& aCookieData,
   int64_t maxage = 0;
   if (ParseMaxAgeAttribute(aMaxage, &maxage)) {
     if (maxage == INT64_MIN) {
-      aCookieData.expiry() = maxage;
+      aCookieData.expiryInMSec() = maxage;
     } else {
-      CheckedInt<int64_t> value(aCurrentTimeInMSec);
-      value += (maxageCap ? std::min(maxage, maxageCap) : maxage) * 1000;
-
-      aCookieData.expiry() = value.isValid() ? value.value() : INT64_MAX;
+      aCookieData.expiryInMSec() =
+          CookieCommons::MaybeCapMaxAge(creationTimeInMSec, maxage);
     }
 
     return false;
@@ -529,8 +529,8 @@ bool CookieParser::GetExpiry(CookieStruct& aCookieData,
   if (!aExpires.IsEmpty()) {
     // parse expiry time
     PRTime expiresTimeInUSec;
-    if (PR_ParseTimeString(aExpires.BeginReading(), true, &expiresTimeInUSec) !=
-        PR_SUCCESS) {
+    if (PR_ParseTimeString(PromiseFlatCString(aExpires).get(), true,
+                           &expiresTimeInUSec) != PR_SUCCESS) {
       return true;
     }
 
@@ -544,12 +544,12 @@ bool CookieParser::GetExpiry(CookieStruct& aCookieData,
       MOZ_ASSERT(aFromHttp);
 
       PRTime dateHeaderTimeInUSec;
-      if (PR_ParseTimeString(aDateHeader.BeginReading(), true,
+      if (PR_ParseTimeString(PromiseFlatCString(aDateHeader).get(), true,
                              &dateHeaderTimeInUSec) == PR_SUCCESS &&
           StaticPrefs::network_cookie_useServerTime()) {
         int64_t serverTimeInMSec =
             dateHeaderTimeInUSec / int64_t(PR_USEC_PER_MSEC);
-        int64_t delta = aCurrentTimeInMSec - serverTimeInMSec;
+        int64_t delta = creationTimeInMSec - serverTimeInMSec;
         expiresInMSec += delta;
       }
     }
@@ -560,8 +560,8 @@ bool CookieParser::GetExpiry(CookieStruct& aCookieData,
     // time be set less than current time and more than server time.
     // The cookie item have to be used to the expired cookie.
 
-    aCookieData.expiry() =
-        CookieCommons::MaybeCapExpiry(aCurrentTimeInMSec, expiresInMSec);
+    aCookieData.expiryInMSec() =
+        CookieCommons::MaybeCapExpiry(creationTimeInMSec, expiresInMSec);
     return false;
   }
 
@@ -633,21 +633,6 @@ void CookieParser::FixDomain(CookieStruct& aCookieData, nsIURI* aHostURI,
    */
 }
 
-static void RecordPartitionedTelemetry(const CookieStruct& aCookieData,
-                                       bool aIsForeign) {
-  mozilla::glean::networking::set_cookie.Add(1);
-  if (aCookieData.isPartitioned()) {
-    mozilla::glean::networking::set_cookie_partitioned.AddToNumerator(1);
-  }
-  if (aIsForeign) {
-    mozilla::glean::networking::set_cookie_foreign.AddToNumerator(1);
-  }
-  if (aIsForeign && aCookieData.isPartitioned()) {
-    mozilla::glean::networking::set_cookie_foreign_partitioned.AddToNumerator(
-        1);
-  }
-}
-
 // Main entry point for cookie parsing. Parses a single cookie string
 // (from either document.cookie or a Set-Cookie header) and populates
 // the internal CookieStruct data.
@@ -656,11 +641,14 @@ void CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
                          const nsACString& aDateHeader, bool aFromHttp,
                          bool aIsForeignAndNotAddon, bool aPartitionedOnly,
                          bool aIsInPrivateBrowsing, bool aOn3pcbException,
-                         int64_t aCurrentTimeInMSec) {
+                         int64_t aCurrentTimeInUSec) {
   MOZ_ASSERT(!mValidation);
 
   // init expiryTime such that session cookies won't prematurely expire
-  mCookieData.expiry() = INT64_MAX;
+  mCookieData.expiryInMSec() = INT64_MAX;
+  mCookieData.creationTimeInUSec() =
+      Cookie::GenerateUniqueCreationTimeInUSec(aCurrentTimeInUSec);
+  mCookieData.updateTimeInUSec() = mCookieData.creationTimeInUSec();
 
   mCookieData.schemeMap() = CookieCommons::URIToSchemeType(mHostURI);
 
@@ -679,8 +667,8 @@ void CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
   }
 
   // calculate expiry time of cookie.
-  mCookieData.isSession() = GetExpiry(
-      mCookieData, expires, maxage, aCurrentTimeInMSec, aDateHeader, aFromHttp);
+  mCookieData.isSession() =
+      GetExpiry(mCookieData, expires, maxage, aDateHeader, aFromHttp);
   if (aStatus == STATUS_ACCEPT_SESSION) {
     // force lifetime to session. note that the expiration time, if set above,
     // will still apply.
@@ -727,12 +715,6 @@ void CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
 
   if (mValidation->Result() != nsICookieValidation::eOK) {
     return;
-  }
-
-  // We count SetCookie operations in the parent process only for HTTP set
-  // cookies to prevent double counting.
-  if (XRE_IsParentProcess() || !aFromHttp) {
-    RecordPartitionedTelemetry(mCookieData, aIsForeignAndNotAddon);
   }
 }
 

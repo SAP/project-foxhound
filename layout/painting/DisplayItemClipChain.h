@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -84,10 +82,15 @@ struct DisplayItemClipChain {
   {
   }
 
+  bool IsDisplayportClip() const { return mKind == ClipKind::Displayport; }
+
+  enum class ClipKind : uint8_t { Displayport, Other };
+
   DisplayItemClip mClip;
   const ActiveScrolledRoot* mASR;
   RefPtr<const DisplayItemClipChain> mParent;
   uint32_t mRefCount = 0;
+  ClipKind mKind = ClipKind::Other;
   DisplayItemClipChain* mNextClipChainToDestroy;
 #if defined(DEBUG) || defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
   bool mOnStack;

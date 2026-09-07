@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +17,7 @@
 #include "nsIInterfaceRequestorUtils.h"  // for do_GetInterface
 #include "nsLiteralString.h"             // for NS_LITERAL_STRING
 #include "nsPIDOMWindow.h"               // for nsPIDOMWindow
+#include "nsPIDOMWindowInlines.h"        // for nsPIDOMWindowOuter::GetDocShell
 
 class nsITransaction;
 

@@ -9,6 +9,38 @@ newtab-page-title = Nueva Pestanya
 newtab-settings-button =
     .title = Personaliza la tuya pachina de Nueva Pestanya
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Nuevas pestanyas
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ringlera
+           *[other] { $num } ringleras
+        }
+home-restore-defaults-srd =
+    .label = Restaurar valors per defecto
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = URL personalizadas…
+home-mode-choice-blank-srd =
+    .label = Pachina en blanco
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Articlos esponsorizaus
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pachinas visitadas
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Marcapachinas
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Descarga mas recient
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +48,7 @@ newtab-search-box-search-button =
     .title = Mirar
     .aria-label = Mirar
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Anyadir motor de busqueda
 newtab-topsites-edit-topsites-header = Editar lo puesto popular
@@ -44,9 +76,6 @@ newtab-topsites-add-button = Anyadir
 newtab-confirm-delete-history-p1 = Yes seguro que quiers borrar totas las instancias d'esta pachina en o tuyo historial?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Esta acción no se puede desfer.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -82,9 +111,6 @@ newtab-menu-save-to-pocket = Alzar en { -pocket-brand-name }
 newtab-menu-delete-pocket = Borrar de { -pocket-brand-name }
 newtab-menu-archive-pocket = Archivar en { -pocket-brand-name }
 newtab-menu-show-privacy-info = Los nuestros patrocinadors y la tuya privacidat
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -192,69 +218,8 @@ newtab-pocket-learn-more = Saber-ne mas
 newtab-pocket-cta-button = Instala { -pocket-brand-name }
 newtab-pocket-cta-text = Alza los tuyos articlos preferius en { -pocket-brand-name }, y regala-te con lecturas fascinants.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Oi, ha fallau bella cosa en a carga d'este conteniu.
 newtab-error-fallback-refresh-link = Refrescar la pachina pa tornar-lo a intentar.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

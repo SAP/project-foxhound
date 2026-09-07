@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGAnimatedNumber.h"
 
+#include "SMILFloatType.h"
+#include "SVGAttrTearoffTable.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
 #include "nsContentUtils.h"
-#include "SMILFloatType.h"
-#include "SVGAttrTearoffTable.h"
 
 using namespace mozilla::dom;
 
@@ -42,8 +40,8 @@ class MOZ_RAII AutoChangeNumberNotifier {
   SVGElement* const mSVGElement;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedNumber,
-                                         SVGAnimatedNumber::DOMAnimatedNumber>
+constinit static SVGAttrTearoffTable<SVGAnimatedNumber,
+                                     SVGAnimatedNumber::DOMAnimatedNumber>
     sSVGAnimatedNumberTearoffTable;
 
 static bool GetValueFromString(const nsAString& aString,
@@ -142,8 +140,9 @@ SVGAnimatedNumber::DOMAnimatedNumber::~DOMAnimatedNumber() {
   sSVGAnimatedNumberTearoffTable.RemoveTearoff(mVal);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedNumber::ToSMILAttr(SVGElement* aSVGElement) {
-  return MakeUnique<SMILNumber>(this, aSVGElement);
+std::unique_ptr<SMILAttr> SVGAnimatedNumber::ToSMILAttr(
+    SVGElement* aSVGElement) {
+  return std::make_unique<SMILNumber>(this, aSVGElement);
 }
 
 nsresult SVGAnimatedNumber::SMILNumber::ValueFromString(
@@ -160,7 +159,7 @@ nsresult SVGAnimatedNumber::SMILNumber::ValueFromString(
 
   SMILValue val(SMILFloatType::Singleton());
   val.mU.mDouble = value;
-  aValue = val;
+  aValue = std::move(val);
 
   return NS_OK;
 }

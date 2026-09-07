@@ -9,10 +9,10 @@ import android.os.Looper.getMainLooper
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.support.base.R
 import mozilla.components.support.test.ext.appCompatContext
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doNothing
@@ -20,13 +20,19 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.Shadows.shadowOf
+import mozilla.components.support.base.R as supportBaseR
 
 @RunWith(AndroidJUnit4::class)
 class DeniedPermissionDialogFragmentTest {
 
+    @Before
+    fun setup() {
+        testContext.setTheme(com.google.android.material.R.style.Theme_MaterialComponents_Light)
+    }
+
     @Test
     fun `WHEN showing the dialog THEN it has the provided message`() {
-        val messageId = R.string.mozac_support_base_permissions_needed_negative_button
+        val messageId = supportBaseR.string.mozac_support_base_permissions_needed_negative_button
         val fragment = spy(
             DeniedPermissionDialogFragment.newInstance(messageId),
         )
@@ -45,7 +51,7 @@ class DeniedPermissionDialogFragmentTest {
 
     @Test
     fun `WHEN clicking the positive button THEN the settings page will show`() {
-        val messageId = R.string.mozac_support_base_permissions_needed_negative_button
+        val messageId = supportBaseR.string.mozac_support_base_permissions_needed_negative_button
 
         val fragment = spy(
             DeniedPermissionDialogFragment.newInstance(messageId),

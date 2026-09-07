@@ -20,7 +20,6 @@
 const SUGGESTION_SEARCH_STRING = "example";
 const SUGGESTION_URL = "http://example.com/";
 const SUGGESTION_URL_WWW = "http://www.example.com/";
-const SUGGESTION_URL_DISPLAY = "http://example.com";
 
 const MERINO_SUGGESTIONS = [
   {
@@ -40,13 +39,12 @@ add_setup(async function init() {
 
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     merinoSuggestions: MERINO_SUGGESTIONS,
-    prefs: [["suggest.quicksuggest.nonsponsored", true]],
+    prefs: [["suggest.quicksuggest.all", true]],
   });
 });
 
-// When non-sponsored suggestions are disabled, navigational suggestions should
-// be disabled.
-add_task(async function nonsponsoredDisabled() {
+// When `all` is disabled, navigational suggestions should be disabled.
+add_task(async function allDisabled() {
   // Disable sponsored suggestions. Navigational suggestions are non-sponsored,
   // so doing this should not prevent them from being enabled.
   UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
@@ -67,7 +65,7 @@ add_task(async function nonsponsoredDisabled() {
   });
 
   // Now disable them.
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", false);
+  UrlbarPrefs.set("suggest.quicksuggest.all", false);
   await check_results({
     context: createContext(SUGGESTION_SEARCH_STRING, {
       providers: [UrlbarProviderQuickSuggest.name],
@@ -76,7 +74,7 @@ add_task(async function nonsponsoredDisabled() {
     matches: [],
   });
 
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
+  UrlbarPrefs.set("suggest.quicksuggest.all", true);
   UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
 });
 
@@ -94,26 +92,33 @@ add_task(async function heuristicDeduplication() {
     [SUGGESTION_URL_WWW, false],
     ["http://exampledomain.com/", true],
   ];
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  let quickSuggestProviderInstance = providersManager.getProvider(
+    UrlbarProviderQuickSuggest.name
+  );
 
   // Stub `UrlbarProviderQuickSuggest.startQuery()` so we can collect the
   // results it adds for each query.
   let addedResults = [];
   let sandbox = sinon.createSandbox();
-  let startQueryStub = sandbox.stub(UrlbarProviderQuickSuggest, "startQuery");
+  let startQueryStub = sandbox.stub(quickSuggestProviderInstance, "startQuery");
   startQueryStub.callsFake((queryContext, add) => {
     let fakeAdd = (provider, result) => {
       addedResults.push(result);
       add(provider, result);
     };
     return startQueryStub.wrappedMethod.call(
-      UrlbarProviderQuickSuggest,
+      quickSuggestProviderInstance,
       queryContext,
       fakeAdd
     );
   });
 
   for (let [url, expectBestMatch] of scenarios) {
-    await PlacesTestUtils.addVisits(url);
+    await PlacesTestUtils.addVisits({
+      url,
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
 
     // Do a search and check the results.
     let context = createContext(SUGGESTION_SEARCH_STRING, {
@@ -169,7 +174,6 @@ function makeExpectedResult({
       telemetryType,
       title: "title",
       url: SUGGESTION_URL,
-      displayUrl: SUGGESTION_URL_DISPLAY,
       icon: "icon",
       isSponsored: false,
       shouldShowUrl: true,

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,18 +58,23 @@ bool XULComboboxAccessible::IsAcceptableChild(nsIContent* aContent) const {
   return AccessibleWrap::IsAcceptableChild(aContent) && !aContent->IsText();
 }
 
-void XULComboboxAccessible::Description(nsString& aDescription) const {
+EDescriptionValueFlag XULComboboxAccessible::Description(
+    nsString& aDescription) const {
   aDescription.Truncate();
   // Use description of currently focused option
   nsCOMPtr<nsIDOMXULMenuListElement> menuListElm = Elm()->AsXULMenuList();
-  if (!menuListElm) return;
+  if (!menuListElm) return eDescriptionOK;
 
   nsCOMPtr<dom::Element> focusedOptionItem;
   menuListElm->GetSelectedItem(getter_AddRefs(focusedOptionItem));
   if (focusedOptionItem && mDoc) {
     LocalAccessible* focusedOptionAcc = mDoc->GetAccessible(focusedOptionItem);
-    if (focusedOptionAcc) focusedOptionAcc->Description(aDescription);
+    if (focusedOptionAcc) {
+      return focusedOptionAcc->Description(aDescription);
+    }
   }
+
+  return eDescriptionOK;
 }
 
 void XULComboboxAccessible::Value(nsString& aValue) const {

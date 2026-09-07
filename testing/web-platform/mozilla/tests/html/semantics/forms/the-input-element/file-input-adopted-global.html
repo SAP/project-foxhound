@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Files from adopted input type=file should be in the element's owner global</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<iframe id="frame" srcdoc="<input type=file>"></iframe>
+<script>
+const MockFilePicker = SpecialPowers.MockFilePicker;
+
+promise_test(async t => {
+  await new Promise(r => addEventListener("load", r));
+  const iframe = document.querySelector("iframe");
+  t.add_cleanup(() => {
+    MockFilePicker.cleanup();
+  });
+
+  const iframeWin = iframe.contentWindow;
+  const input = iframe.contentDocument.querySelector("input");
+
+  assert_true(input instanceof iframeWin.HTMLInputElement,
+    "Before adoption, input's global should be the iframe's window");
+
+  document.body.appendChild(document.adoptNode(input));
+
+  assert_true(input instanceof iframeWin.HTMLInputElement,
+    "After adoption, input's wrapper global should still be the iframe's window");
+
+  // Set up MockFilePicker to return a file when the picker opens.
+  MockFilePicker.init();
+  MockFilePicker.useBlobFile();
+  MockFilePicker.returnValue = MockFilePicker.returnOK;
+
+  const changePromise = new Promise(resolve => {
+    input.addEventListener("change", resolve, { once: true });
+  });
+
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  input.click();
+  await changePromise;
+
+  assert_true(input.files.length > 0, "Should have at least one file");
+  assert_true(input.files[0] instanceof iframeWin.File,
+    "File from input.files should be in the same global as the input element");
+}, "input.files should use the element's owner global, not the adopter document's global");
+</script>
+</body>

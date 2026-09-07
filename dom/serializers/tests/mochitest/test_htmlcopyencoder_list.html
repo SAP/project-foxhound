@@ -1,0 +1,127 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+-->
+<head>
+<title>Test on the html copy encoder for table selection</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1953174">Mozilla Bug 1953174</a>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<div id="container">
+  <ul>
+    <li>Item1</li>
+    <li><span>Item2</span></li>
+    <li><div>Item3</div></li>
+    <li><ol><li>SubItem1</li></ol></li>
+    <li><ol><li><span>SubItem2</span></li><li><div>SubItem3</div></li></ol></li>
+    <div><li>ItemInDiv1</li></div>
+    <span><li>ItemInSpan1</li></span>
+    <div><li><span>ItemInDiv1</span></li></div>
+  </ul>
+</div>
+<script>
+
+/* global describe, it, beforeEach */
+
+const alwaysIncludeCommonAncestor = SpecialPowers.getBoolPref(
+  "dom.serializer.includeCommonAncestor.enabled"
+);
+
+const TESTS = [
+  {
+    selector: `ul li`,
+    expectedResult: `<li>Item1</li>`,
+    expectedContext: `<html><body><div id="container"><ul></ul></div></body></html>`,
+  }, {
+    selector: `ul li span`,
+    expectedResult: `${alwaysIncludeCommonAncestor ? `<li>` : ``}` +
+                    `<span>Item2</span>` +
+                    `${alwaysIncludeCommonAncestor ? `</li>` : ``}`,
+    expectedContext: `<html><body><div id="container"><ul>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<li></li>`}` +
+                     `</ul></div></body></html>`,
+  }, {
+    selector: `ul li div`,
+    expectedResult: `${alwaysIncludeCommonAncestor ? `<li>` : ``}` +
+                    `<div>Item3</div>` +
+                    `${alwaysIncludeCommonAncestor ? `</li>` : ``}`,
+    expectedContext: `<html><body><div id="container"><ul>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<li></li>`}` +
+                     `</ul></div></body></html>`,
+  }, {
+    selector: `ul ol li`,
+    expectedResult: `${alwaysIncludeCommonAncestor ? `<li><ol>` : ``}` +
+                    `<li>SubItem1</li>` +
+                    `${alwaysIncludeCommonAncestor ? `</ol></li>` : ``}`,
+    expectedContext: `<html><body><div id="container"><ul>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<li><ol></ol></li>`}` +
+                     `</ul></div></body></html>`,
+  }, {
+    selector: `ul ol li span`,
+    expectedResult: `${alwaysIncludeCommonAncestor ? `<li>` : ``}` +
+                    `<span>SubItem2</span>` +
+                    `${alwaysIncludeCommonAncestor ? `</li>` : ``}`,
+    expectedContext: `<html><body><div id="container"><ul><li><ol>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<li></li>`}` +
+                     `</ol></li></ul></div></body></html>`,
+  }, {
+    selector: `ul ol li div`,
+    expectedResult: `${alwaysIncludeCommonAncestor ? `<li>` : ``}` +
+                    `<div>SubItem3</div>` +
+                    `${alwaysIncludeCommonAncestor ? `</li>` : ``}`,
+    expectedContext: `<html><body><div id="container"><ul><li><ol>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<li value="2"></li>`}` +
+                     `</ol></li></ul></div></body></html>`,
+  }, {
+    selector: `ul span li`,
+    expectedResult: `<span><li>ItemInSpan1</li></span>`,
+    expectedContext: `<html><body><div id="container"><ul>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<span></span>`}` +
+                     `</ul></div></body></html>`,
+  }, {
+    selector: `ul div span`,
+    expectedResult: `${alwaysIncludeCommonAncestor ? `<div><li>` : ``}` +
+                    `<span>ItemInDiv1</span>` +
+                    `${alwaysIncludeCommonAncestor ? `</li></div>` : ``}`,
+    expectedContext: `<html><body><div id="container"><ul>` +
+                     `${alwaysIncludeCommonAncestor ? `` : `<div><li></li></div>`}` +
+                     `</ul></div></body></html>`,
+  },
+];
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+
+TESTS.forEach(testCase => {
+  it(`Selector: ${testCase.selector}`, () => {
+    info("Select nodes");
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+
+    const range = document.createRange();
+    selection.addRange(range);
+
+    const target = document.querySelector(testCase.selector);
+    range.selectNode(target);
+
+    info("Initialize encoder");
+    encoder.init(document, "text/html", 0);
+    encoder.setSelection(selection);
+
+    info("Check result");
+    let htmlContext = { value: '' };
+    let htmlInfo = { value: '' };
+    is(encoder.encodeToStringWithContext(htmlContext, htmlInfo), testCase.expectedResult,
+       `Check serialized output`);
+    is(htmlContext.value, testCase.expectedContext, `Check serialized context`);
+    is(htmlInfo.value, `0,0`, `Check serialized info`);
+  });
+});
+
+</script>
+</body>
+</html>

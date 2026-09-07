@@ -5,8 +5,6 @@
 package org.mozilla.fenix.messaging
 
 import mozilla.components.service.nimbus.messaging.Message
-import org.mozilla.fenix.BrowserDirection
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MessageClicked
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MessageDismissed
@@ -17,15 +15,18 @@ import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.Microsurv
 import org.mozilla.fenix.settings.SupportUtils
 
 private val PRIVACY_POLICY_URL =
-    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE) +
+    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE) +
         "?utm_medium=firefox-mobile&utm_source=modal&utm_campaign=microsurvey"
 
 /**
  * Handles interactions with a microsurvey.
+ *
+ * @param appStore The [AppStore] for dispatching actions.
+ * @param openUrlInBrowser Callback to open a URL in the browser.
  */
 class MicrosurveyMessageController(
     private val appStore: AppStore,
-    private val homeActivity: HomeActivity,
+    private val openUrlInBrowser: (String) -> Unit,
 ) : MessageController {
 
     override fun onMessagePressed(message: Message) {
@@ -45,11 +46,7 @@ class MicrosurveyMessageController(
         val url = getPrivacyPolicyUrlFor(utmContent)
 
         appStore.dispatch(OnPrivacyNoticeTapped(id))
-        homeActivity.openToBrowserAndLoad(
-            searchTermOrURL = url,
-            newTab = true,
-            from = BrowserDirection.FromGlobal,
-        )
+        openUrlInBrowser(url)
     }
 
     /**

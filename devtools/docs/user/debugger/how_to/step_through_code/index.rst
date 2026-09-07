@@ -24,19 +24,24 @@ When paused, you can press the Esc key to open and close the split console to ga
   :class: border
 
 
-Pause on breakpoints overlay
+Paused overlay
 ****************************
 
-Since Firefox 70, when your code is paused on a breakpoint an overlay appears on the viewport of the tab you are debugging.
+When the page is paused, an overlay appears on the viewport of the tab you are debugging.
 
 .. image:: debugger-overlay.png
-  :alt: border
+  :class: border
 
 
 This lets you know what kind of breakpoint the code is paused on (breakpoint, event breakpoint, etc.), and also provides a step button and a play button. The thinking here is that if you've got your DevTools open in a separate window, as many people do, it can be easier to have the buttons available right there to move the code forward while you are looking at the result.
+
+Starting Firefox 142, this overlay can be disabled from the Debugger settings.
+
+.. image:: debugger-overlay-setting.png
+  :class: border
 
 
 Inline variable preview
 ***********************
 
-New in Firefox 71, the :ref:`source pane <debugger_ui_tour_source_pane>` now gives you an instant preview of the variables on each line of code you've stepped through. See :ref:`Set a breakpoint > Inline variable preview <debugger-how-to-set-a-breakpoint-variable-preview>` for more information.
+The :ref:`source pane <debugger_ui_tour_source_pane>` gives you an instant preview of the variables on each line of code you've stepped through. See :ref:`Set a breakpoint > Inline variable preview <debugger-how-to-set-a-breakpoint-variable-preview>` for more information.

@@ -751,6 +751,7 @@ const GRANTED_WITHOUT_USER_PROMPT = [
   "idle",
   "mozillaAddons",
   "networkStatus",
+  "publicSuffix",
   "scripting",
   "storage",
   "telemetry",
@@ -809,6 +810,23 @@ add_task(async function test_permissions_have_localization_strings() {
         `Permission '${perm}' intentionally granted without prompting the user`
       );
     }
+  }
+});
+
+// Every API permission name must match the regex used by the enterprise
+// ExtensionSettings policy's blocked_permissions filter in
+// toolkit/components/enterprisepolicies/EnterprisePoliciesParent.sys.mjs
+// (mirrors Chrome's policy schema), so admins can target any permission we
+// add now or in the future.
+add_task(async function test_permission_names_match_policy_schema() {
+  const VALID_PERM = /^[a-z][a-zA-Z0-9._]*$/;
+  let names = Schemas.getPermissionNames();
+  ok(names.length, "Got permission names from API schemas");
+  for (let name of names) {
+    ok(
+      VALID_PERM.test(name),
+      `API permission name "${name}" matches enterprise policy schema regex`
+    );
   }
 });
 

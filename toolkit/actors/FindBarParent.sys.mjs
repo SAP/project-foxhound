@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 sts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,16 +27,28 @@ export class FindBarParent extends JSWindowActorParent {
       }
 
       switch (message.name) {
-        case "Findbar:Keypress":
-          findBar._onBrowserKeypress(message.data);
+        case "Findbar:Keypress": {
+          let d = message.data || {};
+          findBar._onBrowserKeypress({
+            type: "keypress",
+            bubbles: false,
+            cancelable: !!d.cancelable,
+            ctrlKey: !!d.ctrlKey,
+            altKey: !!d.altKey,
+            shiftKey: !!d.shiftKey,
+            metaKey: !!d.metaKey,
+            keyCode: (d.keyCode | 0) & 0xffff,
+            charCode: (d.charCode | 0) & 0xffff,
+          });
           break;
+        }
         case "Findbar:Mouseup":
           findBar.onMouseUp();
           break;
       }
     };
 
-    let findPromise = browser.ownerGlobal.gFindBarPromise;
+    let findPromise = browser.documentGlobal.gFindBarPromise;
     if (findPromise) {
       findPromise.then(respondToMessage);
     } else {

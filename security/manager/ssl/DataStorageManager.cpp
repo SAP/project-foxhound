@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,6 +55,14 @@ DataStorageManager::Get(nsIDataStorageManager::DataStorage aDataStorage,
       // bytes by default). For HSTS, much less information is stored, so save
       // space by limiting values to 24 bytes.
       valueLength = 24;
+      break;
+    case nsIDataStorageManager::SiteIntegrityServiceState:
+      if (mSiteIntegrityServiceStateCreated) {
+        return NS_ERROR_ALREADY_INITIALIZED;
+      }
+      mSiteIntegrityServiceStateCreated = true;
+      filename.Assign(u"SiteIntegrityServiceState"_ns);
+      // XXX find valueLength limit
       break;
     default:
       return NS_ERROR_INVALID_ARG;

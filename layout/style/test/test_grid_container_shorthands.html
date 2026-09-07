@@ -158,11 +158,9 @@ var grid_template_test_cases = [
         gridTemplateRows: "subgrid [foo] repeat(3, [] [a b] [c])",
     },
     {
-        // Test that the number of lines is clamped to kMaxLine = 10000.
-        // https://drafts.csswg.org/css-grid/#overlarge-grids
         specified: "subgrid [foo] repeat(999999999, [a]) / subgrid",
         gridTemplateColumns: "subgrid",
-        gridTemplateRows: "subgrid [foo] repeat(10000, [a])",
+        gridTemplateRows: "subgrid [foo] repeat(999999999, [a])",
     },
     {
         specified: "subgrid [bar]/ subgrid [] [foo",

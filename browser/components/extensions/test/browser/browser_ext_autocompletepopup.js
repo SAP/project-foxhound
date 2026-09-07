@@ -1,9 +1,8 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 add_task(async function testAutocompletePopup() {
   let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
     manifest: {
       browser_action: {
         default_popup: "page.html",
@@ -12,6 +11,9 @@ add_task(async function testAutocompletePopup() {
       page_action: {
         default_popup: "page.html",
         browser_style: false,
+      },
+      options_ui: {
+        page: "page.html",
       },
     },
     background: async function () {
@@ -40,8 +42,10 @@ add_task(async function testAutocompletePopup() {
             <option value="ar">
           </datalist>
           </div>
+          <script src="page.js"></script>
           </body>
         </html>`,
+      "page.js": () => browser.test.sendMessage("page_loaded"),
     },
   });
 
@@ -70,20 +74,51 @@ add_task(async function testAutocompletePopup() {
   await extension.startup();
   await extension.awaitMessage("ready");
 
+  info("Testing autocomplete in pageAction popup panel");
   clickPageAction(extension);
   // intentional misspell so eslint is ok with browser in background script.
   let bowser = await awaitExtensionPanel(extension);
   ok(!!bowser, "panel opened with browser");
+  await extension.awaitMessage("page_loaded");
   await testDatalist(bowser, document);
-  closePageAction(extension);
+  await closePageAction(extension);
   await new Promise(resolve => setTimeout(resolve, 0));
 
+  info("Testing autocomplete in browserAction popup panel");
   clickBrowserAction(extension);
   bowser = await awaitExtensionPanel(extension);
   ok(!!bowser, "panel opened with browser");
+  await extension.awaitMessage("page_loaded");
   await testDatalist(bowser, document);
-  closeBrowserAction(extension);
+  await closeBrowserAction(extension);
   await new Promise(resolve => setTimeout(resolve, 0));
+
+  info("Testing autocomplete in embedded options page in about:addons");
+  // Open new window for about:addons to be loaded in, as opening about:addons
+  // may consume an existing tab and we don't want that.
+  let browserWindow = await BrowserTestUtils.openNewBrowserWindow();
+  // Opens about:addons and returns its content window:
+  let aboutaddonsWin = await browserWindow.BrowserAddonUI.openAddonsMgr(
+    `addons://detail/${encodeURIComponent(extension.id)}/preferences`
+  );
+  is(
+    browserWindow.gBrowser.selectedTab.linkedBrowser.currentURI.spec,
+    "about:addons",
+    "about:addons opened in the browser window"
+  );
+  await extension.awaitMessage("page_loaded");
+  let optionsBrowser = aboutaddonsWin.document.getElementById(
+    "addon-inline-options"
+  );
+  is(
+    optionsBrowser.currentURI.spec,
+    `moz-extension://${extension.uuid}/page.html`,
+    "options_ui document from extension is loaded in about:addons"
+  );
+  await SimpleTest.promiseFocus(optionsBrowser);
+  await testDatalist(optionsBrowser, browserWindow.document);
+
+  await BrowserTestUtils.closeWindow(browserWindow);
 
   await extension.unload();
   BrowserTestUtils.removeTab(tab);

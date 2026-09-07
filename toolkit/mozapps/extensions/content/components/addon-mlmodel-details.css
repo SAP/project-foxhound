@@ -8,7 +8,7 @@ addon-mlmodel-details {
     gap: var(--space-xsmall);
     align-items: center;
     padding: var(--space-xsmall) 0;
-    color: var(--in-content-text-color);
+    color: var(--text-color);
 
     &:last-child {
       padding-bottom: var(--space-medium);

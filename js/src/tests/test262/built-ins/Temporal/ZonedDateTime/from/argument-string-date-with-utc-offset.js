@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -11,8 +11,21 @@ features: [Temporal]
 const validStrings = [
   "1970-01-01T00Z[UTC]",
   "1970-01-01T00Z[!UTC]",
+  "1970-01-01T00+00[UTC]",
   "1970-01-01T00+00:00[UTC]",
+  "1970-01-01T00+00:00:00,0[UTC]",
+  "1970-01-01T00+00:00:00.000000000[UTC]",
+  "1970-01-01T00+0000[UTC]",
+  "1970-01-01T00+000000,0[UTC]",
+  "1970-01-01T00+000000.000000000[UTC]",
   "1970-01-01T00+00:00[!UTC]",
+  "1970-01-01T00-00[UTC]",
+  "1970-01-01T00-00:00[UTC]",
+  "1970-01-01T00-00:00:00,0[UTC]",
+  "1970-01-01T00-00:00:00.000000000[UTC]",
+  "1970-01-01T00-0000[UTC]",
+  "1970-01-01T00-000000,0[UTC]",
+  "1970-01-01T00-000000.000000000[UTC]",
 ];
 
 for (const arg of validStrings) {

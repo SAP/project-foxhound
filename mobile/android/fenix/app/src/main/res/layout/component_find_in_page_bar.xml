@@ -8,10 +8,11 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="56dp"
-    android:background="?attr/layer1"
+    android:background="?attr/colorSurface"
     android:clickable="true"
+    android:elevation="@dimen/browser_fragment_toolbar_elevation"
     android:focusable="true"
     android:visibility="gone"
-    app:findInPageButtonsTint="?attr/textPrimary"
-    app:findInPageNoMatchesTextColor="?attr/textCritical"
-    app:findInPageResultCountTextColor="?attr/textPrimary" />
+    app:findInPageButtonsTint="?attr/colorOnSurface"
+    app:findInPageNoMatchesTextColor="?attr/colorError"
+    app:findInPageResultCountTextColor="?attr/colorOnSurface" />

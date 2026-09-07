@@ -1,5 +1,5 @@
 [DEFAULT]
-support-files = [ "hyperlink.js",
+support-files = [
   "!/accessible/tests/mochitest/*.js",
   "!/accessible/tests/mochitest/letters.gif"]
 

@@ -26,15 +26,12 @@
 
       let observerPromise = new Promise(resolve => {
         let crashObserver = (subject, topic) => {
-          is(topic, 'ipc:content-shutdown', 'Received correct observer topic.');
+          is(topic, "ipc:content-shutdown", "Received correct observer topic.");
           ok(subject instanceof Ci.nsIPropertyBag2,
-             'Subject implements nsIPropertyBag2.');
+             "Subject implements nsIPropertyBag2.");
 
-          var dumpID;
-          if ('nsICrashReporter' in Ci) {
-            dumpID = subject.getPropertyAsAString('dumpID');
-            ok(dumpID, "dumpID is present and not an empty string");
-          }
+          const dumpID = subject.get("dumpID");
+          ok(dumpID, "dumpID is present and not an empty string");
 
           Services.obs.removeObserver(crashObserver, 'ipc:content-shutdown');
           resolve();

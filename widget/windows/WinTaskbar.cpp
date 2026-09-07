@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,6 +22,7 @@
 #include "TaskbarWindowPreview.h"
 #include "nsWidgetsCID.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "mozilla/Preferences.h"
 #include "nsAppRunner.h"
@@ -37,14 +36,11 @@
 namespace {
 
 HWND GetHWNDFromDocShell(nsIDocShell* aShell) {
-  nsCOMPtr<nsIBaseWindow> baseWindow(
-      do_QueryInterface(reinterpret_cast<nsISupports*>(aShell)));
-
-  if (!baseWindow) return nullptr;
-
-  nsCOMPtr<nsIWidget> widget;
-  baseWindow->GetMainWidget(getter_AddRefs(widget));
-
+  nsCOMPtr<nsIBaseWindow> baseWindow(do_QueryInterface(ToSupports(aShell)));
+  if (!baseWindow) {
+    return nullptr;
+  }
+  nsCOMPtr<nsIWidget> widget = baseWindow->GetMainWidget();
   return widget ? (HWND)widget->GetNativeData(NS_NATIVE_WINDOW) : nullptr;
 }
 
@@ -361,8 +357,7 @@ WinTaskbar::GetTaskbarWindowPreview(nsIDocShell* shell,
 
   nsCOMPtr<nsITaskbarWindowPreview> preview = window->GetTaskbarPreview();
   if (!preview) {
-    RefPtr<DefaultController> defaultController =
-        new DefaultController(toplevelHWND);
+    auto defaultController = MakeRefPtr<DefaultController>(toplevelHWND);
 
     TaskbarWindowPreview* previewRaw = new TaskbarWindowPreview(
         mTaskbar, defaultController, toplevelHWND, shell);

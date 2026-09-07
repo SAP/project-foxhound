@@ -235,12 +235,11 @@ class MitmproxyAndroid(Mitmproxy):
             LOG.info("Certutil returncode: %s" % cmd_proc.returncode)
             LOG.info("Certutil output: %s" % cmd_output)
             return cmd_output
+        elif raise_exception:
+            LOG.critical("Certutil command failed!!")
+            LOG.info("Certutil returncode: %s" % cmd_proc.returncode)
+            LOG.info("Certutil output: %s" % cmd_output)
+            LOG.info("Certutil error: %s" % errs)
+            raise Exception("Certutil command failed!!")
         else:
-            if raise_exception:
-                LOG.critical("Certutil command failed!!")
-                LOG.info("Certutil returncode: %s" % cmd_proc.returncode)
-                LOG.info("Certutil output: %s" % cmd_output)
-                LOG.info("Certutil error: %s" % errs)
-                raise Exception("Certutil command failed!!")
-            else:
-                return False
+            return False

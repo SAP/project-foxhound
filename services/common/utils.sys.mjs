@@ -184,8 +184,7 @@ export var CommonUtils = {
 
   encodeUTF8: function encodeUTF8(str) {
     try {
-      str = this._utf8Converter.ConvertFromUnicode(str);
-      return str + this._utf8Converter.Finish();
+      return this.byteArrayToString(Array.from(new TextEncoder().encode(str)));
     } catch (ex) {
       return null;
     }
@@ -193,8 +192,8 @@ export var CommonUtils = {
 
   decodeUTF8: function decodeUTF8(str) {
     try {
-      str = this._utf8Converter.ConvertToUnicode(str);
-      return str + this._utf8Converter.Finish();
+      const bytes = this.byteStringToArrayBuffer(str);
+      return new TextDecoder().decode(bytes);
     } catch (ex) {
       return null;
     }
@@ -686,14 +685,6 @@ export var CommonUtils = {
     return result;
   },
 };
-
-ChromeUtils.defineLazyGetter(CommonUtils, "_utf8Converter", function () {
-  let converter = Cc[
-    "@mozilla.org/intl/scriptableunicodeconverter"
-  ].createInstance(Ci.nsIScriptableUnicodeConverter);
-  converter.charset = "UTF-8";
-  return converter;
-});
 
 ChromeUtils.defineLazyGetter(CommonUtils, "_converterService", function () {
   return Cc["@mozilla.org/streamConverters;1"].getService(

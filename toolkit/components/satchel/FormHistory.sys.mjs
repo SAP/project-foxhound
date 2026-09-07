@@ -1292,7 +1292,7 @@ export let FormHistory = {
     supportsDeletedTable = val;
   },
 
-  // The remaining methods are called by FormHistoryStartup.js
+  // The remaining methods are called by FormHistoryStartup.sys.mjs
   async expireOldEntries() {
     log("expireOldEntries");
 

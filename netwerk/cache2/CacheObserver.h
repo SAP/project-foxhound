@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheObserver__h__
-#define CacheObserver__h__
+#ifndef CacheObserver_h_
+#define CacheObserver_h_
 
 #include "nsIObserver.h"
 #include "nsIFile.h"
@@ -12,7 +12,6 @@
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPtr.h"
-#include <algorithm>
 
 namespace mozilla {
 namespace net {
@@ -76,10 +75,6 @@ class CacheObserver : public nsIObserver, public nsSupportsWeakReference {
     if (!StaticPrefs::privacy_sanitize_sanitizeOnShutdown()) {
       return false;
     }
-    if (StaticPrefs::privacy_sanitize_useOldClearHistoryDialog()) {
-      return StaticPrefs::privacy_clearOnShutdown_cache();
-    }
-    // use the new cache clearing pref for the new clear history dialog
     return StaticPrefs::privacy_clearOnShutdown_v2_cache();
   }
   static void ParentDirOverride(nsIFile** aDir);

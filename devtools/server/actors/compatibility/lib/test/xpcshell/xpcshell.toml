@@ -1,5 +1,5 @@
 [DEFAULT]
-tags = "devtools"
+tags = "devtools devtools-compat-data"
 head = "head.js"
 firefox-appdir = "browser"
 

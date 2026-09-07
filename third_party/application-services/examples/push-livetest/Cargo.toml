@@ -1,0 +1,18 @@
+[package]
+name = "example-push-livetest"
+version = "0.1.0"
+authors = ["sync-team@mozilla.com"]
+license = "MPL-2.0"
+edition = "2021"
+publish = false
+
+[[example]]
+path = "src/livetest.rs"
+name = "push-livetest"
+
+[dev-dependencies]
+push = { path = "../../components/push" }
+viaduct = { path = "../../components/viaduct"}
+viaduct-hyper = { path = "../../components/support/viaduct-hyper"}
+hex = "0.4"
+tempfile = "3"

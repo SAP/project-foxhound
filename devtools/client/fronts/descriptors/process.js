@@ -138,5 +138,4 @@ class ProcessDescriptorFront extends DescriptorMixin(
   }
 }
 
-exports.ProcessDescriptorFront = ProcessDescriptorFront;
 registerFront(ProcessDescriptorFront);

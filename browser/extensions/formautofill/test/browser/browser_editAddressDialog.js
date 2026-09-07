@@ -71,8 +71,8 @@ add_task(async function test_saveAddress() {
     );
     is(
       doc.querySelector("#postal-code-container > .label-text").textContent,
-      "ZIP Code",
-      "US postal-code label should be 'ZIP Code'"
+      "ZIP code",
+      "US postal-code label should be 'ZIP code'"
     );
     // Input address info and verify move through form with tab keys
     let keypresses = [

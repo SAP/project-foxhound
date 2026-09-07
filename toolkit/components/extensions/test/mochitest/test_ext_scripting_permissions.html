@@ -26,7 +26,7 @@ const verifyRegisterContentScripts = async ({ manifest_version }) => {
     async background() {
       browser.test.onMessage.addListener(async (msg, value) => {
         switch (msg) {
-          case "grant-permission":
+          case "grant-permission": {
             let granted = await new Promise(resolve => {
               browser.test.withHandlingUserInput(() => {
                 resolve(browser.permissions.request(value));
@@ -35,7 +35,7 @@ const verifyRegisterContentScripts = async ({ manifest_version }) => {
             browser.test.assertTrue(granted, "permission request succeeded");
             browser.test.sendMessage("permission-granted");
             break;
-
+          }
           default:
             browser.test.fail(`invalid message received: ${msg}`);
         }
@@ -128,10 +128,7 @@ const verifyRegisterContentScripts = async ({ manifest_version }) => {
 
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.manifestV3.enabled", true],
-      ["extensions.webextOptionalPermissionPrompts", false],
-    ],
+    set: [["extensions.webextOptionalPermissionPrompts", false]],
   });
 });
 

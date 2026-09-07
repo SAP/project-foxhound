@@ -10,16 +10,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=95530
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 95530 **/
+  /** Test for Bug 95530 */
   function run() {
     is(document.compatMode, "CSS1Compat", "Ensure we are in standards mode, not quirks mode.");
 
     var body = document.getElementsByTagName("body");
 
+    // top/leftmargin apply to both sides: see https://github.com/whatwg/html/pull/11881
     is(computedStyle(body[0],"margin-top"), "100px", "Ensure margin-top matches topmargin");
-    is(computedStyle(body[0],"margin-bottom"), "150px", "Ensure margin-bottom matches bottommargin");
+    is(computedStyle(body[0],"margin-bottom"), "100px", "Ensure margin-bottom matches topmargin");
     is(computedStyle(body[0],"margin-left"), "23px", "Ensure margin-left matches leftmargin");
-    is(computedStyle(body[0],"margin-right"), "64px", "Ensure margin-right matches rightmargin");
+    is(computedStyle(body[0],"margin-right"), "23px", "Ensure margin-right matches leftmargin");
     SimpleTest.finish();
   }
   SimpleTest.waitForExplicitFinish();

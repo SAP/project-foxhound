@@ -175,7 +175,7 @@ LoginManagerAuthPromptFactory.prototype = {
   async _waitForLoginsUI(prompt) {
     await this._uiBusyPromise;
 
-    let [origin, httpRealm] = prompt.prompter._getAuthTarget(
+    const { displayHost, realm } = PromptUtils.getAuthTarget(
       prompt.channel,
       prompt.authInfo
     );
@@ -185,14 +185,17 @@ LoginManagerAuthPromptFactory.prototype = {
       return;
     }
 
-    let hasLogins = Services.logins.countLogins(origin, null, httpRealm) > 0;
+    let hasLogins =
+      (await Services.logins.countLoginsAsync(displayHost, null, realm)) > 0;
     if (
       !hasLogins &&
       lazy.LoginHelper.schemeUpgrades &&
-      origin.startsWith("https://")
+      displayHost.startsWith("https://")
     ) {
-      let httpOrigin = origin.replace(/^https:\/\//, "http://");
-      hasLogins = Services.logins.countLogins(httpOrigin, null, httpRealm) > 0;
+      let httpDisplayHost = displayHost.replace(/^https:\/\//, "http://");
+      hasLogins =
+        (await Services.logins.countLoginsAsync(httpDisplayHost, null, realm)) >
+        0;
     }
     // We don't depend on saved logins.
     if (!hasLogins) {
@@ -314,20 +317,6 @@ LoginManagerAuthPrompter.prototype = {
     return this.__strBundle;
   },
 
-  __ellipsis: null,
-  get _ellipsis() {
-    if (!this.__ellipsis) {
-      this.__ellipsis = "\u2026";
-      try {
-        this.__ellipsis = Services.prefs.getComplexValue(
-          "intl.ellipsis",
-          Ci.nsIPrefLocalizedString
-        ).data;
-      } catch (e) {}
-    }
-    return this.__ellipsis;
-  },
-
   // Whether we are in private browsing mode
   get _inPrivateBrowsing() {
     if (this._chromeWindow) {
@@ -387,6 +376,15 @@ LoginManagerAuthPrompter.prototype = {
   /**
    * Looks up a username and password in the database. Will prompt the user
    * with a dialog, even if a username and password are found.
+   *
+   * Returns a promise, resolving to an object containing the result as well as
+   * the password and username:
+   * Eg:
+   * {
+   *    ok: true,
+   *    username: "user",
+   *    password: "secure",
+   * }
    */
   async asyncPromptUsernameAndPassword(
     aDialogTitle,
@@ -417,13 +415,10 @@ LoginManagerAuthPrompter.prototype = {
       }
 
       // Look for existing logins.
-      // We don't use searchLoginsAsync here and in asyncPromptPassword
-      // because of bug 1848682
-      let matchData = lazy.LoginHelper.newPropertyBag({
+      foundLogins = await Services.logins.searchLoginsAsync({
         origin,
         httpRealm: realm,
       });
-      foundLogins = Services.logins.searchLogins(matchData);
 
       // XXX Like the original code, we can't deal with multiple
       // account selection. (bug 227632)
@@ -460,12 +455,20 @@ LoginManagerAuthPrompter.prototype = {
     );
 
     if (!ok || !canRememberLogin) {
-      return ok;
+      return {
+        ok,
+        username: aUsername.value,
+        password: aPassword.value,
+      };
     }
 
     if (!aPassword.value) {
       this.log("No password entered, so won't offer to save.");
-      return ok;
+      return {
+        ok,
+        username: aUsername.value,
+        password: aPassword.value,
+      };
     }
 
     // XXX We can't prompt with multiple logins yet (bug 227632), so
@@ -489,10 +492,10 @@ LoginManagerAuthPrompter.prototype = {
     } else if (aPassword.value != selectedLogin.password) {
       // update password
       this.log(`Updating password for ${realm}.`);
-      this._updateLogin(selectedLogin, newLogin);
+      await this._updateLogin(selectedLogin, newLogin);
     } else {
       this.log("Login unchanged, no further action needed.");
-      Services.logins.recordPasswordUse(
+      await Services.logins.recordPasswordUseAsync(
         selectedLogin,
         this._inPrivateBrowsing,
         "PromptLogin",
@@ -500,7 +503,11 @@ LoginManagerAuthPrompter.prototype = {
       );
     }
 
-    return ok;
+    return {
+      ok,
+      username: aUsername.value,
+      password: aPassword.value,
+    };
   },
 
   /**
@@ -510,6 +517,14 @@ LoginManagerAuthPrompter.prototype = {
    * If a password is not found in the database, the user will be prompted
    * with a dialog with a text field and ok/cancel buttons. If the user
    * allows it, then the password will be saved in the database.
+   *
+   * Returns a promise, resolving to an object containing the result as well as
+   * the password:
+   * Eg:
+   * {
+   *    ok: true,
+   *    password: "secure",
+   * }
    */
   async asyncPromptPassword(
     aDialogTitle,
@@ -537,11 +552,10 @@ LoginManagerAuthPrompter.prototype = {
         Services.logins.getLoginSavingEnabled(origin);
       if (!aPassword.value) {
         // Look for existing logins.
-        let matchData = lazy.LoginHelper.newPropertyBag({
+        let foundLogins = await Services.logins.searchLoginsAsync({
           origin,
           httpRealm: realm,
         });
-        let foundLogins = Services.logins.searchLogins(matchData);
 
         // XXX Like the original code, we can't deal with multiple
         // account selection (bug 227632). We can deal with finding the
@@ -549,9 +563,13 @@ LoginManagerAuthPrompter.prototype = {
         // just return the first match.
         for (var i = 0; i < foundLogins.length; ++i) {
           if (foundLogins[i].username == username) {
-            aPassword.value = foundLogins[i].password;
             // wallet returned straight away, so this mimics that code
-            return true;
+            aPassword.value = foundLogins[i].password;
+            // returning the found password
+            return {
+              ok: true,
+              password: aPassword.value,
+            };
           }
         }
       }
@@ -578,7 +596,11 @@ LoginManagerAuthPrompter.prototype = {
       await Services.logins.addLoginAsync(newLogin);
     }
 
-    return ok;
+    // returning the provided password
+    return {
+      ok,
+      password: aPassword.value,
+    };
   },
 
   /* ---------- nsIAuthPrompt helpers ---------- */
@@ -619,6 +641,7 @@ LoginManagerAuthPrompter.prototype = {
     var canAutologin = false;
     var foundLogins;
     let autofilled = false;
+    let origin, httpRealm;
 
     try {
       // If the user submits a login but it fails, we need to remove the
@@ -626,7 +649,10 @@ LoginManagerAuthPrompter.prototype = {
       // be prompted for authentication again, which brings us here.
       this._factory._dismissPendingSavePrompt(this._browser);
 
-      var [origin, httpRealm] = this._getAuthTarget(aChannel, aAuthInfo);
+      ({ displayHost: origin, realm: httpRealm } = PromptUtils.getAuthTarget(
+        aChannel,
+        aAuthInfo
+      ));
 
       // Looks for existing logins to prefill the prompt with.
       foundLogins = await Services.logins.searchLoginsAsync({
@@ -765,7 +791,7 @@ LoginManagerAuthPrompter.prototype = {
         this._factory._setPendingSavePrompt(promptBrowser, savePrompt);
       } else {
         this.log("Login unchanged, no further action needed.");
-        Services.logins.recordPasswordUse(
+        await Services.logins.recordPasswordUseAsync(
           selectedLogin,
           this._inPrivateBrowsing,
           "AuthLogin",
@@ -812,7 +838,8 @@ LoginManagerAuthPrompter.prototype = {
 
       cancelable = this._newAsyncPromptConsumer(aCallback, aContext);
 
-      let [origin, httpRealm] = this._getAuthTarget(aChannel, aAuthInfo);
+      const { displayHost: origin, realm: httpRealm } =
+        PromptUtils.getAuthTarget(aChannel, aAuthInfo);
 
       let hashKey = aLevel + "|" + origin + "|" + httpRealm;
       let pendingPrompt = this._factory.getPendingPrompt(
@@ -877,7 +904,7 @@ LoginManagerAuthPrompter.prototype = {
 
   /* ---------- Internal Methods ---------- */
 
-  _updateLogin(login, aNewLogin) {
+  async _updateLogin(login, aNewLogin) {
     var now = Date.now();
     var propBag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
       Ci.nsIWritablePropertyBag
@@ -892,9 +919,9 @@ LoginManagerAuthPrompter.prototype = {
     propBag.setProperty("timePasswordChanged", now);
     propBag.setProperty("timeLastUsed", now);
     propBag.setProperty("timesUsedIncrement", 1);
-    // Note that we don't call `recordPasswordUse` so we won't potentially record
+    // Note that we don't call `recordPasswordUseAsync` so we won't potentially record
     // both a use and a save/update. See bug 1640096.
-    Services.logins.modifyLogin(login, propBag);
+    await Services.logins.modifyLoginAsync(login, propBag);
   },
 
   /**
@@ -906,7 +933,7 @@ LoginManagerAuthPrompter.prototype = {
       return null;
     }
 
-    let chromeWin = browser.ownerGlobal;
+    let chromeWin = browser.documentGlobal;
     if (!chromeWin) {
       return null;
     }
@@ -953,8 +980,7 @@ LoginManagerAuthPrompter.prototype = {
    */
   _sanitizeUsername(username) {
     if (username.length > 30) {
-      username = username.substring(0, 30);
-      username += this._ellipsis;
+      username = username.substring(0, 30) + Services.locale.ellipsis;
     }
     return username.replace(/['"]/g, "");
   },
@@ -1000,57 +1026,6 @@ LoginManagerAuthPrompter.prototype = {
     }
 
     return displayHost;
-  },
-
-  /**
-   * Returns the origin and realm for which authentication is being
-   * requested, in the format expected to be used with nsILoginInfo.
-   */
-  _getAuthTarget(aChannel, aAuthInfo) {
-    var origin, realm;
-
-    // If our proxy is demanding authentication, don't use the
-    // channel's actual destination.
-    if (aAuthInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY) {
-      this.log("getAuthTarget is for proxy auth.");
-      if (!(aChannel instanceof Ci.nsIProxiedChannel)) {
-        throw new Error("proxy auth needs nsIProxiedChannel");
-      }
-
-      var info = aChannel.proxyInfo;
-      if (!info) {
-        throw new Error("proxy auth needs nsIProxyInfo");
-      }
-
-      // Proxies don't have a scheme, but we'll use "moz-proxy://"
-      // so that it's more obvious what the login is for.
-      var idnService = Cc["@mozilla.org/network/idn-service;1"].getService(
-        Ci.nsIIDNService
-      );
-      origin =
-        "moz-proxy://" +
-        idnService.convertUTF8toACE(info.host) +
-        ":" +
-        info.port;
-      realm = aAuthInfo.realm;
-      if (!realm) {
-        realm = origin;
-      }
-
-      return [origin, realm];
-    }
-
-    origin = this._getFormattedOrigin(aChannel.URI);
-
-    // If a HTTP WWW-Authenticate header specified a realm, that value
-    // will be available here. If it wasn't set or wasn't HTTP, we'll use
-    // the formatted origin instead.
-    realm = aAuthInfo.realm;
-    if (!realm) {
-      realm = origin;
-    }
-
-    return [origin, realm];
   },
 
   /**

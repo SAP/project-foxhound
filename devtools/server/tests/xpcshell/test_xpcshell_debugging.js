@@ -9,7 +9,6 @@
 // HACK: ServiceWorkerManager requires the "profile-change-teardown" to cleanly
 // shutdown, and setting _profileInitialized to `true` will trigger those
 // notifications (see /testing/xpcshell/head.js).
-// eslint-disable-next-line no-undef
 _profileInitialized = true;
 
 add_task(async function () {

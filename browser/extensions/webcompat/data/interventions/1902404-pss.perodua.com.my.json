@@ -1,0 +1,15 @@
+{
+  "label": "pss.perodua.com.my",
+  "bugs": {
+    "1902404": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://pss.perodua.com.my/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "label": "indigo.shireburn.com",
+  "bugs": {
+    "1898904": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://indigo.shireburn.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -123,7 +122,8 @@ NS_IMPL_ISUPPORTS(Http3WebTransportStream, nsIInputStreamCallback,
                   nsIOutputStreamCallback)
 
 Http3WebTransportStream::Http3WebTransportStream(
-    Http3Session* aSession, uint64_t aSessionId, WebTransportStreamType aType,
+    Http3SessionBase* aSession, uint64_t aSessionId,
+    WebTransportStreamType aType,
     std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
         aCallback)
     : WebTransportStreamBase(aSessionId, std::move(aCallback)),
@@ -133,7 +133,7 @@ Http3WebTransportStream::Http3WebTransportStream(
   mStreamType = aType;
 }
 
-Http3WebTransportStream::Http3WebTransportStream(Http3Session* aSession,
+Http3WebTransportStream::Http3WebTransportStream(Http3SessionBase* aSession,
                                                  uint64_t aSessionId,
                                                  WebTransportStreamType aType,
                                                  uint64_t aStreamId)
@@ -496,7 +496,7 @@ nsresult Http3WebTransportStream::WriteSegments() {
     if (NS_FAILED(rv)) {
       if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
         nsCOMPtr<nsIEventTarget> target;
-        Unused << gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
+        (void)gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
         if (target) {
           mReceiveStreamPipeOut->AsyncWait(this, 0, 0, target);
           rv = NS_OK;
@@ -642,6 +642,9 @@ void Http3WebTransportStream::SendStopSending(uint8_t aErrorCode) {
 }
 
 void Http3WebTransportStream::SetSendOrder(Maybe<int64_t> aSendOrder) {
+  if (!mSession) {
+    return;
+  }
   mSession->SetSendOrder(this, aSendOrder);
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,12 +77,6 @@ class AndroidWebAuthnService final : public nsIWebAuthnService {
 
  private:
   ~AndroidWebAuthnService() = default;
-
-  // The Android FIDO2 API doesn't accept the credProps extension. However, the
-  // appropriate value for CredentialPropertiesOutput.rk can be determined
-  // entirely from the input, so we cache it here until mRegisterPromise
-  // resolves.
-  Maybe<bool> mRegisterCredPropsRk;
 };
 
 }  // namespace dom

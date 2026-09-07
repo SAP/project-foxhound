@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CDATASection.h"
-#include "mozilla/dom/CDATASectionBinding.h"
+
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/dom/CDATASectionBinding.h"
 
 namespace mozilla::dom {
 
@@ -23,7 +22,7 @@ already_AddRefed<CharacterData> CDATASection::CloneDataNode(
   auto* nim = ni->NodeInfoManager();
   RefPtr<CDATASection> it = new (nim) CDATASection(ni.forget());
   if (aCloneText) {
-    it->mText = mText;
+    it->mBuffer = mBuffer;
   }
 
   return it.forget();
@@ -37,7 +36,7 @@ void CDATASection::List(FILE* out, int32_t aIndent) const {
   fprintf(out, "CDATASection refcount=%" PRIuPTR "<", mRefCnt.get());
 
   nsAutoString tmp;
-  ToCString(tmp, 0, mText.GetLength());
+  ToCString(tmp, 0, mBuffer.GetLength());
   fputs(NS_LossyConvertUTF16toASCII(tmp).get(), out);
 
   fputs(">\n", out);

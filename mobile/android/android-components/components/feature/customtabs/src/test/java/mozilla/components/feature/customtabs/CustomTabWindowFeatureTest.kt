@@ -8,6 +8,9 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
+import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ColorSchemeParams
@@ -20,13 +23,11 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.window.WindowRequest
 import mozilla.components.support.test.any
-import mozilla.components.support.test.ext.joinBlocking
+import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.never
@@ -36,67 +37,75 @@ import org.mockito.Mockito.verify
 @RunWith(AndroidJUnit4::class)
 class CustomTabWindowFeatureTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-
     private lateinit var store: BrowserStore
     private val sessionId = "session-uuid"
     private lateinit var activity: Activity
     private lateinit var engineSession: EngineSession
+    private val testDispatcher = StandardTestDispatcher()
+
+    private val captureActionsMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
 
     @Before
     fun setup() {
         activity = mock()
         engineSession = mock()
 
-        store = spy(
-            BrowserStore(
-                BrowserState(
-                    customTabs = listOf(
-                        createCustomTab(
-                            id = sessionId,
-                            url = "https://www.mozilla.org",
-                            engineSession = engineSession,
-                        ),
+        store = BrowserStore(
+            initialState = BrowserState(
+                customTabs = listOf(
+                    createCustomTab(
+                        id = sessionId,
+                        url = "https://www.mozilla.org",
+                        engineSession = engineSession,
                     ),
                 ),
             ),
+            middleware = listOf(captureActionsMiddleware),
         )
 
         whenever(activity.packageName).thenReturn("org.mozilla.firefox")
     }
 
     @Test
-    fun `given a request to open window, when the url can be handled, then the activity should start`() {
-        val feature = spy(CustomTabWindowFeature(activity, store, sessionId))
+    fun `given a request to open window, when the url can be handled, then the activity should start`() = runTest(testDispatcher) {
+        val feature = CustomTabWindowFeature(activity, store, sessionId, testDispatcher)
         val windowRequest: WindowRequest = mock()
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         whenever(windowRequest.type).thenReturn(WindowRequest.Type.OPEN)
         whenever(windowRequest.url).thenReturn("https://www.firefox.com")
-        store.dispatch(ContentAction.UpdateWindowRequestAction(sessionId, windowRequest)).joinBlocking()
+        store.dispatch(ContentAction.UpdateWindowRequestAction(sessionId, windowRequest))
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(activity).startActivity(any(), any())
-        verify(store).dispatch(ContentAction.ConsumeWindowRequestAction(sessionId))
+        captureActionsMiddleware.assertFirstAction(ContentAction.ConsumeWindowRequestAction::class) { action ->
+            assertEquals(sessionId, action.sessionId)
+        }
     }
 
     @Test
-    fun `given a request to open window, when the url can't be handled, then handleError should be called`() {
+    fun `given a request to open window, when the url can't be handled, then handleError should be called`() = runTest(testDispatcher) {
         val exception = ActivityNotFoundException()
-        val feature = spy(CustomTabWindowFeature(activity, store, sessionId))
+        val feature = CustomTabWindowFeature(activity, store, sessionId, testDispatcher)
         val windowRequest: WindowRequest = mock()
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         whenever(windowRequest.type).thenReturn(WindowRequest.Type.OPEN)
         whenever(windowRequest.url).thenReturn("blob:https://www.firefox.com")
         whenever(activity.startActivity(any(), any())).thenThrow(exception)
-        store.dispatch(ContentAction.UpdateWindowRequestAction(sessionId, windowRequest)).joinBlocking()
+        store.dispatch(ContentAction.UpdateWindowRequestAction(sessionId, windowRequest))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         verify(engineSession).loadUrl("blob:https://www.firefox.com")
     }
 
     @Test
-    fun `creates intent based on default custom tab config`() {
-        val feature = CustomTabWindowFeature(activity, store, sessionId)
+    fun `creates intent based on default custom tab config`() = runTest(testDispatcher) {
+        val feature = CustomTabWindowFeature(activity, store, sessionId, testDispatcher)
         val config = CustomTabConfig()
         val intent = feature.configToIntent(config)
 
@@ -106,8 +115,8 @@ class CustomTabWindowFeatureTest {
     }
 
     @Test
-    fun `creates intent based on custom tab config`() {
-        val feature = CustomTabWindowFeature(activity, store, sessionId)
+    fun `creates intent based on custom tab config`() = runTest(testDispatcher) {
+        val feature = CustomTabWindowFeature(activity, store, sessionId, testDispatcher)
         val config = CustomTabConfig(
             colorSchemes = ColorSchemes(
                 defaultColorSchemeParams = ColorSchemeParams(
@@ -127,8 +136,8 @@ class CustomTabWindowFeatureTest {
     }
 
     @Test
-    fun `creates intent with same menu items`() {
-        val feature = CustomTabWindowFeature(activity, store, sessionId)
+    fun `creates intent with same menu items`() = runTest(testDispatcher) {
+        val feature = CustomTabWindowFeature(activity, store, sessionId, testDispatcher)
         val config = CustomTabConfig(
             actionButtonConfig = CustomTabActionButtonConfig(
                 description = "button",
@@ -149,16 +158,20 @@ class CustomTabWindowFeatureTest {
     }
 
     @Test
-    fun `handles no requests when stopped`() {
-        val feature = CustomTabWindowFeature(activity, store, sessionId)
+    fun `handles no requests when stopped`() = runTest(testDispatcher) {
+        val feature = CustomTabWindowFeature(activity, store, sessionId, testDispatcher)
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         feature.stop()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val windowRequest: WindowRequest = mock()
         whenever(windowRequest.type).thenReturn(WindowRequest.Type.OPEN)
         whenever(windowRequest.url).thenReturn("https://www.firefox.com")
-        store.dispatch(ContentAction.UpdateWindowRequestAction(sessionId, windowRequest)).joinBlocking()
+        store.dispatch(ContentAction.UpdateWindowRequestAction(sessionId, windowRequest))
         verify(activity, never()).startActivity(any(), any())
-        verify(store, never()).dispatch(ContentAction.ConsumeWindowRequestAction(sessionId))
+
+        captureActionsMiddleware.assertNotDispatched(ContentAction.ConsumeWindowRequestAction::class)
     }
 }

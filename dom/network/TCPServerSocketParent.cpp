@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "TCPServerSocket.h"
 #include "TCPServerSocketParent.h"
-#include "nsJSUtils.h"
+
+#include "TCPServerSocket.h"
 #include "TCPSocket.h"
 #include "TCPSocketParent.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/TCPServerSocketEvent.h"
+#include "nsJSUtils.h"
 
 namespace mozilla::dom {
 
@@ -23,23 +21,11 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TCPServerSocketParent)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-void TCPServerSocketParent::ReleaseIPDLReference() {
-  MOZ_ASSERT(mIPCOpen);
-  mIPCOpen = false;
-  this->Release();
-}
-
-void TCPServerSocketParent::AddIPDLReference() {
-  MOZ_ASSERT(!mIPCOpen);
-  mIPCOpen = true;
-  this->AddRef();
-}
-
 TCPServerSocketParent::TCPServerSocketParent(PNeckoParent* neckoParent,
                                              uint16_t aLocalPort,
                                              uint16_t aBacklog,
                                              bool aUseArrayBuffers)
-    : mNeckoParent(neckoParent), mIPCOpen(false) {
+    : mNeckoParent(neckoParent) {
   mServerSocket =
       new TCPServerSocket(nullptr, aLocalPort, aUseArrayBuffers, aBacklog);
   mServerSocket->SetServerBridgeParent(this);
@@ -70,12 +56,7 @@ nsresult TCPServerSocketParent::SendCallbackAccept(TCPSocketParent* socket) {
 
   if (mNeckoParent) {
     if (mNeckoParent->SendPTCPSocketConstructor(socket, host, port)) {
-      // Call |AddIPDLReference| after the consructor message is sent
-      // successfully, otherwise |socket| could be leaked.
-      socket->AddIPDLReference();
-
-      mozilla::Unused << PTCPServerSocketParent::SendCallbackAccept(
-          WrapNotNull(socket));
+      (void)PTCPServerSocketParent::SendCallbackAccept(WrapNotNull(socket));
     } else {
       NS_ERROR("Sending data from PTCPSocketParent was failed.");
     }
@@ -100,7 +81,7 @@ void TCPServerSocketParent::ActorDestroy(ActorDestroyReason why) {
 }
 
 mozilla::ipc::IPCResult TCPServerSocketParent::RecvRequestDelete() {
-  mozilla::Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -108,6 +89,7 @@ void TCPServerSocketParent::OnConnect(TCPServerSocketEvent* event) {
   RefPtr<TCPSocket> socket = event->Socket();
 
   RefPtr<TCPSocketParent> socketParent = new TCPSocketParent();
+  socketParent->AddIPDLReference();
   socketParent->SetSocket(socket);
 
   socket->SetSocketBridgeParent(socketParent);

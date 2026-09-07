@@ -53,10 +53,10 @@ class ProcTest(unittest.TestCase):
         if isalive:
             self.assertTrue(
                 detected,
-                "Detected process is not running, " "process output: %s" % output,
+                "Detected process is not running, process output: %s" % output,
             )
         else:
             self.assertTrue(
                 not detected,
-                "Detected process is still running, " "process output: %s" % output,
+                "Detected process is still running, process output: %s" % output,
             )

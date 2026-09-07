@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,9 @@
 // Microsoft's API Name hackery sucks
 #undef CreateEvent
 
+#include "mozilla/EventListenerManager.h"
+
+#include "EventListenerService.h"
 #include "js/ColumnNumber.h"      // JS::ColumnNumberOneOrigin
 #include "js/EnvironmentChain.h"  // JS::EnvironmentChain
 #include "js/loader/LoadedScript.h"
@@ -20,23 +21,25 @@
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventListenerManager.h"
 #include "mozilla/HalSensor.h"
-#include "mozilla/InternalMutationEvent.h"
 #include "mozilla/JSEventHandler.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ChromeUtils.h"
-#include "mozilla/dom/EventCallbackDebuggerNotification.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/EventCallbackDebuggerNotification.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/PopupBlocker.h"
@@ -45,77 +48,32 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TouchEvent.h"
 #include "mozilla/dom/UserActivation.h"
-
-#include "EventListenerService.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsDOMCID.h"
+#include "nsDisplayList.h"
 #include "nsError.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsIContentSecurityPolicy.h"
-#include "mozilla/dom/Document.h"
+#include "nsIFrame.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsISupports.h"
 #include "nsJSUtils.h"
+#include "nsLayoutUtils.h"
 #include "nsNameSpaceManager.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
 #include "nsPrintfCString.h"
 #include "nsSandboxFlags.h"
+#include "nsScreen.h"
 #include "xpcpublic.h"
-#include "nsIFrame.h"
-#include "nsDisplayList.h"
-#include "nsPIWindowRoot.h"
 
 namespace mozilla {
 
 using namespace dom;
 using namespace hal;
-
-static uint32_t MutationBitForEventType(EventMessage aEventType) {
-  switch (aEventType) {
-    case eLegacySubtreeModified:
-      return NS_EVENT_BITS_MUTATION_SUBTREEMODIFIED;
-    case eLegacyNodeInserted:
-      return NS_EVENT_BITS_MUTATION_NODEINSERTED;
-    case eLegacyNodeRemoved:
-      return NS_EVENT_BITS_MUTATION_NODEREMOVED;
-    case eLegacyNodeRemovedFromDocument:
-      return NS_EVENT_BITS_MUTATION_NODEREMOVEDFROMDOCUMENT;
-    case eLegacyNodeInsertedIntoDocument:
-      return NS_EVENT_BITS_MUTATION_NODEINSERTEDINTODOCUMENT;
-    case eLegacyAttrModified:
-      return NS_EVENT_BITS_MUTATION_ATTRMODIFIED;
-    case eLegacyCharacterDataModified:
-      return NS_EVENT_BITS_MUTATION_CHARACTERDATAMODIFIED;
-    default:
-      break;
-  }
-  return 0;
-}
-
-static DeprecatedOperations DeprecatedMutationOperation(EventMessage aMessage) {
-  switch (aMessage) {
-    case eLegacySubtreeModified:
-      return DeprecatedOperations::eDOMSubtreeModified;
-    case eLegacyNodeInserted:
-      return DeprecatedOperations::eDOMNodeInserted;
-    case eLegacyNodeRemoved:
-      return DeprecatedOperations::eDOMNodeRemoved;
-    case eLegacyNodeRemovedFromDocument:
-      return DeprecatedOperations::eDOMNodeRemovedFromDocument;
-    case eLegacyNodeInsertedIntoDocument:
-      return DeprecatedOperations::eDOMNodeInsertedIntoDocument;
-    case eLegacyAttrModified:
-      return DeprecatedOperations::eDOMAttrModified;
-    case eLegacyCharacterDataModified:
-      return DeprecatedOperations::eDOMCharacterDataModified;
-    default:
-      MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE(
-          "aMessage restricted by switch in AddEventListenerInternal");
-  }
-}
 
 class ListenerMapEntryComparator {
  public:
@@ -144,7 +102,6 @@ uint32_t EventListenerManager::sMainThreadCreatedCount = 0;
 
 EventListenerManagerBase::EventListenerManagerBase()
     : mMayHaveDOMActivateEventListener(false),
-      mMayHaveMutationListeners(false),
       mMayHaveCapturingListeners(false),
       mMayHaveSystemGroupListeners(false),
       mMayHaveTouchEventListener(false),
@@ -274,6 +231,12 @@ EventListenerManager::GetTargetAsInnerWindow() const {
 
 static mozilla::LazyLogModule sSlowChromeLog("SlowChromeEvent");
 
+// Shared with APZ-side files (APZCTreeManager.cpp). Enable
+// with MOZ_LOG=apz.fastpath:5 (or :4 for Debug) to trace the
+// content -> APZ fast-path notification flow for non-passive APZ-aware
+// event listener registration (bug 2031963).
+static mozilla::LazyLogModule sApzFastPathLog("apz.fastpath");
+
 static void LogForChromeEvent(nsPIDOMWindowInner* aWindow, const char* aMsg) {
   if (!MOZ_LOG_TEST(sSlowChromeLog, LogLevel::Info)) {
     return;
@@ -393,44 +356,6 @@ void EventListenerManager::AddEventListenerInternal(
           window->SetHasDOMActivateEventListeners();
         }
         break;
-      case eLegacySubtreeModified:
-      case eLegacyNodeInserted:
-      case eLegacyNodeRemoved:
-      case eLegacyNodeRemovedFromDocument:
-      case eLegacyNodeInsertedIntoDocument:
-      case eLegacyAttrModified:
-      case eLegacyCharacterDataModified: {
-        MOZ_ASSERT(!aFlags.mInSystemGroup,
-                   "Legacy mutation events shouldn't be handled by ourselves");
-        MOZ_ASSERT(listener->mListenerType != Listener::eNativeListener,
-                   "Legacy mutation events shouldn't be handled in C++ code");
-        DebugOnly<nsINode*> targetNode =
-            nsINode::FromEventTargetOrNull(mTarget);
-        // Legacy mutation events shouldn't be handled in chrome documents.
-        MOZ_ASSERT_IF(targetNode,
-                      !nsContentUtils::IsChromeDoc(targetNode->OwnerDoc()));
-        // Legacy mutation events shouldn't listen to mutations in native
-        // anonymous subtrees.
-        MOZ_ASSERT_IF(targetNode, !targetNode->IsInNativeAnonymousSubtree());
-        // For mutation listeners, we need to update the global bit on the DOM
-        // window. Otherwise we won't actually fire the mutation event.
-        mMayHaveMutationListeners = true;
-        // Go from our target to the nearest enclosing DOM window.
-        if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-          if (Document* doc = window->GetExtantDoc()) {
-            doc->WarnOnceAbout(
-                DeprecatedMutationOperation(resolvedEventMessage));
-          }
-          // If resolvedEventMessage is eLegacySubtreeModified, we need to
-          // listen all mutations. nsContentUtils::HasMutationListeners relies
-          // on this.
-          window->SetMutationListeners(
-              (resolvedEventMessage == eLegacySubtreeModified)
-                  ? NS_EVENT_BITS_MUTATION_ALL
-                  : MutationBitForEventType(resolvedEventMessage));
-        }
-        break;
-      }
       case ePointerEnter:
       case ePointerLeave:
         mMayHavePointerEnterLeaveEventListener = true;
@@ -545,36 +470,12 @@ void EventListenerManager::AddEventListenerInternal(
           window->SetHasSMILTimeEventListeners();
         }
         break;
-      case eFormCheckboxStateChange:
-        nsContentUtils::SetMayHaveFormCheckboxStateChangeListeners();
-        break;
-      case eFormRadioStateChange:
-        nsContentUtils::SetMayHaveFormRadioStateChangeListeners();
-        break;
-      case eAfterScriptExecute:
-        if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-          if (Document* doc = window->GetExtantDoc()) {
-            doc->SetUseCounter(eUseCounter_AfterScriptExecuteEvent);
-            if (StaticPrefs::dom_events_script_execute_enabled()) {
+      case eMozOrientationChange:
+        if (nsScreen* screen = mTarget->GetAsScreen()) {
+          if (nsPIDOMWindowOuter* outer = screen->GetOuter()) {
+            if (Document* doc = outer->GetExtantDoc()) {
               doc->WarnOnceAbout(
-                  DeprecatedOperations::eAfterScriptExecuteEvent);
-            } else {
-              doc->WarnOnceAbout(
-                  Document::eAfterScriptExecuteEventNotSupported);
-            }
-          }
-        }
-        break;
-      case eBeforeScriptExecute:
-        if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-          if (Document* doc = window->GetExtantDoc()) {
-            doc->SetUseCounter(eUseCounter_BeforeScriptExecuteEvent);
-            if (StaticPrefs::dom_events_script_execute_enabled()) {
-              doc->WarnOnceAbout(
-                  DeprecatedOperations::eBeforeScriptExecuteEvent);
-            } else {
-              doc->WarnOnceAbout(
-                  Document::eBeforeScriptExecuteEventNotSupported);
+                  DeprecatedOperations::eMozorientationchangeDeprecated);
             }
           }
         }
@@ -583,13 +484,6 @@ void EventListenerManager::AddEventListenerInternal(
         // XXX Use NS_ASSERTION here to print resolvedEventMessage since
         //     MOZ_ASSERT can take only string literal, not pointer to
         //     characters.
-        NS_ASSERTION(
-            resolvedEventMessage < eLegacyMutationEventFirst ||
-                resolvedEventMessage > eLegacyMutationEventLast,
-            nsPrintfCString("You added new mutation event, but it's not "
-                            "handled above, resolvedEventMessage=%s",
-                            ToChar(resolvedEventMessage))
-                .get());
         NS_ASSERTION(aTypeAtom != nsGkAtoms::onpointerenter,
                      nsPrintfCString("resolvedEventMessage=%s",
                                      ToChar(resolvedEventMessage))
@@ -675,12 +569,16 @@ void EventListenerManager::AddEventListenerInternal(
                      nsPrintfCString("resolvedEventMessage=%s",
                                      ToChar(resolvedEventMessage))
                          .get());
+        NS_ASSERTION(aTypeAtom != nsGkAtoms::onmozorientationchange,
+                     nsPrintfCString("resolvedEventMessage=%s",
+                                     ToChar(resolvedEventMessage))
+                         .get());
         break;
     }
   }
 
   if (mIsMainThreadELM && !aFlags.mPassive && IsApzAwareEvent(aTypeAtom)) {
-    ProcessApzAwareEventListenerAdd();
+    ProcessApzAwareEventListenerAdd(aTypeAtom);
   }
 
   if (mTarget) {
@@ -693,16 +591,16 @@ void EventListenerManager::AddEventListenerInternal(
   }
 }
 
-void EventListenerManager::ProcessApzAwareEventListenerAdd() {
+void EventListenerManager::ProcessApzAwareEventListenerAdd(nsAtom* aEvent) {
   Document* doc = nullptr;
 
   // Mark the node as having apz aware listeners
-  if (nsINode* node = nsINode::FromEventTargetOrNull(mTarget)) {
+  nsINode* node = nsINode::FromEventTargetOrNull(mTarget);
+  if (node) {
     node->SetMayBeApzAware();
     doc = node->OwnerDoc();
   }
 
-  // Schedule a paint so event regions on the layer tree gets updated
   if (!doc) {
     if (nsCOMPtr<nsPIDOMWindowInner> window = GetTargetAsInnerWindow()) {
       doc = window->GetExtantDoc();
@@ -716,14 +614,93 @@ void EventListenerManager::ProcessApzAwareEventListenerAdd() {
     }
   }
 
-  if (doc && gfxPlatform::AsyncPanZoomEnabled()) {
-    PresShell* presShell = doc->GetPresShell();
-    if (presShell) {
-      nsIFrame* f = presShell->GetRootFrame();
-      if (f) {
-        f->SchedulePaint();
+  if (!doc || !gfxPlatform::AsyncPanZoomEnabled()) {
+    return;
+  }
+
+  PresShell* presShell = doc->GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  // Try to find a ViewID identifying the scroll container the fast path
+  // signal should apply to:
+  //   - Element listener: nearest scroll container ancestor of its frame.
+  //   - Document/Window/other listener: the document's root scroll
+  //     container (events bubble up to it from anywhere in the document).
+  //
+  // We deliberately use FindIDFor (not FindOrCreateIDFor): if no ViewID has
+  // been assigned yet to the scroll container's scrolled content, APZ has
+  // no APZC for it either, so a fast-path entry would never match a hit
+  // test. Same reasoning when the Element has no primary frame yet, or no
+  // scroll container ancestor at all. In any of these cases fall back to
+  // scheduling a paint so the regular slow path (display-list rebuild +
+  // WebRender transaction) propagates eApzAwareListeners.
+  dom::Element* element = dom::Element::FromNodeOrNull(node);
+  nsIFrame* elementFrame = element ? element->GetPrimaryFrame() : nullptr;
+  layers::ScrollableLayerGuid::ViewID scrollId =
+      layers::ScrollableLayerGuid::NULL_SCROLL_ID;
+  ScrollContainerFrame* scrollFrame = nullptr;
+  if (element) {
+    if (elementFrame) {
+      // SCROLLABLE_ONLY_ASYNC_SCROLLABLE is intentionally omitted: this
+      // path can run during frame construction, before an ancestor scroll
+      // container's scrolled child is attached, and WantAsyncScroll would
+      // deref it.
+      scrollFrame = nsLayoutUtils::GetNearestScrollContainerFrame(
+          elementFrame, nsLayoutUtils::SCROLLABLE_ALWAYS_MATCH_ROOT |
+                            nsLayoutUtils::SCROLLABLE_FIXEDPOS_FINDS_ROOT);
+    }
+  } else {
+    scrollFrame = presShell->GetRootScrollContainerFrame();
+  }
+  if (scrollFrame) {
+    if (nsIFrame* scrolled = scrollFrame->GetScrolledFrame()) {
+      if (nsIContent* scrolledContent = scrolled->GetContent()) {
+        nsLayoutUtils::FindIDFor(scrolledContent, &scrollId);
       }
     }
+  }
+
+  if (StaticPrefs::apz_fastpath_apz_aware_listener_enabled()) {
+    // Bug 2042628: Eventually we will end up using the fast-path for other
+    // event type, but for now we restrict it to touchmove.
+    if (aEvent == nsGkAtoms::ontouchmove &&
+        scrollId != layers::ScrollableLayerGuid::NULL_SCROLL_ID) {
+      // Fast path: inform APZ directly via IPC so it can flag subsequent
+      // hit-test results targeting |scrollId| (or any of its APZC-tree
+      // descendants) with eApzAwareListeners. This avoids the long detour
+      // through layout invalidation, display-list rebuild and a WebRender
+      // scene swap that would otherwise let touchmoves arrive at APZ before
+      // the new listener is visible in the compositor scene (bug 2031963).
+      nsIDocShell* docShell = doc->GetDocShell();
+      if (RefPtr<dom::BrowserChild> browserChild =
+              dom::BrowserChild::GetFrom(docShell)) {
+        MOZ_LOG(sApzFastPathLog, LogLevel::Debug,
+                ("ELM: sending NotifyApzAwareListenerAdded scrollId=%" PRIu64
+                 " (targetIsElement=%d, doc=%p)",
+                 scrollId, element != nullptr, doc));
+        browserChild->NotifyApzAwareListenerAdded(scrollId);
+      } else {
+        MOZ_LOG(sApzFastPathLog, LogLevel::Debug,
+                ("ELM: have scrollId=%" PRIu64
+                 " but no BrowserChild (chrome/non-e10s); skipping fast path",
+                 scrollId));
+      }
+    } else {
+      MOZ_LOG(sApzFastPathLog, LogLevel::Debug,
+              ("ELM: no fast-path send (no scrollId; targetIsElement=%d "
+               "elementHasFrame=%d hasScrollContainerAncestor=%d)",
+               element != nullptr, elementFrame != nullptr,
+               scrollFrame != nullptr));
+    }
+  }
+
+  // Once after we've used fast-path for all APZ aware event listener (including
+  // support in the compositor), we will not need to call `SchedulePaint` at
+  // all, but for now we unconditionally call it.
+  if (nsIFrame* root = presShell->GetRootFrame()) {
+    root->SchedulePaint();
   }
 }
 
@@ -1236,6 +1213,8 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   nsAutoCString url("-moz-evil:lying-event-listener"_ns);
   MOZ_ASSERT(body);
   MOZ_ASSERT(aElement);
+  MOZ_ASSERT(!aElement->ChromeOnlyAccess(),
+             "Don't use inline handlers on NAC/UAWidget");
   nsIURI* uri = aElement->OwnerDoc()->GetDocumentURI();
   if (uri) {
     uri->GetSpec(url);
@@ -1248,17 +1227,16 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   nsContentUtils::GetEventArgNames(aElement->GetNameSpaceID(), aTypeAtom, win,
                                    &argCount, &argNames);
 
-  // Wrap the event target, so that we can use it as the scope for the event
-  // handler. Note that mTarget is different from aElement in the <body> case,
-  // where mTarget is a Window.
+  // Use the document's realm as per spec:
   //
-  // The wrapScope doesn't really matter here, because the target will create
-  // its reflector in the proper scope, and then we'll enter that realm.
+  //     Let settings object be the relevant settings object of document.
+  //
+  // https://html.spec.whatwg.org/#getting-the-current-value-of-the-event-handler
   JS::Rooted<JSObject*> wrapScope(cx, global->GetGlobalJSObject());
   JS::Rooted<JS::Value> v(cx);
   {
     JSAutoRealm ar(cx, wrapScope);
-    nsresult rv = nsContentUtils::WrapNative(cx, mTarget, &v,
+    nsresult rv = nsContentUtils::WrapNative(cx, global, &v,
                                              /* aAllowWrapping = */ false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -1297,8 +1275,10 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
           JS::loader::ParserMetadata::NotParserInserted,
           aElement->OwnerDoc()->NodePrincipal());
 
-  RefPtr<JS::loader::EventScript> eventScript = new JS::loader::EventScript(
-      aElement->OwnerDoc()->GetReferrerPolicy(), fetchOptions, uri);
+  RefPtr<JS::loader::ScriptFetchInfo> fetchInfo =
+      new JS::loader::ScriptFetchInfo(JS::loader::ScriptKind::eEvent,
+                                      aElement->OwnerDoc()->GetReferrerPolicy(),
+                                      fetchOptions, uri);
 
   JS::CompileOptions options(cx);
   // Use line 0 to make the function body starts from line 1.
@@ -1313,7 +1293,7 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   NS_ENSURE_SUCCESS(result, result);
   NS_ENSURE_TRUE(handler, NS_ERROR_FAILURE);
 
-  JS::Rooted<JS::Value> privateValue(cx, JS::PrivateValue(eventScript));
+  JS::Rooted<JS::Value> privateValue(cx, JS::PrivateValue(fetchInfo));
   result = nsJSUtils::UpdateFunctionDebugMetadata(jsapi, handler, options,
                                                   jsStr, privateValue);
   NS_ENSURE_SUCCESS(result, result);
@@ -1397,7 +1377,7 @@ bool EventListenerManager::HandleEventSingleListener(
   }
 
   if (innerWindow) {
-    Unused << innerWindow->SetEvent(oldWindowEvent);
+    (void)innerWindow->SetEvent(oldWindowEvent);
   }
 
   if (NS_FAILED(result)) {
@@ -1480,7 +1460,7 @@ already_AddRefed<nsPIDOMWindowInner> EventListenerManager::WindowFromListener(
         // listener->mListener.GetXPCOMCallback().
         // In most cases, it would be the same as for
         // the target, so let's do that.
-        if (nsIGlobalObject* global = mTarget->GetOwnerGlobal()) {
+        if (nsIGlobalObject* global = mTarget->GetRelevantGlobal()) {
           innerWindow = global->GetAsInnerWindow();
         }
       }
@@ -1825,37 +1805,6 @@ void EventListenerManager::RemoveListenerForAllEvents(
                               true);
 }
 
-bool EventListenerManager::HasMutationListeners() {
-  if (mMayHaveMutationListeners) {
-    for (const auto& entry : mListenerMap.mEntries) {
-      EventMessage message = GetEventMessage(entry.mTypeAtom);
-      if (message >= eLegacyMutationEventFirst &&
-          message <= eLegacyMutationEventLast) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-uint32_t EventListenerManager::MutationListenerBits() {
-  uint32_t bits = 0;
-  if (mMayHaveMutationListeners) {
-    for (const auto& entry : mListenerMap.mEntries) {
-      EventMessage message = GetEventMessage(entry.mTypeAtom);
-      if (message >= eLegacyMutationEventFirst &&
-          message <= eLegacyMutationEventLast) {
-        if (message == eLegacySubtreeModified) {
-          return NS_EVENT_BITS_MUTATION_ALL;
-        }
-        bits |= MutationBitForEventType(message);
-      }
-    }
-  }
-  return bits;
-}
-
 bool EventListenerManager::HasListenersFor(const nsAString& aEventName) const {
   RefPtr<nsAtom> atom = NS_Atomize(u"on"_ns + aEventName);
   return HasListenersFor(atom);
@@ -2161,9 +2110,13 @@ const TypedEventHandler* EventListenerManager::GetTypedEventHandler(
   }
 
   JSEventHandler* jsEventHandler = listener->GetJSEventHandler();
-
+  Maybe<RefPtr<JSEventHandler>> pin;
   if (listener->mHandlerIsString) {
-    CompileEventHandlerInternal(listener, aEventName, nullptr, nullptr);
+    pin.emplace(jsEventHandler);
+    if (NS_FAILED(CompileEventHandlerInternal(listener, aEventName, nullptr,
+                                              nullptr))) {
+      listener = nullptr;
+    }
   }
 
   const TypedEventHandler& typedHandler =

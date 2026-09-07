@@ -30,28 +30,31 @@
   <body id="body">
     <moz-page-nav id="categories-nav" data-l10n-id="aboutpolicies-page-heading">
       <moz-page-nav-button
-        data-l10n-id="active-policies-tab"
+        data-l10n-id="active-policies-tab-title"
         id="category-active"
         view="view-one"
         iconSrc="chrome://browser/content/policies/policies-active.svg"
       >
+        <span data-l10n-id="active-policies-tab"></span>
       </moz-page-nav-button>
       <moz-page-nav-button
-        data-l10n-id="documentation-tab"
+        data-l10n-id="documentation-tab-title"
         id="category-documentation"
         view="view-two"
         iconSrc="chrome://browser/content/policies/policies-documentation.svg"
       >
+        <span data-l10n-id="documentation-tab"></span>
       </moz-page-nav-button>
       <moz-page-nav-button
-        data-l10n-id="errors-tab"
+        data-l10n-id="errors-tab-title"
         id="category-errors"
         view="view-three"
         iconSrc="chrome://browser/content/policies/policies-error.svg"
       >
+        <span data-l10n-id="errors-tab"></span>
       </moz-page-nav-button>
     </moz-page-nav>
-    <div class="main-content">
+    <div class="main-content" tabindex="-1">
       <div class="header">
         <h1
           id="sectionTitle"

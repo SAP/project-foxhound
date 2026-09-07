@@ -8,18 +8,23 @@ const {
   createStore,
   applyMiddleware,
 } = require("resource://devtools/client/shared/vendor/redux.js");
+
+const {
+  ignore,
+} = require("resource://devtools/client/shared/redux/middleware/ignore.js");
+const {
+  promise,
+} = require("resource://devtools/client/shared/redux/middleware/promise.js");
+const {
+  task,
+} = require("resource://devtools/client/shared/redux/middleware/task.js");
 const {
   thunk,
 } = require("resource://devtools/client/shared/redux/middleware/thunk.js");
 const {
   waitUntilService,
 } = require("resource://devtools/client/shared/redux/middleware/wait-service.js");
-const {
-  task,
-} = require("resource://devtools/client/shared/redux/middleware/task.js");
-const {
-  promise,
-} = require("resource://devtools/client/shared/redux/middleware/promise.js");
+
 const flags = require("resource://devtools/shared/flags.js");
 
 loader.lazyRequireGetter(
@@ -42,7 +47,10 @@ loader.lazyRequireGetter(
  *                        that will be passed in each thunk action.
  */
 const createStoreWithMiddleware = (opts = {}) => {
-  const middleware = [];
+  const middleware = [
+    // Ignore should be registered first to prevent any subsequent middle from running
+    ignore,
+  ];
   if (opts.enableTaskMiddleware) {
     middleware.push(task);
   }

@@ -421,3 +421,66 @@ add_bookmark_test(async function test_calculateIndex_for_invalid_url(engine) {
   });
   equal(invalidURLIndex, 0, "Should not throw for invalid URLs");
 });
+
+// Test that applying incoming records uses the server's modified timestamp
+// for the local lastModified, not the current time. This is important because
+// using the current time causes non-deterministic behavior in the merge
+// algorithm when comparing local and remote ages.
+add_bookmark_test(async function test_incoming_lastModified(engine) {
+  let store = engine._store;
+
+  // The server's modified timestamp (in seconds).
+  const serverModified = 1770000000;
+
+  _("Create a folder record with a specific server modified time.");
+  let folderRecord = new BookmarkFolder("bookmarks", "BBBBBBBBBBBB");
+  folderRecord.title = "Test Folder";
+  folderRecord.parentName = BookmarksToolbarTitle;
+  folderRecord.parentid = "toolbar";
+  folderRecord.children = ["AAAAAAAAAAAA"];
+  folderRecord.modified = serverModified;
+
+  _("Create a bookmark record with a specific server modified time.");
+  let bmkRecord = new Bookmark("bookmarks", "AAAAAAAAAAAA");
+  bmkRecord.bmkUri = "http://example.com/test";
+  bmkRecord.title = "Test Bookmark";
+  bmkRecord.parentName = "Test Folder";
+  bmkRecord.parentid = "BBBBBBBBBBBB";
+  bmkRecord.modified = serverModified;
+
+  await apply_records(engine, [folderRecord, bmkRecord]);
+
+  _("Verify the bookmark's lastModified matches the server timestamp.");
+  let item = await PlacesUtils.bookmarks.fetch({ guid: "AAAAAAAAAAAA" });
+  Assert.ok(item, "Bookmark should exist");
+  // The server timestamp is in seconds, lastModified is in milliseconds.
+  Assert.equal(
+    item.lastModified.getTime(),
+    serverModified * 1000,
+    "lastModified should match the server's modified timestamp"
+  );
+
+  _("Verify the folder's lastModified also matches.");
+  let folder = await PlacesUtils.bookmarks.fetch("BBBBBBBBBBBB");
+  Assert.ok(folder, "Folder should exist");
+  Assert.equal(
+    folder.lastModified.getTime(),
+    serverModified * 1000,
+    "Folder lastModified should match the server's modified timestamp"
+  );
+
+  _("Update the bookmark with a newer server timestamp.");
+  const newerServerModified = 1780000000;
+  bmkRecord.title = "Updated Test Bookmark";
+  bmkRecord.modified = newerServerModified;
+  await apply_records(engine, [bmkRecord]);
+
+  item = await PlacesUtils.bookmarks.fetch("AAAAAAAAAAAA");
+  Assert.equal(
+    item.lastModified.getTime(),
+    newerServerModified * 1000,
+    "lastModified should be updated to the newer server timestamp"
+  );
+
+  await store.wipe();
+});

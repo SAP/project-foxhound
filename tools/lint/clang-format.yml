@@ -6,7 +6,7 @@ clang-format:
     extensions: ['cpp', 'c', 'cc', 'h', 'm', 'mm']
     support-files:
         - 'tools/lint/clang-format/**'
-    type: external
+    type: global
     payload: clang-format:lint
     code_review_warnings: false
     setup: clang-format:setup

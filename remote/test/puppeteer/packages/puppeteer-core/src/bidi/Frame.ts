@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as Bidi from 'chromium-bidi/lib/cjs/protocol/protocol.js';
+import * as Bidi from 'webdriver-bidi-protocol';
 
 import type {Observable} from '../../third_party/rxjs/rxjs.js';
 import {
@@ -21,13 +21,14 @@ import {
   switchMap,
 } from '../../third_party/rxjs/rxjs.js';
 import type {CDPSession} from '../api/CDPSession.js';
+import type {DeviceRequestPrompt} from '../api/DeviceRequestPrompt.js';
 import {
   Frame,
   throwIfDetached,
   type GoToOptions,
   type WaitForOptions,
 } from '../api/Frame.js';
-import {PageEvent} from '../api/Page.js';
+import {PageEvent, type WaitTimeoutOptions} from '../api/Page.js';
 import {Accessibility} from '../cdp/Accessibility.js';
 import type {ConsoleMessageType} from '../common/ConsoleMessage.js';
 import {
@@ -136,7 +137,11 @@ export class BidiFrame extends Frame {
     });
 
     this.browsingContext.on('request', ({request}) => {
-      const httpRequest = BidiHTTPRequest.from(request, this);
+      const httpRequest = BidiHTTPRequest.from(
+        request,
+        this,
+        this.page().isNetworkInterceptionEnabled,
+      );
       request.once('success', () => {
         this.page().trustedEmitter.emit(PageEvent.RequestFinished, httpRequest);
       });
@@ -195,6 +200,7 @@ export class BidiFrame extends Frame {
             args,
             getStackTraceLocations(entry.stackTrace),
             this,
+            undefined,
           ),
         );
       } else if (isJavaScriptLogEntry(entry)) {
@@ -470,8 +476,11 @@ export class BidiFrame extends Frame {
     );
   }
 
-  override waitForDevicePrompt(): never {
-    throw new UnsupportedOperation();
+  override waitForDevicePrompt(
+    options: WaitTimeoutOptions = {},
+  ): Promise<DeviceRequestPrompt> {
+    const {timeout = this.timeoutSettings.timeout(), signal} = options;
+    return this.browsingContext.waitForDevicePrompt(timeout, signal);
   }
 
   override get detached(): boolean {

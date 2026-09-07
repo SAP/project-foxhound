@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,8 @@
 #define mozilla_dom_cache_CacheStorage_h
 
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/cache/TypeUtils.h"
+#include "mozilla/dom/cache/Types.h"
 #include "nsCOMPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
@@ -38,9 +36,13 @@ namespace cache {
 class CacheStorageChild;
 class CacheWorkerRef;
 
+bool IsTrusted(const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+               bool aTestingPrefEnabled);
+
 class CacheStorage final : public nsISupports,
                            public nsWrapperCache,
-                           public TypeUtils {
+                           public TypeUtils,
+                           public CacheStorageChildListener {
   using PBackgroundChild = mozilla::ipc::PBackgroundChild;
 
  public:
@@ -78,15 +80,14 @@ class CacheStorage final : public nsISupports,
                                JS::Handle<JSObject*> aGivenProto) override;
 
   // Called when CacheStorageChild actor is being destroyed
-  void DestroyInternal(CacheStorageChild* aActor);
+  // Override Observer method
+  void OnActorDestroy(CacheStorageChild* aActor) override;
 
   // TypeUtils methods
   virtual nsIGlobalObject* GetGlobalObject() const override;
 #ifdef DEBUG
   virtual void AssertOwningThread() const override;
 #endif
-
-  virtual mozilla::ipc::PBackgroundChild* GetIPCManager() override;
 
  private:
   CacheStorage(Namespace aNamespace, nsIGlobalObject* aGlobal,
@@ -106,13 +107,13 @@ class CacheStorage final : public nsISupports,
   nsCOMPtr<nsIGlobalObject> mGlobal;
   const UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
 
-  // weak ref cleared in DestroyInternal
+  // weak ref cleared in OnActorDestroy
   CacheStorageChild* mActor;
 
   nsresult mStatus;
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(CacheStorage)
 };
 

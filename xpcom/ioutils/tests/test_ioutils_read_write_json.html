@@ -142,6 +142,39 @@
       await cleanup(filename);
     });
 
+    add_task(async function test_writeJSON_return() {
+      const filename = PathUtils.join(PathUtils.tempDir, "test_ioutils_writeJSON_return.tmp");
+
+      const obj = { emoji: "☕️ ⚧️ 😀 🖖🏿 🤠 🏳️‍🌈 🥠 🏴‍☠️ 🪐" };
+
+      const expectedJson = JSON.stringify(obj);
+      const size = new TextEncoder().encode(expectedJson).byteLength;
+
+      {
+        const result = await IOUtils.writeJSON(filename, obj, { lengthHint: 0 });
+
+        is(await IOUtils.readUTF8(filename), expectedJson, "should have written expected JSON");
+
+        is(typeof result, "object", "writeJSON returns an object");
+        ok(result !== null, "writeJSON returns non-null");
+
+        ok(Object.hasOwn(result, "size"), "result has size property");
+        ok(Object.hasOwn(result, "jsonLength"), "result has jsonLength property");
+
+        is(result.size, size, "Should have written the expected number of bytes");
+        is(result.jsonLength, expectedJson.length, "Should have written the expected number of UTF-16 codepoints");
+      }
+
+      {
+        const result = await IOUtils.writeJSON(filename, obj, { lengthHint: expectedJson.length, compress: true });
+
+        isnot(result.size, size, "Should have written a different number of bytes due to compression");
+        is(result.jsonLength, expectedJson.length, "Should have written the same number of UTF-16 codepoints");
+      }
+
+      await cleanup(filename);
+    });
+
     add_task(async function test_append_json() {
       const filename = PathUtils.join(PathUtils.tempDir, "test_ioutils_append_json.tmp");
 

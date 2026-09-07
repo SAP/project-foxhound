@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,7 +20,6 @@
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPoint.h"
-#include "nsView.h"
 #include "nsViewportInfo.h"
 
 static mozilla::LazyLogModule sApzZoomLog("apz.zoom");
@@ -64,9 +61,7 @@ static nsIWidget* GetWidget(PresShell* aPresShell) {
     // see https://bugzilla.mozilla.org/show_bug.cgi?id=1648427#c7 .
     return rootFrame->GetNearestWidget();
 #else
-    if (nsView* view = rootFrame->GetView()) {
-      return view->GetWidget();
-    }
+    return rootFrame->GetOwnWidget();
 #endif
   }
   return nullptr;
@@ -89,8 +84,8 @@ void ZoomConstraintsClient::Destroy() {
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
   if (observerService) {
-    observerService->RemoveObserver(this, BEFORE_FIRST_PAINT.Data());
-    observerService->RemoveObserver(this, COMPOSITOR_REINITIALIZED.Data());
+    observerService->RemoveObserver(this, BEFORE_FIRST_PAINT.get());
+    observerService->RemoveObserver(this, COMPOSITOR_REINITIALIZED.get());
   }
 
   Preferences::RemoveObserver(this, "browser.ui.zoom.force-user-scalable");
@@ -129,8 +124,8 @@ void ZoomConstraintsClient::Init(PresShell* aPresShell, Document* aDocument) {
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
   if (observerService) {
-    observerService->AddObserver(this, BEFORE_FIRST_PAINT.Data(), false);
-    observerService->AddObserver(this, COMPOSITOR_REINITIALIZED.Data(), false);
+    observerService->AddObserver(this, BEFORE_FIRST_PAINT.get(), false);
+    observerService->AddObserver(this, COMPOSITOR_REINITIALIZED.get(), false);
   }
 
   Preferences::AddStrongObserver(this, "browser.ui.zoom.force-user-scalable");

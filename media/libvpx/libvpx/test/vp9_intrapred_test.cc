@@ -28,8 +28,8 @@ using libvpx_test::ACMRandom;
 
 const int count_test_block = 100000;
 
-typedef void (*IntraPredFunc)(uint8_t *dst, ptrdiff_t stride,
-                              const uint8_t *above, const uint8_t *left);
+using IntraPredFunc = void (*)(uint8_t *dst, ptrdiff_t stride,
+                               const uint8_t *above, const uint8_t *left);
 
 struct IntraPredParam {
   IntraPredParam(IntraPredFunc pred = nullptr, IntraPredFunc ref = nullptr,
@@ -135,7 +135,7 @@ void IntraPredTest<uint8_t, IntraPredParam>::Predict() {
       params_.pred_fn(dst_, stride_, above_row_, left_col_));
 }
 
-typedef IntraPredTest<uint8_t, IntraPredParam> VP9IntraPredTest;
+using VP9IntraPredTest = IntraPredTest<uint8_t, IntraPredParam>;
 
 TEST_P(VP9IntraPredTest, IntraPredTests) {
   // max block size is 32
@@ -152,7 +152,7 @@ INSTANTIATE_TEST_SUITE_P(
     C, VP9IntraPredTest,
     ::testing::Values(IntraPredParam(&vpx_d45_predictor_4x4_c,
                                      &vpx_d45_predictor_4x4_c, 4, 8)));
-#if HAVE_SSE2
+#if HAVE_SSE2 && HAVE_X86_ASM
 INSTANTIATE_TEST_SUITE_P(
     SSE2, VP9IntraPredTest,
     ::testing::Values(
@@ -214,9 +214,9 @@ INSTANTIATE_TEST_SUITE_P(
                        16, 8),
         IntraPredParam(&vpx_v_predictor_32x32_sse2, &vpx_v_predictor_32x32_c,
                        32, 8)));
-#endif  // HAVE_SSE2
+#endif  // HAVE_SSE2 && HAVE_X86_ASM
 
-#if HAVE_SSSE3
+#if HAVE_SSSE3 && HAVE_X86_ASM
 INSTANTIATE_TEST_SUITE_P(
     SSSE3, VP9IntraPredTest,
     ::testing::Values(IntraPredParam(&vpx_d45_predictor_16x16_ssse3,
@@ -245,7 +245,7 @@ INSTANTIATE_TEST_SUITE_P(
                                      &vpx_d207_predictor_16x16_c, 16, 8),
                       IntraPredParam(&vpx_d207_predictor_32x32_ssse3,
                                      &vpx_d207_predictor_32x32_c, 32, 8)));
-#endif  // HAVE_SSSE3
+#endif  // HAVE_SSSE3 && HAVE_X86_ASM
 
 #if HAVE_NEON
 INSTANTIATE_TEST_SUITE_P(
@@ -499,9 +499,10 @@ INSTANTIATE_TEST_SUITE_P(
 #endif  // HAVE_LSX
 
 #if CONFIG_VP9_HIGHBITDEPTH
-typedef void (*HighbdIntraPred)(uint16_t *dst, ptrdiff_t stride,
-                                const uint16_t *above, const uint16_t *left,
-                                int bps);
+using HighbdIntraPred = void (*)(uint16_t *dst, ptrdiff_t stride,
+                                 const uint16_t *above, const uint16_t *left,
+                                 int bps);
+
 struct HighbdIntraPredParam {
   HighbdIntraPredParam(HighbdIntraPred pred = nullptr,
                        HighbdIntraPred ref = nullptr, int block_size_value = 0,
@@ -524,7 +525,7 @@ void IntraPredTest<uint16_t, HighbdIntraPredParam>::Predict() {
       params_.pred_fn(dst_, stride_, above_row_, left_col_, bit_depth));
 }
 
-typedef IntraPredTest<uint16_t, HighbdIntraPredParam> VP9HighbdIntraPredTest;
+using VP9HighbdIntraPredTest = IntraPredTest<uint16_t, HighbdIntraPredParam>;
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(VP9HighbdIntraPredTest);
 
 TEST_P(VP9HighbdIntraPredTest, HighbdIntraPredTests) {
@@ -536,6 +537,66 @@ TEST_P(VP9HighbdIntraPredTest, HighbdIntraPredTests) {
   RunTest(left_col, above_data, dst, ref_dst);
 }
 #endif
+
+#if HAVE_AVX512
+INSTANTIATE_TEST_SUITE_P(
+    AVX512_TO_C_8, VP9HighbdIntraPredTest,
+    ::testing::Values(
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_32x32_avx512,
+                             &vpx_highbd_d63_predictor_32x32_c, 32, 8),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_32x32_avx512,
+                             &vpx_highbd_d207_predictor_32x32_c, 32, 8)));
+INSTANTIATE_TEST_SUITE_P(
+    AVX512_TO_C_10, VP9HighbdIntraPredTest,
+    ::testing::Values(
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_32x32_avx512,
+                             &vpx_highbd_d63_predictor_32x32_c, 32, 10),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_32x32_avx512,
+                             &vpx_highbd_d207_predictor_32x32_c, 32, 10)));
+INSTANTIATE_TEST_SUITE_P(
+    AVX512_TO_C_12, VP9HighbdIntraPredTest,
+    ::testing::Values(
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_32x32_avx512,
+                             &vpx_highbd_d63_predictor_32x32_c, 32, 12),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_32x32_avx512,
+                             &vpx_highbd_d207_predictor_32x32_c, 32, 12)));
+#endif  // HAVE_AVX512
+
+#if HAVE_AVX2
+INSTANTIATE_TEST_SUITE_P(
+    AVX2_TO_C_8, VP9HighbdIntraPredTest,
+    ::testing::Values(
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_16x16_avx2,
+                             &vpx_highbd_d63_predictor_16x16_c, 16, 8),
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_32x32_avx2,
+                             &vpx_highbd_d63_predictor_32x32_c, 32, 8),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_16x16_avx2,
+                             &vpx_highbd_d207_predictor_16x16_c, 16, 8),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_32x32_avx2,
+                             &vpx_highbd_d207_predictor_32x32_c, 32, 8)));
+INSTANTIATE_TEST_SUITE_P(
+    AVX2_TO_C_10, VP9HighbdIntraPredTest,
+    ::testing::Values(
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_16x16_avx2,
+                             &vpx_highbd_d63_predictor_16x16_c, 16, 10),
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_32x32_avx2,
+                             &vpx_highbd_d63_predictor_32x32_c, 32, 10),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_16x16_avx2,
+                             &vpx_highbd_d207_predictor_16x16_c, 16, 10),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_32x32_avx2,
+                             &vpx_highbd_d207_predictor_32x32_c, 32, 10)));
+INSTANTIATE_TEST_SUITE_P(
+    AVX2_TO_C_12, VP9HighbdIntraPredTest,
+    ::testing::Values(
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_16x16_avx2,
+                             &vpx_highbd_d63_predictor_16x16_c, 16, 12),
+        HighbdIntraPredParam(&vpx_highbd_d63_predictor_32x32_avx2,
+                             &vpx_highbd_d63_predictor_32x32_c, 32, 12),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_16x16_avx2,
+                             &vpx_highbd_d207_predictor_16x16_c, 16, 12),
+        HighbdIntraPredParam(&vpx_highbd_d207_predictor_32x32_avx2,
+                             &vpx_highbd_d207_predictor_32x32_c, 32, 12)));
+#endif  // HAVE_AVX2
 
 #if HAVE_SSSE3
 INSTANTIATE_TEST_SUITE_P(
@@ -666,215 +727,236 @@ INSTANTIATE_TEST_SUITE_P(
 #endif  // HAVE_SSSE3
 
 #if HAVE_SSE2
-INSTANTIATE_TEST_SUITE_P(
-    SSE2_TO_C_8, VP9HighbdIntraPredTest,
-    ::testing::Values(
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_4x4_sse2,
-                             &vpx_highbd_dc_128_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_8x8_sse2,
-                             &vpx_highbd_dc_128_predictor_8x8_c, 8, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_16x16_sse2,
-                             &vpx_highbd_dc_128_predictor_16x16_c, 16, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_32x32_sse2,
-                             &vpx_highbd_dc_128_predictor_32x32_c, 32, 8),
-        HighbdIntraPredParam(&vpx_highbd_d63_predictor_4x4_sse2,
-                             &vpx_highbd_d63_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_d117_predictor_4x4_sse2,
-                             &vpx_highbd_d117_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_d135_predictor_4x4_sse2,
-                             &vpx_highbd_d135_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_d153_predictor_4x4_sse2,
-                             &vpx_highbd_d153_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_d207_predictor_4x4_sse2,
-                             &vpx_highbd_d207_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_4x4_sse2,
-                             &vpx_highbd_dc_left_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_8x8_sse2,
-                             &vpx_highbd_dc_left_predictor_8x8_c, 8, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_16x16_sse2,
-                             &vpx_highbd_dc_left_predictor_16x16_c, 16, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_32x32_sse2,
-                             &vpx_highbd_dc_left_predictor_32x32_c, 32, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_4x4_sse2,
-                             &vpx_highbd_dc_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_8x8_sse2,
-                             &vpx_highbd_dc_predictor_8x8_c, 8, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_16x16_sse2,
-                             &vpx_highbd_dc_predictor_16x16_c, 16, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_32x32_sse2,
-                             &vpx_highbd_dc_predictor_32x32_c, 32, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_4x4_sse2,
-                             &vpx_highbd_dc_top_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_8x8_sse2,
-                             &vpx_highbd_dc_top_predictor_8x8_c, 8, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_16x16_sse2,
-                             &vpx_highbd_dc_top_predictor_16x16_c, 16, 8),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_32x32_sse2,
-                             &vpx_highbd_dc_top_predictor_32x32_c, 32, 8),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_4x4_sse2,
-                             &vpx_highbd_tm_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_8x8_sse2,
-                             &vpx_highbd_tm_predictor_8x8_c, 8, 8),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_16x16_sse2,
-                             &vpx_highbd_tm_predictor_16x16_c, 16, 8),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_32x32_sse2,
-                             &vpx_highbd_tm_predictor_32x32_c, 32, 8),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_4x4_sse2,
-                             &vpx_highbd_h_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_8x8_sse2,
-                             &vpx_highbd_h_predictor_8x8_c, 8, 8),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_16x16_sse2,
-                             &vpx_highbd_h_predictor_16x16_c, 16, 8),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_32x32_sse2,
-                             &vpx_highbd_h_predictor_32x32_c, 32, 8),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_4x4_sse2,
-                             &vpx_highbd_v_predictor_4x4_c, 4, 8),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_8x8_sse2,
-                             &vpx_highbd_v_predictor_8x8_c, 8, 8),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_16x16_sse2,
-                             &vpx_highbd_v_predictor_16x16_c, 16, 8),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_32x32_sse2,
-                             &vpx_highbd_v_predictor_32x32_c, 32, 8)));
+const HighbdIntraPredParam kSse2HighbdParams8[] = {
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_4x4_sse2,
+                       &vpx_highbd_dc_128_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_8x8_sse2,
+                       &vpx_highbd_dc_128_predictor_8x8_c, 8, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_16x16_sse2,
+                       &vpx_highbd_dc_128_predictor_16x16_c, 16, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_32x32_sse2,
+                       &vpx_highbd_dc_128_predictor_32x32_c, 32, 8),
+  HighbdIntraPredParam(&vpx_highbd_d63_predictor_4x4_sse2,
+                       &vpx_highbd_d63_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_d117_predictor_4x4_sse2,
+                       &vpx_highbd_d117_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_d135_predictor_4x4_sse2,
+                       &vpx_highbd_d135_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_d153_predictor_4x4_sse2,
+                       &vpx_highbd_d153_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_d207_predictor_4x4_sse2,
+                       &vpx_highbd_d207_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_4x4_sse2,
+                       &vpx_highbd_dc_left_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_8x8_sse2,
+                       &vpx_highbd_dc_left_predictor_8x8_c, 8, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_16x16_sse2,
+                       &vpx_highbd_dc_left_predictor_16x16_c, 16, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_32x32_sse2,
+                       &vpx_highbd_dc_left_predictor_32x32_c, 32, 8),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_4x4_sse2,
+                       &vpx_highbd_dc_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_8x8_sse2,
+                       &vpx_highbd_dc_predictor_8x8_c, 8, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_16x16_sse2,
+                       &vpx_highbd_dc_predictor_16x16_c, 16, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_32x32_sse2,
+                       &vpx_highbd_dc_predictor_32x32_c, 32, 8),
+#endif  // HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_4x4_sse2,
+                       &vpx_highbd_dc_top_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_8x8_sse2,
+                       &vpx_highbd_dc_top_predictor_8x8_c, 8, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_16x16_sse2,
+                       &vpx_highbd_dc_top_predictor_16x16_c, 16, 8),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_32x32_sse2,
+                       &vpx_highbd_dc_top_predictor_32x32_c, 32, 8),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_4x4_sse2,
+                       &vpx_highbd_tm_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_8x8_sse2,
+                       &vpx_highbd_tm_predictor_8x8_c, 8, 8),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_16x16_sse2,
+                       &vpx_highbd_tm_predictor_16x16_c, 16, 8),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_32x32_sse2,
+                       &vpx_highbd_tm_predictor_32x32_c, 32, 8),
+#endif  // HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_4x4_sse2,
+                       &vpx_highbd_h_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_8x8_sse2,
+                       &vpx_highbd_h_predictor_8x8_c, 8, 8),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_16x16_sse2,
+                       &vpx_highbd_h_predictor_16x16_c, 16, 8),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_32x32_sse2,
+                       &vpx_highbd_h_predictor_32x32_c, 32, 8),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_4x4_sse2,
+                       &vpx_highbd_v_predictor_4x4_c, 4, 8),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_8x8_sse2,
+                       &vpx_highbd_v_predictor_8x8_c, 8, 8),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_16x16_sse2,
+                       &vpx_highbd_v_predictor_16x16_c, 16, 8),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_32x32_sse2,
+                       &vpx_highbd_v_predictor_32x32_c, 32, 8),
+#endif  // HAVE_X86_ASM
+};
+INSTANTIATE_TEST_SUITE_P(SSE2_TO_C_8, VP9HighbdIntraPredTest,
+                         ::testing::ValuesIn(kSse2HighbdParams8));
 
-INSTANTIATE_TEST_SUITE_P(
-    SSE2_TO_C_10, VP9HighbdIntraPredTest,
-    ::testing::Values(
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_4x4_sse2,
-                             &vpx_highbd_dc_128_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_8x8_sse2,
-                             &vpx_highbd_dc_128_predictor_8x8_c, 8, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_16x16_sse2,
-                             &vpx_highbd_dc_128_predictor_16x16_c, 16, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_32x32_sse2,
-                             &vpx_highbd_dc_128_predictor_32x32_c, 32, 10),
-        HighbdIntraPredParam(&vpx_highbd_d63_predictor_4x4_sse2,
-                             &vpx_highbd_d63_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_d117_predictor_4x4_sse2,
-                             &vpx_highbd_d117_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_d135_predictor_4x4_sse2,
-                             &vpx_highbd_d135_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_d153_predictor_4x4_sse2,
-                             &vpx_highbd_d153_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_d207_predictor_4x4_sse2,
-                             &vpx_highbd_d207_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_4x4_sse2,
-                             &vpx_highbd_dc_left_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_8x8_sse2,
-                             &vpx_highbd_dc_left_predictor_8x8_c, 8, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_16x16_sse2,
-                             &vpx_highbd_dc_left_predictor_16x16_c, 16, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_32x32_sse2,
-                             &vpx_highbd_dc_left_predictor_32x32_c, 32, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_4x4_sse2,
-                             &vpx_highbd_dc_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_8x8_sse2,
-                             &vpx_highbd_dc_predictor_8x8_c, 8, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_16x16_sse2,
-                             &vpx_highbd_dc_predictor_16x16_c, 16, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_32x32_sse2,
-                             &vpx_highbd_dc_predictor_32x32_c, 32, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_4x4_sse2,
-                             &vpx_highbd_dc_top_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_8x8_sse2,
-                             &vpx_highbd_dc_top_predictor_8x8_c, 8, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_16x16_sse2,
-                             &vpx_highbd_dc_top_predictor_16x16_c, 16, 10),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_32x32_sse2,
-                             &vpx_highbd_dc_top_predictor_32x32_c, 32, 10),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_4x4_sse2,
-                             &vpx_highbd_tm_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_8x8_sse2,
-                             &vpx_highbd_tm_predictor_8x8_c, 8, 10),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_16x16_sse2,
-                             &vpx_highbd_tm_predictor_16x16_c, 16, 10),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_32x32_sse2,
-                             &vpx_highbd_tm_predictor_32x32_c, 32, 10),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_4x4_sse2,
-                             &vpx_highbd_h_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_8x8_sse2,
-                             &vpx_highbd_h_predictor_8x8_c, 8, 10),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_16x16_sse2,
-                             &vpx_highbd_h_predictor_16x16_c, 16, 10),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_32x32_sse2,
-                             &vpx_highbd_h_predictor_32x32_c, 32, 10),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_4x4_sse2,
-                             &vpx_highbd_v_predictor_4x4_c, 4, 10),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_8x8_sse2,
-                             &vpx_highbd_v_predictor_8x8_c, 8, 10),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_16x16_sse2,
-                             &vpx_highbd_v_predictor_16x16_c, 16, 10),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_32x32_sse2,
-                             &vpx_highbd_v_predictor_32x32_c, 32, 10)));
+const HighbdIntraPredParam kSse2HighbdParams10[] = {
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_4x4_sse2,
+                       &vpx_highbd_dc_128_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_8x8_sse2,
+                       &vpx_highbd_dc_128_predictor_8x8_c, 8, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_16x16_sse2,
+                       &vpx_highbd_dc_128_predictor_16x16_c, 16, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_32x32_sse2,
+                       &vpx_highbd_dc_128_predictor_32x32_c, 32, 10),
+  HighbdIntraPredParam(&vpx_highbd_d63_predictor_4x4_sse2,
+                       &vpx_highbd_d63_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_d117_predictor_4x4_sse2,
+                       &vpx_highbd_d117_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_d135_predictor_4x4_sse2,
+                       &vpx_highbd_d135_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_d153_predictor_4x4_sse2,
+                       &vpx_highbd_d153_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_d207_predictor_4x4_sse2,
+                       &vpx_highbd_d207_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_4x4_sse2,
+                       &vpx_highbd_dc_left_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_8x8_sse2,
+                       &vpx_highbd_dc_left_predictor_8x8_c, 8, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_16x16_sse2,
+                       &vpx_highbd_dc_left_predictor_16x16_c, 16, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_32x32_sse2,
+                       &vpx_highbd_dc_left_predictor_32x32_c, 32, 10),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_4x4_sse2,
+                       &vpx_highbd_dc_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_8x8_sse2,
+                       &vpx_highbd_dc_predictor_8x8_c, 8, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_16x16_sse2,
+                       &vpx_highbd_dc_predictor_16x16_c, 16, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_32x32_sse2,
+                       &vpx_highbd_dc_predictor_32x32_c, 32, 10),
+#endif  // HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_4x4_sse2,
+                       &vpx_highbd_dc_top_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_8x8_sse2,
+                       &vpx_highbd_dc_top_predictor_8x8_c, 8, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_16x16_sse2,
+                       &vpx_highbd_dc_top_predictor_16x16_c, 16, 10),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_32x32_sse2,
+                       &vpx_highbd_dc_top_predictor_32x32_c, 32, 10),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_4x4_sse2,
+                       &vpx_highbd_tm_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_8x8_sse2,
+                       &vpx_highbd_tm_predictor_8x8_c, 8, 10),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_16x16_sse2,
+                       &vpx_highbd_tm_predictor_16x16_c, 16, 10),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_32x32_sse2,
+                       &vpx_highbd_tm_predictor_32x32_c, 32, 10),
+#endif  // HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_4x4_sse2,
+                       &vpx_highbd_h_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_8x8_sse2,
+                       &vpx_highbd_h_predictor_8x8_c, 8, 10),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_16x16_sse2,
+                       &vpx_highbd_h_predictor_16x16_c, 16, 10),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_32x32_sse2,
+                       &vpx_highbd_h_predictor_32x32_c, 32, 10),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_4x4_sse2,
+                       &vpx_highbd_v_predictor_4x4_c, 4, 10),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_8x8_sse2,
+                       &vpx_highbd_v_predictor_8x8_c, 8, 10),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_16x16_sse2,
+                       &vpx_highbd_v_predictor_16x16_c, 16, 10),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_32x32_sse2,
+                       &vpx_highbd_v_predictor_32x32_c, 32, 10),
+#endif  // HAVE_X86_ASM
+};
+INSTANTIATE_TEST_SUITE_P(SSE2_TO_C_10, VP9HighbdIntraPredTest,
+                         ::testing::ValuesIn(kSse2HighbdParams10));
 
-INSTANTIATE_TEST_SUITE_P(
-    SSE2_TO_C_12, VP9HighbdIntraPredTest,
-    ::testing::Values(
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_4x4_sse2,
-                             &vpx_highbd_dc_128_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_8x8_sse2,
-                             &vpx_highbd_dc_128_predictor_8x8_c, 8, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_16x16_sse2,
-                             &vpx_highbd_dc_128_predictor_16x16_c, 16, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_32x32_sse2,
-                             &vpx_highbd_dc_128_predictor_32x32_c, 32, 12),
-        HighbdIntraPredParam(&vpx_highbd_d63_predictor_4x4_sse2,
-                             &vpx_highbd_d63_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_d117_predictor_4x4_sse2,
-                             &vpx_highbd_d117_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_d135_predictor_4x4_sse2,
-                             &vpx_highbd_d135_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_d153_predictor_4x4_sse2,
-                             &vpx_highbd_d153_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_d207_predictor_4x4_sse2,
-                             &vpx_highbd_d207_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_4x4_sse2,
-                             &vpx_highbd_dc_left_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_8x8_sse2,
-                             &vpx_highbd_dc_left_predictor_8x8_c, 8, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_16x16_sse2,
-                             &vpx_highbd_dc_left_predictor_16x16_c, 16, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_32x32_sse2,
-                             &vpx_highbd_dc_left_predictor_32x32_c, 32, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_4x4_sse2,
-                             &vpx_highbd_dc_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_8x8_sse2,
-                             &vpx_highbd_dc_predictor_8x8_c, 8, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_16x16_sse2,
-                             &vpx_highbd_dc_predictor_16x16_c, 16, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_predictor_32x32_sse2,
-                             &vpx_highbd_dc_predictor_32x32_c, 32, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_4x4_sse2,
-                             &vpx_highbd_dc_top_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_8x8_sse2,
-                             &vpx_highbd_dc_top_predictor_8x8_c, 8, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_16x16_sse2,
-                             &vpx_highbd_dc_top_predictor_16x16_c, 16, 12),
-        HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_32x32_sse2,
-                             &vpx_highbd_dc_top_predictor_32x32_c, 32, 12),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_4x4_sse2,
-                             &vpx_highbd_tm_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_8x8_sse2,
-                             &vpx_highbd_tm_predictor_8x8_c, 8, 12),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_16x16_sse2,
-                             &vpx_highbd_tm_predictor_16x16_c, 16, 12),
-        HighbdIntraPredParam(&vpx_highbd_tm_predictor_32x32_sse2,
-                             &vpx_highbd_tm_predictor_32x32_c, 32, 12),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_4x4_sse2,
-                             &vpx_highbd_h_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_8x8_sse2,
-                             &vpx_highbd_h_predictor_8x8_c, 8, 12),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_16x16_sse2,
-                             &vpx_highbd_h_predictor_16x16_c, 16, 12),
-        HighbdIntraPredParam(&vpx_highbd_h_predictor_32x32_sse2,
-                             &vpx_highbd_h_predictor_32x32_c, 32, 12),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_4x4_sse2,
-                             &vpx_highbd_v_predictor_4x4_c, 4, 12),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_8x8_sse2,
-                             &vpx_highbd_v_predictor_8x8_c, 8, 12),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_16x16_sse2,
-                             &vpx_highbd_v_predictor_16x16_c, 16, 12),
-        HighbdIntraPredParam(&vpx_highbd_v_predictor_32x32_sse2,
-                             &vpx_highbd_v_predictor_32x32_c, 32, 12)));
+const HighbdIntraPredParam kSse2HighbdParams12[] = {
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_4x4_sse2,
+                       &vpx_highbd_dc_128_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_8x8_sse2,
+                       &vpx_highbd_dc_128_predictor_8x8_c, 8, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_16x16_sse2,
+                       &vpx_highbd_dc_128_predictor_16x16_c, 16, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_128_predictor_32x32_sse2,
+                       &vpx_highbd_dc_128_predictor_32x32_c, 32, 12),
+  HighbdIntraPredParam(&vpx_highbd_d63_predictor_4x4_sse2,
+                       &vpx_highbd_d63_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_d117_predictor_4x4_sse2,
+                       &vpx_highbd_d117_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_d135_predictor_4x4_sse2,
+                       &vpx_highbd_d135_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_d153_predictor_4x4_sse2,
+                       &vpx_highbd_d153_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_d207_predictor_4x4_sse2,
+                       &vpx_highbd_d207_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_4x4_sse2,
+                       &vpx_highbd_dc_left_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_8x8_sse2,
+                       &vpx_highbd_dc_left_predictor_8x8_c, 8, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_16x16_sse2,
+                       &vpx_highbd_dc_left_predictor_16x16_c, 16, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_left_predictor_32x32_sse2,
+                       &vpx_highbd_dc_left_predictor_32x32_c, 32, 12),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_4x4_sse2,
+                       &vpx_highbd_dc_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_8x8_sse2,
+                       &vpx_highbd_dc_predictor_8x8_c, 8, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_16x16_sse2,
+                       &vpx_highbd_dc_predictor_16x16_c, 16, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_predictor_32x32_sse2,
+                       &vpx_highbd_dc_predictor_32x32_c, 32, 12),
+#endif  // HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_4x4_sse2,
+                       &vpx_highbd_dc_top_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_8x8_sse2,
+                       &vpx_highbd_dc_top_predictor_8x8_c, 8, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_16x16_sse2,
+                       &vpx_highbd_dc_top_predictor_16x16_c, 16, 12),
+  HighbdIntraPredParam(&vpx_highbd_dc_top_predictor_32x32_sse2,
+                       &vpx_highbd_dc_top_predictor_32x32_c, 32, 12),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_4x4_sse2,
+                       &vpx_highbd_tm_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_8x8_sse2,
+                       &vpx_highbd_tm_predictor_8x8_c, 8, 12),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_16x16_sse2,
+                       &vpx_highbd_tm_predictor_16x16_c, 16, 12),
+  HighbdIntraPredParam(&vpx_highbd_tm_predictor_32x32_sse2,
+                       &vpx_highbd_tm_predictor_32x32_c, 32, 12),
+#endif  // HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_4x4_sse2,
+                       &vpx_highbd_h_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_8x8_sse2,
+                       &vpx_highbd_h_predictor_8x8_c, 8, 12),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_16x16_sse2,
+                       &vpx_highbd_h_predictor_16x16_c, 16, 12),
+  HighbdIntraPredParam(&vpx_highbd_h_predictor_32x32_sse2,
+                       &vpx_highbd_h_predictor_32x32_c, 32, 12),
+#if HAVE_X86_ASM
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_4x4_sse2,
+                       &vpx_highbd_v_predictor_4x4_c, 4, 12),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_8x8_sse2,
+                       &vpx_highbd_v_predictor_8x8_c, 8, 12),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_16x16_sse2,
+                       &vpx_highbd_v_predictor_16x16_c, 16, 12),
+  HighbdIntraPredParam(&vpx_highbd_v_predictor_32x32_sse2,
+                       &vpx_highbd_v_predictor_32x32_c, 32, 12),
+#endif  // HAVE_X86_ASM
+};
+INSTANTIATE_TEST_SUITE_P(SSE2_TO_C_12, VP9HighbdIntraPredTest,
+                         ::testing::ValuesIn(kSse2HighbdParams12));
 #endif  // HAVE_SSE2
 
 #if HAVE_NEON

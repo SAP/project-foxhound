@@ -1,6 +1,8 @@
 [DEFAULT]
 prefs = ["dom.payments.request.enabled=true"]
-skip-if = ["true"] # we don't ship webpayments right now bug 1514425
+skip-if = [
+  "true", # we don't ship webpayments right now bug 1514425
+]
 support-files = [
   "head.js",
   "simple_payment_request.html",

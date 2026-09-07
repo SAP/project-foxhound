@@ -15,10 +15,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.EXTRA_DOWNLOAD_STATUS
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.grantPermission
 import mozilla.components.support.test.robolectric.testContext
+import mozilla.components.support.utils.FakeDownloadFileUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -49,7 +49,11 @@ class AndroidDownloadManagerTest {
             userAgent = "Mozilla/5.0 (Linux; Android 7.1.1) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Focus/8.0 Chrome/69.0.3497.100 Mobile Safari/537.36",
         )
         store = BrowserStore()
-        downloadManager = AndroidDownloadManager(testContext, store)
+        downloadManager = AndroidDownloadManager(
+            applicationContext = testContext,
+            store = store,
+            downloadFileUtils = FakeDownloadFileUtils(),
+            )
     }
 
     @Test(expected = SecurityException::class)
@@ -67,7 +71,6 @@ class AndroidDownloadManagerTest {
 
         assertTrue(store.state.downloads.isEmpty())
         val id = downloadManager.download(download)!!
-        store.waitUntilIdle()
         assertEquals(download.copy(id = id), store.state.downloads[id])
 
         notifyDownloadCompleted(id)
@@ -83,7 +86,6 @@ class AndroidDownloadManagerTest {
         grantPermissions()
 
         val id = downloadManager.download(download)!!
-        store.waitUntilIdle()
         notifyDownloadFailed(id)
         shadowOf(getMainLooper()).idle()
         assertTrue(downloadStopped)
@@ -106,7 +108,13 @@ class AndroidDownloadManagerTest {
 
     @Test
     fun `GIVEN a device that supports scoped storage THEN permissions must not included file access`() {
-        val downloadManager = spy(AndroidDownloadManager(testContext, store))
+        val downloadManager = spy(
+            AndroidDownloadManager(
+            applicationContext = testContext,
+            store = store,
+            downloadFileUtils = FakeDownloadFileUtils(),
+        ),
+        )
 
         doReturn(Build.VERSION_CODES.Q).`when`(downloadManager).getSDKVersion()
         println(downloadManager.permissions.joinToString { it })
@@ -115,7 +123,13 @@ class AndroidDownloadManagerTest {
 
     @Test
     fun `GIVEN a device does not supports scoped storage THEN permissions must be included file access`() {
-        val downloadManager = spy(AndroidDownloadManager(testContext, store))
+        val downloadManager = spy(
+            AndroidDownloadManager(
+            applicationContext = testContext,
+            store = store,
+            downloadFileUtils = FakeDownloadFileUtils(),
+        ),
+        )
 
         doReturn(Build.VERSION_CODES.P).`when`(downloadManager).getSDKVersion()
 
@@ -165,7 +179,6 @@ class AndroidDownloadManagerTest {
             downloadWithFileName,
             cookie = "yummy_cookie=choco",
         )!!
-        store.waitUntilIdle()
         assertEquals(downloadWithFileName.copy(id = id), store.state.downloads[id])
 
         notifyDownloadCompleted(id)

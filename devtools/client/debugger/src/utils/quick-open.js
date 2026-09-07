@@ -67,9 +67,8 @@ export function formatSourceForList(
     value,
     title: source.shortName,
     subtitle,
-    icon: hasTabOpened
-      ? "tab result-item-icon"
-      : `result-item-icon ${getSourceClassnames(source, isBlackBoxed)}`,
+    iconClassName: "result-item-icon",
+    icon: hasTabOpened ? "tab" : getSourceClassnames(source, isBlackBoxed),
     id: source.id,
     url: source.url,
     source,

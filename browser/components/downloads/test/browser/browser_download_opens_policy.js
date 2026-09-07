@@ -8,7 +8,8 @@ const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
+  DownloadsViewUI:
+    "moz-src:///browser/components/downloads/DownloadsViewUI.sys.mjs",
 });
 
 const { TelemetryTestUtils } = ChromeUtils.importESModule(

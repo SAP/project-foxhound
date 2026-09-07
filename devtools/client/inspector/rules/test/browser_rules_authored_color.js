@@ -64,15 +64,14 @@ add_task(async function () {
     info("Hide the colorpicker");
     const spectrum = cPicker.spectrum;
     const onHidden = cPicker.tooltip.once("hidden");
-    // Validating the color change ends up updating the rule view twice
-    const onRuleViewChanged = waitForNEvents(view, "ruleview-changed", 2);
+    const onModifications = view.once("property-value-updated");
     focusAndSendKey(spectrum.element.ownerDocument.defaultView, "RETURN");
 
     info("Wait for the colorpicker hidden event");
     await onHidden;
 
-    info("Wait for the 2 ruleview-changed events");
-    await onRuleViewChanged;
+    info("Wait for the property-value-updated event");
+    await onModifications;
 
     is(
       getRuleViewPropertyValue(view, "element", "color"),

@@ -126,7 +126,7 @@ system pixman.
 
 #### Windows backend
 
-- Microsoft Windows 2000 or newer.
+- Microsoft Windows Vista or newer.
 
 #### XCB backend
 

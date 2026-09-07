@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,6 @@
 #ifndef MOZILLA_LAYERS_COMPOSITABLETRANSACTIONPARENT_H
 #define MOZILLA_LAYERS_COMPOSITABLETRANSACTIONPARENT_H
 
-#include <vector>                // for vector
-#include "mozilla/Attributes.h"  // for override
 #include "mozilla/NotNull.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for ISurfaceAllocator
 #include "mozilla/layers/LayersMessages.h"     // for EditReply, etc
@@ -27,6 +23,8 @@ class CompositableParentManager : public HostIPCAllocator {
   CompositableParentManager() = default;
 
   void DestroyActor(const OpDestroy& aOp);
+
+  void DestroyActors(const nsTArray<OpDestroy>& aToDestroy);
 
   void UpdateFwdTransactionId(uint64_t aTransactionId) {
     MOZ_ASSERT(mFwdTransactionId < aTransactionId);

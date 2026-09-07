@@ -19,7 +19,7 @@ async function doTest() {
     async browser => {
       async function switchVideoSource(src) {
         let videoResized = BrowserTestUtils.waitForEvent(pipWin, "resize");
-        await ContentTask.spawn(browser, { src }, async ({ src }) => {
+        await SpecialPowers.spawn(browser, [{ src }], async ({ src }) => {
           let doc = content.document;
           let video = doc.getElementById("with-controls");
           video.src = src;

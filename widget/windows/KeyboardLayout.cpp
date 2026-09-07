@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -749,10 +748,10 @@ static const nsCString ToString(const MSG& aMSG) {
           "transition state=%s",
           GetVirtualKeyCodeName(aMSG.wParam).get(), aMSG.lParam & 0xFFFF,
           WinUtils::GetScanCode(aMSG.lParam),
-          GetBoolName(WinUtils::IsExtendedScanCode(aMSG.lParam)),
-          GetBoolName((aMSG.lParam & (1 << 29)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 30)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 31)) != 0));
+          TrueOrFalse(WinUtils::IsExtendedScanCode(aMSG.lParam)),
+          TrueOrFalse((aMSG.lParam & (1 << 29)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 30)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 31)) != 0));
       break;
     case WM_CHAR:
     case WM_DEADCHAR:
@@ -766,10 +765,10 @@ static const nsCString ToString(const MSG& aMSG) {
           "transition state=%s",
           GetCharacterCodeName(aMSG.wParam).get(), aMSG.lParam & 0xFFFF,
           WinUtils::GetScanCode(aMSG.lParam),
-          GetBoolName(WinUtils::IsExtendedScanCode(aMSG.lParam)),
-          GetBoolName((aMSG.lParam & (1 << 29)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 30)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 31)) != 0));
+          TrueOrFalse(WinUtils::IsExtendedScanCode(aMSG.lParam)),
+          TrueOrFalse((aMSG.lParam & (1 << 29)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 30)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 31)) != 0));
       break;
     case WM_APPCOMMAND:
       result.AppendPrintf(
@@ -1318,11 +1317,11 @@ NativeKey::NativeKey(nsWindow* aWidget, const MSG& aMessage,
            ToString(mShiftedString).get(), ToString(mUnshiftedString).get(),
            GetCharacterCodeName(mShiftedLatinChar).get(),
            GetCharacterCodeName(mUnshiftedLatinChar).get(), mScanCode,
-           GetBoolName(mIsExtended), GetBoolName(mIsRepeat),
-           GetBoolName(mIsDeadKey), GetBoolName(mIsPrintableKey),
-           GetBoolName(mIsSkippableInRemoteProcess),
-           GetBoolName(mCharMessageHasGone),
-           GetBoolName(mIsOverridingKeyboardLayout)));
+           TrueOrFalse(mIsExtended), TrueOrFalse(mIsRepeat),
+           TrueOrFalse(mIsDeadKey), TrueOrFalse(mIsPrintableKey),
+           TrueOrFalse(mIsSkippableInRemoteProcess),
+           TrueOrFalse(mCharMessageHasGone),
+           TrueOrFalse(mIsOverridingKeyboardLayout)));
 }
 
 void NativeKey::InitIsSkippableForKeyOrChar(const MSG& aLastKeyMSG) {
@@ -1601,7 +1600,7 @@ void NativeKey::InitWithKeyOrChar() {
                this, ToString(charMsg).get()));
       NS_WARNING_ASSERTION(
           charMsg.hwnd == mMsg.hwnd,
-          "The retrieved char message was targeted to differnet window");
+          "The retrieved char message was targeted to different window");
       mFollowingCharMsgs.AppendElement(charMsg);
     }
     if (mFollowingCharMsgs.Length() == 1) {
@@ -1745,7 +1744,7 @@ void NativeKey::InitWithAppCommand() {
     mKeyNameIndex = aKeyNameIndex;                                      \
     break;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_APPCOMMAND_TO_DOM_KEY_NAME_INDEX
 
@@ -2137,7 +2136,7 @@ nsEventStatus NativeKey::InitKeyEvent(
        GetDOMKeyCodeName(aKeyEvent.mKeyCode).get(),
        GetKeyLocationName(aKeyEvent.mLocation).get(),
        GetModifiersName(aKeyEvent.mModifiers).get(),
-       GetBoolName(aKeyEvent.DefaultPrevented())));
+       TrueOrFalse(aKeyEvent.DefaultPrevented())));
 
   return aKeyEvent.DefaultPrevented() ? nsEventStatus_eConsumeNoDefault
                                       : nsEventStatus_eIgnore;
@@ -2230,7 +2229,7 @@ bool NativeKey::DispatchCommandEvent(uint32_t aEventCommand) const {
       gKeyLog, LogLevel::Info,
       ("%p   NativeKey::DispatchCommandEvent(), dispatched app command event, "
        "result=%s, mWidget->Destroyed()=%s",
-       this, GetBoolName(ok), GetBoolName(mWidget->Destroyed())));
+       this, SucceededOrFailed(ok), TrueOrFalse(mWidget->Destroyed())));
   return ok;
 }
 
@@ -2306,7 +2305,7 @@ bool NativeKey::HandleAppCommandMessage() const {
     MOZ_LOG(gKeyLog, LogLevel::Info,
             ("%p   NativeKey::HandleAppCommandMessage(), keydown event was "
              "dispatched, consumed=%s",
-             this, GetBoolName(consumed)));
+             this, TrueOrFalse(consumed)));
     sDispatchedKeyOfAppCommand = mVirtualKeyCode;
     if (mWidget->Destroyed()) {
       MOZ_LOG(
@@ -2553,7 +2552,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
         gKeyLog, LogLevel::Info,
         ("%p   NativeKey::HandleKeyDownMessage(), dispatched keydown event, "
          "dispatched=%s, defaultPrevented=%s",
-         this, GetBoolName(dispatched), GetBoolName(defaultPrevented)));
+         this, TrueOrFalse(dispatched), TrueOrFalse(defaultPrevented)));
 
     // If IMC wasn't associated to the window but is associated it now (i.e.,
     // focus is moved from a non-editable editor to an editor by keydown
@@ -2621,7 +2620,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
             ("%p   NativeKey::HandleKeyDownMessage(), not dispatching keypress "
              "event because the key was already handled by IME, "
              "defaultPrevented=%s",
-             this, GetBoolName(defaultPrevented)));
+             this, TrueOrFalse(defaultPrevented)));
     return defaultPrevented;
   }
 
@@ -2825,7 +2824,7 @@ bool NativeKey::HandleCharMessage(const MSG& aCharMsg,
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::HandleCharMessage(), dispatched keypress event, "
            "dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -2898,7 +2897,7 @@ bool NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const {
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::HandleKeyUpMessage(), dispatched keyup event, "
            "dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -3482,8 +3481,8 @@ void NativeKey::ComputeInputtingStringWithKeyboardLayout() {
   mUnshiftedString.Clear();
   mShiftedLatinChar = mUnshiftedLatinChar = 0;
 
-  // XXX How about when Win key is pressed?
-  if (!mModKeyState.IsControl() && !mModKeyState.IsAlt()) {
+  if (!mModKeyState.IsControl() && !mModKeyState.IsAlt() &&
+      !mModKeyState.IsWin()) {
     return;
   }
 
@@ -3592,8 +3591,8 @@ bool NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages() const {
   ModifierKeyState modKeyState(mModKeyState);
   if (mCanIgnoreModifierStateAtKeyPress && IsFollowedByPrintableCharMessage()) {
     // If eKeyPress event should cause inputting text in focused editor,
-    // we need to remove Alt and Ctrl state.
-    modKeyState.Unset(MODIFIER_ALT | MODIFIER_CONTROL);
+    // we need to remove Alt and Ctrl and Meta state.
+    modKeyState.Unset(MODIFIER_ALT | MODIFIER_CONTROL | MODIFIER_META);
   }
   // We don't need to send char message here if there are two or more retrieved
   // messages because we need to set each message to each eKeyPress event.
@@ -3617,7 +3616,7 @@ bool NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages() const {
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages(), "
            "dispatched keypress event(s), dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -3666,7 +3665,7 @@ bool NativeKey::DispatchKeyPressEventsWithoutCharMessage() const {
       gKeyLog, LogLevel::Info,
       ("%p   NativeKey::DispatchKeyPressEventsWithoutCharMessage(), dispatched "
        "keypress event(s), dispatched=%s, consumed=%s",
-       this, GetBoolName(dispatched), GetBoolName(consumed)));
+       this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -5081,7 +5080,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                     \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5101,7 +5100,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                  \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_JAPANESE_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5115,7 +5114,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                            \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_KOREAN_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5130,7 +5129,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                           \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_OTHER_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5146,7 +5145,7 @@ CodeNameIndex KeyboardLayout::ConvertScanCodeToCodeNameIndex(UINT aScanCode) {
   case aNativeKey:                                                       \
     return aCodeNameIndex;
 
-#include "NativeKeyToDOMCodeName.h"
+#include "NativeKeyToDOMCodeName.inc"
 
 #undef NS_NATIVE_KEY_TO_DOM_CODE_NAME_INDEX
 
@@ -5157,7 +5156,7 @@ CodeNameIndex KeyboardLayout::ConvertScanCodeToCodeNameIndex(UINT aScanCode) {
 
 nsresult KeyboardLayout::SynthesizeNativeKeyEvent(
     nsWindow* aWidget, int32_t aNativeKeyboardLayout, int32_t aNativeKeyCode,
-    uint32_t aModifierFlags, const nsAString& aCharacters,
+    nsIWidget::NativeModifiers aModifierFlags, const nsAString& aCharacters,
     const nsAString& aUnmodifiedCharacters) {
   UINT keyboardLayoutListCount = ::GetKeyboardLayoutList(0, nullptr);
   NS_ASSERTION(keyboardLayoutListCount > 0,
@@ -5192,7 +5191,7 @@ nsresult KeyboardLayout::SynthesizeNativeKeyEvent(
   OverrideLayout(loadedLayout);
 
   bool isAltGrKeyPress = false;
-  if (aModifierFlags & nsIWidget::ALTGRAPH) {
+  if (aModifierFlags & nsIWidget::NativeModifiers::ALTGRAPH) {
     if (!HasAltGr()) {
       return NS_ERROR_INVALID_ARG;
     }
@@ -5203,50 +5202,55 @@ nsresult KeyboardLayout::SynthesizeNativeKeyEvent(
     // FYI: We don't support both ControlLeft and AltRight (AltGr) are
     //      pressed at the same time unless synthesizing key is
     //      VK_LCONTROL.
-    aModifierFlags &= ~(nsIWidget::CTRL_L | nsIWidget::ALT_R);
+    aModifierFlags &= ~(nsIWidget::NativeModifiers::CTRL_L |
+                        nsIWidget::NativeModifiers::ALT_R);
   }
 
   uint8_t argumentKeySpecific = 0;
   switch (aNativeKeyCode & 0xFF) {
     case VK_SHIFT:
-      aModifierFlags &= ~(nsIWidget::SHIFT_L | nsIWidget::SHIFT_R);
+      aModifierFlags &= ~(nsIWidget::NativeModifiers::SHIFT_L |
+                          nsIWidget::NativeModifiers::SHIFT_R);
       argumentKeySpecific = VK_LSHIFT;
       break;
     case VK_LSHIFT:
-      aModifierFlags &= ~nsIWidget::SHIFT_L;
+      aModifierFlags &= ~nsIWidget::NativeModifiers::SHIFT_L;
       argumentKeySpecific = aNativeKeyCode & 0xFF;
       aNativeKeyCode = (aNativeKeyCode & 0xFFFF0000) | VK_SHIFT;
       break;
     case VK_RSHIFT:
-      aModifierFlags &= ~nsIWidget::SHIFT_R;
+      aModifierFlags &= ~nsIWidget::NativeModifiers::SHIFT_R;
       argumentKeySpecific = aNativeKeyCode & 0xFF;
       aNativeKeyCode = (aNativeKeyCode & 0xFFFF0000) | VK_SHIFT;
       break;
     case VK_CONTROL:
-      aModifierFlags &= ~(nsIWidget::CTRL_L | nsIWidget::CTRL_R);
+      aModifierFlags &= ~(nsIWidget::NativeModifiers::CTRL_L |
+                          nsIWidget::NativeModifiers::CTRL_R);
       argumentKeySpecific = VK_LCONTROL;
       break;
     case VK_LCONTROL:
-      aModifierFlags &= ~nsIWidget::CTRL_L;
+      aModifierFlags &= ~nsIWidget::NativeModifiers::CTRL_L;
       argumentKeySpecific = aNativeKeyCode & 0xFF;
       aNativeKeyCode = (aNativeKeyCode & 0xFFFF0000) | VK_CONTROL;
       break;
     case VK_RCONTROL:
-      aModifierFlags &= ~nsIWidget::CTRL_R;
+      aModifierFlags &= ~nsIWidget::NativeModifiers::CTRL_R;
       argumentKeySpecific = aNativeKeyCode & 0xFF;
       aNativeKeyCode = (aNativeKeyCode & 0xFFFF0000) | VK_CONTROL;
       break;
     case VK_MENU:
-      aModifierFlags &= ~(nsIWidget::ALT_L | nsIWidget::ALT_R);
+      aModifierFlags &= ~(nsIWidget::NativeModifiers::ALT_L |
+                          nsIWidget::NativeModifiers::ALT_R);
       argumentKeySpecific = VK_LMENU;
       break;
     case VK_LMENU:
-      aModifierFlags &= ~nsIWidget::ALT_L;
+      aModifierFlags &= ~nsIWidget::NativeModifiers::ALT_L;
       argumentKeySpecific = aNativeKeyCode & 0xFF;
       aNativeKeyCode = (aNativeKeyCode & 0xFFFF0000) | VK_MENU;
       break;
     case VK_RMENU:
-      aModifierFlags &= ~(nsIWidget::ALT_R | nsIWidget::ALTGRAPH);
+      aModifierFlags &= ~(nsIWidget::NativeModifiers::ALT_R |
+                          nsIWidget::NativeModifiers::ALTGRAPH);
       argumentKeySpecific = aNativeKeyCode & 0xFF;
       aNativeKeyCode = (aNativeKeyCode & 0xFFFF0000) | VK_MENU;
       // If AltRight key is AltGr in the keyboard layout, let's use
@@ -5255,16 +5259,16 @@ nsresult KeyboardLayout::SynthesizeNativeKeyEvent(
       // the following code complicated.
       if (HasAltGr()) {
         isAltGrKeyPress = true;
-        aModifierFlags &= ~nsIWidget::CTRL_L;
-        aModifierFlags |= nsIWidget::ALTGRAPH;
+        aModifierFlags &= ~nsIWidget::NativeModifiers::CTRL_L;
+        aModifierFlags |= nsIWidget::NativeModifiers::ALTGRAPH;
       }
       break;
     case VK_CAPITAL:
-      aModifierFlags &= ~nsIWidget::CAPS_LOCK;
+      aModifierFlags &= ~nsIWidget::NativeModifiers::CAPS_LOCK;
       argumentKeySpecific = VK_CAPITAL;
       break;
     case VK_NUMLOCK:
-      aModifierFlags &= ~nsIWidget::NUM_LOCK;
+      aModifierFlags &= ~nsIWidget::NativeModifiers::NUM_LOCK;
       argumentKeySpecific = VK_NUMLOCK;
       break;
   }
@@ -5302,7 +5306,8 @@ nsresult KeyboardLayout::SynthesizeNativeKeyEvent(
     // When AltGr key is pressed, both ControlLeft and AltRight cause
     // WM_KEYDOWN messages.
     bool makeSysKeyMsg =
-        !(aModifierFlags & nsIWidget::ALTGRAPH) && IsSysKey(key, modKeyState);
+        !(aModifierFlags & nsIWidget::NativeModifiers::ALTGRAPH) &&
+        IsSysKey(key, modKeyState);
     MSG keyDownMsg =
         WinUtils::InitMSG(makeSysKeyMsg ? WM_SYSKEYDOWN : WM_KEYDOWN, key,
                           lParam, aWidget->GetWindowHandle());

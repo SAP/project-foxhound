@@ -13,6 +13,8 @@ user_pref("browser.safebrowsing.provider.google.gethashURL", "http://127.0.0.1/s
 user_pref("browser.safebrowsing.provider.google.updateURL", "http://127.0.0.1/safebrowsing-dummyg/update");
 user_pref("browser.safebrowsing.provider.google4.gethashURL", "http://127.0.0.1/safebrowsing-dummyg4/gethash");
 user_pref("browser.safebrowsing.provider.google4.updateURL", "http://127.0.0.1/safebrowsing-dummyg4/update");
+user_pref("browser.safebrowsing.provider.google5.gethashURL", "http://127.0.0.1/safebrowsing-dummyg5/gethash");
+user_pref("browser.safebrowsing.provider.google5.updateURL", "http://127.0.0.1/safebrowsing-dummyg5/update");
 user_pref("browser.safebrowsing.provider.mozilla.gethashURL", "http://127.0.0.1/safebrowsing-dummym/gethash");
 user_pref("browser.safebrowsing.provider.mozilla.updateURL", "http://127.0.0.1/safebrowsing-dummym/update");
 // use about:blank, not browser.startup.homepage
@@ -39,6 +41,9 @@ user_pref("extensions.systemAddon.update.url", "http://localhost/dummy-system-ad
 user_pref("gfx.color_management.force_srgb", true);
 user_pref("gfx.color_management.mode", 2);
 user_pref("gfx.logging.level", 1);
+// Ignoring the blocklist is necessary to run tests in CI on old Mesa versions
+// (https://bugzilla.mozilla.org/show_bug.cgi?id=1985348).
+user_pref("gfx.webgpu.ignore-blocklist", true);
 // Disable downscale-during-decode, since it makes reftests more difficult.
 user_pref("image.downscale-during-decode.enabled", false);
 // We do the capturing the reftest results with sync decoding
@@ -108,8 +113,6 @@ user_pref("ui.caretWidth", 1);
 user_pref("ui.prefersReducedMotion", 0);
 user_pref("ui.systemUsesDarkTheme", 0);
 user_pref("ui.useAccessibilityTheme", 0);
-user_pref("ui.windowForeground", "");
-user_pref("ui.windowBackground", "");
 // Turn off the Push service.
 user_pref("dom.push.serverURL", "");
 // Disable intermittent telemetry collection

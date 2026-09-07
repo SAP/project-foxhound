@@ -21,13 +21,11 @@ class TPS:
         self.firefox_log.write(line + "\n")
 
     def run(self, test, phase="phase1", ignore_unused_engines=True):
-        self.profile.set_preferences(
-            {
-                "testing.tps.testFile": os.path.abspath(test),
-                "testing.tps.testPhase": phase,
-                "testing.tps.ignoreUnusedEngines": ignore_unused_engines,
-            }
-        )
+        self.profile.set_preferences({
+            "testing.tps.testFile": os.path.abspath(test),
+            "testing.tps.testPhase": phase,
+            "testing.tps.ignoreUnusedEngines": ignore_unused_engines,
+        })
         args = ["-marionette"]
         process_args = {"processOutputLine": [self._log]}
         self.logger.info("Running: {} {}".format(self.firefox, " ".join(args)))

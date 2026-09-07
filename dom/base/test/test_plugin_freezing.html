@@ -22,8 +22,8 @@ window.addEventListener("unload", function() {
 
 function nextTest() {
   if (testIndex == tests.length) {
-    if (w) {
-      w.close();
+    if (f) {
+      f.remove();
     }
     SimpleTest.waitForFocus(function() {
       SimpleTest.finish();
@@ -47,14 +47,18 @@ function waitForInstanceCount(n) {
 
 tests = [
   function() { waitForInstanceCount(1); },
-  function() { w.location.href = "about:blank";
+  function() { f.src = "about:blank";
                waitForInstanceCount(0); },
 ];
 
 try {
   e1.startWatchingInstanceCount();
-  var w = window.open("data:text/html,<embed id='e2' type='application/x-test'></embed>");
-  SimpleTest.waitForFocus(nextTest, w);
+  // Use an iframe instead of window.open since top-level data: URI
+  // navigations are blocked for content-initiated requests.
+  var f = document.createElement("iframe");
+  f.src = "data:text/html,<embed id='e2' type='application/x-test'></embed>";
+  document.body.appendChild(f);
+  f.onload = nextTest;
   SimpleTest.waitForExplicitFinish();
 } catch (err) {
   todo(false, "Instances already being watched?");

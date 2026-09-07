@@ -10,16 +10,23 @@
 
 #include "modules/rtp_rtcp/source/frame_object.h"
 
-#include <string.h>
-
+#include <cstdint>
 #include <optional>
 #include <utility>
-#include <variant>
 
+#include "api/rtp_packet_infos.h"
+#include "api/scoped_refptr.h"
+#include "api/units/timestamp.h"
+#include "api/video/color_space.h"
+#include "api/video/corruption_detection/frame_instrumentation_data.h"
 #include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_frame_metadata.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_rotation.h"
 #include "api/video/video_timing.h"
-#include "common_video/frame_instrumentation_data.h"
-#include "rtc_base/checks.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
 
 namespace webrtc {
 RtpFrameObject::RtpFrameObject(
@@ -27,8 +34,8 @@ RtpFrameObject::RtpFrameObject(
     uint16_t last_seq_num,
     bool markerBit,
     int times_nacked,
-    int64_t first_packet_received_time,
-    int64_t last_packet_received_time,
+    std::optional<Timestamp> first_packet_received_time,
+    std::optional<Timestamp> last_packet_received_time,
     uint32_t rtp_timestamp,
     int64_t ntp_time_ms,
     const VideoSendTiming& timing,
@@ -37,12 +44,10 @@ RtpFrameObject::RtpFrameObject(
     VideoRotation rotation,
     VideoContentType content_type,
     const RTPVideoHeader& video_header,
-    const std::optional<webrtc::ColorSpace>& color_space,
-    const std::optional<
-        std::variant<FrameInstrumentationSyncData, FrameInstrumentationData>>&
-        frame_instrumentation_data,
+    const std::optional<class ColorSpace>& color_space,
+    const std::optional<FrameInstrumentationData>& frame_instrumentation_data,
     RtpPacketInfos packet_infos,
-    rtc::scoped_refptr<EncodedImageBuffer> image_buffer)
+    scoped_refptr<EncodedImageBuffer> image_buffer)
     : image_buffer_(image_buffer),
       first_seq_num_(first_seq_num),
       last_seq_num_(last_seq_num),
@@ -60,7 +65,7 @@ RtpFrameObject::RtpFrameObject(
   _payloadType = payload_type;
   SetRtpTimestamp(rtp_timestamp);
   ntp_time_ms_ = ntp_time_ms;
-  _frameType = rtp_video_header_.frame_type;
+  set_frame_type(rtp_video_header_.frame_type);
 
   // Setting frame's playout delays to the same values
   // as of the first packet's.
@@ -94,8 +99,12 @@ RtpFrameObject::RtpFrameObject(
     timing_.network2_timestamp_ms =
         ntp_time_ms_ + timing.network2_timestamp_delta_ms;
   }
-  timing_.receive_start_ms = first_packet_received_time;
-  timing_.receive_finish_ms = last_packet_received_time;
+  timing_.receive_start_ms = first_packet_received_time.has_value()
+                                 ? first_packet_received_time->ms()
+                                 : -1;
+  timing_.receive_finish_ms = last_packet_received_time.has_value()
+                                  ? last_packet_received_time->ms()
+                                  : -1;
   timing_.flags = timing.flags;
   is_last_spatial_layer = markerBit;
 }
@@ -122,7 +131,7 @@ VideoCodecType RtpFrameObject::codec_type() const {
   return codec_type_;
 }
 
-int64_t RtpFrameObject::ReceivedTime() const {
+std::optional<Timestamp> RtpFrameObject::ReceivedTimestamp() const {
   return last_packet_received_time_;
 }
 

@@ -22,7 +22,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=333064
 
 <script class="testbody" type="application/javascript">
 
-/** Test for Bug 333064 **/
+/** Test for Bug 333064 */
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {
   var div = document.getElementById("korean-text");
@@ -38,7 +38,11 @@ SimpleTest.waitForFocus(function() {
     function compare(value) {
       // Make sure we got the HTML flavour we asked for and that our
       // string is included without additional spaces.
-      return value.includes("korean-text") && value.includes("안".repeat(160));
+      return (
+        (SpecialPowers.getBoolPref("dom.serializer.includeCommonAncestor.enabled")
+          ? value.includes("korean-text")
+          : !value.includes("korean-text")) && value.includes("안".repeat(160))
+      );
     },
     function setup() {
       synthesizeKey("C", {accelKey: true});

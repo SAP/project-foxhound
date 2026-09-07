@@ -52,7 +52,7 @@ private fun findUrlMatchingText(url: String, text: String): String? {
 
     var urlSansProtocol = uri?.host
     urlSansProtocol += uri?.port?.orEmpty() + uri?.path
-    urlSansProtocol?.let {
+    urlSansProtocol.let {
         if (it.startsWith(text) || it.noCommonSubdomains().startsWith(text)) {
             return url
         }

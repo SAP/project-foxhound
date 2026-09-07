@@ -17,9 +17,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
-import mozilla.components.support.ktx.android.os.resetAfter
 import mozilla.components.support.utils.ManufacturerChecker
-import org.mozilla.fenix.Config
 import org.mozilla.fenix.components.Components
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -31,18 +29,28 @@ private val mainLooper = Looper.getMainLooper()
 
 /**
  * Manages strict mode settings for the application.
+ *
+ * This class provides mechanisms to enable and configure Android's StrictMode,
+ * a developer tool that detects things you might be doing by accident and brings
+ * them to your attention so you can fix them.
+ *
+ * It allows for defining custom thread and VM policies, applying them, and
+ * managing suppressions of StrictMode violations with logging and tracking.
+ *
+ * @param isEnabledByBuildConfig A boolean indicating if StrictMode should be enabled
+ *                                based on the application's build configuration.
+ * @param components An instance of [Components] used to access core application features like the profiler.
+ *                   Ideally, a more specific dependency would be injected, but this is used to
+ *                   work around a circular dependency where StrictMode is part of Core,
+ *                   and Core would need to be passed in here.
+ * @param buildManufacturerChecker An instance of [ManufacturerChecker] used to
+ *                                 apply manufacturer-specific StrictMode workarounds.
  */
 open class StrictModeManager(
-    private val config: Config,
-
-    // Ideally, we'd pass in a more specific value but there is a circular dependency: StrictMode
-    // is passed into Core but we'd need to pass in Core here. Instead, we take components and later
-    // fetch the value we need from it.
+    private val isEnabledByBuildConfig: Boolean,
     private val components: Components,
     private val buildManufacturerChecker: ManufacturerChecker,
 ) {
-
-    private val isEnabledByBuildConfig = config.channel.isDebug
 
     /**
      * The number of times StrictMode has been suppressed. StrictMode can be used to prevent main
@@ -58,37 +66,97 @@ open class StrictModeManager(
     val suppressionCount = AtomicLong(0)
 
     /***
-     * Enables strict mode for debug purposes. meant to be run only in the main process.
-     * @param setPenaltyDeath boolean value to decide setting the penaltyDeath as a penalty.
+     * Enables strict mode for debug purposes. Meant to be run only in the main process. For
+     * simplicity it is also only supported on the main thread.
+     * @param withPenaltyDeath boolean value to decide setting the penaltyDeath as a penalty.
      */
-    fun enableStrictMode(setPenaltyDeath: Boolean) {
-        if (isEnabledByBuildConfig) {
-            val threadPolicy = StrictMode.ThreadPolicy.Builder()
-                .detectAll()
-                .penaltyLog()
-            if (setPenaltyDeath) {
-                threadPolicy.penaltyDeathWithIgnores(buildManufacturerChecker)
-            }
-            StrictMode.setThreadPolicy(threadPolicy.build())
-
-            val builder = StrictMode.VmPolicy.Builder()
-                .detectLeakedSqlLiteObjects()
-                .detectLeakedClosableObjects()
-                .detectLeakedRegistrationObjects()
-                .detectActivityLeaks()
-                .detectFileUriExposure()
-                .penaltyLog()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                builder.detectContentUriWithoutPermission()
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                builder.detectNonSdkApiUsage()
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                builder.detectUnsafeIntentLaunch()
-            }
-            StrictMode.setVmPolicy(builder.build())
+    fun enableStrictMode(withPenaltyDeath: Boolean) {
+        if (!isEnabledByBuildConfig) {
+            return
         }
+
+        if (!mainLooper.isCurrentThread) {
+            throw IllegalStateException("StrictModeManager only supported on main thread")
+        }
+
+        val threadPolicy = buildThreadPolicy(withPenaltyDeath)
+        applyThreadPolicy(threadPolicy)
+
+        val vmPolicy = buildVmPolicy()
+        applyVmPolicy(vmPolicy)
+    }
+
+    /**
+     * Builds a [StrictMode.ThreadPolicy] with the common settings used in Fenix.
+     *
+     * @param withPenaltyDeath If true, the policy will include a custom `penaltyDeath`.
+     * @return The configured [StrictMode.ThreadPolicy].
+     */
+    private fun buildThreadPolicy(withPenaltyDeath: Boolean): StrictMode.ThreadPolicy {
+        val builder = StrictMode.ThreadPolicy.Builder()
+            .detectAll()
+            .penaltyLog()
+        if (withPenaltyDeath) {
+            builder.penaltyDeathWithIgnores(buildManufacturerChecker)
+        }
+        return builder.build()
+    }
+
+    /**
+     * Builds a [StrictMode.VmPolicy] with a curated set of detections and penalties.
+     *
+     * This function constructs a VmPolicy that:
+     *  - Detects leaked SQLite objects.
+     *  - Detects leaked closable objects.
+     *  - Detects leaked registration objects (like BroadcastReceivers).
+     *  - Detects Activity leaks.
+     *  - Detects file URI exposure.
+     *  - Logs detected violations to Logcat.
+     *
+     *  Additionally, based on the Android SDK version, it enables:
+     *  - Detection of content URI access without proper permissions (Android O and above).
+     *  - Detection of non-SDK API usage (Android P and above).
+     *  - Detection of unsafe Intent launches (Android S and above).
+     *
+     * @return The configured [StrictMode.VmPolicy].
+     */
+    private fun buildVmPolicy(): StrictMode.VmPolicy {
+        val builder = StrictMode.VmPolicy.Builder()
+            .detectLeakedSqlLiteObjects()
+            .detectLeakedClosableObjects()
+            .detectLeakedRegistrationObjects()
+            .detectActivityLeaks()
+            .detectFileUriExposure()
+            .penaltyLog()
+
+        builder.detectContentUriWithoutPermission()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            builder.detectNonSdkApiUsage()
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.detectUnsafeIntentLaunch()
+        }
+        return builder.build()
+    }
+
+    /**
+     * Applies the given [StrictMode.ThreadPolicy].
+     *
+     * @param policy The StrictMode.ThreadPolicy to apply.
+     */
+    @VisibleForTesting
+    internal open fun applyThreadPolicy(policy: StrictMode.ThreadPolicy) {
+        StrictMode.setThreadPolicy(policy)
+    }
+
+    /**
+     * Applies the given [StrictMode.VmPolicy].
+     *
+     * @param policy The [StrictMode.VmPolicy] to apply.
+     */
+    @VisibleForTesting
+    internal open fun applyVmPolicy(policy: StrictMode.VmPolicy) {
+        StrictMode.setVmPolicy(policy)
     }
 
     /**
@@ -101,48 +169,55 @@ open class StrictModeManager(
     }
 
     /**
-     * Runs the given [functionBlock] and sets the given [StrictMode.ThreadPolicy] after its
-     * completion when in a build configuration that has StrictMode enabled. If StrictMode is
-     * not enabled, simply runs the [functionBlock]. This function is written in the style of
-     * [AutoCloseable.use].
+     * Runs the given [functionBlock] while temporarily suppressing StrictMode checks if they are
+     * enabled by using the [allowFn] before the call. A Gecko Profiler marker is recorded even
+     * if the strict mode checks are disabled to allow investigating performance of release builds.
      *
-     * This function contains perf improvements so it should be
-     * called instead of [mozilla.components.support.ktx.android.os.resetAfter] (using the wrong
-     * method should be prevented by a lint check). This is significantly less convenient to run than
-     * when it was written as an extension function on [StrictMode.ThreadPolicy] but I think this is
-     * okay: it shouldn't be easy to ignore StrictMode.
+     * For convenience we allow calling this on non-main threads in which case the [functionBlock]
+     * is run wihtou profiler markers or StrictMode effects.
      *
      * @return the value returned by [functionBlock].
      */
-    open fun <R> resetAfter(policy: StrictMode.ThreadPolicy, functionBlock: () -> R): R {
-        fun instrumentedFunctionBlock(): R {
-            val startProfilerTime = components.core.engine.profiler?.getProfilerTime()
-            val returnValue = functionBlock()
-
-            if (mainLooper.thread === Thread.currentThread()) { // markers only supported on main thread.
-                components.core.engine.profiler?.addMarker("StrictMode.resetAfter", startProfilerTime)
-            }
-            return returnValue
+    open fun <R> allowViolation(allowFn: () -> StrictMode.ThreadPolicy, functionBlock: () -> R): R {
+        // To make things easier for callers, we allow this to be called from non-main threads but in that case
+        // simply run their block without any profiling or StrictMode effects.
+        if (!mainLooper.isCurrentThread) {
+            return functionBlock()
         }
 
-        // Calling resetAfter takes 1-2ms (unknown device) so we only execute it if StrictMode can
-        // actually be enabled. https://github.com/mozilla-mobile/fenix/issues/11617
-        return if (isEnabledByBuildConfig) {
-            // This can overflow and crash. However, it's unlikely we'll suppress StrictMode 9
-            // quintillion times in a build config where StrictMode is enabled so we don't handle it
-            // because it'd increase complexity.
-            val suppressionCount = suppressionCount.incrementAndGet()
+        // Run the functionBlock inside a profiler marker even if we won't use StrictMode so that we
+        // can still track the performance of the code.
+        val startProfilerTime = components.core.engine.profiler?.getProfilerTime()
 
-            // We log so that devs are more likely to notice that we're suppressing StrictMode violations.
+        val returnValue = if (isEnabledByBuildConfig) {
+            // Log that we are suppressing a violation to developer convenience. Technically this
+            // count can throw on overflow but it is 64-bit and won't practically happen.
+            val suppressionCount = suppressionCount.incrementAndGet()
             logger.warn("StrictMode violation suppressed: #$suppressionCount")
 
-            policy.resetAfter(::instrumentedFunctionBlock)
+            // Apply the policy variation, run block, then restore policy.
+            val policy = allowFn()
+            try {
+                functionBlock()
+            } finally {
+                applyThreadPolicy(policy)
+            }
         } else {
-            instrumentedFunctionBlock()
+            functionBlock()
         }
+
+        components.core.engine.profiler?.addMarker("StrictMode.allow", startProfilerTime)
+        return returnValue
     }
 
-    // If we use anonymous classes/functions in this class, we get a class load error with a slight perf impact. #18731
+    /**
+     * A [FragmentManager.FragmentLifecycleCallbacks] implementation that handles
+     * StrictMode's `penaltyDeath` for fragments.
+     *
+     * Note that if we use anonymous classes/functions in this class,
+     * we get a class load error with a slight perf impact.
+     * See https://github.com/mozilla-mobile/fenix/issues/18731 for details.
+     */
     inner class DisableStrictModeFragmentLifecycleCallbacks : FragmentManager.FragmentLifecycleCallbacks() {
         override fun onFragmentResumed(fm: FragmentManager, f: Fragment) {
             fm.unregisterFragmentLifecycleCallbacks(this)
@@ -158,7 +233,7 @@ open class StrictModeManager(
 
         // See comment on anonymous functions above.
         private fun disableStrictMode() {
-            enableStrictMode(setPenaltyDeath = false)
+            enableStrictMode(withPenaltyDeath = false)
         }
     }
 }

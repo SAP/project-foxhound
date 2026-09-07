@@ -7,9 +7,11 @@ include IPCServiceWorkerDescriptor;
 
 include "ipc/ErrorIPCUtils.h";
 include "mozilla/dom/ServiceWorkerIPCUtils.h";
+include "mozilla/dom/WorkerIPCUtils.h";
 
 using mozilla::dom::ServiceWorkerUpdateViaCache from "mozilla/dom/ServiceWorkerRegistrationBinding.h";
 using mozilla::CopyableErrorResult from "mozilla/ErrorResult.h";
+using mozilla::dom::WorkerType from "mozilla/dom/WorkerBinding.h";
 
 namespace mozilla {
 namespace dom {
@@ -29,7 +31,7 @@ namespace dom {
   // worker is installed yet, etc.
   PrincipalInfo principalInfo;
   nsCString scope;
-
+  WorkerType type;
   ServiceWorkerUpdateViaCache updateViaCache;
 
   IPCServiceWorkerDescriptor? installing;

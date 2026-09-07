@@ -1,0 +1,15 @@
+{
+  "label": "webex.com",
+  "bugs": {
+    "1945561": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.webex.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

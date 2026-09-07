@@ -34,8 +34,14 @@ ChromeUtils.defineLazyGetter(lazy, "ConsoleAPIStorage", () => {
  *    The ConsoleAPIListener emits "message" events, with the following object as
  *    payload:
  *      - {Array<Object>} arguments - Arguments as passed-in when the method was called.
+ *      - {Number} columnNumber - Column number of the call site in the source.
+ *      - {Object} counter - Information about console.count* calls.
+ *      - {String} filename - URL of the source file where the call was made.
+ *      - {String} functionName - Name of the function where the call was made.
  *      - {String} level - Importance, one of `info`, `warn`, `error`, `debug`, `trace`.
+ *      - {Number} lineNumber - Line number of the call site in the source.
  *      - {Array<Object>} stacktrace - List of stack frames, starting from most recent.
+ *      - {Object} timer - Information about console.time* calls.
  *      - {Number} timeStamp - Timestamp when the method was called.
  */
 export class ConsoleAPIListener {
@@ -116,8 +122,14 @@ export class ConsoleAPIListener {
 
     this.emit("message", {
       arguments: messageObject.arguments,
+      columnNumber: messageObject.columnNumber,
+      counter: messageObject.counter,
+      filename: messageObject.filename,
+      functionName: messageObject.functionName,
       level: messageObject.level,
+      lineNumber: messageObject.lineNumber,
       stacktrace: messageObject.stacktrace,
+      timer: messageObject.timer,
       timeStamp: messageObject.timeStamp,
     });
   };

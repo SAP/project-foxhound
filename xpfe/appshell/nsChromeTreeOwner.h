@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsChromeTreeOwner_h__
-#define nsChromeTreeOwner_h__
+#ifndef nsChromeTreeOwner_h_
+#define nsChromeTreeOwner_h_
 
 // Helper Classes
 #include "nsCOMPtr.h"
@@ -48,4 +47,4 @@ class nsChromeTreeOwner : public nsIDocShellTreeOwner,
   mozilla::AppWindow* mAppWindow;
 };
 
-#endif /* nsChromeTreeOwner_h__ */
+#endif /* nsChromeTreeOwner_h_ */

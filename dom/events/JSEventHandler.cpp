@@ -1,25 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "nsJSUtils.h"
-#include "nsString.h"
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsVariant.h"
-#include "nsGkAtoms.h"
-#include "xpcpublic.h"
-#include "nsJSEnvironment.h"
-#include "nsDOMJSUtils.h"
+#include "mozilla/JSEventHandler.h"
+
 #include "mozilla/ContentEvents.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/JSEventHandler.h"
 #include "mozilla/Likely.h"
 #include "mozilla/dom/BeforeUnloadEvent.h"
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "nsDOMJSUtils.h"
+#include "nsGkAtoms.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsJSEnvironment.h"
+#include "nsJSUtils.h"
+#include "nsString.h"
+#include "nsVariant.h"
+#include "xpcpublic.h"
 
 namespace mozilla {
 
@@ -116,7 +115,6 @@ nsresult JSEventHandler::HandleEvent(Event* aEvent) {
   if (mTypedHandler.Type() == TypedEventHandler::eOnError) {
     MOZ_ASSERT_IF(mEventName, mEventName == nsGkAtoms::onerror);
 
-    nsString errorMsg;
     nsCString file;
     EventOrString msgOrEvent;
     Optional<nsACString> fileName;
@@ -127,9 +125,7 @@ nsresult JSEventHandler::HandleEvent(Event* aEvent) {
     NS_ENSURE_TRUE(aEvent, NS_ERROR_UNEXPECTED);
     ErrorEvent* scriptEvent = aEvent->AsErrorEvent();
     if (scriptEvent) {
-      scriptEvent->GetMessage(errorMsg);
-      msgOrEvent.SetAsString().ShareOrDependUpon(errorMsg);
-
+      scriptEvent->GetMessage(msgOrEvent.SetAsString());
       scriptEvent->GetFilename(file);
       fileName = &file;
 

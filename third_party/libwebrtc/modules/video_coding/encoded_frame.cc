@@ -10,11 +10,17 @@
 
 #include "modules/video_coding/encoded_frame.h"
 
-#include <string.h>
+#include <cstdint>
+#include <cstring>
+#include <optional>
 
-#include <variant>
-
+#include "api/video/encoded_image.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_rotation.h"
 #include "api/video/video_timing.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
@@ -41,7 +47,7 @@ void VCMEncodedFrame::Reset() {
   SetSpatialIndex(std::nullopt);
   _renderTimeMs = -1;
   _payloadType = 0;
-  _frameType = VideoFrameType::kVideoFrameDelta;
+  set_frame_type(VideoFrameType::kVideoFrameDelta);
   _encodedWidth = 0;
   _encodedHeight = 0;
   _missingFrame = false;

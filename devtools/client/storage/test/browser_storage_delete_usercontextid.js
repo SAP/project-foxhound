@@ -8,45 +8,33 @@
 
 // The items that will be deleted.
 const TEST_CASES = [
-  [["localStorage", "http://test1.example.org"], "ls1", "name"],
-  [["sessionStorage", "http://test1.example.org"], "ss1", "name"],
-  [
-    ["cookies", "http://test1.example.org"],
-    getCookieId("c1", "test1.example.org", "/browser"),
-    "name",
-  ],
-  [
-    ["indexedDB", "http://test1.example.org", "idb1 (default)", "obj1"],
-    1,
-    "name",
-  ],
-  [
-    ["Cache", "http://test1.example.org", "plop"],
-    MAIN_DOMAIN + "404_cached_file.js",
-    "url",
-  ],
+  [["localStorage", MAIN_ORIGIN], "ls1", "name"],
+  [["sessionStorage", MAIN_ORIGIN], "ss1", "name"],
+  [["cookies", MAIN_ORIGIN], getCookieId("c1", MAIN_HOST, "/browser"), "name"],
+  [["indexedDB", MAIN_ORIGIN, "idb1 (default)", "obj1"], 1, "name"],
+  [["Cache", MAIN_ORIGIN, "plop"], MAIN_URL + "404_cached_file.js", "url"],
 ];
 
 // The storage items that should exist for default userContextId
 const storageItemsForDefault = [
   [
-    ["cookies", "http://test1.example.org"],
+    ["cookies", MAIN_ORIGIN],
     [
-      getCookieId("c1", "test1.example.org", "/browser"),
-      getCookieId("cs2", ".example.org", "/"),
-      getCookieId("c3", "test1.example.org", "/"),
-      getCookieId("c4", ".example.org", "/"),
-      getCookieId("uc1", ".example.org", "/"),
-      getCookieId("uc2", ".example.org", "/"),
+      getCookieId("c1", MAIN_HOST, "/browser"),
+      getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
+      getCookieId("c3", MAIN_HOST, "/"),
+      getCookieId("c4", "." + MAIN_DOMAIN, "/"),
+      getCookieId("uc1", "." + MAIN_DOMAIN, "/"),
+      getCookieId("uc2", "." + MAIN_DOMAIN, "/"),
     ],
   ],
   [
-    ["cookies", "https://sectest1.example.org"],
+    ["cookies", ALT_ORIGIN_SECURED],
     [
-      getCookieId("uc1", ".example.org", "/"),
-      getCookieId("uc2", ".example.org", "/"),
-      getCookieId("cs2", ".example.org", "/"),
-      getCookieId("c4", ".example.org", "/"),
+      getCookieId("uc1", "." + MAIN_DOMAIN, "/"),
+      getCookieId("uc2", "." + MAIN_DOMAIN, "/"),
+      getCookieId("cs2", "." + MAIN_DOMAIN, "/"),
+      getCookieId("c4", "." + MAIN_DOMAIN, "/"),
       getCookieId(
         "sc1",
         "sectest1.example.org",
@@ -60,62 +48,50 @@ const storageItemsForDefault = [
     ],
   ],
   [
-    ["localStorage", "http://test1.example.org"],
+    ["localStorage", MAIN_ORIGIN],
     ["key", "ls1", "ls2"],
   ],
-  [["localStorage", "http://sectest1.example.org"], ["iframe-u-ls1"]],
-  [["localStorage", "https://sectest1.example.org"], ["iframe-s-ls1"]],
+  [["localStorage", ALT_ORIGIN], ["iframe-u-ls1"]],
+  [["localStorage", ALT_ORIGIN_SECURED], ["iframe-s-ls1"]],
   [
-    ["sessionStorage", "http://test1.example.org"],
+    ["sessionStorage", MAIN_ORIGIN],
     ["key", "ss1"],
   ],
   [
-    ["sessionStorage", "http://sectest1.example.org"],
+    ["sessionStorage", ALT_ORIGIN],
     ["iframe-u-ss1", "iframe-u-ss2"],
   ],
-  [["sessionStorage", "https://sectest1.example.org"], ["iframe-s-ss1"]],
+  [["sessionStorage", ALT_ORIGIN_SECURED], ["iframe-s-ss1"]],
   [
-    ["indexedDB", "http://test1.example.org"],
+    ["indexedDB", MAIN_ORIGIN],
     ["idb1 (default)", "idb2 (default)"],
   ],
   [
-    ["indexedDB", "http://test1.example.org", "idb1 (default)"],
+    ["indexedDB", MAIN_ORIGIN, "idb1 (default)"],
     ["obj1", "obj2"],
   ],
-  [["indexedDB", "http://test1.example.org", "idb2 (default)"], ["obj3"]],
+  [["indexedDB", MAIN_ORIGIN, "idb2 (default)"], ["obj3"]],
   [
-    ["indexedDB", "http://test1.example.org", "idb1 (default)", "obj1"],
+    ["indexedDB", MAIN_ORIGIN, "idb1 (default)", "obj1"],
     [1, 2, 3],
   ],
-  [["indexedDB", "http://test1.example.org", "idb1 (default)", "obj2"], [1]],
-  [["indexedDB", "http://test1.example.org", "idb2 (default)", "obj3"], []],
-  [["indexedDB", "http://sectest1.example.org"], []],
+  [["indexedDB", MAIN_ORIGIN, "idb1 (default)", "obj2"], [1]],
+  [["indexedDB", MAIN_ORIGIN, "idb2 (default)", "obj3"], []],
+  [["indexedDB", ALT_ORIGIN], []],
   [
-    ["indexedDB", "https://sectest1.example.org"],
+    ["indexedDB", ALT_ORIGIN_SECURED],
     ["idb-s1 (default)", "idb-s2 (default)"],
   ],
+  [["indexedDB", ALT_ORIGIN_SECURED, "idb-s1 (default)"], ["obj-s1"]],
+  [["indexedDB", ALT_ORIGIN_SECURED, "idb-s2 (default)"], ["obj-s2"]],
   [
-    ["indexedDB", "https://sectest1.example.org", "idb-s1 (default)"],
-    ["obj-s1"],
-  ],
-  [
-    ["indexedDB", "https://sectest1.example.org", "idb-s2 (default)"],
-    ["obj-s2"],
-  ],
-  [
-    ["indexedDB", "https://sectest1.example.org", "idb-s1 (default)", "obj-s1"],
+    ["indexedDB", ALT_ORIGIN_SECURED, "idb-s1 (default)", "obj-s1"],
     [6, 7],
   ],
+  [["indexedDB", ALT_ORIGIN_SECURED, "idb-s2 (default)", "obj-s2"], [16]],
   [
-    ["indexedDB", "https://sectest1.example.org", "idb-s2 (default)", "obj-s2"],
-    [16],
-  ],
-  [
-    ["Cache", "http://test1.example.org", "plop"],
-    [
-      MAIN_DOMAIN + "404_cached_file.js",
-      MAIN_DOMAIN + "browser_storage_basic.js",
-    ],
+    ["Cache", MAIN_ORIGIN, "plop"],
+    [MAIN_URL + "404_cached_file.js", MAIN_URL + "browser_storage_basic.js"],
   ],
 ];
 
@@ -177,12 +153,12 @@ add_task(async function () {
   await pushPref("dom.security.https_first", false);
 
   // First, open a tab with the default userContextId and setup its storages.
-  const tabDefault = await openTab(MAIN_DOMAIN + "storage-listings.html");
+  const tabDefault = await openTab(MAIN_URL + "storage-listings.html");
 
   // Second, start testing for userContextId 1.
   // We use the same item name as the default page has to see deleting items
   // from userContextId 1 will affect default one or not.
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html", {
+  await openTabAndSetupStorage(MAIN_URL + "storage-listings.html", {
     userContextId: 1,
   });
 

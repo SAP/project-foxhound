@@ -32,6 +32,10 @@ document.getElementById("shadow-host-in-link").attachShadow({ mode: "closed" }).
 <video controls id="test-video-bad2" width="100" height="100" style="background-color: yellow">
   <source src="bogus.duh" type="video/durrrr;">
 </video>
+<div id="test-video-with-overlay" style="position: relative; width: 100px; height: 100px;">
+  <video controls src="video.webm" width="100" height="100" style="background-color: green"></video>
+  <div id="test-video-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
+</div>
 <iframe id="test-iframe" width="98"  height="98" style="border: 1px solid black"></iframe>
 <iframe id="test-video-in-iframe" src="video.webm" width="98" height="98" style="border: 1px solid black"></iframe>
 <iframe id="test-audio-in-iframe" src="audio.ogg" width="98" height="98" style="border: 1px solid black"></iframe>
@@ -54,6 +58,8 @@ document.getElementById("shadow-host-in-link").attachShadow({ mode: "closed" }).
 <svg id="svg-with-relative-link" width=10 height=10><a xlink:href="/"><circle cx="50%" cy="50%" r="50%" fill="blue"/></a></svg>
 <svg id="svg-with-relative-link2" width=10 height=10><a xlink:href="/" xlink:type="simple"><circle cx="50%" cy="50%" r="50%" fill="green"/></a></svg>
 <svg id="svg-with-relative-link3" width=10 height=10><a href="/"><circle cx="50%" cy="50%" r="50%" fill="red"/></a></svg>
+<math id="mathml-with-link"><a href="http://example.com/"><mtext>MathML Link</mtext></a></math>
+<math id="deprecated-mathml-with-link"><mrow href="http://example.com/"><mtext>Deprecated MathML Link</mtext></mrow></math>
 <span id="test-background-image" style="background-image: url('ctxmenu-image.png')">Text with background
   <a id='test-background-image-link' href="about:blank">image</a>
   .

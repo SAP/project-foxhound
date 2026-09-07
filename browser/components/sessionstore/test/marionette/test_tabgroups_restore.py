@@ -19,18 +19,16 @@ def inline(doc):
 
 # Each list element represents a window of tabs loaded at
 # some testing URL
-DEFAULT_WINDOWS = set(
-    [
-        # Window 1. Note the comma after the inline call -
-        # this is Python's way of declaring a 1 item tuple.
-        (inline("""<div">Lorem</div>"""), inline("""<div">Ipsum</div>""")),
-    ]
-)
+DEFAULT_WINDOWS = set([
+    # Window 1. Note the comma after the inline call -
+    # this is Python's way of declaring a 1 item tuple.
+    (inline("""<div">Lorem</div>"""), inline("""<div">Ipsum</div>""")),
+])
 
 
 class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
     def setUp(self):
-        super(TestAutoRestoreWithTabGroups, self).setUp(
+        super().setUp(
             startup_page=3,
             include_private=False,
             restore_on_demand=True,
@@ -48,7 +46,7 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
             let resolve = arguments[0];
             let group = gBrowser.addTabGroup([gBrowser.tabs[0]], { id: "test-group", label: "test-group" });
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(resolve);
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(resolve);
             """
         )
 
@@ -77,8 +75,8 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
         self.marionette.execute_script(
             """
             let group = gBrowser.getTabGroupById("test-group");
-            group.ownerGlobal.SessionStore.addSavedTabGroup(group);
-            group.ownerGlobal.gBrowser.removeTabGroup(group, { animate: false });
+            group.documentGlobal.SessionStore.addSavedTabGroup(group);
+            group.documentGlobal.gBrowser.removeTabGroup(group, { animate: false });
             """
         )
 
@@ -124,7 +122,7 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
             let resolve = arguments[0];
             let group = gBrowser.addTabGroup([gBrowser.tabs[0]], { id: "test-group", label: "test-group" });
             let { TabStateFlusher } = ChromeUtils.importESModule("resource:///modules/sessionstore/TabStateFlusher.sys.mjs");
-            TabStateFlusher.flushWindow(gBrowser.ownerGlobal).then(resolve);
+            TabStateFlusher.flushWindow(gBrowser.documentGlobal).then(resolve);
             """
         )
 
@@ -153,8 +151,8 @@ class TestAutoRestoreWithTabGroups(SessionStoreTestCase):
         self.marionette.execute_script(
             """
             let group = gBrowser.getTabGroupById("test-group");
-            group.ownerGlobal.SessionStore.addSavedTabGroup(group);
-            group.ownerGlobal.gBrowser.removeTabGroup(group, { animate: false });
+            group.documentGlobal.SessionStore.addSavedTabGroup(group);
+            group.documentGlobal.gBrowser.removeTabGroup(group, { animate: false });
             """
         )
 

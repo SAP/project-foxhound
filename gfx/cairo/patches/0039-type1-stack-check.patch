@@ -1,0 +1,20 @@
+# HG changeset patch
+# User Jonathan Kew <jkew@mozilla.com>
+# Date 1782237528 -3600
+#      Tue Jun 23 18:58:48 2026 +0100
+# Node ID 62c3c0c31c94b6e598b0c5a9874e6574be341773
+# Parent  32f715efe1aa84d483a03d4e96e1f80604a8dccb
+Bug 2049399 - Check type1 stack size.
+
+diff --git a/gfx/cairo/cairo/src/cairo-type1-subset.c b/gfx/cairo/cairo/src/cairo-type1-subset.c
+--- a/gfx/cairo/cairo/src/cairo-type1-subset.c
++++ b/gfx/cairo/cairo/src/cairo-type1-subset.c
+@@ -946,7 +946,7 @@ cairo_type1_font_subset_parse_charstring
+                     break;
+ 
+ 		case TYPE1_CHARSTRING_COMMAND_POP:
+-		    if (font->ps_stack.sp < 1) {
++		    if (font->ps_stack.sp < 1 || font->build_stack.sp >= TYPE1_STACKSIZE) {
+ 			status = CAIRO_INT_STATUS_UNSUPPORTED;
+ 			goto cleanup;
+ 		    }

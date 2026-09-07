@@ -86,8 +86,8 @@ export const Downloads = {
    *                 serializable representation of a DownloadSaver object.
    *        }
    *
-   * @return {Promise}
-   * @resolves The newly created Download object.
+   * @returns {Promise}
+   *   Resolves to the newly created Download object.
    * @rejects JavaScript exception.
    */
   async createDownload(properties) {
@@ -118,8 +118,8 @@ export const Downloads = {
    *                     private window.
    *        }
    *
-   * @return {Promise}
-   * @resolves When the download has finished successfully.
+   * @returns {Promise<void>}
+   *   Resolves when the download has finished successfully.
    * @rejects JavaScript exception if the download failed.
    */
   async fetch(source, target, options) {
@@ -146,8 +146,8 @@ export const Downloads = {
    *        Downloads.ALL list are also added to either the Downloads.PUBLIC or
    *        the Downloads.PRIVATE list based on their properties.
    *
-   * @return {Promise}
-   * @resolves The requested DownloadList or DownloadCombinedList object.
+   * @returns {Promise}
+   *   Resolves to the requested DownloadList or DownloadCombinedList object.
    * @rejects JavaScript exception.
    */
   async getList(type) {
@@ -214,8 +214,8 @@ export const Downloads = {
    * @param type
    *        This can be Downloads.PUBLIC, Downloads.PRIVATE, or Downloads.ALL.
    *
-   * @return {Promise}
-   * @resolves The requested DownloadList or DownloadCombinedList object.
+   * @returns {Promise}
+   *   Resolves to the requested DownloadList or DownloadCombinedList object.
    * @rejects JavaScript exception.
    */
   async getSummary(type) {
@@ -254,8 +254,8 @@ export const Downloads = {
    *   Android:
    *     standard downloads directory i.e. /sdcard
    *
-   * @return {Promise}
-   * @resolves The downloads directory string path.
+   * @returns {Promise<string>}
+   *   Resolves to the downloads directory path.
    */
   getSystemDownloadsDirectory() {
     return lazy.DownloadIntegration.getSystemDownloadsDirectory();
@@ -265,8 +265,8 @@ export const Downloads = {
    * Returns the preferred downloads directory based on the user preferences
    * in the current profile asynchronously.
    *
-   * @return {Promise}
-   * @resolves The downloads directory string path.
+   * @returns {Promise<string>}
+   *   Resolves to the downloads directory path.
    */
   getPreferredDownloadsDirectory() {
     return lazy.DownloadIntegration.getPreferredDownloadsDirectory();
@@ -276,8 +276,8 @@ export const Downloads = {
    * Returns the preferred screenshots directory based on the user preferences
    * in the current profile asynchronously.
    *
-   * @return {Promise}
-   * @resolves The screenshots directory string path.
+   * @returns {Promise<string>}
+   *   Resolves to the screenshots directory path.
    */
   getPreferredScreenshotsDirectory() {
     return lazy.DownloadIntegration.getPreferredScreenshotsDirectory();
@@ -289,8 +289,8 @@ export const Downloads = {
    * with an external application. This may or may not be the system temporary
    * directory, based on the platform asynchronously.
    *
-   * @return {Promise}
-   * @resolves The downloads directory string path.
+   * @returns {Promise<string>}
+   *   Resolves to the downloads directory string path.
    */
   getTemporaryDownloadsDirectory() {
     return lazy.DownloadIntegration.getTemporaryDownloadsDirectory();

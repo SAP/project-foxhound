@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,20 +14,6 @@
 #include "mozilla/ArenaAllocatorExtensions.h"
 
 using mozilla::ArenaStrdup;
-
-struct PropertyTableEntry : public PLDHashEntryHdr {
-  // both of these are arena-allocated
-  const char* mKey;
-  const char16_t* mValue;
-};
-
-static const struct PLDHashTableOps property_HashTableOps = {
-    PLDHashTable::HashStringKey,
-    PLDHashTable::MatchStringKey,
-    PLDHashTable::MoveEntryStub,
-    PLDHashTable::ClearEntryStub,
-    nullptr,
-};
 
 //
 // parser stuff
@@ -380,9 +364,7 @@ nsresult nsPropertiesParser::ParseBuffer(const char16_t* aBuffer,
   return NS_OK;
 }
 
-nsPersistentProperties::nsPersistentProperties()
-    : mIn(nullptr),
-      mTable(&property_HashTableOps, sizeof(PropertyTableEntry), 16) {}
+nsPersistentProperties::nsPersistentProperties() : mIn(nullptr), mTable(16) {}
 
 nsPersistentProperties::~nsPersistentProperties() = default;
 
@@ -434,19 +416,17 @@ NS_IMETHODIMP
 nsPersistentProperties::SetStringProperty(const nsACString& aKey,
                                           const nsAString& aNewValue,
                                           nsAString& aOldValue) {
-  const nsCString& flatKey = PromiseFlatCString(aKey);
-  auto entry = static_cast<PropertyTableEntry*>(mTable.Add(flatKey.get()));
+  const char* key = ArenaStrdup(aKey, mArena);
+  const char16_t* value = ArenaStrdup(aNewValue, mArena);
 
-  if (entry->mKey) {
-    aOldValue = entry->mValue;
-    NS_WARNING(
-        nsPrintfCString("the property %s already exists", flatKey.get()).get());
+  auto& entry = mTable.LookupOrInsert(key, nullptr);
+  if (entry) {
+    aOldValue = entry;
+    NS_WARNING(nsPrintfCString("the property %s already exists", key).get());
   } else {
     aOldValue.Truncate();
   }
-
-  entry->mKey = ArenaStrdup(flatKey, mArena);
-  entry->mValue = ArenaStrdup(aNewValue, mArena);
+  entry = value;
 
   return NS_OK;
 }
@@ -461,12 +441,12 @@ nsPersistentProperties::GetStringProperty(const nsACString& aKey,
                                           nsAString& aValue) {
   const nsCString& flatKey = PromiseFlatCString(aKey);
 
-  auto entry = static_cast<PropertyTableEntry*>(mTable.Search(flatKey.get()));
+  auto entry = mTable.Lookup(flatKey.get());
   if (!entry) {
     return NS_ERROR_FAILURE;
   }
 
-  aValue = entry->mValue;
+  aValue = entry.Data();
   return NS_OK;
 }
 
@@ -475,14 +455,12 @@ nsPersistentProperties::Enumerate(nsISimpleEnumerator** aResult) {
   nsCOMArray<nsIPropertyElement> props;
 
   // We know the necessary size; we can avoid growing it while adding elements
-  props.SetCapacity(mTable.EntryCount());
+  props.SetCapacity(mTable.Count());
 
   // Step through hash entries populating a transient array
-  for (auto iter = mTable.Iter(); !iter.Done(); iter.Next()) {
-    auto entry = static_cast<PropertyTableEntry*>(iter.Get());
-
-    RefPtr<nsPropertyElement> element = new nsPropertyElement(
-        nsDependentCString(entry->mKey), nsDependentString(entry->mValue));
+  for (auto& entry : mTable) {
+    RefPtr element = mozilla::MakeRefPtr<nsPropertyElement>(
+        nsDependentCString(entry.GetKey()), nsDependentString(entry.GetData()));
 
     if (!props.AppendObject(element)) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -513,7 +491,7 @@ nsPersistentProperties::Undefine(const char* aProp) {
 
 NS_IMETHODIMP
 nsPersistentProperties::Has(const char* aProp, bool* aResult) {
-  *aResult = !!mTable.Search(aProp);
+  *aResult = mTable.Contains(aProp);
   return NS_OK;
 }
 
@@ -527,7 +505,7 @@ nsPersistentProperties::GetKeys(nsTArray<nsCString>& aKeys) {
 ////////////////////////////////////////////////////////////////////////////////
 
 nsresult nsPropertyElement::Create(REFNSIID aIID, void** aResult) {
-  RefPtr<nsPropertyElement> propElem = new nsPropertyElement();
+  RefPtr propElem = mozilla::MakeRefPtr<nsPropertyElement>();
   return propElem->QueryInterface(aIID, aResult);
 }
 

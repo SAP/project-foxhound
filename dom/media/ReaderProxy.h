@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,12 @@
 #ifndef ReaderProxy_h_
 #define ReaderProxy_h_
 
-#include "mozilla/AbstractThread.h"
-#include "mozilla/RefPtr.h"
-#include "nsISupportsImpl.h"
-
 #include "MediaEventSource.h"
 #include "MediaFormatReader.h"
 #include "MediaPromiseDefs.h"
+#include "mozilla/AbstractThread.h"
+#include "mozilla/RefPtr.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 
@@ -83,6 +80,15 @@ class ReaderProxy {
 
   RefPtr<SetCDMPromise> SetCDMProxy(CDMProxy* aProxy);
 
+#ifdef MOZ_WMF_CDM
+  void NotifyWaitingForKey() {
+    RefPtr<MediaFormatReader> reader = mReader;
+    (void)mReader->OwnerThread()->Dispatch(NS_NewRunnableFunction(
+        "ReaderProxy::NotifyWaitingForKey",
+        [reader]() { reader->NotifyWaitingForKeyForMFCDM(); }));
+  }
+#endif
+
   void SetVideoBlankDecode(bool aIsBlankDecode);
 
   void SetCanonicalDuration(Canonical<media::NullableTimeUnit>& aCanonical);
@@ -92,6 +98,16 @@ class ReaderProxy {
   void SetEncryptedCustomIdent();
 
   bool IsEncryptedCustomIdent() const;
+
+  Maybe<uint32_t> GetMaxVideoQueueSize() {
+    return mReader->GetVideoDecodeProperties().MaxQueueSize();
+  }
+  Maybe<uint32_t> GetMinVideoQueueSize() {
+    return mReader->GetVideoDecodeProperties().MinQueueSize();
+  }
+  Maybe<uint32_t> GetSendToCompositorSize() {
+    return mReader->GetVideoDecodeProperties().SendToCompositorSize();
+  }
 
  private:
   ~ReaderProxy();

@@ -5,52 +5,78 @@
 
 // Test for as-authored styles.
 
-async function createTestContent(style) {
-  const html = `<style type="text/css">
-      ${style}
-      </style>
-      <div id="testid" class="testclass">Styled Node</div>`;
+add_task(async function () {
+  const gradientText1 = "(orange, blue)";
+  const gradientText2 = "(pink, teal)";
+  const html = `
+    <style type="text/css">
+      #testid {
+        background-image: linear-gradient${gradientText1};
+        background-image: -ms-linear-gradient${gradientText2};
+        background-image: linear-gradient${gradientText2};
+      }
+    </style>
+    <div id="testid" class="testclass">Styled Node</div>`;
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  return view;
-}
 
-add_task(async function () {
-  const gradientText1 = "(orange, blue);";
-  const gradientText2 = "(pink, teal);";
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `#testid`,
+      declarations: [
+        {
+          name: "background-image",
+          value: `linear-gradient${gradientText1}`,
+          overridden: true,
+        },
+        {
+          name: "background-image",
+          value: `-ms-linear-gradient${gradientText2}`,
+          valid: false,
+        },
+        { name: "background-image", value: `linear-gradient${gradientText2}` },
+      ],
+    },
+  ]);
 
-  const view = await createTestContent(
-    "#testid {" +
-      "  background-image: linear-gradient" +
-      gradientText1 +
-      "  background-image: -ms-linear-gradient" +
-      gradientText2 +
-      "  background-image: linear-gradient" +
-      gradientText2 +
-      "} "
-  );
-
-  const elementStyle = view._elementStyle;
-  const rule = elementStyle.rules[1];
-
-  // Initially the last property should be active.
-  for (let i = 0; i < 3; ++i) {
-    const prop = rule.textProps[i];
-    is(prop.name, "background-image", "check the property name");
-    is(prop.overridden, i !== 2, "check overridden for " + i);
-  }
-
+  info(`Disable background-image: linear-gradient${gradientText2};`);
+  const rule = view.elementStyle.rules[1];
   await togglePropStatus(view, rule.textProps[2]);
 
-  // Now the first property should be active.
-  for (let i = 0; i < 3; ++i) {
-    const prop = rule.textProps[i];
-    is(
-      prop.overridden || !prop.enabled,
-      i !== 0,
-      "post-change check overridden for " + i
-    );
-  }
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `#testid`,
+      declarations: [
+        {
+          name: "background-image",
+          value: `linear-gradient${gradientText1}`,
+        },
+        {
+          name: "background-image",
+          value: `-ms-linear-gradient${gradientText2}`,
+          valid: false,
+        },
+        {
+          name: "background-image",
+          value: `linear-gradient${gradientText2}`,
+          // Now the last property shouldn't be enabled anymore
+          enabled: false,
+          // disabled declarations use the same class as we do for "overridden"
+          overridden: true,
+        },
+      ],
+    },
+  ]);
 });

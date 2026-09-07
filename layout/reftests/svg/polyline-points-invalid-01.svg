@@ -19,16 +19,11 @@
   </g>
   <!-- Second row: Trailing comma(s) -->
   <g transform="translate(0, 40)">
-    <polyline points="0,0 10,20 20,0" />
-    <polyline points="0,0 10,20 20,0,"                                 style="fill: lime;" />
-    <polyline points="0,0 10,20 20,0"     transform="translate( 40, 0)"/>
-    <polyline points="0,0 10,20 20,0 ,"   transform="translate( 40, 0)" style="fill: lime;" />
-    <polyline points="0,0 10,20 20,0"     transform="translate( 80, 0)"/>
-    <polyline points="0,0 10,20 20,0,,"   transform="translate( 80, 0)" style="fill: lime;" />
-    <polyline points="0,0 10,20 20,0"     transform="translate(120, 0)"/>
-    <polyline points="0,0 10,20 20,0, ,"  transform="translate(120, 0)" style="fill: lime;" />
-    <polyline points="0,0 10,20 20,0"     transform="translate(160, 0)"/>
-    <polyline points="0,0 10,20 20,0 ,,," transform="translate(160, 0)" style="fill: lime;" />
+    <polyline points="0,0 10,20 20,0,"                                 style="fill: red;" />
+    <polyline points="0,0 10,20 20,0 ,"   transform="translate( 40, 0)" style="fill: red;" />
+    <polyline points="0,0 10,20 20,0,,"   transform="translate( 80, 0)" style="fill: red;" />
+    <polyline points="0,0 10,20 20,0, ,"  transform="translate(120, 0)" style="fill: red;" />
+    <polyline points="0,0 10,20 20,0 ,,," transform="translate(160, 0)" style="fill: red;" />
   </g>
   <!-- Third row: Repeated commas in the middle -->
   <g transform="translate(0, 80)">

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -96,7 +94,9 @@ class DataChannelRegistry {
     return Instance()->LookupImpl(aId);
   }
 
-  virtual ~DataChannelRegistry() {
+  // The singleton pointer has already been cleared before the destructor runs,
+  // so no other thread can reach this object. Skip lock analysis.
+  virtual ~DataChannelRegistry() MOZ_NO_THREAD_SAFETY_ANALYSIS {
     MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
     if (NS_WARN_IF(!mConnections.empty())) {
@@ -132,22 +132,26 @@ class DataChannelRegistry {
     return Instance();
   }
 
-  uintptr_t RegisterImpl(DataChannelConnectionUsrsctp* aConnection) {
+  uintptr_t RegisterImpl(DataChannelConnectionUsrsctp* aConnection)
+      MOZ_REQUIRES(sInstanceMutex) {
     MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
     mConnections.emplace(mNextId, aConnection);
     return mNextId++;
   }
 
-  void DeregisterImpl(uintptr_t aId) {
+  void DeregisterImpl(uintptr_t aId) MOZ_REQUIRES(sInstanceMutex) {
     MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
     size_t removed = mConnections.erase(aId);
-    mozilla::Unused << removed;
+    (void)removed;
     MOZ_DIAGNOSTIC_ASSERT(removed);
   }
 
-  bool Empty() const { return mConnections.empty(); }
+  bool Empty() const MOZ_REQUIRES(sInstanceMutex) {
+    return mConnections.empty();
+  }
 
-  RefPtr<DataChannelConnectionUsrsctp> LookupImpl(uintptr_t aId) {
+  RefPtr<DataChannelConnectionUsrsctp> LookupImpl(uintptr_t aId)
+      MOZ_REQUIRES(sInstanceMutex) {
     auto it = mConnections.find(aId);
     if (NS_WARN_IF(it == mConnections.end())) {
       DC_DEBUG(("Can't find connection ulp %p", (void*)aId));
@@ -175,7 +179,15 @@ class DataChannelRegistry {
 
     DC_DEBUG(("Calling usrsctp_init %p", this));
 
-    MOZ_DIAGNOSTIC_ASSERT(!sInitted);
+    // usrsctp is a process-global singleton. If a previous DeinitUsrSctp()
+    // could not tear the stack down (see the comment there), usrsctp is still
+    // initialized and its timer thread is still running; re-initializing would
+    // reset global locks and the callout queue out from under it and start a
+    // second timer thread, corrupting memory. Reuse the live stack; the
+    // callback and sysctl configuration below are still in effect.
+    if (sInitted) {
+      return;
+    }
     usrsctp_init(0, DataChannelRegistry::SendSctpPacket, debug_printf);
     sInitted = true;
 
@@ -211,14 +223,21 @@ class DataChannelRegistry {
     MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
     MOZ_DIAGNOSTIC_ASSERT(sInitted);
     DC_DEBUG(("Calling usrsctp_finish %p", this));
-    usrsctp_finish();
-    sInitted = false;
+    // usrsctp_finish() is fallible: it returns -1 and tears nothing down (the
+    // timer thread keeps running) while an endpoint whose destruction was
+    // deferred (e.g. by an in-flight timer handler) is still on the global
+    // list. Only clear sInitted on success, so InitUsrSctp() never
+    // re-initializes usrsctp over a still-live stack.
+    if (usrsctp_finish() == 0) {
+      sInitted = false;
+    }
   }
 
-  uintptr_t mNextId = 1;
-  std::map<uintptr_t, RefPtr<DataChannelConnectionUsrsctp>> mConnections;
+  uintptr_t mNextId MOZ_GUARDED_BY(sInstanceMutex) = 1;
+  std::map<uintptr_t, RefPtr<DataChannelConnectionUsrsctp>> mConnections
+      MOZ_GUARDED_BY(sInstanceMutex);
   UniquePtr<media::ShutdownBlockingTicket> mShutdownBlocker;
-  static StaticMutex sInstanceMutex MOZ_UNANNOTATED;
+  static StaticMutex sInstanceMutex;
   static bool sInitted;
 };
 
@@ -337,9 +356,8 @@ DataChannelConnectionUsrsctp::DataChannelConnectionUsrsctp(
     nsISerialEventTarget* aTarget, MediaTransportHandler* aHandler)
     : DataChannelConnection(aListener, aTarget, aHandler) {}
 
-bool DataChannelConnectionUsrsctp::Init(
-    const uint16_t aLocalPort, const uint16_t aNumStreams,
-    const Maybe<uint64_t>& aMaxMessageSize) {
+bool DataChannelConnectionUsrsctp::Init(const uint16_t aLocalPort,
+                                        const uint16_t aNumStreams) {
   MOZ_ASSERT(NS_IsMainThread());
 
   struct sctp_initmsg initmsg = {};
@@ -353,8 +371,6 @@ bool DataChannelConnectionUsrsctp::Init(
       SCTP_ADAPTATION_INDICATION, SCTP_PARTIAL_DELIVERY_EVENT,
       SCTP_SEND_FAILED_EVENT,     SCTP_STREAM_RESET_EVENT,
       SCTP_STREAM_CHANGE_EVENT};
-
-  SetMaxMessageSize(aMaxMessageSize.isSome(), aMaxMessageSize.valueOr(0));
 
   mId = DataChannelRegistry::Register(this);
 
@@ -571,9 +587,6 @@ void DataChannelConnectionUsrsctp::OnTransportReady() {
       return;
     }
   }
-  // Note: currently this doesn't actually notify the application
-  Dispatch(do_AddRef(new DataChannelOnMessageAvailable(
-      DataChannelOnMessageAvailable::EventType::OnConnection, this)));
 }
 
 void DataChannelConnectionUsrsctp::OnSctpPacketReceived(
@@ -789,7 +802,10 @@ bool DataChannelConnectionUsrsctp::SendBufferedMessages(
 void DataChannelConnectionUsrsctp::OnStreamOpen(uint16_t stream) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
 
-  mQueuedData.RemoveElementsBy([stream, this](const auto& dataItem) {
+  nsTArray<UniquePtr<QueuedDataMessage>> temp;
+  std::swap(temp, mQueuedData);
+
+  temp.RemoveElementsBy([stream, this](const auto& dataItem) {
     const bool match = dataItem->mStream == stream;
     if (match) {
       DC_DEBUG(("Delivering queued data for stream %u, length %zu", stream,
@@ -801,6 +817,18 @@ void DataChannelConnectionUsrsctp::OnStreamOpen(uint16_t stream) {
     }
     return match;
   });
+
+  std::swap(temp, mQueuedData);
+}
+
+bool DataChannelConnectionUsrsctp::HasQueuedData(uint16_t aStream) const {
+  MOZ_ASSERT(mSTS->IsOnCurrentThread());
+  for (const auto& data : mQueuedData) {
+    if (data->mStream == aStream) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void DataChannelConnectionUsrsctp::HandleDataMessageChunk(
@@ -816,7 +844,7 @@ void DataChannelConnectionUsrsctp::HandleDataMessageChunk(
   // NOTE: the updated spec from the IETF says we should set in-order until we
   // receive an ACK. That would make this code moot.  Keep it for now for
   // backwards compatibility.
-  if (!channel) {
+  if (!channel || HasQueuedData(stream)) {
     // In the updated 0-RTT open case, the sender can send data immediately
     // after Open, and doesn't set the in-order bit (since we don't have a
     // response or ack).  Also, with external negotiation, data can come in
@@ -900,7 +928,7 @@ void DataChannelConnectionUsrsctp::HandleDCEPMessageChunk(const void* buffer,
   }
 
   if (!ReassembleMessageChunk(*mRecvBuffer, buffer, length, ppid, stream)) {
-    Stop();
+    CloseAll_s();
     return;
   }
 
@@ -961,8 +989,6 @@ void DataChannelConnectionUsrsctp::HandleAssociationChangeEvent(
             mNegotiatedIdLimit,
             std::max(sac->sac_outbound_streams, sac->sac_inbound_streams));
 
-        Dispatch(do_AddRef(new DataChannelOnMessageAvailable(
-            DataChannelOnMessageAvailable::EventType::OnConnection, this)));
         DC_DEBUG(("DTLS connect() succeeded!  Entering connected mode"));
 
         // Open any streams pending...
@@ -976,16 +1002,15 @@ void DataChannelConnectionUsrsctp::HandleAssociationChangeEvent(
       break;
     case SCTP_COMM_LOST:
       DC_DEBUG(("Association change: SCTP_COMM_LOST"));
-      // This association is toast, so also close all the channels -- from
-      // mainthread!
-      Stop();
+      // This association is toast, so also close all the channels
+      CloseAll_s();
       break;
     case SCTP_RESTART:
       DC_DEBUG(("Association change: SCTP_RESTART"));
       break;
     case SCTP_SHUTDOWN_COMP:
       DC_DEBUG(("Association change: SCTP_SHUTDOWN_COMP"));
-      Stop();
+      CloseAll_s();
       break;
     case SCTP_CANT_STR_ASSOC:
       DC_DEBUG(("Association change: SCTP_CANT_STR_ASSOC"));
@@ -1207,14 +1232,14 @@ void DataChannelConnectionUsrsctp::HandleSendFailedEvent(
   }
 }
 
-void DataChannelConnectionUsrsctp::ResetStreams(nsTArray<uint16_t>& aStreams) {
+bool DataChannelConnectionUsrsctp::ResetStreams(nsTArray<uint16_t>& aStreams) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
 
   DC_DEBUG(("%s %p: Sending outgoing stream reset for %zu streams", __func__,
             this, aStreams.Length()));
   if (aStreams.IsEmpty()) {
     DC_DEBUG(("No streams to reset"));
-    return;
+    return false;
   }
   const size_t len =
       sizeof(sctp_reset_streams) + (aStreams.Length()) * sizeof(uint16_t);
@@ -1238,6 +1263,7 @@ void DataChannelConnectionUsrsctp::ResetStreams(nsTArray<uint16_t>& aStreams) {
     aStreams.Clear();
   }
   free(srs);
+  return aStreams.Length() == 0;
 }
 
 void DataChannelConnectionUsrsctp::HandleStreamResetEvent(
@@ -1250,13 +1276,15 @@ void DataChannelConnectionUsrsctp::HandleStreamResetEvent(
         (strrst->strreset_length - sizeof(struct sctp_stream_reset_event)) /
         sizeof(uint16_t);
     for (size_t i = 0; i < n; ++i) {
-      if (strrst->strreset_flags & SCTP_STREAM_RESET_INCOMING_SSN) {
-        streamsReset.push_back(strrst->strreset_stream_list[i]);
-      }
+      streamsReset.push_back(strrst->strreset_stream_list[i]);
     }
   }
 
-  OnStreamsReset(std::move(streamsReset));
+  if (strrst->strreset_flags & SCTP_STREAM_RESET_INCOMING_SSN) {
+    OnStreamsReset(std::move(streamsReset));
+  } else if (strrst->strreset_flags & SCTP_STREAM_RESET_OUTGOING_SSN) {
+    OnStreamsResetComplete(std::move(streamsReset));
+  }
 }
 
 void DataChannelConnectionUsrsctp::HandleStreamChangeEvent(

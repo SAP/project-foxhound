@@ -1,5 +1,13 @@
 #!/bin/bash
 
+if [ -z "$UV_SRC" ]; then
+  pushd "$(dirname "$0")" &>/dev/null || exit
+  UV_SRC=$(cd ../.. && pwd)
+  popd &>/dev/null || exit
+fi
+
+. "$UV_SRC/release/common/unpack.sh"
+
 check_updates () {
   # called with 10 args - platform, source package, target package, update package, old updater boolean,
   # a path to the updater binary to use for the tests, a file to write diffs to, the update channel,
@@ -41,13 +49,13 @@ check_updates () {
   fi
 
   case $update_platform in
-      Darwin_ppc-gcc | Darwin_Universal-gcc3 | Darwin_x86_64-gcc3 | Darwin_x86-gcc3-u-ppc-i386 | Darwin_x86-gcc3-u-i386-x86_64 | Darwin_x86_64-gcc3-u-i386-x86_64 | Darwin_aarch64-gcc3)
+      mac | Darwin_ppc-gcc | Darwin_Universal-gcc3 | Darwin_x86_64-gcc3 | Darwin_x86-gcc3-u-ppc-i386 | Darwin_x86-gcc3-u-i386-x86_64 | Darwin_x86_64-gcc3-u-i386-x86_64 | Darwin_aarch64-gcc3)
           platform_dirname="*.app"
           ;;
-      WINNT*)
+      win | WINNT*)
           platform_dirname="bin"
           ;;
-      Linux_x86-gcc | Linux_x86-gcc3 | Linux_x86_64-gcc3)
+      linux | Linux_x86-gcc | Linux_x86-gcc3 | Linux_x86_64-gcc3)
           platform_dirname=$(echo "$product" | tr '[:upper:]' '[:lower:]')
           ;;
   esac
@@ -77,7 +85,7 @@ check_updates () {
     # This check is disabled because we rely on glob expansion here
     # shellcheck disable=SC2086
     cd_dir=$(ls -d ${PWD}/source/${platform_dirname})
-    cd "${cd_dir}" || (echo "TEST-UNEXPECTED-FAIL: couldn't cd to ${cd_dir}" && return 1)
+    cd "${cd_dir}" || { echo "TEST-UNEXPECTED-FAIL: couldn't cd to ${cd_dir}" && return 2; }
 
     set -x
     # Decide if we should use alternative argument list added in
@@ -100,7 +108,7 @@ check_updates () {
     cd ../..
   else
     echo "TEST-UNEXPECTED-FAIL: no dir in source/$platform_dirname"
-    return 1
+    return 3
   fi
 
   # Print updater log
@@ -112,7 +120,7 @@ check_updates () {
   if [ "$update_status" != "succeeded" ]
   then
     echo "TEST-UNEXPECTED-FAIL: update status was not successful: $update_status"
-    return 1
+    return 4
   fi
 
   # TODO: Check updater return code
@@ -167,28 +175,40 @@ check_updates () {
     # shellcheck disable=SC2086
     if ! compgen -G source/${platform_dirname}/Contents/MacOS/updater.app/Contents/Frameworks/UpdateSettings.framework >/dev/null; then
       echo "TEST-UNEXPECTED-FAIL: UpdateSettings.framework doesn't exist after update"
-      return 4
+      return 5
     fi
     # This check is disabled because we rely on glob expansion here
     # shellcheck disable=SC2086
     if ! compgen -G source/${platform_dirname}/Contents/Frameworks/ChannelPrefs.framework >/dev/null; then
       echo "TEST-UNEXPECTED-FAIL: ChannelPrefs.framework doesn't exist after update"
-      return 5
+      return 6
     fi
   fi
 
   # This check is disabled because we rely on glob expansion here
   # shellcheck disable=SC2086
-  ../compare-directories.py source/${platform_dirname} target/${platform_dirname} "${channel}" ${ignore_coderesources} > "${diff_file}"
+  ${UV_SRC}/release/compare-directories.py source/${platform_dirname} target/${platform_dirname} "${channel}" ${ignore_coderesources} > "${diff_file}"
   diffErr=$?
   cat "${diff_file}"
   if [ $diffErr == 2 ]
   then
     echo "TEST-UNEXPECTED-FAIL: differences found after update"
-    return 1
+    return 7
   elif [ $diffErr != 0 ]
   then
     echo "TEST-UNEXPECTED-FAIL: unknown error from diff: $diffErr"
-    return 3
+    return 8
   fi
 }
+
+# if called directly, run the update check
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  # works at a basic level with:
+  # bash ~/repos/firefox/tools/update-verify/release/common/check_updates.sh Linux_x86_64-gcc3 firefox-149.0b1.tar.xz firefox-149.0b2.tar.xz ach `pwd`/updater/updater uv.diff beta "" "" "" firefox
+  # requires:
+  # - xz files present on disk
+  # - updater in `updater/updater`
+  # - mar present at `update/update.mar`
+  check_updates "$@"
+  exit $?
+fi

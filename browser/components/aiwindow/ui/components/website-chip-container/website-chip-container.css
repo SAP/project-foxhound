@@ -1,0 +1,63 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.chip-container {
+  min-width: 0;
+}
+
+:host(.smartbar-context-chips-header) .chip-container {
+  padding-inline-start: var(--space-medium);
+  /* This padding aligns with border-width to maintain consistent spacing that creates the visual that the chips are coming to the edge. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-inline-end: var(--border-width);
+  padding-block-start: var(--space-large);
+}
+
+.scroller {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  min-width: 0;
+}
+
+.scroller > slot {
+  display: contents;
+}
+
+::slotted(*) {
+  flex: 0 0 auto;
+}
+
+.chip-history-deleted {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-small);
+  padding: var(--space-small);
+  border-radius: var(--border-radius-medium);
+  background-color: var(--background-color-box-info);
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+  font-style: italic;
+  cursor: default;
+}
+
+.chip-history-deleted-icon {
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  flex-shrink: 0;
+  opacity: var(--opacity-deemphasized-strong);
+
+  @media (forced-colors) {
+    opacity: 1;
+  }
+}

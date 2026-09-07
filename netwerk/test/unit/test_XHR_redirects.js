@@ -8,9 +8,6 @@
 const { HttpServer } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
 );
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
 
 var sSame;
 var sOther;
@@ -122,7 +119,9 @@ function run_test() {
   // Note that unsafe methods should not follow the redirect automatically
   // Of the methods below, DELETE, POST and PUT are unsafe
 
-  sRedirectPromptPref = Preferences.get("network.http.prompt-temp-redirect");
+  sRedirectPromptPref = Services.prefs.getBoolPref(
+    "network.http.prompt-temp-redirect"
+  );
   // Following Bug 677754 we don't prompt for unsafe redirects
 
   // same-origin variant

@@ -27,11 +27,12 @@ module_sources = [
 ]
 
 ### Load the compressed module sources ###
-import sys, imp, base64, zlib
+import sys, importlib.util, base64, zlib
 
 for name, source in module_sources:
     source = zlib.decompress(base64.b64decode(source))
-    mod = imp.new_module(name)
+    spec = importlib.util.spec_from_loader(name, loader=None)
+    mod = importlib.util.module_from_spec(spec)
     exec(source, mod.__dict__)
     sys.modules[name] = mod
 

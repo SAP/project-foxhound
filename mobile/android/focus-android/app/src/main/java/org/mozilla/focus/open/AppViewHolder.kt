@@ -7,6 +7,7 @@ package org.mozilla.focus.open
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.annotation.LayoutRes
 import androidx.recyclerview.widget.RecyclerView
 import org.mozilla.focus.R
 import org.mozilla.focus.open.AppAdapter.OnAppSelectedListener
@@ -35,6 +36,7 @@ class AppViewHolder internal constructor(itemView: View) : RecyclerView.ViewHold
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.item_app
+        @LayoutRes
+        val LAYOUT_ID = R.layout.item_app
     }
 }

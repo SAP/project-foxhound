@@ -4,7 +4,6 @@
 
 "use strict";
 
-const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   setIgnoreLayoutChanges,
 } = require("resource://devtools/shared/layout/utils.js");
@@ -23,25 +22,25 @@ class ViewportSizeHighlighter {
    *
    * @param {HighlighterEnvironment} highlighterEnv
    * @param {InspectorActor} parent
-   * @param {Object} options
-   * @param {Number} options.hideTimeout: An optional number. When passed, the viewport
+   * @param {object} options
+   * @param {number} options.hideTimeout: An optional number. When passed, the viewport
    *        information will automatically hide after {hideTimeout} ms.
-   * @param {String} options.prefix: The prefix to use when creating anonymous elements.
-   *        Defaults to "viewport-size-highlighter-"
-   * @param {Boolean} options.waitForDocumentToLoad: Option that will be passed to
+   * @param {string} options.extraCls: An extra class to add to the infobar container.
+   * @param {boolean} options.waitForDocumentToLoad: Option that will be passed to
    *        CanvasFrameAnonymousContentHelper. Defaults to true
    */
   constructor(highlighterEnv, parent, options = {}) {
     this.env = highlighterEnv;
     this.parent = parent;
 
-    this.ID_CLASS_PREFIX = options?.prefix || "viewport-size-highlighter-";
+    this.extraCls = options?.extraCls;
     this.hideTimeout = options?.hideTimeout;
 
     this.markup = new CanvasFrameAnonymousContentHelper(
       highlighterEnv,
       this._buildMarkup.bind(this),
       {
+        contentRootHostClassName: "devtools-highlighter-viewport-size",
         waitForDocumentToLoad: options?.waitForDocumentToLoad ?? true,
       }
     );
@@ -65,8 +64,6 @@ class ViewportSizeHighlighter {
   }
 
   _buildMarkup() {
-    const prefix = this.ID_CLASS_PREFIX;
-
     const container = this.markup.createNode({
       attributes: { class: "highlighter-container" },
     });
@@ -74,12 +71,13 @@ class ViewportSizeHighlighter {
     this.markup.createNode({
       parent: container,
       attributes: {
-        class: "viewport-infobar-container",
-        id: "viewport-infobar-container",
+        id: "viewport-size-highlighter-viewport-infobar-container",
+        class:
+          "viewport-size-highlighter-viewport-infobar-container" +
+          (this.extraCls ? " " + this.extraCls : ""),
         position: "top",
         hidden: "true",
       },
-      prefix,
     });
 
     return container;
@@ -108,7 +106,7 @@ class ViewportSizeHighlighter {
   updateViewportInfobar() {
     const { window } = this.env;
     const { innerHeight, innerWidth } = window;
-    const infobarId = this.ID_CLASS_PREFIX + "viewport-infobar-container";
+    const infobarId = "viewport-size-highlighter-viewport-infobar-container";
     const textContent = innerWidth + "px \u00D7 " + innerHeight + "px";
     this.markup.getElement(infobarId).setTextContent(textContent);
   }
@@ -140,8 +138,6 @@ class ViewportSizeHighlighter {
     this.parent = null;
     this.markup = null;
     this.isReady = null;
-
-    EventEmitter.emit(this, "destroy");
   }
 
   show() {
@@ -186,7 +182,7 @@ class ViewportSizeHighlighter {
 
   _showInfobarContainer() {
     this.markup.removeAttributeForElement(
-      this.ID_CLASS_PREFIX + "viewport-infobar-container",
+      "viewport-size-highlighter-viewport-infobar-container",
       "hidden"
     );
   }
@@ -205,7 +201,7 @@ class ViewportSizeHighlighter {
 
   _hideInfobarContainer() {
     this.markup.setAttributeForElement(
-      this.ID_CLASS_PREFIX + "viewport-infobar-container",
+      "viewport-size-highlighter-viewport-infobar-container",
       "hidden",
       "true"
     );

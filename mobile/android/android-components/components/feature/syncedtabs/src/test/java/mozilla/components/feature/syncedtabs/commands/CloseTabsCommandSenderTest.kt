@@ -4,6 +4,7 @@
 
 package mozilla.components.feature.syncedtabs.commands
 
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.storage.sync.RemoteTabsCommandQueue
 import mozilla.components.concept.sync.ConstellationState
 import mozilla.components.concept.sync.Device
@@ -16,19 +17,14 @@ import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class CloseTabsCommandSenderTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     private val device123 = Device(
         id = "123",
@@ -66,7 +62,7 @@ class CloseTabsCommandSenderTest {
     }
 
     @Test
-    fun `GIVEN a device with the close tabs capability WHEN sending the command to the device succeeds THEN the result is a success`() = runTestOnMain {
+    fun `GIVEN a device with the close tabs capability WHEN sending the command to the device succeeds THEN the result is a success`() = runTest {
         whenever(state.otherDevices).thenReturn(listOf(device123))
         whenever(constellation.sendCommandToDevice(eq("123"), any())).thenReturn(true)
 
@@ -74,7 +70,7 @@ class CloseTabsCommandSenderTest {
     }
 
     @Test
-    fun `GIVEN a device with the close tabs capability WHEN sending the command to the device fails THEN the result is a failure`() = runTestOnMain {
+    fun `GIVEN a device with the close tabs capability WHEN sending the command to the device fails THEN the result is a failure`() = runTest {
         whenever(state.otherDevices).thenReturn(listOf(device123))
         whenever(constellation.sendCommandToDevice(eq("123"), any())).thenReturn(false)
 
@@ -82,7 +78,7 @@ class CloseTabsCommandSenderTest {
     }
 
     @Test
-    fun `GIVEN a device without the close tabs capability WHEN sending the command to the device THEN the result is a failure`() = runTestOnMain {
+    fun `GIVEN a device without the close tabs capability WHEN sending the command to the device THEN the result is a failure`() = runTest {
         whenever(state.otherDevices).thenReturn(listOf(device1234))
 
         assertEquals(RemoteTabsCommandQueue.SendCloseTabsResult.NoDevice, sender.send("1234", DeviceCommandOutgoing.CloseTab(urls = listOf("http://example.com"))))
@@ -91,7 +87,7 @@ class CloseTabsCommandSenderTest {
     }
 
     @Test
-    fun `GIVEN the user is not signed in WHEN sending the command to the device THEN the result is a failure`() = runTestOnMain {
+    fun `GIVEN the user is not signed in WHEN sending the command to the device THEN the result is a failure`() = runTest {
         whenever(accountManager.authenticatedAccount()).thenReturn(null)
 
         assertEquals(RemoteTabsCommandQueue.SendCloseTabsResult.NoAccount, sender.send("123", DeviceCommandOutgoing.CloseTab(urls = listOf("http://example.com"))))

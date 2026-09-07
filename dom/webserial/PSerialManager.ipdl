@@ -1,0 +1,43 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include protocol PWindowGlobal;
+include protocol PSerialPort;
+include SerialTypes;
+
+namespace mozilla {
+namespace dom {
+
+async protocol PSerialManager {
+  manager PWindowGlobal;
+
+parent:
+  // Request a port through the user-facing chooser. The permission
+  // prompt & filtering are performed by the parent. In the granted case
+  // the parent creates a PSerialPort endpoint pair, binds the parent
+  // endpoint to a new SerialPortParent on the IO thread, and returns the
+  // child endpoint here. Otherwise the returned endpoint is invalid.
+  async RequestPort(IPCSerialPortFilter[] filters, bool autoselect)
+                    returns (IPCRequestPortResult result,
+                             Endpoint<PSerialPortChild> childEndpoint);
+
+  // Test-only
+  async SimulateDeviceConnection(nsString deviceId, nsString devicePath,
+                                 uint16_t vendorId, uint16_t productId) returns (nsresult rv);
+
+  // Test-only
+  async SimulateDeviceDisconnection(nsString deviceId) returns (nsresult rv);
+
+  // Test-only
+  async RemoveAllMockDevices() returns (nsresult rv);
+
+  // Test-only
+  async ResetToDefaultMockDevices() returns (nsresult rv);
+
+child:
+  async __delete__();
+};
+
+}  // namespace dom
+}  // namespace mozilla

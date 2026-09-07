@@ -9,6 +9,7 @@
 
 #include "include/core/SkContourMeasure.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"  // IWYU pragma: keep
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/private/base/SkTDArray.h"
@@ -45,7 +46,8 @@ bool SkPathMeasure::getMatrix(SkScalar distance, SkMatrix* matrix, MatrixFlags f
     return fContour && fContour->getMatrix(distance, matrix, (SkContourMeasure::MatrixFlags)flags);
 }
 
-bool SkPathMeasure::getSegment(SkScalar startD, SkScalar stopD, SkPath* dst, bool startWithMoveTo) {
+bool SkPathMeasure::getSegment(SkScalar startD, SkScalar stopD, SkPathBuilder* dst,
+                               bool startWithMoveTo) {
     return fContour && fContour->getSegment(startD, stopD, dst, startWithMoveTo);
 }
 

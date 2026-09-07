@@ -5,6 +5,7 @@
 //! The context within which CSS code is parsed.
 
 use crate::context::QuirksMode;
+use crate::custom_properties::{AttrTaint, AttrTaintedRange};
 use crate::error_reporting::{ContextualParseError, ParseErrorReporter};
 use crate::stylesheets::{CssRuleType, CssRuleTypes, Namespaces, Origin, UrlExtraData};
 use crate::use_counters::UseCounters;
@@ -86,6 +87,8 @@ pub struct ParserContext<'a> {
     pub use_counters: Option<&'a UseCounters>,
     /// Current nesting context.
     pub nesting_context: NestingContext,
+    /// The relevant regions in the input that have been tainted by attr() if relevant.
+    pub attr_tainted_regions: AttrTaint,
 }
 
 impl<'a> ParserContext<'a> {
@@ -100,6 +103,7 @@ impl<'a> ParserContext<'a> {
         namespaces: Cow<'a, Namespaces>,
         error_reporter: Option<&'a dyn ParseErrorReporter>,
         use_counters: Option<&'a UseCounters>,
+        attr_tainted_regions: AttrTaint,
     ) -> Self {
         Self {
             stylesheet_origin,
@@ -110,6 +114,7 @@ impl<'a> ParserContext<'a> {
             namespaces,
             use_counters,
             nesting_context: NestingContext::new_from_rule(rule_type),
+            attr_tainted_regions,
         }
     }
 
@@ -125,6 +130,15 @@ impl<'a> ParserContext<'a> {
         r
     }
 
+    /// Temporarily adds a parsing mode flag and executes the callback, returning its result.
+    pub fn with_parsing_mode<R>(&mut self, mode: ParsingMode, cb: impl FnOnce(&Self) -> R) -> R {
+        let old = self.parsing_mode;
+        self.parsing_mode |= mode;
+        let r = cb(self);
+        self.parsing_mode = old;
+        r
+    }
+
     /// Whether we're in a @page rule.
     #[inline]
     pub fn in_page_rule(&self) -> bool {
@@ -134,7 +148,31 @@ impl<'a> ParserContext<'a> {
     /// Returns whether !important declarations are forbidden.
     #[inline]
     pub fn allows_important_declarations(&self) -> bool {
-        !self.nesting_context.rule_types.intersects(CssRuleTypes::IMPORTANT_FORBIDDEN)
+        !self
+            .nesting_context
+            .rule_types
+            .intersects(CssRuleTypes::IMPORTANT_FORBIDDEN)
+    }
+
+    /// Returns whether we can parse element-dependent values.
+    #[inline]
+    pub fn has_element_context(&self) -> bool {
+        if self
+            .nesting_context
+            .rule_types
+            .intersects(CssRuleTypes::WITHOUT_ELEMENT_CONTEXT)
+        {
+            return false;
+        }
+
+        if self
+            .parsing_mode
+            .intersects(ParsingMode::MEDIA_QUERY_CONDITION)
+        {
+            return false;
+        }
+
+        true
     }
 
     /// Get the rule type, which assumes that one is available.
@@ -174,6 +212,12 @@ impl<'a> ParserContext<'a> {
     #[inline]
     pub fn allows_computational_dependence(&self) -> bool {
         self.parsing_mode.allows_computational_dependence()
+    }
+
+    /// Whether any `<url>` over this `range` is disallowed due to attr()-tainting.
+    pub fn disallow_urls_in_range(&self, range: &AttrTaintedRange) -> bool {
+        self.attr_tainted_regions
+            .should_disallow_urls_in_range(range)
     }
 }
 

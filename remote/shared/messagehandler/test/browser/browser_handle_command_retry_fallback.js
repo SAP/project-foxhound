@@ -4,7 +4,7 @@
 "use strict";
 
 const { isInitialDocument } = ChromeUtils.importESModule(
-  "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs"
+  "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs"
 );
 
 // We are forcing the actors to shutdown while queries are unresolved.

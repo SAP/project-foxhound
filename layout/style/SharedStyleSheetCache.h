@@ -1,38 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_SharedStyleSheetCache_h__
-#define mozilla_SharedStyleSheetCache_h__
+#ifndef mozilla_SharedStyleSheetCache_h_
+#define mozilla_SharedStyleSheetCache_h_
 
 // The shared style sheet cache is a cache that allows us to share sheets across
 // documents.
-//
-// It's generally a singleton, but it is different from GlobalStyleSheetCache in
-// the sense that:
-//
-//  * It needs to be cycle-collectable, as it can keep alive style sheets from
-//    various documents.
-//
-//  * It is conceptually a singleton, but given its cycle-collectable nature, we
-//    might re-create it.
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SharedSubResourceCache.h"
+#include "mozilla/StyleSheet.h"
 #include "mozilla/css/Loader.h"
-#include "nsRefPtrHashtable.h"
+#include "nsIMemoryReporter.h"
+#include "nsIObserver.h"
 
 namespace mozilla {
-
-class StyleSheet;
-class SheetLoadDataHashKey;
-
-namespace css {
-class SheetLoadData;
-class Loader;
-}  // namespace css
 
 struct SharedStyleSheetCacheTraits {
   using Loader = css::Loader;
@@ -48,7 +31,8 @@ struct SharedStyleSheetCacheTraits {
 class SharedStyleSheetCache final
     : public SharedSubResourceCache<SharedStyleSheetCacheTraits,
                                     SharedStyleSheetCache>,
-      public nsIMemoryReporter {
+      public nsIMemoryReporter,
+      public nsIObserver {
  public:
   using Base = SharedSubResourceCache<SharedStyleSheetCacheTraits,
                                       SharedStyleSheetCache>;
@@ -58,6 +42,11 @@ class SharedStyleSheetCache final
 
   SharedStyleSheetCache();
   void Init();
+
+  NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic,
+                     const char16_t* aData) override {
+    return Base::DoObserve(aSubject, aTopic, aData);
+  }
 
   // This has to be static because it's also called for loaders that don't have
   // a sheet cache (loaders that are not owned by a document).
@@ -90,19 +79,43 @@ class SharedStyleSheetCache final
     return principalMap.Lookup(aBuffer);
   }
 
+  struct InlineSheetEntry {
+    RefPtr<StyleSheet> mSheet;
+    bool mWasLoadedAsImage = false;
+  };
+  using InlineSheetCandidates = nsTArray<InlineSheetEntry>;
+
   void InsertInline(nsIPrincipal* aPrincipal, const nsAString& aBuffer,
-                    RefPtr<StyleSheet> aSheet) {
+                    InlineSheetEntry&& aEntry) {
+    // TODO(emilio): Maybe a better eviction policy for inline sheets, or an
+    // expiration tracker or so?
     auto& principalMap = mInlineSheets.LookupOrInsert(aPrincipal);
-    principalMap.InsertOrUpdate(aBuffer, std::move(aSheet));
+    principalMap
+        .LookupOrInsertWith(aBuffer, [] { return InlineSheetCandidates(); })
+        .AppendElement(std::move(aEntry));
   }
 
  protected:
   void InsertIfNeeded(css::SheetLoadData&);
+  bool ShouldIgnoreMemoryPressure() override { return false; }
+  void DoScheduleGC();
+  void GC();
 
-  nsTHashMap<PrincipalHashKey, nsRefPtrHashtable<nsStringHashKey, StyleSheet>>
+  nsTHashMap<PrincipalHashKey,
+             nsTHashMap<nsStringHashKey, InlineSheetCandidates>>
       mInlineSheets;
+  nsCOMPtr<nsITimer> mGCTimer;
+  bool mGCScheduled : 1 = false;
 
   ~SharedStyleSheetCache();
+
+ public:
+  static void ScheduleGC() {
+    if (!sSingleton || sSingleton->mGCScheduled) {
+      return;
+    }
+    sSingleton->DoScheduleGC();
+  }
 };
 
 }  // namespace mozilla

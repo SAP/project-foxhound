@@ -10,7 +10,27 @@ export default {
   component: "moz-box-item",
   argTypes: {
     l10nId: {
-      options: ["moz-box-item-label", "moz-box-item-label-description"],
+      options: [
+        "moz-box-item-label",
+        "moz-box-item-label-long",
+        "moz-box-item-label-description",
+        "moz-box-item-label-description-long",
+      ],
+      control: { type: "select" },
+    },
+    iconSrc: {
+      options: [
+        "",
+        "chrome://global/skin/icons/info.svg",
+        "chrome://global/skin/icons/highlights.svg",
+        "chrome://global/skin/icons/warning.svg",
+        "chrome://global/skin/icons/heart.svg",
+        "chrome://global/skin/icons/edit.svg",
+      ],
+      control: { type: "select" },
+    },
+    layout: {
+      options: ["default", "medium-icon", "large-icon"],
       control: { type: "select" },
     },
   },
@@ -19,9 +39,14 @@ export default {
     fluent: `
 moz-box-item-label =
   .label = I'm a box item
+moz-box-item-label-long =
+  .label = Lorem ipsum dolor sit amet, consectetur adipiscing elit
 moz-box-item-label-description =
   .label = I'm a box item
   .description = Some description of the item
+moz-box-item-label-description-long =
+  .label = Lorem ipsum dolor sit amet, consectetur adipiscing elit
+  .description = Etiam leo est, condimentum ac tristique vitae, viverra nec sem.
 moz-box-delete-action =
   .aria-label = Delete I'm a box item
 moz-box-edit-action =
@@ -41,6 +66,9 @@ const Template = ({
   layout,
   slottedActions,
   slottedActionsStart,
+  supportPage,
+  slottedSupportLink,
+  slottedDescription,
 }) => html`
   <style>
     .container {
@@ -66,10 +94,14 @@ const Template = ({
       data-l10n-id=${l10nId}
       iconsrc=${ifDefined(iconSrc)}
       layout=${ifDefined(layout)}
+      support-page=${ifDefined(supportPage)}
     >
       ${slottedContent
         ? html`<div class="slotted">
-            <img src="chrome://global/skin/illustrations/security-error.svg" />
+            <img
+              src="chrome://global/skin/illustrations/security-error.svg"
+              alt="Confused Kit is looking at an orange exclamation mark"
+            />
             <span>This is an example message</span>
             <span class="text-deemphasized">
               Message description would go down here
@@ -105,6 +137,15 @@ const Template = ({
             ></moz-button>
           `
         : ""}
+      ${slottedSupportLink
+        ? html`<a slot="support-link" href="www.example.com">Click me!</a>`
+        : ""}
+      ${slottedDescription
+        ? html`<span slot="description"
+            >This is a slotted description
+            <a href="https://www.example.com" target="_blank">click me</a></span
+          >`
+        : ""}
     </moz-box-item>
   </div>
 `;
@@ -117,6 +158,10 @@ Default.args = {
   slottedContent: false,
   slottedActions: false,
   slottedActionsStart: false,
+  supportPage: "",
+  slottedDescription: false,
+  slottedSupportLink: false,
+  layout: "default",
 };
 
 export const WithDescription = Template.bind({});
@@ -143,6 +188,13 @@ LargeIconLayout.args = {
   layout: "large-icon",
 };
 
+export const MediumIconLayout = Template.bind({});
+MediumIconLayout.args = {
+  ...WithIcon.args,
+  iconSrc: "chrome://global/skin/icons/info.svg",
+  layout: "medium-icon",
+};
+
 export const WithSlottedActions = Template.bind({});
 WithSlottedActions.args = {
   ...Default.args,
@@ -153,4 +205,23 @@ export const WithSlottedActionAtTheStart = Template.bind({});
 WithSlottedActionAtTheStart.args = {
   ...Default.args,
   slottedActionsStart: true,
+};
+
+export const WithSlottedDescription = Template.bind({});
+WithSlottedDescription.args = {
+  ...Default.args,
+  slottedDescription: true,
+};
+
+export const WithSupportPage = Template.bind({});
+WithSupportPage.args = {
+  ...Default.args,
+  supportPage: "test",
+  iconSrc: "chrome://global/skin/icons/info.svg",
+};
+
+export const WithSlottedSupportLink = Template.bind({});
+WithSlottedSupportLink.args = {
+  ...Default.args,
+  slottedSupportLink: true,
 };

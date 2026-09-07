@@ -12,6 +12,7 @@ AddonTestUtils.initMochitest(this);
 
 const MY_CONTEXT = 2;
 let gDidSeeChannel = false;
+let promiseAddonStarted = null;
 
 function check_channel(subject) {
   if (!(subject instanceof Ci.nsIHttpChannel)) {
@@ -32,34 +33,44 @@ function check_channel(subject) {
     "Got expected usercontextid"
   );
 }
-// ----------------------------------------------------------------------------
-// Tests we send the right cookies when installing through an InstallTrigger call
-function test() {
-  // This test depends on InstallTrigger.install availability.
-  setInstallTriggerPrefs();
 
+function confirm_install(panel) {
+  is(panel.getAttribute("name"), "XPI Test", "Should have seen the name");
+  promiseAddonStarted = AddonTestUtils.promiseWebExtensionStartup(
+    "amosigned-xpi@tests.mozilla.org"
+  );
+  return true;
+}
+
+function install_ended(install, addon) {
+  AddonTestUtils.checkInstallInfo(install, {
+    method: "amWebAPI",
+    source: "test-host",
+    sourceURL: /https:\/\/example.com\/.*\/mozaddonmanager.html/,
+  });
+  promiseAddonStarted.then(() => addon.uninstall());
+}
+
+// Verifies that the mozAddonManager install flow download the xpi file from
+// the expected userContextId.
+add_task(async function test_userContext_mozAddonManager_install() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.webapi.testing", true],
+      [PREF_INSTALL_REQUIREBUILTINCERTS, false],
+    ],
+  });
+
+  const deferredInstallCompleted = Promise.withResolvers();
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install_ended;
-  Harness.installsCompletedCallback = finish_test;
+  Harness.installsCompletedCallback = deferredInstallCompleted.resolve;
   Harness.finalContentEvent = "InstallComplete";
   Harness.setup();
 
-  let principal = Services.scriptSecurityManager.createContentPrincipal(
-    Services.io.newURI("http://example.com/"),
-    { userContextId: MY_CONTEXT }
-  );
-
-  PermissionTestUtils.add(principal, "install", Services.perms.ALLOW_ACTION);
-
   var triggers = encodeURIComponent(
     JSON.stringify({
-      "Unsigned XPI": {
-        URL: TESTROOT + "amosigned.xpi",
-        IconURL: TESTROOT + "icon.png",
-        toString() {
-          return this.URL;
-        },
-      },
+      url: SECURE_TESTROOT + "amosigned.xpi",
     })
   );
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "", {
@@ -68,25 +79,12 @@ function test() {
   Services.obs.addObserver(check_channel, "http-on-before-connect");
   BrowserTestUtils.startLoadingURIString(
     gBrowser,
-    TESTROOT + "installtrigger.html?" + triggers
+    SECURE_TESTROOT + "mozaddonmanager.html?" + triggers
   );
-}
 
-function confirm_install(panel) {
-  is(panel.getAttribute("name"), "XPI Test", "Should have seen the name");
-  return true;
-}
+  info("Wait for the install to be completed");
+  const count = await deferredInstallCompleted.promise;
 
-function install_ended(install, addon) {
-  AddonTestUtils.checkInstallInfo(install, {
-    method: "installTrigger",
-    source: "test-host",
-    sourceURL: /http:\/\/example.com\/.*\/installtrigger.html/,
-  });
-  return addon.uninstall();
-}
-
-const finish_test = async function (count) {
   ok(
     gDidSeeChannel,
     "Should have seen the request for the XPI and verified it was sent the right way."
@@ -94,8 +92,6 @@ const finish_test = async function (count) {
   is(count, 1, "1 Add-on should have been successfully installed");
 
   Services.obs.removeObserver(check_channel, "http-on-before-connect");
-
-  PermissionTestUtils.remove("http://example.com", "install");
 
   const results = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
@@ -108,9 +104,11 @@ const finish_test = async function (count) {
     }
   );
 
-  is(results.return, "true", "installTrigger should have claimed success");
-  is(results.status, "0", "Callback should have seen a success");
+  is(results.return, "true", "mozAddonManager should have claimed success");
+  is(results.status, "STATE_INSTALLED", "Callback should have seen a success");
 
   gBrowser.removeCurrentTab();
   Harness.finish();
-};
+
+  await SpecialPowers.popPrefEnv();
+});

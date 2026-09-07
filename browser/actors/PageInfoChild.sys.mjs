@@ -105,7 +105,7 @@ export class PageInfoChild extends JSWindowActorChild {
     docInfo.documentURIObject = documentURIObject;
 
     docInfo.isContentWindowPrivate =
-      lazy.PrivateBrowsingUtils.isContentWindowPrivate(document.ownerGlobal);
+      lazy.PrivateBrowsingUtils.isContentWindowPrivate(document.documentGlobal);
 
     return docInfo;
   }
@@ -117,7 +117,7 @@ export class PageInfoChild extends JSWindowActorChild {
    */
   async getDocumentMedia(document) {
     let nodeCount = 0;
-    let content = document.ownerGlobal;
+    let content = document.documentGlobal;
     let iterator = document.createTreeWalker(
       document,
       content.NodeFilter.SHOW_ELEMENT
@@ -140,11 +140,11 @@ export class PageInfoChild extends JSWindowActorChild {
 
   getMediaItems(document, elem) {
     // Check for images defined in CSS (e.g. background, borders)
-    let computedStyle = elem.ownerGlobal.getComputedStyle(elem);
+    let computedStyle = elem.documentGlobal.getComputedStyle(elem);
     // A node can have multiple media items associated with it - for example,
     // multiple background images.
     let mediaItems = [];
-    let content = document.ownerGlobal;
+    let content = document.documentGlobal;
 
     let addMedia = (url, type, alt, el, isBg, altNotProvided = false) => {
       let element = this.serializeElementInfo(document, url, el, isBg);
@@ -235,7 +235,7 @@ export class PageInfoChild extends JSWindowActorChild {
 
   serializeElementInfo(document, url, item, isBG) {
     let result = {};
-    let content = document.ownerGlobal;
+    let content = document.documentGlobal;
 
     let imageText;
     if (
@@ -333,7 +333,7 @@ export class PageInfoChild extends JSWindowActorChild {
   // parse a node to extract the contents of the node
   getValueText(node) {
     let valueText = "";
-    let content = node.ownerGlobal;
+    let content = node.documentGlobal;
 
     // Form input elements don't generally contain information that is useful to our callers, so return nothing.
     if (

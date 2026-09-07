@@ -28,7 +28,7 @@ bug_number_pattern = re.compile(r"\d+")
 
 class IndentingDumper(yaml.Dumper):
     def increase_indent(self, flow=False, indentless=False):
-        return super(IndentingDumper, self).increase_indent(flow, False)
+        return super().increase_indent(flow, False)
 
 
 def get_bug_number_from_url(url: str) -> int:

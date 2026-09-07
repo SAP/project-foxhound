@@ -113,3 +113,53 @@ add_task(async function homepage_test_anchor_link() {
   });
   await check_homepage({ expectedURL: "http://example1.com/#test" });
 });
+
+add_task(async function homepage_test_newTabOnRestore_true() {
+  await setupPolicyEngineWithJson({
+    policies: {
+      Homepage: {
+        URL: "http://example1.com/",
+        NewTabOnRestore: true,
+      },
+    },
+  });
+
+  Assert.equal(
+    Services.prefs.getBoolPref("browser.sessionstore.newTabOnRestore", false),
+    true,
+    "newTabOnRestore default pref set to true"
+  );
+  Assert.equal(
+    Services.prefs.getBoolPref(
+      "browser.sessionstore.newTabOnRestore.showSetting",
+      false
+    ),
+    true,
+    "showSetting forced to true when NewTabOnRestore is set"
+  );
+});
+
+add_task(async function homepage_test_newTabOnRestore_false() {
+  await setupPolicyEngineWithJson({
+    policies: {
+      Homepage: {
+        URL: "http://example1.com/",
+        NewTabOnRestore: false,
+      },
+    },
+  });
+
+  Assert.equal(
+    Services.prefs.getBoolPref("browser.sessionstore.newTabOnRestore", true),
+    false,
+    "newTabOnRestore default pref set to false"
+  );
+  Assert.equal(
+    Services.prefs.getBoolPref(
+      "browser.sessionstore.newTabOnRestore.showSetting",
+      false
+    ),
+    true,
+    "showSetting forced to true when NewTabOnRestore is set"
+  );
+});

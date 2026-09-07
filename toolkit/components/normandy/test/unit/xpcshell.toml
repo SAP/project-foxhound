@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head_xpc.js"
 firefox-appdir = "browser"
 support-files = [
@@ -14,8 +17,6 @@ tags = "normandy"
 ["test_Normandy.js"]
 
 ["test_NormandyApi.js"]
-
-["test_PrefUtils.js"]
 
 ["test_RecipeRunner.js"]
 

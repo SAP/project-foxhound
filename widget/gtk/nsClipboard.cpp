@@ -1,19 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "nsArrayUtils.h"
 #include "nsClipboard.h"
 #if defined(MOZ_X11)
-#  include "nsClipboardX11.h"
+#  include "RetrievalContextX11.h"
 #endif
 #if defined(MOZ_WAYLAND)
-#  include "nsClipboardWayland.h"
+#  include "RetrievalContextGtk.h"
 #  include "nsWaylandDisplay.h"
 #endif
 #include "nsGtkUtils.h"
@@ -34,44 +29,36 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StaticPrefs_clipboard.h"
 #include "mozilla/TimeStamp.h"
 #include "GRefPtr.h"
 #include "WidgetUtilsGtk.h"
 
 #include "imgIContainer.h"
+#include "mozilla/widget/nsGtkHtmlUtils.h"
 
 #include <gtk/gtk.h>
 #if defined(MOZ_X11)
 #  include <gtk/gtkx.h>
 #endif
 
-#include "mozilla/Encoding.h"
-
 using namespace mozilla;
+using namespace mozilla::widget;
 
 // Idle timeout for receiving selection and property notify events (microsec)
 // Right now it's set to 1 sec.
-const int kClipboardTimeout = 1000000;
+const int mozilla::kClipboardTimeout = 1000000;
 
 // Defines how many event loop iterations will be done without sleep.
 // We ususally get data in first 2-3 iterations unless some large object
 // (an image for instance) is transferred through clipboard.
-const int kClipboardFastIterationNum = 3;
-
-// We add this prefix to HTML markup, so that GetHTMLCharset can correctly
-// detect the HTML as UTF-8 encoded.
-static const char kHTMLMarkupPrefix[] =
-    R"(<meta http-equiv="content-type" content="text/html; charset=utf-8">)";
+const int mozilla::kClipboardFastIterationNum = 3;
 
 static const char kURIListMime[] = "text/uri-list";
 
 // MIME to exclude sensitive data (password) from the clipboard history on not
 // just KDE.
 static const char kKDEPasswordManagerHintMime[] = "x-kde-passwordManagerHint";
-
-MOZ_CONSTINIT ClipboardTargets nsRetrievalContext::sClipboardTargets;
-MOZ_CONSTINIT ClipboardTargets nsRetrievalContext::sPrimaryTargets;
 
 // Callback when someone asks us for the data
 static void clipboard_get_cb(GtkClipboard* aGtkClipboard,
@@ -86,22 +73,29 @@ static void clipboard_owner_change_cb(GtkClipboard* aGtkClipboard,
                                       GdkEventOwnerChange* aEvent,
                                       gpointer aUserData);
 
-static bool GetHTMLCharset(Span<const char> aData, nsCString& str);
-
-ClipboardTargets ClipboardTargets::Clone() {
-  ClipboardTargets ret;
-  ret.mCount = mCount;
-  if (mCount) {
-    ret.mTargets.reset(
-        reinterpret_cast<GdkAtom*>(g_malloc(sizeof(GdkAtom) * mCount)));
-    memcpy(ret.mTargets.get(), mTargets.get(), sizeof(GdkAtom) * mCount);
+ClipboardTargets::ClipboardTargets(GList* aTargets) {
+  for (GList* tmp = aTargets; tmp; tmp = tmp->next) {
+    mTargets.AppendElement(GDK_POINTER_TO_ATOM(tmp->data));
   }
-  return ret;
+}
+
+ClipboardTargets::ClipboardTargets(GUniquePtr<GdkAtom> aTargets,
+                                   int aTargetsNum) {
+  for (int j = 0; j < aTargetsNum; j++) {
+    mTargets.AppendElement(aTargets.get()[j]);
+  }
+}
+
+ClipboardTargets ClipboardTargets::Clone() const {
+  return ClipboardTargets(mTargets.Clone());
 }
 
 void ClipboardTargets::Set(ClipboardTargets aTargets) {
-  mCount = aTargets.mCount;
   mTargets = std::move(aTargets.mTargets);
+}
+
+bool ClipboardTargets::Contains(GdkAtom aTarget) const {
+  return mTargets.Contains(aTarget);
 }
 
 void ClipboardData::SetData(Span<const uint8_t> aData) {
@@ -124,25 +118,27 @@ void ClipboardData::SetText(Span<const char> aData) {
   }
 }
 
-void ClipboardData::SetTargets(ClipboardTargets aTargets) {
-  mLength = aTargets.mCount;
-  mData.reset(reinterpret_cast<char*>(aTargets.mTargets.release()));
+void ClipboardData::SetTargets(GUniquePtr<GdkAtom> aTarget, int aTargetsNum) {
+  mLength = aTargetsNum;
+  mData.reset(reinterpret_cast<char*>(aTarget.release()));
 }
 
 ClipboardTargets ClipboardData::ExtractTargets() {
-  GUniquePtr<GdkAtom> targets(reinterpret_cast<GdkAtom*>(mData.release()));
-  uint32_t length = std::exchange(mLength, 0);
-  return ClipboardTargets{std::move(targets), length};
+  ClipboardTargets targets(
+      GUniquePtr<GdkAtom>(reinterpret_cast<GdkAtom*>(mData.release())),
+      mLength);
+  mLength = 0;
+  return targets;
 }
 
-GdkAtom GetSelectionAtom(int32_t aWhichClipboard) {
+GdkAtom mozilla::GetSelectionAtom(int32_t aWhichClipboard) {
   if (aWhichClipboard == nsIClipboard::kGlobalClipboard)
     return GDK_SELECTION_CLIPBOARD;
 
   return GDK_SELECTION_PRIMARY;
 }
 
-Maybe<nsIClipboard::ClipboardType> GetGeckoClipboardType(
+Maybe<nsIClipboard::ClipboardType> mozilla::GetGeckoClipboardType(
     GtkClipboard* aGtkClipboard) {
   if (aGtkClipboard == gtk_clipboard_get(GDK_SELECTION_PRIMARY)) {
     return Some(nsClipboard::kSelectionClipboard);
@@ -151,42 +147,6 @@ Maybe<nsIClipboard::ClipboardType> GetGeckoClipboardType(
     return Some(nsClipboard::kGlobalClipboard);
   }
   return Nothing();  // THAT AIN'T NO CLIPBOARD I EVER HEARD OF
-}
-
-void nsRetrievalContext::ClearCachedTargetsClipboard(GtkClipboard* aClipboard,
-                                                     GdkEvent* aEvent,
-                                                     gpointer data) {
-  MOZ_CLIPBOARD_LOG("nsRetrievalContext::ClearCachedTargetsClipboard()");
-  sClipboardTargets.Clear();
-}
-
-void nsRetrievalContext::ClearCachedTargetsPrimary(GtkClipboard* aClipboard,
-                                                   GdkEvent* aEvent,
-                                                   gpointer data) {
-  MOZ_CLIPBOARD_LOG("nsRetrievalContext::ClearCachedTargetsPrimary()");
-  sPrimaryTargets.Clear();
-}
-
-ClipboardTargets nsRetrievalContext::GetTargets(int32_t aWhichClipboard) {
-  MOZ_CLIPBOARD_LOG("nsRetrievalContext::GetTargets(%s)\n",
-                    aWhichClipboard == nsClipboard::kSelectionClipboard
-                        ? "primary"
-                        : "clipboard");
-  ClipboardTargets& storedTargets =
-      (aWhichClipboard == nsClipboard::kSelectionClipboard) ? sPrimaryTargets
-                                                            : sClipboardTargets;
-  if (!storedTargets) {
-    MOZ_CLIPBOARD_LOG("  getting targets from system");
-    storedTargets.Set(GetTargetsImpl(aWhichClipboard));
-  } else {
-    MOZ_CLIPBOARD_LOG("  using cached targets");
-  }
-  return storedTargets.Clone();
-}
-
-nsRetrievalContext::~nsRetrievalContext() {
-  sClipboardTargets.Clear();
-  sPrimaryTargets.Clear();
 }
 
 nsClipboard::nsClipboard()
@@ -220,12 +180,12 @@ NS_IMPL_ISUPPORTS_INHERITED(nsClipboard, nsBaseClipboard, nsIObserver)
 nsresult nsClipboard::Init(void) {
 #if defined(MOZ_X11)
   if (widget::GdkIsX11Display()) {
-    mContext = new nsRetrievalContextX11();
+    mContext = new RetrievalContextX11();
   }
 #endif
 #if defined(MOZ_WAYLAND)
   if (widget::GdkIsWaylandDisplay()) {
-    mContext = new nsRetrievalContextWayland();
+    mContext = new RetrievalContextGtk();
   }
 #endif
 
@@ -318,7 +278,8 @@ nsClipboard::SetNativeClipboardData(nsITransferable* aTransferable,
   }
 
   // Try to exclude private data from clipboard history.
-  if (aTransferable->GetIsPrivateData()) {
+  if (!StaticPrefs::clipboard_copyPrivateDataToClipboardCloudOrHistory() &&
+      aTransferable->GetIsPrivateData()) {
     GdkAtom atom = gdk_atom_intern(kKDEPasswordManagerHintMime, FALSE);
     gtk_target_list_add(list, atom, 0, 0);
   }
@@ -342,31 +303,34 @@ nsClipboard::SetNativeClipboardData(nsITransferable* aTransferable,
 
   ClearCachedTargets(aWhichClipboard);
 
+  // On Wayland, track when we're setting clipboard data to avoid double
+  // sequence number increment in OwnerChangedEvent
+  MarkNextOwnerClipboardChange(aWhichClipboard, /* aOurChange */ true);
+
   // Set getcallback and request to store data after an application exit
   if (gtk_clipboard_set_with_data(gtkClipboard, gtkTargets, numTargets,
                                   clipboard_get_cb, clipboard_clear_cb, this)) {
+    IncrementSequenceNumber(aWhichClipboard);
     // We managed to set-up the clipboard so update internal state
     // We have to set it now because gtk_clipboard_set_with_data() calls
     // clipboard_clear_cb() which reset our internal state
     if (aWhichClipboard == kSelectionClipboard) {
-      mSelectionSequenceNumber++;
       mSelectionTransferable = aTransferable;
     } else {
-      mGlobalSequenceNumber++;
       mGlobalTransferable = aTransferable;
       gtk_clipboard_set_can_store(gtkClipboard, gtkTargets, numTargets);
     }
-
+    MOZ_CLIPBOARD_LOG("     sequence %d", GetSequenceNumber(aWhichClipboard));
     rv = NS_OK;
   } else {
-    MOZ_CLIPBOARD_LOG("    gtk_clipboard_set_with_data() failed!\n");
+    MOZ_CLIPBOARD_LOG("     gtk_clipboard_set_with_data() failed!\n");
     EmptyNativeClipboardData(aWhichClipboard);
+    MOZ_CLIPBOARD_LOG("     sequence %d", GetSequenceNumber(aWhichClipboard));
     rv = NS_ERROR_FAILURE;
   }
 
   gtk_target_table_free(gtkTargets, numTargets);
   gtk_target_list_unref(list);
-
   return rv;
 }
 
@@ -450,73 +414,29 @@ static already_AddRefed<nsIFile> GetFileData(const nsACString& aURIList) {
 }
 
 static already_AddRefed<nsISupports> GetHTMLData(Span<const char> aData) {
-  nsLiteralCString mimeType(kHTMLMime);
-
-  // Convert text/html into our text format
-  nsAutoCString charset;
-  if (!GetHTMLCharset(aData, charset)) {
-    // Fall back to utf-8 in case html/data is missing kHTMLMarkupPrefix.
-    MOZ_CLIPBOARD_LOG(
-        "Failed to get html/text encoding, fall back to utf-8.\n");
-    charset.AssignLiteral("utf-8");
-  }
-
-  MOZ_CLIPBOARD_LOG("GetHTMLData: HTML detected charset %s", charset.get());
-  // app which use "text/html" to copy&paste
-  // get the decoder
-  auto encoding = Encoding::ForLabelNoReplacement(charset);
-  if (!encoding) {
-    MOZ_CLIPBOARD_LOG("GetHTMLData: get unicode decoder error (charset: %s)",
-                      charset.get());
-    return nullptr;
-  }
-
-  // According to spec html UTF-16BE/LE should be switched to UTF-8
-  // https://html.spec.whatwg.org/#determining-the-character-encoding:utf-16-encoding-2
-  if (encoding == UTF_16LE_ENCODING || encoding == UTF_16BE_ENCODING) {
-    encoding = UTF_8_ENCODING;
-  }
-
-  // Remove kHTMLMarkupPrefix again, it won't necessarily cause any
-  // issues, but might confuse other users.
-  const size_t prefixLen = std::size(kHTMLMarkupPrefix) - 1;
-  if (aData.Length() >= prefixLen && nsDependentCSubstring(aData.To(prefixLen))
-                                         .EqualsLiteral(kHTMLMarkupPrefix)) {
-    aData = aData.From(prefixLen);
-  }
-
   nsAutoString unicodeData;
-  auto [rv, enc] = encoding->Decode(AsBytes(aData), unicodeData);
-#if MOZ_LOGGING
-  if (enc != UTF_8_ENCODING && MOZ_CLIPBOARD_LOG_ENABLED()) {
-    nsCString decoderName;
-    enc->Name(decoderName);
-    MOZ_CLIPBOARD_LOG("GetHTMLData: expected UTF-8 decoder but got %s",
-                      decoderName.get());
-  }
-#endif
-  if (NS_FAILED(rv)) {
+  if (!DecodeHTMLData(aData, unicodeData)) {
     MOZ_CLIPBOARD_LOG("GetHTMLData: failed to decode HTML");
     return nullptr;
   }
-
   nsCOMPtr<nsISupports> wrapper;
   nsPrimitiveHelpers::CreatePrimitiveForData(
-      mimeType, (const char*)unicodeData.BeginReading(),
+      nsLiteralCString(kHTMLMime), (const char*)unicodeData.BeginReading(),
       unicodeData.Length() * sizeof(char16_t), getter_AddRefs(wrapper));
   return wrapper.forget();
 }
 
 mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
 nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
-                                    ClipboardType aWhichClipboard) {
+                                    ClipboardType aWhichClipboard,
+                                    uint64_t aThreshold) {
   MOZ_DIAGNOSTIC_ASSERT(
       nsIClipboard::IsClipboardTypeSupported(aWhichClipboard));
 
   MOZ_CLIPBOARD_LOG(
-      "nsClipboard::GetNativeClipboardData (%s) for %s\n",
+      "nsClipboard::GetNativeClipboardData (%s) for %s sequence num %d",
       aWhichClipboard == kSelectionClipboard ? "primary" : "clipboard",
-      PromiseFlatCString(aFlavor).get());
+      PromiseFlatCString(aFlavor).get(), GetSequenceNumber(aWhichClipboard));
 
   // TODO: Ensure we don't re-enter here.
   if (!mContext) {
@@ -569,6 +489,10 @@ nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
       // text off the clipboard, run the next loop
       // iteration.
       return nsCOMPtr<nsISupports>{};
+    }
+
+    if (aThreshold && strlen(clipboardData.get()) * 2 > aThreshold) {
+      return mozilla::Err(NS_ERROR_CLIPBOARD_TOO_BIG);
     }
 
     // Convert utf-8 into our text format.
@@ -865,11 +789,13 @@ nsresult nsClipboard::EmptyNativeClipboardData(ClipboardType aWhichClipboard) {
     if (mSelectionTransferable) {
       gtk_clipboard_clear(gtk_clipboard_get(GDK_SELECTION_PRIMARY));
       MOZ_ASSERT(!mSelectionTransferable);
+      MarkNextOwnerClipboardChange(aWhichClipboard, /* aOurChange */ true);
     }
   } else {
     if (mGlobalTransferable) {
       gtk_clipboard_clear(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
       MOZ_ASSERT(!mGlobalTransferable);
+      MarkNextOwnerClipboardChange(aWhichClipboard, /* aOurChange */ true);
     }
   }
   ClearCachedTargets(aWhichClipboard);
@@ -877,11 +803,10 @@ nsresult nsClipboard::EmptyNativeClipboardData(ClipboardType aWhichClipboard) {
 }
 
 void nsClipboard::ClearTransferable(int32_t aWhichClipboard) {
+  IncrementSequenceNumber(aWhichClipboard);
   if (aWhichClipboard == kSelectionClipboard) {
-    mSelectionSequenceNumber++;
     mSelectionTransferable = nullptr;
   } else {
-    mGlobalSequenceNumber++;
     mGlobalTransferable = nullptr;
   }
 }
@@ -921,7 +846,7 @@ nsClipboard::HasNativeClipboardDataMatchingFlavors(
       aWhichClipboard == kSelectionClipboard ? "primary" : "clipboard");
 
   if (!mContext) {
-    MOZ_CLIPBOARD_LOG("    nsRetrievalContext is not available\n");
+    MOZ_CLIPBOARD_LOG("    RetrievalContext is not available\n");
     return Err(NS_ERROR_FAILURE);
   }
 
@@ -1100,7 +1025,6 @@ void nsClipboard::SelectionGetEvent(GtkClipboard* aClipboard,
   // that we want to do is see if that something includes text.  If
   // it does, try to give it text/plain after converting it to
   // utf-8.
-
   int32_t whichClipboard;
 
   // which clipboard?
@@ -1177,18 +1101,18 @@ void nsClipboard::SelectionGetEvent(GtkClipboard* aClipboard,
                                                  kJPGImageMime, kGIFImageMime};
     nsCOMPtr<nsISupports> imageItem;
     nsCOMPtr<imgIContainer> image;
-    for (uint32_t i = 0; i < std::size(imageMimeTypes); i++) {
-      rv = trans->GetTransferData(imageMimeTypes[i], getter_AddRefs(imageItem));
+    for (auto imageMimeType : imageMimeTypes) {
+      rv = trans->GetTransferData(imageMimeType, getter_AddRefs(imageItem));
       if (NS_FAILED(rv)) {
         MOZ_CLIPBOARD_LOG("    %s is missing at GetTransferData()\n",
-                          imageMimeTypes[i]);
+                          imageMimeType);
         continue;
       }
 
       image = do_QueryInterface(imageItem);
       if (image) {
         MOZ_CLIPBOARD_LOG("    %s is available at GetTransferData()\n",
-                          imageMimeTypes[i]);
+                          imageMimeType);
         break;
       }
     }
@@ -1277,7 +1201,8 @@ void nsClipboard::SelectionGetEvent(GtkClipboard* aClipboard,
     return;
   }
 
-  if (selectionTarget == gdk_atom_intern(kKDEPasswordManagerHintMime, FALSE)) {
+  if (!StaticPrefs::clipboard_copyPrivateDataToClipboardCloudOrHistory() &&
+      selectionTarget == gdk_atom_intern(kKDEPasswordManagerHintMime, FALSE)) {
     if (!trans->GetIsPrivateData()) {
       MOZ_CLIPBOARD_LOG(
           "  requested %s, but the data isn't actually private!\n",
@@ -1329,10 +1254,8 @@ void nsClipboard::SelectionGetEvent(GtkClipboard* aClipboard,
 }
 
 void nsClipboard::ClearCachedTargets(int32_t aWhichClipboard) {
-  if (aWhichClipboard == kSelectionClipboard) {
-    nsRetrievalContext::ClearCachedTargetsPrimary(nullptr, nullptr, nullptr);
-  } else {
-    nsRetrievalContext::ClearCachedTargetsClipboard(nullptr, nullptr, nullptr);
+  if (mContext) {
+    mContext->ClearCachedTargets(aWhichClipboard);
   }
 }
 
@@ -1355,27 +1278,20 @@ void nsClipboard::OwnerChangedEvent(GtkClipboard* aGtkClipboard,
   if (whichClipboard.isNothing()) {
     return;
   }
-  MOZ_CLIPBOARD_LOG(
-      "nsClipboard::OwnerChangedEvent (%s)\n",
-      *whichClipboard == kSelectionClipboard ? "primary" : "clipboard");
-  GtkWidget* gtkWidget = [aEvent]() -> GtkWidget* {
-    if (!aEvent->owner) {
-      return nullptr;
-    }
-    gpointer user_data = nullptr;
-    gdk_window_get_user_data(aEvent->owner, &user_data);
-    return GTK_WIDGET(user_data);
-  }();
-  // If we can get GtkWidget from the current clipboard owner, this
-  // owner-changed event must be triggered by ourself via calling
-  // gtk_clipboard_set_with_data, the sequence number should already be handled.
-  if (!gtkWidget) {
-    if (*whichClipboard == kSelectionClipboard) {
-      mSelectionSequenceNumber++;
-    } else {
-      mGlobalSequenceNumber++;
-    }
+
+  bool shouldIncrementSequence = !IsOurOwnerClipboardChange(*whichClipboard);
+  MarkNextOwnerClipboardChange(*whichClipboard, /* aOurChange */ false);
+
+  if (shouldIncrementSequence) {
+    IncrementSequenceNumber(*whichClipboard);
   }
+
+  MOZ_CLIPBOARD_LOG(
+      "nsClipboard::OwnerChangedEvent (%s) %s sequence %d\n",
+      *whichClipboard == kSelectionClipboard ? "primary" : "clipboard",
+      shouldIncrementSequence ? "external change" : "internal change",
+      *whichClipboard == kSelectionClipboard ? mSelectionSequenceNumber
+                                             : mGlobalSequenceNumber);
 
   ClearCachedTargets(*whichClipboard);
 }
@@ -1400,49 +1316,4 @@ void clipboard_owner_change_cb(GtkClipboard* aGtkClipboard,
   MOZ_CLIPBOARD_LOG("clipboard_owner_change_cb() callback\n");
   nsClipboard* clipboard = static_cast<nsClipboard*>(aUserData);
   clipboard->OwnerChangedEvent(aGtkClipboard, aEvent);
-}
-
-/*
- * This function extracts the encoding label from the subset of HTML internal
- * encoding declaration syntax that uses the old long form with double quotes
- * and without spaces around the equals sign between the "content" attribute
- * name and the attribute value.
- *
- * This was added for the sake of an ancient version of StarOffice
- * in the pre-UTF-8 era in bug 123389. It is unclear if supporting
- * non-UTF-8 encodings is still necessary and if this function
- * still needs to exist.
- *
- * As of December 2022, both Gecko and LibreOffice emit an UTF-8
- * declaration that this function successfully extracts "UTF-8" from,
- * but that's also the default that we fall back on if this function
- * fails to extract a label.
- */
-bool GetHTMLCharset(Span<const char> aData, nsCString& aFoundCharset) {
-  // Assume ASCII first to find "charset" info
-  const nsDependentCSubstring htmlStr(aData);
-  nsACString::const_iterator start, end;
-  htmlStr.BeginReading(start);
-  htmlStr.EndReading(end);
-  nsACString::const_iterator valueStart(start), valueEnd(start);
-
-  if (CaseInsensitiveFindInReadable("CONTENT=\"text/html;"_ns, start, end)) {
-    start = end;
-    htmlStr.EndReading(end);
-
-    if (CaseInsensitiveFindInReadable("charset="_ns, start, end)) {
-      valueStart = end;
-      start = end;
-      htmlStr.EndReading(end);
-
-      if (FindCharInReadable('"', start, end)) valueEnd = start;
-    }
-  }
-  // find "charset" in HTML
-  if (valueStart != valueEnd) {
-    aFoundCharset = Substring(valueStart, valueEnd);
-    ToUpperCase(aFoundCharset);
-    return true;
-  }
-  return false;
 }

@@ -2,15 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is a chrome-API-dependent version of the module
-// devtools/client/netmonitor/src/utils/open-request-in-tab.js, so that it can
-// take advantage of utilizing chrome APIs. But because of this, it isn't
-// intended to be used in Chrome-API-free applications, such as the Launchpad.
-//
-// Please keep in mind that if the feature in this file has changed, don't
-// forget to also change that accordingly in
-// devtools/client/netmonitor/src/utils/open-request-in-tab.js.
-
 "use strict";
 
 const {

@@ -12,7 +12,7 @@ Infobars are shown at the top of the browser content area, these can be per tab 
 3. In devtools Messages section, select and show messages from `cfr` as provider
 4. You should see example JSON messages with `"template": "infobar"`. Clicking `Show` next to infobar message should show respective message UI
 5. You can directly modify the message in the text area with your changes or by pasting your custom message JSON. Clicking `Modify` shows your updated message.
-6. Ensure that all required properties are covered according to the [Infobar Schema](https://searchfox.org/mozilla-central/source/browser/components/asrouter/content-src/templates/CFR/templates/InfoBar.schema.json)
+6. Ensure that all required properties are covered according to the [Infobar Schema](https://searchfox.org/firefox-main/source/browser/components/asrouter/content-src/templates/CFR/templates/InfoBar.schema.json)
 7. Clicking `Share`, copies link to clipboard that can be pasted in the url bar to preview infobar message UI in browser and can be shared to get feedback from your team.
 - **Note:** Overlapping infobars will not be shown when testing multiple infobar messages
 - **Note:** Modifying the `label` property will change the text within the buttons, eg: `"label": "Disable"`

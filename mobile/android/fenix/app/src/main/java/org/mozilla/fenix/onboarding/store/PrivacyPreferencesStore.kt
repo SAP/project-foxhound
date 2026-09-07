@@ -7,7 +7,7 @@ package org.mozilla.fenix.onboarding.store
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
-import mozilla.components.lib.state.UiStore
+import mozilla.components.lib.state.Store
 
 /**
  * Represents the state of privacy preferences.
@@ -78,13 +78,13 @@ internal object PrivacyPreferencesReducer {
 }
 
 /**
- * A [UiStore] that holds the [PrivacyPreferencesState] for the privacy preferences and reduces
+ * A [Store] that holds the [PrivacyPreferencesState] for the privacy preferences and reduces
  * [PrivacyPreferencesAction]s dispatched to the store.
  */
 class PrivacyPreferencesStore(
     initialState: PrivacyPreferencesState = PrivacyPreferencesState(),
     middlewares: List<Middleware<PrivacyPreferencesState, PrivacyPreferencesAction>> = emptyList(),
-) : UiStore<PrivacyPreferencesState, PrivacyPreferencesAction>(
+) : Store<PrivacyPreferencesState, PrivacyPreferencesAction>(
     initialState,
     PrivacyPreferencesReducer::reduce,
     middlewares,

@@ -1,21 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerUpdateJob.h"
 
-#include "nsIScriptError.h"
-#include "nsIURL.h"
-#include "nsNetUtil.h"
-#include "nsProxyRelease.h"
 #include "ServiceWorkerManager.h"
 #include "ServiceWorkerPrivate.h"
 #include "ServiceWorkerRegistrationInfo.h"
 #include "ServiceWorkerScriptCache.h"
-#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "nsIScriptError.h"
+#include "nsIURL.h"
+#include "nsNetUtil.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla::dom {
 
@@ -395,7 +393,7 @@ void ServiceWorkerUpdateJob::ComparisonResult(nsresult aStatus,
     NS_ConvertUTF8toUTF16 reportMaxPrefix(maxPrefix);
 
     rv = nsContentUtils::FormatLocalizedString(
-        message, nsContentUtils::eDOM_PROPERTIES,
+        message, PropertiesFile::DOM_PROPERTIES,
         "ServiceWorkerScopePathMismatch", reportScope, reportMaxPrefix);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to format localized string");
     swm->ReportToAllClients(mScope, message, ""_ns, u""_ns, 0, 0,
@@ -418,8 +416,9 @@ void ServiceWorkerUpdateJob::ComparisonResult(nsresult aStatus,
   }
 
   RefPtr<ServiceWorkerInfo> sw = new ServiceWorkerInfo(
-      mRegistration->Principal(), mRegistration->Scope(), mRegistration->Id(),
-      mRegistration->Version(), mScriptSpec, aNewCacheName, flags);
+      mRegistration->Principal(), mRegistration->Scope(), mRegistration->Type(),
+      mRegistration->Id(), mRegistration->Version(), mScriptSpec, aNewCacheName,
+      flags);
 
   // If the registration is corrupt enough to force an uninstall if the
   // upgrade fails, then we want to make sure the upgrade takes effect

@@ -8,9 +8,13 @@
 newtab-page-title = Novi tab
 newtab-settings-button =
     .title = Prilagodite svoju početnu stranicu novog taba
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = Prilagodi ovu stranicu
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = Prilagodi
+newtab-customize-panel-label =
+    .label = Prilagodi
 newtab-personalize-settings-icon-label =
     .title = Personalizujte novi tab
     .aria-label = Postavke
@@ -23,6 +27,63 @@ newtab-personalize-dialog-label =
     .aria-label = Personalizuj
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Novi tabovi
+
+## Firefox Home content
+
+home-prefs-firefox-logo-header =
+    .label = { -brand-short-name } logo
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } red
+            [few] { $num } redovi
+           *[other] { $num } redovi
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Ekstenzija ({ $extension })
+home-restore-defaults-srd =
+    .label = Vrati na početne vrijednosti
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (Zadano)
+home-mode-choice-custom-srd =
+    .label = Prilagođeni URL-ovi…
+home-mode-choice-blank-srd =
+    .label = Prazna stranica
+home-prefs-shortcuts-header-srd =
+    .label = Prečice
+home-prefs-shortcuts-select =
+    .aria-label = Prečice
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = Sponzorisane prečice
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Sponzorisane priče
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Posjećene stranice
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Zabilješke
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Najnovija preuzimanja
+home-prefs-recent-activity-header-srd =
+    .label = Nedavne aktivnosti
+home-prefs-recent-activity-select =
+    .aria-label = Nedavne aktivnosti
+home-prefs-weather-header-srd =
+    .label = Vrijeme
+home-prefs-support-firefox-header-srd =
+    .label = Podržite { -brand-product-name }
+home-prefs-mission-message-learn-more-link-srd = Saznajte kako
 
 ## Search box component.
 
@@ -49,13 +110,16 @@ newtab-search-box-input =
     .placeholder = Pretraži web
     .aria-label = Pretraži web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Dodaj pretraživač
 newtab-topsites-add-shortcut-header = Nova prečica
 newtab-topsites-edit-topsites-header = Uredi najbolju stranicu
 newtab-topsites-edit-shortcut-header = Uredi prečicu
 newtab-topsites-add-shortcut-label = Dodaj prečicu
+newtab-topsites-add-shortcut-title =
+    .title = Dodaj prečicu
+    .aria-label = Dodaj prečicu
 newtab-topsites-title-label = Naslov
 newtab-topsites-title-input =
     .placeholder = Unesi naslov
@@ -125,6 +189,8 @@ newtab-menu-report = Prijavi
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blokiraj
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = Saznajte više
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = Prestani pratiti temu
@@ -292,9 +358,22 @@ newtab-error-fallback-refresh-link = Osvježite stranicu da biste pokušali pono
 
 newtab-custom-shortcuts-title = Prečice
 newtab-custom-shortcuts-subtitle = Web stranice koje sačuvate ili posjetite
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Prečice
     .description = Stranice koje ste sačuvali ili posjetili
+newtab-custom-shortcuts-nova =
+    .label = Prečice
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } red
+            [few] { $num } reda
+           *[other] { $num } redova
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -306,22 +385,19 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Sponzorisane prečice
 newtab-custom-pocket-title = Preporučuje { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Izuzetan sadržaj koji je kurirao { -pocket-brand-name }, dio porodice { -brand-product-name }
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be having a description under "Recommended stories" anymore
 newtab-custom-stories-toggle =
     .label = Preporučene priče
     .description = Izuzetan sadržaj koji je kurirala porodica { -brand-product-name }
+newtab-recommended-stories-toggle =
+    .label = Preporučene priče
 newtab-custom-pocket-sponsored = Sponzorisane priče
 newtab-custom-pocket-show-recent-saves = Prikaži nedavno sačuvane
 newtab-custom-recent-title = Nedavne aktivnosti
 newtab-custom-recent-subtitle = Izbor najnovijih stranica i sadržaja
-newtab-custom-recent-toggle =
-    .label = Nedavne aktivnosti
-    .description = Izbor najnovijih stranica i sadržaja
 newtab-custom-weather-toggle =
     .label = Vrijeme
     .description = Ukratko o današnjoj prognozi
-newtab-custom-trending-search-toggle =
-    .label = Popularne pretrage
-    .description = Popularne i često tražene teme
 newtab-custom-close-button = Zatvori
 newtab-custom-settings = Upravljajte više postavki
 
@@ -329,8 +405,11 @@ newtab-custom-settings = Upravljajte više postavki
 
 newtab-wallpaper-title = Pozadine
 newtab-wallpaper-reset = Vrati na izvorno
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Učitaj sliku
 newtab-wallpaper-custom-color = Izaberite boju
+newtab-wallpaper-toggle-title =
+    .label = Pozadine
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Slika je premašila ograničenje veličine datoteke od { $file_size }MB. Molimo pokušajte s učitavanjem manje datoteke.
@@ -352,6 +431,7 @@ newtab-wallpaper-light-fox-anniversary = Lisica u travnatom polju sa maglovitim 
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = Čvrste boje
 newtab-wallpaper-blue = Plava
 newtab-wallpaper-light-blue = Svijetlo plava
@@ -383,7 +463,7 @@ newtab-wallpaper-abstract-purple-green = Gradijent ljubičastog i zelenog svjetl
 newtab-wallpaper-abstract-blue-purple-waves = Plavi i ljubičasti valoviti oblici
 newtab-wallpaper-abstract-black-waves = Crni valoviti oblici
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografije
 newtab-wallpaper-beach-at-sunrise = Plaža u izlasku sunca
@@ -439,7 +519,6 @@ newtab-weather-menu-change-location = Promijeni lokaciju
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Traži lokaciju
     .aria-label = Traži lokaciju
-newtab-weather-change-location-search-input = Traži lokaciju
 newtab-weather-menu-weather-display = Prikaz vremena
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -457,6 +536,11 @@ newtab-weather-menu-hide-weather = Sakrij vrijeme na novom tabu
 newtab-weather-menu-learn-more = Saznajte više
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Vremenski podaci trenutno nisu dostupni.
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Pogledajte prognozu na { $provider }
+    .aria-description = { $provider } ∙ Sponzorisano
 
 ## Topic Labels
 
@@ -555,7 +639,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Vaši favoriti na dohvat ruke
 newtab-shortcuts-highlight-subtitle = Dodajte prečicu da biste svoje omiljene stranice imali pri ruci na jedan klik.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Zašto ovo prijavljujete?
@@ -577,16 +661,3 @@ newtab-report-cancel = Otkaži
 newtab-report-submit = Pošalji
 newtab-toast-thanks-for-reporting =
     .message = Hvala vam što ste ovo prijavili.
-
-## Strings for trending searches
-
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Popularne teme na Google
-newtab-trending-searches-show-trending =
-    .title = Prikaži popularne pretrage
-newtab-trending-searches-hide-trending =
-    .title = Sakrij popularne pretrage
-newtab-trending-searches-learn-more = Saznajte više
-newtab-trending-searches-dismiss = Sakrij popularne pretrage
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Popularne pretrage

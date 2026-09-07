@@ -39,6 +39,10 @@ function waitForEvent(obj, name) {
   });
 }
 
+function waitForAnimationFrame() {
+  return new Promise(resolve => window.requestAnimationFrame(resolve));
+}
+
 async function start() {
   await waitForEvent(window, "focus");
   var oldOuterWidth = window.outerWidth, oldOuterHeight = window.outerHeight;
@@ -58,6 +62,12 @@ async function start() {
   sizemodeChange = waitForEvent(window, "sizemodechange");
   window.fullScreen = false;
   await sizemodeChange;
+  // sizemodechange fires when the OS reports the window state change. On
+  // macOS with native fullscreen, the document layout may not have reflowed
+  // to the restored window size yet (bug 2038980), so wait two animation
+  // frames before reading innerWidth/innerHeight.
+  await waitForAnimationFrame();
+  await waitForAnimationFrame();
   is(window.outerWidth, oldOuterWidth, "wrong outerWidth after fullscreen mode");
   is(window.outerHeight, oldOuterHeight, "wrong outerHeight after fullscreen mode");
   is(window.innerWidth, oldOuterWidth, "wrong innerWidth after fullscreen mode");

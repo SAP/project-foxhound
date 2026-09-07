@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env browser */
 "use strict";
 
 const {
@@ -431,8 +430,8 @@ class Tree extends Component {
   /**
    * Expands current row.
    *
-   * @param {Object} item
-   * @param {Boolean} expandAllChildren
+   * @param {object} item
+   * @param {boolean} expandAllChildren
    */
   _onExpand(item, expandAllChildren) {
     if (this.props.onExpand) {
@@ -451,7 +450,7 @@ class Tree extends Component {
   /**
    * Collapses current row.
    *
-   * @param {Object} item
+   * @param {object} item
    */
   _onCollapse(item) {
     if (this.props.onCollapse) {
@@ -464,12 +463,12 @@ class Tree extends Component {
    * we might have to calculate the position of the item based on its index and
    * the item height.
    *
-   * @param {Object} item
+   * @param {object} item
    *        The item to be scrolled into view.
-   * @param {Number|undefined} index
+   * @param {number | undefined} index
    *        The index of the item in a full DFS traversal (ignoring collapsed
    *        nodes) or undefined.
-   * @param {Object} options
+   * @param {object} options
    *        Optional information regarding item's requested alignement when
    *        scrolling.
    */
@@ -516,11 +515,11 @@ class Tree extends Component {
   /**
    * Sets the passed in item to be the focused item.
    *
-   * @param {Number} index
+   * @param {number} index
    *        The index of the item in a full DFS traversal (ignoring collapsed
    *        nodes). Ignored if `item` is undefined.
    *
-   * @param {Object|undefined} item
+   * @param {object | undefined} item
    *        The item to be focused, or undefined to focus no item.
    */
   _focus(index, item, options = {}) {

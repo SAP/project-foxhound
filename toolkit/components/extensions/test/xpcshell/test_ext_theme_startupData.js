@@ -80,6 +80,13 @@ add_setup(function setup_intercept_fallbackThemeData() {
       gFallbackHistory.push(structuredClone(value));
       console.trace(`Set fallbackThemeData: ${value?.theme?.id}`);
       fallbackThemeDataPropertyDescriptor.set.call(this, value);
+      if (value) {
+        Assert.deepEqual(
+          LightweightThemeManager.themeData,
+          value,
+          "Expected only valid fallback values to be set"
+        );
+      }
     },
     get: fallbackThemeDataPropertyDescriptor.get,
   });

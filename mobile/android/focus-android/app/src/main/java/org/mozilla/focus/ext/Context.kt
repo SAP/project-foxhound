@@ -9,7 +9,7 @@ import android.app.Activity
 import android.content.Context
 import android.view.ContextThemeWrapper
 import android.view.accessibility.AccessibilityManager
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.focus.Components
 import org.mozilla.focus.FocusApplication
 import org.mozilla.focus.utils.Settings
@@ -45,7 +45,8 @@ val Context.accessibilityManager: AccessibilityManager
  */
 val Context.installedDate: String
     get() {
-        val installTime = this.packageManager.getPackageInfoCompat(this.packageName, 0).firstInstallTime
+        val installTime =
+            this.packageManagerCompatHelper.getPackageInfoCompat(packageName, 0).firstInstallTime
         return DateFormat.getDateInstance().format(installTime)
     }
 

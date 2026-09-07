@@ -31,29 +31,29 @@ screenshot shows a customized "Energy" tab.
 
 The power-related columns are as follows.
 
--   **Energy Impact** / **Avg Energy Impact**: See the separate section
-    below.
--   **% CPU**: CPU usage percentage. This can exceed 100% if multiple
-    cores are being used.
--   **Idle wake Ups**:
-    -   In Mac OS 10.9 this measured "package idle exit" wakeups. This
-        is the same value as
-        [powermetrics](./powermetrics.md)'
-        "Pkg idle" measurement (i.e.
-        `task_power_info::task_platform_idle_wakeups` obtained from the
-        `task_info` function.)
-    -   In Mac OS 10.10 it appears to have been changed to measure
-        interrupt-level wakeups (a superset of idle wakeups), which are
-        less interesting. This is the same value as
-        [powermetrics](./powermetrics.md)'
-        "Intr" measurement (i.e.
-        `task_power_info::task_interrupt_wakeups` obtained from the
-        `task_info` function.)
--   **Requires High Perf GPU**: Many Macs have two GPUs: a low-power,
-    low-performance integrated GPU, and a high-power, high-performance
-    external GPU. Using the high-performance GPU can greatly increase
-    power consumption, and should be avoided whenever possible. This
-    column indicates which GPU is being used.
+- **Energy Impact** / **Avg Energy Impact**: See the separate section
+  below.
+- **% CPU**: CPU usage percentage. This can exceed 100% if multiple
+  cores are being used.
+- **Idle wake Ups**:
+  - In Mac OS 10.9 this measured "package idle exit" wakeups. This
+    is the same value as
+    [powermetrics](./powermetrics.md)'
+    "Pkg idle" measurement (i.e.
+    `task_power_info::task_platform_idle_wakeups` obtained from the
+    `task_info` function.)
+  - In Mac OS 10.10 it appears to have been changed to measure
+    interrupt-level wakeups (a superset of idle wakeups), which are
+    less interesting. This is the same value as
+    [powermetrics](./powermetrics.md)'
+    "Intr" measurement (i.e.
+    `task_power_info::task_interrupt_wakeups` obtained from the
+    `task_info` function.)
+- **Requires High Perf GPU**: Many Macs have two GPUs: a low-power,
+  low-performance integrated GPU, and a high-power, high-performance
+  external GPU. Using the high-performance GPU can greatly increase
+  power consumption, and should be avoided whenever possible. This
+  column indicates which GPU is being used.
 
 Activity Monitor can be useful for cursory measurements, but for more
 precise and detailed measurements other tools such as
@@ -140,9 +140,7 @@ Energy Impact" in Activity Monitor.
 `top` is similar to Activity Monitor, but is a command-line utility. To
 see power-related measurements, invoke it as follows.
 
-```
-top -stats pid,command,cpu,idlew,power -o power -d
-```
+    top -stats pid,command,cpu,idlew,power -o power -d
 
 **Note**: `-a` and `-e` can be used instead of `-d` to get different
 counting modes. See the man page for details.
@@ -156,10 +154,10 @@ It will show periodically-updating data like the following.
     76505          top                      1.5          1            1.6
     76354          Activity Monitor         1.0          0            1.0
 
--   The **PID**, **COMMAND** and **%CPU** columns are self-explanatory.
--   The **IDLEW** column is the number of "package idle exit" wakeups.
--   The **POWER** column's value is computed by the same formula as the
-    one used for "Energy Impact" by Activity Monitor in Mac OS 10.9,
-    and should also be avoided.
+- The **PID**, **COMMAND** and **%CPU** columns are self-explanatory.
+- The **IDLEW** column is the number of "package idle exit" wakeups.
+- The **POWER** column's value is computed by the same formula as the
+  one used for "Energy Impact" by Activity Monitor in Mac OS 10.9,
+  and should also be avoided.
 
 `top` is unlikely to be much use for power profiling.

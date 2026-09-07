@@ -34,7 +34,7 @@ async function startTest(test, token) {
   v.preload = 'metadata';
   await new Promise(r => v.onloadedmetadata = r);
 
-  const stream = v.mozCaptureStream();
+  const stream = v.captureStream?.() || v.mozCaptureStream();
 
   is(stream.getAudioTracks().length, Math.min(1, v.audioTracks.length),
     `${token}: Expected number of audio tracks`);

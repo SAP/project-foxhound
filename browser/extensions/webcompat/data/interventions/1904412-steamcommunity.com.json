@@ -1,0 +1,15 @@
+{
+  "label": "steamcommunity.com",
+  "bugs": {
+    "1904412": {
+      "issue": "blocked-content",
+      "matches": ["*://steamcommunity.com/chat*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

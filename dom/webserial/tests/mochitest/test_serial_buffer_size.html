@@ -1,0 +1,130 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Open Options</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testMaxBufferSize() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  // 16 MiB is the maximum; exactly 16 MiB should succeed.
+  await port.open({ baudRate: 9600, bufferSize: 16 * 1024 * 1024 });
+  await port.close();
+
+  // One byte over the maximum should be rejected.
+  await Assert.rejects(
+    port.open({ baudRate: 9600, bufferSize: 16 * 1024 * 1024 + 1 }),
+    e => e.name === "TypeError" && e.message.includes("buffer size"),
+    "Should throw TypeError for bufferSize exceeding maximum"
+  );
+});
+
+add_task(async function testZeroBufferSize() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await Assert.rejects(
+    port.open({ baudRate: 9600, bufferSize: 0 }),
+    e => e.name === "TypeError" && e.message.includes("buffer size"),
+    "Should throw TypeError mentioning buffer size for bufferSize=0"
+  );
+
+  ok(!port.writable, "Port should not have a writable since it is not opened");
+});
+
+add_task(async function testBufferSizeWithReadWrite() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600, bufferSize: 128 });
+
+  const writer = port.writable.getWriter();
+  const reader = port.readable.getReader();
+
+  const data = new Uint8Array([0x48, 0x65, 0x6C, 0x6C, 0x6F]);
+  await writer.write(data);
+
+  const { value, done } = await reader.read();
+  ok(!done, "Should receive data");
+  ok(value instanceof Uint8Array, "Should receive Uint8Array");
+  is(value.length, data.length, "Should receive same length data");
+
+  writer.releaseLock();
+  reader.releaseLock();
+
+  await port.close();
+});
+
+add_task(async function testDifferentBufferSizesAcrossReopens() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  const bufferSizes = [1, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 1048576];
+
+  for (const bufferSize of bufferSizes) {
+    await port.open({ baudRate: 9600, bufferSize });
+    ok(port.readable, "readable stream should be available");
+    ok(port.writable, "writable stream should be available");
+    await port.close();
+  }
+});
+
+add_task(async function testBufferSizeAffectsBackpressure() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600, bufferSize: 16 });
+
+  const writer = port.writable.getWriter();
+
+  const largeData = new Uint8Array(100);
+  for (let i = 0; i < largeData.length; i++) {
+    largeData[i] = i % 256;
+  }
+
+  try {
+    await writer.write(largeData);
+    ok(true, "Should be able to write data larger than bufferSize");
+  } catch (e) {
+    ok(false, `Write should not fail: ${e.message}`);
+  }
+
+  writer.releaseLock();
+  await port.close();
+});
+
+add_task(async function testSmallBufferSizeWithMultipleWrites() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+
+  await port.open({ baudRate: 9600, bufferSize: 8 });
+
+  const writer = port.writable.getWriter();
+
+  for (let i = 0; i < 10; i++) {
+    const data = new Uint8Array([i, i + 1, i + 2]);
+    await writer.write(data);
+  }
+
+  ok(true, "Should handle multiple writes with small bufferSize");
+
+  writer.releaseLock();
+  await port.close();
+});
+
+</script>
+</body>
+</html>

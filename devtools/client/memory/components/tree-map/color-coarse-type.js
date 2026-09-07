@@ -20,7 +20,7 @@ const L = 0.9;
 /**
  * Recursively find the index of the coarse type of a node
  *
- * @param  {Object} node
+ * @param  {object} node
  *         d3 treemap
  * @return {Integer}
  *         index
@@ -38,8 +38,8 @@ function findCoarseTypeIndex(node) {
 /**
  * Decide a color value for depth to be used in the HSL computation
  *
- * @param  {Object} node
- * @return {Number}
+ * @param  {object} node
+ * @return {number}
  */
 function depthColorFactor(node) {
   return Math.min(1, node.depth / DEPTH_FACTOR);
@@ -48,8 +48,8 @@ function depthColorFactor(node) {
 /**
  * Decide a color value for type to be used in the HSL computation
  *
- * @param  {Object} node
- * @return {Number}
+ * @param  {object} node
+ * @return {number}
  */
 function typeColorFactor(node) {
   return findCoarseTypeIndex(node) / TYPE_FACTOR;
@@ -58,7 +58,7 @@ function typeColorFactor(node) {
 /**
  * Color a node
  *
- * @param  {Object} node
+ * @param  {object} node
  * @return {Array} HSL values ranged 0-1
  */
 module.exports = function colorCoarseType(node) {

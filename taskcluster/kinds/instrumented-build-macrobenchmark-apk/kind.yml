@@ -15,13 +15,15 @@ kind-dependencies:
     - generate-baseline-profile-firebase
 
 task-defaults:
-    attributes:
-        retrigger: true
+    run-on-repo-type: [hg]
     fetches:
         toolchain:
             - linux64-android-sdk-linux-repack
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - linux64-jdk-repack
             - linux64-node
+    run-on-projects: []
     run:
         using: gradlew
     treeherder:
@@ -50,7 +52,7 @@ tasks:
         worker:
             artifacts:
                 - name: "public/build/target.arm64-v8a.apk"
-                  path: "/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/fenix/benchmark/app-fenix-arm64-v8a-benchmark.apk"
+                  path: "/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/benchmark/app-arm64-v8a-benchmark.apk"
                   type: "file"
                 - name: "public/build/target.noarch.apk"
                   path: "/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/benchmark/outputs/apk/benchmark/benchmark-benchmark.apk"

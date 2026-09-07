@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Page with External JS</title>
+  <script src="external_script.js"></script>
+</head>
+<body>
+  <h1>Test Page for External JS Sources</h1>
+  <p>This page loads an external JavaScript file to test JS source collection.</p>
+
+  <script>
+    function inlineFunction() {
+      // Do some work for ~2ms to generate samples
+      const start = performance.now();
+      let result = 0;
+      while (performance.now() - start < 10) {
+        for (let i = 0; i < 1000; i++) {
+          result += Math.sin(i) * Math.cos(i);
+        }
+      }
+      return result;
+    }
+
+    window.onload = function() {
+      inlineFunction();
+      externalFunction();
+    };
+  </script>
+</body>
+</html>

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -27,9 +26,6 @@
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Likely.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/StaticPrefs_image.h"
@@ -81,6 +77,8 @@ RasterImage::RasterImage(nsIURI* aURI /* = nullptr */)
 
 //******************************************************************************
 RasterImage::~RasterImage() {
+  mIsBeingDestroyed = true;
+
   // Make sure our SourceBuffer is marked as complete. This will ensure that any
   // outstanding decoders terminate.
   if (!mSourceBuffer->IsComplete()) {
@@ -128,11 +126,6 @@ nsresult RasterImage::Init(const char* aMimeType, uint32_t aFlags) {
     mLockCount++;
     SurfaceCache::LockImage(ImageKey(this));
   }
-
-  // Set the default flags according to the decoder type to allow preferences to
-  // be stored if necessary.
-  mDefaultDecoderFlags =
-      DecoderFactory::GetDefaultDecoderFlagsForType(mDecoderType);
 
   // Mark us as initialized
   mInitialized = true;
@@ -274,7 +267,12 @@ AspectRatio RasterImage::GetIntrinsicRatio() {
   if (mError) {
     return {};
   }
-  return AspectRatio::FromSize(mSize.width, mSize.height);
+  OrientedIntSize size = mSize;
+  if (mResolution.mX != mResolution.mY) {
+    mResolution.ApplyXTo(size.width);
+    mResolution.ApplyYTo(size.height);
+  }
+  return AspectRatio::FromSize(size.width, size.height);
 }
 
 NS_IMETHODIMP_(Orientation)
@@ -489,8 +487,12 @@ RasterImage::WillDrawOpaqueNow() {
 void RasterImage::OnSurfaceDiscarded(const SurfaceKey& aSurfaceKey) {
   MOZ_ASSERT(mProgressTracker);
 
+  if (mIsBeingDestroyed) {
+    return;
+  }
+
   bool animatedFramesDiscarded =
-      mAnimationState && aSurfaceKey.Playback() == PlaybackType::eAnimated;
+      aSurfaceKey.Playback() == PlaybackType::eAnimated;
 
   nsCOMPtr<nsIEventTarget> eventTarget = do_GetMainThread();
 
@@ -1188,7 +1190,7 @@ void RasterImage::Decode(const OrientedIntSize& aSize, uint32_t aFlags,
   SurfaceCache::UnlockEntries(ImageKey(this));
 
   // Determine which flags we need to decode this image with.
-  DecoderFlags decoderFlags = mDefaultDecoderFlags;
+  DecoderFlags decoderFlags = DefaultDecoderFlags();
   if (aFlags & FLAG_ASYNC_NOTIFY) {
     decoderFlags |= DecoderFlags::ASYNC_NOTIFY;
   }
@@ -1272,7 +1274,7 @@ RasterImage::DecodeMetadata(uint32_t aFlags) {
 
   // Create a decoder.
   RefPtr<IDecodingTask> task = DecoderFactory::CreateMetadataDecoder(
-      mDecoderType, WrapNotNull(this), mDefaultDecoderFlags, mSourceBuffer);
+      mDecoderType, WrapNotNull(this), DefaultDecoderFlags(), mSourceBuffer);
 
   // Make sure DecoderFactory was able to create a decoder successfully.
   if (!task) {
@@ -1547,6 +1549,11 @@ void RasterImage::DoError() {
 
   // Invalidate to get rid of any partially-drawn image content.
   auto dirtyRect = OrientedIntRect({0, 0}, mSize);
+  // Make sure to provide a non-empty rect so a FRAME_UPDATE notification goes
+  // out otherwise consumers might not get any kind of update whatsoever.
+  if (dirtyRect.IsEmpty()) {
+    dirtyRect.width = dirtyRect.height = 1;
+  }
   NotifyProgress(NoProgress, dirtyRect);
 
   MOZ_LOG(gImgLog, LogLevel::Error,
@@ -1674,10 +1681,12 @@ void RasterImage::NotifyDecodeComplete(
     }
 
     if (mAnimationState && LoadHasBeenDecoded()) {
-      // We've finished a full decode of all animation frames and our
-      // AnimationState has been notified about them all, so let it know not to
-      // expect anymore.
-      mAnimationState->NotifyDecodeComplete();
+      // If we've successfully finished a full decode of all animation frames
+      // then let our animation state know it is complete and to not expect
+      // anymore frames.
+      if (aStatus.mFinished && !aStatus.mHadError) {
+        mAnimationState->NotifyDecodeComplete();
+      }
 
       IntRect rect = mAnimationState->UpdateState(this, mSize.ToUnknownSize());
 

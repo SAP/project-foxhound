@@ -10,12 +10,14 @@
 
 #include "modules/video_coding/codecs/test/encoded_video_frame_producer.h"
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "api/test/create_frame_generator.h"
 #include "api/test/frame_generator_interface.h"
-#include "api/transport/rtp/dependency_descriptor.h"
+#include "api/video/encoded_image.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_type.h"
 #include "api/video_codecs/video_encoder.h"
@@ -35,9 +37,14 @@ class EncoderCallback : public EncodedImageCallback {
  private:
   Result OnEncodedImage(const EncodedImage& encoded_image,
                         const CodecSpecificInfo* codec_specific_info) override {
-    output_frames_.push_back({encoded_image, *codec_specific_info});
+    output_frames_.push_back({.encoded_image = encoded_image,
+                              .codec_specific_info = *codec_specific_info});
     return Result(Result::Error::OK);
   }
+
+  void OnFrameDropped(uint32_t /*rtp_timestamp*/,
+                      int /*spatial_id*/,
+                      bool /*is_end_of_temporal_unit*/) override {}
 
   std::vector<EncodedVideoFrameProducer::EncodedFrame>& output_frames_;
 };

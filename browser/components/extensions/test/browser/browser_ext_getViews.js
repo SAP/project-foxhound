@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 function genericChecker() {
@@ -314,7 +312,7 @@ add_task(async function test_getViews_excludes_blocked_parsing_documents() {
 
   // Ensure the mouse is not initially hovering the browserAction widget.
   EventUtils.synthesizeMouseAtCenter(
-    window.gURLBar.textbox,
+    window.gURLBar,
     { type: "mouseover" },
     window
   );
@@ -394,7 +392,7 @@ add_task(async function test_getViews_excludes_blocked_parsing_documents() {
 
   // Ensure the mouse is not hovering the browserAction widget anymore when exiting the test case.
   EventUtils.synthesizeMouseAtCenter(
-    window.gURLBar.textbox,
+    window.gURLBar,
     { type: "mouseover", button: 0 },
     window
   );

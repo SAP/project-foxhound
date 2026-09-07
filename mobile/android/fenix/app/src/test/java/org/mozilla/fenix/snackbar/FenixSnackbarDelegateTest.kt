@@ -11,10 +11,8 @@ import com.google.android.material.snackbar.Snackbar.LENGTH_SHORT
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
-import io.mockk.mockkObject
-import io.mockk.unmockkObject
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.verify
-import org.junit.After
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -33,7 +31,7 @@ class FenixSnackbarDelegateTest {
     @MockK
     private lateinit var view: View
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var snackbar: Snackbar
     private lateinit var delegate: FenixSnackbarDelegate
 
@@ -43,19 +41,11 @@ class FenixSnackbarDelegateTest {
     @Before
     fun setup() {
         MockKAnnotations.init(this)
-        mockkObject(Snackbar.Companion)
 
-        delegate = FenixSnackbarDelegate(view)
-        every {
-            Snackbar.make(view, any())
-        } returns snackbar
+        delegate = FenixSnackbarDelegate(view) { parent, state -> snackbar }
+
         every { view.context.getString(R.string.app_name) } returns APP_NAME
         every { view.context.getString(R.string.edit_2) } returns EDIT_PASSWORD
-    }
-
-    @After
-    fun teardown() {
-        unmockkObject(Snackbar.Companion)
     }
 
     @Test
@@ -66,6 +56,7 @@ class FenixSnackbarDelegateTest {
             duration = LENGTH_LONG,
             isError = false,
             actionText = EDIT_PASSWORD,
+            withDismissAction = false,
             listener = null,
         )
 
@@ -80,6 +71,7 @@ class FenixSnackbarDelegateTest {
             duration = LENGTH_LONG,
             isError = false,
             actionText = null,
+            withDismissAction = false,
             listener = {},
         )
 
@@ -94,6 +86,7 @@ class FenixSnackbarDelegateTest {
             duration = LENGTH_LONG,
             isError = false,
             actionText = null,
+            withDismissAction = false,
             listener = null,
         )
 
@@ -108,6 +101,7 @@ class FenixSnackbarDelegateTest {
             duration = LENGTH_LONG,
             isError = true,
             actionText = null,
+            withDismissAction = false,
             listener = null,
         )
 
@@ -124,10 +118,11 @@ class FenixSnackbarDelegateTest {
             duration = LENGTH_LONG,
             isError = true,
             actionText = null,
+            withDismissAction = false,
             listener = null,
         )
 
-        assertTrue(snackbarState.subMessage == subText)
+        assertTrue(snackbarState.subMessage?.text == subText)
     }
 
     @Test
@@ -138,6 +133,7 @@ class FenixSnackbarDelegateTest {
             duration = LENGTH_LONG,
             isError = false,
             actionText = null,
+            withDismissAction = false,
             listener = null,
         )
 

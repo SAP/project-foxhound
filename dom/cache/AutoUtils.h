@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/dom/cache/CacheTypes.h"
-#include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/cache/TypeUtils.h"
+#include "mozilla/dom/cache/Types.h"
 #include "nsTArray.h"
 
 struct nsID;
@@ -69,7 +67,7 @@ class MOZ_STACK_CLASS AutoChildOpArgs final {
 
 class MOZ_STACK_CLASS AutoParentOpResult final {
  public:
-  AutoParentOpResult(mozilla::ipc::PBackgroundParent* aManager,
+  AutoParentOpResult(const WeakRefParentType& aManager,
                      const CacheOpResult& aOpResult, uint32_t aEntryCount);
   ~AutoParentOpResult();
 
@@ -87,7 +85,7 @@ class MOZ_STACK_CLASS AutoParentOpResult final {
   void SerializeReadStream(const nsID& aId, StreamList& aStreamList,
                            CacheReadStream* aReadStreamOut);
 
-  mozilla::ipc::PBackgroundParent* mManager;
+  const WeakRefParentType mManager;
   CacheOpResult mOpResult;
   CacheStreamControlParent* mStreamControl;
   bool mSent;

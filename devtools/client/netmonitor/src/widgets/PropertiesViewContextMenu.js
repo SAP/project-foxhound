@@ -33,11 +33,12 @@ class PropertiesViewContextMenu {
 
   /**
    * Handle the context menu opening.
-   * @param {Object} event open event
-   * @param {Object} selection object representing the current selection
-   * @param {Object} data object containing information
-   * @param {Object} data.member member of the right-clicked row
-   * @param {Object} data.object the whole tree data (can be optional)
+   *
+   * @param {object} event open event
+   * @param {object} selection object representing the current selection
+   * @param {object} data object containing information
+   * @param {object} data.member member of the right-clicked row
+   * @param {object} data.object the whole tree data (can be optional)
    */
   open(event = {}, selection, { member, object }) {
     const menuItems = [
@@ -64,8 +65,9 @@ class PropertiesViewContextMenu {
 
   /**
    * Copies all.
-   * @param {Object} object the whole tree data
-   * @param {Object} selection object representing the current selection
+   *
+   * @param {object} object the whole tree data
+   * @param {object} selection object representing the current selection
    */
   copyAll(object, selection) {
     let buffer = "";
@@ -88,8 +90,9 @@ class PropertiesViewContextMenu {
 
   /**
    * Copies the value of a single item.
-   * @param {Object} member member of the right-clicked row
-   * @param {Object} selection object representing the current selection
+   *
+   * @param {object} member member of the right-clicked row
+   * @param {object} selection object representing the current selection
    */
   copyValue(member, selection) {
     let buffer = "";

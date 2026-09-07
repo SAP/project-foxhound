@@ -27,11 +27,11 @@
  */
 
 #include "Reverb.h"
-#include "ReverbConvolverStage.h"
 
 #include <math.h>
+
 #include "ReverbConvolver.h"
-#include "mozilla/FloatingPoint.h"
+#include "ReverbConvolverStage.h"
 
 using namespace mozilla;
 

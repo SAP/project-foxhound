@@ -12,9 +12,16 @@ updater.app/Contents/MacOS/org.mozilla.updater
 plugin-container.app/Contents/PkgInfo
 updater.app/Contents/PkgInfo
 media-plugin-helper.app/Contents/PkgInfo
+gpu-helper.app/Contents/PkgInfo
+security-module-helper.app/Contents/PkgInfo
 
 media-plugin-helper.app/Contents/MacOS/@MOZ_APP_DISPLAYNAME@ Media Plugin Helper
+gpu-helper.app/Contents/MacOS/@MOZ_APP_DISPLAYNAME@ GPU Helper
 plugin-container.app/Contents/MacOS/plugin-container
+security-module-helper.app/Contents/MacOS/@MOZ_APP_DISPLAYNAME@ Security Module Helper
+
+media-plugin-helper.app/Contents/Resources/English.lproj/InfoPlist.strings
+security-module-helper.app/Contents/Resources/English.lproj/InfoPlist.strings
 
 # Duplicated on Linux by browser/branding/branding-common.mozbuild
 #ifdef XP_LINUX
@@ -81,26 +88,37 @@ browser/chrome/browser/skin/classic/browser/customize.svg
 browser/features/webcompat-reporter@mozilla.org/icons/lightbulb.svg
 chrome/toolkit/skin/classic/global/icons/lightbulb.svg
 
-# Bug 1861662 - These will be removed with new search config changes
-browser/chrome/browser/search-extensions/amazondotcn/_locales/default/messages.json
-browser/chrome/browser/search-extensions/amazondotcn/_locales/mozillaonline/messages.json
-browser/chrome/browser/search-extensions/amazondotcom/_locales/en/messages.json
-browser/chrome/browser/search-extensions/amazondotcom/_locales/us/messages.json
-
 # Bug 1895873 - Search engines with the same icon
 browser/defaults/settings/main/search-config-icons/6a83583a-f0ba-fd39-2fdb-fd2b6990ea3b
 browser/defaults/settings/main/search-config-icons/f312610a-ebfb-a106-ea92-fd643c5d3636
 browser/defaults/settings/main/search-config-icons/47da97b5-600f-c450-fd15-a52bb2169c11
 browser/defaults/settings/main/search-config-icons/fed4f021-ff3e-942a-010e-afa43fda2136
 
-# Bug 1946262 - De-Duplicate by moving glyph svg icons in a shared location
-browser/chrome/browser/content/browser/asrouter/assets/glyph-mail-16.svg
-#ifdef BROWSER_NEWTAB_AS_ADDON
 browser/chrome/browser/builtin-addons/newtab/data/data/content/assets/glyph-mail-16.svg
-#else
-browser/chrome/browser/content/newtab/data/content/assets/glyph-mail-16.svg
-#endif
+
+# Bug 2022304 - activity-stream-debug.html is intentionally identical to
+# activity-stream.html now that vendor bundling replaces separate dev/prod builds
+browser/chrome/browser/builtin-addons/newtab/prerendered/activity-stream-debug.html
+browser/chrome/browser/builtin-addons/newtab/prerendered/activity-stream.html
 
 # Bug 1946597 - Move glyph-webextension-16.svg in browser/themes/shared/icons
 browser/chrome/browser/content/activity-stream/data/content/assets/glyph-webextension-16.svg
 browser/chrome/browser/content/newtab/data/content/assets/glyph-webextension-16.svg
+
+# Bug 2031302 - allow duplicate css/js files which are used as content scripts by our built-in web compatibility addon.
+browser/chrome/browser/builtin-addons/webcompat/injections/*
+
+# @backward-compat {version 151}
+# Bug 2035817 - These shaft-arrow SVGs are temporarily duplicated between toolkit
+# and browser/extensions/newtab in order to make HNT Nova shippable via newtab
+# train-hop. We can remove these duplicates once Firefox 151 ships to release.
+browser/chrome/browser/builtin-addons/newtab/data/data/content/assets/shaft-arrow-left.svg
+chrome/toolkit/skin/classic/global/icons/shaft-arrow-left.svg
+browser/chrome/browser/builtin-addons/newtab/data/data/content/assets/shaft-arrow-right.svg
+chrome/toolkit/skin/classic/global/icons/shaft-arrow-right.svg
+
+# Bug 2034982 - kit-in-circle.svg is shared between the about:pdf landing page
+# (toolkit global skin, used by the promo) and browser/extensions/newtab, which
+# ship in separate packaging domains.
+browser/chrome/browser/builtin-addons/newtab/data/data/content/assets/kit-in-circle.svg
+chrome/toolkit/skin/classic/global/illustrations/kit-in-circle.svg

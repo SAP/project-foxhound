@@ -1,13 +1,13 @@
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS.mozilla.dom += [
     "AudioFocusManager.h",
+    "AudioSessionManager.h",
+    "AudioSessionRecord.h",
     "ContentMediaController.h",
     "ContentPlaybackController.h",
-    "FetchImageHelper.h",
     "MediaControlKeyManager.h",
     "MediaControlKeySource.h",
     "MediaController.h",
@@ -23,9 +23,10 @@ EXPORTS.ipc += [
 
 UNIFIED_SOURCES += [
     "AudioFocusManager.cpp",
+    "AudioSessionManager.cpp",
+    "AudioSessionRecord.cpp",
     "ContentMediaController.cpp",
     "ContentPlaybackController.cpp",
-    "FetchImageHelper.cpp",
     "MediaControlKeyManager.cpp",
     "MediaControlKeySource.cpp",
     "MediaController.cpp",
@@ -37,7 +38,6 @@ UNIFIED_SOURCES += [
 
 include("/ipc/chromium/chromium-config.mozbuild")
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 FINAL_LIBRARY = "xul"

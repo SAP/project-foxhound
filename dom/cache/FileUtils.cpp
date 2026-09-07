@@ -1,13 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "FileUtilsImpl.h"
-
 #include "CacheCipherKeyManager.h"
 #include "DBSchema.h"
+#include "FileUtilsImpl.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/SnappyCompressOutputStream.h"
 #include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/quota/DecryptingInputStream.h"
 #include "mozilla/dom/quota/DecryptingInputStream_impl.h"
@@ -18,12 +17,9 @@
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/SnappyCompressOutputStream.h"
-#include "mozilla/Unused.h"
+#include "nsIFile.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
-#include "nsIFile.h"
 #include "nsIUUIDGenerator.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -34,7 +30,7 @@
 
 namespace mozilla::dom::cache {
 
-static_assert(SNAPPY_VERSION == 0x010200);
+static_assert(SNAPPY_VERSION == 0x010202);
 
 using mozilla::dom::quota::Client;
 using mozilla::dom::quota::CloneFileAndAppend;
@@ -416,7 +412,7 @@ nsresult BodyDeleteOrphanedFiles(
               });
 
               nsID id;
-              QM_TRY(OkIf(id.Parse(leafName.BeginReading())), true);
+              QM_TRY(OkIf(id.Parse(PromiseFlatCString(leafName).get())), true);
 
               if (!aKnownBodyIds.Contains(id)) {
                 return true;

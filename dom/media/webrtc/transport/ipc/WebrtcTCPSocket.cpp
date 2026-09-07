@@ -1,31 +1,29 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebrtcTCPSocket.h"
 
+#include "WebrtcTCPSocketCallback.h"
+#include "WebrtcTCPSocketLog.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/ContentProcessManager.h"
 #include "nsHttpChannel.h"
+#include "nsICancelable.h"
 #include "nsIChannel.h"
 #include "nsIClassOfService.h"
 #include "nsIContentPolicy.h"
+#include "nsICookieJarSettings.h"
 #include "nsIIOService.h"
 #include "nsILoadInfo.h"
 #include "nsIProtocolProxyService.h"
-#include "nsIURIMutator.h"
-#include "nsICookieJarSettings.h"
-#include "nsProxyRelease.h"
-#include "nsString.h"
-#include "mozilla/dom/ContentProcessManager.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/StaticPrefs_media.h"
+#include "nsISocketTransport.h"
 #include "nsISocketTransportService.h"
-#include "nsICancelable.h"
+#include "nsIURIMutator.h"
+#include "nsProxyRelease.h"
 #include "nsSocketTransportService2.h"
-
-#include "WebrtcTCPSocketCallback.h"
-#include "WebrtcTCPSocketLog.h"
+#include "nsString.h"
 
 namespace mozilla::net {
 
@@ -58,7 +56,7 @@ WebrtcTCPSocket::WebrtcTCPSocket(WebrtcTCPSocketCallback* aCallbacks)
       mTransport(nullptr),
       mSocketIn(nullptr),
       mSocketOut(nullptr) {
-  LOG(("WebrtcTCPSocket::WebrtcTCPSocket %p\n", this));
+  LOG("WebrtcTCPSocket::WebrtcTCPSocket {}\n", fmt::ptr(this));
   mMainThread = GetMainThreadSerialEventTarget();
   mSocketThread = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
   MOZ_RELEASE_ASSERT(mMainThread, "no main thread");
@@ -66,7 +64,7 @@ WebrtcTCPSocket::WebrtcTCPSocket(WebrtcTCPSocketCallback* aCallbacks)
 }
 
 WebrtcTCPSocket::~WebrtcTCPSocket() {
-  LOG(("WebrtcTCPSocket::~WebrtcTCPSocket %p\n", this));
+  LOG("WebrtcTCPSocket::~WebrtcTCPSocket {}\n", fmt::ptr(this));
 
   NS_ProxyRelease("WebrtcTCPSocket::CleanUpAuthProvider", mMainThread,
                   mAuthProvider.forget());
@@ -82,7 +80,7 @@ void WebrtcTCPSocket::SetTabId(dom::TabId aTabId) {
 }
 
 nsresult WebrtcTCPSocket::Write(nsTArray<uint8_t>&& aWriteData) {
-  LOG(("WebrtcTCPSocket::Write %p\n", this));
+  LOG("WebrtcTCPSocket::Write {}\n", fmt::ptr(this));
   MOZ_ASSERT(NS_IsMainThread());
   nsresult rv = mSocketThread->Dispatch(NewRunnableMethod<nsTArray<uint8_t>&&>(
       "WebrtcTCPSocket::Write", this, &WebrtcTCPSocket::EnqueueWrite_s,
@@ -93,7 +91,7 @@ nsresult WebrtcTCPSocket::Write(nsTArray<uint8_t>&& aWriteData) {
 }
 
 nsresult WebrtcTCPSocket::Close() {
-  LOG(("WebrtcTCPSocket::Close %p\n", this));
+  LOG("WebrtcTCPSocket::Close {}\n", fmt::ptr(this));
 
   CloseWithReason(NS_OK);
 
@@ -101,8 +99,8 @@ nsresult WebrtcTCPSocket::Close() {
 }
 
 void WebrtcTCPSocket::CloseWithReason(nsresult aReason) {
-  LOG(("WebrtcTCPSocket::CloseWithReason %p reason=%u\n", this,
-       static_cast<uint32_t>(aReason)));
+  LOG("WebrtcTCPSocket::CloseWithReason {} reason={}\n", fmt::ptr(this),
+      static_cast<uint32_t>(aReason));
 
   if (!OnSocketThread()) {
     MOZ_ASSERT(NS_IsMainThread(), "not on main thread");
@@ -154,13 +152,13 @@ nsresult WebrtcTCPSocket::Open(
     const nsACString& aHost, const int& aPort, const nsACString& aLocalAddress,
     const int& aLocalPort, bool aUseTls,
     const Maybe<net::WebrtcProxyConfig>& aProxyConfig) {
-  LOG(("WebrtcTCPSocket::Open %p remote-host=%s local-addr=%s local-port=%d",
-       this, PromiseFlatCString(aHost).get(),
-       PromiseFlatCString(aLocalAddress).get(), aLocalPort));
+  LOG("WebrtcTCPSocket::Open {} remote-host={} local-addr={} local-port={}",
+      fmt::ptr(this), PromiseFlatCString(aHost).get(),
+      PromiseFlatCString(aLocalAddress).get(), aLocalPort);
   MOZ_ASSERT(NS_IsMainThread());
 
   if (NS_WARN_IF(mOpened)) {
-    LOG(("WebrtcTCPSocket %p: TCP socket already open\n", this));
+    LOG("WebrtcTCPSocket {}: TCP socket already open\n", fmt::ptr(this));
     CloseWithReason(NS_ERROR_FAILURE);
     return NS_ERROR_FAILURE;
   }
@@ -254,7 +252,8 @@ NS_IMETHODIMP WebrtcTCPSocket::OnProxyAvailable(nsICancelable* aRequest,
       return rv;
     }
 
-    if (mProxyType == "http" || mProxyType == "https") {
+    if (mProxyType == "http" || mProxyType == "https" ||
+        mProxyType == "masque") {
       rv = OpenWithHttpProxy();
       if (NS_WARN_IF(NS_FAILED(rv))) {
         CloseWithReason(rv);
@@ -284,7 +283,7 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
     return;
   }
 
-  LOG(("WebrtcTCPSocket::OpenWithoutHttpProxy %p\n", this));
+  LOG("WebrtcTCPSocket::OpenWithoutHttpProxy {}\n", fmt::ptr(this));
 
   if (mClosed) {
     return;
@@ -335,7 +334,7 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
   }
 
   if (NS_WARN_IF(PR_SUCCESS !=
-                 PR_StringToNetAddr(mLocalAddress.BeginReading(), &prAddr))) {
+                 PR_StringToNetAddr(mLocalAddress.get(), &prAddr))) {
     CloseWithReason(NS_ERROR_FAILURE);
     return;
   }
@@ -390,12 +389,12 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
 
 nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
   MOZ_ASSERT(NS_IsMainThread(), "not on main thread");
-  LOG(("WebrtcTCPSocket::OpenWithHttpProxy %p\n", this));
+  LOG("WebrtcTCPSocket::OpenWithHttpProxy {}\n", fmt::ptr(this));
   nsresult rv;
   nsCOMPtr<nsIIOService> ioService;
   ioService = do_GetService(NS_IOSERVICE_CONTRACTID, &rv);
   if (NS_FAILED(rv)) {
-    LOG(("WebrtcTCPSocket %p: io service missing\n", this));
+    LOG("WebrtcTCPSocket {}: io service missing\n", fmt::ptr(this));
     return rv;
   }
 
@@ -410,7 +409,7 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
   rv = ipc::LoadInfoArgsToLoadInfo(mProxyConfig->loadInfoArgs(),
                                    NOT_REMOTE_TYPE, getter_AddRefs(loadInfo));
   if (NS_FAILED(rv)) {
-    LOG(("WebrtcTCPSocket %p: could not init load info\n", this));
+    LOG("WebrtcTCPSocket {}: could not init load info\n", fmt::ptr(this));
     return rv;
   }
 
@@ -432,7 +431,7 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
       nsIContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA,
       getter_AddRefs(localChannel));
   if (NS_FAILED(rv)) {
-    LOG(("WebrtcTCPSocket %p: bad open channel\n", this));
+    LOG("WebrtcTCPSocket {}: bad open channel\n", fmt::ptr(this));
     return rv;
   }
 
@@ -445,7 +444,7 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
   CallQueryInterface(localChannel, httpChannel.StartAssignment());
 
   if (!httpChannel) {
-    LOG(("WebrtcTCPSocket %p: not an http channel\n", this));
+    LOG("WebrtcTCPSocket {}: not an http channel\n", fmt::ptr(this));
     return NS_ERROR_FAILURE;
   }
 
@@ -466,7 +465,7 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
     cos->AddClassFlags(nsIClassOfService::Unblocked |
                        nsIClassOfService::DontThrottle);
   } else {
-    LOG(("WebrtcTCPSocket %p: could not set class of service\n", this));
+    LOG("WebrtcTCPSocket {}: could not set class of service\n", fmt::ptr(this));
     return NS_ERROR_FAILURE;
   }
 
@@ -483,7 +482,7 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
   rv = httpChannel->AsyncOpen(this);
 
   if (NS_FAILED(rv)) {
-    LOG(("WebrtcTCPSocket %p: cannot async open\n", this));
+    LOG("WebrtcTCPSocket {}: cannot async open\n", fmt::ptr(this));
     return rv;
   }
 
@@ -495,7 +494,7 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
 }
 
 void WebrtcTCPSocket::EnqueueWrite_s(nsTArray<uint8_t>&& aWriteData) {
-  LOG(("WebrtcTCPSocket::EnqueueWrite %p\n", this));
+  LOG("WebrtcTCPSocket::EnqueueWrite {}\n", fmt::ptr(this));
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   if (mClosed) {
@@ -510,7 +509,7 @@ void WebrtcTCPSocket::EnqueueWrite_s(nsTArray<uint8_t>&& aWriteData) {
 }
 
 void WebrtcTCPSocket::InvokeOnClose(nsresult aReason) {
-  LOG(("WebrtcTCPSocket::InvokeOnClose %p\n", this));
+  LOG("WebrtcTCPSocket::InvokeOnClose {}\n", fmt::ptr(this));
 
   if (!NS_IsMainThread()) {
     MOZ_ALWAYS_SUCCEEDS(mMainThread->Dispatch(
@@ -531,7 +530,7 @@ void WebrtcTCPSocket::InvokeOnClose(nsresult aReason) {
 }
 
 void WebrtcTCPSocket::InvokeOnConnected() {
-  LOG(("WebrtcTCPSocket::InvokeOnConnected %p\n", this));
+  LOG("WebrtcTCPSocket::InvokeOnConnected {}\n", fmt::ptr(this));
 
   if (!NS_IsMainThread()) {
     MOZ_ALWAYS_SUCCEEDS(mMainThread->Dispatch(
@@ -546,8 +545,8 @@ void WebrtcTCPSocket::InvokeOnConnected() {
 }
 
 void WebrtcTCPSocket::InvokeOnRead(nsTArray<uint8_t>&& aReadData) {
-  LOG(("WebrtcTCPSocket::InvokeOnRead %p count=%zu\n", this,
-       aReadData.Length()));
+  LOG("WebrtcTCPSocket::InvokeOnRead {} count={}\n", fmt::ptr(this),
+      aReadData.Length());
 
   if (!NS_IsMainThread()) {
     MOZ_ALWAYS_SUCCEEDS(
@@ -570,7 +569,7 @@ WebrtcTCPSocket::OnTransportAvailable(nsISocketTransport* aTransport,
   // This is called only in the http proxy case, once we have connected to the
   // http proxy and performed the http upgrade to switch it over to passthrough
   // mode. That process is started async by OpenWithHttpProxy.
-  LOG(("WebrtcTCPSocket::OnTransportAvailable %p\n", this));
+  LOG("WebrtcTCPSocket::OnTransportAvailable {}\n", fmt::ptr(this));
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   MOZ_ASSERT(!mTransport,
              "already called transport available on webrtc TCP socket");
@@ -581,7 +580,7 @@ WebrtcTCPSocket::OnTransportAvailable(nsISocketTransport* aTransport,
   aSocketOut->AsyncWait(nullptr, 0, 0, nullptr);
 
   if (mClosed) {
-    LOG(("WebrtcTCPSocket::OnTransportAvailable %p closed\n", this));
+    LOG("WebrtcTCPSocket::OnTransportAvailable {} closed\n", fmt::ptr(this));
     return NS_OK;
   }
 
@@ -593,13 +592,15 @@ WebrtcTCPSocket::OnTransportAvailable(nsISocketTransport* aTransport,
   uint32_t minBufferSize = 256 * 1024;
   nsresult rv = mTransport->SetSendBufferSize(minBufferSize);
   if (NS_FAILED(rv)) {
-    LOG(("WebrtcProxyChannel::OnTransportAvailable %p send failed\n", this));
+    LOG("WebrtcProxyChannel::OnTransportAvailable {} send failed\n",
+        fmt::ptr(this));
     CloseWithReason(rv);
     return rv;
   }
   rv = mTransport->SetRecvBufferSize(minBufferSize);
   if (NS_FAILED(rv)) {
-    LOG(("WebrtcProxyChannel::OnTransportAvailable %p recv failed\n", this));
+    LOG("WebrtcProxyChannel::OnTransportAvailable {} recv failed\n",
+        fmt::ptr(this));
     CloseWithReason(rv);
     return rv;
   }
@@ -622,13 +623,13 @@ void WebrtcTCPSocket::FinishOpen() {
 
 NS_IMETHODIMP
 WebrtcTCPSocket::OnUpgradeFailed(nsresult aErrorCode) {
-  LOG(("WebrtcTCPSocket::OnUpgradeFailed %p\n", this));
+  LOG("WebrtcTCPSocket::OnUpgradeFailed {}\n", fmt::ptr(this));
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   MOZ_ASSERT(!mTransport,
              "already called transport available on webrtc TCP socket");
 
   if (mClosed) {
-    LOG(("WebrtcTCPSocket::OnUpgradeFailed %p closed\n", this));
+    LOG("WebrtcTCPSocket::OnUpgradeFailed {} closed\n", fmt::ptr(this));
     return NS_OK;
   }
 
@@ -646,15 +647,15 @@ WebrtcTCPSocket::OnWebSocketConnectionAvailable(
 // nsIRequestObserver (from nsIStreamListener)
 NS_IMETHODIMP
 WebrtcTCPSocket::OnStartRequest(nsIRequest* aRequest) {
-  LOG(("WebrtcTCPSocket::OnStartRequest %p\n", this));
+  LOG("WebrtcTCPSocket::OnStartRequest {}\n", fmt::ptr(this));
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
 WebrtcTCPSocket::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
-  LOG(("WebrtcTCPSocket::OnStopRequest %p status=%u\n", this,
-       static_cast<uint32_t>(aStatusCode)));
+  LOG("WebrtcTCPSocket::OnStopRequest {} status={}\n", fmt::ptr(this),
+      static_cast<uint32_t>(aStatusCode));
 
   // see nsHttpChannel::ProcessFailedProxyConnect for most error codes
   if (NS_FAILED(aStatusCode)) {
@@ -670,7 +671,7 @@ NS_IMETHODIMP
 WebrtcTCPSocket::OnDataAvailable(nsIRequest* aRequest,
                                  nsIInputStream* aInputStream, uint64_t aOffset,
                                  uint32_t aCount) {
-  LOG(("WebrtcTCPSocket::OnDataAvailable %p count=%u\n", this, aCount));
+  LOG("WebrtcTCPSocket::OnDataAvailable {} count={}\n", fmt::ptr(this), aCount);
   MOZ_ASSERT(0, "unreachable data available");
   return NS_OK;
 }
@@ -678,59 +679,67 @@ WebrtcTCPSocket::OnDataAvailable(nsIRequest* aRequest,
 // nsIInputStreamCallback
 NS_IMETHODIMP
 WebrtcTCPSocket::OnInputStreamReady(nsIAsyncInputStream* in) {
-  LOG(("WebrtcTCPSocket::OnInputStreamReady %p unwritten=%zu\n", this,
-       CountUnwrittenBytes()));
+  LOG("WebrtcTCPSocket::OnInputStreamReady {} unwritten={}\n", fmt::ptr(this),
+      CountUnwrittenBytes());
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   MOZ_ASSERT(!mClosed, "webrtc TCP socket closed");
   MOZ_ASSERT(mTransport, "webrtc TCP socket not connected");
   MOZ_ASSERT(mSocketIn == in, "wrong input stream");
 
-  char buffer[9216];
-  uint32_t remainingCapacity = sizeof(buffer);
-  uint32_t read = 0;
+  while (true) {
+    char buffer[9216];
+    uint32_t remainingCapacity = sizeof(buffer);
+    uint32_t read = 0;
 
-  while (remainingCapacity > 0) {
-    uint32_t count = 0;
-    nsresult rv = mSocketIn->Read(buffer + read, remainingCapacity, &count);
-    if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
+    while (remainingCapacity > 0) {
+      uint32_t count = 0;
+      nsresult rv = mSocketIn->Read(buffer + read, remainingCapacity, &count);
+      if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
+        break;
+      }
+
+      if (NS_FAILED(rv)) {
+        LOG("WebrtcTCPSocket::OnInputStreamReady {} failed {}\n",
+            fmt::ptr(this), static_cast<uint32_t>(rv));
+        CloseWithReason(rv);
+        return rv;
+      }
+
+      // base stream closed
+      if (count == 0) {
+        LOG("WebrtcTCPSocket::OnInputStreamReady {} connection closed\n",
+            fmt::ptr(this));
+        CloseWithReason(NS_ERROR_FAILURE);
+        return NS_OK;
+      }
+
+      remainingCapacity -= count;
+      read += count;
+    }
+
+    if (read > 0) {
+      nsTArray<uint8_t> array(read);
+      array.AppendElements(buffer, read);
+
+      InvokeOnRead(std::move(array));
+    }
+
+    if (remainingCapacity != 0) {
+      // Loop exited above, but not because we ran out of space. We're actually
+      // done, break out of the while(true) loop.
       break;
     }
-
-    if (NS_FAILED(rv)) {
-      LOG(("WebrtcTCPSocket::OnInputStreamReady %p failed %u\n", this,
-           static_cast<uint32_t>(rv)));
-      CloseWithReason(rv);
-      return rv;
-    }
-
-    // base stream closed
-    if (count == 0) {
-      LOG(("WebrtcTCPSocket::OnInputStreamReady %p connection closed\n", this));
-      CloseWithReason(NS_ERROR_FAILURE);
-      return NS_OK;
-    }
-
-    remainingCapacity -= count;
-    read += count;
-  }
-
-  if (read > 0) {
-    nsTArray<uint8_t> array(read);
-    array.AppendElements(buffer, read);
-
-    InvokeOnRead(std::move(array));
   }
 
   mSocketIn->AsyncWait(this, 0, 0, nullptr);
-
   return NS_OK;
 }
 
 // nsIOutputStreamCallback
 NS_IMETHODIMP
 WebrtcTCPSocket::OnOutputStreamReady(nsIAsyncOutputStream* out) {
-  LOG(("WebrtcTCPSocket::OnOutputStreamReady %p unwritten=%zu\n", this,
-       CountUnwrittenBytes()));
+  LOG("WebrtcTCPSocket::OnOutputStreamReady {} unwritten={}\n", fmt::ptr(this),
+      CountUnwrittenBytes());
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   MOZ_ASSERT(!mClosed, "webrtc TCP socket closed");
   MOZ_ASSERT(mTransport, "webrtc TCP socket not connected");
@@ -752,8 +761,8 @@ WebrtcTCPSocket::OnOutputStreamReady(nsIAsyncOutputStream* out) {
     }
 
     if (NS_FAILED(rv)) {
-      LOG(("WebrtcTCPSocket::OnOutputStreamReady %p failed %u\n", this,
-           static_cast<uint32_t>(rv)));
+      LOG("WebrtcTCPSocket::OnOutputStreamReady {} failed {}\n", fmt::ptr(this),
+          static_cast<uint32_t>(rv));
       CloseWithReason(rv);
       return NS_OK;
     }
@@ -772,7 +781,7 @@ WebrtcTCPSocket::OnOutputStreamReady(nsIAsyncOutputStream* out) {
 // nsIInterfaceRequestor
 NS_IMETHODIMP
 WebrtcTCPSocket::GetInterface(const nsIID& iid, void** result) {
-  LOG(("WebrtcTCPSocket::GetInterface %p\n", this));
+  LOG("WebrtcTCPSocket::GetInterface {}\n", fmt::ptr(this));
 
   return QueryInterface(iid, result);
 }

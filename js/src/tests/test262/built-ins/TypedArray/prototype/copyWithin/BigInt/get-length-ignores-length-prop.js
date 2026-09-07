@@ -21,7 +21,7 @@ info: |
   1. Let O be ? ToObject(this value).
   2. Let len be ? ToLength(? Get(O, "length")).
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -46,6 +46,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   });
 
   assert.sameValue(sample.copyWithin(0, 0), sample);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

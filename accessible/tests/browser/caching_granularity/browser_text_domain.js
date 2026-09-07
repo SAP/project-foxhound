@@ -41,7 +41,7 @@ addAccessibleTask(
 
 // CacheKey::TextAttributes, CacheDomain::Text
 addAccessibleTask(
-  `<div id="test">test</div>`,
+  `<div id="test"><strong>test</strong> me</div>`,
   async function (browser, docAcc) {
     let acc = findAccessibleChildByID(docAcc, "test").firstChild;
     await testCachingPerPlatform(acc, "style", () => {

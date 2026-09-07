@@ -1,42 +1,38 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerScriptCache.h"
 
+#include "ServiceWorkerManager.h"
 #include "js/Array.h"               // JS::GetArrayLength
 #include "js/PropertyAndElement.h"  // JS_GetElement
 #include "js/Utility.h"             // JS::FreePolicy
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/CacheBinding.h"
-#include "mozilla/dom/cache/CacheStorage.h"
-#include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/cache/Cache.h"
+#include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_extensions.h"
+#include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIHttpChannel.h"
+#include "nsIInputStreamPump.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptSecurityManager.h"
 #include "nsIStreamLoader.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIUUIDGenerator.h"
 #include "nsIXPConnect.h"
-
-#include "nsIInputStreamPump.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsContentUtils.h"
 #include "nsNetUtil.h"
-#include "ServiceWorkerManager.h"
 #include "nsStringStream.h"
 
 using mozilla::dom::cache::Cache;
@@ -146,7 +142,7 @@ class CompareNetwork final : public nsIStreamLoaderObserver,
 
   bool Succeeded() const { return NS_SUCCEEDED(mNetworkResult); }
 
-  const nsTArray<nsCString>& URLList() const { return mURLList; }
+  const nsTArray<NotNull<RefPtr<nsIURI>>>& URLList() const { return mURLList; }
 
  private:
   ~CompareNetwork() {
@@ -168,7 +164,7 @@ class CompareNetwork final : public nsIStreamLoaderObserver,
   ChannelInfo mChannelInfo;
   RefPtr<InternalHeaders> mInternalHeaders;
   UniquePtr<PrincipalInfo> mPrincipalInfo;
-  nsTArray<nsCString> mURLList;
+  nsTArray<NotNull<RefPtr<nsIURI>>> mURLList;
 
   nsCString mMaxScope;
   nsLoadFlags mLoadFlags;
@@ -566,7 +562,7 @@ class CompareManager final : public PromiseNativeHandler {
         new Response(aCache->GetGlobalObject(), std::move(ir), nullptr);
 
     RequestOrUTF8String request;
-    request.SetAsUTF8String().ShareOrDependUpon(aCN->URL());
+    request.SetAsUTF8String() = aCN->URL();
 
     // For now we have to wait until the Put Promise is fulfilled before we can
     // continue since Cache does not yet support starting a read that is being
@@ -634,7 +630,7 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
   }
 
   mURL = aURL;
-  mURLList.AppendElement(mURL);
+  mURLList.AppendElement(WrapNotNull(uri.get()));
 
   nsCOMPtr<nsILoadGroup> loadGroup;
   rv = NS_NewLoadGroup(getter_AddRefs(loadGroup), aPrincipal);
@@ -678,8 +674,7 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
     net::CookieJarSettings::Cast(cookieJarSettings)
         ->SetPartitionKey(aPrincipal->OriginAttributesRef().mPartitionKey);
   } else {
-    net::CookieJarSettings::Cast(cookieJarSettings)
-        ->SetPartitionKey(uri, false);
+    net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
   }
 
   // Note that because there is no "serviceworker" RequestContext type, we can
@@ -896,6 +891,12 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
   nsresult rv = NS_ERROR_FAILURE;
   auto guard = MakeScopeExit([&] { NetworkFinish(rv); });
 
+  if (aLen > GetWorkerScriptMaxSizeInBytes()) {
+    rv = NS_ERROR_DOM_ABORT_ERR;  // This will make sure an exception gets
+                                  // thrown to the global.
+    return NS_OK;
+  }
+
   if (NS_WARN_IF(NS_FAILED(aStatus))) {
     rv = (aStatus == NS_ERROR_REDIRECT_LOOP) ? NS_ERROR_DOM_SECURITY_ERR
                                              : aStatus;
@@ -924,7 +925,7 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
 
   if (isExtension) {
     // NOTE: trying to register any moz-extension use that doesn't ends
-    // with .js/.jsm/.mjs seems to be already completing with an error
+    // with .js//.mjs seems to be already completing with an error
     // in aStatus and they never reach this point.
 
     // TODO: look into avoid duplicated parts that could be shared with the HTTP
@@ -935,14 +936,13 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
       return rv;
     }
 
-    nsCString channelURLSpec;
-    MOZ_ALWAYS_SUCCEEDS(channelURL->GetSpec(channelURLSpec));
-
     // Append the final URL (which for an extension worker script is going to
     // be a file or jar url).
     MOZ_DIAGNOSTIC_ASSERT(!mURLList.IsEmpty());
-    if (channelURLSpec != mURLList[0]) {
-      mURLList.AppendElement(channelURLSpec);
+
+    bool equals = false;
+    if (NS_FAILED(channelURL->Equals(mURLList[0], &equals)) || !equals) {
+      mURLList.AppendElement(WrapNotNull(channelURL.get()));
     }
 
     UniquePtr<char16_t[], JS::FreePolicy> buffer;
@@ -1047,7 +1047,7 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
     // Get the stringified numeric status code, not statusText which could be
     // something misleading like OK for a 404.
     uint32_t status = 0;
-    Unused << httpChannel->GetResponseStatus(
+    (void)httpChannel->GetResponseStatus(
         &status);  // don't care if this fails, use 0.
     nsAutoString statusAsText;
     statusAsText.AppendInt(status);
@@ -1063,8 +1063,7 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
 
   // Note: we explicitly don't check for the return value here, because the
   // absence of the header is not an error condition.
-  Unused << httpChannel->GetResponseHeader("Service-Worker-Allowed"_ns,
-                                           mMaxScope);
+  (void)httpChannel->GetResponseHeader("Service-Worker-Allowed"_ns, mMaxScope);
 
   // [9.2 Update]4.13, If response's cache state is not "local",
   // set registration's last update check time to the current time
@@ -1072,26 +1071,35 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
     mRegistration->RefreshLastUpdateCheckTime();
   }
 
-  nsAutoCString mimeType;
-  rv = httpChannel->GetContentType(mimeType);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // We should only end up here if !mResponseHead in the channel.  If headers
-    // were received but no content type was specified, we'll be given
-    // UNKNOWN_CONTENT_TYPE "application/x-unknown-content-type" and so fall
-    // into the next case with its better error message.
-    rv = NS_ERROR_DOM_SECURITY_ERR;
-    return rv;
-  }
+  nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
+  if (!JS::Prefs::experimental_import_text() ||
+      (loadInfo->GetExternalContentPolicyType() !=
+       ExtContentPolicyType::TYPE_TEXT)) {
+    nsAutoCString mimeType;
+    rv = httpChannel->GetContentType(mimeType);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      // We should only end up here if !mResponseHead in the channel.  If
+      // headers were received but no content type was specified, we'll be given
+      // UNKNOWN_CONTENT_TYPE "application/x-unknown-content-type" and so fall
+      // into the next case with its better error message.
+      rv = NS_ERROR_DOM_SECURITY_ERR;
+      return rv;
+    }
 
-  if (mimeType.IsEmpty() ||
-      !nsContentUtils::IsJavascriptMIMEType(NS_ConvertUTF8toUTF16(mimeType))) {
-    ServiceWorkerManager::LocalizeAndReportToAllClients(
-        mRegistration->Scope(), "ServiceWorkerRegisterMimeTypeError2",
-        nsTArray<nsString>{NS_ConvertUTF8toUTF16(mRegistration->Scope()),
-                           NS_ConvertUTF8toUTF16(mimeType),
-                           NS_ConvertUTF8toUTF16(mURL)});
-    rv = NS_ERROR_DOM_SECURITY_ERR;
-    return rv;
+    auto mimeTypeUTF16 = NS_ConvertUTF8toUTF16(mimeType);
+    // The top-level service worker script must be served with a JavaScript
+    // MIME type. JSON is only permitted for non-top-level (imported) modules,
+    // such as `import data from "./x.json" with { type: "json" }`.
+    if (mimeTypeUTF16.IsEmpty() ||
+        !(nsContentUtils::IsJavascriptMIMEType(mimeTypeUTF16) ||
+          (!mIsMainScript && nsContentUtils::IsJsonMimeType(mimeTypeUTF16)))) {
+      ServiceWorkerManager::LocalizeAndReportToAllClients(
+          mRegistration->Scope(), "ServiceWorkerRegisterMimeTypeError2",
+          nsTArray<nsString>{NS_ConvertUTF8toUTF16(mRegistration->Scope()),
+                             mimeTypeUTF16, NS_ConvertUTF8toUTF16(mURL)});
+      rv = NS_ERROR_DOM_SECURITY_ERR;
+      return rv;
+    }
   }
 
   nsCOMPtr<nsIURI> channelURL;
@@ -1100,15 +1108,14 @@ CompareNetwork::OnStreamComplete(nsIStreamLoader* aLoader,
     return rv;
   }
 
-  nsCString channelURLSpec;
-  MOZ_ALWAYS_SUCCEEDS(channelURL->GetSpec(channelURLSpec));
-
   // Append the final URL if its different from the original
   // request URL.  This lets us note that a redirect occurred
   // even though we don't track every redirect URL here.
   MOZ_DIAGNOSTIC_ASSERT(!mURLList.IsEmpty());
-  if (channelURLSpec != mURLList[0]) {
-    mURLList.AppendElement(channelURLSpec);
+
+  bool equals = false;
+  if (NS_FAILED(channelURL->Equals(mURLList[0], &equals)) || !equals) {
+    mURLList.AppendElement(WrapNotNull(channelURL.get()));
   }
 
   UniquePtr<char16_t[], JS::FreePolicy> buffer;
@@ -1137,7 +1144,7 @@ nsresult CompareCache::Initialize(Cache* const aCache, const nsACString& aURL) {
   jsapi.Init();
 
   RequestOrUTF8String request;
-  request.SetAsUTF8String().ShareOrDependUpon(aURL);
+  request.SetAsUTF8String() = aURL;
   ErrorResult error;
   CacheQueryOptions params;
   RefPtr<Promise> promise = aCache->Match(jsapi.cx(), request, params, error);

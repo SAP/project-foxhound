@@ -1,19 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef MOZILLA_TRACKBUFFERSMANAGER_H_
 #define MOZILLA_TRACKBUFFERSMANAGER_H_
-
-#include "mozilla/Atomics.h"
-#include "mozilla/EventTargetCapability.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/NotNull.h"
-#include "mozilla/TaskQueue.h"
-#include "mozilla/dom/MediaDebugInfoBinding.h"
 
 #include "MediaContainerType.h"
 #include "MediaData.h"
@@ -23,6 +13,13 @@
 #include "MediaSpan.h"
 #include "SourceBufferTask.h"
 #include "TimeUnits.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/EventTargetCapability.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/TaskQueue.h"
+#include "mozilla/dom/MediaDebugInfoBinding.h"
 #include "nsTArray.h"
 
 namespace mozilla {

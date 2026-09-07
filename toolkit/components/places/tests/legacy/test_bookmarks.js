@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,18 +20,10 @@ var bookmarksObserver = {
           : null;
         bookmarksObserver._itemAddedTitle = event.title;
 
+        bookmarksObserver._itemAddedGuid = event.guid;
         // Ensure that we've created a guid for this item.
-        let stmt = DBConn().createStatement(
-          `SELECT guid
-           FROM moz_bookmarks
-           WHERE id = :item_id`
-        );
-        stmt.params.item_id = event.id;
-        Assert.ok(stmt.executeStep());
-        Assert.ok(!stmt.getIsNull(0));
-        do_check_valid_places_guid(stmt.row.guid);
-        Assert.equal(stmt.row.guid, event.guid);
-        stmt.finalize();
+        Assert.ok(event.guid, "Bookmark should have a guid");
+        do_check_valid_places_guid(event.guid);
         break;
       }
       case "bookmark-removed":
@@ -75,6 +65,7 @@ add_task(async function test_bookmarks() {
     bs.DEFAULT_INDEX
   );
   let testRootGuid = await PlacesTestUtils.promiseItemGuid(testRoot);
+  Assert.equal(bookmarksObserver._itemAddedGuid, testRootGuid);
   Assert.equal(bookmarksObserver._itemAddedId, testRoot);
   Assert.equal(bookmarksObserver._itemAddedParent, root);
   Assert.equal(bookmarksObserver._itemAddedIndex, bmStartIndex);
@@ -96,6 +87,12 @@ add_task(async function test_bookmarks() {
   Assert.equal(bookmarksObserver._itemAddedParent, testRoot);
   Assert.equal(bookmarksObserver._itemAddedIndex, testStartIndex);
   Assert.ok(bookmarksObserver._itemAddedURI.equals(uri("http://google.com/")));
+  Assert.equal(
+    bookmarksObserver._itemAddedGuid,
+    await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "guid", {
+      id: newId,
+    })
+  );
 
   // after just inserting, modified should not be set
   let lastModified = PlacesUtils.toPRTime(

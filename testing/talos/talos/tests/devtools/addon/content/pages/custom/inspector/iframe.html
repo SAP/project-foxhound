@@ -76,6 +76,15 @@
       ${manyCSSVariablesDeclarations}
     }`
 
+    const UNUSED_CSS_VARIABLES_COUNT = 300;
+    let manyUnusedCSSVariablesDeclarations = "";
+    for (i = 0; i < UNUSED_CSS_VARIABLES_COUNT; i++) {
+      manyUnusedCSSVariablesDeclarations += `--unused-variable-${i}: ${i};\n`;
+    }
+    let manyUnusedCSSVariables = `.many-unused-css-variables {
+      ${manyUnusedCSSVariablesDeclarations}
+    }`
+
     let expandManyChildren = new Array(100).join("  <div attr='my-attr'>content</div>\n");
 
     let maxBalancedDepth = 8;
@@ -95,8 +104,7 @@
 
     let style = document.createElement("style");
     style.type = "text/css";
-    style.appendChild(document.createTextNode(manyCssRules));
-    style.appendChild(document.createTextNode(manyCSSVariables));
+    style.append(manyCssRules, manyCSSVariables, manyUnusedCSSVariables);
     document.head.appendChild(style);
 
     var tpl = document.createElement('template');
@@ -112,6 +120,7 @@
          <div class="no-css-rules"></div>
          <div class="many-css-rules"></div>
          <div class="many-css-variables"></div>
+         <div class="many-unused-css-variables"></div>
          <div class="expand-many-children">
          ${expandManyChildren}
          </div>

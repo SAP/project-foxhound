@@ -73,9 +73,12 @@ async function _eventListenerLeakStep(target, name, extra) {
   frame = null;
 
   // Perform many GC's to avoid intermittent delayed collection.
-  await new Promise(resolve => SpecialPowers.exactGC(resolve));
-  await new Promise(resolve => SpecialPowers.exactGC(resolve));
-  await new Promise(resolve => SpecialPowers.exactGC(resolve));
+  // Spin the event loop between attempts so that async cleanup
+  // runnables (e.g. WebSocket close handshake) can drain before GC.
+  for (let i = 0; i < 3; i++) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => SpecialPowers.exactGC(resolve));
+  }
 
   ok(
     !weakRef.get(),

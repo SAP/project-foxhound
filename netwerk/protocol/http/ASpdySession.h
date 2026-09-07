@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,7 +77,8 @@ class ASpdySession : public nsAHttpTransaction {
             code == NS_BINDING_ABORTED || code == NS_BINDING_REDIRECTED ||
             code == NS_ERROR_INVALID_CONTENT_ENCODING ||
             code == NS_BINDING_RETARGETED ||
-            code == NS_ERROR_CORRUPTED_CONTENT);
+            code == NS_ERROR_CORRUPTED_CONTENT ||
+            code == NS_ERROR_NET_TIMEOUT_EXTERNAL);
   }
 
   virtual void SetCleanShutdown(bool) = 0;

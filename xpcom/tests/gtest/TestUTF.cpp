@@ -1,13 +1,7 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
-#include <stdio.h>
-#include <stdlib.h>
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "UTFStrings.h"
@@ -167,7 +161,7 @@ static void NonASCII16_helper(const size_t aStrSize) {
     // And finish with the trailing ASCII chars.
     expected.Append(asciiCString.BeginReading() + i + 1, kTestSize - i - 1);
 
-    EXPECT_STREQ(dest.BeginReading(), expected.BeginReading());
+    EXPECT_STREQ(dest.get(), expected.get());
   }
 }
 

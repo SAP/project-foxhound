@@ -22,7 +22,10 @@ async function testOnWindowBody(win, expectedReferrer, rp) {
   let browser = win.gBrowser;
   let tab = browser.selectedTab;
   let b = browser.getBrowserForTab(tab);
-  await promiseTabLoadEvent(tab, TEST_TOP_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: TEST_TOP_PAGE,
+  });
 
   info("Loading tracking scripts and tracking images");
   let { iframeReferrer, refreshReferrer } = await SpecialPowers.spawn(
@@ -60,24 +63,18 @@ async function testOnWindowBody(win, expectedReferrer, rp) {
       let iframeReferrer;
       {
         let iframe = content.document.createElement("iframe");
-        let p = new content.Promise(resolve => {
-          iframe.onload = resolve;
-        });
-        content.document.body.appendChild(iframe);
+        const loaded = ContentTaskUtils.waitForEvent(iframe, "load");
         if (rp) {
           iframe.referrerPolicy = rp;
         }
         iframe.src =
           "https://tracking.example.org/browser/toolkit/components/antitracking/test/browser/referrer.sjs?what=iframe";
-        await p;
+        content.document.body.appendChild(iframe);
+        await loaded;
 
-        p = new content.Promise(resolve => {
-          content.onmessage = event => {
-            resolve(event.data);
-          };
-        });
+        const messageEvent = ContentTaskUtils.waitForEvent(content, "message");
         iframe.contentWindow.postMessage("ping", "*");
-        iframeReferrer = await p;
+        iframeReferrer = (await messageEvent).data;
       }
 
       let refreshReferrer;
@@ -105,8 +102,8 @@ async function testOnWindowBody(win, expectedReferrer, rp) {
               iframeLoaded();
             }
           };
-          content.document.body.appendChild(iframe);
           iframe.src = content.location;
+          content.document.body.appendChild(iframe);
           await p;
         }
 

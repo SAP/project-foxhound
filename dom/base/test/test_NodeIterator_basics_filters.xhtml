@@ -28,7 +28,7 @@
     }
   }
 
-  /** DOM Traversal: NodeIterator: Basics **/
+  /** DOM Traversal: NodeIterator: Basics */
   // NOTE: If you change the document structure, you have to make sure
   // the magic numbers in this array (and 'expected_f', below) match.
   var expected = new Array(9, // document
@@ -68,7 +68,7 @@
     found.unshift(node.nodeType);
   compare_arrays(expected, found, 'basics backward');
 
-  /** DOM Traversal: NodeIterator: Filters **/
+  /** DOM Traversal: NodeIterator: Filters */
   function filter(n) {
     if (n.nodeType == 3) {
       return NodeFilter.FILTER_SKIP;

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
+  <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
+  <string name="mozac_feature_downloads_notification_channel">ڈاونلوڈآک</string>
+  <!--
+    Summary text shown on an in progress download notification.
+    %1$s will be replaced with the estimated time remaining to complete the download.
+  -->
+  <string name="mozac_feature_downloads_time_remaining">%1$s ٹی</string>
+  <!-- Text shown on the second row of a paused download notification. -->
+  <string name="mozac_feature_downloads_paused_notification_text">ڈاونلوڈ سلیس</string>
+  <!-- Text shown on the second row of an completed download notification. The filename is shown on the first row. -->
+  <string name="mozac_feature_downloads_completed_notification_text2">ڈاونلوڈ پورہ مس</string>
+  <!-- Text shown on the second row of an failed download notification. The filename is shown on the first row. -->
+  <string name="mozac_feature_downloads_failed_notification_text2">ڈاونلوڈ متو</string>
+  <!--
+    Alert dialog confirmation before downloading a file, this is the title.
+    %1$s will be replaced with the size of the file.
+  -->
+  <string name="mozac_feature_downloads_dialog_title_3">فائل اے ڈاونلود کیسہ؟ (%1$s)</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">فائل وا ڈاونلود کیرے؟</string>
+  <!-- Alert dialog confirmation before download a file, this is the positive action. -->
+  <string name="mozac_feature_downloads_dialog_download">ڈاؤن لوڈ</string>
+  <!-- Alert dialog confirmation before download a file, this is the negative action. -->
+  <string name="mozac_feature_downloads_dialog_cancel">کینسل</string>
+  <!-- Alert dialog confirmation before downloading a file without network connection, this is the description. -->
+  <string name="mozac_feature_downloads_file_check_connection" tools:ignore="UnusedResources">تینا کنیکژن اے ہر و پدا واراس خل۔</string>
+  <!-- Message that appears when the downloaded file could not be opened. -->
+  <string name="mozac_feature_downloads_could_not_open_file">فائل ملنگپک</string>
+  <!-- Button that opens the downloaded file when pressed. -->
+  <string name="mozac_feature_downloads_button_open">ملبو</string>
+  <!-- Button that restarts the download after a failed attempt. -->
+  <string name="mozac_feature_downloads_button_try_again">پدا واراس خل</string>
+  <!-- Message that appears when trying to download with an external app fails. %1$s will be replaced with the name the external app. -->
+  <string name="mozac_feature_downloads_unable_to_open_third_party_app">%1$s ملینگ مفک</string>
+  <!-- Alert dialog confirmation before cancelling downloads, this is the positive action. -->
+  <string name="mozac_feature_downloads_cancel_active_downloads_accept">ڈاونلوڈ آک کینسل</string>
+</resources>

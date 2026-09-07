@@ -1,0 +1,24 @@
+[
+  {
+    "namespace": "urlHelpers",
+    "description": "experimental API to get eTLD for a URL",
+    "functions": [
+      {
+        "name": "getBaseDomainFromHost",
+        "type": "function",
+        "description": "",
+        "parameters": [
+          {
+            "name": "host",
+            "type": "string",
+            "description": "The host for which to get its eTLD."
+          }
+        ],
+        "returns": {
+          "type": "string",
+          "description": "The base domain (or exception if fails)."
+        }
+      }
+    ]
+  }
+]

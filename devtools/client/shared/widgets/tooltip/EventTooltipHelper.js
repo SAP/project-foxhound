@@ -16,6 +16,8 @@ const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const CONTAINER_WIDTH = 500;
 
+const L10N_USERDEFINED = L10N.getStr("eventsTooltip.userDefined");
+
 const L10N_BUBBLING = L10N.getStr("eventsTooltip.Bubbling");
 const L10N_CAPTURING = L10N.getStr("eventsTooltip.Capturing");
 
@@ -53,7 +55,7 @@ class EventTooltip extends EventEmitter {
     this._subscriptions = [];
 
     const config = {
-      mode: Editor.modes.js,
+      mode: Editor.modes.javascript,
       lineNumbers: false,
       lineWrapping: true,
       readOnly: true,
@@ -158,6 +160,7 @@ class EventTooltip extends EventEmitter {
       attributesContainer.className = "event-tooltip-attributes-container";
       header.appendChild(attributesContainer);
 
+      // Tags are used to refer to JS Frameworks like jQuery and React
       if (listener.tags) {
         for (const tag of listener.tags.split(",")) {
           const attributesBox = doc.createElementNS(XHTML_NS, "div");
@@ -170,6 +173,18 @@ class EventTooltip extends EventEmitter {
           tagBox.setAttribute("title", tag);
           attributesBox.appendChild(tagBox);
         }
+        // Only show User-defined when we aren't using a framework,
+        // which may use onClick but still be a browser supported event
+      } else if (listener.isUserDefined) {
+        const attributesBox = doc.createElementNS(XHTML_NS, "div");
+        attributesBox.className = "event-tooltip-attributes-box";
+        attributesContainer.appendChild(attributesBox);
+
+        const capturing = doc.createElementNS(XHTML_NS, "span");
+        capturing.className = "event-tooltip-attributes";
+
+        capturing.textContent = L10N_USERDEFINED;
+        attributesBox.appendChild(capturing);
       }
 
       if (!listener.hide.capturing) {

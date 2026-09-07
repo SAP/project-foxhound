@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     run:
@@ -20,7 +20,7 @@ win64-nasm:
         arguments: ['win64']
     fetches:
         fetch:
-            - nasm-2.16.03
+            - nasm-3.01
         toolchain:
             - linux64-clang-mingw-x64
 
@@ -35,7 +35,7 @@ macosx64-nasm:
         arguments: ['macosx64']
     fetches:
         fetch:
-            - nasm-2.16.03
+            - nasm-3.01
         toolchain:
             - linux64-clang-toolchain
             - macosx64-sdk-toolchain
@@ -51,7 +51,7 @@ macosx64-aarch64-nasm:
         arguments: ['macosx64-aarch64']
     fetches:
         fetch:
-            - nasm-2.16.03
+            - nasm-3.01
         toolchain:
             - linux64-clang-toolchain
             - macosx64-sdk-toolchain
@@ -67,7 +67,7 @@ linux64-nasm:
         arguments: ['linux64']
     fetches:
         fetch:
-            - nasm-2.16.03
+            - nasm-3.01
         toolchain:
             - linux64-clang-toolchain
             - sysroot-x86_64-linux-gnu

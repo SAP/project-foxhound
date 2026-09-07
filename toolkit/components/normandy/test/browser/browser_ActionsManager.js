@@ -6,9 +6,6 @@ const { BaseAction } = ChromeUtils.importESModule(
 const { ActionsManager } = ChromeUtils.importESModule(
   "resource://normandy/lib/ActionsManager.sys.mjs"
 );
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 const { ActionSchemas } = ChromeUtils.importESModule(
   "resource://normandy/actions/schemas/index.sys.mjs"
 );

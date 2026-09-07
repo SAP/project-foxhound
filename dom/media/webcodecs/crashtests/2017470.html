@@ -1,0 +1,17 @@
+<canvas id="c"></canvas>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const f0 = new VideoFrame(c, {
+    timestamp: 1993811,
+    displayWidth: 1280,
+    displayHeight: 1
+  })
+  const f1 = new VideoFrame(f0, {
+    visibleRect: {
+      width: 187,
+      height: 40
+    }
+  })
+  const _ = new VideoFrame(f1, { })
+})
+</script>

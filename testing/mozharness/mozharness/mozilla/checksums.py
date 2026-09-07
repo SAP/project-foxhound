@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import six
-
 
 def parse_checksums_file(checksums):
     """
@@ -13,8 +11,10 @@ def parse_checksums_file(checksums):
     fileInfo = {}
     for line in checksums.splitlines():
         hash_, type_, size, file_ = line.split(None, 3)
-        type_ = six.ensure_str(type_)
-        file_ = six.ensure_str(file_)
+        if isinstance(type_, bytes):
+            type_ = type_.decode("utf-8")
+        if isinstance(file_, bytes):
+            file_ = file_.decode("utf-8")
         size = int(size)
         if size < 0:
             raise ValueError("Found negative value (%d) for size." % size)

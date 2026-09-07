@@ -9,13 +9,13 @@ import android.content.res.AssetManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito
 import java.io.ByteArrayInputStream
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AssetManagerTest {

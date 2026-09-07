@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ typename nsTStringRepr<T>::char_type nsTStringRepr<T>::Last() const {
 template <typename T>
 bool nsTStringRepr<T>::Equals(const self_type& aStr) const {
   return this->mLength == aStr.mLength &&
-         char_traits::compare(this->mData, aStr.mData, this->mLength) == 0;
+         char_traits::equals(this->mData, aStr.mData, this->mLength);
 }
 
 template <typename T>
@@ -60,7 +58,7 @@ bool nsTStringRepr<T>::Equals(const char_type* aData) const {
   // XXX avoid length calculation?
   size_type length = char_traits::length(aData);
   return this->mLength == length &&
-         char_traits::compare(this->mData, aData, this->mLength) == 0;
+         char_traits::equals(this->mData, aData, this->mLength);
 }
 
 template <typename T>

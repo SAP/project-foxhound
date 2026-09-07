@@ -2,7 +2,7 @@ add_task(async function test() {
   const uris = [undefined, "about:blank"];
 
   function checkContentProcess(newBrowser, uri) {
-    return ContentTask.spawn(newBrowser, [uri], async function (uri) {
+    return SpecialPowers.spawn(newBrowser, [uri], async function (uri) {
       var prin = content.document.nodePrincipal;
       Assert.notEqual(
         prin,
@@ -27,7 +27,9 @@ add_task(async function test() {
     await BrowserTestUtils.withNewTab(
       { gBrowser },
       async function (newBrowser) {
-        let loadedPromise = BrowserTestUtils.browserLoaded(newBrowser);
+        let loadedPromise = BrowserTestUtils.browserLoaded(newBrowser, {
+          wantLoad: "about:blank",
+        });
         BrowserTestUtils.startLoadingURIString(newBrowser, uri);
 
         var prin = newBrowser.contentPrincipal;

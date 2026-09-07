@@ -1,6 +1,3 @@
-/* -*- tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -75,7 +72,7 @@ parent:
    *   GPU/UI process for each "top level browser window" as above.
    * See gfx/layers/ipc/PCompositorBridge.ipdl for more details.
    */
-  async PCompositorBridge(CompositorBridgeOptions options);
+  async PCompositorBridge(CompositorBridgeOptions options, uint32_t aNamespace);
 
   async AddSharedSurface(ExternalImageId aId, SurfaceDescriptorShared aDesc);
   async RemoveSharedSurface(ExternalImageId aId);

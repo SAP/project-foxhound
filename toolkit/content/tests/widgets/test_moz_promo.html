@@ -35,6 +35,16 @@
         heading="Vibrant type"
         type="vibrant"
       ></moz-promo>
+      <moz-promo id="actionsPromo" heading="Actions slot" type="default">
+        <button slot="actions">Action button</button>
+      </moz-promo>
+      <moz-promo
+        id="supportLinkPromo"
+        heading="Support link slot"
+        type="vibrant"
+      >
+        <a slot="support-link" href="#learn-more">Learn more</a>
+      </moz-promo>
     </div>
     <pre id="test"></pre>
     <script class="testbody" type="application/javascript">
@@ -220,6 +230,66 @@
         testPromo.imageAlignment = "center";
         await testPromo.updateComplete;
         assertContainersAlignment(testPromo);
+      });
+
+      add_task(async function test_actions_slot() {
+        let actionsPromo = document.getElementById("actionsPromo");
+        ok(
+          actionsPromo,
+          "Promo element should exist when using an element for the actions slot"
+        );
+        let actionsButton = actionsPromo.querySelector("button");
+        is(
+          actionsPromo.actionsSlot.assignedElements()[0],
+          actionsButton,
+          "Slotted button is correctly assigned"
+        );
+
+        actionsButton.remove();
+        await actionsPromo.updateComplete;
+        is(
+          actionsPromo.actionsSlot.assignedElements().length,
+          0,
+          "The actions slot updates correctly when the slotted element is removed"
+        );
+
+        actionsPromo.append(actionsButton);
+        await actionsPromo.updateComplete;
+        is(
+          actionsPromo.actionsSlot.assignedElements()[0],
+          actionsButton,
+          "Adding the actions button back to the promo element updates the slotted element correctly"
+        );
+      });
+
+      add_task(async function test_support_link_slot() {
+        let supportLinkPromo = document.getElementById("supportLinkPromo");
+        ok(
+          supportLinkPromo,
+          "Promo element should exist when using an element for the support-link slot"
+        );
+        let supportLink = supportLinkPromo.querySelector("a");
+        is(
+          supportLinkPromo.supportLinkSlot.assignedElements()[0],
+          supportLink,
+          "Slotted support link is correctly assigned"
+        );
+
+        supportLink.remove();
+        await supportLinkPromo.updateComplete;
+        is(
+          supportLinkPromo.supportLinkSlot.assignedElements().length,
+          0,
+          "The support-link slot updates correctly when the slotted element is removed"
+        );
+
+        supportLinkPromo.append(supportLink);
+        await supportLinkPromo.updateComplete;
+        is(
+          supportLinkPromo.supportLinkSlot.assignedElements()[0],
+          supportLink,
+          "Adding the support link back to the promo element updates the slotted element correctly"
+        );
       });
     </script>
   </body>

@@ -51,6 +51,7 @@ module.exports = async function () {
     "devtools.debugger.features.javascript-tracing",
     true
   );
+  Services.prefs.setBoolPref("devtools.command-button-jstracer.enabled", true);
 
   Services.prefs.setBoolPref(
     "devtools.debugger.javascript-tracing-values",

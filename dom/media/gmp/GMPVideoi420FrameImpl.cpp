@@ -1,14 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPVideoi420FrameImpl.h"
+
 #include <algorithm>
-#include "mozilla/gmp/GMPTypes.h"
-#include "mozilla/CheckedInt.h"
-#include "GMPVideoHost.h"
+
 #include "GMPSharedMemManager.h"
+#include "GMPVideoHost.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/gmp/GMPTypes.h"
+#include "nsProxyRelease.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla::gmp {
 
@@ -38,16 +42,24 @@ void GMPVideoi420FrameImpl::GMPFramePlane::Copy(uint8_t* aDst,
   }
 }
 
-GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(GMPVideoHostImpl* aHost)
-    : mHost(aHost), mWidth(0), mHeight(0), mTimestamp(0ll), mDuration(0ll) {
+GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
+    GMPVideoHostImpl* aHost,
+    HostReportPolicy aReportPolicy /*= HostReportPolicy::None*/)
+    : mReportPolicy(aReportPolicy),
+      mHost(aHost),
+      mWidth(0),
+      mHeight(0),
+      mTimestamp(0ll),
+      mDuration(0ll) {
   MOZ_ASSERT(aHost);
-  aHost->DecodedFrameCreated(this);
 }
 
 GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
     const GMPVideoi420FrameData& aFrameData, ipc::Shmem&& aShmemBuffer,
-    GMPVideoHostImpl* aHost)
-    : mHost(aHost),
+    GMPVideoHostImpl* aHost,
+    HostReportPolicy aReportPolicy /*= HostReportPolicy::None*/)
+    : mReportPolicy(aReportPolicy),
+      mHost(aHost),
       mShmemBuffer(std::move(aShmemBuffer)),
       mYPlane(aFrameData.mYPlane()),
       mUPlane(aFrameData.mUPlane()),
@@ -58,13 +70,14 @@ GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
       mUpdatedTimestamp(aFrameData.mUpdatedTimestamp()),
       mDuration(aFrameData.mDuration()) {
   MOZ_ASSERT(aHost);
-  aHost->DecodedFrameCreated(this);
 }
 
 GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
     const GMPVideoi420FrameData& aFrameData, nsTArray<uint8_t>&& aArrayBuffer,
-    GMPVideoHostImpl* aHost)
-    : mHost(aHost),
+    GMPVideoHostImpl* aHost,
+    HostReportPolicy aReportPolicy /*= HostReportPolicy::None*/)
+    : mReportPolicy(aReportPolicy),
+      mHost(aHost),
       mArrayBuffer(std::move(aArrayBuffer)),
       mYPlane(aFrameData.mYPlane()),
       mUPlane(aFrameData.mUPlane()),
@@ -75,22 +88,23 @@ GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(
       mUpdatedTimestamp(aFrameData.mUpdatedTimestamp()),
       mDuration(aFrameData.mDuration()) {
   MOZ_ASSERT(aHost);
-  aHost->DecodedFrameCreated(this);
 }
 
 GMPVideoi420FrameImpl::~GMPVideoi420FrameImpl() {
-  DestroyBuffer();
-  if (mHost) {
-    mHost->DecodedFrameDestroyed(this);
+  if (mReportPolicy == HostReportPolicy::Destroyed) {
+    mHost->MgrDecodedFrameDestroyed(this);
   }
-}
-
-void GMPVideoi420FrameImpl::DoneWithAPI() {
-  DestroyBuffer();
-
-  // Do this after destroying the buffer because destruction
-  // involves deallocation, which requires a host.
-  mHost = nullptr;
+  if (mShmemBuffer.IsWritable()) {
+    mHost->MgrGiveShmem(GMPSharedMemClass::Decoded, std::move(mShmemBuffer));
+  }
+  // Proxy release to ensure that any synchronous runnables from the plugin can
+  // first unblock the worker thread. If we destroy the plugin once this
+  // reference is freed, we won't be blocked trying to join the worker thread.
+  if (XRE_IsGMPluginProcess()) {
+    NS_ProxyRelease("GMPVideoi420FrameImpl::~GMPVideoi420FrameImpl",
+                    GetMainThreadSerialEventTarget(), mHost.forget(),
+                    /* aAlwaysProxy */ true);
+  }
 }
 
 void GMPVideoi420FrameImpl::InitFrameData(GMPVideoi420FrameData& aFrameData) {
@@ -145,31 +159,85 @@ bool GMPVideoi420FrameImpl::CheckFrameData(
   // This implies a bug or serious error on the child size.  Ignore this frame
   // if so. Note: Size() greater than expected is also an error, but with no
   // negative consequences
-  int32_t half_width = (aFrameData.mWidth() + 1) / 2;
-  if ((aFrameData.mYPlane().mStride() <= 0) ||
-      (aFrameData.mYPlane().mSize() <= 0) ||
-      (aFrameData.mYPlane().mOffset() < 0) ||
-      (aFrameData.mUPlane().mStride() <= 0) ||
-      (aFrameData.mUPlane().mSize() <= 0) ||
-      (aFrameData.mUPlane().mOffset() <
-       aFrameData.mYPlane().mOffset() + aFrameData.mYPlane().mSize()) ||
-      (aFrameData.mVPlane().mStride() <= 0) ||
-      (aFrameData.mVPlane().mSize() <= 0) ||
-      (aFrameData.mVPlane().mOffset() <
-       aFrameData.mUPlane().mOffset() + aFrameData.mUPlane().mSize()) ||
-      (aBufferSize < static_cast<size_t>(aFrameData.mVPlane().mOffset()) +
-                         static_cast<size_t>(aFrameData.mVPlane().mSize())) ||
-      (aFrameData.mYPlane().mStride() < aFrameData.mWidth()) ||
-      (aFrameData.mUPlane().mStride() < half_width) ||
-      (aFrameData.mVPlane().mStride() < half_width) ||
-      (aFrameData.mYPlane().mSize() <
-       aFrameData.mYPlane().mStride() * aFrameData.mHeight()) ||
-      (aFrameData.mUPlane().mSize() <
-       aFrameData.mUPlane().mStride() * ((aFrameData.mHeight() + 1) / 2)) ||
-      (aFrameData.mVPlane().mSize() <
-       aFrameData.mVPlane().mStride() * ((aFrameData.mHeight() + 1) / 2))) {
+  if (aFrameData.mWidth() <= 0 || aFrameData.mHeight() <= 0) {
     return false;
   }
+  int32_t half_width = (aFrameData.mWidth() + 1) / 2;
+  int32_t half_height = (aFrameData.mHeight() + 1) / 2;
+
+  // Check for negative offsets
+  if ((aFrameData.mYPlane().mOffset() < 0) ||
+      (aFrameData.mUPlane().mOffset() < 0) ||
+      (aFrameData.mVPlane().mOffset() < 0)) {
+    return false;
+  }
+
+  // Check for non-positive strides and sizes
+  if ((aFrameData.mYPlane().mStride() <= 0) ||
+      (aFrameData.mYPlane().mSize() <= 0) ||
+      (aFrameData.mUPlane().mStride() <= 0) ||
+      (aFrameData.mUPlane().mSize() <= 0) ||
+      (aFrameData.mVPlane().mStride() <= 0) ||
+      (aFrameData.mVPlane().mSize() <= 0)) {
+    return false;
+  }
+
+  // Check stride requirements (must be at least as wide as the data)
+  if ((aFrameData.mYPlane().mStride() < aFrameData.mWidth()) ||
+      (aFrameData.mUPlane().mStride() < half_width) ||
+      (aFrameData.mVPlane().mStride() < half_width)) {
+    return false;
+  }
+
+  // Check that plane strides match.
+  if (aFrameData.mUPlane().mStride() != aFrameData.mVPlane().mStride()) {
+    return false;
+  }
+
+  // Validate plane end calculations
+  auto y_plane_end = CheckedInt<int32_t>(aFrameData.mYPlane().mOffset()) +
+                     aFrameData.mYPlane().mSize();
+  auto u_plane_end = CheckedInt<int32_t>(aFrameData.mUPlane().mOffset()) +
+                     aFrameData.mUPlane().mSize();
+  auto v_plane_end = CheckedInt<int32_t>(aFrameData.mVPlane().mOffset()) +
+                     aFrameData.mVPlane().mSize();
+
+  if (!y_plane_end.isValid() || !u_plane_end.isValid() ||
+      !v_plane_end.isValid()) {
+    return false;
+  }
+
+  // Check that planes don't overlap
+  if ((aFrameData.mUPlane().mOffset() < y_plane_end.value()) ||
+      (aFrameData.mVPlane().mOffset() < u_plane_end.value())) {
+    return false;
+  }
+
+  // Check buffer size
+  if (aBufferSize < static_cast<size_t>(v_plane_end.value())) {
+    return false;
+  }
+
+  // Validate size calculations
+  auto y_expected_size = CheckedInt<int32_t>(aFrameData.mYPlane().mStride()) *
+                         aFrameData.mHeight();
+  auto u_expected_size =
+      CheckedInt<int32_t>(aFrameData.mUPlane().mStride()) * half_height;
+  auto v_expected_size =
+      CheckedInt<int32_t>(aFrameData.mVPlane().mStride()) * half_height;
+
+  if (!y_expected_size.isValid() || !u_expected_size.isValid() ||
+      !v_expected_size.isValid()) {
+    return false;
+  }
+
+  // Check that allocated sizes are sufficient
+  if ((aFrameData.mYPlane().mSize() < y_expected_size.value()) ||
+      (aFrameData.mUPlane().mSize() < u_expected_size.value()) ||
+      (aFrameData.mVPlane().mSize() < v_expected_size.value())) {
+    return false;
+  }
+
   return true;
 }
 
@@ -252,10 +320,6 @@ GMPErr GMPVideoi420FrameImpl::MaybeResize(int32_t aNewSize) {
     return GMPNoErr;
   }
 
-  if (!mHost) {
-    return GMPGenericErr;
-  }
-
   if (!mArrayBuffer.IsEmpty()) {
     if (!mArrayBuffer.SetLength(aNewSize, fallible)) {
       return GMPAllocErr;
@@ -264,32 +328,22 @@ GMPErr GMPVideoi420FrameImpl::MaybeResize(int32_t aNewSize) {
   }
 
   ipc::Shmem new_mem;
-  if (!mHost->SharedMemMgr()->MgrTakeShmem(GMPSharedMemClass::Decoded, aNewSize,
-                                           &new_mem) &&
+  if (!mHost->MgrTakeShmem(GMPSharedMemClass::Decoded, aNewSize, &new_mem) &&
       !mArrayBuffer.SetLength(aNewSize, fallible)) {
     return GMPAllocErr;
   }
 
   if (mShmemBuffer.IsReadable()) {
     if (new_mem.IsWritable()) {
-      memcpy(new_mem.get<uint8_t>(), mShmemBuffer.get<uint8_t>(), aNewSize);
+      memcpy(new_mem.get<uint8_t>(), mShmemBuffer.get<uint8_t>(),
+             mShmemBuffer.Size<uint8_t>());
     }
-    mHost->SharedMemMgr()->MgrGiveShmem(GMPSharedMemClass::Decoded,
-                                        std::move(mShmemBuffer));
+    mHost->MgrGiveShmem(GMPSharedMemClass::Decoded, std::move(mShmemBuffer));
   }
 
   mShmemBuffer = new_mem;
 
   return GMPNoErr;
-}
-
-void GMPVideoi420FrameImpl::DestroyBuffer() {
-  if (mHost && mShmemBuffer.IsWritable()) {
-    mHost->SharedMemMgr()->MgrGiveShmem(GMPSharedMemClass::Decoded,
-                                        std::move(mShmemBuffer));
-  }
-  mShmemBuffer = ipc::Shmem();
-  mArrayBuffer.Clear();
 }
 
 GMPErr GMPVideoi420FrameImpl::CreateEmptyFrame(int32_t aWidth, int32_t aHeight,

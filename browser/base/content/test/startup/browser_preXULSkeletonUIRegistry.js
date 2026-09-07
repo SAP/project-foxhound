@@ -2,6 +2,8 @@ ChromeUtils.defineESModuleGetters(this, {
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
 });
 
+const kRegPath = `Software\\Mozilla\\${AppConstants.MOZ_APP_BASENAME}\\PreXULSkeletonUISettings`;
+
 function getFirefoxExecutableFile() {
   let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
   file = Services.dirsvc.get("GreBinD", Ci.nsIFile);
@@ -26,10 +28,11 @@ function readRegKeyExtended(aRoot, aPath, aKey, aRegistryNode = 0) {
     if (registry.hasValue(aKey)) {
       let type = registry.getValueType(aKey);
       switch (type) {
-        case kRegMultiSz:
+        case kRegMultiSz: {
           // nsIWindowsRegKey doesn't support REG_MULTI_SZ type out of the box.
           let str = registry.readStringValue(aKey);
           return str.split("\0").filter(v => v);
+        }
         case Ci.nsIWindowsRegKey.TYPE_STRING:
           return registry.readStringValue(aKey);
         case Ci.nsIWindowsRegKey.TYPE_INT:
@@ -55,7 +58,7 @@ add_task(async function testWritesEnabledOnPrefChange() {
   const firefoxPath = getFirefoxExecutableFile().path;
   let enabled = WindowsRegistry.readRegKey(
     Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-    "Software\\Mozilla\\Firefox\\PreXULSkeletonUISettings",
+    kRegPath,
     `${firefoxPath}|Enabled`
   );
   is(enabled, 1, "Pre-XUL skeleton UI is enabled in the Windows registry");
@@ -63,7 +66,7 @@ add_task(async function testWritesEnabledOnPrefChange() {
   Services.prefs.setBoolPref("browser.startup.preXulSkeletonUI", false);
   enabled = WindowsRegistry.readRegKey(
     Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-    "Software\\Mozilla\\Firefox\\PreXULSkeletonUISettings",
+    kRegPath,
     `${firefoxPath}|Enabled`
   );
   is(enabled, 0, "Pre-XUL skeleton UI is disabled in the Windows registry");
@@ -72,7 +75,7 @@ add_task(async function testWritesEnabledOnPrefChange() {
   Services.prefs.setIntPref("browser.tabs.inTitlebar", 0);
   enabled = WindowsRegistry.readRegKey(
     Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-    "Software\\Mozilla\\Firefox\\PreXULSkeletonUISettings",
+    kRegPath,
     `${firefoxPath}|Enabled`
   );
   is(enabled, 0, "Pre-XUL skeleton UI is disabled in the Windows registry");
@@ -105,7 +108,7 @@ add_task(async function testPersistsNecessaryValuesOnChange() {
   for (let key of regKeys) {
     WindowsRegistry.removeRegKey(
       Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-      "Software\\Mozilla\\Firefox\\PreXULSkeletonUISettings",
+      kRegPath,
       key
     );
   }
@@ -115,7 +118,7 @@ add_task(async function testPersistsNecessaryValuesOnChange() {
   for (let key of regKeys) {
     let value = readRegKeyExtended(
       Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-      "Software\\Mozilla\\Firefox\\PreXULSkeletonUISettings",
+      kRegPath,
       `${firefoxPath}|${key}`
     );
     isnot(

@@ -1,0 +1,15 @@
+{
+  "label": "wbte.drcedirect.com",
+  "bugs": {
+    "1899060": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://wbte.drcedirect.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

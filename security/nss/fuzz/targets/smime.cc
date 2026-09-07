@@ -10,12 +10,11 @@
 
 #include "asn1/mutators.h"
 #include "base/database.h"
-#include "base/mutate.h"
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   static NSSDatabase db = NSSDatabase();
 
-  SECItem buffer = {siBuffer, (unsigned char *)data, (unsigned int)size};
+  SECItem buffer = {siBuffer, (unsigned char*)data, (unsigned int)size};
 
   ScopedNSSCMSMessage cmsg(NSS_CMSMessage_CreateFromDER(
       &buffer, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr));
@@ -24,9 +23,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   return 0;
 }
 
-extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
+extern "C" size_t LLVMFuzzerCustomMutator(uint8_t* data, size_t size,
                                           size_t maxSize, unsigned int seed) {
-  return CustomMutate(
-      Mutators({ASN1Mutators::FlipConstructed, ASN1Mutators::ChangeType}), data,
-      size, maxSize, seed);
+  return ASN1Mutators::CustomMutator(data, size, maxSize, seed);
+}
+
+extern "C" size_t LLVMFuzzerCustomCrossOver(const uint8_t* data1, size_t size1,
+                                            const uint8_t* data2, size_t size2,
+                                            uint8_t* out, size_t maxOutSize,
+                                            unsigned int seed) {
+  return ASN1Mutators::CustomCrossOver(data1, size1, data2, size2, out,
+                                       maxOutSize, seed);
 }

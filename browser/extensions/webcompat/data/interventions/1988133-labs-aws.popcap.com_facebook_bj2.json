@@ -1,0 +1,15 @@
+{
+  "label": "labs-aws.popcap.com/facebook/bj2",
+  "bugs": {
+    "1988133": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://labs-aws.popcap.com/facebook/bj2/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

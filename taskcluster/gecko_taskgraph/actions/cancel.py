@@ -5,7 +5,7 @@
 
 import logging
 
-import requests
+from taskcluster.exceptions import TaskclusterRestFailure
 from taskgraph.util.taskcluster import cancel_task
 
 from .registry import register_callback_action
@@ -25,9 +25,9 @@ def cancel_action(parameters, graph_config, input, task_group_id, task_id):
     # Note that this is limited by the scopes afforded to generic actions to
     # only cancel tasks with the level-specific schedulerId.
     try:
-        cancel_task(task_id, use_proxy=True)
-    except requests.HTTPError as e:
-        if e.response.status_code == 409:
+        cancel_task(task_id)
+    except TaskclusterRestFailure as e:
+        if e.status_code == 409:
             # A 409 response indicates that this task is past its deadline.  It
             # cannot be cancelled at this time, but it's also not running
             # anymore, so we can ignore this error.

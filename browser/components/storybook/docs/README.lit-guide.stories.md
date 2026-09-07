@@ -10,7 +10,7 @@ Mozilla developers began experimenting with using Lit to build a handful of new 
 
 Lit has comprehensive documentation on their website that should be consulted alongside this document when building new Lit-based custom elements: [https://lit.dev/docs/](https://lit.dev/docs/)
 
-While Lit was initially introduced to assist with the work of the Reusable Components team it can also be used for creating both reusable and domain-specific UI widgets throughout `mozilla-central`. Some examples of custom elements that have been created using Lit so far include [moz-toggle](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-toggle/moz-toggle.mjs), [moz-button-group](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-button-group/moz-button-group.mjs), and the Credential Management team's [login-timeline](https://searchfox.org/mozilla-central/source/browser/components/aboutlogins/content/components/login-timeline.mjs) component.
+While Lit was initially introduced to assist with the work of the Reusable Components team it can also be used for creating both reusable and domain-specific UI widgets throughout `mozilla-central`. Some examples of custom elements that have been created using Lit so far include [moz-toggle](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-toggle/moz-toggle.mjs), [moz-button-group](https://searchfox.org/firefox-main/source/toolkit/content/widgets/moz-button-group/moz-button-group.mjs), and the Credential Management team's [login-timeline](https://searchfox.org/firefox-main/source/browser/components/aboutlogins/content/components/login-timeline.mjs) component.
 
 ### When to use Lit
 
@@ -32,7 +32,7 @@ Using external stylesheets is the preferred way to style your Lit-based componen
 
 ### The `lit.all.mjs` vendor file
 
-A somewhat customized, vendored version of Lit is available at [toolkit/content/widgets/vendor/lit.all.mjs](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/vendor/lit.all.mjs). The version of Lit in `mozilla-central` has a number of patches applied to disable minification, source maps, and certain warning messages, as well as patches to replace usage of `innerHTML` with `DOMParser` and to slightly modify the behavior of the `styleMap` directive. More specifics on these patches, as well as information on how to update `lit.all.mjs`, can be found [here](https://searchfox.org/mozilla-central/source/toolkit/content/vendor/lit).
+A somewhat customized, vendored version of Lit is available at [toolkit/content/widgets/vendor/lit.all.mjs](https://searchfox.org/firefox-main/source/toolkit/content/widgets/vendor/lit.all.mjs). The version of Lit in `mozilla-central` has a number of patches applied to disable minification, source maps, and certain warning messages, as well as patches to replace usage of `innerHTML` with `DOMParser` and to slightly modify the behavior of the `styleMap` directive. More specifics on these patches, as well as information on how to update `lit.all.mjs`, can be found [here](https://searchfox.org/firefox-main/source/toolkit/content/vendor/lit).
 
 Because our vendored version of Lit bundles the contents of a few different Lit source files into a single file, imports that would normally come from different files are pulled directly from `lit.all.mjs`. For example, imports that look like this when using the Lit npm package:
 
@@ -52,7 +52,7 @@ import { LitElement, classMap, ifDefined } from "chrome://global/content/vendor/
 
 ### `MozLitElement` and `lit-utils.mjs`
 
-[MozLitElement](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/lit-utils.mjs#84) is an extension of the `LitElement` class that has added functionality to make it more tailored to Mozilla developers' needs. In almost all cases `MozLitElement` should be used as the base class for your new Lit-based custom elements in place of `LitElement`.
+[MozLitElement](https://searchfox.org/firefox-main/source/toolkit/content/widgets/lit-utils.mjs#84) is an extension of the `LitElement` class that has added functionality to make it more tailored to Mozilla developers' needs. In almost all cases `MozLitElement` should be used as the base class for your new Lit-based custom elements in place of `LitElement`.
 
 It can be imported from `lit-utils.js` and used as follows:
 
@@ -68,7 +68,7 @@ class MyCustomElement extends MozLitElement {
 
 #### It provides automatic Fluent support for the shadow DOM
 
-When working with Fluent in the shadow DOM an element's `shadowRoot` must be connected before Fluent can be used. `MozLitElement` handles this by extending `LitElement`'s `connectedCallback` to [call](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/lit-utils.mjs#84) `document.l10n.connectRoot` if needed. `MozLitElement` also automatically calls `document.l10n.translateFragment` on the renderRoot anytime an element updates. The net result of these modifications is that you can use Fluent in your Lit based components just like you would in any other markup in `mozilla-central`.
+When working with Fluent in the shadow DOM an element's `shadowRoot` must be connected before Fluent can be used. `MozLitElement` handles this by extending `LitElement`'s `connectedCallback` to [call](https://searchfox.org/firefox-main/source/toolkit/content/widgets/lit-utils.mjs#84) `document.l10n.connectRoot` if needed. `MozLitElement` also automatically calls `document.l10n.translateFragment` on the renderRoot anytime an element updates. The net result of these modifications is that you can use Fluent in your Lit based components just like you would in any other markup in `mozilla-central`.
 
 #### It provides automatic Fluent support for localized Reactive Properties
 
@@ -106,7 +106,7 @@ class MyElement extends MozLitElement {
 
 #### It implements support for Lit's `@query` and `@queryAll` decorators
 
-The Lit library includes `@query` and `@queryAll` [decorators](https://lit.dev/docs/components/shadow-dom/#@query-@queryall-and-@queryasync-decorators) that provide an easy way of finding elements within the internal component DOM. These do not work in `mozilla-central` as we do not have support for JavaScript decorators. Instead, `MozLitElement` provides equivalent [DOM querying functionality](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/lit-utils.mjs#87-99) via defining a static `queries` property on the subclass. For example the following Lit code that queries the component's DOM for certain selectors and assigns the results to different class properties:
+The Lit library includes `@query` and `@queryAll` [decorators](https://lit.dev/docs/components/shadow-dom/#@query-@queryall-and-@queryasync-decorators) that provide an easy way of finding elements within the internal component DOM. These do not work in `mozilla-central` as we do not have support for JavaScript decorators. Instead, `MozLitElement` provides equivalent [DOM querying functionality](https://searchfox.org/firefox-main/source/toolkit/content/widgets/lit-utils.mjs#87-99) via defining a static `queries` property on the subclass. For example the following Lit code that queries the component's DOM for certain selectors and assigns the results to different class properties:
 
 ```ts
 import { LitElement, html } from "lit";

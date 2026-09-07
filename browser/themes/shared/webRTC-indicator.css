@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://browser/skin/webRTC-menubar-indicator.css");
 @namespace xul url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 @namespace html url("http://www.w3.org/1999/xhtml");
 
@@ -9,7 +10,7 @@
   appearance: none;
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--border-radius-small);
   --indicator-height: 32px;
   --indicator-background-color: rgb(249, 249, 250);
   --indicator-color: rgb(12, 12, 13);
@@ -139,7 +140,7 @@ xul|menu {
   background-size: 16px;
   background-color: transparent;
   padding: 10px 16px;
-  border-radius: 5px;
+  border-radius: var(--border-radius-small);
 }
 
 .control-icon + .control-icon {
@@ -197,7 +198,7 @@ xul|menu {
 .stop-button {
   background-color: var(--indicator-stop-button-background-color);
   color: var(--indicator-stop-button-color);
-  border-radius: 5px;
+  border-radius: var(--border-radius-small);
   padding: 3px 5px;
   margin-inline-start: 15px;
 }
@@ -236,31 +237,6 @@ xul|menu {
   fill: currentColor;
   fill-opacity: 0.4;
   margin: 5px;
-}
-
-#webRTC-sharingCamera-menu,
-#webRTC-sharingMicrophone-menu,
-#webRTC-sharingScreen-menu {
-  -moz-context-properties: fill;
-  fill: currentColor;
-}
-
-#webRTC-sharingCamera-menu {
-  list-style-image: url("chrome://browser/skin/notification-icons/camera.svg");
-}
-
-#webRTC-sharingMicrophone-menu {
-  list-style-image: url("chrome://browser/skin/notification-icons/microphone.svg");
-}
-
-#webRTC-sharingScreen-menu {
-  list-style-image: url("chrome://browser/skin/notification-icons/screen.svg");
-}
-
-#webRTC-sharingCamera-menu > menupopup,
-#webRTC-sharingMicrophone-menu > menupopup,
-#webRTC-sharingScreen-menu > menupopup {
-  list-style-image: none; /* don't inherit into menu items */
 }
 
 @media (-moz-platform: macos) {
@@ -303,7 +279,7 @@ xul|menu {
     background-position: center -5px;
     padding: 8px;
     border: 1px solid transparent;
-    border-radius: 1000px;
+    border-radius: var(--border-radius-circle);
   }
 }
 
@@ -335,14 +311,14 @@ xul|menu {
   }
 
   #webRTC-sharingCamera-menu {
-    list-style-image: url("chrome://browser/skin/notification-icons/camera.png");
+    --menuitem-icon: url("chrome://browser/skin/notification-icons/camera.png");
   }
 
   #webRTC-sharingMicrophone-menu {
-    list-style-image: url("chrome://browser/skin/notification-icons/microphone.png");
+    --menuitem-icon: url("chrome://browser/skin/notification-icons/microphone.png");
   }
 
   #webRTC-sharingScreen-menu {
-    list-style-image: url("chrome://browser/skin/notification-icons/screen.png");
+    --menuitem-icon: url("chrome://browser/skin/notification-icons/screen.png");
   }
 }

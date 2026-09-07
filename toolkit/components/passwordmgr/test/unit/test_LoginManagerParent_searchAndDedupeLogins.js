@@ -178,9 +178,39 @@ add_task(async function test_searchAndDedupeLogins_acceptDifferentSubdomains() {
       Assert.ok(actual[i].equals(login), `Check index ${i}`);
     }
 
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 });
+
+/**
+ * searchAndDedupeLogins must sort results so the matching-scheme
+ * login comes first regardless of storage insertion order.
+ */
+add_task(
+  async function test_searchAndDedupeLogins_scheme_order_independent_of_insertion_order() {
+    // Insert HTTP login first, HTTPS login second
+    const logins = [DOMAIN1_HTTP_TO_HTTP_U2_P1, DOMAIN1_HTTPS_TO_HTTPS_U1_P1];
+    await Services.logins.addLogins(logins);
+
+    let actual = await LMP.searchAndDedupeLogins(DOMAIN1_HTTPS_ORIGIN, {
+      formActionOrigin: DOMAIN1_HTTPS_ORIGIN,
+      looseActionOriginMatch: true,
+      acceptDifferentSubdomains: true,
+    });
+
+    Assert.strictEqual(actual.length, 2, "Both logins returned");
+    Assert.ok(
+      actual[0].equals(DOMAIN1_HTTPS_TO_HTTPS_U1_P1),
+      "HTTPS login is first for HTTPS form regardless of insertion order"
+    );
+    Assert.ok(
+      actual[1].equals(DOMAIN1_HTTP_TO_HTTP_U2_P1),
+      "HTTP login is second"
+    );
+
+    await Services.logins.removeAllUserFacingLoginsAsync();
+  }
+);
 
 add_task(async function test_reject_duplicates() {
   const testcases = [
@@ -202,6 +232,6 @@ add_task(async function test_reject_duplicates() {
     const result = await Services.logins.addLogins(tc.logins);
     Assert.equal(result.length, 1, "only single login added");
 
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 });

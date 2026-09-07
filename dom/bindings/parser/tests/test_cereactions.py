@@ -50,8 +50,7 @@ def WebIDLTest(parser, harness):
     except Exception as e:
         harness.ok(
             False,
-            "Shouldn't have thrown for [CEReactions] used on writable attribute. %s"
-            % e,
+            f"Shouldn't have thrown for [CEReactions] used on writable attribute. {e}",
         )
         threw = True
 
@@ -70,8 +69,7 @@ def WebIDLTest(parser, harness):
     except Exception as e:
         harness.ok(
             False,
-            "Shouldn't have thrown for [CEReactions] used on regular operations. %s"
-            % e,
+            f"Shouldn't have thrown for [CEReactions] used on regular operations. {e}",
         )
         threw = True
 

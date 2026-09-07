@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -95,7 +93,7 @@ static Maybe<TimesToStartsMutex::AutoLock> GetTimesToStartsLock() {
   return Some(std::move(lock));
 }
 
-void TimespanMetric::Start() const {
+void TimespanStandalone::Start() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
@@ -107,7 +105,7 @@ void TimespanMetric::Start() const {
   fog_timespan_start(mId);
 }
 
-void TimespanMetric::Stop() const {
+void TimespanStandalone::Stop() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
@@ -128,7 +126,7 @@ void TimespanMetric::Stop() const {
   fog_timespan_stop(mId);
 }
 
-void TimespanMetric::Cancel() const {
+void TimespanStandalone::Cancel() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
@@ -138,7 +136,7 @@ void TimespanMetric::Cancel() const {
   fog_timespan_cancel(mId);
 }
 
-void TimespanMetric::SetRaw(uint32_t aDuration) const {
+void TimespanStandalone::SetRaw(uint32_t aDuration) const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();

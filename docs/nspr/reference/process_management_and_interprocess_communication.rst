@@ -45,11 +45,11 @@ The functions that create and manipulate attribute sets of new processes
 are:
 
  - :ref:`PR_NewProcessAttr`
- - :ref:`PR_ResetProcessAttr`
- - :ref:`PR_DestroyProcessAttr`
- - :ref:`PR_ProcessAttrSetStdioRedirect`
- - :ref:`PR_ProcessAttrSetCurrentDirectory`
- - :ref:`PR_ProcessAttrSetInheritableFD`
+ - ``PR_ResetProcessAttr``
+ - ``PR_DestroyProcessAttr``
+ - ``PR_ProcessAttrSetStdioRedirect``
+ - ``PR_ProcessAttrSetCurrentDirectory``
+ - ``PR_ProcessAttrSetInheritableFD``
 
 .. _Creating_and_Managing_Processes:
 
@@ -58,7 +58,7 @@ Creating and Managing Processes
 
 The functions that create and manage processes are:
 
- - :ref:`PR_CreateProcess`
- - :ref:`PR_DetachProcess`
- - :ref:`PR_WaitProcess`
- - :ref:`PR_KillProcess`
+ - ``PR_CreateProcess``
+ - ``PR_DetachProcess``
+ - ``PR_WaitProcess``
+ - ``PR_KillProcess``

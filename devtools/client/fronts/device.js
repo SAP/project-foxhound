@@ -19,5 +19,4 @@ class DeviceFront extends FrontClassWithSpec(deviceSpec) {
   }
 }
 
-exports.DeviceFront = DeviceFront;
 registerFront(DeviceFront);

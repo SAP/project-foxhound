@@ -13,14 +13,17 @@
 #include <dvdmedia.h>  // VIDEOINFOHEADER2
 
 #include "modules/video_capture/video_capture_config.h"
+#include "modules/video_capture/video_capture_impl.h"
 #include "modules/video_capture/windows/help_functions_ds.h"
 #include "modules/video_capture/windows/sink_filter_ds.h"
 #include "rtc_base/logging.h"
+#include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 namespace videocapturemodule {
-VideoCaptureDS::VideoCaptureDS()
-    : _captureFilter(NULL),
+VideoCaptureDS::VideoCaptureDS(Clock* clock)
+    : VideoCaptureImpl(clock),
+      _captureFilter(NULL),
       _graphBuilder(NULL),
       _mediaControl(NULL),
       _inputSendPin(NULL),
@@ -309,7 +312,7 @@ HRESULT VideoCaptureDS::ConnectDVCamera() {
       RTC_LOG(LS_INFO) << "Failed to get input pin from DV decoder";
       return -1;
     }
-    _outputDvPin = GetOutputPin(_dvFilter, GUID_NULL);
+    _outputDvPin = GetOutputPin(_dvFilter, PIN_CATEGORY_CAPTURE);
     if (_outputDvPin == NULL) {
       RTC_LOG(LS_INFO) << "Failed to get output pin from DV decoder";
       return -1;

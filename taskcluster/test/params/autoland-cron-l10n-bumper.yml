@@ -19,7 +19,6 @@ head_rev: 00327c4fd62255eb3ab07a275d90ad09cce51ac3
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20240529063131'
 next_version: null
 optimize_strategies: gecko_taskgraph.optimize:project.autoland
@@ -40,8 +39,6 @@ release_partners: []
 release_product: null
 release_type: ''
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: l10n_bump
 tasks_for: cron
 test_manifest_loader: bugbug

@@ -12,17 +12,17 @@ mitigations cause the application verifier DLL to load.
 This is a cherry-pick and rebase of chromium commit:
 f1abab03e72635bf675f41715faadd78579086fc
 
-diff --git a/security/sandbox/chromium/sandbox/win/src/sandbox_nt_util.h b/security/sandbox/chromium/sandbox/win/src/sandbox_nt_util.h
---- a/security/sandbox/chromium/sandbox/win/src/sandbox_nt_util.h
-+++ b/security/sandbox/chromium/sandbox/win/src/sandbox_nt_util.h
-@@ -210,11 +210,19 @@ class AutoProtectMemory {
- };
- 
- // Returns true if the file_rename_information structure is supported by our
+diff --git a/sandbox/win/src/sandbox_nt_util.h b/sandbox/win/src/sandbox_nt_util.h
+--- a/sandbox/win/src/sandbox_nt_util.h
++++ b/sandbox/win/src/sandbox_nt_util.h
+@@ -218,11 +218,19 @@ class AutoProtectMemory {
  // rename handler.
  bool IsSupportedRenameCall(FILE_RENAME_INFORMATION* file_info,
                             DWORD length,
                             uint32_t file_info_class);
+ 
+ // Get the CLIENT_ID from the current TEB.
+ CLIENT_ID GetCurrentClientId();
  
 +// Version of memset that can be called before the CRT is initialized.
 +__forceinline void Memset(void* ptr, int value, size_t num_bytes) {
@@ -34,16 +34,16 @@ diff --git a/security/sandbox/chromium/sandbox/win/src/sandbox_nt_util.h b/secur
 +
  }  // namespace sandbox
  
- #endif  // SANDBOX_SRC_SANDBOX_NT_UTIL_H__
-diff --git a/security/sandbox/chromium/sandbox/win/src/signed_interception.cc b/security/sandbox/chromium/sandbox/win/src/signed_interception.cc
---- a/security/sandbox/chromium/sandbox/win/src/signed_interception.cc
-+++ b/security/sandbox/chromium/sandbox/win/src/signed_interception.cc
+ #endif  // SANDBOX_WIN_SRC_SANDBOX_NT_UTIL_H_
+diff --git a/sandbox/win/src/signed_interception.cc b/sandbox/win/src/signed_interception.cc
+--- a/sandbox/win/src/signed_interception.cc
++++ b/sandbox/win/src/signed_interception.cc
 @@ -13,16 +13,19 @@
+ #include "sandbox/win/src/policy_target.h"
  #include "sandbox/win/src/sandbox_factory.h"
  #include "sandbox/win/src/sandbox_nt_util.h"
  #include "sandbox/win/src/sharedmem_ipc_client.h"
  #include "sandbox/win/src/target_services.h"
- #include "mozilla/sandboxing/sandboxLogging.h"
  
  namespace sandbox {
  
@@ -58,9 +58,9 @@ diff --git a/security/sandbox/chromium/sandbox/win/src/signed_interception.cc b/
                        PLARGE_INTEGER maximum_size,
                        ULONG section_page_protection,
                        ULONG allocation_attributes,
-@@ -45,34 +48,46 @@ TargetNtCreateSection(NtCreateSectionFun
- 
-     mozilla::sandboxing::LogBlocked("NtCreateSection");
+@@ -43,34 +46,47 @@ TargetNtCreateSection(NtCreateSectionFun
+     if (allocation_attributes != SEC_IMAGE)
+       break;
  
      // IPC must be fully started.
      void* memory = GetGlobalIPCMemory();
@@ -77,8 +77,9 @@ diff --git a/security/sandbox/chromium/sandbox/win/src/signed_interception.cc b/
 +    OBJECT_NAME_INFORMATION* path =
 +        reinterpret_cast<OBJECT_NAME_INFORMATION*>(path_buffer);
 +    ULONG out_buffer_size = 0;
-+    NTSTATUS status = g_nt.QueryObject(file_handle, ObjectNameInformation, path,
-+                                       path_buffer_size, &out_buffer_size);
++    NTSTATUS status =
++        GetNtExports()->QueryObject(file_handle, ObjectNameInformation, path,
++                                    path_buffer_size, &out_buffer_size);
  
 -    if (!NtGetPathFromHandle(file_handle, &path))
 +    if (!NT_SUCCESS(status)) {
@@ -111,10 +112,10 @@ diff --git a/security/sandbox/chromium/sandbox/win/src/signed_interception.cc b/
      if (code != SBOX_ALL_OK)
        break;
  
-diff --git a/security/sandbox/chromium/sandbox/win/src/target_interceptions.cc b/security/sandbox/chromium/sandbox/win/src/target_interceptions.cc
---- a/security/sandbox/chromium/sandbox/win/src/target_interceptions.cc
-+++ b/security/sandbox/chromium/sandbox/win/src/target_interceptions.cc
-@@ -41,44 +41,39 @@ TargetNtMapViewOfSection(NtMapViewOfSect
+diff --git a/sandbox/win/src/target_interceptions.cc b/sandbox/win/src/target_interceptions.cc
+--- a/sandbox/win/src/target_interceptions.cc
++++ b/sandbox/win/src/target_interceptions.cc
+@@ -41,46 +41,39 @@ TargetNtMapViewOfSection(NtMapViewOfSect
  
    do {
      if (!NT_SUCCESS(ret))
@@ -137,14 +138,16 @@ diff --git a/security/sandbox/chromium/sandbox/win/src/target_interceptions.cc b
 -        // indicates Application Verifier is enabled and we should wait until
 -        // the next module is loaded.
 -        if (ansi_module_name &&
--            (g_nt._strnicmp(
+-            (GetNtExports()->_strnicmp(
 -                 ansi_module_name, base::win::kApplicationVerifierDllName,
--                 g_nt.strlen(base::win::kApplicationVerifierDllName) + 1) == 0))
+-                 GetNtExports()->strlen(
+-                     base::win::kApplicationVerifierDllName) +
+-                     1) == 0)) {
 -          break;
--
+-        }
          if (ansi_module_name &&
-             (g_nt._strnicmp(ansi_module_name, KERNEL32_DLL_NAME,
-                             sizeof(KERNEL32_DLL_NAME)) == 0)) {
+             (GetNtExports()->_strnicmp(ansi_module_name, KERNEL32_DLL_NAME,
+                                        sizeof(KERNEL32_DLL_NAME)) == 0)) {
            s_state = kAfterKernel32;
          }
        } __except (EXCEPTION_EXECUTE_HANDLER) {

@@ -45,8 +45,7 @@ async function testICBWidth(ui) {
     await EventUtils.synthesizeClick(innerDiv);
     await mousedown;
 
-    const win = content.document.defaultView;
-    const bg = win.getComputedStyle(innerDiv).getPropertyValue("color");
+    const bg = content.getComputedStyle(innerDiv).getPropertyValue("color");
 
     is(bg, "rgb(0, 128, 0)", "inner div's background color changed to green.");
   });

@@ -8,6 +8,9 @@ extern crate test;
 use serde_json::{json, Map, Value};
 
 #[cfg(feature = "bench")]
+use crate::parser::ArbitrarySubstitutionFunctions;
+
+#[cfg(feature = "bench")]
 use self::test::Bencher;
 
 use super::{
@@ -24,7 +27,7 @@ macro_rules! JArray {
 }
 
 fn almost_equals(a: &Value, b: &Value) -> bool {
-    let var_name = match (a, b) {
+    match (a, b) {
         (Value::Number(a), Value::Number(b)) => {
             let a = a.as_f64().unwrap();
             let b = b.as_f64().unwrap();
@@ -39,8 +42,7 @@ fn almost_equals(a: &Value, b: &Value) -> bool {
         (&Value::Object(_), &Value::Object(_)) => panic!("Not implemented"),
         (&Value::Null, &Value::Null) => true,
         _ => false,
-    };
-    var_name
+    }
 }
 
 fn normalize(json: &mut Value) {
@@ -794,7 +796,10 @@ fn delimiter_from_byte(b: &mut Bencher) {
 }
 
 #[cfg(feature = "bench")]
-const BACKGROUND_IMAGE: &'static str = include_str!("big-data-url.css");
+const BACKGROUND_IMAGE: &str = include_str!("big-data-url.css");
+
+#[cfg(feature = "bench")]
+const ARBITRARY_SUBSTITUTION_FUNCTIONS: ArbitrarySubstitutionFunctions = &["var", "env"];
 
 #[cfg(feature = "bench")]
 #[bench]
@@ -802,14 +807,16 @@ fn unquoted_url(b: &mut Bencher) {
     b.iter(|| {
         let mut input = ParserInput::new(BACKGROUND_IMAGE);
         let mut input = Parser::new(&mut input);
-        input.look_for_var_or_env_functions();
+        input.look_for_arbitrary_substitution_functions(ARBITRARY_SUBSTITUTION_FUNCTIONS);
 
         let result = input.try_parse(|input| input.expect_url());
 
         assert!(result.is_ok());
 
-        input.seen_var_or_env_functions();
-        (result.is_ok(), input.seen_var_or_env_functions())
+        (
+            result.is_ok(),
+            input.seen_arbitrary_substitution_functions(),
+        )
     })
 }
 
@@ -1078,7 +1085,7 @@ fn one_component_value_to_json(token: Token, input: &mut Parser) -> Value {
 /// including in string literals.
 #[test]
 fn procedural_masquerade_whitespace() {
-    ascii_case_insensitive_phf_map! {
+    ascii_case_insensitive_map! {
         map -> () = {
             "  \t\n" => ()
         }
@@ -1326,7 +1333,7 @@ fn utf16_columns() {
 #[test]
 fn servo_define_css_keyword_enum() {
     macro_rules! define_css_keyword_enum {
-        (pub enum $name:ident { $($variant:ident = $css:pat,)+ }) => {
+        (pub enum $name:ident { $($variant:ident = $css:literal,)+ }) => {
             #[derive(PartialEq, Debug)]
             pub enum $name {
                 $($variant),+

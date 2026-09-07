@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WINDIRENT_H__
-#define WINDIRENT_H__
+#ifndef WINDIRENT_H_
+#define WINDIRENT_H_
 
 /**
  * Note: The reason that these functions are separated from those in
@@ -44,4 +42,4 @@ BOOL PathAppendSafe(LPWSTR base, LPCWSTR extra);
 BOOL GetUUIDString(LPWSTR outBuf);
 BOOL GetUUIDTempFilePath(LPCWSTR basePath, LPCWSTR prefix, LPWSTR tmpPath);
 
-#endif  // WINDIRENT_H__
+#endif  // WINDIRENT_H_

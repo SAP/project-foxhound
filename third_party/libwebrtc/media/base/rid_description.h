@@ -15,9 +15,10 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "media/base/codec.h"
 
-namespace cricket {
+namespace webrtc {
 
 enum class RidDirection { kSend, kReceive };
 
@@ -46,7 +47,7 @@ enum class RidDirection { kSend, kReceive };
 // See: https://w3c.github.io/webrtc-svc/ for more details.
 struct RidDescription final {
   RidDescription();
-  RidDescription(const std::string& rid, RidDirection direction);
+  RidDescription(absl::string_view rid, RidDirection direction);
   RidDescription(const RidDescription& other);
   ~RidDescription();
   RidDescription& operator=(const RidDescription& other);
@@ -92,6 +93,7 @@ struct RidDescription final {
   std::map<std::string, std::string> restrictions;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // MEDIA_BASE_RID_DESCRIPTION_H_

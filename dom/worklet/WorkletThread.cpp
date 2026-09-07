@@ -1,27 +1,30 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkletThread.h"
-#include "prthread.h"
+
+#include "GeckoProfiler.h"
+#include "XPCSelfHostedShmem.h"
+#include "js/ContextOptions.h"
+#include "js/Exception.h"
+#include "js/Initialization.h"
+#include "js/friend/MicroTask.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/EventQueue.h"
+#include "mozilla/FlowMarkers.h"
+#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/ThreadEventQueue.h"
+#include "mozilla/dom/AtomList.h"
+#include "mozilla/dom/OffThreadCSPContext.h"
+#include "mozilla/dom/WorkletGlobalScope.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "nsJSEnvironment.h"
 #include "nsJSPrincipals.h"
-#include "mozilla/dom/AtomList.h"
-#include "mozilla/dom/WorkletGlobalScope.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/FlowMarkers.h"
-#include "mozilla/EventQueue.h"
-#include "mozilla/ThreadEventQueue.h"
-#include "js/ContextOptions.h"
-#include "js/Exception.h"
-#include "js/Initialization.h"
-#include "XPCSelfHostedShmem.h"
+#include "prthread.h"
 
 namespace mozilla::dom {
 
@@ -162,10 +165,12 @@ class WorkletJSContext final : public CycleCollectedJSContext {
 #endif
 
     JS::JobQueueMayNotBeEmpty(cx);
+
     PROFILER_MARKER_FLOW_ONLY("WorkletJSContext::DispatchToMicroTask", OTHER,
                               {}, FlowMarker,
                               Flow::FromPointer(runnable.get()));
-    GetMicroTaskQueue().push_back(std::move(runnable));
+    bool ret = mozilla::EnqueueMicroTask(cx, std::move(aRunnable));
+    MOZ_RELEASE_ASSERT(ret);
   }
 
   bool IsSystemCaller() const override {
@@ -176,18 +181,28 @@ class WorkletJSContext final : public CycleCollectedJSContext {
   void ReportError(JSErrorReport* aReport,
                    JS::ConstUTF8CharsZ aToStringResult) override;
 
-  uint64_t GetCurrentWorkletWindowID() {
+  WorkletImpl* GetWorkletImpl() const {
     JSObject* global = JS::CurrentGlobalOrNull(Context());
     if (NS_WARN_IF(!global)) {
-      return 0;
+      return nullptr;
     }
+
     nsIGlobalObject* nativeGlobal = xpc::NativeGlobal(global);
     nsCOMPtr<WorkletGlobalScope> workletGlobal =
         do_QueryInterface(nativeGlobal);
     if (NS_WARN_IF(!workletGlobal)) {
       return 0;
     }
-    return workletGlobal->Impl()->LoadInfo().InnerWindowID();
+
+    return workletGlobal->Impl();
+  }
+
+  uint64_t GetCurrentWorkletWindowID() {
+    if (WorkletImpl* impl = GetWorkletImpl()) {
+      return impl->LoadInfo().InnerWindowID();
+    }
+
+    return 0;
   }
 };
 
@@ -199,7 +214,11 @@ void WorkletJSContext::ReportError(JSErrorReport* aReport,
   RefPtr<AsyncErrorReporter> reporter = new AsyncErrorReporter(xpcReport);
 
   JSContext* cx = Context();
-  if (JS_IsExceptionPending(cx)) {
+  // NOTE: This function is used both for errors and warnings, and warnings
+  //       can be reported while there's a pending exception.
+  //       Warnings are always reported with non-null JSErrorReport.
+  if (!aReport || !aReport->isWarning()) {
+    MOZ_ASSERT(JS_IsExceptionPending(cx));
     JS::ExceptionStack exnStack(cx);
     if (JS::StealPendingExceptionStack(cx, &exnStack)) {
       JS::Rooted<JSObject*> stack(cx);
@@ -295,30 +314,6 @@ nsresult WorkletThread::DispatchRunnable(
   return nsThread::Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
 }
 
-NS_IMETHODIMP
-WorkletThread::DispatchFromScript(nsIRunnable* aRunnable, uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> runnable(aRunnable);
-  return Dispatch(runnable.forget(), aFlags);
-}
-
-NS_IMETHODIMP
-WorkletThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                        uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> runnable(aRunnable);
-
-  // Worklet only supports asynchronous dispatch.
-  if (NS_WARN_IF(aFlags != NS_DISPATCH_NORMAL)) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  return nsThread::Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
-}
-
-NS_IMETHODIMP
-WorkletThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t aFlags) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
 static bool DispatchToEventLoop(
     void* aClosure, js::UniquePtr<JS::Dispatchable>&& aDispatchable) {
   // This callback may execute either on the worklet thread or a random
@@ -363,6 +358,56 @@ static bool DelayedDispatchToEventLoop(
   return false;
 }
 
+namespace {
+bool ContentSecurityPolicyAllows(
+    JSContext* aCx, JS::RuntimeCode aKind, JS::Handle<JSString*> aCodeString,
+    JS::CompilationType aCompilationType,
+    JS::Handle<JS::StackGCVector<JSString*>> aParameterStrings,
+    JS::Handle<JSString*> aBodyString,
+    JS::Handle<JS::StackGCVector<JS::Value>> aParameterArgs,
+    JS::Handle<JS::Value> aBodyArg, bool* aOutCanCompileStrings) {
+  WorkletThread::AssertIsOnWorkletThread();
+
+  CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::GetFor(aCx);
+  if (!ccjscx) {
+    return false;
+  }
+
+  WorkletJSContext* wcx = ccjscx->GetAsWorkletJSContext();
+  if (!wcx) {
+    return false;
+  }
+
+  WorkletImpl* impl = wcx->GetWorkletImpl();
+  if (!impl) {
+    return false;
+  }
+
+  // Allow eval by default without a CSP.
+  *aOutCanCompileStrings = true;
+  bool reportViolation = false;
+  if (OffThreadCSPContext* ctx = impl->GetCSPContext()) {
+    if (aKind == JS::RuntimeCode::JS) {
+      if (ctx->CSPInfo().requireTrustedTypesForDirectiveState() ==
+          RequireTrustedTypesForDirectiveState::ENFORCE) {
+        // The TrustedTypePolicyFactory is not exposed to Worklets, so there is
+        // no way to define a policy that would allow scripts.
+        *aOutCanCompileStrings = false;
+      } else {
+        *aOutCanCompileStrings = ctx->IsEvalAllowed(reportViolation);
+      }
+    } else {
+      *aOutCanCompileStrings = ctx->IsWasmEvalAllowed(reportViolation);
+    }
+  }
+
+  // TODO: report violations
+  return true;
+}
+
+const JSSecurityCallbacks SecurityCallbacks = {ContentSecurityPolicyAllows};
+}  // namespace
+
 // static
 void WorkletThread::EnsureCycleCollectedJSContext(
     JSRuntime* aParentRuntime, const JS::ContextOptions& aOptions) {
@@ -379,22 +424,25 @@ void WorkletThread::EnsureCycleCollectedJSContext(
     return;
   }
 
+  PROFILER_SET_JS_CONTEXT(context);
+
   JS::ContextOptionsRef(context->Context()) = aOptions;
 
   JS_SetGCParameter(context->Context(), JSGC_MAX_BYTES, uint32_t(-1));
 
+  JS_SetSecurityCallbacks(context->Context(), &SecurityCallbacks);
+
   // FIXME: JS_SetDefaultLocale
   // FIXME: JSSettings
-  // FIXME: JS_SetSecurityCallbacks
   // FIXME: JS::SetAsyncTaskCallbacks
   // FIXME: JS::SetCTypesActivityCallback
   // FIXME: JS::SetGCZeal
 
   // A thread lives strictly longer than its JSRuntime so we can safely
   // store a raw pointer as the callback's closure argument on the JSRuntime.
-  JS::InitDispatchsToEventLoop(context->Context(), DispatchToEventLoop,
-                               DelayedDispatchToEventLoop,
-                               NS_GetCurrentThread());
+  JS::InitAsyncTaskCallbacks(context->Context(), DispatchToEventLoop,
+                             DelayedDispatchToEventLoop, nullptr, nullptr,
+                             NS_GetCurrentThread());
 
   JS_SetNativeStackQuota(context->Context(),
                          WORKLET_CONTEXT_NATIVE_STACK_LIMIT);
@@ -463,6 +511,7 @@ void WorkletThread::DeleteCycleCollectedJSContext() {
 
   WorkletJSContext* workletjscx = ccjscx->GetAsWorkletJSContext();
   MOZ_ASSERT(workletjscx);
+  PROFILER_CLEAR_JS_CONTEXT();
   delete workletjscx;
 }
 

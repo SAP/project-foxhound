@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+  <meta charset="utf-8">
+</head>
+<body>
+<script>
+async function run() {
+  for (let i = 0; i < 5; i++) {
+    const iframe = document.createElement("iframe");
+    iframe.src = "2038533-inner.html";
+    document.body.appendChild(iframe);
+    await new Promise(r => iframe.onload = r);
+    await new Promise(r => iframe.onload = r);
+    iframe.remove();
+  }
+  document.documentElement.classList.remove("reftest-wait");
+}
+
+run();
+</script>
+</body>
+</html>

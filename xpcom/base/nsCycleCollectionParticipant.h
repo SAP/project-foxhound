@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCycleCollectionParticipant_h__
-#define nsCycleCollectionParticipant_h__
+#ifndef nsCycleCollectionParticipant_h_
+#define nsCycleCollectionParticipant_h_
 
 #include <type_traits>
 #include "js/HeapAPI.h"
@@ -725,10 +723,23 @@ T* DowncastCCParticipant(void* aPtr) {
 // If a class defines a participant, then QIing an instance of that class to
 // nsXPCOMCycleCollectionParticipant should produce that participant.
 #ifdef DEBUG
+#  ifdef __clang__
+/* clang-format off */
+#    define IGNORE_UNNECESSARY_VIRTUAL_SPECIFIER(...)                         \
+      _Pragma("clang diagnostic push")                                        \
+      _Pragma("clang diagnostic ignored \"-Wunnecessary-virtual-specifier\"") \
+      __VA_ARGS__                                                             \
+      _Pragma("clang diagnostic pop")
+/* clang-format on */
+#  else
+#    define IGNORE_UNNECESSARY_VIRTUAL_SPECIFIER(...) __VA_ARGS__
+#  endif
 #  define NS_CHECK_FOR_RIGHT_PARTICIPANT_BASE \
-    virtual void CheckForRightParticipant()
+    IGNORE_UNNECESSARY_VIRTUAL_SPECIFIER(     \
+        virtual void CheckForRightParticipant())
 #  define NS_CHECK_FOR_RIGHT_PARTICIPANT_DERIVED \
-    virtual void CheckForRightParticipant() override
+    IGNORE_UNNECESSARY_VIRTUAL_SPECIFIER(        \
+        virtual void CheckForRightParticipant() override)
 #  define NS_CHECK_FOR_RIGHT_PARTICIPANT_BODY(_class)             \
     {                                                             \
       nsXPCOMCycleCollectionParticipant* p;                       \
@@ -783,8 +794,9 @@ T* DowncastCCParticipant(void* aPtr) {
  * builds.
  */
 #ifdef DEBUG
-#  define NOT_INHERITED_CANT_OVERRIDE \
-    virtual void BaseCycleCollectable() final {}
+#  define NOT_INHERITED_CANT_OVERRIDE                                        \
+    IGNORE_UNNECESSARY_VIRTUAL_SPECIFIER(virtual void BaseCycleCollectable() \
+                                             final{})
 #else
 #  define NOT_INHERITED_CANT_OVERRIDE
 #endif
@@ -1193,4 +1205,4 @@ inline void ImplCycleCollectionTraverse(
       aField);
 }
 
-#endif  // nsCycleCollectionParticipant_h__
+#endif  // nsCycleCollectionParticipant_h_

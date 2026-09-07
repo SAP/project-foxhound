@@ -1,0 +1,32 @@
+[DEFAULT]
+subsuite = "integration"
+
+["test_xdg_config_legacy_existing.py"]
+run-if = [
+  "os == 'linux'"
+]
+
+["test_xdg_config_legacy_forced.py"]
+run-if = [
+  "os == 'linux'"
+]
+
+["test_xdg_config_new.py"]
+run-if = [
+  "os == 'linux'"
+]
+
+["test_xdg_config_new_env.py"]
+run-if = [
+  "os == 'linux'"
+]
+
+["test_xdg_config_new_env_invalid.py"]
+run-if = [
+  "os == 'linux'"
+]
+
+["test_xdg_config_new_existing.py"]
+run-if = [
+  "os == 'linux'"
+]

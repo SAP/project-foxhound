@@ -139,7 +139,7 @@
 
 .devtools-sidebar-tabs tabs > tab[selected],
 .devtools-sidebar-tabs tabs > tab[selected] + tab {
-  border-image: linear-gradient(var(--theme-splitter-color), var(--theme-splitter-color)) 1 1;
+  border-image: image(var(--theme-splitter-color)) 1 1;
 }
 
 .devtools-sidebar-tabs tabs > tab:first-child {

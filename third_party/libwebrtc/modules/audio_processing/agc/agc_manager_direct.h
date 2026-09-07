@@ -12,10 +12,12 @@
 #define MODULES_AUDIO_PROCESSING_AGC_AGC_MANAGER_DIRECT_H_
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
+#include <vector>
 
-#include "api/array_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/environment/environment.h"
 #include "modules/audio_processing/agc/agc.h"
@@ -102,7 +104,7 @@ class AgcManagerDirect final {
 
   // If available, returns the latest digital compression gain that has been
   // chosen.
-  std::optional<int> GetDigitalComressionGain();
+  std::optional<int> GetDigitalCompressionGain();
 
   // Returns true if clipping prediction is enabled.
   bool clipping_predictor_enabled() const { return !!clipping_predictor_; }
@@ -215,7 +217,7 @@ class MonoAgc {
   // the (digital) compression gain to be applied by `agc_`. Must be called
   // after `HandleClipping()`. If `rms_error_override` has a value, RMS error
   // from AGC is overridden by it.
-  void Process(rtc::ArrayView<const int16_t> audio,
+  void Process(std::span<const int16_t> audio,
                std::optional<int> rms_error_override);
 
   // Returns the recommended input volume. Must be called after `Process()`.

@@ -10,12 +10,20 @@ origin:
 
   url: https://xiph.org/vorbis/
 
-  release: 315da9cc9d30484c802b2e2ea150df39e060e2b9 (2025-02-05T08:11:19.000-08:00).
-  revision: 315da9cc9d30484c802b2e2ea150df39e060e2b9
+  release: c9b52fc1c81d8ced3f2eb880ce68162ff270ec47 (2026-05-24T14:15:22.000-07:00).
+  revision: c9b52fc1c81d8ced3f2eb880ce68162ff270ec47
 
 
   license: BSD-3-Clause
   license-file: COPYING
+
+updatebot:
+    maintainer-phab: chunmin
+    maintainer-bz: cchang@mozilla.com
+    tasks:
+      - type: vendoring
+        enabled: true
+        frequency: release
 
 vendoring:
   url: https://gitlab.xiph.org/xiph/vorbis
@@ -66,7 +74,6 @@ vendoring:
     - lib/block.c
     - include/vorbis/codec.h
     - COPYING
-    - README.md
     - AUTHORS
     # Encoder support
     - lib/vorbisenc.c

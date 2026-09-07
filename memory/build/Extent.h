@@ -20,7 +20,7 @@ struct arena_t;
 enum ChunkType;
 
 // Tree of extents.
-struct extent_node_t {
+struct extent_node_t : public BaseAllocClass {
   union {
     // Linkage for the size/address-ordered tree for chunk recycling.
     RedBlackTreeNode<extent_node_t> mLinkBySize;
@@ -57,6 +57,16 @@ struct ExtentTreeSzTrait {
     return (ret != Order::eEqual) ? ret
                                   : CompareAddr(aNode->mAddr, aOther->mAddr);
   }
+
+  using SearchKey = size_t;
+
+  // This comparison is used to lookup an extent of a size.  It will never
+  // return eEqual instead it'll choose the leftmost node in the tree with
+  // the given size.
+  static inline Order Compare(SearchKey aKey, extent_node_t* aOther) {
+    Order ret = CompareInt(aKey, aOther->mSize);
+    return (ret != Order::eEqual) ? ret : Order::eLess;
+  }
 };
 
 struct ExtentTreeTrait {
@@ -67,11 +77,18 @@ struct ExtentTreeTrait {
   static inline Order Compare(extent_node_t* aNode, extent_node_t* aOther) {
     return CompareAddr(aNode->mAddr, aOther->mAddr);
   }
+
+  using SearchKey = void*;
+
+  static inline Order Compare(SearchKey aKey, extent_node_t* aOther) {
+    // aKey is a pointer to memory that may be within a node.
+    return CompareAddr(aKey, aOther->mAddr);
+  }
 };
 
 struct ExtentTreeBoundsTrait : public ExtentTreeTrait {
-  static inline Order Compare(extent_node_t* aKey, extent_node_t* aNode) {
-    uintptr_t key_addr = reinterpret_cast<uintptr_t>(aKey->mAddr);
+  static inline Order CompareBounds(void* aKey, extent_node_t* aNode) {
+    uintptr_t key_addr = reinterpret_cast<uintptr_t>(aKey);
     uintptr_t node_addr = reinterpret_cast<uintptr_t>(aNode->mAddr);
     size_t node_size = aNode->mSize;
 
@@ -80,16 +97,17 @@ struct ExtentTreeBoundsTrait : public ExtentTreeTrait {
       return Order::eEqual;
     }
 
-    return CompareAddr(aKey->mAddr, aNode->mAddr);
+    return CompareAddr(aKey, aNode->mAddr);
+  }
+
+  static inline Order Compare(extent_node_t* aKey, extent_node_t* aNode) {
+    return CompareBounds(aKey->mAddr, aNode);
+  }
+  static inline Order Compare(SearchKey aKey, extent_node_t* aNode) {
+    return CompareBounds(aKey, aNode);
   }
 };
 
-using ExtentAlloc = TypedBaseAlloc<extent_node_t>;
-
-template <>
-extent_node_t* ExtentAlloc::sFirstFree;
-
-using UniqueBaseNode =
-    mozilla::UniquePtr<extent_node_t, BaseAllocFreePolicy<extent_node_t>>;
+using UniqueBaseNode = mozilla::UniquePtr<extent_node_t>;
 
 #endif /* ! EXTENT_H */

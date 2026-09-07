@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include "gfxContext.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUtils.h"
@@ -67,7 +66,7 @@ void SVGForeignObjectFrame::Init(nsIContent* aContent,
 
 nsresult SVGForeignObjectFrame::AttributeChanged(int32_t aNameSpaceID,
                                                  nsAtom* aAttribute,
-                                                 int32_t aModType) {
+                                                 AttrModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::transform) {
       // We don't invalidate for transform changes (the layers code does that).
@@ -280,15 +279,16 @@ void SVGForeignObjectFrame::ReflowSVG() {
                   NS_FRAME_HAS_DIRTY_CHILDREN);
 }
 
-void SVGForeignObjectFrame::NotifySVGChanged(uint32_t aFlags) {
-  MOZ_ASSERT(aFlags & (TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED),
+void SVGForeignObjectFrame::NotifySVGChanged(ChangeFlags aFlags) {
+  MOZ_ASSERT(aFlags.contains(ChangeFlag::TransformChanged) ||
+                 aFlags.contains(ChangeFlag::CoordContextChanged),
              "Invalidation logic may need adjusting");
 
   bool needNewBounds = false;  // i.e. mRect or ink overflow rect
   bool needReflow = false;
   bool needNewCanvasTM = false;
 
-  if (aFlags & COORD_CONTEXT_CHANGED) {
+  if (aFlags.contains(ChangeFlag::CoordContextChanged)) {
     // Coordinate context changes affect mCanvasTM if we have a
     // percentage 'x' or 'y'
     if (StyleSVGReset()->mX.HasPercent() || StyleSVGReset()->mY.HasPercent()) {
@@ -306,7 +306,7 @@ void SVGForeignObjectFrame::NotifySVGChanged(uint32_t aFlags) {
     }
   }
 
-  if (aFlags & TRANSFORM_CHANGED) {
+  if (aFlags.contains(ChangeFlag::TransformChanged)) {
     if (mCanvasTM && mCanvasTM->IsSingular()) {
       needNewBounds = true;  // old bounds are bogus
     }
@@ -348,13 +348,13 @@ void SVGForeignObjectFrame::NotifySVGChanged(uint32_t aFlags) {
 }
 
 SVGBBox SVGForeignObjectFrame::GetBBoxContribution(
-    const Matrix& aToBBoxUserspace, uint32_t aFlags) {
-  SVGForeignObjectElement* content =
+    const Matrix& aToBBoxUserspace, SVGBBoxFlags aFlags) {
+  SVGForeignObjectElement* element =
       static_cast<SVGForeignObjectElement*>(GetContent());
 
   float x, y, w, h;
   SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
-      content, &x, &y, &w, &h);
+      element, &x, &y, &w, &h);
 
   if (w < 0.0f) {
     w = 0.0f;
@@ -362,12 +362,17 @@ SVGBBox SVGForeignObjectFrame::GetBBoxContribution(
   if (h < 0.0f) {
     h = 0.0f;
   }
+  gfx::Rect rect(0.0f, 0.0f, w, h);
+
+  if (aFlags.contains(SVGBBoxFlag::DisregardCSSZoom)) {
+    rect.Scale(1 / Style()->EffectiveZoom().ToFloat());
+  }
 
   if (aToBBoxUserspace.IsSingular()) {
     // XXX ReportToConsole
     return SVGBBox();
   }
-  return aToBBoxUserspace.TransformBounds(gfx::Rect(0.0, 0.0, w, h));
+  return aToBBoxUserspace.TransformBounds(rect);
 }
 
 //----------------------------------------------------------------------
@@ -377,8 +382,8 @@ gfxMatrix SVGForeignObjectFrame::GetCanvasTM() {
     NS_ASSERTION(GetParent(), "null parent");
     auto* parent = static_cast<SVGContainerFrame*>(GetParent());
     auto* content = static_cast<SVGForeignObjectElement*>(GetContent());
-    mCanvasTM = MakeUnique<gfxMatrix>(content->ChildToUserSpaceTransform() *
-                                      parent->GetCanvasTM());
+    mCanvasTM = std::make_unique<gfxMatrix>(
+        content->ChildToUserSpaceTransform() * parent->GetCanvasTM());
   }
   return *mCanvasTM;
 }
@@ -414,7 +419,7 @@ void SVGForeignObjectFrame::DoReflow() {
   }
 
   // initiate a synchronous reflow here and now:
-  UniquePtr<gfxContext> renderingContext =
+  std::unique_ptr<gfxContext> renderingContext =
       presContext->PresShell()->CreateReferenceRenderingContext();
 
   WritingMode wm = kid->GetWritingMode();

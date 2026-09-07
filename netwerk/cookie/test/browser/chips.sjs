@@ -25,4 +25,12 @@ function handleRequest(aRequest, aResponse) {
       true
     );
   }
+
+  if (params.has("setnonchips")) {
+    aResponse.setHeader(
+      "Set-Cookie",
+      "nonchips=foreign; SameSite=None; Secure",
+      true
+    );
+  }
 }

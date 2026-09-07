@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -18,7 +16,10 @@ DIRS += [
 
 EXPORTS.mozilla += [
     "/mozglue/misc/IntegerPrintfMacros.h",
+    "/mozglue/misc/Now.h",
     "/mozglue/misc/Sprintf.h",
+    "/mozglue/misc/TimeStamp.h",
+    "/mozglue/misc/Uptime.h",
 ]
 
 if CONFIG["OS_ARCH"] == "WINNT":

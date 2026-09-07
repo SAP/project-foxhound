@@ -1,5 +1,8 @@
 "use strict";
 
+// Schedule reset to the initial sidebar state after the test.
+SidebarTestUtils.restoreStateAtCleanup(window);
+
 function background() {
   browser.runtime.onConnect.addListener(port => {
     browser.test.assertEq(port.name, "ernie", "port name correct");

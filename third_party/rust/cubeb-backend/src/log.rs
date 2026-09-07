@@ -3,6 +3,7 @@
 // This program is made available under an ISC-style license.  See the
 // accompanying file LICENSE for details.
 
+use std::ffi::CStr;
 use std::os::raw::c_char;
 
 /// Maximum length in bytes for a log message.
@@ -68,9 +69,13 @@ pub fn cubeb_log_internal_buf_fmt(
         .to_str()
         .unwrap();
     let mut buf = StaticCString::<LOG_LIMIT>::new();
-    let _ = std::fmt::write(&mut buf, format_args!("{}:{}: {}\n", filename, line, msg));
+    let _ = std::fmt::write(&mut buf, format_args!("{filename}:{line}: {msg}\n"));
     unsafe {
-        log_callback(buf.as_cstr().as_ptr());
+        // Don't process this as a format string in C
+        log_callback(
+            CStr::from_bytes_with_nul_unchecked(b"%s\0").as_ptr(),
+            buf.as_cstr().as_ptr(),
+        );
     };
 }
 
@@ -87,7 +92,7 @@ macro_rules! cubeb_log_internal {
         }
     };
     ($log_callback: expr, $level: expr, $msg: expr) => {
-        cubeb_log_internal!($log_callback, $level, "{}", $msg);
+        cubeb_log_internal!($log_callback, $level, "{}", format_args!($msg));
     };
 }
 
@@ -113,15 +118,62 @@ macro_rules! cubeb_alogv {
 
 #[cfg(test)]
 mod tests {
+    use crate::{set_logging, LogLevel};
+    extern crate regex;
+    use self::regex::Regex;
+    use std::sync::RwLock;
+
+    // Ensure that tests that modify the global log callback (e.g. to assert)
+    // cannot run concurrently with others
+    static LOG_MODIFIER: RwLock<()> = RwLock::new(());
+
     #[test]
     fn test_normal_logging_sync() {
+        let _guard = LOG_MODIFIER.read();
         cubeb_log!("This is synchronous log output at normal level");
         cubeb_log!("{} Formatted log", 1);
         cubeb_log!("{} Formatted {} log {}", 1, 2, 3);
     }
 
     #[test]
+    fn test_normal_logging_sync_format_specififer() {
+        let _guard = LOG_MODIFIER.write();
+        set_logging(
+            LogLevel::Normal,
+            Some(|s| {
+                let s = s.to_str().unwrap().trim();
+                println!("{}", s);
+                let re = Regex::new(r"log.rs:\d+: This has a %s in it").unwrap();
+                assert!(re.is_match(s));
+            }),
+        )
+        .unwrap();
+        cubeb_log!("This has a %s in it");
+        set_logging(LogLevel::Disabled, None).unwrap();
+    }
+
+    #[test]
+    fn test_normal_logging_inline() {
+        let _guard = LOG_MODIFIER.write();
+        // log.rs:128: 1 log\n
+        set_logging(
+            LogLevel::Normal,
+            Some(|s| {
+                let s = s.to_str().unwrap().trim();
+                println!("{}", s);
+                let re = Regex::new(r"log.rs:\d+: 1 log").unwrap();
+                assert!(re.is_match(s));
+            }),
+        )
+        .unwrap();
+        let x = 1;
+        cubeb_log!("{x} log");
+        set_logging(LogLevel::Disabled, None).unwrap();
+    }
+
+    #[test]
     fn test_verbose_logging_sync() {
+        let _guard = LOG_MODIFIER.read();
         cubeb_logv!("This is synchronous log output at verbose level");
         cubeb_logv!("{} Formatted log", 1);
         cubeb_logv!("{} Formatted {} log {}", 1, 2, 3);
@@ -129,6 +181,7 @@ mod tests {
 
     #[test]
     fn test_normal_logging_async() {
+        let _guard = LOG_MODIFIER.read();
         cubeb_alog!("This is asynchronous log output at normal level");
         cubeb_alog!("{} Formatted log", 1);
         cubeb_alog!("{} Formatted {} log {}", 1, 2, 3);
@@ -136,6 +189,7 @@ mod tests {
 
     #[test]
     fn test_verbose_logging_async() {
+        let _guard = LOG_MODIFIER.read();
         cubeb_alogv!("This is asynchronous log output at verbose level");
         cubeb_alogv!("{} Formatted log", 1);
         cubeb_alogv!("{} Formatted {} log {}", 1, 2, 3);

@@ -16,17 +16,17 @@ const {
  * would be in relation to its current orientation. Otherwise, return the current
  * orientation and angle.
  *
- * @param {Object} device
+ * @param {object} device
  *        The device whose content is displayed in the viewport. Used to determine the
  *        primary orientation.
- * @param {Object} viewport
+ * @param {object} viewport
  *        The viewport displaying device content. Used to determine the current
  *        orientation type of the device while in RDM.
- * @param {Number|null} angleToRotateTo
+ * @param {number | null} angleToRotateTo
  *        Optional. The rotated angle specifies the degree to which the device WILL be
  *        turned to. If undefined, then only return the current orientation and angle
  *        of the device.
- * @return {Object} the orientation of the device.
+ * @return {object} the orientation of the device.
  */
 function getOrientation(device, viewport, angleToRotateTo = null) {
   const { width: deviceWidth, height: deviceHeight } = device;

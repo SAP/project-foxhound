@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +13,6 @@
 #include <X11/Xutil.h>
 #include "X11UndefineNone.h"
 
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/Range.h"
@@ -24,7 +22,6 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/GtkCompositorWidget.h"
-#include "mozilla/Unused.h"
 
 #include "prenv.h"
 #include "GLContextProvider.h"
@@ -51,7 +48,7 @@ namespace mozilla::gl {
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
 
-MOZ_RUNINIT GLXLibrary sGLXLibrary;
+MOZ_GLOBINIT GLXLibrary sGLXLibrary;
 
 static inline bool HasExtension(const char* aExtensions,
                                 const char* aRequiredExtension) {
@@ -469,7 +466,7 @@ bool GLContextGLX::MakeCurrentImpl() const {
   if (mGLX->IsMesa()) {
     // Read into the event queue to ensure that Mesa receives a
     // DRI2InvalidateBuffers event before drawing. See bug 1280653.
-    Unused << XPending(*mDisplay);
+    (void)XPending(*mDisplay);
   }
 
   const bool succeeded = mGLX->fMakeCurrent(*mDisplay, mDrawable, mContext);
@@ -554,7 +551,7 @@ GLContextGLX::GLContextGLX(const GLContextDesc& desc,
                            bool aDoubleBuffered, Drawable aOwnedPixmap)
     : GLContext(desc, nullptr),
       mContext(aContext),
-      mDisplay(aDisplay),
+      mDisplay(std::move(aDisplay)),
       mDrawable(aDrawable),
       mOwnedPixmap(aOwnedPixmap),
       mDoubleBuffered(aDoubleBuffered),

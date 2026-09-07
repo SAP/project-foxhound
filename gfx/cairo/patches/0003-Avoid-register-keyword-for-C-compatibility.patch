@@ -1,0 +1,29 @@
+From 08ac44ba73d425a967e45ef31610633cfe2e68ec Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 03/29] Avoid 'register' keyword for C++ compatibility
+
+---
+ src/cairoint.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/cairoint.h b/src/cairoint.h
+index be1a4ba2a..0bb8b6f61 100644
+--- a/src/cairoint.h
++++ b/src/cairoint.h
+@@ -177,8 +177,12 @@ _cairo_popcount (uint32_t mask)
+ {
+ #if __GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4)
+     return __builtin_popcount (mask);
++#else
++#ifdef __cplusplus
++    int y;
+ #else
+     register int y;
++#endif
+ 
+     y = (mask >> 1) &033333333333;
+     y = mask - y - ((y >>1) & 033333333333);
+-- 
+2.53.0
+

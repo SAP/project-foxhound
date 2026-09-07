@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -124,7 +122,7 @@ Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
 
     for (size_t i = 0; i < argv.size(); i++)
       argv_cstr[i] = const_cast<char*>(argv[i].c_str());
-    argv_cstr[argv.size()] = NULL;
+    argv_cstr[argv.size()] = nullptr;
 
 #ifdef MOZ_CODE_COVERAGE
     if (gcov_child_prefix && !options.full_env) {
@@ -158,7 +156,7 @@ Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
 
   gProcessLog.print("==> process %d launched child process %d\n",
                     GetCurrentProcId(), pid);
-  if (options.wait) HANDLE_EINTR(waitpid(pid, 0, 0));
+  if (options.wait) HANDLE_EINTR(waitpid(pid, nullptr, 0));
 
   if (process_handle) *process_handle = pid;
 

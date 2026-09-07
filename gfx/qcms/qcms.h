@@ -194,6 +194,8 @@ void qcms_transform_release(qcms_transform *);
 
 void qcms_transform_data(qcms_transform *transform, const void *src, void *dest, size_t length);
 
+void qcms_transform_data_rgba_f16_to_rgba_u8(qcms_transform *transform, const uint16_t *src, uint8_t *dst, size_t num_pixels);
+
 void qcms_enable_iccv4();
 void qcms_enable_neon();
 void qcms_enable_avx();

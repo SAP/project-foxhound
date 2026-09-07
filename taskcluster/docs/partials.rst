@@ -6,55 +6,56 @@ Overview
 
 Windows, Mac and Linux releases have partial updates, to reduce
 the file size end-users have to download in order to receive new
-versions. These are created using a docker image, some Python,
-``mbsdiff``, and the tools in ``tools/update-packaging``
+versions. Partial updates contain only the differences between two
+complete MAR files, allowing users to download a much smaller file
+when updating.
 
-The task has been called 'Funsize' for quite some time. This might
-make sense depending on what brands of chocolate bar are available
-near you.
+Partials are generated using ``zucchini``, a binary diffing algorithm.
+The task uses an in-tree Docker image
+(``taskcluster/docker/partials-zucchini/``) and a Python script
+(``make_incremental_zucchini.py``) that orchestrates the diffing
+process, along with ``mar`` tools fetched as toolchain artifacts.
 
 How the Task Works
 ------------------
 
-Funsize uses a docker image that's built in-tree, named funsize-update-generator.
-The image contains some Python to examine the task definition and determine
-what needs to be done, but it downloads tools like ``mar`` and ``mbsdiff``
-from either locations specified in the task definition, or default mozilla-central
-locations.
+The ``partials-zucchini`` kind
+(``taskcluster/kinds/partials-zucchini/kind.yml``) defines the task.
+The transform at
+``taskcluster/gecko_taskgraph/transforms/partials_zucchini.py``
+populates the task definition based on the release history.
 
-The 'extra' section of the task definition contains most of the payload, under
-the 'funsize' key. In here is a list of partials that this specific task will
-generate, and each entry includes the earlier (or 'from') version, and the most
-recent (or 'to') version, which for most releases will likely be a taskcluster
-artifact.
+The task depends on the ``repackage`` (or ``repackage-l10n``) kind
+for the target ("to") complete MAR, and fetches the ``linux64-zucchini-bin``
+and ``linux64-mar-tools`` toolchain artifacts.
 
-.. code-block:: json
+The transform reads the ``release_history`` from the task graph
+parameters to determine which previous versions need partial updates.
+For each platform and locale combination, it constructs a JSON list
+of "from" MARs and passes it to the script via the ``--from-mars-json``
+argument.
 
-    {
-       "to_mar": "https://tc.net/api/queue/v1/task/EWtBFqVuT-WqG3tGLxWhmA/artifacts/public/build/ach/target.complete.mar",
-       "product": "Firefox",
-       "dest_mar": "target-60.0b8.partial.mar",
-       "locale": "ach",
-       "from_mar": "http://archive.mozilla.org/pub/firefox/candidates/60.0b8-candidates/build1/update/linux-i686/ach/firefox-60.0b8.complete.mar",
-       "update_number": 2,
-       "platform": "linux32",
-       "previousVersion": "60.0b8",
-       "previousBuildNumber": "1",
-       "branch": "mozilla-beta"
-     }
+Inside the Docker container, ``make_incremental_zucchini.py``:
 
-The 'update number' indicates how many released versions there are between 'to' and the current 'from'.
-For example, if we are building a partial update for the current nightly from the previous one, the update
-number will be 1. For the release before that, it will be 2. This lets us use generic output artifact
-names that we can rename in the later ``beetmover`` tasks.
+1. Extracts the target ("to") complete MAR once.
+2. Validates the MAR channel ID on the target MAR.
+3. For each previous ("from") version, in parallel using
+   ``ProcessPoolExecutor``:
 
-Inside the task, for each partial it has been told to generate, it will download, unpack and virus
-scan the 'from_mar' and 'to_mar', download the tools, and run ``make_incremental_update.sh`` from
-``tools/update-packaging``.
+   a. Downloads and signature-verifies the "from" MAR.
+   b. Extracts the "from" MAR.
+   c. Compares files between the two versions.
+   d. For changed files, generates a ``zucchini`` diff (XZ-compressed),
+      choosing the smaller of the patch or the full file.
+   e. Writes add/remove/patch instructions into an ``updatev3.manifest``.
+   f. Packages the result into a partial MAR using ``mar``.
+   g. Validates the MAR channel ID on the resulting partial.
 
-If a scope is given for a set of temporary S3 credentials, the task will use a caching script,
-to allow reuse of the diffs made for larger files. Some of the larger files are not localised,
-and this allows us to save a lot of compute time.
+4. Writes a ``manifest.json`` summarizing all generated partials.
+
+The script also handles forced-update files (e.g. ``precomplete``,
+``.chk`` files, the macOS Firefox binary) and ``add-if-not``
+instructions for files like ``channel-prefs.js``.
 
 For Releases
 ------------
@@ -106,9 +107,9 @@ prior releases that can be used to build partial updates. This could be
 for a variety of reasons, such as a new locale, or a hiatus in nightly
 releases creating too long a gap in the history.
 
-This means that the ``partials`` and ``partials-signing`` tasks may have
-nothing to do for a platform and locale. If this is true, then the tasks
-are filtered out in the ``transform``.
+This means that the ``partials-zucchini`` and ``partials-signing`` tasks
+may have nothing to do for a platform and locale. If this is true, then
+the tasks are filtered out in the ``transform``.
 
 This does mean that the downstream task, ``beetmover-repackage`` can not
 rely on the ``partials-signing`` task existing. It depends on both the
@@ -119,5 +120,19 @@ If there is a history in the ``parameters`` ``release_history`` section
 then ``beetmover-repackage`` will depend on ``partials-signing``.
 Otherwise, it will depend on ``repackage-signing``.
 
-This is not ideal, as it results in unclear logic in the task graph
-generation. It will be improved.
+Zucchini Rollout
+----------------
+
+The legacy implementation (called "Funsize") used ``mbsdiff`` for
+diffing. The ``zucchini_partial_rollout`` transform in the
+``partials-signing`` kind controls which implementation is active
+for each release channel. The ``partials-signing`` kind depends on
+both ``partials`` (legacy) and ``partials-zucchini``, and the rollout
+transform filters out the unused implementation based on the project:
+
+- **mozilla-central, mozilla-beta** (nightly): uses ``partials-zucchini``
+- **mozilla-release, ESR channels**: uses legacy ``partials``
+
+As zucchini partials are validated on nightly, the rollout will expand
+to other channels by removing entries from the
+``LEGACY_PARTIALS_PROJECTS`` set in the rollout transform.

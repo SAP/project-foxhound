@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,13 +7,14 @@
  */
 
 #include "mozilla/dom/DocumentType.h"
-#include "nsGkAtoms.h"
+
+#include "mozilla/dom/DocumentTypeBinding.h"
 #include "nsCOMPtr.h"
 #include "nsDOMString.h"
+#include "nsGkAtoms.h"
 #include "nsNodeInfoManager.h"
-#include "xpcpublic.h"
 #include "nsWrapperCacheInlines.h"
-#include "mozilla/dom/DocumentTypeBinding.h"
+#include "xpcpublic.h"
 
 already_AddRefed<mozilla::dom::DocumentType> NS_NewDOMDocumentType(
     nsNodeInfoManager* aNodeInfoManager, nsAtom* aName,
@@ -40,7 +39,7 @@ JSObject* DocumentType::WrapNode(JSContext* cx,
   return DocumentType_Binding::Wrap(cx, this, aGivenProto);
 }
 
-DocumentType::DocumentType(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+DocumentType::DocumentType(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                            const nsAString& aPublicId,
                            const nsAString& aSystemId,
                            const nsAString& aInternalSubset)
@@ -55,7 +54,9 @@ DocumentType::DocumentType(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
 
 DocumentType::~DocumentType() = default;
 
-const nsTextFragment* DocumentType::GetText() { return nullptr; }
+const CharacterDataBuffer* DocumentType::GetCharacterDataBuffer() const {
+  return nullptr;
+}
 
 void DocumentType::GetName(nsAString& aName) const { aName = NodeName(); }
 

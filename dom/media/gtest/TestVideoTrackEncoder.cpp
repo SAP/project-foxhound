@@ -9,12 +9,10 @@
 #include "MediaTrackListener.h"
 #include "VP8TrackEncoder.h"
 #include "WebMWriter.h"  // TODO: it's weird to include muxer header to get the class definition of VP8 METADATA
+#include "YUVBufferGenerator.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "prtime.h"
-
-#include "YUVBufferGenerator.h"
 
 #define VIDEO_TRACK_RATE 90000
 

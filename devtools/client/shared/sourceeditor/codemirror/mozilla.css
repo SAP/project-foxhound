@@ -8,7 +8,7 @@
   --breakpoint-active-color-hover: light-dark(rgba(44,187,15,.5), rgba(0,255,175,.7););
   --gutter-background-color: var(--theme-sidebar-background);
   --gutter-border-color: light-dark(var(--theme-splitter-color), var(--theme-toolbar-background));
-
+  --highlight-line-duration: 5000ms;
   &[forced-colors-active] {
     /* overriding variable in HCM so the border is actually visible (see Bug 1953376) */
     --gutter-border-color: var(--theme-splitter-color);
@@ -112,9 +112,9 @@
 }
 
 /* Search highlight style
- * cm-searching is used in Style Editor, and cm-highlight in Debugger */
+ * cm-searching is used in Style Editor, cm-highlight in Debugger and searchMatch in Netmonitor */
 .cm-searching,
-.cm-highlight {
+.cm-highlight, .cm-editor .cm-searchMatch {
   border-bottom: 1px solid var(--theme-contrast-border);
   /* Use the translucent yellow background, because we want the text selection
      background (CodeMirror-selected) to show through this. */
@@ -377,7 +377,7 @@
 }
 
 /* CodeMirror matchhighlight styling */
-.cm-matchhighlight, .cm-selectionMatch {
+.cm-matchhighlight, .cm-searchMatch-selected {
   outline: 1px solid var(--theme-contrast-border);
   border-radius: 2px;
   /* Override cm6 inline */
@@ -453,6 +453,12 @@
   font-family: unset;
 }
 
+/* Remove the default selection match background, as search results might have the
+.cm-selectionMatch class after the current search term has been removed, these should not be styled`` */
+.cm-editor .cm-selectionMatch {
+  background-color: transparent;
+}
+
 .cm-editor .cm-selectionBackground {
   background: var(--theme-text-selection-background) !important;
 }
@@ -461,6 +467,7 @@
   /* We don't want forced colors on selection so we can adjust the colors as we want.
      This especially helps for the unfocused selected text */
   forced-color-adjust: none;
+  color: inherit;
 }
 
 .cm-editor .cm-line ::selection {
@@ -526,4 +533,48 @@
   .tok-punctuation {
     color: currentColor;
   }
+}
+
+.highlight-line .CodeMirror-line,
+/* For CM6 */
+.cm-editor .cm-line.highlight-line {
+  animation-name: fade-highlight-out;
+  animation-duration: var(--highlight-line-duration);
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+@keyframes fade-highlight-out {
+
+  0%,
+  30% {
+    /* We want to use a color with some transparency so text selection is visible through it */
+    background-color: var(--theme-contrast-background-alpha);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.cm-editor .cm-panels {
+  background-color: var(--theme-toolbar-background);
+  color: var(--theme-body-color);
+}
+
+.cm-editor .cm-panels-top {
+  border-color: var(--theme-splitter-color);
+}
+
+/* Default search panel */
+.cm-search .cm-textfield {
+  width: 100%;
+  font-size: inherit;
+  background-color: transparent;
+  border-color: var(--theme-splitter-color);
+  margin: 0 !important;
+}
+
+/* Hide all other elements of the search except the text input */
+.cm-search .cm-button, .cm-search label, .cm-search button[name="close"] {
+  display: none;
 }

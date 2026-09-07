@@ -25,24 +25,24 @@ available measurements.
 
 The three panes display the following information:
 
--   **Power**: Shows power estimates for the package and the cores
-    (\"IA\"). These are reasonably useful for power profiling purposes,
-    but Mozilla\'s `rapl` utility provides these along with GPU and RAM
-    estimates, and in a command-line format that is often easier to use.
--   **Frequency**: Shows operating frequency measurements for the cores
-    (\"IA\") and the GPU (\"GT\"). These measurements aren\'t
-    particularly useful for power profiling purposes.
--   **Temperature**: Shows the package temperature. This is interesting,
-    but again not useful for power profiling purposes. Specifically,
-    the temperature is a proxy measurement that is *affected by*
-    processor power consumption, rather than one that *affects* it,
-    which makes it even less useful than most proxy measurements.
+- **Power**: Shows power estimates for the package and the cores
+  (\"IA\"). These are reasonably useful for power profiling purposes,
+  but Mozilla\'s `rapl` utility provides these along with GPU and RAM
+  estimates, and in a command-line format that is often easier to use.
+- **Frequency**: Shows operating frequency measurements for the cores
+  (\"IA\") and the GPU (\"GT\"). These measurements aren\'t
+  particularly useful for power profiling purposes.
+- **Temperature**: Shows the package temperature. This is interesting,
+  but again not useful for power profiling purposes. Specifically,
+  the temperature is a proxy measurement that is *affected by*
+  processor power consumption, rather than one that *affects* it,
+  which makes it even less useful than most proxy measurements.
 
 Intel Power Gadget can also log these results to a file. This feature
 has been used in [energia](https://github.com/mozilla/energia), Roberto
 Vitillo\'s tool for systematically measuring differential power usage
-between different browsers. (An energia dashboard can be seen
-[here](http://people.mozilla.org/~rvitillo/dashboard/); please note that
+between different browsers. (See the [energia dashboard](http://people.mozilla.org/~rvitillo/dashboard/);
+please note that
 the data has not been updated since early 2014.)
 
 Version 3.0 (available on Mac and Windows, but not on Linux) also

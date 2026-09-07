@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 #include "mozilla/extensions/ExtensionMockAPI.h"
 #include "mozilla/extensions/ExtensionPort.h"
 #include "mozilla/extensions/ExtensionProxy.h"
+#include "mozilla/extensions/ExtensionPublicSuffix.h"
 #include "mozilla/extensions/ExtensionRuntime.h"
 #include "mozilla/extensions/ExtensionScripting.h"
 #include "mozilla/extensions/ExtensionTest.h"
@@ -40,6 +39,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ExtensionBrowser)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExtensionDns)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExtensionMockAPI)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExtensionProxy)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mExtensionPublicSuffix)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExtensionRuntime)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExtensionScripting)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExtensionTest)
@@ -56,6 +56,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ExtensionBrowser)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExtensionMockAPI)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExtensionRuntime)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExtensionProxy)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExtensionPublicSuffix)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExtensionScripting)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExtensionTest)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -238,6 +239,14 @@ ExtensionProxy* ExtensionBrowser::GetExtensionProxy() {
   }
 
   return mExtensionProxy;
+}
+
+ExtensionPublicSuffix* ExtensionBrowser::GetExtensionPublicSuffix() {
+  if (!mExtensionPublicSuffix) {
+    mExtensionPublicSuffix = new ExtensionPublicSuffix(mGlobal, this);
+  }
+
+  return mExtensionPublicSuffix;
 }
 
 ExtensionRuntime* ExtensionBrowser::GetExtensionRuntime() {

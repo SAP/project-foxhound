@@ -20,9 +20,9 @@ includes: [testTypedArray.js, detachArrayBuffer.js]
 features: [TypedArray]
 ---*/
 
-testWithTypedArrayConstructors(function(TA) {
+testWithTypedArrayConstructors(function(TA, makeCtorArg) {
   var sample = new TA();
-  var target = new TA();
+  var target = new TA(makeCtorArg(0));
   var calledOffset = 0;
   var obj = {
     valueOf: function() {
@@ -36,6 +36,6 @@ testWithTypedArrayConstructors(function(TA) {
   });
 
   assert.sameValue(calledOffset, 1);
-});
+}, null, null, ["immutable"]);
 
 reportCompare(0, 0);

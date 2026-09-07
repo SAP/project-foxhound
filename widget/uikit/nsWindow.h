@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,11 @@
 #ifndef NSWINDOW_H_
 #define NSWINDOW_H_
 
+#include <objc/objc.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "mozilla/widget/IOSView.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "gfxPoint.h"
 
 #include "nsTArray.h"
@@ -20,6 +20,10 @@
 typedef struct objc_object ChildView;
 #endif
 
+namespace mozilla::layers {
+class NativeLayerRootCA;
+}
+
 namespace mozilla::widget {
 class EventDispatcher;
 class TextInputHandler;
@@ -28,7 +32,7 @@ class TextInputHandler;
 #define NS_WINDOW_IID \
   {0x5e6fd559, 0xb3f9, 0x40c9, {0x92, 0xd1, 0xef, 0x80, 0xb4, 0xf9, 0x69, 0xe9}}
 
-class nsWindow final : public nsBaseWidget {
+class nsWindow final : public nsIWidget {
  public:
   nsWindow();
 
@@ -40,9 +44,8 @@ class nsWindow final : public nsBaseWidget {
   // nsIWidget
   //
 
-  [[nodiscard]] nsresult Create(
-      nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
-      mozilla::widget::InitData* aInitData = nullptr) override;
+  [[nodiscard]] nsresult Create(nsIWidget* aParent, const LayoutDeviceIntRect&,
+                                const mozilla::widget::InitData&) override;
   void Destroy() override;
   void Show(bool aState) override;
   void Enable(bool aState) override {}
@@ -54,19 +57,21 @@ class nsWindow final : public nsBaseWidget {
   void SetBackgroundColor(const nscolor& aColor) override;
   void* GetNativeData(uint32_t aDataType) override;
 
-  void Move(double aX, double aY) override;
+  void Move(const DesktopPoint&) override;
   nsSizeMode SizeMode() override { return mSizeMode; }
   void SetSizeMode(nsSizeMode aMode) override;
   void EnteredFullScreen(bool aFullScreen);
-  void Resize(double aWidth, double aHeight, bool aRepaint) override;
-  void Resize(double aX, double aY, double aWidth, double aHeight,
-              bool aRepaint) override;
+  void Resize(const DesktopSize&, bool aRepaint) override;
+  void Resize(const DesktopRect&, bool aRepaint) override;
+  void DoResize(double aX, double aY, double aWidth, double aHeight,
+                bool aRepaint);
   LayoutDeviceIntRect GetScreenBounds() override;
+  LayoutDeviceIntRect GetBounds() override { return mBounds; }
   void ReportMoveEvent();
   void ReportSizeEvent();
   void ReportSizeModeEvent(nsSizeMode aMode);
 
-  CGFloat BackingScaleFactor();
+  double BackingScaleFactor();
   void BackingScaleFactorChanged();
   float GetDPI() override {
     // XXX: terrible
@@ -78,11 +83,8 @@ class nsWindow final : public nsBaseWidget {
   nsresult SetTitle(const nsAString& aTitle) override { return NS_OK; }
 
   void Invalidate(const LayoutDeviceIntRect& aRect) override;
-  nsresult DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
-                         nsEventStatus& aStatus) override;
 
-  void WillPaintWindow();
-  bool PaintWindow(LayoutDeviceIntRegion aRegion);
+  void PaintWindow();
 
   bool HasModalDescendents() { return false; }
 
@@ -106,12 +108,33 @@ class nsWindow final : public nsBaseWidget {
                       void* aCallbackData) override;
   */
 
+  mozilla::layers::NativeLayerRoot* GetNativeLayerRoot() override;
+
+  void HandleMainThreadCATransaction();
+
+  // Called when the main thread enters a phase during which visual changes
+  // are imminent and any layer updates on the compositor thread would interfere
+  // with visual atomicity.
+  // "Async" CATransactions are CATransactions which happen on a thread that's
+  // not the main thread.
+  void SuspendAsyncCATransactions();
+
+  // Called when we know that the current main thread paint will be completed
+  // once the main thread goes back to the event loop.
+  void MaybeScheduleUnsuspendAsyncCATransactions();
+
+  // Called from the runnable dispatched by
+  // MaybeScheduleUnsuspendAsyncCATransactions(). At this point we know that the
+  // main thread is done handling the visual change (such as a window resize)
+  // and we can start modifying CALayers from the compositor thread again.
+  void UnsuspendAsyncCATransactions();
+
   mozilla::widget::EventDispatcher* GetEventDispatcher() const;
 
   static already_AddRefed<nsWindow> From(nsPIDOMWindowOuter* aDOMWindow);
   static already_AddRefed<nsWindow> From(nsIWidget* aWidget);
 
-  void SetIOSView(already_AddRefed<mozilla::widget::IOSView>&& aView) {
+  void SetIOSView(already_AddRefed<mozilla::widget::IOSView> aView) {
     mIOSView = aView;
   }
   mozilla::widget::IOSView* GetIOSView() const { return mIOSView; }
@@ -135,6 +158,11 @@ class nsWindow final : public nsBaseWidget {
   mozilla::widget::InputContext mInputContext;
   RefPtr<mozilla::widget::TextInputHandler> mTextInputHandler;
   RefPtr<mozilla::widget::IOSView> mIOSView;
+
+  RefPtr<mozilla::layers::NativeLayerRootCA> mNativeLayerRoot;
+
+  RefPtr<mozilla::CancelableRunnable> mUnsuspendAsyncCATransactionsRunnable;
+  LayoutDeviceIntRect mBounds;
 
   void OnSizeChanged(const mozilla::gfx::IntSize& aSize);
 

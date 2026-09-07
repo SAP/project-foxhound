@@ -106,7 +106,7 @@ class MarionetteParentProcess {
     cmdLine.handleFlag("marionette", false);
   }
 
-  async observe(subject, topic) {
+  async observe(subject, topic, data) {
     if (this.enabled) {
       lazy.logger.trace(`Received observer notification ${topic}`);
     }
@@ -171,9 +171,13 @@ class MarionetteParentProcess {
       case "final-ui-startup":
         Services.obs.removeObserver(this, topic);
 
+        Services.obs.addObserver(this, "before-cancel-download-prompt");
         Services.obs.addObserver(this, "browser-idle-startup-tasks-finished");
         Services.obs.addObserver(this, "mail-idle-startup-tasks-finished");
         Services.obs.addObserver(this, "quit-application");
+
+        Services.obs.addObserver(this, "xpcom-shutdown");
+        Services.obs.addObserver(this, "xpcom-shutdown-threads");
 
         await this.init();
         break;
@@ -191,7 +195,28 @@ class MarionetteParentProcess {
 
       case "quit-application":
         Services.obs.removeObserver(this, topic);
+        // Remove this observer here rather than inside the handler itself,
+        // because on some platforms the notification fires multiple times
+        // and removing an already-removed observer would throw.
+        Services.obs.removeObserver(this, "before-cancel-download-prompt");
+        lazy.logger.trace(
+          `Application is shutting down with reason: "${data || "unknown"}"`
+        );
         await this.uninit();
+        break;
+
+      // Before the cancel download prompt appears,
+      // skip the prompt and force canceling of downloads.
+      case "before-cancel-download-prompt": {
+        const showPrompt = subject.QueryInterface(Ci.nsISupportsPRBool);
+        showPrompt.data = false;
+        break;
+      }
+
+      // Used for logging purposes to help identify slow shutdown sequences.
+      case "xpcom-shutdown":
+      case "xpcom-shutdown-threads":
+        Services.obs.removeObserver(this, topic);
         break;
     }
   }
@@ -203,7 +228,7 @@ class MarionetteParentProcess {
         let dialog = win.document.getElementById("safeModeDialog");
         if (dialog) {
           // accept the dialog to start in safe-mode
-          lazy.logger.trace("Safe mode detected, supressing dialog");
+          lazy.logger.trace("Safe mode detected, suppressing dialog");
           win.setTimeout(() => {
             dialog.getButton("accept").click();
           });

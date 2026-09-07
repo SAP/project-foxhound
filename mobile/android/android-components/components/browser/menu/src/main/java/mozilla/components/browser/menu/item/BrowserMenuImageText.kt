@@ -24,13 +24,17 @@ import mozilla.components.concept.menu.candidate.TextStyle
 
 internal const val NO_ID = -1
 
-internal fun ImageView.setTintResource(@ColorRes tintColorResource: Int) {
+internal fun ImageView.setTintResource(
+    @ColorRes tintColorResource: Int,
+) {
     if (tintColorResource != NO_ID) {
         imageTintList = AppCompatResources.getColorStateList(context, tintColorResource)
     }
 }
 
-internal fun TextView.setColorResource(@ColorRes textColorResource: Int) {
+internal fun TextView.setColorResource(
+    @ColorRes textColorResource: Int,
+) {
     if (textColorResource != NO_ID) {
         setTextColor(getColor(context, textColorResource))
     }

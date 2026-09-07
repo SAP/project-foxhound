@@ -17,11 +17,10 @@
 
 #include <string>
 
-#include "absl/base/macros.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/time_utils.h"
 
-namespace cricket {
+namespace webrtc {
 
 //////////////////////////////////////////////////////////////////////////////
 // Definition of FourCC codes
@@ -142,7 +141,7 @@ struct VideoFormatPod {
 
 struct RTC_EXPORT VideoFormat : VideoFormatPod {
   static const int64_t kMinimumInterval =
-      webrtc::kNumNanosecsPerSec / 10000;  // 10k fps.
+      kNumNanosecsPerSec / 10000;  // 10k fps.
 
   VideoFormat() { Construct(0, 0, 0, 0); }
 
@@ -162,21 +161,21 @@ struct RTC_EXPORT VideoFormat : VideoFormatPod {
   }
 
   static int64_t FpsToInterval(int fps) {
-    return fps ? webrtc::kNumNanosecsPerSec / fps : kMinimumInterval;
+    return fps ? kNumNanosecsPerSec / fps : kMinimumInterval;
   }
 
   static int IntervalToFps(int64_t interval) {
     if (!interval) {
       return 0;
     }
-    return static_cast<int>(webrtc::kNumNanosecsPerSec / interval);
+    return static_cast<int>(kNumNanosecsPerSec / interval);
   }
 
   static float IntervalToFpsFloat(int64_t interval) {
     if (!interval) {
       return 0.f;
     }
-    return static_cast<float>(webrtc::kNumNanosecsPerSec) /
+    return static_cast<float>(kNumNanosecsPerSec) /
            static_cast<float>(interval);
   }
 
@@ -214,12 +213,7 @@ struct RTC_EXPORT VideoFormat : VideoFormatPod {
   std::string ToString() const;
 };
 
-// Returns the largest positive integer that divides both `a` and `b`.
-ABSL_DEPRECATE_AND_INLINE() int GreatestCommonDivisor(int a, int b);
+}  //  namespace webrtc
 
-// Returns the smallest positive integer that is divisible by both `a` and `b`.
-ABSL_DEPRECATE_AND_INLINE() int LeastCommonMultiple(int a, int b);
-
-}  // namespace cricket
 
 #endif  // MEDIA_BASE_VIDEO_COMMON_H_

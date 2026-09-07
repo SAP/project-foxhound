@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=605242
 <head>
   <title>Test for Bug 605242</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="setTimeout('runTest()', 0)">
@@ -17,24 +18,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=605242
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 605242 **/
+/** Test for Bug 605242 */
 
 SimpleTest.waitForExplicitFinish();
 
-var utils = SpecialPowers.getDOMWindowUtils(window);
-function sendMouseDown(el) {
-  var rect = el.getBoundingClientRect();
-  utils.sendMouseEvent('mousedown', rect.left + 5, rect.top + 5, 0, 1, 0);
-}
-
-function sendMouseUp(el) {
-  var rect = el.getBoundingClientRect();
-  utils.sendMouseEvent('mouseup', rect.left + 5, rect.top + 5, 0, 1, 0);
-}
-
 function runTest() {
   var b = document.getElementById("testbutton");
-  sendMouseDown(b);
+  synthesizeMouse(b, 5, 5, { type: "mousedown" });
   var l = document.querySelectorAll(":active");
 
   var contains = false;  
@@ -45,7 +35,7 @@ function runTest() {
   }
 
   ok(contains, "Wrong active content! \n");
-  sendMouseUp(b);
+  synthesizeMouse(b, 5, 5, { type: "mouseup" });
   SimpleTest.finish();
 }
 

@@ -1,0 +1,15 @@
+{
+  "label": "mms.pinduoduo.com",
+  "bugs": {
+    "2039268": {
+      "issue": "unsupported-warning",
+      "matches": ["*://mms.pinduoduo.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

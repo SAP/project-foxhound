@@ -6,6 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635499
 <head>
   <title>Test for Bug 635499</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="datetime_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -16,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635499
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 635499 **/
+/** Test for Bug 635499 */
 
 var data = [
   { type: 'hidden', apply: false },
@@ -47,14 +48,16 @@ var input = document.createElement("input");
 document.getElementById('content').appendChild(input);
 
 /**
- * @aValidity - boolean indicating whether the element is expected to be valid
+ * @param {boolean} aValidity
+ *   Indicates whether the element is expected to be valid
  *   (aElement.validity.valid is true) or not. The value passed is ignored and
  *   overridden with true if aApply is false.
- * @aApply - boolean indicating whether the min/max attributes apply to this
- *   element type.
- * @aRangeApply - A boolean that's set to true if the current input type is a
- *   "[candidate] for constraint validation" and it "[has] range limitations"
- *   per http://www.whatwg.org/specs/web-apps/current-work/multipage/selectors.html#selector-in-range
+ * @param {boolean} aApply
+ *   Indicating whether the min/max attributes apply to this element type.
+ * @param {boolean} aRangeApply
+ *   Set to true if the current input type is a "[candidate] for constraint
+ *   validation" and it "[has] range limitations" per
+ *   http://www.whatwg.org/specs/web-apps/current-work/multipage/selectors.html#selector-in-range
  *   (in other words, one of the pseudo classes :in-range and :out-of-range
  *   should apply (which, depends on aValidity)).
  *   Else (neither :in-range or :out-of-range should match) set to false.
@@ -71,7 +74,7 @@ function checkValidity(aElement, aValidity, aApply, aRangeApply)
         (aElement.type == "date" || aElement.type == "time" ||
          aElement.type == "month" || aElement.type == "week" ||
          aElement.type == "datetime-local") ?
-        ("Please select a value that is no later than " + aElement.max + ".") :
+        ("Please select a value that is no later than " + formatDateTimeForValidityMessage(aElement.max, aElement.type) + ".") :
         ("Please select a value that is no more than " + aElement.max + ".");
   is(aElement.validationMessage,
      aValidity ? "" : overflowMsg, "Checking range overflow validation message");

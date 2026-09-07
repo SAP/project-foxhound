@@ -55,13 +55,6 @@ function makePrefTrackedFlag(exports, name, pref) {
 makePrefTrackedFlag(exports, "wantLogging", "devtools.debugger.log");
 
 /**
- * Setting the "devtools.debugger.log.verbose" preference to true will enable a
- * more verbose logging of the the RDP. The "devtools.debugger.log" preference
- * must be set to true as well for this to have any effect.
- */
-makePrefTrackedFlag(exports, "wantVerbose", "devtools.debugger.log.verbose");
-
-/**
  * Setting the "devtools.testing" preference to true will toggle on certain
  * behaviors that can differ from the production version of the code. These
  * behaviors typically enable easier testing or enhanced debugging features.

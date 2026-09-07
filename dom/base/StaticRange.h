@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,8 +17,12 @@ class ErrorResult;
 
 namespace dom {
 
+class CrossShadowBoundaryRange;
+
 class StaticRange : public AbstractRange {
  public:
+  enum class MutationObserved : bool { No, Yes };
+
   StaticRange() = delete;
   explicit StaticRange(const StaticRange& aOther) = delete;
 
@@ -54,9 +56,8 @@ class StaticRange : public AbstractRange {
                                               ErrorResult& aRv) {
     return StaticRange::Create(
         RawRangeBoundary(aStartContainer, aStartOffset,
-                         RangeBoundaryIsMutationObserved::No),
-        RawRangeBoundary(aEndContainer, aEndOffset,
-                         RangeBoundaryIsMutationObserved::No),
+                         RangeBoundarySetBy::Offset),
+        RawRangeBoundary(aEndContainer, aEndOffset, RangeBoundarySetBy::Offset),
         aRv);
   }
   template <typename SPT, typename SRT, typename EPT, typename ERT>
@@ -71,17 +72,23 @@ class StaticRange : public AbstractRange {
    */
   bool IsValid() const;
 
+  // CrossShadowBoundaryRange is the only StaticRange constructed with
+  // MutationObserved::Yes, so this distinguishes it without a dedicated tag.
+  bool IsCrossShadowBoundaryRange() const {
+    return mIsMutationObserved == MutationObserved::Yes;
+  }
+  inline CrossShadowBoundaryRange* AsCrossShadowBoundaryRange();
+
  private:
   // Whether the start and end points are in the same tree.
   // They could be in different trees, i.e, cross shadow boundaries.
   bool mAreStartAndEndInSameTree = false;
 
   // Whether mutation is observed.
-  RangeBoundaryIsMutationObserved mIsMutationObserved;
+  MutationObserved mIsMutationObserved = MutationObserved::No;
 
  protected:
-  explicit StaticRange(nsINode* aNode,
-                       RangeBoundaryIsMutationObserved aIsMutationObserved,
+  explicit StaticRange(nsINode* aNode, MutationObserved aIsMutationObserved,
                        TreeKind aBoundaryTreeKind = TreeKind::DOM)
       : AbstractRange(aNode, /* aIsDynamicRange = */ false, aBoundaryTreeKind),
         mIsMutationObserved(aIsMutationObserved) {}
@@ -105,8 +112,10 @@ class StaticRange : public AbstractRange {
    */
   nsresult SetStartAndEnd(nsINode* aStartContainer, uint32_t aStartOffset,
                           nsINode* aEndContainer, uint32_t aEndOffset) {
-    return SetStartAndEnd(RawRangeBoundary(aStartContainer, aStartOffset),
-                          RawRangeBoundary(aEndContainer, aEndOffset));
+    return SetStartAndEnd(RawRangeBoundary(aStartContainer, aStartOffset,
+                                           RangeBoundarySetBy::Offset),
+                          RawRangeBoundary(aEndContainer, aEndOffset,
+                                           RangeBoundarySetBy::Offset));
   }
   template <typename SPT, typename SRT, typename EPT, typename ERT>
   nsresult SetStartAndEnd(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,

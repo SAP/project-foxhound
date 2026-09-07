@@ -149,7 +149,7 @@ Building, running, testing, etc. not always support the latest Python versions, 
 especially after updating your Python distribution to a new version.
 
 The recommended way to work around this is to use a virtual environment with a compatible Python version.
-Please consider `mach's <https://searchfox.org/mozilla-central/source/mach>`_ ``MIN_PYTHON_VERSION`` and ``MAX_PYTHON_VERSION_TO_CONSIDER``
+Please consider :searchfox:`mach's <mach>` ``MIN_PYTHON_VERSION`` and ``MAX_PYTHON_VERSION_TO_CONSIDER``
 for the range of compatible versions.
 
 Should you be using Python through Homebrew, you can install older releases like this:

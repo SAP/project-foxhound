@@ -523,7 +523,7 @@ function createMultiLineDumper(aLevel) {
  * @param {object} aFrame
  *        The youngest stack frame coming from Components.stack, as formatted by
  *        getStack().
- * @param {array} aArgs
+ * @param {Array} aArgs
  *        The arguments given to the console method.
  * @param {object} aOptions
  *        Object properties depend on the console method that was invoked:

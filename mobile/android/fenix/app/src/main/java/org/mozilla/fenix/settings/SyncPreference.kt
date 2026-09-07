@@ -7,9 +7,9 @@ package org.mozilla.fenix.settings
 import android.content.Context
 import android.util.AttributeSet
 import android.view.View
-import androidx.appcompat.widget.SwitchCompat
 import androidx.preference.PreferenceViewHolder
 import androidx.preference.SwitchPreferenceCompat
+import com.google.android.material.materialswitch.MaterialSwitch
 import org.mozilla.fenix.R
 
 /**
@@ -21,7 +21,7 @@ class SyncPreference @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : SwitchPreferenceCompat(context, attrs) {
 
-    private var switchView: SwitchCompat? = null
+    private var switchView: MaterialSwitch? = null
 
     /**
      * Whether or not switch's toggle widget is visible.
@@ -42,7 +42,7 @@ class SyncPreference @JvmOverloads constructor(
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
 
-        switchView = holder.findViewById(R.id.switch_widget) as SwitchCompat?
+        switchView = holder.findViewById(R.id.switch_widget) as MaterialSwitch?
 
         switchView?.isChecked = isChecked
         switchView?.visibility = if (isSwitchWidgetVisible) View.VISIBLE else View.INVISIBLE

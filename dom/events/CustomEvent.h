@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CustomEvent_h__
-#define CustomEvent_h__
+#ifndef CustomEvent_h_
+#define CustomEvent_h_
 
 #include "js/Value.h"
 #include "mozilla/dom/Event.h"
@@ -49,4 +47,4 @@ already_AddRefed<mozilla::dom::CustomEvent> NS_NewDOMCustomEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
     mozilla::WidgetEvent* aEvent);
 
-#endif  // CustomEvent_h__
+#endif  // CustomEvent_h_

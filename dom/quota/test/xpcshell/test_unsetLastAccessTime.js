@@ -40,7 +40,7 @@ async function testSteps() {
   // - storage/default/https+++foo.example.com
   // - storage.sqlite
   // The file make_unsetLastAccessTime.js was run locally, specifically it was
-  // temporarily enabled in xpcshell.ini and then executed:
+  // temporarily enabled in xpcshell.toml and then executed:
   // mach test --interactive dom/quota/test/xpcshell/make_unsetLastAccessTime.js
   // Note: to make it become the profile in the test, additional manual steps
   // are needed.

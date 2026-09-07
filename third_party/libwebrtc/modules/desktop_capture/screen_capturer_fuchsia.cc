@@ -21,6 +21,8 @@
 #include <string>
 #include <utility>
 
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "modules/desktop_capture/blank_detector_desktop_capturer_wrapper.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capture_types.h"
@@ -31,7 +33,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/divide_round.h"
-#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -56,12 +57,17 @@ size_t RoundUpToMultiple(size_t value, size_t multiple) {
 
 std::unique_ptr<DesktopCapturer> DesktopCapturer::CreateRawScreenCapturer(
     const DesktopCaptureOptions& options) {
-  std::unique_ptr<ScreenCapturerFuchsia> capturer(new ScreenCapturerFuchsia());
+  RTC_LOG(LS_INFO) << "DesktopCapturer::CreateRawScreenCapturer creates "
+                      "DesktopCapturer of type ScreenCapturerFuchsia";
+  std::unique_ptr<ScreenCapturerFuchsia> capturer(
+      new ScreenCapturerFuchsia(options));
   return capturer;
 }
 
-ScreenCapturerFuchsia::ScreenCapturerFuchsia()
-    : component_context_(sys::ComponentContext::Create()) {}
+ScreenCapturerFuchsia::ScreenCapturerFuchsia(
+    const DesktopCaptureOptions& options)
+    : component_context_(sys::ComponentContext::Create()),
+      clock_(options.clock()) {}
 
 ScreenCapturerFuchsia::~ScreenCapturerFuchsia() {
   // unmap virtual memory mapped pointers
@@ -93,7 +99,7 @@ void ScreenCapturerFuchsia::CaptureFrame() {
     return;
   }
 
-  int64_t capture_start_time_nanos = rtc::TimeNanos();
+  Timestamp capture_start_time = clock_.CurrentTime();
 
   zx::event event;
   zx::event dup;
@@ -148,8 +154,7 @@ void ScreenCapturerFuchsia::CaptureFrame() {
                       << release_result.err();
   }
 
-  int capture_time_ms = (rtc::TimeNanos() - capture_start_time_nanos) /
-                        rtc::kNumNanosecsPerMillisec;
+  int capture_time_ms = (clock_.CurrentTime() - capture_start_time).ms();
   frame->set_capture_time_ms(capture_time_ms);
   callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
 }
@@ -303,9 +308,8 @@ void ScreenCapturerFuchsia::SetupBuffers() {
 
   fuchsia::ui::composition::RegisterBufferCollectionArgs buffer_collection_args;
   buffer_collection_args.set_export_token(std::move(export_token));
-  buffer_collection_args.set_buffer_collection_token(
-      fuchsia::sysmem::BufferCollectionTokenHandle(
-          flatland_token.Unbind().TakeChannel()));
+  buffer_collection_args.set_buffer_collection_token2(
+      std::move(flatland_token));
   buffer_collection_args.set_usage(
       fuchsia::ui::composition::RegisterBufferCollectionUsage::SCREENSHOT);
 
@@ -387,7 +391,7 @@ void ScreenCapturerFuchsia::SetupBuffers() {
     const zx::vmo& virt_mem =
         buffer_collection_info_.buffers()[buffer_index].vmo();
     virtual_memory_mapped_addrs_[buffer_index] = nullptr;
-    auto status = zx::vmar::root_self()->map(
+    status = zx::vmar::root_self()->map(
         ZX_VM_PERM_READ, /*vmar_offset*/ 0, virt_mem,
         /*vmo_offset*/ 0, virt_mem_bytes,
         reinterpret_cast<uintptr_t*>(

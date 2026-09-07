@@ -46,24 +46,9 @@ export interface Commands {
   client: any;
   targetCommand: {
     targetFront: {
-      // @backward-compat { version 141 } This trait is used to support Firefox < 140
-      // It should be removed when ESR 128 isn't supported anymore.
-      getTrait(
-        traitName: "useBulkTransferForPerformanceProfile"
-      ): boolean | undefined;
       getTrait(traitName: string): unknown;
     };
   };
-}
-
-/* @backward-compat { version 141 } This interface is only useful for Firefox <
- * 140. Starting Firefox 140 a gzipped ArrayBuffer is used in all cases, then
- * this interface can be replaced by MockedExports.ProfileAndAdditionalInformation
- * directly after we stop supporting older versions.
- */
-export interface ProfileAndAdditionalInformation {
-  profile: ArrayBuffer | MinimallyTypedGeckoProfile;
-  additionalInformation?: MockedExports.ProfileGenerationAdditionalInformation;
 }
 
 /**
@@ -71,14 +56,15 @@ export interface ProfileAndAdditionalInformation {
  */
 export interface PerfFront {
   startProfiler: (options: RecordingSettings) => Promise<boolean>;
-  getProfileAndStopProfiler: () => Promise<ProfileAndAdditionalInformation>;
+  getProfileAndStopProfiler: () => Promise<MockedExports.ProfileAndAdditionalInformation>;
 
-  /* Note that this front also has getProfileAndStopProfilerBulk and
+  /* Note that this front also has startCaptureAndStopProfiler and
    * getPreviouslyRetrievedAdditionalInformation, but we don't
    * want to be able to call these functions directly, so they're commented out
    * in this interface, only specified for documentation purposes. */
-  // getProfileAndStopProfilerBulk: () => Promise<ArrayBuffer>
-  // getPreviouslyRetrievedAdditionalInformation: () => Promise<MockedExports.ProfileGenerationAdditionalInformation>;
+  // startCaptureAndStopProfiler: () => Promise<number>;
+  // getPreviouslyCapturedProfileDataBulk: (handle: number) => Promise<ArrayBuffer>;
+  // getPreviouslyRetrievedAdditionalInformation: (handle: number) => Promise<MockedExports.ProfileGenerationAdditionalInformation>;
   stopProfilerAndDiscardProfile: () => Promise<void>;
   getSymbolTable: (
     path: string,
@@ -106,14 +92,7 @@ export interface PreferenceFront {
 }
 
 export interface RootTraits {
-  // @backward-compat { version 141 }
-  // In Firefox >= 140, this will be true, and will be missing in older
-  // versions. The functionality controlled by this property can be cleaned up
-  // once ESR 128 isn't supported anymore.
-  useBulkTransferForPerformanceProfile?: boolean;
-
-  // There are other properties too, but we don't list them here as they're not
-  // related to the performance panel.
+  // There are no traits used by the performance front end at the moment.
 }
 
 export type RecordingState =
@@ -190,17 +169,6 @@ export interface Library {
   arch: string;
 }
 
-/**
- * Only provide types for the GeckoProfile as much as we need it. There is no
- * reason to maintain a full type definition here.
- * @backward-compat { version 141 } This interface is only useful for Firefox <
- * 140. Starting Firefox 140 a gzipped ArrayBuffer is used in all cases.
- */
-export interface MinimallyTypedGeckoProfile {
-  libs: Library[];
-  processes: MinimallyTypedGeckoProfile[];
-}
-
 export type GetSymbolTableCallback = (
   debugName: string,
   breakpadId: string
@@ -216,7 +184,7 @@ export interface SymbolicationService {
  * profile has been obtained.
  */
 export type OnProfileReceived = (
-  profileAndAdditionalInformation: ProfileAndAdditionalInformation | null,
+  profileAndAdditionalInformation: MockedExports.ProfileAndAdditionalInformation | null,
   error?: Error | string
 ) => void;
 
@@ -235,6 +203,7 @@ export interface RecordingSettings {
   objdirs: string[];
   // The duration is currently not wired up to the UI yet. See Bug 1587165.
   duration?: number;
+  mozLogs?: string;
 }
 
 /**
@@ -479,6 +448,7 @@ export interface PresetDefinition {
   threads: string[];
   duration: number;
   profilerViewMode?: ProfilerViewMode;
+  mozLogs?: string;
   l10nIds: {
     popup: {
       label: string;
@@ -513,7 +483,8 @@ export type RequestFromFrontend =
   | GetSymbolTableRequest
   | QuerySymbolicationApiRequest
   | GetPageFaviconsRequest
-  | OpenScriptInTabDebuggerRequest;
+  | OpenScriptInTabDebuggerRequest
+  | GetJSSourcesRequest;
 
 type StatusQueryRequest = { type: "STATUS_QUERY" };
 type EnableMenuButtonRequest = { type: "ENABLE_MENU_BUTTON" };
@@ -549,6 +520,10 @@ type OpenScriptInTabDebuggerRequest = {
   line: number;
   column: number;
 };
+type GetJSSourcesRequest = {
+  type: "GET_JS_SOURCES";
+  sourceUuids: Array<string>;
+};
 
 export type MessageToFrontend<R> =
   | OutOfBandErrorMessageToFrontend
@@ -581,7 +556,8 @@ export type ResponseToFrontend =
   | GetSymbolTableResponse
   | QuerySymbolicationApiResponse
   | GetPageFaviconsResponse
-  | OpenScriptInTabDebuggerResponse;
+  | OpenScriptInTabDebuggerResponse
+  | GetJSSourcesResponse;
 
 type StatusQueryResponse = {
   menuButtonIsEnabled: boolean;
@@ -605,15 +581,15 @@ type StatusQueryResponse = {
 };
 type EnableMenuButtonResponse = void;
 
-/* @backward-compat { version 141 } When the target is < v140, this is a JS
- * object. Starting v140 this is an ArrayBuffer containing a gzipped profile. */
-type GetProfileResponse = ArrayBuffer | MinimallyTypedGeckoProfile;
+type GetProfileResponse = ArrayBuffer;
 type GetExternalMarkersResponse = Array<object>;
 type GetExternalPowerTracksResponse = Array<object>;
 type GetSymbolTableResponse = SymbolTableAsTuple;
 type QuerySymbolicationApiResponse = string;
 type GetPageFaviconsResponse = Array<ProfilerFaviconData | null>;
 type OpenScriptInTabDebuggerResponse = void;
+type GetJSSourceReponseItem = { sourceText: string } | { error: string };
+type GetJSSourcesResponse = Array<GetJSSourceReponseItem>;
 
 /**
  * This represents an event channel that can talk to a content page on the web.
@@ -638,6 +614,10 @@ export class ProfilerWebChannel {
   ) => void;
 }
 
+type JSSources = Partial<{
+  [sourceUuid: string]: string;
+}>;
+
 /**
  * The per-tab information that is stored when a new profile is captured
  * and a profiler tab is opened, to serve the correct profile to the tab
@@ -646,14 +626,13 @@ export class ProfilerWebChannel {
 export type ProfilerBrowserInfo = {
   profileCaptureResult: ProfileCaptureResult;
   symbolicationService: SymbolicationService | null;
+  jsSources: JSSources | null;
 };
 
 export type ProfileCaptureResult =
   | {
       type: "SUCCESS";
-      /* @backward-compat { version 141 } When the target is < v140, this is a JS
-       * object. Starting v140 this is an ArrayBuffer containing a gzipped profile. */
-      profile: MinimallyTypedGeckoProfile | ArrayBuffer;
+      profile: ArrayBuffer;
     }
   | {
       type: "ERROR";

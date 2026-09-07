@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,26 +5,36 @@
 #ifndef DOM_SVG_SVGGEOMETRYELEMENT_H_
 #define DOM_SVG_SVGGEOMETRYELEMENT_H_
 
+#include "mozilla/EnumeratedArray.h"
+#include "mozilla/dom/SVGAnimatedNumber.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/dom/SVGAnimatedNumber.h"
 
 namespace mozilla {
 
-struct SVGMark {
-  enum Type {
-    eStart,
-    eMid,
-    eEnd,
+class SVGMarkerFrame;
 
-    eTypeCount
+struct SVGMark {
+  enum class Type {
+    Start,
+    Mid,
+    End,
   };
 
-  float x, y, angle;
+  gfx::Point pos;
+  float angle;
   Type type;
-  SVGMark(float aX, float aY, float aAngle, Type aType)
-      : x(aX), y(aY), angle(aAngle), type(aType) {}
+  SVGMark(const gfx::Point& aPos, float aAngle, Type aType)
+      : pos(aPos), angle(aAngle), type(aType) {}
 };
+
+// Glue to make EnumeratedArray work with SVGMark::Type.
+template <>
+struct MaxContiguousEnumValue<SVGMark::Type> {
+  static constexpr auto value = SVGMark::Type::End;
+};
+
+using SVGMarkerFrames = EnumeratedArray<SVGMark::Type, SVGMarkerFrame*>;
 
 namespace dom {
 
@@ -50,7 +58,7 @@ class SVGGeometryElement : public SVGGeometryElementBase {
 
  public:
   explicit SVGGeometryElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   NS_IMPL_FROMNODE_HELPER(SVGGeometryElement, IsSVGGeometryElement())
 
@@ -111,40 +119,51 @@ class SVGGeometryElement : public SVGGeometryElementBase {
   class SimplePath {
    public:
     SimplePath()
-        : mX(0.0), mY(0.0), mWidthOrX2(0.0), mHeightOrY2(0.0), mType(NONE) {}
-    bool IsPath() const { return mType != NONE; }
+        : mX(0.0),
+          mY(0.0),
+          mWidthOrX2(0.0),
+          mHeightOrY2(0.0),
+          mType(Type::None) {}
+    bool IsPath() const { return mType != Type::None; }
     void SetRect(Float x, Float y, Float width, Float height) {
       mX = x;
       mY = y;
       mWidthOrX2 = width;
       mHeightOrY2 = height;
-      mType = RECT;
+      mType = Type::Rect;
+    }
+    void SetRect(const gfx::Rect& rect) {
+      mX = rect.x;
+      mY = rect.y;
+      mWidthOrX2 = rect.width;
+      mHeightOrY2 = rect.height;
+      mType = Type::Rect;
     }
     Rect AsRect() const {
-      MOZ_ASSERT(mType == RECT);
+      MOZ_ASSERT(mType == Type::Rect);
       return Rect(mX, mY, mWidthOrX2, mHeightOrY2);
     }
-    bool IsRect() const { return mType == RECT; }
+    bool IsRect() const { return mType == Type::Rect; }
     void SetLine(Float x1, Float y1, Float x2, Float y2) {
       mX = x1;
       mY = y1;
       mWidthOrX2 = x2;
       mHeightOrY2 = y2;
-      mType = LINE;
+      mType = Type::Line;
     }
     Point Point1() const {
-      MOZ_ASSERT(mType == LINE);
+      MOZ_ASSERT(mType == Type::Line);
       return Point(mX, mY);
     }
     Point Point2() const {
-      MOZ_ASSERT(mType == LINE);
+      MOZ_ASSERT(mType == Type::Line);
       return Point(mWidthOrX2, mHeightOrY2);
     }
-    bool IsLine() const { return mType == LINE; }
-    void Reset() { mType = NONE; }
+    bool IsLine() const { return mType == Type::Line; }
+    void Reset() { mType = Type::None; }
 
    private:
-    enum Type { NONE, RECT, LINE };
+    enum class Type { None, Rect, Line };
     Float mX, mY, mWidthOrX2, mHeightOrY2;
     Type mType;
   };
@@ -229,7 +248,7 @@ class SVGGeometryElement : public SVGGeometryElementBase {
    */
   FillRule GetFillRule();
 
-  enum PathLengthScaleForType { eForTextPath, eForStroking };
+  enum class PathLengthScaleUsageType { TextPath, Stroking };
 
   /**
    * Gets the ratio of the actual element's length to the content author's
@@ -237,7 +256,7 @@ class SVGGeometryElement : public SVGGeometryElementBase {
    * This is used to scale stroke dashing, and to scale offsets along a
    * textPath.
    */
-  float GetPathLengthScale(PathLengthScaleForType aFor);
+  float GetPathLengthScale(PathLengthScaleUsageType aFor);
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedNumber> PathLength();
@@ -255,8 +274,8 @@ class SVGGeometryElement : public SVGGeometryElementBase {
 
   MOZ_CAN_RUN_SCRIPT void FlushIfNeeded();
 
-  SVGAnimatedNumber mPathLength;
   static NumberInfo sNumberInfo;
+  SVGAnimatedNumber mPathLength;
   mutable RefPtr<Path> mCachedPath;
 
  private:

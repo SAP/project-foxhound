@@ -138,17 +138,25 @@ public:
     // Create a new marked-content identifier (MCID) to be used with a marked-content sequence
     // parented by the structure element (StructElem) with the given element identifier (elemId).
     // Returns a false Mark if if elemId does not refer to a StructElem.
-    SkPDFStructTree::Mark createMarkForElemId(int elemId);
+    //
+    // If a true Mark is returned and structParentsKey is false, the Mark will be added to a new
+    // StructParents and structParentsKey will be updated to reference the StructParents entry.
+    SkPDFStructTree::Mark createMarkForElemId(int elemId, SkPDFParentTreeKey& structParentsKey);
+
+    void setContentStreamRefForStructParentsKey(SkPDFParentTreeKey structParentsKey,
+                                                SkPDFIndirectReference contentStreamRef);
 
     // Create a key to use with /StructParent in a content item (usually an annotation) which refers
     // to the structure element (StructElem) with the given element identifier (elemId).
-    // Returns -1 if elemId does not refer to a StructElem.
-    int createStructParentKeyForElemId(int elemId, SkPDFIndirectReference contentItemRef);
+    // Returns false key if elemId does not refer to a StructElem.
+    SkPDFParentTreeKey createStructParentKeyForElemId(int elemId,
+                                                      SkPDFIndirectReference contentItemRef);
 
     void addStructElemTitle(int elemId, SkSpan<const char>);
 
     std::unique_ptr<SkPDFArray> getAnnotations();
 
+    // Every reference returned by this method must be passed to `emit` exactly once.
     SkPDFIndirectReference reserveRef() { return SkPDFIndirectReference{fNextObjectNumber++}; }
 
     // Returns a tag to prepend to a PostScript name of a subset font. Includes the '+'.

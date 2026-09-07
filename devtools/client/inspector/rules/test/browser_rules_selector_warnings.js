@@ -7,6 +7,10 @@
 const TEST_URI = `
   <!DOCTYPE html>
   <style>
+    main, :scope ~ * {
+      outline-color: tomato;
+    }
+
     main, :has(form) {
       /* /!\ space between & and : is important */
       & :has(input),
@@ -26,6 +30,8 @@ const TEST_URI = `
 
 const UNCONSTRAINED_HAS_WARNING_MESSAGE =
   "This selector uses unconstrained :has(), which can be slow";
+const SIBLING_COMTINATOR_AFTER_SCOPE_WARNING_MESSAGE =
+  "Sibling selectors after :scope will never match anything";
 
 add_task(async function () {
   await addTab(
@@ -35,12 +41,12 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
 
   await selectNode("main", inspector);
-  const { ancestorDataEl, selectorText } = getRuleViewRuleEditor(view, 1);
+  const { ancestorDataEl, selectorText } = getRuleViewRuleEditorAt(view, 1);
 
   info(
     "Check that unconstrained :has() warnings are displayed for the rules selectors"
   );
-  const ruleSelectors = Array.from(
+  let ruleSelectors = Array.from(
     selectorText.querySelectorAll(".ruleview-selector")
   );
 
@@ -81,6 +87,24 @@ add_task(async function () {
     selectorEl: parentRuleSelectors[1],
     selectorText: ":has(form)",
     expectedWarnings: [UNCONSTRAINED_HAS_WARNING_MESSAGE],
+  });
+
+  const scopeSiblingRuleEditor = getRuleViewRuleEditorAt(view, 3);
+  ruleSelectors = Array.from(
+    scopeSiblingRuleEditor.selectorText.querySelectorAll(".ruleview-selector")
+  );
+  // Warning is not displayed when the selector does not have warnings
+  await assertSelectorWarnings({
+    view,
+    selectorEl: ruleSelectors[0],
+    selectorText: "main",
+    expectedWarnings: [],
+  });
+  await assertSelectorWarnings({
+    view,
+    selectorEl: ruleSelectors[1],
+    selectorText: ":scope ~ *",
+    expectedWarnings: [SIBLING_COMTINATOR_AFTER_SCOPE_WARNING_MESSAGE],
   });
 });
 

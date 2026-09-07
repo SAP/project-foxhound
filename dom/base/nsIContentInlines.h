@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,14 @@
 #ifndef nsIContentInlines_h
 #define nsIContentInlines_h
 
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsContentUtils.h"
-#include "nsAtom.h"
-#include "nsIFrame.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "nsAtom.h"
+#include "nsContentUtils.h"
+#include "nsIContent.h"
+#include "nsIFrame.h"
 
 inline bool nsIContent::IsInHTMLDocument() const {
   return OwnerDoc()->IsHTMLDocument();
@@ -25,7 +23,9 @@ inline bool nsIContent::IsInChromeDocument() const {
 }
 
 inline void nsIContent::SetPrimaryFrame(nsIFrame* aFrame) {
-  MOZ_ASSERT(IsInUncomposedDoc() || IsInShadowTree(), "This will end badly!");
+  MOZ_ASSERT(!aFrame || IsInUncomposedDoc() || IsInShadowTree(),
+             "This will end badly!");
+  MOZ_ASSERT(!aFrame || IsInComposedDoc(), "This will end badly!");
 
   // <area> is known to trigger this, see bug 749326 and bug 135040.
   MOZ_ASSERT(IsHTMLElement(nsGkAtoms::area) || !aFrame || !mPrimaryFrame ||
@@ -46,14 +46,6 @@ inline void nsIContent::SetPrimaryFrame(nsIFrame* aFrame) {
   }
 
   mPrimaryFrame = aFrame;
-}
-
-inline mozilla::dom::ShadowRoot* nsIContent::GetShadowRoot() const {
-  if (!IsElement()) {
-    return nullptr;
-  }
-
-  return AsElement()->GetShadowRoot();
 }
 
 template <nsINode::FlattenedParentType aType>
@@ -152,22 +144,6 @@ inline bool nsINode::NodeOrAncestorHasDirAuto() const {
   return AncestorHasDirAuto() || (IsElement() && AsElement()->HasDirAuto());
 }
 
-inline bool nsINode::IsEditable() const {
-  if (HasFlag(NODE_IS_EDITABLE)) {
-    // The node is in an editable contentEditable subtree.
-    return true;
-  }
-
-  // All editable anonymous content should be made explicitly editable via the
-  // NODE_IS_EDITABLE flag.
-  if (IsInNativeAnonymousSubtree()) {
-    return false;
-  }
-
-  // Check if the node is in a document and the document is in designMode.
-  return IsInDesignMode();
-}
-
 inline bool nsINode::IsEditingHost() const {
   if (!IsEditable() || !IsInComposedDoc() || IsInDesignMode() ||
       IsInNativeAnonymousSubtree()) {
@@ -257,8 +233,8 @@ inline void nsIContent::HandleShadowDOMRelatedRemovalSteps(bool aNullParent) {
 
   if (aNullParent) {
     // FIXME(emilio, bug 1577141): FromNodeOrNull rather than just FromNode
-    // because XBL likes to call UnbindFromTree at very odd times (with already
-    // disconnected anonymous content subtrees).
+    // because frame destruction likes to call UnbindFromTree at very odd times
+    // (with already disconnected anonymous content subtrees).
     if (Element* parentElement = Element::FromNodeOrNull(mParent)) {
       if (ShadowRoot* shadow = parentElement->GetShadowRoot()) {
         shadow->MaybeUnslotHostChild(*this);

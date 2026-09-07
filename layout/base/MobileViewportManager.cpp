@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,6 @@
 #include "mozilla/dom/InteractiveWidget.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
-#include "nsViewManager.h"
 #include "nsViewportInfo.h"
 
 mozilla::LazyLogModule MobileViewportManager::gLog("apz.mobileviewport");
@@ -51,7 +48,7 @@ MobileViewportManager::MobileViewportManager(MVMContext* aContext,
   mContext->AddEventListener(FULLSCREEN_CHANGED, this, false);
   mContext->AddEventListener(LOAD, this, true);
 
-  mContext->AddObserver(this, BEFORE_FIRST_PAINT.Data(), false);
+  mContext->AddObserver(this, BEFORE_FIRST_PAINT.get(), false);
 
   // We need to initialize the display size and the CSS viewport size before
   // the initial reflow happens.
@@ -68,7 +65,7 @@ void MobileViewportManager::Destroy() {
   mContext->RemoveEventListener(FULLSCREEN_CHANGED, this, false);
   mContext->RemoveEventListener(LOAD, this, true);
 
-  mContext->RemoveObserver(this, BEFORE_FIRST_PAINT.Data());
+  mContext->RemoveObserver(this, BEFORE_FIRST_PAINT.get());
 
   mContext->Destroy();
   mContext = nullptr;
@@ -756,6 +753,21 @@ CSSSize MobileViewportManager::GetIntrinsicCompositionSize() const {
                             compositionSize, mMobileViewportSize);
 
   return ScreenSize(compositionSize) / intrinsicScale;
+}
+
+CSSToScreenScale MobileViewportManager::GetIntrinsicScaleForFixedViewport()
+    const {
+  const ScreenIntSize displaySize = GetLayoutDisplaySize();
+  const ScreenIntSize compositionSize = GetCompositionSize(displaySize);
+  const nsViewportInfo viewportInfo = mContext->GetViewportInfo(displaySize);
+
+  CSSSize contentSize{};
+  if (Maybe<CSSRect> scrollableRect =
+          mContext->CalculateScrollableRectForRSF()) {
+    contentSize = scrollableRect->Size();
+  }
+
+  return ComputeIntrinsicScale(viewportInfo, compositionSize, contentSize);
 }
 
 ParentLayerSize MobileViewportManager::GetCompositionSizeWithoutDynamicToolbar()

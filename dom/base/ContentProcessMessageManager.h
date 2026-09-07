@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,8 @@
 #ifndef mozilla_dom_ContentProcessMessageManager_h
 #define mozilla_dom_ContentProcessMessageManager_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/MessageManagerGlobal.h"
 #include "mozilla/dom/MessageManagerCallback.h"
+#include "mozilla/dom/MessageManagerGlobal.h"
 #include "nsCOMPtr.h"
 #include "nsIScriptContext.h"
 #include "nsServiceManagerUtils.h"
@@ -61,9 +58,7 @@ class ContentProcessMessageManager : public nsIMessageSender,
   [[nodiscard]] JSObject* GetOrCreateWrapper();
 
   using MessageManagerGlobal::AddMessageListener;
-  using MessageManagerGlobal::AddWeakMessageListener;
   using MessageManagerGlobal::RemoveMessageListener;
-  using MessageManagerGlobal::RemoveWeakMessageListener;
 
   // ContentProcessMessageManager
   void GetInitialProcessData(JSContext* aCx,

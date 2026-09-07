@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozPersonalDictionary_h__
-#define mozPersonalDictionary_h__
+#ifndef mozPersonalDictionary_h_
+#define mozPersonalDictionary_h_
 
 #include "nsCOMPtr.h"
 #include "nsString.h"
@@ -15,6 +14,7 @@
 #include "nsCRT.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
+#include "mozilla/Atomics.h"
 #include <mozilla/Monitor.h>
 
 #define MOZ_PERSONALDICTIONARY_CONTRACTID \
@@ -45,10 +45,10 @@ class mozPersonalDictionary final : public mozIPersonalDictionary,
   virtual ~mozPersonalDictionary();
 
   /* true if the dictionary has been loaded from disk */
-  bool mIsLoaded;
+  mozilla::Atomic<bool> mIsLoaded;
 
   /* true if a dictionary save is pending */
-  bool mSavePending;
+  mozilla::Atomic<bool> mSavePending;
 
   nsCOMPtr<nsIFile> mFile;
   mozilla::Monitor mMonitor MOZ_UNANNOTATED;

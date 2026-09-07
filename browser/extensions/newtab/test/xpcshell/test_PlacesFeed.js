@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesFeed: "resource://newtab/lib/PlacesFeed.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  SearchService: "resource://gre/modules/SearchService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
@@ -125,6 +125,26 @@ add_task(async function test_addToBlockedTopSitesSponsors_no_dupes() {
     Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF)
   );
   Assert.deepEqual(new Set(["foo", "bar", "test"]), new Set(blockedSponsors));
+
+  Services.prefs.clearUserPref(TOP_SITES_BLOCKED_SPONSORS_PREF);
+  sandbox.restore();
+});
+
+add_task(async function test_addToBlockedTopSitesSponsors_invalid_pref() {
+  info(
+    "PlacesFeed.addToBlockedTopSitesSponsors should treat an invalid pref " +
+      "value as an empty blocklist"
+  );
+  let sandbox = sinon.createSandbox();
+  let feed = getPlacesFeedForTest(sandbox);
+  Services.prefs.setStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "");
+
+  feed.addToBlockedTopSitesSponsors([{ url: "test.com" }]);
+
+  let blockedSponsors = JSON.parse(
+    Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF)
+  );
+  Assert.deepEqual(new Set(["test"]), new Set(blockedSponsors));
 
   Services.prefs.clearUserPref(TOP_SITES_BLOCKED_SPONSORS_PREF);
   sandbox.restore();
@@ -277,13 +297,10 @@ add_task(async function test_onAction_BOOKMARK_URL() {
   sandbox.stub(NewTabUtils.activityStreamLinks, "addBookmark");
 
   let data = { url: "pear.com", title: "A pear" };
-  let _target = { browser: { ownerGlobal() {} } };
+  let _target = { window() {} };
   feed.onAction({ type: actionTypes.BOOKMARK_URL, data, _target });
   Assert.ok(
-    NewTabUtils.activityStreamLinks.addBookmark.calledWith(
-      data,
-      _target.browser.ownerGlobal
-    )
+    NewTabUtils.activityStreamLinks.addBookmark.calledWith(data, _target.window)
   );
 
   sandbox.restore();
@@ -362,7 +379,7 @@ add_task(async function test_onAction_OPEN_NEW_WINDOW() {
   let openWindowAction = {
     type: actionTypes.OPEN_NEW_WINDOW,
     data: { url: "https://foo.com" },
-    _target: { browser: { ownerGlobal: { openTrustedLinkIn } } },
+    _target: { window: { openTrustedLinkIn } },
   };
 
   feed.onAction(openWindowAction);
@@ -388,7 +405,7 @@ add_task(async function test_onAction_OPEN_PRIVATE_WINDOW() {
   let openWindowAction = {
     type: actionTypes.OPEN_PRIVATE_WINDOW,
     data: { url: "https://foo.com" },
-    _target: { browser: { ownerGlobal: { openTrustedLinkIn } } },
+    _target: { window: { openTrustedLinkIn } },
   };
 
   feed.onAction(openWindowAction);
@@ -415,8 +432,8 @@ add_task(async function test_onAction_OPEN_LINK() {
     type: actionTypes.OPEN_LINK,
     data: { url: "https://foo.com" },
     _target: {
-      browser: {
-        ownerGlobal: { openTrustedLinkIn },
+      window: {
+        openTrustedLinkIn,
       },
     },
   };
@@ -432,6 +449,29 @@ add_task(async function test_onAction_OPEN_LINK() {
   sandbox.restore();
 });
 
+add_task(async function test_onAction_OPEN_LINK_where() {
+  info("PlacesFeed.onAction should respect action.data.where on OPEN_LINK");
+  let sandbox = sinon.createSandbox();
+  let feed = getPlacesFeedForTest(sandbox);
+  let openTrustedLinkIn = sandbox.stub();
+  let openLinkAction = {
+    type: actionTypes.OPEN_LINK,
+    data: { url: "https://foo.com", where: "tab" },
+    _target: {
+      window: {
+        openTrustedLinkIn,
+      },
+    },
+  };
+  feed.onAction(openLinkAction);
+
+  Assert.ok(openTrustedLinkIn.calledOnce, "openTrustedLinkIn called");
+  let [, where] = openTrustedLinkIn.firstCall.args;
+  Assert.equal(where, "tab");
+
+  sandbox.restore();
+});
+
 add_task(async function test_onAction_OPEN_LINK_referrer() {
   info("PlacesFeed.onAction should open link with referrer on OPEN_LINK");
   let sandbox = sinon.createSandbox();
@@ -441,8 +481,9 @@ add_task(async function test_onAction_OPEN_LINK_referrer() {
     type: actionTypes.OPEN_LINK,
     data: { url: "https://foo.com", referrer: "https://foo.com/ref" },
     _target: {
-      browser: {
-        ownerGlobal: { openTrustedLinkIn, whereToOpenLink: () => "tab" },
+      window: {
+        openTrustedLinkIn,
+        whereToOpenLink: () => "tab",
       },
     },
   };
@@ -487,8 +528,9 @@ add_task(async function test_onAction_OPEN_LINK_typed_bonus() {
       url: "https://foo.com",
     },
     _target: {
-      browser: {
-        ownerGlobal: { openTrustedLinkIn, whereToOpenLink: () => "tab" },
+      window: {
+        openTrustedLinkIn,
+        whereToOpenLink: () => "tab",
       },
     },
   };
@@ -515,8 +557,8 @@ add_task(async function test_onAction_OPEN_LINK_pocket() {
       type: "pocket",
     },
     _target: {
-      browser: {
-        ownerGlobal: { openTrustedLinkIn },
+      window: {
+        openTrustedLinkIn,
       },
     },
   };
@@ -542,9 +584,7 @@ add_task(async function test_onAction_OPEN_LINK_not_http() {
     type: actionTypes.OPEN_LINK,
     data: { url: "file:///foo.com" },
     _target: {
-      browser: {
-        ownerGlobal: { openTrustedLinkIn },
-      },
+      window: { openTrustedLinkIn },
     },
   };
 
@@ -584,9 +624,7 @@ add_task(async function test_onAction_ABOUT_SPONSORED_TOP_SITES() {
   let openLinkAction = {
     type: actionTypes.ABOUT_SPONSORED_TOP_SITES,
     _target: {
-      browser: {
-        ownerGlobal: { openTrustedLinkIn },
-      },
+      window: { openTrustedLinkIn },
     },
   };
 
@@ -606,14 +644,14 @@ add_task(async function test_onAction_FILL_SEARCH_TERM() {
       "on FILL_SEARCH_TERM"
   );
   let sandbox = sinon.createSandbox();
-  sandbox.stub(SearchService.prototype, "getEngineByAlias").resolves(null);
+  sandbox.stub(SearchService, "getEngineByAlias").resolves(null);
 
   let feed = getPlacesFeedForTest(sandbox);
   let locationBar = { search: sandbox.stub() };
   let action = {
     type: actionTypes.FILL_SEARCH_TERM,
     data: { label: "@Foo" },
-    _target: { browser: { ownerGlobal: { gURLBar: locationBar } } },
+    _target: { window: { gURLBar: locationBar } },
   };
 
   await feed.onAction(action);
@@ -625,34 +663,6 @@ add_task(async function test_onAction_FILL_SEARCH_TERM() {
       searchModeEntry: "topsites_newtab",
     })
   );
-
-  sandbox.restore();
-});
-
-add_task(async function test_onAction_HANDOFF_SEARCH_TO_AWESOMEBAR() {
-  info(
-    "PlacesFeed.onAction should call handoffSearchToAwesomebar " +
-      "on HANDOFF_SEARCH_TO_AWESOMEBAR"
-  );
-  let sandbox = sinon.createSandbox();
-
-  let feed = getPlacesFeedForTest(sandbox);
-  sandbox.stub(feed, "handoffSearchToAwesomebar");
-
-  let action = {
-    type: actionTypes.HANDOFF_SEARCH_TO_AWESOMEBAR,
-    data: { text: "f" },
-    meta: { fromTarget: {} },
-    _target: { browser: { ownerGlobal: { gURLBar: { focus: () => {} } } } },
-  };
-
-  await feed.onAction(action);
-
-  Assert.ok(
-    feed.handoffSearchToAwesomebar.calledOnce,
-    "PlacesFeed.handoffSearchToAwesomebar called"
-  );
-  Assert.ok(feed.handoffSearchToAwesomebar.calledWithExactly(action));
 
   sandbox.restore();
 });
@@ -699,291 +709,6 @@ add_task(
     Assert.ok(
       PartnerLinkAttribution.makeRequest.calledOnce,
       "PartnerLinkAttribution.makeRequest called"
-    );
-
-    sandbox.restore();
-  }
-);
-
-function createFakeURLBar(sandbox) {
-  let fakeURLBar = {
-    focus: sandbox.spy(),
-    handoff: sandbox.spy(),
-    setHiddenFocus: sandbox.spy(),
-    removeHiddenFocus: sandbox.spy(),
-    addEventListener: (ev, cb) => {
-      fakeURLBar.listeners[ev] = cb;
-    },
-    removeEventListener: sandbox.spy(),
-
-    listeners: [],
-  };
-
-  return fakeURLBar;
-}
-
-add_task(async function test_handoffSearchToAwesomebar_no_text() {
-  info(
-    "PlacesFeed.handoffSearchToAwesomebar should properly handle handoff " +
-      "with no text passed in"
-  );
-
-  let sandbox = sinon.createSandbox();
-
-  let feed = getPlacesFeedForTest(sandbox);
-  let fakeURLBar = createFakeURLBar(sandbox);
-
-  sandbox.stub(PrivateBrowsingUtils, "isBrowserPrivate").returns(false);
-  sandbox.stub(feed, "_getDefaultSearchEngine").returns(null);
-
-  feed.handoffSearchToAwesomebar({
-    _target: { browser: { ownerGlobal: { gURLBar: fakeURLBar } } },
-    data: {},
-    meta: { fromTarget: {} },
-  });
-
-  Assert.ok(
-    fakeURLBar.setHiddenFocus.calledOnce,
-    "gURLBar.setHiddenFocus called"
-  );
-  Assert.ok(fakeURLBar.handoff.notCalled, "gURLBar.handoff not called");
-  Assert.ok(
-    feed.store.dispatch.notCalled,
-    "PlacesFeed.store.dispatch not called"
-  );
-
-  // Now type a character.
-  fakeURLBar.listeners.keydown({ key: "f" });
-  Assert.ok(fakeURLBar.handoff.calledOnce, "gURLBar.handoff called");
-  Assert.ok(
-    fakeURLBar.removeHiddenFocus.calledOnce,
-    "gURLBar.removeHiddenFocus called"
-  );
-  Assert.ok(feed.store.dispatch.calledOnce, "PlacesFeed.store.dispatch called");
-  Assert.ok(
-    feed.store.dispatch.calledWith({
-      meta: {
-        from: "ActivityStream:Main",
-        skipMain: true,
-        to: "ActivityStream:Content",
-        toTarget: {},
-      },
-      type: "DISABLE_SEARCH",
-    }),
-    "PlacesFeed.store.dispatch called"
-  );
-
-  sandbox.restore();
-});
-
-add_task(async function test_handoffSearchToAwesomebar_with_text() {
-  info(
-    "PlacesFeed.handoffSearchToAwesomebar should properly handle handoff " +
-      "with text data passed in"
-  );
-
-  let sandbox = sinon.createSandbox();
-
-  let feed = getPlacesFeedForTest(sandbox);
-  let fakeURLBar = createFakeURLBar(sandbox);
-
-  sandbox.stub(PrivateBrowsingUtils, "isBrowserPrivate").returns(false);
-  let engine = {};
-  sandbox.stub(feed, "_getDefaultSearchEngine").returns(engine);
-
-  const SESSION_ID = "decafc0ffee";
-  AboutNewTab.activityStream.store.feeds.get.returns({
-    sessions: {
-      get: () => {
-        return { session_id: SESSION_ID };
-      },
-    },
-  });
-
-  feed.handoffSearchToAwesomebar({
-    _target: { browser: { ownerGlobal: { gURLBar: fakeURLBar } } },
-    data: { text: "foo" },
-    meta: { fromTarget: {} },
-  });
-
-  Assert.ok(fakeURLBar.handoff.calledOnce, "gURLBar.handoff was called");
-  Assert.ok(fakeURLBar.handoff.calledWithExactly("foo", engine, SESSION_ID));
-  Assert.ok(fakeURLBar.focus.notCalled, "gURLBar.focus not called");
-  Assert.ok(
-    fakeURLBar.setHiddenFocus.notCalled,
-    "gURLBar.setHiddenFocus not called"
-  );
-
-  // Now call blur listener.
-  fakeURLBar.listeners.blur();
-  Assert.ok(feed.store.dispatch.calledOnce, "PlacesFeed.store.dispatch called");
-  Assert.ok(
-    feed.store.dispatch.calledWith({
-      meta: {
-        from: "ActivityStream:Main",
-        skipMain: true,
-        to: "ActivityStream:Content",
-        toTarget: {},
-      },
-      type: "SHOW_SEARCH",
-    })
-  );
-
-  sandbox.restore();
-});
-
-add_task(async function test_handoffSearchToAwesomebar_with_text_pb_mode() {
-  info(
-    "PlacesFeed.handoffSearchToAwesomebar should properly handle handoff " +
-      "with text data passed in, in private browsing mode"
-  );
-
-  let sandbox = sinon.createSandbox();
-
-  let feed = getPlacesFeedForTest(sandbox);
-  let fakeURLBar = createFakeURLBar(sandbox);
-
-  sandbox.stub(PrivateBrowsingUtils, "isBrowserPrivate").returns(true);
-  let engine = {};
-  sandbox.stub(feed, "_getDefaultSearchEngine").returns(engine);
-
-  feed.handoffSearchToAwesomebar({
-    _target: { browser: { ownerGlobal: { gURLBar: fakeURLBar } } },
-    data: { text: "foo" },
-    meta: { fromTarget: {} },
-  });
-  Assert.ok(fakeURLBar.handoff.calledOnce, "gURLBar.handoff was called");
-  Assert.ok(fakeURLBar.handoff.calledWithExactly("foo", engine, undefined));
-  Assert.ok(fakeURLBar.focus.notCalled, "gURLBar.focus not called");
-  Assert.ok(
-    fakeURLBar.setHiddenFocus.notCalled,
-    "gURLBar.setHiddenFocus not called"
-  );
-
-  // Now call blur listener.
-  fakeURLBar.listeners.blur();
-  Assert.ok(feed.store.dispatch.calledOnce, "PlacesFeed.store.dispatch called");
-  Assert.ok(
-    feed.store.dispatch.calledWith({
-      meta: {
-        from: "ActivityStream:Main",
-        skipMain: true,
-        to: "ActivityStream:Content",
-        toTarget: {},
-      },
-      type: "SHOW_SEARCH",
-    })
-  );
-
-  sandbox.restore();
-});
-
-add_task(async function test_handoffSearchToAwesomebar_SHOW_SEARCH_on_esc() {
-  info(
-    "PlacesFeed.handoffSearchToAwesomebar should SHOW_SEARCH on ESC keydown"
-  );
-
-  let sandbox = sinon.createSandbox();
-
-  let feed = getPlacesFeedForTest(sandbox);
-  let fakeURLBar = createFakeURLBar(sandbox);
-
-  sandbox.stub(PrivateBrowsingUtils, "isBrowserPrivate").returns(false);
-  let engine = {};
-  sandbox.stub(feed, "_getDefaultSearchEngine").returns(engine);
-
-  feed.handoffSearchToAwesomebar({
-    _target: { browser: { ownerGlobal: { gURLBar: fakeURLBar } } },
-    data: { text: "foo" },
-    meta: { fromTarget: {} },
-  });
-  Assert.ok(fakeURLBar.handoff.calledOnce, "gURLBar.handoff was called");
-  Assert.ok(fakeURLBar.handoff.calledWithExactly("foo", engine, undefined));
-  Assert.ok(fakeURLBar.focus.notCalled, "gURLBar.focus not called");
-
-  // Now call ESC keydown.
-  fakeURLBar.listeners.keydown({ key: "Escape" });
-  Assert.ok(feed.store.dispatch.calledOnce, "PlacesFeed.store.dispatch called");
-  Assert.ok(
-    feed.store.dispatch.calledWith({
-      meta: {
-        from: "ActivityStream:Main",
-        skipMain: true,
-        to: "ActivityStream:Content",
-        toTarget: {},
-      },
-      type: "SHOW_SEARCH",
-    })
-  );
-
-  sandbox.restore();
-});
-
-add_task(
-  async function test_handoffSearchToAwesomebar_with_session_id_no_text() {
-    info(
-      "PlacesFeed.handoffSearchToAwesomebar should properly handoff a " +
-        "newtab session id with no text passed in"
-    );
-
-    let sandbox = sinon.createSandbox();
-
-    let feed = getPlacesFeedForTest(sandbox);
-    let fakeURLBar = createFakeURLBar(sandbox);
-
-    sandbox.stub(PrivateBrowsingUtils, "isBrowserPrivate").returns(false);
-    let engine = {};
-    sandbox.stub(feed, "_getDefaultSearchEngine").returns(engine);
-
-    const SESSION_ID = "decafc0ffee";
-    AboutNewTab.activityStream.store.feeds.get.returns({
-      sessions: {
-        get: () => {
-          return { session_id: SESSION_ID };
-        },
-      },
-    });
-
-    feed.handoffSearchToAwesomebar({
-      _target: { browser: { ownerGlobal: { gURLBar: fakeURLBar } } },
-      data: {},
-      meta: { fromTarget: {} },
-    });
-
-    Assert.ok(
-      fakeURLBar.setHiddenFocus.calledOnce,
-      "gURLBar.setHiddenFocus was called"
-    );
-    Assert.ok(fakeURLBar.handoff.notCalled, "gURLBar.handoff not called");
-    Assert.ok(fakeURLBar.focus.notCalled, "gURLBar.focus not called");
-    Assert.ok(
-      feed.store.dispatch.notCalled,
-      "PlacesFeed.store.dispatch not called"
-    );
-
-    // Now type a character.
-    fakeURLBar.listeners.keydown({ key: "f" });
-    Assert.ok(fakeURLBar.handoff.calledOnce, "gURLBar.handoff was called");
-    Assert.ok(fakeURLBar.handoff.calledWithExactly("", engine, SESSION_ID));
-
-    Assert.ok(
-      fakeURLBar.removeHiddenFocus.calledOnce,
-      "gURLBar.removeHiddenFocus was called"
-    );
-    Assert.ok(
-      feed.store.dispatch.calledOnce,
-      "PlacesFeed.store.dispatch called"
-    );
-    Assert.ok(
-      feed.store.dispatch.calledWith({
-        meta: {
-          from: "ActivityStream:Main",
-          skipMain: true,
-          to: "ActivityStream:Content",
-          toTarget: {},
-        },
-        type: "DISABLE_SEARCH",
-      })
     );
 
     sandbox.restore();
@@ -1389,6 +1114,84 @@ add_task(async function test_PlacesObserver_ignores() {
     sandbox.restore();
   }
 });
+
+add_task(
+  async function test_PlacesObserver_skipped_bookmark_added_does_not_drop_subsequent_events() {
+    info(
+      "PlacesObserver should continue processing events after skipping a " +
+        "bookmark-added event (e.g. from IMPORT source)"
+    );
+    let sandbox = sinon.createSandbox();
+    let dispatch = sandbox.spy();
+    let observer = new PlacesFeed.PlacesObserver(dispatch);
+
+    await observer.handlePlacesEvent([
+      {
+        itemType: TYPE_BOOKMARK,
+        source: SOURCES.IMPORT,
+        dateAdded: FAKE_BOOKMARK.dateAdded,
+        guid: FAKE_BOOKMARK.bookmarkGuid,
+        title: FAKE_BOOKMARK.bookmarkTitle,
+        url: "https://www.imported.com",
+        isTagging: false,
+        type: "bookmark-added",
+      },
+      {
+        type: "page-removed",
+        url: "https://www.removed-page.com",
+        isRemovedFromStore: true,
+      },
+    ]);
+
+    Assert.ok(
+      dispatch.calledWith({
+        type: actionTypes.PLACES_LINKS_DELETED,
+        data: { urls: ["https://www.removed-page.com"] },
+      }),
+      "page-removed event after skipped bookmark-added should still be dispatched"
+    );
+    sandbox.restore();
+  }
+);
+
+add_task(
+  async function test_PlacesObserver_skipped_bookmark_added_does_not_drop_accumulated_removals() {
+    info(
+      "PlacesObserver should dispatch accumulated removedPages even when a " +
+        "skippable bookmark-added event follows"
+    );
+    let sandbox = sinon.createSandbox();
+    let dispatch = sandbox.spy();
+    let observer = new PlacesFeed.PlacesObserver(dispatch);
+
+    await observer.handlePlacesEvent([
+      {
+        type: "page-removed",
+        url: "https://www.already-removed.com",
+        isRemovedFromStore: true,
+      },
+      {
+        itemType: TYPE_BOOKMARK,
+        source: SOURCES.IMPORT,
+        dateAdded: FAKE_BOOKMARK.dateAdded,
+        guid: FAKE_BOOKMARK.bookmarkGuid,
+        title: FAKE_BOOKMARK.bookmarkTitle,
+        url: "https://www.imported.com",
+        isTagging: false,
+        type: "bookmark-added",
+      },
+    ]);
+
+    Assert.ok(
+      dispatch.calledWith({
+        type: actionTypes.PLACES_LINKS_DELETED,
+        data: { urls: ["https://www.already-removed.com"] },
+      }),
+      "page-removed accumulated before skipped bookmark-added should still be dispatched"
+    );
+    sandbox.restore();
+  }
+);
 
 add_task(async function test_PlacesObserver_bookmark_removed() {
   info(

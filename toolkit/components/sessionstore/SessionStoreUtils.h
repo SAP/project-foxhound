@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,16 +39,6 @@ class SessionStoreUtils {
   static void ForEachNonDynamicChildFrame(
       const GlobalObject& aGlobal, WindowProxyHolder& aWindow,
       SessionStoreUtilsFrameCallback& aCallback, ErrorResult& aRv);
-
-  static already_AddRefed<nsISupports> AddDynamicFrameFilteredListener(
-      const GlobalObject& aGlobal, EventTarget& aTarget, const nsAString& aType,
-      JS::Handle<JS::Value> aListener, bool aUseCapture, bool aMozSystemGroup,
-      ErrorResult& aRv);
-
-  static void RemoveDynamicFrameFilteredListener(
-      const GlobalObject& aGlobal, EventTarget& aTarget, const nsAString& aType,
-      nsISupports* aListener, bool aUseCapture, bool aMozSystemGroup,
-      ErrorResult& aRv);
 
   static void CollectDocShellCapabilities(const GlobalObject& aGlobal,
                                           nsIDocShell* aDocShell,

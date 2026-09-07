@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,14 +7,12 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
 #include <IOKit/IOKitLib.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/param.h>
 
 #include "MacLaunchHelper.h"
 #include "MacRunFromDmgUtils.h"
-#include "MacUtils.h"
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/intl/Localization.h"
@@ -37,7 +34,6 @@
 // https://developer.apple.com/documentation/iokit
 // https://developer.apple.com/library/archive/documentation/DeviceDrivers/Conceptual/IOKitFundamentals/
 
-using namespace mozilla::MacUtils;
 using namespace mozilla::MacLaunchHelper;
 
 namespace mozilla::MacRunFromDmgUtils {

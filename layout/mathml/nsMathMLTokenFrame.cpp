@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 
 #include "gfxContext.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
@@ -34,10 +33,10 @@ nsMathMLTokenFrame::InheritAutomaticData(nsIFrame* aParent) {
   return NS_OK;
 }
 
-eMathMLFrameType nsMathMLTokenFrame::GetMathMLFrameType() {
+MathMLFrameType nsMathMLTokenFrame::GetMathMLFrameType() {
   // treat everything other than <mi> as ordinary...
   if (!mContent->IsMathMLElement(nsGkAtoms::mi)) {
-    return eMathMLFrameType_Ordinary;
+    return MathMLFrameType::Ordinary;
   }
 
   StyleMathVariant mathVariant = StyleFont()->mMathVariant;
@@ -48,9 +47,9 @@ eMathMLFrameType nsMathMLTokenFrame::GetMathMLFrameType() {
       mathVariant == StyleMathVariant::BoldItalic ||
       mathVariant == StyleMathVariant::SansSerifItalic ||
       mathVariant == StyleMathVariant::SansSerifBoldItalic) {
-    return eMathMLFrameType_ItalicIdentifier;
+    return MathMLFrameType::ItalicIdentifier;
   }
-  return eMathMLFrameType_UprightIdentifier;
+  return MathMLFrameType::UprightIdentifier;
 }
 
 void nsMathMLTokenFrame::MarkTextFramesAsTokenMathML() {
@@ -150,9 +149,9 @@ void nsMathMLTokenFrame::Reflow(nsPresContext* aPresContext,
 // pass, it is not computed here because our children may be text frames
 // that do not implement the GetBoundingMetrics() interface.
 /* virtual */
-nsresult nsMathMLTokenFrame::Place(DrawTarget* aDrawTarget,
-                                   const PlaceFlags& aFlags,
-                                   ReflowOutput& aDesiredSize) {
+void nsMathMLTokenFrame::Place(DrawTarget* aDrawTarget,
+                               const PlaceFlags& aFlags,
+                               ReflowOutput& aDesiredSize) {
   mBoundingMetrics = nsBoundingMetrics();
   for (nsIFrame* childFrame : PrincipalChildList()) {
     ReflowOutput childSize(aDesiredSize.GetWritingMode());
@@ -210,6 +209,4 @@ nsresult nsMathMLTokenFrame::Place(DrawTarget* aDrawTarget,
   }
 
   SetReference(nsPoint(0, aDesiredSize.BlockStartAscent()));
-
-  return NS_OK;
 }

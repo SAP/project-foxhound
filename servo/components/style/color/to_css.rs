@@ -126,16 +126,22 @@ impl ToCss for AbsoluteColor {
                             "legacy srgb is not a color function"
                         );
                     },
-                    ColorSpace::SrgbLinear |
-                    ColorSpace::DisplayP3 |
-                    ColorSpace::A98Rgb |
-                    ColorSpace::ProphotoRgb |
-                    ColorSpace::Rec2020 |
-                    ColorSpace::XyzD50 |
-                    ColorSpace::XyzD65 => {
+                    ColorSpace::SrgbLinear
+                    | ColorSpace::DisplayP3
+                    | ColorSpace::DisplayP3Linear
+                    | ColorSpace::A98Rgb
+                    | ColorSpace::ProphotoRgb
+                    | ColorSpace::Rec2020
+                    | ColorSpace::XyzD50
+                    | ColorSpace::XyzD65 => {
                         // These color spaces are allowed.
                     },
-                    _ => {
+                    ColorSpace::Hsl
+                    | ColorSpace::Hwb
+                    | ColorSpace::Lab
+                    | ColorSpace::Oklab
+                    | ColorSpace::Lch
+                    | ColorSpace::Oklch => {
                         unreachable!("other color spaces do not support color() syntax")
                     },
                 };
@@ -267,13 +273,14 @@ impl AbsoluteColor {
                 serialize_color_alpha(dest, self.alpha(), false)?;
                 dest.write_char(')')
             },
-            ColorSpace::SrgbLinear |
-            ColorSpace::DisplayP3 |
-            ColorSpace::A98Rgb |
-            ColorSpace::ProphotoRgb |
-            ColorSpace::Rec2020 |
-            ColorSpace::XyzD50 |
-            ColorSpace::XyzD65 => {
+            ColorSpace::SrgbLinear
+            | ColorSpace::DisplayP3
+            | ColorSpace::DisplayP3Linear
+            | ColorSpace::A98Rgb
+            | ColorSpace::ProphotoRgb
+            | ColorSpace::Rec2020
+            | ColorSpace::XyzD50
+            | ColorSpace::XyzD65 => {
                 dest.write_str("color(")?;
                 self.color_space.to_css(dest)?;
                 dest.write_char(' ')?;

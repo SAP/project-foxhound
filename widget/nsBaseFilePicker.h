@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBaseFilePicker_h__
-#define nsBaseFilePicker_h__
+#ifndef nsBaseFilePicker_h_
+#define nsBaseFilePicker_h_
 
 #include "nsISupports.h"
 #include "nsIFilePicker.h"
@@ -15,6 +14,7 @@
 
 class nsISimpleEnumerator;
 class nsIWidget;
+class nsIGlobalObject;
 
 namespace mozilla::dom {
 class BrowsingContext;
@@ -26,7 +26,8 @@ class nsBaseFilePicker : public nsIFilePicker {
 
   // nsIFilePicker
   NS_IMETHOD Init(mozilla::dom::BrowsingContext* aBrowsingContext,
-                  const nsAString& aTitle, nsIFilePicker::Mode aMode) override;
+                  const nsAString& aTitle, nsIFilePicker::Mode aMode,
+                  nsISupports* aGlobal) override;
   NS_IMETHOD IsModeSupported(nsIFilePicker::Mode aMode, JSContext* aCx,
                              mozilla::dom::Promise** aPromise) override;
   NS_IMETHOD AppendFilters(int32_t filterMask) override;
@@ -53,6 +54,8 @@ class nsBaseFilePicker : public nsIFilePicker {
   NS_IMETHOD GetDomFilesInWebKitDirectory(
       nsISimpleEnumerator** aValue) override;
 
+  nsIGlobalObject* GetRelevantGlobal() const;
+
  protected:
   virtual ~nsBaseFilePicker();
 
@@ -66,9 +69,10 @@ class nsBaseFilePicker : public nsIFilePicker {
   nsString mDisplaySpecialDirectory;
 
   RefPtr<mozilla::dom::BrowsingContext> mBrowsingContext;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
   nsIFilePicker::Mode mMode = nsIFilePicker::modeOpen;
   nsString mOkButtonLabel;
   nsTArray<nsString> mRawFilters;
 };
 
-#endif  // nsBaseFilePicker_h__
+#endif  // nsBaseFilePicker_h_

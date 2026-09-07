@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,21 +9,21 @@
 #ifndef mozilla_dom_TreeWalker_h
 #define mozilla_dom_TreeWalker_h
 
-#include "nsISupports.h"
-#include "nsTraversal.h"
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsISupports.h"
+#include "nsTArray.h"
+#include "nsTraversal.h"
 
 class nsINode;
 
 namespace mozilla::dom {
 
 class TreeWalker final : public nsISupports, public nsTraversal {
-  virtual ~TreeWalker();
+  ~TreeWalker();
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
 
   TreeWalker(nsINode* aRoot, uint32_t aWhatToShow, NodeFilter* aFilter);
 

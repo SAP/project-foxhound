@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
+  <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
+  <string name="mozac_feature_downloads_notification_channel">ډاونلوډونه</string>
+  <!--
+    Summary text shown on an in progress download notification.
+    %1$s will be replaced with the estimated time remaining to complete the download.
+  -->
+  <string name="mozac_feature_downloads_time_remaining">په %1$s کې</string>
+  <!-- Summary text shown on an in progress download notification when the estimated time remaining is unknown. -->
+  <string name="mozac_feature_downloads_time_remaining_unknown">نامعلوم وخت</string>
+  <!-- Text shown on the second row of a paused download notification. -->
+  <string name="mozac_feature_downloads_paused_notification_text">ډاونلوډ ودرول شو</string>
+  <!-- Text shown on the second row of an completed download notification. The filename is shown on the first row. -->
+  <string name="mozac_feature_downloads_completed_notification_text2">ډاونلوډ بشپړ شو</string>
+  <!-- Text shown on the second row of an failed download notification. The filename is shown on the first row. -->
+  <string name="mozac_feature_downloads_failed_notification_text2">ډاونلوډ ناکام شو</string>
+  <!--
+    Alert dialog confirmation before downloading a previously downloaded file, this is the title.
+    %1$s will be replaced with the size of the file.
+  -->
+  <string name="mozac_feature_downloads_again_dialog_title">فایل بیا ډاونلوډ کړئ؟ (%1$s)</string>
+  <!--
+    Alert dialog confirmation before downloading a file, this is the title.
+    %1$s will be replaced with the size of the file.
+  -->
+  <string name="mozac_feature_downloads_dialog_title_3">فایل ډاونلوډ کړئ؟ (%1$s)</string>
+  <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_dialog_title_with_unknown_size">فایل ډاونلوډ کړئ؟</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">فایل بیا ډاونلوډ کړئ؟</string>
+  <!-- Alert dialog confirmation before download a file, this is the positive action. -->
+  <string name="mozac_feature_downloads_dialog_download">ډاونلوډ کړئ</string>
+  <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
+  <string name="mozac_feature_downloads_dialog_download_again">بیا ډاونلوډ کړئ</string>
+  <!-- Alert dialog confirmation before download a file, this is the negative action. -->
+  <string name="mozac_feature_downloads_dialog_cancel">لغوه کول</string>
+  <!--
+    Alert dialog confirmation before downloading a previously downloaded file, this is the description.
+    %1$s will be replaced with the name of the file.
+  -->
+  <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s لا دمخه شتون لري.</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">موجوده فایل پرانیزئ</string>
+  <!--
+    Alert dialog confirmation before downloading a file without network connection, this is the description.
+    %1$s will be replaced with the name of the file.
+  -->
+  <string name="mozac_feature_downloads_file_failure_no_connection" tools:ignore="UnusedResources">%1$s ډاونلوډ نه شو.</string>
+  <!-- Alert dialog confirmation before downloading a file without network connection, this is the description. -->
+  <string name="mozac_feature_downloads_file_check_connection" tools:ignore="UnusedResources">خپل اړیکه (کنکشن) وګورئ او بیا هڅه وکړئ.</string>
+  <!-- Error shown when the user is trying to download a invalid file. %1$s will be replaced with the name of the app. -->
+  <string name="mozac_feature_downloads_file_not_supported2">%1$s د دې ډول فایل ډاونلوډ نشي کولی</string>
+  <!-- Message that appears when the downloaded file could not be opened. -->
+  <string name="mozac_feature_downloads_could_not_open_file">فایل نه شو پرانیستلی</string>
+  <!-- Message that appears when the downloaded file is a specific type (%1$s) that Android doesn't support opening. -->
+  <string name="mozac_feature_downloads_open_not_supported1">د %1$s فایلونو د خلاصولو لپاره هیڅ اپلیکیشن ونه موندل شو.</string>
+  <!-- Button that pauses the download when pressed. -->
+  <string name="mozac_feature_downloads_button_pause">وقفه</string>
+  <!-- Button that resumes the download when pressed. -->
+  <string name="mozac_feature_downloads_button_resume">دوام ورکړئ</string>
+  <!-- Button that cancels the download when pressed. -->
+  <string name="mozac_feature_downloads_button_cancel">لغوه کول</string>
+  <!-- Button that opens the downloaded file when pressed. -->
+  <string name="mozac_feature_downloads_button_open">پرانيزئ</string>
+  <!-- Button that restarts the download after a failed attempt. -->
+  <string name="mozac_feature_downloads_button_try_again">بیا هڅه وکړه</string>
+  <!-- Content description for close button -->
+  <string name="mozac_feature_downloads_button_close">بندکړئ</string>
+  <!-- Title for the third party download app chooser dialog -->
+  <string name="mozac_feature_downloads_third_party_app_chooser_dialog_title">په کارولو سره عمل بشپړ کړئ</string>
+  <!-- Message that appears when trying to download with an external app fails. %1$s will be replaced with the name the external app. -->
+  <string name="mozac_feature_downloads_unable_to_open_third_party_app">د %1$s پرانیستلو توان نلري</string>
+  <!-- Text for the info dialog when write to storage permissions have been denied but user tries to download a file. -->
+  <string name="mozac_feature_downloads_write_external_storage_permissions_needed_message">د فايلونو د ښکته کولو لپاره د فايلونو او رسنيو د لاسرسي اجازه اړينه ده. د اندروېډ امستنو ته لاړ شئ، پر اجازو ټېپ وکړئ، او بيا اجازه ورکړئ.</string>
+  <!-- Alert dialog confirmation before cancelling downloads, this is the title -->
+  <string name="mozac_feature_downloads_cancel_active_downloads_warning_content_title">شخصي ډاونلوډونه لغوه کړئ؟</string>
+  <!-- Alert dialog confirmation before cancelling private downloads, this is the body. %1$s will be replaced with the name of the file. -->
+  <string name="mozac_feature_downloads_cancel_active_private_downloads_warning_content_body">که تاسو اوس ټول شخصي ټبونه وتړئ، د %1$s ډاونلوډ به لغوه شي. ايا ډاډه ياست چې غواړئ له شخصي لټون څخه ووځئ؟</string>
+  <!-- Alert dialog confirmation before cancelling downloads, this is the positive action. -->
+  <string name="mozac_feature_downloads_cancel_active_downloads_accept">ډاونلوډونه لغوه کړئ</string>
+  <!-- Alert dialog confirmation before cancelling downloads, this is the negative action. Leaves user in Private browsing -->
+  <string name="mozac_feature_downloads_cancel_active_private_downloads_deny">په شخصي لټون کې پاتې شئ</string>
+</resources>

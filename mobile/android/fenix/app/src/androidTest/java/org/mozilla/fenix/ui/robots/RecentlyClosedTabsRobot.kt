@@ -6,6 +6,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.net.Uri
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.Visibility
@@ -19,7 +20,6 @@ import org.hamcrest.Matchers
 import org.hamcrest.Matchers.allOf
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
-import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
@@ -91,7 +91,7 @@ class RecentlyClosedTabsRobot {
     }
 
     class Transition {
-        fun clickRecentlyClosedItem(title: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun clickRecentlyClosedItem(composeTestRule: ComposeTestRule, title: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             recentlyClosedTabsPageTitle(title).also {
                 Log.i(TAG, "clickRecentlyClosedItem: Waiting for $waitingTimeShort ms for recently closed tab with title: $title to exist")
                 it.waitForExists(waitingTimeShort)
@@ -104,11 +104,11 @@ class RecentlyClosedTabsRobot {
             mDevice.waitForIdle()
             Log.i(TAG, "clickRecentlyClosedItem: Waited for device to be idle")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
-        fun clickOpenInNewTab(testRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenInNewTab(testRule: ComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenInNewTab: Trying to click the multi-select \"Open in a new tab\" context menu button")
             openInNewTabOption().click()
             Log.i(TAG, "clickOpenInNewTab: Clicked the multi-select \"Open in a new tab\" context menu button")
@@ -117,7 +117,7 @@ class RecentlyClosedTabsRobot {
             return TabDrawerRobot.Transition(testRule)
         }
 
-        fun clickOpenInPrivateTab(testRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenInPrivateTab(testRule: ComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenInPrivateTab: Trying to click the multi-select \"Open in a private tab\" context menu button")
             openInPrivateTabOption().click()
             Log.i(TAG, "clickOpenInPrivateTab: Clicked the multi-select \"Open in a private tab\" context menu button")
@@ -135,13 +135,13 @@ class RecentlyClosedTabsRobot {
             return ShareOverlayRobot.Transition()
         }
 
-        fun goBackToHistoryMenu(interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
+        fun goBackToHistoryMenu(composeTestRule: ComposeTestRule, interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
             Log.i(TAG, "goBackToHistoryMenu: Trying to click navigate up toolbar button")
             onView(withContentDescription("Navigate up")).click()
             Log.i(TAG, "goBackToHistoryMenu: Clicked navigate up toolbar button")
 
             HistoryRobot().interact()
-            return HistoryRobot.Transition()
+            return HistoryRobot.Transition(composeTestRule)
         }
     }
 }

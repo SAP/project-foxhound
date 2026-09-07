@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,6 +31,14 @@ streamListener.prototype = {
     throw Components.Exception("", Cr.NS_ERROR_ABORT);
   },
 };
+
+add_setup(async function () {
+  // Ensure the Places DB file exists.
+  // In production, BrowserGlue initializes Places on idle after startup,
+  // but in tests that step doesn’t run. Clearing history here forces Places
+  // to init and the DB file to be created for ConcurrentConnection to use.
+  await PlacesUtils.history.clear();
+});
 
 add_task(async function () {
   info("Test that the default icon has the right content type.");

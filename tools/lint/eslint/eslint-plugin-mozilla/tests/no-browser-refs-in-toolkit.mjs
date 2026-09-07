@@ -21,7 +21,6 @@ function invalidCode(code, url) {
       {
         messageId: "noBrowserChrome",
         data: { url },
-        type: "Literal",
       },
     ],
   };

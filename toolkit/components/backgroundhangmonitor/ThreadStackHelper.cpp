@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,13 +15,10 @@
 #include <utility>
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/HangTypes.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/MemoryChecking.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/UniquePtr.h"
 #include "nsThread.h"
 
 #ifdef __GNUC__
@@ -36,8 +31,6 @@
 #endif
 
 #include <string.h>
-#include <vector>
-#include <cstdlib>
 
 #ifdef XP_LINUX
 #  include <ucontext.h>
@@ -205,9 +198,13 @@ void ThreadStackHelper::CollectJitReturnAddr(void* aAddr) {
   TryAppendFrame(HangEntryJit());
 }
 
-void ThreadStackHelper::CollectWasmFrame(JS::ProfilingCategoryPair aCategory,
-                                         const char* aLabel) {
+void ThreadStackHelper::CollectWasmOrSyncJITFrame(
+    JS::ProfilingCategoryPair aCategory, const char* aLabel,
+    uint32_t aSourceId) {
   MOZ_RELEASE_ASSERT(mStackToFill);
+  // BHR performs asynchronous sampling as the stack collection happens on the
+  // "BHMgr Monitor" thread. That's why, this method only receives WASM frames,
+  // never sync JIT frames.
   // We don't want to collect WASM frames, as they are probably for content, so
   // we just add a "(content wasm)" frame.
   TryAppendFrame(HangEntryWasm());

@@ -11,6 +11,9 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import org.mozilla.focus.R
 import org.mozilla.focus.databinding.SwitchWithDescriptionBinding
 
+/**
+ * A custom view for the cookie banner exception details switch.
+ */
 class CookieBannerExceptionDetailsSwitch @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,

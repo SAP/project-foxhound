@@ -2,7 +2,9 @@
 tags = "devtools"
 head = "head.js"
 firefox-appdir = "browser"
-run-if = ["os != 'android'"]
+run-if = [
+  "os != 'android'",
+]
 support-files = ""
 
 ["test_protocol_abort.js"]

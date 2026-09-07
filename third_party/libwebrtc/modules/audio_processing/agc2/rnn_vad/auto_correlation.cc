@@ -11,7 +11,10 @@
 #include "modules/audio_processing/agc2/rnn_vad/auto_correlation.h"
 
 #include <algorithm>
+#include <span>
 
+#include "modules/audio_processing/agc2/rnn_vad/common.h"
+#include "modules/audio_processing/utility/pffft_wrapper.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -44,8 +47,8 @@ AutoCorrelationCalculator::~AutoCorrelationCalculator() = default;
 // inverted lag equal to 0 that corresponds to a lag equal to the maximum
 // pitch period.
 void AutoCorrelationCalculator::ComputeOnPitchBuffer(
-    rtc::ArrayView<const float, kBufSize12kHz> pitch_buf,
-    rtc::ArrayView<float, kNumLags12kHz> auto_corr) {
+    std::span<const float, kBufSize12kHz> pitch_buf,
+    std::span<float, kNumLags12kHz> auto_corr) {
   RTC_DCHECK_LT(auto_corr.size(), kMaxPitch12kHz);
   RTC_DCHECK_GT(pitch_buf.size(), kMaxPitch12kHz);
   constexpr int kFftFrameSize = 1 << kAutoCorrelationFftOrder;

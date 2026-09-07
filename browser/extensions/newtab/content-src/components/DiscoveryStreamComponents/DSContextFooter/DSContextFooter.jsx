@@ -3,7 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { cardContextTypes } from "../../Card/types.mjs";
-import { SponsoredContentHighlight } from "../FeatureHighlight/SponsoredContentHighlight";
 // eslint-disable-next-line no-shadow
 import { CSSTransition, TransitionGroup } from "react-transition-group";
 import { FluentOrText } from "../../FluentOrText/FluentOrText.jsx";
@@ -12,6 +11,23 @@ import React from "react";
 // Animation time is mirrored in DSContextFooter.scss
 const ANIMATION_DURATION = 3000;
 
+const TransitionWrapper = ({ icon, fluentID, ...transitionProps }) => {
+  const nodeRef = React.useRef(null);
+
+  return (
+    <CSSTransition
+      nodeRef={nodeRef}
+      timeout={ANIMATION_DURATION}
+      classNames="story-animate"
+      {...transitionProps}
+    >
+      <div ref={nodeRef}>
+        <StatusMessage icon={icon} fluentID={fluentID} />
+      </div>
+    </CSSTransition>
+  );
+};
+
 export const DSMessageLabel = props => {
   const { context, context_type, mayHaveSectionsCards } = props;
   const { icon, fluentID } = cardContextTypes[context_type] || {};
@@ -19,13 +35,7 @@ export const DSMessageLabel = props => {
   if (!context && context_type && !mayHaveSectionsCards) {
     return (
       <TransitionGroup component={null}>
-        <CSSTransition
-          key={fluentID}
-          timeout={ANIMATION_DURATION}
-          classNames="story-animate"
-        >
-          <StatusMessage icon={icon} fluentID={fluentID} />
-        </CSSTransition>
+        <TransitionWrapper key={fluentID} icon={icon} fluentID={fluentID} />
       </TransitionGroup>
     );
   }
@@ -48,6 +58,7 @@ export const SponsorLabel = ({
   sponsor,
   context,
   newSponsoredLabel,
+  novaEnabled,
 }) => {
   const classList = `story-sponsored-label ${newSponsoredLabel || ""} clamp`;
   // If override is not false or an empty string.
@@ -59,6 +70,18 @@ export const SponsorLabel = ({
     // This is to support the use cases where the sponsored context is displayed elsewhere.
     return null;
   } else if (sponsor) {
+    if (novaEnabled) {
+      return (
+        <div className="source-wrapper">
+          <span className="source clamp">{sponsor}</span>
+          <span className="ds-spoc-separator" aria-hidden="true"></span>
+          <span
+            className="ds-spoc-sponsored"
+            data-l10n-id="newtab-label-sponsored-fixed"
+          />
+        </div>
+      );
+    }
     return (
       <p className={classList}>
         <FluentOrText
@@ -84,15 +107,15 @@ export class DSContextFooter extends React.PureComponent {
       sponsored_by_override,
       cta_button_variant,
       source,
-      spocMessageVariant,
-      dispatch,
       mayHaveSectionsCards,
+      novaEnabled,
     } = this.props;
 
     const sponsorLabel = SponsorLabel({
       sponsored_by_override,
       sponsor,
       context,
+      novaEnabled,
     });
     const dsMessageLabel = DSMessageLabel({
       context,
@@ -125,12 +148,6 @@ export class DSContextFooter extends React.PureComponent {
       return (
         <div className="story-footer">
           {sponsorLabel}
-          {sponsorLabel && spocMessageVariant === "variant-b" && (
-            <SponsoredContentHighlight
-              dispatch={dispatch}
-              position="inset-block-end inset-inline-start"
-            />
-          )}
           {dsMessageLabel}
         </div>
       );
@@ -141,7 +158,7 @@ export class DSContextFooter extends React.PureComponent {
 }
 
 export const DSMessageFooter = props => {
-  const { context, context_type, saveToPocketCard } = props;
+  const { context, context_type } = props;
 
   const dsMessageLabel = DSMessageLabel({
     context,
@@ -149,7 +166,7 @@ export const DSMessageFooter = props => {
   });
 
   // This case is specific and already displayed to the user elsewhere.
-  if (!dsMessageLabel || (saveToPocketCard && context_type === "pocket")) {
+  if (!dsMessageLabel) {
     return null;
   }
 

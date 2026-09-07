@@ -1,0 +1,14 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+browser.jar:
+        content/browser/urlbar/SmartbarInput.mjs           (content/SmartbarInput.mjs)
+        content/browser/urlbar/SmartbarInputController.mjs (content/SmartbarInputController.mjs)
+        content/browser/urlbar/SmartbarInputUtils.mjs      (content/SmartbarInputUtils.mjs)
+        content/browser/urlbar/UrlbarEventBufferer.mjs     (content/UrlbarEventBufferer.mjs)
+        content/browser/urlbar/UrlbarInput.mjs             (content/UrlbarInput.mjs)
+        content/browser/urlbar/UrlbarView.mjs              (content/UrlbarView.mjs)
+        content/browser/urlbar/UrlbarResult.mjs            (content/UrlbarResult.mjs)
+        content/browser/urlbar/UrlbarShared.mjs         (content/UrlbarShared.mjs)
+        content/browser/urlbar/SearchModeSwitcher.mjs      (content/SearchModeSwitcher.mjs)

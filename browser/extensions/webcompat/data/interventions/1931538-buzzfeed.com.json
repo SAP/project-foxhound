@@ -1,0 +1,21 @@
+{
+  "label": "buzzfeed.com",
+  "bugs": {
+    "1931538": {
+      "issue": "broken-interactive-elements",
+      "matches": [
+        "*://www.buzzfeed.com/trendyelephant793/thanksgiving-foods-showdown-quiz*"
+      ]
+    }
+  },
+  "css": {
+    "card_game_fix": "[class*=isFlipped] [class*=cardFace][class*=cardBack] { pointer-events: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "max_version": 140,
+      "css": ["card_game_fix"]
+    }
+  ]
+}

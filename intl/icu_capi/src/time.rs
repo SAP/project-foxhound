@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
 
@@ -67,24 +66,28 @@ pub mod ffi {
         /// Returns the hour in this time
         #[diplomat::rust_link(icu::time::Time::hour, StructField)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // this just returns a constructor argument
         pub fn hour(&self) -> u8 {
             self.0.hour.into()
         }
         /// Returns the minute in this time
         #[diplomat::rust_link(icu::time::Time::minute, StructField)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // this just returns a constructor argument
         pub fn minute(&self) -> u8 {
             self.0.minute.into()
         }
         /// Returns the second in this time
         #[diplomat::rust_link(icu::time::Time::second, StructField)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // this just returns a constructor argument
         pub fn second(&self) -> u8 {
             self.0.second.into()
         }
         /// Returns the subsecond in this time as nanoseconds
         #[diplomat::rust_link(icu::time::Time::subsecond, StructField)]
         #[diplomat::attr(auto, getter)]
+        #[diplomat::attr(demo_gen, disable)] // this just returns a constructor argument
         pub fn subsecond(&self) -> u32 {
             self.0.subsecond.into()
         }

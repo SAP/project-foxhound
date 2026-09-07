@@ -18,154 +18,8 @@
           src="../value.js"></script>
 
   <script type="application/javascript">
-    /**
-     * Do tests.
-     */
-    var gQueue = null;
-
-    // Value change invoker
-    function changeARIAValue(aNodeOrID, aValuenow, aValuetext) {
-      this.DOMNode = getNode(aNodeOrID);
-      this.eventSeq = [ new invokerChecker(aValuetext ?
-                                           EVENT_TEXT_VALUE_CHANGE :
-                                           EVENT_VALUE_CHANGE, this.DOMNode),
-        ];
-
-      this.invoke = function changeARIAValue_invoke() {
-        // Note: this should not fire an EVENT_VALUE_CHANGE when aria-valuetext
-        // is not empty
-        if (aValuenow != undefined)
-          this.DOMNode.setAttribute("aria-valuenow", aValuenow);
-
-        // Note: this should always fire an EVENT_VALUE_CHANGE
-        if (aValuetext != undefined)
-          this.DOMNode.setAttribute("aria-valuetext", aValuetext);
-      };
-
-      this.check = function changeARIAValue_check() {
-        var acc = getAccessible(aNodeOrID, [nsIAccessibleValue]);
-        if (!acc)
-          return;
-
-        // Note: always test against valuetext first because the existence of
-        // aria-valuetext takes precedence over aria-valuenow in gecko.
-        is(acc.value, (aValuetext != undefined) ? aValuetext : aValuenow,
-            "Wrong value of " + prettyName(aNodeOrID));
-      };
-
-      this.getID = function changeARIAValue_getID() {
-        return prettyName(aNodeOrID) + " value changed";
-      };
-    }
-
-    function changeValue(aID, aValue) {
-      this.DOMNode = getNode(aID);
-      this.eventSeq = [new invokerChecker(EVENT_TEXT_VALUE_CHANGE,
-                                          this.DOMNode),
-        ];
-
-      this.invoke = function changeValue_invoke() {
-        this.DOMNode.value = aValue;
-      };
-
-      this.check = function changeValue_check() {
-        var acc = getAccessible(this.DOMNode);
-        is(acc.value, aValue, "Wrong value for " + prettyName(aID));
-      };
-
-      this.getID = function changeValue_getID() {
-        return prettyName(aID) + " value changed";
-      };
-    }
-
-    function changeProgressValue(aID, aValue) {
-      this.DOMNode = getNode(aID);
-      this.eventSeq = [new invokerChecker(EVENT_VALUE_CHANGE, this.DOMNode)];
-
-      this.invoke = function changeProgressValue_invoke() {
-         this.DOMNode.value = aValue;
-      };
-
-      this.check = function changeProgressValue_check() {
-        var acc = getAccessible(this.DOMNode);
-        is(acc.value, aValue + "%", "Wrong value for " + prettyName(aID));
-      };
-
-      this.getID = function changeProgressValue_getID() {
-        return prettyName(aID) + " value changed";
-      };
-    }
-
-    function changeRangeValueWithMouse(aID) {
-      this.DOMNode = getNode(aID);
-      this.eventSeq = [new invokerChecker(EVENT_VALUE_CHANGE, this.DOMNode)];
-
-      this.invoke = function changeRangeValue_invoke() {
-        synthesizeMouse(getNode(aID), 5, 5, { });
-      };
-
-      this.finalCheck = function changeRangeValue_finalCheck() {
-        var acc = getAccessible(this.DOMNode);
-        is(acc.value, "0", "Wrong value for " + prettyName(aID));
-      };
-
-      this.getID = function changeRangeValue_getID() {
-        return prettyName(aID) + " range value changed";
-      };
-    }
-
-    function changeRangeValueWithA11yAPI(aID) {
-      this.DOMNode = getNode(aID);
-      let inputChecker = new invokerChecker("input", this.DOMNode);
-      inputChecker.eventTarget = "element";
-
-      let changeChecker = new invokerChecker("change", this.DOMNode);
-      changeChecker.eventTarget = "element";
-
-      this.eventSeq = [
-        inputChecker,
-        changeChecker,
-        new invokerChecker(EVENT_VALUE_CHANGE, this.DOMNode),
-      ];
-
-      this.invoke = function changeRangeValue_invoke() {
-        this.DOMNode.focus();
-        let acc = getAccessible(this.DOMNode, [nsIAccessibleValue]);
-        acc.currentValue = 0;
-        this.DOMNode.blur();
-      };
-
-      this.finalCheck = function changeRangeValue_finalCheck() {
-        var acc = getAccessible(this.DOMNode);
-        is(acc.value, "0", "Wrong value for " + prettyName(aID));
-      };
-
-      this.getID = function changeRangeValue_getID() {
-        return prettyName(aID) + " range value changed";
-      };
-    }
-
-    function changeSelectValue(aID, aKey, aValue) {
-      this.eventSeq =
-        [ new invokerChecker(EVENT_TEXT_VALUE_CHANGE, getAccessible(aID)) ];
-
-      this.invoke = function changeSelectValue_invoke() {
-        getAccessible(aID).takeFocus();
-        synthesizeKey(aKey, {}, window);
-      };
-
-      this.finalCheck = function changeSelectValue_finalCheck() {
-        is(getAccessible(aID).value, aValue, "Wrong value for " + prettyName(aID));
-      };
-
-      this.getID = function changeSelectValue_getID() {
-        return `${prettyName(aID)} closed select value change on '${aKey}'' key press`;
-      };
-    }
-
     // enableLogging("DOMEvents");
-    // gA11yEventDumpToConsole = true;
-    function doTests() {
+    async function doTests() {
 
       // Test initial values
       testValue("slider_vn", "5", 5, 0, 1000, 0);
@@ -178,37 +32,108 @@
       testValue("range2", "6", 6, 0, 10, 1);
 
       // Test that elements which should not expose values do not
-      let separatorVal = getAccessible("separator", [nsIAccessibleValue], null, DONOTFAIL_IF_NO_INTERFACE);
+      let separatorVal = getAccessible(
+        "separator",
+        [nsIAccessibleValue],
+        null,
+        DONOTFAIL_IF_NO_INTERFACE
+      );
       ok(!separatorVal, "value interface is not exposed for separator");
       let separatorAcc = getAccessible("separator");
       ok(!separatorAcc.value, "Value text is not exposed for separator");
 
       // Test value change events
-      gQueue = new eventQueue();
 
-      gQueue.push(new changeARIAValue("slider_vn", "6", undefined));
-      gQueue.push(new changeARIAValue("slider_vt", undefined, "hey!"));
-      gQueue.push(new changeARIAValue("slider_vnvt", "3", "sweet"));
-      gQueue.push(new changeARIAValue("scrollbar", "6", undefined));
-      gQueue.push(new changeARIAValue("splitter", "6", undefined));
+      let p = waitForEvent(EVENT_VALUE_CHANGE, getNode("slider_vn"));
+      getNode("slider_vn").setAttribute("aria-valuenow", "6");
+      await p;
+      is(getAccessible("slider_vn", [nsIAccessibleValue]).value, "6",
+         "Wrong value of slider_vn");
 
-      gQueue.push(new changeValue("combobox", "hello"));
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, getNode("slider_vt"));
+      getNode("slider_vt").setAttribute("aria-valuetext", "hey!");
+      await p;
+      is(getAccessible("slider_vt", [nsIAccessibleValue]).value, "hey!",
+         "Wrong value of slider_vt");
 
-      gQueue.push(new changeProgressValue("progress", "50"));
-      gQueue.push(new changeRangeValueWithMouse("range"));
-      gQueue.push(new changeRangeValueWithA11yAPI("range2"));
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, getNode("slider_vnvt"));
+      getNode("slider_vnvt").setAttribute("aria-valuenow", "3");
+      getNode("slider_vnvt").setAttribute("aria-valuetext", "sweet");
+      await p;
+      is(getAccessible("slider_vnvt", [nsIAccessibleValue]).value, "sweet",
+         "Wrong value of slider_vnvt");
 
-      gQueue.push(new changeSelectValue("select", "VK_DOWN", "2nd"));
-      gQueue.push(new changeSelectValue("select", "3", "3rd"));
+      p = waitForEvent(EVENT_VALUE_CHANGE, getNode("scrollbar"));
+      getNode("scrollbar").setAttribute("aria-valuenow", "6");
+      await p;
+      is(getAccessible("scrollbar", [nsIAccessibleValue]).value, "6",
+         "Wrong value of scrollbar");
+
+      p = waitForEvent(EVENT_VALUE_CHANGE, getNode("splitter"));
+      getNode("splitter").setAttribute("aria-valuenow", "6");
+      await p;
+      is(getAccessible("splitter", [nsIAccessibleValue]).value, "6",
+         "Wrong value of splitter");
+
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, getNode("combobox"));
+      getNode("combobox").value = "hello";
+      await p;
+      is(getAccessible(getNode("combobox")).value, "hello",
+         "Wrong value for combobox");
+
+      p = waitForEvent(EVENT_VALUE_CHANGE, getNode("progress"));
+      getNode("progress").value = "50";
+      await p;
+      is(getAccessible(getNode("progress")).value, "50%",
+         "Wrong value for progress");
+
+      p = waitForEvent(EVENT_VALUE_CHANGE, getNode("range"));
+      synthesizeMouse(getNode("range"), 5, 5, {});
+      await p;
+      is(getAccessible(getNode("range")).value, "0",
+         "Wrong value for range");
+
+      p = waitForEvent(EVENT_VALUE_CHANGE, getNode("range2"));
+      getNode("range2").focus();
+      getAccessible(getNode("range2"), [nsIAccessibleValue]).currentValue = 0;
+      getNode("range2").blur();
+      await p;
+      is(getAccessible(getNode("range2")).value, "0",
+         "Wrong value for range2");
+
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, getAccessible("select"));
+      getAccessible("select").takeFocus();
+      synthesizeKey("VK_DOWN", {}, window);
+      await p;
+      is(getAccessible("select").value, "2nd", "Wrong value for select");
+
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, getAccessible("select"));
+      getAccessible("select").takeFocus();
+      synthesizeKey("3", {}, window);
+      await p;
+      is(getAccessible("select").value, "3rd", "Wrong value for select");
 
       let iframeSelect = getAccessible("selectIframe").firstChild.firstChild;
-      gQueue.push(new changeSelectValue(iframeSelect, "VK_DOWN", "2"));
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, iframeSelect);
+      iframeSelect.takeFocus();
+      synthesizeKey("VK_DOWN", {}, window);
+      await p;
+      is(iframeSelect.value, "2", "Wrong value for iframeSelect");
 
       let shadowSelect = getAccessible("selectShadow").firstChild;
-      gQueue.push(new changeSelectValue(shadowSelect, "VK_DOWN", "2"));
-      gQueue.push(new changeValue("number", "2"));
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, shadowSelect);
+      shadowSelect.takeFocus();
+      synthesizeKey("VK_DOWN", {}, window);
+      await p;
+      is(shadowSelect.value, "2", "Wrong value for shadowSelect");
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      p = waitForEvent(EVENT_TEXT_VALUE_CHANGE, getNode("number"));
+      getNode("number").value = "2";
+      await p;
+      is(getAccessible(getNode("number")).value, "2",
+         "Wrong value for number");
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

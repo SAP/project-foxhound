@@ -90,7 +90,7 @@ async function checkDialog(
       BrowserTestUtils.isHidden(doc.getElementById("infoTitle")),
       "Old title should be hidden."
     );
-    let iconCS = doc.ownerGlobal.getComputedStyle(
+    let iconCS = doc.documentGlobal.getComputedStyle(
       doc.querySelector(".titleIcon")
     );
     Assert.stringContains(

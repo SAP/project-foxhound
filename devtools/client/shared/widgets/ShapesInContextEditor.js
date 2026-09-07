@@ -17,9 +17,9 @@ const { debounce } = require("resource://devtools/shared/debounce.js");
  *
  * It is instantiated once in HighlightersOverlay by calls to .getInContextEditor().
  */
-class ShapesInContextEditor {
+class ShapesInContextEditor extends EventEmitter {
   constructor(highlighter, inspector, state) {
-    EventEmitter.decorate(this);
+    super();
 
     this.inspector = inspector;
     this.highlighter = highlighter;
@@ -92,7 +92,7 @@ class ShapesInContextEditor {
    *
    * @param {NodeFront} node
    *        The NodeFront of the element with a shape to highlight.
-   * @param {Object} options
+   * @param {object} options
    *        Object used for passing options to the shapes highlighter.
    */
   async toggle(node, options, prop) {
@@ -127,7 +127,7 @@ class ShapesInContextEditor {
    *
    * @param {NodeFront} node
    *        The NodeFront of the element with a shape to highlight.
-   * @param {Object} options
+   * @param {object} options
    *        Object used for passing options to the shapes highlighter.
    */
   async show(node, options) {
@@ -196,7 +196,7 @@ class ShapesInContextEditor {
    * Handle events emitted by the highlighter.
    * Find any callback assigned to the event type and call it with the given data object.
    *
-   * @param {Object} data
+   * @param {object} data
    *        The data object sent in the event.
    */
   onHighlighterEvent(data) {
@@ -223,14 +223,13 @@ class ShapesInContextEditor {
   /**
    * Handler for "shape-change" event from the shapes highlighter.
    *
-   * @param  {Object} data
+   * @param  {object} data
    *         Data associated with the "shape-change" event.
    *         Contains:
    *         - {String} value: the new shape value.
    *         - {String} type: the event type ("shape-change").
    */
   onShapeChange(data) {
-    this.preview(data.value);
     this.commit(data.value);
   }
 
@@ -240,7 +239,7 @@ class ShapesInContextEditor {
    * highlighter. Marks/unmarks the corresponding coordinate node in the shape value
    * from the Rule view.
    *
-   * @param  {Object} data
+   * @param  {object} data
    *         Data associated with the "shape-hover" event.
    *         Contains:
    *         - {String|null} point: coordinate to highlight or null if nothing to highlight
@@ -303,36 +302,19 @@ class ShapesInContextEditor {
   }
 
   /**
-   * Preview a shape value on the element without committing the changes to the Rule view.
-   *
-   * @param {String} value
-   *        The shape value to set the current property to
-   */
-  preview(value) {
-    if (!this.textProperty) {
-      return;
-    }
-    // Update the element's style to see live results.
-    this.textProperty.rule.previewPropertyValue(this.textProperty, value);
-    // Update the text of CSS value in the Rule view. This makes it inert.
-    // When commit() is called, the value is reparsed and its DOM structure rebuilt.
-    this.swatch.nextSibling.textContent = value;
-  }
-
-  /**
    * Commit a shape value change which triggers an expensive operation that rebuilds
    * part of the DOM of the TextPropertyEditor. Called in a debounced manner; see
    * constructor.
    *
-   * @param {String} value
+   * @param {string} value
    *        The shape value for the current property
    */
   commit(value) {
     if (!this.textProperty) {
       return;
     }
-
-    this.textProperty.setValue(value);
+    // Update the element's style to see live results.
+    this.rule.setPropertyValue(this.textProperty, value);
   }
 
   destroy() {

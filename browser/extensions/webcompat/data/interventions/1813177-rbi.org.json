@@ -1,0 +1,15 @@
+{
+  "label": "rbi.org",
+  "bugs": {
+    "1813177": {
+      "issue": "broken-redirect",
+      "matches": ["*://m.rbi.org.in/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

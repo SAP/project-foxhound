@@ -1,3 +1,7 @@
+PLHashEntry
+===========
+
+.. _plhashentry-syntax:
 
 Syntax
 ------
@@ -8,6 +12,8 @@ Syntax
 
    typedef struct PLHashEntry PLHashEntry;
 
+
+.. _plhashentry-description:
 
 Description
 -----------

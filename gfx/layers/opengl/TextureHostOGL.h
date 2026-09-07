@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,6 @@
 #include "gfxTypes.h"
 #include "mozilla/GfxMessageUtils.h"         // for gfxContentType
 #include "mozilla/Assertions.h"              // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"              // for override
 #include "mozilla/RefPtr.h"                  // for RefPtr
 #include "mozilla/gfx/Matrix.h"              // for Matrix4x4
 #include "mozilla/gfx/Point.h"               // for IntSize, IntPoint
@@ -64,10 +61,10 @@ already_AddRefed<TextureHost> CreateTextureHostOGL(
  *
  * Note that it is important to be careful about the ownership model with
  * the OpenGL backend, due to some widget limitation on Linux: before
- * the nsBaseWidget associated with our OpenGL context has been completely
+ * the nsIWidget associated with our OpenGL context has been completely
  * deleted, every resource belonging to the OpenGL context MUST have been
  * released. At the moment the teardown sequence happens in the middle of
- * the nsBaseWidget's destructor, meaning that at a given moment we must be
+ * the nsIWidget's destructor, meaning that at a given moment we must be
  * able to easily find and release all the GL resources.
  * The point is: be careful about the ownership model and limit the number
  * of objects sharing references to GL resources to make the tear down
@@ -541,11 +538,7 @@ class AndroidHardwareBufferTextureHost : public TextureHost {
                         const Range<wr::ImageKey>& aImageKeys,
                         PushDisplayItemFlagSet aFlags) override;
 
-  void SetAcquireFence(UniqueFileHandle&& aFenceFd) override;
-
-  void SetReleaseFence(UniqueFileHandle&& aFenceFd) override;
-
-  UniqueFileHandle GetAndResetReleaseFence() override;
+  void SetReadFence(Fence* aReadFence) override;
 
   AndroidHardwareBuffer* GetAndroidHardwareBuffer() const override {
     return mAndroidHardwareBuffer;

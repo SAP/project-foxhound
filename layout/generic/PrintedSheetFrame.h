@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -102,14 +100,15 @@ class PrintedSheetFrame final : public nsContainerFrame {
   // nsSharedPageData.
   // XXXjwatt: We should investigate sharing this function for the single
   // page-per-sheet case (bug 1835782). The logic for that case
-  // (nsPageFrame::ComputePageSizeScale) is somewhat different though, since
-  // that case uses no sheet margins and uses the user/CSS specified margins on
-  // the page, with any page scaling reverted to keep the margins unchanged.
-  // We, on the other hand, use the unwriteable margins for the sheet, unscaled,
-  // and use the user/CSS margins on the pages and allow them to be scaled
-  // along with any pages-per-sheet scaling. (This behavior makes maximum use
-  // of the sheet and, by scaling the default on the pages, results in a
-  // a sensible amount of spacing between pages.)
+  // (nsPageFrame::ComputeSinglePPSPageSizeScale) is somewhat different
+  // though, since that case uses no sheet margins and uses the user/CSS
+  // specified margins on the page, with any page scaling reverted to keep
+  // the margins unchanged.
+  // We, on the other hand, use the unwriteable margins for the sheet,
+  // unscaled, and use the user/CSS margins on the pages and allow them to
+  // be scaled along with any pages-per-sheet scaling. (This behavior makes
+  // maximum use of the sheet and, by scaling the default on the pages,
+  // results in a a sensible amount of spacing between pages.)
   void ComputePagesPerSheetGridMetrics(const nsSize& aSheetSize);
 
   // See GetSizeForChildren.

@@ -1,11 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
 interface nsIHttpChannel;
+
+[scriptable, uuid(53b81d9c-3b62-4ecb-b8d2-5f5a17914c9e)]
+interface nsINetworkErrorReport : nsISupports
+{
+  readonly attribute AUTF8String body;
+  readonly attribute AString group;
+  readonly attribute AString url;
+};
 
 [scriptable, uuid(391ba410-0a68-42f7-b3e4-3ec26db645c0)]
 interface nsINetworkErrorLogging : nsISupports
@@ -18,5 +24,5 @@ interface nsINetworkErrorLogging : nsISupports
   /**
    * Maybe send error log payload if theres a policy.
    */
-  void generateNELReport(in nsIHttpChannel aChannel);
+  nsINetworkErrorReport generateNELReport(in nsIHttpChannel aChannel);
 };

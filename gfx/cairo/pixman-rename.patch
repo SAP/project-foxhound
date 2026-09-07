@@ -1,3 +1,6 @@
+From: Jeff Muizelaar <jmuizelaar@mozilla.com>
+Subject: Rename pixman public symbols to avoid conflicts in Mozilla's static build
+
 diff --git a/gfx/cairo/libpixman/src/pixman.h b/gfx/cairo/libpixman/src/pixman.h
 --- a/gfx/cairo/libpixman/src/pixman.h
 +++ b/gfx/cairo/libpixman/src/pixman.h

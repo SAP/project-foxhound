@@ -1,0 +1,22 @@
+[DEFAULT]
+prefs = [
+  "browser.newtabpage.resource-mapping.log=true",
+  "browser.newtabpage.activity-stream.debug=false",
+  "browser.newtabpage.activity-stream.discoverystream.enabled=true",
+  "browser.newtabpage.activity-stream.discoverystream.endpoints=data:",
+  "browser.newtabpage.activity-stream.feeds.system.topstories=true",
+  "browser.newtabpage.activity-stream.feeds.section.topstories=true",
+  "messaging-system.log=all",
+  "browser.newtabpage.sponsor-protection.enabled=true",
+  "browser.newtabpage.sponsor-protection.debug=true",
+]
+
+["browser_newtab_background_animation.js"]
+
+["browser_sponsor_protection.js"]
+
+["browser_sponsored_annotation.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
+]

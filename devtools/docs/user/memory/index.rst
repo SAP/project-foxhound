@@ -14,7 +14,6 @@ The Memory tool lets you take a snapshot of the current tab's memory `heap <http
 The basics
 **********
 
-- :ref:`Opening the memory tool <memory-basic-operations-opening-the-memory-tool>`
 - :ref:`Taking a heap snapshot <memory-basic-operations-taking-a-heap-snapshot>`
 - :ref:`Comparing two snapshots <memory-basic-operations-comparing-snapshots>`
 - :ref:`Deleting snapshots <memory-basic-operations-clearing-a-snapshot>`
@@ -24,8 +23,6 @@ The basics
 
 Analyzing snapshots
 *******************
-
-The Tree map view is new in Firefox 48, and the Dominators view is new in Firefox 46.
 
 Once you've taken a snapshot, there are three main views the Memory tool provides:
 

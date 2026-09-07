@@ -8,22 +8,21 @@ import android.view.View
 import android.widget.FrameLayout
 import io.mockk.MockKAnnotations
 import io.mockk.coEvery
-import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
@@ -39,12 +38,11 @@ class CookieBannerHandlingDetailsViewTest {
     private lateinit var binding: ComponentCookieBannerDetailsPanelBinding
     private lateinit var interactor: CookieBannerDetailsInteractor
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var publicSuffixList: PublicSuffixList
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val scope = coroutinesTestRule.scope
+    private val testDispatcher = StandardTestDispatcher()
+    private val testScope = TestScope(testDispatcher)
 
     @Before
     fun setup() {
@@ -56,7 +54,8 @@ class CookieBannerHandlingDetailsViewTest {
                 context = testContext,
                 publicSuffixList = publicSuffixList,
                 interactor = interactor,
-                ioScope = scope,
+                scope = testScope,
+                ioDispatcher = testDispatcher,
                 onDismiss = {},
             ),
         )
@@ -88,12 +87,13 @@ class CookieBannerHandlingDetailsViewTest {
 
     @Test
     fun `GIVEN cookie banner handling mode is enabled WHEN biding title THEN title view must have the expected string`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             coEvery { publicSuffixList.getPublicSuffixPlusOne(any()) } returns CompletableDeferred("mozilla.org")
 
             val websiteUrl = "https://mozilla.org"
 
             view.bindTitle(url = websiteUrl, state = CookieBannerUIMode.ENABLE)
+            testDispatcher.scheduler.advanceUntilIdle()
 
             val expectedText =
                 testContext.getString(
@@ -106,12 +106,13 @@ class CookieBannerHandlingDetailsViewTest {
 
     @Test
     fun `GIVEN cookie banner handling mode is site not supported WHEN biding title THEN title view must have the expected string`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             coEvery { publicSuffixList.getPublicSuffixPlusOne(any()) } returns CompletableDeferred("mozilla.org")
 
             val websiteUrl = "https://mozilla.org"
 
             view.bindTitle(url = websiteUrl, state = CookieBannerUIMode.SITE_NOT_SUPPORTED)
+            testDispatcher.scheduler.advanceUntilIdle()
 
             val expectedText =
                 testContext.getString(
@@ -123,7 +124,7 @@ class CookieBannerHandlingDetailsViewTest {
 
     @Test
     fun `GIVEN cookie banner handling mode is disabled WHEN biding title THEN title view must have the expected string`() =
-        runTestOnMain {
+        runTest(testDispatcher) {
             coEvery { publicSuffixList.getPublicSuffixPlusOne(any()) } returns CompletableDeferred("mozilla.org")
 
             val websiteUrl = "https://mozilla.org"
@@ -133,7 +134,7 @@ class CookieBannerHandlingDetailsViewTest {
                 state = CookieBannerUIMode.DISABLE,
             )
 
-            advanceUntilIdle()
+            testDispatcher.scheduler.advanceUntilIdle()
 
             val expectedText =
                 testContext.getString(

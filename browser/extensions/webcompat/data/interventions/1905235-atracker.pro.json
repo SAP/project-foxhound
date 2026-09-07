@@ -1,0 +1,15 @@
+{
+  "label": "atracker.pro",
+  "bugs": {
+    "1905235": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://atracker.pro/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

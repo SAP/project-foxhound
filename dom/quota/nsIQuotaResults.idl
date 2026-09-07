@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,11 +24,23 @@ interface nsIQuotaFullOriginMetadataResult : nsISupports
 
   readonly attribute ACString storageOrigin;
 
+  readonly attribute boolean private;
+
   readonly attribute ACString persistenceType;
+
+  readonly attribute long long lastAccessTime;
+
+  readonly attribute long lastMaintenanceDate;
+
+  readonly attribute boolean accessed;
 
   readonly attribute boolean persisted;
 
-  readonly attribute long long lastAccessTime;
+  readonly attribute ACString clientUsages;
+
+  readonly attribute unsigned long long originUsage;
+
+  readonly attribute unsigned long quotaVersion;
 };
 
 [scriptable, uuid(d8c9328b-9aa8-4f5d-90e6-482de4a6d5b8)]

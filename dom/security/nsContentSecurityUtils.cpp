@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,27 +7,29 @@
 #include "nsContentSecurityUtils.h"
 
 #include "mozilla/Components.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsIChannel.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIHttpChannel.h"
 #include "nsIMultiPartChannel.h"
-#include "nsIURI.h"
 #include "nsITransfer.h"
+#include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsSandboxFlags.h"
 #if defined(XP_WIN)
-#  include "mozilla/WinHeaderOnlyUtils.h"
-#  include "WinUtils.h"
 #  include <wininet.h>
+
+#  include "WinUtils.h"
+#  include "mozilla/WinHeaderOnlyUtils.h"
 #endif
 
 #include "FramingChecker.h"
+#include "LoadInfo.h"
 #include "js/Array.h"  // JS::GetArrayLength
 #include "js/ContextOptions.h"
 #include "js/PropertyAndElement.h"  // JS_GetElement
@@ -39,13 +39,12 @@
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "LoadInfo.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
 #include "nsIConsoleService.h"
 #include "nsIStringBundle.h"
 
@@ -320,6 +319,7 @@ FilenameTypeAndDetails nsContentSecurityUtils::FilenameToFilenameType(
   // These are strings because the Telemetry Events API only accepts strings
   static constexpr auto kChromeURI = "chromeuri"_ns;
   static constexpr auto kResourceURI = "resourceuri"_ns;
+  static constexpr auto kMozSrcURI = "mozsrcuri"_ns;
   static constexpr auto kBlobUri = "bloburi"_ns;
   static constexpr auto kDataUri = "dataurl"_ns;
   static constexpr auto kAboutUri = "abouturi"_ns;
@@ -370,6 +370,9 @@ FilenameTypeAndDetails nsContentSecurityUtils::FilenameToFilenameType(
                                     Some(StripQueryRef(fileName)));
     }
     return FilenameTypeAndDetails(kResourceURI, Some(StripQueryRef(fileName)));
+  }
+  if (StringBeginsWith(fileName, "moz-src://"_ns)) {
+    return FilenameTypeAndDetails(kMozSrcURI, Some(StripQueryRef(fileName)));
   }
 
   // blob: and data:
@@ -749,8 +752,7 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
   MOZ_CRASH_UNSAFE_PRINTF("%s", crashString.get());
 #endif
 
-#if defined(MOZ_WIDGET_ANDROID) && !defined(NIGHTLY_BUILD)
-  // TODO(bug 1895823)
+#if defined(ANDROID) && !defined(NIGHTLY_BUILD)
   return true;
 #else
   return false;
@@ -765,20 +767,20 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
                                              uint32_t aColumnNumber) {
   FilenameTypeAndDetails fileNameTypeAndDetails =
       FilenameToFilenameType(aFileName, false);
-  auto fileinfo = fileNameTypeAndDetails.second;
-  auto value = Some(fileNameTypeAndDetails.first);
+  auto fileinfo = std::move(fileNameTypeAndDetails.second);
+  auto value = Some(std::move(fileNameTypeAndDetails.first));
   if (aIsSystemPrincipal) {
     glean::security::EvalUsageSystemContextExtra extra = {
-        .fileinfo = fileinfo,
-        .value = value,
+        .fileinfo = std::move(fileinfo),
+        .value = std::move(value),
     };
-    glean::security::eval_usage_system_context.Record(Some(extra));
+    glean::security::eval_usage_system_context.Record(Some(std::move(extra)));
   } else {
     glean::security::EvalUsageParentProcessExtra extra = {
-        .fileinfo = fileinfo,
-        .value = value,
+        .fileinfo = std::move(fileinfo),
+        .value = std::move(value),
     };
-    glean::security::eval_usage_parent_process.Record(Some(extra));
+    glean::security::eval_usage_parent_process.Record(Some(std::move(extra)));
   }
 
   // Report an error to console
@@ -805,7 +807,7 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
   }
   nsAutoString message;
   NS_ConvertUTF8toUTF16 fileNameA(aFileName);
-  AutoTArray<nsString, 1> formatStrings = {fileNameA};
+  AutoTArray<nsString, 1> formatStrings = {std::move(fileNameA)};
   nsresult rv = bundle->FormatStringFromName("RestrictBrowserEvalUsage",
                                              formatStrings, message);
   if (NS_FAILED(rv)) {
@@ -1004,10 +1006,10 @@ nsresult CheckCSPFrameAncestorPolicy(nsIChannel* aChannel,
 
   nsAutoCString tCspHeaderValue, tCspROHeaderValue;
   if (httpChannel) {
-    Unused << httpChannel->GetResponseHeader("content-security-policy"_ns,
-                                             tCspHeaderValue);
+    (void)httpChannel->GetResponseHeader("content-security-policy"_ns,
+                                         tCspHeaderValue);
 
-    Unused << httpChannel->GetResponseHeader(
+    (void)httpChannel->GetResponseHeader(
         "content-security-policy-report-only"_ns, tCspROHeaderValue);
 
     // if there are no CSP values, then there is nothing to do here.
@@ -1266,7 +1268,6 @@ static nsLiteralCString sStyleSrcUnsafeInlineAllowList[] = {
     "chrome://browser/content/places/places.xhtml"_ns,
     "chrome://browser/content/preferences/dialogs/applicationManager.xhtml"_ns,
     "chrome://browser/content/preferences/dialogs/browserLanguages.xhtml"_ns,
-    "chrome://browser/content/preferences/dialogs/clearSiteData.xhtml"_ns,
     "chrome://browser/content/preferences/dialogs/colors.xhtml"_ns,
     "chrome://browser/content/preferences/dialogs/connection.xhtml"_ns,
     "chrome://browser/content/preferences/dialogs/containers.xhtml"_ns,
@@ -1281,7 +1282,6 @@ static nsLiteralCString sStyleSrcUnsafeInlineAllowList[] = {
     "chrome://browser/content/preferences/dialogs/translations.xhtml"_ns,
     "chrome://browser/content/preferences/fxaPairDevice.xhtml"_ns,
     "chrome://browser/content/safeMode.xhtml"_ns,
-    "chrome://browser/content/sanitize.xhtml"_ns,
     "chrome://browser/content/sanitize_v2.xhtml"_ns,
     "chrome://browser/content/search/addEngine.xhtml"_ns,
     "chrome://browser/content/setDesktopBackground.xhtml"_ns,
@@ -1291,9 +1291,11 @@ static nsLiteralCString sStyleSrcUnsafeInlineAllowList[] = {
     "chrome://devtools/content/framework/toolbox-options.html"_ns,
     "chrome://devtools/content/framework/toolbox-window.xhtml"_ns,
     "chrome://devtools/content/inspector/index.xhtml"_ns,
-    "chrome://devtools/content/inspector/markup/markup.xhtml"_ns,
+    "chrome://devtools/content/inspector/markup/markup.html"_ns,
+    "chrome://devtools/content/netmonitor/index.html"_ns,
     "chrome://devtools/content/memory/index.xhtml"_ns,
     "chrome://devtools/content/shared/sourceeditor/codemirror/cmiframe.html"_ns,
+    "chrome://devtools/content/webconsole/index.html"_ns,
     "chrome://formautofill/content/manageAddresses.xhtml"_ns,
     "chrome://formautofill/content/manageCreditCards.xhtml"_ns,
     "chrome://gfxsanity/content/sanityparent.html"_ns,
@@ -1319,6 +1321,19 @@ static nsLiteralCString sStyleSrcUnsafeInlineAllowList[] = {
     "chrome://pippki/content/load_device.xhtml"_ns,
     "chrome://pippki/content/setp12password.xhtml"_ns,
 };
+// img-src moz-remote-image:
+static nsLiteralCString sImgSrcMozRemoteImageAllowList[] = {
+    "about:firefoxview"_ns,
+    "about:preferences"_ns,
+    "about:processes"_ns,
+    "about:settings"_ns,
+    "chrome://browser/content/aiwindow/aiWindow.html"_ns,
+    "chrome://browser/content/firefoxview/firefoxview.html"_ns,
+    "chrome://browser/content/preferences/dialogs/applicationManager.xhtml"_ns,
+    "chrome://browser/content/sidebar/sidebar-syncedtabs.html"_ns,
+    "chrome://global/content/aboutProcesses.html"_ns,
+    "chrome://mozapps/content/handling/appChooser.xhtml"_ns,
+};
 // img-src data: blob:
 static nsLiteralCString sImgSrcDataBlobAllowList[] = {
     "about:addons"_ns,
@@ -1332,6 +1347,7 @@ static nsLiteralCString sImgSrcDataBlobAllowList[] = {
     "about:logins"_ns,
     "about:newprofile"_ns,
     "about:newtab"_ns,
+    "about:opentabs"_ns,
     "about:preferences"_ns,
     "about:privatebrowsing"_ns,
     "about:processes"_ns,
@@ -1344,15 +1360,18 @@ static nsLiteralCString sImgSrcDataBlobAllowList[] = {
     "about:welcome"_ns,
     "chrome://browser/content/aboutDialog.xhtml"_ns,
     "chrome://browser/content/aboutlogins/aboutLogins.html"_ns,
+    "chrome://browser/content/aiwindow/aiWindow.html"_ns,
     "chrome://browser/content/genai/chat.html"_ns,
-    "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
+    "chrome://browser/content/qrcode/qrcode-dialog.html"_ns,
     "chrome://browser/content/places/bookmarksSidebar.xhtml"_ns,
     "chrome://browser/content/places/places.xhtml"_ns,
     "chrome://browser/content/preferences/dialogs/permissions.xhtml"_ns,
     "chrome://browser/content/preferences/fxaPairDevice.xhtml"_ns,
     "chrome://browser/content/screenshots/screenshots-preview.html"_ns,
+    "chrome://browser/content/sidebar/sidebar-bookmarks.html"_ns,
     "chrome://browser/content/sidebar/sidebar-customize.html"_ns,
     "chrome://browser/content/sidebar/sidebar-history.html"_ns,
+    "chrome://browser/content/sidebar/sidebar-opentabs.html"_ns,
     "chrome://browser/content/sidebar/sidebar-syncedtabs.html"_ns,
     "chrome://browser/content/spotlight.html"_ns,
     "chrome://browser/content/syncedtabs/sidebar.xhtml"_ns,
@@ -1361,7 +1380,7 @@ static nsLiteralCString sImgSrcDataBlobAllowList[] = {
     "chrome://devtools/content/framework/browser-toolbox/window.html"_ns,
     "chrome://devtools/content/framework/toolbox-window.xhtml"_ns,
     "chrome://devtools/content/inspector/index.xhtml"_ns,
-    "chrome://devtools/content/inspector/markup/markup.xhtml"_ns,
+    "chrome://devtools/content/inspector/markup/markup.html"_ns,
     "chrome://devtools/content/netmonitor/index.html"_ns,
     "chrome://devtools/content/responsive/toolbar.xhtml"_ns,
     "chrome://devtools/content/shared/sourceeditor/codemirror/cmiframe.html"_ns,
@@ -1381,20 +1400,13 @@ static nsLiteralCString sImgSrcHttpsAllowList[] = {
     "chrome://devtools/content/application/index.html"_ns,
     "chrome://devtools/content/framework/browser-toolbox/window.html"_ns,
     "chrome://devtools/content/framework/toolbox-window.xhtml"_ns,
-    "chrome://browser/content/preferences/dialogs/applicationManager.xhtml"_ns,
-    "chrome://global/content/alerts/alert.xhtml"_ns,
-    "chrome://mozapps/content/handling/appChooser.xhtml"_ns,
 };
 // img-src http:
 //  UNSAFE! Do not use.
 static nsLiteralCString sImgSrcHttpAllowList[] = {
-    "about:addons"_ns,
-    "chrome://devtools/content/application/index.html"_ns,
+    "about:addons"_ns, "chrome://devtools/content/application/index.html"_ns,
     "chrome://devtools/content/framework/browser-toolbox/window.html"_ns,
     "chrome://devtools/content/framework/toolbox-window.xhtml"_ns,
-    "chrome://browser/content/preferences/dialogs/applicationManager.xhtml"_ns,
-    "chrome://global/content/alerts/alert.xhtml"_ns,
-    "chrome://mozapps/content/handling/appChooser.xhtml"_ns,
     // STOP! Do not add anything to this list.
 };
 // img-src jar: file:
@@ -1406,8 +1418,7 @@ static nsLiteralCString sImgSrcAddonsAllowList[] = {
 // img-src *
 //  UNSAFE! Allows loading everything.
 static nsLiteralCString sImgSrcWildcardAllowList[] = {
-    "about:reader"_ns, "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
-    "chrome://browser/content/syncedtabs/sidebar.xhtml"_ns,
+    "about:reader"_ns, "chrome://browser/content/syncedtabs/sidebar.xhtml"_ns,
     // STOP! Do not add anything to this list.
 };
 // img-src https://example.org
@@ -1417,14 +1428,10 @@ static nsLiteralCString sImgSrcHttpsHostAllowList[] = {
     "chrome://browser/content/aboutlogins/aboutLogins.html"_ns,
     "chrome://browser/content/spotlight.html"_ns,
 };
-// media-src data: blob:
-static nsLiteralCString sMediaSrcDataBlobAllowList[] = {
-    "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
-};
 // media-src *
 //  UNSAFE! Allows loading everything.
 static nsLiteralCString sMediaSrcWildcardAllowList[] = {
-    "about:reader"_ns, "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
+    "about:reader"_ns,
     // STOP! Do not add anything to this list.
 };
 // media-src https://example.org
@@ -1599,9 +1606,23 @@ class ImgSrcVisitor : public AllowBuiltinSrcVisitor {
     nsAutoString scheme;
     src.getScheme(scheme);
 
-    // moz-icon is used for loading known favicons.
+    // moz-icon is used for loading icons from the platform.
     if (scheme == u"moz-icon"_ns) {
       return true;
+    }
+
+    // page-icon is used for loading favicons that are already stored by the
+    // favicon service.
+    if (scheme == u"page-icon"_ns) {
+      return true;
+    }
+
+    // moz-remote-image: safely re-encodes the image, but can still be used for
+    // arbitrary network requests.
+    if (scheme == u"moz-remote-image"_ns) {
+      if (CheckAllowList(sImgSrcMozRemoteImageAllowList)) {
+        return true;
+      }
     }
 
     // data: and blob: can be used to decode arbitrary images.
@@ -1643,20 +1664,6 @@ class MediaSrcVisitor : public AllowBuiltinSrcVisitor {
   MediaSrcVisitor(CSPDirective aDirective, nsACString& aURL)
       : AllowBuiltinSrcVisitor(aDirective, aURL) {
     MOZ_ASSERT(aDirective == CSPDirective::MEDIA_SRC_DIRECTIVE);
-  }
-
-  bool visitSchemeSrc(const nsCSPSchemeSrc& src) override {
-    nsAutoString scheme;
-    src.getScheme(scheme);
-
-    // data: and blob: can be used to decode arbitrary media.
-    if (scheme == u"data"_ns || scheme == u"blob") {
-      if (CheckAllowList(sMediaSrcDataBlobAllowList)) {
-        return true;
-      }
-    }
-
-    return AllowBuiltinSrcVisitor::visitSchemeSrc(src);
   }
 
   bool visitHostSrc(const nsCSPHostSrc& src) override {
@@ -1848,7 +1855,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
 
     nsTArray<nsString> directiveNames;
     policy->getDirectiveNames(directiveNames);
-    for (nsString dir : directiveNames) {
+    for (const nsString& dir : directiveNames) {
       MOZ_ASSERT(!dir.EqualsLiteral("script-src-elem") &&
                  !dir.EqualsLiteral("script-src-attr"));
     }
@@ -1884,7 +1891,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   // Make sure we have a checker for all the directives that are being used.
   nsTArray<nsString> directiveNames;
   policy->getDirectiveNames(directiveNames);
-  for (nsString dir : directiveNames) {
+  for (const nsString& dir : directiveNames) {
     if (dir.EqualsLiteral("default-src") || dir.EqualsLiteral("object-src") ||
         dir.EqualsLiteral("script-src") || dir.EqualsLiteral("style-src") ||
         dir.EqualsLiteral("img-src") || dir.EqualsLiteral("media-src") ||
@@ -1903,6 +1910,8 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
 
 /* static */
 void nsContentSecurityUtils::AssertChromePageHasCSP(Document* aDocument) {
+  // Thunderbird's CSP does not pass these checks
+#  ifndef MOZ_THUNDERBIRD
   nsCOMPtr<nsIURI> documentURI = aDocument->GetDocumentURI();
   if (!documentURI->SchemeIs("chrome")) {
     return;
@@ -1916,71 +1925,93 @@ void nsContentSecurityUtils::AssertChromePageHasCSP(Document* aDocument) {
   nsAutoCString spec;
   documentURI->GetSpec(spec);
 
+  if (IsExemptedFromBaselineChromeCSP(spec)) {
+    return;
+  }
+
   nsCOMPtr<nsIContentSecurityPolicy> csp =
       PolicyContainer::GetCSP(aDocument->GetPolicyContainer());
   uint32_t count = 0;
   if (csp) {
     static_cast<nsCSPContext*>(csp.get())->GetPolicyCount(&count);
   }
-  if (count != 0) {
-    MOZ_ASSERT(count == 1, "chrome: pages should have exactly one CSP");
 
-    // Both of these have a known weaker policy that differs
-    // from all other chrome: pages.
-    if (StringBeginsWith(spec, "chrome://browser/content/browser.xhtml"_ns) ||
-        StringBeginsWith(spec,
-                         "chrome://browser/content/hiddenWindowMac.xhtml"_ns)) {
-      return;
-    }
+  bool hasBaselineCSP = StaticPrefs::security_chrome_baseline_csp_enabled();
 
-    // Thunderbird's CSP does not pass these checks.
-#  ifndef MOZ_THUNDERBIRD
-    const nsCSPPolicy* policy =
-        static_cast<nsCSPContext*>(csp.get())->GetPolicy(0);
-    {
-      AllowBuiltinSrcVisitor visitor(CSPDirective::DEFAULT_SRC_DIRECTIVE, spec);
-      if (!visitor.visit(policy)) {
-        MOZ_CRASH_UNSAFE_PRINTF(
-            "Document (%s) CSP does not have a default-src!", spec.get());
-      }
-    }
+  // All chrome: pages should have exactly two CSPs (baseline + custom)
+  if (count != (hasBaselineCSP ? 2 : 1)) {
+    MOZ_CRASH_UNSAFE_PRINTF("Document (%s) does not have a custom CSP!",
+                            spec.get());
+  }
 
-    CHECK_DIR(SCRIPT_SRC_DIRECTIVE, AllowBuiltinSrcVisitor);
-    // If the policy being checked does not have an explicit |script-src-attr|
-    // directive, nsCSPPolicy::visitDirectiveSrcs will fallback to using the
-    // |script-src| directive, but not default-src.
-    // This means we can't use DisallowingVisitor here, because the script-src
-    // fallback will usually contain at least a chrome: source.
-    // This is not a problem from a security perspective, because inline scripts
-    // are not loaded from an URL and thus still disallowed.
-    CHECK_DIR(SCRIPT_SRC_ATTR_DIRECTIVE, AllowBuiltinSrcVisitor);
-    CHECK_DIR(STYLE_SRC_DIRECTIVE, StyleSrcVisitor);
-    CHECK_DIR(IMG_SRC_DIRECTIVE, ImgSrcVisitor);
-    CHECK_DIR(MEDIA_SRC_DIRECTIVE, MediaSrcVisitor);
-    // For now we don't require chrome: pages to have a `object-src 'none'`
-    // directive.
-    CHECK_DIR(OBJECT_SRC_DIRECTIVE, DisallowingVisitor);
+  if (hasBaselineCSP) {
+    nsAutoString baselinePolicy;
+    static_cast<nsCSPContext*>(csp.get())->GetPolicy(0)->toString(
+        baselinePolicy);
+    MOZ_ASSERT(baselinePolicy == kBaselineChromeCSP);
+  }
 
-    nsTArray<nsString> directiveNames;
-    policy->getDirectiveNames(directiveNames);
-    for (nsString dir : directiveNames) {
-      if (dir.EqualsLiteral("default-src") || dir.EqualsLiteral("script-src") ||
-          dir.EqualsLiteral("script-src-attr") ||
-          dir.EqualsLiteral("style-src") || dir.EqualsLiteral("img-src") ||
-          dir.EqualsLiteral("media-src") || dir.EqualsLiteral("object-src")) {
-        continue;
-      }
-
-      MOZ_CRASH_UNSAFE_PRINTF(
-          "Document (%s) must not contain a CSP with the unchecked directive "
-          "%s",
-          spec.get(), NS_ConvertUTF16toUTF8(dir).get());
-    }
-#  endif
+  // Both of these have a known weaker policy that differs
+  // from all other chrome: pages.
+  if (StringBeginsWith(spec, "chrome://browser/content/browser.xhtml"_ns) ||
+      StringBeginsWith(spec,
+                       "chrome://browser/content/hiddenWindowMac.xhtml"_ns)) {
     return;
   }
 
-  if (xpc::IsInAutomation()) {
+  const nsCSPPolicy* policy =
+      static_cast<nsCSPContext*>(csp.get())->GetPolicy(hasBaselineCSP ? 1 : 0);
+  {
+    AllowBuiltinSrcVisitor visitor(CSPDirective::DEFAULT_SRC_DIRECTIVE, spec);
+    if (!visitor.visit(policy)) {
+      MOZ_CRASH_UNSAFE_PRINTF("Document (%s) CSP does not have a default-src!",
+                              spec.get());
+    }
+  }
+
+  CHECK_DIR(SCRIPT_SRC_DIRECTIVE, AllowBuiltinSrcVisitor);
+  // If the policy being checked does not have an explicit |script-src-attr|
+  // directive, nsCSPPolicy::visitDirectiveSrcs will fallback to using the
+  // |script-src| directive, but not default-src.
+  // This means we can't use DisallowingVisitor here, because the script-src
+  // fallback will usually contain at least a chrome: source.
+  // This is not a problem from a security perspective, because inline scripts
+  // are not loaded from an URL and thus still disallowed.
+  CHECK_DIR(SCRIPT_SRC_ATTR_DIRECTIVE, AllowBuiltinSrcVisitor);
+  CHECK_DIR(STYLE_SRC_DIRECTIVE, StyleSrcVisitor);
+  CHECK_DIR(IMG_SRC_DIRECTIVE, ImgSrcVisitor);
+  CHECK_DIR(MEDIA_SRC_DIRECTIVE, MediaSrcVisitor);
+  // For now we don't require chrome: pages to have a `object-src 'none'`
+  // directive.
+  CHECK_DIR(OBJECT_SRC_DIRECTIVE, DisallowingVisitor);
+
+  nsTArray<nsString> directiveNames;
+  policy->getDirectiveNames(directiveNames);
+  for (const nsString& dir : directiveNames) {
+    if (dir.EqualsLiteral("default-src") || dir.EqualsLiteral("script-src") ||
+        dir.EqualsLiteral("script-src-attr") ||
+        dir.EqualsLiteral("style-src") || dir.EqualsLiteral("img-src") ||
+        dir.EqualsLiteral("media-src") || dir.EqualsLiteral("object-src")) {
+      continue;
+    }
+
+    MOZ_CRASH_UNSAFE_PRINTF(
+        "Document (%s) must not contain a CSP with the unchecked directive "
+        "%s",
+        spec.get(), NS_ConvertUTF16toUTF8(dir).get());
+  }
+#  endif
+  return;
+}
+
+#  undef CHECK_DIR
+
+#endif
+
+/* static */
+bool nsContentSecurityUtils::IsExemptedFromBaselineChromeCSP(
+    nsACString& aSpec) {
+  if (xpc::IsInAutomation()) [[unlikely]] {
     // Test files
     static nsLiteralCString sAllowedTestPathsWithNoCSP[] = {
         "chrome://mochikit/"_ns,
@@ -1990,24 +2021,20 @@ void nsContentSecurityUtils::AssertChromePageHasCSP(Document* aDocument) {
     };
 
     for (const nsLiteralCString& entry : sAllowedTestPathsWithNoCSP) {
-      if (StringBeginsWith(spec, entry)) {
-        return;
+      if (StringBeginsWith(aSpec, entry)) {
+        return true;
       }
     }
   }
 
   // CSP for browser.xhtml has been disabled
-  if (spec.EqualsLiteral("chrome://browser/content/browser.xhtml") &&
-      !StaticPrefs::security_browser_xhtml_csp_enabled()) {
-    return;
+  if (!StaticPrefs::security_browser_xhtml_csp_enabled() &&
+      aSpec.EqualsLiteral("chrome://browser/content/browser.xhtml")) {
+    return true;
   }
 
-  MOZ_CRASH_UNSAFE_PRINTF("Document (%s) does not have a CSP!", spec.get());
+  return false;
 }
-
-#  undef CHECK_DIR
-
-#endif
 
 /* static */
 bool nsContentSecurityUtils::ValidateScriptFilename(JSContext* cx,
@@ -2151,28 +2178,9 @@ bool nsContentSecurityUtils::ValidateScriptFilename(JSContext* cx,
           : "(None)",
       "Blocking a script load %s from file %s");
   MOZ_CRASH_UNSAFE_PRINTF("%s", crashString.get());
-#elif defined(EARLY_BETA_OR_EARLIER)
-  // Cause a crash (if we've never crashed before and we can ensure we won't do
-  // it again.)
-  // The details in the second arg, passed to UNSAFE_PRINTF, are also included
-  // in Event Telemetry and have received data review.
-  if (fileNameTypeAndDetails.second.isSome()) {
-    PossiblyCrash("js_load_1", aFilename,
-                  fileNameTypeAndDetails.second.value());
-  } else {
-    PossiblyCrash("js_load_1", aFilename, "(None)"_ns);
-  }
 #endif
 
-  // Presently we are only enforcing restrictions for the script filename
-  // on Nightly.  On all channels we are reporting Telemetry. In the future we
-  // will assert in debug builds and return false to prevent execution in
-  // non-debug builds.
-#ifdef NIGHTLY_BUILD
   return false;
-#else
-  return true;
-#endif
 }
 
 /* static */
@@ -2199,7 +2207,7 @@ void nsContentSecurityUtils::LogMessageToConsole(nsIHttpChannel* aChannel,
   uri->GetSpec(spec);
   AutoTArray<nsString, 1> params = {NS_ConvertUTF8toUTF16(spec)};
   rv = nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eSECURITY_PROPERTIES, aMsg, params, localizedMsg);
+      PropertiesFile::SECURITY_PROPERTIES, aMsg, params, localizedMsg);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }

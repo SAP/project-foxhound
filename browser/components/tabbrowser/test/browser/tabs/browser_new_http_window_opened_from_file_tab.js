@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-
 const TEST_FILE = "file_with_link_to_http.html";
 // eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const TEST_HTTP = "http://example.org/";

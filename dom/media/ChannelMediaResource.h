@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,6 +40,7 @@ class ChannelSuspendAgent {
   void Delegate(nsIChannel* aChannel);
   // Stop the management of the suspend status of the channel.
   void Revoke();
+  void RevokeIfManaged(nsIChannel* aChannel);
 
  private:
   // Only suspends channel but not changes the suspend count.

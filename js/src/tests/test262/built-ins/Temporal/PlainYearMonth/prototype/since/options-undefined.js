@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -21,5 +21,10 @@ TemporalHelpers.assertDuration(later.since(earlier),
   2, 7, 0, 0, 0, 0, 0, 0, 0, 0, "default largestUnit is year (implicit, pos)");
 TemporalHelpers.assertDuration(earlier.since(later),
   -2, -7, 0, 0, 0, 0, 0, 0, 0, 0, "default largestUnit is year (implicit, neg)");
+
+TemporalHelpers.assertDuration(later.since(earlier, () => {}),
+  2, 7, 0, 0, 0, 0, 0, 0, 0, 0, "default largestUnit is year (lambda, pos)");
+TemporalHelpers.assertDuration(earlier.since(later, () => {}),
+  -2, -7, 0, 0, 0, 0, 0, 0, 0, 0, "default largestUnit is year (lambda, neg)");
 
 reportCompare(0, 0);

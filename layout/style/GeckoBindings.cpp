@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,10 @@
 
 #include "mozilla/GeckoBindings.h"
 
+#include "AnchorPositioningUtils.h"
 #include "ChildIterator.h"
 #include "ErrorReporter.h"
+#include "PseudoStyleType.h"
 #include "gfxFontFeatures.h"
 #include "gfxMathTable.h"
 #include "gfxTextRun.h"
@@ -25,7 +25,7 @@
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/RWLock.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoElementSnapshot.h"
@@ -41,6 +41,7 @@
 #include "mozilla/URLExtraData.h"
 #include "mozilla/css/ImageLoader.h"
 #include "mozilla/dom/CSSMozDocumentRule.h"
+#include "mozilla/dom/CSSTransition.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -58,7 +59,6 @@
 #include "nsAttrValueInlines.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSProps.h"
-#include "nsCSSPseudoElements.h"
 #include "nsContentUtils.h"
 #include "nsDOMTokenList.h"
 #include "nsDeviceContext.h"
@@ -88,32 +88,9 @@ using namespace mozilla;
 using namespace mozilla::css;
 using namespace mozilla::dom;
 
-// Definitions of the global traversal stats.
-bool ServoTraversalStatistics::sActive = false;
-ServoTraversalStatistics ServoTraversalStatistics::sSingleton;
+ServoTraversalStatistics* ServoTraversalStatistics::sSingleton = nullptr;
 
-static StaticAutoPtr<RWLock> sServoFFILock;
-
-static const LangGroupFontPrefs* ThreadSafeGetLangGroupFontPrefs(
-    const Document& aDocument, nsAtom* aLanguage) {
-  bool needsCache = false;
-  {
-    AutoReadLock guard(*sServoFFILock);
-    if (auto* prefs = aDocument.GetFontPrefsForLang(aLanguage, &needsCache)) {
-      return prefs;
-    }
-  }
-  MOZ_ASSERT(needsCache);
-  AutoWriteLock guard(*sServoFFILock);
-  return aDocument.GetFontPrefsForLang(aLanguage);
-}
-
-static const nsFont& ThreadSafeGetDefaultVariableFont(const Document& aDocument,
-                                                      nsAtom* aLanguage) {
-  return ThreadSafeGetLangGroupFontPrefs(aDocument, aLanguage)
-      ->mDefaultVariableFont;
-}
-
+static StaticAutoPtr<Mutex> sServoFFILock;
 /*
  * Does this child count as significant for selector matching?
  *
@@ -134,40 +111,11 @@ const nsINode* Gecko_GetFlattenedTreeParentNode(const nsINode* aNode) {
 }
 
 void Gecko_GetAnonymousContentForElement(const Element* aElement,
-                                         nsIContent** aStackBuffer,
-                                         size_t aStackBufferCap,
-                                         size_t* aStackBufferLen,
-                                         nsTArray<nsIContent*>* aExcessArray) {
+                                         nsTArray<nsIContent*>* aArray) {
   MOZ_ASSERT(aElement->MayHaveAnonymousChildren());
-  MOZ_ASSERT(*aStackBufferLen == 0);
-  MOZ_ASSERT(aStackBufferCap > 2, "We do unchecked appends for common pseudos");
-  if (aElement->HasProperties()) {
-    if (auto* marker = nsLayoutUtils::GetMarkerPseudo(aElement)) {
-      aStackBuffer[(*aStackBufferLen)++] = marker;
-    }
-    if (auto* before = nsLayoutUtils::GetBeforePseudo(aElement)) {
-      aStackBuffer[(*aStackBufferLen)++] = before;
-    }
-    if (auto* after = nsLayoutUtils::GetAfterPseudo(aElement)) {
-      aStackBuffer[(*aStackBufferLen)++] = after;
-    }
-  }
-  AutoTArray<nsIContent*, 5> elements;
+  nsLayoutUtils::AppendGeneratedContentPseudos(aElement, *aArray);
   nsContentUtils::AppendNativeAnonymousChildren(
-      aElement, elements, nsIContent::eSkipDocumentLevelNativeAnonymousContent);
-  size_t nacChildren = elements.Length();
-  if (!nacChildren) {
-    return;  // Nothing else to do.
-  }
-
-  // If we fit in the stack buffer, copy there, otherwise use aExcessArray.
-  if (nacChildren <= aStackBufferCap - *aStackBufferLen) {
-    PodCopy(aStackBuffer + *aStackBufferLen, elements.Elements(), nacChildren);
-    *aStackBufferLen += nacChildren;
-  } else {
-    aExcessArray->SwapElements(elements);
-  }
-  MOZ_DIAGNOSTIC_ASSERT(*aStackBufferLen <= aStackBufferCap);
+      aElement, *aArray, nsIContent::eSkipDocumentLevelNativeAnonymousContent);
 }
 
 void Gecko_DestroyAnonymousContentList(nsTArray<nsIContent*>* aAnonContent) {
@@ -175,10 +123,12 @@ void Gecko_DestroyAnonymousContentList(nsTArray<nsIContent*>* aAnonContent) {
   delete aAnonContent;
 }
 
-const nsTArray<RefPtr<nsINode>>* Gecko_GetAssignedNodes(
-    const Element* aElement) {
+RustSpan<const nsINode* const> Gecko_GetAssignedNodes(const Element* aElement) {
   MOZ_ASSERT(HTMLSlotElement::FromNode(aElement));
-  return &static_cast<const HTMLSlotElement*>(aElement)->AssignedNodes();
+  Span<const RefPtr<nsINode>> span =
+      static_cast<const HTMLSlotElement*>(aElement)->AssignedNodes();
+  return {reinterpret_cast<const nsINode* const*>(span.Elements()),
+          span.Length()};
 }
 
 void Gecko_GetQueryContainerSize(const Element* aElement, nscoord* aOutWidth,
@@ -203,10 +153,8 @@ void Gecko_GetQueryContainerSize(const Element* aElement, nscoord* aOutWidth,
 }
 
 void Gecko_ComputedStyle_Init(ComputedStyle* aStyle,
-                              const ServoComputedData* aValues,
-                              PseudoStyleType aPseudoType) {
-  new (KnownNotNull, aStyle)
-      ComputedStyle(aPseudoType, ServoComputedDataForgotten(aValues));
+                              const ServoComputedData* aValues) {
+  new (KnownNotNull, aStyle) ComputedStyle(ServoComputedDataForgotten(aValues));
 }
 
 ServoComputedData::ServoComputedData(const ServoComputedDataForgotten aValue) {
@@ -221,7 +169,7 @@ void ServoComputedData::AddSizeOfExcludingThis(nsWindowSizes& aSizes) const {
   // to measure it with a function that can handle an interior pointer. We use
   // ServoStyleStructsEnclosingMallocSizeOf to clearly identify in DMD's
   // output the memory measured here.
-#define STYLE_STRUCT(name_)                                       \
+#define MEASURE_STRUCT(name_)                                     \
   static_assert(alignof(nsStyle##name_) <= sizeof(size_t),        \
                 "alignment will break AddSizeOfExcludingThis()"); \
   const void* p##name_ = Style##name_();                          \
@@ -229,8 +177,8 @@ void ServoComputedData::AddSizeOfExcludingThis(nsWindowSizes& aSizes) const {
     aSizes.mStyleSizes.NS_STYLE_SIZES_FIELD(name_) +=             \
         ServoStyleStructsMallocEnclosingSizeOf(p##name_);         \
   }
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+  FOR_EACH_STYLE_STRUCT(MEASURE_STRUCT, MEASURE_STRUCT)
+#undef MEASURE_STRUCT
 
   if (visited_style && !aSizes.mState.HaveSeenPtr(visited_style)) {
     visited_style->AddSizeOfIncludingThis(aSizes,
@@ -295,6 +243,12 @@ bool Gecko_IsRootElement(const Element* aElement) {
   return aElement->OwnerDoc()->GetRootElement() == aElement;
 }
 
+void Gecko_GetCachedLazyPseudoStyles(const ComputedStyle* aStyle,
+                                     nsTArray<const ComputedStyle*>* aArray) {
+  MOZ_ASSERT(aStyle);
+  aStyle->GetCachedLazyPseudoStyles(*aArray);
+}
+
 void Gecko_NoteDirtyElement(const Element* aElement) {
   MOZ_ASSERT(NS_IsMainThread());
   const_cast<Element*>(aElement)->NoteDirtyForServo();
@@ -316,6 +270,21 @@ bool Gecko_AnimationNameMayBeReferencedFromStyle(
   return aPresContext->AnimationManager()->AnimationMayBeReferenced(aName);
 }
 
+void Gecko_InvalidatePositionTry(const Element* aElement) {
+  auto* f = aElement->GetPrimaryFrame();
+  if (!f || !f->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
+    return;
+  }
+  f->RemoveProperty(nsIFrame::LastSuccessfulPositionFallback());
+  f->PresShell()->MarkPositionedFrameForReflow(f);
+}
+
+void Gecko_NoteHighlightPseudoStyleInvalidated(const Document* aDoc) {
+  if (auto* presContext = aDoc->GetPresContext()) {
+    presContext->RestyleManager()->NoteHighlightPseudoStyleInvalidated();
+  }
+}
+
 float Gecko_GetScrollbarInlineSize(const nsPresContext* aPc) {
   MOZ_ASSERT(aPc);
   auto overlay = aPc->UseOverlayScrollbars() ? nsITheme::Overlay::Yes
@@ -330,12 +299,13 @@ PseudoStyleType Gecko_GetImplementedPseudoType(const Element* aElement) {
 }
 
 nsAtom* Gecko_GetImplementedPseudoIdentifier(const Element* aElement) {
-  if (!PseudoStyle::IsNamedViewTransitionPseudoElement(
-          aElement->GetPseudoElementType())) {
+  if (!aElement->HasName()) {
     return nullptr;
   }
 
-  if (!aElement->HasName()) {
+  PseudoStyleType type = aElement->GetPseudoElementType();
+  if (!PseudoStyle::IsNamedViewTransitionPseudoElement(type) &&
+      type != PseudoStyleType::Picker) {
     return nullptr;
   }
 
@@ -369,7 +339,7 @@ nscoord Gecko_CalcLineHeight(const StyleLineHeight* aLh,
                              const nsStyleFont* aAgainstFont,
                              const mozilla::dom::Element* aElement) {
   // Normal line-height depends on font metrics.
-  AutoWriteLock guard(*sServoFFILock);
+  MutexAutoLock guard(*sServoFFILock);
   return ReflowInput::CalcLineHeight(*aLh, *aAgainstFont,
                                      const_cast<nsPresContext*>(aPc), aVertical,
                                      aElement, NS_UNCONSTRAINEDSIZE, 1.0f);
@@ -395,19 +365,7 @@ bool Gecko_HaveSeenPtr(SeenPtrs* aTable, const void* aPtr) {
 
 const StyleLockedDeclarationBlock* Gecko_GetStyleAttrDeclarationBlock(
     const Element* aElement) {
-  DeclarationBlock* decl = aElement->GetInlineStyleDeclaration();
-  if (!decl) {
-    return nullptr;
-  }
-  return decl->Raw();
-}
-
-void Gecko_UnsetDirtyStyleAttr(const Element* aElement) {
-  DeclarationBlock* decl = aElement->GetInlineStyleDeclaration();
-  if (!decl) {
-    return;
-  }
-  decl->UnsetDirty();
+  return aElement->GetInlineStyleDeclaration();
 }
 
 const StyleLockedDeclarationBlock*
@@ -568,18 +526,30 @@ void Gecko_UpdateAnimations(const Element* aElement,
   const auto [element, pseudoRequest] =
       AnimationUtils::GetElementPseudoPair(aElement);
 
+  // Handle timeline scopes first, because our own scroll/view-linked animations
+  // may be affected.
+  if (aTasks & UpdateAnimationsTasks::TimelineScopes) {
+    presContext->TimelineManager()->UpdateTimelineScopes(element,
+                                                         aComputedData);
+    // We could try to limit the impact here, at least for changes involving not
+    // `all`. However, defer any such optimization until after bug 2024012.
+    presContext->AnimationManager()->UpdateAllNamedTimelineAnimations();
+  }
+
   // Handle scroll/view timelines first because CSS animations may refer to the
   // timeline defined by itself.
   if (aTasks & UpdateAnimationsTasks::ScrollTimelines) {
-    presContext->TimelineManager()->UpdateTimelines(
+    const auto affected = presContext->TimelineManager()->UpdateTimelines(
         const_cast<Element*>(element), pseudoRequest, aComputedData,
         TimelineManager::ProgressTimelineType::Scroll);
+    presContext->AnimationManager()->UpdateNamedTimelineAnimations(affected);
   }
 
   if (aTasks & UpdateAnimationsTasks::ViewTimelines) {
-    presContext->TimelineManager()->UpdateTimelines(
+    const auto affected = presContext->TimelineManager()->UpdateTimelines(
         const_cast<Element*>(element), pseudoRequest, aComputedData,
         TimelineManager::ProgressTimelineType::View);
+    presContext->AnimationManager()->UpdateNamedTimelineAnimations(affected);
   }
 
   if (aTasks & UpdateAnimationsTasks::CSSAnimations) {
@@ -678,11 +648,11 @@ static CSSTransition* GetCurrentTransitionAt(const Element* aElement,
   return collection->mAnimations.SafeElementAt(aIndex);
 }
 
-nsCSSPropertyID Gecko_ElementTransitions_PropertyAt(const Element* aElement,
-                                                    size_t aIndex) {
+NonCustomCSSPropertyId Gecko_ElementTransitions_PropertyAt(
+    const Element* aElement, size_t aIndex) {
   CSSTransition* transition = GetCurrentTransitionAt(aElement, aIndex);
-  return transition ? transition->TransitionProperty().mID
-                    : nsCSSPropertyID::eCSSProperty_UNKNOWN;
+  return transition ? transition->TransitionProperty().mId
+                    : NonCustomCSSPropertyId::eCSSProperty_UNKNOWN;
 }
 
 const StyleAnimationValue* Gecko_ElementTransitions_EndValueAt(
@@ -712,9 +682,9 @@ double Gecko_GetPositionInSegment(const AnimationPropertySegment* aSegment,
 
 const StyleAnimationValue* Gecko_AnimationGetBaseStyle(
     const RawServoAnimationValueTable* aBaseStyles,
-    const mozilla::AnimatedPropertyID* aProperty) {
+    const mozilla::CSSPropertyId* aProperty) {
   const auto* base = reinterpret_cast<const nsRefPtrHashtable<
-      nsGenericHashKey<AnimatedPropertyID>, StyleAnimationValue>*>(aBaseStyles);
+      nsGenericHashKey<CSSPropertyId>, StyleAnimationValue>*>(aBaseStyles);
   return base->GetWeak(*aProperty);
 }
 
@@ -822,6 +792,39 @@ bool Gecko_MatchViewTransitionClass(
   return vt->MatchClassList(name, *aPtNameAndClassSelector);
 }
 
+static bool IsValidViewTransitionType(nsAtom* aName) {
+  nsDependentAtomString str(aName);
+  return !StringBeginsWith(str, u"-ua-"_ns,
+                           nsASCIICaseInsensitiveStringComparator) &&
+         !str.LowerCaseEqualsASCII("none");
+}
+
+bool Gecko_HasActiveViewTransitionTypes(
+    const mozilla::dom::Document* aDoc,
+    const nsTArray<StyleCustomIdent>* aNames) {
+  MOZ_ASSERT(aDoc);
+  MOZ_ASSERT(aNames);
+  const ViewTransition* vt = aDoc->GetActiveViewTransition();
+  if (!vt) {
+    return false;
+  }
+  const auto& typeList = vt->GetTypeList();
+  if (typeList.IsEmpty()) {
+    return false;
+  }
+  for (const auto& name : *aNames) {
+    if (typeList.Contains(name.AsAtom())) {
+      // NOTE(emilio): This IsValidViewTransitionType() check is not in the spec
+      // and is rather weird, but matches other browsers for now, see:
+      // https://github.com/w3c/csswg-drafts/issues/13141
+      if (IsValidViewTransitionType(name.AsAtom())) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 nsAtom* Gecko_GetXMLLangValue(const Element* aElement) {
   const nsAttrValue* attr =
       aElement->GetParsedAttr(nsGkAtoms::lang, kNameSpaceID_XML);
@@ -852,6 +855,25 @@ bool Gecko_IsTableBorderNonzero(const Element* aElement) {
 bool Gecko_IsSelectListBox(const Element* aElement) {
   const auto* select = HTMLSelectElement::FromNode(aElement);
   return select && !select->IsCombobox();
+}
+
+bool Gecko_LookupAttrValue(const Element* aElement, nsAtom& aNamespace,
+                           nsAtom& aName, nsAString& aResult) {
+  int32_t attrNameSpace = kNameSpaceID_None;
+  if (!aNamespace.IsEmpty()) {
+    attrNameSpace = nsNameSpaceManager::GetInstance()->GetNameSpaceID(
+        &aNamespace, nsContentUtils::IsChromeDoc(aElement->OwnerDoc()));
+  }
+  // All attribute names on HTML elements in HTML docs match
+  // ASCII-case-insensitively. See note in:
+  // https://html.spec.whatwg.org/multipage/dom.html#custom-data-attribute
+  if (!aName.IsAsciiLowercase() && aElement->OwnerDoc()->IsHTMLDocument() &&
+      aElement->IsHTMLElement()) {
+    RefPtr<nsAtom> lowercaseName(&aName);
+    ToLowerCaseASCII(lowercaseName);
+    return aElement->GetAttr(attrNameSpace, lowercaseName, aResult);
+  }
+  return aElement->GetAttr(attrNameSpace, &aName, aResult);
 }
 
 template <typename Implementor>
@@ -951,7 +973,7 @@ void Gecko_nsFont_InitSystem(nsFont* aDest, StyleSystemFont aFontId,
                              const nsStyleFont* aFont,
                              const Document* aDocument) {
   const nsFont& defaultVariableFont =
-      ThreadSafeGetDefaultVariableFont(*aDocument, aFont->mLanguage);
+      aDocument->GetFontPrefsForLang(aFont->mLanguage)->mDefaultVariableFont;
 
   // We have passed uninitialized memory to this function,
   // initialize it. We can't simply return an nsFont because then
@@ -967,14 +989,12 @@ void Gecko_nsFont_Destroy(nsFont* aDest) { aDest->~nsFont(); }
 
 StyleGenericFontFamily Gecko_nsStyleFont_ComputeFallbackFontTypeForLanguage(
     const Document* aDoc, nsAtom* aLanguage) {
-  return ThreadSafeGetLangGroupFontPrefs(*aDoc, aLanguage)->GetDefaultGeneric();
+  return aDoc->GetFontPrefsForLang(aLanguage)->GetDefaultGeneric();
 }
 
 Length Gecko_GetBaseSize(const Document* aDoc, nsAtom* aLang,
                          StyleGenericFontFamily aGeneric) {
-  return ThreadSafeGetLangGroupFontPrefs(*aDoc, aLang)
-      ->GetDefaultFont(aGeneric)
-      ->size;
+  return aDoc->GetFontPrefsForLang(aLang)->GetDefaultFont(aGeneric)->size;
 }
 
 gfxFontFeatureValueSet* Gecko_ConstructFontFeatureValueSet() {
@@ -1059,47 +1079,68 @@ enum class KeyframeSearchDirection {
 enum class KeyframeInsertPosition {
   Prepend,
   LastForOffset,
+  Append,
 };
 
-static Keyframe* GetOrCreateKeyframe(
-    nsTArray<Keyframe>* aKeyframes, float aOffset,
-    const StyleComputedTimingFunction* aTimingFunction,
+static std::pair<Keyframe*, size_t> GetOrCreateKeyframe(
+    nsTArray<Keyframe>* aKeyframes, StyleTimelineRangeName aRangeName,
+    float aOffset, const StyleComputedTimingFunction* aTimingFunction,
     const CompositeOperationOrAuto aComposition,
     KeyframeSearchDirection aSearchDirection,
     KeyframeInsertPosition aInsertPosition) {
   MOZ_ASSERT(aKeyframes, "The keyframe array should be valid");
   MOZ_ASSERT(aTimingFunction, "The timing function should be valid");
-  MOZ_ASSERT(aOffset >= 0. && aOffset <= 1.,
-             "The offset should be in the range of [0.0, 1.0]");
+  MOZ_ASSERT(aRangeName != StyleTimelineRangeName::None ||
+                 (aRangeName == StyleTimelineRangeName::None && aOffset >= 0. &&
+                  aOffset <= 1.),
+             "The percentage offset should be in the range of [0.0, 1.0]");
 
+  const auto& offset = Keyframe::OffsetType{aRangeName, (double)aOffset};
   size_t keyframeIndex;
   switch (aSearchDirection) {
     case KeyframeSearchDirection::Forwards:
       if (nsAnimationManager::FindMatchingKeyframe(
-              *aKeyframes, aOffset, *aTimingFunction, aComposition,
+              *aKeyframes, offset, *aTimingFunction, aComposition,
               keyframeIndex)) {
-        return &(*aKeyframes)[keyframeIndex];
+        return {&(*aKeyframes)[keyframeIndex], keyframeIndex};
       }
       break;
     case KeyframeSearchDirection::Backwards:
       if (nsAnimationManager::FindMatchingKeyframe(
-              Reversed(*aKeyframes), aOffset, *aTimingFunction, aComposition,
+              Reversed(*aKeyframes), offset, *aTimingFunction, aComposition,
               keyframeIndex)) {
-        return &(*aKeyframes)[aKeyframes->Length() - 1 - keyframeIndex];
+        return {&(*aKeyframes)[aKeyframes->Length() - 1 - keyframeIndex],
+                aKeyframes->Length() - 1 - keyframeIndex};
       }
       keyframeIndex = aKeyframes->Length() - 1;
       break;
   }
 
-  Keyframe* keyframe = aKeyframes->InsertElementAt(
-      aInsertPosition == KeyframeInsertPosition::Prepend ? 0 : keyframeIndex);
-  keyframe->mOffset.emplace(aOffset);
+  Keyframe* keyframe = nullptr;
+  switch (aInsertPosition) {
+    case KeyframeInsertPosition::Prepend:
+      keyframe = aKeyframes->InsertElementAt(0);
+      break;
+    case KeyframeInsertPosition::LastForOffset:
+      // FIXME: Bug 2037642. This may be incorrect to insert the final keyframe,
+      // or we probably never call this because we generate the initial/final
+      // keyframes in from_keyframes().
+      // However, we will move the generation of initial/final keyframes into
+      // other places so this will be dropped soon. Just keep it as it is.
+      keyframe = aKeyframes->InsertElementAt(keyframeIndex);
+      break;
+    case KeyframeInsertPosition::Append:
+      keyframe = aKeyframes->AppendElement();
+      break;
+  }
+  MOZ_ASSERT(keyframe);
+  keyframe->mOffset.emplace(offset);
   if (!aTimingFunction->IsLinearKeyword()) {
     keyframe->mTimingFunction.emplace(*aTimingFunction);
   }
   keyframe->mComposite = aComposition;
-
-  return keyframe;
+  // Return the length of aKeyframes to represent the new Keyframe is inserted.
+  return {keyframe, aKeyframes->Length()};
 }
 
 Keyframe* Gecko_GetOrCreateKeyframeAtStart(
@@ -1107,31 +1148,50 @@ Keyframe* Gecko_GetOrCreateKeyframeAtStart(
     const StyleComputedTimingFunction* aTimingFunction,
     const CompositeOperationOrAuto aComposition) {
   MOZ_ASSERT(aKeyframes->IsEmpty() ||
-                 aKeyframes->ElementAt(0).mOffset.value() >= aOffset,
-             "The offset should be less than or equal to the first keyframe's "
-             "offset if there are exisiting keyframes");
-
-  return GetOrCreateKeyframe(aKeyframes, aOffset, aTimingFunction, aComposition,
+                 aKeyframes->ElementAt(0).mOffset->mPercentage >= aOffset,
+             "The percentage offset should be less than or equal to the first "
+             "keyframe's offset if there are exisiting keyframes");
+  return GetOrCreateKeyframe(aKeyframes, StyleTimelineRangeName::None, aOffset,
+                             aTimingFunction, aComposition,
                              KeyframeSearchDirection::Forwards,
-                             KeyframeInsertPosition::Prepend);
+                             KeyframeInsertPosition::Prepend)
+      .first;
+}
+
+Keyframe* Gecko_GetOrCreateKeyframeWithRangeName(
+    nsTArray<Keyframe>* aKeyframes, const StyleTimelineRangeName aRangeName,
+    float aOffset, const StyleComputedTimingFunction* aTimingFunction,
+    const CompositeOperationOrAuto aComposition, size_t* aMatchedIdx) {
+  MOZ_ASSERT(aRangeName != StyleTimelineRangeName::Normal,
+             "normal shouldn't be used");
+
+  auto [keyframe, idx] = GetOrCreateKeyframe(
+      aKeyframes, aRangeName, aOffset, aTimingFunction, aComposition,
+      KeyframeSearchDirection::Backwards, KeyframeInsertPosition::Append);
+  *aMatchedIdx = idx;
+  return keyframe;
 }
 
 Keyframe* Gecko_GetOrCreateInitialKeyframe(
     nsTArray<Keyframe>* aKeyframes,
     const StyleComputedTimingFunction* aTimingFunction,
     const CompositeOperationOrAuto aComposition) {
-  return GetOrCreateKeyframe(aKeyframes, 0., aTimingFunction, aComposition,
+  return GetOrCreateKeyframe(aKeyframes, StyleTimelineRangeName::None, 0.,
+                             aTimingFunction, aComposition,
                              KeyframeSearchDirection::Forwards,
-                             KeyframeInsertPosition::LastForOffset);
+                             KeyframeInsertPosition::LastForOffset)
+      .first;
 }
 
 Keyframe* Gecko_GetOrCreateFinalKeyframe(
     nsTArray<Keyframe>* aKeyframes,
     const StyleComputedTimingFunction* aTimingFunction,
     const CompositeOperationOrAuto aComposition) {
-  return GetOrCreateKeyframe(aKeyframes, 1., aTimingFunction, aComposition,
+  return GetOrCreateKeyframe(aKeyframes, StyleTimelineRangeName::None, 1.,
+                             aTimingFunction, aComposition,
                              KeyframeSearchDirection::Backwards,
-                             KeyframeInsertPosition::LastForOffset);
+                             KeyframeInsertPosition::LastForOffset)
+      .first;
 }
 
 void Gecko_GetComputedURLSpec(const StyleComputedUrl* aURL, nsCString* aOut) {
@@ -1225,6 +1285,11 @@ void Gecko_Snapshot_DebugListAttributes(const ServoElementSnapshot* aSnapshot,
 
 NS_IMPL_THREADSAFE_FFI_REFCOUNTING(URLExtraData, URLExtraData);
 
+bool Gecko_IsURIInList(const URLExtraData* aData, const nsACString* aList) {
+  return nsContentUtils::IsURIInList(aData->BaseURI(),
+                                     PromiseFlatCString(*aList));
+}
+
 void Gecko_nsStyleFont_SetLang(nsStyleFont* aFont, nsAtom* aAtom) {
   aFont->mLanguage = dont_AddRef(aAtom);
   aFont->mExplicitLanguage = true;
@@ -1245,29 +1310,11 @@ Length Gecko_nsStyleFont_ComputeMinSize(const nsStyleFont* aFont,
   if (!aFont->MinFontSizeEnabled()) {
     return {0};
   }
-  Length minFontSize;
-  bool needsCache = false;
-
-  auto MinFontSize = [&](bool* aNeedsToCache) {
-    const auto* prefs =
-        aDocument->GetFontPrefsForLang(aFont->mLanguage, aNeedsToCache);
-    return prefs ? prefs->mMinimumFontSize : Length{0};
-  };
-
-  {
-    AutoReadLock guard(*sServoFFILock);
-    minFontSize = MinFontSize(&needsCache);
-  }
-
-  if (needsCache) {
-    AutoWriteLock guard(*sServoFFILock);
-    minFontSize = MinFontSize(nullptr);
-  }
-
+  Length minFontSize =
+      aDocument->GetFontPrefsForLang(aFont->mLanguage)->mMinimumFontSize;
   if (minFontSize.ToCSSPixels() <= 0.0f) {
     return {0};
   }
-
   minFontSize.ScaleBy(aFont->mMinFontSizeRatio._0);
   return minFontSize;
 }
@@ -1283,7 +1330,7 @@ void InitializeServo() {
   gUACacheReporter = new UACacheReporter();
   RegisterWeakMemoryReporter(gUACacheReporter);
 
-  sServoFFILock = new RWLock("Servo::FFILock");
+  sServoFFILock = new Mutex("Servo::FFILock");
 }
 
 void ShutdownServo() {
@@ -1300,8 +1347,8 @@ void ShutdownServo() {
 
 void AssertIsMainThreadOrServoFontMetricsLocked() {
   if (!NS_IsMainThread()) {
-    MOZ_ASSERT(sServoFFILock &&
-               sServoFFILock->LockedForWritingByCurrentThread());
+    MOZ_ASSERT(sServoFFILock);
+    sServoFFILock->AssertCurrentThreadOwns();
   }
 }
 
@@ -1312,7 +1359,7 @@ GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext* aPresContext,
                                       const nsStyleFont* aFont,
                                       Length aFontSize,
                                       StyleQueryFontMetricsFlags flags) {
-  AutoWriteLock guard(*sServoFFILock);
+  MutexAutoLock guard(*sServoFFILock);
 
   // Getting font metrics can require some main thread only work to be
   // done, such as work that needs to touch non-threadsafe refcounted
@@ -1412,11 +1459,9 @@ static already_AddRefed<StyleSheet> LoadImportSheet(
     if (!uri) {
       NS_NewURI(getter_AddRefs(uri), "about:invalid"_ns);
     }
-    emptySheet->SetURIs(uri, uri, uri);
-    emptySheet->SetPrincipal(aURL.ExtraData().Principal());
     nsCOMPtr<nsIReferrerInfo> referrerInfo =
-        ReferrerInfo::CreateForExternalCSSResources(emptySheet);
-    emptySheet->SetReferrerInfo(referrerInfo);
+        ReferrerInfo::CreateForExternalCSSResources(emptySheet, uri);
+    emptySheet->SetURIs(uri, uri, referrerInfo, aURL.ExtraData().Principal());
     emptySheet->SetComplete();
     aParent->AppendStyleSheet(*emptySheet);
     return emptySheet.forget();
@@ -1463,7 +1508,7 @@ void Gecko_LoadStyleSheetAsync(SheetLoadDataHolder* aParentData,
 }
 
 void Gecko_AddPropertyToSet(nsCSSPropertyIDSet* aPropertySet,
-                            nsCSSPropertyID aProperty) {
+                            NonCustomCSSPropertyId aProperty) {
   aPropertySet->AddProperty(aProperty);
 }
 
@@ -1504,7 +1549,7 @@ void Construct(T* aPtr, const Document* aDoc) {
   }
 }
 
-#define STYLE_STRUCT(name)                                             \
+#define GENERATE_GECKO_FUNCTIONS(name)                                 \
   void Gecko_Construct_Default_nsStyle##name(nsStyle##name* ptr,       \
                                              const Document* doc) {    \
     Construct(ptr, doc);                                               \
@@ -1517,9 +1562,9 @@ void Construct(T* aPtr, const Document* aDoc) {
     ptr->~nsStyle##name();                                             \
   }
 
-#include "nsStyleStructList.h"
+FOR_EACH_STYLE_STRUCT(GENERATE_GECKO_FUNCTIONS, GENERATE_GECKO_FUNCTIONS)
 
-#undef STYLE_STRUCT
+#undef GENERATE_GECKO_FUNCTIONS
 
 bool Gecko_ErrorReportingEnabled(const StyleSheet* aSheet,
                                  const Loader* aLoader,
@@ -1570,7 +1615,7 @@ void Gecko_ReportUnexpectedCSSError(const uint64_t aWindowId, nsIURI* aURI,
   reporter.OutputError(selectorsValue, lineNumber + 1, colNumber, aURI);
 }
 
-void Gecko_ContentList_AppendAll(nsSimpleContentList* aList,
+void Gecko_ContentList_AppendAll(SimpleContentList* aList,
                                  const Element** aElements, size_t aLength) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aElements);
@@ -1584,18 +1629,20 @@ void Gecko_ContentList_AppendAll(nsSimpleContentList* aList,
   }
 }
 
-const nsTArray<Element*>* Gecko_Document_GetElementsWithId(const Document* aDoc,
-                                                           nsAtom* aId) {
+RustSpan<const Element* const> Gecko_Document_GetElementsWithId(
+    const Document* aDoc, nsAtom* aId) {
   MOZ_ASSERT(aDoc);
   MOZ_ASSERT(aId);
-  return aDoc->GetAllElementsForId(aId);
+  auto span = aDoc->GetAllElementsForId(aId);
+  return {span.Elements(), span.Length()};
 }
 
-const nsTArray<Element*>* Gecko_ShadowRoot_GetElementsWithId(
+RustSpan<const Element* const> Gecko_ShadowRoot_GetElementsWithId(
     const ShadowRoot* aShadowRoot, nsAtom* aId) {
   MOZ_ASSERT(aShadowRoot);
   MOZ_ASSERT(aId);
-  return aShadowRoot->GetAllElementsForId(aId);
+  auto span = aShadowRoot->GetAllElementsForId(aId);
+  return {span.Elements(), span.Length()};
 }
 
 static StyleComputedMozPrefFeatureValue GetPrefValue(const nsCString& aPref) {
@@ -1769,6 +1816,10 @@ nsAtom** Gecko_Element_ExportedParts(const nsAttrValue* aValue,
   return reinterpret_cast<nsAtom**>(parts->Elements());
 }
 
+uint64_t Gecko_Element_GetSubtreeBloomFilter(const Element* aElement) {
+  return aElement->GetSubtreeBloomFilter();
+}
+
 bool StyleSingleFontFamily::IsNamedFamily(const nsAString& aFamilyName) const {
   if (!IsFamilyName()) {
     return false;
@@ -1819,6 +1870,8 @@ void StyleSingleFontFamily::AppendToString(nsACString& aName,
       return aName.AppendLiteral("cursive");
     case StyleGenericFontFamily::Fantasy:
       return aName.AppendLiteral("fantasy");
+    case StyleGenericFontFamily::Math:
+      return aName.AppendLiteral("math");
     case StyleGenericFontFamily::SystemUi:
       return aName.AppendLiteral("system-ui");
   }
@@ -1839,22 +1892,6 @@ StyleFontFamilyList StyleFontFamilyList::WithOneUnquotedFamily(
   names.AppendElement(StyleSingleFontFamily::FamilyName(
       {StyleAtom(NS_Atomize(aName)), StyleFontFamilyNameSyntax::Identifiers}));
   return WithNames(std::move(names));
-}
-
-// Find the aContainer's child that is the ancestor of aDescendant.
-static const nsIFrame* TraverseUpToContainerChild(const nsIFrame* aContainer,
-                                                  const nsIFrame* aDescendant) {
-  const auto* current = aDescendant;
-  while (true) {
-    const auto* parent = current->GetParent();
-    if (!parent) {
-      return nullptr;
-    }
-    if (parent == aContainer) {
-      return current;
-    }
-    current = parent;
-  }
 }
 
 static bool AnchorSideUsesCBWM(
@@ -1879,114 +1916,79 @@ static bool AnchorSideUsesCBWM(
   return false;
 }
 
-struct AnchorPosInfo {
-  // Border-box of the anchor frame, offset against `mContainingBlock`'s padding
-  // box.
-  nsRect mRect;
-  const nsIFrame* mContainingBlock;
-};
-
-static nsIFrame* GetAnchorOf(const nsIFrame* aPositioned,
-                             const nsAtom* aAnchorName) {
-  const auto* presShell = aPositioned->PresShell();
-  MOZ_ASSERT(presShell, "No PresShell for frame?");
-
-  const auto* anchorName = aAnchorName;
-  if (!anchorName || anchorName->IsEmpty()) {
-    const auto* stylePos = aPositioned->StylePosition();
-    if (!stylePos->mPositionAnchor.IsIdent()) {
-      // No valid anchor specified, bail.
-      // TODO(dshin): Implicit anchor should be looked at here.
-      return nullptr;
-    }
-    anchorName = stylePos->mPositionAnchor.AsIdent().AsAtom();
-  }
-  return presShell->GetAnchorPosAnchor(anchorName, aPositioned);
-}
-
-static Maybe<AnchorPosInfo> GetAnchorPosRect(const nsIFrame* aPositioned,
-                                             const nsAtom* aAnchorName,
-                                             bool aCBRectIsvalid) {
-  if (!aPositioned) {
-    return Nothing{};
-  }
-
-  const auto* anchor = GetAnchorOf(aPositioned, aAnchorName);
-  if (!anchor) {
-    return Nothing{};
-  }
-
-  MOZ_ASSERT(aPositioned->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW),
-             "Calling GetAnchorPoseRect on non-abspos frame?");
-  // We're assuming that the caller already check for abspos.
-  const auto* containingBlock = aPositioned->GetParent();
-  auto rect = [&]() -> Maybe<nsRect> {
-    if (aCBRectIsvalid) {
-      const nsRect result = anchor->GetRectRelativeToSelf();
-      const auto offset = anchor->GetOffsetTo(containingBlock);
-      // Easy, just use the existing function.
-      return Some(result + offset);
-    }
-
-    // Ok, containing block doesn't have its rect fully resolved. Figure out
-    // rect relative to the child of containing block that is also the ancestor
-    // of the anchor, and manually compute the offset.
-    // TODO(dshin): This wouldn't handle anchor in a previous top layer.
-    const auto* containerChild =
-        TraverseUpToContainerChild(containingBlock, anchor);
-    if (!containerChild) {
-      return Nothing{};
-    }
-
-    if (anchor == containerChild) {
-      // Anchor is the direct child of anchor's CBWM.
-      return Some(anchor->GetRect());
-    }
-
-    // TODO(dshin): Already traversed up to find `containerChild`, and we're
-    // going to do it again here, which feels a little wasteful.
-    const nsRect rectToContainerChild = anchor->GetRectRelativeToSelf();
-    const auto offset = anchor->GetOffsetTo(containerChild);
-    return Some(rectToContainerChild + offset + containerChild->GetPosition());
-  }();
-  return rect.map([&](const nsRect& aRect) {
-    // We need to position the border box of the anchor within the abspos
-    // containing block's size - So the rectangle's size (i.e. Anchor size)
-    // stays the same, while "the outer rectangle" (i.e. The abspos cb size)
-    // "shrinks" by shifting the position.
-    const auto border = containingBlock->GetUsedBorder();
-    const nsPoint borderTopLeft{border.left, border.top};
-    return AnchorPosInfo{
-        .mRect = aRect - borderTopLeft,
-        .mContainingBlock = containingBlock,
-    };
-  });
-}
-
-bool Gecko_GetAnchorPosOffset(
-    const AnchorPosOffsetResolutionParams* aParams, const nsAtom* aAnchorName,
-    StylePhysicalSide aPropSide,
-    mozilla::StyleAnchorSideKeyword aAnchorSideKeyword, float aPercentage,
-    mozilla::Length* aOut) {
+bool Gecko_GetAnchorPosOffset(const AnchorPosOffsetResolutionParams* aParams,
+                              const nsAtom* aAnchorName,
+                              const StyleCascadeLevel* aTreeScope,
+                              StylePhysicalSide aPropSide,
+                              StyleAnchorSideKeyword aAnchorSideKeyword,
+                              float aPercentage, Length* aOut) {
   if (!aParams || !aParams->mBaseParams.mFrame) {
     return false;
   }
-  const auto info = GetAnchorPosRect(aParams->mBaseParams.mFrame, aAnchorName,
-                                     !aParams->mCBSize);
-  if (info.isNothing()) {
+  const auto* positioned = aParams->mBaseParams.mFrame;
+  const auto* containingBlock = positioned->GetParent();
+  auto* cache = aParams->mBaseParams.mCache;
+  const auto info = AnchorPositioningUtils::ResolveAnchorPosRect(
+      positioned, containingBlock, {aAnchorName, *aTreeScope},
+      !aParams->mCBSize, cache);
+  if (!info) {
     return false;
+  }
+  if (cache) {
+    // Cache is set during reflow, which is really the only time we want to
+    // actively modify scroll compensation state & side.
+    if (info->mCompensatesForScroll) {
+      const auto axis = [aPropSide]() {
+        switch (aPropSide) {
+          case StylePhysicalSide::Left:
+          case StylePhysicalSide::Right:
+            return PhysicalAxis::Horizontal;
+          case StylePhysicalSide::Top:
+          case StylePhysicalSide::Bottom:
+            break;
+          default:
+            MOZ_ASSERT_UNREACHABLE("Unhandled side?");
+        }
+        return PhysicalAxis::Vertical;
+      }();
+      cache->mReferenceData->AdjustCompensatingForScroll(axis);
+      // Non scroll-compensated anchor will not have any impact on the
+      // containing block due to scrolling. See documentation for
+      // `mScrollCompensatedSides`.
+      cache->mReferenceData->mScrollCompensatedSides |=
+          SideToSideBit(ToSide(aPropSide));
+    }
   }
   // Compute the offset here in C++, where translating between physical/logical
   // coordinates is easier.
-  const auto& rect = info.ref().mRect;
-  const auto* containingBlock = info.ref().mContainingBlock;
+
   const auto usesCBWM = AnchorSideUsesCBWM(aAnchorSideKeyword);
   const auto cbwm = containingBlock->GetWritingMode();
   const auto wm =
-      usesCBWM ? aParams->mBaseParams.mFrame->GetWritingMode() : cbwm;
-  const auto logicalCBSize = aParams->mCBSize
-                                 ? aParams->mCBSize->ConvertTo(wm, cbwm)
-                                 : containingBlock->PaddingSize(wm);
+      usesCBWM ? cbwm : aParams->mBaseParams.mFrame->GetWritingMode();
+  const auto [rect, logicalCBSize] = [&] {
+    // We need `AnchorPosReferenceData` to compute the anchor offset against
+    // the adjusted CB, so make the best attempt to retrieve it.
+    // TODO(dshin, bug 2005207): We really need to unify containing block
+    // lookups and clean up cache lookups here.
+    const auto* referenceData =
+        cache ? cache->mReferenceData
+              : positioned->GetProperty(nsIFrame::AnchorPosReferences());
+    if (!referenceData) {
+      return std::make_pair(
+          info->mRect, aParams->mCBSize ? aParams->mCBSize->ConvertTo(wm, cbwm)
+                                        : containingBlock->PaddingSize(wm));
+    }
+    // Offset happens from padding rect.
+    const auto offset = referenceData->mAdjustedContainingBlock.TopLeft() -
+                        referenceData->mOriginalContainingBlockRect.TopLeft();
+    return std::make_pair(
+        info->mRect - offset,
+        aParams->mCBSize
+            ? aParams->mCBSize->ConvertTo(wm, cbwm)
+            : LogicalSize{cbwm, referenceData->mAdjustedContainingBlock.Size()}
+                  .ConvertTo(wm, cbwm));
+  }();
   const LogicalRect logicalAnchorRect{wm, rect,
                                       logicalCBSize.GetPhysicalSize(wm)};
   const auto logicalPropSide = wm.LogicalSideForPhysicalSide(ToSide(aPropSide));
@@ -2004,8 +2006,9 @@ bool Gecko_GetAnchorPosOffset(
       case StyleAnchorSideKeyword::Bottom:
         return GetEdge(wm.LogicalSideForPhysicalSide(eSideBottom));
       case StyleAnchorSideKeyword::Inside:
-      case StyleAnchorSideKeyword::Outside:
         return propEdge;
+      case StyleAnchorSideKeyword::Outside:
+        return GetOppositeEdge(propEdge);
       case StyleAnchorSideKeyword::Start:
       case StyleAnchorSideKeyword::SelfStart:
       case StyleAnchorSideKeyword::Center:
@@ -2017,25 +2020,30 @@ bool Gecko_GetAnchorPosOffset(
     return LogicalEdge::Start;
   }();
 
-  // Do we need to flip the computed offset by containing block's size?
-  const auto opposite =
-      propEdge != anchorEdge && propEdge != LogicalEdge::Start;
-  const auto size = logicalCBSize.Size(propAxis, wm);
-  const auto offset = anchorEdge == LogicalEdge::Start
-                          ? logicalAnchorRect.Start(propAxis, wm)
-                          : logicalAnchorRect.End(propAxis, wm);
-  const auto side = opposite ? size - offset : offset;
-  nscoord result = side;
+  nscoord result = [&]() {
+    // Offset to the desired anchor edge, from the containing block's start
+    // edge.
+    const auto anchorOffsetFromStartEdge =
+        anchorEdge == LogicalEdge::Start ? logicalAnchorRect.Start(propAxis, wm)
+                                         : logicalAnchorRect.End(propAxis, wm);
+    if (propEdge == LogicalEdge::Start) {
+      return anchorOffsetFromStartEdge;
+    }
+    // Need the offset from the end edge of the containing block.
+    const auto anchorOffsetFromEndEdge =
+        logicalCBSize.Size(propAxis, wm) - anchorOffsetFromStartEdge;
+    return anchorOffsetFromEndEdge;
+  }();
 
   // Apply the percentage value, with the percentage basis as the anchor
   // element's size in the relevant axis.
   if (aPercentage != 0.f) {
     const nscoord anchorSize = LogicalSize{wm, rect.Size()}.Size(propAxis, wm);
-    result = side + (opposite ? -1 : 1) *
-                        ((aPercentage != 1.f)
-                             ? NSToCoordRoundWithClamp(
-                                   aPercentage * static_cast<float>(anchorSize))
-                             : anchorSize);
+    result += (propEdge == LogicalEdge::End ? -1 : 1) *
+              ((aPercentage != 1.f)
+                   ? NSToCoordRoundWithClamp(aPercentage *
+                                             static_cast<float>(anchorSize))
+                   : anchorSize);
   }
   *aOut = Length::FromPixels(CSSPixel::FromAppUnits(result));
   return true;
@@ -2043,44 +2051,54 @@ bool Gecko_GetAnchorPosOffset(
 
 bool Gecko_GetAnchorPosSize(const AnchorPosResolutionParams* aParams,
                             const nsAtom* aAnchorName,
-                            mozilla::StylePhysicalAxis aPropAxis,
-                            mozilla::StyleAnchorSizeKeyword aAnchorSizeKeyword,
-                            mozilla::Length* aOut) {
+                            const mozilla::StyleCascadeLevel* aTreeScope,
+                            StylePhysicalAxis aPropAxis,
+                            StyleAnchorSizeKeyword aAnchorSizeKeyword,
+                            Length* aOut) {
   if (!aParams || !aParams->mFrame) {
     return false;
   }
   const auto* positioned = aParams->mFrame;
-  const auto* anchor = GetAnchorOf(positioned, aAnchorName);
-  if (!anchor) {
+  const auto size = AnchorPositioningUtils::ResolveAnchorPosSize(
+      positioned, {aAnchorName, *aTreeScope}, aParams->mCache);
+  if (!size) {
     return false;
   }
   const auto* containingBlock = positioned->GetParent();
   const auto l = [&]() {
     switch (aAnchorSizeKeyword) {
-      case mozilla::StyleAnchorSizeKeyword::None:
+      case StyleAnchorSizeKeyword::None:
         switch (aPropAxis) {
-          case mozilla::StylePhysicalAxis::Horizontal:
-            return anchor->GetSize().Width();
-          case mozilla::StylePhysicalAxis::Vertical:
-            return anchor->GetSize().Height();
+          case StylePhysicalAxis::Horizontal:
+            return size->Width();
+          case StylePhysicalAxis::Vertical:
+            return size->Height();
         }
         MOZ_ASSERT_UNREACHABLE("Unexpected physical axis.");
-        return anchor->GetSize().Width();
-      case mozilla::StyleAnchorSizeKeyword::Width:
-        return anchor->GetSize().Width();
-      case mozilla::StyleAnchorSizeKeyword::Height:
-        return anchor->GetSize().Height();
-      case mozilla::StyleAnchorSizeKeyword::Inline:
-        return anchor->ISize(containingBlock->GetWritingMode());
-      case mozilla::StyleAnchorSizeKeyword::Block:
-        return anchor->BSize(containingBlock->GetWritingMode());
-      case mozilla::StyleAnchorSizeKeyword::SelfInline:
-        return anchor->ISize(positioned->GetWritingMode());
-      case mozilla::StyleAnchorSizeKeyword::SelfBlock:
-        return anchor->BSize(positioned->GetWritingMode());
+        return size->Width();
+      case StyleAnchorSizeKeyword::Width:
+        return size->Width();
+      case StyleAnchorSizeKeyword::Height:
+        return size->Height();
+      case StyleAnchorSizeKeyword::Inline: {
+        const auto wm = containingBlock->GetWritingMode();
+        return LogicalSize{wm, *size}.ISize(wm);
+      }
+      case StyleAnchorSizeKeyword::Block: {
+        const auto wm = containingBlock->GetWritingMode();
+        return LogicalSize{wm, *size}.BSize(wm);
+      }
+      case StyleAnchorSizeKeyword::SelfInline: {
+        const auto wm = positioned->GetWritingMode();
+        return LogicalSize{wm, *size}.ISize(wm);
+      }
+      case StyleAnchorSizeKeyword::SelfBlock: {
+        const auto wm = positioned->GetWritingMode();
+        return LogicalSize{wm, *size}.BSize(wm);
+      }
     }
     MOZ_ASSERT_UNREACHABLE("Unhandled anchor size keyword.");
-    return anchor->GetSize().Width();
+    return size->Width();
   }();
   *aOut = Length::FromPixels(CSSPixel::FromAppUnits(l));
   return true;

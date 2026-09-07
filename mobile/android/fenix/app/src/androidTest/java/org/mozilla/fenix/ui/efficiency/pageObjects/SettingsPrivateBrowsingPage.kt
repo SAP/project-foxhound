@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
@@ -29,5 +33,20 @@ class SettingsPrivateBrowsingPage(composeRule: AndroidComposeTestRule<HomeActivi
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {
         return SettingsPrivateBrowsingSelectors.all.filter { it.groups.contains(group) }
+    }
+
+    /**
+     * NOTE: Temporary stub for the Test Factory demo.
+     *
+     * This method exists only to illustrate how the `SettingsPrivateBrowsingTest`
+     * (and the Test Factory pattern) would toggle Private Browsing in a real page
+     * object. It is **not** connected to functional UI code and should be replaced
+     * with the actual implementation when Settings pages are integrated.
+     *
+     * The `UnsupportedOperationException` is intentional to ensure this placeholder
+     * is never used in production or non-demo tests.
+     */
+    fun setPrivateBrowsing(on: Boolean) {
+        throw UnsupportedOperationException("setPrivateBrowsing is not supported by ${this::class.simpleName}")
     }
 }

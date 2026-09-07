@@ -9,6 +9,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.RadioButtonPreference
@@ -16,7 +17,10 @@ import org.mozilla.fenix.settings.SharedPreferenceUpdater
 import org.mozilla.fenix.settings.requirePreference
 import org.mozilla.fenix.utils.view.addToRadioGroup
 
-class SavedLoginsSettingFragment : PreferenceFragmentCompat() {
+/**
+ * Settings screen allowing users to choose whether newly used passwords should be remembered or not.
+ */
+class SavedLoginsSettingFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment {
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.save_logins_preferences, rootKey)
     }

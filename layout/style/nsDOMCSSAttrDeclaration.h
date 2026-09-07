@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,9 @@
 #ifndef nsDOMCSSAttributeDeclaration_h
 #define nsDOMCSSAttributeDeclaration_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/dom/DocGroup.h"
 #include "nsDOMCSSDeclaration.h"
-
-struct RawServoUnlockedDeclarationBlock;
 
 namespace mozilla {
 
@@ -40,8 +35,8 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_WRAPPERCACHE_CLASS_AMBIGUOUS(
       nsDOMCSSAttributeDeclaration, nsICSSDeclaration)
 
-  mozilla::DeclarationBlock* GetOrCreateCSSDeclaration(
-      Operation aOperation, mozilla::DeclarationBlock** aCreated) final;
+  Block* GetOrCreateCSSDeclaration(Operation aOperation,
+                                   Block** aCreated) final;
 
   nsDOMCSSDeclaration::ParsingEnvironment GetParsingEnvironment(
       nsIPrincipal* aSubjectPrincipal) const final;
@@ -51,24 +46,26 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
   nsINode* GetAssociatedNode() const override { return mElement; }
   nsINode* GetParentObject() const override { return mElement; }
 
-  nsresult SetSMILValue(const nsCSSPropertyID aPropID, const SMILValue& aValue);
-  nsresult SetSMILValue(const nsCSSPropertyID aPropID,
+  nsresult SetSMILValue(const NonCustomCSSPropertyId aPropId,
+                        const SMILValue& aValue);
+  nsresult SetSMILValue(const NonCustomCSSPropertyId aPropId,
                         const SVGAnimatedLength& aLength);
-  nsresult SetSMILValue(const nsCSSPropertyID,
+  nsresult SetSMILValue(const NonCustomCSSPropertyId,
                         const mozilla::SVGAnimatedPathSegList& aPath);
-  nsresult SetSMILValue(const nsCSSPropertyID,
+  nsresult SetSMILValue(const NonCustomCSSPropertyId,
                         const mozilla::SVGAnimatedTransformList*,
                         const mozilla::gfx::Matrix* aAnimateMotion = nullptr);
-  void ClearSMILValue(const nsCSSPropertyID aPropID) {
+  void ClearSMILValue(const NonCustomCSSPropertyId aPropId) {
     // Put empty string in override style for our property
-    SetPropertyValue(aPropID, ""_ns, nullptr, mozilla::IgnoreErrors());
+    SetPropertyValue(aPropId, ""_ns, nullptr, mozilla::IgnoreErrors());
   }
 
-  void SetPropertyValue(const nsCSSPropertyID aPropID, const nsACString& aValue,
+  void SetPropertyValue(const NonCustomCSSPropertyId aPropId,
+                        const nsACString& aValue,
                         nsIPrincipal* aSubjectPrincipal,
                         mozilla::ErrorResult& aRv) override;
 
-  static void MutationClosureFunction(void* aData, nsCSSPropertyID);
+  static void MutationClosureFunction(void* aData, NonCustomCSSPropertyId);
 
   void GetPropertyChangeClosure(
       mozilla::DeclarationBlockMutationClosure* aClosure,
@@ -85,8 +82,7 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
   ~nsDOMCSSAttributeDeclaration();
 
   nsresult SetCSSDeclaration(
-      mozilla::DeclarationBlock* aDecl,
-      mozilla::MutationClosureData* aClosureData) override;
+      Block* aDecl, mozilla::MutationClosureData* aClosureData) override;
   mozilla::dom::Document* DocToUpdate() final;
 
   RefPtr<Element> mElement;

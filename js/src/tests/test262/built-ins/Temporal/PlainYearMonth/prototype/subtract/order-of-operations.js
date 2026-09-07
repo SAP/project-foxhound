@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2020 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -9,7 +9,7 @@ includes: [compareArray.js, temporalHelpers.js]
 features: [Temporal]
 ---*/
 
-const expected = [
+const expectedOpsForPrimitiveOptions = [
   // ToTemporalDuration
   "get fields.days",
   "get fields.days.valueOf",
@@ -41,10 +41,12 @@ const expected = [
   "get fields.years",
   "get fields.years.valueOf",
   "call fields.years.valueOf",
+];
+const expected = expectedOpsForPrimitiveOptions.concat([
   "get options.overflow",
   "get options.overflow.toString",
   "call options.overflow.toString",
-];
+]);
 const actual = [];
 
 const instance = new Temporal.PlainYearMonth(2000, 5, "iso8601");
@@ -52,20 +54,26 @@ const instance = new Temporal.PlainYearMonth(2000, 5, "iso8601");
 const fields = TemporalHelpers.propertyBagObserver(actual, {
   years: 1,
   months: 1,
-  weeks: 1,
-  days: 1,
-  hours: 1,
-  minutes: 1,
-  seconds: 1,
-  milliseconds: 1,
-  microseconds: 1,
-  nanoseconds: 1,
+  weeks: 0,
+  days: 0,
+  hours: 0,
+  minutes: 0,
+  seconds: 0,
+  milliseconds: 0,
+  microseconds: 0,
+  nanoseconds: 0,
 }, "fields");
 
 const options = TemporalHelpers.propertyBagObserver(actual, { overflow: "constrain" }, "options");
 
 instance.subtract(fields, options);
 assert.compareArray(actual, expected, "order of operations");
+
+actual.splice(0); // clear
+
+assert.throws(TypeError, () => instance.subtract(fields, null));
+assert.compareArray(actual, expectedOpsForPrimitiveOptions,
+  "duration fields are read before TypeError is thrown for primitive options");
 
 actual.splice(0); // clear
 

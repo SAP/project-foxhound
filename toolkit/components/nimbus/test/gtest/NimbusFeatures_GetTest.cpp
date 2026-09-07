@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -157,13 +155,18 @@ TEST(NimbusFeaturesUpdate, Errors)
   ASSERT_EQ(NimbusFeatures::GetInt("foo"_ns, "value"_ns, 0), 24);
 
   // Verify updating foo.enabled doesn't call FooValueUpdated.
-  ASSERT_TRUE(NimbusFeatures::GetBool("foo"_ns, "enabled"_ns, false));
+  gPrefUpdate = false;
   ASSERT_EQ(Preferences::SetBool("nimbus.syncdatastore.foo.enabled", false,
                                  PrefValueKind::User),
             NS_OK);
   ASSERT_FALSE(NimbusFeatures::GetBool("foo"_ns, "enabled"_ns, true));
-  gPrefUpdate = false;
+  ASSERT_EQ(Preferences::SetBool("nimbus.syncdatastore.foo.enabled", true,
+                                 PrefValueKind::User),
+            NS_OK);
+  ASSERT_TRUE(NimbusFeatures::GetBool("foo"_ns, "enabled"_ns, false));
+  ASSERT_FALSE(gPrefUpdate);
 
+  // Verify updating bar.value calls BarRolloutValueUpdated
   ASSERT_EQ(Preferences::SetInt("nimbus.syncdefaultsstore.bar.value", 25,
                                 PrefValueKind::User),
             NS_OK);

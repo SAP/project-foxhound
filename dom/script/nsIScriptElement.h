@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIScriptElement_h___
-#define nsIScriptElement_h___
+#ifndef nsIScriptElement_h_
+#define nsIScriptElement_h_
 
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "js/loader/ScriptKind.h"
@@ -213,19 +211,12 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    * This method is called when the parser finishes creating the script
    * element's children, if any are present.
    *
-   * @return whether the parser will be blocked while this script is being
-   *         loaded
+   * @param aParser If non-null, a parser that can be blocked until the script
+   *        becomes available.
+   * @return whether a non-null aParser would be blocked while this script is
+   *         being loaded.
    */
-  bool AttemptToExecute() {
-    mDoneAddingChildren = true;
-    bool block = MaybeProcessScript();
-    if (!mAlreadyStarted) {
-      // Need to lose parser-insertedness here to allow another script to cause
-      // execution later.
-      LoseParserInsertedness();
-    }
-    return block;
-  }
+  bool AttemptToExecute(nsCOMPtr<nsIParser> aParser);
 
   /**
    * Get the CORS mode of the script element
@@ -252,6 +243,14 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    */
   virtual nsresult FireErrorEvent() = 0;
 
+  /**
+   * This must be called on scripts with mIsTrusted set to false in
+   * order retrieve the associated aSourceText (source text after
+   * application of the Trusted Types's default policy).
+   */
+  virtual MOZ_CAN_RUN_SCRIPT nsresult
+  GetTrustedTypesCompliantInlineScriptText(nsString& aSourceText) = 0;
+
  protected:
   /**
    * Processes the script if it's in the document-tree and links to or
@@ -269,7 +268,7 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    * @return whether the parser will be blocked while this script is being
    *         loaded
    */
-  virtual bool MaybeProcessScript() = 0;
+  virtual bool MaybeProcessScript(nsCOMPtr<nsIParser> aParser) = 0;
 
   /**
    * Since we've removed the XPCOM interface to HTML elements, we need a way to
@@ -373,4 +372,4 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
   nsWeakPtr mCreatorParser;
 };
 
-#endif  // nsIScriptElement_h___
+#endif  // nsIScriptElement_h_

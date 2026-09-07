@@ -13,7 +13,7 @@ const TEST_PATH2 = getRootDirectory(gTestPath).replace(
 );
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 registerCleanupFunction(async function () {
   info("Running the cleanup code");
@@ -49,6 +49,12 @@ function canonicalizeExtension(str) {
   return str.replace(/\.htm$/, ".html");
 }
 
+// Strips the _XXXX seed (4 base64url chars) that nsWebBrowserPersist inserts
+// before the file extension of saved subresources.
+function stripSeedFromComponent(component) {
+  return component.replace(/_[A-Za-z0-9_-]{4}(_data|\.[^.]+)$/, "$1");
+}
+
 function checkContents(dir, expected, str) {
   let stack = [dir];
   let files = [];
@@ -58,7 +64,10 @@ function checkContents(dir, expected, str) {
         stack.push(file);
       }
 
-      let path = canonicalizeExtension(file.getRelativePath(dir));
+      let path = canonicalizeExtension(file.getRelativePath(dir))
+        .split("/")
+        .map(stripSeedFromComponent)
+        .join("/");
       files.push(path);
     }
   }

@@ -1,7 +1,21 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill-opacity="context-fill-opacity">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton">
   <circle fill="context-stroke" cx="7.6" cy="7.6" r="7.5"/>
   <path fill="context-fill" d="M11 8.2H4.2c-.3 0-.6-.2-.6-.6s.3-.6.6-.6H11c.3 0 .6.3.6.6s-.3.6-.6.6z"/>
+</g>
+<g class="nova">
+  <circle fill="context-stroke" cx="8" cy="8" r="8"/>
+  <path fill-rule="evenodd" d="M4.75 7.25a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5z" clip-rule="evenodd"/>
+</g>
 </svg>

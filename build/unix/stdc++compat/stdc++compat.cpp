@@ -174,8 +174,18 @@ template basic_string<char, char_traits<char>, allocator<char>>::basic_string(
 template basic_stringstream<char, char_traits<char>,
                             allocator<char>>::basic_stringstream();
 
+template basic_istringstream<char, char_traits<char>,
+                             allocator<char>>::basic_istringstream();
+
 template basic_ostringstream<char, char_traits<char>,
                              allocator<char>>::basic_ostringstream();
+
+template char*
+basic_string<char, char_traits<char>, allocator<char>>::data() noexcept;
+
+template basic_stringbuf<char, char_traits<char>,
+                         allocator<char>>::basic_stringbuf();
+
 #endif
 
 #if _GLIBCXX_RELEASE >= 11

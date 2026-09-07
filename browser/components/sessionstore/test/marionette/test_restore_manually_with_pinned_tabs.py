@@ -19,20 +19,18 @@ def inline(doc):
 
 class TestSessionRestoreWithPinnedTabs(SessionStoreTestCase):
     def setUp(self):
-        super(TestSessionRestoreWithPinnedTabs, self).setUp(
+        super().setUp(
             startup_page=1,
             include_private=False,
             restore_on_demand=True,
-            test_windows=set(
-                [
-                    # Window 1
-                    (
-                        inline("""<div">ipsum</div>"""),
-                        inline("""<div">dolor</div>"""),
-                        inline("""<div">amet</div>"""),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                # Window 1
+                (
+                    inline("""<div">ipsum</div>"""),
+                    inline("""<div">dolor</div>"""),
+                    inline("""<div">amet</div>"""),
+                ),
+            ]),
         )
 
     def test_no_restore_with_quit(self):

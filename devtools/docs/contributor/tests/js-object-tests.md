@@ -4,6 +4,7 @@
 arbitrary JavaScript object types that Gecko can spawn in JavaScript.
 
 This includes:
+
 * any JavaScript type that Spidermonkey supports,
 * any JavaScript type exposed to Web Page from Gecko (All the DOM APIs),
 * any JavaScript type only exposed to Worker threads,
@@ -11,36 +12,44 @@ This includes:
 * ...
 
 This test framework consists in:
-* a manifest file, [AllJavaScriptTypes.mjs](https://searchfox.org/mozilla-central/source/devtools/shared/tests/objects/AllJavaScriptTypes.mjs) which defines all the JS objects that gecko can spawn
-* one xpcshell or one mochitest file, using [JSObjectsTestUtils](https://searchfox.org/mozilla-central/source/devtools/shared/tests/objects/JSObjectsTestUtils.sys.mjs) helper to evaluate all the JS Objects and generate a value for each of them.
+
+* a manifest file, [AllJavascriptTypes.mjs](https://searchfox.org/firefox-main/source/devtools/shared/tests/objects/AllJavascriptTypes.mjs) which defines all the JS objects that gecko can spawn
+* one xpcshell or one mochitest file, using [JSObjectsTestUtils](https://searchfox.org/firefox-main/source/devtools/shared/tests/objects/JSObjectsTestUtils.sys.mjs) helper to evaluate all the JS Objects and generate a value for each of them.
 * a snapshot file, read and written by JSObjectsTestUtils, specific to each xpcshell/mochitest and storing all its the generated values.
 
 You can run your test to execute the assertions:
+
 ```bash
-$ ./mach test my/browser_test.js
+./mach test my/browser_test.js
 ```
 
 And you can update the snapshot by running:
+
 ```bash
-$ ./mach test my/browser_test.js --setenv UPDATE_SNAPSHOT=true
+./mach test my/browser_test.js --setenv UPDATE_SNAPSHOT=true
 ```
 
 You also can run all the tests with:
+
 ```bash
-$ ./mach xpcshell-test --tag object-snapshots
-$ ./mach mochitest --tag object-snapshots
+./mach xpcshell-test --tag object-snapshots
+./mach mochitest --tag object-snapshots
 ```
+
 And update all the snapshots with:
+
 ```bash
-$ ./mach xpcshell-test --tag object-snapshots --setenv UPDATE_SNAPSHOT=true
-$ ./mach mochitest --tag object-snapshots --setenv UPDATE_SNAPSHOT=true
+./mach xpcshell-test --tag object-snapshots --setenv UPDATE_SNAPSHOT=true
+./mach mochitest --tag object-snapshots --setenv UPDATE_SNAPSHOT=true
 ```
+
 (you may use `./mach test`, but it will run some unexpected tests, be slower and report unrelated errors)
 
 ## JSObjectsTestUtils APIs
 
 This test helper is available to all xpcshell and mochitest tests from `resource://testing-common/JSObjectsTestUtils.sys.mjs`.
 It exposes only two methods:
+
 * `JSOBjectsTestUtils.init(testScope)`
 
   Which is meant to be called early in the test run, before the test page is loaded.
@@ -57,10 +66,10 @@ It exposes only two methods:
 
   This method will receive a single argument which is an object with two attributes:
   * `context`
-    A string whose value can be one of [AllJavaScriptTypes.mjs](https://searchfox.org/mozilla-central/source/devtools/shared/tests/objects/AllJavaScriptTypes.mjs) `CONTEXTS` dictionary:
-      * "js": Basic JS value available from any possible JavaScript context (worker, page, chrome scopes)
-      * "page": Values only available from a Web page global
-      * "chrome": Privileged values, only available from a chrome, privileged scope
+    A string whose value can be one of [AllJavascriptTypes.mjs](https://searchfox.org/firefox-main/source/devtools/shared/tests/objects/AllJavascriptTypes.mjs) `CONTEXTS` dictionary:
+    * "js": Basic JS value available from any possible JavaScript context (worker, page, chrome scopes)
+    * "page": Values only available from a Web page global
+    * "chrome": Privileged values, only available from a chrome, privileged scope
 
   * `expression`
     A string which should be evaled in order to instantiate the object example to cover.
@@ -121,12 +130,12 @@ add_task(async function () {
 });
 ```
 
-
 ## AllJavaScriptTypes manifest
 
-All the JavaScript object examples are stored in a manifest file located in the current folder: AllJavaScriptTypes.mjs.
+All the JavaScript object examples are stored in a manifest file located in the current folder: AllJavascriptTypes.mjs.
 
 This module exports an array of objects descriptions, which are objects with the two following attributes:
+
 * `context`:
   A String to designate the context into which this expression could be evaluated.
   See the first paragraph for the list of all contexts.
@@ -134,10 +143,11 @@ This module exports an array of objects descriptions, which are objects with the
   The JavaScript expression to evaluate, which can either be:
   * a string representing a piece of JavaScript value.
   * a function, which would be stringified and evaluated in many scopes.
-     This is to be used when you need intermediate value before spawning another specific JS Value.
+    This is to be used when you need intermediate value before spawning another specific JS Value.
   If the expression throws, the thrown exception will be considered as the value to assert.
 
 The object descriptions can also have a couple of optional attributes:
+
 * `prefs`: An array of arrays. The nested array are made of two elements: a string and a value.
   The string represents a preference name and the value, the preference value.
   This is used to set preference before starting the test.

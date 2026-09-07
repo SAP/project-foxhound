@@ -1,0 +1,16 @@
+---
+android-expired-strings:
+    description: >-
+        Checks for references to Android string resources
+        marked for removal (moz:removedIn)
+    include:
+        - 'mobile/android'
+    exclude: []
+    extensions:
+        - 'kt'
+        - 'java'
+        - 'xml'
+    support-files:
+        - 'tools/lint/android-expired-strings/**'
+    type: external
+    payload: android-expired-strings:lint

@@ -1,0 +1,15 @@
+{
+  "label": "lg.jio.com",
+  "bugs": {
+    "1902474": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://lg.jio.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["desktop_not_mobile"]
+    }
+  ]
+}

@@ -233,6 +233,7 @@ BrowserTabList.prototype.destroy = function () {
 
 /**
  * Get the selected browser for the given navigator:browser window.
+ *
  * @private
  * @param window nsIChromeWindow
  *        The navigator:browser window for which you want the selected browser.
@@ -330,7 +331,7 @@ BrowserTabList.prototype._getActorForBrowser = async function (browser) {
  * - for the tab matching a browserId if one is passed
  * - OR the currently selected tab if no browserId is passed.
  *
- * @param {Number} browserId: use to match any tab
+ * @param {number} browserId: use to match any tab
  */
 BrowserTabList.prototype.getTab = function ({ browserId }) {
   if (typeof browserId == "number") {
@@ -469,7 +470,7 @@ BrowserTabList.prototype._checkListening = function () {
   );
 };
 
-/*
+/**
  * Add or remove event listeners for all XUL windows.
  *
  * @param shouldListen boolean
@@ -657,8 +658,7 @@ BrowserTabList.prototype.onCloseWindow = DevToolsUtils.makeInfallible(function (
        * top-level window, and exit them.
        */
       for (const [browser, actor] of this._actorByBrowser) {
-        /* The browser document of a closed window has no default view. */
-        if (!browser.ownerGlobal) {
+        if (!browser.ownerDocument.isActive()) {
           this._handleActorClose(actor, browser);
         }
       }

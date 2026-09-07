@@ -27,7 +27,7 @@ add_task(async function () {
   );
 
   info("Reload page and check that the CSP warning is not duplicated");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await checkUniqueMessageExists(hud, EXPECTED_RESULT, ".warn");
 
   Services.cache2.clear();

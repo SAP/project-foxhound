@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 
 #include <stdint.h>                         // for uint8_t, uint32_t
 #include "mozilla/Attributes.h"             // for MOZ_STACK_CLASS
-#include "mozilla/RefPtr.h"                 // for already_AddRefed
 #include "mozilla/gfx/Point.h"              // for IntSize
 #include "mozilla/gfx/Rect.h"               // for IntRect
 #include "mozilla/gfx/Types.h"              // for SurfaceFormat
@@ -29,25 +26,27 @@ namespace ImageDataSerializer {
 
 // RGB
 
-int32_t ComputeRGBStride(gfx::SurfaceFormat aFormat, int32_t aWidth);
+Maybe<int32_t> ComputeRGBStride(gfx::SurfaceFormat aFormat, int32_t aWidth);
 
-int32_t GetRGBStride(const RGBDescriptor& aDescriptor);
+Maybe<int32_t> GetRGBStride(const RGBDescriptor& aDescriptor);
 
-uint32_t ComputeRGBBufferSize(gfx::IntSize aSize, gfx::SurfaceFormat aFormat);
+Maybe<uint32_t> ComputeRGBBufferSize(gfx::IntSize aSize,
+                                     gfx::SurfaceFormat aFormat);
 
 // YCbCr
 
 /// This function is meant as a helper to know how much shared memory we need
 /// to allocate in a shmem in order to place a shared YCbCr image blob of
 /// given dimensions.
-uint32_t ComputeYCbCrBufferSize(const gfx::IntSize& aYSize, int32_t aYStride,
-                                const gfx::IntSize& aCbCrSize,
-                                int32_t aCbCrStride);
-uint32_t ComputeYCbCrBufferSize(const gfx::IntSize& aYSize, int32_t aYStride,
-                                const gfx::IntSize& aCbCrSize,
-                                int32_t aCbCrStride, uint32_t aYOffset,
-                                uint32_t aCbOffset, uint32_t aCrOffset);
-uint32_t ComputeYCbCrBufferSize(uint32_t aBufferSize);
+Maybe<uint32_t> ComputeYCbCrBufferSize(
+    const gfx::IntRect& aDisplay, const gfx::IntSize& aYSize, int32_t aYStride,
+    const gfx::IntSize& aCbCrSize, int32_t aCbCrStride, gfx::ColorDepth aDepth,
+    const gfx::ChromaSubsampling aSubsampling);
+Maybe<uint32_t> ComputeYCbCrBufferSize(
+    const gfx::IntRect& aDisplay, const gfx::IntSize& aYSize, int32_t aYStride,
+    const gfx::IntSize& aCbCrSize, int32_t aCbCrStride, uint32_t aYOffset,
+    uint32_t aCbOffset, uint32_t aCrOffset, gfx::ColorDepth aDepth,
+    const gfx::ChromaSubsampling aSubsampling);
 
 void ComputeYCbCrOffsets(int32_t yStride, int32_t yHeight, int32_t cbCrStride,
                          int32_t cbCrHeight, uint32_t& outYOffset,
@@ -71,6 +70,9 @@ Maybe<int32_t> YStrideFromBufferDescriptor(const BufferDescriptor& aDescriptor);
 Maybe<int32_t> CbCrStrideFromBufferDescriptor(
     const BufferDescriptor& aDescriptor);
 
+Maybe<gfx::ColorSpace2> ColorSpace2FromBufferDescriptor(
+    const BufferDescriptor& aDescriptor);
+
 Maybe<gfx::YUVColorSpace> YUVColorSpaceFromBufferDescriptor(
     const BufferDescriptor& aDescriptor);
 
@@ -78,6 +80,9 @@ Maybe<gfx::ColorDepth> ColorDepthFromBufferDescriptor(
     const BufferDescriptor& aDescriptor);
 
 Maybe<gfx::ColorRange> ColorRangeFromBufferDescriptor(
+    const BufferDescriptor& aDescriptor);
+
+Maybe<gfx::TransferFunction> TransferFunctionFromBufferDescriptor(
     const BufferDescriptor& aDescriptor);
 
 Maybe<StereoMode> StereoModeFromBufferDescriptor(
@@ -91,6 +96,12 @@ uint8_t* GetYChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor);
 uint8_t* GetCbChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor);
 
 uint8_t* GetCrChannel(uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor);
+
+uint16_t* GetYChannel(uint16_t* aBuffer, const YCbCrDescriptor& aDescriptor);
+
+uint16_t* GetCbChannel(uint16_t* aBuffer, const YCbCrDescriptor& aDescriptor);
+
+uint16_t* GetCrChannel(uint16_t* aBuffer, const YCbCrDescriptor& aDescriptor);
 
 already_AddRefed<gfx::DataSourceSurface> DataSourceSurfaceFromYCbCrDescriptor(
     uint8_t* aBuffer, const YCbCrDescriptor& aDescriptor,

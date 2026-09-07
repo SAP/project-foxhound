@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StateWatching.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "nsISupportsImpl.h"
 #include "VideoUtils.h"
 
@@ -35,7 +32,7 @@ TEST(WatchManager, Shutdown)
   WatchManager<Foo> manager(p, queue);
   Watchable<bool> notifier(false, "notifier");
 
-  Unused << queue->Dispatch(NS_NewRunnableFunction(
+  (void)queue->Dispatch(NS_NewRunnableFunction(
       "TestStateWatching::WatchManager_Shutdown_Test::TestBody", [&]() {
         manager.Watch(notifier, &Foo::Notify);
         notifier = true;     // Trigger the call to Foo::Notify().

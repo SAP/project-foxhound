@@ -2,19 +2,18 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js, sm/non262-TypedArray-shell.js]
-flags:
-  - noStrict
+includes: [sm/non262-TypedArray-shell.js]
 description: |
   pending
 esid: pending
+features: [Float16Array, Float32Array, Float64Array]
 ---*/
 // Test with all floating point typed arrays.
 const floatConstructors = anyTypedArrayConstructors.filter(isFloatConstructor);
 
 // Also test with cross-compartment wrapped typed arrays.
-if (typeof createNewGlobal === "function") {
-    const otherGlobal = createNewGlobal();
+{
+    const otherGlobal = $262.createRealm().global;
     floatConstructors.push(otherGlobal.Float16Array);
     floatConstructors.push(otherGlobal.Float32Array);
     floatConstructors.push(otherGlobal.Float64Array);
@@ -138,6 +137,5 @@ for (const [TA, taLength] of prod(floatConstructors, typedArrayLengths)) {
         assert.sameValue(fta[nanOffset + i], NaN, `At offset: ${nanOffset + i}`);
     }
 }
-
 
 reportCompare(0, 0);

@@ -1,0 +1,78 @@
+<!-- Any copyright is dedicated to the Public Domain.
+     http://creativecommons.org/publicdomain/zero/1.0/ -->
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset=utf8>
+  <title>Autocomplete anchor names</title>
+</head>
+<body>
+<style>
+  #anchor {
+    anchor-name: --my-anchor, --anchor-alias;
+  }
+
+  #abs-pos-anchor {
+    anchor-name: --my-abs-pos-anchor;
+  }
+
+  #another-anchor {
+    anchor-name: --another-anchor;
+  }
+
+  #not-abs-pos {
+    position-anchor: initial;
+    inset: initial;
+  }
+
+  .abs-pos {
+    position: absolute;
+    position-anchor: initial;
+    inset: initial;
+  }
+
+  #with-pseudo::before {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 10px;
+    position: absolute;
+    position-anchor: initial;
+    inset: initial;
+  }
+</style>
+
+<div id="anchor">⚓️</div>
+<div id="another-anchor">⚓︎⚓︎⚓︎</div>
+<div id="abs-pos" class="abs-pos">abs-pos</div>
+<div id="not-abs-pos">not abs-pos</div>
+<div id="abs-pos-anchor" class="abs-pos">abs-pos ⚓️</div>
+<div id="with-pseudo">with pseudo</div>
+<div id="host"></div>
+
+<script>
+  "use strict";
+
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(`
+    div {
+      anchor-name: --my-shadow-anchor, --shadow-anchor-alias;
+    }
+
+    .shadow-abs-pos {
+      position: absolute;
+      position-anchor: initial;
+      inset: initial;
+    }
+  `);
+  const shadow = document.getElementById("host").attachShadow({ mode: "open" });
+  shadow.adoptedStyleSheets = [sheet];
+
+  const shadowAnchor = document.createElement("div");
+  shadowAnchor.append("⚓️");
+
+  const shadowAbsPos = document.createElement("aside");
+  shadowAbsPos.classList.add("shadow-abs-pos")
+  shadowAbsPos.append("shadow abs-pos");
+  shadow.append(shadowAnchor, shadowAbsPos);
+</script>

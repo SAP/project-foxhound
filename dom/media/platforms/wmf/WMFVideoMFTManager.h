@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 #  include "WMF.h"
 #  include "WMFDecoderModule.h"
 #  include "WMFMediaDataDecoder.h"
-#  include "mozilla/Atomics.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/gfx/Rect.h"
 
@@ -70,7 +67,7 @@ class WMFVideoMFTManager : public MFTManager {
   HRESULT CreateD3DVideoFrame(IMFSample* aSample, int64_t aStreamOffset,
                               VideoData** aOutVideoData);
 
-  HRESULT SetDecoderMediaTypes();
+  HRESULT SetDecoderMediaTypes(const GUID& aFallbackSubType);
 
   bool CanUseDXVA(IMFMediaType* aInputType, IMFMediaType* aOutputType);
 
@@ -86,6 +83,11 @@ class WMFVideoMFTManager : public MFTManager {
   // make sense, we also handle that case.
   media::TimeUnit GetSampleDurationOrLastKnownDuration(
       IMFSample* aSample) const;
+
+  bool IsHDR() const {
+    return gfx::IsHDRTransferFunction(
+        mVideoInfo.mTransferFunction.refOr(gfx::TransferFunction::BT709));
+  }
 
   // Video frame geometry.
   const VideoInfo mVideoInfo;

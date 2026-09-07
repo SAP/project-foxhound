@@ -9,11 +9,17 @@ import android.os.Parcelable
 import android.util.AttributeSet
 import android.util.JsonReader
 import androidx.annotation.MainThread
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.activity.ActivityDelegate
 import mozilla.components.concept.engine.activity.OrientationDelegate
+import mozilla.components.concept.engine.ai.AIFeaturesRuntime
+import mozilla.components.concept.engine.autofill.AddressStructureRuntime
 import mozilla.components.concept.engine.content.blocking.TrackerLog
+import mozilla.components.concept.engine.content.blocking.TrackingProtectionEvent
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionExceptionStorage
+import mozilla.components.concept.engine.ipprotection.IPProtectionDelegate
+import mozilla.components.concept.engine.ipprotection.IPProtectionHandler
 import mozilla.components.concept.engine.preferences.BrowserPreferencesRuntime
 import mozilla.components.concept.engine.serviceworker.ServiceWorkerDelegate
 import mozilla.components.concept.engine.translate.TranslationsRuntime
@@ -27,8 +33,12 @@ import org.json.JSONObject
 /**
  * Entry point for interacting with the engine implementation.
  */
-interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesRuntime, DataCleanable {
-
+interface Engine :
+    WebExtensionRuntime,
+    TranslationsRuntime,
+    BrowserPreferencesRuntime,
+    AddressStructureRuntime,
+    DataCleanable {
     /**
      * Describes a combination of browsing data types stored by the engine.
      */
@@ -108,6 +118,31 @@ interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesR
          * DoH is disabled, corresponds to TRR_MODE_DISABLED (5) from GeckoView.
          */
         OFF,
+    }
+
+    /**
+     * Firefox Relay feature mode for controlling the state of the integration.
+     */
+    enum class FirefoxRelayMode {
+        /**
+         * Firefox Relay is available but not yet offered to the user.
+         */
+        AVAILABLE,
+
+        /**
+         * Firefox Relay has been offered to the user.
+         */
+        OFFERED,
+
+        /**
+         * Firefox Relay is enabled.
+         */
+        ENABLED,
+
+        /**
+         * Firefox Relay is disabled.
+         */
+        DISABLED,
     }
 
     /**
@@ -213,6 +248,23 @@ interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesR
     ): WebPushHandler = throw UnsupportedOperationException("Web Push support is not available in this engine")
 
     /**
+     * Registers an [IPProtectionDelegate] to be notified of IP protection state changes.
+     *
+     * @return An [IPProtectionHandler] to control the IP protection proxy and manage auth tokens.
+     */
+    @ExperimentalAndroidComponentsApi
+    fun registerIPProtectionDelegate(
+        delegate: IPProtectionDelegate,
+    ): IPProtectionHandler = throw UnsupportedOperationException("IP Protection is not available in this engine")
+
+    /**
+     * Un-registers the attached [IPProtectionDelegate] if one was added with [registerIPProtectionDelegate].
+     */
+    @ExperimentalAndroidComponentsApi
+    fun unregisterIPProtectionDelegate(): Unit =
+        throw UnsupportedOperationException("IP Protection is not available in this engine")
+
+    /**
      * Registers an [ActivityDelegate] to be notified on activity events that are needed by the engine.
      */
     fun registerActivityDelegate(
@@ -294,6 +346,71 @@ interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesR
     )
 
     /**
+     * Fetch aggregate content blocking events by date range from the tracking protection database.
+     *
+     * @param dateFrom start of the date range, in milliseconds since epoch.
+     * @param dateTo end of the date range, in milliseconds since epoch.
+     * @param onSuccess callback invoked with the list of events.
+     * @param onError callback invoked if fetching failed.
+     */
+    fun getTrackingProtectionEventsByDateRange(
+        dateFrom: Long,
+        dateTo: Long,
+        onSuccess: (List<TrackingProtectionEvent>) -> Unit,
+        onError: (Throwable) -> Unit = { },
+    ): Unit = onError(
+        UnsupportedOperationException(
+            "getTrackingProtectionEventsByDateRange is not supported by this engine.",
+        ),
+    )
+
+    /**
+     * Get the total count of all content blocking events ever recorded.
+     *
+     * @param onSuccess callback invoked with the total count.
+     * @param onError callback invoked if fetching failed.
+     */
+    fun sumAllTrackingProtectionEvents(
+        onSuccess: (Int) -> Unit,
+        onError: (Throwable) -> Unit = { },
+    ): Unit = onError(
+        UnsupportedOperationException(
+            "sumAllTrackingProtectionEvents is not supported by this engine.",
+        ),
+    )
+
+    /**
+     * Get the earliest recorded date in the content blocking database.
+     *
+     * @param onSuccess callback invoked with the earliest date as milliseconds since epoch,
+     *  or null if no data exists.
+     * @param onError callback invoked if fetching failed.
+     */
+    fun getEarliestTrackingProtectionDate(
+        onSuccess: (Long?) -> Unit,
+        onError: (Throwable) -> Unit = { },
+    ): Unit = onError(
+        UnsupportedOperationException(
+            "getEarliestTrackingProtectionDate is not supported by this engine.",
+        ),
+    )
+
+    /**
+     * Clear all persisted data about trackers blocked in previous browsing sessions.
+     *
+     * @param onSuccess optional callback invoked when the data has been cleared.
+     * @param onError optional callback invoked if clearing failed.
+     */
+    fun clearTrackingProtectionData(
+        onSuccess: () -> Unit = { },
+        onError: (Throwable) -> Unit = { },
+    ): Unit = onError(
+        UnsupportedOperationException(
+            "clearTrackingProtectionData is not supported by this engine.",
+        ),
+    )
+
+    /**
      * Provides access to the tracking protection exception list for this engine.
      */
     val trackingProtectionExceptionStore: TrackingProtectionExceptionStorage
@@ -314,4 +431,10 @@ interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesR
      * Returns the version of the engine as [EngineVersion] object.
      */
     val version: EngineVersion
+
+    /**
+     * Provides access to the runtime AI features for this engine.
+     */
+    val aiFeatures: AIFeaturesRuntime
+        get() = object : AIFeaturesRuntime {}
 }

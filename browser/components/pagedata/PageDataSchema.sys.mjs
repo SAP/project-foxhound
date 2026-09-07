@@ -7,9 +7,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   JsonSchemaValidator:
     "resource://gre/modules/components-utils/JsonSchemaValidator.sys.mjs",
-  OpenGraphPageData: "resource:///modules/pagedata/OpenGraphPageData.sys.mjs",
-  SchemaOrgPageData: "resource:///modules/pagedata/SchemaOrgPageData.sys.mjs",
-  TwitterPageData: "resource:///modules/pagedata/TwitterPageData.sys.mjs",
+  OpenGraphPageData:
+    "moz-src:///browser/components/pagedata/OpenGraphPageData.sys.mjs",
+  SchemaOrgPageData:
+    "moz-src:///browser/components/pagedata/SchemaOrgPageData.sys.mjs",
+  TwitterPageData:
+    "moz-src:///browser/components/pagedata/TwitterPageData.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", function () {

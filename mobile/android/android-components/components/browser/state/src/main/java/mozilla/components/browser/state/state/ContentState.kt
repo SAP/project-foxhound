@@ -5,6 +5,7 @@
 package mozilla.components.browser.state.state
 
 import android.graphics.Bitmap
+import mozilla.components.browser.state.state.SecurityInfo.Unknown
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.state.content.FindResultState
 import mozilla.components.browser.state.state.content.HistoryState
@@ -28,7 +29,7 @@ import mozilla.components.concept.engine.window.WindowRequest
  * @property loading True if state is loading.
  * @property searchTerms The last used search terms, or an empty string if no
  * search was executed for this session.
- * @property securityInfo The security information as [SecurityInfoState],
+ * @property securityInfo The security information as [SecurityInfo],
  * describing whether or not the this session is for a secure URL, as well
  * as the host and SSL certificate authority.
  * @property icon The icon of the page currently loaded by this session.
@@ -74,7 +75,7 @@ data class ContentState(
     val progress: Int = 0,
     val loading: Boolean = false,
     val searchTerms: String = "",
-    val securityInfo: SecurityInfoState = SecurityInfoState(),
+    val securityInfo: SecurityInfo = Unknown,
     val icon: Bitmap? = null,
     val download: DownloadState? = null,
     val share: ShareResourceState? = null,

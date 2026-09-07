@@ -11,7 +11,6 @@ const dvSmall = new DataView(bufferSmall);
 const dvLargeOffset = new DataView(bufferLarge, 5 * gb);
 const dvLargeLength = new DataView(bufferLarge);
 
-const TypedArrayByteOffset = getSelfHostedValue("TypedArrayByteOffset");
 const TypedArrayLength = getSelfHostedValue("TypedArrayLength");
 
 function testBufferByteLengthInt32() {
@@ -27,7 +26,6 @@ function testTypedArrayByteOffsetInt32() {
     var arr = [taLargeOffset, taSmall];
     for (var i = 0; i < 2000; i++) {
         var idx = +(i < 1900); // First 1 then 0.
-        assertEq(TypedArrayByteOffset(arr[idx]), idx === 0 ? 5 * gb : 0);
         assertEq(arr[idx].byteOffset, idx === 0 ? 5 * gb : 0);
     }
 }

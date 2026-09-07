@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,9 +15,8 @@
 #include "gfxUtils.h"
 
 #include "MainThreadUtils.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/gfx/Tools.h"
-#include "mozilla/Likely.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_browser.h"
@@ -413,8 +410,8 @@ imgFrame::SurfaceWithFormat imgFrame::SurfaceForDrawing(
   mMonitor.AssertCurrentThreadOwns();
 
   if (!aDoPartialDecode) {
-    return SurfaceWithFormat(new gfxSurfaceDrawable(aSurface, mImageSize),
-                             mFormat);
+    return SurfaceWithFormat(
+        MakeAndAddRef<gfxSurfaceDrawable>(aSurface, mImageSize), mFormat);
   }
 
   gfxRect available =
@@ -436,8 +433,9 @@ imgFrame::SurfaceWithFormat imgFrame::SurfaceForDrawing(
     target->FillRect(ToRect(aRegion.Intersect(available).Rect()), pattern);
 
     RefPtr<SourceSurface> newsurf = target->Snapshot();
-    return SurfaceWithFormat(new gfxSurfaceDrawable(newsurf, mImageSize),
-                             target->GetFormat());
+    return SurfaceWithFormat(
+        MakeAndAddRef<gfxSurfaceDrawable>(newsurf, mImageSize),
+        target->GetFormat());
   }
 
   // Not tiling, and we have a surface, so we can account for
@@ -445,8 +443,8 @@ imgFrame::SurfaceWithFormat imgFrame::SurfaceForDrawing(
   aRegion = aRegion.Intersect(available);
   IntSize availableSize(mDecoded.Width(), mDecoded.Height());
 
-  return SurfaceWithFormat(new gfxSurfaceDrawable(aSurface, availableSize),
-                           mFormat);
+  return SurfaceWithFormat(
+      MakeAndAddRef<gfxSurfaceDrawable>(aSurface, availableSize), mFormat);
 }
 
 bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,

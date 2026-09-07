@@ -26,7 +26,7 @@ const info = window.opener.info;
 const SimpleTest = window.opener.SimpleTest;
 const original_finish = window.opener.SimpleTest.finish;
 
-/** Test for Bug 422132 **/
+/** Test for Bug 422132 */
 
 SimpleTest.finish = function finish() {
   self.close();

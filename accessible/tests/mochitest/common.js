@@ -104,11 +104,14 @@ const MAX_TRIM_LENGTH = 100;
  */
 
 /**
- * nsIAccessibilityService service.
+ * nsIAccessibilityService service. Eagerly instantiated unless
+ * window.gDisableAccServiceInit is set before this script is loaded.
  */
-var gAccService = Cc["@mozilla.org/accessibilityService;1"].getService(
-  nsIAccessibilityService
-);
+var gAccService = window.gDisableAccServiceInit
+  ? null
+  : Cc["@mozilla.org/accessibilityService;1"].getService(
+      nsIAccessibilityService
+    );
 
 /**
  * Enable/disable logging.
@@ -871,8 +874,9 @@ function getTextFromClipboard() {
  * Obtain DOMNode id from an accessible. This simply queries the .id property
  * on the accessible, but it catches exceptions which might occur if the
  * accessible has died.
+ *
  * @param  {nsIAccessible} accessible  accessible
- * @return {String?}                   DOMNode id if available
+ * @return {string?}                   DOMNode id if available
  */
 function getAccessibleDOMNodeID(accessible) {
   try {
@@ -957,6 +961,7 @@ function prettyName(aIdentifier) {
 
 /**
  * Shorten a long string if it exceeds MAX_TRIM_LENGTH.
+ *
  * @param aString the string to shorten.
  * @returns the shortened string.
  */

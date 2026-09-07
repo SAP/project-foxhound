@@ -10,9 +10,9 @@ import mozilla.components.feature.syncedtabs.helper.getDevice2Tabs
 import mozilla.components.feature.syncedtabs.storage.SyncedTabsStorage
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.mockito.Mockito.doReturn
+import kotlin.test.assertNotNull
 
 class SyncedTabsStorageKtTest {
     private val syncedTabs: SyncedTabsStorage = mock()

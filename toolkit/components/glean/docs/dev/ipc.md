@@ -61,6 +61,7 @@ unordered_category:
 This presently only supports:
 * Boolean metrics
 * Labeled Boolean metrics
+* Quantity metrics
 
 ```{note}
 If there's an metric type not on this list that you need to use in a non-parent process,

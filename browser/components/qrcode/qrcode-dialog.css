@@ -1,0 +1,79 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  min-inline-size: var(--size-layout-large);
+  max-inline-size: var(--size-layout-large);
+}
+
+body {
+  margin: 0;
+  padding: var(--space-xxlarge);
+  background-color: var(--background-color-box);
+  overflow-y: auto;
+}
+
+#qrcode-dialog-content {
+  margin-inline: auto;
+  inline-size: var(--size-layout-large);
+  max-inline-size: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xlarge);
+  align-items: center;
+}
+
+#dialog-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-block-size: var(--size-item-large);
+
+  h2 {
+    margin: 0;
+    font-size: var(--font-size-xxlarge);
+    font-weight: var(--font-weight-semibold);
+    text-align: center;
+  }
+}
+
+#close-button {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-start: 0;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: var(--space-large);
+
+  &[hidden] {
+    display: none !important;
+  }
+}
+
+#qrcode-image {
+  box-sizing: border-box;
+  width: var(--size-layout-medium);
+  height: var(--size-layout-medium);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-large);
+}
+
+#qrcode-url {
+  margin: 0;
+  width: 100%;
+  text-align: center;
+  color: var(--text-color);
+  font-size: var(--font-size-root);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

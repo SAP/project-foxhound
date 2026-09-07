@@ -218,8 +218,8 @@ add_task(async function () {
     let observedPreview = ctrlTab.previews[0];
     is(observedPreview._tab, tab, "The observed preview is for the new tab");
     ok(
-      !observedPreview._canvas.firstElementChild,
-      "The preview <canvas> does not exist yet"
+      HTMLImageElement.isInstance(observedPreview._canvas.firstElementChild),
+      "The preview <canvas> does not exist yet, there's a placeholder <img> instead"
     );
 
     let emptyCanvas = PageThumbs.createCanvas(window);

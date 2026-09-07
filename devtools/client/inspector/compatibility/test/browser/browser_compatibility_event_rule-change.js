@@ -12,7 +12,7 @@ const TEST_URI = `
     overflow-anchor: auto;
   }
   div {
-    scrollbar-color: auto;
+    user-select: auto;
   }
   </style>
   <div class="test-class">test class</div>
@@ -24,11 +24,11 @@ const TEST_DATA_SELECTED = {
     expectedProperties: [
       {
         property: "overflow-anchor",
-        url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
       },
       {
-        property: "scrollbar-color",
-        url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+        property: "user-select",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-select",
       },
     ],
     expectedNodes: [
@@ -37,7 +37,7 @@ const TEST_DATA_SELECTED = {
         nodes: [],
       },
       {
-        property: "scrollbar-color",
+        property: "user-select",
         nodes: [],
       },
     ],
@@ -46,7 +46,7 @@ const TEST_DATA_SELECTED = {
     expectedProperties: [
       {
         property: "overflow-anchor",
-        url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
       },
     ],
     expectedNodes: [
@@ -59,13 +59,13 @@ const TEST_DATA_SELECTED = {
   elementRule: {
     expectedProperties: [
       {
-        property: "scrollbar-color",
-        url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+        property: "user-select",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-select",
       },
     ],
     expectedNodes: [
       {
-        property: "scrollbar-color",
+        property: "user-select",
         nodes: [],
       },
     ],
@@ -77,11 +77,11 @@ const TEST_DATA_ALL = {
     expectedProperties: [
       {
         property: "overflow-anchor",
-        url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
       },
       {
-        property: "scrollbar-color",
-        url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+        property: "user-select",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-select",
       },
     ],
     expectedNodes: [
@@ -90,7 +90,7 @@ const TEST_DATA_ALL = {
         nodes: ["div.test-class"],
       },
       {
-        property: "scrollbar-color",
+        property: "user-select",
         nodes: ["div.test-class", "div"],
       },
     ],
@@ -99,7 +99,7 @@ const TEST_DATA_ALL = {
     expectedProperties: [
       {
         property: "overflow-anchor",
-        url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
       },
     ],
     expectedNodes: [
@@ -112,13 +112,13 @@ const TEST_DATA_ALL = {
   elementRule: {
     expectedProperties: [
       {
-        property: "scrollbar-color",
-        url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+        property: "user-select",
+        url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-select",
       },
     ],
     expectedNodes: [
       {
-        property: "scrollbar-color",
+        property: "user-select",
         nodes: ["div.test-class", "div"],
       },
     ],

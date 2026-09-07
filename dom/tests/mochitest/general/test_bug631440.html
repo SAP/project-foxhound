@@ -12,7 +12,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=631440
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=631440">Mozilla Bug 631440</a>
 <p id="display"></p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -20,10 +20,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=631440
 SimpleTest.waitForExplicitFinish();
 
 var w = window.open("about:blank");
-w.addEventListener("load", function() {
-  w.close();
-  SimpleTest.finish();
-});
 
 try {
   w.history.pushState(null, "title", "pushState.html");
@@ -32,6 +28,9 @@ try {
 catch (e) {
   ok(true, "Should have thrown a security exception");
 }
+
+w.close();
+SimpleTest.finish();
 
 </script>
 </pre>

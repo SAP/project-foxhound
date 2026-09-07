@@ -1,0 +1,295 @@
+From: "Byron Campen [:bwc]" <docfaraday@gmail.com>
+Date: Fri, 19 Feb 2021 15:56:00 -0600
+Subject: Bug 1654112 - Get RTCP BYE and RTP timeout handling working again
+ (from Bug 1595479) r=mjf,dminor
+
+Differential Revision: https://phabricator.services.mozilla.com/D106145
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d0b311007c033e83824f5f6996a70ab9e870f31f
+---
+ audio/audio_receive_stream.cc                |  5 ++++-
+ audio/channel_receive.cc                     | 13 +++++++++----
+ audio/channel_receive.h                      |  4 +++-
+ call/audio_receive_stream.h                  |  3 +++
+ call/video_receive_stream.cc                 |  2 ++
+ call/video_receive_stream.h                  |  3 +++
+ modules/rtp_rtcp/include/rtp_rtcp_defines.h  |  8 ++++++++
+ modules/rtp_rtcp/source/rtcp_receiver.cc     | 20 +++++++++++++++++---
+ modules/rtp_rtcp/source/rtcp_receiver.h      |  1 +
+ modules/rtp_rtcp/source/rtp_rtcp_interface.h |  3 +++
+ video/rtp_video_stream_receiver2.cc          |  7 +++++--
+ 11 files changed, 58 insertions(+), 11 deletions(-)
+
+diff --git a/audio/audio_receive_stream.cc b/audio/audio_receive_stream.cc
+index 02ee15227c..1e06c4fcf0 100644
+--- a/audio/audio_receive_stream.cc
++++ b/audio/audio_receive_stream.cc
+@@ -59,6 +59,8 @@ std::string AudioReceiveStreamInterface::Config::Rtp::ToString() const {
+      << (rtcp_mode == RtcpMode::kCompound
+              ? "compound"
+              : (rtcp_mode == RtcpMode::kReducedSize ? "reducedSize" : "off"));
++  ss << ", rtcp_event_observer: "
++     << (rtcp_event_observer ? "(rtcp_event_observer)" : "nullptr");
+   ss << '}';
+   return ss.Release();
+ }
+@@ -90,7 +92,8 @@ std::unique_ptr<voe::ChannelReceiveInterface> CreateChannelReceive(
+       config.jitter_buffer_max_packets, config.jitter_buffer_fast_accelerate,
+       config.jitter_buffer_min_delay_ms, config.enable_non_sender_rtt,
+       config.decoder_factory, std::move(config.frame_decryptor),
+-      config.crypto_options, std::move(config.frame_transformer));
++      config.crypto_options, std::move(config.frame_transformer),
++      config.rtp.rtcp_event_observer);
+ }
+ }  // namespace
+ 
+diff --git a/audio/channel_receive.cc b/audio/channel_receive.cc
+index ed38828026..6b4d0e30a2 100644
+--- a/audio/channel_receive.cc
++++ b/audio/channel_receive.cc
+@@ -129,7 +129,8 @@ class ChannelReceive : public ChannelReceiveInterface,
+                  scoped_refptr<AudioDecoderFactory> decoder_factory,
+                  scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+                  const CryptoOptions& crypto_options,
+-                 scoped_refptr<FrameTransformerInterface> frame_transformer);
++                 scoped_refptr<FrameTransformerInterface> frame_transformer,
++                 RtcpEventObserver* rtcp_event_observer);
+   ~ChannelReceive() override;
+ 
+   void SetSink(AudioSinkInterface* sink) override;
+@@ -557,7 +558,8 @@ ChannelReceive::ChannelReceive(
+     scoped_refptr<AudioDecoderFactory> decoder_factory,
+     scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+     const CryptoOptions& crypto_options,
+-    scoped_refptr<FrameTransformerInterface> frame_transformer)
++    scoped_refptr<FrameTransformerInterface> frame_transformer,
++    RtcpEventObserver* rtcp_event_observer)
+     : env_(env),
+       worker_thread_(TaskQueueBase::Current()),
+       rtp_receive_statistics_(ReceiveStatistics::Create(&env_.clock())),
+@@ -588,6 +590,7 @@ ChannelReceive::ChannelReceive(
+   configuration.receive_statistics = rtp_receive_statistics_.get();
+   configuration.rtcp_packet_type_counter_observer = this;
+   configuration.non_sender_rtt_measurement = enable_non_sender_rtt;
++  configuration.rtcp_event_observer = rtcp_event_observer;
+ 
+   if (frame_transformer)
+     InitFrameTransformerDelegate(std::move(frame_transformer));
+@@ -1203,12 +1206,14 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
+     scoped_refptr<AudioDecoderFactory> decoder_factory,
+     scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+     const CryptoOptions& crypto_options,
+-    scoped_refptr<FrameTransformerInterface> frame_transformer) {
++    scoped_refptr<FrameTransformerInterface> frame_transformer,
++    RtcpEventObserver* rtcp_event_observer) {
+   return std::make_unique<ChannelReceive>(
+       env, neteq_factory, audio_device_module, rtcp_send_transport, remote_ssrc,
+       jitter_buffer_max_packets, jitter_buffer_fast_playout,
+       jitter_buffer_min_delay_ms, enable_non_sender_rtt, decoder_factory,
+-      std::move(frame_decryptor), crypto_options, std::move(frame_transformer));
++      std::move(frame_decryptor), crypto_options, std::move(frame_transformer),
++      rtcp_event_observer);
+ }
+ 
+ }  // namespace voe
+diff --git a/audio/channel_receive.h b/audio/channel_receive.h
+index dd4188898a..952784c168 100644
+--- a/audio/channel_receive.h
++++ b/audio/channel_receive.h
+@@ -38,6 +38,7 @@
+ #include "call/rtp_packet_sink_interface.h"
+ #include "call/syncable.h"
+ #include "modules/audio_coding/include/audio_coding_module_typedefs.h"
++#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+ #include "system_wrappers/include/ntp_time.h"
+ 
+ namespace webrtc {
+@@ -181,7 +182,8 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
+     scoped_refptr<AudioDecoderFactory> decoder_factory,
+     scoped_refptr<FrameDecryptorInterface> frame_decryptor,
+     const webrtc::CryptoOptions& crypto_options,
+-    scoped_refptr<FrameTransformerInterface> frame_transformer);
++    scoped_refptr<FrameTransformerInterface> frame_transformer,
++    RtcpEventObserver* rtcp_event_observer);
+ 
+ }  // namespace voe
+ }  // namespace webrtc
+diff --git a/call/audio_receive_stream.h b/call/audio_receive_stream.h
+index 88932020d7..0cbe4267cb 100644
+--- a/call/audio_receive_stream.h
++++ b/call/audio_receive_stream.h
+@@ -22,6 +22,7 @@
+ #include "api/audio_codecs/audio_decoder_factory.h"
+ #include "api/audio_codecs/audio_format.h"
+ #include "api/call/transport.h"
++#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+ #include "api/crypto/crypto_options.h"
+ #include "api/crypto/frame_decryptor_interface.h"
+ #include "api/frame_transformer_interface.h"
+@@ -134,6 +135,8 @@ class AudioReceiveStreamInterface : public MediaReceiveStreamInterface {
+       // See NackConfig for description.
+       NackConfig nack;
+       RtcpMode rtcp_mode = RtcpMode::kCompound;
++
++      RtcpEventObserver* rtcp_event_observer = nullptr;
+     } rtp;
+ 
+     // Receive-side RTT.
+diff --git a/call/video_receive_stream.cc b/call/video_receive_stream.cc
+index 06e33f6160..38408eb0ab 100644
+--- a/call/video_receive_stream.cc
++++ b/call/video_receive_stream.cc
+@@ -177,6 +177,8 @@ std::string VideoReceiveStreamInterface::Config::Rtp::ToString() const {
+     ss << pt << ", ";
+   }
+   ss << "}";
++  ss << ", rtcp_event_observer: "
++     << (rtcp_event_observer ? "(rtcp_event_observer)" : "nullptr");
+   ss << "}";
+   return ss.Release();
+ }
+diff --git a/call/video_receive_stream.h b/call/video_receive_stream.h
+index 84a3059c40..128ec02b80 100644
+--- a/call/video_receive_stream.h
++++ b/call/video_receive_stream.h
+@@ -22,6 +22,7 @@
+ #include <vector>
+ 
+ #include "api/call/transport.h"
++#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+ #include "api/crypto/crypto_options.h"
+ #include "api/crypto/frame_decryptor_interface.h"
+ #include "api/frame_transformer_interface.h"
+@@ -272,6 +273,8 @@ class VideoReceiveStreamInterface : public MediaReceiveStreamInterface {
+       // meta data is expected to be present in generic frame descriptor
+       // RTP header extension).
+       std::set<int> raw_payload_types;
++
++      RtcpEventObserver* rtcp_event_observer = nullptr;
+     } rtp;
+ 
+     // Transport for outgoing packets (RTCP).
+diff --git a/modules/rtp_rtcp/include/rtp_rtcp_defines.h b/modules/rtp_rtcp/include/rtp_rtcp_defines.h
+index fac8d06ea9..676b448587 100644
+--- a/modules/rtp_rtcp/include/rtp_rtcp_defines.h
++++ b/modules/rtp_rtcp/include/rtp_rtcp_defines.h
+@@ -183,6 +183,14 @@ class NetworkLinkRtcpObserver {
+   virtual void OnRttUpdate(Timestamp /* receive_time */, TimeDelta /* rtt */) {}
+ };
+ 
++class RtcpEventObserver {
++ public:
++  virtual void OnRtcpBye() = 0;
++  virtual void OnRtcpTimeout() = 0;
++
++  virtual ~RtcpEventObserver() {}
++};
++
+ // NOTE! `kNumMediaTypes` must be kept in sync with RtpPacketMediaType!
+ static constexpr size_t kNumMediaTypes = 5;
+ enum class RtpPacketMediaType : size_t {
+diff --git a/modules/rtp_rtcp/source/rtcp_receiver.cc b/modules/rtp_rtcp/source/rtcp_receiver.cc
+index 983cd9ff65..3bdde69999 100644
+--- a/modules/rtp_rtcp/source/rtcp_receiver.cc
++++ b/modules/rtp_rtcp/source/rtcp_receiver.cc
+@@ -162,6 +162,7 @@ RTCPReceiver::RTCPReceiver(const Environment& env,
+       rtp_rtcp_(owner),
+       registered_ssrcs_(config),
+       network_link_rtcp_observer_(config.network_link_rtcp_observer),
++      rtcp_event_observer_(config.rtcp_event_observer),
+       rtcp_intra_frame_observer_(config.intra_frame_callback),
+       rtcp_loss_notification_observer_(config.rtcp_loss_notification_observer),
+       network_state_estimate_observer_(config.network_state_estimate_observer),
+@@ -763,6 +764,10 @@ bool RTCPReceiver::HandleBye(const CommonHeader& rtcp_block) {
+     return false;
+   }
+ 
++  if (rtcp_event_observer_) {
++    rtcp_event_observer_->OnRtcpBye();
++  }
++
+   // Clear our lists.
+   rtts_.erase(bye.sender_ssrc());
+   EraseIf(received_report_blocks_, [&](const auto& elem) {
+@@ -1206,12 +1211,21 @@ std::vector<rtcp::TmmbItem> RTCPReceiver::TmmbrReceived() {
+ }
+ 
+ bool RTCPReceiver::RtcpRrTimeoutLocked(Timestamp now) {
+-  return ResetTimestampIfExpired(now, last_received_rb_, report_interval_);
++  bool result =
++      ResetTimestampIfExpired(now, last_received_rb_, report_interval_);
++  if (result && rtcp_event_observer_) {
++    rtcp_event_observer_->OnRtcpTimeout();
++  }
++  return result;
+ }
+ 
+ bool RTCPReceiver::RtcpRrSequenceNumberTimeoutLocked(Timestamp now) {
+-  return ResetTimestampIfExpired(now, last_increased_sequence_number_,
+-                                 report_interval_);
++  bool result = ResetTimestampIfExpired(now, last_increased_sequence_number_,
++                                        report_interval_);
++  if (result && rtcp_event_observer_) {
++    rtcp_event_observer_->OnRtcpTimeout();
++  }
++  return result;
+ }
+ 
+ }  // namespace webrtc
+diff --git a/modules/rtp_rtcp/source/rtcp_receiver.h b/modules/rtp_rtcp/source/rtcp_receiver.h
+index 57ae638042..f3bc1b4626 100644
+--- a/modules/rtp_rtcp/source/rtcp_receiver.h
++++ b/modules/rtp_rtcp/source/rtcp_receiver.h
+@@ -341,6 +341,7 @@ class RTCPReceiver final {
+   RegisteredSsrcs registered_ssrcs_;
+ 
+   NetworkLinkRtcpObserver* const network_link_rtcp_observer_;
++  RtcpEventObserver* const rtcp_event_observer_;
+   RtcpIntraFrameObserver* const rtcp_intra_frame_observer_;
+   RtcpLossNotificationObserver* const rtcp_loss_notification_observer_;
+   NetworkStateEstimateObserver* const network_state_estimate_observer_;
+diff --git a/modules/rtp_rtcp/source/rtp_rtcp_interface.h b/modules/rtp_rtcp/source/rtp_rtcp_interface.h
+index c133f44597..b9941ceb82 100644
+--- a/modules/rtp_rtcp/source/rtp_rtcp_interface.h
++++ b/modules/rtp_rtcp/source/rtp_rtcp_interface.h
+@@ -71,6 +71,9 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
+     // bandwidth estimation related message.
+     NetworkLinkRtcpObserver* network_link_rtcp_observer = nullptr;
+ 
++    // Called when we receive a RTCP bye or timeout
++    RtcpEventObserver* rtcp_event_observer = nullptr;
++
+     NetworkStateEstimateObserver* network_state_estimate_observer = nullptr;
+ 
+     VideoBitrateAllocationObserver* bitrate_allocation_observer = nullptr;
+diff --git a/video/rtp_video_stream_receiver2.cc b/video/rtp_video_stream_receiver2.cc
+index 6bf59fd0a7..5cd895e1dd 100644
+--- a/video/rtp_video_stream_receiver2.cc
++++ b/video/rtp_video_stream_receiver2.cc
+@@ -127,7 +127,8 @@ std::unique_ptr<ModuleRtpRtcpImpl2> CreateRtpRtcpModule(
+     RtcpPacketTypeCounterObserver* rtcp_packet_type_counter_observer,
+     RtcpCnameCallback* rtcp_cname_callback,
+     PacketRouter* packet_router,
+-    bool non_sender_rtt_measurement) {
++    bool non_sender_rtt_measurement,
++    RtcpEventObserver* rtcp_event_observer) {
+   RtpRtcpInterface::Configuration configuration;
+   configuration.audio = false;
+   configuration.receiver_only = true;
+@@ -137,6 +138,7 @@ std::unique_ptr<ModuleRtpRtcpImpl2> CreateRtpRtcpModule(
+   configuration.rtcp_packet_type_counter_observer =
+       rtcp_packet_type_counter_observer;
+   configuration.rtcp_cname_callback = rtcp_cname_callback;
++  configuration.rtcp_event_observer = rtcp_event_observer;
+   configuration.non_sender_rtt_measurement = non_sender_rtt_measurement;
+ 
+   auto rtp_rtcp = ModuleRtpRtcpImpl2::CreateReceiveModule(
+@@ -318,7 +320,8 @@ RtpVideoStreamReceiver2::RtpVideoStreamReceiver2(
+           rtcp_packet_type_counter_observer,
+           rtcp_cname_callback,
+           packet_router,
+-          config_.rtp.rtcp_xr.receiver_reference_time_report)),
++          config_.rtp.rtcp_xr.receiver_reference_time_report,
++          config_.rtp.rtcp_event_observer)),
+       nack_periodic_processor_(nack_periodic_processor),
+       complete_frame_callback_(complete_frame_callback),
+       keyframe_request_method_(config_.rtp.keyframe_method),

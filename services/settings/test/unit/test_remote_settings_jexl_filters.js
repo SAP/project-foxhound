@@ -36,7 +36,7 @@ add_task(async function test_returns_all_without_target() {
 });
 
 add_task(async function test_filters_can_be_disabled() {
-  const c = RemoteSettings("no-jexl", { filterFunc: null });
+  const c = RemoteSettings("no-jexl", { filterCreator: null });
   await c.db.importChanges({}, 42, [
     {
       id: "abc",

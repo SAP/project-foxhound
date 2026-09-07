@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>WebGL Vendor Sanitize with FPP - Vendor should be sanitized</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script>
+/* global SimpleTest SpecialPowers */
+SimpleTest.waitForExplicitFinish();
+document.addEventListener("DOMContentLoaded", async function() {
+  // Enable FPP with WebGLVendorSanitize
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.fingerprintingProtection", true],
+      ["privacy.fingerprintingProtection.overrides", "+WebGLVendorSanitize"],
+      ["privacy.resistFingerprinting", false]
+    ]
+  });
+
+  let canvas = document.body.appendChild(document.createElement("canvas"));
+  if (!canvas) {
+    SimpleTest.ok(false, "Cannot create canvas");
+    SimpleTest.finish();
+    return;
+  }
+
+  let gl = canvas.getContext("webgl");
+  if (!gl) {
+    SimpleTest.ok(false, "Cannot get WebGL context");
+    SimpleTest.finish();
+    return;
+  }
+
+  // Try to get the WEBGL_debug_renderer_info extension
+  let ext = gl.getExtension("WEBGL_debug_renderer_info");
+  if (!ext) {
+    SimpleTest.ok(false, "WEBGL_debug_renderer_info extension should be available with FPP");
+    SimpleTest.finish();
+    return;
+  }
+
+  // With FPP and WebGLVendorSanitize enabled, the vendor should be sanitized
+  // to one of the known values
+  let vendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL);
+
+  // List of valid sanitized vendor strings
+  const validVendors = [
+    "NVIDIA Corporation",
+    "Intel",
+    "AMD",
+    "Qualcomm",
+    "ARM",
+    "Apple",
+    "Samsung",
+    "Mesa",
+    "Microsoft",
+    "VMware",
+    "Google",
+    "Other"
+  ];
+
+  SimpleTest.ok(validVendors.includes(vendor),
+    "UNMASKED_VENDOR_WEBGL should be sanitized to one of the known values. Got: " + vendor);
+
+  // Verify it's NOT "Mozilla" (which would indicate WebGLRenderInfo is active)
+  SimpleTest.isnot(vendor, "Mozilla",
+    "UNMASKED_VENDOR_WEBGL should be sanitized, not 'Mozilla' (WebGLRenderInfo not active)");
+
+  SimpleTest.finish();
+});
+</script>

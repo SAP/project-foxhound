@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -35,9 +34,8 @@ const TEST_DATA = [
 ];
 
 add_task(async function () {
-  startTelemetry();
-
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  Services.fog.testResetFOG();
   const { inspector, view } = await openRuleView();
 
   info("Check correctness of data by toggling tooltip open");
@@ -50,5 +48,5 @@ function checkResults() {
   info(
     'Check the telemetry against "devtools.tooltip.shown" for label "css-compatibility" and ensure it is set'
   );
-  checkTelemetry("devtools.tooltip.shown", "", 1, "css-compatibility");
+  is(1, Glean.devtoolsTooltip.shown["css-compatibility"].testGetValue());
 }

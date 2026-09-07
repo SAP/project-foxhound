@@ -446,7 +446,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Can't have both a HTMLConstructor and a throwing constructor " "operation",
+        "Can't have both a HTMLConstructor and a throwing constructor operation",
     )
 
     # Test HTMLConstructor and [ChromeOnly] constructor operation
@@ -486,7 +486,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Can't have both a throwing chromeonly constructor and a " "HTMLConstructor",
+        "Can't have both a throwing chromeonly constructor and a HTMLConstructor",
     )
 
     parser = parser.reset()
@@ -507,7 +507,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Can't have both a HTMLConstructor and a chromeonly constructor " "operation",
+        "Can't have both a HTMLConstructor and a chromeonly constructor operation",
     )
 
     parser = parser.reset()
@@ -549,8 +549,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Can't have a constructor operation on a [LegacyNoInterfaceObject] "
-        "interface",
+        "Can't have a constructor operation on a [LegacyNoInterfaceObject] interface",
     )
 
     parser = parser.reset()

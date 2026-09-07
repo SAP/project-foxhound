@@ -17,13 +17,13 @@
 .fieldpair__title {
   margin-inline-end: var(--base-unit);
   font-size: var(--caption-20-font-size);
-  font-weight: var(--caption-20-font-weight);
+  font-weight: var(--caption-20-font-weight, normal);
 }
 
 .fieldpair__description {
   color: var(--fieldpair-text-color);
   flex: 1;
   font-size: var(--caption-20-font-size);
-  font-weight: var(--caption-20-font-weight);
+  font-weight: var(--caption-20-font-weight, normal);
   text-align: end;
 }

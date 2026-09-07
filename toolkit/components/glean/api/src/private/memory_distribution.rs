@@ -35,7 +35,7 @@ pub enum MemoryDistributionMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_namer!(MemoryDistributionMetric);
+define_metric_namer!(MemoryDistributionMetric);
 
 impl MemoryDistributionMetric {
     /// Create a new memory distribution metric.
@@ -78,7 +78,7 @@ impl MemoryDistributionMetric {
         }
     }
 
-    pub fn accumulate_samples(&self, samples: Vec<u64>) {
+    pub fn accumulate_samples_unsigned(&self, samples: Vec<u64>) {
         #[cfg(feature = "with_gecko")]
         let marker_samples = truncate_vector_for_marker(&samples);
 
@@ -195,32 +195,8 @@ impl MemoryDistribution for MemoryDistributionMetric {
         );
     }
 
-    /// **Test-only API.**
-    ///
-    /// Get the currently-stored histogram as a DistributionData of the serialized value.
-    /// This doesn't clear the stored value.
-    ///
-    /// ## Arguments
-    ///
-    /// * `ping_name` - the storage name to look into.
-    ///
-    /// ## Return value
-    ///
-    /// Returns the stored value or `None` if nothing stored.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<DistributionData> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            MemoryDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            MemoryDistributionMetric::Child(meta) => {
-                panic!(
-                    "Cannot get test value for {:?} in non-parent process!",
-                    meta.id
-                )
-            }
-        }
+    pub fn accumulate_samples(&self, samples: Vec<i64>) {
+        self.accumulate_samples_unsigned(samples.into_iter().map(|s| s as _).collect());
     }
 
     /// **Exported for test purposes.**
@@ -249,6 +225,35 @@ impl MemoryDistribution for MemoryDistributionMetric {
     }
 }
 
+#[inherent]
+impl glean::TestGetValue for MemoryDistributionMetric {
+    type Output = DistributionData;
+
+    /// **Test-only API.**
+    ///
+    /// Get the currently-stored histogram as a DistributionData of the serialized value.
+    /// This doesn't clear the stored value.
+    ///
+    /// ## Arguments
+    ///
+    /// * `ping_name` - the storage name to look into.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the stored value or `None` if nothing stored.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        match self {
+            MemoryDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            MemoryDistributionMetric::Child(meta) => {
+                panic!(
+                    "Cannot get test value for {:?} in non-parent process!",
+                    meta.id
+                )
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -272,7 +277,9 @@ mod test {
 
         metric.accumulate(42);
 
-        let metric_data = metric.test_get_value("test-ping").unwrap();
+        let metric_data = metric
+            .test_get_value(Some("test-ping".to_string()))
+            .unwrap();
         assert_eq!(1, metric_data.values[&42494]);
         assert_eq!(43008, metric_data.sum);
     }
@@ -292,7 +299,9 @@ mod test {
             child_metric.accumulate(13 * 9);
         }
 
-        let metric_data = parent_metric.test_get_value("test-ping").unwrap();
+        let metric_data = parent_metric
+            .test_get_value(Some("test-ping".to_string()))
+            .unwrap();
         assert_eq!(1, metric_data.values[&42494]);
         assert_eq!(43008, metric_data.sum);
 

@@ -1,9 +1,14 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 tags = "devtools"
 head = "head.js"
 firefox-appdir = "browser"
 
 ["test_popup_initial_state.js"]
+
+["test_format_file_size.js"]
 
 ["test_remove_common_path_prefix.js"]
 

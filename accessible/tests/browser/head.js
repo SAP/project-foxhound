@@ -19,7 +19,7 @@ const { CommonUtils } = ChromeUtils.importESModule(
 /**
  * Capture when 'a11y-consumers-changed' event is fired.
  *
- * @param  {?Object} target
+ * @param  {?object} target
  *         [optional] browser object that indicates that accessibility service
  *         is in content process.
  * @return {Array}
@@ -45,7 +45,7 @@ function accConsumersChanged(target) {
 /**
  * Capture when accessibility service is initialized.
  *
- * @param  {?Object} target
+ * @param  {?object} target
  *         [optional] browser object that indicates that accessibility service
  *         is expected to be initialized in content process.
  * @return {Array}
@@ -71,7 +71,7 @@ function initAccService(target) {
 /**
  * Capture when accessibility service is shutdown.
  *
- * @param  {?Object} target
+ * @param  {?object} target
  *         [optional] browser object that indicates that accessibility service
  *         is expected to be shutdown in content process.
  * @return {Array}
@@ -96,7 +96,7 @@ function shutdownAccService(target) {
 
 /**
  * Simpler verions of waitForEvent defined in
- * accessible/tests/browser/events.js
+ * accessible/tests/mochitest/events.js
  */
 function waitForEvent(eventType, expectedId) {
   return new Promise(resolve => {

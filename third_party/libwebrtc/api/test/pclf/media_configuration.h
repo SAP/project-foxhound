@@ -17,11 +17,11 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/audio_options.h"
 #include "api/media_stream_interface.h"
 #include "api/rtp_parameters.h"
@@ -359,7 +359,7 @@ struct AudioConfig {
   std::optional<std::string> output_dump_file_name;
 
   // Audio options to use.
-  cricket::AudioOptions audio_options;
+  AudioOptions audio_options;
   // Sampling frequency of input audio data (from file or generated).
   int sampling_frequency_in_hz = 48000;
   // If specified, determines a sync group to which this audio stream belongs.
@@ -394,9 +394,9 @@ class VideoSubscription {
   // Returns the resolution constructed as maximum from all resolution
   // dimensions: width, height and fps.
   static std::optional<VideoResolution> GetMaxResolution(
-      rtc::ArrayView<const VideoConfig> video_configs);
+      std::span<const VideoConfig> video_configs);
   static std::optional<VideoResolution> GetMaxResolution(
-      rtc::ArrayView<const VideoResolution> resolutions);
+      std::span<const VideoResolution> resolutions);
 
   bool operator==(const VideoSubscription& other) const;
   bool operator!=(const VideoSubscription& other) const;

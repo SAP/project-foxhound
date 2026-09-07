@@ -3,7 +3,7 @@
 
 "use strict";
 
-// Check that, even though the AnimationPlayerActor only sends the bits of its
+// Check that, even though the AnimationActor only sends the bits of its
 // state that change, the front reconstructs the whole state everytime.
 
 add_task(async function () {

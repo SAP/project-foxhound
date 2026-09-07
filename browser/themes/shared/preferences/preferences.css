@@ -6,13 +6,25 @@
 
 /* Global rules */
 :root {
-  /**
-   * Headings are currently 1 level higher than they should be. Eventually
-   * "Settings" will become our h1 and everything will drop down a level so our
-   * h1s become h2s, h2s become h3s, etc.
-   */
-  --heading-font-size-xlarge: var(--font-size-xlarge);
-  --heading-font-size-large: var(--font-size-large);
+  @media not -moz-pref("browser.settings-redesign.enabled") {
+    /**
+     * Pre-SRD, headings are 1 level higher than they should be. These overrides
+     * size them as if they were one level lower. With SRD on, the widgets
+     * already render the correct level, so we don't need these.
+     */
+    --font-size-heading-xlarge: var(--font-size-xlarge);
+    --font-size-heading-large: var(--font-size-large);
+    --font-size-heading-medium: var(--font-size-medium);
+  }
+  --select-max-width: 20rem;
+
+  --card-padding-inline: var(--space-xlarge);
+  --card-padding-block: var(--card-padding-inline);
+
+  @media -moz-pref("browser.settings-redesign.enabled") {
+    --background-color-canvas: light-dark(var(--color-gray-0), var(--color-gray-90));
+  }
+
   user-select: text;
 }
 
@@ -51,32 +63,83 @@
   min-height: 0;
 }
 
+#categories {
+  width: calc(var(--size-sidebar) - 42px);
+
+  @media (max-width: 950px) {
+    width: auto;
+  }
+}
+
+#search-container {
+  position: sticky;
+  top: 0;
+  /* Bug 2026689 Negative margin is used here to hide the borders of setting-controls on scroll
+     as well as the shadow to the left of the searchbar */
+  margin-inline-start: -4px;
+  /* 4px of additional width to account for the -4px of margin defined above */
+  width: calc(100% + 4px);
+  /* z-index = 2 so that the search-tooltips don't appear when the user scrolls
+     up after searching. */
+  z-index: 2;
+  background-color: var(--background-color-canvas);
+  padding-top: var(--page-space-block-start);
+  padding-bottom: var(--search-container-padding);
+  padding-inline: var(--focus-outline-offset);
+  /* Ensure focus indicators on elements below the search container
+     aren't obscured. */
+  margin-bottom: var(--search-container-margin);
+}
+
+#searchInput {
+  width: 100%;
+}
+
+#policies-container-content:not([hidden]) + #searchInput {
+  margin-block-start: var(--space-small);
+}
+
 .main-content {
-  padding-top: 0;
-  /* the 32px min-height, plus 20+30px margin below, plus some leeway: */
-  scroll-padding-top: 90px;
+  --search-container-padding: var(--space-small);
+  --search-container-margin: calc(var(--focus-outline-width) + var(--focus-outline-offset));
+
   contain: inline-size;
+  padding-top: 0;
+  scroll-padding-top: calc(calc(2 * var(--page-space-block-start)) + var(--search-container-padding) + var(--search-container-margin));
+
+  @media (max-width: 950px) {
+    padding-inline: var(--space-medium);
+  }
 }
 
 .pane-container {
   /* A workaround to keep the container always float on the `top: 0` (Bug 1377009) */
   display: block;
-  width: min(100%, var(--page-main-content-width));
+  width: min(100%, 600px);
   min-width: min-content;
+  /* Used to prevent cutting off the borders of the setting-controls */
+  margin-inline-start: 1px;
 }
 
 #mainPrefPane {
   width: 100%;
-  padding: 0;
 }
 
 html|div[data-category],
-groupbox[data-category] {
-  margin: 0 0 32px;
+groupbox[data-category],
+setting-group[data-category] {
+  margin: 0 0 var(--space-xlarge);
+}
+
+/* Bug 2002963 - payments and addresses are in a groupbox together, but they probably shouldn't be */
+#formAutofillGroupBox:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
 }
 
 html|h1 {
-  margin: 0 0 var(--space-small);
+  margin: 0 0 var(--space-large);
 }
 
 html|h2 {
@@ -125,6 +188,11 @@ label {
   color: var(--text-color-deemphasized);
 }
 
+.firefoxLabs-description {
+  color: var(--text-color-deemphasized);
+  margin: 0;
+}
+
 .tip-caption {
   font-size: 0.9em;
   color: var(--text-color-deemphasized);
@@ -167,13 +235,36 @@ radio {
   margin: 4px 0;
 }
 
-.spotlight {
-  background-color: color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
-  outline: var(--color-accent-primary) 1px dotted;
-  animation: fade-out 0.5s ease-out 2s forwards;
-  /* Show the border to spotlight the components in high-contrast mode. */
-  border: 1px solid transparent;
-  border-radius: 2px;
+@media not -moz-pref("browser.settings-redesign.enabled") {
+  .spotlight {
+    background-color: color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
+    outline: var(--border-color-selected) 1px dotted;
+    animation: fade-out 0.5s ease-out 2s forwards;
+    /* Show the border to spotlight the components in high-contrast mode. */
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-xsmall);
+  }
+
+  [data-subcategory] {
+    margin-inline: -4px;
+    padding-inline: 4px;
+  }
+}
+
+@media -moz-pref("browser.settings-redesign.enabled") {
+  .spotlight {
+    outline: 2px solid var(--border-color-selected);
+    animation: fade-out 0.5s ease-out 2s forwards;
+
+    setting-group& {
+      border-radius: var(--card-border-radius);
+    }
+
+    &:not(setting-group) {
+      border-radius: var(--border-radius-medium);
+      outline-offset: var(--space-small);
+    }
+  }
 }
 
 @keyframes fade-out {
@@ -183,60 +274,18 @@ radio {
   }
 }
 
-[data-subcategory] {
-  margin-inline: -4px;
-  padding-inline: 4px;
-}
-
 .ac-site-icon {
   display: flex;
 }
 
-/* Subcategory title */
+@media not -moz-pref("browser.settings-redesign.enabled") {
+  /* Subcategory title */
 
-/**
- * The first subcategory title for each category should not have margin-top.
- */
-
-.subcategory:not([hidden]) ~ .subcategory {
-  padding-top: var(--space-xxlarge);
-  border-top: 1px solid var(--in-content-border-color);
-}
-
-/* Category List */
-
-#categories {
-  overflow: visible;
-  min-height: auto;
-  padding: 1px; /* Adding padding around richlistitem in order to make entire keyboard focusing outline visible */
-}
-
-#category-general > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-general.svg");
-}
-
-#category-home > .category-icon {
-  list-style-image: url("chrome://browser/skin/home.svg");
-}
-
-#category-search > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-search.svg");
-}
-
-#category-privacy > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-privacy-security.svg");
-}
-
-#category-sync > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/category-sync.svg");
-}
-
-#category-experimental > .category-icon {
-  list-style-image: url("chrome://global/skin/icons/experiments.svg");
-}
-
-#category-more-from-mozilla > .category-icon {
-  list-style-image: url("chrome://browser/skin/preferences/mozilla-logo.svg");
+  /* The first subcategory title for each category should not have margin-top. */
+  .subcategory:not([hidden]) ~ .subcategory {
+    padding-top: var(--space-xxlarge);
+    border-top: 1px solid var(--border-color);
+  }
 }
 
 /* All panes */
@@ -250,31 +299,18 @@ radio {
 
 /* General Pane */
 
-.is-default > #isNotDefaultPane,
-:not(.is-default) > #isDefaultPane {
-  visibility: hidden;
+#isNotDefaultPane,
+#isDefaultPane {
+  /* 64px for the kit image + border. This may be slightly too large due to
+   * pixel-snapping. Defining it helps avoid layout changes once the kit
+   * image is loaded. */
+  min-height: calc(64px + 2 * var(--border-width));
 }
 
-#isDefaultLabel,
-#isNotDefaultLabel {
-  font-weight: var(--font-weight-bold);
-}
-
-/* stylelint-disable-next-line media-query-no-invalid */
 @media not -moz-pref("browser.migrate.preferences-entrypoint.enabled") {
   #dataMigrationGroup {
     display: none;
   }
-}
-
-#dataMigration {
-  /* This should really be using baseline, but that doesn't work properly with
-   * the <description> and XUL <button> markup. */
-  align-items: center;
-}
-
-#browserContainersExtensionContent {
-  padding-block: 5px;
 }
 
 .extension-controlled {
@@ -331,60 +367,36 @@ radio {
   padding: 0.3em;
 }
 
-#saveWhere {
-  align-items: center;
-}
-
-#saveTo {
-  margin-inline-end: 1em;
-}
-
-#downloadFolder {
-  flex: 1;
-  margin-block: 4px;
-  margin-inline-start: 0;
-  padding-inline-start: 30px;
-  background-repeat: no-repeat;
-  background-size: 16px;
-  background-position: center left 8px;
-}
-
-#downloadFolder:-moz-locale-dir(rtl) {
-  background-position-x: right 8px;
-}
-
-#updateBox {
-  margin-block: 4px 32px;
-}
-
-/* Work around bug 560067 - animated images in visibility: hidden
- * still eat CPU. */
-#updateDeck > *:not(.deck-selected) > .update-throbber {
-  display: none;
-}
-
-#updateDeck > hbox > button {
-  margin-block: 0;
-  margin-inline-end: 0;
-}
-
-#updateDeck > hbox > label {
-  flex: 1;
-  margin-inline-end: 5px !important;
-}
-
-.manualLink {
-  margin-inline-start: 6px !important;
-}
-
-#updateRadioGroup > radio {
-  min-height: 30px;
-  margin: 2px 0;
-}
-
 #filter {
   flex: 1;
   margin: 4px 0 8px;
+}
+
+/** SRD applications section START **/
+#applicationsHandlersView {
+  --box-group-max-height: 500px;
+  container-type: inline-size;
+
+  moz-box-item.first label {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  moz-box-item label[slot="actions"],
+  .actionsMenu {
+    width: clamp(140px, 50cqi, 270px);
+  }
+
+  moz-box-item[hidden] {
+    display: none;
+  }
+}
+/** SRD applications section END **/
+
+/* Override overflow-wrap: anywhere from moz-card
+ TODO: Eventually we should update to make this
+ section more responsive to screen width */
+moz-fieldset#applicationsGroup {
+  overflow-wrap: normal;
 }
 
 #handlersView {
@@ -435,7 +447,7 @@ radio {
   margin-inline-end: 8px !important;
 }
 
-/* Increase the specifity to override common.inc.css */
+/* Increase the specificity to override common.inc.css */
 richlistitem[selected] .actionsMenu:focus-visible {
   outline-offset: -3px;
 }
@@ -487,7 +499,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
 }
 
 #homeContentsGroup > [data-subcategory] .section-checkbox {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 #homeContentsGroup > [data-subcategory] > vbox menulist {
@@ -503,20 +515,12 @@ richlistitem[selected] .actionsMenu:focus-visible {
   margin-inline-end: var(--space-small);
 }
 
-.addon-with-favicon .menu-icon {
-  margin-inline-start: 0;
-}
-
-a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
+a[is="moz-support-link"]:not([hidden]) {
   display: inline-block;
   white-space: initial;
 }
 
 /* Search Pane */
-
-#engineList {
-  margin: 2px 0 5px;
-}
 
 #engineList > treechildren::-moz-tree-image(engineShown, checked),
 #blocklistsTree > treechildren::-moz-tree-image(selectionCol, checked) {
@@ -527,15 +531,16 @@ a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
 
 #engineList > treechildren::-moz-tree-image(engineShown, checked, selected),
 #blocklistsTree > treechildren::-moz-tree-image(selectionCol, checked, selected) {
-  fill: var(--in-content-item-selected-text);
-  stroke: var(--in-content-item-selected);
+  fill: var(--text-color-accent-primary-selected);
+  stroke: var(--color-accent-primary-selected);
 }
 
 @media (forced-colors) {
   #engineList > treechildren::-moz-tree-image(hover),
   #blocklistsTree > treechildren::-moz-tree-image(hover) {
-    fill: var(--in-content-item-hover-text);
-    stroke: var(--in-content-item-hover);
+    fill: var(--text-color-list-item-hover);
+    /* fill allows icon and text colors, but we have no such rules for stroke */
+    stroke: var(--background-color-list-item-hover);
   }
 }
 
@@ -591,7 +596,7 @@ a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
   margin-bottom: 0;
 }
 
-.text-link[disabled="true"] {
+.text-link[disabled] {
   pointer-events: none;
 }
 
@@ -619,20 +624,20 @@ html|dialog {
 
 html|dialog::backdrop,
 .dialogOverlay[topmost="true"] {
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--background-color-overlay);
 }
 
 html|dialog,
 .dialogBox {
   border: 1px solid transparent;
-  border-radius: 8px;
-  box-shadow: var(--box-shadow-popup);
+  border-radius: var(--border-radius-medium);
+  box-shadow: var(--popup-box-shadow);
 }
 
 .dialogBox {
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-box);
   background-clip: content-box;
-  color: var(--in-content-page-color);
+  color: var(--text-color);
   /* `transparent` will use the dialogText color in high-contrast themes and
      when page colors are disabled */
   display: flex;
@@ -645,7 +650,7 @@ html|dialog,
   @media not (forced-colors) {
     html|dialog,
     .dialogBox {
-      --in-content-page-background: #42414d;
+      --background-color-canvas: #42414d;
     }
   }
 }
@@ -659,11 +664,11 @@ html|dialog,
 
 .dialogTitleBar {
   padding: 0.4em 0.2em;
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .dialogTitle {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-heading);
   text-align: center;
   user-select: none;
 }
@@ -732,7 +737,7 @@ html|dialog,
 .fxaProfileImage {
   width: 80px;
   height: 80px;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
   border: 1px solid transparent;
   list-style-image: url(chrome://browser/skin/fxa/avatar-color.svg);
   margin-inline-end: var(--space-xlarge);
@@ -771,6 +776,10 @@ html|dialog,
   margin-inline-end: 0;
 }
 
+#fxaAccountDisabled {
+  margin-bottom: calc(-1 * var(--space-large));
+}
+
 #noFxaAccount > label:first-child {
   margin-bottom: 0.6em;
 }
@@ -779,8 +788,26 @@ html|dialog,
   margin-block: 0 4px;
 }
 
-#noFxaSignIn {
+button#noFxaSignIn {
   margin-inline-start: 8px;
+}
+
+#syncConfigured {
+  --box-icon-start-fill: var(--icon-color-success);
+}
+
+#syncNotConfigured,
+#noFxaSignIn {
+  --box-icon-start-fill: var(--icon-color-warning);
+}
+
+#syncSetup {
+  white-space: nowrap;
+}
+
+#syncNow,
+#syncing {
+  min-width: 150px;
 }
 
 .fxaSyncIllustration {
@@ -794,7 +821,7 @@ html|dialog,
 }
 
 .separator {
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 #fxaGroup {
@@ -816,6 +843,16 @@ html|dialog,
   margin-inline: 4px 8px;
 }
 
+#fxaLoginVerified {
+  --box-icon-size: calc(var(--icon-size-xlarge) * 2);
+  --box-icon-border-radius: var(--border-radius-circle);
+
+  &[description] {
+    --box-label-alignment: end;
+    --box-description-alignment: start;
+  }
+}
+
 #syncStatusContainer {
   margin-top: 32px;
 }
@@ -826,7 +863,7 @@ html|dialog,
 
 .sync-group {
   margin-block: var(--space-large);
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
 }
 
 .sync-configured {
@@ -922,6 +959,7 @@ dialog > .sync-engines-list + hbox {
 
 .fxaMobilePromo {
   margin-top: 2px !important;
+  margin-bottom: var(--space-xxlarge);
 }
 
 .androidIcon,
@@ -932,66 +970,11 @@ dialog > .sync-engines-list + hbox {
   vertical-align: text-bottom;
 }
 
-.update-throbber {
-  width: 1.3em;
-  min-height: 1.3em;
-  margin-inline-end: 8px;
-  content: url("chrome://global/skin/icons/loading.svg");
-  -moz-context-properties: fill;
-  fill: var(--color-accent-primary);
-}
-
-.navigation {
-  overflow-x: hidden;
-  overflow-y: auto;
-  position: relative;
-}
-
-@media (prefers-reduced-motion) {
-  /* Setting border-inline-end on .navigation makes it a focusable element */
-  .navigation::after {
-    content: "";
-    width: 1px;
-    height: 100%;
-    background-color: var(--in-content-border-color);
-    top: 0;
-    inset-inline-end: 0;
-    position: absolute;
-  }
-}
-
-.face-sad::before {
-  content: "\01F641";
-  font-size: 1.3em;
-  margin-inline-end: 8px;
-}
-
-.face-smile::before {
-  content: "\01F600";
-  font-size: 1.3em;
-  margin-inline-end: 8px;
-}
-
-#policies-container,
-#searchInput {
-  min-height: 32px;
-  margin: 20px 0 30px;
-}
-
-#policies-container {
-  margin-inline-end: var(--space-large);
-  /* Make sure the container is at least the same height as the searchbox.
-     This is needed in addition to the min-height above to make the info icon
-     the same height as the first line in the policies label.
-     Searchbox's height - line-height - border top and bottom */
-  padding-block: max(0px, calc((32px - 1.8em - 2px) / 2));
-}
-
 .info-box-container {
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   padding: 9px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 .info-box-container.smaller-font-size {
@@ -1016,20 +999,9 @@ dialog > .sync-engines-list + hbox {
   margin-top: 0.3em;
 }
 
-.sticky-container {
-  position: sticky;
-  background-color: var(--in-content-page-background);
+#search-tooltip-container {
+  position: relative;
   top: 0;
-  z-index: 1;
-  /* The sticky-container should have the capability to cover all spotlight area. */
-  width: calc(100% + 8px);
-  margin-inline: -4px;
-  padding-inline: 4px;
-}
-
-.sticky-inner-container {
-  flex: 1;
-  max-width: var(--page-main-content-width);
 }
 
 .search-tooltip {
@@ -1042,6 +1014,7 @@ dialog > .sync-engines-list + hbox {
   border: 1px solid #d7b600;
   margin-top: -18px;
   opacity: 0.85;
+  z-index: 1;
 }
 
 .search-tooltip:hover {
@@ -1090,6 +1063,7 @@ dialog > .sync-engines-list + hbox {
   text-overflow: ellipsis;
 }
 
+.setting-hidden,
 .visually-hidden {
   display: none !important;
 }
@@ -1176,15 +1150,6 @@ menulist[indicator="true"] > menupopup menuitem[indicator="true"]:not([image]) >
   font-size: 0.8em;
 }
 
-.updateSettingCrossUserWarningContainer {
-  margin-block-end: 17px;
-}
-
-#updateSettingCrossUserWarningDesc {
-  padding-inline-start: calc(16px + 6px); /* radio-check's width + margin-inline-end */
-  margin-block-start: 20px;
-}
-
 richlistitem .text-link {
   color: inherit;
   text-decoration: underline;
@@ -1219,6 +1184,10 @@ richlistitem .text-link:hover {
   font-size: var(--font-size-large);
 }
 
+#experimentalCategory-reset {
+  margin-top: var(--space-small);
+}
+
 .featureGateDescription {
   white-space: pre-wrap;
 }
@@ -1236,7 +1205,18 @@ richlistitem .text-link:hover {
   margin-inline-start: 6px;
 }
 
+/* This is an HTML div (not XUL hbox), so it needs explicit display:flex for
+   horizontal icon+title layout. The :not([hidden]) guard prevents this from
+   overriding the hidden attribute's display:none (inline styles and CSS rules
+   both beat the UA stylesheet's hidden handling for HTML elements). */
+#moreFromMozillaCategory-header:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 #moreFromMozillaCategory-header .subtitle {
+  flex-basis: 100%;
+  margin-block-start: var(--space-xsmall);
   margin-block-end: var(--space-xlarge);
 }
 
@@ -1276,28 +1256,33 @@ richlistitem .text-link:hover {
   margin-inline: 30px 0;
 }
 
-#firefox-mobile {
-  background-image: url("chrome://browser/skin/device-phone.svg");
-}
+/* Product icon backgrounds for the legacy (non-SRD) More from Mozilla page.
+ * Scoped to #moreFromMozillaCategory so they don't apply to the config-based
+ * moz-card elements that reuse the same product IDs. */
+#moreFromMozillaCategory {
+  #firefox-mobile {
+    background-image: url("chrome://browser/skin/device-phone.svg");
+  }
 
-#mozilla-vpn {
-  background-image: url("chrome://browser/skin/preferences/vpn-logo.svg");
-}
+  #mozilla-vpn {
+    background-image: url("chrome://browser/skin/preferences/vpn-logo.svg");
+  }
 
-#mozilla-monitor {
-  background-image: url("chrome://browser/skin/preferences/monitor-logo.svg");
-}
+  #mozilla-monitor {
+    background-image: url("chrome://browser/skin/preferences/monitor-logo.svg");
+  }
 
-#firefox-relay {
-  background-image: url("chrome://browser/skin/preferences/relay-logo.svg");
-}
+  #firefox-relay {
+    background-image: url("chrome://browser/skin/preferences/relay-logo.svg");
+  }
 
-#solo-ai {
-  background-image: url("chrome://browser/skin/preferences/solo-ai-logo.svg");
-}
+  #solo-ai {
+    background-image: url("chrome://browser/skin/preferences/solo-ai-logo.svg");
+  }
 
-#mdn {
-  background-image: url("chrome://browser/skin/preferences/mdn-logo.svg");
+  #mdn {
+    background-image: url("chrome://browser/skin/preferences/mdn-logo.svg");
+  }
 }
 
 /*
@@ -1309,12 +1294,12 @@ richlistitem .text-link:hover {
   min-height: 204px;
   margin-block: 10px 0;
   margin-inline-start: 30px;
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-evenly;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 @media (forced-colors) {
@@ -1331,7 +1316,7 @@ richlistitem .text-link:hover {
 }
 
 .qr-code-box-image {
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   padding: 2px;
   width: 80px;
   flex: 0 0 auto;
@@ -1386,87 +1371,144 @@ richlistitem .text-link:hover {
   }
 }
 
-#websiteAppearanceGroup {
-  display: block;
+#webAppearanceGroup .description-deemphasized {
+  margin-block-end: var(--space-large);
 }
 
-#web-appearance-chooser {
+/** SRD setting-chooser control START **/
+.setting-chooser-item {
+  flex: 1;
+
+  &::part(image) {
+    width: 54px;
+    box-shadow: var(--card-box-shadow);
+    margin-block-start: var(--space-medium);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--border-radius-small);
+  }
+
+  &:dir(rtl)::part(image) {
+    transform: scaleX(-1);
+  }
+}
+/** SRD setting-chooser control END **/
+
+/** SRD rows control for Homepage START **/
+setting-group[groupid="homepage"] {
+  --select-max-width: fit-content;
+  --select-min-width: 15em;
+}
+/** SRD rows control for Homepage END **/
+
+/** SRD rows control for New Tab START **/
+setting-group[groupid="home"] {
+  --select-max-width: 17rem;
+}
+/** SRD rows control for New Tab END **/
+
+/** SRD History first item is label-less START **/
+/* bug 2001196: Workaround for using legend as label for the select. */
+setting-group[groupid="history"] > moz-fieldset::part(inputs),
+setting-group[groupid="history"] > moz-card > moz-fieldset::part(inputs) {
+  margin-block-start: 0;
+}
+/** SRD History first item is label-less END **/
+
+setting-group[groupid="aiFeatures"] {
+  --select-max-width: fit-content;
+
+  > moz-card > moz-fieldset::part(inputs) {
+    gap: var(--space-xlarge);
+  }
+}
+
+#blockAiGroup {
+  @media not (prefers-contrast) {
+    --block-ai-background-color: light-dark(color-mix(in srgb, currentColor 3%, transparent), color-mix(in srgb, currentColor 5%, transparent));
+    background-color: var(--block-ai-background-color);
+  }
+}
+
+#aiBlockedMessage {
+  margin: calc(-1 * var(--space-large));
+  margin-top: var(--space-medium);
+  --message-bar-border-radius: 0 0 var(--box-border-radius) var(--box-border-radius);
+  border-bottom-color: transparent;
+  border-inline-color: transparent;
+}
+
+#aiControlDefaultToggle {
+  --toggle-width: 40px;
+  --toggle-height: 20px;
+}
+
+.custom-model-save-row {
   display: flex;
-  justify-content: space-between;
-  gap: var(--space-large);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-medium);
 }
 
-#web-appearance-chooser,
-#web-appearance-override-warning,
-#text-zoom-override-warning {
-  margin: var(--space-medium) 0;
+.custom-model-save-confirmation {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-small);
+  min-inline-size: 0;
+
+  > span {
+    min-inline-size: 0;
+  }
 }
 
-#web-appearance-override-warning:not([hidden]) {
-  display: flex;
+.custom-model-save-confirmation-icon {
+  -moz-context-properties: fill;
+  fill: var(--icon-color-success);
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
-.web-appearance-choice {
-  width: 100%;
-  border: 1px solid var(--in-content-box-border-color);
-  background-color: var(--in-content-box-background-color);
-  color: var(--in-content-text-color);
-  border-radius: 4px;
-  overflow: clip;
+.ai-controls-description {
+  --ai-controls-description-image-margin: calc(64px + var(--space-large));
+  --ai-controls-description-background-color: light-dark(var(--color-violet-0), var(--color-violet-90));
+  anchor-name: --ai-controls-description;
+
+  @media not (forced-colors) {
+    --card-background-color: var(--ai-controls-description-background-color);
+  }
+
+  > p {
+    margin: 0;
+    margin-inline-end: var(--ai-controls-description-image-margin);
+  }
+
+  > img {
+    position: fixed;
+    position-anchor: --ai-controls-description;
+    inset-block-end: anchor(end);
+    inset-inline-end: anchor(end);
+    margin-inline-end: var(--space-large);
+  }
 }
 
-.web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background);
-  padding: var(--space-medium) 0;
-}
-
-.web-appearance-choice:hover > .web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background-hover);
-}
-
-.web-appearance-choice:hover:active > .web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background-active);
-}
-
-.web-appearance-choice img {
-  display: block;
-  margin: 0 auto;
-
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
-  box-shadow: 0 0 2px 0 rgba(0, 0, 0, 0.2);
-
-  transform: scaleX(1);
-  content: url("chrome://browser/content/preferences/web-appearance-light.svg");
-}
-
-.web-appearance-choice.dark img {
-  content: url("chrome://browser/content/preferences/web-appearance-dark.svg");
-}
-
-.web-appearance-choice img:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
-.web-appearance-choice-footer {
-  border-top: 1px solid var(--in-content-box-border-color);
-  padding: 4px 8px;
-  overflow-wrap: anywhere;
-  display: flex;
+setting-group[groupid="aiStatesDescription"] {
+  p,
+  ul {
+    margin: 0;
+  }
 }
 
 #translations-manage-install-list {
   height: 220px;
   overflow: auto;
   background-color: var(--background-color-box);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
   resize: vertical;
   margin: 4px 0;
 }
 
 .translations-manage-language:first-child {
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--border-color);
   padding: 8px;
   margin-bottom: 8px;
 }
@@ -1486,9 +1528,18 @@ richlistitem .text-link:hover {
   margin: var(--space-large) 0;
 }
 
+.translations-download-language-error {
+  background-color: var(--background-color-critical);
+}
+
 .hidden-category {
   display: none;
 }
+
+.nav-separator {
+  width: 100%;
+}
+
 /* Platform-specific tweaks & overrides */
 
 @media (-moz-platform: macos) {
@@ -1538,6 +1589,10 @@ richlistitem .text-link:hover {
   margin: 0 0 var(--space-small);
 }
 
+.subsection-heading {
+  margin-bottom: var(--space-small);
+}
+
 .section-header-last {
   margin: 0 0 var(--space-large);
 }
@@ -1546,11 +1601,85 @@ richlistitem .text-link:hover {
   margin: 0;
 }
 
+setting-pane[onsearchpane] {
+  margin-block-start: var(--space-large);
+}
+
 /* Styles for the "sponsors support our mission" message and link on the Home tab */
 .mission-message {
   margin-block-start: var(--space-large);
 
   > a {
     font-size: var(--font-size-small);
+  }
+}
+
+#dohProviderSelect {
+  --select-max-width: 235px;
+}
+
+#browserContainersbox moz-message-bar {
+  margin-block-start: 0;
+}
+
+#etpBannerEl {
+  border-radius: var(--border-radius-large);
+  background-clip: content-box;
+  background-image:
+    url("chrome://browser/content/preferences/etp-advanced-banner.svg"),
+    radial-gradient(151.822% 149.985% at 50% -42.53%, rgba(174, 73, 236, 1), rgba(33, 3, 64, 1));
+  background-repeat: no-repeat;
+  background-position: center;
+  height: 128px;
+}
+
+@media (forced-colors: active) {
+  #etpBannerEl {
+    background-image: url("chrome://browser/content/preferences/etp-advanced-banner.svg");
+  }
+}
+
+#etpLevelWarning {
+  --promo-image-position: top;
+}
+
+#etpResetButtonGroup {
+  display: flex;
+  gap: var(--space-small);
+}
+
+#addresses-list-header,
+#payments-list-header {
+  --box-label-font-weight: var(--font-weight-heading);
+}
+
+#no-addresses-stored,
+#no-payments-stored {
+  color: var(--text-color-deemphasized);
+}
+
+.box-header-bold {
+  --box-label-font-weight: var(--font-weight-heading);
+}
+
+.containers-identity-item {
+  --box-icon-start-fill: var(--identity-icon-color);
+  --box-icon-size: var(--icon-size-xlarge);
+  --box-icon-padding: var(--space-small);
+  --box-icon-border-radius: var(--border-radius-circle);
+  --box-icon-background: color-mix(in srgb, var(--identity-icon-color) 15%, transparent);
+}
+
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-large);
+
+  moz-box-link {
+    margin-block-start: auto;
+  }
+
+  @media (max-width: 45em) {
+    grid-template-columns: 1fr;
   }
 }

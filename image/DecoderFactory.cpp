@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,9 +20,8 @@
 #include "nsICODecoder.h"
 #include "nsIconDecoder.h"
 #include "nsWebPDecoder.h"
-#ifdef MOZ_AV1
-#  include "nsAVIFDecoder.h"
-#endif
+#include "nsAVIFDecoder.h"
+
 #ifdef MOZ_JXL
 #  include "nsJXLDecoder.h"
 #endif
@@ -86,13 +84,9 @@ DecoderType DecoderFactory::GetDecoderType(const char* aMimeType) {
     type = DecoderType::WEBP;
 
     // AVIF
-  }
-#ifdef MOZ_AV1
-  else if (!strcmp(aMimeType, IMAGE_AVIF) &&
-           StaticPrefs::image_avif_enabled()) {
+  } else if (!strcmp(aMimeType, IMAGE_AVIF)) {
     type = DecoderType::AVIF;
   }
-#endif
 #ifdef MOZ_JXL
   else if (!strcmp(aMimeType, IMAGE_JXL) && StaticPrefs::image_jxl_enabled()) {
     type = DecoderType::JXL;
@@ -100,24 +94,6 @@ DecoderType DecoderFactory::GetDecoderType(const char* aMimeType) {
 #endif
 
   return type;
-}
-
-/* static */
-DecoderFlags DecoderFactory::GetDefaultDecoderFlagsForType(DecoderType aType) {
-  auto flags = DefaultDecoderFlags();
-
-#ifdef MOZ_AV1
-  if (aType == DecoderType::AVIF) {
-    if (StaticPrefs::image_avif_sequence_enabled()) {
-      flags |= DecoderFlags::AVIF_SEQUENCES_ENABLED;
-    }
-    if (StaticPrefs::image_avif_sequence_animate_avif_major_branded_images()) {
-      flags |= DecoderFlags::AVIF_ANIMATE_AVIF_MAJOR;
-    }
-  }
-#endif
-
-  return flags;
 }
 
 /* static */
@@ -156,11 +132,9 @@ already_AddRefed<Decoder> DecoderFactory::GetDecoder(DecoderType aType,
     case DecoderType::WEBP:
       decoder = new nsWebPDecoder(aImage);
       break;
-#ifdef MOZ_AV1
     case DecoderType::AVIF:
       decoder = new nsAVIFDecoder(aImage);
       break;
-#endif
 #ifdef MOZ_JXL
     case DecoderType::JXL:
       decoder = new nsJXLDecoder(aImage);
@@ -249,7 +223,11 @@ nsresult DecoderFactory::CreateAnimationDecoder(
   }
 
   MOZ_ASSERT(aType == DecoderType::GIF || aType == DecoderType::PNG ||
-                 aType == DecoderType::WEBP || aType == DecoderType::AVIF,
+                 aType == DecoderType::WEBP || aType == DecoderType::AVIF
+#ifdef MOZ_JXL
+                 || aType == DecoderType::JXL
+#endif
+             ,
              "Calling CreateAnimationDecoder for non-animating DecoderType");
 
   // Create an anonymous decoder. Interaction with the SurfaceCache and the
@@ -304,7 +282,11 @@ already_AddRefed<Decoder> DecoderFactory::CloneAnimationDecoder(
   // rediscover it is animated).
   DecoderType type = aDecoder->GetType();
   MOZ_ASSERT(type == DecoderType::GIF || type == DecoderType::PNG ||
-                 type == DecoderType::WEBP || type == DecoderType::AVIF,
+                 type == DecoderType::WEBP || type == DecoderType::AVIF
+#ifdef MOZ_JXL
+                 || type == DecoderType::JXL
+#endif
+             ,
              "Calling CloneAnimationDecoder for non-animating DecoderType");
 
   RefPtr<Decoder> decoder = GetDecoder(type, nullptr, /* aIsRedecode = */ true);
@@ -371,7 +353,7 @@ already_AddRefed<IDecodingTask> DecoderFactory::CreateMetadataDecoder(
     return nullptr;
   }
 
-  RefPtr<IDecodingTask> task = new MetadataDecodingTask(WrapNotNull(decoder));
+  auto task = MakeRefPtr<MetadataDecodingTask>(WrapNotNull(decoder));
   return task.forget();
 }
 

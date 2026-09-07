@@ -105,7 +105,7 @@ disabled or uninstalled, the prior user-set or default values would be returned 
 
 An extension may watch for changes using the onChange api (e.g. browserSettings.settingName.onChange).
 
-[1] https://searchfox.org/mozilla-central/rev/04d8e7629354bab9e6a285183e763410860c5006/toolkit/components/extensions/ext-toolkit.json#19
+[1] :searchfox:`mozilla-central/rev/04d8e7629354bab9e6a285183e763410860c5006:toolkit/components/extensions/ext-toolkit.json#19`
 
 Notifications:
 ^^^^^^^^^^^^^^

@@ -1,27 +1,26 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "InProcessBrowserChildMessageManager.h"
-#include "nsContentUtils.h"
-#include "nsDocShell.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsComponentManagerUtils.h"
-#include "nsFrameLoader.h"
-#include "nsFrameLoaderOwner.h"
-#include "nsQueryObject.h"
-#include "xpcpublic.h"
+
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/ChromeMessageSender.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/JSActorService.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/SameProcessMessageQueue.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WindowProxyHolder.h"
-#include "mozilla/dom/JSActorService.h"
-#include "mozilla/HoldDropJSObjects.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsDocShell.h"
+#include "nsFrameLoader.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsQueryObject.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -46,16 +45,15 @@ InProcessBrowserChildMessageManager::Create(nsDocShell* aShell,
 }
 
 bool InProcessBrowserChildMessageManager::DoSendBlockingMessage(
-    const nsAString& aMessage, StructuredCloneData& aData,
-    nsTArray<StructuredCloneData>* aRetVal) {
+    const nsAString& aMessage, NotNull<StructuredCloneData*> aData,
+    nsTArray<NotNull<RefPtr<StructuredCloneData>>>* aRetVal) {
   SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
   queue->Flush();
 
   if (mChromeMessageManager) {
     RefPtr<nsFrameMessageManager> mm = mChromeMessageManager;
     RefPtr<nsFrameLoader> fl = GetFrameLoader();
-    mm->ReceiveMessage(mOwner, fl, aMessage, true, &aData, aRetVal,
-                       IgnoreErrors());
+    mm->ReceiveMessage(mOwner, fl, aMessage, true, aData, aRetVal);
   }
   return true;
 }
@@ -77,7 +75,7 @@ class nsAsyncMessageToParent : public nsSameProcessAsyncMessageBase,
 };
 
 nsresult InProcessBrowserChildMessageManager::DoSendAsyncMessage(
-    const nsAString& aMessage, StructuredCloneData& aData) {
+    const nsAString& aMessage, NotNull<StructuredCloneData*> aData) {
   SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
   RefPtr<nsAsyncMessageToParent> ev = new nsAsyncMessageToParent(this);
 
@@ -251,7 +249,7 @@ void InProcessBrowserChildMessageManager::LoadFrameScript(
     const nsAString& aURL, bool aRunInGlobalScope) {
   if (!nsContentUtils::IsSafeToRunScript()) {
     nsContentUtils::AddScriptRunner(
-        new nsAsyncScriptLoad(this, aURL, aRunInGlobalScope));
+        MakeAndAddRef<nsAsyncScriptLoad>(this, aURL, aRunInGlobalScope));
     return;
   }
   bool tmp = mLoadingScript;

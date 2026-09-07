@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -312,11 +311,6 @@ STDMETHODIMP TSFTextStoreBase::RequestLock(DWORD dwLockFlags,
 void TSFTextStoreBase::DispatchEvent(WidgetGUIEvent& aEvent) {
   if (NS_WARN_IF(!mWidget) || NS_WARN_IF(mWidget->Destroyed())) {
     return;
-  }
-  // If the event isn't a query content event, the event may be handled
-  // asynchronously.  So, we should put off to answer from GetTextExt() etc.
-  if (!aEvent.AsQueryContentEvent()) {
-    mDeferNotifyingTSFUntilNextUpdate = true;
   }
   mWidget->DispatchWindowEvent(aEvent);
 }
@@ -1109,7 +1103,7 @@ HRESULT TSFTextStoreBase::RetrieveRequestedAttrsInternal(
       switch (i) {
         case TSFUtils::AttrIndex::InputScope: {
           paAttrVals[count].varValue.vt = VT_UNKNOWN;
-          RefPtr<IUnknown> inputScope = new TSFInputScope(mInputScopes);
+          auto inputScope = MakeRefPtr<TSFInputScope>(mInputScopes);
           paAttrVals[count].varValue.punkVal = inputScope.forget().take();
           break;
         }

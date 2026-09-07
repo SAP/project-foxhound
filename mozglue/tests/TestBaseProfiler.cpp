@@ -1,34 +1,28 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "BaseProfiler.h"
-
 #include "mozilla/Attributes.h"
 #include "mozilla/BaseAndGeckoProfilerDetail.h"
 #include "mozilla/BaseProfileJSONWriter.h"
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/BaseProfilerDetail.h"
 #include "mozilla/FailureLatch.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/ProgressLogger.h"
 #include "mozilla/ProportionValue.h"
 
-#ifdef MOZ_GECKO_PROFILER
-#  include "mozilla/BaseProfilerMarkerTypes.h"
-#  include "mozilla/leb128iterator.h"
-#  include "mozilla/ModuloBuffer.h"
-#  include "mozilla/mozalloc.h"
-#  include "mozilla/PowerOfTwo.h"
-#  include "mozilla/ProfileBufferChunk.h"
-#  include "mozilla/ProfileBufferChunkManagerSingle.h"
-#  include "mozilla/ProfileBufferChunkManagerWithLocalLimit.h"
-#  include "mozilla/ProfileBufferControlledChunkManager.h"
-#  include "mozilla/ProfileChunkedBuffer.h"
-#  include "mozilla/Vector.h"
-#endif  // MOZ_GECKO_PROFILER
+#include "mozilla/BaseProfilerMarkerTypes.h"
+#include "mozilla/leb128iterator.h"
+#include "mozilla/ModuloBuffer.h"
+#include "mozilla/mozalloc.h"
+#include "mozilla/PowerOfTwo.h"
+#include "mozilla/ProfileBufferChunk.h"
+#include "mozilla/ProfileBufferChunkManagerSingle.h"
+#include "mozilla/ProfileBufferChunkManagerWithLocalLimit.h"
+#include "mozilla/ProfileBufferControlledChunkManager.h"
+#include "mozilla/ProfileChunkedBuffer.h"
+#include "mozilla/Vector.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #  include <windows.h>
@@ -1151,12 +1145,10 @@ void TestProgressLogger() {
   printf("TestProgressLogger done\n");
 }
 
-#ifdef MOZ_GECKO_PROFILER
-
-MOZ_MAYBE_UNUSED static void SleepMilli(unsigned aMilliseconds) {
-#  if defined(_MSC_VER) || defined(__MINGW32__)
+[[maybe_unused]] static void SleepMilli(unsigned aMilliseconds) {
+#if defined(_MSC_VER) || defined(__MINGW32__)
   Sleep(aMilliseconds);
-#  else
+#else
   struct timespec ts = {/* .tv_sec */ static_cast<time_t>(aMilliseconds / 1000),
                         /* ts.tv_nsec */ long(aMilliseconds % 1000) * 1000000};
   struct timespec tr = {0, 0};
@@ -1168,10 +1160,10 @@ MOZ_MAYBE_UNUSED static void SleepMilli(unsigned aMilliseconds) {
       exit(1);
     }
   }
-#  endif
+#endif
 }
 
-MOZ_MAYBE_UNUSED static void WaitUntilTimeStampChanges(
+[[maybe_unused]] static void WaitUntilTimeStampChanges(
     const mozilla::TimeStamp& aTimeStampToCompare = mozilla::TimeStamp::Now()) {
   while (aTimeStampToCompare == mozilla::TimeStamp::Now()) {
     SleepMilli(1);
@@ -1443,16 +1435,16 @@ void CheckJSON(mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
 void TestJSONTimeOutput() {
   printf("TestJSONTimeOutput...\n");
 
-#  define TEST(in, out)                                     \
-    do {                                                    \
-      mozilla::baseprofiler::SpliceableJSONWriter writer(   \
-          mozilla::MakeUnique<StringWriteFunc>(),           \
-          FailureLatchInfallibleSource::Singleton());       \
-      writer.Start();                                       \
-      writer.TimeDoubleMsProperty("time_ms", (in));         \
-      writer.End();                                         \
-      CheckJSON(writer, "{\"time_ms\":" out "}", __LINE__); \
-    } while (false);
+#define TEST(in, out)                                     \
+  do {                                                    \
+    mozilla::baseprofiler::SpliceableJSONWriter writer(   \
+        mozilla::MakeUnique<StringWriteFunc>(),           \
+        FailureLatchInfallibleSource::Singleton());       \
+    writer.Start();                                       \
+    writer.TimeDoubleMsProperty("time_ms", (in));         \
+    writer.End();                                         \
+    CheckJSON(writer, "{\"time_ms\":" out "}", __LINE__); \
+  } while (false);
 
   TEST(0, "0");
 
@@ -1499,9 +1491,46 @@ void TestJSONTimeOutput() {
   TEST(-1'000'000, "-1000000");
   TEST(-9'007'199'254.740'990, "-9007199254.74099");
 
-#  undef TEST
+#undef TEST
 
   printf("TestJSONTimeOutput done\n");
+}
+
+void TestStreamPayloadHelperTimeDuration() {
+  printf("TestStreamPayloadHelperTimeDuration...\n");
+
+  using MS = mozilla::MarkerSchema;
+  using mozilla::TimeDuration;
+  using mozilla::detail::StreamPayloadHelper;
+
+#define TEST(fmt, td, out)                                      \
+  do {                                                          \
+    mozilla::baseprofiler::SpliceableJSONWriter writer(         \
+        mozilla::MakeUnique<StringWriteFunc>(),                 \
+        FailureLatchInfallibleSource::Singleton());             \
+    writer.Start();                                             \
+    StreamPayloadHelper<TimeDuration, MS::Format::fmt>::Stream( \
+        writer, mozilla::MakeStringSpan("v"), (td));            \
+    writer.End();                                               \
+    CheckJSON(writer, "{\"v\":" out "}", __LINE__);             \
+  } while (false)
+
+  // Milliseconds / Duration / Seconds all serialize as milliseconds.
+  TEST(Milliseconds, TimeDuration::FromMilliseconds(5000), "5000");
+  TEST(Duration, TimeDuration::FromMilliseconds(5000), "5000");
+  TEST(Seconds, TimeDuration::FromMilliseconds(500), "500");
+
+  // Microseconds: value in μs.
+  TEST(Microseconds, TimeDuration::FromMicroseconds(5), "5");
+  TEST(Microseconds, TimeDuration::FromMilliseconds(2), "2000");
+
+  // Nanoseconds: value in ns.
+  TEST(Nanoseconds, TimeDuration::FromMicroseconds(5), "5000");
+  TEST(Nanoseconds, TimeDuration::FromMilliseconds(1), "1000000");
+
+#undef TEST
+
+  printf("TestStreamPayloadHelperTimeDuration done\n");
 }
 
 template <uint8_t byte, uint8_t... tail>
@@ -1719,10 +1748,10 @@ static void TestChunkManagerSingle() {
   // Reference to base class, to exercize virtual methods.
   ProfileBufferChunkManager& cm = cms;
 
-#  ifdef DEBUG
+#ifdef DEBUG
   const char* chunkManagerRegisterer = "TestChunkManagerSingle";
   cm.RegisteredWith(chunkManagerRegisterer);
-#  endif  // DEBUG
+#endif  // DEBUG
 
   const auto maxTotalSize = cm.MaxTotalSize();
   MOZ_RELEASE_ASSERT(maxTotalSize >= ChunkMinBufferBytes);
@@ -1762,8 +1791,8 @@ static void TestChunkManagerSingle() {
   MOZ_RELEASE_ASSERT(chunk->RangeStart() == 0);
   chunk->SetRangeStart(100);
   MOZ_RELEASE_ASSERT(chunk->RangeStart() == 100);
-  Unused << chunk->ReserveInitialBlockAsTail(1);
-  Unused << chunk->ReserveBlock(2);
+  (void)chunk->ReserveInitialBlockAsTail(1);
+  (void)chunk->ReserveBlock(2);
   MOZ_RELEASE_ASSERT(chunk->ChunkHeader().mOffsetFirstBlock == 1);
   MOZ_RELEASE_ASSERT(chunk->ChunkHeader().mOffsetPastLastBlock == 1 + 2);
 
@@ -1830,8 +1859,8 @@ static void TestChunkManagerSingle() {
   MOZ_RELEASE_ASSERT(chunk->RangeStart() == 0);
   chunk->SetRangeStart(200);
   MOZ_RELEASE_ASSERT(chunk->RangeStart() == 200);
-  Unused << chunk->ReserveInitialBlockAsTail(3);
-  Unused << chunk->ReserveBlock(4);
+  (void)chunk->ReserveInitialBlockAsTail(3);
+  (void)chunk->ReserveBlock(4);
   MOZ_RELEASE_ASSERT(chunk->ChunkHeader().mOffsetFirstBlock == 3);
   MOZ_RELEASE_ASSERT(chunk->ChunkHeader().mOffsetPastLastBlock == 3 + 4);
 
@@ -1867,13 +1896,13 @@ static void TestChunkManagerSingle() {
   MOZ_RELEASE_ASSERT(chunk->RangeStart() == 0, "Got non-recycled chunk");
 
   // Enough testing! Clean-up.
-  Unused << chunk->ReserveInitialBlockAsTail(0);
+  (void)chunk->ReserveInitialBlockAsTail(0);
   chunk->MarkDone();
   cm.ForgetUnreleasedChunks();
 
-#  ifdef DEBUG
+#ifdef DEBUG
   cm.DeregisteredFrom(chunkManagerRegisterer);
-#  endif  // DEBUG
+#endif  // DEBUG
 
   printf("TestChunkManagerSingle done\n");
 }
@@ -1891,10 +1920,10 @@ static void TestChunkManagerWithLocalLimit() {
   // Reference to base class, to exercize virtual methods.
   ProfileBufferChunkManager& cm = cmll;
 
-#  ifdef DEBUG
+#ifdef DEBUG
   const char* chunkManagerRegisterer = "TestChunkManagerWithLocalLimit";
   cm.RegisteredWith(chunkManagerRegisterer);
-#  endif  // DEBUG
+#endif  // DEBUG
 
   MOZ_RELEASE_ASSERT(cm.MaxTotalSize() == MaxTotalBytes,
                      "Max total size should be exactly as given");
@@ -1951,8 +1980,8 @@ static void TestChunkManagerWithLocalLimit() {
     const ProfileBufferIndex index = 1 + i * chunkActualBufferBytes;
     chunk->SetRangeStart(index);
     MOZ_RELEASE_ASSERT(chunk->RangeStart() == index);
-    Unused << chunk->ReserveInitialBlockAsTail(1);
-    Unused << chunk->ReserveBlock(2);
+    (void)chunk->ReserveInitialBlockAsTail(1);
+    (void)chunk->ReserveBlock(2);
     MOZ_RELEASE_ASSERT(chunk->ChunkHeader().mOffsetFirstBlock == 1);
     MOZ_RELEASE_ASSERT(chunk->ChunkHeader().mOffsetPastLastBlock == 1 + 2);
 
@@ -2001,18 +2030,18 @@ static void TestChunkManagerWithLocalLimit() {
   cm.RequestChunk([&](UniquePtr<ProfileBufferChunk> aChunk) {
     ran = true;
     MOZ_RELEASE_ASSERT(!!aChunk, "Chunk request should always work");
-    Unused << aChunk->ReserveInitialBlockAsTail(0);
+    (void)aChunk->ReserveInitialBlockAsTail(0);
     WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
     aChunk->MarkDone();
     UniquePtr<ProfileBufferChunk> anotherChunk = cm.GetChunk();
     MOZ_RELEASE_ASSERT(!!anotherChunk);
-    Unused << anotherChunk->ReserveInitialBlockAsTail(0);
+    (void)anotherChunk->ReserveInitialBlockAsTail(0);
     WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
     anotherChunk->MarkDone();
     cm.RequestChunk([&](UniquePtr<ProfileBufferChunk> aChunk) {
       ranInner = true;
       MOZ_RELEASE_ASSERT(!!aChunk, "Chunk request should always work");
-      Unused << aChunk->ReserveInitialBlockAsTail(0);
+      (void)aChunk->ReserveInitialBlockAsTail(0);
       WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
       aChunk->MarkDone();
     });
@@ -2034,7 +2063,7 @@ static void TestChunkManagerWithLocalLimit() {
       ran, "2nd FulfillChunkRequests should invoke the inner request callback");
 
   // Enough testing! Clean-up.
-  Unused << chunk->ReserveInitialBlockAsTail(0);
+  (void)chunk->ReserveInitialBlockAsTail(0);
   WaitUntilTimeStampChanges();  // Force "done" timestamp to change.
   chunk->MarkDone();
   cm.ForgetUnreleasedChunks();
@@ -2050,7 +2079,7 @@ static void TestChunkManagerWithLocalLimit() {
   for (unsigned i = 0; i < RandomReleaseChunkLoop; ++i) {
     UniquePtr<ProfileBufferChunk> chunk = cm.GetChunk();
     MOZ_RELEASE_ASSERT(chunk);
-    Unused << chunk->ReserveInitialBlockAsTail(0);
+    (void)chunk->ReserveInitialBlockAsTail(0);
     chunk->MarkDone();
     MOZ_RELEASE_ASSERT(!chunk->ChunkHeader().mDoneTimeStamp.IsNull());
     chunksTimeStamps.infallibleEmplaceBack(chunk->ChunkHeader().mDoneTimeStamp);
@@ -2097,14 +2126,14 @@ static void TestChunkManagerWithLocalLimit() {
     MOZ_RELEASE_ASSERT(extantReleasedChunks, "Not enough released chunks");
     MOZ_RELEASE_ASSERT(extantReleasedChunks->ChunkHeader().mDoneTimeStamp ==
                        chunksTimeStamps[i]);
-    Unused << std::exchange(extantReleasedChunks,
-                            extantReleasedChunks->ReleaseNext());
+    (void)std::exchange(extantReleasedChunks,
+                        extantReleasedChunks->ReleaseNext());
   }
   MOZ_RELEASE_ASSERT(!extantReleasedChunks, "Too many released chunks");
 
-#  ifdef DEBUG
+#ifdef DEBUG
   cm.DeregisteredFrom(chunkManagerRegisterer);
-#  endif  // DEBUG
+#endif  // DEBUG
 
   printf("TestChunkManagerWithLocalLimit done\n");
 }
@@ -2209,7 +2238,7 @@ static void TestControlledChunkManagerUpdate() {
     auto chunk = ProfileBufferChunk::Create(aChunkToBeat.BufferBytes() * 2);
     MOZ_RELEASE_ASSERT(!!chunk);
     MOZ_RELEASE_ASSERT(chunk->BufferBytes() >= aChunkToBeat.BufferBytes() * 2);
-    Unused << chunk->ReserveInitialBlockAsTail(0);
+    (void)chunk->ReserveInitialBlockAsTail(0);
     chunk->MarkDone();
     MOZ_RELEASE_ASSERT(chunk->ChunkHeader().mDoneTimeStamp >
                        aChunkToBeat.ChunkHeader().mDoneTimeStamp);
@@ -2221,7 +2250,7 @@ static void TestControlledChunkManagerUpdate() {
   // Create initial update with 2 released chunks and 1 unreleased chunk.
   auto released = ProfileBufferChunk::Create(10);
   ProfileBufferChunk* c1 = released.get();
-  Unused << c1->ReserveInitialBlockAsTail(0);
+  (void)c1->ReserveInitialBlockAsTail(0);
   c1->MarkDone();
 
   released->SetLast(CreateBiggerChunkAfter(*c1));
@@ -2337,7 +2366,7 @@ static void TestControlledChunkManagerUpdate() {
   // released.
   auto recycled = std::exchange(released, released->ReleaseNext());
   recycled->MarkRecycled();
-  Unused << recycled->ReserveInitialBlockAsTail(0);
+  (void)recycled->ReserveInitialBlockAsTail(0);
   recycled->MarkDone();
   released->SetLast(std::move(unreleased));
   unreleased = std::move(recycled);
@@ -2382,11 +2411,11 @@ static void TestControlledChunkManagerWithLocalLimit() {
   // Reference to controlled chunk manager base class.
   ProfileBufferControlledChunkManager& ccm = cmll;
 
-#  ifdef DEBUG
+#ifdef DEBUG
   const char* chunkManagerRegisterer =
       "TestControlledChunkManagerWithLocalLimit";
   cm.RegisteredWith(chunkManagerRegisterer);
-#  endif  // DEBUG
+#endif  // DEBUG
 
   MOZ_RELEASE_ASSERT(cm.MaxTotalSize() == MaxTotalBytes,
                      "Max total size should be exactly as given");
@@ -2464,8 +2493,8 @@ static void TestControlledChunkManagerWithLocalLimit() {
     const ProfileBufferIndex index =
         ProfileBufferIndex(chunkActualBufferBytes) * i + 1;
     chunk->SetRangeStart(index);
-    Unused << chunk->ReserveInitialBlockAsTail(1);
-    Unused << chunk->ReserveBlock(2);
+    (void)chunk->ReserveInitialBlockAsTail(1);
+    (void)chunk->ReserveBlock(2);
 
     // Request a new chunk.
     UniquePtr<ProfileBufferChunk> newChunk;
@@ -2540,7 +2569,7 @@ static void TestControlledChunkManagerWithLocalLimit() {
   }
 
   // Enough testing! Clean-up.
-  Unused << chunk->ReserveInitialBlockAsTail(0);
+  (void)chunk->ReserveInitialBlockAsTail(0);
   chunk->MarkDone();
   cm.ForgetUnreleasedChunks();
   MOZ_RELEASE_ASSERT(
@@ -2559,23 +2588,23 @@ static void TestControlledChunkManagerWithLocalLimit() {
                      "SetUpdateCallback({}) should have triggered an update");
   MOZ_RELEASE_ASSERT(update.IsFinal());
 
-#  ifdef DEBUG
+#ifdef DEBUG
   cm.DeregisteredFrom(chunkManagerRegisterer);
-#  endif  // DEBUG
+#endif  // DEBUG
 
   printf("TestControlledChunkManagerWithLocalLimit done\n");
 }
 
-#  define VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(                         \
-      aProfileChunkedBuffer, aStart, aEnd, aPushed, aCleared, aFailed)        \
-    {                                                                         \
-      ProfileChunkedBuffer::State state = (aProfileChunkedBuffer).GetState(); \
-      MOZ_RELEASE_ASSERT(state.mRangeStart == (aStart));                      \
-      MOZ_RELEASE_ASSERT(state.mRangeEnd == (aEnd));                          \
-      MOZ_RELEASE_ASSERT(state.mPushedBlockCount == (aPushed));               \
-      MOZ_RELEASE_ASSERT(state.mClearedBlockCount == (aCleared));             \
-      MOZ_RELEASE_ASSERT(state.mFailedPutBytes == (aFailed));                 \
-    }
+#define VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(                         \
+    aProfileChunkedBuffer, aStart, aEnd, aPushed, aCleared, aFailed)        \
+  {                                                                         \
+    ProfileChunkedBuffer::State state = (aProfileChunkedBuffer).GetState(); \
+    MOZ_RELEASE_ASSERT(state.mRangeStart == (aStart));                      \
+    MOZ_RELEASE_ASSERT(state.mRangeEnd == (aEnd));                          \
+    MOZ_RELEASE_ASSERT(state.mPushedBlockCount == (aPushed));               \
+    MOZ_RELEASE_ASSERT(state.mClearedBlockCount == (aCleared));             \
+    MOZ_RELEASE_ASSERT(state.mFailedPutBytes == (aFailed));                 \
+  }
 
 static void TestChunkedBuffer() {
   printf("TestChunkedBuffer...\n");
@@ -2943,15 +2972,15 @@ static void TestChunkedBuffer() {
   VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
       cb, startAfterPuts, endAfterPuts, pushedAfterPuts, clearedAfterPuts, 0);
 
-#  ifdef DEBUG
+#ifdef DEBUG
   // cb.Dump();
-#  endif
+#endif
 
   cb.Clear();
 
-#  ifdef DEBUG
+#ifdef DEBUG
   // cb.Dump();
-#  endif
+#endif
 
   ProfileChunkedBuffer::State stateAfterClear = cb.GetState();
   ProfileBufferIndex startAfterClear = stateAfterClear.mRangeStart;
@@ -3002,9 +3031,9 @@ static void TestChunkedBuffer() {
     thread.join();
   }
 
-#  ifdef DEBUG
+#ifdef DEBUG
   // cb.Dump();
-#  endif
+#endif
 
   ProfileChunkedBuffer::State stateAfterMTPuts = cb.GetState();
   ProfileBufferIndex startAfterMTPuts = stateAfterMTPuts.mRangeStart;
@@ -3183,10 +3212,10 @@ static void TestChunkedBufferSingle() {
   VERIFY_PCB_START_END_PUSHED_CLEARED_FAILED(
       cbTarget, 1, 1 + blockBytes * (testBlocks - 1), testBlocks - 1, 0, 0);
 
-#  ifdef DEBUG
+#ifdef DEBUG
   // cbSingle.Dump();
   // cbTarget.Dump();
-#  endif
+#endif
 
   // Because we failed to write a too-big chunk above, the chunk was marked
   // full, so that entries should be consistently rejected from now on.
@@ -3563,7 +3592,7 @@ void TestModuloBuffer() {
 
     // Compare the two outputs.
     for (uint32_t i = 0; i < TRISize; ++i) {
-#  ifdef TEST_MODULOBUFFER_FAILURE_DEBUG
+#ifdef TEST_MODULOBUFFER_FAILURE_DEBUG
       // Only used when debugging failures.
       if (output[i] != outputCheck[i]) {
         printf(
@@ -3572,15 +3601,15 @@ void TestModuloBuffer() {
             unsigned(aReadFrom), unsigned(aWriteTo), unsigned(aBytes),
             unsigned(i), input, output, outputCheck);
       }
-#  endif
+#endif
       MOZ_RELEASE_ASSERT(output[i] == outputCheck[i]);
     }
 
-#  ifdef TEST_MODULOBUFFER_HELPER
+#ifdef TEST_MODULOBUFFER_HELPER
     // Only used when adding more tests.
     printf("*** from=%u to=%u bytes=%u output: %s\n", unsigned(aReadFrom),
            unsigned(aWriteTo), unsigned(aBytes), output);
-#  endif
+#endif
 
     return std::string(reinterpret_cast<const char*>(output));
   };
@@ -3863,6 +3892,7 @@ void TestProfilerDependencies() {
   TestPowerOfTwo();
   TestLEB128();
   TestJSONTimeOutput();
+  TestStreamPayloadHelperTimeDuration();
   TestChunk();
   TestChunkManagerSingle();
   TestChunkManagerWithLocalLimit();
@@ -4080,8 +4110,8 @@ void TestProfiler() {
         ::mozilla::baseprofiler::markers::NoPayload{}));
 
     MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
-        "tracing", mozilla::baseprofiler::category::OTHER, {},
-        mozilla::baseprofiler::markers::Tracing{}, "category"));
+        "stackmarker", mozilla::baseprofiler::category::OTHER, {},
+        mozilla::baseprofiler::markers::StackMarker{}));
 
     MOZ_RELEASE_ASSERT(baseprofiler::AddMarker(
         "text", mozilla::baseprofiler::category::OTHER, {},
@@ -4154,7 +4184,7 @@ void TestProfiler() {
     // Check for some expected marker schema JSON output.
     MOZ_RELEASE_ASSERT(profileSV.find("\"markerSchema\":[") != svnpos);
     MOZ_RELEASE_ASSERT(profileSV.find("\"name\":\"Text\",") != svnpos);
-    MOZ_RELEASE_ASSERT(profileSV.find("\"name\":\"tracing\",") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"name\":\"StackMarker\",") != svnpos);
     MOZ_RELEASE_ASSERT(profileSV.find("\"name\":\"MediaSample\",") != svnpos);
     MOZ_RELEASE_ASSERT(profileSV.find("\"display\":[") != svnpos);
     MOZ_RELEASE_ASSERT(profileSV.find("\"marker-chart\"") != svnpos);
@@ -4512,24 +4542,24 @@ void TestMarkerCategory() {
   mozilla::ProfileChunkedBuffer buffer(
       mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex, chunkManager);
 
-#  define CATEGORY_ENUM_BEGIN_CATEGORY(name, labelAsString, color)
-#  define CATEGORY_ENUM_SUBCATEGORY(supercategory, name, labelAsString)     \
-    static_assert(                                                          \
-        std::is_same_v<decltype(mozilla::baseprofiler::category::name),     \
-                       const mozilla::MarkerCategory>,                      \
-        "baseprofiler::category::<name> should be a const MarkerCategory"); \
-                                                                            \
-    SubTestMarkerCategory(                                                  \
-        mozilla::baseprofiler::category::name,                              \
-        mozilla::baseprofiler::ProfilingCategoryPair::name,                 \
-        mozilla::baseprofiler::ProfilingCategory::supercategory);
-#  define CATEGORY_ENUM_END_CATEGORY
+#define CATEGORY_ENUM_BEGIN_CATEGORY(name, labelAsString, color)
+#define CATEGORY_ENUM_SUBCATEGORY(supercategory, name, labelAsString)     \
+  static_assert(                                                          \
+      std::is_same_v<decltype(mozilla::baseprofiler::category::name),     \
+                     const mozilla::MarkerCategory>,                      \
+      "baseprofiler::category::<name> should be a const MarkerCategory"); \
+                                                                          \
+  SubTestMarkerCategory(                                                  \
+      mozilla::baseprofiler::category::name,                              \
+      mozilla::baseprofiler::ProfilingCategoryPair::name,                 \
+      mozilla::baseprofiler::ProfilingCategory::supercategory);
+#define CATEGORY_ENUM_END_CATEGORY
   MOZ_PROFILING_CATEGORY_LIST(CATEGORY_ENUM_BEGIN_CATEGORY,
                               CATEGORY_ENUM_SUBCATEGORY,
                               CATEGORY_ENUM_END_CATEGORY)
-#  undef CATEGORY_ENUM_BEGIN_CATEGORY
-#  undef CATEGORY_ENUM_SUBCATEGORY
-#  undef CATEGORY_ENUM_END_CATEGORY
+#undef CATEGORY_ENUM_BEGIN_CATEGORY
+#undef CATEGORY_ENUM_SUBCATEGORY
+#undef CATEGORY_ENUM_END_CATEGORY
 
   printf("TestMarkerCategory done\n");
 }
@@ -4606,9 +4636,9 @@ void TestMarkerNoPayload() {
   MOZ_RELEASE_ASSERT(i2);
   MOZ_RELEASE_ASSERT(i2 > i1);
 
-#  ifdef DEBUG
+#ifdef DEBUG
   buffer.Dump();
-#  endif
+#endif
 
   PrintMarkers(buffer);
 
@@ -4633,8 +4663,7 @@ void TestUserMarker() {
       using MS = mozilla::MarkerSchema;
       MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
       schema.SetTooltipLabel("tooltip for test-minimal");
-      schema.AddKeyLabelFormatSearchable("text", "Text", MS::Format::String,
-                                         MS::Searchable::Searchable);
+      schema.AddKeyLabelFormat("text", "Text", MS::Format::String);
       return schema;
     }
   };
@@ -4694,9 +4723,9 @@ void TestUserMarker() {
       mozilla::MarkerInnerWindowId(123), MarkerTypeTestMinimal{},
       std::string("InnerWindowId(123)")));
 
-#  ifdef DEBUG
+#ifdef DEBUG
   buffer.Dump();
-#  endif
+#endif
 
   PrintMarkers(buffer);
 
@@ -4711,9 +4740,9 @@ void TestPredefinedMarkers() {
       mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex, chunkManager);
 
   MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
-      buffer, std::string_view("tracing"),
+      buffer, std::string_view("stackmarker"),
       mozilla::baseprofiler::category::OTHER, {},
-      mozilla::baseprofiler::markers::Tracing{}, "category"));
+      mozilla::baseprofiler::markers::StackMarker{}));
 
   MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
       buffer, std::string_view("text"), mozilla::baseprofiler::category::OTHER,
@@ -4728,9 +4757,9 @@ void TestPredefinedMarkers() {
       {}, mozilla::baseprofiler::markers::VideoFallingBehindMarker{}, 123,
       456));
 
-#  ifdef DEBUG
+#ifdef DEBUG
   buffer.Dump();
-#  endif
+#endif
 
   PrintMarkers(buffer);
 
@@ -4754,76 +4783,16 @@ void TestProfilerMarkers() {
   printf("TestProfilerMarkers done\n");
 }
 
-#else  // MOZ_GECKO_PROFILER
-
-// Testing that macros are still #defined (but do nothing) when
-// MOZ_GECKO_PROFILER is disabled.
-void TestProfiler() {
-  // These don't need to make sense, we just want to know that they're defined
-  // and don't do anything.
-
-#  ifndef AUTO_BASE_PROFILER_INIT
-#    error AUTO_BASE_PROFILER_INIT not #defined
-#  endif  // AUTO_BASE_PROFILER_INIT
-  AUTO_BASE_PROFILER_INIT;
-
-#  ifndef AUTO_BASE_PROFILER_MARKER_TEXT
-#    error AUTO_BASE_PROFILER_MARKER_TEXT not #defined
-#  endif  // AUTO_BASE_PROFILER_MARKER_TEXT
-
-#  ifndef AUTO_BASE_PROFILER_LABEL
-#    error AUTO_BASE_PROFILER_LABEL not #defined
-#  endif  // AUTO_BASE_PROFILER_LABEL
-
-#  ifndef AUTO_BASE_PROFILER_THREAD_SLEEP
-#    error AUTO_BASE_PROFILER_THREAD_SLEEP not #defined
-#  endif  // AUTO_BASE_PROFILER_THREAD_SLEEP
-  AUTO_BASE_PROFILER_THREAD_SLEEP;
-
-#  ifndef BASE_PROFILER_MARKER_UNTYPED
-#    error BASE_PROFILER_MARKER_UNTYPED not #defined
-#  endif  // BASE_PROFILER_MARKER_UNTYPED
-
-#  ifndef BASE_PROFILER_MARKER
-#    error BASE_PROFILER_MARKER not #defined
-#  endif  // BASE_PROFILER_MARKER
-
-#  ifndef BASE_PROFILER_MARKER_TEXT
-#    error BASE_PROFILER_MARKER_TEXT not #defined
-#  endif  // BASE_PROFILER_MARKER_TEXT
-
-  MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_get_backtrace(),
-                     "profiler_get_backtrace should return nullptr");
-  mozilla::ProfileChunkedBuffer buffer(
-      mozilla::ProfileChunkedBuffer::ThreadSafety::WithoutMutex);
-  MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_capture_backtrace_into(
-                         buffer, mozilla::StackCaptureOptions::Full),
-                     "profiler_capture_backtrace_into should return false");
-  MOZ_RELEASE_ASSERT(!mozilla::baseprofiler::profiler_capture_backtrace(),
-                     "profiler_capture_backtrace should return nullptr");
-}
-
-// Testing that macros are still #defined (but do nothing) when
-// MOZ_GECKO_PROFILER is disabled.
-void TestProfilerMarkers() {
-  // These don't need to make sense, we just want to know that they're defined
-  // and don't do anything.
-}
-
-#endif  // MOZ_GECKO_PROFILER else
-
 #if defined(XP_WIN)
 int wmain()
 #else
 int main()
 #endif  // defined(XP_WIN)
 {
-#ifdef MOZ_GECKO_PROFILER
   printf("BaseTestProfiler -- pid: %" PRIu64 ", tid: %" PRIu64 "\n",
          uint64_t(baseprofiler::profiler_current_process_id().ToNumber()),
          uint64_t(baseprofiler::profiler_current_thread_id().ToNumber()));
   // ::SleepMilli(10000);
-#endif  // MOZ_GECKO_PROFILER
 
   TestFailureLatch();
   TestProfilerUtils();
@@ -4831,8 +4800,7 @@ int main()
   TestSharedMutex();
   TestProportionValue();
   TestProgressLogger();
-  // Note that there are two `TestProfiler{,Markers}` functions above, depending
-  // on whether MOZ_GECKO_PROFILER is #defined.
+
   {
     printf("profiler_init()...\n");
     AUTO_BASE_PROFILER_INIT;

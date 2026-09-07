@@ -10,20 +10,23 @@
 
 #include "rtc_tools/video_file_writer.h"
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <cstdio>
 #include <string>
 
 #include "absl/strings/match.h"
+#include "absl/strings/string_view.h"
+#include "api/scoped_refptr.h"
 #include "api/video/video_frame_buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_tools/video_file_reader.h"
 
 namespace webrtc {
 namespace test {
 namespace {
 
-void WriteVideoToFile(const rtc::scoped_refptr<Video>& video,
+void WriteVideoToFile(const scoped_refptr<Video>& video,
                       const std::string& file_name,
                       int fps,
                       bool isY4m) {
@@ -40,26 +43,27 @@ void WriteVideoToFile(const rtc::scoped_refptr<Video>& video,
   }
   for (size_t i = 0; i < video->number_of_frames(); ++i) {
     if (isY4m) {
-      std::string frame = "FRAME\n";
-      fwrite(frame.c_str(), 1, 6, output_file);
+      absl::string_view frame = "FRAME\n";
+      RTC_CHECK_EQ(fwrite(frame.data(), 1, frame.length(), output_file),
+                   frame.length());
     }
-    rtc::scoped_refptr<I420BufferInterface> buffer = video->GetFrame(i);
+    scoped_refptr<I420BufferInterface> buffer = video->GetFrame(i);
     RTC_CHECK(buffer) << "Frame: " << i
                       << "\nWhile trying to create: " << file_name;
     const uint8_t* data_y = buffer->DataY();
     int stride = buffer->StrideY();
     for (int j = 0; j < video->height(); ++j) {
-      fwrite(data_y + j * stride, /*size=*/1, stride, output_file);
+      RTC_CHECK_EQ(fwrite(data_y + j * stride, 1, stride, output_file), stride);
     }
     const uint8_t* data_u = buffer->DataU();
     stride = buffer->StrideU();
     for (int j = 0; j < buffer->ChromaHeight(); ++j) {
-      fwrite(data_u + j * stride, /*size=*/1, stride, output_file);
+      RTC_CHECK_EQ(fwrite(data_u + j * stride, 1, stride, output_file), stride);
     }
     const uint8_t* data_v = buffer->DataV();
     stride = buffer->StrideV();
     for (int j = 0; j < buffer->ChromaHeight(); ++j) {
-      fwrite(data_v + j * stride, /*size=*/1, stride, output_file);
+      RTC_CHECK_EQ(fwrite(data_v + j * stride, 1, stride, output_file), stride);
     }
   }
   if (ferror(output_file) != 0) {
@@ -70,20 +74,20 @@ void WriteVideoToFile(const rtc::scoped_refptr<Video>& video,
 
 }  // Anonymous namespace
 
-void WriteVideoToFile(const rtc::scoped_refptr<Video>& video,
+void WriteVideoToFile(const scoped_refptr<Video>& video,
                       const std::string& file_name,
                       int fps) {
   WriteVideoToFile(video, file_name, fps,
                    /*isY4m=*/absl::EndsWith(file_name, ".y4m"));
 }
 
-void WriteY4mVideoToFile(const rtc::scoped_refptr<Video>& video,
+void WriteY4mVideoToFile(const scoped_refptr<Video>& video,
                          const std::string& file_name,
                          int fps) {
   WriteVideoToFile(video, file_name, fps, /*isY4m=*/true);
 }
 
-void WriteYuvVideoToFile(const rtc::scoped_refptr<Video>& video,
+void WriteYuvVideoToFile(const scoped_refptr<Video>& video,
                          const std::string& file_name,
                          int fps) {
   WriteVideoToFile(video, file_name, fps, /*isY4m=*/false);

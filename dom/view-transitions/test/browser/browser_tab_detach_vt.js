@@ -43,7 +43,7 @@ add_task(async function test_tab_detach_active_vt() {
       )}`,
     },
     async browser => {
-      await ContentTask.spawn(browser, null, async function () {
+      await SpecialPowers.spawn(browser, [], async function () {
         return content.document.startViewTransition().ready;
       });
       let newWin = await detachTab(gBrowser.selectedTab);

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,11 @@
 #ifndef TX_TXSTYLESHEET_H
 #define TX_TXSTYLESHEET_H
 
-#include "txOutputFormat.h"
+#include "nsISupportsImpl.h"
 #include "txExpandedNameMap.h"
 #include "txList.h"
+#include "txOutputFormat.h"
 #include "txXSLTPatterns.h"
-#include "nsISupportsImpl.h"
 
 class txInstruction;
 class txTemplateItem;

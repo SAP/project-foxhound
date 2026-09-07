@@ -108,7 +108,7 @@ function asyncCleanup() {
  * if necessary, otherwise reuses the existing cached connection. This
  * connection shares its cache.
  *
- * @returns the mozIStorageConnection for the file.
+ * @returns {mozIStorageConnection}
  */
 function getOpenedDatabase(connectionFlags = 0) {
   if (!gDBConn) {
@@ -122,7 +122,7 @@ function getOpenedDatabase(connectionFlags = 0) {
  * if necessary, otherwise reuses the existing cached connection. This
  * connection doesn't share its cache.
  *
- * @returns the mozIStorageConnection for the file.
+ * @returns {mozIStorageConnection}
  */
 function getOpenedUnsharedDatabase() {
   if (!gDBConn) {
@@ -136,7 +136,7 @@ function getOpenedUnsharedDatabase() {
  *
  * @param aFile
  *        The nsIFile representing the db file to open.
- * @returns the mozIStorageConnection for the file.
+ * @returns {mozIStorageConnection}
  */
 function getDatabase(aFile) {
   return Services.storage.openDatabase(aFile);
@@ -151,7 +151,7 @@ function createStatement(aSQL) {
  *
  * @param aSQL
  *        The SQL to parse into a statement.
- * @returns a mozIStorageAsyncStatement from aSQL.
+ * @returns {mozIStorageAsyncStatement}
  */
 function createAsyncStatement(aSQL) {
   return getOpenedDatabase().createAsyncStatement(aSQL);

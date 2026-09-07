@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,12 @@
 #include "WorkletModuleLoader.h"
 
 #include "js/CompileOptions.h"  // JS::InstantiateOptions
+#include "js/Modules.h"
 #include "js/experimental/JSStencil.h"  // JS::CompileModuleScriptToStencil, JS::InstantiateModuleStencil
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/loader/ModuleLoadRequest.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/Worklet.h"
 #include "mozilla/dom/WorkletFetchHandler.h"
@@ -34,6 +33,16 @@ NS_IMPL_CYCLE_COLLECTION(WorkletScriptLoader)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WorkletScriptLoader)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(WorkletScriptLoader)
 
+nsresult WorkletScriptLoader::FillCompileOptionsForRequest(
+    JSContext* cx, ScriptLoadRequest* aRequest, JS::CompileOptions* aOptions,
+    JS::MutableHandle<JSScript*> aIntroductionScript) {
+  aOptions->setIntroductionType("Worklet");
+  aOptions->setFileAndLine(aRequest->mURL.get(), 1);
+  aOptions->setIsRunOnce(true);
+  aOptions->setNoScriptRval(true);
+  return NS_OK;
+}
+
 //////////////////////////////////////////////////////////////
 // WorkletModuleLoader
 //////////////////////////////////////////////////////////////
@@ -54,36 +63,28 @@ WorkletModuleLoader::WorkletModuleLoader(WorkletScriptLoader* aScriptLoader,
   MOZ_ASSERT(!NS_IsMainThread());
 }
 
-already_AddRefed<ModuleLoadRequest> WorkletModuleLoader::CreateStaticImport(
-    nsIURI* aURI, JS::ModuleType aModuleType, ModuleLoadRequest* aParent,
-    const mozilla::dom::SRIMetadata& aSriMetadata) {
+already_AddRefed<ModuleLoadRequest> WorkletModuleLoader::CreateRequest(
+    JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+    JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+    bool aIsDynamicImport, ScriptFetchOptions* aOptions,
+    dom::ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
+    const dom::SRIMetadata& aSriMetadata) {
+  JS::ModuleType moduleType = GetModuleRequestType(aCx, aModuleRequest);
+  ModuleLoadRequest* root = nullptr;
+  MOZ_ASSERT(!aHostDefined.isUndefined());
+  root = static_cast<ModuleLoadRequest*>(aHostDefined.toPrivate());
+  MOZ_ASSERT(root);
+  WorkletLoadContext* context = root->mLoadContext->AsWorkletContext();
   const nsMainThreadPtrHandle<WorkletFetchHandler>& handlerRef =
-      aParent->GetWorkletLoadContext()->GetHandlerRef();
+      context->GetHandlerRef();
   RefPtr<WorkletLoadContext> loadContext = new WorkletLoadContext(handlerRef);
+  RefPtr<ModuleLoadRequest> request =
+      new ModuleLoadRequest(moduleType, SRIMetadata(), aBaseURL, loadContext,
+                            ModuleLoadRequest::Kind::StaticImport, this, root);
 
-  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-the-descendants-of-a-module-script
-  // Step 11. Perform the internal module script graph fetching procedure
-  //
-  // https://html.spec.whatwg.org/multipage/webappapis.html#internal-module-script-graph-fetching-procedure
-  // Step 5. Fetch a single module script with referrer is referringScript's
-  // base URL,
-  nsIURI* referrer = aParent->mURI;
-  RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aModuleType, aParent->ReferrerPolicy(), aParent->mFetchOptions,
-      SRIMetadata(), referrer, loadContext,
-      ModuleLoadRequest::Kind::StaticImport, this, aParent->mVisitedSet,
-      aParent->GetRootModule());
-
-  request->mURL = request->mURI->GetSpecOrDefault();
-  request->NoCacheEntryFound();
+  request->mURL = aURI->GetSpecOrDefault();
+  request->NoCacheEntryFound(aReferrerPolicy, aOptions, aURI);
   return request.forget();
-}
-
-already_AddRefed<ModuleLoadRequest> WorkletModuleLoader::CreateDynamicImport(
-    JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-    LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-    JS::Handle<JSObject*> aPromise) {
-  return nullptr;
 }
 
 bool WorkletModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest,
@@ -92,11 +93,11 @@ bool WorkletModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest,
 }
 
 nsresult WorkletModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
-  InsertRequest(aRequest->mURI, aRequest);
+  InsertRequest(aRequest->URI(), aRequest);
 
   RefPtr<StartFetchRunnable> runnable =
       new StartFetchRunnable(aRequest->GetWorkletLoadContext()->GetHandlerRef(),
-                             aRequest->mURI, aRequest->mReferrer);
+                             aRequest->URI(), aRequest->mReferrer);
   NS_DispatchToMainThread(runnable.forget());
   return NS_OK;
 }
@@ -106,20 +107,45 @@ nsresult WorkletModuleLoader::CompileFetchedModule(
     ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModuleScript) {
   switch (aRequest->mModuleType) {
     case JS::ModuleType::Unknown:
+    case JS::ModuleType::Bytes:
       MOZ_CRASH("Unexpected module type");
-    case JS::ModuleType::JavaScript:
-      return CompileJavaScriptModule(aCx, aOptions, aRequest, aModuleScript);
+    case JS::ModuleType::JavaScriptOrWasm:
+      return CompileJavaScriptOrWasmModule(aCx, aOptions, aRequest,
+                                           aModuleScript);
     case JS::ModuleType::JSON:
       return CompileJsonModule(aCx, aOptions, aRequest, aModuleScript);
+    case JS::ModuleType::CSS:
+      MOZ_CRASH("CSS modules are not supported in worklets");
+    case JS::ModuleType::Text:
+      return CreateTextModule(aCx, aOptions, aRequest, aModuleScript);
   }
 
   MOZ_CRASH("Unhandled module type");
 }
 
-nsresult WorkletModuleLoader::CompileJavaScriptModule(
+nsresult WorkletModuleLoader::CompileJavaScriptOrWasmModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleScript) {
-  MOZ_ASSERT(aRequest->IsTextSource());
+#ifdef NIGHTLY_BUILD
+  if (aRequest->HasWasmMimeTypeEssence()) {
+    MOZ_ASSERT(aRequest->IsWasmBytes());
+    JS::Rooted<JSObject*> moduleReq(aCx, aRequest->mModuleRequestObj);
+    JSObject* wasmModule;
+    if (moduleReq && JS::ModuleRequestIsSourcePhase(aCx, moduleReq)) {
+      wasmModule =
+          JS::CompileWasmModuleAsSource(aCx, aOptions, aRequest->WasmBytes());
+    } else {
+      wasmModule = JS::CompileWasmModule(aCx, aOptions, aRequest->WasmBytes());
+    }
+    if (!wasmModule) {
+      return NS_ERROR_FAILURE;
+    }
+
+    aModuleScript.set(wasmModule);
+    return NS_OK;
+  }
+#endif
+  MOZ_ASSERT(aRequest->IsFetchedAsTextSource());
 
   MaybeSourceText maybeSource;
   nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
@@ -146,7 +172,7 @@ nsresult WorkletModuleLoader::CompileJavaScriptModule(
 nsresult WorkletModuleLoader::CompileJsonModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleScript) {
-  MOZ_ASSERT(aRequest->IsTextSource());
+  MOZ_ASSERT(aRequest->IsFetchedAsTextSource());
 
   MaybeSourceText maybeSource;
   nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
@@ -163,6 +189,42 @@ nsresult WorkletModuleLoader::CompileJsonModule(
   }
 
   aModuleScript.set(jsonModule);
+  return NS_OK;
+}
+
+nsresult WorkletModuleLoader::CreateTextModule(
+    JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
+    JS::MutableHandle<JSObject*> aModuleScript) {
+  MOZ_ASSERT(aRequest->IsFetchedAsTextSource());
+
+  MaybeSourceText maybeSource;
+  nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
+                                          aRequest->mLoadContext.get());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  auto compile = [&](auto& source) {
+    using T = decltype(source);
+    static_assert(std::is_same_v<T, JS::SourceText<char16_t>&> ||
+                  std::is_same_v<T, JS::SourceText<Utf8Unit>&>);
+
+    JSString* str;
+    if constexpr (std::is_same_v<T, JS::SourceText<Utf8Unit>&>) {
+      str = JS_NewStringCopyUTF8N(aCx,
+                                  JS::UTF8Chars(source.get(), source.length()));
+    } else {
+      str = JS_NewUCStringCopyN(aCx, source.get(), source.length());
+    }
+
+    JS::Rooted<JS::Value> defaultExport(aCx, JS::StringValue(str));
+    return JS::CreateDefaultExportSyntheticModule(aCx, defaultExport);
+  };
+
+  auto* textModule = maybeSource.mapNonEmpty(compile);
+  if (!textModule) {
+    return NS_ERROR_FAILURE;
+  }
+
+  aModuleScript.set(textModule);
   return NS_OK;
 }
 
@@ -238,16 +300,16 @@ AddModuleThrowErrorRunnable::Run() {
 
   JSContext* cx = jsapi.cx();
   JS::Rooted<JS::Value> error(cx);
-  ErrorResult result;
-  Read(global, cx, &error, result);
-  Unused << NS_WARN_IF(result.Failed());
+  IgnoredErrorResult result;
+  Read(cx, &error, result);
+  (void)NS_WARN_IF(result.Failed());
   mHandlerRef->ExecutionFailed(error);
 
   return NS_OK;
 }
 
 void WorkletModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
-  if (!aRequest->IsTopLevel()) {
+  if (aRequest->IsStaticImport()) {
     return;
   }
 
@@ -264,29 +326,47 @@ void WorkletModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
     return;
   }
 
-  if (!aRequest->InstantiateModuleGraph()) {
-    return;
-  }
-
-  nsresult rv = aRequest->EvaluateModule();
-  if (NS_FAILED(rv)) {
-    return;
-  }
-
+  bool hasParseError = aRequest->mModuleScript->HasParseError();
   bool hasError = aRequest->mModuleScript->HasErrorToRethrow();
-  if (hasError) {
+
+  if (!hasParseError && !hasError) {
+    if (!aRequest->InstantiateModuleGraph()) {
+      return;
+    }
+
+    nsresult rv = aRequest->EvaluateModule();
+    if (NS_FAILED(rv)) {
+      return;
+    }
+
+    hasError = aRequest->mModuleScript->HasErrorToRethrow();
+  }
+
+  if (hasParseError || hasError) {
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(GetGlobalObject()))) {
       return;
     }
 
     JSContext* cx = jsapi.cx();
-    JS::Rooted<JS::Value> error(cx, aRequest->mModuleScript->ErrorToRethrow());
+    JS::Rooted<JS::Value> error(cx);
+    if (hasParseError) {
+      error = aRequest->mModuleScript->ParseError();
+    } else {
+      error = aRequest->mModuleScript->ErrorToRethrow();
+    }
+
     RefPtr<AddModuleThrowErrorRunnable> runnable =
         new AddModuleThrowErrorRunnable(handlerRef);
-    ErrorResult result;
-    runnable->Write(cx, error, result);
-    if (NS_WARN_IF(result.Failed())) {
+
+    bool writeOk = [&] {
+      IgnoredErrorResult result;
+      runnable->Write(cx, error, result);
+      return !result.Failed();
+    }();
+
+    JS_SetPendingException(cx, error);
+    if (!writeOk) {
       return;
     }
 
@@ -306,13 +386,12 @@ nsresult WorkletModuleLoader::GetResolveFailureMessage(
     ResolveError aError, const nsAString& aSpecifier, nsAString& aResult) {
   uint8_t index = static_cast<uint8_t>(aError);
   MOZ_ASSERT(index < static_cast<uint8_t>(ResolveError::Length));
-  MOZ_ASSERT(mLocalizedStrs);
-  MOZ_ASSERT(!mLocalizedStrs->IsEmpty());
-  if (!mLocalizedStrs || NS_WARN_IF(mLocalizedStrs->IsEmpty())) {
+  MOZ_ASSERT(HasSetLocalizedStrings());
+  if (NS_WARN_IF(mLocalizedStrs.IsEmpty())) {
     return NS_ERROR_FAILURE;
   }
 
-  const nsString& localizedStr = mLocalizedStrs->ElementAt(index);
+  const nsString& localizedStr = mLocalizedStrs.ElementAt(index);
 
   AutoTArray<nsString, 1> params;
   params.AppendElement(aSpecifier);

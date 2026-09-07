@@ -57,6 +57,7 @@ class Toolbar extends Component {
 
   /**
    * Handles what we do when key is pressed in search input.
+   *
    * @param event
    * @param conn
    */

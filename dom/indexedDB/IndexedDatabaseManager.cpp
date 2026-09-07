@@ -1,37 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IndexedDatabaseManager.h"
-
-#include "chrome/common/ipc_channel.h"  // for IPC::Channel::kMaximumMessageSize
-#include "nsIScriptError.h"
-#include "nsIScriptGlobalObject.h"
-
-#include "jsapi.h"
-#include "js/Object.h"              // JS::GetClass
-#include "js/PropertyAndElement.h"  // JS_DefineProperty
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/ContentEvents.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/dom/DOMException.h"
-#include "mozilla/dom/ErrorEvent.h"
-#include "mozilla/dom/ErrorEventBinding.h"
-#include "mozilla/dom/WorkerScope.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/dom/quota/Assertions.h"
-#include "mozilla/dom/quota/PromiseUtils.h"
-#include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/intl/LocaleCanonicalizer.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "nsContentUtils.h"
-#include "mozilla/Logging.h"
 
 #include "ActorsChild.h"
 #include "DatabaseFileManager.h"
@@ -42,7 +13,32 @@
 #include "IndexedDBCommon.h"
 #include "ProfilerHelpers.h"
 #include "ScriptErrorHelper.h"
+#include "chrome/common/ipc_channel.h"  // for IPC::Channel::kMaximumMessageSize
+#include "js/Object.h"                  // JS::GetClass
+#include "js/PropertyAndElement.h"      // JS_DefineProperty
+#include "jsapi.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ContentEvents.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/ErrorEvent.h"
+#include "mozilla/dom/ErrorEventBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/quota/Assertions.h"
+#include "mozilla/dom/quota/PromiseUtils.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/intl/LocaleCanonicalizer.h"
+#include "mozilla/intl/LocaleService.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"
+#include "nsIScriptError.h"
+#include "nsIScriptGlobalObject.h"
 
 // Bindings for ResolveConstructors
 #include "mozilla/dom/IDBCursorBinding.h"
@@ -754,15 +750,6 @@ void IndexedDatabaseManager::LoggingModePrefChangedCallback(
   }
 
   bool useProfiler = Preferences::GetBool(kPrefLoggingProfiler);
-#if !defined(MOZ_GECKO_PROFILER)
-  if (useProfiler) {
-    NS_WARNING(
-        "IndexedDB cannot create profiler marks because this build does "
-        "not have profiler extensions enabled!");
-    useProfiler = false;
-  }
-#endif
-
   const bool logDetails = Preferences::GetBool(kPrefLoggingDetails);
 
   if (useProfiler) {
@@ -781,7 +768,7 @@ nsresult IndexedDatabaseManager::EnsureLocale() {
   }
 
   nsAutoCString acceptLang;
-  Preferences::GetLocalizedCString("intl.accept_languages", acceptLang);
+  intl::LocaleService::GetInstance()->GetAcceptLanguages(acceptLang);
 
   // Split values on commas.
   for (const auto& lang :

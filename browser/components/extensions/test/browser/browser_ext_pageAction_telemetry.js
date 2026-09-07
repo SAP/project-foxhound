@@ -1,24 +1,7 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
-
-const HISTOGRAM = "WEBEXT_PAGEACTION_POPUP_OPEN_MS";
-const HISTOGRAM_KEYED = "WEBEXT_PAGEACTION_POPUP_OPEN_MS_BY_ADDONID";
 
 const EXTENSION_ID1 = "@test-extension1";
 const EXTENSION_ID2 = "@test-extension2";
-
-function snapshotCountsSum(snapshot) {
-  return Object.values(snapshot.values).reduce((a, b) => a + b, 0);
-}
-
-function histogramCountsSum(histogram) {
-  return snapshotCountsSum(histogram.snapshot());
-}
-
-function gleanMetricSamplesCount(gleanMetric) {
-  return snapshotCountsSum(gleanMetric.testGetValue() ?? { values: {} });
-}
 
 add_task(async function testPageActionTelemetry() {
   let extensionOptions = {
@@ -61,28 +44,17 @@ add_task(async function testPageActionTelemetry() {
     },
   });
 
-  let histogram = Services.telemetry.getHistogramById(HISTOGRAM);
-  let histogramKeyed =
-    Services.telemetry.getKeyedHistogramById(HISTOGRAM_KEYED);
-
-  histogram.clear();
-  histogramKeyed.clear();
   Services.fog.testResetFOG();
 
-  is(
-    histogramCountsSum(histogram),
-    0,
-    `No data recorded for histogram: ${HISTOGRAM}.`
-  );
-  is(
-    Object.keys(histogramKeyed).length,
-    0,
-    `No data recorded for histogram: ${HISTOGRAM_KEYED}.`
-  );
   Assert.deepEqual(
     Glean.extensionsTiming.pageActionPopupOpen.testGetValue(),
     undefined,
     "No data recorded for glean metric extensionsTiming.pageActionPopupOpen"
+  );
+  Assert.deepEqual(
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue(),
+    {},
+    "No data recorded for glean metric extensionsTiming.pageActionPopupOpenByAddonid"
   );
 
   await extension1.startup();
@@ -90,135 +62,135 @@ add_task(async function testPageActionTelemetry() {
   await extension2.startup();
   await extension2.awaitMessage("action-shown");
 
-  is(
-    histogramCountsSum(histogram),
-    0,
-    `No data recorded for histogram after PageAction shown: ${HISTOGRAM}.`
-  );
-  is(
-    Object.keys(histogramKeyed).length,
-    0,
-    `No data recorded for histogram after PageAction shown: ${HISTOGRAM_KEYED}.`
-  );
-  is(
-    gleanMetricSamplesCount(Glean.extensionsTiming.pageActionPopupOpen),
-    0,
+  // No data is expected after the two test extension has been started
+  // but none of the pageAction popup was opened yet.
+  Assert.deepEqual(
+    Glean.extensionsTiming.pageActionPopupOpen.testGetValue(),
+    undefined,
     "No data recorded for glean metric extensionsTiming.pageActionPopupOpen"
   );
+  Assert.deepEqual(
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue(),
+    {},
+    "No data recorded for glean metric extensionsTiming.pageActionPopupOpenByAddonid"
+  );
+
+  info("Open extension1 pageAction popup");
 
   clickPageAction(extension1, window);
   await awaitExtensionPanel(extension1);
 
-  is(
-    histogramCountsSum(histogram),
+  Assert.deepEqual(
+    Glean.extensionsTiming.pageActionPopupOpen.testGetValue()?.count,
     1,
-    `Data recorded for first extension for histogram: ${HISTOGRAM}.`
-  );
-  is(
-    gleanMetricSamplesCount(Glean.extensionsTiming.pageActionPopupOpen),
-    1,
-    `Data recorded for first extension on Glean metric extensionsTiming.pageActionPopupOpen`
+    "Got the expected number of samples in pageActionPopupOpen Glean metric"
   );
 
-  let keyedSnapshot = histogramKeyed.snapshot();
-  Assert.deepEqual(
-    Object.keys(keyedSnapshot),
-    [EXTENSION_ID1],
-    `Data recorded for first extension histogram: ${HISTOGRAM_KEYED}.`
+  const allAddonsMetricSum =
+    Glean.extensionsTiming.pageActionPopupOpen.testGetValue()?.sum;
+  const ext1MetricSum =
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum;
+  Assert.greater(
+    allAddonsMetricSum,
+    0,
+    "Expect pageActionPopupOpen metric data to be found"
   );
-  is(
-    snapshotCountsSum(keyedSnapshot[EXTENSION_ID1]),
-    1,
-    `Data recorded for first extension for histogram: ${HISTOGRAM_KEYED}.`
+  Assert.greater(
+    ext1MetricSum,
+    0,
+    "Expect pageActionPopupOpenByAddonid metric data for extension1 to be found"
   );
 
   await closePageAction(extension1, window);
 
+  info("Open extension2 pageAction popup");
+
   clickPageAction(extension2, window);
   await awaitExtensionPanel(extension2);
 
-  is(
-    histogramCountsSum(histogram),
-    2,
-    `Data recorded for second extension for histogram: ${HISTOGRAM}.`
-  );
-  is(
-    gleanMetricSamplesCount(Glean.extensionsTiming.pageActionPopupOpen),
-    2,
-    `Data recorded for second extension on Glean metric extensionsTiming.pageActionPopupOpen`
-  );
-
-  keyedSnapshot = histogramKeyed.snapshot();
   Assert.deepEqual(
-    Object.keys(keyedSnapshot).sort(),
-    [EXTENSION_ID1, EXTENSION_ID2],
-    `Data recorded for second extension histogram: ${HISTOGRAM_KEYED}.`
+    Glean.extensionsTiming.pageActionPopupOpen.testGetValue()?.count,
+    2,
+    "Got the expected number of samples in pageActionPopupOpen Glean metric"
   );
-  is(
-    snapshotCountsSum(keyedSnapshot[EXTENSION_ID2]),
-    1,
-    `Data recorded for second extension for histogram: ${HISTOGRAM_KEYED}.`
+  Assert.greater(
+    Glean.extensionsTiming.pageActionPopupOpen.testGetValue()?.sum,
+    allAddonsMetricSum,
+    "Expect pageActionPopupOpen metric data to increase after extension2 action panel open"
   );
-  is(
-    snapshotCountsSum(keyedSnapshot[EXTENSION_ID1]),
-    1,
-    `Data recorded for first extension should not change for histogram: ${HISTOGRAM_KEYED}.`
+  const ext2MetricSum =
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue()?.[
+      extension2.id
+    ]?.sum;
+  Assert.greater(
+    ext2MetricSum,
+    0,
+    "Expect pageActionPopupOpenByAddonid metric data for extension2 to be found"
+  );
+  Assert.equal(
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum,
+    ext1MetricSum,
+    "Expect pageActionPopupOpenByAddonid metric data for extension1 to not change"
   );
 
   await closePageAction(extension2, window);
+
+  info("Open extension2 pageAction popup again");
 
   clickPageAction(extension2, window);
   await awaitExtensionPanel(extension2);
 
-  is(
-    histogramCountsSum(histogram),
+  Assert.deepEqual(
+    Glean.extensionsTiming.pageActionPopupOpen.testGetValue()?.count,
     3,
-    `Data recorded for second opening of popup for histogram: ${HISTOGRAM}.`
+    "Got the expected number of samples in pageActionPopupOpen Glean metric"
   );
-  is(
-    gleanMetricSamplesCount(Glean.extensionsTiming.pageActionPopupOpen),
-    3,
-    `Data recorded for second opening popup on Glean metric extensionsTiming.pageActionPopupOpen`
+  const ext2MetricSumMeasure2 =
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue()?.[
+      extension2.id
+    ]?.sum;
+  Assert.greater(
+    ext2MetricSumMeasure2,
+    ext2MetricSum,
+    "Expect pageActionPopupOpenByAddonid metric data for extension2 to increase"
   );
-
-  keyedSnapshot = histogramKeyed.snapshot();
-  is(
-    snapshotCountsSum(keyedSnapshot[EXTENSION_ID2]),
-    2,
-    `Data recorded for second opening of popup for histogram: ${HISTOGRAM_KEYED}.`
-  );
-  is(
-    snapshotCountsSum(keyedSnapshot[EXTENSION_ID1]),
-    1,
-    `Data recorded for first extension should not change for histogram: ${HISTOGRAM_KEYED}.`
+  Assert.equal(
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum,
+    ext1MetricSum,
+    "Expect pageActionPopupOpenByAddonid metric data for extension1 to not change"
   );
 
   await closePageAction(extension2, window);
+
+  info("Open extension1 pageAction popup again");
 
   clickPageAction(extension1, window);
   await awaitExtensionPanel(extension1);
 
-  is(
-    histogramCountsSum(histogram),
+  Assert.deepEqual(
+    Glean.extensionsTiming.pageActionPopupOpen.testGetValue()?.count,
     4,
-    `Data recorded for third opening of popup for histogram: ${HISTOGRAM}.`
+    "Got the expected number of samples in pageActionPopupOpen Glean metric"
   );
-  is(
-    gleanMetricSamplesCount(Glean.extensionsTiming.pageActionPopupOpen),
-    4,
-    `Data recorded for third opening popup on Glean metric extensionsTiming.pageActionPopupOpen`
+  Assert.greater(
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue()?.[
+      extension1.id
+    ]?.sum,
+    ext1MetricSum,
+    "Expect pageActionPopupOpenByAddonid metric data for extension1 to increase"
   );
-
-  keyedSnapshot = histogramKeyed.snapshot();
-  is(
-    snapshotCountsSum(keyedSnapshot[EXTENSION_ID1]),
-    2,
-    `Data recorded for second opening of popup for histogram: ${HISTOGRAM_KEYED}.`
-  );
-  is(
-    snapshotCountsSum(keyedSnapshot[EXTENSION_ID1]),
-    2,
-    `Data recorded for second extension should not change for histogram: ${HISTOGRAM_KEYED}.`
+  Assert.equal(
+    Glean.extensionsTiming.pageActionPopupOpenByAddonid.testGetValue()?.[
+      extension2.id
+    ]?.sum,
+    ext2MetricSumMeasure2,
+    "Expect pageActionPopupOpenByAddonid metric data for extension2 to not change"
   );
 
   await closePageAction(extension1, window);

@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -20,7 +19,7 @@ export class UserCharacteristicsChild extends JSWindowActorChild {
   /**
    * A placeholder for the collected data.
    *
-   * @typedef {Object} userDataDetails
+   * @typedef {object} userDataDetails
    *   @property {string} debug - The debug messages.
    *   @property {Array<string>} gamepads - The user characteristics data for gamepads.
    *   @property {Map<string, number | string | boolean>} output - The user characteristics data.

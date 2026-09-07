@@ -15,11 +15,12 @@
 
 #include <optional>
 #include <set>
+#include <span>
 
-#include "api/array_view.h"
 #include "api/sequence_checker.h"
 #include "modules/include/module_common_types.h"
 #include "rtc_base/system/no_unique_address.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -28,7 +29,7 @@ class LossNotificationController {
   struct FrameDetails {
     bool is_keyframe;
     int64_t frame_id;
-    rtc::ArrayView<const int64_t> frame_dependencies;
+    std::span<const int64_t> frame_dependencies;
   };
 
   LossNotificationController(KeyFrameRequestSender* key_frame_request_sender,
@@ -44,13 +45,13 @@ class LossNotificationController {
   void OnAssembledFrame(uint16_t first_seq_num,
                         int64_t frame_id,
                         bool discardable,
-                        rtc::ArrayView<const int64_t> frame_dependencies);
+                        std::span<const int64_t> frame_dependencies);
 
  private:
   void DiscardOldInformation();
 
   bool AllDependenciesDecodable(
-      rtc::ArrayView<const int64_t> frame_dependencies) const;
+      std::span<const int64_t> frame_dependencies) const;
 
   // When the loss of a packet or the non-decodability of a frame is detected,
   // produces a key frame request or a loss notification.

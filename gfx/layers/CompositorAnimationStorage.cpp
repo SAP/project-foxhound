@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +28,8 @@ struct CompositorAnimationMarker {
     return MakeStringSpan("CompositorAnimation");
   }
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   uint64_t aId, nsCSSPropertyID aProperty) {
+                                   uint64_t aId,
+                                   NonCustomCSSPropertyId aProperty) {
     aWriter.IntProperty("pid", int64_t(aId >> 32));
     aWriter.IntProperty("id", int64_t(aId & 0xffffffff));
     aWriter.StringProperty("property", nsCSSProps::GetStringValue(aProperty));
@@ -42,7 +41,7 @@ struct CompositorAnimationMarker {
     schema.AddKeyLabelFormat("id", "Animation Id", MS::Format::Integer);
     schema.AddKeyLabelFormat("property", "Animated Property",
                              MS::Format::String);
-    schema.SetTableLabel("{marker.name} - {marker.data.property}");
+    schema.SetTableLabel("{marker.data.property}");
     return schema;
   }
 };
@@ -55,16 +54,16 @@ namespace layers {
 using gfx::Matrix4x4;
 
 already_AddRefed<StyleAnimationValue> AnimatedValue::AsAnimationValue(
-    nsCSSPropertyID aProperty) const {
+    NonCustomCSSPropertyId aProperty) const {
   RefPtr<StyleAnimationValue> result;
   mValue.match(
       [&](const AnimationTransform& aTransform) {
         // Linear search. It's likely that the length of the array is one in
         // most common case, so it shouldn't have much performance impact.
         for (const auto& value : Transform().mAnimationValues) {
-          AnimatedPropertyID property(eCSSProperty_UNKNOWN);
+          CSSPropertyId property(eCSSProperty_UNKNOWN);
           Servo_AnimationValue_GetPropertyId(value, &property);
-          if (property.mID == aProperty) {
+          if (property.mId == aProperty) {
             result = value;
             break;
           }
@@ -231,7 +230,7 @@ static ParentLayerRect GetClipRectForPartialPrerender(
 }
 
 void CompositorAnimationStorage::StoreAnimatedValue(
-    nsCSSPropertyID aProperty, uint64_t aId,
+    NonCustomCSSPropertyId aProperty, uint64_t aId,
     const std::unique_ptr<AnimationStorageData>& aAnimationStorageData,
     SampledAnimationArray&& aAnimationValues,
     const MutexAutoLock& aProofOfMapLock, const RefPtr<APZSampler>& aApzSampler,
@@ -336,7 +335,7 @@ bool CompositorAnimationStorage::SampleAnimations(
         continue;
       }
 
-      const nsCSSPropertyID lastPropertyAnimationGroupProperty =
+      const NonCustomCSSPropertyId lastPropertyAnimationGroupProperty =
           animationStorageData->mAnimation.LastElement().mProperty;
       isAnimating = true;
       SampledAnimationArray animationValues;

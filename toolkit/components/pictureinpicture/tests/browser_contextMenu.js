@@ -9,13 +9,13 @@
  *
  * @param {Element} browser The <xul:browser> hosting the <video>
  *
- * @param {String} videoID The ID of the video to open the context
+ * @param {string} videoID The ID of the video to open the context
  * menu with.
  *
- * @param {Object} modifiers The properties to pass to synthesizeMouseAtCenter.
+ * @param {object} modifiers The properties to pass to synthesizeMouseAtCenter.
  *
- * @returns Promise
- * @resolves With the context menu DOM node once opened.
+ * @returns {Promise}
+ *   Resolves with the context menu DOM node once opened.
  */
 async function openContextMenu(
   browser,
@@ -42,8 +42,7 @@ async function openContextMenu(
  * @param {Element} contextMenu The content area context menu opened with
  * openContextMenu.
  *
- * @returns Promise
- * @resolves With undefined
+ * @returns {Promise<void>}
  */
 async function closeContextMenu(contextMenu) {
   let popupHiddenPromise = BrowserTestUtils.waitForEvent(
@@ -84,9 +83,8 @@ async function runTaskOpenClosePiPWithContextMenu(isCtrlClick = false) {
           !menuItem.hidden,
           "Should show Picture-in-Picture menu item."
         );
-        Assert.equal(
-          menuItem.getAttribute("checked"),
-          "false",
+        Assert.ok(
+          !menuItem.hasAttribute("checked"),
           "Picture-in-Picture should be unchecked."
         );
 
@@ -156,9 +154,8 @@ add_task(async () => {
           !menuItem.hidden,
           "Should show Picture-in-Picture menu item."
         );
-        Assert.equal(
-          menuItem.getAttribute("checked"),
-          "false",
+        Assert.ok(
+          !menuItem.hasAttribute("checked"),
           "Picture-in-Picture should be unchecked."
         );
         await closeContextMenu(menu);
@@ -178,9 +175,8 @@ add_task(async () => {
           !menuItem.hidden,
           "Should show Picture-in-Picture menu item."
         );
-        Assert.equal(
-          menuItem.getAttribute("checked"),
-          "true",
+        Assert.ok(
+          menuItem.hasAttribute("checked"),
           "Picture-in-Picture should be checked."
         );
         await closeContextMenu(menu);
@@ -203,9 +199,8 @@ add_task(async () => {
           !menuItem.hidden,
           "Should show Picture-in-Picture menu item."
         );
-        Assert.equal(
-          menuItem.getAttribute("checked"),
-          "false",
+        Assert.ok(
+          !menuItem.hasAttribute("checked"),
           "Picture-in-Picture should be unchecked."
         );
         await closeContextMenu(menu);
@@ -231,9 +226,8 @@ add_task(async () => {
           !menuItem.hidden,
           "Should be showing Picture-in-Picture menu item."
         );
-        Assert.equal(
-          menuItem.getAttribute("checked"),
-          "false",
+        Assert.ok(
+          !menuItem.hasAttribute("checked"),
           "Picture-in-Picture should be unchecked."
         );
         await closeContextMenu(menu);
@@ -253,9 +247,8 @@ add_task(async () => {
           !menuItem.hidden,
           "Should show Picture-in-Picture menu item."
         );
-        Assert.equal(
-          menuItem.getAttribute("checked"),
-          "true",
+        Assert.ok(
+          menuItem.hasAttribute("checked"),
           "Picture-in-Picture should be checked."
         );
         await closeContextMenu(menu);

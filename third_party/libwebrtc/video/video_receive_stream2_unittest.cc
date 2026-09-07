@@ -11,13 +11,12 @@
 #include "video/video_receive_stream2.h"
 
 #include <algorithm>
-#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <limits>
 #include <memory>
 #include <optional>
-#include <queue>
-#include <tuple>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -25,26 +24,38 @@
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/metronome/test/fake_metronome.h"
+#include "api/rtp_packet_info.h"
+#include "api/rtp_packet_infos.h"
+#include "api/scoped_refptr.h"
 #include "api/test/mock_video_decoder.h"
 #include "api/test/mock_video_decoder_factory.h"
 #include "api/test/time_controller.h"
+#include "api/transport/rtp/rtp_source.h"
 #include "api/units/frequency.h"
 #include "api/units/time_delta.h"
-#include "api/video/encoded_image.h"
+#include "api/units/timestamp.h"
+#include "api/video/corruption_detection/frame_instrumentation_data.h"
+#include "api/video/i420_buffer.h"
 #include "api/video/recordable_encoded_frame.h"
 #include "api/video/test/video_frame_matchers.h"
+#include "api/video/video_content_type.h"
 #include "api/video/video_frame.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_rotation.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_timing.h"
 #include "api/video_codecs/sdp_video_format.h"
-#include "api/video_codecs/video_decoder.h"
 #include "call/rtp_stream_receiver_controller.h"
 #include "call/video_receive_stream.h"
+#include "common_video/include/corruption_score_calculator.h"
 #include "common_video/test/utilities.h"
 #include "media/engine/fake_webrtc_call.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "modules/video_coding/encoded_frame.h"
+#include "modules/video_coding/nack_requester.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/clock.h"
+#include "test/create_test_field_trials.h"
 #include "test/fake_decoder.h"
 #include "test/fake_encoded_frame.h"
 #include "test/gmock.h"
@@ -54,6 +65,7 @@
 #include "test/time_controller/simulated_time_controller.h"
 #include "test/video_decoder_proxy_factory.h"
 #include "video/call_stats2.h"
+#include "video/decode_synchronizer.h"
 
 namespace webrtc {
 
@@ -101,9 +113,8 @@ constexpr uint8_t kH264PayloadType = 99;
 constexpr uint8_t kH265PayloadType = 100;
 constexpr uint8_t kAv1PayloadType = 101;
 constexpr uint32_t kRemoteSsrc = 1111;
-constexpr uint32_t kLocalSsrc = 2222;
 
-class FakeVideoRenderer : public rtc::VideoSinkInterface<VideoFrame> {
+class FakeVideoRenderer : public VideoSinkInterface<VideoFrame> {
  public:
   explicit FakeVideoRenderer(TimeController* time_controller)
       : time_controller_(time_controller) {}
@@ -207,7 +218,9 @@ class VideoReceiveStream2Test : public ::testing::TestWithParam<bool> {
         .WillByDefault(Invoke(&fake_decoder_, &test::FakeDecoder::Release));
     ON_CALL(mock_transport_, SendRtcp)
         .WillByDefault(
-            Invoke(&rtcp_packet_parser_, &test::RtcpPacketParser::Parse));
+            [this](std::span<const uint8_t> packet, ::testing::Unused) {
+              return rtcp_packet_parser_.Parse(packet);
+            });
   }
 
   ~VideoReceiveStream2Test() override {
@@ -220,7 +233,6 @@ class VideoReceiveStream2Test : public ::testing::TestWithParam<bool> {
 
   void SetUp() override {
     config_.rtp.remote_ssrc = kRemoteSsrc;
-    config_.rtp.local_ssrc = kLocalSsrc;
     config_.renderer = &fake_renderer_;
     VideoReceiveStreamInterface::Decoder h264_decoder;
     h264_decoder.payload_type = kH264PayloadType;
@@ -247,12 +259,10 @@ class VideoReceiveStream2Test : public ::testing::TestWithParam<bool> {
       video_receive_stream_ = nullptr;
     }
     timing_ = new VCMTiming(&env_.clock(), env_.field_trials());
-    video_receive_stream_ =
-        std::make_unique<webrtc::internal::VideoReceiveStream2>(
-            env_, &fake_call_, kDefaultNumCpuCores, &packet_router_,
-            config_.Copy(), &call_stats_, absl::WrapUnique(timing_),
-            &nack_periodic_processor_,
-            UseMetronome() ? &decode_sync_ : nullptr);
+    video_receive_stream_ = std::make_unique<internal::VideoReceiveStream2>(
+        env_, &fake_call_, kDefaultNumCpuCores, &packet_router_, config_.Copy(),
+        &call_stats_, absl::WrapUnique(timing_), &nack_periodic_processor_,
+        UseMetronome() ? &decode_sync_ : nullptr);
     video_receive_stream_->RegisterWithTransport(
         &rtp_stream_receiver_controller_);
     if (state)
@@ -273,7 +283,7 @@ class VideoReceiveStream2Test : public ::testing::TestWithParam<bool> {
   test::RtcpPacketParser rtcp_packet_parser_;
   PacketRouter packet_router_;
   RtpStreamReceiverController rtp_stream_receiver_controller_;
-  std::unique_ptr<webrtc::internal::VideoReceiveStream2> video_receive_stream_;
+  std::unique_ptr<internal::VideoReceiveStream2> video_receive_stream_;
   VCMTiming* timing_;
   test::FakeMetronome fake_metronome_;
   DecodeSynchronizer decode_sync_;
@@ -286,8 +296,7 @@ class VideoReceiveStream2Test : public ::testing::TestWithParam<bool> {
 TEST_P(VideoReceiveStream2Test, CreateFrameFromH264FmtpSpropAndIdr) {
   constexpr uint8_t idr_nalu[] = {0x05, 0xFF, 0xFF, 0xFF};
   RtpPacketToSend rtppacket(nullptr);
-  uint8_t* payload = rtppacket.AllocatePayload(sizeof(idr_nalu));
-  memcpy(payload, idr_nalu, sizeof(idr_nalu));
+  rtppacket.SetPayload(idr_nalu);
   rtppacket.SetMarker(true);
   rtppacket.SetSsrc(kRemoteSsrc);
   rtppacket.SetPayloadType(kH264PayloadType);
@@ -320,7 +329,7 @@ TEST_P(VideoReceiveStream2Test, PlayoutDelay) {
   EXPECT_EQ(kPlayoutDelay.max(), timings.max_playout_delay);
 
   // Check that the biggest minimum delay is chosen.
-  video_receive_stream_->SetMinimumPlayoutDelay(400);
+  video_receive_stream_->SetMinimumPlayoutDelay(TimeDelta::Millis(400));
   timings = timing_->GetTimings();
   EXPECT_EQ(400, timings.min_playout_delay.ms());
 
@@ -337,7 +346,7 @@ TEST_P(VideoReceiveStream2Test, PlayoutDelay) {
   timings = timing_->GetTimings();
   EXPECT_EQ(400, timings.min_playout_delay.ms());
 
-  video_receive_stream_->SetMinimumPlayoutDelay(0);
+  video_receive_stream_->SetMinimumPlayoutDelay(TimeDelta::Zero());
   timings = timing_->GetTimings();
   EXPECT_EQ(123, timings.min_playout_delay.ms());
 }
@@ -353,7 +362,7 @@ TEST_P(VideoReceiveStream2Test, MinPlayoutDelayIsLimitedByMaxPlayoutDelay) {
   EXPECT_EQ(timing_->GetTimings().min_playout_delay, kPlayoutDelay.min());
 
   // Check that the biggest minimum delay is limited by the max playout delay.
-  video_receive_stream_->SetMinimumPlayoutDelay(400);
+  video_receive_stream_->SetMinimumPlayoutDelay(TimeDelta::Millis(400));
   EXPECT_EQ(timing_->GetTimings().min_playout_delay, kPlayoutDelay.max());
 }
 
@@ -452,8 +461,7 @@ TEST_P(VideoReceiveStream2Test, MaxCompositionDelaySetFromMaxPlayoutDelay) {
 TEST_P(VideoReceiveStream2Test, LazyDecoderCreation) {
   constexpr uint8_t idr_nalu[] = {0x05, 0xFF, 0xFF, 0xFF};
   RtpPacketToSend rtppacket(nullptr);
-  uint8_t* payload = rtppacket.AllocatePayload(sizeof(idr_nalu));
-  memcpy(payload, idr_nalu, sizeof(idr_nalu));
+  rtppacket.SetPayload(idr_nalu);
   rtppacket.SetMarker(true);
   rtppacket.SetSsrc(kRemoteSsrc);
   rtppacket.SetPayloadType(kH264PayloadType);
@@ -486,8 +494,7 @@ TEST_P(VideoReceiveStream2Test, LazyDecoderCreation) {
 TEST_P(VideoReceiveStream2Test, LazyDecoderCreationCodecSwitch) {
   constexpr uint8_t idr_nalu[] = {0x05, 0xFF, 0xFF, 0xFF};
   RtpPacketToSend rtppacket(nullptr);
-  uint8_t* payload = rtppacket.AllocatePayload(sizeof(idr_nalu));
-  memcpy(payload, idr_nalu, sizeof(idr_nalu));
+  rtppacket.SetPayload(idr_nalu);
   rtppacket.SetMarker(true);
   rtppacket.SetSsrc(kRemoteSsrc);
   rtppacket.SetPayloadType(kH264PayloadType);
@@ -520,8 +527,7 @@ TEST_P(VideoReceiveStream2Test, LazyDecoderCreationCodecSwitch) {
   // Switch to AV1.
   const uint8_t av1_key_obu[] = {0x18, 0x48, 0x01, 0xAA};  // \  OBU
   RtpPacketToSend av1_rtppacket(nullptr);
-  uint8_t* av1_payload = av1_rtppacket.AllocatePayload(sizeof(av1_key_obu));
-  memcpy(av1_payload, av1_key_obu, sizeof(av1_key_obu));
+  av1_rtppacket.SetPayload(av1_key_obu);
   av1_rtppacket.SetMarker(true);
   av1_rtppacket.SetSsrc(kRemoteSsrc);
   av1_rtppacket.SetPayloadType(kAv1PayloadType);
@@ -568,6 +574,117 @@ TEST_P(VideoReceiveStream2Test, LazyDecoderCreationCodecSwitch) {
   time_controller_.AdvanceTime(TimeDelta::Millis(100));
 }
 
+TEST_P(VideoReceiveStream2Test, CalculateCorruptionScoreSync) {
+  video_receive_stream_->Start();
+
+  constexpr uint32_t kRtpTimestamp = 12345;
+  auto test_frame = test::FakeFrameBuilder()
+                        .Id(0)
+                        .PayloadType(kH264PayloadType)
+                        .Time(kRtpTimestamp)
+                        .AsLast()
+                        .Build();
+
+  FrameInstrumentationData data;
+  data.SetSequenceIndex(1);
+  data.SetStdDev(1.0);
+  data.SetLumaErrorThreshold(5);
+  data.SetChromaErrorThreshold(3);
+  data.SetSampleValues(std::vector<double>{0.5, 0.6});
+
+  test_frame->SetFrameInstrumentationData(data);
+
+  EXPECT_CALL(mock_decoder_, Decode(_, _)).WillOnce(DefaultDecodeAction());
+
+  video_receive_stream_->OnCompleteFrame(std::move(test_frame));
+
+  time_controller_.AdvanceTime(TimeDelta::Zero());
+
+  VideoReceiveStreamInterface::Stats stats = video_receive_stream_->GetStats();
+  EXPECT_EQ(stats.corruption_score_count, 1u);
+}
+
+TEST_P(VideoReceiveStream2Test, CalculateCorruptionScoreAsync) {
+  env_ = CreateEnvironment(
+      CreateTestFieldTrialsPtr("WebRTC-CorruptionDetectionFrameSelector/"
+                               "asynchronous_evaluation:true/"),
+      time_controller_.CreateTaskQueueFactory(), time_controller_.GetClock());
+  RecreateReceiveStream();
+
+  video_receive_stream_->Start();
+
+  constexpr uint32_t kRtpTimestamp = 12345;
+  auto test_frame = test::FakeFrameBuilder()
+                        .Id(0)
+                        .PayloadType(kH264PayloadType)
+                        .Time(kRtpTimestamp)
+                        .AsLast()
+                        .Build();
+
+  FrameInstrumentationData data;
+  data.SetSequenceIndex(1);
+  data.SetStdDev(1.0);
+  data.SetLumaErrorThreshold(5);
+  data.SetChromaErrorThreshold(3);
+  data.SetSampleValues(std::vector<double>{0.5, 0.6});
+
+  test_frame->SetFrameInstrumentationData(data);
+
+  EXPECT_CALL(mock_decoder_, Decode(_, _)).WillOnce(DefaultDecodeAction());
+
+  video_receive_stream_->OnCompleteFrame(std::move(test_frame));
+
+  time_controller_.AdvanceTime(TimeDelta::Millis(10));
+
+  VideoReceiveStreamInterface::Stats stats = video_receive_stream_->GetStats();
+  EXPECT_EQ(stats.corruption_score_count, 1u);
+}
+
+TEST_P(VideoReceiveStream2Test,
+       CalculateCorruptionScoreDropsFramesWhenQueueFull) {
+  env_ = CreateEnvironment(
+      CreateTestFieldTrialsPtr("WebRTC-CorruptionDetectionFrameSelector/"
+                               "asynchronous_evaluation:true/"),
+      time_controller_.CreateTaskQueueFactory(), time_controller_.GetClock());
+  RecreateReceiveStream();
+
+  video_receive_stream_->Start();
+
+  // Create a dummy frame.
+  scoped_refptr<I420Buffer> buffer = I420Buffer::Create(320, 240);
+  I420Buffer::SetBlack(buffer.get());
+  VideoFrame frame = VideoFrame::Builder()
+                         .set_video_frame_buffer(buffer)
+                         .set_rotation(kVideoRotation_0)
+                         .set_timestamp_ms(0)
+                         .build();
+
+  FrameInstrumentationData data;
+  data.SetSequenceIndex(1);
+  data.SetStdDev(1.0);
+  data.SetLumaErrorThreshold(5);
+  data.SetChromaErrorThreshold(3);
+  data.SetSampleValues(std::vector<double>{0.5, 0.6});
+
+  CorruptionScoreCalculator* calculator = video_receive_stream_.get();
+
+  // Call it 3 times in a row. The counter should increment on the calling
+  // thread (test thread) before tasks are run on the post_decode_queue_.
+  // Limit is 2, so the 3rd call should be discarded.
+  calculator->CalculateCorruptionScore(frame, data,
+                                       VideoContentType::UNSPECIFIED);
+  calculator->CalculateCorruptionScore(frame, data,
+                                       VideoContentType::UNSPECIFIED);
+  calculator->CalculateCorruptionScore(frame, data,
+                                       VideoContentType::UNSPECIFIED);
+
+  // Advance time to let tasks run.
+  time_controller_.AdvanceTime(TimeDelta::Millis(100));
+
+  VideoReceiveStreamInterface::Stats stats = video_receive_stream_->GetStats();
+  EXPECT_EQ(stats.corruption_score_count, 2u);
+}
+
 TEST_P(VideoReceiveStream2Test, PassesNtpTime) {
   const Timestamp kNtpTimestamp = Timestamp::Millis(12345);
   std::unique_ptr<test::FakeEncodedFrame> test_frame =
@@ -585,7 +702,7 @@ TEST_P(VideoReceiveStream2Test, PassesNtpTime) {
 }
 
 TEST_P(VideoReceiveStream2Test, PassesRotation) {
-  const webrtc::VideoRotation kRotation = webrtc::kVideoRotation_180;
+  const VideoRotation kRotation = kVideoRotation_180;
   std::unique_ptr<test::FakeEncodedFrame> test_frame =
       test::FakeFrameBuilder()
           .Id(0)
@@ -704,7 +821,7 @@ std::unique_ptr<test::FakeEncodedFrame> MakeFrameWithResolution(
                    .PayloadType(kH264PayloadType)
                    .AsLast()
                    .Build();
-  frame->SetFrameType(frame_type);
+  frame->set_frame_type(frame_type);
   frame->_encodedWidth = width;
   frame->_encodedHeight = height;
   return frame;
@@ -909,18 +1026,31 @@ TEST_P(VideoReceiveStream2Test, FramesScheduledInOrder) {
   EXPECT_CALL(mock_decoder_,
               Decode(test::RtpTimestamp(RtpTimestampForFrame(2)), _))
       .Times(1);
-  key_frame->SetReceivedTime(env_.clock().CurrentTime().ms());
+
+  // `key_frame` arrives at the start time...
+  key_frame->SetReceivedTime(env_.clock().CurrentTime());
   video_receive_stream_->OnCompleteFrame(std::move(key_frame));
+  // ...and it is decoded and rendered right away.
   EXPECT_THAT(fake_renderer_.WaitForFrame(TimeDelta::Zero()), RenderedFrame());
 
-  delta_frame2->SetReceivedTime(env_.clock().CurrentTime().ms());
+  // `delta_frame2` arrives on time, which is two inter-frame durations later...
+  time_controller_.AdvanceTime(2 * k30FpsDelay);
+  Timestamp delta_frame2_received_time = env_.clock().CurrentTime();
+  delta_frame2->SetReceivedTime(delta_frame2_received_time);
   video_receive_stream_->OnCompleteFrame(std::move(delta_frame2));
-  EXPECT_THAT(fake_renderer_.WaitForFrame(k30FpsDelay), DidNotReceiveFrame());
-  // `delta_frame1` arrives late.
-  delta_frame1->SetReceivedTime(env_.clock().CurrentTime().ms());
+  // ...but it doesn't render, since it is not yet decodable.
+  EXPECT_THAT(fake_renderer_.WaitForFrame(TimeDelta::Zero()),
+              DidNotReceiveFrame());
+
+  // `delta_frame1` arrives back-to-back with `delta_frame2`...
+  delta_frame1->SetReceivedTime(env_.clock().CurrentTime());
+  EXPECT_EQ(delta_frame1->ReceivedTimestamp(), delta_frame2_received_time);
   video_receive_stream_->OnCompleteFrame(std::move(delta_frame1));
+  // ...so it is decoded and rendered right away (since it is late).
+  EXPECT_THAT(fake_renderer_.WaitForFrame(TimeDelta::Zero()), RenderedFrame());
+  // And then a bit later, `delta_frame2` is decoded and rendered.
   EXPECT_THAT(fake_renderer_.WaitForFrame(k30FpsDelay), RenderedFrame());
-  EXPECT_THAT(fake_renderer_.WaitForFrame(k30FpsDelay * 2), RenderedFrame());
+
   video_receive_stream_->Stop();
 }
 
@@ -950,7 +1080,7 @@ TEST_P(VideoReceiveStream2Test, WaitsforAllSpatialLayers) {
 
   // No decodes should be called until `sl2` is received.
   EXPECT_CALL(mock_decoder_, Decode(_, _)).Times(0);
-  sl0->SetReceivedTime(env_.clock().CurrentTime().ms());
+  sl0->SetReceivedTime(env_.clock().CurrentTime());
   video_receive_stream_->OnCompleteFrame(std::move(sl0));
   EXPECT_THAT(fake_renderer_.WaitForFrame(TimeDelta::Zero()),
               DidNotReceiveFrame());
@@ -997,11 +1127,12 @@ TEST_P(VideoReceiveStream2Test, FramesFastForwardOnSystemHalt) {
                             .Build();
   InSequence seq;
   EXPECT_CALL(mock_decoder_, Decode(test::RtpTimestamp(kFirstRtpTimestamp), _))
-      .WillOnce(testing::DoAll(Invoke([&] {
-                                 // System halt will be simulated in the decode.
-                                 time_controller_.AdvanceTime(k30FpsDelay * 2);
-                               }),
-                               DefaultDecodeAction()));
+      .WillOnce(testing::DoAll(
+          [&] {
+            // System halt will be simulated in the decode.
+            time_controller_.AdvanceTime(k30FpsDelay * 2);
+          },
+          DefaultDecodeAction()));
   EXPECT_CALL(mock_decoder_,
               Decode(test::RtpTimestamp(RtpTimestampForFrame(2)), _));
   video_receive_stream_->OnCompleteFrame(std::move(key_frame));

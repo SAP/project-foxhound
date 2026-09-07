@@ -5,7 +5,8 @@
 
 /**
  * Return a web-based URL for a given file based on the testing directory.
- * @param {String} fileName
+ *
+ * @param {string} fileName
  *        file that caller wants its web-based url
  */
 function GetTestWebBasedURL(fileName) {

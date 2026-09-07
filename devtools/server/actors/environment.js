@@ -85,7 +85,7 @@ class EnvironmentActor extends Actor {
    * lexical environment.
    */
   bindings() {
-    const bindings = { arguments: [], variables: {} };
+    const bindings = { arguments: [], variables: Object.create(null) };
 
     // TODO: this part should be removed in favor of the commented-out part
     // below when getVariableDescriptor lands (bug 725815).
@@ -101,7 +101,12 @@ class EnvironmentActor extends Actor {
       parameterNames = [];
     }
     for (const name of parameterNames) {
-      const arg = {};
+      // The names of destructuring parameters will be `undefined`.
+      // See https://firefox-source-docs.mozilla.org/js/Debugger/Debugger.Script.html#parameternames
+      if (name == undefined) {
+        continue;
+      }
+      const arg = Object.create(null);
       const value = this.obj.getVariable(name);
 
       // TODO: this part should be removed in favor of the commented-out part

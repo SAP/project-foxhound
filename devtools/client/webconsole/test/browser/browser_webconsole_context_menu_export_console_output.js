@@ -6,6 +6,7 @@
 const httpServer = createTestHTTPServer();
 httpServer.registerPathHandler(`/`, function (request, response) {
   response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html");
   response.write(`
     <html>
       <head>
@@ -39,7 +40,7 @@ httpServer.registerPathHandler("/test.js", function (request, response) {
 const TEST_URI = `http://localhost:${httpServer.identity.primaryPort}/`;
 
 const { MockFilePicker } = SpecialPowers;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 MockFilePicker.returnValue = MockFilePicker.returnOK;
 
 var FileUtils = ChromeUtils.importESModule(

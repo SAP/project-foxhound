@@ -1,0 +1,16 @@
+diff --git a/fix-RLIMIT_MEMLOCK-solaris.patch b/fix-RLIMIT_MEMLOCK-solaris.patch
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/src/llama-mmap.cpp b/src/llama-mmap.cpp
+index c5f8a28bb3..519e81bf5a 100644
+--- a/src/llama-mmap.cpp
++++ b/src/llama-mmap.cpp
+@@ -478,7 +478,7 @@
+ 
+         char* errmsg = std::strerror(errno);
+         bool suggest = (errno == ENOMEM);
+-#if defined(TARGET_OS_VISION) || defined(TARGET_OS_TV) || defined(_AIX)
++#if defined(TARGET_OS_VISION) || defined(TARGET_OS_TV) || defined(_AIX) || defined(__sun__)
+         // visionOS/tvOS dont't support RLIMIT_MEMLOCK
+         // Skip resource limit checks on visionOS/tvOS
+         suggest = false;

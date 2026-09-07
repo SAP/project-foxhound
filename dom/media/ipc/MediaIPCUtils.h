@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,20 +5,20 @@
 #ifndef mozilla_dom_media_MediaIPCUtils_h
 #define mozilla_dom_media_MediaIPCUtils_h
 
-#include <type_traits>
-
 #include "DecoderDoctorDiagnostics.h"
 #include "EncoderConfig.h"
+#include "MediaTrackConstraints.h"
 #include "PerformanceRecorder.h"
 #include "PlatformDecoderModule.h"
 #include "PlatformEncoderModule.h"
 #include "ipc/EnumSerializer.h"
-#include "mozilla/EnumSet.h"
+#include "mozilla/CDMProxy.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ParamTraits_TiedFields.h"
-#include "mozilla/gfx/Rect.h"
 #include "mozilla/dom/MFCDMSerializers.h"
+#include "mozilla/dom/MediaKeysBinding.h"
+#include "mozilla/gfx/Rect.h"
 
 namespace IPC {
 template <>
@@ -43,33 +41,29 @@ struct ParamTraits<mozilla::VideoInfo> {
     WriteParam(aWriter, aParam.mColorSpace);
     WriteParam(aWriter, aParam.mColorPrimaries);
     WriteParam(aWriter, aParam.mTransferFunction);
+    WriteParam(aWriter, aParam.mHDRMetadata);
     WriteParam(aWriter, aParam.mColorRange);
-    WriteParam(aWriter, aParam.HasAlpha());
+    WriteParam(aWriter, aParam.mAlphaPresent);
     WriteParam(aWriter, aParam.mCrypto);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
-    mozilla::gfx::IntRect imageRect;
-    bool alphaPresent;
-    if (ReadParam(aReader, &aResult->mMimeType) &&
-        ReadParam(aReader, &aResult->mDisplay) &&
-        ReadParam(aReader, &aResult->mStereoMode) &&
-        ReadParam(aReader, &aResult->mImage) &&
-        ReadParam(aReader, &aResult->mImageRect) &&
-        ReadParam(aReader, aResult->mCodecSpecificConfig.get()) &&
-        ReadParam(aReader, aResult->mExtraData.get()) &&
-        ReadParam(aReader, &aResult->mRotation) &&
-        ReadParam(aReader, &aResult->mColorDepth) &&
-        ReadParam(aReader, &aResult->mColorSpace) &&
-        ReadParam(aReader, &aResult->mColorPrimaries) &&
-        ReadParam(aReader, &aResult->mTransferFunction) &&
-        ReadParam(aReader, &aResult->mColorRange) &&
-        ReadParam(aReader, &alphaPresent) &&
-        ReadParam(aReader, &aResult->mCrypto)) {
-      aResult->SetAlpha(alphaPresent);
-      return true;
-    }
-    return false;
+    return ReadParam(aReader, &aResult->mMimeType) &&
+           ReadParam(aReader, &aResult->mDisplay) &&
+           ReadParam(aReader, &aResult->mStereoMode) &&
+           ReadParam(aReader, &aResult->mImage) &&
+           ReadParam(aReader, &aResult->mImageRect) &&
+           ReadParam(aReader, aResult->mCodecSpecificConfig.get()) &&
+           ReadParam(aReader, aResult->mExtraData.get()) &&
+           ReadParam(aReader, &aResult->mRotation) &&
+           ReadParam(aReader, &aResult->mColorDepth) &&
+           ReadParam(aReader, &aResult->mColorSpace) &&
+           ReadParam(aReader, &aResult->mColorPrimaries) &&
+           ReadParam(aReader, &aResult->mTransferFunction) &&
+           ReadParam(aReader, &aResult->mHDRMetadata) &&
+           ReadParam(aReader, &aResult->mColorRange) &&
+           ReadParam(aReader, &aResult->mAlphaPresent) &&
+           ReadParam(aReader, &aResult->mCrypto);
   }
 };
 
@@ -80,11 +74,20 @@ struct ParamTraits<mozilla::TrackInfo::TrackType>
           mozilla::TrackInfo::TrackType::kUndefinedTrack,
           mozilla::TrackInfo::TrackType::kTextTrack> {};
 
+struct VideoRotationValidator {
+  using IntegralType = std::underlying_type_t<mozilla::VideoRotation>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    return e == IntegralType(mozilla::VideoRotation::kDegree_0) ||
+           e == IntegralType(mozilla::VideoRotation::kDegree_90) ||
+           e == IntegralType(mozilla::VideoRotation::kDegree_180) ||
+           e == IntegralType(mozilla::VideoRotation::kDegree_270);
+  }
+};
+
 template <>
 struct ParamTraits<mozilla::VideoRotation>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::VideoRotation, mozilla::VideoRotation::kDegree_0,
-          mozilla::VideoRotation::kDegree_270> {};
+    : EnumSerializer<mozilla::VideoRotation, VideoRotationValidator> {};
 
 template <>
 struct ParamTraits<mozilla::MediaByteBuffer>
@@ -221,6 +224,14 @@ struct ParamTraits<mozilla::MediaDataDecoder::ConversionRequired>
               mozilla::MediaDataDecoder::ConversionRequired::kNeedHVCC)> {};
 
 template <>
+struct MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    ParamTraits<mozilla::MediaDataDecoder::PropertyName>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::MediaDataDecoder::PropertyName,
+          mozilla::MediaDataDecoder::PropertyName(0),
+          mozilla::MediaDataDecoder::sHighestPropertyName> {};
+
+template <>
 struct ParamTraits<mozilla::media::TimeUnit> {
   using paramType = mozilla::media::TimeUnit;
 
@@ -238,6 +249,10 @@ struct ParamTraits<mozilla::media::TimeUnit> {
     if (ReadParam(aReader, &valid) && ReadParam(aReader, &ticks) &&
         ReadParam(aReader, &base)) {
       if (valid) {
+        if (base <= 0 || base > int64_t(UINT32_MAX)) {
+          return false;
+        }
+
         *aResult = mozilla::media::TimeUnit(ticks, base);
       } else {
         *aResult = mozilla::media::TimeUnit::Invalid();
@@ -322,22 +337,24 @@ struct ParamTraits<mozilla::DecoderDoctorDiagnostics::DiagnosticsType>
 };
 
 template <>
+struct ParamTraits<mozilla::DecoderDoctorEvent::Domain>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::DecoderDoctorEvent::Domain,
+          mozilla::DecoderDoctorEvent::Domain::eAudioSinkStartup,
+          mozilla::DecoderDoctorEvent::Domain::eAudioSinkStartup> {};
+
+template <>
 struct ParamTraits<mozilla::DecoderDoctorEvent> {
   typedef mozilla::DecoderDoctorEvent paramType;
 
   static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    int domain = aParam.mDomain;
-    WriteParam(aWriter, domain);
+    WriteParam(aWriter, aParam.mDomain);
     WriteParam(aWriter, aParam.mResult);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
-    int domain = 0;
-    if (ReadParam(aReader, &domain) && ReadParam(aReader, &aResult->mResult)) {
-      aResult->mDomain = paramType::Domain(domain);
-      return true;
-    }
-    return false;
+    return ReadParam(aReader, &aResult->mDomain) &&
+           ReadParam(aReader, &aResult->mResult);
   };
 };
 
@@ -414,26 +431,61 @@ struct ParamTraits<mozilla::H264BitStreamFormat>
 template <>
 struct ParamTraits<mozilla::HardwarePreference>
     : public ContiguousEnumSerializerInclusive<
-          mozilla::HardwarePreference,
-          mozilla::HardwarePreference::RequireHardware,
-          mozilla::HardwarePreference::None> {};
+          mozilla::HardwarePreference, mozilla::HardwarePreference::None,
+          mozilla::HardwarePreference::RequireSoftware> {};
 
 template <>
 struct ParamTraits<mozilla::Usage>
     : public ContiguousEnumSerializerInclusive<
           mozilla::Usage, mozilla::Usage::Realtime, mozilla::Usage::Record> {};
 
+struct H264ProfileValidator {
+  using IntegralType = std::underlying_type_t<mozilla::H264_PROFILE>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    return e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_UNKNOWN) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_BASE) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_MAIN) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_EXTENDED) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_HIGH);
+  }
+};
+
 template <>
 struct ParamTraits<mozilla::H264_PROFILE>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::H264_PROFILE, mozilla::H264_PROFILE::H264_PROFILE_UNKNOWN,
-          mozilla::H264_PROFILE::H264_PROFILE_HIGH> {};
+    : EnumSerializer<mozilla::H264_PROFILE, H264ProfileValidator> {};
+
+struct H264LevelValidator {
+  using IntegralType = std::underlying_type_t<mozilla::H264_LEVEL>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    static_assert(mozilla::H264_LEVEL::H264_LEVEL_1_b ==
+                  mozilla::H264_LEVEL::H264_LEVEL_1_1);
+    return e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1_3) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_2_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_2_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_3) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_3_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_3_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_4) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_4_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_4_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_5) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_5_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_5_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_6) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_6_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_6_2);
+  }
+};
 
 template <>
 struct ParamTraits<mozilla::H264_LEVEL>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::H264_LEVEL, mozilla::H264_LEVEL::H264_LEVEL_1,
-          mozilla::H264_LEVEL::H264_LEVEL_6_2> {};
+    : EnumSerializer<mozilla::H264_LEVEL, H264LevelValidator> {};
 
 template <>
 struct ParamTraits<mozilla::OpusBitstreamFormat>
@@ -449,7 +501,8 @@ struct ParamTraits<mozilla::OpusSpecific::Application>
           mozilla::OpusSpecific::Application::RestricedLowDelay> {};
 
 template <>
-struct ParamTraits<mozilla::VPXComplexity>
+struct MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    ParamTraits<mozilla::VPXComplexity>
     : public ContiguousEnumSerializerInclusive<mozilla::VPXComplexity,
                                                mozilla::VPXComplexity::Normal,
                                                mozilla::VPXComplexity::Max> {};
@@ -644,6 +697,70 @@ struct ParamTraits<mozilla::EncoderConfigurationChangeList*> {
     return true;
   }
 };
+
+template <>
+struct ParamTraits<mozilla::dom::MediaKeySessionType>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::MediaKeySessionType,
+          mozilla::dom::MediaKeySessionType::Temporary,
+          mozilla::dom::MediaKeySessionType::Persistent_license> {};
+
+template <>
+struct ParamTraits<mozilla::CDMKeyInfo> {
+  typedef mozilla::CDMKeyInfo paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mKeyId);
+    WriteParam(aWriter, aParam.mStatus);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mKeyId) &&
+           ReadParam(aReader, &aResult->mStatus);
+  }
+};
+
+template <typename T>
+struct ParamTraits<mozilla::NormalizedConstraintSet::Range<T>> {
+  using paramType = mozilla::NormalizedConstraintSet::Range<T>;
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParams(aWriter, aParam.mMin, aParam.mMax, aParam.mIdeal);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    paramType& aParam = *aResult;
+    return ReadParams(aReader, aParam.mMin, aParam.mMax, aParam.mIdeal);
+  }
+};
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::LongRange,
+    mozilla::NormalizedConstraintSet::Range<int32_t>);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::LongLongRange,
+    mozilla::NormalizedConstraintSet::Range<int64_t>);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::DoubleRange,
+    mozilla::NormalizedConstraintSet::Range<double>);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::BooleanRange,
+    mozilla::NormalizedConstraintSet::Range<bool>);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::NormalizedConstraintSet::StringRange,
+                                  mExact, mIdeal);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::NormalizedConstraintSet, mWidth,
+                                  mHeight, mFrameRate, mFacingMode, mResizeMode,
+                                  mMediaSource, mBrowserWindow, mDeviceId,
+                                  mGroupId, mViewportOffsetX, mViewportOffsetY,
+                                  mViewportWidth, mViewportHeight,
+                                  mEchoCancellation, mNoiseSuppression,
+                                  mAutoGainControl, mChannelCount);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
+    mozilla::NormalizedConstraints, mozilla::NormalizedConstraintSet,
+    mAdvanced);
+
+template <>
+struct ParamTraits<mozilla::dom::VideoResizeModeEnum>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::VideoResizeModeEnum> {};
 
 }  // namespace IPC
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,6 +42,7 @@ class nsOnStartRequestEvent : public nsARequestObserverEvent {
 
   NS_IMETHOD Run() override {
     LOG(("nsOnStartRequestEvent::HandleEvent [req=%p]\n", mRequest.get()));
+    nsMainThreadPtrHandle<nsIRequestObserver> observer = mProxy->mObserver;
 
     if (!mProxy->mObserver) {
       MOZ_ASSERT_UNREACHABLE(
@@ -52,7 +52,7 @@ class nsOnStartRequestEvent : public nsARequestObserverEvent {
     }
 
     LOG(("handle startevent=%p\n", this));
-    nsresult rv = mProxy->mObserver->OnStartRequest(mRequest);
+    nsresult rv = observer->OnStartRequest(mRequest);
     if (NS_FAILED(rv)) {
       LOG(("OnStartRequest failed [rv=%" PRIx32 "] canceling request!\n",
            static_cast<uint32_t>(rv)));

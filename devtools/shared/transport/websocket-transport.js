@@ -6,15 +6,14 @@
 
 const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-function WebSocketDebuggerTransport(socket) {
-  EventEmitter.decorate(this);
+class WebSocketDebuggerTransport extends EventEmitter {
+  constructor(socket) {
+    super();
 
-  this.active = false;
-  this.hooks = null;
-  this.socket = socket;
-}
-
-WebSocketDebuggerTransport.prototype = {
+    this.active = false;
+    this.hooks = null;
+    this.socket = socket;
+  }
   ready() {
     if (this.active) {
       return;
@@ -24,18 +23,18 @@ WebSocketDebuggerTransport.prototype = {
     this.socket.addEventListener("close", this);
 
     this.active = true;
-  },
+  }
 
   send(object) {
     this.emit("send", object);
     if (this.socket) {
       this.socket.send(JSON.stringify(object));
     }
-  },
+  }
 
   startBulkSend() {
     throw new Error("Bulk send is not supported by WebSocket transport");
-  },
+  }
 
   close() {
     if (!this.socket) {
@@ -55,7 +54,7 @@ WebSocketDebuggerTransport.prototype = {
       }
       this.hooks = null;
     }
-  },
+  }
 
   handleEvent(event) {
     switch (event.type) {
@@ -66,7 +65,7 @@ WebSocketDebuggerTransport.prototype = {
         this.close();
         break;
     }
-  },
+  }
 
   onMessage({ data }) {
     if (typeof data !== "string") {
@@ -80,7 +79,7 @@ WebSocketDebuggerTransport.prototype = {
     if (this.hooks) {
       this.hooks.onPacket(object);
     }
-  },
-};
+  }
+}
 
 module.exports = WebSocketDebuggerTransport;

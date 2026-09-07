@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,6 +49,8 @@ GtkCompositorWidget::GtkCompositorWidget(
         (void*)mWidget.get(), (void*)mWidget);
   }
 #endif
+  auto size = LayoutDeviceIntSize(aInitData.InitialClientSize());
+  LOG("  client size %d x %d", size.width, size.height);
 }
 
 GtkCompositorWidget::~GtkCompositorWidget() {
@@ -93,6 +94,15 @@ void GtkCompositorWidget::NotifyClientSizeChanged(
   *size = aClientSize;
 }
 
+void GtkCompositorWidget::NotifyFullscreenChanged(bool aIsFullscreen) {
+#ifdef MOZ_WAYLAND
+  if (mNativeLayerRoot) {
+    LOG("GtkCompositorWidget::NotifyFullscreenChanged() [%d]", aIsFullscreen);
+    mNativeLayerRoot->NotifyFullscreenChanged(aIsFullscreen);
+  }
+#endif
+}
+
 LayoutDeviceIntSize GtkCompositorWidget::GetClientSize() {
   auto size = mClientSize.Lock();
   return *size;
@@ -113,15 +123,14 @@ EGLNativeWindowType GtkCompositorWidget::GetEGLNativeWindow() {
   return window;
 }
 
-bool GtkCompositorWidget::SetEGLNativeWindowSize(
+void GtkCompositorWidget::SetEGLNativeWindowSize(
     const LayoutDeviceIntSize& aEGLWindowSize) {
 #if defined(MOZ_WAYLAND)
   // We explicitly need to set EGL window size on Wayland only.
-  if (GdkIsWaylandDisplay() && mWidget) {
-    return mWidget->SetEGLNativeWindowSize(aEGLWindowSize);
+  if (mWidget && mWidget->GetWaylandSurface()) {
+    mWidget->GetWaylandSurface()->ApplyEGLWindowSize(aEGLWindowSize);
   }
 #endif
-  return true;
 }
 
 LayoutDeviceIntRegion GtkCompositorWidget::GetTransparentRegion() {
@@ -134,20 +143,17 @@ LayoutDeviceIntRegion GtkCompositorWidget::GetTransparentRegion() {
 }
 
 #ifdef MOZ_WAYLAND
-RefPtr<mozilla::layers::NativeLayerRoot>
-GtkCompositorWidget::GetNativeLayerRoot() {
-  if (gfx::gfxVars::UseWebRenderCompositor()) {
-    if (!mNativeLayerRoot) {
-      LOG("GtkCompositorWidget::GetNativeLayerRoot [%p] create",
-          (void*)mWidget.get());
-      MOZ_ASSERT(mWidget && mWidget->GetMozContainer());
-      mNativeLayerRoot = layers::NativeLayerRootWayland::Create(
-          MOZ_WL_SURFACE(mWidget->GetMozContainer()));
-      mNativeLayerRoot->Init();
-    }
-    return mNativeLayerRoot;
+mozilla::layers::NativeLayerRoot* GtkCompositorWidget::GetNativeLayerRoot() {
+  if (!mNativeLayerRoot && gfx::gfxVars::UseWebRenderCompositor() &&
+      WaylandDisplayGet()->GetFractionalScaleManager()) {
+    LOG("GtkCompositorWidget::GetNativeLayerRoot [%p] create",
+        (void*)mWidget.get());
+    MOZ_ASSERT(mWidget && mWidget->GetMozContainer());
+    mNativeLayerRoot = layers::NativeLayerRootWayland::Create(
+        MOZ_WL_SURFACE(mWidget->GetMozContainer()));
+    mNativeLayerRoot->Init();
   }
-  return nullptr;
+  return mNativeLayerRoot;
 }
 #endif
 
@@ -173,23 +179,6 @@ void GtkCompositorWidget::ConfigureX11Backend(Window aXWindow) {
   mProvider.Initialize(aXWindow);
 }
 #endif
-
-void GtkCompositorWidget::SetRenderingSurface(const uintptr_t aXWindow) {
-  LOG("GtkCompositorWidget::SetRenderingSurface() [%p]\n", mWidget.get());
-
-#if defined(MOZ_WAYLAND)
-  if (GdkIsWaylandDisplay()) {
-    LOG("  configure widget %p\n", mWidget.get());
-    ConfigureWaylandBackend();
-  }
-#endif
-#if defined(MOZ_X11)
-  if (GdkIsX11Display()) {
-    LOG("  configure XWindow %p\n", (void*)aXWindow);
-    ConfigureX11Backend((Window)aXWindow);
-  }
-#endif
-}
 
 #ifdef MOZ_LOGGING
 bool GtkCompositorWidget::IsPopup() {

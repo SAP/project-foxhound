@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XULMenuBarElement.h"
+
 #include "MenuBarListener.h"
 #include "XULButtonElement.h"
-#include "nsXULPopupManager.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/dom/BindContext.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Try.h"
+#include "mozilla/dom/BindContext.h"
+#include "nsXULPopupManager.h"
 
 namespace mozilla::dom {
 
@@ -30,8 +29,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(XULMenuBarElement,
                                                XULMenuParentElement)
 
-XULMenuBarElement::XULMenuBarElement(
-    already_AddRefed<class NodeInfo>&& aNodeInfo)
+XULMenuBarElement::XULMenuBarElement(already_AddRefed<class NodeInfo> aNodeInfo)
     : XULMenuParentElement(std::move(aNodeInfo)) {}
 
 XULMenuBarElement::~XULMenuBarElement() { MOZ_DIAGNOSTIC_ASSERT(!mListener); }

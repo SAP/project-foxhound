@@ -1,4 +1,5 @@
 import { CONTENT_MESSAGE_TYPE } from "common/Actions.mjs";
+import { WIDGET_REGISTRY } from "common/WidgetsRegistry.mjs";
 import {
   ActivityStream,
   PREFS_CONFIG,
@@ -11,7 +12,6 @@ import { AboutPreferences } from "lib/AboutPreferences.sys.mjs";
 import { DefaultPrefs } from "lib/ActivityStreamPrefs.sys.mjs";
 import { NewTabInit } from "lib/NewTabInit.sys.mjs";
 import { SectionsFeed } from "lib/SectionsManager.sys.mjs";
-import { RecommendationProvider } from "lib/RecommendationProvider.sys.mjs";
 import { PlacesFeed } from "lib/PlacesFeed.sys.mjs";
 import { PrefsFeed } from "lib/PrefsFeed.sys.mjs";
 import { SystemTickFeed } from "lib/SystemTickFeed.sys.mjs";
@@ -41,9 +41,9 @@ describe("ActivityStream", () => {
       DEFAULT_SITES,
       AboutPreferences,
       DefaultPrefs,
+      NewTabActorRegistry: { init: () => {}, uninit: () => {} },
       NewTabInit,
       SectionsFeed,
-      RecommendationProvider,
       PlacesFeed,
       PrefsFeed,
       SystemTickFeed,
@@ -77,6 +77,19 @@ describe("ActivityStream", () => {
   it("should initialize with .initialized=false", () => {
     assert.isFalse(as.initialized, ".initialized");
   });
+  it("should have a null createdInstant if not constructed with one", () => {
+    const noCreatedInstantAS = new ActivityStream();
+    assert.isNull(noCreatedInstantAS.createdInstant);
+  });
+  it("should have a createdInstant value exposed if constructed with one", () => {
+    // The Node environment does not know what Temporal is, but we can pretend
+    // that a Date is a temporal, since ActivityStream isn't really doing any
+    // type-checking here - it's just holding onto whatever it was constructed
+    // with, and exposing it with a getter.
+    const instant = new Date();
+    const createdInstantAS = new ActivityStream(instant);
+    assert.equal(createdInstantAS.createdInstant, instant);
+  });
   describe("#init", () => {
     beforeEach(() => {
       as.init();
@@ -101,22 +114,6 @@ describe("ActivityStream", () => {
 
       const [, , action] = as.store.init.firstCall.args;
       assert.equal(action.type, "UNINIT");
-    });
-    it("should clear old default discoverystream config pref", () => {
-      sandbox.stub(global.Services.prefs, "prefHasUserValue").returns(true);
-      sandbox
-        .stub(global.Services.prefs, "getStringPref")
-        .returns(
-          `{"api_key_pref":"extensions.pocket.oAuthConsumerKey","enabled":false,"show_spocs":true,"layout_endpoint":"https://getpocket.cdn.mozilla.net/v3/newtab/layout?version=1&consumer_key=$apiKey&layout_variant=basic"}`
-        );
-      sandbox.stub(global.Services.prefs, "clearUserPref");
-
-      as.init();
-
-      assert.calledWith(
-        global.Services.prefs.clearUserPref,
-        "browser.newtabpage.activity-stream.discoverystream.config"
-      );
     });
     it("should call addObserver for the app locales", () => {
       sandbox.stub(global.Services.obs, "addObserver");
@@ -209,10 +206,6 @@ describe("ActivityStream", () => {
     });
     it("should create a Favicon feed", () => {
       const feed = as.feeds.get("feeds.favicon")();
-      assert.ok(feed, "feed should exist");
-    });
-    it("should create a RecommendationProvider feed", () => {
-      const feed = as.feeds.get("feeds.recommendationprovider")();
       assert.ok(feed, "feed should exist");
     });
     it("should create a DiscoveryStreamFeed feed", () => {
@@ -342,7 +335,7 @@ describe("ActivityStream", () => {
       assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
     });
     it("should turn off when region is not supported", () => {
-      stub.get(() => "FR");
+      stub.get(() => "JP");
       as._updateDynamicPrefs();
       assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
     });
@@ -371,6 +364,51 @@ describe("ActivityStream", () => {
       sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "fr");
       as._updateDynamicPrefs();
       assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
+    });
+  });
+  describe("getWeatherWidgetSize", () => {
+    let getBoolPrefStub;
+    let getStringPrefStub;
+    const PREF = "widgets.weather.size";
+    const FORECAST_PREF =
+      "browser.newtabpage.activity-stream.widgets.system.weatherForecast.enabled";
+    const MAXIMIZED_PREF =
+      "browser.newtabpage.activity-stream.widgets.maximized";
+    const DISPLAY_PREF = "browser.newtabpage.activity-stream.weather.display";
+
+    beforeEach(() => {
+      getBoolPrefStub = sandbox.stub(global.Services.prefs, "getBoolPref");
+      getBoolPrefStub.withArgs(FORECAST_PREF, false).returns(false);
+      getBoolPrefStub.withArgs(MAXIMIZED_PREF, true).returns(true);
+      getStringPrefStub = sandbox
+        .stub(global.Services.prefs, "getStringPref")
+        .callsFake((_pref, defaultVal) => defaultVal);
+      getStringPrefStub.withArgs(DISPLAY_PREF, "detailed").returns("detailed");
+    });
+
+    it("should return small when forecast system pref is disabled", () => {
+      as._updateDynamicPrefs();
+      assert.equal(PREFS_CONFIG.get(PREF).value, "small");
+    });
+
+    it("should return small when forecast is enabled but display is not detailed", () => {
+      getBoolPrefStub.withArgs(FORECAST_PREF, false).returns(true);
+      getStringPrefStub.withArgs(DISPLAY_PREF, "detailed").returns("simple");
+      as._updateDynamicPrefs();
+      assert.equal(PREFS_CONFIG.get(PREF).value, "small");
+    });
+
+    it("should return large when forecast is enabled and widgets are maximized", () => {
+      getBoolPrefStub.withArgs(FORECAST_PREF, false).returns(true);
+      as._updateDynamicPrefs();
+      assert.equal(PREFS_CONFIG.get(PREF).value, "large");
+    });
+
+    it("should return medium when forecast is enabled but widgets are not maximized", () => {
+      getBoolPrefStub.withArgs(FORECAST_PREF, false).returns(true);
+      getBoolPrefStub.withArgs(MAXIMIZED_PREF, true).returns(false);
+      as._updateDynamicPrefs();
+      assert.equal(PREFS_CONFIG.get(PREF).value, "medium");
     });
   });
   describe("showTopicsSelection", () => {
@@ -415,7 +453,7 @@ describe("ActivityStream", () => {
       assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
     });
     it("should turn off when region is not supported", () => {
-      stub.get(() => "FR");
+      stub.get(() => "JP");
       as._updateDynamicPrefs();
       assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
     });
@@ -488,157 +526,7 @@ describe("ActivityStream", () => {
       assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
     });
     it("should turn off when region is not supported", () => {
-      stub.get(() => "FR");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when locale is not set", () => {
-      stub.get(() => "US");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn on when locale is supported", () => {
-      stub.get(() => "US");
-      sandbox
-        .stub(global.Services.locale, "appLocaleAsBCP47")
-        .get(() => "en-US");
-      as._updateDynamicPrefs();
-      assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when locale is not supported", () => {
-      stub.get(() => "US");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "fr");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region and locale are both not supported", () => {
-      stub.get(() => "FR");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "fr");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-  });
-  describe("showThumbsUpDown", () => {
-    let stub;
-    let getStringPrefStub;
-    const FEATURE_ENABLED_PREF = "discoverystream.thumbsUpDown.enabled";
-    const REGION_THUMBS_CONFIG =
-      "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.region-thumbs-config";
-    const LOCALE_THUMBS_CONFIG =
-      "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.locale-thumbs-config";
-
-    beforeEach(() => {
-      stub = sandbox.stub(global.Region, "home");
-
-      sandbox
-        .stub(global.Services.locale, "appLocaleAsBCP47")
-        .get(() => "en-US");
-
-      getStringPrefStub = sandbox.stub(global.Services.prefs, "getStringPref");
-
-      // Set default regions
-      getStringPrefStub.withArgs(REGION_THUMBS_CONFIG).returns("US, CA");
-
-      // Set default locales
-      getStringPrefStub
-        .withArgs(LOCALE_THUMBS_CONFIG)
-        .returns("en-US,en-GB,en-CA");
-    });
-    it("should turn off when region and locale are not set", () => {
-      stub.get(() => "");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region is not set", () => {
-      stub.get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn on when region is supported", () => {
-      stub.get(() => "US");
-      as._updateDynamicPrefs();
-      assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region is not supported", () => {
-      stub.get(() => "FR");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when locale is not set", () => {
-      stub.get(() => "US");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn on when locale is supported", () => {
-      stub.get(() => "US");
-      sandbox
-        .stub(global.Services.locale, "appLocaleAsBCP47")
-        .get(() => "en-US");
-      as._updateDynamicPrefs();
-      assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when locale is not supported", () => {
-      stub.get(() => "US");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "fr");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region and locale are both not supported", () => {
-      stub.get(() => "FR");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "fr");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-  });
-  describe("showContextualContent", () => {
-    let stub;
-    let getStringPrefStub;
-    const FEATURE_ENABLED_PREF = "discoverystream.contextualContent.enabled";
-    const REGION_CONTEXTUAL_CONTENT_CONFIG =
-      "browser.newtabpage.activity-stream.discoverystream.contextualContent.region-content-config";
-    const LOCALE_CONTEXTUAL_CONTENT_CONFIG =
-      "browser.newtabpage.activity-stream.discoverystream.contextualContent.locale-content-config";
-
-    beforeEach(() => {
-      stub = sandbox.stub(global.Region, "home");
-
-      sandbox
-        .stub(global.Services.locale, "appLocaleAsBCP47")
-        .get(() => "en-US");
-
-      getStringPrefStub = sandbox.stub(global.Services.prefs, "getStringPref");
-
-      // Set default regions
-      getStringPrefStub
-        .withArgs(REGION_CONTEXTUAL_CONTENT_CONFIG)
-        .returns("US, CA");
-
-      // Set default locales
-      getStringPrefStub
-        .withArgs(LOCALE_CONTEXTUAL_CONTENT_CONFIG)
-        .returns("en-US,en-GB,en-CA");
-    });
-    it("should turn off when region and locale are not set", () => {
-      stub.get(() => "");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region is not set", () => {
-      stub.get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn on when region is supported", () => {
-      stub.get(() => "US");
-      as._updateDynamicPrefs();
-      assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region is not supported", () => {
-      stub.get(() => "FR");
+      stub.get(() => "JP");
       as._updateDynamicPrefs();
       assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
     });
@@ -966,4 +854,237 @@ describe("ActivityStream", () => {
       }
     });
   });
+
+  describe("proxying images", () => {
+    let registerStub;
+    let unregisterStub;
+
+    beforeEach(() => {
+      registerStub = sandbox.stub(as, "registerNetworkProxy");
+      unregisterStub = sandbox.stub(as, "unregisterNetworkProxy");
+    });
+
+    describe("#init", () => {
+      it("should call registerNetworkProxy during init", () => {
+        as.init();
+        assert.calledOnce(registerStub);
+      });
+    });
+
+    describe("#uninit", () => {
+      it("should call unregisterNetworkProxy during uninit", () => {
+        as.init();
+        as.uninit();
+        assert.calledOnce(unregisterStub);
+      });
+    });
+
+    describe("#getImageProxyConfig", () => {
+      beforeEach(() => {
+        as.initialized = true;
+      });
+
+      it("should return null when proxy config is missing", () => {
+        as.store = {
+          getState: () => ({
+            Prefs: {
+              values: {},
+            },
+          }),
+        };
+
+        const config = as.getImageProxyConfig();
+        assert.isNull(config);
+      });
+
+      it("should return null when proxy is disabled", () => {
+        as.store = {
+          getState: () => ({
+            Prefs: {
+              values: {
+                trainhopConfig: {
+                  imageProxy: {
+                    enabled: false,
+                    proxyHost: "proxy.example.com",
+                    proxyPort: 443,
+                    proxyAuthHeader: "auth",
+                  },
+                },
+                "discoverystream.sections.personalization.inferred.enabled": true,
+              },
+            },
+          }),
+        };
+
+        const config = as.getImageProxyConfig();
+        assert.isNull(config);
+      });
+
+      it("should return null when required fields are missing", () => {
+        as.store = {
+          getState: () => ({
+            Prefs: {
+              values: {
+                trainhopConfig: {
+                  imageProxy: {
+                    enabled: true,
+                    proxyHost: "proxy.example.com",
+                  },
+                },
+                "discoverystream.sections.personalization.inferred.enabled": true,
+              },
+            },
+          }),
+        };
+
+        const config = as.getImageProxyConfig();
+        assert.isNull(config);
+      });
+
+      it("should return null when inferred personalization is disabled", () => {
+        as.store = {
+          getState: () => ({
+            Prefs: {
+              values: {
+                trainhopConfig: {
+                  imageProxy: {
+                    enabled: true,
+                    proxyHost: "proxy.example.com",
+                    proxyPort: 443,
+                    proxyAuthHeader: "auth",
+                  },
+                },
+                "discoverystream.sections.personalization.inferred.enabled": false,
+                "discoverystream.imageProxy.enabled": true,
+              },
+            },
+          }),
+        };
+
+        const config = as.getImageProxyConfig();
+        assert.isNull(config);
+      });
+
+      it("should return valid config when properly configured", () => {
+        as.store = {
+          getState: () => ({
+            Prefs: {
+              values: {
+                trainhopConfig: {
+                  imageProxy: {
+                    enabled: true,
+                    proxyHost: "host",
+                    proxyPort: 1124,
+                    proxyAuthHeader: "123",
+                    connectionIsolationKey: "isolation-key",
+                    failoverProxy: "failover.example.com",
+                    imageProxyHosts: "host1.com,host2.com,host3.com",
+                  },
+                },
+                "discoverystream.sections.personalization.inferred.enabled": true,
+                "discoverystream.imageProxy.enabled": true,
+              },
+            },
+          }),
+        };
+
+        const config = as.getImageProxyConfig();
+        assert.ok(config);
+      });
+    });
+
+    describe("#applyFilter", () => {
+      let mockChannel;
+      let mockCallback;
+      let mockProxyInfo;
+      let mockBrowser;
+      let mockCustomProxyInfo;
+      let getConfigStub;
+      let AboutNewTabParent;
+
+      beforeEach(() => {
+        mockCallback = { onProxyFilterResult: sandbox.stub() };
+        mockProxyInfo = {};
+        mockCustomProxyInfo = {};
+        mockBrowser = {};
+
+        mockChannel = {
+          URI: { host: "example.com", scheme: "https" },
+          loadInfo: {
+            browsingContext: { top: { embedderElement: mockBrowser } },
+          },
+        };
+
+        getConfigStub = sandbox.stub(as, "getImageProxyConfig");
+
+        AboutNewTabParent = { loadedTabs: new Set([mockBrowser]) };
+        globals.set({
+          AboutNewTabParent,
+          ProxyService: {
+            newProxyInfo: sandbox.stub().returns(mockCustomProxyInfo),
+          },
+        });
+      });
+
+      it("should pass through original proxy when config is null", () => {
+        getConfigStub.returns(null);
+
+        as.applyFilter(mockChannel, mockProxyInfo, mockCallback);
+
+        assert.calledOnce(mockCallback.onProxyFilterResult);
+        assert.calledWith(mockCallback.onProxyFilterResult, mockProxyInfo);
+      });
+
+      it("should apply proxy for matching HTTPS host from newtab", () => {
+        const config = {
+          imageProxyHosts: ["example.com", "other.com"],
+          proxyHost: "proxy.example.com",
+          proxyPort: 443,
+          proxyAuthHeader: "Bearer token",
+          connectionIsolationKey: "key",
+          failoverProxy: "failover.example.com",
+        };
+        getConfigStub.returns(config);
+
+        as.applyFilter(mockChannel, mockProxyInfo, mockCallback);
+
+        assert.calledOnce(global.ProxyService.newProxyInfo);
+        assert.calledWith(
+          global.ProxyService.newProxyInfo,
+          "https",
+          config.proxyHost,
+          config.proxyPort,
+          config.proxyAuthHeader,
+          config.connectionIsolationKey,
+          0,
+          5000,
+          config.failoverProxy
+        );
+
+        assert.calledOnce(mockCallback.onProxyFilterResult);
+        assert.calledWith(
+          mockCallback.onProxyFilterResult,
+          mockCustomProxyInfo
+        );
+      });
+    });
+  });
+});
+
+describe("WIDGET_REGISTRY pref coverage", () => {
+  for (const widget of WIDGET_REGISTRY) {
+    it(`should have enabledPref registered for widget "${widget.id}"`, () => {
+      assert.ok(
+        PREFS_CONFIG.has(widget.enabledPref),
+        `Missing PREFS_CONFIG entry for ${widget.enabledPref}`
+      );
+    });
+
+    it(`should have sizePref registered for widget "${widget.id}"`, () => {
+      assert.ok(
+        PREFS_CONFIG.has(widget.sizePref),
+        `Missing PREFS_CONFIG entry for ${widget.sizePref}`
+      );
+    });
+  }
 });

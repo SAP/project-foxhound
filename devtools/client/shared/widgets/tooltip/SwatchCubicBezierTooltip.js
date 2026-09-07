@@ -82,6 +82,29 @@ class SwatchCubicBezierTooltip extends SwatchBasedEditorTooltip {
     this.preview(bezier + "");
   }
 
+  /**
+   * Like SwatchBasedEditorTooltip.addSwatch.
+   *
+   * @param {node} swatchEl
+   *        @see SwatchBasedEditorTooltip.addSwatch
+   * @param {object} callbacks
+   *        @see SwatchBasedEditorTooltip.addSwatch
+   * @param {node|undefined} previousSwatchEl
+   *        @see SwatchBasedEditorTooltip.addSwatch
+   */
+  addSwatch(swatchEl, callbacks, previousSwatchEl) {
+    super.addSwatch(swatchEl, callbacks, previousSwatchEl);
+
+    // If we are updating an already rendered and visible swatch,
+    // update the current value DOM reference to the new DOM element.
+    if (
+      previousSwatchEl &&
+      this.currentBezierValue == previousSwatchEl.nextSibling
+    ) {
+      this.currentBezierValue = swatchEl.nextSibling;
+    }
+  }
+
   destroy() {
     super.destroy();
     this.currentBezierValue = null;

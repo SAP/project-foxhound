@@ -115,8 +115,9 @@ function isV4PingFormat(aPing) {
 
 /**
  * Check if the provided ping is a deletion-request ping.
- * @param {Object} aPing The ping to check.
- * @return {Boolean} True if the ping is a deletion-request ping, false otherwise.
+ *
+ * @param {object} aPing The ping to check.
+ * @return {boolean} True if the ping is a deletion-request ping, false otherwise.
  */
 function isDeletionRequestPing(aPing) {
   return isV4PingFormat(aPing) && aPing.type == PING_TYPE_DELETION_REQUEST;
@@ -124,7 +125,8 @@ function isDeletionRequestPing(aPing) {
 
 /**
  * Generate a string suitable for including in a profiler marker as a ping description.
- * @param {Object} aPing The ping to describe.
+ *
+ * @param {object} aPing The ping to describe.
  */
 function getPingMarkerString(aPing) {
   let markerString = aPing.type;
@@ -137,11 +139,12 @@ function getPingMarkerString(aPing) {
 
 /**
  * Save the provided ping as a pending ping.
- * @param {Object} aPing The ping to save.
+ *
+ * @param {object} aPing The ping to save.
  * @return {Promise} A promise resolved when the ping is saved.
  */
 function savePing(aPing) {
-  let startTime = Cu.now();
+  let startTime = ChromeUtils.now();
   let promise = lazy.TelemetryStorage.savePendingPing(aPing);
   promise.then(() => {
     ChromeUtils.addProfilerMarker(
@@ -168,7 +171,7 @@ function arrayToString(array) {
 }
 
 /**
- * @return {String} This returns a string with the gzip compressed data.
+ * @return {string} This returns a string with the gzip compressed data.
  */
 export function gzipCompressString(string) {
   let observer = {
@@ -253,7 +256,7 @@ export var TelemetrySend = {
   /**
    * Initializes this module.
    *
-   * @param {Boolean} testing Whether this is run in a test. This changes some behavior
+   * @param {boolean} testing Whether this is run in a test. This changes some behavior
    * to enable proper testing.
    * @return {Promise} Resolved when setup is finished.
    */
@@ -285,9 +288,9 @@ export var TelemetrySend = {
    * - send the ping right away if possible or
    * - save the ping to disk and send it at the next opportunity
    *
-   * @param {Object} ping The ping data to send, must be serializable to JSON.
-   * @param {Object} [aOptions] Options object.
-   * @param {Boolean} [options.usePingSender=false] if true, send the ping using the PingSender.
+   * @param {object} ping The ping data to send, must be serializable to JSON.
+   * @param {object} [aOptions] Options object.
+   * @param {boolean} [options.usePingSender=false] if true, send the ping using the PingSender.
    * @return {Promise} Test-only - a promise that is resolved when the ping is sent or saved.
    */
   submitPing(ping, options = {}) {
@@ -300,8 +303,8 @@ export var TelemetrySend = {
    * pings are not sent to the server.
    * If trying to send a deletion-request ping, don't block it.
    *
-   * @param {Object} [ping=null] A ping to be checked.
-   * @return {Boolean} True if pings can be send to the servers, false otherwise.
+   * @param {object} [ping=null] A ping to be checked.
+   * @return {boolean} True if pings can be send to the servers, false otherwise.
    */
   sendingEnabled(ping = null) {
     return TelemetrySendImpl.sendingEnabled(ping);
@@ -397,7 +400,7 @@ var CancellableTimeout = {
   /**
    * This waits until either the given timeout passed or the timeout was cancelled.
    *
-   * @param {Number} timeoutMs The timeout in ms.
+   * @param {number} timeoutMs The timeout in ms.
    * @return {Promise<bool>} Promise that is resolved with false if the timeout was cancelled,
    *                         false otherwise.
    */
@@ -738,13 +741,8 @@ export var TelemetrySendImpl = {
   _tooLateToSend: false,
   // Array of {url, path} awaiting flushPingSenderBatch().
   _pingSenderBatch: [],
-
-  OBSERVER_TOPICS: [
-    TOPIC_IDLE_DAILY,
-    TOPIC_QUIT_APPLICATION_GRANTED,
-    TOPIC_QUIT_APPLICATION_FORCED,
-    TOPIC_PROFILE_CHANGE_NET_TEARDOWN,
-  ],
+  _quitObserverRegistered: false,
+  _observerRegistered: false,
 
   OBSERVED_PREFERENCES: [
     TelemetryUtils.Preferences.TelemetryEnabled,
@@ -790,8 +788,11 @@ export var TelemetrySendImpl = {
 
     // Install the observer to detect OS shutdown early enough, so
     // that we catch this before the delayed setup happens.
-    Services.obs.addObserver(this, TOPIC_QUIT_APPLICATION_FORCED);
-    Services.obs.addObserver(this, TOPIC_QUIT_APPLICATION_GRANTED);
+    if (!this._quitObserverRegistered) {
+      Services.obs.addObserver(this, TOPIC_QUIT_APPLICATION_FORCED);
+      Services.obs.addObserver(this, TOPIC_QUIT_APPLICATION_GRANTED);
+      this._quitObserverRegistered = true;
+    }
   },
 
   QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
@@ -801,8 +802,11 @@ export var TelemetrySendImpl = {
 
     this._testMode = testing;
 
-    Services.obs.addObserver(this, TOPIC_IDLE_DAILY);
-    Services.obs.addObserver(this, TOPIC_PROFILE_CHANGE_NET_TEARDOWN);
+    if (!this._observerRegistered) {
+      Services.obs.addObserver(this, TOPIC_IDLE_DAILY);
+      Services.obs.addObserver(this, TOPIC_PROFILE_CHANGE_NET_TEARDOWN);
+      this._observerRegistered = true;
+    }
 
     this._server = Services.prefs.getStringPref(
       TelemetryUtils.Preferences.Server,
@@ -878,7 +882,8 @@ export var TelemetrySendImpl = {
 
   /**
    * Discard old pings from the pending pings and detect overdue ones.
-   * @return {Boolean} True if we have overdue pings, false otherwise.
+   *
+   * @return {boolean} True if we have overdue pings, false otherwise.
    */
   async _checkPendingPings() {
     // Scan the pending pings - that gives us a list sorted by last modified, descending.
@@ -910,15 +915,15 @@ export var TelemetrySendImpl = {
       Services.prefs.removeObserver(pref, this);
     }
 
-    for (let topic of this.OBSERVER_TOPICS) {
-      try {
-        Services.obs.removeObserver(this, topic);
-      } catch (ex) {
-        this._log.error(
-          "shutdown - failed to remove observer for " + topic,
-          ex
-        );
-      }
+    if (this._observerRegistered) {
+      Services.obs.removeObserver(this, TOPIC_IDLE_DAILY);
+      Services.obs.removeObserver(this, TOPIC_PROFILE_CHANGE_NET_TEARDOWN);
+      this._observerRegistered = false;
+    }
+    if (this._quitObserverRegistered) {
+      Services.obs.removeObserver(this, TOPIC_QUIT_APPLICATION_FORCED);
+      Services.obs.removeObserver(this, TOPIC_QUIT_APPLICATION_GRANTED);
+      this._quitObserverRegistered = false;
     }
 
     // We can't send anymore now.
@@ -1030,8 +1035,8 @@ export var TelemetrySendImpl = {
    * succeeds, the ping is eventually removed from the disk to prevent duplicated
    * submissions.
    *
-   * @param {String} pingId The id of the ping to send.
-   * @param {String} submissionURL The complete Telemetry-compliant URL for the ping.
+   * @param {string} pingId The id of the ping to send.
+   * @param {string} submissionURL The complete Telemetry-compliant URL for the ping.
    */
   _sendWithPingSender(pingId, submissionURL) {
     this._log.trace(
@@ -1396,7 +1401,7 @@ export var TelemetrySendImpl = {
   },
 
   _doPing(ping, id, isPersisted) {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
 
     if (!this.sendingEnabled(ping)) {
       // We can't send the pings to the server, so don't try to.
@@ -1574,7 +1579,8 @@ export var TelemetrySendImpl = {
 
   /**
    * Check if sending is temporarily disabled.
-   * @return {Boolean} True if we can send pings to the server right now, false if
+   *
+   * @return {boolean} True if we can send pings to the server right now, false if
    *         sending is temporarily disabled.
    */
   get canSendNow() {
@@ -1592,8 +1598,8 @@ export var TelemetrySendImpl = {
    * If trying to send a "deletion-request" ping, don't block it.
    * If unified telemetry is off, don't send pings if Telemetry is disabled.
    *
-   * @param {Object} [ping=null] A ping to be checked.
-   * @return {Boolean} True if pings can be send to the servers, false otherwise.
+   * @param {object} [ping=null] A ping to be checked.
+   * @return {boolean} True if pings can be send to the servers, false otherwise.
    */
   sendingEnabled(ping = null) {
     // We only send pings from official builds, but allow overriding this for tests.
@@ -1634,7 +1640,8 @@ export var TelemetrySendImpl = {
 
   /**
    * Return a promise that allows to wait on pending pings.
-   * @return {Object<Promise>} A promise resolved when all the pending pings promises
+   *
+   * @return {Promise} A promise resolved when all the pending pings promises
    *         are resolved.
    */
   promisePendingPingActivity() {

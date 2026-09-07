@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -153,6 +151,10 @@ class MediaExtendedMIMEType {
   // MIME "type/subtype".
   const MediaMIMEType& Type() const { return mMIMEType; }
 
+  // Returns the MIME subtype (e.g., "h264", "vp9", "av1").
+  // Returns empty substring if no '/' found in MIME type.
+  nsDependentCSubstring Subtype() const;
+
   // Was there an explicit 'codecs' parameter provided?
   bool HaveCodecs() const { return mHaveCodecs; }
   // Codecs. May be empty if not provided or explicitly provided as empty.
@@ -166,8 +168,13 @@ class MediaExtendedMIMEType {
   Maybe<int32_t> GetChannels() const { return GetMaybeNumber(mChannels); }
   Maybe<int32_t> GetSamplerate() const { return GetMaybeNumber(mSamplerate); }
 
+  // Total number of parameters, including non-media parameters. Lazily init'd -
+  // mutates mNumParams and numParamsCached on first use. Callable from any
+  // thread, not thread safe.
+  size_t GetParameterCount() const;
+
   // Original string. Note that "type/subtype" may not be lowercase,
-  // use Type().AsString() instead to get the normalized "type/subtype".
+  // use Type().AsString() instead to get the normalized "type/subtype"
   const nsCString& OriginalString() const { return mOriginalString; }
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
@@ -207,6 +214,9 @@ class MediaExtendedMIMEType {
   int32_t mSamplerate = -1;  // -1 if not provided.
   // For both audio and video.
   int32_t mBitrate = -1;  // -1 if not provided.
+  // General parameter information
+  mutable size_t mNumParams = 0;          // lazily init'd since counting params
+  mutable bool mNumParamsCached = false;  // needs additional parser (CMimeType)
 };
 
 Maybe<MediaExtendedMIMEType> MakeMediaExtendedMIMEType(const nsAString& aType);

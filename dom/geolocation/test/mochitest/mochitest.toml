@@ -43,15 +43,15 @@ support-files = ["file_featurePolicy.html"]
 ["test_geoGetCurrentPositionBlockedInInsecureContext.html"]
 scheme = "http" # This test REQUIRES to run on HTTP (_NOT_ HTTPS).
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_geoWatchPositionBlockedInInsecureContext.html"]
 scheme = "http" # This test REQUIRES to run on HTTP (_NOT_ HTTPS).
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_geolocation_is_undefined_when_pref_is_off.html"]
@@ -62,25 +62,25 @@ support-files = ["popup.html"]
 skip-if = [
   "condprof",
   "os == 'android'", # test uses popup windows
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1823283
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1823283
 ]
 
 ["test_manyCurrentConcurrent.html"]
 skip-if = [
   "condprof", # : timed out
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1823283
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1823283
 ]
 
 ["test_manyCurrentSerial.html"]
 skip-if = [
   "condprof", # : timed out
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1823283
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1823283
 ]
 
 ["test_manyWatchConcurrent.html"]
 skip-if = [
   "condprof", # : timed out
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1823283
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1823283
 ]
 
 ["test_manyWatchSerial.html"]
@@ -88,7 +88,9 @@ skip-if = [
 ["test_manyWindows.html"]
 
 ["test_native_provider.html"]
-skip-if = ["os != 'android'"]
+skip-if = [
+  "os != 'android'",
+]
 
 ["test_not_fully_active.html"]
 support-files = ["popup.html"]

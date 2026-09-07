@@ -71,15 +71,6 @@ add_task(async function () {
     ".webconsole-evaluation-selector-button"
   );
 
-  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-    is(
-      evaluationContextSelectorButton,
-      null,
-      "context selector is only displayed when Fission or EFT is enabled"
-    );
-    return;
-  }
-
   const remoteIframeUrl = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],

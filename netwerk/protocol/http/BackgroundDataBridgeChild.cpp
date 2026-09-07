@@ -21,7 +21,7 @@ void BackgroundDataBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
-    const uint64_t& offset, const uint32_t& count, const nsACString& data,
+    const uint64_t& offset, const nsACString& data,
     const TimeStamp& aOnDataAvailableStartTime) {
   if (!mBgChild) {
     return IPC_OK();
@@ -36,7 +36,7 @@ mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
   #endif
   nsDependentCSubstring taint;
   return mBgChild->RecvOnTransportAndData(NS_OK, NS_NET_STATUS_RECEIVING_FROM,
-                                          offset, count, data, taint, true,
+                                          offset, data, taint, true,
                                           aOnDataAvailableStartTime);
 }
 

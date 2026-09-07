@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -129,7 +126,7 @@ nsUserIdleServiceDaily::Observe(nsISupports*, const char* aTopic,
   // Start timer for the next check in one day.
   (void)mTimer->InitWithNamedFuncCallback(
       DailyCallback, this, SECONDS_PER_DAY * PR_MSEC_PER_SEC,
-      nsITimer::TYPE_ONE_SHOT, "nsUserIdleServiceDaily::Observe");
+      nsITimer::TYPE_ONE_SHOT, "nsUserIdleServiceDaily::Observe"_ns);
 
   return NS_OK;
 }
@@ -206,7 +203,7 @@ void nsUserIdleServiceDaily::Init() {
 
     (void)mTimer->InitWithNamedFuncCallback(
         DailyCallback, this, milliSecLeftUntilDaily, nsITimer::TYPE_ONE_SHOT,
-        "nsUserIdleServiceDaily::Init");
+        "nsUserIdleServiceDaily::Init"_ns);
   }
 }
 
@@ -264,7 +261,7 @@ void nsUserIdleServiceDaily::DailyCallback(nsITimer* aTimer, void* aClosure) {
 
     (void)self->mTimer->InitWithNamedFuncCallback(
         DailyCallback, self, delayTime / PR_USEC_PER_MSEC,
-        nsITimer::TYPE_ONE_SHOT, "nsUserIdleServiceDaily::DailyCallback");
+        nsITimer::TYPE_ONE_SHOT, "nsUserIdleServiceDaily::DailyCallback"_ns);
     return;
   }
 
@@ -857,7 +854,8 @@ void nsUserIdleService::SetTimerExpiryIfBefore(TimeStamp aNextTimeout) {
     // Start the timer
     mTimer->InitWithNamedFuncCallback(
         StaticIdleTimerCallback, this, deltaTime.ToMilliseconds(),
-        nsITimer::TYPE_ONE_SHOT, "nsUserIdleService::SetTimerExpiryIfBefore");
+        nsITimer::TYPE_ONE_SHOT,
+        "nsUserIdleService::SetTimerExpiryIfBefore"_ns);
   }
 }
 

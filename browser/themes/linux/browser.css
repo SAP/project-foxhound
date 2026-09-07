@@ -14,7 +14,7 @@
     @media (-moz-gtk-theme-family) {
       --tabs-navbar-separator-style: none;
       @media (prefers-color-scheme: light) {
-        --urlbar-box-bgcolor: #fafafa;
+        --urlbar-box-background-color: #fafafa;
       }
     }
   }
@@ -26,38 +26,43 @@
 }
 
 /**
- * Titlebar drawing:
- *
- * GTK windows have both a window radius (exposed via the
+ * Titlebar drawing. GTK windows have both a window radius (exposed via the
  * `-moz-gtk-csd-titlebar-radius`) environment variable, and a window shadow
- * (which we can't read back from GTK). Note that the -moz-window-decorations
- * (in X11) or the compositor (in Wayland) does draw the shadow corners
- * already.
+ * (which we can't read back from GTK).
  */
 @media (-moz-gtk-csd-transparency-available) {
   :root[customtitlebar] {
     background-color: transparent;
 
-    &[sizemode="normal"]:not([gtktiledwindow="true"]) {
-      /* This takes care of drawing our window decorations on X11 */
+    &[sizemode="normal"]:not([gtktiledwindow]) {
+      /* Firefox draws its contents to a child window, while GTK takes care of
+       * drawing the toplevel (which in most cases is just the window
+       * decorations).
+       *
+       * Due to how X11 child windows work, pixels painted by a child window will
+       * never be drawn by its toplevel, even in compositing window managers.
+       * That means that we need to draw the part of the decorations that fall
+       * into our client area ourselves, which is what this does.
+       *
+       * Alternatives to this would be:
+       *  * Using the XComposite extension
+       *  * Drawing to the toplevel window buffer directly
+       *  * Approximating the corners with gdk_window_shape_combine_region
+       *
+       * None of them being particularly appealing.
+       *
+       * On Wayland we render to a subsurface which gets properly composited
+       * atop our toplevel, so there's no issue there (MozWindowDecorations
+       * does nothing).
+       */
       -moz-default-appearance: -moz-window-decorations;
       appearance: auto;
 
-      #navigator-toolbox,
+      body,
       dialog::backdrop {
         border-top-left-radius: env(-moz-gtk-csd-titlebar-radius);
         border-top-right-radius: env(-moz-gtk-csd-titlebar-radius);
-      }
-
-      /* stylelint-disable-next-line media-query-no-invalid */
-      @media -moz-pref("widget.gtk.rounded-bottom-corners.enabled") {
-        #navigator-toolbox {
-          /* The body clip below covers this. */
-          border-radius: 0;
-        }
-
-        body,
-        dialog::backdrop {
+        @media -moz-pref("widget.gtk.rounded-bottom-corners.enabled") {
           /* Use an uniform clip to allow WebRender to optimize it better */
           border-radius: env(-moz-gtk-csd-titlebar-radius);
         }
@@ -85,16 +90,9 @@
 }
 
 /* Address bar */
-#urlbar,
+.urlbar,
 #searchbar {
   font-size: 1.05em;
-}
-
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("browser.urlbar.experimental.expandTextOnFocus") {
-  #urlbar[breakout-extend] {
-    font-size: 1.14em;
-  }
 }
 
 /* AutoComplete */
@@ -124,7 +122,7 @@
 /* All tabs menupopup */
 
 .alltabs-item[selected="true"] {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #UITourHighlight {
@@ -148,7 +146,7 @@
 }
 
 /**
- * Override the --arrowpanel-padding so the background extends
+ * Override the --panel-padding so the background extends
  * to the sides and bottom of the panel.
  */
 #UITourTooltipButtons {
@@ -213,7 +211,7 @@
   -moz-window-dragging: drag;
 
   > .toolbarbutton-icon {
-    border-radius: 100%;
+    border-radius: var(--border-radius-circle);
     background-position: center center;
     background-size: min(16px, var(--titlebar-button-size) - 2 * env(hairline));
     background-repeat: no-repeat;
@@ -248,15 +246,15 @@
 
   @media (-moz-gtk-theme-family: breeze) {
     &:hover > .toolbarbutton-icon {
-      color: var(--toolbox-bgcolor);
-      background-color: var(--toolbox-textcolor);
+      color: var(--toolbox-background-color);
+      background-color: var(--toolbox-text-color);
       &:-moz-window-inactive {
-        color: var(--toolbox-bgcolor-inactive);
-        background-color: var(--toolbox-textcolor-inactive);
+        color: var(--toolbox-background-color-inactive);
+        background-color: var(--toolbox-text-color-inactive);
       }
     }
     &:hover:active > .toolbarbutton-icon {
-      background-color: color-mix(in srgb, var(--toolbox-textcolor) 50%, transparent);
+      background-color: color-mix(in srgb, var(--toolbox-text-color) 50%, transparent);
     }
     &.titlebar-close:hover > .toolbarbutton-icon {
       background-color: #ff98a2;
@@ -306,4 +304,8 @@
   @media not (-moz-gtk-csd-minimize-button) {
     display: none;
   }
+}
+
+.titlebar-return-to-opener {
+  --titlebar-button-position: env(-moz-gtk-csd-minimize-button-position);
 }

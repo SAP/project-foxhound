@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+
+<style>
+  @font-face {
+    /* only has characters "alnst" */
+    font-family: test;
+    src: url(Inter.var.subset.ttf);
+  }
+  @font-face {
+    /* only has characters "A" */
+    font-family: test2;
+    src: url(FloatPrecisionTest.ttf);
+  }
+  .weight {
+    font-family: test;
+    font-weight: 800;
+  }
+  .rounding {
+    font-family: test2;
+  }
+</style>
+
+<body>
+  <div class="weight">alnst</div>
+  <div class="rounding">A</div>
+</body>

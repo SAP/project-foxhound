@@ -27,6 +27,9 @@ private val logger = Logger("AppStartReasonProvider")
  */
 class AppStartReasonProvider {
 
+    /**
+     * Possible reasons why the application was started.
+     */
     enum class StartReason {
         /** We don't know yet what caused this [Application] instance to be started. */
         TO_BE_DETERMINED,

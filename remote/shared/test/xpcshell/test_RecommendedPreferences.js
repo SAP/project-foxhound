@@ -53,7 +53,7 @@ add_task(async function test_multipleClients() {
   RecommendedPreferences.restoreAllPreferences();
   checkPreferences({ common: false, protocol_1: false, protocol_2: false });
 
-  info("Attemps to restore again");
+  info("Attempts to restore again");
   RecommendedPreferences.restoreAllPreferences();
   checkPreferences({ common: false, protocol_1: false, protocol_2: false });
 

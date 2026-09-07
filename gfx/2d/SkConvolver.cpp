@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011-2016 Google Inc.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the gfx/skia/LICENSE file.
 
 #include "SkConvolver.h"
+
+#include <algorithm>
 
 #ifdef USE_SSE2
 #  include "mozilla/SSE.h"
@@ -64,12 +64,14 @@ void ConvolveHorizontally(const unsigned char* srcData,
 
     // Bring this value back in range. All of the filter scaling factors
     // are in fixed point with kShiftBits bits of fractional part.
-    accum[0] >>= SkConvolutionFilter1D::kShiftBits;
-    accum[1] >>= SkConvolutionFilter1D::kShiftBits;
-    accum[2] >>= SkConvolutionFilter1D::kShiftBits;
+    // Add rounding bias before truncating to avoid systematic darkening.
+    constexpr int kRound = 1 << (SkConvolutionFilter1D::kShiftBits - 1);
+    accum[0] = (accum[0] + kRound) >> SkConvolutionFilter1D::kShiftBits;
+    accum[1] = (accum[1] + kRound) >> SkConvolutionFilter1D::kShiftBits;
+    accum[2] = (accum[2] + kRound) >> SkConvolutionFilter1D::kShiftBits;
 
     if (hasAlpha) {
-      accum[3] >>= SkConvolutionFilter1D::kShiftBits;
+      accum[3] = (accum[3] + kRound) >> SkConvolutionFilter1D::kShiftBits;
     }
 
     // Store the new pixel.
@@ -114,11 +116,12 @@ void ConvolveVertically(
 
     // Bring this value back in range. All of the filter scaling factors
     // are in fixed point with kShiftBits bits of precision.
-    accum[0] >>= SkConvolutionFilter1D::kShiftBits;
-    accum[1] >>= SkConvolutionFilter1D::kShiftBits;
-    accum[2] >>= SkConvolutionFilter1D::kShiftBits;
+    constexpr int kRound = 1 << (SkConvolutionFilter1D::kShiftBits - 1);
+    accum[0] = (accum[0] + kRound) >> SkConvolutionFilter1D::kShiftBits;
+    accum[1] = (accum[1] + kRound) >> SkConvolutionFilter1D::kShiftBits;
+    accum[2] = (accum[2] + kRound) >> SkConvolutionFilter1D::kShiftBits;
     if (hasAlpha) {
-      accum[3] >>= SkConvolutionFilter1D::kShiftBits;
+      accum[3] = (accum[3] + kRound) >> SkConvolutionFilter1D::kShiftBits;
     }
 
     // Store the new pixel.
@@ -177,7 +180,8 @@ void ConvolveHorizontallyA8(const unsigned char* srcData,
 
     // Bring this value back in range. All of the filter scaling factors
     // are in fixed point with kShiftBits bits of fractional part.
-    accum >>= SkConvolutionFilter1D::kShiftBits;
+    constexpr int kRound = 1 << (SkConvolutionFilter1D::kShiftBits - 1);
+    accum = (accum + kRound) >> SkConvolutionFilter1D::kShiftBits;
 
     // Store the new pixel.
     outRow[outX] = ClampTo8(accum);
@@ -206,7 +210,8 @@ void ConvolveVerticallyA8(
 
     // Bring this value back in range. All of the filter scaling factors
     // are in fixed point with kShiftBits bits of precision.
-    accum >>= SkConvolutionFilter1D::kShiftBits;
+    constexpr int kRound = 1 << (SkConvolutionFilter1D::kShiftBits - 1);
+    accum = (accum + kRound) >> SkConvolutionFilter1D::kShiftBits;
 
     // Store the new pixel.
     outRow[outX] = ClampTo8(accum);
@@ -487,8 +492,13 @@ bool SkConvolutionFilter1D::ComputeFilterValues(
     float srcPixel = (static_cast<float>(destI) + 0.5f) * invScale;
 
     // Compute the (inclusive) range of source pixels the filter covers.
-    float srcBegin = std::max(0.0f, floorf(srcPixel - srcSupport));
-    float srcEnd = std::min(aSrcSize - 1.0f, ceilf(srcPixel + srcSupport));
+    // Clamp in the integer domain to avoid float rounding imprecision with
+    // values near int32 extremes.
+    int32_t srcBegin =
+        int32_t(std::clamp(int64_t(floorf(srcPixel - srcSupport)), int64_t(0),
+                           int64_t(aSrcSize) - 1));
+    int32_t srcEnd = int32_t(std::clamp(int64_t(ceilf(srcPixel + srcSupport)),
+                                        int64_t(0), int64_t(aSrcSize) - 1));
 
     // Compute the unnormalized filter value at each location of the source
     // it covers.
@@ -500,13 +510,14 @@ bool SkConvolutionFilter1D::ComputeFilterValues(
     // example used above the distance from the center of the filter to
     // the pixel with coordinates (2, 2) should be 0, because its center
     // is at (2.5, 2.5).
-    int32_t filterCount = int32_t(srcEnd - srcBegin) + 1;
+    int32_t filterCount = srcEnd - srcBegin + 1;
     if (filterCount <= 0 || !filterValues.resize(filterCount) ||
         !fixedFilterValues.resize(filterCount)) {
       return false;
     }
 
-    float destFilterDist = (srcBegin + 0.5f - srcPixel) * clampedScale;
+    float destFilterDist =
+        (static_cast<float>(srcBegin) + 0.5f - srcPixel) * clampedScale;
     float filterSum = 0.0f;
     for (int32_t index = 0; index < filterCount; index++) {
       float filterValue = aBitmapFilter.evaluate(destFilterDist);
@@ -533,7 +544,7 @@ bool SkConvolutionFilter1D::ComputeFilterValues(
     ConvolutionFixed leftovers = ToFixed(1) - fixedSum;
     fixedFilterValues[filterCount / 2] += leftovers;
 
-    if (!AddFilter(int32_t(srcBegin), fixedFilterValues.begin(), filterCount)) {
+    if (!AddFilter(srcBegin, fixedFilterValues.begin(), filterCount)) {
       fFilters.shrinkTo(oldFiltersLength);
       fFilterValues.shrinkTo(oldFilterValuesLength);
       fMaxFilter = oldMaxFilter;

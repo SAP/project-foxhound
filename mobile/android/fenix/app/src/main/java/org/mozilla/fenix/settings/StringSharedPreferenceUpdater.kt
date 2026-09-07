@@ -6,7 +6,7 @@ package org.mozilla.fenix.settings
 
 import androidx.core.content.edit
 import androidx.preference.Preference
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 
 /**
  * Updates the corresponding [android.content.SharedPreferences] when the String [Preference] is changed.
@@ -16,7 +16,7 @@ open class StringSharedPreferenceUpdater : Preference.OnPreferenceChangeListener
 
     override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
         val newStringValue = newValue as? String ?: return false
-        preference.context.settings().preferences.edit {
+        preference.context.components.settings.preferences.edit {
             putString(preference.key, newStringValue)
         }
         return true

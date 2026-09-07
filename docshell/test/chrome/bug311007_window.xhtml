@@ -114,6 +114,13 @@ function step2A() {
 }
 
 function step2B(aWebProgress, aRequest, aLocation, aFlags) {
+  content.addEventListener(
+    'load',
+    () => step2C(aWebProgress, aRequest, aLocation, aFlags),
+    {once: true});
+}
+
+function step2C(aWebProgress, aRequest, aLocation, aFlags) {
   is(aLocation.spec, kSecureURI, "A URI on HTTPS (2)");
 
   ok(!(aFlags & Ci.nsIWebProgressListener

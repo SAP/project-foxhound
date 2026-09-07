@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,8 @@
 #include "MainThreadUtils.h"
 #include "mozilla/AspectRatio.h"
 #include "mozilla/EndianUtils.h"
+#include "mozilla/IntegerRange.h"
+#include "mozilla/SVGContentUtils.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -44,6 +44,7 @@ template struct StyleStrong<StyleLockedStyleRule>;
 template struct StyleStrong<StyleLockedImportRule>;
 template struct StyleStrong<StyleLockedKeyframesRule>;
 template struct StyleStrong<StyleMediaRule>;
+template struct StyleStrong<StyleCustomMediaRule>;
 template struct StyleStrong<StyleDocumentRule>;
 template struct StyleStrong<StyleNamespaceRule>;
 template struct StyleStrong<StyleMarginRule>;
@@ -57,8 +58,50 @@ template struct StyleStrong<StyleLockedCounterStyleRule>;
 template struct StyleStrong<StyleContainerRule>;
 template struct StyleStrong<StyleScopeRule>;
 template struct StyleStrong<StyleStartingStyleRule>;
+template struct StyleStrong<StyleAppearanceBaseRule>;
 template struct StyleStrong<StyleLockedPositionTryRule>;
 template struct StyleStrong<StyleLockedNestedDeclarationsRule>;
+template struct StyleStrong<StyleViewTransitionRule>;
+
+template <typename T, size_t N>
+inline StyleOwnedArray<T, N>::StyleOwnedArray(const StyleOwnedArray& aOther)
+    : ptr(static_cast<T*>(moz_xmalloc(N * sizeof(T)))) {
+  for (size_t i = 0; i < N; ++i) {
+    new (&ptr[i]) T(aOther.ptr[i]);
+  }
+}
+
+template <typename T, size_t N>
+template <typename... Args>
+  requires(sizeof...(Args) == N)
+inline StyleOwnedArray<T, N>::StyleOwnedArray(Args&&... aArgs)
+    : ptr(static_cast<T*>(malloc(N * sizeof(T)))) {
+  size_t i = 0;
+  (new (&ptr[i++]) T(std::forward<Args>(aArgs)), ...);
+}
+
+template <typename T, size_t N>
+inline StyleOwnedArray<T, N>& StyleOwnedArray<T, N>::operator=(
+    const StyleOwnedArray& aOther) {
+  if (this == &aOther) {
+    return *this;
+  }
+  for (size_t i = 0; i < N; ++i) {
+    ptr[i].~T();
+  }
+  for (size_t i = 0; i < N; ++i) {
+    new (&ptr[i]) T(aOther.ptr[i]);
+  }
+  return *this;
+}
+
+template <typename T, size_t N>
+inline StyleOwnedArray<T, N>::~StyleOwnedArray() {
+  for (size_t i = 0; i < N; ++i) {
+    ptr[i].~T();
+  }
+  free(ptr);
+}
 
 template <typename T>
 inline void StyleOwnedSlice<T>::Clear() {
@@ -355,7 +398,7 @@ inline StyleAngle StyleAngle::Zero() { return {0.0f}; }
 inline float StyleAngle::ToDegrees() const { return _0; }
 
 inline double StyleAngle::ToRadians() const {
-  return double(ToDegrees()) * M_PI / 180.0;
+  return double(ToDegrees()) * kRadPerDegree;
 }
 
 inline bool StyleUrlExtraData::IsShared() const { return !!(_0 & 1); }
@@ -499,6 +542,10 @@ StyleGradient::ColorInterpolationMethod() const {
   return AsConic().color_interpolation_method;
 }
 
+inline StyleAnimationName::StyleAnimationName() : _0(nsGkAtoms::_empty) {};
+
+inline StyleTimelineIdent::StyleTimelineIdent() : _0(nsGkAtoms::_empty) {};
+
 template <typename Integer>
 inline StyleGenericGridLine<Integer>::StyleGenericGridLine()
     : ident{StyleAtom(nsGkAtoms::_empty)}, line_num(0), is_span(false) {}
@@ -525,6 +572,7 @@ using LengthOrAuto = StyleLengthOrAuto;
 using NonNegativeLength = StyleNonNegativeLength;
 using NonNegativeLengthOrAuto = StyleNonNegativeLengthOrAuto;
 using BorderRadius = StyleBorderRadius;
+using CornerShapeRect = StyleCornerShapeRect;
 
 bool StyleCSSPixelLength::IsZero() const { return _0 == 0.0f; }
 
@@ -561,45 +609,49 @@ nscoord StyleCSSPixelLength::ToAppUnits() const {
   return detail::DefaultLengthToAppUnits(_0);
 }
 
-bool LengthPercentage::IsLength() const { return Tag() == TAG_LENGTH; }
+static_assert(sizeof(LengthPercentage) == sizeof(uint64_t), "");
 
-StyleLengthPercentageUnion::StyleLengthPercentageUnion() {
-  length = {TAG_LENGTH, {0.0f}};
-  MOZ_ASSERT(IsLength());
+bool LengthPercentage::IsLengthOrPercentage() const {
+  return (_0._0.tag.tag & StyleNUMERIC_UNION_TAG_INLINE) != 0;
 }
 
-static_assert(sizeof(LengthPercentage) == sizeof(uint64_t), "");
+bool LengthPercentage::IsLength() const {
+  return IsLengthOrPercentage() &&
+         _0._0.inl.numeric_tag == StyleLengthPercentageTag::Length;
+}
+
+bool LengthPercentage::IsPercentage() const {
+  return IsLengthOrPercentage() &&
+         _0._0.inl.numeric_tag == StyleLengthPercentageTag::Percentage;
+}
+
+bool LengthPercentage::IsCalc() const { return !IsLengthOrPercentage(); }
 
 Length& LengthPercentage::AsLength() {
   MOZ_ASSERT(IsLength());
-  return length.length;
+  return *reinterpret_cast<Length*>(&_0._0.inl.value);
 }
 
 const Length& LengthPercentage::AsLength() const {
   return const_cast<LengthPercentage*>(this)->AsLength();
 }
 
-bool LengthPercentage::IsPercentage() const { return Tag() == TAG_PERCENTAGE; }
-
 StylePercentage& LengthPercentage::AsPercentage() {
   MOZ_ASSERT(IsPercentage());
-  return percentage.percentage;
+  return *reinterpret_cast<StylePercentage*>(&_0._0.inl.value);
 }
 
 const StylePercentage& LengthPercentage::AsPercentage() const {
   return const_cast<LengthPercentage*>(this)->AsPercentage();
 }
 
-bool LengthPercentage::IsCalc() const { return Tag() == TAG_CALC; }
-
 StyleCalcLengthPercentage& LengthPercentage::AsCalc() {
   MOZ_ASSERT(IsCalc());
-  // NOTE: in 32-bits, the pointer is not swapped, and goes along with the tag.
 #ifdef SERVO_32_BITS
-  return *reinterpret_cast<StyleCalcLengthPercentage*>(calc.ptr);
+  return *reinterpret_cast<StyleCalcLengthPercentage*>(_0._0.boxed.ptr);
 #else
   return *reinterpret_cast<StyleCalcLengthPercentage*>(
-      NativeEndian::swapFromLittleEndian(calc.ptr));
+      NativeEndian::swapFromLittleEndian(_0._0.boxed.ptr));
 #endif
 }
 
@@ -607,29 +659,28 @@ const StyleCalcLengthPercentage& LengthPercentage::AsCalc() const {
   return const_cast<LengthPercentage*>(this)->AsCalc();
 }
 
-StyleLengthPercentageUnion::StyleLengthPercentageUnion(const Self& aOther) {
-  if (aOther.IsLength()) {
-    length = {TAG_LENGTH, aOther.AsLength()};
-  } else if (aOther.IsPercentage()) {
-    percentage = {TAG_PERCENTAGE, aOther.AsPercentage()};
+StyleLengthPercentage::StyleLengthPercentage() {
+  _0._0.inl = {StyleNUMERIC_UNION_TAG_INLINE, StyleLengthPercentageTag::Length,
+               0.0f};
+  MOZ_ASSERT(IsLength());
+}
+
+StyleLengthPercentage::StyleLengthPercentage(const Self& aOther) {
+  if (aOther.IsLengthOrPercentage()) {
+    _0._0.inl = aOther._0._0.inl;
   } else {
     MOZ_ASSERT(aOther.IsCalc());
     auto* ptr = new StyleCalcLengthPercentage(aOther.AsCalc());
-    // NOTE: in 32-bits, the pointer is not swapped, and goes along with the
-    // tag.
-    calc = {
 #ifdef SERVO_32_BITS
-        TAG_CALC,
-        ptr,
+    _0._0.boxed = {0, ptr};
 #else
-        NativeEndian::swapToLittleEndian(reinterpret_cast<uintptr_t>(ptr)),
+    _0._0.boxed = {
+        NativeEndian::swapToLittleEndian(reinterpret_cast<uintptr_t>(ptr))};
 #endif
-    };
   }
-  MOZ_ASSERT(Tag() == aOther.Tag());
 }
 
-StyleLengthPercentageUnion::~StyleLengthPercentageUnion() {
+LengthPercentage::~StyleLengthPercentage() {
   if (IsCalc()) {
     delete &AsCalc();
   }
@@ -644,16 +695,13 @@ LengthPercentage& LengthPercentage::operator=(const LengthPercentage& aOther) {
 }
 
 bool LengthPercentage::operator==(const LengthPercentage& aOther) const {
-  if (Tag() != aOther.Tag()) {
-    return false;
-  }
   if (IsLength()) {
-    return AsLength() == aOther.AsLength();
+    return aOther.IsLength() && AsLength() == aOther.AsLength();
   }
   if (IsPercentage()) {
-    return AsPercentage() == aOther.AsPercentage();
+    return aOther.IsPercentage() && AsPercentage() == aOther.AsPercentage();
   }
-  return AsCalc() == aOther.AsCalc();
+  return aOther.IsCalc() && AsCalc() == aOther.AsCalc();
 }
 
 bool LengthPercentage::operator!=(const LengthPercentage& aOther) const {
@@ -665,7 +713,7 @@ LengthPercentage LengthPercentage::Zero() { return {}; }
 LengthPercentage LengthPercentage::FromPixels(CSSCoord aCoord) {
   LengthPercentage l;
   MOZ_ASSERT(l.IsLength());
-  l.length.length = {aCoord};
+  l._0._0.inl.value = aCoord;
   return l;
 }
 
@@ -675,7 +723,8 @@ LengthPercentage LengthPercentage::FromAppUnits(nscoord aCoord) {
 
 LengthPercentage LengthPercentage::FromPercentage(float aPercentage) {
   LengthPercentage l;
-  l.percentage = {TAG_PERCENTAGE, {aPercentage}};
+  l._0._0.inl = {StyleNUMERIC_UNION_TAG_INLINE,
+                 StyleLengthPercentageTag::Percentage, aPercentage};
   return l;
 }
 
@@ -732,9 +781,6 @@ nscoord StyleCalcLengthPercentage::Resolve(nscoord aBasis,
   return aRounder(result * AppUnitsPerCSSPixel());
 }
 
-template <>
-void StyleCalcNode::ScaleLengthsBy(float);
-
 CSSCoord LengthPercentage::ResolveToCSSPixels(CSSCoord aPercentageBasis) const {
   if (IsLength()) {
     return AsLength().ToCSSPixels();
@@ -787,15 +833,6 @@ nscoord LengthPercentage::Resolve(nscoord aPercentageBasis,
   return Resolve([aPercentageBasis] { return aPercentageBasis; }, aRounder);
 }
 
-void LengthPercentage::ScaleLengthsBy(float aScale) {
-  if (IsLength()) {
-    AsLength().ScaleBy(aScale);
-  }
-  if (IsCalc()) {
-    AsCalc().node.ScaleLengthsBy(aScale);
-  }
-}
-
 #define IMPL_LENGTHPERCENTAGE_FORWARDS(ty_)                                 \
   template <>                                                               \
   inline bool ty_::HasPercent() const {                                     \
@@ -846,6 +883,11 @@ inline bool StyleMargin::HasAnchorPositioningFunction() const {
 template <>
 inline bool StyleSize::HasAnchorPositioningFunction() const {
   return IsAnchorSizeFunction() || IsAnchorContainingCalcFunction();
+}
+
+template <>
+inline StyleSize StyleSize::FromAppUnits(nscoord aAppUnits) {
+  return StyleSize::LengthPercentage(LengthPercentage::FromAppUnits(aAppUnits));
 }
 
 template <>
@@ -1020,7 +1062,7 @@ inline bool RestyleHint::DefinitelyRecascadesAllSubtree() const {
 }
 
 template <>
-ImageResolution StyleImage::GetResolution(const ComputedStyle&) const;
+ImageResolution StyleImage::GetResolution(const ComputedStyle*) const;
 
 template <>
 inline const StyleImage& StyleImage::FinalImage() const {
@@ -1102,6 +1144,10 @@ inline void StyleFontStyle::ToString(nsACString& aString) const {
 
 inline bool StyleFontWeight::IsBold() const { return *this >= BOLD_THRESHOLD; }
 
+inline bool StyleFontWeight::PreferBold() const {
+  return *this > PREFER_BOLD_THRESHOLD;
+}
+
 inline bool StyleFontStyle::IsItalic() const { return *this == ITALIC; }
 
 inline float StyleFontStyle::ObliqueAngle() const {
@@ -1116,6 +1162,10 @@ inline float StyleFontStyle::SlantAngle() const {
 using FontStretch = StyleFontStretch;
 using FontSlantStyle = StyleFontStyle;
 using FontWeight = StyleFontWeight;
+
+inline StyleFontPalette StyleFontPalette::Normal() {
+  return StyleFontPalette{StyleAtom(nsGkAtoms::normal->ToAddRefed())};
+}
 
 template <>
 inline double StyleComputedTimingFunction::At(double aPortion,
@@ -1148,6 +1198,22 @@ template <>
 inline StyleViewTimelineInset::StyleGenericViewTimelineInset()
     : start(LengthPercentageOrAuto::Auto()),
       end(LengthPercentageOrAuto::Auto()) {}
+
+/* static */
+template <>
+inline StyleAnimationRangeStart
+StyleGenericAnimationRangeValue<LengthPercentage>::DefaultStart() {
+  return {StyleTimelineRangeName::Normal,
+          LengthPercentage::FromPercentage(0.0f)};
+}
+
+/* static */
+template <>
+inline StyleAnimationRangeEnd
+StyleGenericAnimationRangeValue<LengthPercentage>::DefaultEnd() {
+  return {StyleTimelineRangeName::Normal,
+          LengthPercentage::FromPercentage(1.0f)};
+}
 
 inline StyleDisplayOutside StyleDisplay::Outside() const {
   return StyleDisplayOutside((_0 & OUTSIDE_MASK) >> OUTSIDE_SHIFT);
@@ -1274,6 +1340,140 @@ inline gfx::Point StyleCoordinatePair<LengthPercentage>::ToGfxPoint(
                     y.ResolveToCSSPixels(aBasis->Height()));
 }
 
+template <>
+inline gfx::Point
+StyleGenericPosition<StyleCSSFloat, StyleCSSFloat>::ToGfxPoint(
+    const CSSSize* aBasis) const {
+  return gfx::Point(horizontal, vertical);
+}
+
+template <>
+inline gfx::Point StylePosition::ToGfxPoint(const CSSSize* aBasis) const {
+  MOZ_ASSERT(aBasis);
+  return gfx::Point(horizontal.ResolveToCSSPixels(aBasis->Width()),
+                    vertical.ResolveToCSSPixels(aBasis->Height()));
+}
+
+template <>
+inline gfx::Point
+StyleCommandEndPoint<StyleGenericPosition<StyleCSSFloat, StyleCSSFloat>,
+                     StyleCSSFloat>::ToGfxPoint(const CSSSize* aBasis) const {
+  if (IsToPosition()) {
+    auto& pos = AsToPosition();
+    return pos.ToGfxPoint();
+  } else {
+    auto& coord = AsByCoordinate();
+    return coord.ToGfxPoint();
+  }
+}
+
+template <>
+inline gfx::Point
+StyleCommandEndPoint<StylePosition, LengthPercentage>::ToGfxPoint(
+    const CSSSize* aBasis) const {
+  MOZ_ASSERT(aBasis);
+  if (IsToPosition()) {
+    auto& pos = AsToPosition();
+    return pos.ToGfxPoint(aBasis);
+  } else {
+    auto& coord = AsByCoordinate();
+    return coord.ToGfxPoint(aBasis);
+  }
+}
+
+template <>
+inline gfx::Coord StyleAxisEndPoint<StyleCSSFloat>::ToGfxCoord(
+    const StyleCSSFloat* aBasis) const {
+  if (IsToPosition()) {
+    const auto pos = AsToPosition();
+    MOZ_ASSERT(pos.IsLengthPercent());
+    return gfx::Coord(pos.AsLengthPercent());
+  }
+  return gfx::Coord(AsByCoordinate());
+}
+
+template <>
+inline gfx::Coord StyleAxisEndPoint<LengthPercentage>::ToGfxCoord(
+    const StyleCSSFloat* aBasis) const {
+  MOZ_ASSERT(aBasis);
+  if (IsToPosition()) {
+    const auto pos = AsToPosition();
+    MOZ_ASSERT(pos.IsLengthPercent());
+    return gfx::Coord(pos.AsLengthPercent().ResolveToCSSPixels(*aBasis));
+  }
+  return gfx::Coord(AsByCoordinate().ResolveToCSSPixels(*aBasis));
+}
+
+template <>
+inline gfx::Point
+StyleControlPoint<StyleGenericPosition<StyleCSSFloat, StyleCSSFloat>,
+                  StyleCSSFloat>::ToGfxPoint(const gfx::Point aStatePos,
+                                             const gfx::Point aEndPoint,
+                                             const CSSSize* aBasis) const {
+  if (IsAbsolute()) {
+    auto& pos = AsAbsolute();
+    return pos.ToGfxPoint();
+  }
+
+  // Else
+  auto& point = AsRelative();
+  auto cp = point.coord.ToGfxPoint();
+  if (point.reference == StyleControlReference::Start) {
+    return cp + aStatePos;
+  } else if (point.reference == StyleControlReference::End) {
+    return cp + aEndPoint;
+  } else {
+    return cp;
+  }
+}
+
+template <>
+inline gfx::Point
+StyleControlPoint<StylePosition, LengthPercentage>::ToGfxPoint(
+    const gfx::Point aStatePos, const gfx::Point aEndPoint,
+    const CSSSize* aBasis) const {
+  MOZ_ASSERT(aBasis);
+  if (IsAbsolute()) {
+    auto& pos = AsAbsolute();
+    return pos.ToGfxPoint(aBasis);
+  }
+
+  // Else
+  auto& point = AsRelative();
+  auto cp = point.coord.ToGfxPoint(aBasis);
+  if (point.reference == StyleControlReference::Start) {
+    return cp + aStatePos;
+  } else if (point.reference == StyleControlReference::End) {
+    return cp + aEndPoint;
+  } else {
+    return cp;
+  }
+}
+
+template <>
+inline gfx::Point StyleArcRadii<StyleCSSFloat>::ToGfxPoint(
+    const CSSSize* aBasis) const {
+  return ry.IsSome() ? gfx::Point(rx, ry.AsSome()) : gfx::Point(rx, rx);
+}
+
+template <>
+inline gfx::Point StyleArcRadii<LengthPercentage>::ToGfxPoint(
+    const CSSSize* aBasis) const {
+  MOZ_ASSERT(aBasis);
+  if (ry.IsSome()) {
+    return gfx::Point(rx.ResolveToCSSPixels(aBasis->Width()),
+                      ry.AsSome().ResolveToCSSPixels(aBasis->Height()));
+  }
+
+  // Else percentages are resolved against the direction-agnostic size
+  // of the reference box for both radiuses.
+  // https://drafts.csswg.org/css-shapes-1/#typedef-shape-arc-command
+  const auto directionAgnostic = SVGContentUtils::ComputeNormalizedHypotenuse(
+      aBasis->Width(), aBasis->Height());
+  const auto radius = rx.ResolveToCSSPixels(directionAgnostic);
+  return gfx::Point(radius, radius);
+}
+
 inline StylePhysicalSide ToStylePhysicalSide(mozilla::Side aSide) {
   // TODO(dshin): Should look into merging these two types...
   static_assert(static_cast<uint8_t>(mozilla::Side::eSideLeft) ==
@@ -1320,6 +1520,20 @@ DEFINE_LENGTH_PERCENTAGE_CTOR(MaxSize)
 inline bool StylePositionArea::IsNone() const {
   return first == StylePositionAreaKeyword::None;
 }
+
+template <>
+inline bool StyleTreeScoped<StyleAnchorNameIdent>::IsEmpty() const {
+  return value.IsEmpty();
+}
+
+template <>
+inline Span<const mozilla::StyleAtom>
+StyleTreeScoped<StyleAnchorNameIdent>::AsSpan() const {
+  return value.AsSpan();
+}
+
+inline StyleNumericType::StyleNumericType()
+    : exponents{}, percent_hint(StyleOptional<StyleNumericBaseType>::None()) {}
 
 }  // namespace mozilla
 

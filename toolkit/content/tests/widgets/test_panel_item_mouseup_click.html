@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Test Panel Item Mouseup Click</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+  </head>
+  <body>
+    <p id="display"></p>
+
+    <div id="content">
+      <panel-list>
+        <panel-item>First item</panel-item>
+        <panel-item>Second item</panel-item>
+        <panel-item>Third item</panel-item>
+      </panel-list>
+      <button>Open</button>
+    </div>
+
+    <script class="testbody" type="application/javascript">
+      const { BrowserTestUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/BrowserTestUtils.sys.mjs"
+      );
+
+      let panelList = document.querySelector("panel-list");
+      let [item1, item2] = panelList.querySelectorAll("panel-item");
+      let anchorButton = document.querySelector("button");
+
+      async function doTest(msg, fn) {
+        info(msg);
+        anchorButton.click();
+        await BrowserTestUtils.waitForEvent(panelList, "shown");
+        await fn();
+        await BrowserTestUtils.waitForEvent(panelList, "hidden");
+      }
+
+      add_setup(function setup() {
+        anchorButton.addEventListener("click", e => panelList.toggle(e));
+      });
+
+      add_task(async function test_nonComboboxAnchor() {
+        anchorButton.role = "menu";
+        anchorButton.click();
+        await BrowserTestUtils.waitForEvent(panelList, "shown");
+
+        let clicks = 0;
+        let mouseups = 0;
+        item1.addEventListener("click", () => clicks++);
+        item1.addEventListener("mouseup", () => mouseups++);
+
+        synthesizeMouseAtCenter(item1, { type: "mouseup" });
+
+        is(clicks, 0, "No click event on mouseup with non-combobox anchor");
+        is(mouseups, 1, "Mouseup fires normally with non-combobox anchor");
+
+        anchorButton.click();
+        await BrowserTestUtils.waitForEvent(panelList, "hidden");
+      });
+
+      add_task(async function test_eventCounts() {
+        anchorButton.role = "combobox";
+
+        let clicks = 0;
+        let mouseups = 0;
+        item1.addEventListener("click", () => clicks++);
+        item1.addEventListener("mouseup", () => mouseups++);
+
+        // Make sure reconnecting doesn't mess up the listener order.
+        item1.remove();
+        item2.before(item1);
+
+        await doTest("Testing mouseup", () => {
+          synthesizeMouseAtCenter(item1, { type: "mouseup" });
+          is(clicks, 1, "Click event fires");
+          is(mouseups, 1, "Mouseup fires");
+        });
+
+        await doTest("Testing .click()", () => {
+          item1.click();
+          is(clicks, 2, "Click event fires");
+          is(mouseups, 1, "Mouseup doesn't fire");
+        });
+
+        await doTest("Testing real click", () => {
+          synthesizeMouseAtCenter(item1, {});
+          is(clicks, 3, "Click event fires");
+          is(mouseups, 2, "Mouseup fires");
+        });
+
+        await doTest("Testing keyboard click", () => {
+          item1.focus();
+          synthesizeKey("KEY_Enter", {});
+          is(clicks, 4, "Click event fires");
+          is(mouseups, 2, "Mouseup doesn't fire");
+        });
+      });
+
+      add_task(async function test_eventData() {
+        anchorButton.role = "combobox";
+
+        await doTest("Testing without shift key", () => {
+          item1.addEventListener(
+            "click",
+            event => {
+              ok(!event.shiftKey, "Event doesn't have shiftKey property");
+            },
+            { once: true }
+          );
+          synthesizeMouseAtCenter(item1, { type: "mouseup" });
+        });
+
+        await doTest("Testing with shift key", () => {
+          item1.addEventListener(
+            "click",
+            event => {
+              ok(event.shiftKey, "Event has shiftKey property");
+            },
+            { once: true }
+          );
+          synthesizeMouseAtCenter(item1, { type: "mouseup", shiftKey: true });
+        });
+      });
+    </script>
+  </body>
+</html>

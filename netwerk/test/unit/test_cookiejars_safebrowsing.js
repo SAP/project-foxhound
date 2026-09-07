@@ -136,7 +136,9 @@ add_test(function test_safebrowsing_update() {
   streamUpdater.downloadUpdates(
     "test-phish-simple,test-malware-simple",
     "",
+    "",
     true,
+    "test",
     URL + safebrowsingUpdatePath,
     onSuccess,
     onUpdateError,

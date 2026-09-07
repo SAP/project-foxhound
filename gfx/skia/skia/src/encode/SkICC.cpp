@@ -49,7 +49,7 @@ SkFixed float_round_to_fixed(float x) {
 
 // Convert a float to a uInt16Number, with 0.0 mapping go 0 and 1.0 mapping to |one|.
 uint16_t float_to_uInt16Number(float x, uint16_t one) {
-    x = x * one + 0.5;
+    x = x * one + 0.5f;
     if (x > one) return one;
     if (x < 0) return 0;
     return static_cast<uint16_t>(x);
@@ -211,7 +211,7 @@ constexpr uint32_t kCICPTrfnHLG = 18;
 
 uint32_t get_cicp_trfn(const skcms_TransferFunction& fn) {
     switch (skcms_TransferFunction_getType(&fn)) {
-        case skcms_TFType_Invalid:
+        default:
             return 0;
         case skcms_TFType_sRGBish:
             if (nearly_equal(fn, SkNamedTransferFn::kSRGB)) {
@@ -222,10 +222,12 @@ uint32_t get_cicp_trfn(const skcms_TransferFunction& fn) {
                 return kCICPTrfnLinear;
             }
             break;
+        case skcms_TFType_PQ:
         case skcms_TFType_PQish:
             // All PQ transfer functions are mapped to the single PQ value,
             // ignoring their SDR white level.
             return kCICPTrfnPQ;
+        case skcms_TFType_HLG:
         case skcms_TFType_HLGish:
             // All HLG transfer functions are mapped to the single HLG value.
             return kCICPTrfnHLG;
@@ -320,8 +322,8 @@ sk_sp<SkData> write_text_tag(const char* text) {
 // Write a CICP tag.
 sk_sp<SkData> write_cicp_tag(const skcms_CICP& cicp) {
     SkDynamicMemoryWStream s;
-    SkWStreamWriteU32BE(&s, kTAG_cicp);       // Type signature
-    SkWStreamWriteU32BE(&s, 0);               // Reserved
+    SkStreamPriv::WriteU32BE(&s, kTAG_cicp);  // Type signature
+    SkStreamPriv::WriteU32BE(&s, 0);          // Reserved
     s.write8(cicp.color_primaries);           // Color primaries
     s.write8(cicp.transfer_characteristics);  // Transfer characteristics
     s.write8(cicp.matrix_coefficients);       // RGB matrix
@@ -361,11 +363,11 @@ float tone_map_inverse(float y) {
 // Evaluate PQ and HLG transfer functions without tonemapping. The maximum returned value is
 // kToneMapInputMax.
 float hdr_trfn_eval(const skcms_TransferFunction& fn, float x) {
-    if (skcms_TransferFunction_isHLGish(&fn)) {
+    if (skcms_TransferFunction_isHLGish(&fn) || skcms_TransferFunction_isHLG(&fn)) {
         // For HLG this curve is the inverse OETF and then a per-channel OOTF.
-        x = skcms_TransferFunction_eval(&SkNamedTransferFn::kHLG, x) / 12.f;
+        x = skcms_TransferFunction_eval(&SkNamedTransferFn::kHLG, x);
         x *= std::pow(x, 0.2);
-    } else if (skcms_TransferFunction_isPQish(&fn)) {
+    } else if (skcms_TransferFunction_isPQish(&fn) || skcms_TransferFunction_isPQ(&fn)) {
         // For PQ this is the EOTF, scaled so that 1,000 nits maps to 1.0.
         x = 10.f * skcms_TransferFunction_eval(&SkNamedTransferFn::kPQ, x);
         x = std::min(x, 1.f);
@@ -380,33 +382,33 @@ float hdr_trfn_eval(const skcms_TransferFunction& fn, float x) {
 sk_sp<SkData> write_trc_tag(const skcms_Curve& trc) {
     SkDynamicMemoryWStream s;
     if (trc.table_entries) {
-        SkWStreamWriteU32BE(&s, kTAG_CurveType);     // Type
-        SkWStreamWriteU32BE(&s, 0);                  // Reserved
-        SkWStreamWriteU32BE(&s, trc.table_entries);  // Value count
+        SkStreamPriv::WriteU32BE(&s, kTAG_CurveType);     // Type
+        SkStreamPriv::WriteU32BE(&s, 0);                  // Reserved
+        SkStreamPriv::WriteU32BE(&s, trc.table_entries);  // Value count
         for (uint32_t i = 0; i < trc.table_entries; ++i) {
             uint16_t value = reinterpret_cast<const uint16_t*>(trc.table_16)[i];
             s.write16(value);
         }
     } else {
-        SkWStreamWriteU32BE(&s, kTAG_ParaCurveType);       // Type
+        SkStreamPriv::WriteU32BE(&s, kTAG_ParaCurveType);  // Type
         s.write32(0);                                      // Reserved
         const auto& fn = trc.parametric;
         SkASSERT(skcms_TransferFunction_isSRGBish(&fn));
         if (fn.a == 1.f && fn.b == 0.f && fn.c == 0.f && fn.d == 0.f && fn.e == 0.f &&
             fn.f == 0.f) {
-            SkWStreamWriteU16BE(&s, kExponential_ParaCurveType);
-            SkWStreamWriteU16BE(&s, 0);
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.g));
+            SkStreamPriv::WriteU16BE(&s, kExponential_ParaCurveType);
+            SkStreamPriv::WriteU16BE(&s, 0);
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.g));
         } else {
-            SkWStreamWriteU16BE(&s, kGABCDEF_ParaCurveType);
-            SkWStreamWriteU16BE(&s, 0);
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.g));
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.a));
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.b));
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.c));
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.d));
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.e));
-            SkWStreamWriteU32BE(&s, float_round_to_fixed(fn.f));
+            SkStreamPriv::WriteU16BE(&s, kGABCDEF_ParaCurveType);
+            SkStreamPriv::WriteU16BE(&s, 0);
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.g));
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.a));
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.b));
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.c));
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.d));
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.e));
+            SkStreamPriv::WriteU32BE(&s, float_round_to_fixed(fn.f));
         }
     }
     s.padToAlign4();
@@ -504,16 +506,16 @@ sk_sp<SkData> write_mAB_or_mBA_tag(uint32_t type,
     }
 
     SkDynamicMemoryWStream s;
-    SkWStreamWriteU32BE(&s, type);  // Type signature
+    SkStreamPriv::WriteU32BE(&s, type);  // Type signature
     s.write32(0);                   // Reserved
     s.write8(kNumChannels);         // Input channels
     s.write8(kNumChannels);         // Output channels
     s.write16(0);                   // Reserved
-    SkWStreamWriteU32BE(&s, b_curves_offset);  // B curve offset
-    SkWStreamWriteU32BE(&s, matrix_offset);    // Matrix offset
-    SkWStreamWriteU32BE(&s, m_curves_offset);  // M curve offset
-    SkWStreamWriteU32BE(&s, clut_offset);      // CLUT offset
-    SkWStreamWriteU32BE(&s, a_curves_offset);  // A curve offset
+    SkStreamPriv::WriteU32BE(&s, b_curves_offset);  // B curve offset
+    SkStreamPriv::WriteU32BE(&s, matrix_offset);    // Matrix offset
+    SkStreamPriv::WriteU32BE(&s, m_curves_offset);  // M curve offset
+    SkStreamPriv::WriteU32BE(&s, clut_offset);      // CLUT offset
+    SkStreamPriv::WriteU32BE(&s, a_curves_offset);  // A curve offset
     SkASSERT(s.bytesWritten() == b_curves_offset);
     for (size_t i = 0; i < kNumChannels; ++i) {
         s.write(b_curves_data[i]->data(), b_curves_data[i]->size());
@@ -656,7 +658,7 @@ sk_sp<SkData> SkWriteICCProfile(const skcms_ICCProfile* profile, const char* des
     size_t last_tag_offset = sizeof(header) + tag_table_size;
     size_t last_tag_size = 0;
     for (const auto& tag : tags) {
-        if (!tag.second->isEmpty()) {
+        if (!tag.second->empty()) {
             last_tag_offset = last_tag_offset + last_tag_size;
             last_tag_size = tag.second->size();
         }
@@ -671,7 +673,7 @@ sk_sp<SkData> SkWriteICCProfile(const skcms_ICCProfile* profile, const char* des
 
     // Write the tags.
     for (const auto& tag : tags) {
-        if (tag.second->isEmpty()) continue;
+        if (tag.second->empty()) continue;
         memcpy(ptr, tag.second->data(), tag.second->size());
         ptr += tag.second->size();
     }
@@ -705,7 +707,8 @@ sk_sp<SkData> SkWriteICCProfile(const skcms_TransferFunction& fn, const skcms_Ma
     }
 
     // Populate A2B (PQ and HLG only).
-    if (skcms_TransferFunction_isPQish(&fn) || skcms_TransferFunction_isHLGish(&fn)) {
+    if (skcms_TransferFunction_isPQish(&fn) || skcms_TransferFunction_isHLGish(&fn) ||
+        skcms_TransferFunction_isPQ(&fn) || skcms_TransferFunction_isHLG(&fn)) {
         // Populate a 1D curve to perform per-channel conversion to linear and tone mapping.
         constexpr uint32_t kTrcTableSize = 65;
         trc_table.resize(kTrcTableSize);
@@ -735,7 +738,7 @@ sk_sp<SkData> SkWriteICCProfile(const skcms_TransferFunction& fn, const skcms_Ma
                     }
 
                     // For HLG, mix the channels according to the OOTF.
-                    if (skcms_TransferFunction_isHLGish(&fn)) {
+                    if (skcms_TransferFunction_isHLGish(&fn) || skcms_TransferFunction_isHLG(&fn)) {
                         // Scale to [0, 1].
                         for (auto& c : rgb) {
                             c /= kToneMapInputMax;
@@ -806,7 +809,8 @@ sk_sp<SkData> SkWriteICCProfile(const skcms_TransferFunction& fn, const skcms_Ma
     }
 
     // Populate CICP.
-    if (skcms_TransferFunction_isHLGish(&fn) || skcms_TransferFunction_isPQish(&fn)) {
+    if (skcms_TransferFunction_isHLGish(&fn) || skcms_TransferFunction_isPQish(&fn) ||
+        skcms_TransferFunction_isHLG(&fn) || skcms_TransferFunction_isPQ(&fn)) {
         profile.has_CICP = true;
         profile.CICP.color_primaries = get_cicp_primaries(toXYZD50);
         profile.CICP.transfer_characteristics = get_cicp_trfn(fn);

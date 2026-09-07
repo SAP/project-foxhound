@@ -4,8 +4,8 @@
 
 "use strict";
 
-const HEURISTIC_FALLBACK_PROVIDERNAME = "HeuristicFallback";
-const PLACES_PROVIDERNAME = "Places";
+const HEURISTIC_FALLBACK_PROVIDERNAME = "UrlbarProviderHeuristicFallback";
+const PLACES_PROVIDERNAME = "UrlbarProviderPlaces";
 
 // "example.com/foo/" should match http://example.com/foo/.
 testEngine_setup();
@@ -14,6 +14,25 @@ registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
 });
 Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
+
+// Variant of `add_task` for tests that rely on the pre-adaptive bookmark-driven
+// autofill path (an unvisited bookmark becoming an autofill candidate). That
+// path is gated on the adaptive autofill pref being off.
+function add_nonadaptive_autofill_task(callback) {
+  add_task(async () => {
+    Services.prefs.setBoolPref(
+      "browser.urlbar.autoFill.adaptiveHistory.enabled",
+      false
+    );
+    try {
+      await callback();
+    } finally {
+      Services.prefs.clearUserPref(
+        "browser.urlbar.autoFill.adaptiveHistory.enabled"
+      );
+    }
+  });
+}
 
 add_task(async function multipleSlashes() {
   await PlacesTestUtils.addVisits([
@@ -74,7 +93,7 @@ add_task(async function portNoMatch() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://example.com:8999/f",
-        fallbackTitle: "example.com:8999/f",
+        title: "example.com:8999/f",
         iconUri: "page-icon:http://example.com:8999/",
         heuristic: true,
         providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
@@ -99,9 +118,7 @@ add_task(async function port() {
     matches: [
       makeVisitResult(context, {
         uri: "http://example.com:8888/foo/bar/",
-        fallbackTitle: UrlbarTestUtils.trimURL(
-          "http://example.com:8888/foo/bar/"
-        ),
+        title: UrlbarTestUtils.trimURL("http://example.com:8888/foo/bar/"),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -177,7 +194,7 @@ add_task(async function caseInsensitiveFromHistory() {
 });
 
 // autofill with case insensitive from bookmark.
-add_task(async function caseInsensitiveFromBookmark() {
+add_nonadaptive_autofill_task(async function caseInsensitiveFromBookmark() {
   Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", true);
   Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
 
@@ -206,7 +223,7 @@ add_task(async function uriFragmentCaseSensitiveNoMatch() {
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://example.com/#t",
-        fallbackTitle: "http://example.com/#t",
+        title: "http://example.com/#t",
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -255,48 +272,6 @@ add_task(async function uriCase() {
 
   const testData = [
     {
-      input: "example.COM",
-      expected: {
-        autofilled: "example.COM/",
-        completed: "http://example.com/",
-        results: [
-          context =>
-            makeVisitResult(context, {
-              uri: "http://example.com/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/"),
-              heuristic: true,
-            }),
-          context =>
-            makeVisitResult(context, {
-              uri: "http://example.com/ABC/DEF",
-              title: "test visit for http://example.com/ABC/DEF",
-            }),
-        ],
-      },
-    },
-    {
-      input: "example.COM/",
-      expected: {
-        autofilled: "example.COM/",
-        completed: "http://example.com/",
-        results: [
-          context =>
-            makeVisitResult(context, {
-              uri: "http://example.com/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/", {
-                removeSingleTrailingSlash: false,
-              }),
-              heuristic: true,
-            }),
-          context =>
-            makeVisitResult(context, {
-              uri: "http://example.com/ABC/DEF",
-              title: "test visit for http://example.com/ABC/DEF",
-            }),
-        ],
-      },
-    },
-    {
       input: "example.COM/a",
       expected: {
         autofilled: "example.COM/aBC/",
@@ -305,7 +280,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/ABC/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
+              title: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
               heuristic: true,
             }),
           context =>
@@ -325,7 +300,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/ABC/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
+              title: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
               heuristic: true,
             }),
           context =>
@@ -345,7 +320,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/ABC/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
+              title: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
               heuristic: true,
             }),
           context =>
@@ -365,7 +340,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/abc/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/abc/"),
+              title: UrlbarTestUtils.trimURL("http://example.com/abc/"),
               heuristic: true,
             }),
           context =>
@@ -415,9 +390,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/abc/def",
-              fallbackTitle: UrlbarTestUtils.trimURL(
-                "http://example.com/abc/def"
-              ),
+              title: UrlbarTestUtils.trimURL("http://example.com/abc/def"),
               heuristic: true,
             }),
           context =>
@@ -437,7 +410,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/ABC/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
+              title: UrlbarTestUtils.trimURL("http://example.com/ABC/"),
               heuristic: true,
             }),
           context =>
@@ -457,7 +430,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/abc/",
-              fallbackTitle: UrlbarTestUtils.trimURL("http://example.com/abc/"),
+              title: UrlbarTestUtils.trimURL("http://example.com/abc/"),
               heuristic: true,
             }),
           context =>
@@ -492,9 +465,7 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/abc/def",
-              fallbackTitle: UrlbarTestUtils.trimURL(
-                "http://example.com/abc/def"
-              ),
+              title: UrlbarTestUtils.trimURL("http://example.com/abc/def"),
               heuristic: true,
             }),
           context =>
@@ -529,9 +500,75 @@ add_task(async function uriCase() {
           context =>
             makeVisitResult(context, {
               uri: "http://example.com/abc/def",
-              fallbackTitle: UrlbarTestUtils.trimURL(
-                "http://example.com/abc/def"
-              ),
+              title: UrlbarTestUtils.trimURL("http://example.com/abc/def"),
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+  ];
+
+  for (const { input, expected } of testData) {
+    const context = createContext(input, {
+      isPrivate: false,
+    });
+    await check_results({
+      context,
+      autofilled: expected.autofilled,
+      completed: expected.completed,
+      matches: expected.results.map(f => f(context)),
+    });
+  }
+
+  await cleanupPlaces();
+});
+
+add_task(async function uriCaseTyped() {
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/ABC/DEF",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
+
+  const testData = [
+    {
+      input: "example.COM",
+      expected: {
+        autofilled: "example.COM/",
+        completed: "http://example.com/",
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/",
+              title: UrlbarTestUtils.trimURL("http://example.com/"),
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.COM/",
+      expected: {
+        autofilled: "example.COM/",
+        completed: "http://example.com/",
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/",
+              title: UrlbarTestUtils.trimURL("http://example.com/", {
+                removeSingleTrailingSlash: false,
+              }),
               heuristic: true,
             }),
           context =>
@@ -636,7 +673,7 @@ add_task(async function originLooksLikePrefix2() {
     matches: [
       makeVisitResult(context, {
         uri: "http://localhost:8888/foo/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://localhost:8888/foo/"),
+        title: UrlbarTestUtils.trimURL("http://localhost:8888/foo/"),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -666,7 +703,7 @@ add_task(async function originLooksLikePrefix2() {
 
 // Checks view-source pages as a prefix
 // Uses bookmark because addVisits does not allow non-http uri's
-add_task(async function viewSourceAsPrefix() {
+add_nonadaptive_autofill_task(async function viewSourceAsPrefix() {
   let address = "view-source:https://www.example.com/";
   let title = "A view source bookmark";
   await PlacesTestUtils.addBookmarkWithDetails({
@@ -719,7 +756,7 @@ add_task(async function viewSourceAsPrefix() {
 
 // Checks data url prefixes
 // Uses bookmark because addVisits does not allow non-http uri's
-add_task(async function dataAsPrefix() {
+add_nonadaptive_autofill_task(async function dataAsPrefix() {
   let address = "data:text/html,%3Ch1%3EHello%2C World!%3C%2Fh1%3E";
   let title = "A data url bookmark";
   await PlacesTestUtils.addBookmarkWithDetails({
@@ -864,9 +901,7 @@ add_task(async function wwwHistory() {
           context =>
             makeVisitResult(context, {
               uri: "https://www.example.com/ABC",
-              fallbackTitle: UrlbarTestUtils.trimURL(
-                "https://www.example.com/ABC"
-              ),
+              title: UrlbarTestUtils.trimURL("https://www.example.com/ABC"),
               heuristic: true,
             }),
           context =>
@@ -896,6 +931,7 @@ add_task(async function formatPunycodeResultCorrectly() {
   await PlacesTestUtils.addVisits([
     {
       uri: `http://test.xn--e1afmkfd.com/`,
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
   ]);
   let context = createContext("test", { isPrivate: false });
@@ -907,7 +943,6 @@ add_task(async function formatPunycodeResultCorrectly() {
       makeVisitResult(context, {
         uri: "http://test.xn--e1afmkfd.com/",
         title: "test visit for http://test.xn--e1afmkfd.com/",
-        displayUrl: "http://test.пример.com",
         heuristic: true,
       }),
     ],

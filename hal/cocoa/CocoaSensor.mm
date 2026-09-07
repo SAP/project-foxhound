@@ -108,7 +108,7 @@ void EnableSensorNotifications(SensorType aSensor) {
     if (sUpdateTimer) {
       sUpdateTimer->InitWithNamedFuncCallback(
           UpdateHandler, nullptr, DEFAULT_SENSOR_POLL,
-          nsITimer::TYPE_REPEATING_SLACK, "hal_impl::UpdateHandler");
+          nsITimer::TYPE_REPEATING_SLACK, "hal_impl::UpdateHandler"_ns);
     }
   }
 }

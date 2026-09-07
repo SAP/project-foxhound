@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,6 +8,7 @@
 #include "nsIProtocolHandler.h"
 #include "nsProxyRelease.h"
 #include "nsNetUtil.h"
+#include "nsQueryObject.h"
 #include "nsSimpleURI.h"
 #include "nsURIHashKey.h"
 
@@ -28,16 +28,15 @@ gfxFontSrcURI::gfxFontSrcURI(nsIURI* aURI) : mURI(aURI) {
   mURI->GetScheme(scheme);
 
   if (scheme.EqualsLiteral("data")) {
-    // We know that nsSimpleURI::From returns us a pointer to the same object,
-    // and we hold a strong reference to the object in mURI, so no need to
-    // hold it strongly here as well.  (And we'd have to
-    // NS_ReleaseOnMainThread it in our destructor anyway.)
-    RefPtr<mozilla::net::nsSimpleURI> simpleURI =
-        mozilla::net::nsSimpleURI::From(aURI);
-    mSimpleURI = simpleURI;
+    // We hold a strong reference to the object in mURI, so no need to hold it
+    // strongly here as well.
+    RefPtr<mozilla::net::nsSimpleURI> simpleURI = do_QueryObject(aURI);
+    MOZ_ASSERT(simpleURI, "The data: URL should be backed by nsSimpleURI");
+    MOZ_ASSERT(simpleURI == aURI,
+               "The QueryObject must have the same object, otherwise holding a "
+               "raw pointer here is unsafe");
 
-    NS_ASSERTION(mSimpleURI,
-                 "Why aren't our data: URLs backed by nsSimpleURI?");
+    mSimpleURI = simpleURI;
   } else {
     mSimpleURI = nullptr;
   }

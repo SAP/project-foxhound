@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,15 +11,11 @@
 
 namespace mozilla {
 
-#define NS_REGISTER_COMMAND(_cmdClass, _cmdName)                       \
-  {                                                                    \
-    aCommandTable->RegisterCommand(                                    \
-        _cmdName,                                                      \
-        static_cast<nsIControllerCommand*>(_cmdClass::GetInstance())); \
-  }
+#define NS_REGISTER_COMMAND(_cmdClass, _cmdName) \
+  aCommandTable->RegisterCommand(_cmdName ""_ns, _cmdClass::GetInstance());
 
 // static
-nsresult HTMLEditorController::RegisterEditorDocStateCommands(
+void HTMLEditorController::RegisterEditorDocStateCommands(
     nsControllerCommandTable* aCommandTable) {
   // observer commands for document state
   NS_REGISTER_COMMAND(DocumentStateCommand, "obs_documentCreated")
@@ -39,12 +34,10 @@ nsresult HTMLEditorController::RegisterEditorDocStateCommands(
                       "cmd_enableAbsolutePositionEditing")
   NS_REGISTER_COMMAND(SetDocumentStateCommand,
                       "cmd_enableCompatibleJoinSplitNodeDirection")
-
-  return NS_OK;
 }
 
 // static
-nsresult HTMLEditorController::RegisterHTMLEditorCommands(
+void HTMLEditorController::RegisterHTMLEditorCommands(
     nsControllerCommandTable* aCommandTable) {
   // Edit menu
   NS_REGISTER_COMMAND(PasteNoFormattingCommand, "cmd_pasteNoFormatting");
@@ -105,8 +98,6 @@ nsresult HTMLEditorController::RegisterHTMLEditorCommands(
   NS_REGISTER_COMMAND(AbsolutePositioningCommand, "cmd_absPos");
   NS_REGISTER_COMMAND(DecreaseZIndexCommand, "cmd_decreaseZIndex");
   NS_REGISTER_COMMAND(IncreaseZIndexCommand, "cmd_increaseZIndex");
-
-  return NS_OK;
 }
 
 // static

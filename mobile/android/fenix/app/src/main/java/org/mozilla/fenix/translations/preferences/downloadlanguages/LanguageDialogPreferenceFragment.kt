@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.DialogFragment
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
@@ -25,7 +26,6 @@ import mozilla.components.concept.engine.translate.ModelState
 import mozilla.components.concept.engine.translate.OperationLevel
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
@@ -47,7 +47,9 @@ class LanguageDialogPreferenceFragment : DialogFragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        val view = ComposeView(requireContext())
+        val view = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        }
         when (args.modelState) {
             ModelState.NOT_DOWNLOADED -> setDownloadLanguageFileDialog(view)
             ModelState.DOWNLOAD_IN_PROGRESS -> {}
@@ -117,7 +119,7 @@ class LanguageDialogPreferenceFragment : DialogFragment() {
                         isCheckBoxEnabled = checkBoxEnabled,
                         onSavingModeStateChange = { checkBoxEnabled = it },
                         onConfirmDownload = {
-                            requireContext().settings().ignoreTranslationsDataSaverWarning =
+                            requireComponents.settings.ignoreTranslationsDataSaverWarning =
                                 checkBoxEnabled
 
                             if (args.itemType == DownloadLanguageItemTypePreference.AllLanguages) {

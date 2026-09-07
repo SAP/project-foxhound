@@ -21,7 +21,6 @@ import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -33,6 +32,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AwesomeBarFeatureTest {
@@ -47,22 +47,21 @@ class AwesomeBarFeatureTest {
 
         `when`(toolbar.setOnEditListener(any())).thenAnswer { invocation ->
             listener = invocation.getArgument<Toolbar.OnEditListener>(0)
-            Unit
         }
 
         AwesomeBarFeature(awesomeBar, toolbar)
 
         assertNotNull(listener)
 
-        listener!!.onStartEditing()
+        listener.onStartEditing()
 
         verify(awesomeBar).onInputStarted()
 
-        listener!!.onTextChanged("Hello")
+        listener.onTextChanged("Hello")
 
         verify(awesomeBar).onInputChanged("Hello")
 
-        listener!!.onStopEditing()
+        listener.onStopEditing()
 
         verify(awesomeBar).onInputCancelled()
     }
@@ -76,14 +75,13 @@ class AwesomeBarFeatureTest {
 
         `when`(awesomeBar.setOnStopListener(any())).thenAnswer { invocation ->
             stopListener = invocation.getArgument<() -> Unit>(0)
-            Unit
         }
 
         AwesomeBarFeature(awesomeBar, toolbar)
 
         assertNotNull(stopListener)
 
-        stopListener!!.invoke()
+        stopListener.invoke()
 
         verify(toolbar).displayMode()
     }
@@ -98,7 +96,7 @@ class AwesomeBarFeatureTest {
 
         verify(awesomeBar, never()).addProviders(any())
 
-        feature.addSessionProvider(resources, mock(), mock())
+        feature.addSessionProvider(resources, BrowserStore(), mock())
 
         verify(awesomeBar).addProviders(any())
     }
@@ -127,7 +125,7 @@ class AwesomeBarFeatureTest {
 
         verify(awesomeBar, never()).addProviders(any())
 
-        val store: BrowserStore = mock()
+        val store = BrowserStore()
         feature.addSearchProvider(store = store, searchUseCase = mock(), fetchClient = mock())
 
         val provider = argumentCaptor<SearchSuggestionProvider>()
@@ -261,7 +259,7 @@ class AwesomeBarFeatureTest {
 
         verify(awesomeBar, never()).addProviders(any())
 
-        feature.addSearchActionProvider(mock(), mock())
+        feature.addSearchActionProvider(BrowserStore(), mock())
 
         verify(awesomeBar).addProviders(any())
     }
@@ -278,7 +276,6 @@ class AwesomeBarFeatureTest {
 
         `when`(toolbar.setOnEditListener(any())).thenAnswer { invocation ->
             listener = invocation.getArgument<Toolbar.OnEditListener>(0)
-            Unit
         }
 
         AwesomeBarFeature(
@@ -297,7 +294,7 @@ class AwesomeBarFeatureTest {
         assertFalse(completeInvoked)
         startInvoked = false
 
-        listener!!.onStopEditing()
+        listener.onStopEditing()
 
         assertFalse(startInvoked)
         assertTrue(completeInvoked)
@@ -313,7 +310,6 @@ class AwesomeBarFeatureTest {
 
         `when`(toolbar.setOnEditListener(any())).thenAnswer { invocation ->
             listener = invocation.getArgument<Toolbar.OnEditListener>(0)
-            Unit
         }
 
         AwesomeBarFeature(
@@ -323,8 +319,8 @@ class AwesomeBarFeatureTest {
 
         assertTrue("Nothing to cancel when editing has started.", listener!!.onCancelEditing())
 
-        listener!!.onStartEditing()
+        listener.onStartEditing()
 
-        assertFalse("Cancelling because edit has started.", listener!!.onCancelEditing())
+        assertFalse("Cancelling because edit has started.", listener.onCancelEditing())
     }
 }

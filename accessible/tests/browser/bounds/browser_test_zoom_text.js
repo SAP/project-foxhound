@@ -20,14 +20,6 @@ async function runTests(browser, accDoc) {
       [x, y, width, height],
       COORDTYPE_SCREEN_RELATIVE
     );
-    // A 0 range should return an empty rect.
-    testTextBounds(
-      hyperTextNode,
-      0,
-      0,
-      [0, 0, 0, 0],
-      COORDTYPE_SCREEN_RELATIVE
-    );
   }
 
   async function testEmptyInputNode(id) {

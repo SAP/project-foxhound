@@ -14,9 +14,9 @@ configuration file that lists some metadata about how the Web IDL should
 be reflected into Gecko-internal code.
 
 All Web IDL files should be placed in
-[`dom/webidl`](https://searchfox.org/mozilla-central/source/dom/webidl/)
+[`dom/webidl`](https://searchfox.org/firefox-main/source/dom/webidl/)
 and added to the list in the
-[moz.build](https://searchfox.org/mozilla-central/source/dom/webidl/moz.build)
+[moz.build](https://searchfox.org/firefox-main/source/dom/webidl/moz.build)
 file in that directory.
 
 Note that if you're adding new interfaces, then the test at
@@ -24,13 +24,13 @@ Note that if you're adding new interfaces, then the test at
 fail. This is a signal that you need to get a review from a [DOM
 peer](https://wiki.mozilla.org/Modules/All#Document_Object_Model).
 Resist the urge to just add your interfaces to the
-[moz.build](https://searchfox.org/mozilla-central/source/dom/webidl/moz.build) list
+[moz.build](https://searchfox.org/firefox-main/source/dom/webidl/moz.build) list
 without the review; it will just annoy the DOM peers and they'll make
 you get the review anyway.
 
 The configuration file, `dom/bindings/Bindings.conf`, is basically a
 Python dict that maps interface names to information about the
-interface, called a *descriptor*. There are all sorts of possible
+interface, called a _descriptor_. There are all sorts of possible
 options here that handle various edge cases, but most descriptors can be
 very simple.
 
@@ -40,7 +40,7 @@ each interface, a namespace whose name is the name of the interface with
 interface's binding go in that namespace.
 
 There are various helper objects and utility methods in
-[`dom/bindings`](https://searchfox.org/mozilla-central/source/dom/bindings)
+[`dom/bindings`](https://searchfox.org/firefox-main/source/dom/bindings)
 that are also all in the `mozilla::dom` namespace and whose headers
 are all exported into `mozilla/dom` (placed in
 `$OBJDIR/dist/include` by the build process).
@@ -57,7 +57,7 @@ interface, you need to do the following:
    need to do this if your objects can only be created, never gotten
    from other objects. If you also inherit from `nsISupports`, make
    sure the `nsISupports` comes before the `nsWrapperCache` in your
-   list of parent classes. If your interface *does* inherit from another
+   list of parent classes. If your interface _does_ inherit from another
    interface, just inherit from the C++ type that the other interface
    corresponds to.
 
@@ -88,10 +88,10 @@ interface, you need to do the following:
    document. The return type of `GetParentObject` doesn't matter other
    than it must either singly-inherit from `nsISupports` or have a
    corresponding
-   [`ToSupports`](https://searchfox.org/mozilla-central/search?q=ToSupports&path=&case=true&regexp=false)
+   [`ToSupports`](https://searchfox.org/firefox-main/search?q=ToSupports&path=&case=true&regexp=false)
    method that can produce an `nsISupports` from it. (This allows the
    return value to be implicitly converted to a
-   [`ParentObject`](https://searchfox.org/mozilla-central/search?q=ParentObject&path=&case=true&regexp=false)
+   [`ParentObject`](https://searchfox.org/firefox-main/search?q=ParentObject&path=&case=true&regexp=false)
    instance by the compiler via one of that class's non-explicit
    constructors.)
    If many instances of `MyInterface` are expected to be created
@@ -101,7 +101,7 @@ interface, you need to do the following:
    associate the resulting object with a random global object for
    security purposes; this is not usually ok for things that are exposed
    to web content. Again, if you do not need wrapper caching you don't
-   need to do this.  The actual type returned from `GetParentObject`
+   need to do this. The actual type returned from `GetParentObject`
    must be defined in a header included from your implementation header,
    so that this type's definition is visible to the binding code.
 
@@ -117,8 +117,8 @@ interface, you need to do the following:
    [`HeaderFile`](#headerfile-path-to-headerfile-h) annotation to the .webidl file). If
    you don't have to set any annotations, then you don't need to add an
    entry either and the code generator will simply assume the defaults
-   here.  Note that using a `'headerFile'` annotation is generally not
-   recommended.  If you do use it, you will need to make sure your
+   here. Note that using a `'headerFile'` annotation is generally not
+   recommended. If you do use it, you will need to make sure your
    header includes all the headers needed for your [`Func`](#func-funcname)
    annotations.
 
@@ -335,17 +335,17 @@ explanations.
 
 `any` is represented in three different ways, depending on use:
 
--  `any` arguments become `JS::Handle<JS::Value>`.  They will be in
-   the compartment of the passed-in JSContext.
--  `any` return values become a `JS::MutableHandle<JS::Value>` out
-   param appended to the argument list. This comes after all IDL
-   arguments, but before the `ErrorResult&`, if any, for the method.
-   The return value is allowed to be in any compartment; bindings will
-   wrap it into the context compartment as needed.
--  `any` dictionary members and sequence elements become
-   `JS::Value`. The dictionary members and sequence elements are
-   guaranteed to be marked by whomever puts the sequence or dictionary
-   on the stack, using `SequenceRooter` and `DictionaryRooter`.
+- `any` arguments become `JS::Handle<JS::Value>`. They will be in
+  the compartment of the passed-in JSContext.
+- `any` return values become a `JS::MutableHandle<JS::Value>` out
+  param appended to the argument list. This comes after all IDL
+  arguments, but before the `ErrorResult&`, if any, for the method.
+  The return value is allowed to be in any compartment; bindings will
+  wrap it into the context compartment as needed.
+- `any` dictionary members and sequence elements become
+  `JS::Value`. The dictionary members and sequence elements are
+  guaranteed to be marked by whomever puts the sequence or dictionary
+  on the stack, using `SequenceRooter` and `DictionaryRooter`.
 
 Methods using `any` always get a `JSContext*` argument.
 
@@ -414,7 +414,7 @@ int64_t MyMethod(const Nullable<uint32_t>& arg);
 #### Floating point types
 
 Floating point Web IDL types are mapped to the C++ type of the same
-name.  So `float` and `unrestricted float` become a C++ `float`,
+name. So `float` and `unrestricted float` become a C++ `float`,
 while `double` and `unrestricted double` become a C++ `double`.
 
 For example, this Web IDL:
@@ -438,15 +438,15 @@ double MyMethod(const Nullable<double>& arg);
 
 Strings are reflected in three different ways, depending on use:
 
--  String arguments become `const nsAString&`.
--  String return values become a
-   [`mozilla::dom::DOMString&`](#domstring-c) out param
-   appended to the argument list. This comes after all IDL arguments,
-   but before the `ErrorResult&`, if any, for the method. Note that
-   this allows callees to declare their methods as taking an
-   `nsAString&` or `nsString&` if desired.
--  Strings in sequences, dictionaries, owning unions, and variadic
-   arguments become `nsString`.
+- String arguments become `const nsAString&`.
+- String return values become a
+  [`mozilla::dom::DOMString&`](#domstring-c) out param
+  appended to the argument list. This comes after all IDL arguments,
+  but before the `ErrorResult&`, if any, for the method. Note that
+  this allows callees to declare their methods as taking an
+  `nsAString&` or `nsString&` if desired.
+- Strings in sequences, dictionaries, owning unions, and variadic
+  arguments become `nsString`.
 
 Nullable strings are represented by the same types as non-nullable ones,
 but the string will return true for `DOMStringIsNull()`. Returning
@@ -488,12 +488,12 @@ you want to process the string as UTF-8 rather than UTF-16.
 
 It is reflected in three different ways, depending on use:
 
--  Arguments become `const nsACString&`.
--  Return values become an `nsACString&` out param appended to the
-   argument list. This comes after all IDL arguments, but before the
-   `ErrorResult&`, if any, for the method.
--  In sequences, dictionaries owning unions, and variadic arguments it
-   becomes `nsCString`.
+- Arguments become `const nsACString&`.
+- Return values become an `nsACString&` out param appended to the
+  argument list. This comes after all IDL arguments, but before the
+  `ErrorResult&`, if any, for the method.
+- In sequences, dictionaries owning unions, and variadic arguments it
+  becomes `nsCString`.
 
 Nullable `UTF8String`s are represented by the same types as
 non-nullable ones, but the string will return true for `IsVoid()`.
@@ -504,12 +504,12 @@ the out param.
 
 `ByteString` is reflected in three different ways, depending on use:
 
--  `ByteString` arguments become `const nsACString&`.
--  `ByteString` return values become an `nsCString&` out param
-   appended to the argument list. This comes after all IDL arguments,
-   but before the `ErrorResult&`, if any, for the method.
--  `ByteString` in sequences, dictionaries, owning unions, and
-   variadic arguments becomes `nsCString`.
+- `ByteString` arguments become `const nsACString&`.
+- `ByteString` return values become an `nsCString&` out param
+  appended to the argument list. This comes after all IDL arguments,
+  but before the `ErrorResult&`, if any, for the method.
+- `ByteString` in sequences, dictionaries, owning unions, and
+  variadic arguments becomes `nsCString`.
 
 Nullable `ByteString` are represented by the same types as
 non-nullable ones, but the string will return true for `IsVoid()`.
@@ -520,17 +520,17 @@ the out param.
 
 `object` is represented in three different ways, depending on use:
 
--  `object` arguments become `JS::Handle<JSObject*>`.  They will be
-   in the compartment of the passed-in JSContext.
--  `object` return values become a `JS::MutableHandle<JSObject*>`
-   out param appended to the argument list. This comes after all IDL
-   arguments, but before the `ErrorResult&`, if any, for the method.
-   The return value is allowed to be in any compartment; bindings will
-   wrap it into the context compartment as needed.
--  `object` dictionary members and sequence elements become
-   `JSObject*`. The dictionary members and sequence elements are
-   guaranteed to be marked by whoever puts the sequence or dictionary on
-   the stack, using `SequenceRooter` and `DictionaryRooter`.
+- `object` arguments become `JS::Handle<JSObject*>`. They will be
+  in the compartment of the passed-in JSContext.
+- `object` return values become a `JS::MutableHandle<JSObject*>`
+  out param appended to the argument list. This comes after all IDL
+  arguments, but before the `ErrorResult&`, if any, for the method.
+  The return value is allowed to be in any compartment; bindings will
+  wrap it into the context compartment as needed.
+- `object` dictionary members and sequence elements become
+  `JSObject*`. The dictionary members and sequence elements are
+  guaranteed to be marked by whoever puts the sequence or dictionary on
+  the stack, using `SequenceRooter` and `DictionaryRooter`.
 
 Methods using `object` always get a `JSContext*` argument.
 
@@ -574,16 +574,16 @@ name, in the `mozilla::dom` namespace, matches the name of the
 callback interface in the Web IDL. The exact representation depends on
 how the type is being used.
 
--  Nullable arguments become `Foo*`.
--  Non-nullable arguments become `Foo&`.
--  Return values become `already_AddRefed<Foo>` or `Foo*` as
-   desired. The pointer form is preferred because it results in faster
-   code, but it should only be used if the return value was not addrefed
-   (and so it can only be used if the return value is kept alive by the
-   callee until at least the binding method has returned).
--  Web IDL callback interfaces in sequences, dictionaries, owning unions,
-   and variadic arguments are represented by `RefPtr<Foo>` if nullable
-   and [`OwningNonNull<Foo>`](#owningnonnull-t) otherwise.
+- Nullable arguments become `Foo*`.
+- Non-nullable arguments become `Foo&`.
+- Return values become `already_AddRefed<Foo>` or `Foo*` as
+  desired. The pointer form is preferred because it results in faster
+  code, but it should only be used if the return value was not addrefed
+  (and so it can only be used if the return value is kept alive by the
+  callee until at least the binding method has returned).
+- Web IDL callback interfaces in sequences, dictionaries, owning unions,
+  and variadic arguments are represented by `RefPtr<Foo>` if nullable
+  and [`OwningNonNull<Foo>`](#owningnonnull-t) otherwise.
 
 If the interface is a single-operation interface, the object exposes two
 methods that both invoke the same underlying JS callable. The first of
@@ -694,14 +694,14 @@ unwrapping function for. The C++ type to be used should be the
 [`Bindings.conf`](#bindings-conf-details) file. The exact representation
 depends on how the type is being used.
 
--  Arguments become `nsIFoo*`.
--  Return values can be `already_AddRefed<nsIFoo>` or `nsIFoo*` as
-   desired. The pointer form is preferred because it results in faster
-   code, but it should only be used if the return value was not addrefed
-   (and so it can only be used if the return value is kept alive by the
-   callee until at least the binding method has returned).
--  External interfaces in sequences, dictionaries, owning unions, and
-   variadic arguments are represented by `RefPtr<nsIFoo>`.
+- Arguments become `nsIFoo*`.
+- Return values can be `already_AddRefed<nsIFoo>` or `nsIFoo*` as
+  desired. The pointer form is preferred because it results in faster
+  code, but it should only be used if the return value was not addrefed
+  (and so it can only be used if the return value is kept alive by the
+  callee until at least the binding method has returned).
+- External interfaces in sequences, dictionaries, owning unions, and
+  variadic arguments are represented by `RefPtr<nsIFoo>`.
 
 ##### Web IDL interfaces
 
@@ -720,16 +720,16 @@ the object implements. The C++ type to be used should be the
 `mozilla::dom::InterfaceName` if none is listed. The exact
 representation depends on how the type is being used.
 
--  Nullable arguments become `Foo*`.
--  Non-nullable arguments become `Foo&`.
--  Return values become `already_AddRefed<Foo>` or `Foo*` as
-   desired. The pointer form is preferred because it results in faster
-   code, but it should only be used if the return value was not addrefed
-   (and so it can only be used if the return value is kept alive by the
-   callee until at least the binding method has returned).
--  Web IDL interfaces in sequences, dictionaries, owning unions, and
-   variadic arguments are represented by `RefPtr<Foo>` if nullable and
-   [`OwningNonNull<Foo>`](#owningnonnull-t) otherwise.
+- Nullable arguments become `Foo*`.
+- Non-nullable arguments become `Foo&`.
+- Return values become `already_AddRefed<Foo>` or `Foo*` as
+  desired. The pointer form is preferred because it results in faster
+  code, but it should only be used if the return value was not addrefed
+  (and so it can only be used if the return value is kept alive by the
+  callee until at least the binding method has returned).
+- Web IDL interfaces in sequences, dictionaries, owning unions, and
+  variadic arguments are represented by `RefPtr<Foo>` if nullable and
+  [`OwningNonNull<Foo>`](#owningnonnull-t) otherwise.
 
 For example, this Web IDL:
 
@@ -761,7 +761,7 @@ MyClass* SomeYetOtherAttr(); // Don't have to return already_AddRefed!
 ##### "SpiderMonkey" interfaces
 
 Typed array, array buffer, and array buffer view arguments are
-represented by the objects in [`TypedArray.h`](#typed-arrays-arraybuffers-array-buffer-views).  For
+represented by the objects in [`TypedArray.h`](#typed-arrays-arraybuffers-array-buffer-views). For
 example, this Web IDL:
 
 ``` webidl
@@ -782,14 +782,14 @@ void PassInt16Array(const Nullable<Int16Array>& arg);
 
 Typed array return values become a `JS::MutableHandle<JSObject*>` out
 param appended to the argument list. This comes after all IDL arguments,
-but before the `ErrorResult&`, if any, for the method.  The return
+but before the `ErrorResult&`, if any, for the method. The return
 value is allowed to be in any compartment; bindings will wrap it into
 the context compartment as needed.
 
 Typed arrays store a `JSObject*` and hence need to be rooted
-properly.  On-stack typed arrays can be declared as
+properly. On-stack typed arrays can be declared as
 `RootedTypedArray<TypedArrayType>` (e.g.
-`RootedTypedArray<Int16Array>`).  Typed arrays on the heap need to be
+`RootedTypedArray<Int16Array>`). Typed arrays on the heap need to be
 traced.
 
 #### Dictionary types
@@ -824,7 +824,7 @@ is the responsibility of the caller.
 
 For example, this Web IDL:
 
-``` webidl
+``` text
 dictionary Dict {
   long foo = 5;
   DOMString bar;
@@ -860,15 +860,15 @@ alphabetical order.
 There are a few useful methods found on dictionaries and dictionary
 members that you can use to quickly determine useful things.
 
--  **member.WasPassed()** - as the name suggests, was a particular
-   member passed?
-   (e.g., `if (arg.foo.WasPassed() { /* do nice things!*/ }`)
--  **dictionary.IsAnyMemberPresent()** - great for checking if you need
-   to do anything.
-   (e.g., `if (!arg.IsAnyMemberPresent()) return; // nothing to do`)
--  **member.Value()** - getting the actual data/value of a member that
-   was passed.
-   (e.g., `mBar.Assign(args.mBar.value())`)
+- **member.WasPassed()** - as the name suggests, was a particular
+  member passed?
+  (e.g., `if (arg.foo.WasPassed() { /* do nice things!*/ }`)
+- **dictionary.IsAnyMemberPresent()** - great for checking if you need
+  to do anything.
+  (e.g., `if (!arg.IsAnyMemberPresent()) return; // nothing to do`)
+- **member.Value()** - getting the actual data/value of a member that
+  was passed.
+  (e.g., `mBar.Assign(args.mBar.value())`)
 
 Example implementation using all of the above:
 
@@ -897,7 +897,7 @@ placed in the `mozilla::dom` namespace, while the values are placed in
 the `mozilla::dom::MyEnum` namespace.
 
 The type of the enum class is automatically selected to be the smallest
-unsigned integer type that can hold all the values.  In practice, this
+unsigned integer type that can hold all the values. In practice, this
 is always uint8_t, because Web IDL enums tend to not have more than 255
 values.
 
@@ -924,13 +924,13 @@ enum class MyEnum : uint8_t {
 ```
 
 `mozilla::dom::GetEnumString` is a templated helper function declared in
-[`BindingUtils.h`](https://searchfox.org/mozilla-central/source/dom/bindings/BindingUtils.h)
+[`BindingUtils.h`](https://searchfox.org/firefox-main/source/dom/bindings/BindingUtils.h)
 and exported to `mozilla/dom/BindingUtils.h` that can be used to convert an enum
 value to its corresponding string value. It returns a `const nsCString&`
 containing the string value.
 
 `mozilla::dom::StringToEnum` is a templated helper function in
-[`BindingUtils.h`](https://searchfox.org/mozilla-central/source/dom/bindings/BindingUtils.h)
+[`BindingUtils.h`](https://searchfox.org/firefox-main/source/dom/bindings/BindingUtils.h)
 and exported to `mozilla/dom/BindingUtils.h` that can be used to convert a
 string to the corresponding enum value. It needs to be supplied with the enum
 class as a template argument, and returns a `mozilla::Maybe<Enum>`. If the string
@@ -939,14 +939,14 @@ then it returns `mozilla::Nothing()`, else it returns the right enum value in
 the `mozilla::Maybe`.
 
 `mozilla::dom::WebIDLEnumSerializer` is a templated alias in
-[`BindingIPCUtils.h`](https://searchfox.org/mozilla-central/source/dom/bindings/BindingIPCUtils.h)
+[`BindingIPCUtils.h`](https://searchfox.org/firefox-main/source/dom/bindings/BindingIPCUtils.h)
 exported to `mozilla/dom/BindingIPCUtils.h` to implement an IPC serializer with
 the right validation for WebIDL enums. It uses a
 `mozilla::MaxContinuousEnumValue` that is generated for every WebIDL enum to
 implement the validation.
 
 `mozilla::dom::MakeWebIDLEnumeratedRange` is a templated helper function in
-[`BindingUtils.h`](https://searchfox.org/mozilla-central/source/dom/bindings/BindingUtils.h)
+[`BindingUtils.h`](https://searchfox.org/firefox-main/source/dom/bindings/BindingUtils.h)
 and exported to `mozilla/dom/BindingUtils.h` that can be used to create a
 `mozilla::EnumeratedRange` for a WebIDL enum.
 
@@ -971,7 +971,7 @@ passed in in whatever form is most convenient, as long as it's either a
 type that can be wrapped by XPConnect or a Web IDL interface type.
 
 If `aReportExceptions` is set to `eReportExceptions`, the `Call`
-methods will report JS exceptions before returning.  If
+methods will report JS exceptions before returning. If
 `aReportExceptions` is set to `eRethrowExceptions`, JS exceptions
 will be stashed in the `ErrorResult` and will be reported when the
 stack unwinds to wherever the `ErrorResult` was set up.
@@ -1065,7 +1065,7 @@ of the struct is the concatenation of the names of the types in the
 union, with "Or" inserted between them, and for an owning struct
 "Owning" prepended. So for example, this IDL:
 
-``` webidl
+``` text
 undefined passUnion((object or long) arg);
 (object or long) receiveUnion();
 undefined passSequenceOfUnions(sequence<(object or long)> arg);
@@ -1274,18 +1274,18 @@ public:
 If the interface has a named getter, the binding will expect several
 methods on the C++ implementation:
 
--  A `NamedGetter` method. This takes a property name and returns
-   whatever type the named getter is declared to return. It also has a
-   boolean out param for whether a property with that name should exist
-   at all.
--  A `NameIsEnumerable` method. This takes a property name and
-   returns a boolean that indicates whether the property is enumerable.
--  A `GetSupportedNames` method. This takes an unsigned integer which
-   corresponds to the flags passed to the `iterate` proxy trap and
-   returns a list of property names. For implementations of this method,
-   the important flags is `JSITER_HIDDEN`. If that flag is set, the
-   call needs to return all supported property names. If it's not set,
-   the call needs to return only the enumerable ones.
+- A `NamedGetter` method. This takes a property name and returns
+  whatever type the named getter is declared to return. It also has a
+  boolean out param for whether a property with that name should exist
+  at all.
+- A `NameIsEnumerable` method. This takes a property name and
+  returns a boolean that indicates whether the property is enumerable.
+- A `GetSupportedNames` method. This takes an unsigned integer which
+  corresponds to the flags passed to the `iterate` proxy trap and
+  returns a list of property names. For implementations of this method,
+  the important flags is `JSITER_HIDDEN`. If that flag is set, the
+  call needs to return all supported property names. If it's not set,
+  the call needs to return only the enumerable ones.
 
 The `NameIsEnumerable` and `GetSupportedNames` methods need to agree
 on which names are and are not enumerable. The `NamedGetter` and
@@ -1317,12 +1317,12 @@ public:
 If the interface has a indexed getter, the binding will expect the
 following methods on the C++ implementation:
 
--  A `IndexedGetter` method. This takes an integer index value and
-   returns whatever type the indexed getter is declared to return. It
-   also has a boolean out param for whether a property with that index
-   should exist at all.  The implementation must set this out param
-   correctly.  The return value is guaranteed to be ignored if the out
-   param is set to false.
+- A `IndexedGetter` method. This takes an integer index value and
+  returns whatever type the indexed getter is declared to return. It
+  also has a boolean out param for whether a property with that index
+  should exist at all. The implementation must set this out param
+  correctly. The return value is guaranteed to be ignored if the out
+  param is set to false.
 
 So for example, given this IDL:
 
@@ -1348,7 +1348,7 @@ public:
 
 Web IDL methods, getters, and setters that are [explicitly marked as
 allowed to throw](#throws-getterthrows-setterthrows) have an `ErrorResult&` argument as their
-last argument.  To throw an exception, simply call `Throw()` on the
+last argument. To throw an exception, simply call `Throw()` on the
 `ErrorResult&` and return from your C++ back into the binding code.
 
 In cases when the specification calls for throwing a `TypeError`, you
@@ -1359,6 +1359,15 @@ should use `ErrorResult::ThrowTypeError()` instead of calling
 
 Our Web IDL parser and code generator recognize several extended
 attributes that are not present in the Web IDL spec.
+
+### `[AllowLarge]`
+
+Can be specified on buffer source types (`ArrayBuffer`, `ArrayBufferView`,
+typed arrays) to skip the default 2 GB size check. This allows
+incremental migration of consumers to support buffers larger than 2 GB.
+Can be combined with `[AllowShared]`. On the C++ side, use
+`ProcessData<true>(...)` or `ProcessFixedData<true>(...)` to access the
+data.
 
 ### `[Alias=propName]`
 
@@ -1410,14 +1419,14 @@ implementing `MyInterface`.
 Multiple `[BindingAlias]` extended attributes can be used on a single
 attribute.
 
-### `[BindingTemplate=(name, value)]`
+### `[BindingTemplate=(name, type, value)]`
 
 This extended attribute can be specified on an attribute, and causes the getter
 and setter for this attribute to forward to a common generated implementation,
 shared with all other attributes that have a `[BindingTemplate]` with the same
 value for the `name` argument. The `TemplatedAttributes` dictionary in
 Bindings.conf needs to contain a definition for the template with the name
-`name`. The `value` will be passed as an argument when calling the common
+`name`. The argument `type::value` will be passed when calling the common
 generated implementation.
 
 This is aimed at very specialized use cases where an interface has a
@@ -1432,13 +1441,13 @@ whether the getter and setter throws exceptions).
 ### `[ChromeOnly]`
 
 This extended attribute can be specified on any method, attribute, or
-constant on an interface or on an interface as a whole.  It can also be
+constant on an interface or on an interface as a whole. It can also be
 specified on dictionary members.
 
 Interface members flagged as `[ChromeOnly]` are only exposed in chrome
 Windows (and in particular, are not exposed to webpages). From the point
 of view of web content, it's as if the interface member were not there
-at all. These members *are* exposed to chrome script working with a
+at all. These members _are_ exposed to chrome script working with a
 content object via Xrays.
 
 If specified on an interface as a whole, this functions like
@@ -1460,7 +1469,7 @@ need to test true for the interface or interface member to be exposed.
 
 This extended attribute can be specified on any method, attribute, or
 constant on an interface or on an interface as a whole. It can also be
-specified on dictionary members.  It takes a value, which must be the
+specified on dictionary members. It takes a value, which must be the
 name of a boolean preference exposed from `StaticPrefs`. The
 `StaticPrefs` function that will be called is calculated from the
 value of the extended attribute, with dots replaced by underscores
@@ -1485,8 +1494,8 @@ it's desirable to keep the prefname with the Web IDL declaration.
 
 If specified on a dictionary member, the web-observable behavior when
 the pref is set to false will be as if the dictionary did not have a
-member of that name defined.  That means that on the JS side no
-observable get of the property will happen.  On the C++ side, the
+member of that name defined. That means that on the JS side no
+observable get of the property will happen. On the C++ side, the
 behavior would be as if the passed-in object did not have a property
 with the relevant name: the dictionary member would either be
 `!Passed()` or have the default value if there is a default value.
@@ -1508,7 +1517,7 @@ exposed.
 
 This extended attribute can be specified on any method, attribute, or
 constant on an interface or on an interface as a whole. It can also be
-specified on dictionary members.  It takes a value, which must be the
+specified on dictionary members. It takes a value, which must be the
 name of a static function.
 
 If specified on an interface member, the interface member involved is
@@ -1546,8 +1555,8 @@ and making it look like the feature is not implemented at all.
 
 If specified on a dictionary member, the web-observable behavior when
 the function returns false will be as if the dictionary did not have a
-member of that name defined.  That means that on the JS side no
-observable get of the property will happen.  On the C++ side, the
+member of that name defined. That means that on the JS side no
+observable get of the property will happen. On the C++ side, the
 behavior would be as if the passed-in object did not have a property
 with the relevant name: the dictionary member would either be
 `!Passed()` or have the default value if there is a default value.
@@ -1580,7 +1589,7 @@ will need to test true for the interface or interface member to be
 exposed.
 
 Binding code will include the headers necessary for a `[Func]`, unless
-the interface is using a non-default header file.  If a non-default
+the interface is using a non-default header file. If a non-default
 header file is used, that header file needs to do any header inclusions
 necessary for `[Func]` annotations.
 
@@ -1605,7 +1614,7 @@ as throwing.
 Used for a method or attribute to indicate what the return value depends
 on. Possible values are:
 
-*  `Everything`
+- `Everything`
 
    This value can't actually be specified explicitly; this is the
    default value you get when `[DependsOn]` is not specified. This
@@ -1613,7 +1622,7 @@ on. Possible values are:
    and hence can't rearrange other code that might change values around
    the method or attribute.
 
-*  `DOMState`
+- `DOMState`
 
    The return value depends on the state of the "DOM", by which we mean
    all objects specified via Web IDL. The return value is guaranteed to
@@ -1621,7 +1630,7 @@ on. Possible values are:
    structures, and is guaranteed to not change unless some function with
    [`[Affects=Everything]`](#affects) is executed.
 
-*  `DeviceState`
+- `DeviceState`
 
    The return value depends on the state of the device we're running on
    (e.g., the system clock). The return value is guaranteed to not be
@@ -1629,7 +1638,7 @@ on. Possible values are:
    new value every time the method or getter is called even if no Gecko
    code ran between the calls.
 
-*  `Nothing`
+- `Nothing`
 
    The return value is a constant that never changes. This value cannot
    be used on non-readonly attributes, since having a non-readonly
@@ -1646,14 +1655,14 @@ Used for a method or attribute getter to indicate what sorts of state
 can be affected when the function is called. Attribute setters are, for
 now, assumed to affect everything. Possible values are:
 
-*  `Everything`
+- `Everything`
 
    This value can't actually be specified explicitly; this is the
    default value you get when `[Affects]` is not specified. This means
    that calling the method or getter might change any mutable state in
    the DOM or JS heap.
 
-*  `Nothing`
+- `Nothing`
 
    Calling the method or getter will have no side-effects on either the
    DOM or the JS heap.
@@ -1715,7 +1724,7 @@ OK.
 ### `[HeaderFile="path/to/headerfile.h"]`
 
 Indicates where the implementation can be found. Similar to the
-headerFile annotation in Bindings.conf.  Just like headerFile in
+headerFile annotation in Bindings.conf. Just like headerFile in
 Bindings.conf, should be avoided.
 
 ### `[JSImplementation="@mozilla.org/some-contractid;1"]`
@@ -1765,7 +1774,7 @@ attributes whose value is a sequence or dictionary (which would
 otherwise end up returning a new object each time and hence not be
 allowed in Web IDL).
 
-Unlike [`[StoreInSlot]`](#storeinslot) this does *not* cause the
+Unlike [`[StoreInSlot]`](#storeinslot) this does _not_ cause the
 getter to be eagerly called at JS wrapper creation time; the caching is
 lazy. `[Cached]` attributes must be [`[Pure]`](#pure) or
 [`[Constant]`](#constant), because otherwise not calling the C++
@@ -1836,13 +1845,13 @@ public:
 
 When deprecating an interface or method, the `[Deprecated]` annotation
 causes the Web IDL compiler to insert code that generates deprecation
-warnings.  This annotation can be added to interface methods or
-interfaces.  Adding this to an interface causes a warning to be issued
+warnings. This annotation can be added to interface methods or
+interfaces. Adding this to an interface causes a warning to be issued
 the first time the object is constructed, or any static method on the
 object is invoked.
 
 The complete list of valid deprecation tags is maintained in
-[nsDeprecatedOperationList.h](https://searchfox.org/mozilla-central/source/dom/base/nsDeprecatedOperationList.h).
+[nsDeprecatedOperationList.inc](https://searchfox.org/firefox-main/source/dom/base/nsDeprecatedOperationList.inc).
 Each new tag requires that a localized string be defined, containing the
 deprecation message to display.
 
@@ -1870,16 +1879,16 @@ We implement the [standard extended
 attribute](https://webidl.spec.whatwg.org/#SecureContext) with a few
 details specific to Gecko:
 
--  System principals are considered secure.
--  An extension poking at non-secured DOM objects will see APIs marked
-   with `[SecureContext]`.
--  XPConnect sandboxes don't see `[SecureContext]` APIs, except if
-   they're created with `isSecureContext: true`.
+- System principals are considered secure.
+- An extension poking at non-secured DOM objects will see APIs marked
+  with `[SecureContext]`.
+- XPConnect sandboxes don't see `[SecureContext]` APIs, except if
+  they're created with `isSecureContext: true`.
 
 ### `[NeedsSubjectPrincipal]`, `[GetterNeedsSubjectPrincipal]`, `[SetterNeedsSubjectPrincipal]`
 
 Used to flag a method or an attribute that needs to know the subject
-principal. This principal will be passed as argument.  The argument
+principal. This principal will be passed as argument. The argument
 will be a `nsIPrincipal&` because a subject principal is always
 available.
 
@@ -1897,9 +1906,9 @@ principal.
 ### `[NeedsCallerType]`
 
 Used to flag a method or an attribute that needs to know the caller
-type, in the `mozilla::dom::CallerType` sense.  This can be safely
+type, in the `mozilla::dom::CallerType` sense. This can be safely
 used for APIs exposed in workers; there it will indicate whether the
-worker involved is a `ChromeWorker` or not.  At the moment the only
+worker involved is a `ChromeWorker` or not. At the moment the only
 possible caller types are `System` (representing system-principal
 callers) and `NonSystem`.
 
@@ -1918,11 +1927,12 @@ These methods will initialize the dictionary from `val` by following WebIDL's
 
 ### `[GenerateInitFromJSON]`
 
-When set on a dictionary it will add an `Init` method to the generated C++
-class with the following signature:
+When set on a dictionary it will add `Init` methods to the generated C++
+class with the following signatures:
 
 ``` cpp
 bool Init(const nsAString& aJSON);
+bool Init(const nsACString& aJSON);
 ```
 
 This extended attribute will only have an effect if all of the types of the
@@ -1941,11 +1951,12 @@ extended attribute.
 
 ### `[GenerateToJSON]`
 
-When set on a dictionary it will add a `ToJSON` method to the generated C++
-class with the following signature:
+When set on a dictionary it will add `ToJSON` methods to the generated C++
+class with the following signatures:
 
 ``` cpp
 bool ToJSON(nsAString& aJSON);
+bool ToJSON(nsACString& aJSON);
 ```
 
 The method will generate a JSON representation of the dictionary members' values
@@ -2034,7 +2045,6 @@ class Element {
 };
 ```
 
-
 ## Helper objects
 
 The C++ side of the bindings uses a number of helper objects.
@@ -2042,7 +2052,7 @@ The C++ side of the bindings uses a number of helper objects.
 ### `Nullable<T>`
 
 `Nullable<>` is a struct declared in
-[`Nullable.h`](https://searchfox.org/mozilla-central/source/dom/bindings/Nullable.h)
+[`Nullable.h`](https://searchfox.org/firefox-main/source/dom/bindings/Nullable.h)
 and exported to `mozilla/dom/Nullable.h` that is used to represent
 nullable values of types that don't have a natural way to represent
 null.
@@ -2059,7 +2069,7 @@ null and two setters that can be used to set it to a value:
 ### `Optional<T>`
 
 `Optional<>` is a struct declared in
-[`BindingDeclarations.h`](https://searchfox.org/mozilla-central/source/dom/bindings/BindingDeclarations.h)
+[`BindingDeclarations.h`](https://searchfox.org/firefox-main/source/dom/bindings/BindingDeclarations.h)
 and exported to `mozilla/dom/BindingDeclarations.h` that is used to
 represent optional arguments and dictionary members, but only those that
 have no default value.
@@ -2071,14 +2081,14 @@ get a `const T&` for the value.
 ### `NonNull<T>`
 
 `NonNull<T>` is a struct declared in
-[`BindingUtils.h`](https://searchfox.org/mozilla-central/source/dom/bindings/BindingUtils.h)
+[`BindingUtils.h`](https://searchfox.org/firefox-main/source/dom/bindings/BindingUtils.h)
 and exported to `mozilla/dom/BindingUtils.h` that is used to represent
 non-null C++ objects. It has a conversion operator that produces `T&`.
 
 ### `OwningNonNull<T>`
 
 `OwningNonNull<T>` is a struct declared in
-[`OwningNonNull.h`](https://searchfox.org/mozilla-central/source/xpcom/base/OwningNonNull.h)
+[`OwningNonNull.h`](https://searchfox.org/firefox-main/source/xpcom/base/OwningNonNull.h)
 and exported to `mozilla/OwningNonNull.h` that is used to represent
 non-null C++ objects and holds a strong reference to them. It has a
 conversion operator that produces `T&`.
@@ -2095,10 +2105,14 @@ in units of `*Data()`. So for example, `Int32Array` has a `Data()`
 returning `int32_t*` and a `Length()` that returns the number of
 32-bit ints in the array.
 
+By default, the generated bindings reject typed arrays, `ArrayBuffer`,
+and `ArrayBufferView` objects larger than 2 GB. To allow larger buffers,
+use the [`[AllowLarge]`](#allowlarge) extended attribute.
+
 ### `Sequence<T>`
 
 `Sequence<>` is a type declared in
-[`BindingDeclarations.h`](https://searchfox.org/mozilla-central/source/dom/bindings/BindingDeclarations.h)
+[`BindingDeclarations.h`](https://searchfox.org/firefox-main/source/dom/bindings/BindingDeclarations.h)
 and exported to `mozilla/dom/BindingDeclarations.h` that is used to
 represent sequence arguments. It's some kind of typed array, but which
 exact kind is opaque to consumers. This allows the binding code to
@@ -2108,7 +2122,7 @@ and so forth) without having to update all the callees.
 ### `CallbackFunction`
 
 `CallbackFunction` is a type declared in
-[CallbackFunction.h](https://searchfox.org/mozilla-central/source/dom/bindings/CallbackFunction.h)
+[CallbackFunction.h](https://searchfox.org/firefox-main/source/dom/bindings/CallbackFunction.h)
 and exported to `mozilla/dom/CallbackFunction.h` that is used as a
 common base class for all the generated callback function
 representations. This class inherits from `nsISupports`, and consumers
@@ -2117,7 +2131,7 @@ must make sure to cycle-collect it, since it keeps JS objects alive.
 ### `CallbackInterface`
 
 `CallbackInterface` is a type declared in
-[CallbackInterface.h](https://searchfox.org/mozilla-central/source/dom/bindings/CallbackInterface.h)
+[CallbackInterface.h](https://searchfox.org/firefox-main/source/dom/bindings/CallbackInterface.h)
 and exported to `mozilla/dom/CallbackInterface.h` that is used as a
 common base class for all the generated callback interface
 representations. This class inherits from `nsISupports`, and consumers
@@ -2126,7 +2140,7 @@ must make sure to cycle-collect it, since it keeps JS objects alive.
 ### `DOMString`
 
 `DOMString` is a class declared in
-[BindingDeclarations.h](https://searchfox.org/mozilla-central/source/dom/bindings/BindingDeclarations.h)
+[BindingDeclarations.h](https://searchfox.org/firefox-main/source/dom/bindings/BindingDeclarations.h)
 and exported to `mozilla/dom/BindingDeclarations.h` that is used for
 Web IDL `DOMString` return values. It has a conversion operator to
 `nsString&` so that it can be passed to methods that take that type or
@@ -2142,7 +2156,7 @@ codepath even if it does end up having to addref the `StringBuffer`.
 ### `GlobalObject`
 
 `GlobalObject` is a class declared in
-[BindingDeclarations.h](https://searchfox.org/mozilla-central/source/dom/bindings/BindingDeclarations.h)
+[BindingDeclarations.h](https://searchfox.org/firefox-main/source/dom/bindings/BindingDeclarations.h)
 and exported to `mozilla/dom/BindingDeclarations.h` that is used to
 represent the global object for static attributes and operations
 (including constructors). It has a `Get()` method that returns the
@@ -2155,7 +2169,7 @@ the `JSContext` may not match the compartment of the global!
 ### `Date`
 
 `Date` is a class declared in
-[BindingDeclarations.h](https://searchfox.org/mozilla-central/source/dom/bindings/BindingDeclarations.h)
+[BindingDeclarations.h](https://searchfox.org/firefox-main/source/dom/bindings/BindingDeclarations.h)
 and exported to `mozilla/dom/BindingDeclarations.h` that is used to
 represent Web IDL Dates. It has a `TimeStamp()` method returning a
 double which represents a number of milliseconds since the epoch, as
@@ -2166,29 +2180,29 @@ with a double timestamp or a JS `Date` object. It also has a
 ### `ErrorResult`
 
 `ErrorResult` is a class declared in
-[ErrorResult.h](https://searchfox.org/mozilla-central/source/dom/bindings/ErrorResult.h)
+[ErrorResult.h](https://searchfox.org/firefox-main/source/dom/bindings/ErrorResult.h)
 and exported to `mozilla/ErrorResult.h` that is used to represent
 exceptions in Web IDL bindings. This has the following methods:
 
--  `Throw`: allows throwing an `nsresult`. The `nsresult` must be
-   a failure code.
--  `ThrowTypeError`: allows throwing a `TypeError` with the given
-   error message. The list of allowed `TypeError`s and corresponding
-   messages is in
-   [`dom/bindings/Errors.msg`](https://searchfox.org/mozilla-central/source/dom/bindings/Errors.msg).
--  `ThrowJSException`: allows throwing a preexisting JS exception
-   value. However, the `MightThrowJSException()` method must be called
-   before any such exceptions are thrown (even if no exception is
-   thrown).
--  `Failed`: checks whether an exception has been thrown on this
-   `ErrorResult`.
--  `ErrorCode`: returns a failure `nsresult` representing (perhaps
-   incompletely) the state of this `ErrorResult`.
--  `operator=`: takes an `nsresult` and acts like `Throw` if the
-   result is an error code, and like a no-op otherwise (unless an
-   exception has already been thrown, in which case it asserts). This
-   should only be used for legacy code that has nsresult everywhere; we
-   would like to get rid of this operator at some point.
+- `Throw`: allows throwing an `nsresult`. The `nsresult` must be
+  a failure code.
+- `ThrowTypeError`: allows throwing a `TypeError` with the given
+  error message. The list of allowed `TypeError`s and corresponding
+  messages is in
+  [`dom/bindings/Errors.msg`](https://searchfox.org/firefox-main/source/dom/bindings/Errors.msg).
+- `ThrowJSException`: allows throwing a preexisting JS exception
+  value. However, the `MightThrowJSException()` method must be called
+  before any such exceptions are thrown (even if no exception is
+  thrown).
+- `Failed`: checks whether an exception has been thrown on this
+  `ErrorResult`.
+- `ErrorCode`: returns a failure `nsresult` representing (perhaps
+  incompletely) the state of this `ErrorResult`.
+- `operator=`: takes an `nsresult` and acts like `Throw` if the
+  result is an error code, and like a no-op otherwise (unless an
+  exception has already been thrown, in which case it asserts). This
+  should only be used for legacy code that has nsresult everywhere; we
+  would like to get rid of this operator at some point.
 
 ## Events
 
@@ -2264,10 +2278,10 @@ It is possible to implement Web IDL interfaces in JavaScript within Gecko
 -- however, **this is limited to interfaces that are not exposed in Web
 Workers**. When the binding occurs, two objects are created:
 
--  *Content-exposed object:* what gets exposed to the web page.
--  *Implementation object:* running as a chrome-privileged script. This
-   allows the implementation object to have various APIs that the
-   content-exposed object does not.
+- _Content-exposed object:_ what gets exposed to the web page.
+- _Implementation object:_ running as a chrome-privileged script. This
+  allows the implementation object to have various APIs that the
+  content-exposed object does not.
 
 Because there are two types of objects, you have to be careful about
 which object you are creating.
@@ -2353,7 +2367,7 @@ interface MyNumber {
 };
 ```
 
-Next, create an XPCOM component that implements this interface.  Use
+Next, create an XPCOM component that implements this interface. Use
 the same contract ID as you specified in the Web IDL file. The class
 ID doesn't matter, except that it should be a newly generated one. For
 `QueryInterface`, you only need to implement `nsISupports`, not
@@ -2386,9 +2400,9 @@ Static attributes and methods are not supported on JS-implemented Web IDL
 However, with the changes in [bug
 1172785](https://bugzilla.mozilla.org/show_bug.cgi?id=1172785) you
 can route static methods to a C++ implementation on another object using
-a `StaticClassOverride` annotation.  This annotation includes the
+a `StaticClassOverride` annotation. This annotation includes the
 full, namespace-qualified name of the class that contains an
-implementation of the named method.  The include for that class must be
+implementation of the named method. The include for that class must be
 found in a directory based on its name.
 
 ``` webidl
@@ -2496,7 +2510,7 @@ and other implementation details to the content code.
 When throwing because a specification requires an exception, you need to
 create the exception from the window your Web IDL object is associated
 with (the one that was passed to your `init` method). The binding code
-will then rethrow that exception to the web page.  An example of how
+will then rethrow that exception to the web page. An example of how
 this could work:
 
 ``` js

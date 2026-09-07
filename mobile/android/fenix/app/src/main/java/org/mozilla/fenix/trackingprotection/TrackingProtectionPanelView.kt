@@ -25,14 +25,12 @@ import org.mozilla.fenix.GleanMetrics.TrackingProtection
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.ComponentTrackingProtectionPanelBinding
 import org.mozilla.fenix.ext.addUnderline
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.CROSS_SITE_TRACKING_COOKIES
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.CRYPTOMINERS
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.FINGERPRINTERS
-import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.REDIRECT_TRACKERS
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.SOCIAL_MEDIA_TRACKERS
-import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.SUSPECTED_FINGERPRINTERS
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.TRACKING_CONTENT
+import org.mozilla.fenix.utils.Settings
 
 /**
  * Interface for the TrackingProtectionPanelViewInteractor. This interface is implemented by objects that want
@@ -73,6 +71,7 @@ interface TrackingProtectionPanelViewInteractor {
 @SuppressWarnings("TooManyFunctions")
 class TrackingProtectionPanelView(
     val containerView: ViewGroup,
+    val settings: Settings,
     val interactor: TrackingProtectionPanelInteractor,
 ) : View.OnClickListener {
 
@@ -133,10 +132,8 @@ class TrackingProtectionPanelView(
         binding.notBlockingHeader.isGone = bucketedTrackers.loadedIsEmpty()
         binding.blockingHeader.isGone = bucketedTrackers.blockedIsEmpty()
 
-        if (containerView.context.settings().enabledTotalCookieProtection) {
-            binding.crossSiteTracking.text = containerView.context.getString(R.string.etp_cookies_title_2)
-            binding.crossSiteTrackingLoaded.text = containerView.context.getString(R.string.etp_cookies_title_2)
-        }
+        binding.crossSiteTracking.text = containerView.context.getString(R.string.etp_cookies_title_2)
+        binding.crossSiteTrackingLoaded.text = containerView.context.getString(R.string.etp_cookies_title_2)
 
         updateCategoryVisibility()
         focusAccessibilityLastUsedCategory(state.lastAccessedCategory)
@@ -150,9 +147,7 @@ class TrackingProtectionPanelView(
         binding.normalMode.visibility = View.GONE
         binding.detailsMode.visibility = View.VISIBLE
 
-        if (category == CROSS_SITE_TRACKING_COOKIES &&
-            containerView.context.settings().enabledTotalCookieProtection
-        ) {
+        if (category == CROSS_SITE_TRACKING_COOKIES) {
             binding.categoryTitle.setText(R.string.etp_cookies_title_2)
             binding.categoryDescription.setText(R.string.etp_cookies_description_2)
         } else {
@@ -218,6 +213,7 @@ class TrackingProtectionPanelView(
      * visibility, where "..._loaded" titles correspond to "Allowed" permissions and the other
      * corresponds to "Blocked" permissions for each category.
      */
+    @Suppress("CognitiveComplexMethod")
     private fun getLastUsedCategoryView(categoryTitle: String) = when (categoryTitle) {
         CROSS_SITE_TRACKING_COOKIES.name -> {
             if (binding.crossSiteTracking.isGone) binding.crossSiteTrackingLoaded else binding.crossSiteTracking
@@ -234,16 +230,6 @@ class TrackingProtectionPanelView(
         CRYPTOMINERS.name -> {
             if (binding.cryptominers.isGone) binding.cryptominersLoaded else binding.cryptominers
         }
-        REDIRECT_TRACKERS.name -> {
-            if (binding.redirectTrackers.isGone) binding.redirectTrackersLoaded else binding.redirectTrackers
-        }
-        SUSPECTED_FINGERPRINTERS.name -> {
-            if (binding.suspectedFingerprinters.isGone) {
-                binding.suspectedFingerprintersLoaded
-            } else {
-                binding.suspectedFingerprinters
-            }
-        }
         else -> null
     }
 
@@ -255,8 +241,6 @@ class TrackingProtectionPanelView(
         binding.fingerprinters.isGone = bucketedTrackers.get(FINGERPRINTERS, true).isEmpty()
         binding.trackingContent.isGone = bucketedTrackers.get(TRACKING_CONTENT, true).isEmpty()
         binding.cryptominers.isGone = bucketedTrackers.get(CRYPTOMINERS, true).isEmpty()
-        binding.redirectTrackers.isGone = bucketedTrackers.get(REDIRECT_TRACKERS, true).isEmpty()
-        binding.suspectedFingerprinters.isGone = bucketedTrackers.get(SUSPECTED_FINGERPRINTERS, true).isEmpty()
 
         binding.crossSiteTrackingLoaded.isGone =
             bucketedTrackers.get(CROSS_SITE_TRACKING_COOKIES, false).isEmpty()
@@ -265,8 +249,6 @@ class TrackingProtectionPanelView(
         binding.fingerprintersLoaded.isGone = bucketedTrackers.get(FINGERPRINTERS, false).isEmpty()
         binding.trackingContentLoaded.isGone = bucketedTrackers.get(TRACKING_CONTENT, false).isEmpty()
         binding.cryptominersLoaded.isGone = bucketedTrackers.get(CRYPTOMINERS, false).isEmpty()
-        binding.redirectTrackersLoaded.isGone = bucketedTrackers.get(REDIRECT_TRACKERS, false).isEmpty()
-        binding.suspectedFingerprintersLoaded.isGone = bucketedTrackers.get(SUSPECTED_FINGERPRINTERS, false).isEmpty()
     }
 
     private fun setCategoryClickListeners() {
@@ -281,7 +263,6 @@ class TrackingProtectionPanelView(
         binding.fingerprintersLoaded.setOnClickListener(this)
         binding.trackingContentLoaded.setOnClickListener(this)
         binding.cryptominersLoaded.setOnClickListener(this)
-        binding.redirectTrackersLoaded.setOnClickListener(this)
     }
 
     override fun onClick(v: View) {
@@ -331,8 +312,6 @@ class TrackingProtectionPanelView(
             R.id.cross_site_tracking, R.id.cross_site_tracking_loaded -> CROSS_SITE_TRACKING_COOKIES
             R.id.tracking_content, R.id.tracking_content_loaded -> TRACKING_CONTENT
             R.id.cryptominers, R.id.cryptominers_loaded -> CRYPTOMINERS
-            R.id.redirect_trackers, R.id.redirect_trackers_loaded -> REDIRECT_TRACKERS
-            R.id.suspected_fingerprinters, R.id.suspected_fingerprinters_loaded -> SUSPECTED_FINGERPRINTERS
             else -> null
         }
 
@@ -345,8 +324,6 @@ class TrackingProtectionPanelView(
             R.id.fingerprinters_loaded,
             R.id.tracking_content_loaded,
             R.id.cryptominers_loaded,
-            R.id.redirect_trackers_loaded,
-            R.id.suspected_fingerprinters_loaded,
             -> true
 
             R.id.social_media_trackers,
@@ -354,8 +331,6 @@ class TrackingProtectionPanelView(
             R.id.cross_site_tracking,
             R.id.tracking_content,
             R.id.cryptominers,
-            R.id.redirect_trackers,
-            R.id.suspected_fingerprinters,
             -> false
             else -> false
         }

@@ -1,8 +1,6 @@
 /*
- * jsimd_powerpc.c
- *
  * Copyright 2009 Pierre Ossman <ossman@cendio.se> for Cendio AB
- * Copyright (C) 2009-2011, 2014-2016, 2018, 2022, D. R. Commander.
+ * Copyright (C) 2009-2011, 2014-2016, 2018, 2022, 2024, 2026, D. R. Commander.
  * Copyright (C) 2015-2016, 2018, 2022, Matthieu Darbois.
  *
  * Based on the x86 SIMD extension for IJG JPEG library,
@@ -20,30 +18,35 @@
 #endif
 
 #define JPEG_INTERNALS
-#include "../../jinclude.h"
-#include "../../jpeglib.h"
-#include "../../jsimd.h"
-#include "../../jdct.h"
-#include "../../jsimddct.h"
+#include "../../src/jinclude.h"
+#include "../../src/jpeglib.h"
+#include "../../src/jsimd.h"
+#include "../../src/jdct.h"
+#include "../../src/jsimddct.h"
 #include "../jsimd.h"
 
 #include <ctype.h>
 
+#if !defined(__ALTIVEC__)
 #if defined(__APPLE__)
 #include <sys/types.h>
 #include <sys/sysctl.h>
+#elif defined(HAVE_GETAUXVAL) || defined(HAVE_ELF_AUX_INFO)
+#if defined(__FreeBSD__)
+#include <machine/cpu.h>
+#endif
+#include <sys/auxv.h>
 #elif defined(__OpenBSD__)
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #include <machine/cpu.h>
-#elif defined(__FreeBSD__)
-#include <machine/cpu.h>
-#include <sys/auxv.h>
+#endif
 #endif
 
 static THREAD_LOCAL unsigned int simd_support = ~0;
 
-#if !defined(__ALTIVEC__) && (defined(__linux__) || defined(ANDROID) || defined(__ANDROID__))
+#if !defined(__ALTIVEC__) && !defined(HAVE_GETAUXVAL) && \
+    (defined(__linux__) || defined(ANDROID) || defined(__ANDROID__))
 
 #define SOMEWHAT_SANE_PROC_CPUINFO_SIZE_LIMIT  (1024 * 1024)
 
@@ -114,9 +117,12 @@ LOCAL(void)
 init_simd(void)
 {
 #ifndef NO_GETENV
-  char *env = NULL;
+  char env[2] = { 0 };
 #endif
-#if !defined(__ALTIVEC__) && (defined(__linux__) || defined(ANDROID) || defined(__ANDROID__))
+#if !defined(__ALTIVEC__)
+#if defined(HAVE_GETAUXVAL) || defined(HAVE_ELF_AUX_INFO)
+  unsigned long cpufeatures = 0;
+#elif defined(__linux__) || defined(ANDROID) || defined(__ANDROID__)
   int bufsize = 1024; /* an initial guess for the line buffer size limit */
 #elif defined(__amigaos4__)
   uint32 altivec = 0;
@@ -128,8 +134,7 @@ init_simd(void)
   int mib[2] = { CTL_MACHDEP, CPU_ALTIVEC };
   int altivec;
   size_t len = sizeof(altivec);
-#elif defined(__FreeBSD__)
-  unsigned long cpufeatures = 0;
+#endif
 #endif
 
   if (simd_support != ~0U)
@@ -139,6 +144,10 @@ init_simd(void)
 
 #if defined(__ALTIVEC__)
   simd_support |= JSIMD_ALTIVEC;
+#elif defined(HAVE_GETAUXVAL)
+  cpufeatures = getauxval(AT_HWCAP);
+  if (cpufeatures & PPC_FEATURE_HAS_ALTIVEC)
+    simd_support |= JSIMD_ALTIVEC;
 #elif defined(__linux__) || defined(ANDROID) || defined(__ANDROID__)
   while (!parse_proc_cpuinfo(bufsize)) {
     bufsize *= 2;
@@ -149,10 +158,11 @@ init_simd(void)
   IExec->GetCPUInfoTags(GCIT_VectorUnit, &altivec, TAG_DONE);
   if (altivec == VECTORTYPE_ALTIVEC)
     simd_support |= JSIMD_ALTIVEC;
-#elif defined(__APPLE__) || defined(__OpenBSD__)
+#elif defined(__APPLE__) || \
+      (defined(__OpenBSD__) && !defined(HAVE_ELF_AUX_INFO))
   if (sysctl(mib, 2, &altivec, &len, NULL, 0) == 0 && altivec != 0)
     simd_support |= JSIMD_ALTIVEC;
-#elif defined(__FreeBSD__)
+#elif defined(HAVE_ELF_AUX_INFO)
   elf_aux_info(AT_HWCAP, &cpufeatures, sizeof(cpufeatures));
   if (cpufeatures & PPC_FEATURE_HAS_ALTIVEC)
     simd_support |= JSIMD_ALTIVEC;
@@ -160,11 +170,9 @@ init_simd(void)
 
 #ifndef NO_GETENV
   /* Force different settings through environment variables */
-  env = getenv("JSIMD_FORCEALTIVEC");
-  if ((env != NULL) && (strcmp(env, "1") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FORCEALTIVEC") && !strcmp(env, "1"))
     simd_support = JSIMD_ALTIVEC;
-  env = getenv("JSIMD_FORCENONE");
-  if ((env != NULL) && (strcmp(env, "1") == 0))
+  if (!GETENV_S(env, 2, "JSIMD_FORCENONE") && !strcmp(env, "1"))
     simd_support = 0;
 #endif
 }

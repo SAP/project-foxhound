@@ -8,13 +8,13 @@ let originalEngine;
 let originalPrivateEngine;
 
 async function resetEngines() {
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     originalEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
-  await Services.search.setDefaultPrivate(
+  await SearchService.setDefaultPrivate(
     originalPrivateEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 }
 
@@ -28,8 +28,8 @@ add_setup(async function () {
     ],
   });
   await gCUITestUtils.addSearchBar();
-  originalEngine = await Services.search.getDefault();
-  originalPrivateEngine = await Services.search.getDefaultPrivate();
+  originalEngine = await SearchService.getDefault();
+  originalPrivateEngine = await SearchService.getDefaultPrivate();
   registerCleanupFunction(async () => {
     await resetEngines();
     gCUITestUtils.removeSearchBar();
@@ -122,9 +122,8 @@ function promiseDefaultEngineChanged(testPrivate) {
     function observer(aSub, aTopic, aData) {
       if (aData == expectedNotification) {
         Assert.equal(
-          Services.search[
-            testPrivate ? "defaultPrivateEngine" : "defaultEngine"
-          ].name,
+          SearchService[testPrivate ? "defaultPrivateEngine" : "defaultEngine"]
+            .name,
           TEST_ENGINE_NAME,
           "defaultEngine set"
         );
@@ -155,7 +154,7 @@ async function openPopupAndGetEngineButton(
   baseId,
   engineName
 ) {
-  const win = oneOffInstance.container.ownerGlobal;
+  const win = oneOffInstance.container.documentGlobal;
   // Open the popup.
   win.gURLBar.blur();
   let shownPromise = promiseEvent(popup, "popupshown");
@@ -223,7 +222,7 @@ async function openPopupAndGetEngineButton(
 async function promiseClosePopup(popup) {
   // close the panel using the escape key.
   let promise = promiseEvent(popup, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape", {}, popup.ownerGlobal);
+  EventUtils.synthesizeKey("KEY_Escape", {}, popup.documentGlobal);
   await promise;
 
   // Move the cursor out of the panel area to avoid messing with other tests.
@@ -232,6 +231,6 @@ async function promiseClosePopup(popup) {
     target: popup,
     offsetX: 0,
     offsetY: 0,
-    win: popup.ownerGlobal,
+    win: popup.documentGlobal,
   });
 }

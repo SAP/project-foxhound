@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const tests = [
   // Rounding conflict with maximum fraction/significand digits.
   {

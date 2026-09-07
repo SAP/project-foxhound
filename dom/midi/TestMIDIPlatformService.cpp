@@ -3,14 +3,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TestMIDIPlatformService.h"
+
+#include "mozilla/dom/MIDIPlatformRunnables.h"
 #include "mozilla/dom/MIDIPort.h"
-#include "mozilla/dom/MIDITypes.h"
 #include "mozilla/dom/MIDIPortInterface.h"
 #include "mozilla/dom/MIDIPortParent.h"
-#include "mozilla/dom/MIDIPlatformRunnables.h"
+#include "mozilla/dom/MIDITypes.h"
 #include "mozilla/dom/MIDIUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/Unused.h"
 #include "nsIThread.h"
 
 using namespace mozilla;
@@ -68,23 +68,23 @@ TestMIDIPlatformService::TestMIDIPlatformService()
     : mControlInputPort(u"b744eebe-f7d8-499b-872b-958f63c8f522"_ns,
                         u"Test Control MIDI Device Input Port"_ns,
                         u"Test Manufacturer"_ns, u"1.0.0"_ns,
-                        static_cast<uint32_t>(MIDIPortType::Input)),
+                        MIDIPortType::Input),
       mControlOutputPort(u"ab8e7fe8-c4de-436a-a960-30898a7c9a3d"_ns,
                          u"Test Control MIDI Device Output Port"_ns,
                          u"Test Manufacturer"_ns, u"1.0.0"_ns,
-                         static_cast<uint32_t>(MIDIPortType::Output)),
+                         MIDIPortType::Output),
       mStateTestInputPort(u"a9329677-8588-4460-a091-9d4a7f629a48"_ns,
                           u"Test State MIDI Device Input Port"_ns,
                           u"Test Manufacturer"_ns, u"1.0.0"_ns,
-                          static_cast<uint32_t>(MIDIPortType::Input)),
+                          MIDIPortType::Input),
       mStateTestOutputPort(u"478fa225-b5fc-4fa6-a543-d32d9cb651e7"_ns,
                            u"Test State MIDI Device Output Port"_ns,
                            u"Test Manufacturer"_ns, u"1.0.0"_ns,
-                           static_cast<uint32_t>(MIDIPortType::Output)),
+                           MIDIPortType::Output),
       mAlwaysClosedTestOutputPort(u"f87d0c76-3c68-49a9-a44f-700f1125c07a"_ns,
                                   u"Always Closed MIDI Device Output Port"_ns,
                                   u"Test Manufacturer"_ns, u"1.0.0"_ns,
-                                  static_cast<uint32_t>(MIDIPortType::Output)),
+                                  MIDIPortType::Output),
       mDoRefresh(false),
       mIsInitialized(false) {
   MIDIPlatformService::AssertThread();

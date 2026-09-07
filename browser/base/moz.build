@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -27,6 +25,7 @@ BROWSER_CHROME_MANIFESTS += [
     "content/test/contextMenu/browser.toml",
     "content/test/favicons/browser.toml",
     "content/test/forms/browser.toml",
+    "content/test/framebusting/browser.toml",
     "content/test/fullscreen/browser.toml",
     "content/test/general/browser.toml",
     "content/test/gesture/browser.toml",
@@ -36,6 +35,7 @@ BROWSER_CHROME_MANIFESTS += [
     "content/test/linkHandling/browser.toml",
     "content/test/menubar/browser.toml",
     "content/test/metaTags/browser.toml",
+    "content/test/mousepostracker/browser.toml",
     "content/test/notificationbox/browser.toml",
     "content/test/outOfProcess/browser.toml",
     "content/test/pageActions/browser.toml",
@@ -45,13 +45,10 @@ BROWSER_CHROME_MANIFESTS += [
     "content/test/plugins/browser.toml",
     "content/test/popupNotifications/browser.toml",
     "content/test/popups/browser.toml",
-    "content/test/privateBrowsing/browser.toml",
     "content/test/protectionsUI/browser.toml",
     "content/test/referrer/browser.toml",
     "content/test/sanitize/browser.toml",
     "content/test/scroll-to-text-fragment/browser.toml",
-    "content/test/sidebar/browser.toml",
-    "content/test/sidebar/browserSidebarRevamp.toml",
     "content/test/siteIdentity/browser.toml",
     "content/test/startup/browser.toml",
     "content/test/static/browser.toml",

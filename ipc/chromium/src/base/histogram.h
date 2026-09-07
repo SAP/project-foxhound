@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -43,7 +41,6 @@
 #define BASE_METRICS_HISTOGRAM_H_
 #pragma once
 
-#include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 
 #include <map>

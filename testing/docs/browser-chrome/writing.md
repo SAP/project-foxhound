@@ -113,6 +113,27 @@ Use [`BrowserTestUtils.waitForMutationCondition`](browsertestutils.rst#BrowserTe
 Do **not** use `waitForCondition`, which uses a timeout loop and often
 leads to intermittent failures.
 
+### Querying elements across Shadow DOM boundaries
+
+Use [`BrowserTestUtils.querySelectorDeep`](browsertestutils.rst#BrowserTestUtils.querySelectorDeep)
+from the parent process, or `ContentTaskUtils.querySelectorDeep` inside a
+`SpecialPowers.spawn` callback, to find an element that may be nested inside
+one or more Shadow DOM roots (open or closed):
+
+```js
+// In the parent process:
+const el = BrowserTestUtils.querySelectorDeep(document, ".my-selector");
+
+// Inside SpecialPowers.spawn:
+let result = await SpecialPowers.spawn(browser, [], async () => {
+  return ContentTaskUtils.querySelectorDeep(content.document, ".my-selector")
+    ?.textContent;
+});
+```
+
+Both functions accept a `Document`, `ShadowRoot`, or `Element` as the root and
+return the first matching element, or `null` if none is found.
+
 ### Mocking code not under test
 
 The [`Sinon`](https://sinonjs.org/) mocking framework is available. You can import it

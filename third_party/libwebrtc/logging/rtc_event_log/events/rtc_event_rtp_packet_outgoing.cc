@@ -10,31 +10,28 @@
 
 #include "logging/rtc_event_log/events/rtc_event_rtp_packet_outgoing.h"
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "absl/memory/memory.h"
-#include "api/rtc_event_log/rtc_event.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 
 namespace webrtc {
 
 RtcEventRtpPacketOutgoing::RtcEventRtpPacketOutgoing(
     const RtpPacketToSend& packet,
-    int probe_cluster_id)
-    : packet_(packet), probe_cluster_id_(probe_cluster_id) {}
-
-RtcEventRtpPacketOutgoing::RtcEventRtpPacketOutgoing(
-    const RtcEventRtpPacketOutgoing& other)
-    : RtcEvent(other.timestamp_us_),
-      packet_(other.packet_),
-      probe_cluster_id_(other.probe_cluster_id_) {}
+    int probe_cluster_id,
+    std::optional<uint16_t> rtx_original_sequence_number)
+    : packet_(packet),
+      probe_cluster_id_(probe_cluster_id),
+      rtx_original_sequence_number_(rtx_original_sequence_number) {}
 
 RtcEventRtpPacketOutgoing::~RtcEventRtpPacketOutgoing() = default;
 
 std::unique_ptr<RtcEventRtpPacketOutgoing> RtcEventRtpPacketOutgoing::Copy()
     const {
-  return absl::WrapUnique<RtcEventRtpPacketOutgoing>(
-      new RtcEventRtpPacketOutgoing(*this));
+  return absl::WrapUnique(new RtcEventRtpPacketOutgoing(*this));
 }
 
 }  // namespace webrtc

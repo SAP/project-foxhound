@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,7 +47,7 @@ void nsDisplayItemGenericGeometry::MoveBy(const nsPoint& aOffset) {
 nsDisplayItemBoundsGeometry::nsDisplayItemBoundsGeometry(
     nsDisplayItem* aItem, nsDisplayListBuilder* aBuilder)
     : nsDisplayItemGeometry(aItem, aBuilder) {
-  nscoord radii[8];
+  nsRectCornerRadii radii;
   mHasRoundedCorners = aItem->Frame()->GetBorderRadii(radii);
 }
 

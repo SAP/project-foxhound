@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -179,6 +177,18 @@ class WebSocketChannel : public BaseWebSocketChannel,
 
   void StopSession(nsresult reason);
   void DoStopSession(nsresult reason);
+
+  // Returns a strong reference to mListenerMT, or nullptr if mStopped is true.
+  // Acquires mMutex; caller must not hold it.
+  already_AddRefed<BaseWebSocketChannel::ListenerAndContextContainer>
+  GetListenerMT() MOZ_EXCLUDES(mMutex);
+
+  // Atomically moves mListenerMT out (leaving it null) under mMutex.
+  // Used only by DoStopSession so the CallOnStop runnable carries the last
+  // strong reference; CallOnStop::Run then needs no further mListenerMT write.
+  // Caller must not hold mMutex.
+  already_AddRefed<BaseWebSocketChannel::ListenerAndContextContainer>
+  TakeListenerMT() MOZ_EXCLUDES(mMutex);
   void AbortSession(nsresult reason);
   void ReleaseSession();
   void CleanupConnection();
@@ -360,6 +370,8 @@ class WebSocketChannel : public BaseWebSocketChannel,
       mConnectionLogService;  // effectively const
 
   mozilla::Mutex mMutex;
+  RefPtr<BaseWebSocketChannel::ListenerAndContextContainer> mListenerMT
+      MOZ_GUARDED_BY(mMutex);
 };
 
 class WebSocketSSLChannel : public WebSocketChannel {

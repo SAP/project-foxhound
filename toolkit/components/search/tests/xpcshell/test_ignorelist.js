@@ -41,10 +41,10 @@ add_setup(async () => {
 });
 
 add_task(async function test_ignoreListOnLoadSettings() {
-  consoleAllowList.push("Failed to load");
+  let finishListening = TestUtils.listenForConsoleMessages();
 
   Assert.ok(
-    !Services.search.isInitialized,
+    !SearchService.isInitialized,
     "Search service should not be initialized to begin with for this sub test"
   );
 
@@ -58,69 +58,173 @@ add_task(async function test_ignoreListOnLoadSettings() {
     "settings-update-complete"
   );
 
-  await Services.search.init();
+  await SearchService.init();
 
   await ignoreListUpdateCompleted;
 
   Assert.ok(
-    !(await Services.search.getEngineByName("Test search engine")),
+    !SearchService.getEngineByName("Test search engine"),
     "Should not have installed the add-on engine from settings"
   );
 
   Assert.ok(
-    !(await Services.search.getEngineByName("OpenSearchTest")),
+    !SearchService.getEngineByName("OpenSearchTest"),
     "Should not have installed the OpenSearch engine from settings"
   );
 
   Assert.deepEqual(
-    (await Services.search.getEngines()).map(e => e.id),
+    (await SearchService.getEngines()).map(e => e.id),
     ["defaultEngine"],
     "Should have correctly started and installed only the default engine"
+  );
+
+  assertPreference(
+    "OpenSearchTest",
+    "submission url",
+    "https://www.example.com/test?search_query=&opensearch=sng"
+  );
+
+  let consoleMessages = await finishListening();
+  Assert.deepEqual(
+    consoleMessages
+      .filter(msg => msg.level == "warn")
+      .map(msg => {
+        return {
+          level: msg.level,
+          arguments: msg.arguments,
+        };
+      }),
+    [
+      {
+        level: "warn",
+        arguments: [
+          "Search engine",
+          "Test search engine",
+          "matches submission url",
+          "https://www.example.com/search?q=&ignore=true&channel=sng",
+        ],
+      },
+      {
+        level: "warn",
+        arguments: [
+          "Search engine",
+          "OpenSearchTest",
+          "matches submission url",
+          "https://www.example.com/test?search_query=&opensearch=sng",
+        ],
+      },
+    ],
+    "Should log console warnings for both search engines"
   );
 });
 
 add_task(async function test_ignoreListOnInstall() {
   Assert.ok(
-    Services.search.isInitialized,
+    SearchService.isInitialized,
     "Search service should have been initialized to begin with for this sub test"
   );
 
   await SearchTestUtils.installSearchExtension({
     name: kSearchEngineID1,
     search_url: kSearchEngineURL1,
+    search_url_get_params: "",
   });
 
-  let engine = Services.search.getEngineByName(kSearchEngineID1);
+  let engine = SearchService.getEngineByName(kSearchEngineID1);
   Assert.equal(
     engine,
     null,
-    "Engine with ignored search params should not exist"
+    "Engine with ignored search params should not be added"
+  );
+
+  assertPreference(
+    kSearchEngineID1,
+    "submission url",
+    kSearchEngineURL1.replace("{searchTerms}", "")
   );
 
   await SearchTestUtils.installSearchExtension({
     name: kSearchEngineID2,
     search_url: kSearchEngineURL2,
+    search_url_get_params: "",
   });
 
   // An ignored engine shouldn't be available at all
-  engine = Services.search.getEngineByName(kSearchEngineID2);
+  engine = SearchService.getEngineByName(kSearchEngineID2);
   Assert.equal(
     engine,
     null,
     "Engine with ignored search params of a different case should not exist"
   );
 
+  assertPreference(
+    kSearchEngineID2,
+    "submission url",
+    kSearchEngineURL2.replace("{searchTerms}", "").toLowerCase()
+  );
+
+  let finishListening = TestUtils.listenForConsoleMessages();
+
   await SearchTestUtils.installSearchExtension({
     id: kExtensionID,
     name: kSearchEngineID3,
     search_url: kSearchEngineURL3,
+    search_url_get_params: "",
   });
 
   // An ignored engine shouldn't be available at all
-  engine = Services.search.getEngineByName(kSearchEngineID3);
+  engine = SearchService.getEngineByName(kSearchEngineID3);
   Assert.equal(
     engine,
     null,
     "Engine with ignored extension id should not exist"
   );
+
+  assertPreference(kSearchEngineID3, "load path", `[addon]${kExtensionID}`);
+
+  let consoleMessages = await finishListening();
+  Assert.deepEqual(
+    consoleMessages
+      .filter(msg => msg.level == "warn")
+      .map(msg => {
+        return {
+          level: msg.level,
+          arguments: msg.arguments,
+        };
+      }),
+    [
+      {
+        level: "warn",
+        arguments: [
+          "Search engine",
+          kSearchEngineID3,
+          "matches load path",
+          `[addon]${kExtensionID}`,
+        ],
+      },
+    ],
+    "Should have logged a console message"
+  );
 });
+
+/**
+ * Asserts that the lastEngineIgnored preference is set correctly.
+ *
+ * @param {string} engineName
+ * @param {string} ignoreListtype
+ * @param {string} url
+ */
+function assertPreference(engineName, ignoreListtype, url) {
+  let prefValue = Services.prefs.getCharPref(
+    SearchUtils.BROWSER_SEARCH_PREF + "lastEngineIgnored"
+  );
+  let matchResult = prefValue.match(/\d+ (.*?) (?:(https.*|\[.*))/);
+  Assert.deepEqual(
+    matchResult.slice(1),
+    [
+      `Search engine '${engineName}' matches ${ignoreListtype} ignore list`,
+      url,
+    ],
+    "Should have set the preference to the last engine ignored"
+  );
+}

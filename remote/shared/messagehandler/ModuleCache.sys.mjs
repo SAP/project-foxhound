@@ -90,7 +90,7 @@ export class ModuleCache {
   #modules;
   #protocol;
 
-  /*
+  /**
    * @param {MessageHandler} messageHandler
    *     The MessageHandler instance which owns this ModuleCache instance.
    */

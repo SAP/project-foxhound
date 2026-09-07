@@ -7,8 +7,7 @@ import android.content.Context
 import android.content.pm.ShortcutManager
 import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Before
 import org.junit.Test
@@ -44,8 +43,7 @@ class HomeScreenTest {
     @Mock
     private lateinit var shortcutManager: ShortcutManager
 
-    @ExperimentalCoroutinesApi
-    private val testDispatcher = UnconfinedTestDispatcher()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setUp() {
@@ -79,6 +77,7 @@ class HomeScreenTest {
             testDispatcher,
             testDispatcher,
         )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(shortcutManager).isRequestPinShortcutSupported
 
@@ -96,6 +95,8 @@ class HomeScreenTest {
             testDispatcher,
             testDispatcher,
         )
+
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(shortcutManager, never()).isRequestPinShortcutSupported
         verify(appStore, never()).dispatch(AppAction.UpdateIsPinningSupported(true))

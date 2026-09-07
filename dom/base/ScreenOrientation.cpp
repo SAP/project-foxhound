@@ -1,25 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScreenOrientation.h"
-#include "nsIDocShell.h"
-#include "mozilla/dom/Document.h"
-#include "nsGlobalWindowInner.h"
-#include "nsSandboxFlags.h"
-#include "nsScreen.h"
 
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Hal.h"
 #include "mozilla/Preferences.h"
-
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/StaticPrefs_browser.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIDocShell.h"
+#include "nsPIDOMWindowInlines.h"
+#include "nsSandboxFlags.h"
+#include "nsScreen.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -70,15 +68,30 @@ ScreenOrientation::ScreenOrientation(nsPIDOMWindowInner* aWindow,
     : DOMEventTargetHelper(aWindow), mScreen(aScreen) {
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT(aScreen);
+}
 
-  mAngle = aScreen->GetOrientationAngle();
-  mType = InternalOrientationToType(aScreen->GetOrientationType());
+/* static */ already_AddRefed<ScreenOrientation> ScreenOrientation::Create(
+    nsPIDOMWindowInner* aWindow, nsScreen* aScreen) {
+  RefPtr screenOrientation = new ScreenOrientation(aWindow, aScreen);
 
-  Document* doc = GetResponsibleDocument();
+  screenOrientation->mAngle = aScreen->GetOrientationAngle();
+  screenOrientation->mType =
+      InternalOrientationToType(aScreen->GetOrientationType());
+
+  Document* doc = screenOrientation->GetResponsibleDocument();
   BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
-  if (bc && !bc->IsDiscarded() && !bc->InRDMPane()) {
-    MOZ_ALWAYS_SUCCEEDS(bc->SetCurrentOrientation(mType, mAngle));
+  if (bc && !bc->IsDiscarded() && !bc->HasOrientationOverride()) {
+    MOZ_ALWAYS_SUCCEEDS(bc->SetCurrentOrientation(screenOrientation->mType,
+                                                  screenOrientation->mAngle));
+  } else if (bc && !bc->IsTop() && bc->HasOrientationOverride()) {
+    // Resync the override for newly created iframes.
+    BrowsingContext* topBC = bc->Top();
+    MOZ_ALWAYS_SUCCEEDS(
+        bc->SetOrientationOverride(topBC->GetCurrentOrientationType(),
+                                   topBC->GetCurrentOrientationAngle()));
   }
+
+  return screenOrientation.forget();
 }
 
 ScreenOrientation::~ScreenOrientation() {
@@ -681,13 +694,13 @@ void ScreenOrientation::CleanupFullscreenListener() {
 
 OrientationType ScreenOrientation::DeviceType(CallerType aCallerType) const {
   if (nsContentUtils::ShouldResistFingerprinting(
-          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
+          aCallerType, GetRelevantGlobal(), RFPTarget::ScreenOrientation)) {
     Document* doc = GetResponsibleDocument();
     BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
     if (!bc) {
       return nsRFPService::GetDefaultOrientationType();
     }
-    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+    CSSIntSize size = bc->TopInnerSizeSpoofedForRFP();
     return nsRFPService::ViewportSizeToOrientationType(size.width, size.height);
   }
   return mType;
@@ -695,13 +708,13 @@ OrientationType ScreenOrientation::DeviceType(CallerType aCallerType) const {
 
 uint16_t ScreenOrientation::DeviceAngle(CallerType aCallerType) const {
   if (nsContentUtils::ShouldResistFingerprinting(
-          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
+          aCallerType, GetRelevantGlobal(), RFPTarget::ScreenOrientation)) {
     Document* doc = GetResponsibleDocument();
     BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
     if (!bc) {
       return 0;
     }
-    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+    CSSIntSize size = bc->TopInnerSizeSpoofedForRFP();
     return nsRFPService::ViewportSizeToAngle(size.width, size.height);
   }
   return mAngle;
@@ -718,8 +731,8 @@ OrientationType ScreenOrientation::GetType(CallerType aCallerType,
 
   OrientationType orientation = bc->GetCurrentOrientationType();
   if (nsContentUtils::ShouldResistFingerprinting(
-          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
-    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+          aCallerType, GetRelevantGlobal(), RFPTarget::ScreenOrientation)) {
+    CSSIntSize size = bc->TopInnerSizeSpoofedForRFP();
     return nsRFPService::ViewportSizeToOrientationType(size.width, size.height);
   }
   return orientation;
@@ -736,8 +749,8 @@ uint16_t ScreenOrientation::GetAngle(CallerType aCallerType,
 
   uint16_t angle = static_cast<uint16_t>(bc->GetCurrentOrientationAngle());
   if (nsContentUtils::ShouldResistFingerprinting(
-          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
-    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+          aCallerType, GetRelevantGlobal(), RFPTarget::ScreenOrientation)) {
+    CSSIntSize size = bc->TopInnerSizeSpoofedForRFP();
     return nsRFPService::ViewportSizeToAngle(size.width, size.height);
   }
   return angle;
@@ -821,29 +834,52 @@ void ScreenOrientation::MaybeChanged() {
     rv = bc->SetCurrentOrientation(mType, mAngle);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SetCurrentOrientation failed");
 
-    // change event has to be dispatched by descendantDocs.
-    // Looking for top level browsing context that has screen in process.
-    // If parent document has screen, we don't dispatch it at this time.
-    // change event will be dispatched by parent's
-    // ScreenOrientation::MaybeChanged.
-    BrowsingContext* rootBc = bc;
-    bool dispatchChangeEvent = true;
-    while (rootBc->GetParent()) {
-      rootBc = rootBc->GetParent();
-      if (Document* doc = rootBc->GetExtantDocument()) {
-        if (auto* win = nsGlobalWindowInner::Cast(doc->GetInnerWindow())) {
-          if (win->HasScreen()) {
-            // Parent of browsing context has screen object. Child shouldn't
-            // dispatch change event.
-            dispatchChangeEvent = false;
-            break;
-          }
+    MaybeDispatchChangeEvent(bc);
+  }
+}
+
+void ScreenOrientation::MaybeDispatchChangeEvent(
+    BrowsingContext* aBrowsingContext) {
+  // change event has to be dispatched by descendantDocs.
+  // Looking for top level browsing context that has screen in process.
+  // If parent document has screen, we don't dispatch it at this time.
+  // change event will be dispatched by parent's
+  // ScreenOrientation::MaybeChanged.
+  BrowsingContext* rootBc = aBrowsingContext;
+  bool dispatchChangeEvent = true;
+  while (rootBc->GetParent()) {
+    rootBc = rootBc->GetParent();
+    if (Document* doc = rootBc->GetExtantDocument()) {
+      if (auto* win = nsGlobalWindowInner::Cast(doc->GetInnerWindow())) {
+        if (win->HasScreen()) {
+          // Parent of browsing context has screen object. Child shouldn't
+          // dispatch change event.
+          dispatchChangeEvent = false;
+          break;
         }
       }
     }
-    if (dispatchChangeEvent) {
-      DispatchChangeEventToChildren(rootBc);
-    }
+  }
+  if (dispatchChangeEvent) {
+    DispatchChangeEventToChildren(rootBc);
+  }
+}
+
+void ScreenOrientation::MaybeDispatchEventsForOverride(
+    BrowsingContext* aBrowsingContext, bool aOldHasOrientationOverride,
+    bool aOverrideIsDifferentThanDevice) {
+  Document* doc = aBrowsingContext->GetExtantDocument();
+  nsCOMPtr<nsPIDOMWindowOuter> outerWindow = doc->GetWindow();
+
+  // Send the event if the orientation was already overriden or different
+  // from device metrics or the override was reset and it is different from
+  // device metrics.
+  if ((aBrowsingContext->HasOrientationOverride() &&
+       (aOldHasOrientationOverride || aOverrideIsDifferentThanDevice)) ||
+      (!aBrowsingContext->HasOrientationOverride() &&
+       aOldHasOrientationOverride && aOverrideIsDifferentThanDevice)) {
+    outerWindow->DispatchCustomEvent(u"orientationchange"_ns);
+    MaybeDispatchChangeEvent(aBrowsingContext);
   }
 }
 

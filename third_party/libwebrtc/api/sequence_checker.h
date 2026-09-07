@@ -59,10 +59,22 @@ class RTC_LOCKABLE SequenceChecker
   //
   // But the problem with that is having the call to `Current()` exist for
   // `SequenceCheckerDoNothing`.
-  explicit SequenceChecker(InitialState initial_state = kAttached)
+  explicit SequenceChecker(InitialState initial_state = kDetached)
       : Impl(initial_state) {}
   explicit SequenceChecker(TaskQueueBase* attached_queue)
       : Impl(attached_queue) {}
+
+  // Move constructor that allows an object with a sequence checker to be stored
+  // in a container such as std::vector<> that needs support for move semantics.
+  //
+  // Note:  The side effect (or perhaps, feature) of std::move(sequence_checker)
+  // will be that it will be detached from whatever context it was attached to.
+  // The newly constructed SequenceChecker will also be in a detached state.
+  SequenceChecker(SequenceChecker&& o) = default;
+
+  SequenceChecker(const SequenceChecker&) = delete;
+  SequenceChecker& operator=(const SequenceChecker&) = delete;
+  SequenceChecker& operator=(SequenceChecker&&) = delete;
 
   // Returns true if sequence checker is attached to the current sequence.
   bool IsCurrent() const { return Impl::IsCurrent(); }
@@ -100,14 +112,14 @@ class RTC_LOCKABLE SequenceChecker
 //  public:
 //   class Encoder {
 //    public:
-//     rtc::TaskQueueBase& Queue() { return encoder_queue_; }
+//     webrtc::TaskQueueBase& Queue() { return encoder_queue_; }
 //     void Encode() {
 //       RTC_DCHECK_RUN_ON(&encoder_queue_);
 //       DoSomething(var_);
 //     }
 //
 //    private:
-//     rtc::TaskQueueBase& encoder_queue_;
+//     webrtc::TaskQueueBase& encoder_queue_;
 //     Frame var_ RTC_GUARDED_BY(encoder_queue_);
 //   };
 //
@@ -115,12 +127,12 @@ class RTC_LOCKABLE SequenceChecker
 //     // Will fail at runtime when DCHECK is enabled:
 //     // encoder_->Encode();
 //     // Will work:
-//     rtc::scoped_refptr<Encoder> encoder = encoder_;
+//     webrtc::scoped_refptr<Encoder> encoder = encoder_;
 //     encoder_->Queue().PostTask([encoder] { encoder->Encode(); });
 //   }
 //
 //  private:
-//   rtc::scoped_refptr<Encoder> encoder_;
+//   webrtc::scoped_refptr<Encoder> encoder_;
 // }
 
 // Document if a function expected to be called from same thread/task queue.

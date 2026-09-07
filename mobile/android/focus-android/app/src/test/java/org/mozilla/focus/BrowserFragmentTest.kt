@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
+import kotlinx.coroutines.flow.flowOf
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.CustomTabConfig
 import mozilla.components.browser.state.state.CustomTabSessionState
@@ -18,7 +19,6 @@ import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.selection.SelectionActionDelegate
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,6 +29,7 @@ import org.mozilla.focus.browser.BrowserCoordinatorLayout
 import org.mozilla.focus.databinding.FragmentBrowserBinding
 import org.mozilla.focus.fragment.BrowserFragment
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class BrowserFragmentTest {
@@ -109,6 +110,9 @@ class DummyEngineView(context: Context) : View(context), EngineView {
     init {
         id = R.id.engineView
     }
+
+    override val verticalScrollPosition = flowOf(0f)
+    override val verticalScrollDelta = flowOf(0f)
 
     override fun render(session: EngineSession) {
         // no-op

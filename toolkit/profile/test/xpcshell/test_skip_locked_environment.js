@@ -50,6 +50,7 @@ add_task(async () => {
 
   let { rootDir, localDir, profile, didCreate } = selectStartupProfile();
   checkStartupReason("restart-skipped-default");
+  await checkProfileSource(profile, "restart-skipped-default");
 
   // Since there is already a profile with the desired name on dev-edition, a
   // unique version will be used.

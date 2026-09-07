@@ -30,12 +30,10 @@ add_task(async function () {
   );
   assertHighlightLocation(dbg, "simple1.js", 1);
 
-  // Note that CodeMirror is 0-based while the footer displays 1-based
-  setEditorCursorAt(dbg, 1, 0);
-  await waitForCursorPosition(dbg, 2);
+  await setEditorCursorAt(dbg, 1, 0);
   assertCursorPosition(
     dbg,
-    2,
+    1,
     1,
     "when moving the cursor, the position footer updates"
   );
@@ -44,11 +42,10 @@ add_task(async function () {
     "Moving the cursor resets the highlighted line"
   );
 
-  setEditorCursorAt(dbg, 2, 0);
-  await waitForCursorPosition(dbg, 3);
+  await setEditorCursorAt(dbg, 2, 0);
   assertCursorPosition(
     dbg,
-    3,
+    2,
     1,
     "when moving the cursor a second time, the position footer still updates"
   );

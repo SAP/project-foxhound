@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsNetSegmentUtils_h__
-#define nsNetSegmentUtils_h__
+#ifndef nsNetSegmentUtils_h_
+#define nsNetSegmentUtils_h_
 
 #include "nsIOService.h"
 
@@ -17,4 +17,4 @@ static inline void net_ResolveSegmentParams(uint32_t& segsize,
   if (!segcount) segcount = mozilla::net::nsIOService::gDefaultSegmentCount;
 }
 
-#endif  // !nsNetSegmentUtils_h__
+#endif  // !nsNetSegmentUtils_h_

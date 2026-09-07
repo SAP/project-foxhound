@@ -30,6 +30,7 @@ support-files = [
   "../browser/form_same_origin_action.html",
   "auth2/authenticate.sjs",
   "file_history_back.html",
+  "file_postmessage_channel.html",
   "form_basic_shadow_DOM_both_fields_together_in_a_shadow_root.html",
   "form_basic_shadow_DOM_each_field_in_its_own_shadow_root.html",
   "form_basic_shadow_DOM_form_and_fields_together_in_a_shadow_root.html",
@@ -44,7 +45,9 @@ support-files = [
   "pwmgr_common_parent.js",
   "../authenticate.sjs",
 ]
-skip-if = ["os == 'android'"] # Don't run on GeckoView
+skip-if = [
+  "os == 'android'", # Don't run on GeckoView
+]
 
 # Note: new tests should use scheme = https unless they have a specific reason not to
 
@@ -57,118 +60,173 @@ support-files = [
 
 ["test_LoginManagerContent_passwordEditedOrGenerated.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # password generation
+run-if = [
+  "os != 'android'", # password generation
+]
 
 ["test_autocomplete_autofill_related_realms_no_dupes.html"]
-skip-if = ["xorigin"] # Bug 1716412 - New fission platform triage
+skip-if = [
+  "xorigin", # Bug 1716412 - New fission platform triage
+]
 scheme = "https"
 
 ["test_autocomplete_basic_form.html"]
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1857071
   "xorigin", # Bug 1716412 - New fission platform triage
-  "display == 'wayland' && os_version == '22.04'", # Bug 1857071
 ]
 scheme = "https"
 
 ["test_autocomplete_basic_form_formActionOrigin.html"]
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["xorigin"] # Bug 1716412 - New fission platform triage
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "xorigin", # Bug 1716412 - New fission platform triage
+]
 scheme = "https"
 
 ["test_autocomplete_basic_form_insecure.html"]
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["xorigin"] # Bug 1716412 - New fission platform triage
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "xorigin", # Bug 1716412 - New fission platform triage
+]
 
 ["test_autocomplete_basic_form_related_realms.html"]
-skip-if = ["xorigin"] # Bug 1716412 - New fission platform triage
+skip-if = [
+  "xorigin", # Bug 1716412 - New fission platform triage
+]
 scheme = "https"
 
 ["test_autocomplete_hasBeenTypePassword.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_autocomplete_highlight.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_autocomplete_highlight_non_login.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_autocomplete_highlight_username_only_form.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_autocomplete_https_downgrade.html"]
 scheme = "http" # Tests downgrading
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 skip-if = [
-  "os == 'linux' && debug", # Bug 1554959
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1554959
   "xorigin", # Bug 1716412 - New fission platform triage
 ]
 
 ["test_autocomplete_https_upgrade.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["os == 'linux' && debug"] # Bug 1554959 for linux debug disable
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1554959 for linux debug disable
+]
 
 ["test_autocomplete_password_generation.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["xorigin"]
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "xorigin",
+]
 
 ["test_autocomplete_password_generation_confirm.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_autocomplete_password_generation_telemetry.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["xorigin"]
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "xorigin",
+]
 
 ["test_autocomplete_password_open.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_autocomplete_sandboxed.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_autocomplete_tab_between_fields.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["xorigin"]
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "xorigin",
+]
 
 ["test_autofill_autocomplete_types.html"]
 scheme = "https"
-skip-if = ["os == 'android'"] # bug 1533965
+skip-if = [
+  "os == 'android'", # bug 1533965
+]
 
 ["test_autofill_different_formActionOrigin.html"]
 scheme = "https"
-skip-if = ["os == 'android'"] # Bug 1259768
+skip-if = [
+  "os == 'android'", # Bug 1259768
+]
 
 ["test_autofill_different_subdomain.html"]
 scheme = "https"
 skip-if = [
-  "os == 'android'", # Bug 1259768
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # Bug 1259768
 ]
 
 ["test_autofill_from_bfcache.html"]
 scheme = "https"
+support-files = ["form_basic_bfcache.html"]
 skip-if = [
   "os == 'android'", # bug 1527403
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && debug && xorigin && verify-standalone",
 ]
-support-files = ["form_basic_bfcache.html"]
 
 ["test_autofill_hasBeenTypePassword.html"]
 scheme = "https"
 
 ["test_autofill_highlight.html"]
 scheme = "https"
-skip-if = ["os == 'android'"] # Bug 1531185
+skip-if = [
+  "os == 'android'", # Bug 1531185
+]
 
 ["test_autofill_highlight_empty_username.html"]
 scheme = "https"
@@ -179,22 +237,24 @@ scheme = "https"
 ["test_autofill_https_downgrade.html"]
 scheme = "http" # we need http to test handling of https logins on http forms
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_autofill_https_upgrade.html"]
 skip-if = [
-  "os == 'android'", # Bug 1259768
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # Bug 1259768
 ]
 
 ["test_autofill_password-only.html"]
 
 ["test_autofill_sandboxed.html"]
 scheme = "https"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_autofill_tab_between_fields.html"]
 scheme = "https"
@@ -205,7 +265,9 @@ scheme = "https"
 
 ["test_autofocus_js.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 
 ["test_basic_form.html"]
 
@@ -223,31 +285,43 @@ run-if = ["os != 'android'"] # autocomplete
 
 ["test_basic_form_honor_autocomplete_off.html"]
 scheme = "https"
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["xorigin"]
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "xorigin",
+]
 
 ["test_basic_form_html5.html"]
 
 ["test_basic_form_pwevent.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_basic_form_pwonly.html"]
 
 ["test_bug_627616.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug_776171.html"]
 
 ["test_case_differences.html"]
-run-if = ["os != 'android'"] # autocomplete
+run-if = [
+  "os != 'android'", # autocomplete
+]
 scheme = "https"
 
 ["test_dismissed_doorhanger_in_shadow_DOM.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
 scheme = "https"
 
 ["test_formLike_rootElement_with_Shadow_DOM.html"]
@@ -261,134 +335,178 @@ scheme = "https"
 
 ["test_formless_autofill.html"]
 skip-if = [
-  "xorigin",
-  "http3",
   "http2",
+  "http3",
+  "xorigin",
 ]
 
 ["test_formless_submit.html"]
 skip-if = [
-  "os == 'android' && debug", # bug 1397615
-  "http3",
   "http2",
+  "http3",
+  "os == 'android' && debug", # bug 1397615
 ]
 
 ["test_formless_submit_form_removal.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_formless_submit_form_removal_negative.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_formless_submit_navigation.html"]
 skip-if = [
-  "os == 'android' && debug", # bug 1397615
-  "http3",
   "http2",
+  "http3",
+  "os == 'android' && debug", # bug 1397615
 ]
 
 ["test_formless_submit_navigation_negative.html"]
 skip-if = [
-  "os == 'android' && debug", # bug 1397615
-  "http3",
   "http2",
+  "http3",
+  "os == 'android' && debug", # bug 1397615
 ]
 
 ["test_include_other_subdomains_in_lookup.html"]
-run-if = ["os != 'android'"] # android:autocomplete.
+run-if = [
+  "os != 'android'", # android:autocomplete.
+]
 scheme = "https"
 
 ["test_input_events.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_input_events_for_identical_values.html"]
 
 ["test_insecure_form_field_no_saved_login.html"]
-run-if = ["os != 'android'"] # android:autocomplete.
+run-if = [
+  "os != 'android'", # android:autocomplete.
+]
 
 ["test_maxlength.html"]
 
 ["test_munged_values.html"]
 scheme = "https"
-skip-if = ["os == 'android'"] # bug 1527403
+skip-if = [
+  "os == 'android'", # bug 1527403
+]
 
 ["test_one_doorhanger_per_un_pw.html"]
 scheme = "https"
-skip-if = ["os == 'android'"] # bug 1535505
+skip-if = [
+  "os == 'android'", # bug 1535505
+]
 
 ["test_onsubmit_value_change.html"]
 
 ["test_password_field_autocomplete.html"]
-run-if = ["os != 'android'"] # android:autocomplete.
+run-if = [
+  "os != 'android'", # android:autocomplete.
+]
 
 ["test_password_length.html"]
 scheme = "https"
-skip-if = ["os == 'android'"] # bug 1527403
+skip-if = [
+  "os == 'android'", # bug 1527403
+]
 
 ["test_passwords_in_type_password.html"]
 
 ["test_primary_password.html"]
 scheme = "https"
-run-if = ["os == 'mac'"]
-skip-if = ["xorigin"] # Tests desktop prompts and bug 1333264
+run-if = [
+  "os == 'mac'",
+]
+skip-if = [
+  "xorigin", # Tests desktop prompts and bug 1333264
+]
 support-files = [
   "chrome_timeout.js",
   "subtst_primary_pass.html",
 ]
 
 ["test_prompt.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
-skip-if = ["os == 'linux'"]
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["test_prompt_async.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = ["subtst_prompt_async.html"]
 
 ["test_prompt_http.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
 skip-if = [
-  "os == 'linux'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
   "xorigin", # Bug 1716412 - New fission platform triage
 ]
 
 ["test_prompt_noWindow.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
 
 ["test_prompt_promptAuth.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
-skip-if = ["os == 'linux'"]
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["test_prompt_promptAuth_proxy.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
-skip-if = ["os == 'linux'"]
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["test_recipe_login_fields.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["test_set_stored_logins_during_task.html"]
 
 ["test_submit_without_field_modifications.html"]
 support-files = ["subtst_prefilled_form.html"]
 skip-if = [
-  "xorigin",
-  "http3",
   "http2",
+  "http3",
+  "xorigin",
 ]
 
 ["test_username_focus.html"]
-run-if = ["os != 'android'"] # autocomplete
-skip-if = ["xorigin"]
+run-if = [
+  "os != 'android'", # autocomplete
+]
+skip-if = [
+  "xorigin",
+]
 
 ["test_xhr.html"]
-run-if = ["os != 'android'"] # Tests desktop prompts
+run-if = [
+  "os != 'android'", # Tests desktop prompts
+]
 
 ["test_xhr_2.html"]

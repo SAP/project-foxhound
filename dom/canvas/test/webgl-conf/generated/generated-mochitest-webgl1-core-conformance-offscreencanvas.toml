@@ -1,0 +1,45 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl1-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/offscreencanvas/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_conformance__offscreencanvas__context-attribute-preserve-drawing-buffer.html"]
+
+["test_conformance__offscreencanvas__context-creation-worker.html"]
+
+["test_conformance__offscreencanvas__context-creation.html"]
+
+["test_conformance__offscreencanvas__context-lost-restored-worker.html"]
+
+["test_conformance__offscreencanvas__context-lost-restored.html"]
+
+["test_conformance__offscreencanvas__context-lost-worker.html"]
+
+["test_conformance__offscreencanvas__context-lost.html"]
+
+["test_conformance__offscreencanvas__methods-worker.html"]
+
+["test_conformance__offscreencanvas__methods.html"]
+
+["test_conformance__offscreencanvas__offscreencanvas-resize.html"]
+
+["test_conformance__offscreencanvas__offscreencanvas-timer-query.html"]
+
+["test_conformance__offscreencanvas__offscreencanvas-transfer-image-bitmap.html"]

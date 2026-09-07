@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 
 #include "ErrorList.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/MacroForEach.h"
 #include "nscore.h"
 
 namespace mozilla::dom::quota {
@@ -44,9 +41,42 @@ FullOriginMetadataResult::GetStorageOrigin(nsACString& aStorageOrigin) {
 }
 
 NS_IMETHODIMP
+FullOriginMetadataResult::GetPrivate(bool* aPrivate) {
+  MOZ_ASSERT(aPrivate);
+
+  *aPrivate = mFullOriginMetadata.mIsPrivate;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 FullOriginMetadataResult::GetPersistenceType(nsACString& aPersistenceType) {
   aPersistenceType =
       PersistenceTypeToString(mFullOriginMetadata.mPersistenceType);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetLastAccessTime(int64_t* aLastAccessTime) {
+  MOZ_ASSERT(aLastAccessTime);
+
+  *aLastAccessTime = mFullOriginMetadata.mLastAccessTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetLastMaintenanceDate(
+    int32_t* aLastMaintenanceDate) {
+  MOZ_ASSERT(aLastMaintenanceDate);
+
+  *aLastMaintenanceDate = mFullOriginMetadata.mLastMaintenanceDate;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetAccessed(bool* aAccessed) {
+  MOZ_ASSERT(aAccessed);
+
+  *aAccessed = mFullOriginMetadata.mAccessed;
   return NS_OK;
 }
 
@@ -59,10 +89,24 @@ FullOriginMetadataResult::GetPersisted(bool* aPersisted) {
 }
 
 NS_IMETHODIMP
-FullOriginMetadataResult::GetLastAccessTime(int64_t* aLastAccessTime) {
-  MOZ_ASSERT(aLastAccessTime);
+FullOriginMetadataResult::GetClientUsages(nsACString& aClientUsages) {
+  mFullOriginMetadata.mClientUsages.Serialize(aClientUsages);
+  return NS_OK;
+}
 
-  *aLastAccessTime = mFullOriginMetadata.mLastAccessTime;
+NS_IMETHODIMP
+FullOriginMetadataResult::GetOriginUsage(uint64_t* aOriginUsage) {
+  MOZ_ASSERT(aOriginUsage);
+
+  *aOriginUsage = mFullOriginMetadata.mOriginUsage;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+FullOriginMetadataResult::GetQuotaVersion(uint32_t* aQuotaVersion) {
+  MOZ_ASSERT(aQuotaVersion);
+
+  *aQuotaVersion = mFullOriginMetadata.mQuotaVersion;
   return NS_OK;
 }
 

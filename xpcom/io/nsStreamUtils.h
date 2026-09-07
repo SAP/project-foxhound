@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#ifndef nsStreamUtils_h__
-#define nsStreamUtils_h__
+#ifndef nsStreamUtils_h_
+#define nsStreamUtils_h_
 
 #include "nsCOMPtr.h"
 #include "nsStringFwd.h"
@@ -19,6 +17,7 @@
 #include "Taint.h"
 
 class nsIAsyncInputStream;
+class nsICloneableInputStream;
 class nsIOutputStream;
 class nsIInputStreamCallback;
 class nsIOutputStreamCallback;
@@ -312,6 +311,26 @@ extern nsresult NS_FillArray(FallibleTArray<char>& aDest,
 extern bool NS_InputStreamIsCloneable(nsIInputStream* aSource);
 
 /**
+ * Ensure the provided source stream would pass NS_InputStreamIsCloneable().
+ * Returns a nsICloneableInputStream with GetCloneable() == true. If aSource
+ * does not implement nsICloneableInputStream, or its cloneable attribute is
+ * false, then a fallback clone is provided by copying the source to a pipe. In
+ * this case the caller must replace the source stream with the resulting
+ * replacement stream (aReplacementOut).
+ *
+ * @param aSource         The input stream to clone.
+ * @param aCloneableOut   Required out parameter to hold the QI result.
+ * @param aReplacementOut Optional out parameter to hold stream to replace
+ *                        aSource if it was not cloneable. If not provided then
+ *                        the fallback clone process is not supported, and a
+ *                        non-cloneable source will result in failure.
+ *                        Replacement streams are non-blocking.
+ */
+extern nsresult NS_EnsureInputStreamIsCloneable(
+    nsIInputStream* aSource, nsICloneableInputStream** aCloneableOut,
+    nsIInputStream** aReplacementOut = nullptr);
+
+/**
  * Clone the provided source stream in the most efficient way possible.  This
  * first attempts to QI to nsICloneableInputStream to use Clone().  If that is
  * not supported or its cloneable attribute is false, then a fallback clone is
@@ -360,4 +379,4 @@ extern nsresult NS_MakeAsyncNonBlockingInputStream(
     nsIAsyncInputStream** aAsyncInputStream, bool aCloseWhenDone = true,
     uint32_t aFlags = 0, uint32_t aSegmentSize = 0, uint32_t aSegmentCount = 0);
 
-#endif  // !nsStreamUtils_h__
+#endif  // !nsStreamUtils_h_

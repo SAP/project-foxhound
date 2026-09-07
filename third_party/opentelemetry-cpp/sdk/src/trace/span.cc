@@ -9,6 +9,7 @@
 #include "opentelemetry/sdk/trace/recordable.h"
 #include "opentelemetry/trace/span_id.h"
 #include "opentelemetry/trace/span_metadata.h"
+#include "opentelemetry/trace/trace_flags.h"
 #include "opentelemetry/version.h"
 #include "src/trace/span.h"
 
@@ -59,8 +60,7 @@ Span::Span(std::shared_ptr<Tracer> &&tracer,
     : tracer_{std::move(tracer)},
       recordable_{tracer_->GetProcessor().MakeRecordable()},
       start_steady_time{options.start_steady_time},
-      span_context_(std::move(span_context)),
-      has_ended_{false}
+      span_context_(std::move(span_context))
 {
   if (recordable_ == nullptr)
   {
@@ -171,7 +171,7 @@ void Span::AddLinks(const opentelemetry::trace::SpanContextKeyValueIterable &lin
     return;
   }
 
-  links.ForEachKeyValue([&](opentelemetry::trace::SpanContext span_context,
+  links.ForEachKeyValue([&](const opentelemetry::trace::SpanContext &span_context,
                             const common::KeyValueIterable &attributes) {
     recordable_->AddLink(span_context, attributes);
     return true;

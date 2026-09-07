@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!--
+  Tests that an element with position:fixed sticks to
+  the bottom of the page when pinch-zoomed-in and
+  the dynamic toolbar at the bottom is fully collapsed.
+  (https://bugzilla.mozilla.org/show_bug.cgi?id=1880375)
+-->
+<html reftest-resolution="2.0"
+      reftest-async-scroll
+      reftest-async-scroll-y="9999">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html {
+    scrollbar-width: none;
+}
+#footer {
+    height: 60px;
+    left: 0px;
+    right: 0px;
+    bottom: 0px;
+    position: fixed;
+    background: green;
+}
+</style>
+<body>
+<div id="footer"></div>
+</body>
+</html>

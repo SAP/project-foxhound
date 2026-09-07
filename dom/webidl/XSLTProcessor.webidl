@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 typedef (unrestricted double or boolean or DOMString or Node or sequence<Node> or XPathResult) XSLTParameterValue;
 
-[Exposed=Window]
+[Exposed=Window, Pref="dom.xslt.enabled"]
 interface XSLTProcessor {
     [UseCounter]
     constructor();

@@ -32,7 +32,7 @@ add_task(async function () {
           gBrowser,
           "FullZoomChange"
         );
-        ZoomManager.zoom = 0.5;
+        FullZoom.setZoom(0.5, gBrowser.selectedBrowser);
         await zoomChange;
       }
 

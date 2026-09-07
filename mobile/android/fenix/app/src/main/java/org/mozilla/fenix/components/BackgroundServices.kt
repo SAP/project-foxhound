@@ -30,7 +30,7 @@ import mozilla.components.feature.syncedtabs.commands.SyncedTabsCommandsFlushSch
 import mozilla.components.feature.syncedtabs.storage.SyncedTabsStorage
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.service.fxa.PeriodicSyncConfig
 import mozilla.components.service.fxa.ServerConfig
 import mozilla.components.service.fxa.SyncConfig
@@ -55,7 +55,6 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.maxActiveTime
 import org.mozilla.fenix.ext.recordEventInNimbus
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.sync.SyncedTabsIntegration
@@ -102,7 +101,6 @@ class BackgroundServices(
     private val deviceConfig = DeviceConfig(
         name = defaultDeviceName(context),
         type = DeviceType.MOBILE,
-
         // NB: flipping this flag back and worth is currently not well supported and may need hand-holding.
         // Consult with the android-components peers before changing.
         // See https://github.com/mozilla/application-services/issues/1308
@@ -110,7 +108,6 @@ class BackgroundServices(
             add(DeviceCapability.SEND_TAB)
             add(DeviceCapability.CLOSE_TABS)
         },
-
         // Enable encryption for account state on supported API levels (23+).
         // Just on Nightly and local builds for now.
         // Enabling this for all channels is tracked in https://github.com/mozilla-mobile/fenix/issues/6704
@@ -154,6 +151,7 @@ class BackgroundServices(
 
     private val telemetryAccountObserver = TelemetryAccountObserver(
         context,
+        settings,
     )
 
     val accountAbnormalities = AccountAbnormalities(context, crashReporter, strictMode)
@@ -182,7 +180,7 @@ class BackgroundServices(
     val syncedTabsCommandsFlushScheduler by lazyMonitored {
         SyncedTabsCommandsFlushScheduler(
             context = context,
-            flushDelay = context.getUndoDelay().milliseconds + DEFAULT_SYNCED_TABS_COMMANDS_EXTRA_FLUSH_DELAY,
+            flushDelay = settings.getUndoDelay().milliseconds + DEFAULT_SYNCED_TABS_COMMANDS_EXTRA_FLUSH_DELAY,
         )
     }
     val closeSyncedTabsCommandReceiver by lazyMonitored {
@@ -266,13 +264,13 @@ private class AccountManagerReadyObserver(
 
 internal class TelemetryMiddleware : Middleware<SyncState, SyncAction> {
     override fun invoke(
-        context: MiddlewareContext<SyncState, SyncAction>,
+        store: Store<SyncState, SyncAction>,
         next: (SyncAction) -> Unit,
         action: SyncAction,
     ) {
-        val prevState = context.store.state
+        val prevState = store.state
         next(action)
-        val accountUid = context.store.state.account?.uid
+        val accountUid = store.state.account?.uid
         if (prevState.account?.uid != accountUid && accountUid != null) {
             ClientAssociation.uid.set(accountUid)
             fxAccounts.submit()
@@ -283,9 +281,10 @@ internal class TelemetryMiddleware : Middleware<SyncState, SyncAction> {
 @VisibleForTesting(otherwise = PRIVATE)
 internal class TelemetryAccountObserver(
     private val context: Context,
+    private val settings: Settings,
 ) : AccountObserver {
     override fun onAuthenticated(account: OAuthAccount, authType: AuthType) {
-        context.settings().signedInFxaAccount = true
+        settings.signedInFxaAccount = true
         when (authType) {
             // User signed-in into an existing FxA account.
             AuthType.Signin -> {
@@ -320,7 +319,7 @@ internal class TelemetryAccountObserver(
 
     override fun onLoggedOut() {
         SyncAuth.signOut.record(NoExtras())
-        context.settings().signedInFxaAccount = false
+        settings.signedInFxaAccount = false
     }
 }
 

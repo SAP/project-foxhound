@@ -12,7 +12,6 @@ import org.mozilla.fenix.components.history.HistoryDB
 class HistoryDataSourceTest {
     private val testCases = listOf(
         listOf<Int>() to listOf(),
-
         listOf(1) to listOf(
             TestHistory.Regular("http://www.mozilla.com"),
         ),

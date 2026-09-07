@@ -33,7 +33,11 @@ function runTest() {
   is(pasteContainer.querySelector("#headingone").textContent, "Month", "First heading should be 'Month'.");
   is(pasteContainer.querySelector("#headingtwo").textContent, "Savings", "Second heading should be 'Savings'.");
   is(pasteContainer.querySelector("#cellone").textContent, "January", "First cell should be 'January'.");
-  is(pasteContainer.querySelector("#celltwo").textContent, "$100", "Second cell should be '$100'.");
+  is(
+    pasteContainer.querySelector("#celltwo").textContent,
+    "",
+    "Second cell should be empty since the range ends at start of the cell"
+  );
 
   SimpleTest.finish();
 }

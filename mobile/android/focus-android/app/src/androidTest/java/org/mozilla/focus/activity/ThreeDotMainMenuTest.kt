@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package org.mozilla.focus.activity
 
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -11,21 +10,23 @@ import org.junit.Test
 import org.mozilla.focus.activity.robots.homeScreen
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
-import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.RetryTestRule
-import org.mozilla.focus.helpers.TestAssetHelper
-import org.mozilla.focus.helpers.TestHelper.mDevice
-import org.mozilla.focus.helpers.TestHelper.waitingTime
-import org.mozilla.focus.helpers.TestSetup
+import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
+import org.mozilla.focus.helpers.TestHelper
 import org.mozilla.focus.testAnnotations.SmokeTest
 
 /**
  * Verifies main menu items on the homescreen and on a browser page.
  */
-class ThreeDotMainMenuTest : TestSetup() {
-    private lateinit var webServer: MockWebServer
+class ThreeDotMainMenuTest {
     private val featureSettingsHelper = FeatureSettingsHelper()
+
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
+    private val webServerRule get() = focusTestRule.mockWebServerRule
 
     @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
@@ -35,18 +36,12 @@ class ThreeDotMainMenuTest : TestSetup() {
     val retryTestRule = RetryTestRule(3)
 
     @Before
-    override fun setUp() {
-        super.setUp()
-        webServer = MockWebServer().apply {
-            dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
-            start()
-        }
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
     }
 
     @After
     fun tearDown() {
-        webServer.shutdown()
         featureSettingsHelper.resetAllFeatureFlags()
     }
 
@@ -63,7 +58,7 @@ class ThreeDotMainMenuTest : TestSetup() {
     @SmokeTest
     @Test
     fun browserMenuItemsTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServerRule.server.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
@@ -82,26 +77,26 @@ class ThreeDotMainMenuTest : TestSetup() {
     @SmokeTest
     @Test
     fun shareTabTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServerRule.server.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
         }.openMainMenu {
         }.openShareScreen {
             verifyShareAppsListOpened()
-            mDevice.pressBack()
+            TestHelper.mDevice.pressBack()
         }
     }
 
     @SmokeTest
     @Test
     fun findInPageTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServerRule.server.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
         }.openMainMenu {
         }.openFindInPage {
             enterFindInPageQuery("tab")
@@ -121,15 +116,15 @@ class ThreeDotMainMenuTest : TestSetup() {
     @SmokeTest
     @Test
     fun switchDesktopModeTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServerRule.server.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
             verifyPageContent("mobile-site")
         }.openMainMenu {
         }.switchDesktopSiteMode {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
             verifyPageContent("desktop-site")
         }.openMainMenu {
             verifyRequestDesktopSiteIsEnabled(true)

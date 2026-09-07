@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=c: */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +18,7 @@ include "mozilla/dom/NavigationAPIIPCUtils.h";
 include "mozilla/dom/PropertyBagUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
+include "mozilla/dom/ConsoleReportIPCUtils.h";
 include "mozilla/net/CacheInfoIPCTypes.h";
 include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/net/ClassOfService.h";
@@ -35,6 +33,7 @@ using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 [RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using nsContentPolicyType from "nsIContentPolicy.h";
 using mozilla::net::PreferredAlternativeDataDeliveryTypeIPC from "nsICacheInfoChannel.h";
+using mozilla::dom::ForceMediaDocument from "mozilla/dom/LoadURIOptionsBinding.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 using nsILoadInfo::StoragePermissionState from "nsILoadInfo.h";
 using nsILoadInfo::IPAddressSpace from "nsILoadInfo.h";
@@ -46,6 +45,8 @@ using nsILoadInfo::HTTPSUpgradeTelemetryType from "nsILoadInfo.h";
 using nsILoadInfo::SchemelessInputType from "nsILoadInfo.h";
 using mozilla::dom::UserNavigationInvolvement from "mozilla/dom/UserNavigationInvolvement.h";
 using mozilla::RFPTargetSet from "nsRFPService.h";
+using PropertiesFile from "nsContentUtils.h";
+[RefCounted] using mozilla::dom::ParentProcessChannelHandle from "mozilla/dom/ParentProcessChannelHandle.h";
 
 namespace mozilla {
 namespace net {
@@ -73,6 +74,17 @@ struct CookieJarSettingsArgs
   bool hasFingerprintingRandomizationKey;
   uint8_t[] fingerprintingRandomizationKey;
   uint64_t topLevelWindowContextId;
+};
+
+//-----------------------------------------------------------------------------
+// CookieChange
+//-----------------------------------------------------------------------------
+
+struct CookieChange
+{
+  bool added;
+  CookieStruct cookie;
+  OriginAttributes originAttributes;
 };
 
 //-----------------------------------------------------------------------------
@@ -130,11 +142,13 @@ struct LoadInfoArgs
   bool                        browserWouldUpgradeInsecureRequests;
   bool                        forceAllowDataURI;
   bool                        allowInsecureRedirectToDataURI;
+  ForceMediaDocument          forceMediaDocument;
   bool                        skipContentPolicyCheckForWebRequest;
   bool                        originalFrameSrcLoad;
   bool                        forceInheritPrincipalDropped;
   uint64_t                    innerWindowID;
   uint64_t                    browsingContextID;
+  uint64_t                    associatedBrowsingContextID;
   uint64_t                    frameBrowsingContextID;
   bool                        initialSecurityCheckDone;
   bool                        isInThirdPartyContext;
@@ -210,6 +224,9 @@ struct LoadInfoArgs
   InterceptionInfoArg?        interceptionInfo;
   bool                        isNewWindowTarget;
   UserNavigationInvolvement   userNavigationInvolvement;
+  FeaturePolicyInfo?          containerFeaturePolicyInfo;
+  // https://html.spec.whatwg.org/#dom-location-ancestororigins
+  PrincipalInfo?[]             ancestorOrigins;
 };
 
 /**
@@ -422,6 +439,8 @@ struct ProxyInfoCloneArgs
   nsCString type;
   nsCString host;
   int32_t port;
+  nsCString masqueTemplate;
+  nsCString alpn;
   nsCString username;
   nsCString password;
   uint32_t flags;
@@ -461,13 +480,14 @@ struct HttpConnectionInfoCloneArgs
   uint64_t webTransportId;
   bool hasIPHintAddress;
   nsCString echConfig;
+  bool happyEyeballsEnabled;
   ProxyInfoCloneArgs[] proxyInfo;
 };
 
 struct ConsoleReportCollected {
   uint32_t errorFlags;
   nsCString category;
-  uint32_t propertiesFile;
+  PropertiesFile propertiesFile;
   nsCString sourceFileURI;
   uint32_t lineNumber;
   uint32_t columnNumber;
@@ -481,9 +501,10 @@ struct CookieStruct
   nsCString value;
   nsCString host;
   nsCString path;
-  int64_t   expiry;
-  int64_t   lastAccessed;
-  int64_t   creationTime;
+  int64_t   expiryInMSec;
+  int64_t   lastAccessedInUSec;
+  int64_t   creationTimeInUSec;
+  int64_t   updateTimeInUSec;
   bool      isHttpOnly;
   bool      isSession;
   bool      isSecure;
@@ -556,6 +577,8 @@ struct RedirectToRealChannelArgs {
   nsCString? originalUriString;
   EarlyHintConnectArgs[] earlyHints;
   uint32_t earlyHintLinkType;
+  nullable nsIReferrerInfo referrerInfo;
+  nullable ParentProcessChannelHandle channelHandle;
 };
 
 struct TimingStructArgs {
@@ -567,6 +590,8 @@ struct TimingStructArgs {
   TimeStamp connectEnd;
   TimeStamp requestStart;
   TimeStamp responseStart;
+  TimeStamp firstInterimResponseStart;
+  TimeStamp finalResponseHeadersStart;
   TimeStamp responseEnd;
   TimeStamp transactionPending;
 };
@@ -580,12 +605,15 @@ struct ResourceTimingStructArgs {
   TimeStamp connectEnd;
   TimeStamp requestStart;
   TimeStamp responseStart;
+  TimeStamp firstInterimResponseStart;
+  TimeStamp finalResponseHeadersStart;
   TimeStamp responseEnd;
   TimeStamp fetchStart;
   TimeStamp redirectStart;
   TimeStamp redirectEnd;
   uint64_t transferSize;
   uint64_t encodedBodySize;
+  uint64_t decodedBodySize;
 
   // Not actually part of resource timing, but not part of the transaction
   // timings either. These need to be passed to HttpChannelChild along with
@@ -630,7 +658,6 @@ struct TransactionObserverResult
 struct SpeculativeConnectionOverriderArgs {
   uint32_t parallelSpeculativeConnectLimit;
   bool ignoreIdle;
-  bool isFromPredictor;
   bool allow1918;
 };
 
@@ -671,6 +698,28 @@ struct FileChannelInfo
   LoadInfoArgs           loadInfo;
   nsCString              contentType;
   uint64_t               channelId;
+};
+
+//-----------------------------------------------------------------------------
+// GeckoView's Android Content IPDL structs
+//-----------------------------------------------------------------------------
+
+struct GeckoViewContentChannelOpenArgs
+{
+  URIParams uri;
+  LoadInfoArgs loadInfo;
+  uint32_t loadFlags;
+};
+
+struct GeckoViewContentChannelConnectArgs
+{
+  uint32_t channelId;
+};
+
+union GeckoViewContentChannelArgs
+{
+  GeckoViewContentChannelOpenArgs;
+  GeckoViewContentChannelConnectArgs;
 };
 
 struct RemoteStreamInfo {

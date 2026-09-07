@@ -82,7 +82,7 @@ add_setup(async function init() {
 });
 
 for (let { key, keyCode, suppressed } of kKeyList) {
-  /** Test for Bug 545812 **/
+  /** Test for Bug 545812 */
   add_task(async function testExitFullscreenByKeyboard() {
     let keyCodeValue = KeyEvent["DOM_" + keyCode];
     info(`Test keycode ${key} (${keyCodeValue})`);
@@ -235,7 +235,7 @@ for (let { key, keyCode, suppressed } of kKeyList) {
     gBrowser.removeTab(tab);
   });
 
-  /** Test for Bug 1621736 **/
+  /** Test for Bug 1621736 */
   // macOS places fullscreen windows in their own virtual desktop, and it is not
   // possible to programmatically move focus to another chrome window in a different
   // virtual desktop, so this test doesn't work on macOS.

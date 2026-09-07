@@ -112,7 +112,7 @@ const EXPECTED_AFTER_SPAN_PROP_CHANGES = EXPECTED_AFTER_DIV_PROP_CHANGE.map(
 add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view: ruleView } = await openRuleView();
-  const changesView = selectChangesView(inspector);
+  const changesView = await selectChangesView(inspector);
   const { document: panelDoc, store } = changesView;
   const panel = panelDoc.querySelector("#sidebar-panel-changes");
 
@@ -155,8 +155,12 @@ add_task(async function () {
 });
 
 async function assertSelectors(panel, expected) {
-  const selectorsEl = getSelectors(panel);
+  await waitFor(
+    () => getSelectors(panel).length === expected.length,
+    "Wait for the expected number of selectors item"
+  );
 
+  const selectorsEl = getSelectors(panel);
   is(
     selectorsEl.length,
     expected.length,

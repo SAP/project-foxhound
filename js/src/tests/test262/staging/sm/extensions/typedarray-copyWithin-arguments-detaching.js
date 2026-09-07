@@ -4,25 +4,12 @@
  */
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
+includes: [detachArrayBuffer.js]
 description: |
-  pending
+  %TypedArray.prototype.copyWithin shouldn't misbehave horribly if index-argument conversion detaches the underlying ArrayBuffer
+info: bugzilla.mozilla.org/show_bug.cgi?id=991981
 esid: pending
 ---*/
-var gTestfile = "typedarray-copyWithin-arguments-detaching.js";
-//-----------------------------------------------------------------------------
-var BUGNUMBER = 991981;
-var summary =
-  "%TypedArray.prototype.copyWithin shouldn't misbehave horribly if " +
-  "index-argument conversion detaches the underlying ArrayBuffer";
-
-print(BUGNUMBER + ": " + summary);
-
-/**************
- * BEGIN TEST *
- **************/
 
 function testBegin()
 {
@@ -32,24 +19,17 @@ function testBegin()
     {
       valueOf: function()
       {
-        $262.detachArrayBuffer(ab);
+        $DETACHBUFFER(ab);
         return 0x800;
       }
     };
 
   var ta = new Uint8Array(ab);
 
-  var ok = false;
-  try
-  {
+  assert.throws(TypeError, function() {
     ta.copyWithin(0, begin, 0x1000);
-  }
-  catch (e)
-  {
-    ok = true;
-  }
-  assert.sameValue(ok, true, "start weirdness should have thrown");
-  assert.sameValue(ab.byteLength, 0, "detaching should work for start weirdness");
+  }, "begin weirdness should have thrown");
+  assert.sameValue(ab.byteLength, 0, "detaching should work for begin weirdness");
 }
 testBegin();
 
@@ -61,24 +41,17 @@ function testEnd()
     {
       valueOf: function()
       {
-        $262.detachArrayBuffer(ab);
+        $DETACHBUFFER(ab);
         return 0x1000;
       }
     };
 
   var ta = new Uint8Array(ab);
 
-  var ok = false;
-  try
-  {
+  assert.throws(TypeError, function() {
     ta.copyWithin(0, 0x800, end);
-  }
-  catch (e)
-  {
-    ok = true;
-  }
-  assert.sameValue(ok, true, "start weirdness should have thrown");
-  assert.sameValue(ab.byteLength, 0, "detaching should work for start weirdness");
+  }, "end weirdness should have thrown");
+  assert.sameValue(ab.byteLength, 0, "detaching should work for end weirdness");
 }
 testEnd();
 
@@ -90,29 +63,18 @@ function testDest()
     {
       valueOf: function()
       {
-        $262.detachArrayBuffer(ab);
+        $DETACHBUFFER(ab);
         return 0;
       }
     };
 
   var ta = new Uint8Array(ab);
 
-  var ok = false;
-  try
-  {
+  assert.throws(TypeError, function() {
     ta.copyWithin(dest, 0x800, 0x1000);
-  }
-  catch (e)
-  {
-    ok = true;
-  }
-  assert.sameValue(ok, true, "start weirdness should have thrown");
-  assert.sameValue(ab.byteLength, 0, "detaching should work for start weirdness");
+  }, "dest weirdness should have thrown");
+  assert.sameValue(ab.byteLength, 0, "detaching should work for dest weirdness");
 }
 testDest();
-
-/******************************************************************************/
-
-print("Tests complete");
 
 reportCompare(0, 0);

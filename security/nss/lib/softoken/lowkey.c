@@ -10,11 +10,13 @@
 #include "secerr.h"
 #include "softoken.h"
 #include "ec.h"
+#include "kem.h"
 
 SEC_ASN1_MKSUB(SEC_AnyTemplate)
 SEC_ASN1_MKSUB(SEC_BitStringTemplate)
 SEC_ASN1_MKSUB(SEC_ObjectIDTemplate)
 SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
+SEC_ASN1_MKSUB(SEC_OctetStringTemplate)
 
 const SEC_ASN1Template nsslowkey_AttributeTemplate[] = {
     { SEC_ASN1_SEQUENCE,
@@ -89,6 +91,26 @@ const SEC_ASN1Template nsslowkey_DSAPrivateKeyTemplate[] = {
     { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(NSSLOWKEYPrivateKey) },
     { SEC_ASN1_INTEGER, offsetof(NSSLOWKEYPrivateKey, u.dsa.publicValue) },
     { SEC_ASN1_INTEGER, offsetof(NSSLOWKEYPrivateKey, u.dsa.privateValue) },
+    { 0 }
+};
+
+const SEC_ASN1Template nsslowkey_PQBothSeedAndPrivateKeyTemplate[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(NSSLOWKEYPrivateKey) },
+    { SEC_ASN1_OCTET_STRING, offsetof(NSSLOWKEYPrivateKey, u.genpq.seedItem) },
+    { SEC_ASN1_OCTET_STRING, offsetof(NSSLOWKEYPrivateKey, u.genpq.keyItem) },
+    { 0 }
+};
+
+const SEC_ASN1Template nsslowkey_PQSeedTemplate[] = {
+    /* the explicit | 0 here is source code doumentation, tell
+     * clang warnings to let it ride */
+    { SEC_ASN1_CONTEXT_SPECIFIC | SEC_ASN1_XTRN | 0, // NOLINT(misc-redundant-expression)
+      offsetof(NSSLOWKEYPrivateKey, u.genpq.seedItem),
+      SEC_ASN1_SUB(SEC_OctetStringTemplate) },
+    { 0 }
+};
+const SEC_ASN1Template nsslowkey_PQPrivateKeyTemplate[] = {
+    { SEC_ASN1_OCTET_STRING, offsetof(NSSLOWKEYPrivateKey, u.genpq.keyItem) },
     { 0 }
 };
 
@@ -293,8 +315,12 @@ nsslowkey_ConvertToPublicKey(NSSLOWKEYPrivateKey *privk)
                 if (rv == SECSuccess) {
                     rv = SECITEM_CopyItem(arena, &pubk->u.rsa.publicExponent,
                                           &privk->u.rsa.publicExponent);
-                    if (rv == SECSuccess)
+                    if (rv == SECSuccess) {
+                        /* this key was already verified fully as
+                         * a private key */
+                        pubk->u.rsa.needVerify = PR_FALSE;
                         return pubk;
+                    }
                 }
             } else {
                 PORT_SetError(SEC_ERROR_NO_MEMORY);
@@ -421,6 +447,73 @@ nsslowkey_ConvertToPublicKey(NSSLOWKEYPrivateKey *privk)
                                    &(privk->u.ec.ecParams));
                 if (rv == SECSuccess)
                     return pubk;
+            }
+            break;
+        case NSSLOWKEYMLDSAKey:
+            pubk = (NSSLOWKEYPublicKey *)PORT_ArenaZAlloc(arena,
+                                                          sizeof(NSSLOWKEYPublicKey));
+            if (pubk != NULL) {
+                SECStatus rv;
+                SECItem seed = { siBuffer, NULL, 0 };
+                MLDSAPrivateKey newPrivKey;
+
+                pubk->arena = arena;
+                pubk->keyType = privk->keyType;
+
+                /* privatekey value is encoded (rho, K, tr, s1, s2, t0) */
+                /* publickey value is encoded (rho, t1) */
+                /* Future, we can calculate public key directly from
+                 * privatekey value as follows :
+                 * A^ = ExpandA(rho);
+                 * t = NTT-1(A^ o NSS(s1)) + s2
+                 * (t1, t0) = Power2Round(t)
+                 * we now have rho and t1 so we can encode public key.
+                 * these functions are all specified in FIPS-204. For now
+                 * we just use the seed if it's a available and regenerate
+                 * both keys, and discard the private key. */
+                if (privk->u.mldsa.seedLen == 0) {
+                    PORT_SetError(SEC_ERROR_PKCS11_FUNCTION_FAILED);
+                    rv = SECFailure;
+                    break;
+                }
+                seed.data = privk->u.mldsa.seed;
+                seed.len = privk->u.mldsa.seedLen;
+                rv = MLDSA_NewKey(privk->u.mldsa.paramSet, &seed,
+                                  &newPrivKey, &pubk->u.mldsa);
+                if (rv != SECSuccess) {
+                    break;
+                }
+                PORT_SafeZero(&newPrivKey, sizeof(newPrivKey));
+                return pubk;
+            }
+            break;
+        case NSSLOWKEYMLKEMKey:
+            pubk = (NSSLOWKEYPublicKey *)PORT_ArenaZAlloc(arena,
+                                                          sizeof(NSSLOWKEYPublicKey));
+            if (pubk != NULL) {
+                size_t pubKeyLen;
+                SECItem *item = NULL;
+
+                pubk->arena = arena;
+                pubk->keyType = privk->keyType;
+                pubk->u.mlkem.mlkemParams = privk->u.mlkem.mlkemParams;
+                /* privatekey value is encoded (dPKE||ePKE||H(ePKE)||z) */
+                /* publickey value is encoded (ePKE) */
+                /* size(dPKE) = 384k and size(ePKE)=384k+32,
+                 * so size(dPKE) = size(ePKE)-32 */
+                pubKeyLen = sftk_kyber_pubKeyLen(pubk->u.mlkem.mlkemParams);
+                if (privk->u.mlkem.key.len < 2 * pubKeyLen) {
+                    PORT_SetError(SEC_ERROR_BAD_KEY);
+                    break;
+                }
+                item = SECITEM_AllocItem(arena, &pubk->u.mlkem.key, (int)pubKeyLen);
+                if (item == NULL) {
+                    break;
+                }
+                PORT_Memcpy(pubk->u.mlkem.key.data,
+                            privk->u.mlkem.key.data + pubKeyLen - 32,
+                            pubKeyLen);
+                return pubk;
             }
             break;
         /* No Fortezza in Low Key implementations (Fortezza keys aren't
@@ -556,6 +649,21 @@ nsslowkey_CopyPrivateKey(NSSLOWKEYPrivateKey *privKey)
             /* Copy the rest of the params */
             rv = EC_CopyParams(poolp, &(returnKey->u.ec.ecParams),
                                &(privKey->u.ec.ecParams));
+            if (rv != SECSuccess)
+                break;
+            break;
+        case NSSLOWKEYMLDSAKey:
+            returnKey->u.mldsa = privKey->u.mldsa;
+            rv = SECSuccess;
+            break;
+        case NSSLOWKEYMLKEMKey:
+            returnKey->u.mlkem.mlkemParams = privKey->u.mlkem.mlkemParams;
+            rv = SECITEM_CopyItem(poolp, &(returnKey->u.mlkem.key),
+                                  &(privKey->u.mlkem.key));
+            if (rv != SECSuccess)
+                break;
+            rv = SECITEM_CopyItem(poolp, &(returnKey->u.mlkem.seed),
+                                  &(privKey->u.mlkem.seed));
             if (rv != SECSuccess)
                 break;
             break;

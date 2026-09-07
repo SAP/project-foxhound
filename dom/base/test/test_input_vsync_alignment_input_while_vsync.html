@@ -12,7 +12,6 @@
 
   function triggerKey() {
     SpecialPowers.loadChromeScript(() => {
-      /* eslint-env mozilla/chrome-script */
       var win = Services.wm.getMostRecentBrowserWindow();
       for (let i = 0; i < 200; ++i) {
         EventUtils.synthesizeKey("a", {}, win);

@@ -1,0 +1,8 @@
+#!/usr/bin/env python
+# Fake mach for clippy lint tests.
+# Outputs minimal cargo JSON so the linter sees valid clippy output.
+import json
+import sys
+
+print(json.dumps({"reason": "build-finished", "success": True}))
+sys.exit(0)

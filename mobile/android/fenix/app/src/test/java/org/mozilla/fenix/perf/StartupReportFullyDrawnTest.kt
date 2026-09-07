@@ -12,6 +12,7 @@ import io.mockk.MockKAnnotations
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
+import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
@@ -29,13 +30,13 @@ class StartupReportFullyDrawnTest {
 
     @MockK private lateinit var activity: HomeActivity
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var rootContainer: LinearLayout
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var holderItemView: View
 
-    @MockK(relaxed = true)
+    @RelaxedMockK
     private lateinit var viewTreeObserver: ViewTreeObserver
     private lateinit var fullyDrawn: StartupReportFullyDrawn
 

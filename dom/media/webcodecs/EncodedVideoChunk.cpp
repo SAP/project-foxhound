@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/EncodedVideoChunk.h"
+
 #include <utility>
-#include "mozilla/dom/EncodedVideoChunkBinding.h"
 
 #include "MediaData.h"
 #include "TimeUnits.h"
@@ -14,6 +12,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/dom/BufferSourceBinding.h"
+#include "mozilla/dom/EncodedVideoChunkBinding.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/WebCodecsUtils.h"
@@ -27,7 +26,7 @@ namespace mozilla::dom {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOGW
 #  undef LOGW
@@ -66,20 +65,20 @@ EncodedVideoChunkData::~EncodedVideoChunkData() = default;
 
 UniquePtr<EncodedVideoChunkData> EncodedVideoChunkData::Clone() const {
   if (!mBuffer) {
-    LOGE("No buffer in EncodedVideoChunkData %p to clone!", this);
+    LOGE("No buffer in EncodedVideoChunkData {} to clone!", fmt::ptr(this));
     return nullptr;
   }
 
   // Since EncodedVideoChunkData can be zero-sized, cloning a zero-sized chunk
   // is allowed.
   if (mBuffer->Size() == 0) {
-    LOGW("Cloning an empty EncodedVideoChunkData %p", this);
+    LOGW("Cloning an empty EncodedVideoChunkData {}", fmt::ptr(this));
   }
 
   auto buffer =
       MakeRefPtr<MediaAlignedByteBuffer>(mBuffer->Data(), mBuffer->Length());
   if (!buffer || buffer->Size() != mBuffer->Size()) {
-    LOGE("OOM to copy EncodedVideoChunkData %p", this);
+    LOGE("OOM to copy EncodedVideoChunkData {}", fmt::ptr(this));
     return nullptr;
   }
 
@@ -89,7 +88,7 @@ UniquePtr<EncodedVideoChunkData> EncodedVideoChunkData::Clone() const {
 
 already_AddRefed<MediaRawData> EncodedVideoChunkData::TakeData() {
   if (!mBuffer || !(*mBuffer)) {
-    LOGE("EncodedVideoChunkData %p has no data!", this);
+    LOGE("EncodedVideoChunkData {} has no data!", fmt::ptr(this));
     return nullptr;
   }
 
@@ -101,8 +100,8 @@ already_AddRefed<MediaRawData> EncodedVideoChunkData::TakeData() {
   if (mDuration) {
     CheckedInt64 duration(*mDuration);
     if (!duration.isValid()) {
-      LOGE("EncodedVideoChunkData %p 's duration exceeds TimeUnit's limit",
-           this);
+      LOGE("EncodedVideoChunkData {} 's duration exceeds TimeUnit's limit",
+           fmt::ptr(this));
       return nullptr;
     }
     sample->mDuration = TimeUnit::FromMicroseconds(duration.value());
@@ -113,7 +112,7 @@ already_AddRefed<MediaRawData> EncodedVideoChunkData::TakeData() {
 
 nsCString EncodedVideoChunkData::ToString() const {
   return nsFmtCString(
-      FMT_STRING("EncodedVideoChunkData[bytes: {}, type: {}, ts: {}, dur: {}]"),
+      "EncodedVideoChunkData[bytes: {}, type: {}, ts: {}, dur: {}]",
       mBuffer ? mBuffer->Length() : 0, GetEnumString(mType).get(), mTimestamp,
       mDuration ? std::to_string(*mDuration).c_str() : "none");
 }
@@ -154,31 +153,42 @@ already_AddRefed<EncodedVideoChunk> EncodedVideoChunk::Constructor(
     return nullptr;
   }
 
-  auto buffer = ProcessTypedArrays(
+  bool isInputBufferEmpty = false;
+  auto res = ProcessTypedArrays(
       aInit.mData,
-      [&](const Span<uint8_t>& aData,
-          JS::AutoCheckCannotGC&&) -> RefPtr<MediaAlignedByteBuffer> {
+      [&](const Span<uint8_t>& aData, JS::AutoCheckCannotGC&&)
+          -> Result<RefPtr<MediaAlignedByteBuffer>, MediaResult> {
         // Make sure it's in uint32_t's range.
         CheckedUint32 byteLength(aData.Length());
         if (!byteLength.isValid()) {
-          aRv.Throw(NS_ERROR_INVALID_ARG);
-          return nullptr;
+          return Err(MediaResult(NS_ERROR_INVALID_ARG,
+                                 "requested size exceeds uint32_t limit"));
         }
-        if (aData.Length() == 0) {
-          LOGW("Buffer for constructing EncodedVideoChunk is empty!");
-        }
+        isInputBufferEmpty = aData.Length() == 0;
         RefPtr<MediaAlignedByteBuffer> buf = MakeRefPtr<MediaAlignedByteBuffer>(
             aData.Elements(), aData.Length());
 
         // Instead of checking *buf, size comparision is used to allow
         // constructing a zero-sized EncodedVideoChunk.
         if (!buf || buf->Size() != aData.Length()) {
-          aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-          return nullptr;
+          return Err(MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                                 "failed to allocate buffer: OOM or "
+                                 "exceeds internal size limit"));
         }
         return buf;
       });
 
+  if (res.isErr()) {
+    MediaResult err = res.unwrapErr();
+    LOGE("Failed to process buffer for EncodedVideoChunk constructor: {}",
+         err.Description().get());
+    aRv.Throw(err.Code());
+    return nullptr;
+  }
+  if (isInputBufferEmpty) {
+    LOGW("Buffer for constructing EncodedVideoChunk is empty!");
+  }
+  RefPtr<MediaAlignedByteBuffer> buffer = res.unwrap();
   RefPtr<EncodedVideoChunk> chunk(new EncodedVideoChunk(
       global, buffer.forget(), aInit.mType, aInit.mTimestamp,
       OptionalToMaybe(aInit.mDuration)));

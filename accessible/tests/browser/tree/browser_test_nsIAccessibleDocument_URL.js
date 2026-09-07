@@ -35,9 +35,6 @@ add_task(async function testInDataURI() {
 });
 
 add_task(async function testInHTTPSURIContainingPrivateThings() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["network.auth.confirmAuth.enabled", false]],
-  });
   const kURL =
     "https://username:password@example.com/browser/toolkit/content/tests/browser/file_empty.html?query=some#ref";
   const kURLWithoutUserPass =

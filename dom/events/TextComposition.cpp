@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,8 +18,8 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/TextEvents.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/EditContext.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsIMutationObserver.h"
@@ -263,6 +261,21 @@ void TextComposition::DispatchEvent(
   }
   RefPtr<nsINode> node = mNode;
   RefPtr<nsPresContext> presContext = mPresContext;
+  if (auto* element = nsGenericHTMLElement::FromNode(node)) {
+    if (RefPtr<dom::EditContext> editContext = element->GetEditContext()) {
+      // Only compositionstart and compositionend are sent to EditContext
+      if (aDispatchEvent->mMessage == eCompositionStart) {
+        editContext->StartComposition(*aDispatchEvent);
+      } else if (aDispatchEvent->mMessage == eCompositionEnd) {
+        editContext->EndComposition(*aDispatchEvent);
+      }
+      // Internally, we want to dispatch this event to the EditContext's
+      // associated element, since that is what the EditorEventListener is
+      // listening to. But according to the spec, composition events should only
+      // be dispatched to the EditContext.
+      aDispatchEvent->mFlags.mOnlySystemGroupDispatch = true;
+    }
+  }
   EventDispatcher::Dispatch(node, presContext, aDispatchEvent, nullptr, aStatus,
                             aCallBack);
 
@@ -278,8 +291,8 @@ void TextComposition::OnCompositionEventDiscarded(
              "Shouldn't be called with untrusted event");
 
   if (mBrowserParent) {
-    Unused << mBrowserParent->SendCompositionEvent(*aCompositionEvent,
-                                                   mCompositionId);
+    (void)mBrowserParent->SendCompositionEvent(*aCompositionEvent,
+                                               mCompositionId);
   }
 
   // XXX If composition events are discarded, should we dispatch them with
@@ -377,8 +390,8 @@ void TextComposition::DispatchCompositionEvent(
   // If the content is a container of BrowserParent, composition should be in
   // the remote process.
   if (mBrowserParent) {
-    Unused << mBrowserParent->SendCompositionEvent(*aCompositionEvent,
-                                                   mCompositionId);
+    (void)mBrowserParent->SendCompositionEvent(*aCompositionEvent,
+                                               mCompositionId);
     aCompositionEvent->StopPropagation();
     if (aCompositionEvent->CausesDOMTextEvent()) {
       mLastData = aCompositionEvent->mData;
@@ -541,7 +554,7 @@ void TextComposition::HandleSelectionEvent(
   // If the content is a container of BrowserParent, composition should be in
   // the remote process.
   if (aBrowserParent) {
-    Unused << aBrowserParent->SendSelectionEvent(*aSelectionEvent);
+    (void)aBrowserParent->SendSelectionEvent(*aSelectionEvent);
     aSelectionEvent->StopPropagation();
     return;
   }
@@ -674,7 +687,7 @@ void TextComposition::MaybeNotifyIMEOfCompositionEventHandled(
 void TextComposition::DispatchCompositionEventRunnable(
     EventMessage aEventMessage, const nsAString& aData,
     bool aIsSynthesizingCommit) {
-  nsContentUtils::AddScriptRunner(new CompositionEventDispatcher(
+  nsContentUtils::AddScriptRunner(MakeAndAddRef<CompositionEventDispatcher>(
       this, mNode, aEventMessage, aData, aIsSynthesizingCommit));
 }
 

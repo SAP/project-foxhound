@@ -11,7 +11,7 @@
     <p>When it comes to your life online, you have a choice: accept the factory settings or put your privacy first. When you choose Firefox as your default browser, you’re choosing to protect your data while supporting an independent tech company. Firefox is also the only major browser backed by a non-profit fighting to give you more openness, transparency and control of your life online. Join hundreds of millions of people who choose to protect what's important by choosing Firefox - a web browser designed to be fast, easy to use, customizable and private.</p>
   </description>
   <releases>
-	<release version="$VERSION" date="$DATE"/>
+	<release version="$PKG_VERSION" date="$DATE"/>
   </releases>
   <keywords>
     <keyword>mozilla</keyword>

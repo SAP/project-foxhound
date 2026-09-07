@@ -21,7 +21,7 @@ var doTest = srcObject => new Promise(resolve => {
   var newSrc = a.src + "?2";
   b.src = newSrc;
   is(b[srcObject], null, "Initial srcObject is null");
-  var stream = a.mozCaptureStream();
+  var stream = a.captureStream?.() || a.mozCaptureStream();
   b[srcObject] = stream;
   is(b[srcObject], stream, "Stream set correctly");
   try {

@@ -43,6 +43,11 @@ function getL10n() {
   return gL10n;
 }
 
+const FIREFOX_REFRESH_MIGRATOR_KEYS = new Set([
+  "firefox",
+  "firefox-selectable-profile",
+]);
+
 const MIGRATOR_MODULES = Object.freeze({
   EdgeProfileMigrator: {
     moduleURI: "resource:///modules/EdgeProfileMigrator.sys.mjs",
@@ -52,9 +57,9 @@ const MIGRATOR_MODULES = Object.freeze({
     moduleURI: "resource:///modules/FirefoxProfileMigrator.sys.mjs",
     platforms: ["linux", "macosx", "win"],
   },
-  IEProfileMigrator: {
-    moduleURI: "resource:///modules/IEProfileMigrator.sys.mjs",
-    platforms: ["win"],
+  FirefoxSelectableProfileMigrator: {
+    moduleURI: "resource:///modules/FirefoxSelectableProfileMigrator.sys.mjs",
+    platforms: ["linux", "macosx", "win"],
   },
   SafariProfileMigrator: {
     moduleURI: "resource:///modules/SafariProfileMigrator.sys.mjs",
@@ -171,6 +176,7 @@ class MigrationUtils {
         "chrome://browser/content/spotlight.html",
         "about:firefoxview",
       ],
+      remoteTypes: ["parent", "privilegedabout"],
     });
 
     ChromeUtils.defineLazyGetter(this, "IS_LINUX_SNAP_PACKAGE", () => {
@@ -745,7 +751,7 @@ class MigrationUtils {
     let isRefresh =
       migrator &&
       skipSourceSelection &&
-      migratorKey == AppConstants.MOZ_APP_NAME;
+      FIREFOX_REFRESH_MIGRATOR_KEYS.has(migratorKey);
 
     let entrypoint = this.MIGRATION_ENTRYPOINTS.FIRSTRUN;
     if (isRefresh) {

@@ -17,7 +17,7 @@ export class GeckoViewPrompter {
         this._domWin = aParent.window;
       } else {
         this._domWin =
-          aParent.embedderElement && aParent.embedderElement.ownerGlobal;
+          aParent.embedderElement && aParent.embedderElement.documentGlobal;
       }
     }
 

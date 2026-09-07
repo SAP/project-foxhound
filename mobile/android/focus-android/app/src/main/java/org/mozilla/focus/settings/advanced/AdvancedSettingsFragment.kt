@@ -18,6 +18,9 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import org.mozilla.focus.utils.AppConstants.isDevBuild
 
+/**
+ * Fragment responsible for displaying and managing advanced settings.
+ */
 class AdvancedSettingsFragment :
     BaseSettingsFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener {

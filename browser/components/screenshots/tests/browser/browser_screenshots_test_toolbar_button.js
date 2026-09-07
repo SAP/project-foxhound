@@ -32,7 +32,7 @@ add_task(async function testNimbusDefaultScrenshotButtonPlacementEnrollment() {
     value: { buttonOnToolbarByDefault: true },
   });
   const { ScreenshotsCustomizableWidget } = ChromeUtils.importESModule(
-    "resource:///modules/ScreenshotsUtils.sys.mjs"
+    "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs"
   );
   // re-initialize, this is normally done during browser startup
   ScreenshotsCustomizableWidget.uninit();
@@ -68,7 +68,7 @@ add_task(async function testButtonPlacementLateEnrollment() {
     value: { buttonOnToolbarByDefault: true },
   });
   const { ScreenshotsCustomizableWidget } = ChromeUtils.importESModule(
-    "resource:///modules/ScreenshotsUtils.sys.mjs"
+    "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs"
   );
   // re-initialize, this is normally done during browser startup
   ScreenshotsCustomizableWidget.uninit();

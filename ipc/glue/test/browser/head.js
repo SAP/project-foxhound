@@ -226,7 +226,7 @@ async function addMediaTab(src) {
     forceNewProcess: true,
   });
   const browser = gBrowser.getBrowserForTab(tab);
-  await BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
   await SpecialPowers.spawn(browser, [src], createAudioElement);
   return tab;
 }
@@ -505,7 +505,7 @@ async function crashSomeUtility(utilityPid, actorsCheck) {
   // writing leak logs
   utilityProcessTest().noteIntentionalCrash(utilityPid);
 
-  const dumpID = subject.getPropertyAsAString("dumpID");
+  const dumpID = subject.get("dumpID");
   ok(dumpID, "There should be a dumpID");
 
   await crashMan.ensureCrashIsPresent(dumpID);

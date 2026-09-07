@@ -1,0 +1,18 @@
+[DEFAULT]
+dupe-manifest = true
+prefs = [
+  "browser.settings-redesign.enabled=false",
+]
+support-files = [
+  "head.js",
+]
+tags = "os_integration"
+
+["browser_browser_languages_preferred.js"]
+
+["browser_browser_languages_subdialog.js"]
+skip-if = [
+  "tsan",
+]
+
+["browser_languages_subdialog.js"]

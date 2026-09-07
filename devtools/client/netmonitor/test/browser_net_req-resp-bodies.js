@@ -42,7 +42,7 @@ add_task(async function () {
 
   // Reload debugee.
   const wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   // Perform another batch of requests.
@@ -60,7 +60,7 @@ add_task(async function () {
       const requestsListStatus = requestItem.querySelector(".status-code");
       EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
       await waitUntil(() => requestsListStatus.title);
-      await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
+      await waitForDOM(requestItem, ".requests-list-timings-total");
     }
     await verifyRequestItemTarget(
       document,

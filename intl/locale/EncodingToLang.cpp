@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +19,7 @@ using namespace mozilla::intl;
 // 1. Putting the pointers in a static array in Rust, at a distance.
 // 2. Run-time initializer.
 // 3. Using pointer pointers, as seen here.
-const mozilla::NotNull<const mozilla::Encoding *> *
+const mozilla::NotNull<const mozilla::Encoding*>*
     EncodingToLang::kEncodingsByRoughFrequency[] = {
 #define _(encoding, lang) &encoding,
 #include "EncodingsByFrequency.inc"

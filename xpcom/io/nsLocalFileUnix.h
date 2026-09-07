@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -60,9 +58,6 @@ class nsLocalFile final
   ~nsLocalFile() = default;
 
  protected:
-  // This stat cache holds the *last stat* - it does not invalidate.
-  // Call "FillStatCache" whenever you want to stat our file.
-  struct STAT mCachedStat;
   nsCString mPath;
 
   void LocateNativeLeafName(nsACString::const_iterator&,
@@ -74,7 +69,7 @@ class nsLocalFile final
                                    const nsACString& aNewName,
                                    nsACString& aResult);
 
-  bool FillStatCache();
+  nsresult StatFile(struct STAT* statInfo);
 
   nsresult CreateAndKeepOpen(uint32_t aType, int aFlags, uint32_t aPermissions,
                              bool aSkipAncestors, PRFileDesc** aResult);

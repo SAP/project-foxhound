@@ -1,0 +1,26 @@
+{
+  "description": "ProseMirror bundle of core, non-core and third-party packages",
+  "scripts": {
+    "build": "rollup -c --configMinify rollup.config.mjs",
+    "build:dev": "rollup -c rollup.config.mjs"
+  },
+  "dependencies": {
+    "prosemirror-commands": "file:./prosemirror-commands",
+    "prosemirror-history": "file:./prosemirror-history",
+    "prosemirror-keymap": "file:./prosemirror-keymap",
+    "prosemirror-markdown": "file:./prosemirror-markdown",
+    "prosemirror-model": "file:./prosemirror-model",
+    "prosemirror-schema-basic": "file:./prosemirror-schema-basic",
+    "prosemirror-state": "file:./prosemirror-state",
+    "prosemirror-suggestions": "file:./prosemirror-suggestions",
+    "prosemirror-transform": "file:./prosemirror-transform",
+    "prosemirror-view": "file:./prosemirror-view"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.1",
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^3.29.4"
+  }
+}

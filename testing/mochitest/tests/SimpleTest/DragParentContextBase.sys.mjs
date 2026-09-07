@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,23 +12,12 @@ export class DragParentContextBase {
   // Browsing context that the related element is in
   browsingContext = null;
 
-  constructor(
-    aSubtypeName,
-    aBrowsingContext,
-    aParams,
-    aSpecialPowers,
-    aOk,
-    aIs,
-    aInfo
-  ) {
+  constructor(aSubtypeName, aBrowsingContext, aParams, aSpecialPowers) {
     Object.assign(this, aParams);
     this.params = aParams;
     this.subtypeName = aSubtypeName;
     this.browsingContext = aBrowsingContext;
     this.specialPowers = aSpecialPowers;
-    this.ok = aOk;
-    this.is = aIs;
-    this.info = aInfo;
   }
 
   getElementPositions() {

@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -33,6 +32,12 @@ interface mixin DocumentOrShadowRoot {
   readonly attribute Element? fullscreenElement;
   [BinaryName="fullscreenElement"]
   readonly attribute Element? mozFullScreenElement;
+
+  [Pref="dom.scoped-custom-element-registries.enabled"]
+  readonly attribute CustomElementRegistry? customElementRegistry;
+
+  [Pref="dom.media-pip.enabled"]
+  readonly attribute Element? pictureInPictureElement;
 };
 
 // https://drafts.csswg.org/web-animations-1/#extensions-to-the-documentorshadowroot-interface-mixin

@@ -8,7 +8,7 @@
 
 add_task(async function () {
   await pushPref("dom.security.https_first", false);
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-listings.html");
 
   const contextMenu =
     gPanelWindow.document.getElementById("storage-tree-popup");
@@ -16,7 +16,7 @@ add_task(async function () {
     "#storage-tree-popup-delete"
   );
 
-  const cacheToDelete = ["Cache", "http://test1.example.org", "plop"];
+  const cacheToDelete = ["Cache", MAIN_ORIGIN, "plop"];
 
   info("test state before delete");
   await selectTreeItem(cacheToDelete);
@@ -45,7 +45,6 @@ add_task(async function () {
   await eventWait;
 
   info("test state after delete");
-  await selectTreeItem(cacheToDelete);
   ok(
     !gUI.tree.isSelected(cacheToDelete),
     "Cache item is no longer present in the tree"

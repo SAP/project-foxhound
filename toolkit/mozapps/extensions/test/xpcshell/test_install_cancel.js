@@ -22,6 +22,9 @@ class TestListener {
   }
 
   onStartRequest(request) {
+    if (this.listener.onStartRequest) {
+      this.listener.onStartRequest(request);
+    }
     this.origListener.onStartRequest(request);
   }
 
@@ -37,7 +40,7 @@ function startListener(listener) {
   let observer = {
     observe(subject) {
       let channel = subject.QueryInterface(Ci.nsIHttpChannel);
-      if (channel.URI.spec === "http://example.com/addons/test.xpi") {
+      if (channel.URI.spec.endsWith("/addons/test.xpi")) {
         let channelListener = new TestListener(listener);
         channelListener.origListener = subject
           .QueryInterface(Ci.nsITraceableChannel)
@@ -49,7 +52,7 @@ function startListener(listener) {
   Services.obs.addObserver(observer, "http-on-modify-request");
 }
 
-add_task(async function setup() {
+add_setup(async function setup() {
   let xpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       name: "Test",
@@ -108,4 +111,56 @@ add_task(async function test_install_user_cancelled() {
     () => !install.file.exists(),
     "wait for temp file to be removed"
   );
+});
+
+add_task(async function test_install_cancelled_on_quit_or_offline() {
+  const TOPICS = [
+    "quit-application-granted",
+    "network:offline-about-to-go-offline",
+  ];
+
+  const server = AddonTestUtils.createHttpServer({
+    hosts: ["slow.example.com"],
+  });
+  let pendingResponses = [];
+  server.registerPathHandler("/addons/test.xpi", (request, response) => {
+    response.setStatusLine(request.httpVersion, 200, "OK");
+    response.setHeader("Content-Type", "application/x-xpinstall");
+    pendingResponses.push(response);
+    response.processAsync();
+    response.write("Here are some bytes");
+  });
+  const cleanupResponses = () => {
+    pendingResponses.forEach(res => res.finish());
+    pendingResponses = [];
+  };
+  registerCleanupFunction(cleanupResponses);
+
+  for (let topic of TOPICS) {
+    info(`Verify DownloadAddonInstall cancelled on topic ${topic}`);
+
+    let url = "http://slow.example.com/addons/test.xpi";
+    let install = await AddonManager.getInstallForURL(url, {
+      name: "Test",
+      version: "1.0",
+    });
+    let downloadStarted = new Promise(resolve => {
+      startListener({
+        onStartRequest() {
+          resolve();
+        },
+      });
+    });
+    let installPromise = install.install();
+    await downloadStarted;
+    equal(install.state, AddonManager.STATE_DOWNLOADING, "install was started");
+    Services.obs.notifyObservers(null, topic);
+    await Assert.rejects(
+      installPromise,
+      /Install failed: onDownloadCancelled/,
+      "Got the expected install onDownloadCancelled failure"
+    );
+    equal(install.state, AddonManager.STATE_CANCELLED, "install was cancelled");
+    cleanupResponses();
+  }
 });

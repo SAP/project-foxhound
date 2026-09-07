@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,8 +11,9 @@
 
 mozilla::LazyLogModule sShmemPoolLog("ShmemPool");
 
-#define SHMEMPOOL_LOG_VERBOSE(args) \
-  MOZ_LOG(sShmemPoolLog, mozilla::LogLevel::Verbose, args)
+#define SHMEMPOOL_LOG_VERBOSE(args)                      \
+  MOZ_LOG_FMT(sShmemPoolLog, mozilla::LogLevel::Verbose, \
+              MOZ_LOG_EXPAND_ARGS args)
 
 namespace mozilla {
 
@@ -68,8 +67,7 @@ mozilla::ShmemBuffer ShmemPool::GetIfAvailable(size_t aSize) {
   size_t poolUse = mShmemPool.Length() - mPoolFree;
   if (poolUse > mMaxPoolUse) {
     mMaxPoolUse = poolUse;
-    SHMEMPOOL_LOG(
-        ("Maximum ShmemPool use increased: %zu buffers", mMaxPoolUse));
+    SHMEMPOOL_LOG(("Maximum ShmemPool use increased: {} buffers", mMaxPoolUse));
   }
 #endif
   return std::move(res);
@@ -83,7 +81,7 @@ void ShmemPool::Put(ShmemBuffer&& aShmem) {
 #ifdef DEBUG
   size_t poolUse = mShmemPool.Length() - mPoolFree;
   if (poolUse > 0) {
-    SHMEMPOOL_LOG_VERBOSE(("ShmemPool usage reduced to %zu buffers", poolUse));
+    SHMEMPOOL_LOG_VERBOSE(("ShmemPool usage reduced to {} buffers", poolUse));
   }
 #endif
 }

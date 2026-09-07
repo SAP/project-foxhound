@@ -1,0 +1,24 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    description: "profiler-node-tools toolchain build"
+    attributes:
+        local-toolchain: true
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 1800
+
+profiler-node-tools:
+    description: "profiler node tools from firefox profiler"
+    treeherder:
+        symbol: TL(profiler-node-tools)
+    run:
+        script: build-profiler-node-tools.sh
+        toolchain-artifact: public/build/profiler-node-tools.tar.zst
+    fetches:
+        fetch:
+            - firefox-profiler
+        toolchain:
+            - linux64-node-24

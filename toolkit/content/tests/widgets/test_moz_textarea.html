@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MozTextarea Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-textarea.mjs"
+    ></script>
+    <script src="lit-test-helpers.js"></script>
+    <script class="testbody" type="application/javascript">
+      let testHelpers = new InputTestHelpers();
+      let html;
+
+      add_setup(async function setup() {
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: (attrs, children) =>
+            html`<moz-textarea ${attrs}>${children}</moz-textarea>`,
+        });
+      });
+
+      add_task(async function testMozTextareaProperties() {
+        await testHelpers.testCommonInputProperties("moz-textarea", {
+          type: "textarea",
+        });
+      });
+
+      add_task(async function testMozTextareaReadonly() {
+        await testHelpers.verifyReadonly("moz-textarea");
+      });
+
+      add_task(async function testMozTextareaEvents() {
+        await testHelpers.testTextBasedInputEvents("moz-textarea");
+      });
+
+      add_task(async function testMozTextareaSync() {
+        const INITIAL_VALUE = "value";
+        const USER_INPUT = "new value";
+        const UNIQUE_INPUT = "unique value";
+
+        const renderTarget = await testHelpers.renderTemplate(
+          html`<moz-textarea
+            label="Testing value"
+            value=${INITIAL_VALUE}
+          ></moz-textarea>`
+        );
+        const wrapper = renderTarget.querySelector("moz-textarea");
+        ok(wrapper, "Found moz-textarea wrapper");
+
+        const innerTextarea = wrapper.inputEl;
+        ok(
+          HTMLTextAreaElement.isInstance(innerTextarea),
+          "Wrapper inner element is a <textarea>"
+        );
+
+        is(
+          innerTextarea.value,
+          INITIAL_VALUE,
+          "Inner textarea starts with the initial template value."
+        );
+        is(
+          wrapper.value,
+          INITIAL_VALUE,
+          "Wrapper value starts with the initial template value."
+        );
+
+        wrapper.value = INITIAL_VALUE;
+        await wrapper.updateComplete;
+        is(
+          innerTextarea.value,
+          INITIAL_VALUE,
+          "Inner textarea value is in sync with wrapper value (after direct set)."
+        );
+
+        wrapper.value = "";
+        await wrapper.updateComplete;
+
+        innerTextarea.focus();
+        sendString(USER_INPUT);
+        innerTextarea.blur();
+        await TestUtils.waitForTick();
+
+        is(
+          wrapper.value,
+          USER_INPUT,
+          "Wrapper value is updated after typing into inner textarea."
+        );
+        is(
+          innerTextarea.value,
+          USER_INPUT,
+          "Inner textarea value is updated after typing into inner textarea."
+        );
+
+        wrapper.value = UNIQUE_INPUT;
+        await wrapper.updateComplete;
+        is(
+          wrapper.value,
+          UNIQUE_INPUT,
+          "Wrapper value is updated to unique value."
+        );
+        is(
+          innerTextarea.value,
+          UNIQUE_INPUT,
+          "Inner textarea value is in sync with unique wrapper value."
+        );
+      });
+
+      add_task(async function testMozTextareaRows() {
+        let renderTarget = await testHelpers.renderTemplate();
+        let textarea = renderTarget.querySelector("moz-textarea");
+
+        is(textarea.rows, 2, "Default rows value is 2.");
+        is(textarea.inputEl.rows, 2, "Native textarea rows matches default.");
+
+        textarea.rows = 6;
+        await textarea.updateComplete;
+        is(
+          textarea.inputEl.rows,
+          6,
+          "Rows property update is reflected on the native textarea."
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

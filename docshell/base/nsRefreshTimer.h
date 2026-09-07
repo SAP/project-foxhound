@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsRefreshTimer_h__
-#define nsRefreshTimer_h__
+#ifndef nsRefreshTimer_h_
+#define nsRefreshTimer_h_
 
 #include "nsINamed.h"
 #include "nsITimer.h"
@@ -36,4 +34,4 @@ class nsRefreshTimer : public nsITimerCallback, public nsINamed {
   virtual ~nsRefreshTimer();
 };
 
-#endif /* nsRefreshTimer_h__ */
+#endif /* nsRefreshTimer_h_ */

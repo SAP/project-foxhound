@@ -6,15 +6,16 @@
 //!
 //! [margin]: https://drafts.csswg.org/css-page-3/#margin-boxes
 
+use crate::derives::*;
 use crate::properties::PropertyDeclarationBlock;
 use crate::shared_lock::{DeepCloneWithLock, Locked};
 use crate::shared_lock::{SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard};
-use crate::str::CssStringWriter;
-use cssparser::SourceLocation;
+use cssparser::{match_ignore_ascii_case, SourceLocation};
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use servo_arc::Arc;
 use std::fmt::{self, Write};
+use style_traits::CssStringWriter;
 
 macro_rules! margin_rule_types {
     ($($(#[$($meta:tt)+])* $id:ident => $val:literal,)+) => {
@@ -179,11 +180,7 @@ impl ToCssWithGuard for MarginRule {
 }
 
 impl DeepCloneWithLock for MarginRule {
-    fn deep_clone_with_lock(
-        &self,
-        lock: &SharedRwLock,
-        guard: &SharedRwLockReadGuard,
-    ) -> Self {
+    fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Self {
         MarginRule {
             rule_type: self.rule_type,
             block: Arc::new(lock.wrap(self.block.read_with(&guard).clone())),

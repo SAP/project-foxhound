@@ -19,6 +19,7 @@
 #include "src/shaders/SkShaderBase.h"
 
 #include <cstdint>
+#include <optional>
 
 class SkArenaAlloc;
 class SkMatrix;
@@ -81,6 +82,7 @@ public:
     void blitAntiH(int x, int y, const SkAlpha antialias[], const int16_t runs[]) override;
     void blitAntiH2(int x, int y, U8CPU a0, U8CPU a1) override;
     void blitAntiV2(int x, int y, U8CPU a0, U8CPU a1) override;
+    std::optional<DirectBlit> canDirectBlit() override;
 };
 
 class SkARGB32_Black_Blitter : public SkARGB32_Opaque_Blitter {
@@ -119,7 +121,8 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap&,
                                          const SkMatrix& ctm,
                                          SkArenaAlloc*,
                                          sk_sp<SkShader> clipShader,
-                                         const SkSurfaceProps& props);
+                                         const SkSurfaceProps& props,
+                                         const SkRect& devBounds);
 // Use this if you've pre-baked a shader pipeline, including modulating with paint alpha.
 SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap&, const SkPaint&,
                                          const SkRasterPipeline& shaderPipeline,

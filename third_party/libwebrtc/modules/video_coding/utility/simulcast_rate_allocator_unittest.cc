@@ -10,24 +10,32 @@
 
 #include "modules/video_coding/utility/simulcast_rate_allocator.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
-#include <utility>
+#include <optional>
 #include <vector>
 
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
+#include "api/units/data_rate.h"
+#include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_bitrate_allocator.h"
+#include "api/video/video_codec_type.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/vp8_frame_buffer_controller.h"
 #include "api/video_codecs/vp8_frame_config.h"
-#include "api/video_codecs/vp8_temporal_layers.h"
 #include "rtc_base/checks.h"
-#include "test/explicit_key_value_config.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
 namespace webrtc {
 namespace {
-using test::ExplicitKeyValueConfig;
+
 using ::testing::_;
 
 constexpr uint32_t kFramerateFps = 5;
@@ -40,7 +48,7 @@ constexpr uint32_t kSimulcastScreenshareMinBitrateKbps = 600;
 constexpr uint32_t kSimulcastScreenshareMaxBitrateKbps = 1250;
 // Default video hysteresis factor: allocatable bitrate for next layer must
 // exceed 20% of min setting in order to be initially turned on.
-const double kDefaultHysteresis = 1.2;
+constexpr double kDefaultHysteresis = 1.2;
 
 class MockTemporalLayers : public Vp8FrameBufferController {
  public:
@@ -66,7 +74,7 @@ class SimulcastRateAllocatorTest : public ::testing::TestWithParam<bool> {
     codec_.active = true;
     CreateAllocator();
   }
-  virtual ~SimulcastRateAllocatorTest() {}
+  ~SimulcastRateAllocatorTest() override {}
 
   template <size_t S>
   void ExpectEqual(uint32_t (&expected)[S],
@@ -143,10 +151,9 @@ class SimulcastRateAllocatorTest : public ::testing::TestWithParam<bool> {
         DataRate::KilobitsPerSec(target_bitrate), kDefaultFrameRate));
   }
 
-  VideoBitrateAllocation GetAllocation(DataRate target_rate,
-                                       DataRate stable_rate) {
-    return allocator_->Allocate(VideoBitrateAllocationParameters(
-        target_rate, stable_rate, kDefaultFrameRate));
+  VideoBitrateAllocation GetAllocation(DataRate target_rate) {
+    return allocator_->Allocate(
+        VideoBitrateAllocationParameters(target_rate, kDefaultFrameRate));
   }
 
   DataRate MinRate(size_t layer_index) const {
@@ -300,8 +307,8 @@ TEST_F(SimulcastRateAllocatorTest, Regular3TLTemporalRateAllocation) {
 }
 
 TEST_F(SimulcastRateAllocatorTest, BaseHeavy3TLTemporalRateAllocation) {
-  ExplicitKeyValueConfig field_trials(
-      "WebRTC-UseBaseHeavyVP8TL3RateAllocation/Enabled/");
+  FieldTrials field_trials =
+      CreateTestFieldTrials("WebRTC-UseBaseHeavyVP8TL3RateAllocation/Enabled/");
 
   SetupCodec3SL3TL({true, true, true});
   CreateAllocator(CreateEnvironment(&field_trials));
@@ -584,68 +591,44 @@ TEST_F(SimulcastRateAllocatorTest, NonConferenceModeScreenshare) {
   EXPECT_EQ(alloc.GetTemporalLayerAllocation(2).size(), 3u);
 }
 
-TEST_F(SimulcastRateAllocatorTest, StableRate) {
-  ExplicitKeyValueConfig field_trials(
-      "WebRTC-StableTargetRate/"
-      "enabled:true,"
-      "video_hysteresis_factor:1.1/");
-
-  SetupCodec3SL3TL({true, true, true});
-  CreateAllocator(CreateEnvironment(&field_trials));
-
-  // Let the volatile rate always be be enough for all streams, in this test we
-  // are only interested in how the stable rate affects enablement.
-  const DataRate volatile_rate =
-      (TargetRate(0) + TargetRate(1) + MinRate(2)) * 1.1;
-
+TEST_F(SimulcastRateAllocatorTest, TemporalLayerForMixedCodec) {
+  // Singlecast stream
   {
-    // On the first call to a new SimulcastRateAllocator instance, hysteresis
-    // is disabled, but stable rate still caps layers.
-    uint32_t expected[] = {TargetRate(0).kbps<uint32_t>(),
-                           MaxRate(1).kbps<uint32_t>()};
-    ExpectEqual(expected,
-                GetAllocation(volatile_rate, TargetRate(0) + MinRate(1)));
+    SetupCodec3TL();
+    codec_.numberOfSimulcastStreams = 0;
+    CreateAllocator();
+
+    const uint32_t bitrate = codec_.simulcastStream[0].maxBitrate +
+                             codec_.simulcastStream[1].maxBitrate +
+                             codec_.simulcastStream[2].maxBitrate;
+    const VideoBitrateAllocation alloc = GetAllocation(bitrate);
+
+    // If the single stream, use default temporal layer count.
+    EXPECT_EQ(alloc.GetTemporalLayerAllocation(0).size(), 3u);
   }
 
+  // Simulcast stream
   {
-    // Let stable rate go to a bitrate below what is needed for two streams.
-    uint32_t expected[] = {MaxRate(0).kbps<uint32_t>(), 0};
-    ExpectEqual(expected,
-                GetAllocation(volatile_rate, TargetRate(0) + MinRate(1) -
-                                                 DataRate::BitsPerSec(1)));
-  }
+    SetupCodec3SL3TL({true, true, true});
+    codec_.numberOfSimulcastStreams = 3;
+    codec_.simulcastStream[0].format = std::nullopt;
+    codec_.simulcastStream[0].numberOfTemporalLayers = 1;
+    codec_.simulcastStream[1].format = SdpVideoFormat::VP8();
+    codec_.simulcastStream[1].numberOfTemporalLayers = 2;
+    codec_.simulcastStream[2].format = SdpVideoFormat::VP9Profile0();
+    codec_.simulcastStream[2].numberOfTemporalLayers = 0;
+    CreateAllocator();
 
-  {
-    // Don't enable stream as we need to get up above hysteresis threshold.
-    uint32_t expected[] = {MaxRate(0).kbps<uint32_t>(), 0};
-    ExpectEqual(expected,
-                GetAllocation(volatile_rate, TargetRate(0) + MinRate(1)));
-  }
+    const uint32_t bitrate = codec_.simulcastStream[0].maxBitrate +
+                             codec_.simulcastStream[1].maxBitrate +
+                             codec_.simulcastStream[2].maxBitrate;
+    const VideoBitrateAllocation alloc = GetAllocation(bitrate);
 
-  {
-    // Above threshold with hysteresis, enable second stream.
-    uint32_t expected[] = {TargetRate(0).kbps<uint32_t>(),
-                           MaxRate(1).kbps<uint32_t>()};
-    ExpectEqual(expected, GetAllocation(volatile_rate,
-                                        (TargetRate(0) + MinRate(1)) * 1.1));
-  }
-
-  {
-    // Enough to enable all thee layers.
-    uint32_t expected[] = {
-        TargetRate(0).kbps<uint32_t>(), TargetRate(1).kbps<uint32_t>(),
-        (volatile_rate - TargetRate(0) - TargetRate(1)).kbps<uint32_t>()};
-    ExpectEqual(expected, GetAllocation(volatile_rate, volatile_rate));
-  }
-
-  {
-    // Drop hysteresis, all three still on.
-    uint32_t expected[] = {
-        TargetRate(0).kbps<uint32_t>(), TargetRate(1).kbps<uint32_t>(),
-        (volatile_rate - TargetRate(0) - TargetRate(1)).kbps<uint32_t>()};
-    ExpectEqual(expected,
-                GetAllocation(volatile_rate,
-                              TargetRate(0) + TargetRate(1) + MinRate(2)));
+    // If the simulcast stream, use the layer specific temporal layer count
+    // (minimum is 1).
+    EXPECT_EQ(alloc.GetTemporalLayerAllocation(0).size(), 1u);
+    EXPECT_EQ(alloc.GetTemporalLayerAllocation(1).size(), 2u);
+    EXPECT_EQ(alloc.GetTemporalLayerAllocation(2).size(), 1u);
   }
 }
 

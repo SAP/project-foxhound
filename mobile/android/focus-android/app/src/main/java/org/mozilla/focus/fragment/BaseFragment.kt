@@ -14,6 +14,9 @@ import org.mozilla.focus.ext.hideToolbar
 import org.mozilla.focus.ext.requireComponents
 import org.mozilla.focus.state.Screen
 
+/**
+ * Base [Fragment] class for the application.
+ */
 abstract class BaseFragment : Fragment() {
     private var animationSet: AnimationSet? = null
 
@@ -23,6 +26,9 @@ abstract class BaseFragment : Fragment() {
         view?.isInvisible = requireComponents.appStore.state.screen == Screen.Locked()
     }
 
+    /**
+     * Cancels any ongoing animations on this fragment.
+     */
     fun cancelAnimation() {
         if (animationSet != null) {
             animationSet!!.duration = 0
@@ -35,7 +41,6 @@ abstract class BaseFragment : Fragment() {
         view?.isInvisible = requireComponents.appStore.state.screen == Screen.Locked()
     }
 
-    @Suppress("SwallowedException")
     override fun onCreateAnimation(transit: Int, enter: Boolean, nextAnim: Int): Animation? {
         var animation = super.onCreateAnimation(transit, enter, nextAnim)
         if (animation == null && nextAnim != 0) {

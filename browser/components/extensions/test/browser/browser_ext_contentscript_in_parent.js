@@ -1,7 +1,5 @@
 "use strict";
 
-const TELEMETRY_EVENT = "security#javascriptLoad#parentProcess";
-
 add_task(async function test_contentscript_telemetry() {
   // Turn on telemetry and reset it to the previous state once the test is completed.
   // const telemetryCanRecordBase = Services.telemetry.canRecordBase;
@@ -57,28 +55,21 @@ add_task(async function test_contentscript_telemetry() {
   };
 
   function getSecurityEventCount() {
-    let snap = Services.telemetry.getSnapshotForKeyedScalars();
-    return snap.parent["telemetry.event_counts"][TELEMETRY_EVENT] || 0;
+    return (
+      Glean.security.javascriptLoadParentProcess.testGetValue()?.length ?? 0
+    );
   }
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     "about:preferences"
   );
-  is(
-    getSecurityEventCount(),
-    0,
-    `No events recorded before startup: ${TELEMETRY_EVENT}.`
-  );
+  is(getSecurityEventCount(), 0, `No events recorded before startup.`);
 
   let extension = ExtensionTestUtils.loadExtension(extensionData);
 
   await extension.startup();
-  is(
-    getSecurityEventCount(),
-    0,
-    `No events recorded after startup: ${TELEMETRY_EVENT}.`
-  );
+  is(getSecurityEventCount(), 0, `No events recorded after startup.`);
 
   extension.sendMessage("execute");
   await extension.awaitMessage("executed");
@@ -93,9 +84,5 @@ add_task(async function test_contentscript_telemetry() {
   BrowserTestUtils.removeTab(tab);
   await extension.unload();
 
-  is(
-    getSecurityEventCount(),
-    0,
-    `No events recorded after executeScript: ${TELEMETRY_EVENT}.`
-  );
+  is(getSecurityEventCount(), 0, `No events recorded after executeScript.`);
 });

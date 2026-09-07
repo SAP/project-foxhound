@@ -63,11 +63,21 @@ interface nsICacheStorage : nsISupports
   const uint32_t OPEN_INTERCEPTED = 1 << 6;
 
   /**
+   * Only open an existing entry which is complete (i.e. not being written)
+   */
+  const uint32_t OPEN_COMPLETE_ONLY = 1 << 7;
+
+  /**
+   * Open even if we're revalidating/etc; used for Dictionary Cache loads
+   */
+  const uint32_t OPEN_ALWAYS = 1 << 8;
+
+  /**
    * Asynchronously opens a cache entry for the specified URI.
    * Result is fetched asynchronously via the callback.
    *
    * @param aURI
-   *    The URI to search in cache or to open for writting.
+   *    The URI to search in cache or to open for writing.
    * @param aIdExtension
    *    Any string that will extend (distinguish) the entry.  Two entries
    *    with the same aURI but different aIdExtension will be comletely
@@ -88,6 +98,33 @@ interface nsICacheStorage : nsISupports
   void asyncOpenURI(in nsIURI aURI, in ACString aIdExtension,
                     in uint32_t aFlags,
                     in nsICacheEntryOpenCallback aCallback);
+
+  /**
+   * Asynchronously opens a cache entry for the specified URI.
+   * Result is fetched asynchronously via the callback.
+   *
+   * @param aURI
+   *    The URI to search in cache or to open for writing.
+   * @param aIdExtension
+   *    Any string that will extend (distinguish) the entry.  Two entries
+   *    with the same aURI but different aIdExtension will be comletely
+   *    different entries.  If you don't know what aIdExtension should be
+   *    leave it empty.
+   * @param aFlags
+   *    OPEN_NORMALLY - open cache entry normally for read and write
+   *    OPEN_TRUNCATE - delete any existing entry before opening it
+   *    OPEN_READONLY - don't create an entry if there is none
+   *    OPEN_PRIORITY - give this request a priority over others
+   *    OPEN_BYPASS_IF_BUSY - backward compatibility only, LOAD_BYPASS_LOCAL_CACHE_IF_BUSY
+   *    CHECK_MULTITHREADED - onCacheEntryCheck may be called on any thread, consumer
+   *                          implementation is thread-safe
+   * @param aCallback
+   *    The consumer that receives the result.
+   *    IMPORTANT: The callback may be called sooner the method returns.
+   */
+  void asyncOpenURIString(in ACString aURI, in ACString aIdExtension,
+                          in uint32_t aFlags,
+                          in nsICacheEntryOpenCallback aCallback);
 
   /**
    * Immediately opens a new and empty cache entry in the storage, any existing

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,8 @@
 /* base class for rendering objects that need child lists but behave like leaf
  */
 
-#ifndef nsAtomicContainerFrame_h___
-#define nsAtomicContainerFrame_h___
+#ifndef nsAtomicContainerFrame_h_
+#define nsAtomicContainerFrame_h_
 
 #include "nsContainerFrame.h"
 
@@ -41,4 +39,4 @@ class nsAtomicContainerFrame : public nsContainerFrame {
       : nsContainerFrame(aStyle, aPresContext, aID) {}
 };
 
-#endif  // nsAtomicContainerFrame_h___
+#endif  // nsAtomicContainerFrame_h_

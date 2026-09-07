@@ -21,7 +21,10 @@ function getTabDetails(portID, url = "about:newtab", extraArgs = {}) {
   };
   let browser = {
     getAttribute: () => (extraArgs.preloaded ? "preloaded" : ""),
-    ownerGlobal: {},
+    documentGlobal: {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
   };
   let browsingContext = {
     top: {
@@ -164,13 +167,15 @@ describe("ActivityStreamMessageChannel", () => {
           preloaded: true,
           loaded: true,
         });
-        msg4.data.browser.ownerGlobal = {
+        msg4.data.browser.documentGlobal = {
           STATE_MAXIMIZED: 1,
           STATE_MINIMIZED: 2,
           STATE_NORMAL: 3,
           STATE_FULLSCREEN: 4,
           windowState: 3,
           isFullyOccluded: false,
+          addEventListener: () => {},
+          removeEventListener: () => {},
         };
         mm.loadedTabs.set(msg4.data.browser, msg4.data);
         mm.simulateMessagesForExistingTabs();
@@ -297,7 +302,11 @@ describe("ActivityStreamMessageChannel", () => {
         const expectedAction = {
           type: action.data.type,
           data: action.data.data,
-          _target: { browser: msg.data.browser },
+          _target: {
+            browser: msg.data.browser,
+            window:
+              msg.data.browser.documentGlobal || msg.data.browser.ownerGlobal,
+          },
         };
         mm.onMessage(action, msg.data);
         assert.calledWith(mm.onActionFromContent, expectedAction, "foo");

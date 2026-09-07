@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ const isRunningObserver = {
   observe(subject, topic) {
     switch (topic) {
       case "profiler-started":
-      case "profiler-stopped":
+      case "profiler-stopped": {
         // Call observer(false) or observer(true), but do it through a promise
         // so that it's asynchronous.
         // We don't want it to be synchronous because of the observer call in
@@ -39,6 +37,7 @@ const isRunningObserver = {
           isRunningPromise.then(observer);
         }
         break;
+      }
     }
   },
 

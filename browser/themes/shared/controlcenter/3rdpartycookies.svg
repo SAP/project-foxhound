@@ -2,5 +2,18 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton">
   <path d="M6.655.627C3.155 1.261.5 4.318.5 8a7.5 7.5 0 0 0 15 0l-.237-.246c-.406.11-.83.173-1.263.207l0 .639-.4.4-1.2 0-.4-.4 0-.781A6.498 6.498 0 0 1 7 1.5c0-.199.012-.395.032-.589zM2.4 9 2 8.6l0-1.2.4-.4 1.2 0 .4.4 0 1.2-.4.4zM6 12.6l-.4.4-1.2 0-.4-.4 0-1.2.4-.4 1.2 0 .4.4zm0-8-.4.4-1.2 0-.4-.4 0-1.2.4-.4 1.2 0 .4.4zm3 4-.4.4-1.2 0-.4-.4 0-1.2.4-.4 1.2 0 .4.4zm3 4-.4.4-1.2 0-.4-.4 0-1.2.4-.4 1.2 0 .4.4z"/>
+</g>
+<g class="nova">
+  <path fill-rule="evenodd" d="M8 0c.446 0 .902.042 1.393.129a.75.75 0 0 1 .62.763c0 .027-.01.116-.014.144 0 1.43 1.09 2.704 2.535 2.929a.76.76 0 0 1 .549.393l.281.536a.75.75 0 0 1-.005.707A2.9 2.9 0 0 0 13 7c0 1.271.816 2.404 2.03 2.822a.75.75 0 0 1 .46.972C14.325 13.908 11.316 16 8 16c-4.411 0-8-3.589-8-8s3.589-8 8-8m2.125 10a1.125 1.125 0 1 0 0 2.25 1.125 1.125 0 0 0 0-2.25M5 8.25a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5M7 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2" clip-rule="evenodd" />
+</g>
 </svg>

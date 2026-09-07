@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -116,7 +114,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(
       SendReceiveMultiTouchInputEvent(event, !!aCallback, &res,
                                       &processedEvent);
 
-      event = processedEvent;
+      event = std::move(processedEvent);
       break;
     }
     case MOUSE_INPUT: {
@@ -125,7 +123,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(
 
       SendReceiveMouseInputEvent(event, !!aCallback, &res, &processedEvent);
 
-      event = processedEvent;
+      event = std::move(processedEvent);
       break;
     }
     case PANGESTURE_INPUT: {
@@ -135,7 +133,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(
       SendReceivePanGestureInputEvent(event, !!aCallback, &res,
                                       &processedEvent);
 
-      event = processedEvent;
+      event = std::move(processedEvent);
       break;
     }
     case PINCHGESTURE_INPUT: {
@@ -145,7 +143,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(
       SendReceivePinchGestureInputEvent(event, !!aCallback, &res,
                                         &processedEvent);
 
-      event = processedEvent;
+      event = std::move(processedEvent);
       break;
     }
     case TAPGESTURE_INPUT: {
@@ -155,7 +153,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(
       SendReceiveTapGestureInputEvent(event, !!aCallback, &res,
                                       &processedEvent);
 
-      event = processedEvent;
+      event = std::move(processedEvent);
       break;
     }
     case SCROLLWHEEL_INPUT: {
@@ -165,7 +163,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(
       SendReceiveScrollWheelInputEvent(event, !!aCallback, &res,
                                        &processedEvent);
 
-      event = processedEvent;
+      event = std::move(processedEvent);
       break;
     }
     case KEYBOARD_INPUT: {
@@ -174,7 +172,7 @@ APZEventResult APZInputBridgeChild::ReceiveInputEvent(
 
       SendReceiveKeyboardInputEvent(event, !!aCallback, &res, &processedEvent);
 
-      event = processedEvent;
+      event = std::move(processedEvent);
       break;
     }
     default: {
@@ -205,7 +203,9 @@ void APZInputBridgeChild::HandleTapOnMainThread(
                           aDoubleTapToZoomMetrics);
     return;
   }
-  dom::BrowserParent* tab =
+  // Hold strong reference to BrowserParent because SendHandleTap
+  // can run script via SetFocus.
+  RefPtr<dom::BrowserParent> tab =
       dom::BrowserParent::GetBrowserParentFromLayersId(aGuid.mLayersId);
   if (tab) {
 #ifdef MOZ_WIDGET_ANDROID

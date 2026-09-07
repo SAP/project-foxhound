@@ -269,6 +269,20 @@ more information.
 :ref:`More information <Pushing to Try>`
 
 
+If you used AI tools
+--------------------
+
+AI-assisted tools can help you write patches, but you are accountable for what you submit.
+Before requesting review, make sure you understand and can explain every change in your
+patch -- a reviewer's job is to double-check a human's work, not a tool's output. Taking
+the time to read through and understand the patch yourself helps reviews go smoothly.
+
+If your AI tool offers a code review feature (for example, a ``/review`` command),
+running it in a fresh session before submitting can catch issues your working session and
+self-review may have missed.
+
+See the :doc:`AI Coding Policy <ai-coding>` for the full expectations.
+
 To submit a patch
 -----------------
 

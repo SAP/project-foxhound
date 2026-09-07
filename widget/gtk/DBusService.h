@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DBusService_h__
-#define DBusService_h__
+#ifndef DBusService_h_
+#define DBusService_h_
 
 #include <glib.h>
 #include <gio/gio.h>
@@ -64,4 +63,4 @@ class DBusService final {
 
 }  // namespace mozilla::widget
 
-#endif  // DBusService_h__
+#endif  // DBusService_h_

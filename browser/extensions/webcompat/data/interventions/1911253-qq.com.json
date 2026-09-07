@@ -1,0 +1,21 @@
+{
+  "label": "qq.com",
+  "bugs": {
+    "1911253": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://*.qq.com/*"]
+    }
+  },
+  "css": {
+    "unhide-checkboxes": ".accredit_info_op li input[type=checkbox] { appearance: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": {
+        "all_frames": true,
+        "which": ["unhide-checkboxes"]
+      }
+    }
+  ]
+}

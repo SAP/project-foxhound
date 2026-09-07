@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,6 @@
 #include "RemotePrintJobChild.h"
 
 #include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/Unused.h"
 #include "nsPagePrintTimer.h"
 #include "nsPrintJob.h"
 #include "private/pprio.h"
@@ -20,11 +17,13 @@ NS_IMPL_ISUPPORTS(RemotePrintJobChild, nsIWebProgressListener)
 RemotePrintJobChild::RemotePrintJobChild() = default;
 
 nsresult RemotePrintJobChild::InitializePrint(const nsString& aDocumentTitle,
+                                              uint64_t aBrowsingContextId,
                                               const int32_t& aStartPage,
                                               const int32_t& aEndPage) {
   // Print initialization can sometimes display a dialog in the parent, so we
   // need to spin a nested event loop until initialization completes.
-  Unused << SendInitializePrint(aDocumentTitle, aStartPage, aEndPage);
+  (void)SendInitializePrint(aDocumentTitle, aBrowsingContextId, aStartPage,
+                            aEndPage);
   mozilla::SpinEventLoopUntil("RemotePrintJobChild::InitializePrint"_ns,
                               [&]() { return mPrintInitialized; });
 
@@ -62,8 +61,8 @@ void RemotePrintJobChild::ProcessPage(const IntSize& aSizeInPoints,
 
   mPagePrintTimer->WaitForRemotePrint();
   if (!mDestroyed) {
-    Unused << SendProcessPage(aSizeInPoints.width, aSizeInPoints.height,
-                              std::move(aDeps));
+    (void)SendProcessPage(aSizeInPoints.width, aSizeInPoints.height,
+                          std::move(aDeps));
   }
 }
 
@@ -118,8 +117,8 @@ RemotePrintJobChild::OnProgressChange(nsIWebProgress* aProgress,
                                       int32_t aCurTotalProgress,
                                       int32_t aMaxTotalProgress) {
   if (!mDestroyed) {
-    Unused << SendProgressChange(aCurSelfProgress, aMaxSelfProgress,
-                                 aCurTotalProgress, aMaxTotalProgress);
+    (void)SendProgressChange(aCurSelfProgress, aMaxSelfProgress,
+                             aCurTotalProgress, aMaxTotalProgress);
   }
 
   return NS_OK;
@@ -137,7 +136,7 @@ RemotePrintJobChild::OnStatusChange(nsIWebProgress* aProgress,
                                     nsIRequest* aRequest, nsresult aStatus,
                                     const char16_t* aMessage) {
   if (NS_SUCCEEDED(mInitializationResult) && !mDestroyed) {
-    Unused << SendStatusChange(aStatus);
+    (void)SendStatusChange(aStatus);
   }
 
   return NS_OK;

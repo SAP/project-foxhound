@@ -203,7 +203,6 @@ data class VisitInfo(
 /**
  * Visit type constants as defined by Desktop Firefox.
  */
-@Suppress("MagicNumber")
 enum class VisitType(val type: Int) {
 
     // User followed a link.

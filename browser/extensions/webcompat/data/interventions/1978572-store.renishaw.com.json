@@ -1,0 +1,18 @@
+{
+  "label": "store.renishaw.com",
+  "bugs": {
+    "1978572": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://store.renishaw.com/*"]
+    }
+  },
+  "css": {
+    "fix_range_sliders": "input[type=range] { height: 0px; position: absolute; z-index: 1; } input[type=range].range-selector, input[type=range].range-selector + div, input[type=range].range-selector::-moz-range-track, input[type=range].range-selector::-moz-range-progress { pointer-events: none; } input[type=range].range-selector::-moz-range-thumb { pointer-events: all; } input[type=range].range-selector::-moz-range-track { background: #f93; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix_range_sliders"]
+    }
+  ]
+}

@@ -1,0 +1,391 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: gecko_taskgraph.loader.test:loader
+
+kind-dependencies:
+    - build
+    - fetch
+    - toolchain
+
+transforms:
+    - gecko_taskgraph.transforms.test:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
+
+# Adding a new test type or running tests on a new platform? Be sure to review
+# https://wiki.mozilla.org/Sheriffing/Job_Visibility_Policy
+
+task-defaults:
+    run-on-repo-type: [hg]
+    attributes:
+        retrigger: true
+    use-python: default
+    use-uv: true
+    require-signed-extensions:
+        by-release-type:
+            release|esr.*: true
+            beta:
+                by-test-platform:
+                    .*-devedition/.*: false
+                    default: true
+            default: false
+    docker-image:
+        in-tree: ubuntu2404-test
+    fetches:
+        toolchain:
+            by-test-platform:
+                win.*:
+                    - win32-minidump-stackwalk
+                    - win32-fix-stacks
+                macosx.*-64.*:
+                    - macosx64-minidump-stackwalk
+                    - macosx64-fix-stacks
+                macosx.*-aarch64.*:
+                    - macosx64-aarch64-minidump-stackwalk
+                    - macosx64-aarch64-fix-stacks
+                android-em-14.*:
+                    - android34-system-image-x86_64-linux
+                    - android34-avd-x86_64-linux
+                    - android-emulator-linux
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux64-hostutils
+                android-hw.*:
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux64-hostutils
+                default:
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+    suite:
+        category: reftest
+    target:
+        by-test-platform:
+            android-em.*: geckoview-test_runner.apk
+            android-hw-.*: geckoview-test_runner.apk
+            default: null
+    tier: default
+    mozharness:
+        requires-signed-builds:
+            by-test-platform:
+                windows1.*:
+                    by-variant:
+                        msix: true
+                        default: false
+                default: false
+        script:
+            by-test-platform:
+                android-em.*: android_emulator_unittest.py
+                android-hw.*: android_hardware_unittest.py
+                default: desktop_unittest.py
+        config:
+            by-test-platform:
+                android-em-14.*:
+                    - android/android_common.py
+                    - android/android14-x86_64.py
+                android-hw.*:
+                    - android/android_common.py
+                    - android/android_hw.py
+                linux.*:
+                    - unittests/linux_unittest.py
+                    - remove_executables.py
+                macosx.*:
+                    - unittests/mac_unittest.py
+                windows.*:
+                    - unittests/win_unittest.py
+
+tasks:
+    crashtest:
+        description: "Crashtest run"
+        schedules-component: crashtest
+        treeherder-symbol: R(C)
+        worker-type:
+            by-test-platform:
+                .*windows.*: win11-64-25h2
+                default: default
+        chunks:
+            by-test-platform:
+                linux.*64-tsan(-qr)?/opt: dynamic
+                default: 1
+        default-chunks:
+            by-test-platform:
+                linux.*64-tsan(-qr)?/opt: 4
+                default: 1
+        variants:
+            - no-fission
+            - webrender-sw+no-fission
+            - webrender-sw
+            - inc-origin-init
+        run-on-projects:
+            by-variant:
+                webrender-sw+no-fission:
+                    by-test-platform:
+                        android-em.*/debug: built-projects
+                        linux2404-64/.*: ['mozilla-central']
+                        linux2404-64-shippable/opt: ['mozilla-central']
+                        linux2404-64-asan/opt: ['mozilla-central']
+                        default: []
+                webrender-sw:
+                    by-test-platform:
+                        macosx.*64(-qr)?/debug: built-projects
+                        linux.*64(-qr)?/debug: built-projects
+                        linux.*64-tsan(-qr)?/opt: built-projects
+                        linux.*64-asan(-qr)?/opt: built-projects
+                        windows.*-asan.*/opt: built-projects
+                        windows1.*64.*/debug: built-projects
+                        default: []
+                no-fission:
+                    by-test-platform:
+                        android-em.*/debug-isolated-process: []
+                        linux2404-64/.*: ['mozilla-central']
+                        linux2404-64-shippable/opt: ['mozilla-central']
+                        linux2404-64-asan/opt: ['mozilla-central']
+                        android.*: built-projects
+                        default: []
+                inc-origin-init: []
+                default:
+                    by-test-platform:
+                        android.*: []
+                        .*-wayland/debug.*: []
+                        # Compositor shutdown assertion in DisconnectApzcTreeManager
+                        # on headless macOS aarch64 VM workers (Bug 2039987 family);
+                        # same pattern excludes jsreftest, marionette-unittest, and
+                        # mochitest-remote on this platform.
+                        macosx1500-aarch64-vms/debug: []
+                        default: built-projects
+        max-run-time: 3600
+        mozharness:
+            extra-options:
+                by-variant:
+                    inc-origin-init:
+                        - "--filter=dom/(indexedDB|fs)"
+                    default: []
+        tier:
+            by-variant:
+                no-fission:
+                    by-test-platform:
+                        linux.*: 2
+                        default: default
+                webrender-sw+no-fission:
+                    by-test-platform:
+                        linux.*: 2
+                        default: default
+                default:
+                    by-test-platform:
+                        android-hw-.*(-qr)?/.*: 2
+                        android-em.*/debug-isolated-process: 3
+                        default: default
+
+    crashtest-qr:
+        description: "Crashtest Webrender run"
+        schedules-component: crashtest
+        treeherder-symbol: R(C)
+        worker-type:
+            by-test-platform:
+                .*windows.*: win11-64-25h2
+                default: default
+        test-manifest-loader: null  # don't load tests in the taskgraph
+        chunks: 1
+        variants:
+            - no-fission
+        run-on-projects:
+            by-variant:
+                no-fission: built-projects
+                default: []
+        max-run-time: 1200
+        tier: 2
+        virtualization: virtual
+
+    jsreftest:
+        description: "JS Reftest run"
+        schedules-component: jsreftest
+        treeherder-symbol: R(J)
+        worker-type:
+            by-test-platform:
+                .*windows.*: win11-64-25h2
+                default: default
+        instance-size:
+            by-test-platform:
+                windows.*-asan.*: large
+                default: default
+        test-manifest-loader: null  # don't load tests in the taskgraph
+        chunks:
+            by-test-platform:
+                android-hw.*/debug: 12
+                android-hw.*/opt: 6
+                windows.*-asan.*/opt: 6
+                windows.*-ccov.*/opt: 5
+                windows.*/debug: 4
+                windows.*/opt: 2
+                linux.*64-ccov.*/.*: 5
+                linux2404-64/opt: 4
+                linux.*/debug: 5
+                .*-tsan(-qr)?/opt: 8
+                macosx.*-64(-shippable)?/opt: 2
+                default: 3
+        max-run-time:
+            by-test-platform:
+                .*-ccov.*: 7200
+                .*-wayland/debug.*: 5400
+                default: 3600
+        variants:
+            - no-fission
+        run-on-projects:
+            by-variant:
+                no-fission:
+                    by-test-platform:
+                        linux2404-64/.*: ['mozilla-central']
+                        linux2404-64-shippable/opt: ['mozilla-central']
+                        linux2404-64-asan/opt: ['mozilla-central']
+                        android-hw-.*-aarch64(?:-shippable)?(-qr)?/.*: ['mozilla-central', 'release']
+                        android-hw-.*-arm7(?:-shippable)?(-qr)?/.*: ['mozilla-central', 'release']
+                        android.*: built-projects
+                        default: []
+                default:
+                    by-test-platform:
+                        android.*/.*: []
+                        # Compositor shutdown crash in DisconnectApzcTreeManager
+                        # on headless macOS aarch64 VM workers (Bug 2038639 family).
+                        # opt builds finish before the crash window; debug consistently
+                        # hits it after every test in the chunk has passed.
+                        macosx1500-aarch64-vms/debug: []
+                        default: built-projects
+        virtualization: virtual
+        tier:
+            by-variant:
+                no-fission:
+                    by-test-platform:
+                        linux.*: 2
+                        default: default
+                default: default
+
+    reftest:
+        description: "Reftest run"
+        treeherder-symbol: R(R)
+        virtualization: virtual-with-gpu
+        worker-type:
+            by-test-platform:
+                .*windows.*: win11-64-25h2-gpu
+                default: default
+        chunks: dynamic
+        default-chunks:
+            by-test-platform:
+                android-em.*: 6
+                linux2404-64(-shippable)?/opt: 5
+                linux2404-64-devedition/opt: 5
+                linux.*64-tsan(-qr)?/opt: 16
+                macosx.*-64-shippable/opt: 3
+                macosx.*-64/debug: 6
+                windows.*64.*/debug: 4
+                windows.*32.*/debug: 6
+                windows.*-ccov.*/opt: 9
+                windows10.*/opt: 2
+                windows11.*asan/opt: 4
+                windows11.*/opt: 3
+                default: 8
+        variants:
+            - draw-snapshot
+            - no-fission
+            - no-gpu-process
+            - webrender-dcomp-disabled
+            - webrender-dcomp-present
+            - webrender-dcomp-overlays
+            - webrender-dcomp-compositing  # Should match default
+            - webrender-sw+no-fission
+            - webrender-sw
+        run-on-projects:
+            by-variant:
+                draw-snapshot:
+                    by-test-platform:
+                        linux2404.*/debug: built-projects
+                        default: []
+                webrender-sw+no-fission:
+                    by-test-platform:
+                        android-em.*/debug: built-projects
+                        linux2404-64/debug: ['mozilla-central']
+                        linux2404-64(-shippable)?/opt: ['mozilla-central']
+                        linux2404-64-asan/opt: ['mozilla-central']
+                        default: []
+                webrender-sw:
+                    by-test-platform:
+                        linux2404-64/.*: built-projects
+                        linux2404-64-asan/opt: built-projects
+                        linux2404-64-tsan/opt: built-projects
+                        macosx.*64(-qr)?/debug: built-projects
+                        windows.*-asan.*/opt: built-projects
+                        default: []
+                no-fission:
+                    by-test-platform:
+                        android-em.*/debug-isolated-process: ['trunk']
+                        linux2404-64/debug: ['mozilla-central']
+                        linux2404-64(-shippable)?/opt: ['mozilla-central']
+                        linux2404-64-asan/opt: ['mozilla-central']
+                        android.*: built-projects
+                        default: []
+                no-gpu-process:
+                    by-test-platform:
+                        android.*: []
+                        .*-wayland.*: []
+                        linux.*-asan.*/opt: []
+                        windows.*: []
+                        default: built-projects
+                default:
+                    by-test-platform:
+                        android.*: []
+                        .*-wayland.*: []
+                        linux.*-asan.*/opt: []
+                        default: built-projects
+        max-run-time:
+            by-test-platform:
+                windows.*-32-mingwclang.*/debug: 5400
+                windows.*-ccov.*/.*: 5400
+                windows.*-asan.*/opt: 5400
+                default: 3600
+        mozharness:
+            chunked:
+                by-test-platform:
+                    android-em.*: false
+                    macosx.*64/opt: false
+                    windows.*/opt: false
+                    default: true
+            extra-options:
+                - --setpref=layers.acceleration.force-enabled=true
+        tier:
+            by-variant:
+                no-fission:
+                    by-test-platform:
+                        linux.*: 2
+                        default: default
+                webrender-sw+no-fission:
+                    by-test-platform:
+                        linux.*: 2
+                        default: default
+                default:
+                    by-test-platform:
+                        android-em.*/debug-isolated-process: 2
+                        default: default
+
+    reftest-qr:
+        description: "Reftest webrender run"
+        treeherder-symbol: R(R)
+        worker-type:
+            by-test-platform:
+                .*windows.*: win11-64-25h2
+                default: default
+        chunks: 2
+        test-manifest-loader: null  # don't load tests in the taskgraph
+        variants:
+            - no-fission
+            - no-gpu-process
+        run-without-variant: false
+        run-on-projects:
+            by-variant:
+                no-fission: built-projects
+                no-gpu-process: built-projects
+        max-run-time: 2400
+        mozharness:
+            chunked: true
+        tier: 2
+        virtualization: virtual

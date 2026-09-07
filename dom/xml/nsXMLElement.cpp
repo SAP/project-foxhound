@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXMLElement.h"
+
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "nsContentUtils.h"  // nsAutoScriptBlocker
@@ -12,9 +11,8 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsresult NS_NewXMLElement(
-    Element** aInstancePtrResult,
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
+nsresult NS_NewXMLElement(Element** aInstancePtrResult,
+                          already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo) {
   RefPtr<mozilla::dom::NodeInfo> nodeInfo(std::move(aNodeInfo));
   auto* nim = nodeInfo->NodeInfoManager();
   RefPtr<nsXMLElement> it = new (nim) nsXMLElement(nodeInfo.forget());
@@ -26,14 +24,23 @@ nsresult NS_NewXMLElement(
 void nsXMLElement::UnbindFromTree(UnbindContext& aContext) {
   nsAtom* property;
   switch (GetPseudoElementType()) {
-    case PseudoStyleType::marker:
+    case PseudoStyleType::Marker:
       property = nsGkAtoms::markerPseudoProperty;
       break;
-    case PseudoStyleType::before:
+    case PseudoStyleType::Before:
       property = nsGkAtoms::beforePseudoProperty;
       break;
-    case PseudoStyleType::after:
+    case PseudoStyleType::After:
       property = nsGkAtoms::afterPseudoProperty;
+      break;
+    case PseudoStyleType::Backdrop:
+      property = nsGkAtoms::backdropPseudoProperty;
+      break;
+    case PseudoStyleType::Checkmark:
+      property = nsGkAtoms::checkmarkPseudoProperty;
+      break;
+    case PseudoStyleType::PickerIcon:
+      property = nsGkAtoms::pickerIconPseudoProperty;
       break;
     default:
       property = nullptr;

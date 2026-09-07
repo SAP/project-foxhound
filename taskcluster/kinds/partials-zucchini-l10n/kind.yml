@@ -1,0 +1,80 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
+
+transforms:
+    - taskgraph.transforms.from_deps
+    - gecko_taskgraph.transforms.name_sanity
+    - gecko_taskgraph.transforms.partials_zucchini
+    - gecko_taskgraph.transforms.job
+    - gecko_taskgraph.transforms.task
+
+kind-dependencies:
+    - toolchain
+    - repackage-l10n
+    - partials-zucchini
+
+only-for-attributes:
+    - nightly
+    - shippable
+
+task-defaults:
+    run-on-repo-type: [hg]
+
+only-for-build-platforms:
+    - macosx64-shippable/opt
+    - macosx64-devedition/opt
+    - win32-shippable/opt
+    - win32-devedition/opt
+    - win64-shippable/opt
+    - win64-devedition/opt
+    - win64-aarch64-shippable/opt
+    - win64-aarch64-devedition/opt
+    - linux64-shippable/opt
+    - linux64-aarch64-shippable/opt
+    - linux64-devedition/opt
+    - linux64-aarch64-devedition/opt
+
+tasks:
+    zucchini:
+        from-deps:
+            kinds: [repackage-l10n]
+            copy-attributes: true
+            group-by: single-with-filters
+        shipping-phase: promote
+        run-on-projects: ["mozilla-central"]
+        validate-cert:
+            by-project:
+                # don't validate certs on try; this allows generating
+                # dep signed partials with nightly signed `from` MARs
+                try: false
+                default: true
+        fetches:
+            toolchain:
+                - linux64-zucchini-bin
+                - linux64-mar-tools
+        # treeherder: set in transform
+        worker-type: b-linux
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts
+            docker-image:
+                in-tree: "partials-zuc"
+            chain-of-trust: true
+            max-run-time: 5400
+        run:
+            using: run-task
+            checkout: false
+            # More parameters to be added in transform
+            # artifact-reference used for to-mar-url parameter
+            command:
+                artifact-reference: >-
+                    export PATH=$PATH:$MOZ_FETCHES_DIR &&
+                    export PATH=$PATH:$MOZ_FETCHES_DIR/mar-tools &&
+                    python3 /builds/worker/bin/make_incremental_zucchini.py
+                    --workdir=/builds/worker/workspace
+                    --to-mar=$MOZ_FETCHES_DIR/target.complete.mar

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +7,7 @@
 #include "mozilla/a11y/DocManager.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "nsCoreUtils.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
@@ -16,47 +16,69 @@
 namespace mozilla::a11y {
 
 CssAltContent::CssAltContent(nsIContent* aContent) {
+  if (!aContent) {
+    return;
+  }
+
   nsIFrame* frame = aContent->GetPrimaryFrame();
   if (!frame) {
     return;
   }
-  if (!frame->IsReplaced()) {
-    return;
-  }
   // Check if this is for a pseudo-element.
-  if (aContent->IsInNativeAnonymousSubtree()) {
-    nsIContent* parent = aContent->GetParent();
-    if (parent && (parent->IsGeneratedContentContainerForBefore() ||
-                   parent->IsGeneratedContentContainerForAfter() ||
-                   parent->IsGeneratedContentContainerForMarker())) {
-      mPseudoElement = parent->AsElement();
+  if (nsCoreUtils::IsPseudoElement(aContent)) {
+    // If there are children, we want to expose the alt text on those instead,
+    // so ignore it for the pseudo-element itself.
+    if (aContent->HasChildren()) {
+      return;
+    }
+    // No children only happens when there is alt text with an empty content
+    // string; e.g. content: "" / "alt"
+    // In this case, we need to expose the alt text on the pseudo-element
+    // itself.
+    mPseudoElement = aContent->AsElement();
+  } else if (aContent->IsInNativeAnonymousSubtree()) {
+    if (!frame->IsReplaced()) {
+      return;
+    }
+    dom::Element* parent = aContent->GetParentElement();
+    if (parent && nsCoreUtils::IsPseudoElement(parent)) {
+      // aContent is a child of a pseudo-element.
+      mPseudoElement = parent;
       // We need the frame from the pseudo-element to get the content style.
       frame = parent->GetPrimaryFrame();
       if (!frame) {
         return;
       }
-      // We need the real element to get any attributes.
-      mRealElement = parent->GetParentElement();
-      if (!mRealElement) {
-        return;
-      }
+    }
+  }
+  if (mPseudoElement) {
+    // We need the real element to get any attributes.
+    mRealElement = mPseudoElement->GetParentElement();
+    if (!mRealElement) {
+      return;
     }
   }
   if (!mRealElement) {
+    // This isn't for a pseudo-element. It might be an element which has its
+    // content replaced using CSS content.
     if (aContent->IsElement()) {
+      if (!frame->IsReplaced()) {
+        return;
+      }
       mRealElement = aContent->AsElement();
     } else {
       return;
     }
   }
   mItems = frame->StyleContent()->AltContentItems();
-}
+  if (mItems.IsEmpty()) {
+    return;
+  }
 
-void CssAltContent::AppendToString(nsAString& aOut) {
   // There can be multiple alt text items.
   for (const auto& item : mItems) {
     if (item.IsString()) {
-      aOut.Append(NS_ConvertUTF8toUTF16(item.AsString().AsString()));
+      mText.Append(NS_ConvertUTF8toUTF16(item.AsString().AsString()));
     } else if (item.IsAttr()) {
       // This item gets its value from an attribute on the element or from
       // fallback text.
@@ -82,10 +104,12 @@ void CssAltContent::AppendToString(nsAString& aOut) {
           fallback->ToString(val);
         }
       }
-      aOut.Append(val);
+      mText.Append(val);
     }
   }
 }
+
+void CssAltContent::AppendToString(nsAString& aOut) { aOut.Append(mText); }
 
 /* static */
 bool CssAltContent::HandleAttributeChange(nsIContent* aContent,
@@ -98,11 +122,15 @@ bool CssAltContent::HandleAttributeChange(nsIContent* aContent,
   // Handle any pseudo-elements with CSS alt content.
   for (dom::Element* pseudo : {nsLayoutUtils::GetBeforePseudo(aContent),
                                nsLayoutUtils::GetAfterPseudo(aContent),
-                               nsLayoutUtils::GetMarkerPseudo(aContent)}) {
-    // CssAltContent wants a child of a pseudo-element.
-    nsIContent* child = pseudo ? pseudo->GetFirstChild() : nullptr;
-    if (child &&
-        CssAltContent(child).HandleAttributeChange(aNameSpaceID, aAttribute)) {
+                               nsLayoutUtils::GetMarkerPseudo(aContent),
+                               nsLayoutUtils::GetCheckmarkPseudo(aContent)}) {
+    // CssAltContent wants a child of a pseudo-element if there is one.
+    nsIContent* content = pseudo ? pseudo->GetFirstChild() : nullptr;
+    if (!content) {
+      content = pseudo;
+    }
+    if (content && CssAltContent(content).HandleAttributeChange(aNameSpaceID,
+                                                                aAttribute)) {
       return true;
     }
   }

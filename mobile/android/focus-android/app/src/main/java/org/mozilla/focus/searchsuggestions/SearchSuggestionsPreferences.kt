@@ -10,14 +10,31 @@ import androidx.preference.PreferenceManager
 import org.mozilla.focus.R
 import org.mozilla.focus.ext.settings
 
+/**
+ * Helper class for managing search suggestions preferences.
+ */
 class SearchSuggestionsPreferences(private val context: Context) {
     private val settings = context.settings
     private val preferences = PreferenceManager.getDefaultSharedPreferences(context)
 
+    /**
+     * Returns true if search suggestions are enabled.
+     */
     fun searchSuggestionsEnabled(): Boolean = settings.shouldShowSearchSuggestions()
+
+    /**
+     * Returns true if the user has manually toggled the search suggestions setting.
+     */
     fun hasUserToggledSearchSuggestions(): Boolean = settings.userHasToggledSearchSuggestions()
+
+    /**
+     * Returns true if the user has dismissed the "no suggestions" message.
+     */
     fun userHasDismissedNoSuggestionsMessage(): Boolean = settings.userHasDismissedNoSuggestionsMessage()
 
+    /**
+     * Enables search suggestions in the preferences.
+     */
     fun enableSearchSuggestions() {
         preferences.edit {
             putBoolean(TOGGLED_SUGGESTIONS_PREF, true)
@@ -28,6 +45,9 @@ class SearchSuggestionsPreferences(private val context: Context) {
         }
     }
 
+    /**
+     * Disables search suggestions in the preferences.
+     */
     fun disableSearchSuggestions() {
         preferences.edit {
             putBoolean(TOGGLED_SUGGESTIONS_PREF, true)
@@ -38,6 +58,9 @@ class SearchSuggestionsPreferences(private val context: Context) {
         }
     }
 
+    /**
+     * Marks the "no suggestions" message as dismissed.
+     */
     fun dismissNoSuggestionsMessage() {
         preferences.edit {
             putBoolean(DISMISSED_NO_SUGGESTIONS_PREF, true)

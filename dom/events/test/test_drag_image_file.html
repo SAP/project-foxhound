@@ -65,6 +65,11 @@ async function synthesizeDragAndCheck(aImgId, aImageAsFile) {
   }
 }
 
+add_setup(async function init() {
+  // Wait for page full loaded.
+  await SimpleTest.promiseFocus();
+});
+
 [true, false].forEach((pref) => {
   add_task(async function test_drag_standard_image() {
     info(`test with dom.events.dataTransfer.imageAsFile.enabled=${pref}`);

@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/CacheStorageChild.h"
 
-#include "mozilla/Unused.h"
 #include "mozilla/dom/cache/CacheChild.h"
 #include "mozilla/dom/cache/CacheOpChild.h"
 #include "mozilla/dom/cache/CacheStorage.h"
@@ -17,9 +14,10 @@ namespace mozilla::dom::cache {
 // declared in ActorUtils.h
 void DeallocPCacheStorageChild(PCacheStorageChild* aActor) { delete aActor; }
 
-CacheStorageChild::CacheStorageChild(CacheStorage* aListener,
-                                     SafeRefPtr<CacheWorkerRef> aWorkerRef)
-    : mListener(aListener), mDelayedDestroy(false) {
+CacheStorageChild::CacheStorageChild(CacheStorageChildListener* aListener,
+                                     SafeRefPtr<CacheWorkerRef> aWorkerRef,
+                                     ActorChild* aParentActor)
+    : mParentActor(aParentActor), mListener(aListener), mDelayedDestroy(false) {
   MOZ_COUNT_CTOR(cache::CacheStorageChild);
   MOZ_DIAGNOSTIC_ASSERT(mListener);
 
@@ -38,15 +36,6 @@ void CacheStorageChild::ClearListener() {
   mListener = nullptr;
 }
 
-void CacheStorageChild::ExecuteOp(nsIGlobalObject* aGlobal, Promise* aPromise,
-                                  nsISupports* aParent,
-                                  const CacheOpArgs& aArgs) {
-  Unused << SendPCacheOpConstructor(
-      new CacheOpChild(GetWorkerRefPtr().clonePtr(), aGlobal, aParent, aPromise,
-                       this),
-      aArgs);
-}
-
 void CacheStorageChild::StartDestroyFromListener() {
   NS_ASSERT_OWNINGTHREAD(CacheStorageChild);
 
@@ -54,7 +43,7 @@ void CacheStorageChild::StartDestroyFromListener() {
 }
 
 void CacheStorageChild::DestroyInternal() {
-  RefPtr<CacheStorage> listener = mListener;
+  CacheStorageChildListener* listener = mListener;
 
   // StartDestroy() can get called from either CacheStorage or the
   // CacheWorkerRef.
@@ -64,9 +53,9 @@ void CacheStorageChild::DestroyInternal() {
     return;
   }
 
-  listener->DestroyInternal(this);
+  listener->OnActorDestroy(this);
 
-  // CacheStorage listener should call ClearListener() in DestroyInternal()
+  // CacheStorage listener should call ClearListener() in OnActorDestroy()
   MOZ_DIAGNOSTIC_ASSERT(!mListener);
 
   // Start actor destruction from parent process
@@ -88,16 +77,22 @@ void CacheStorageChild::NoteDeletedActor() {
   // when StartDestroy was called from WorkerRef notification. If the last
   // CacheOpChild is getting destructed; it's the time for us to SendTearDown to
   // the other side.
-  if (NumChildActors() == 0 && mDelayedDestroy) DestroyInternal();
+  if (NumChildActors() == 0 && mDelayedDestroy) {
+    DestroyInternal();
+  }
 }
 
 void CacheStorageChild::ActorDestroy(ActorDestroyReason aReason) {
   NS_ASSERT_OWNINGTHREAD(CacheStorageChild);
-  RefPtr<CacheStorage> listener = mListener;
+  CacheStorageChildListener* listener = mListener;
   if (listener) {
-    listener->DestroyInternal(this);
-    // CacheStorage listener should call ClearListener() in DestroyInternal()
+    listener->OnActorDestroy(this);
+    // CacheStorage listener should call ClearListener() in OnActorDestroy()
     MOZ_DIAGNOSTIC_ASSERT(!mListener);
+  }
+
+  if (mParentActor) {
+    mParentActor->NoteDeletedActor();
   }
 
   RemoveWorkerRef();

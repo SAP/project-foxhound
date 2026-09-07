@@ -9,7 +9,6 @@
 
 #include "seccomon.h"
 #include "secmod.h"
-#include "nssilock.h"
 #include "secmodi.h"
 #include "secmodti.h"
 #include "pkcs11t.h"
@@ -57,6 +56,7 @@ const PK11DefaultArrayEntry PK11_DefaultArray[] = {
     { "SKIPJACK", SECMOD_FORTEZZA_FLAG, CKM_SKIPJACK_CBC64 },
     { "Publicly-readable certs", SECMOD_FRIENDLY_FLAG, CKM_INVALID_MECHANISM },
     { "Random Num Generator", SECMOD_RANDOM_FLAG, CKM_FAKE_RANDOM },
+    { "ML-DSA", SECMOD_MLDSA_FLAG, CKM_ML_DSA },
 };
 const int num_pk11_default_mechanisms =
     sizeof(PK11_DefaultArray) / sizeof(PK11_DefaultArray[0]);
@@ -94,7 +94,8 @@ static PK11SlotList
     pk11_tlsSlotList,
     pk11_randomSlotList,
     pk11_sha256SlotList,
-    pk11_sha512SlotList; /* slots do SHA512 and SHA384 */
+    pk11_sha512SlotList, /* slots do SHA512 and SHA384 */
+    pk11_mldsaSlotList;
 
 /************************************************************
  * Generic Slot List and Slot List element manipulations
@@ -113,7 +114,7 @@ PK11_NewSlotList(void)
         return NULL;
     list->head = NULL;
     list->tail = NULL;
-    list->lock = PZ_NewLock(nssILockList);
+    list->lock = PR_NewLock();
     if (list->lock == NULL) {
         PORT_Free(list);
         return NULL;
@@ -135,11 +136,11 @@ PK11_FreeSlotListElement(PK11SlotList *list, PK11SlotListElement *le)
         return SECFailure;
     }
 
-    PZ_Lock(list->lock);
+    PR_Lock(list->lock);
     if (le->refCount-- == 1) {
         freeit = PR_TRUE;
     }
-    PZ_Unlock(list->lock);
+    PR_Unlock(list->lock);
     if (freeit) {
         PK11_FreeSlot(le->slot);
         PORT_Free(le);
@@ -159,10 +160,11 @@ pk11_FreeSlotListStatic(PK11SlotList *list)
         PK11_FreeSlotListElement(list, le);
     }
     if (list->lock) {
-        PZ_DestroyLock(list->lock);
+        PR_DestroyLock(list->lock);
     }
     list->lock = NULL;
     list->head = NULL;
+    list->tail = NULL;
 }
 
 /*
@@ -196,7 +198,7 @@ PK11_AddSlotToList(PK11SlotList *list, PK11SlotInfo *slot, PRBool sorted)
     le->slot = PK11_ReferenceSlot(slot);
     le->prev = NULL;
     le->refCount = 1;
-    PZ_Lock(list->lock);
+    PR_Lock(list->lock);
     element = list->head;
     /* Insertion sort, with higher cipherOrders are sorted first in the list */
     while (element && sorted && (element->slot->module->cipherOrder > le->slot->module->cipherOrder)) {
@@ -215,7 +217,7 @@ PK11_AddSlotToList(PK11SlotList *list, PK11SlotInfo *slot, PRBool sorted)
         le->prev->next = le;
     if (list->head == element)
         list->head = le;
-    PZ_Unlock(list->lock);
+    PR_Unlock(list->lock);
 
     return SECSuccess;
 }
@@ -226,7 +228,7 @@ PK11_AddSlotToList(PK11SlotList *list, PK11SlotInfo *slot, PRBool sorted)
 SECStatus
 PK11_DeleteSlotFromList(PK11SlotList *list, PK11SlotListElement *le)
 {
-    PZ_Lock(list->lock);
+    PR_Lock(list->lock);
     if (le->prev)
         le->prev->next = le->next;
     else
@@ -236,7 +238,7 @@ PK11_DeleteSlotFromList(PK11SlotList *list, PK11SlotListElement *le)
     else
         list->tail = le->prev;
     le->next = le->prev = NULL;
-    PZ_Unlock(list->lock);
+    PR_Unlock(list->lock);
     PK11_FreeSlotListElement(list, le);
     return SECSuccess;
 }
@@ -300,11 +302,11 @@ PK11_GetFirstSafe(PK11SlotList *list)
 {
     PK11SlotListElement *le;
 
-    PZ_Lock(list->lock);
+    PR_Lock(list->lock);
     le = list->head;
     if (le != NULL)
         (le)->refCount++;
-    PZ_Unlock(list->lock);
+    PR_Unlock(list->lock);
     return le;
 }
 
@@ -317,7 +319,7 @@ PK11SlotListElement *
 PK11_GetNextSafe(PK11SlotList *list, PK11SlotListElement *le, PRBool restart)
 {
     PK11SlotListElement *new_le;
-    PZ_Lock(list->lock);
+    PR_Lock(list->lock);
     new_le = le->next;
     if (le->next == NULL) {
         /* if the prev and next fields are NULL then either this element
@@ -329,7 +331,7 @@ PK11_GetNextSafe(PK11SlotList *list, PK11SlotListElement *le, PRBool restart)
     }
     if (new_le)
         new_le->refCount++;
-    PZ_Unlock(list->lock);
+    PR_Unlock(list->lock);
     PK11_FreeSlotListElement(list, le);
     return new_le;
 }
@@ -350,6 +352,31 @@ PK11_FindSlotElement(PK11SlotList *list, PK11SlotInfo *slot)
     return NULL;
 }
 
+/* like PORT_Memcmp, return -1 if the version is less then the
+ * passed in version, 0 if it's equal to and 1 if it's greater than
+ * the passed in version, PKCS #11 returns versions in 2 places,
+ * once in the function table and once in the module. the former
+ * is good to determine if it is safe to call a new function,
+ * the latter is good for module functionality */
+PRInt32
+PK11_CheckPKCS11Version(PK11SlotInfo *slot, CK_BYTE major, CK_BYTE minor,
+                        PRBool useFunctionTable)
+{
+    CK_VERSION version = useFunctionTable ? PK11_GETTAB(slot)->version : slot->module->cryptokiVersion;
+
+    if (version.major < major) {
+        return -1;
+    } else if (version.major > major) {
+        return 1;
+    } else if (version.minor < minor) {
+        return -1;
+    } else if (version.minor > minor) {
+        return 1;
+    }
+    /* if we get here, they must both be equal */
+    return 0;
+}
+
 /************************************************************
  * Generic Slot Utilities
  ************************************************************/
@@ -365,21 +392,21 @@ PK11_NewSlotInfo(SECMODModule *mod)
     if (slot == NULL) {
         return slot;
     }
-    slot->freeListLock = PZ_NewLock(nssILockFreelist);
+    slot->freeListLock = PR_NewLock();
     if (slot->freeListLock == NULL) {
         PORT_Free(slot);
         return NULL;
     }
-    slot->nssTokenLock = PZ_NewLock(nssILockOther);
+    slot->nssTokenLock = PR_NewLock();
     if (slot->nssTokenLock == NULL) {
-        PZ_DestroyLock(slot->freeListLock);
+        PR_DestroyLock(slot->freeListLock);
         PORT_Free(slot);
         return NULL;
     }
-    slot->sessionLock = mod->isThreadSafe ? PZ_NewLock(nssILockSession) : mod->refLock;
+    slot->sessionLock = mod->isThreadSafe ? PR_NewLock() : mod->refLock;
     if (slot->sessionLock == NULL) {
-        PZ_DestroyLock(slot->nssTokenLock);
-        PZ_DestroyLock(slot->freeListLock);
+        PR_DestroyLock(slot->nssTokenLock);
+        PR_DestroyLock(slot->freeListLock);
         PORT_Free(slot);
         return NULL;
     }
@@ -431,6 +458,7 @@ PK11_NewSlotInfo(SECMODModule *mod)
     slot->nssToken = NULL;
     slot->profileList = NULL;
     slot->profileCount = 0;
+    slot->validationFIPSFlags = 0;
     return slot;
 }
 
@@ -462,15 +490,15 @@ PK11_DestroySlot(PK11SlotInfo *slot)
         PORT_Free(slot->profileList);
     }
     if (slot->isThreadSafe && slot->sessionLock) {
-        PZ_DestroyLock(slot->sessionLock);
+        PR_DestroyLock(slot->sessionLock);
     }
     slot->sessionLock = NULL;
     if (slot->freeListLock) {
-        PZ_DestroyLock(slot->freeListLock);
+        PR_DestroyLock(slot->freeListLock);
         slot->freeListLock = NULL;
     }
     if (slot->nssTokenLock) {
-        PZ_DestroyLock(slot->nssTokenLock);
+        PR_DestroyLock(slot->nssTokenLock);
         slot->nssTokenLock = NULL;
     }
 
@@ -495,13 +523,13 @@ PK11_FreeSlot(PK11SlotInfo *slot)
 void
 PK11_EnterSlotMonitor(PK11SlotInfo *slot)
 {
-    PZ_Lock(slot->sessionLock);
+    PR_Lock(slot->sessionLock);
 }
 
 void
 PK11_ExitSlotMonitor(PK11SlotInfo *slot)
 {
-    PZ_Unlock(slot->sessionLock);
+    PR_Unlock(slot->sessionLock);
 }
 
 /***********************************************************
@@ -821,8 +849,9 @@ PK11_RestoreROSession(PK11SlotInfo *slot, CK_SESSION_HANDLE rwsession)
 static void
 pk11_InitSlotListStatic(PK11SlotList *list)
 {
-    list->lock = PZ_NewLock(nssILockList);
+    list->lock = PR_NewLock();
     list->head = NULL;
+    list->tail = NULL;
 }
 
 /* initialize the system slotlists */
@@ -849,6 +878,7 @@ PK11_InitSlotLists(void)
     pk11_InitSlotListStatic(&pk11_randomSlotList);
     pk11_InitSlotListStatic(&pk11_sha256SlotList);
     pk11_InitSlotListStatic(&pk11_sha512SlotList);
+    pk11_InitSlotListStatic(&pk11_mldsaSlotList);
     return SECSuccess;
 }
 
@@ -875,6 +905,7 @@ PK11_DestroySlotLists(void)
     pk11_FreeSlotListStatic(&pk11_randomSlotList);
     pk11_FreeSlotListStatic(&pk11_sha256SlotList);
     pk11_FreeSlotListStatic(&pk11_sha512SlotList);
+    pk11_FreeSlotListStatic(&pk11_mldsaSlotList);
     return;
 }
 
@@ -949,6 +980,8 @@ PK11_GetSlotList(CK_MECHANISM_TYPE type)
         case CKM_NSS_KYBER:
         case CKM_NSS_ML_KEM_KEY_PAIR_GEN: /* Bug 1893029 */
         case CKM_NSS_ML_KEM:
+        case CKM_ML_KEM_KEY_PAIR_GEN: /* Bug 1893029 */
+        case CKM_ML_KEM:
             return &pk11_ecSlotList;
         case CKM_SSL3_PRE_MASTER_KEY_GEN:
         case CKM_SSL3_MASTER_KEY_DERIVE:
@@ -964,6 +997,8 @@ PK11_GetSlotList(CK_MECHANISM_TYPE type)
             return &pk11_ideaSlotList;
         case CKM_FAKE_RANDOM:
             return &pk11_randomSlotList;
+        case CKM_ML_DSA:
+            return &pk11_mldsaSlotList;
     }
     return NULL;
 }
@@ -1270,6 +1305,51 @@ pk11_HasProfile(PK11SlotInfo *slot, CK_PROFILE_ID id)
     return PR_FALSE;
 }
 
+static CK_FLAGS
+pk11_GetValidationFlags(PK11SlotInfo *slot, CK_VALIDATION_AUTHORITY_TYPE auth)
+{
+    CK_ATTRIBUTE findTemp[2];
+    CK_ATTRIBUTE *attrs;
+    CK_OBJECT_CLASS oclass = CKO_VALIDATION;
+    size_t tsize;
+    int objCount;
+    CK_OBJECT_HANDLE *handles = NULL;
+    CK_FLAGS validation_flags = 0;
+    int i;
+
+    /* only used with tokens with verison >= 3.2 */
+    if (PK11_CheckPKCS11Version(slot, 3, 2, PR_FALSE) < 0) {
+        return validation_flags;
+    }
+
+    attrs = findTemp;
+    PK11_SETATTRS(attrs, CKA_CLASS, &oclass, sizeof(oclass));
+    attrs++;
+    PK11_SETATTRS(attrs, CKA_VALIDATION_AUTHORITY_TYPE, &auth, sizeof(auth));
+    attrs++;
+    tsize = attrs - findTemp;
+    PORT_Assert(tsize <= sizeof(findTemp) / sizeof(CK_ATTRIBUTE));
+
+    objCount = 0;
+    handles = pk11_FindObjectsByTemplate(slot, findTemp, tsize, &objCount);
+    if (handles == NULL) {
+        /* none found, return or empty flags */
+        return validation_flags;
+    }
+
+    for (i = 0; i < objCount; i++) {
+        CK_FLAGS value;
+        value = PK11_ReadULongAttribute(slot, handles[i], CKA_VALIDATION_FLAG);
+        if (value == CK_UNAVAILABLE_INFORMATION) {
+            continue;
+        }
+        validation_flags |= value;
+    }
+
+    PORT_Free(handles);
+    return validation_flags;
+}
+
 /*
  * initialize a new token
  * unlike initialize slot, this can be called multiple times in the lifetime
@@ -1307,7 +1387,9 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
         ((slot->tokenInfo.flags & CKF_PROTECTED_AUTHENTICATION_PATH)
              ? PR_TRUE
              : PR_FALSE);
+    PK11_EnterSlotMonitor(slot);
     slot->lastLoginCheck = 0;
+    PK11_ExitSlotMonitor(slot);
     slot->lastState = 0;
     /* on some platforms Active Card incorrectly sets the
      * CKF_PROTECTED_AUTHENTICATION_PATH bit when it doesn't mean to. */
@@ -1334,6 +1416,7 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
     slot->RSAInfoFlags = 0;
 
     /* initialize the maxKeyCount value */
+    PR_Lock(slot->freeListLock);
     if (slot->tokenInfo.ulMaxSessionCount == 0) {
         slot->maxKeyCount = 800; /* should be #define or a config param */
     } else if (slot->tokenInfo.ulMaxSessionCount < 20) {
@@ -1342,6 +1425,7 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
     } else {
         slot->maxKeyCount = slot->tokenInfo.ulMaxSessionCount / 2;
     }
+    PR_Unlock(slot->freeListLock);
 
     /* Make sure our session handle is valid */
     if (slot->session == CK_INVALID_HANDLE) {
@@ -1399,6 +1483,8 @@ PK11_InitToken(PK11SlotInfo *slot, PRBool loadCerts)
     /* Not all tokens have profile objects or even recognize what profile
      * objects are it's OK for pk11_ReadProfileList to fail */
     (void)pk11_ReadProfileList(slot);
+    slot->validationFIPSFlags =
+        pk11_GetValidationFlags(slot, CKV_AUTHORITY_TYPE_NIST_CMVP);
 
     if (!(slot->isInternal) && (slot->hasRandom)) {
         /* if this slot has a random number generater, use it to add entropy
@@ -2672,10 +2758,11 @@ PK11_ResetToken(PK11SlotInfo *slot, char *sso_pwd)
     /* now re-init the token */
     crv = PK11_GETTAB(slot)->C_InitToken(slot->slotID,
                                          (unsigned char *)sso_pwd, sso_pwd ? PORT_Strlen(sso_pwd) : 0, tokenName);
-
-    /* finally bring the token back up */
-    PK11_InitToken(slot, PR_TRUE);
     PK11_ExitSlotMonitor(slot);
+
+    /* finally bring the token back up. PK11_InitToken takes the slot monitor
+     * itself, so it must be called without the monitor held. */
+    PK11_InitToken(slot, PR_TRUE);
     if (crv != CKR_OK) {
         PORT_SetError(PK11_MapError(crv));
         return SECFailure;
@@ -2696,10 +2783,10 @@ PK11Slot_SetNSSToken(PK11SlotInfo *sl, NSSToken *nsst)
         nsst = nssToken_AddRef(nsst);
     }
 
-    PZ_Lock(sl->nssTokenLock);
+    PR_Lock(sl->nssTokenLock);
     old = sl->nssToken;
     sl->nssToken = nsst;
-    PZ_Unlock(sl->nssTokenLock);
+    PR_Unlock(sl->nssTokenLock);
 
     if (old) {
         (void)nssToken_Destroy(old);
@@ -2711,11 +2798,11 @@ PK11Slot_GetNSSToken(PK11SlotInfo *sl)
 {
     NSSToken *rv = NULL;
 
-    PZ_Lock(sl->nssTokenLock);
+    PR_Lock(sl->nssTokenLock);
     if (sl->nssToken) {
         rv = nssToken_AddRef(sl->nssToken);
     }
-    PZ_Unlock(sl->nssTokenLock);
+    PR_Unlock(sl->nssTokenLock);
 
     return rv;
 }
@@ -2728,6 +2815,36 @@ pk11slot_GetFIPSStatus(PK11SlotInfo *slot, CK_SESSION_HANDLE session,
     CK_RV crv;
     CK_ULONG fipsState = CKS_NSS_FIPS_NOT_OK;
 
+    if (PK11_CheckPKCS11Version(slot, 3, 2, PR_TRUE) >= 0) {
+        CK_FLAGS validationFlags = 0;
+
+        /* module isn't validated */
+        if (slot->validationFIPSFlags == 0) {
+            return PR_FALSE;
+        }
+        switch (operationType) {
+            /* in pkcs #11, these are equivalent */
+            case CKT_NSS_SESSION_LAST_CHECK:
+            case CKT_NSS_SESSION_CHECK:
+                crv = PK11_GETTAB(slot)->C_GetSessionValidationFlags(session,
+                                                                     CKS_LAST_VALIDATION_OK, &validationFlags);
+                if (crv != CKR_OK) {
+                    return PR_FALSE;
+                }
+                break;
+            case CKT_NSS_OBJECT_CHECK:
+                validationFlags = PK11_ReadULongAttribute(slot, object,
+                                                          CKA_OBJECT_VALIDATION_FLAGS);
+                if (validationFlags == CK_UNAVAILABLE_INFORMATION) {
+                    return PR_FALSE;
+                }
+                break;
+            default:
+                return PR_FALSE;
+        }
+        return (PRBool)(validationFlags & slot->validationFIPSFlags) != 0;
+    }
+    /* handle the NSS vendor specific indicators, for older modules */
     /* handle the obvious conditions:
      * 1) the module doesn't have a fipsIndicator - fips state must be false */
     if (mod->fipsIndicator == NULL) {

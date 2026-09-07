@@ -8,7 +8,7 @@ mainly RedHat and Mozilla.
 
 .. warning::
 
-   While the NSS team focuses mainly on supporting platforms and features needded by
+   While the NSS team focuses mainly on supporting platforms and features needed by
    Firefox and RHEL, we are happy to take contributions.
 
 Contributors can reach out the the core team and follow NSS related news through the
@@ -46,7 +46,7 @@ following mailing list, Google group and Element/Matrix channel:
 
 .. container::
 
-   See our section on :ref:`mozilla_projects_nss_nss_sources_building_testing` to get started
+   See our section on :ref:`mozilla_projects_nss_building` to get started
    making your patch. When you're satisfied with it, you'll need code review.
 
 .. _code_review:

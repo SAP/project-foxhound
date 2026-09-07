@@ -25,6 +25,7 @@ import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class EngineViewClippingBehaviorTest {
@@ -234,6 +235,23 @@ class EngineViewClippingBehaviorTest {
         // after the bottom toolbar has moved also
         verify(engineView).setVerticalClipping(-topToolbarHeight - bottomToolbarHeight)
         assertEquals(0f, engineParentView.translationY)
+    }
+
+    @Test
+    fun `GIVEN a top toolbar almost fully hidden THEN configure the engine view with a fully hidden toolbar`() {
+        doReturn(TOOLBAR_PARENT_HEIGHT).`when`(coordinatorLayout).height
+        doReturn(TOOLBAR_TOP_WHEN_POSITIONED_AT_TOP).`when`(toolbar).top
+        doReturn(TOOLBAR_TOP_WHEN_POSITIONED_AT_BOTTOM).`when`(toolbarContainerView).top
+        doReturn(-(TOOLBAR_HEIGHT + 1)).`when`(toolbar).translationY
+
+        buildEngineViewClipping2Behavior(
+            topToolbarHeight = TOOLBAR_HEIGHT.toInt(),
+            bottomToolbarHeight = 0,
+        ).run {
+            applyUpdatesDependentViewChanged(coordinatorLayout, toolbar)
+        }
+
+        verify(engineView).setVerticalClipping(-TOOLBAR_HEIGHT.roundToInt())
     }
 
     @Test

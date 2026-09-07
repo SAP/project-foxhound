@@ -21,7 +21,7 @@ export class GeckoViewActorParent extends JSWindowActorParent {
     if (!browsingContext.isContent && browsingContext.window) {
       return browsingContext.window;
     }
-    return this.browser?.ownerGlobal;
+    return this.browser?.documentGlobal;
   }
 
   get eventDispatcher() {
@@ -34,13 +34,6 @@ export class GeckoViewActorParent extends JSWindowActorParent {
       // destroyed already and there's nothing to do here for us.
       debug`receiveMessage window destroyed ${aMessage.name} ${aMessage.data?.type}`;
       return null;
-    }
-
-    switch (aMessage.name) {
-      case "DispatcherMessage":
-        return this.eventDispatcher.sendRequest(aMessage.data);
-      case "DispatcherQuery":
-        return this.eventDispatcher.sendRequestForResult(aMessage.data);
     }
 
     // By default messages are forwarded to the module.

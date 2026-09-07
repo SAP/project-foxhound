@@ -134,20 +134,20 @@ def main():
         metavar="COUNT",
         type=int,
         default=50,
-        help="timed data runs that count towards the average" " [%default]",
+        help="timed data runs that count towards the average [%default]",
     )
     parser.add_option(
         "-s",
         "--shell",
         metavar="PATH",
-        help="explicit shell location; when omitted, will look" " in likely places",
+        help="explicit shell location; when omitted, will look in likely places",
     )
     parser.add_option(
         "-b",
         "--baseline",
         metavar="JSON_PATH",
         dest="baseline_path",
-        help="json file with baseline values to " "compare against",
+        help="json file with baseline values to compare against",
     )
     parser.add_option(
         "--mode",

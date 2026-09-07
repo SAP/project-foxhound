@@ -73,6 +73,7 @@ assertEq(ins.exports.check(0, 10, 1), 1);
 
 let ab = mem.buffer;
 assertEq(ab.resizable, false);
+assertEq(ab.maxByteLength, 20 << 16);
 
 // Make .buffer resizable, detaching the old one.
 let rab = mem.toResizableBuffer();
@@ -91,6 +92,7 @@ assertEq(ab2.resizable, false);
 assertEq(mem.buffer, ab2);
 assertEq(ab2 !== ab, true);
 assertEq(rab.detached, true);
+assertEq(ab2.byteLength, 20 << 16);
 assertEq(ab2.maxByteLength, 20 << 16);
 
 assertEq(ins.exports.check(0, 10, 3), 1);
@@ -119,7 +121,7 @@ ins.exports.fill(0, 10, 5);
 check(0, 10, 5);
 
 // Try to resize JS way.
-rab.resize(65536 * 30);
+assertEq(rab.resize(65536 * 30), undefined);
 assertEq(rab.byteLength, 30 * 65536);
 ins.exports.fill(30 * 65536 - 10*4, 10, 6);
 check(30 * 65536 - 10 * 4, 10, 6);
@@ -133,3 +135,33 @@ assertThrowsInstanceOf(() => rab.resize(rab.byteLength + 10), RangeError);
 
 mem = new WebAssembly.Memory({initial: 20});
 assertThrowsInstanceOf(() => mem.toResizableBuffer(), TypeError);
+
+// Test the JS API with a resizable and shared buffer.
+a = new WebAssembly.Memory({
+    initial: 2,
+    maximum: 4,
+    shared: true
+})
+a.toResizableBuffer();
+setSharedObject(a);
+
+// Testing the limits of our implementation.
+let big_memory = new WebAssembly.Memory({address: 'i64', initial: 0n, maximum: BigInt(MaxMemory64PagesValidation), shared: false});
+let buffer = big_memory.toResizableBuffer();
+
+// Asserts that buffer.maxByteLength is less than MAX_SAFE_INTEGER.
+assertEq(buffer.maxByteLength <= Number.MAX_SAFE_INTEGER, true);
+
+// Create a new Memory without a maximum and accessing maxByteLength.
+new WebAssembly.Memory({ initial: 10 }).buffer.maxByteLength;
+
+// toResizableBuffer and toFixedLengthBuffer throw when the buffer length is pinned.
+mem = new WebAssembly.Memory({initial: 1, maximum: 4});
+pinArrayBufferOrViewLength(mem.buffer, true);
+assertThrowsInstanceOf(() => mem.toResizableBuffer(), RangeError);
+pinArrayBufferOrViewLength(mem.buffer, false);
+
+rab = mem.toResizableBuffer();
+pinArrayBufferOrViewLength(rab, true);
+assertThrowsInstanceOf(() => mem.toFixedLengthBuffer(), RangeError);
+pinArrayBufferOrViewLength(rab, false);

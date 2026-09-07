@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim:set ts=2 sw=2 sts=2 et:
- */
 "use strict";
 
 const { Weave } = ChromeUtils.importESModule(
@@ -153,7 +150,10 @@ add_task(async function test_clientWithTabs() {
   });
   equal(clients[0].tabs.length, 1);
   equal(clients[0].tabs[0].url, "http://foo.com/");
-  equal(clients[0].tabs[0].icon, "http://foo.com/favicon");
+  let icon_url = new URL(clients[0].tabs[0].icon);
+  equal(icon_url.protocol, "moz-remote-image:", "image protocol is correct");
+  equal(icon_url.searchParams.get("url"), "http://foo.com/favicon");
+
   equal(clients[0].tabs[0].lastUsed, 1655745700);
   // second client has no tabs.
   equal(clients[1].tabs.length, 0);

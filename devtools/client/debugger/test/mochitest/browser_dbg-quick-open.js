@@ -94,6 +94,18 @@ add_task(async function () {
   pressKey(dbg, "Escape");
   assertQuickOpenDisabled(dbg);
 
+  info("Test that the highlighted result matches match the query");
+  await quickOpen(dbg, "sw");
+  await waitForResults(dbg, [
+    "script-switching-01.js",
+    "script-switching-02.js",
+  ]);
+  await assertHighlightMatches(dbg, 1, "sw");
+  await assertHighlightMatches(dbg, 2, "sw");
+  EventUtils.sendString("i");
+  await assertHighlightMatches(dbg, 1, "swi");
+  pressKey(dbg, "Escape");
+
   info("Testing goto line:column");
   assertLine(dbg, 0);
   assertColumn(dbg, 1);
@@ -167,7 +179,17 @@ function findResultEl(dbg, index = 1) {
 async function assertResultIsTab(dbg, index) {
   const el = await findResultEl(dbg, index);
   ok(
-    el && !!el.querySelector(".tab.result-item-icon"),
+    el && !!el.querySelector(".dbg-img-tab.result-item-icon"),
     "Result should be a tab"
   );
+}
+
+async function assertHighlightMatches(dbg, resultIndex, expectedMatchText) {
+  const el = await findResultEl(dbg, resultIndex);
+  const highlight = await waitForElementWithSelector(dbg, "mark.highlight");
+  ok(el && !!highlight, "The query match is highlighted");
+  await waitUntil(
+    () => el.querySelector("mark.highlight").innerText == expectedMatchText
+  );
+  ok(true, "The highlighted text matches the query text");
 }

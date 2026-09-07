@@ -70,6 +70,7 @@ function executeStatementsInTransaction(conn, stmts) {
 
 /**
  * Helper function to extract a non-empty group from a URI.
+ *
  * @param {nsIURI} uri The URI to extract from.
  * @returns {string} a non-empty group.
  * @throws if a non-empty group cannot be extracted.
@@ -1242,14 +1243,16 @@ ContentPrefService2.prototype = {
       case "last-pb-context-exited":
         this._pbStore.removeAll();
         break;
-      case "test:reset":
+      case "test:reset": {
         let fn = subj.QueryInterface(Ci.xpcIJSWeakReference).get();
         this._reset(fn);
         break;
-      case "test:db":
+      }
+      case "test:db": {
         let obj = subj.QueryInterface(Ci.xpcIJSWeakReference).get();
         obj.value = this.conn;
         break;
+      }
     }
   },
 

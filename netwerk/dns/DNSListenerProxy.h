@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DNSListenerProxy_h__
-#define DNSListenerProxy_h__
+#ifndef DNSListenerProxy_h_
+#define DNSListenerProxy_h_
 
 #include "nsIDNSListener.h"
 #include "nsIDNSRecord.h"
@@ -53,4 +51,4 @@ class DNSListenerProxy final : public nsIDNSListener {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // DNSListenerProxy_h__
+#endif  // DNSListenerProxy_h_

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,8 +16,6 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/TreeOrderedArray.h"
 #include "nsAtom.h"
-#include "nsCOMPtr.h"
-#include "nsContentList.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
@@ -31,6 +27,7 @@ namespace mozilla {
 namespace dom {
 class Document;
 class Element;
+class SimpleHTMLCollection;
 }  // namespace dom
 
 /**
@@ -112,14 +109,14 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
 
   void AddNameElement(nsINode* aDocument, Element* aElement);
   void RemoveNameElement(Element* aElement);
-  nsBaseContentList* GetNameContentList() { return mNameContentList; }
+  dom::SimpleHTMLCollection* GetNameContentList() { return mNameContentList; }
   bool HasNameElement() const;
 
   void AddDocumentNameElement(Document* aDocument,
                               nsGenericHTMLElement* aElement);
   void RemoveDocumentNameElement(nsGenericHTMLElement* aElement);
   bool HasDocumentNameElement() const;
-  nsBaseContentList* GetDocumentNameContentList() {
+  dom::SimpleHTMLCollection* GetDocumentNameContentList() {
     return mDocumentNameContentList;
   }
 
@@ -127,12 +124,15 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
    * Returns the element if we know the element associated with this
    * id. Otherwise returns null.
    */
-  Element* GetIdElement() const { return mIdContentList->SafeElementAt(0); }
+  Element* GetIdElement() const {
+    auto span = mIdContentList.AsSpan();
+    return span.IsEmpty() ? nullptr : span[0];
+  }
 
   /**
    * Returns the list of all elements associated with this id.
    */
-  const nsTArray<Element*>& GetIdElements() const { return mIdContentList; }
+  Span<Element* const> GetIdElements() const { return mIdContentList.AsSpan(); }
 
   /**
    * If this entry has a non-null image element set (using SetImageElement),
@@ -229,9 +229,9 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
 
   OwningAtomOrString mKey;
   dom::TreeOrderedArray<Element*> mIdContentList;
-  RefPtr<nsBaseContentList> mNameContentList;
+  RefPtr<dom::SimpleHTMLCollection> mNameContentList;
   // The content list for the document named getter.
-  RefPtr<nsBaseContentList> mDocumentNameContentList;
+  RefPtr<dom::SimpleHTMLCollection> mDocumentNameContentList;
   UniquePtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
   RefPtr<Element> mImageElement;
 };

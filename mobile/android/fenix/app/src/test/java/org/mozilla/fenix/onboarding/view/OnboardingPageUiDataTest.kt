@@ -58,7 +58,6 @@ val defaultBrowserPageUiData = OnboardingPageUiData(
     description = "default browser body with link text",
     primaryButtonLabel = "default browser primary button text",
     secondaryButtonLabel = "default browser secondary button text",
-    privacyCaption = null,
 )
 
 val syncPageUiData = OnboardingPageUiData(
@@ -68,7 +67,6 @@ val syncPageUiData = OnboardingPageUiData(
     description = "sync body",
     primaryButtonLabel = "sync primary button text",
     secondaryButtonLabel = "sync secondary button text",
-    privacyCaption = null,
 )
 
 val notificationPageUiData = OnboardingPageUiData(
@@ -78,7 +76,6 @@ val notificationPageUiData = OnboardingPageUiData(
     description = "notification body",
     primaryButtonLabel = "notification primary button text",
     secondaryButtonLabel = "notification secondary button text",
-    privacyCaption = null,
 )
 
 private val allKnownPages = listOf(

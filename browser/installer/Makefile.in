@@ -61,6 +61,13 @@ endif
 
 DEFINES += -DMOZ_CHILD_PROCESS_NAME=$(MOZ_CHILD_PROCESS_NAME)
 DEFINES += -DMOZ_EME_PROCESS_NAME="$(MOZ_EME_PROCESS_NAME)"
+DEFINES += -DMOZ_GPU_PROCESS_NAME="$(MOZ_GPU_PROCESS_NAME)"
+
+ifdef NIGHTLY_BUILD
+ifndef MOZ_NO_SMART_CARDS
+DEFINES += -DMOZ_PKCS11_PROCESS_NAME="$(MOZ_PKCS11_PROCESS_NAME)"
+endif
+endif
 
 # Set MSVC dlls version to package, if any.
 ifdef MOZ_NO_DEBUG_RTL
@@ -72,6 +79,7 @@ ifdef MSVC_C_RUNTIME_1_DLL
 DEFINES += -DMSVC_C_RUNTIME_1_DLL=$(MSVC_C_RUNTIME_1_DLL)
 endif
 DEFINES += -DMSVC_CXX_RUNTIME_DLL=$(MSVC_CXX_RUNTIME_DLL)
+DEFINES += -DMSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL=$(MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL)
 endif
 endif
 endif
@@ -98,20 +106,13 @@ endif
 
 include $(topsrcdir)/toolkit/mozapps/installer/packager.mk
 
+BINPATH = $(MOZ_PKG_BINPATH)
 ifeq (Darwin,$(OS_TARGET))
-BINPATH = $(_BINPATH)
-DEFINES += -DAPPNAME='$(_APPNAME)'
-else
-# Every other platform just winds up in dist/bin
-BINPATH = bin
+DEFINES += -DAPPNAME='$(MOZ_MACBUNDLE_NAME)'
 endif
 DEFINES += -DBINPATH='$(BINPATH)'
 
-ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
-RESPATH = $(_RESPATH)
-else
-RESPATH = $(BINPATH)
-endif
+RESPATH = $(MOZ_PKG_RESPATH)
 DEFINES += -DRESPATH='$(RESPATH)'
 
 LPROJ_ROOT = $(firstword $(subst -, ,$(AB_CD)))
@@ -141,11 +142,7 @@ PKGCOMP_FIND_OPTS =
 else
 PKGCOMP_FIND_OPTS = -L
 endif
-ifeq (Darwin, $(OS_ARCH))
-FINDPATH = $(_APPNAME)/Contents/MacOS
-else
-FINDPATH=bin
-endif
+FINDPATH = $(MOZ_PKG_BINPATH)
 
 package-compare::
 	cd $(DIST); find $(PKGCOMP_FIND_OPTS) '$(FINDPATH)' -type f | sort > bin-list.txt

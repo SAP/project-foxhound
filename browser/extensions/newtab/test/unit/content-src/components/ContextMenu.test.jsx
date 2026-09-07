@@ -192,6 +192,16 @@ describe("<ContextMenu>", () => {
     const wrapper = mountWithProps(props);
     assert.lengthOf(wrapper.find(".context-menu-item"), 1);
   });
+  it("should set aria-haspopup when provided by the option", () => {
+    const props = Object.assign({}, DEFAULT_PROPS, {
+      options: [{ label: "item1", ariaHasPopup: "dialog" }],
+    });
+    const wrapper = mountWithProps(props);
+    assert.equal(
+      wrapper.find(".context-menu-item button").prop("aria-haspopup"),
+      "dialog"
+    );
+  });
   it("should call onClick when onKeyDown is called with Enter", () => {
     const onClick = sinon.spy();
     const props = Object.assign({}, DEFAULT_PROPS, {

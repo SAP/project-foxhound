@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -16,7 +14,7 @@ BROWSER_CHROME_MANIFESTS += [
 
 JAR_MANIFESTS += ["jar.mn"]
 
-EXTRA_JS_MODULES.pagedata += [
+MOZ_SRC_FILES += [
     "OpenGraphPageData.sys.mjs",
     "PageDataSchema.sys.mjs",
     "PageDataService.sys.mjs",

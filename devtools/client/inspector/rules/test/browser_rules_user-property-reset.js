@@ -30,7 +30,7 @@ add_task(async function () {
     "The modifications are stored as expected"
   );
 
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   is(
     view.store.userProperties.map.size,

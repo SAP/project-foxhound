@@ -4,10 +4,10 @@
 
 package org.mozilla.fenix.trackingprotection
 
-import android.content.Context
 import androidx.annotation.VisibleForTesting
 import androidx.fragment.app.Fragment
 import androidx.navigation.NavController
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -17,9 +17,8 @@ import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.browser.BrowserFragmentDirections
-import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
 
 /**
@@ -28,10 +27,10 @@ import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCoo
  */
 @Suppress("LongParameterList")
 class TrackingProtectionPanelInteractor(
-    private val context: Context,
+    private val components: Components,
     private val fragment: Fragment,
     private val store: ProtectionsStore,
-    private val ioScope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val cookieBannersStorage: CookieBannersStorage,
     private val navController: () -> NavController,
     private val openTrackingProtectionSettings: () -> Unit,
@@ -39,6 +38,8 @@ class TrackingProtectionPanelInteractor(
     internal var sitePermissions: SitePermissions?,
     private val gravity: Int,
     private val getCurrentTab: () -> SessionState?,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : TrackingProtectionPanelViewInteractor {
 
     override fun openDetails(category: TrackingProtectionCategory, categoryBlocked: Boolean) {
@@ -69,13 +70,16 @@ class TrackingProtectionPanelInteractor(
      */
     @VisibleForTesting
     internal fun handleNavigationAfterCheck(tab: SessionState, containsException: Boolean) {
-        ioScope.launch {
-            val cookieBannerUIMode = cookieBannersStorage.getCookieBannerUIMode(
-                tab = tab,
-                isFeatureEnabledInPrivateMode = context.settings().shouldUseCookieBannerPrivateMode,
-                publicSuffixList = context.components.publicSuffixList,
-            )
-            withContext(Dispatchers.Main) {
+        scope.launch {
+            val cookieBannerUIMode = withContext(ioDispatcher) {
+                cookieBannersStorage.getCookieBannerUIMode(
+                    tab = tab,
+                    isFeatureEnabledInPrivateMode = components.settings.shouldUseCookieBannerPrivateMode,
+                    publicSuffixList = components.publicSuffixList,
+                )
+            }
+
+            withContext(mainDispatcher) {
                 fragment.runIfFragmentIsAttached {
                     navController().popBackStack()
                     val isTrackingProtectionEnabled =
@@ -86,7 +90,7 @@ class TrackingProtectionPanelInteractor(
                             url = tab.content.url,
                             title = tab.content.title,
                             isLocalPdf = tab.content.url.isContentUrl(),
-                            isSecured = tab.content.securityInfo.secure,
+                            isSecured = tab.content.securityInfo.isSecure,
                             sitePermissions = sitePermissions,
                             gravity = gravity,
                             certificateName = tab.content.securityInfo.issuer,
@@ -102,7 +106,7 @@ class TrackingProtectionPanelInteractor(
 
     override fun onBackPressed() {
         getCurrentTab()?.let { tab ->
-            context.components.useCases.trackingProtectionUseCases.containsException(tab.id) { contains ->
+            components.useCases.trackingProtectionUseCases.containsException(tab.id) { contains ->
                 handleNavigationAfterCheck(tab, contains)
             }
         }

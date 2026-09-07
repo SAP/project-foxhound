@@ -1,0 +1,136 @@
+<!doctype html>
+<title>JXL animation repetition count via ImageDecoder and snapshotWindow</title>
+<!-- Intentionally not including SimpleTest.css to control page background. -->
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/WindowSnapshot.js"></script>
+<style>
+  html, body { background: black; margin: 0; padding: 0; }
+</style>
+<script>
+
+/* globals ImageDecoder */
+
+async function testRepetitionCount(filename, repetitionCount) {
+  const response = await fetch(filename);
+  const decoder = new ImageDecoder({data: response.body, type: 'image/jxl'});
+  await decoder.tracks.ready;
+
+  const track = decoder.tracks.selectedTrack;
+  ok(track.animated, `${filename}: track must be animated`);
+  is(track.repetitionCount, repetitionCount,
+    `${filename}: repetitionCount must match`);
+
+  await decoder.completed;
+
+  const frameCount = track.frameCount;
+  is(frameCount, 4, `${filename}: must have exactly 4 frames`);
+
+  let loopDurationUs = 0;
+  for (let i = 0; i < frameCount; i++) {
+    const result = await decoder.decode({frameIndex: i});
+    loopDurationUs += result.image.duration;
+    result.image.close();
+  }
+  decoder.close();
+  const loopDurationMs = loopDurationUs / 1000;
+  const frameDurationMs = loopDurationMs / frameCount;
+  const isInfinite = repetitionCount === Infinity;
+
+  // For infinite repetitions, poll for one full cycle + buffer; for finite,
+  // poll until the expected total duration has elapsed.
+  const pollDurationMs = isInfinite
+    ? loopDurationMs + frameDurationMs * 3
+    : loopDurationMs * (repetitionCount + 1) + frameDurationMs * 3;
+
+  // White background is distinct from both the black page background and all
+  // four animation frame colors (red/green/blue/yellow). It shows while the
+  // image is loading, allowing polling to start immediately without waiting
+  // for the load event.
+  const imgBgColor = 0xFFFFFF;
+  const img = document.createElement('img');
+  img.style.cssText = 'position:fixed;top:0;left:0;width:100px;height:100px;background-color:white;';
+  document.body.appendChild(img);
+
+  // Read the center pixel of the image via snapshotWindow (which uses
+  // drawWindow and captures the current animation frame, not just frame 0).
+  const pixelX = 50;
+  const pixelY = 50;
+
+  let animationStartTime = null;
+  let lastChangeTime = null;
+  let lastPixelKey = 0; // 0 = black (page background before img is painted)
+  let frameChanges = 0;
+  await new Promise(requestAnimationFrame);
+
+  const pollStartTime = performance.now();
+
+  try {
+    await new Promise((resolve, reject) => {
+      function poll() {
+        const snapshot = SpecialPowers.snapshotWindow(window, false);
+        const p = snapshot.getContext('2d').getImageData(pixelX, pixelY, 1, 1).data;
+        const key = (p[0] << 16) | (p[1] << 8) | p[2];
+
+        if (key !== lastPixelKey) {
+          lastPixelKey = key;
+          if (key !== imgBgColor) {
+            frameChanges++;
+            if (animationStartTime === null) {
+              animationStartTime = performance.now();
+            }
+            lastChangeTime = performance.now();
+          }
+        }
+
+        const elapsed = animationStartTime !== null
+          ? performance.now() - animationStartTime
+          : performance.now() - pollStartTime;
+
+        if (elapsed > pollDurationMs) {
+          resolve();
+        } else {
+          requestAnimationFrame(poll);
+        }
+      }
+
+      img.onerror = () => reject(new Error('Failed to load ' + filename));
+      img.src = filename;
+      requestAnimationFrame(poll);
+    });
+  } finally {
+    document.body.removeChild(img);
+  }
+
+  if (isInfinite) {
+    ok(frameChanges >= frameCount,
+      `${filename}: animation must cycle at least once (got ${frameChanges} changes, expected >= ${frameCount})`);
+  } else {
+    const kLastFrameColor = 0xFFFF00; // yellow - last frame of test animation
+    ok(lastPixelKey === kLastFrameColor,
+      `${filename}: animation must end on the last frame (yellow), got 0x${lastPixelKey.toString(16)}`);
+    const elapsed = lastChangeTime - animationStartTime;
+    const expectedLastChange = (frameCount * (repetitionCount + 1) - 1) * frameDurationMs;
+    ok(elapsed <= expectedLastChange + frameDurationMs * 2,
+      `${filename}: animation ran too long (${elapsed}ms, expected <= ${expectedLastChange + frameDurationMs * 2}ms)`);
+  }
+}
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.requestFlakyTimeout('animation timing');
+
+async function runTests() {
+  SpecialPowers.pushPrefEnv({'set': [['image.jxl.enabled', true], ['dom.media.webcodecs.enabled', true], ['dom.media.webcodecs.image-decoder.enabled', true]]}, async () => {
+    try {
+      await testRepetitionCount('animation-1loop.jxl', 0);
+      await testRepetitionCount('animation-2loops.jxl', 1);
+      await testRepetitionCount('animation-infiniteloop.jxl', Infinity);
+    } catch (e) {
+      ok(false, 'Unexpected error: ' + e);
+    }
+    SimpleTest.finish();
+  });
+}
+
+window.onload = runTests;
+
+</script>

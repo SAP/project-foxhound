@@ -15,16 +15,17 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/field_trials_view.h"
 #include "api/test/network_emulation/cross_traffic.h"
 #include "api/test/network_emulation/network_emulation_interfaces.h"
+#include "api/test/network_emulation/network_queue.h"
 #include "api/test/peer_network_dependencies.h"
 #include "api/test/simulated_network.h"
 #include "api/test/time_controller.h"
@@ -185,11 +186,12 @@ class NetworkEmulationManager {
     class Builder {
      public:
       explicit Builder(NetworkEmulationManager* net) : net_(net) {}
-      Builder() : net_(nullptr) {}
       Builder(const Builder&) = default;
       // Sets the config state, note that this will replace any previously set
       // values.
       Builder& config(BuiltInNetworkBehaviorConfig config);
+      // If set, `queue_factory` must outlive the Builder.
+      Builder& queue_factory(NetworkQueueFactory& queue_factory);
       Builder& delay_ms(int queue_delay_ms);
       Builder& capacity(DataRate link_capacity);
       Builder& capacity_kbps(int link_capacity_kbps);
@@ -201,12 +203,11 @@ class NetworkEmulationManager {
       Builder& avg_burst_loss_length(int avg_burst_loss_length);
       Builder& packet_overhead(int packet_overhead);
       SimulatedNetworkNode Build(uint64_t random_seed = 1) const;
-      SimulatedNetworkNode Build(NetworkEmulationManager* net,
-                                 uint64_t random_seed = 1) const;
 
      private:
       NetworkEmulationManager* const net_;
       BuiltInNetworkBehaviorConfig config_;
+      NetworkQueueFactory* queue_factory_ = nullptr;
     };
   };
   virtual ~NetworkEmulationManager() = default;
@@ -337,7 +338,7 @@ class NetworkEmulationManager {
   // available network interfaces for PeerConnection. If endpoint is enabled, it
   // will be immediately available for PeerConnection, otherwise user will be
   // able to enable endpoint later to make it available for PeerConnection.
-  virtual absl::Nonnull<EmulatedNetworkManagerInterface*>
+  virtual EmulatedNetworkManagerInterface* absl_nonnull
   CreateEmulatedNetworkManagerInterface(
       const std::vector<EmulatedEndpoint*>& endpoints) = 0;
 
@@ -345,14 +346,14 @@ class NetworkEmulationManager {
   // `stats_callback`. Callback will be executed on network emulation
   // internal task queue.
   virtual void GetStats(
-      rtc::ArrayView<EmulatedEndpoint* const> endpoints,
+      std::span<EmulatedEndpoint* const> endpoints,
       std::function<void(EmulatedNetworkStats)> stats_callback) = 0;
 
   // Passes combined network stats for all specified `nodes` into specified
   // `stats_callback`. Callback will be executed on network emulation
   // internal task queue.
   virtual void GetStats(
-      rtc::ArrayView<EmulatedNetworkNode* const> nodes,
+      std::span<EmulatedNetworkNode* const> nodes,
       std::function<void(EmulatedNetworkNodeStats)> stats_callback) = 0;
 
   // Create a EmulatedTURNServer.
@@ -364,8 +365,9 @@ class NetworkEmulationManager {
 
   // Create a pair of EmulatedNetworkManagerInterfaces connected to each other.
   std::pair<EmulatedNetworkManagerInterface*, EmulatedNetworkManagerInterface*>
-  CreateEndpointPairWithTwoWayRoutes(
-      const BuiltInNetworkBehaviorConfig& config);
+  CreateEndpointPairWithTwoWayRoutes(const BuiltInNetworkBehaviorConfig& config,
+                                     int alice_interface_count = 1,
+                                     int bob_interface_count = 1);
 };
 
 }  // namespace webrtc

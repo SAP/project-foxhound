@@ -161,7 +161,9 @@ async function testNavigationToAboutBlankDocument() {
   info("Navigate to about:blank page");
   const onSwitchedTarget = targetCommand.once("switched-target");
   const browser = tab.linkedBrowser;
-  const onLoaded = BrowserTestUtils.browserLoaded(browser);
+  const onLoaded = BrowserTestUtils.browserLoaded(browser, {
+    wantLoad: secondLocation,
+  });
   BrowserTestUtils.startLoadingURIString(browser, secondLocation);
   await onLoaded;
 
@@ -393,8 +395,7 @@ async function testTabFrames() {
   // Check that calling getAllTargets([frame]) return the same target instances
   const frames = await targetCommand.getAllTargets([TYPES.FRAME]);
   // When fission is enabled, we also get the remote example.org iframe.
-  const expectedFramesCount =
-    isFissionEnabled() || isEveryFrameTargetEnabled() ? 2 : 1;
+  const expectedFramesCount = 2;
   is(
     frames.length,
     expectedFramesCount,
@@ -467,29 +468,19 @@ async function testTabFrames() {
   const noParentTarget = await targets[0].targetFront.getParentTarget();
   is(noParentTarget, null, "The top level target has no parent target");
 
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    is(
-      targets[1].targetFront.url,
-      IFRAME_URL,
-      "Second target should be the iframe one"
-    );
-    is(
-      !targets[1].targetFront.isTopLevel,
-      true,
-      "Iframe target isn't top level"
-    );
-    is(
-      !targets[1].isTargetSwitching,
-      true,
-      "Iframe target isn't a target swich"
-    );
-    const parentTarget = await targets[1].targetFront.getParentTarget();
-    is(
-      parentTarget,
-      targets[0].targetFront,
-      "The parent target for the iframe is the top level target"
-    );
-  }
+  is(
+    targets[1].targetFront.url,
+    IFRAME_URL,
+    "Second target should be the iframe one"
+  );
+  is(!targets[1].targetFront.isTopLevel, true, "Iframe target isn't top level");
+  is(!targets[1].isTargetSwitching, true, "Iframe target isn't a target swich");
+  const parentTarget = await targets[1].targetFront.getParentTarget();
+  is(
+    parentTarget,
+    targets[0].targetFront,
+    "The parent target for the iframe is the top level target"
+  );
 
   // Before navigating to another process, ensure cleaning up everything from the first page
   await waitForAllTargetsToBeAttached(targetCommand);
@@ -509,81 +500,60 @@ async function testTabFrames() {
   BrowserTestUtils.startLoadingURIString(browser, SECOND_PAGE_URL);
   await onLoaded;
 
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    const afterNavigationFramesCount = 3;
-    await waitFor(
-      () => targets.length == afterNavigationFramesCount,
-      "Wait for all expected targets after navigation"
-    );
-    is(
-      targets.length,
-      afterNavigationFramesCount,
-      "retrieved all targets after navigation"
-    );
-    // As targetFront.url isn't reliable and might be about:blank,
-    // try to assert that we got the right target via other means.
-    // outerWindowID should change when navigating to another process,
-    // while it would stay equal for in-process navigations.
-    is(
-      targets[2].targetFront.outerWindowID,
-      browser.outerWindowID,
-      "The new target should be the newly loaded document"
-    );
-    is(
-      targets[2].isTargetSwitching,
-      true,
-      "and should be flagged as a target switching"
-    );
+  const afterNavigationFramesCount = 3;
+  await waitFor(
+    () => targets.length == afterNavigationFramesCount,
+    "Wait for all expected targets after navigation"
+  );
+  is(
+    targets.length,
+    afterNavigationFramesCount,
+    "retrieved all targets after navigation"
+  );
+  // As targetFront.url isn't reliable and might be about:blank,
+  // try to assert that we got the right target via other means.
+  // outerWindowID should change when navigating to another process,
+  // while it would stay equal for in-process navigations.
+  is(
+    targets[2].targetFront.outerWindowID,
+    browser.outerWindowID,
+    "The new target should be the newly loaded document"
+  );
+  is(
+    targets[2].isTargetSwitching,
+    true,
+    "and should be flagged as a target switching"
+  );
 
-    is(
-      destroyedTargets.length,
-      2,
-      "The two existing targets should be destroyed"
-    );
-    is(
-      destroyedTargets[0].targetFront,
-      targets[1].targetFront,
-      "The first destroyed should be the iframe one"
-    );
-    is(
-      destroyedTargets[0].isTargetSwitching,
-      false,
-      "the target destruction is not flagged as target switching for iframes"
-    );
-    is(
-      destroyedTargets[1].targetFront,
-      targets[0].targetFront,
-      "The second destroyed should be the previous top level one (because it is delayed to be fired *after* will-navigate)"
-    );
-    is(
-      destroyedTargets[1].isTargetSwitching,
-      true,
-      "the target destruction is flagged as target switching"
-    );
-  } else {
-    await waitFor(
-      () => targets.length == 2,
-      "Wait for all expected targets after navigation"
-    );
-    is(
-      destroyedTargets.length,
-      1,
-      "with JSWindowActor based target, the top level target is destroyed"
-    );
-    is(
-      targetCommand.targetFront,
-      targets[1].targetFront,
-      "we got a new target"
-    );
-    ok(
-      !targetCommand.targetFront.isDestroyed(),
-      "that target is not destroyed"
-    );
-    ok(
-      targets[0].targetFront.isDestroyed(),
-      "but the previous one is destroyed"
-    );
-  }
+  is(
+    destroyedTargets.length,
+    2,
+    "The two existing targets should be destroyed"
+  );
+  const iframeDestroyedTarget = destroyedTargets.find(
+    target => target.targetFront === targets[1].targetFront
+  );
+  ok(
+    iframeDestroyedTarget,
+    "Received the destroyed target notification for the iframe"
+  );
+  is(
+    iframeDestroyedTarget.isTargetSwitching,
+    false,
+    "the target destruction is not flagged as target switching for iframes"
+  );
+  const topLevelDestroyedTarget = destroyedTargets.find(
+    target => target.targetFront === targets[0].targetFront
+  );
+  ok(
+    topLevelDestroyedTarget,
+    "Received the destroyed target notification for the top level frame"
+  );
+  is(
+    topLevelDestroyedTarget.isTargetSwitching,
+    true,
+    "the target destruction is flagged as target switching"
+  );
 
   await onNewTargetProcessed;
 
@@ -603,13 +573,14 @@ async function testNestedIframes() {
     "<title>second</title><h3>second level iframe</h3>"
   )}&delay=500`;
 
-  const testUrl = `data:text/html;charset=utf-8,
+  // addTab will wait for this specific url so need to use URL to serialize correctly
+  const testUrl = new URL(`data:text/html;charset=utf-8,
     <h1>Top-level</h1>
     <iframe id=first-level
       src='data:text/html;charset=utf-8,${encodeURIComponent(
         `<title>first</title><h2>first level iframe</h2><iframe id=second-level src="${nestedIframeUrl}"></iframe>`
       )}'
-    ></iframe>`;
+    ></iframe>`).href;
 
   // Create a TargetCommand for a given test tab
   const tab = await addTab(testUrl);
@@ -626,37 +597,23 @@ async function testNestedIframes() {
   const topParent = await frames[0].getParentTarget();
   is(topParent, null, "Top level target has no parent");
 
-  if (isEveryFrameTargetEnabled()) {
-    const firstIframeTarget = frames.find(target => target.title == "first");
-    ok(
-      firstIframeTarget,
-      "With EFT, got the target for the first level iframe"
-    );
-    const firstParent = await firstIframeTarget.getParentTarget();
-    is(
-      firstParent,
-      targetCommand.targetFront,
-      "With EFT, first level has top level target as parent"
-    );
+  const firstIframeTarget = frames.find(target => target.title == "first");
+  ok(firstIframeTarget, "Got the target for the first level iframe");
+  const firstParent = await firstIframeTarget.getParentTarget();
+  is(
+    firstParent,
+    targetCommand.targetFront,
+    "First level has top level target as parent"
+  );
 
-    const secondIframeTarget = frames.find(target => target.title == "second");
-    ok(secondIframeTarget, "Got the target for the second level iframe");
-    const secondParent = await secondIframeTarget.getParentTarget();
-    is(
-      secondParent,
-      firstIframeTarget,
-      "With EFT, second level has the first level target as parent"
-    );
-  } else if (isFissionEnabled()) {
-    const secondIframeTarget = frames.find(target => target.title == "second");
-    ok(secondIframeTarget, "Got the target for the second level iframe");
-    const secondParent = await secondIframeTarget.getParentTarget();
-    is(
-      secondParent,
-      targetCommand.targetFront,
-      "With fission, second level has top level target as parent"
-    );
-  }
+  const secondIframeTarget = frames.find(target => target.title == "second");
+  ok(secondIframeTarget, "Got the target for the second level iframe");
+  const secondParent = await secondIframeTarget.getParentTarget();
+  is(
+    secondParent,
+    firstIframeTarget,
+    "Second level has the first level target as parent"
+  );
 
   await commands.destroy();
 }

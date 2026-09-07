@@ -61,9 +61,7 @@ function testCancelInPhase4() {
 }
 
 function onWindowLoad() {
-  // Disable rcwn to make cache behavior deterministic.
-  SpecialPowers.pushPrefEnv({set: [["network.http.rcwn.enabled", false]]},
-                            testCancelInPhase4);
+  testCancelInPhase4();
 }
 
 SimpleTest.waitForExplicitFinish();

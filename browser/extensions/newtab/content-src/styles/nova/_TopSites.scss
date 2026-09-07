@@ -1,0 +1,213 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+// @nova-cleanup(merge-styles): Merge nova/_TopSites.scss back to TopSites/_TopSites.scss after ship
+
+.nova-enabled .top-sites {
+  display: contents;
+}
+
+.nova-enabled .top-sites-list-wrapper,
+.nova-enabled .edit-topsites-wrapper {
+  grid-column: 1 / -1;
+}
+
+.nova-enabled .top-sites-list {
+  grid-template-columns: repeat(6, auto);
+  column-gap: var(--space-medium);
+  row-gap: var(--space-large);
+
+  .nova-hide-for-xs,
+  .nova-hide-for-s {
+    display: none;
+  }
+
+  @include at-content-cols(8) {
+    grid-template-columns: repeat(8, auto);
+
+    .nova-hide-for-xs {
+      display: inline-block;
+    }
+  }
+
+  @include at-content-cols(12) {
+    grid-template-columns: repeat(var(--top-sites-max-per-row, 8), auto);
+
+    .nova-hide-for-s {
+      display: inline-block;
+    }
+  }
+}
+
+// @nova-cleanup(remove-conditional): Nova gets rid of outer hover background
+.nova-enabled .top-sites-list:not(.dnd-active) .top-site-outer:is(.active, :focus-within, :hover) {
+  background: none;
+}
+
+.nova-enabled .top-site-outer {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: var(--col-width);
+  margin-block-end: 0;
+
+  .top-site-button {
+    display: grid;
+    grid-template-rows: var(--col-width) auto;
+    padding: 0;
+  }
+
+  .tile {
+    align-self: end;
+    box-shadow: var(--card-box-shadow);
+    border: var(--border-width) solid var(--button-border-color-ghost);
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition: width 100ms ease-out, height 100ms ease-out;
+    }
+  }
+
+  &:is(:hover, :focus-within, .active) {
+    .tile {
+      // Only expand the tile on hover for users without a reduced-motion preference
+      @media (prefers-reduced-motion: no-preference) {
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+        width: var(--col-width);
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+        height: var(--col-width);
+      }
+
+      border-color: var(--button-border-color-ghost-hover);
+    }
+
+    .icon-pin-small,
+    .context-menu-button {
+      opacity: 1;
+
+      @media (prefers-reduced-motion: no-preference) {
+        transition: opacity 100ms ease-out 50ms;
+      }
+    }
+  }
+
+  &:active .tile {
+    border-color: var(--button-border-color-ghost-active);
+  }
+
+  &.add-button .tile {
+    color-scheme: initial;
+  }
+
+  .top-site-inner > a:focus .tile {
+    outline: var(--focus-outline);
+  }
+
+  .title {
+    @include wallpaper-contrast-fix;
+  }
+
+  .context-menu {
+    inset-block-start: var(--space-xlarge);
+  }
+
+  .context-menu-button {
+    inset-inline-end: var(--space-xxsmall);
+    inset-block-start: var(--space-xxsmall);
+    border: var(--border-width) solid var(--button-border-color-ghost);
+    border-radius: var(--border-radius-circle);
+    color: var(--button-text-color-ghost);
+    fill: var(--button-icon-fill);
+
+    &:hover {
+      background-color: var(--button-background-color-ghost-hover);
+      border-color: var(--button-border-color-ghost-hover);
+      color: var(--button-text-color-ghost-hover);
+
+      &:active {
+        background-color: var(--button-background-color-ghost-active);
+        border-color: var(--button-border-color-ghost-active);
+      }
+    }
+
+    &:focus-visible {
+      background-color: var(--button-background-color-ghost); // @nova-cleanup(remove-conditional): overrides classic focus background
+    }
+
+    .lightWallpaper &,
+    .darkWallpaper & {
+      color-scheme: light dark; // @nova-cleanup(remove-conditional): mixin no longer needed
+
+      &:focus-visible::after {
+        content: none; // @nova-cleanup(remove-conditional): ::after no longer needed
+      }
+    }
+  }
+
+  .icon-pin-small {
+    inset-block-start: calc(var(--space-xsmall) + var(--space-xxsmall));
+    inset-inline-start: calc(var(--space-xsmall) + var(--space-xxsmall));
+
+    .lightWallpaper &,
+    .darkWallpaper & {
+      color-scheme: light dark; // @nova-cleanup(remove-conditional): mixin no longer needed
+    }
+  }
+
+  &.add-button .tile {
+    background: var(--newtab-background-card);
+  }
+
+  .title {
+    .title-label {
+      padding: 0;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      width: var(--col-width);
+    }
+
+    // Allow a bit more character space for sponsored tile labels
+    &.sponsored > .title-label {
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      width: calc(var(--col-width) + 8px);
+    }
+  }
+}
+
+// Under reduced motion the tile never expands, so reposition the pin and
+// context menu relative to its smaller resting size.
+@media (prefers-reduced-motion: reduce) {
+  .nova-enabled .top-site-outer .context-menu-button {
+    inset-inline-end: calc(var(--space-xsmall) + var(--space-xxsmall) / 2);
+    inset-block-start: var(--space-small);
+  }
+
+  .nova-enabled .top-site-outer .icon-pin-small {
+    inset-block-start: calc(var(--space-medium) + var(--space-xxsmall));
+    inset-inline-start: var(--space-small);
+  }
+}
+
+@media (forced-colors: active) {
+  .nova-enabled .top-site-outer .tile {
+    background-color: var(--button-background-color);
+  }
+
+  .nova-enabled .top-site-outer .context-menu-button {
+    background-color: var(--button-background-color);
+  }
+
+  .nova-enabled .top-site-outer:is(:hover, :focus-within, .active) .tile {
+    background-color: var(--button-background-color-hover);
+  }
+
+  .nova-enabled .top-site-outer .sponsored-label {
+    color: var(--text-color);
+  }
+
+  .nova-enabled .top-site-outer.add-button .tile .icon-wrapper {
+    color: var(--button-text-color-ghost);
+    fill: var(--button-icon-fill);
+  }
+
+  .nova-enabled .top-site-outer.add-button:hover .tile .icon-wrapper {
+    color: var(--button-text-color-ghost-hover);
+  }
+}

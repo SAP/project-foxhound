@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/OriginTrials.h"
+#include "mozilla/dom/OffThreadCSPContext.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsRFPService.h"
 
@@ -68,6 +67,7 @@ class WorkletImpl {
 
   // Execution thread only.
   dom::WorkletGlobalScope* GetGlobalScope();
+  dom::OffThreadCSPContext* GetCSPContext();
 
   // Any thread.
 
@@ -78,6 +78,9 @@ class WorkletImpl {
   }
   nsIPrincipal* Principal() const { return mPrincipal; }
   const ipc::PrincipalInfo& PrincipalInfo() const { return mPrincipalInfo; }
+  const Maybe<ipc::PolicyContainerArgs>& PolicyContainer() const {
+    return mPolicyContainer;
+  }
 
   const Maybe<nsID>& GetAgentClusterId() const { return mAgentClusterId; }
 
@@ -109,6 +112,7 @@ class WorkletImpl {
   // Modified only in constructor.
   ipc::PrincipalInfo mPrincipalInfo;
   nsCOMPtr<nsIPrincipal> mPrincipal;
+  Maybe<ipc::PolicyContainerArgs> mPolicyContainer;
 
   const WorkletLoadInfo mWorkletLoadInfo;
 
@@ -118,6 +122,7 @@ class WorkletImpl {
 
   // Execution thread only.
   RefPtr<dom::WorkletGlobalScope> mGlobalScope;
+  UniquePtr<dom::OffThreadCSPContext> mCSPContext;
   bool mFinishedOnExecutionThread : 1;
 
   Maybe<nsID> mAgentClusterId;

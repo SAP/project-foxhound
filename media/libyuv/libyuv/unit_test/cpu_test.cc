@@ -100,6 +100,7 @@ TEST_F(LibYUVBaseTest, TestCpuHas) {
     int has_neon_i8mm = TestCpuFlag(kCpuHasNeonI8MM);
     int has_sve = TestCpuFlag(kCpuHasSVE);
     int has_sve2 = TestCpuFlag(kCpuHasSVE2);
+    int has_sve_f32mm = TestCpuFlag(kCpuHasSVEF32MM);
     int has_sme = TestCpuFlag(kCpuHasSME);
     int has_sme2 = TestCpuFlag(kCpuHasSME2);
     printf("Has Arm 0x%x\n", has_arm);
@@ -108,6 +109,7 @@ TEST_F(LibYUVBaseTest, TestCpuHas) {
     printf("Has Neon I8MM 0x%x\n", has_neon_i8mm);
     printf("Has SVE 0x%x\n", has_sve);
     printf("Has SVE2 0x%x\n", has_sve2);
+    printf("Has SVE F32MM 0x%x\n", has_sve_f32mm);
     printf("Has SME 0x%x\n", has_sme);
     printf("Has SME2 0x%x\n", has_sme2);
 
@@ -150,15 +152,6 @@ TEST_F(LibYUVBaseTest, TestCpuHas) {
     }
   }
 #endif  // defined(__riscv)
-
-#if defined(__mips__)
-  int has_mips = TestCpuFlag(kCpuHasMIPS);
-  if (has_mips) {
-    int has_msa = TestCpuFlag(kCpuHasMSA);
-    printf("Has MIPS 0x%x\n", has_mips);
-    printf("Has MSA 0x%x\n", has_msa);
-  }
-#endif  // defined(__mips__)
 
 #if defined(__loongarch__)
   int has_loongarch = TestCpuFlag(kCpuHasLOONGARCH);
@@ -291,18 +284,6 @@ TEST_F(LibYUVBaseTest, TestCompilerMacros) {
 #ifdef __llvm__
   printf("__llvm__ %d\n", __llvm__);
 #endif
-#ifdef __mips_msa
-  printf("__mips_msa %d\n", __mips_msa);
-#endif
-#ifdef __mips
-  printf("__mips %d\n", __mips);
-#endif
-#ifdef __mips_isa_rev
-  printf("__mips_isa_rev %d\n", __mips_isa_rev);
-#endif
-#ifdef _MIPS_ARCH_LOONGSON3A
-  printf("_MIPS_ARCH_LOONGSON3A %d\n", _MIPS_ARCH_LOONGSON3A);
-#endif
 #ifdef __loongarch__
   printf("__loongarch__ %d\n", __loongarch__);
 #endif
@@ -342,7 +323,7 @@ static int FileExists(const char* file_name) {
   return 1;
 }
 
-TEST_F(LibYUVBaseTest, TestLinuxArm) {
+TEST_F(LibYUVBaseTest, DISABLED_TestLinuxArm) {
   if (FileExists("../../unit_test/testdata/arm_v7.txt")) {
     printf("Note: testing to load \"../../unit_test/testdata/arm_v7.txt\"\n");
 
@@ -388,20 +369,7 @@ TEST_F(LibYUVBaseTest, TestLinuxAArch64) {
 }
 #endif
 
-TEST_F(LibYUVBaseTest, TestLinuxMipsMsa) {
-  if (FileExists("../../unit_test/testdata/mips.txt")) {
-    printf("Note: testing to load \"../../unit_test/testdata/mips.txt\"\n");
-
-    EXPECT_EQ(0, MipsCpuCaps("../../unit_test/testdata/mips.txt"));
-    EXPECT_EQ(kCpuHasMSA, MipsCpuCaps("../../unit_test/testdata/mips_msa.txt"));
-    EXPECT_EQ(kCpuHasMSA,
-              MipsCpuCaps("../../unit_test/testdata/mips_loongson2k.txt"));
-  } else {
-    printf("WARNING: unable to load \"../../unit_test/testdata/mips.txt\"\n");
-  }
-}
-
-TEST_F(LibYUVBaseTest, TestLinuxRVV) {
+TEST_F(LibYUVBaseTest, DISABLED_TestLinuxRVV) {
   if (FileExists("../../unit_test/testdata/riscv64.txt")) {
     printf("Note: testing to load \"../../unit_test/testdata/riscv64.txt\"\n");
 
@@ -427,12 +395,13 @@ TEST_F(LibYUVBaseTest, TestLinuxRVV) {
 #endif
 }
 
-// TODO(fbarchard): Fix clangcl test of cpuflags.
-#ifdef _MSC_VER
-TEST_F(LibYUVBaseTest, DISABLED_TestSetCpuFlags) {
+#ifdef _WIN32
+// This doesn't pass on Windows CQ.
+#define MAYBE_TestSetCpuFlags DISABLED_TestSetCpuFlags
 #else
-TEST_F(LibYUVBaseTest, TestSetCpuFlags) {
+#define MAYBE_TestSetCpuFlags TestSetCpuFlags
 #endif
+TEST_F(LibYUVBaseTest, MAYBE_TestSetCpuFlags) {
   // Reset any masked flags that may have been set so auto init is enabled.
   MaskCpuFlags(0);
 

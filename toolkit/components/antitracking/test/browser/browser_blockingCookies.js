@@ -185,8 +185,8 @@ AntiTracking.runTestInNormalAndPrivateMode(
 );
 
 AntiTracking._createTask({
-  name: "Block cookies with BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN when preference is enabled",
-  cookieBehavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  name: "Block cookies with BEHAVIOR_PARTITION_FOREIGN when preference is enabled",
+  cookieBehavior: BEHAVIOR_PARTITION_FOREIGN,
   allowList: false,
   callback: async _ => {
     document.cookie = "name=value";
@@ -220,8 +220,8 @@ AntiTracking._createTask({
 });
 
 AntiTracking._createTask({
-  name: "Block cookies in pbm with BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN when preference is enabled",
-  cookieBehavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  name: "Block cookies in pbm with BEHAVIOR_PARTITION_FOREIGN when preference is enabled",
+  cookieBehavior: BEHAVIOR_PARTITION_FOREIGN,
   allowList: false,
   callback: async _ => {
     document.cookie = "name=value";
@@ -255,8 +255,8 @@ AntiTracking._createTask({
 });
 
 AntiTracking._createTask({
-  name: "Block cookies with BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN when preference is enabled for pbmode",
-  cookieBehavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  name: "Block cookies with BEHAVIOR_PARTITION_FOREIGN when preference is enabled for pbmode",
+  cookieBehavior: BEHAVIOR_PARTITION_FOREIGN,
   allowList: false,
   callback: async _ => {
     document.cookie = "name=value";

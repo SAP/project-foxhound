@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define DOM_QUOTA_CONSTANTS_H_
 
 #include "nsLiteralString.h"
+#include "prtime.h"
 
 // The name of the file that we use to load/save the last access time of an
 // origin.
@@ -18,6 +17,18 @@
 #define METADATA_V2_TMP_FILE_NAME u".metadata-v2-tmp"
 
 namespace mozilla::dom::quota {
+
+// Seconds in one day (24 * 60 * 60). Used for time based calculations across
+// quota manager code.
+constexpr int64_t kSecPerDay = 86400;
+
+// Seconds in one week.
+constexpr int64_t kSecPerWeek = 7 * kSecPerDay;
+
+// Default cutoff access time (in microseconds) used for temporary storage
+// cleanup. Corresponds to "one week ago" and is used as the threshold when
+// clearing non persisted zero usage origins.
+constexpr int64_t aDefaultCutoffAccessTime = kSecPerWeek * PR_USEC_PER_SEC;
 
 const char kChromeOrigin[] = "chrome";
 

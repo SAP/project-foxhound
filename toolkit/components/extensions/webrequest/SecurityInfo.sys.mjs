@@ -10,14 +10,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "NSSErrorsService",
   "@mozilla.org/nss_errors_service;1",
-  "nsINSSErrorsService"
+  Ci.nsINSSErrorsService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "pkps",
   "@mozilla.org/security/publickeypinningservice;1",
-  "nsIPublicKeyPinningService"
+  Ci.nsIPublicKeyPinningService
 );
 
 // NOTE: SecurityInfo is largely reworked from the devtools NetworkHelper with changes
@@ -102,9 +102,9 @@ export const SecurityInfo = {
       // The connection failed.
       info.state = "broken";
       info.errorMessage = securityInfo.errorMessage;
-      if (options.certificateChain && securityInfo.failedCertChain) {
+      if (options.certificateChain && securityInfo.handshakeCertificates) {
         info.certificates = this.getCertificateChain(
-          securityInfo.failedCertChain,
+          securityInfo.handshakeCertificates,
           false,
           options
         );

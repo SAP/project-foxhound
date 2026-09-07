@@ -11,6 +11,7 @@ import org.junit.Test
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
+import mozilla.components.ui.icons.R as iconsR
 
 class SetupChecklistReducerTest {
     @Test
@@ -43,7 +44,7 @@ class SetupChecklistReducerTest {
                 ChecklistItem.Task(
                     type = ChecklistItem.Task.Type.SET_AS_DEFAULT,
                     title = R.string.setup_checklist_task_default_browser,
-                    icon = R.drawable.ic_addons_extensions,
+                    icon = iconsR.drawable.mozac_ic_extension_24,
                     isCompleted = false,
                 ),
             ),
@@ -55,7 +56,7 @@ class SetupChecklistReducerTest {
                 ChecklistItem.Task(
                     type = ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
                     title = R.string.setup_checklist_task_explore_extensions,
-                    icon = R.drawable.ic_addons_extensions,
+                    icon = iconsR.drawable.mozac_ic_extension_24,
                     isCompleted = false,
                 ),
             ),
@@ -73,7 +74,7 @@ class SetupChecklistReducerTest {
 
         // Verify that the expanded group is expanded, and the other one is not
         assertTrue((appState.setupChecklistState!!.checklistItems[0] as ChecklistItem.Group).isExpanded)
-        assertFalse((appState.setupChecklistState!!.checklistItems[1] as ChecklistItem.Group).isExpanded)
+        assertFalse((appState.setupChecklistState.checklistItems[1] as ChecklistItem.Group).isExpanded)
 
         val reducedState = SetupChecklistReducer.reduce(
             appState,
@@ -82,7 +83,7 @@ class SetupChecklistReducerTest {
 
         // Verify that the expanded group was collapsed, and the other one got expanded
         assertFalse((reducedState.setupChecklistState!!.checklistItems[0] as ChecklistItem.Group).isExpanded)
-        assertTrue((reducedState.setupChecklistState!!.checklistItems[1] as ChecklistItem.Group).isExpanded)
+        assertTrue((reducedState.setupChecklistState.checklistItems[1] as ChecklistItem.Group).isExpanded)
     }
 
     @Test
@@ -90,7 +91,7 @@ class SetupChecklistReducerTest {
         val task = ChecklistItem.Task(
             type = ChecklistItem.Task.Type.EXPLORE_EXTENSION,
             title = R.string.setup_checklist_task_default_browser,
-            icon = R.drawable.ic_addons_extensions,
+            icon = iconsR.drawable.mozac_ic_extension_24,
             isCompleted = false,
         )
 
@@ -109,7 +110,7 @@ class SetupChecklistReducerTest {
         val task = ChecklistItem.Task(
             type = ChecklistItem.Task.Type.EXPLORE_EXTENSION,
             title = R.string.setup_checklist_task_explore_extensions,
-            icon = R.drawable.ic_addons_extensions,
+            icon = iconsR.drawable.mozac_ic_extension_24,
             isCompleted = false,
         )
 
@@ -135,13 +136,13 @@ class SetupChecklistReducerTest {
         val updatedTask = ChecklistItem.Task(
             type = ChecklistItem.Task.Type.SET_AS_DEFAULT,
             title = R.string.setup_checklist_task_default_browser,
-            icon = R.drawable.ic_addons_extensions,
+            icon = iconsR.drawable.mozac_ic_extension_24,
             isCompleted = false,
         )
         val nonUpdatedTask = ChecklistItem.Task(
             type = ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
             title = R.string.setup_checklist_task_default_browser,
-            icon = R.drawable.ic_addons_extensions,
+            icon = iconsR.drawable.mozac_ic_extension_24,
             isCompleted = false,
         )
         val group = ChecklistItem.Group(
@@ -158,7 +159,7 @@ class SetupChecklistReducerTest {
         )
 
         assertTrue((reducedState.setupChecklistState!!.checklistItems[0] as ChecklistItem.Group).tasks[0].isCompleted)
-        assertFalse((reducedState.setupChecklistState!!.checklistItems[0] as ChecklistItem.Group).tasks[1].isCompleted)
+        assertFalse((reducedState.setupChecklistState.checklistItems[0] as ChecklistItem.Group).tasks[1].isCompleted)
 
         val reducedState2 = SetupChecklistReducer.reduce(
             reducedState,
@@ -166,6 +167,6 @@ class SetupChecklistReducerTest {
         )
 
         assertFalse((reducedState2.setupChecklistState!!.checklistItems[0] as ChecklistItem.Group).tasks[0].isCompleted)
-        assertFalse((reducedState2.setupChecklistState!!.checklistItems[0] as ChecklistItem.Group).tasks[1].isCompleted)
+        assertFalse((reducedState2.setupChecklistState.checklistItems[0] as ChecklistItem.Group).tasks[1].isCompleted)
     }
 }

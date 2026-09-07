@@ -13,9 +13,10 @@
 
 // avoid redefined macro in unified build
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("ContentPlaybackController=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                                               \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug,                    \
+              "ContentPlaybackController={}, " msg, fmt::ptr(this), \
+              ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -41,12 +42,12 @@ MediaSession* ContentPlaybackController::GetMediaSession() const {
 }
 
 void ContentPlaybackController::NotifyContentMediaControlKeyReceiver(
-    MediaControlKey aKey, Maybe<SeekDetails> aDetails) {
+    MediaControlKey aKey, const MediaControlActionParams& aParams) {
   if (RefPtr<ContentMediaControlKeyReceiver> receiver =
           ContentMediaControlKeyReceiver::Get(mBC)) {
-    LOG("Handle '%s' in default behavior for BC %" PRIu64,
-        GetEnumString(aKey).get(), mBC->Id());
-    receiver->HandleMediaKey(aKey, aDetails);
+    LOG("Handle '{}' in default behavior for BC {}", GetEnumString(aKey).get(),
+        mBC->Id());
+    receiver->HandleMediaKey(aKey, aParams);
   }
 }
 
@@ -57,12 +58,12 @@ void ContentPlaybackController::NotifyMediaSession(MediaSessionAction aAction) {
 }
 
 void ContentPlaybackController::NotifyMediaSession(
-    const MediaSessionActionDetails& aDetails) {
+    const MediaSessionActionDetails& aParams) {
   if (RefPtr<MediaSession> session = GetMediaSession()) {
-    LOG("Handle '%s' in media session behavior for BC %" PRIu64,
-        GetEnumString(aDetails.mAction).get(), mBC->Id());
+    LOG("Handle '{}' in media session behavior for BC {}",
+        GetEnumString(aParams.mAction).get(), mBC->Id());
     MOZ_ASSERT(session->IsActive(), "Notify inactive media session!");
-    session->NotifyHandler(aDetails);
+    session->NotifyHandler(aParams);
   }
 }
 
@@ -128,7 +129,7 @@ void ContentPlaybackController::SeekBackward(double aSeekOffset) {
     NotifyMediaSession(details);
   } else if (!GetActiveMediaSessionId() || (session && session->IsActive())) {
     NotifyContentMediaControlKeyReceiver(MediaControlKey::Seekbackward,
-                                         Some(SeekDetails(aSeekOffset)));
+                                         MediaControlActionParams(aSeekOffset));
   }
 }
 
@@ -141,7 +142,7 @@ void ContentPlaybackController::SeekForward(double aSeekOffset) {
     NotifyMediaSession(details);
   } else if (!GetActiveMediaSessionId() || (session && session->IsActive())) {
     NotifyContentMediaControlKeyReceiver(MediaControlKey::Seekforward,
-                                         Some(SeekDetails(aSeekOffset)));
+                                         MediaControlActionParams(aSeekOffset));
   }
 }
 
@@ -178,8 +179,23 @@ void ContentPlaybackController::SeekTo(double aSeekTime, bool aFastSeek) {
     NotifyMediaSession(details);
   } else if (!GetActiveMediaSessionId() || (session && session->IsActive())) {
     NotifyContentMediaControlKeyReceiver(
-        MediaControlKey::Seekto, Some(SeekDetails(aSeekTime, aFastSeek)));
+        MediaControlKey::Seekto,
+        MediaControlActionParams(aSeekTime, aFastSeek));
   }
+}
+
+void ContentPlaybackController::SetVolume(double aVolume) {
+  NotifyContentMediaControlKeyReceiver(
+      MediaControlKey::Setvolume,
+      MediaControlActionParams::FromVolume(aVolume));
+}
+
+void ContentPlaybackController::Mute() {
+  NotifyContentMediaControlKeyReceiver(MediaControlKey::Mute);
+}
+
+void ContentPlaybackController::Unmute() {
+  NotifyContentMediaControlKeyReceiver(MediaControlKey::Unmute);
 }
 
 void ContentMediaControlKeyHandler::HandleMediaControlAction(
@@ -217,27 +233,39 @@ void ContentMediaControlKeyHandler::HandleMediaControlAction(
       controller.NextTrack();
       return;
     case MediaControlKey::Seekbackward: {
-      const SeekDetails& details = *aAction.mDetails;
-      MOZ_ASSERT(details.mRelativeSeekOffset);
-      controller.SeekBackward(details.mRelativeSeekOffset.value());
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mRelativeSeekOffset);
+      controller.SeekBackward(params.mRelativeSeekOffset.value());
       return;
     }
     case MediaControlKey::Seekforward: {
-      const SeekDetails& details = *aAction.mDetails;
-      MOZ_ASSERT(details.mRelativeSeekOffset);
-      controller.SeekForward(details.mRelativeSeekOffset.value());
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mRelativeSeekOffset);
+      controller.SeekForward(params.mRelativeSeekOffset.value());
       return;
     }
     case MediaControlKey::Skipad:
       controller.SkipAd();
       return;
     case MediaControlKey::Seekto: {
-      const SeekDetails& details = *aAction.mDetails;
-      MOZ_ASSERT(details.mAbsolute);
-      controller.SeekTo(details.mAbsolute->mSeekTime,
-                        details.mAbsolute->mFastSeek);
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mAbsolute);
+      controller.SeekTo(params.mAbsolute->mSeekTime,
+                        params.mAbsolute->mFastSeek);
       return;
     }
+    case MediaControlKey::Setvolume: {
+      const MediaControlActionParams& params = aAction.mParams;
+      MOZ_ASSERT(params.mVolume);
+      controller.SetVolume(params.mVolume.value());
+      return;
+    }
+    case MediaControlKey::Mute:
+      controller.Mute();
+      return;
+    case MediaControlKey::Unmute:
+      controller.Unmute();
+      return;
     default:
       MOZ_ASSERT_UNREACHABLE("Invalid media control key.");
   };

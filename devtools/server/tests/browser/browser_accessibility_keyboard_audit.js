@@ -5,7 +5,7 @@
 "use strict";
 
 /**
- * Checks functionality around text label audit for the AccessibleActor.
+ * Checks functionality around keyboard audit for the AccessibleActor.
  */
 
 const {
@@ -58,7 +58,7 @@ add_task(async function () {
     ["Interactive element when disabled.", "#input-3", null],
     ["Focusable interactive element.", "#input-4", null],
     [
-      "Interactive accesible (link with no attributes) with no accessible actions.",
+      "Interactive accessible (link with no attributes) with no accessible actions.",
       "#link-1",
       null,
     ],
@@ -329,6 +329,7 @@ add_task(async function () {
       null,
     ],
     ["Focusable menubar is considered interactive", "#menubar-2", null],
+    ["input type=search is considered interactive", "#input-search", null],
   ];
 
   for (const [description, selector, expected] of tests) {

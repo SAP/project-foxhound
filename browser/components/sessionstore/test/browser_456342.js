@@ -49,7 +49,7 @@ async function test_restore_nonstandard_input_values(aURL) {
     for (let elem of content.document.forms[0].elements) {
       elem.value = valueChild;
       let event = elem.ownerDocument.createEvent("UIEvents");
-      event.initUIEvent("input", true, true, elem.ownerGlobal, 0);
+      event.initUIEvent("input", true, true, elem.documentGlobal, 0);
       elem.dispatchEvent(event);
     }
   });

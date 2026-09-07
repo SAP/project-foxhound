@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,13 +28,7 @@ class WorkletScriptLoader : public JS::loader::ScriptLoaderInterface {
 
   nsresult FillCompileOptionsForRequest(
       JSContext* cx, ScriptLoadRequest* aRequest, JS::CompileOptions* aOptions,
-      JS::MutableHandle<JSScript*> aIntroductionScript) override {
-    aOptions->setIntroductionType("Worklet");
-    aOptions->setFileAndLine(aRequest->mURL.get(), 1);
-    aOptions->setIsRunOnce(true);
-    aOptions->setNoScriptRval(true);
-    return NS_OK;
-  }
+      JS::MutableHandle<JSScript*> aIntroductionScript) override;
 
  private:
   ~WorkletScriptLoader() = default;
@@ -55,23 +47,23 @@ class WorkletModuleLoader : public JS::loader::ModuleLoaderBase {
   void RemoveRequest(nsIURI* aURI);
   JS::loader::ModuleLoadRequest* GetRequest(nsIURI* aURI) const;
 
-  bool HasSetLocalizedStrings() const { return (bool)mLocalizedStrs; }
-  void SetLocalizedStrings(const nsTArray<nsString>* aStrings) {
-    mLocalizedStrs = aStrings;
+  bool HasSetLocalizedStrings() const { return !mLocalizedStrs.IsEmpty(); }
+  void SetLocalizedStrings(nsTArray<nsString>&& aStrings) {
+    MOZ_ASSERT(!aStrings.IsEmpty());
+    mLocalizedStrs = std::move(aStrings);
   }
 
  private:
   ~WorkletModuleLoader() = default;
 
-  already_AddRefed<JS::loader::ModuleLoadRequest> CreateStaticImport(
-      nsIURI* aURI, JS::ModuleType aModuleType,
-      JS::loader::ModuleLoadRequest* aParent,
-      const mozilla::dom::SRIMetadata& aSriMetadata) override;
+  already_AddRefed<ModuleLoadRequest> CreateRequest(
+      JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+      JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+      bool aIsDynamicImport, JS::loader::ScriptFetchOptions* aOptions,
+      dom::ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
+      const dom::SRIMetadata& aSriMetadata) override;
 
-  already_AddRefed<JS::loader::ModuleLoadRequest> CreateDynamicImport(
-      JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-      LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-      JS::Handle<JSObject*> aPromise) override;
+  bool IsDynamicImportSupported() override { return false; }
 
   bool CanStartLoad(JS::loader::ModuleLoadRequest* aRequest,
                     nsresult* aRvOut) override;
@@ -83,19 +75,32 @@ class WorkletModuleLoader : public JS::loader::ModuleLoaderBase {
       JS::CompileOptions& aOptions, JS::loader::ModuleLoadRequest* aRequest,
       JS::MutableHandle<JSObject*> aModuleScript) override;
 
-  nsresult CompileJavaScriptModule(JSContext* aCx, JS::CompileOptions& aOptions,
-                                   ModuleLoadRequest* aRequest,
-                                   JS::MutableHandle<JSObject*> aModuleScript);
+  nsresult CompileJavaScriptOrWasmModule(
+      JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
+      JS::MutableHandle<JSObject*> aModuleScript);
 
   nsresult CompileJsonModule(JSContext* aCx, JS::CompileOptions& aOptions,
                              ModuleLoadRequest* aRequest,
                              JS::MutableHandle<JSObject*> aModuleScript);
+
+  nsresult CreateTextModule(JSContext* aCx, JS::CompileOptions& aOptions,
+                            ModuleLoadRequest* aRequest,
+                            JS::MutableHandle<JSObject*> aModuleScript);
 
   void OnModuleLoadComplete(JS::loader::ModuleLoadRequest* aRequest) override;
 
   nsresult GetResolveFailureMessage(JS::loader::ResolveError aError,
                                     const nsAString& aSpecifier,
                                     nsAString& aResult) override;
+
+  bool IsModuleTypeAllowed(JS::ModuleType aModuleType) override {
+    // https://html.spec.whatwg.org/#module-type-allowed
+    // If moduleType is "css" and the CSSStyleSheet interface is not exposed in
+    // settings's realm, then return false.
+    return aModuleType == JS::ModuleType::JavaScript ||
+           aModuleType == JS::ModuleType::JSON ||
+           aModuleType == JS::ModuleType::Text;
+  }
 
   // A hashtable to map a nsIURI(from main thread) to a ModuleLoadRequest(in
   // worklet thread).
@@ -104,7 +109,7 @@ class WorkletModuleLoader : public JS::loader::ModuleLoaderBase {
 
   // We get the localized strings on the main thread, and pass it to
   // WorkletModuleLoader.
-  const nsTArray<nsString>* mLocalizedStrs = nullptr;
+  nsTArray<nsString> mLocalizedStrs;
 };
 }  // namespace loader
 

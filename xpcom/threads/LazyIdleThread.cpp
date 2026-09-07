@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,7 @@
 
 namespace mozilla {
 
-LazyIdleThread::LazyIdleThread(uint32_t aIdleTimeoutMS, const char* aName,
+LazyIdleThread::LazyIdleThread(uint32_t aIdleTimeoutMS, StaticString aName,
                                ShutdownMethod aShutdownMethod)
     : mOwningEventTarget(GetCurrentSerialEventTarget()),
       mThreadPool(new nsThreadPool()),
@@ -78,14 +76,13 @@ NS_IMPL_ISUPPORTS(LazyIdleThread, nsIEventTarget, nsISerialEventTarget,
                   nsIObserver)
 
 NS_IMETHODIMP
-LazyIdleThread::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> event(aEvent);
-  return Dispatch(event.forget(), aFlags);
+LazyIdleThread::DispatchFromScript(nsIRunnable* aEvent, DispatchFlags aFlags) {
+  return Dispatch(do_AddRef(aEvent), aFlags);
 }
 
 NS_IMETHODIMP
 LazyIdleThread::Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                         uint32_t aFlags) {
+                         DispatchFlags aFlags) {
   return mTaskQueue->Dispatch(std::move(aEvent), aFlags);
 }
 
@@ -96,12 +93,16 @@ LazyIdleThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) {
 
 NS_IMETHODIMP
 LazyIdleThread::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return mTaskQueue->RegisterShutdownTask(aTask);
 }
 
 NS_IMETHODIMP
 LazyIdleThread::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return mTaskQueue->UnregisterShutdownTask(aTask);
+}
+
+nsIEventTarget::FeatureFlags LazyIdleThread::GetFeatures() {
+  return mTaskQueue->GetFeatures();
 }
 
 NS_IMETHODIMP

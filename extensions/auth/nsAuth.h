@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAuth_h__
-#define nsAuth_h__
+#ifndef nsAuth_h_
+#define nsAuth_h_
 
 /* types of packages */
 enum pType { PACKAGE_TYPE_KERBEROS, PACKAGE_TYPE_NEGOTIATE, PACKAGE_TYPE_NTLM };
@@ -20,4 +20,4 @@ extern mozilla::LazyLogModule gNegotiateLog;
 
 #define LOG(args) MOZ_LOG(gNegotiateLog, mozilla::LogLevel::Debug, args)
 
-#endif /* !defined( nsAuth_h__ ) */
+#endif /* !defined( nsAuth_h_ ) */

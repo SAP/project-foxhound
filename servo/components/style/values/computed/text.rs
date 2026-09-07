@@ -4,22 +4,27 @@
 
 //! Computed types for text properties.
 
-use crate::values::computed::length::LengthPercentage;
-use crate::values::generics::NumberOrAuto;
+use crate::derives::*;
+use crate::typed_om::{KeywordValue, ToTyped, TypedValue};
+use crate::values::computed::length::{Length, LengthPercentage};
 use crate::values::generics::text::{
-    GenericHyphenateLimitChars, GenericInitialLetter, GenericTextDecorationLength, GenericTextIndent,
+    GenericHyphenateLimitChars, GenericInitialLetter, GenericTextDecorationInset,
+    GenericTextDecorationLength, GenericTextIndent,
 };
+use crate::values::generics::NumberOrAuto;
 use crate::values::specified::text as specified;
 use crate::values::specified::text::{TextEmphasisFillMode, TextEmphasisShapeKeyword};
 use crate::values::{CSSFloat, CSSInteger};
 use crate::Zero;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ToCss};
+use style_traits::{CssString, CssWriter, ToCss};
+use thin_vec::ThinVec;
 
 pub use crate::values::specified::text::{
     HyphenateCharacter, LineBreak, MozControlCharacterVisibility, OverflowWrap, RubyPosition,
-    TextAlignLast, TextDecorationLine, TextDecorationSkipInk, TextEmphasisPosition, TextJustify,
-    TextOverflow, TextTransform, TextUnderlinePosition, WordBreak,
+    TextAlignLast, TextAutospace, TextBoxEdge, TextBoxTrim, TextDecorationLine,
+    TextDecorationSkipInk, TextEmphasisPosition, TextJustify, TextOverflow, TextTransform,
+    TextUnderlinePosition, WordBreak,
 };
 
 /// A computed value for the `initial-letter` property.
@@ -27,6 +32,9 @@ pub type InitialLetter = GenericInitialLetter<CSSFloat, CSSInteger>;
 
 /// Implements type for `text-decoration-thickness` property.
 pub type TextDecorationLength = GenericTextDecorationLength<LengthPercentage>;
+
+/// Implements type for `text-decoration-inset` property.
+pub type TextDecorationInset = GenericTextDecorationInset<Length>;
 
 /// The computed value of `text-align`.
 pub type TextAlign = specified::TextAlignKeyword;
@@ -91,6 +99,20 @@ impl ToCss for LetterSpacing {
     }
 }
 
+impl ToTyped for LetterSpacing {
+    // Note: The specification does not currently define how letter spacing
+    // should be reified into Typed OM. The current behavior follows existing
+    // WPT coverage (letter-spacing.html). Syncing spec with UA/WPT behavior
+    // tracked in https://github.com/w3c/csswg-drafts/issues/13907
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        if !self.0.has_percentage() && self.0.is_zero() {
+            dest.push(TypedValue::Keyword(KeywordValue(CssString::from("normal"))));
+            return Ok(());
+        }
+        self.0.to_typed(dest)
+    }
+}
+
 /// A computed value for the `word-spacing` property.
 pub type WordSpacing = LengthPercentage;
 
@@ -103,9 +125,10 @@ impl WordSpacing {
 }
 
 /// Computed value for the text-emphasis-style property
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToResolvedValue)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToResolvedValue, ToTyped)]
 #[allow(missing_docs)]
 #[repr(C, u8)]
+#[typed(todo_derive_fields)]
 pub enum TextEmphasisStyle {
     /// [ <fill> || <shape> ]
     Keyword {

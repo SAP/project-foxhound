@@ -26,7 +26,7 @@ system there are two kind of writes:
   Shader. The system is not able to determine if a resource is fully
   initialized afterwards but is no longer allowed to perform any
   clears, therefore this leads to a
-  `MemoryInitKind.ImplicitlyInitialized` action, exactly like a read
+  `MemoryInitKind.NeedsInitializedMemory` action, exactly like a read
   would.
 
  */
@@ -221,7 +221,7 @@ where
     }
 
     // Returns an iterator over the uninitialized ranges in a query range.
-    pub(crate) fn uninitialized(&mut self, drain_range: Range<Idx>) -> UninitializedIter<Idx> {
+    pub(crate) fn uninitialized(&mut self, drain_range: Range<Idx>) -> UninitializedIter<'_, Idx> {
         let index = self
             .uninitialized_ranges
             .partition_point(|r| r.end <= drain_range.start);
@@ -233,7 +233,7 @@ where
     }
 
     // Drains uninitialized ranges in a query range.
-    pub(crate) fn drain(&mut self, drain_range: Range<Idx>) -> InitTrackerDrain<Idx> {
+    pub(crate) fn drain(&mut self, drain_range: Range<Idx>) -> InitTrackerDrain<'_, Idx> {
         let index = self
             .uninitialized_ranges
             .partition_point(|r| r.end <= drain_range.start);
@@ -248,7 +248,6 @@ where
 
 impl InitTracker<u32> {
     // Makes a single entry uninitialized if not already uninitialized
-    #[allow(dead_code)]
     pub(crate) fn discard(&mut self, pos: u32) {
         // first range where end>=idx
         let r_idx = self.uninitialized_ranges.partition_point(|r| r.end < pos);

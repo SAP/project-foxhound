@@ -24,13 +24,13 @@ As a summary, the MessageHandler framework proposes to write tooling code as mod
 
 Modules created for the MessageHandler framework need to run in several processes, threads, ...
 
-To support this the framework will dynamically create a network of [MessageHandler](https://searchfox.org/mozilla-central/source/remote/shared/messagehandler/MessageHandler.sys.mjs) instances in the various layers that need to be accessed by your modules. The MessageHandler class is obviously named after the framework, but the name is appropriate because its role is mainly to route commands and events.
+To support this the framework will dynamically create a network of [MessageHandler](https://searchfox.org/firefox-main/source/remote/shared/messagehandler/MessageHandler.sys.mjs) instances in the various layers that need to be accessed by your modules. The MessageHandler class is obviously named after the framework, but the name is appropriate because its role is mainly to route commands and events.
 
 On top of routing duties, the MessageHandler class is also responsible for instantiating and managing modules. Typically, processing a command has two possible outcomes. Either it's not intended for this particular layer, in which case the MessageHandler will analyze the command and send it towards the appropriate recipient. But if it is intended for this layer, then the MessageHandler will try to delegate the command to the appropriate module. This means instantiating the module if it wasn't done before. So each node of a MessageHandler network also contains module instances.
 
-The root of this network is the [RootMessageHandler](https://searchfox.org/mozilla-central/source/remote/shared/messagehandler/RootMessageHandler.sys.mjs) and lives in the parent process. For consumers, this is also the single entry point exposing the commands and events of your modules. It can also own module instances, if you have modules which are supposed to live in the parent process (aka root layer).
+The root of this network is the [RootMessageHandler](https://searchfox.org/firefox-main/source/remote/shared/messagehandler/RootMessageHandler.sys.mjs) and lives in the parent process. For consumers, this is also the single entry point exposing the commands and events of your modules. It can also own module instances, if you have modules which are supposed to live in the parent process (aka root layer).
 
-At the moment we only support another type of MessageHandler, the [WindowGlobalMessageHandler](https://searchfox.org/mozilla-central/source/remote/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs) which will be used for the windowglobal layer and lives in the content process.
+At the moment we only support another type of MessageHandler, the [WindowGlobalMessageHandler](https://searchfox.org/firefox-main/source/remote/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs) which will be used for the windowglobal layer and lives in the content process.
 
 ### Simplified architecture example
 

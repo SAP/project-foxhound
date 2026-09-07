@@ -12,11 +12,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class SystemEngineSessionStateTest {
@@ -71,7 +71,7 @@ class SystemEngineSessionStateTest {
             JSONObject(outputStream.toString()),
         ).bundle
 
-        assertNotNull(bundle!!)
+        assertNotNull(bundle)
 
         assertEquals(7, bundle.size())
 
@@ -114,7 +114,7 @@ class SystemEngineSessionStateTest {
         val reader = JsonReader(outputStream.toString().reader())
         val bundle = SystemEngineSessionState.from(reader).bundle
 
-        assertNotNull(bundle!!)
+        assertNotNull(bundle)
 
         assertEquals(7, bundle.size())
 

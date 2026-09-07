@@ -1,14 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "hasht.h"
-#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/WebAuthnUtil.h"
+
+#include "hasht.h"
+#include "js/Exception.h"
+#include "mozilla/Base64.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/WebAuthenticationBinding.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/extensions/MatchPattern.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
+#include "mozilla/net/DNS.h"
 #include "mozpkix/pkixutil.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsHTMLDocument.h"
 #include "nsICryptoHash.h"
 #include "nsIEffectiveTLDService.h"
@@ -38,6 +48,12 @@ bool IsValidAppId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
   // [2] https://w3c.github.io/webauthn/#sctn-appid-extension
 
   auto* principal = BasePrincipal::Cast(aPrincipal);
+  bool reqIsFromExtension = !!principal->AddonPolicy();
+  if (reqIsFromExtension) {
+    // AppIDs are not allowed from extensions.
+    return false;
+  }
+
   nsCOMPtr<nsIURI> callerUri;
   nsresult rv = principal->GetURI(getter_AddRefs(callerUri));
   if (NS_FAILED(rv)) {
@@ -116,19 +132,44 @@ bool IsWebAuthnAllowedInDocument(const nsCOMPtr<Document>& aDoc) {
   return aDoc->IsHTMLOrXHTML();
 }
 
-bool IsWebAuthnAllowedForPrincipal(const nsCOMPtr<nsIPrincipal>& aPrincipal) {
-  MOZ_ASSERT(aPrincipal);
-  if (aPrincipal->GetIsNullPrincipal()) {
+bool IsWebAuthnAllowedInContext(WindowGlobalParent* aContext) {
+  nsIPrincipal* principal = aContext->DocumentPrincipal();
+  MOZ_ASSERT(principal);
+
+  if (principal->GetIsNullPrincipal()) {
     return false;
   }
-  if (aPrincipal->GetIsIpAddress()) {
+
+  if (principal->GetIsIpAddress()) {
     return false;
   }
   // This next test is not strictly necessary since CredentialsContainer is
   // [SecureContext] in our webidl.
-  if (!aPrincipal->GetIsOriginPotentiallyTrustworthy()) {
+  if (!principal->GetIsOriginPotentiallyTrustworthy()) {
     return false;
   }
+
+  if (principal->GetIsLoopbackHost()) {
+    return true;
+  }
+
+  if (StaticPrefs::security_webauthn_allow_with_certificate_override()) {
+    return true;
+  }
+
+  WindowGlobalParent* windowContext = aContext;
+  while (windowContext) {
+    if (nsCOMPtr<nsIChannel> chan = windowContext->GetDocumentChannel()) {
+      nsCOMPtr<nsITransportSecurityInfo> securityInfo;
+      nsresult rv = chan->GetSecurityInfo(getter_AddRefs(securityInfo));
+      if (NS_SUCCEEDED(rv) && securityInfo &&
+          !IsWebAuthnAllowedForTransportSecurityInfo(securityInfo)) {
+        return false;
+      }
+    }
+    windowContext = windowContext->GetParentWindowContext();
+  }
+
   return true;
 }
 
@@ -154,22 +195,66 @@ bool IsWebAuthnAllowedForTransportSecurityInfo(
   }
 }
 
-bool IsValidRpId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
-                 const nsACString& aRpId) {
+// The "is a registrable domain suffix of or is equal to" condition is defined
+// in https://html.spec.whatwg.org/multipage/browsers.html#dom-document-domain
+// as a subroutine of the document.domain setter, and it is exposed in XUL as
+// the Document::IsValidDomain function. Unfortunately Document::IsValidDomain
+// takes URIs, and to support web extensions we need to compare directly with
+// ASCII host names.
+bool IsRegistrableDomainSuffixOfOrEqualTo(const nsACString& aQuery,
+                                          const nsACString& aReference) {
+  nsCOMPtr<nsIEffectiveTLDService> tldService =
+      mozilla::components::EffectiveTLD::Service();
+  if (!tldService) {
+    return false;
+  }
+
+  // exclude values that are themselves in the public suffix list.
+  nsAutoCString queryPublicSuffix;
+  nsresult rv =
+      tldService->GetKnownPublicSuffixFromHost(aQuery, queryPublicSuffix);
+  if (NS_FAILED(rv) || aQuery == queryPublicSuffix) {
+    return false;
+  }
+
+  if (aQuery.Equals(aReference)) {
+    return true;
+  }
+
+  if (aQuery.Length() > aReference.Length() &&
+      StringEndsWith(aQuery, aReference) &&
+      aQuery.CharAt(aQuery.Length() - aReference.Length() - 1) == '.') {
+    // The query string ends with '.' followed by the reference string. It is a
+    // registrable domain suffix of the reference string if and only if its base
+    // domain is entirely contained in `aReference`.
+    nsAutoCString queryBaseDomain;
+    rv = tldService->GetBaseDomainFromHost(aQuery, 0, queryBaseDomain);
+    if (NS_FAILED(rv)) {
+      return false;
+    }
+
+    return aReference.Length() >= queryBaseDomain.Length();
+  }
+
+  return false;
+}
+
+static bool OriginCanClaimRpId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
+                               const nsACString& aRpId) {
   // This checks two of the conditions defined in
   // https://w3c.github.io/webauthn/#rp-id, namely that the RP ID value is
   //  (1) "a valid domain string", and
   //  (2) "a registrable domain suffix of or is equal to the caller's origin's
   //      effective domain"
   //
-  // We do not check that the condition that "origin's scheme is https [, or]
-  // the origin's host is localhost and its scheme is http". These are special
-  // cases of secure contexts (https://www.w3.org/TR/secure-contexts/). We
-  // expose WebAuthn in all secure contexts, which is slightly more lenient
-  // than the spec's condition.
+  // The specification also requires
+  //  (3) Either "the origin's scheme is https" or "the origin's host is
+  //      localhost and its scheme is http".
+  // We relax this third condition slightly and expose WebAuthn in all secure
+  // contexts (https://www.w3.org/TR/secure-contexts/).
 
   // Condition (1)
-  nsCString normalizedRpId;
+  nsAutoCString normalizedRpId;
   nsresult rv = NS_DomainToASCII(aRpId, normalizedRpId);
   if (NS_FAILED(rv)) {
     return false;
@@ -179,23 +264,140 @@ bool IsValidRpId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
   }
 
   // Condition (2)
-  // The "is a registrable domain suffix of or is equal to" condition is defined
-  // in https://html.spec.whatwg.org/multipage/browsers.html#dom-document-domain
-  // as a subroutine of the document.domain setter, and it is exposed in XUL as
-  // the Document::IsValidDomain function. This function takes URIs as inputs
-  // rather than domain strings, so we construct a target URI using the current
-  // document URI as a template.
   auto* basePrin = BasePrincipal::Cast(aPrincipal);
-  nsCOMPtr<nsIURI> currentURI;
-  if (NS_FAILED(basePrin->GetURI(getter_AddRefs(currentURI)))) {
+  nsAutoCString current;
+  if (NS_FAILED(basePrin->GetAsciiHost(current))) {
     return false;
   }
-  nsCOMPtr<nsIURI> targetURI;
-  rv = NS_MutateURI(currentURI).SetHost(aRpId).Finalize(targetURI);
+  if (!IsRegistrableDomainSuffixOfOrEqualTo(current, aRpId)) {
+    return false;
+  }
+
+  // Condition (3)
+  if (!aPrincipal->GetIsOriginPotentiallyTrustworthy()) {
+    return false;
+  }
+
+  return true;
+}
+
+static bool ExtensionCanClaimRpId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
+                                  const nsACString& aRpId) {
+  // The conditions here are largely the same as in OriginCanClaimRpId. However,
+  // rather than making direct comparisons with the caller's origin, we check
+  // whether the extension has host permissions for a suitable origin via
+  // WebExtensionPolicy::CanAccessURI (which checks the restricted URI list).
+  //
+  // The conditions that we enforce are:
+  // (1) The RP ID must be a valid domain string.
+  // (2) The RP ID must not be a single-label non-loopback hostname or a known
+  //     public suffix.
+  // (3) The extension must have host permissions for either
+  //     - https://<aRpId>, or
+  //     - http://<aRpId>, if aRpId is a loopback hostname (per
+  //     mozilla::net::IsLoopbackHostname).
+
+  // Condition (1)
+  nsAutoCString normalizedRpId;
+  nsresult rv = NS_DomainToASCII(aRpId, normalizedRpId);
   if (NS_FAILED(rv)) {
     return false;
   }
-  return Document::IsValidDomain(currentURI, targetURI);
+  if (normalizedRpId != aRpId) {
+    return false;
+  }
+
+  // Condition (2)
+  nsCOMPtr<nsIEffectiveTLDService> tldService =
+      mozilla::components::EffectiveTLD::Service();
+  if (!tldService) {
+    return false;
+  }
+
+  nsAutoCString rpIdPublicSuffix;
+  if (NS_FAILED(
+          tldService->GetKnownPublicSuffixFromHost(aRpId, rpIdPublicSuffix))) {
+    return false;
+  }
+
+  if (aRpId == rpIdPublicSuffix) {
+    return false;
+  }
+
+  // Exclude single-label non-loopback hostnames.
+  int32_t firstDot = aRpId.FindChar('.');
+  if ((firstDot < 0 || firstDot == (int32_t)aRpId.Length() - 1) &&
+      !mozilla::net::IsLoopbackHostname(aRpId)) {
+    return false;
+  }
+
+  // Condition (3)
+  auto* basePrin = BasePrincipal::Cast(aPrincipal);
+  MOZ_ASSERT(basePrin->AddonPolicy());
+
+  nsAutoCString httpsUriSpec("https://"_ns);
+  httpsUriSpec.Append(aRpId);
+  httpsUriSpec.AppendLiteral("/");
+  nsCOMPtr<nsIURI> uri;
+  rv = NS_NewURI(getter_AddRefs(uri), httpsUriSpec);
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  if (basePrin->AddonPolicy()->CanAccessURI(uri.get())) {
+    return true;
+  }
+
+  if (mozilla::net::IsLoopbackHostname(aRpId)) {
+    nsCOMPtr<nsIURI> httpUri;
+    rv = NS_MutateURI(uri).SetScheme("http"_ns).Finalize(
+        getter_AddRefs(httpUri));
+    if (NS_SUCCEEDED(rv) &&
+        basePrin->AddonPolicy()->CanAccessURI(httpUri.get())) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool IsValidRpId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
+                 const nsACString& aRpId) {
+  auto* basePrincipal = BasePrincipal::Cast(aPrincipal);
+  bool reqIsFromExtension = !!basePrincipal->AddonPolicy();
+  if (reqIsFromExtension) {
+    return ExtensionCanClaimRpId(aPrincipal, aRpId);
+  }
+  return OriginCanClaimRpId(aPrincipal, aRpId);
+}
+
+nsresult GetWebAuthnClientDataOrigin(nsIPrincipal* aPrincipal,
+                                     /* out */ nsACString& aOrigin) {
+  auto* basePrincipal = BasePrincipal::Cast(aPrincipal);
+
+  bool reqIsFromExtension = !!basePrincipal->AddonPolicy();
+  if (reqIsFromExtension) {
+    nsAutoCString extensionId;
+    basePrincipal->AddonPolicy()->Id()->ToUTF8String(extensionId);
+
+    nsTArray<uint8_t> hashedId;
+    nsresult rv = HashCString(extensionId, hashedId);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    // The extension ID may not be a valid host string. So we use the sha256
+    // hash of the extension ID encoded in base 16 with the digits [a-p].
+    aOrigin.Assign("moz-extension://");
+    for (uint8_t byte : hashedId) {
+      aOrigin.Append(char('a' + ((byte >> 4) & 0x0F)));
+      aOrigin.Append(char('a' + (byte & 0x0F)));
+    }
+
+    return NS_OK;
+  }
+
+  return basePrincipal->GetWebExposedOriginSerialization(aOrigin);
 }
 
 static nsresult HashCString(nsICryptoHash* aHashService, const nsACString& aIn,
@@ -241,6 +443,341 @@ nsresult HashCString(const nsACString& aIn, /* out */ nsTArray<uint8_t>& aOut) {
     return NS_ERROR_FAILURE;
   }
 
+  return NS_OK;
+}
+
+uint32_t WebAuthnTimeout(const Optional<uint32_t>& aTimeout) {
+  uint32_t adjustedTimeout = 30000;
+  if (aTimeout.WasPassed()) {
+    adjustedTimeout = aTimeout.Value();
+    adjustedTimeout = std::max(15000u, adjustedTimeout);
+    adjustedTimeout = std::min(120000u, adjustedTimeout);
+  }
+  return adjustedTimeout;
+}
+
+static nsresult SerializeWebAuthnData(
+    const OwningArrayBufferViewOrArrayBuffer& aData, nsString& aOut) {
+  return ProcessTypedArrays(
+      aData, [&](const Span<uint8_t>& aData, JS::AutoCheckCannotGC&&) {
+        nsAutoCString result;
+        nsresult rv = mozilla::Base64URLEncode(
+            aData.Length(), aData.Elements(),
+            Base64URLEncodePaddingPolicy::Omit, result);
+        if (NS_SUCCEEDED(rv)) {
+          aOut.Assign(NS_ConvertUTF8toUTF16(result));
+        }
+        return rv;
+      });
+}
+
+nsresult SerializeWebAuthnCreationOptions(
+    JSContext* aCx, const nsString& aRpId,
+    const PublicKeyCredentialCreationOptions& aOptions, nsString& aOut) {
+  nsresult rv;
+  PublicKeyCredentialCreationOptionsJSON json;
+
+  json.mRp.mId.Construct(aRpId);
+
+  json.mRp.mName.Assign(aOptions.mRp.mName);
+
+  json.mUser.mName.Assign(aOptions.mUser.mName);
+
+  rv = SerializeWebAuthnData(aOptions.mUser.mId, json.mUser.mId);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  json.mUser.mDisplayName.Assign(aOptions.mUser.mDisplayName);
+
+  rv = SerializeWebAuthnData(aOptions.mChallenge, json.mChallenge);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  json.mPubKeyCredParams = aOptions.mPubKeyCredParams;
+
+  json.mTimeout.Construct(WebAuthnTimeout(aOptions.mTimeout));
+
+  for (const auto& excludeCredential : aOptions.mExcludeCredentials) {
+    PublicKeyCredentialDescriptorJSON* excludeCredentialJSON =
+        json.mExcludeCredentials.AppendElement(fallible);
+    if (!excludeCredentialJSON) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    excludeCredentialJSON->mType = excludeCredential.mType;
+    rv = SerializeWebAuthnData(excludeCredential.mId,
+                               excludeCredentialJSON->mId);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (excludeCredential.mTransports.WasPassed()) {
+      excludeCredentialJSON->mTransports.Construct(
+          excludeCredential.mTransports.Value());
+    }
+  }
+
+  json.mAuthenticatorSelection.Construct(aOptions.mAuthenticatorSelection);
+
+  json.mHints = aOptions.mHints;
+
+  json.mAttestation = aOptions.mAttestation;
+
+  AuthenticationExtensionsClientInputsJSON& extensionsJSON =
+      json.mExtensions.Construct();
+
+  if (aOptions.mExtensions.mAppid.WasPassed()) {
+    extensionsJSON.mAppid.Construct(aOptions.mExtensions.mAppid.Value());
+  }
+
+  if (aOptions.mExtensions.mCredentialProtectionPolicy.WasPassed()) {
+    extensionsJSON.mCredentialProtectionPolicy.Construct(
+        aOptions.mExtensions.mCredentialProtectionPolicy.Value());
+  }
+
+  if (aOptions.mExtensions.mEnforceCredentialProtectionPolicy.WasPassed()) {
+    extensionsJSON.mEnforceCredentialProtectionPolicy.Construct(
+        aOptions.mExtensions.mEnforceCredentialProtectionPolicy.Value());
+  }
+
+  if (aOptions.mExtensions.mCredProps.WasPassed()) {
+    extensionsJSON.mCredProps.Construct(
+        aOptions.mExtensions.mCredProps.Value());
+  }
+
+  if (aOptions.mExtensions.mHmacCreateSecret.WasPassed()) {
+    extensionsJSON.mHmacCreateSecret.Construct(
+        aOptions.mExtensions.mHmacCreateSecret.Value());
+  }
+
+  if (aOptions.mExtensions.mMinPinLength.WasPassed()) {
+    extensionsJSON.mMinPinLength.Construct(
+        aOptions.mExtensions.mMinPinLength.Value());
+  }
+
+  if (aOptions.mExtensions.mLargeBlob.WasPassed()) {
+    const AuthenticationExtensionsLargeBlobInputs& largeBlobInputs =
+        aOptions.mExtensions.mLargeBlob.Value();
+    AuthenticationExtensionsLargeBlobInputsJSON& largeBlobInputsJSON =
+        extensionsJSON.mLargeBlob.Construct();
+
+    if (largeBlobInputs.mSupport.WasPassed()) {
+      largeBlobInputsJSON.mSupport.Construct(largeBlobInputs.mSupport.Value());
+    }
+
+    if (largeBlobInputs.mRead.WasPassed()) {
+      largeBlobInputsJSON.mRead.Construct(largeBlobInputs.mRead.Value());
+    }
+
+    if (largeBlobInputs.mWrite.WasPassed()) {
+      nsString write;
+      rv = SerializeWebAuthnData(largeBlobInputs.mWrite.Value(), write);
+      NS_ENSURE_SUCCESS(rv, rv);
+      largeBlobInputsJSON.mWrite.Construct(write);
+    }
+  }
+
+  if (aOptions.mExtensions.mPrf.WasPassed()) {
+    const AuthenticationExtensionsPRFInputs& prfInputs =
+        aOptions.mExtensions.mPrf.Value();
+    AuthenticationExtensionsPRFInputsJSON& prfInputsJSON =
+        extensionsJSON.mPrf.Construct();
+
+    if (prfInputs.mEval.WasPassed()) {
+      AuthenticationExtensionsPRFValuesJSON& evalJSON =
+          prfInputsJSON.mEval.Construct();
+      rv = SerializeWebAuthnData(prfInputs.mEval.Value().mFirst,
+                                 evalJSON.mFirst);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      if (prfInputs.mEval.Value().mSecond.WasPassed()) {
+        nsString second;
+        rv = SerializeWebAuthnData(prfInputs.mEval.Value().mSecond.Value(),
+                                   second);
+        NS_ENSURE_SUCCESS(rv, rv);
+        evalJSON.mSecond.Construct(second);
+      }
+    }
+
+    if (prfInputs.mEvalByCredential.WasPassed()) {
+      auto& evalByCredentialJSON = prfInputsJSON.mEvalByCredential.Construct();
+      for (const auto& entry : prfInputs.mEvalByCredential.Value().Entries()) {
+        auto* jsonEntry =
+            evalByCredentialJSON.Entries().AppendElement(fallible);
+        if (!jsonEntry) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+
+        jsonEntry->mKey = entry.mKey;
+        AuthenticationExtensionsPRFValuesJSON& valuesJSON = jsonEntry->mValue;
+
+        rv = SerializeWebAuthnData(entry.mValue.mFirst, valuesJSON.mFirst);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (entry.mValue.mSecond.WasPassed()) {
+          nsString second;
+          rv = SerializeWebAuthnData(entry.mValue.mSecond.Value(), second);
+          NS_ENSURE_SUCCESS(rv, rv);
+          valuesJSON.mSecond.Construct(second);
+        }
+      }
+    }
+  }
+
+  JS::Rooted<JS::Value> value(aCx);
+  if (!ToJSValue(aCx, json, &value)) {
+    // Callers reject the promise with a fixed error code and have no way to
+    // forward a pending exception, so we must not leave one set.
+    JS_ClearPendingException(aCx);
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoString jsonString;
+  if (!nsContentUtils::StringifyJSON(aCx, value, jsonString,
+                                     UndefinedIsNullStringLiteral)) {
+    JS_ClearPendingException(aCx);
+    return NS_ERROR_FAILURE;
+  }
+
+  aOut = std::move(jsonString);
+  return NS_OK;
+}
+
+nsresult SerializeWebAuthnRequestOptions(
+    JSContext* aCx, const nsString& aRpId,
+    const PublicKeyCredentialRequestOptions& aOptions, nsString& aOut) {
+  nsresult rv;
+  PublicKeyCredentialRequestOptionsJSON json;
+
+  rv = SerializeWebAuthnData(aOptions.mChallenge, json.mChallenge);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  json.mTimeout.Construct(WebAuthnTimeout(aOptions.mTimeout));
+
+  json.mRpId.Construct(aRpId);
+
+  for (const auto& allowCredential : aOptions.mAllowCredentials) {
+    PublicKeyCredentialDescriptorJSON* allowCredentialJSON =
+        json.mAllowCredentials.AppendElement(fallible);
+    if (!allowCredentialJSON) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    allowCredentialJSON->mType = allowCredential.mType;
+    rv = SerializeWebAuthnData(allowCredential.mId, allowCredentialJSON->mId);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (allowCredential.mTransports.WasPassed()) {
+      allowCredentialJSON->mTransports.Construct(
+          allowCredential.mTransports.Value());
+    }
+  }
+
+  json.mUserVerification = aOptions.mUserVerification;
+
+  json.mHints = aOptions.mHints;
+
+  AuthenticationExtensionsClientInputsJSON& extensionsJSON =
+      json.mExtensions.Construct();
+
+  if (aOptions.mExtensions.mAppid.WasPassed()) {
+    extensionsJSON.mAppid.Construct(aOptions.mExtensions.mAppid.Value());
+  }
+
+  if (aOptions.mExtensions.mCredProps.WasPassed()) {
+    extensionsJSON.mCredProps.Construct(
+        aOptions.mExtensions.mCredProps.Value());
+  }
+
+  if (aOptions.mExtensions.mHmacCreateSecret.WasPassed()) {
+    extensionsJSON.mHmacCreateSecret.Construct(
+        aOptions.mExtensions.mHmacCreateSecret.Value());
+  }
+
+  if (aOptions.mExtensions.mMinPinLength.WasPassed()) {
+    extensionsJSON.mMinPinLength.Construct(
+        aOptions.mExtensions.mMinPinLength.Value());
+  }
+
+  if (aOptions.mExtensions.mLargeBlob.WasPassed()) {
+    const AuthenticationExtensionsLargeBlobInputs& largeBlobInputs =
+        aOptions.mExtensions.mLargeBlob.Value();
+    AuthenticationExtensionsLargeBlobInputsJSON& largeBlobInputsJSON =
+        extensionsJSON.mLargeBlob.Construct();
+
+    if (largeBlobInputs.mSupport.WasPassed()) {
+      largeBlobInputsJSON.mSupport.Construct(largeBlobInputs.mSupport.Value());
+    }
+
+    if (largeBlobInputs.mRead.WasPassed()) {
+      largeBlobInputsJSON.mRead.Construct(largeBlobInputs.mRead.Value());
+    }
+
+    if (largeBlobInputs.mWrite.WasPassed()) {
+      nsString write;
+      rv = SerializeWebAuthnData(largeBlobInputs.mWrite.Value(), write);
+      NS_ENSURE_SUCCESS(rv, rv);
+      largeBlobInputsJSON.mWrite.Construct(write);
+    }
+  }
+
+  if (aOptions.mExtensions.mPrf.WasPassed()) {
+    const AuthenticationExtensionsPRFInputs& prfInputs =
+        aOptions.mExtensions.mPrf.Value();
+    AuthenticationExtensionsPRFInputsJSON& prfInputsJSON =
+        extensionsJSON.mPrf.Construct();
+
+    if (prfInputs.mEval.WasPassed()) {
+      AuthenticationExtensionsPRFValuesJSON& evalJSON =
+          prfInputsJSON.mEval.Construct();
+      rv = SerializeWebAuthnData(prfInputs.mEval.Value().mFirst,
+                                 evalJSON.mFirst);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      if (prfInputs.mEval.Value().mSecond.WasPassed()) {
+        nsString second;
+        rv = SerializeWebAuthnData(prfInputs.mEval.Value().mSecond.Value(),
+                                   second);
+        NS_ENSURE_SUCCESS(rv, rv);
+        evalJSON.mSecond.Construct(second);
+      }
+    }
+
+    if (prfInputs.mEvalByCredential.WasPassed()) {
+      auto& evalByCredentialJSON = prfInputsJSON.mEvalByCredential.Construct();
+      for (const auto& entry : prfInputs.mEvalByCredential.Value().Entries()) {
+        auto* jsonEntry =
+            evalByCredentialJSON.Entries().AppendElement(fallible);
+        if (!jsonEntry) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+
+        jsonEntry->mKey = entry.mKey;
+        AuthenticationExtensionsPRFValuesJSON& valuesJSON = jsonEntry->mValue;
+
+        rv = SerializeWebAuthnData(entry.mValue.mFirst, valuesJSON.mFirst);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (entry.mValue.mSecond.WasPassed()) {
+          nsString second;
+          rv = SerializeWebAuthnData(entry.mValue.mSecond.Value(), second);
+          NS_ENSURE_SUCCESS(rv, rv);
+          valuesJSON.mSecond.Construct(second);
+        }
+      }
+    }
+  }
+
+  JS::Rooted<JS::Value> value(aCx);
+  if (!ToJSValue(aCx, json, &value)) {
+    // Callers reject the promise with a fixed error code and have no way to
+    // forward a pending exception, so we must not leave one set.
+    JS_ClearPendingException(aCx);
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoString jsonString;
+  if (!nsContentUtils::StringifyJSON(aCx, value, jsonString,
+                                     UndefinedIsNullStringLiteral)) {
+    JS_ClearPendingException(aCx);
+    return NS_ERROR_FAILURE;
+  }
+
+  aOut = std::move(jsonString);
   return NS_OK;
 }
 

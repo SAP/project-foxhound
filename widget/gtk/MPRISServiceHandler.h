@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +7,7 @@
 #define WIDGET_GTK_MPRIS_SERVICE_HANDLER_H_
 
 #include <gio/gio.h>
-#include "mozilla/dom/FetchImageHelper.h"
 #include "mozilla/dom/MediaControlKeySource.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/UniquePtr.h"
 #include "nsIFile.h"
 #include "nsMimeTypes.h"
 #include "nsString.h"
@@ -83,6 +79,9 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
   double GetPositionSeconds() const;
   double GetPlaybackRate() const;
 
+  void SetVolume(double aVolume);
+  double GetVolume() const;
+
   bool IsMediaKeySupported(dom::MediaControlKey aKey) const;
 
   void OwnName(GDBusConnection* aConnection);
@@ -115,6 +114,7 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
   uint32_t mSupportedKeys = 0;
 
   Maybe<dom::PositionState> mPositionState;
+  double mVolume = 1.0;
 
   class MPRISMetadata : public dom::MediaMetadataBase {
    public:
@@ -141,17 +141,8 @@ class MPRISServiceHandler final : public dom::MediaControlKeySource {
   nsCOMPtr<nsIFile> mLocalImageFile;
   nsCOMPtr<nsIFile> mLocalImageFolder;
 
-  UniquePtr<dom::FetchImageHelper> mImageFetcher;
-  MozPromiseRequestHolder<dom::ImagePromise> mImageFetchRequest;
-
-  nsString mFetchingUrl;
   nsString mCurrentImageUrl;
 
-  size_t mNextImageIndex = 0;
-
-  // Load the image at index aIndex of the metadta's artwork to MPRIS
-  // asynchronously
-  void LoadImageAtIndex(const size_t aIndex);
   bool SetImageToDisplay(const char* aImageData, uint32_t aDataSize);
 
   bool RenewLocalImageFile(const char* aImageData, uint32_t aDataSize);

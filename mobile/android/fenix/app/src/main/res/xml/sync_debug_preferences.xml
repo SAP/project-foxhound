@@ -23,7 +23,7 @@
         android:key="@string/pref_key_sync_debug_quit"
         android:title="@string/preferences_sync_debug_quit_button_title"
         android:summary="@string/preferences_sync_debug_quit_button_summary"
-        android:icon="@drawable/ic_close"
+        android:icon="@drawable/mozac_ic_cross_24"
         app:isPreferenceVisible="false" />
     <CheckBoxPreference
         android:defaultValue="false"
@@ -40,4 +40,41 @@
     <androidx.preference.Preference
         android:key="@string/pref_key_sync_debug_permanent_auth_error"
         android:title="@string/preferences_sync_debug_permanent_auth_error_button_title" />
+    <PreferenceCategory
+        android:selectable="false"
+        android:title="@string/preferences_sync_debug_scope_authorization_category"
+        app:iconSpaceReserved="false">
+        <androidx.preference.EditTextPreference
+            android:key="@string/pref_key_sync_debug_scope_authorization_scopes"
+            android:title="@string/preferences_sync_debug_scope_authorization_scopes_title"
+            android:defaultValue="profile"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true" />
+        <androidx.preference.EditTextPreference
+            android:key="@string/pref_key_sync_debug_scope_authorization_entrypoint"
+            android:title="@string/preferences_sync_debug_scope_authorization_entrypoint_title"
+            android:defaultValue="sync-debug-menu"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true" />
+        <androidx.preference.Preference
+            android:key="@string/pref_key_sync_debug_scope_authorization_start"
+            android:title="@string/preferences_sync_debug_scope_authorization_start_title" />
+    </PreferenceCategory>
+    <PreferenceCategory
+        android:selectable="false"
+        android:title="@string/preferences_sync_debug_oauth_token_category"
+        app:iconSpaceReserved="false">
+        <androidx.preference.EditTextPreference
+            android:key="@string/pref_key_sync_debug_oauth_token_scopes"
+            android:title="@string/preferences_sync_debug_oauth_token_scopes_title"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true" />
+        <androidx.preference.Preference
+            android:key="@string/pref_key_sync_debug_oauth_token_fetch"
+            android:title="@string/preferences_sync_debug_oauth_token_fetch_title" />
+        <androidx.preference.Preference
+            android:key="@string/pref_key_sync_debug_oauth_token_result"
+            android:title="@string/preferences_sync_debug_oauth_token_result_title"
+            android:selectable="false" />
+    </PreferenceCategory>
 </PreferenceScreen>

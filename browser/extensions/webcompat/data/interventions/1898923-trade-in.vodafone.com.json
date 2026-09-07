@@ -1,0 +1,15 @@
+{
+  "label": "trade-in.vodafone.com",
+  "bugs": {
+    "1898923": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://trade-in.vodafone.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

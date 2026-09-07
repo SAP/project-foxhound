@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 #define mozilla_image_ProgressTracker_h
 
 #include "CopyOnWrite.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
@@ -86,7 +84,7 @@ class ObserverTable : public nsTHashMap<nsPtrHashKey<IProgressObserver>,
   }
 
  private:
-  ~ObserverTable() {}
+  ~ObserverTable() = default;
 };
 
 /**
@@ -100,12 +98,13 @@ class ObserverTable : public nsTHashMap<nsPtrHashKey<IProgressObserver>,
  * asynchronously.
  */
 class ProgressTracker : public mozilla::SupportsWeakPtr {
-  virtual ~ProgressTracker() {}
+  virtual ~ProgressTracker() = default;
 
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ProgressTracker)
 
   ProgressTracker();
+  ProgressTracker(const ProgressTracker& aOther) = delete;
 
   bool HasImage() const {
     MutexAutoLock lock(mMutex);
@@ -190,8 +189,6 @@ class ProgressTracker : public mozilla::SupportsWeakPtr {
   friend class AsyncNotifyRunnable;
   friend class AsyncNotifyCurrentStateRunnable;
   friend class ImageFactory;
-
-  ProgressTracker(const ProgressTracker& aOther) = delete;
 
   // Sets our weak reference to our image. Only ImageFactory should call this.
   void SetImage(Image* aImage);

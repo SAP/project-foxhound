@@ -9,7 +9,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   FormLikeFactory: "resource://gre/modules/FormLikeFactory.sys.mjs",
-  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
   LoginManagerChild: "resource://gre/modules/LoginManagerChild.sys.mjs",
 });
 
@@ -98,7 +97,7 @@ export class GeckoViewAutoFillChild extends GeckoViewActorChild {
   async addElement(aFormLike) {
     debug`Adding auto-fill ${aFormLike.rootElement.tagName}`;
 
-    const window = aFormLike.rootElement.ownerGlobal;
+    const window = aFormLike.rootElement.documentGlobal;
     // Get password field to get better form data via LoginManagerChild.
     let passwordField;
     for (const field of aFormLike.elements) {
@@ -211,7 +210,7 @@ export class GeckoViewAutoFillChild extends GeckoViewActorChild {
       return info;
     }
 
-    const window = aElement.ownerGlobal;
+    const window = aElement.documentGlobal;
     const bounds = aElement.getBoundingClientRect();
     const isInputElement = window.HTMLInputElement.isInstance(aElement);
 
@@ -307,10 +306,13 @@ export class GeckoViewAutoFillChild extends GeckoViewActorChild {
 
     const info = aTarget && this._autofillInfos?.get(aTarget);
     if (info) {
+      const win = aTarget.documentGlobal;
       const bounds = aTarget.getBoundingClientRect();
-      const screenRect = lazy.LayoutUtils.rectToScreenRect(
-        aTarget.ownerGlobal,
-        bounds
+      const screenRect = win.windowUtils.toScreenRect(
+        bounds.left,
+        bounds.top,
+        bounds.width,
+        bounds.height
       );
       info.screenRect = {
         left: screenRect.left,

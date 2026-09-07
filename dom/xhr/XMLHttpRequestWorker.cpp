@@ -1,25 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XMLHttpRequestWorker.h"
 
-#include "nsIDOMEventListener.h"
-
 #include "GeckoProfiler.h"
-#include "jsfriendapi.h"
+#include "XMLHttpRequestMainThread.h"
+#include "XMLHttpRequestUpload.h"
 #include "js/ArrayBuffer.h"  // JS::Is{,Detached}ArrayBufferObject
 #include "js/GCPolicyAPI.h"
 #include "js/JSON.h"
 #include "js/RootingAPI.h"  // JS::{Handle,Heap,PersistentRooted}
 #include "js/TracingAPI.h"
 #include "js/Value.h"  // JS::{Undefined,}Value
-#include "mozilla/ArrayUtils.h"
+#include "jsfriendapi.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/dom/Exceptions.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/ProgressEvent.h"
@@ -27,19 +25,15 @@
 #include "mozilla/dom/StreamBlobImpl.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/URLSearchParams.h"
-#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsIDOMEventListener.h"
 #include "nsJSUtils.h"
 #include "nsThreadUtils.h"
-
-#include "XMLHttpRequestMainThread.h"
-#include "XMLHttpRequestUpload.h"
-
-#include "mozilla/UniquePtr.h"
 
 extern mozilla::LazyLogModule gXMLHttpRequestLog;
 
@@ -462,7 +456,7 @@ class EventRunnable final : public MainThreadProxyRunnable {
         mReadyState(0),
         mUploadEvent(aUploadEvent),
         mProgressEvent(false),
-        mLengthComputable(0),
+        mLengthComputable(false),
         mStatusResult(NS_OK),
         mErrorDetail(NS_OK),
         mScopeObj(RootingCx(), aScopeObj) {}
@@ -771,6 +765,8 @@ bool Proxy::Init(WorkerPrivate* aWorkerPrivate) {
 
   mXHR->SetParameters(mMozAnon, mMozSystem);
   mXHR->SetClientInfoAndController(mClientInfo, mController);
+  mXHR->SetAssociatedBrowsingContextID(
+      aWorkerPrivate->AssociatedBrowsingContextID());
 
   ErrorResult rv;
   mXHRUpload = mXHR->GetUpload(rv);
@@ -1397,6 +1393,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(XMLHttpRequestWorker,
   tmp->mResponseBlob = nullptr;
   tmp->mResponseArrayBufferValue = nullptr;
   tmp->mResponseJSONValue.setUndefined();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(XMLHttpRequestWorker,
@@ -2301,7 +2298,7 @@ void XMLHttpRequestWorker::GetResponse(JSContext* aCx,
 
       if (!mResponseBlob) {
         mResponseBlob =
-            Blob::Create(GetOwnerGlobal(), mResponseData->mResponseBlobImpl);
+            Blob::Create(GetRelevantGlobal(), mResponseData->mResponseBlobImpl);
       }
 
       if (!mResponseBlob ||

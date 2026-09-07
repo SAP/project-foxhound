@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,9 @@
 #include "PostMessageEvent.h"
 
 #include "MessageEvent.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/DocGroup.h"
@@ -14,15 +15,14 @@
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/WindowContext.h"
 #include "nsDocShell.h"
 #include "nsGlobalWindowInner.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIConsoleService.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
@@ -52,6 +52,12 @@ PostMessageEvent::~PostMessageEvent() = default;
 
 // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230, bug 1535398)
 MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
+  if (mCallerWindowID) {
+    RefPtr<WindowContext> wc = WindowContext::GetById(mCallerWindowID);
+    if (!wc || !wc->IsCurrent()) {
+      mSource = nullptr;
+    }
+  }
   // Note: We don't init this AutoJSAPI with targetWindow, because we do not
   // want exceptions during message deserialization to trigger error events on
   // targetWindow.
@@ -130,7 +136,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
 
       nsAutoString errorText;
       nsContentUtils::FormatLocalizedString(
-          errorText, nsContentUtils::eDOM_PROPERTIES,
+          errorText, PropertiesFile::DOM_PROPERTIES,
           "TargetPrincipalDoesNotMatch", providedOrigin, targetOrigin);
 
       nsCOMPtr<nsIScriptError> errorObject =
@@ -166,18 +172,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
   nsCOMPtr<mozilla::dom::EventTarget> eventTarget =
       do_QueryObject(targetWindow);
 
-  JS::CloneDataPolicy cloneDataPolicy;
-
   MOZ_DIAGNOSTIC_ASSERT(targetWindow);
-  if (mCallerAgentClusterId.isSome() && targetWindow->GetDocGroup() &&
-      targetWindow->GetDocGroup()->AgentClusterId().Equals(
-          mCallerAgentClusterId.ref())) {
-    cloneDataPolicy.allowIntraClusterClonableSharedObjects();
-  }
-
-  if (targetWindow->IsSharedMemoryAllowed()) {
-    cloneDataPolicy.allowSharedMemoryObjects();
-  }
 
   if (mHolder.empty()) {
     DispatchError(cx, targetWindow, eventTarget);
@@ -186,16 +181,27 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP PostMessageEvent::Run() {
 
   StructuredCloneHolder* holder;
   if (mHolder.constructed<StructuredCloneHolder>()) {
-    mHolder.ref<StructuredCloneHolder>().Read(
-        targetWindow->AsGlobal(), cx, &messageData, cloneDataPolicy, rv);
     holder = &mHolder.ref<StructuredCloneHolder>();
   } else {
-    MOZ_ASSERT(mHolder.constructed<ipc::StructuredCloneData>());
-    mHolder.ref<ipc::StructuredCloneData>().Read(cx, &messageData, rv);
-    holder = &mHolder.ref<ipc::StructuredCloneData>();
+    holder = mHolder.ref<RefPtr<ipc::StructuredCloneData>>().get();
   }
+
+  JS::CloneDataPolicy cloneDataPolicy;
+  if (holder->CloneScope() != JS::StructuredCloneScope::DifferentProcess) {
+    // Only enable cloning shared memory, etc. when in-process.
+    if (mCallerAgentClusterId.isSome() && targetWindow->GetDocGroup() &&
+        targetWindow->GetDocGroup()->AgentClusterId().Equals(
+            mCallerAgentClusterId.ref())) {
+      cloneDataPolicy.allowIntraClusterClonableSharedObjects();
+    }
+
+    if (targetWindow->IsSharedMemoryAllowed()) {
+      cloneDataPolicy.allowSharedMemoryObjects();
+    }
+  }
+
+  holder->Read(cx, &messageData, cloneDataPolicy, rv);
   if (NS_WARN_IF(rv.Failed())) {
-    JS_ClearPendingException(cx);
     DispatchError(cx, targetWindow, eventTarget);
     return NS_OK;
   }

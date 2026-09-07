@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,9 +24,10 @@ interface Screen : EventTarget {
    * Can be: landscape-primary, landscape-secondary,
    *         portrait-primary or portrait-secondary.
    */
-  [NeedsCallerType]
+  [NeedsCallerType, Deprecated="MozorientationDeprecated"]
   readonly attribute DOMString mozOrientation;
 
+  [Deprecated="MozorientationchangeDeprecated"]
   attribute EventHandler onmozorientationchange;
 
   /**
@@ -37,8 +37,13 @@ interface Screen : EventTarget {
    * FIXME(emilio): These do literally nothing, we should
    * try to remove these.
    */
+  [Deprecated="MozlockorientationDeprecated"]
   boolean mozLockOrientation(DOMString orientation);
+
+  [Deprecated="MozlockorientationDeprecated"]
   boolean mozLockOrientation(sequence<DOMString> orientation);
+
+  [Deprecated="MozunlockorientationDeprecated"]
   undefined mozUnlockOrientation();
 };
 

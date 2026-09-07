@@ -16,11 +16,11 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.Engine
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.android.test.rules.WebserverRule
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.TimeoutException
+import kotlin.test.assertNotNull
 
 class FullRestoreTest {
     @get:Rule
@@ -77,7 +77,7 @@ class FullRestoreTest {
 
             val browsingSession = storage.restore()
             assertNotNull(browsingSession)
-            newUseCases.restore(browsingSession!!)
+            newUseCases.restore(browsingSession)
 
             waitFor { newStore.state.selectedTab?.engineState != null }
             waitFor { newStore.state.selectedTab?.content?.title == "Restore Test" }

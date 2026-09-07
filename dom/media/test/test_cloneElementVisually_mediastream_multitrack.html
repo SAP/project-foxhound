@@ -46,7 +46,7 @@ add_task(async () => {
 
   await setup();
 
-  let [track1] = originalVideo.mozCaptureStream().getTracks();
+  let [track1] = (originalVideo.captureStream?.() || originalVideo.mozCaptureStream()).getTracks();
   let playingPromise = waitForEventOnce(originalVideo, "playing");
   await originalVideo.play();
   await playingPromise;

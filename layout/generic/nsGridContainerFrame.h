@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rendering object for CSS "display: grid | inline-grid" */
 
-#ifndef nsGridContainerFrame_h___
-#define nsGridContainerFrame_h___
+#ifndef nsGridContainerFrame_h_
+#define nsGridContainerFrame_h_
 
 #include "mozilla/CSSOrderAwareFrameIterator.h"
 #include "mozilla/HashTable.h"
@@ -78,15 +76,6 @@ struct ComputedGridTrackInfo {
 };
 
 struct ComputedGridLineInfo {
-  explicit ComputedGridLineInfo(
-      nsTArray<nsTArray<RefPtr<nsAtom>>>&& aNames,
-      const nsTArray<RefPtr<nsAtom>>& aNamesBefore,
-      const nsTArray<RefPtr<nsAtom>>& aNamesAfter,
-      nsTArray<RefPtr<nsAtom>>&& aNamesFollowingRepeat)
-      : mNames(std::move(aNames)),
-        mNamesBefore(aNamesBefore.Clone()),
-        mNamesAfter(aNamesAfter.Clone()),
-        mNamesFollowingRepeat(std::move(aNamesFollowingRepeat)) {}
   nsTArray<nsTArray<RefPtr<nsAtom>>> mNames;
   nsTArray<RefPtr<nsAtom>> mNamesBefore;
   nsTArray<RefPtr<nsAtom>> mNamesAfter;
@@ -161,7 +150,8 @@ class nsGridContainerFrame final : public nsContainerFrame,
   int32_t GetNumLines() const final;
   bool IsLineIteratorFlowRTL() final;
   mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
-  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  int32_t FindLineContaining(const nsIFrame* aFrame,
+                             int32_t aStartLine = 0) final;
   NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                          nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
                          bool* aPosIsAfterLastFrame) final;
@@ -238,6 +228,18 @@ class nsGridContainerFrame final : public nsContainerFrame,
   }
 
   using nsContainerFrame::IsMasonry;
+
+  /**
+   * Return true if this frame has masonry layout in aAxis (in this frame's own
+   * writing mode).
+   */
+  bool IsMasonry(mozilla::LogicalAxis aAxis) const;
+  bool IsColMasonry() const {
+    return HasAnyStateBits(NS_STATE_GRID_IS_COL_MASONRY);
+  }
+  bool IsRowMasonry() const {
+    return HasAnyStateBits(NS_STATE_GRID_IS_ROW_MASONRY);
+  }
 
   /** Return true if this frame has masonry layout in any axis. */
   bool IsMasonry() const {
@@ -385,6 +387,10 @@ class nsGridContainerFrame final : public nsContainerFrame,
                          const LogicalRect& aContentArea,
                          const nsSize& aContainerSize,
                          ReflowOutput& aDesiredSize, nsReflowStatus& aStatus);
+  void ReflowAbsoluteChildren(GridReflowInput& aGridRI,
+                              const LogicalRect& aContentArea,
+                              nscoord aContentBSize, ReflowOutput& aDesiredSize,
+                              nsReflowStatus& aStatus);
 
   /**
    * Helper to implement IntrinsicISize().
@@ -577,4 +583,4 @@ class nsGridContainerFrame final : public nsContainerFrame,
   PerLogicalAxis<PerBaseline<nscoord>> mBaseline;
 };
 
-#endif /* nsGridContainerFrame_h___ */
+#endif /* nsGridContainerFrame_h_ */

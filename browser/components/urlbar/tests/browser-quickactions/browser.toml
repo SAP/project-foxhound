@@ -1,0 +1,21 @@
+[DEFAULT]
+tags = "urlbar"
+support-files = [
+  "../browser/head-common.js",
+  "head.js",
+]
+
+["browser_commands.js"]
+
+["browser_devtools.js"]
+
+["browser_general.js"]
+
+["browser_mute.js"]
+support-files = ["!/toolkit/content/tests/browser/audio.ogg"]
+
+["browser_screenshot.js"]
+
+["browser_tab_refocus.js"]
+
+["browser_translate.js"]

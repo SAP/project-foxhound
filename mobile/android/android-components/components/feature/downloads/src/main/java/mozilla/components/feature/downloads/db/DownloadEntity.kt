@@ -17,28 +17,20 @@ internal data class DownloadEntity(
     @PrimaryKey
     @ColumnInfo(name = "id")
     var id: String,
-
     @ColumnInfo(name = "url")
     var url: String,
-
     @ColumnInfo(name = "file_name")
     var fileName: String?,
-
     @ColumnInfo(name = "content_type")
     var contentType: String?,
-
     @ColumnInfo(name = "content_length")
     var contentLength: Long?,
-
     @ColumnInfo(name = "status")
     var status: DownloadState.Status,
-
-    @ColumnInfo(name = "destination_directory")
-    var destinationDirectory: String,
-
+    @ColumnInfo(name = "directory_path")
+    var directoryPath: String,
     @ColumnInfo(name = "created_at")
     var createdAt: Long,
-
     @ColumnInfo(name = "etag")
     val etag: String?,
 ) {
@@ -52,7 +44,7 @@ internal data class DownloadEntity(
             currentBytesCopied = 0,
             status = status,
             userAgent = null,
-            destinationDirectory = destinationDirectory,
+            directoryPath = directoryPath,
             referrerUrl = null,
             skipConfirmation = false,
             id = id,
@@ -83,7 +75,7 @@ internal fun DownloadState.toDownloadEntity(): DownloadEntity {
         contentType,
         contentLength,
         status = status,
-        destinationDirectory = destinationDirectory,
+        directoryPath = directoryPath,
         createdAt = createdTime,
         etag = etag,
     )

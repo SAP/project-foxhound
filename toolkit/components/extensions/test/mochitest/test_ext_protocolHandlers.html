@@ -19,7 +19,6 @@ function protocolChromeScript() {
   const PROTOCOL_HANDLER_OPEN_PERM_KEY = "open-protocol-handler";
   const PERMISSION_KEY_DELIMITER = "^";
 
-  /* eslint-env mozilla/chrome-script */
   addMessageListener("setup", ({ protocol, principalOrigins }) => {
     let data = {};
     const protoSvc = Cc[
@@ -197,7 +196,6 @@ add_task(async function test_protocolHandler() {
 
   // Test that handling a URL from the commandline works.
   chromeScript = SpecialPowers.loadChromeScript(() => {
-    /* eslint-env mozilla/chrome-script */
     const CONTENT_HANDLING_URL =
       "chrome://mozapps/content/handling/permissionDialog.xhtml";
     const { BrowserTestUtils } = ChromeUtils.importESModule(
@@ -253,7 +251,6 @@ add_task(async function test_protocolHandler() {
 
   // Expect the chooser window to be open, close it.
   chromeScript = SpecialPowers.loadChromeScript(() => {
-    /* eslint-env mozilla/chrome-script */
     const CONTENT_HANDLING_URL =
       "chrome://mozapps/content/handling/appChooser.xhtml";
     const { BrowserTestUtils } = ChromeUtils.importESModule(
@@ -325,7 +322,6 @@ add_task(async function test_protocolHandler() {
   // Shutdown the addon, then ensure the protocol was removed.
   await extension.unload();
   chromeScript = SpecialPowers.loadChromeScript(() => {
-    /* eslint-env mozilla/chrome-script */
     addMessageListener("setup", () => {
       const protoSvc = Cc[
         "@mozilla.org/uriloader/external-protocol-service;1"
@@ -512,7 +508,6 @@ add_task(async function test_protocolHandler_duplicate() {
 
   // Get the count of handlers installed.
   let chromeScript = SpecialPowers.loadChromeScript(() => {
-    /* eslint-env mozilla/chrome-script */
     addMessageListener("setup", () => {
       const protoSvc = Cc[
         "@mozilla.org/uriloader/external-protocol-service;1"

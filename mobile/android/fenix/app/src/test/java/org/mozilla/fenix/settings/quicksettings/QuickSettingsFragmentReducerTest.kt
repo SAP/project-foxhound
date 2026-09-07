@@ -120,14 +120,16 @@ class QuickSettingsFragmentReducerTest {
     }
 
     private fun createTestRule() = SitePermissionsRules(
-        SitePermissionsRules.Action.ALLOWED,
-        SitePermissionsRules.Action.ALLOWED,
-        SitePermissionsRules.Action.ALLOWED,
-        SitePermissionsRules.Action.ALLOWED,
-        SitePermissionsRules.AutoplayAction.ALLOWED,
-        SitePermissionsRules.AutoplayAction.ALLOWED,
-        SitePermissionsRules.Action.ALLOWED,
-        SitePermissionsRules.Action.ALLOWED,
-        SitePermissionsRules.Action.ALLOWED,
+        camera = SitePermissionsRules.Action.ALLOWED,
+        location = SitePermissionsRules.Action.ALLOWED,
+        notification = SitePermissionsRules.Action.ALLOWED,
+        microphone = SitePermissionsRules.Action.ALLOWED,
+        autoplayAudible = SitePermissionsRules.AutoplayAction.ALLOWED,
+        autoplayInaudible = SitePermissionsRules.AutoplayAction.ALLOWED,
+        persistentStorage = SitePermissionsRules.Action.ALLOWED,
+        mediaKeySystemAccess = SitePermissionsRules.Action.ALLOWED,
+        crossOriginStorageAccess = SitePermissionsRules.Action.ALLOWED,
+        localDeviceAccess = SitePermissionsRules.Action.ALLOWED,
+        localNetworkAccess = SitePermissionsRules.Action.ALLOWED,
     )
 }

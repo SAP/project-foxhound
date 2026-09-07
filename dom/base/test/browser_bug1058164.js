@@ -209,7 +209,7 @@ add_task(async function test_swap_frameloader_pagevisibility_events() {
 
   // Wait for that initial doc to be visible because if its pageshow hasn't
   // happened we don't confuse it with the other expected events.
-  await ContentTask.spawn(emptyBrowser, null, async () => {
+  await SpecialPowers.spawn(emptyBrowser, [], async () => {
     if (content.document.visibilityState === "hidden") {
       info("waiting for hidden emptyBrowser to be visible");
       await ContentTaskUtils.waitForEvent(

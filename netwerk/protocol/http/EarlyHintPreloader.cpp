@@ -144,9 +144,7 @@ Maybe<PreloadHashKey> EarlyHintPreloader::GenerateHashKey(
         aURI, aCorsMode, JS::loader::ScriptKind::eClassic));
   }
   if (aAs == ASDestination::DESTINATION_STYLE) {
-    return Some(PreloadHashKey::CreateAsStyle(
-        aURI, aPrincipal, aCorsMode,
-        css::SheetParsingMode::eAuthorSheetFeatures));
+    return Some(PreloadHashKey::CreateAsStyle(aURI, aPrincipal, aCorsMode));
   }
   if (aAs == ASDestination::DESTINATION_FETCH && aCorsMode != CORS_NONE) {
     return Some(PreloadHashKey::CreateAsFetch(aURI, aCorsMode));
@@ -439,11 +437,6 @@ nsresult EarlyHintPreloader::OpenChannel(
 
   PriorizeAsPreload();
 
-  if (nsCOMPtr<nsIRaceCacheWithNetwork> rcwn = do_QueryInterface(httpChannel)) {
-    // Since this is an early hint, we should consult the cache first.
-    rcwn->SetAllowRacing(false);
-  }
-
   rv = mChannel->AsyncOpen(mParentListener);
   if (NS_FAILED(rv)) {
     mParentListener = nullptr;
@@ -467,11 +460,11 @@ nsresult EarlyHintPreloader::OpenChannel(
 
 void EarlyHintPreloader::PriorizeAsPreload() {
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL;
-  Unused << mChannel->GetLoadFlags(&loadFlags);
-  Unused << mChannel->SetLoadFlags(loadFlags | nsIRequest::LOAD_BACKGROUND);
+  (void)mChannel->GetLoadFlags(&loadFlags);
+  (void)mChannel->SetLoadFlags(loadFlags | nsIRequest::LOAD_BACKGROUND);
 
   if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(mChannel)) {
-    Unused << cos->AddClassFlags(nsIClassOfService::Unblocked);
+    (void)cos->AddClassFlags(nsIClassOfService::Unblocked);
   }
 }
 
@@ -643,11 +636,11 @@ EarlyHintPreloader::OnStartRequest(nsIRequest* aRequest) {
   MOZ_DIAGNOSTIC_ASSERT(mChannel);
 
   nsresult status = NS_OK;
-  Unused << aRequest->GetStatus(&status);
+  (void)aRequest->GetStatus(&status);
 
-  if (mParent) {
+  if (nsCOMPtr<nsIParentChannel> parent = mParent) {
     SetParentChannel();
-    mParent->OnStartRequest(aRequest);
+    parent->OnStartRequest(aRequest);
     InvokeStreamListenerFunctions();
   } else {
     // Don't suspend the chanel when the channel got cancelled with

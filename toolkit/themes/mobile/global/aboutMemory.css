@@ -101,7 +101,7 @@ div.opsRowLabel,
 div.sidebarLabel {
   display: block;
   margin-bottom: 0.2em;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .opsRowLabel label {
@@ -140,7 +140,7 @@ h2 {
 }
 
 .mrValue {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .hasKids {

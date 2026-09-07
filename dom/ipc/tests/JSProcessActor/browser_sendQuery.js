@@ -85,3 +85,21 @@ declTest("sendQuery testing", {
     is(result, 30);
   },
 });
+
+declTest("same process sendQuery inputStream testing", {
+  includeParent: true,
+  url: "about:robots",
+  async test(browser) {
+    await SpecialPowers.spawn(browser, [], async function () {
+      let child = ChromeUtils.domProcessChild;
+      let actorChild = child.getActor("TestProcessActor");
+      Assert.ok(actorChild, "JSProcessActorChild should have value.");
+
+      let inputStream = await actorChild.requestInputStream();
+      Assert.ok(
+        inputStream.QueryInterface(Ci.nsIInputStream),
+        "Got back an nsIInputStream"
+      );
+    });
+  },
+});

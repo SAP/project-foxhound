@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,13 +9,16 @@
 
 **/
 
-#ifndef nsScrollbarButtonFrame_h___
-#define nsScrollbarButtonFrame_h___
+#ifndef nsScrollbarButtonFrame_h_
+#define nsScrollbarButtonFrame_h_
 
 #include "SimpleXULLeafFrame.h"
 #include "mozilla/Attributes.h"
 #include "nsLeafFrame.h"
 #include "nsRepeatService.h"
+
+class nsScrollbarFrame;
+class nsIScrollbarMediator;
 
 namespace mozilla {
 class PresShell;
@@ -27,8 +28,7 @@ class nsScrollbarButtonFrame final : public mozilla::SimpleXULLeafFrame {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsScrollbarButtonFrame)
 
-  explicit nsScrollbarButtonFrame(ComputedStyle* aStyle,
-                                  nsPresContext* aPresContext)
+  nsScrollbarButtonFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
       : mozilla::SimpleXULLeafFrame(aStyle, aPresContext, kClassID) {}
 
   // Overrides
@@ -41,10 +41,8 @@ class nsScrollbarButtonFrame final : public mozilla::SimpleXULLeafFrame {
                        mozilla::WidgetGUIEvent* aEvent,
                        nsEventStatus* aEventStatus) override;
 
-  static nsresult GetChildWithTag(nsAtom* atom, nsIFrame* start,
-                                  nsIFrame*& result);
-  static nsresult GetParentWithTag(nsAtom* atom, nsIFrame* start,
-                                   nsIFrame*& result);
+  nsScrollbarFrame* GetScrollbar();
+  nsIScrollbarMediator* GetMediator();
 
   bool HandleButtonPress(nsPresContext* aPresContext,
                          mozilla::WidgetGUIEvent* aEvent,
@@ -73,7 +71,7 @@ class nsScrollbarButtonFrame final : public mozilla::SimpleXULLeafFrame {
     nsRepeatService::GetInstance()->Start(Notify, this, mContent->OwnerDoc(),
                                           "nsScrollbarButtonFrame"_ns);
   }
-  void StopRepeat() { nsRepeatService::GetInstance()->Stop(Notify, this); }
+  void StopRepeat();
   void Notify();
   static void Notify(void* aData) {
     static_cast<nsScrollbarButtonFrame*>(aData)->Notify();

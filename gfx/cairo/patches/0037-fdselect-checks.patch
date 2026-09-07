@@ -1,0 +1,29 @@
+# HG changeset patch
+# User Jonathan Kew <jkew@mozilla.com>
+# Date 1782235921 -3600
+#      Tue Jun 23 18:32:01 2026 +0100
+# Node ID 5692a7add098f9c1c78885dcc1b821ac11fe0ce8
+# Parent  1d143cb49e2179675d69ecc03e2eb4b8dfd7412c
+Bug 2048801 - Validate fdselect entries before use.
+
+diff --git a/gfx/cairo/cairo/src/cairo-cff-subset.c b/gfx/cairo/cairo/src/cairo-cff-subset.c
+--- a/gfx/cairo/cairo/src/cairo-cff-subset.c
++++ b/gfx/cairo/cairo/src/cairo-cff-subset.c
+@@ -1631,6 +1631,8 @@ cairo_cff_parse_charstring (cairo_cff_fo
+ 
+             if (font->is_cid) {
+                 fd = font->fdselect[glyph_id];
++                if (fd < 0 || (unsigned int) fd >= font->num_fontdicts)
++		    return CAIRO_INT_STATUS_UNSUPPORTED;
+ 		sub_num = font->type2_stack_top_value + font->fd_local_sub_bias[fd];
+ 		if (sub_num < 0 || sub_num >= (int)_cairo_array_num_elements(&font->fd_local_sub_index[fd]))
+ 		    return CAIRO_INT_STATUS_UNSUPPORTED;
+@@ -1726,6 +1728,8 @@ cairo_cff_find_width_and_subroutines_use
+     if (!font->is_opentype) {
+         if (font->is_cid) {
+             fd = font->fdselect[glyph_id];
++            if (fd < 0 || (unsigned int) fd >= font->num_fontdicts)
++                return CAIRO_INT_STATUS_UNSUPPORTED;
+             if (font->type2_found_width)
+                 width = font->fd_nominal_width[fd] + font->type2_width;
+             else

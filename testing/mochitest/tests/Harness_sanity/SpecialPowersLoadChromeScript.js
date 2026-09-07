@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 // Just receive 'foo' message and forward it back
 // as 'bar' message
 addMessageListener("foo", function (message) {

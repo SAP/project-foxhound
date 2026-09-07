@@ -1,23 +1,19 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsISupports.h"
 #include "nsFakeSynthServices.h"
-#include "nsPrintfCString.h"
+
 #include "SharedBuffer.h"
-
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/nsSynthVoiceRegistry.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/nsSpeechTask.h"
-
+#include "mozilla/dom/nsSynthVoiceRegistry.h"
+#include "nsISupports.h"
+#include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 #include "prenv.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/DebugOnly.h"
 
 #define CHANNELS 1
 #define SAMPLERATE 1600
@@ -61,6 +57,7 @@ static const VoiceDetails sVoices[] = {
      eFailAtStart},
     {"urn:moz-tts:fake:gottardo", "Gottardo Aldighieri", "it-IT-fail", false,
      eFail},
+    {"urn:moz-tts:fake:toremove", "Voice To Remove", "x-to-remove", false, 0},
 };
 
 // FakeSynthCallback
@@ -241,6 +238,8 @@ static void AddVoices(nsISpeechService* aService, const VoiceDetails* aVoices,
 void nsFakeSynthServices::Init() {
   mSynthService = new FakeSpeechSynth();
   AddVoices(mSynthService, sVoices, std::size(sVoices));
+  nsSynthVoiceRegistry::GetInstance()->RemoveVoice(
+      mSynthService, u"urn:moz-tts:fake:toremove"_ns);
 }
 
 // nsIObserver

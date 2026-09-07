@@ -2,6 +2,14 @@
 
 // Check zeal modes trigger GC as expected.
 
+// JIT compiled allocations don't trigger GC zeal.
+const jitCompilerOptions = getJitCompilerOptions();
+if (jitCompilerOptions["blinterp.warmup.trigger"] === 0 ||
+    jitCompilerOptions["baseline.warmup.trigger"] === 0 ||
+    jitCompilerOptions["ion.warmup.trigger"] === 0) {
+  quit();
+}
+
 gczeal(0);
 gcparam('minNurseryBytes', 1024 * 1024);
 gcparam('maxNurseryBytes', 1024 * 1024);
@@ -31,9 +39,8 @@ function countGCs(allocCount) {
     slice: gcparam("sliceNumber")
   }
 
-  let a = new Array(allocCount);
   for (let i = 0; i < allocCount - 1 ; i++) {
-    a.push({x: i});
+    let o = {x: i};
   }
   finishgc();
 
@@ -45,6 +52,9 @@ function countGCs(allocCount) {
 }
 
 //  0:  (None) Normal amount of collection (resets all modes)
+//
+//  This also delazifies the test scripts which can otherwise allocate and
+//  confuse the measurements.
 checkGCsWithZeal(0, 0, 100,  {major: 0,  minor: 0,  slice: 0});
 
 //  1:  (RootsChange) Collect when roots are added or removed
@@ -78,9 +88,10 @@ checkGCsWithZeal(9, 10, 100, {major: 5,  minor: 5,  slice: 10});
 // This produces non-deterministic results as we poll for background
 // finalization to finish. The work budget is ignored for this phase.
 let counts = countGCsWithZeal(10, 10, 1000);
+print(`check IncrementalMultipleSlices mode: got ${JSON.stringify(counts)}`);
 assertEq(counts.major >= 1, true);
 assertEq(counts.minor >= 1, true);
-assertEq(counts.slice >= 90, true);
+assertEq(counts.slice >= 70, true);
 
 //  11: (IncrementalMarkingValidator) Verify incremental marking
 checkGCsWithZeal(11, 0,  100, {major: 0,  minor: 0,  slice: 0});

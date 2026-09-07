@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -96,7 +94,7 @@ TEST(DelayedRunnable, BackgroundTaskQueueShutdownTask)
 
   // Leak the queue, so it gets cleaned up by xpcom-shutdown.
   nsISerialEventTarget* tq = taskQueue.forget().take();
-  mozilla::Unused << tq;
+  (void)tq;
 }
 
 /*
@@ -112,13 +110,13 @@ TEST(DelayedRunnable, nsThreadShutdownTask)
 
   // Leak the thread, so it gets cleaned up by xpcom-shutdown.
   nsIThread* t = thread.forget().take();
-  mozilla::Unused << t;
+  (void)t;
 }
 
 TEST(DelayedRunnable, TimerFiresBeforeRunnableRuns)
 {
   RefPtr<mozilla::SharedThreadPool> pool =
-      mozilla::SharedThreadPool::Get("Test Pool"_ns);
+      mozilla::SharedThreadPool::Get("Test Pool");
   auto tailTaskQueue1 =
       TaskQueue::Create(do_AddRef(pool), "TestDelayedRunnable tailTaskQueue1",
                         /* aSupportsTailDispatch = */ true);

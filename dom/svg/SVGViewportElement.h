@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,13 @@
 #ifndef DOM_SVG_SVGVIEWPORTELEMENT_H_
 #define DOM_SVG_SVGVIEWPORTELEMENT_H_
 
-#include "mozilla/Attributes.h"
-#include "nsIContentInlines.h"
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGAnimatedViewBox.h"
 #include "SVGGraphicsElement.h"
-#include "SVGPoint.h"
 #include "SVGPreserveAspectRatio.h"
+#include "nsIContentInlines.h"
 
 namespace mozilla {
 class AutoPreserveAspectRatioOverride;
@@ -34,7 +30,7 @@ class SVGViewportElement : public SVGGraphicsElement {
 
  protected:
   explicit SVGViewportElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   ~SVGViewportElement() = default;
 
  public:
@@ -48,7 +44,7 @@ class SVGViewportElement : public SVGGraphicsElement {
 
   // SVGViewportElement methods:
 
-  float GetLength(uint8_t aCtxType) const;
+  float GetLength(SVGLength::Axis aAxis) const;
 
   // public helpers:
 
@@ -83,7 +79,10 @@ class SVGViewportElement : public SVGGraphicsElement {
 
   void UpdateHasChildrenOnlyTransform();
 
-  enum ChildrenOnlyTransformChangedFlags { eDuringReflow = 1 };
+  enum class ChildrenOnlyTransformChangedFlag { DuringReflow };
+
+  using ChildrenOnlyTransformChangedFlags =
+      EnumSet<ChildrenOnlyTransformChangedFlag>;
 
   /**
    * This method notifies the style system that the overflow rects of our
@@ -95,7 +94,8 @@ class SVGViewportElement : public SVGGraphicsElement {
    * GetAttributeChangeHint is because we need to act on non-attribute (e.g.
    * currentScale) changes in addition to attribute (e.g. viewBox) changes.
    */
-  void ChildrenOnlyTransformChanged(uint32_t aFlags = 0);
+  void ChildrenOnlyTransformChanged(
+      ChildrenOnlyTransformChangedFlags aFlags = {});
 
   gfx::Matrix GetViewBoxTransform() const;
 
@@ -145,18 +145,18 @@ class SVGViewportElement : public SVGGraphicsElement {
   SVGViewBox GetViewBoxWithSynthesis(float aViewportWidth,
                                      float aViewportHeight) const;
 
-  enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  SVGAnimatedLength mLengthAttributes[4];
-  static LengthInfo sLengthInfo[4];
-  LengthAttributesInfo GetLengthInfo() override;
-
   SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio() override;
 
   virtual const SVGAnimatedViewBox& GetViewBoxInternal() const {
     return mViewBox;
   }
+
   SVGAnimatedViewBox mViewBox;
-  SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
+
+  enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
+  SVGAnimatedLength mLengthAttributes[4];
+  static LengthInfo sLengthInfo[4];
+  LengthAttributesInfo GetLengthInfo() override;
 
   // The size of the rectangular SVG viewport into which we render. This is
   // not (necessarily) the same as the content area. See:
@@ -168,7 +168,9 @@ class SVGViewportElement : public SVGGraphicsElement {
   // XXXjwatt our frame should probably reset this when it's destroyed.
   gfx::Size mViewportSize;
 
-  bool mHasChildrenOnlyTransform;
+  SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
+
+  bool mHasChildrenOnlyTransform = false;
 };
 
 }  // namespace dom

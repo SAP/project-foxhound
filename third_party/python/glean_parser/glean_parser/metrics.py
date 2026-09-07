@@ -462,8 +462,10 @@ class Object(Metric):
         self._generate_structure = self.validate_structure(structure)
         super().__init__(*args, **kwargs)
 
-    ALLOWED_TOPLEVEL = {"type", "properties", "items"}
+    ALLOWED_TOPLEVEL = {"type", "properties", "items", "description", "oneOf"}
     ALLOWED_TYPES = ["object", "array", "number", "string", "boolean"]
+    ALLOWED_SUBTYPES = ["number", "string", "boolean"]
+    ALLOWED_ONEOF_FIELDS = {"description", "type"}
 
     @staticmethod
     def _validate_substructure(structure):
@@ -474,6 +476,34 @@ class Object(Metric):
             raise ValueError(
                 f"Found additional fields: {extra}. Only allowed: {allowed}"
             )
+
+        if "oneOf" in structure:
+            subtypes = structure.pop("oneOf")
+            structure["type"] = "oneof"
+            structure["subtypes"] = []
+            if not subtypes:
+                raise ValueError("List of types required.")
+
+            for typ in subtypes:
+                extra = set(typ.keys()) - Object.ALLOWED_ONEOF_FIELDS
+                if extra:
+                    extra = ", ".join(extra)
+                    allowed = ", ".join(Object.ALLOWED_ONEOF_FIELDS)
+                    raise ValueError(
+                        f"Found additional fields: {extra}. Only allowed: {allowed}"
+                    )
+
+                ty = typ.get("type")
+                if not ty:
+                    raise ValueError("element of `oneOf` list must contain a type")
+
+                if ty not in Object.ALLOWED_SUBTYPES:
+                    raise ValueError(
+                        f"invalid `type` in `oneOf` list. found: {ty}, only allowed: {Object.ALLOWED_SUBTYPES}"
+                    )
+
+                structure["subtypes"].append(ty)
+            return structure
 
         if "type" not in structure:
             raise ValueError(
@@ -579,7 +609,6 @@ class DualLabeledCounter(Metric):
         d["categories"] = self.ordered_categories
         del d["ordered_keys"]
         del d["ordered_categories"]
-        del d["dual_labeled"]
         return d
 
 

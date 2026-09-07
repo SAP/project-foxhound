@@ -16,8 +16,7 @@ support-files = [
 
 ["test_debugger_client.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_defineLazyPrototypeGetter.js"]
@@ -28,12 +27,9 @@ skip-if = [
 
 ["test_eventemitter_destroy.js"]
 
-["test_eventemitter_static.js"]
-
 ["test_executeSoon.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_fetch-bom.js"]
@@ -56,20 +52,22 @@ skip-if = [
 
 ["test_loader.js"]
 
+["test_LocalizationHelper_missing_key.js"]
+
 ["test_natural-sort.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_pluralForm-english.js"]
 
-["test_pluralForm-makeGetter.js"]
+["test_pluralForm-irish.js"]
+
+["test_pluralForm-japanese.js"]
 
 ["test_prettifyCSS.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_require.js"]
@@ -78,8 +76,7 @@ skip-if = [
 
 ["test_require_raw.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'android' && android_version == '34' && processor == 'x86_64'",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'",
 ]
 
 ["test_safeErrorString.js"]
@@ -87,3 +84,5 @@ skip-if = [
 ["test_sprintfjs.js"]
 
 ["test_stack.js"]
+
+["test_toFixed.js"]

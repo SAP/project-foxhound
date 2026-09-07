@@ -1,0 +1,15 @@
+{
+  "label": "clinicaonline.co.il",
+  "bugs": {
+    "1902396": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.clinicaonline.co.il/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

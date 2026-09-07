@@ -79,9 +79,8 @@ class TabPriorityWatcher {
    * @param expectedPriority (String)
    *   One of the PROCESS_PRIORITY_ constants defined at the
    *   top of this file.
-   * @return Promise
-   * @resolves undefined
-   *   Once the browser reaches the expected priority.
+   * @returns {Promise<void>}
+   *   Resolves once the browser reaches the expected priority.
    */
   async waitForPriorityChange(childID, expectedPriority) {
     await TestUtils.waitForCondition(() => {
@@ -106,9 +105,8 @@ class TabPriorityWatcher {
    *
    * @param childID
    *   The childID of the process that we expect to not change priority.
-   * @return Promise
-   * @resolves undefined
-   *   Once the WAIT_FOR_CHANGE_TIME_MS duration has passed.
+   * @returns {Promise<void>}
+   *   Resolves once the WAIT_FOR_CHANGE_TIME_MS duration has passed.
    */
   async ensureNoPriorityChange(childID) {
     this.noChangeChildIDs.set(childID, []);
@@ -134,9 +132,8 @@ class TabPriorityWatcher {
    * @param expectedPriority (String)
    *   One of the PROCESS_PRIORITY_ constants defined at the
    *   top of this file.
-   * @return Promise
-   * @resolves undefined
-   *   Once the browser reaches the expected priority.
+   * @returns {Promise<void>}
+   *   Resolves once the browser reaches the expected priority.
    */
   async waitForBrowserTreePriority(browser, expectedPriority) {
     let childIDs = new Set(
@@ -195,7 +192,7 @@ class TabPriorityWatcher {
     };
   }
 
-  /** nsIObserver **/
+  /** nsIObserver */
   observe(subject, topic, data) {
     if (topic != PRIORITY_SET_TOPIC) {
       Assert.ok(false, "TabPriorityWatcher is observing the wrong topic");
@@ -255,10 +252,9 @@ registerCleanupFunction(() => {
  *     This should be one of the PROCESS_PRIORITY_ strings defined at the
  *     top of the file.
  *
- * @return Promise
- * @resolves undefined
- *   Once the tab switch is complete, and the two content processes for the
- *   tabs have reached the expected priority levels.
+ * @returns {Promise<void>}
+ *   Resolves once the tab switch is complete, and the two content processes for
+ *   the tabs have reached the expected priority levels.
  */
 async function assertPriorityChangeOnBackground({
   fromTab,

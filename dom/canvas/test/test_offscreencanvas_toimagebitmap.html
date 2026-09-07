@@ -99,6 +99,7 @@ invoke(async () => {
   await new Promise(go =>
     SpecialPowers.pushPrefEnv({'set': [
       ['webgl.force-enabled', true],
+      ["privacy.baselineFingerprintingProtection", false]
     ]}, go));
 
   console.log('await testWorker...');

@@ -44,15 +44,6 @@ Building NSS
       brew install mercurial git ninja python3-pip
       python3 -m pip install gyp-next
 
-   It is also necessary to make sure that a `python` (not just `python3`)
-   executable is in the path.
-   The Homebrew Python installation has the necessary symlink but may require
-   explicit adding to the PATH variable, for example like this:
-
-   .. code::
-
-      export PATH="/opt/homebrew/opt/python/libexec/bin:$PATH"
-
    **On Windows:**
 
    .. code::
@@ -96,7 +87,7 @@ Building NSS
 
    .. code::
 
-      hg clone https://hg.mozilla.org/projects/nspr
+      git clone https://github.com/mozilla/nspr
       hg clone https://hg.mozilla.org/projects/nss
 
 
@@ -107,7 +98,7 @@ Building NSS
 
    .. code::
 
-      git clone hg::https://hg.mozilla.org/projects/nspr
+      git clone https://github.com/mozilla/nspr
       git clone hg::https://hg.mozilla.org/projects/nss
 
 
@@ -283,7 +274,6 @@ Building NSS
 
    The following static libraries aren't included in any shared libraries
 
-   -  ``libcrmf.a``/``crmf.lib`` provides an API for CRMF operations.
    -  ``libjar.a``/``jar.lib`` provides an API for creating JAR files.
 
    The following static libraries are included only in external loadable PKCS

@@ -22,6 +22,9 @@
 # do ok(true, "Type not supported") and stop the test.
 
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 subsuite = "media"
 tags = "media-gpu"
 support-files = [
@@ -697,51 +700,81 @@ support-files = [
 ]
 
 ["test_seek-1.html"]
-skip-if = ["os == 'android'"] # bug 1322806, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1322806, android(bug 1232305)
+]
 
 ["test_seek-10.html"]
-skip-if = ["os == 'android'"] # android(bug 1232305)
+skip-if = [
+  "os == 'android'", # android(bug 1232305)
+]
 
 ["test_seek-11.html"]
-skip-if = ["os == 'android'"] # bug 1323133, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1323133, android(bug 1232305)
+]
 
 ["test_seek-12.html"]
-skip-if = ["os == 'android'"] # bug 1321081, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1321081, android(bug 1232305)
+]
 
 ["test_seek-13.html"]
-skip-if = ["os == 'android'"] # bug 1299174, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1299174, android(bug 1232305)
+]
 
 ["test_seek-14.html"]
-skip-if = ["os == 'android'"] # android(bug 1232305)
+skip-if = [
+  "os == 'android'", # android(bug 1232305)
+]
 
 ["test_seek-2.html"]
-skip-if = ["os == 'android'"] # bug 1309778, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1309778, android(bug 1232305)
+]
 
 ["test_seek-3.html"]
-skip-if = ["os == 'android'"] # bug 1321082, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1321082, android(bug 1232305)
+]
 
 ["test_seek-4.html"]
-skip-if = ["os == 'android'"] # android(bug 1232305)
+skip-if = [
+  "os == 'android'", # android(bug 1232305)
+]
 
 ["test_seek-5.html"]
-skip-if = ["os == 'android'"] # android(bug 1232305)
+skip-if = [
+  "os == 'android'", # android(bug 1232305)
+]
 
 ["test_seek-6.html"]
-skip-if = ["os == 'android'"] # bug 1336629, bug 1324482, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1336629, bug 1324482, android(bug 1232305)
+]
 
 ["test_seek-7.html"]
-skip-if = ["os == 'android'"] # android(bug 1232305)
+skip-if = [
+  "os == 'android'", # android(bug 1232305)
+]
 
 ["test_seek-8.html"]
-skip-if = ["os == 'android'"] # bug 1310584, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1310584, android(bug 1232305)
+]
 
 ["test_seek-9.html"]
-skip-if = ["os == 'android'"] # bug 1332019, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1332019, android(bug 1232305)
+]
 
 ["test_seekLies.html"]
 
 ["test_seekToNextFrame.html"]
-skip-if = ["os == 'android'"] # bug 1329391, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1329391, android(bug 1232305)
+]
 tags = "seektonextframe"
 
 ["test_seek_duration.html"]
@@ -751,10 +784,16 @@ tags = "seektonextframe"
 ["test_seek_nosrc.html"]
 
 ["test_seek_out_of_range.html"]
-skip-if = ["os == 'android'"] # bug 1299382, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1299382, android(bug 1232305)
+]
 
 ["test_seek_promise_bug1344357.html"]
-skip-if = ["os == 'android'"] # bug 1299382, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1299382, android(bug 1232305)
+]
 
 ["test_seekable1.html"]
-skip-if = ["os == 'android'"] # android(bug 1232305)
+skip-if = [
+  "os == 'android'", # android(bug 1232305)
+]

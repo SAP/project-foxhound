@@ -17,12 +17,8 @@
           opener.info("file_bug1300461_back.html");
           opener.is(shistory.count, 2, "check history length");
           opener.is(shistory.index, 1, "check history index");
-          if (!SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-            opener.is(shistory.legacySHistory.requestedIndex, -1, "check requestedIndex");
-          } else {
-            let index = await opener.getSHRequestedIndex(SpecialPowers.wrap(window).browsingContext.id);
-            opener.is(index, -1, "check requestedIndex");
-          }
+          let index = await opener.getSHRequestedIndex(SpecialPowers.wrap(window).browsingContext.id);
+          opener.is(index, -1, "check requestedIndex");
 
           opener.ok(webNav.canGoBackIgnoringUserInteraction, "check canGoBackIgnoringUserInteraction");
           if (opener.testCount == 1) {

@@ -28,7 +28,7 @@ class StatsCollectorCallbackAdapter : public RTCStatsCollectorCallback {
       : completion_handler_(completion_handler) {}
 
   void OnStatsDelivered(
-      const rtc::scoped_refptr<const RTCStatsReport> &report) override {
+      const webrtc::scoped_refptr<const RTCStatsReport> &report) override {
     RTC_DCHECK(completion_handler_);
     RTC_OBJC_TYPE(RTCStatisticsReport) *statisticsReport =
         [[RTC_OBJC_TYPE(RTCStatisticsReport) alloc] initWithReport:*report];
@@ -74,8 +74,8 @@ class StatsObserverAdapter : public StatsObserver {
     - (void)statisticsForSender
     : (RTC_OBJC_TYPE(RTCRtpSender) *)sender completionHandler
     : (RTCStatisticsCompletionHandler)completionHandler {
-  rtc::scoped_refptr<webrtc::StatsCollectorCallbackAdapter> collector =
-      rtc::make_ref_counted<webrtc::StatsCollectorCallbackAdapter>(
+  webrtc::scoped_refptr<webrtc::StatsCollectorCallbackAdapter> collector =
+      webrtc::make_ref_counted<webrtc::StatsCollectorCallbackAdapter>(
           completionHandler);
   self.nativePeerConnection->GetStats(sender.nativeRtpSender, collector);
 }
@@ -83,16 +83,16 @@ class StatsObserverAdapter : public StatsObserver {
 - (void)statisticsForReceiver:(RTC_OBJC_TYPE(RTCRtpReceiver) *)receiver
             completionHandler:
                 (RTCStatisticsCompletionHandler)completionHandler {
-  rtc::scoped_refptr<webrtc::StatsCollectorCallbackAdapter> collector =
-      rtc::make_ref_counted<webrtc::StatsCollectorCallbackAdapter>(
+  webrtc::scoped_refptr<webrtc::StatsCollectorCallbackAdapter> collector =
+      webrtc::make_ref_counted<webrtc::StatsCollectorCallbackAdapter>(
           completionHandler);
   self.nativePeerConnection->GetStats(receiver.nativeRtpReceiver, collector);
 }
 
 - (void)statisticsWithCompletionHandler:
     (RTCStatisticsCompletionHandler)completionHandler {
-  rtc::scoped_refptr<webrtc::StatsCollectorCallbackAdapter> collector =
-      rtc::make_ref_counted<webrtc::StatsCollectorCallbackAdapter>(
+  webrtc::scoped_refptr<webrtc::StatsCollectorCallbackAdapter> collector =
+      webrtc::make_ref_counted<webrtc::StatsCollectorCallbackAdapter>(
           completionHandler);
   self.nativePeerConnection->GetStats(collector.get());
 }
@@ -102,12 +102,15 @@ class StatsObserverAdapter : public StatsObserver {
     completionHandler:
         (void (^)(NSArray<RTC_OBJC_TYPE(RTCLegacyStatsReport) *> *stats))
             completionHandler {
-  rtc::scoped_refptr<webrtc::StatsObserverAdapter> observer =
-      rtc::make_ref_counted<webrtc::StatsObserverAdapter>(completionHandler);
+  webrtc::scoped_refptr<webrtc::StatsObserverAdapter> observer =
+      webrtc::make_ref_counted<webrtc::StatsObserverAdapter>(completionHandler);
   webrtc::PeerConnectionInterface::StatsOutputLevel nativeOutputLevel =
       [[self class] nativeStatsOutputLevelForLevel:statsOutputLevel];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   self.nativePeerConnection->GetStats(
       observer.get(), mediaStreamTrack.nativeTrack.get(), nativeOutputLevel);
+#pragma clang diagnostic pop
 }
 
 @end

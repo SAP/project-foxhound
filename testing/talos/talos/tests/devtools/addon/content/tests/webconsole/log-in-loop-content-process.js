@@ -38,9 +38,9 @@ module.exports = async function () {
     `data:application/javascript,(${encodeURIComponent(
       `function () {
         addMessageListener("do-logs", function ({data}) {
-          const s = Cu.now();
+          const s = ChromeUtils.now();
           content.wrappedJSObject.doLogs(data, ${TOTAL_MESSAGES});
-          sendAsyncMessage('logs-done',  Cu.now() - s);
+          sendAsyncMessage('logs-done',  ChromeUtils.now() - s);
           ChromeUtils.addProfilerMarker(
             "DAMP",
             { startTime: s, category: "Test" },

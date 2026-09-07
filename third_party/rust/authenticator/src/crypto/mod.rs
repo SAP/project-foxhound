@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use crate::ctap2::commands::client_pin::PinUvAuthTokenPermission;
-use crate::ctap2::commands::get_info::AuthenticatorInfo;
+use crate::ctap2::commands::get_info::{AuthenticatorInfo, AuthenticatorVersion};
 use crate::errors::AuthenticatorError;
 use crate::{ctap2::commands::CommandError, transport::errors::HIDError};
 use serde::{
@@ -24,6 +24,11 @@ mod openssl;
 #[cfg(feature = "crypto_openssl")]
 use self::openssl as backend;
 
+#[cfg(feature = "crypto_rust")]
+mod rustcrypto;
+#[cfg(feature = "crypto_rust")]
+use rustcrypto as backend;
+
 #[cfg(feature = "crypto_dummy")]
 mod dummy;
 #[cfg(feature = "crypto_dummy")]
@@ -40,9 +45,18 @@ pub use backend::ecdsa_p256_sha256_sign_raw;
 
 pub struct PinUvAuthProtocol(Box<dyn PinProtocolImpl + Send + Sync>);
 impl PinUvAuthProtocol {
+    pub fn from_id(id: u64) -> Option<Self> {
+        match id {
+            1 => Some(Self(Box::new(PinUvAuth1 {}))),
+            2 => Some(Self(Box::new(PinUvAuth2 {}))),
+            _ => None,
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.0.protocol_id()
     }
+
     pub fn encapsulate(&self, peer_cose_key: &COSEKey) -> Result<SharedSecret, CryptoError> {
         self.0.encapsulate(peer_cose_key)
     }
@@ -74,7 +88,6 @@ impl Clone for PinUvAuthProtocol {
 /// CTAP 2.1, Section 6.5.4. PIN/UV Auth Protocol Abstract Definition
 trait PinProtocolImpl: ClonablePinProtocolImpl {
     fn protocol_id(&self) -> u64;
-    fn initialize(&self);
     fn encrypt(&self, key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError>;
     fn decrypt(&self, key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError>;
     fn authenticate(&self, key: &[u8], message: &[u8]) -> Result<Vec<u8>, CryptoError>;
@@ -107,9 +120,7 @@ trait PinProtocolImpl: ClonablePinProtocolImpl {
             _ => return Err(CryptoError::UnsupportedKeyType),
         };
 
-        let peer_spki = peer_cose_ec2_key.der_spki()?;
-
-        let (shared_point, client_public_sec1) = ecdhe_p256_raw(&peer_spki)?;
+        let (shared_point, client_public_sec1) = ecdhe_p256_raw(peer_cose_ec2_key)?;
 
         let client_cose_ec2_key =
             COSEEC2Key::from_sec1_uncompressed(Curve::SECP256R1, &client_public_sec1)?;
@@ -141,28 +152,22 @@ impl TryFrom<&AuthenticatorInfo> for PinUvAuthProtocol {
         // has no preference, it SHOULD select the one listed first in
         // pinUvAuthProtocols."
         if let Some(pin_protocols) = &info.pin_protocols {
-            for proto_id in pin_protocols.iter() {
-                match proto_id {
-                    1 => return Ok(PinUvAuthProtocol(Box::new(PinUvAuth1 {}))),
-                    2 => return Ok(PinUvAuthProtocol(Box::new(PinUvAuth2 {}))),
-                    _ => continue,
-                }
-            }
+            pin_protocols
+                .iter()
+                .copied()
+                .find_map(PinUvAuthProtocol::from_id)
+                .ok_or(CommandError::UnsupportedPinProtocol)
         } else {
             match info.max_supported_version() {
-                crate::ctap2::commands::get_info::AuthenticatorVersion::U2F_V2 => {
-                    return Err(CommandError::UnsupportedPinProtocol)
+                AuthenticatorVersion::U2F_V2 | AuthenticatorVersion::Unknown => {
+                    Err(CommandError::UnsupportedPinProtocol)
                 }
-                crate::ctap2::commands::get_info::AuthenticatorVersion::FIDO_2_0 => {
-                    return Ok(PinUvAuthProtocol(Box::new(PinUvAuth1 {})))
-                }
-                crate::ctap2::commands::get_info::AuthenticatorVersion::FIDO_2_1_PRE
-                | crate::ctap2::commands::get_info::AuthenticatorVersion::FIDO_2_1 => {
-                    return Ok(PinUvAuthProtocol(Box::new(PinUvAuth2 {})))
+                AuthenticatorVersion::FIDO_2_0 => Ok(PinUvAuthProtocol(Box::new(PinUvAuth1 {}))),
+                AuthenticatorVersion::FIDO_2_1_PRE | AuthenticatorVersion::FIDO_2_1 => {
+                    Ok(PinUvAuthProtocol(Box::new(PinUvAuth2 {})))
                 }
             }
         }
-        Err(CommandError::UnsupportedPinProtocol)
     }
 }
 
@@ -182,8 +187,6 @@ impl PinProtocolImpl for PinUvAuth1 {
     fn protocol_id(&self) -> u64 {
         1
     }
-
-    fn initialize(&self) {}
 
     fn encrypt(&self, key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         // [CTAP 2.1]
@@ -227,8 +230,6 @@ impl PinProtocolImpl for PinUvAuth2 {
     fn protocol_id(&self) -> u64 {
         2
     }
-
-    fn initialize(&self) {}
 
     fn encrypt(&self, key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         // [CTAP 2.1]
@@ -513,54 +514,59 @@ pub enum COSEAlgorithm {
     // /// used by validators, but can exist in some windows hello tpm's
     // INSECURE_RS1 = -65535,
     INSECURE_RS1 = -65535,             //  RSASSA-PKCS1-v1_5 using SHA-1
-    RS512 = -259,                      //    RSASSA-PKCS1-v1_5 using SHA-512
-    RS384 = -258,                      //    RSASSA-PKCS1-v1_5 using SHA-384
-    RS256 = -257,                      //    RSASSA-PKCS1-v1_5 using SHA-256
-    ES256K = -47,                      //     ECDSA using secp256k1 curve and SHA-256
-    HSS_LMS = -46,                     //     HSS/LMS hash-based digital signature
-    SHAKE256 = -45,                    //     SHAKE-256 512-bit Hash Value
-    SHA512 = -44,                      //     SHA-2 512-bit Hash
-    SHA384 = -43,                      //     SHA-2 384-bit Hash
-    RSAES_OAEP_SHA_512 = -42,          //     RSAES-OAEP w/ SHA-512
-    RSAES_OAEP_SHA_256 = -41,          //     RSAES-OAEP w/ SHA-256
-    RSAES_OAEP_RFC_8017_default = -40, //     RSAES-OAEP w/ SHA-1
-    PS512 = -39,                       //     RSASSA-PSS w/ SHA-512
-    PS384 = -38,                       //     RSASSA-PSS w/ SHA-384
-    PS256 = -37,                       //     RSASSA-PSS w/ SHA-256
-    ES512 = -36,                       //     ECDSA w/ SHA-512
-    ES384 = -35,                       //     ECDSA w/ SHA-384
-    ECDH_SS_A256KW = -34,              //     ECDH SS w/ Concat KDF and AES Key Wrap w/ 256-bit key
-    ECDH_SS_A192KW = -33,              //     ECDH SS w/ Concat KDF and AES Key Wrap w/ 192-bit key
-    ECDH_SS_A128KW = -32,              //     ECDH SS w/ Concat KDF and AES Key Wrap w/ 128-bit key
-    ECDH_ES_A256KW = -31,              //     ECDH ES w/ Concat KDF and AES Key Wrap w/ 256-bit key
-    ECDH_ES_A192KW = -30,              //     ECDH ES w/ Concat KDF and AES Key Wrap w/ 192-bit key
-    ECDH_ES_A128KW = -29,              //     ECDH ES w/ Concat KDF and AES Key Wrap w/ 128-bit key
-    ECDH_SS_HKDF512 = -28,             //     ECDH SS w/ HKDF - generate key directly
-    ECDH_SS_HKDF256 = -27,             //     ECDH SS w/ HKDF - generate key directly
-    ECDH_ES_HKDF512 = -26,             //     ECDH ES w/ HKDF - generate key directly
-    ECDH_ES_HKDF256 = -25,             //     ECDH ES w/ HKDF - generate key directly
-    SHAKE128 = -18,                    //     SHAKE-128 256-bit Hash Value
-    SHA512_256 = -17,                  //     SHA-2 512-bit Hash truncated to 256-bits
-    SHA256 = -16,                      //     SHA-2 256-bit Hash
-    SHA256_64 = -15,                   //     SHA-2 256-bit Hash truncated to 64-bits
-    SHA1 = -14,                        //     SHA-1 Hash
-    Direct_HKDF_AES256 = -13,          //     Shared secret w/ AES-MAC 256-bit key
-    Direct_HKDF_AES128 = -12,          //     Shared secret w/ AES-MAC 128-bit key
-    Direct_HKDF_SHA512 = -11,          //     Shared secret w/ HKDF and SHA-512
-    Direct_HKDF_SHA256 = -10,          //     Shared secret w/ HKDF and SHA-256
+    RS512 = -259,                      //  RSASSA-PKCS1-v1_5 using SHA-512
+    RS384 = -258,                      //  RSASSA-PKCS1-v1_5 using SHA-384
+    RS256 = -257,                      //  RSASSA-PKCS1-v1_5 using SHA-256
+    Ed448 = -53,                       //  EdDSA using the Ed448 parameter set
+    ESP512 = -52,                      //  ECDSA using P-521 curve and SHA-512
+    ESP384 = -51,                      //  ECDSA using P-384 curve and SHA-384
+    ES256K = -47,                      //  ECDSA using secp256k1 curve and SHA-256
+    HSS_LMS = -46,                     //  HSS/LMS hash-based digital signature
+    SHAKE256 = -45,                    //  SHAKE-256 512-bit Hash Value
+    SHA512 = -44,                      //  SHA-2 512-bit Hash
+    SHA384 = -43,                      //  SHA-2 384-bit Hash
+    RSAES_OAEP_SHA_512 = -42,          //  RSAES-OAEP w/ SHA-512
+    RSAES_OAEP_SHA_256 = -41,          //  RSAES-OAEP w/ SHA-256
+    RSAES_OAEP_RFC_8017_default = -40, //  RSAES-OAEP w/ SHA-1
+    PS512 = -39,                       //  RSASSA-PSS w/ SHA-512
+    PS384 = -38,                       //  RSASSA-PSS w/ SHA-384
+    PS256 = -37,                       //  RSASSA-PSS w/ SHA-256
+    ES512 = -36,                       //  ECDSA w/ SHA-512
+    ES384 = -35,                       //  ECDSA w/ SHA-384
+    ECDH_SS_A256KW = -34,              //  ECDH SS w/ Concat KDF and AES Key Wrap w/ 256-bit key
+    ECDH_SS_A192KW = -33,              //  ECDH SS w/ Concat KDF and AES Key Wrap w/ 192-bit key
+    ECDH_SS_A128KW = -32,              //  ECDH SS w/ Concat KDF and AES Key Wrap w/ 128-bit key
+    ECDH_ES_A256KW = -31,              //  ECDH ES w/ Concat KDF and AES Key Wrap w/ 256-bit key
+    ECDH_ES_A192KW = -30,              //  ECDH ES w/ Concat KDF and AES Key Wrap w/ 192-bit key
+    ECDH_ES_A128KW = -29,              //  ECDH ES w/ Concat KDF and AES Key Wrap w/ 128-bit key
+    ECDH_SS_HKDF512 = -28,             //  ECDH SS w/ HKDF - generate key directly
+    ECDH_SS_HKDF256 = -27,             //  ECDH SS w/ HKDF - generate key directly
+    ECDH_ES_HKDF512 = -26,             //  ECDH ES w/ HKDF - generate key directly
+    ECDH_ES_HKDF256 = -25,             //  ECDH ES w/ HKDF - generate key directly
+    Ed25519 = -19,                     //  EdDSA using the Ed25519 parameter set
+    SHAKE128 = -18,                    //  SHAKE-128 256-bit Hash Value
+    SHA512_256 = -17,                  //  SHA-2 512-bit Hash truncated to 256-bits
+    SHA256 = -16,                      //  SHA-2 256-bit Hash
+    SHA256_64 = -15,                   //  SHA-2 256-bit Hash truncated to 64-bits
+    SHA1 = -14,                        //  SHA-1 Hash
+    Direct_HKDF_AES256 = -13,          //  Shared secret w/ AES-MAC 256-bit key
+    Direct_HKDF_AES128 = -12,          //  Shared secret w/ AES-MAC 128-bit key
+    Direct_HKDF_SHA512 = -11,          //  Shared secret w/ HKDF and SHA-512
+    Direct_HKDF_SHA256 = -10,          //  Shared secret w/ HKDF and SHA-256
+    ESP256 = -9,                       //  ECDSA using P-256 curve and SHA-256
     EDDSA = -8,                        //  EdDSA
     ES256 = -7,                        //  ECDSA w/ SHA-256
     Direct = -6,                       //  Direct use of CEK
     A256KW = -5,                       //  AES Key Wrap w/ 256-bit key
     A192KW = -4,                       //  AES Key Wrap w/ 192-bit key
     A128KW = -3,                       //  AES Key Wrap w/ 128-bit key
-    A128GCM = 1,                       //   AES-GCM mode w/ 128-bit key, 128-bit tag
-    A192GCM = 2,                       //   AES-GCM mode w/ 192-bit key, 128-bit tag
-    A256GCM = 3,                       //   AES-GCM mode w/ 256-bit key, 128-bit tag
-    HMAC256_64 = 4,                    //   HMAC w/ SHA-256 truncated to 64 bits
-    HMAC256_256 = 5,                   //   HMAC w/ SHA-256
-    HMAC384_384 = 6,                   //   HMAC w/ SHA-384
-    HMAC512_512 = 7,                   //   HMAC w/ SHA-512
+    A128GCM = 1,                       //  AES-GCM mode w/ 128-bit key, 128-bit tag
+    A192GCM = 2,                       //  AES-GCM mode w/ 192-bit key, 128-bit tag
+    A256GCM = 3,                       //  AES-GCM mode w/ 256-bit key, 128-bit tag
+    HMAC256_64 = 4,                    //  HMAC w/ SHA-256 truncated to 64 bits
+    HMAC256_256 = 5,                   //  HMAC w/ SHA-256
+    HMAC384_384 = 6,                   //  HMAC w/ SHA-384
+    HMAC512_512 = 7,                   //  HMAC w/ SHA-512
     AES_CCM_16_64_128 = 10,            //  AES-CCM mode 128-bit key, 64-bit tag, 13-byte nonce
     AES_CCM_16_64_256 = 11,            //  AES-CCM mode 256-bit key, 64-bit tag, 13-byte nonce
     AES_CCM_64_64_128 = 12,            //  AES-CCM mode 128-bit key, 64-bit tag, 7-byte nonce
@@ -621,6 +627,9 @@ impl TryFrom<i64> for COSEAlgorithm {
             i if i == COSEAlgorithm::RS512 as i64 => Ok(COSEAlgorithm::RS512),
             i if i == COSEAlgorithm::RS384 as i64 => Ok(COSEAlgorithm::RS384),
             i if i == COSEAlgorithm::RS256 as i64 => Ok(COSEAlgorithm::RS256),
+            i if i == COSEAlgorithm::Ed448 as i64 => Ok(COSEAlgorithm::Ed448),
+            i if i == COSEAlgorithm::ESP512 as i64 => Ok(COSEAlgorithm::ESP512),
+            i if i == COSEAlgorithm::ESP384 as i64 => Ok(COSEAlgorithm::ESP384),
             i if i == COSEAlgorithm::ES256K as i64 => Ok(COSEAlgorithm::ES256K),
             i if i == COSEAlgorithm::HSS_LMS as i64 => Ok(COSEAlgorithm::HSS_LMS),
             i if i == COSEAlgorithm::SHAKE256 as i64 => Ok(COSEAlgorithm::SHAKE256),
@@ -650,6 +659,7 @@ impl TryFrom<i64> for COSEAlgorithm {
             i if i == COSEAlgorithm::ECDH_SS_HKDF256 as i64 => Ok(COSEAlgorithm::ECDH_SS_HKDF256),
             i if i == COSEAlgorithm::ECDH_ES_HKDF512 as i64 => Ok(COSEAlgorithm::ECDH_ES_HKDF512),
             i if i == COSEAlgorithm::ECDH_ES_HKDF256 as i64 => Ok(COSEAlgorithm::ECDH_ES_HKDF256),
+            i if i == COSEAlgorithm::Ed25519 as i64 => Ok(COSEAlgorithm::Ed25519),
             i if i == COSEAlgorithm::SHAKE128 as i64 => Ok(COSEAlgorithm::SHAKE128),
             i if i == COSEAlgorithm::SHA512_256 as i64 => Ok(COSEAlgorithm::SHA512_256),
             i if i == COSEAlgorithm::SHA256 as i64 => Ok(COSEAlgorithm::SHA256),
@@ -667,6 +677,7 @@ impl TryFrom<i64> for COSEAlgorithm {
             i if i == COSEAlgorithm::Direct_HKDF_SHA256 as i64 => {
                 Ok(COSEAlgorithm::Direct_HKDF_SHA256)
             }
+            i if i == COSEAlgorithm::ESP256 as i64 => Ok(COSEAlgorithm::ESP256),
             i if i == COSEAlgorithm::EDDSA as i64 => Ok(COSEAlgorithm::EDDSA),
             i if i == COSEAlgorithm::ES256 as i64 => Ok(COSEAlgorithm::ES256),
             i if i == COSEAlgorithm::Direct as i64 => Ok(COSEAlgorithm::Direct),
@@ -1131,7 +1142,7 @@ pub struct U2FRegisterAnswer<'a> {
 }
 
 // We will only return MalformedInput here
-pub fn parse_u2f_der_certificate(data: &[u8]) -> Result<U2FRegisterAnswer, CryptoError> {
+pub fn parse_u2f_der_certificate(data: &[u8]) -> Result<U2FRegisterAnswer<'_>, CryptoError> {
     // So we don't panic below, when accessing individual bytes
     if data.len() < 4 {
         return Err(CryptoError::MalformedInput);
@@ -1452,8 +1463,8 @@ mod test {
         // We are using `test_cose_ec2_p256_ecdh_sha256()` here, because we need a way to hand in
         // the private key which would be generated on the fly otherwise (ephemeral keys),
         // to predict the outputs
-        let peer_spki = peer_ec2_key.der_spki().unwrap();
-        let shared_point = test_ecdh_p256_raw(&peer_spki, &EC_PUB_X, &EC_PUB_Y, &EC_PRIV).unwrap();
+        let shared_point =
+            test_ecdh_p256_raw(&peer_ec2_key, &EC_PUB_X, &EC_PUB_Y, &EC_PRIV).unwrap();
         let shared_secret = SharedSecret {
             pin_protocol: PinUvAuthProtocol(Box::new(PinUvAuth1 {})),
             key: sha256(&shared_point).unwrap(),

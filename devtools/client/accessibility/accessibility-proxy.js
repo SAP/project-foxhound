@@ -25,12 +25,15 @@ const {
 class AccessibilityProxy {
   #panel;
   #initialized;
+  #accessibilityWalkerFronts;
+  #currentAccessibleWalkerFront;
+
   constructor(commands, panel) {
     this.commands = commands;
     this.#panel = panel;
 
     this.#initialized = false;
-    this._accessibilityWalkerFronts = new Set();
+    this.#accessibilityWalkerFronts = new Set();
     this.lifecycleEvents = new Map();
     this.accessibilityEvents = new Map();
 
@@ -85,7 +88,7 @@ class AccessibilityProxy {
   /**
    * Perform an audit for a given filter.
    *
-   * @param  {String} filter
+   * @param  {string} filter
    *         Type of an audit to perform.
    * @param  {Function} onProgress
    *         Audit progress callback.
@@ -174,7 +177,7 @@ class AccessibilityProxy {
    * Return the topmost level accessibility walker to be used as the root of
    * the accessibility tree view.
    *
-   * @return {Object}
+   * @return {object}
    *         Topmost accessibility walker.
    */
   getAccessibilityTreeRoot() {
@@ -184,6 +187,7 @@ class AccessibilityProxy {
   /**
    * Look up accessibility fronts (get an existing one or create a new one) for
    * all existing target fronts and run a task with each one of them.
+   *
    * @param {Function} task
    *        Function to execute with each accessiblity front.
    */
@@ -210,6 +214,7 @@ class AccessibilityProxy {
    * Look up accessibility walker fronts (get an existing one or create a new
    * one using accessibility front) for all existing target fronts and run a
    * task with each one of them.
+   *
    * @param {Function} task
    *        Function to execute with each accessiblity walker front.
    */
@@ -227,12 +232,12 @@ class AccessibilityProxy {
     return async accessible => {
       if (accessible) {
         const accessibleWalkerFront = accessible.getParent();
-        if (this._currentAccessibleWalkerFront !== accessibleWalkerFront) {
-          if (this._currentAccessibleWalkerFront) {
-            await this._currentAccessibleWalkerFront.unhighlight();
+        if (this.#currentAccessibleWalkerFront !== accessibleWalkerFront) {
+          if (this.#currentAccessibleWalkerFront) {
+            await this.#currentAccessibleWalkerFront.unhighlight();
           }
 
-          this._currentAccessibleWalkerFront = accessibleWalkerFront;
+          this.#currentAccessibleWalkerFront = accessibleWalkerFront;
         }
       }
 
@@ -242,7 +247,8 @@ class AccessibilityProxy {
 
   /**
    * Start picking and add walker listeners.
-   * @param  {Boolean} doFocus
+   *
+   * @param  {boolean} doFocus
    *         If true, move keyboard focus into content.
    */
   pick(doFocus, onHovered, onPicked, onPreviewed, onCanceled) {
@@ -274,7 +280,7 @@ class AccessibilityProxy {
    * Stop picking and remove all walker listeners.
    */
   async cancelPick() {
-    this._currentAccessibleWalkerFront = null;
+    this.#currentAccessibleWalkerFront = null;
     return this.withAllAccessibilityWalkerFronts(
       async accessibleWalkerFront => {
         await accessibleWalkerFront.cancelPick();
@@ -318,7 +324,7 @@ class AccessibilityProxy {
   }
 
   startListeningForAccessibilityEvents(events) {
-    for (const accessibleWalkerFront of this._accessibilityWalkerFronts.values()) {
+    for (const accessibleWalkerFront of this.#accessibilityWalkerFronts.values()) {
       this.startListening(accessibleWalkerFront, {
         events,
         // Only register listeners once (for top level), no need to register
@@ -329,7 +335,7 @@ class AccessibilityProxy {
   }
 
   stopListeningForAccessibilityEvents(events) {
-    for (const accessibleWalkerFront of this._accessibilityWalkerFronts.values()) {
+    for (const accessibleWalkerFront of this.#accessibilityWalkerFronts.values()) {
       this.stopListening(accessibleWalkerFront, {
         events,
         // Only unregister listeners once (for top level), no need to unregister
@@ -446,14 +452,14 @@ class AccessibilityProxy {
     this.commands = null;
   }
 
-  _getEvents(front) {
+  #getEvents(front) {
     return front.typeName === "accessiblewalker"
       ? this.accessibilityEvents
       : this.lifecycleEvents;
   }
 
   registerEvent(front, type, listener) {
-    const events = this._getEvents(front);
+    const events = this.#getEvents(front);
     if (events.has(type)) {
       events.get(type).add(listener);
     } else {
@@ -462,7 +468,7 @@ class AccessibilityProxy {
   }
 
   unregisterEvent(front, type, listener) {
-    const events = this._getEvents(front);
+    const events = this.#getEvents(front);
     if (!events.has(type)) {
       return;
     }
@@ -499,7 +505,7 @@ class AccessibilityProxy {
   }
 
   onAccessibleWalkerFrontAvailable(accessibleWalkerFront) {
-    this._accessibilityWalkerFronts.add(accessibleWalkerFront);
+    this.#accessibilityWalkerFronts.add(accessibleWalkerFront);
     // Apply all existing accessible walker front event listeners to the new
     // front.
     for (const [type, listeners] of this.accessibilityEvents.entries()) {
@@ -510,7 +516,7 @@ class AccessibilityProxy {
   }
 
   onAccessibleWalkerFrontDestroyed(accessibleWalkerFront) {
-    this._accessibilityWalkerFronts.delete(accessibleWalkerFront);
+    this.#accessibilityWalkerFronts.delete(accessibleWalkerFront);
     // Remove all existing accessible walker front event listeners from the
     // destroyed front.
     for (const [type, listeners] of this.accessibilityEvents.entries()) {
@@ -532,7 +538,7 @@ class AccessibilityProxy {
     }
 
     // Clear all the fronts collected by `watchFronts` on the previous set of targets/documents.
-    this._accessibilityWalkerFronts.clear();
+    this.#accessibilityWalkerFronts.clear();
   }
 
   async onTargetDestroyed({ targetFront }) {
@@ -549,6 +555,15 @@ class AccessibilityProxy {
     this.simulatorFront = this.accessibilityFront.simulatorFront;
     if (this.simulatorFront) {
       this.simulate = types => this.simulatorFront.simulate({ types });
+
+      // Re-apply a potential existing simulation
+      const { simulation } = this.#panel.panelWin.view.store.getState();
+      const simulationType = Object.keys(simulation).find(
+        name => simulation[name]
+      );
+      if (simulationType) {
+        await this.simulate([simulationType]);
+      }
     } else {
       this.simulate = null;
     }

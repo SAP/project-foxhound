@@ -56,11 +56,10 @@ async function basicTest(view, name, result) {
 
   const spectrum = cPicker.spectrum;
   const onHidden = cPicker.tooltip.once("hidden");
-  // Validating the color change ends up updating the rule view twice
-  const onRuleViewChanged = waitForNEvents(view, "ruleview-changed", 2);
+  const onModifications = view.once("property-value-updated");
   focusAndSendKey(spectrum.element.ownerDocument.defaultView, "RETURN");
   await onHidden;
-  await onRuleViewChanged;
+  await onModifications;
 
   is(
     getRuleViewPropertyValue(view, "#testid", "color"),

@@ -16,6 +16,10 @@ add_task(async function run_test() {
     is_win7_or_newer = true;
   }
 
+  registerCleanupFunction(async () => {
+    Services.prefs.clearUserPref("termsofuse.bypassNotification");
+  });
+
   // try a basic crash
   await do_content_crash(null, function (mdump, extra) {
     Assert.ok(mdump.exists());
@@ -108,6 +112,8 @@ add_task(async function run_test() {
     function () {
       // Enable the FHR, official policy bypass (since we're in a test) and
       // specify a telemetry server & client ID.
+      Services.prefs.setBoolPref("termsofuse.bypassNotification", true);
+      Services.prefs.setBoolPref("browser.preonboarding.enabled", false);
       Services.prefs.setBoolPref(
         "datareporting.policy.dataSubmissionPolicyBypassNotification",
         true
@@ -178,6 +184,7 @@ add_task(async function run_test() {
         "datareporting.policy.dataSubmissionPolicyBypassNotification",
         true
       );
+      Services.prefs.setBoolPref("termsofuse.bypassNotification", true);
       Services.prefs.setBoolPref(
         "datareporting.healthreport.uploadEnabled",
         false

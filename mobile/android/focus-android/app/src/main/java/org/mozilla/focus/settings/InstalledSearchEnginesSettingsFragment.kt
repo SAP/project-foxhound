@@ -24,6 +24,9 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import kotlin.collections.forEach as withEach
 
+/**
+ * Settings fragment for managing installed search engines.
+ */
 class InstalledSearchEnginesSettingsFragment : BaseSettingsFragment() {
     override fun onCreatePreferences(p0: Bundle?, p1: String?) {
         //

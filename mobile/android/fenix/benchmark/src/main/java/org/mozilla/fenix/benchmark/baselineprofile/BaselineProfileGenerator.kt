@@ -10,7 +10,7 @@ package org.mozilla.fenix.benchmark.baselineprofile
  *   test-targets:
  *     - annotation org.mozilla.fenix.benchmark.baselineprofile.BaselineProfileGenerator
  *
- * Please remember to update [arm64-v8a-baseline-profile.yml](https://searchfox.org/mozilla-central/source/mobile/android/test_infra/flank-configs/fenix/arm64-v8a-baseline-profile.yml)
+ * Please remember to update [arm64-v8a-baseline-profile.yml](https://searchfox.org/firefox-main/source/mobile/android/test_infra/flank-configs/fenix/arm64-v8a-baseline-profile.yml)
  * and any other use of this annotation if its name or package is changed.
  */
 annotation class BaselineProfileGenerator

@@ -171,7 +171,7 @@ def create_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-dir", help="Directory to store output files")
     parser.add_argument(
-        "--meta-dir", help="Directory containing wpt-metadata " "checkout to update."
+        "--meta-dir", help="Directory containing wpt-metadata checkout to update."
     )
     return parser
 

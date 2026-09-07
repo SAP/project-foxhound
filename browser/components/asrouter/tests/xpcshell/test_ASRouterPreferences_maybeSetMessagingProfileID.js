@@ -9,6 +9,16 @@ const { ASRouterPreferences } = ChromeUtils.importESModule(
 );
 
 add_task(async function test_maybeSetMessagingProfileID() {
+  // Enable singleProfileMessaging mitigation
+  Services.prefs.setBoolPref(
+    "messaging-system.profile.singleProfileMessaging.disable",
+    false
+  );
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref(
+      "messaging-system.profile.singleProfileMessaging.disable"
+    );
+  });
   await initSelectableProfileService();
   let currentProfile = sinon
     .stub(SelectableProfileService, "currentProfile")

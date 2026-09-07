@@ -42,6 +42,13 @@ impl Waker {
 
     #[allow(clippy::unused_io_amount)] // Don't care about partial writes.
     pub(crate) fn wake(&self) -> io::Result<()> {
+        // The epoll emulation on some illumos systems currently requires
+        // the eventfd to be read before an edge-triggered read event is
+        // generated.
+        // See https://www.illumos.org/issues/16700.
+        #[cfg(target_os = "illumos")]
+        self.reset()?;
+
         let buf: [u8; 8] = 1u64.to_ne_bytes();
         match (&self.fd).write(&buf) {
             Ok(_) => Ok(()),
@@ -58,6 +65,17 @@ impl Waker {
     #[allow(dead_code)] // Only used by the `poll(2)` implementation.
     pub(crate) fn ack_and_reset(&self) {
         let _ = self.reset();
+    }
+
+    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
+    pub(crate) fn fd(&self) -> Option<RawFd> {
+        Some(self.as_raw_fd())
+    }
+
+    /// Only ever `true` for the `single_threaded.rs` implementation.
+    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
+    pub(crate) fn woken(&self) -> bool {
+        false
     }
 
     /// Reset the eventfd object, only need to call this if `wake` fails.

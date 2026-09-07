@@ -52,7 +52,7 @@
           class="testcanvas"
           width="250"
           height="250"
-          id="glcanvassoftware"
+          id="glcanvasSoftware"
         ></canvas>
         <table>
           <tr>
@@ -553,6 +553,172 @@
             </msub>
           </mrow>
         </mrow>
+      </math>
+
+      <!-- New MathML elements for mathml_values metric -->
+      <!-- These are collected as an array, add more with id="new-2", "new-3", etc. -->
+      <math id="new-1" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mrow>
+          <msup>
+            <mi>x</mi>
+            <mn>2</mn>
+          </msup>
+          <mo>+</mo>
+          <msup>
+            <mi>y</mi>
+            <mn>2</mn>
+          </msup>
+          <mo>=</mo>
+          <msup>
+            <mi>z</mi>
+            <mn>2</mn>
+          </msup>
+        </mrow>
+      </math>
+
+      <!--
+        Diagnostic MathML elements to isolate causes of rendering differences.
+        Categories:
+        - new-2 to new-3: Pixel-based mspace (minimal font dependency)
+        - new-4 to new-5: Em-based mspace (tests font-size only)
+        - new-6 to new-7: Fractions (tests fractionRuleThickness)
+        - new-8 to new-9: Radicals (tests radical parameters)
+        - new-10 to new-12: Scripts (tests sub/superscript shifts)
+        - new-13 to new-14: Stretchy operators (tests MathVariants)
+        - new-15 to new-16: Over/under (tests overbar/underbar gaps)
+        - new-17 to new-19: Single glyphs (baseline for font variation)
+        These elements use mspace with explicit dimensions where possible to
+        minimize font glyph dependency while still exercising MATH table
+        parameters.
+      -->
+
+      <!-- Category 1: Pixel-based mspace (should be identical everywhere) -->
+      <math id="new-2" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mspace width="100px" height="50px" depth="10px" />
+      </math>
+      <math id="new-3" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mrow>
+          <mspace width="50px" height="20px" />
+          <mspace width="30px" height="40px" />
+        </mrow>
+      </math>
+
+      <!-- Category 2: Em-based mspace (depends only on font-size) -->
+      <math
+        id="new-4"
+        xmlns="http://www.w3.org/1998/Math/MathML"
+        class="mathml-font16"
+      >
+        <mspace width="5em" height="2em" />
+      </math>
+      <math
+        id="new-5"
+        xmlns="http://www.w3.org/1998/Math/MathML"
+        class="mathml-font20"
+      >
+        <mspace width="5em" height="2em" />
+      </math>
+
+      <!-- Category 3: Fractions (tests fractionRuleThickness, shifts) -->
+      <math id="new-6" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mfrac>
+          <mspace width="50px" height="10px" />
+          <mspace width="50px" height="10px" />
+        </mfrac>
+      </math>
+      <math id="new-7" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mfrac linethickness="0">
+          <mspace width="50px" height="10px" />
+          <mspace width="50px" height="10px" />
+        </mfrac>
+      </math>
+
+      <!-- Category 4: Radicals (tests radicalVerticalGap, radicalRuleThickness) -->
+      <math id="new-8" xmlns="http://www.w3.org/1998/Math/MathML">
+        <msqrt>
+          <mspace width="50px" height="30px" />
+        </msqrt>
+      </math>
+      <math id="new-9" xmlns="http://www.w3.org/1998/Math/MathML">
+        <msqrt>
+          <msqrt>
+            <mspace width="30px" height="20px" />
+          </msqrt>
+        </msqrt>
+      </math>
+
+      <!-- Category 5: Sub/superscript (tests script shift parameters) -->
+      <math id="new-10" xmlns="http://www.w3.org/1998/Math/MathML">
+        <msub>
+          <mspace width="20px" height="20px" />
+          <mspace width="10px" height="10px" />
+        </msub>
+      </math>
+      <math id="new-11" xmlns="http://www.w3.org/1998/Math/MathML">
+        <msup>
+          <mspace width="20px" height="20px" />
+          <mspace width="10px" height="10px" />
+        </msup>
+      </math>
+      <math id="new-12" xmlns="http://www.w3.org/1998/Math/MathML">
+        <msubsup>
+          <mspace width="20px" height="20px" />
+          <mspace width="10px" height="10px" />
+          <mspace width="10px" height="10px" />
+        </msubsup>
+      </math>
+
+      <!-- Category 6: Stretchy operators (tests MathVariants table) -->
+      <math id="new-13" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mrow>
+          <mo>(</mo>
+          <mspace width="20px" height="100px" />
+          <mo>)</mo>
+        </mrow>
+      </math>
+      <math id="new-14" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mrow>
+          <mo>(</mo>
+          <mspace width="20px" height="200px" />
+          <mo>)</mo>
+        </mrow>
+      </math>
+
+      <!-- Category 7: Over/under (tests overbar/underbar gaps) -->
+      <math id="new-15" xmlns="http://www.w3.org/1998/Math/MathML">
+        <mover>
+          <mspace width="50px" height="20px" />
+          <mo>&#x2015;</mo>
+        </mover>
+      </math>
+      <math id="new-16" xmlns="http://www.w3.org/1998/Math/MathML">
+        <munder>
+          <mspace width="50px" height="20px" />
+          <mo>&#x2015;</mo>
+        </munder>
+      </math>
+
+      <!-- Category 8: Single glyphs (baseline for font variation) -->
+      <math
+        id="new-17"
+        xmlns="http://www.w3.org/1998/Math/MathML"
+        class="mathml-font48"
+      >
+        <mi>x</mi>
+      </math>
+      <math
+        id="new-18"
+        xmlns="http://www.w3.org/1998/Math/MathML"
+        class="mathml-font48"
+      >
+        <mo>+</mo>
+      </math>
+      <math
+        id="new-19"
+        xmlns="http://www.w3.org/1998/Math/MathML"
+        class="mathml-font48"
+      >
+        <mo>&#x2211;</mo>
       </math>
     </div>
 

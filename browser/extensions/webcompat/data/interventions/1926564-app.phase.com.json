@@ -1,0 +1,15 @@
+{
+  "label": "app.phase.com",
+  "bugs": {
+    "1926564": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://app.phase.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

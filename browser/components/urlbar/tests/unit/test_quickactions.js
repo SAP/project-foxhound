@@ -6,9 +6,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   ActionsProviderQuickActions:
-    "resource:///modules/ActionsProviderQuickActions.sys.mjs",
-  UrlbarProviderInterventions:
-    "resource:///modules/UrlbarProviderInterventions.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
 });
 
 add_setup(async () => {
@@ -107,11 +105,21 @@ add_task(async function minimum_search_string() {
 });
 
 add_task(async function interventions_disabled() {
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  let interventionsProvider = providersManager.getProvider(
+    "UrlbarProviderInterventions"
+  );
+  // Mock the relevent method of Query so we don't have to start a real one.
+  interventionsProvider.queryInstance = {
+    getProvider: name => providersManager.getProvider(name),
+  };
   let context = createContext("test", { isPrivate: false });
+
   Assert.ok(
-    !(await UrlbarProviderInterventions.isActive(context)),
+    !(await interventionsProvider.isActive(context)),
     "Urlbar interventions are disabled when actions are enabled"
   );
+  interventionsProvider.queryInstance = null;
 });
 
 add_task(async function test_multiple_exact_matches() {

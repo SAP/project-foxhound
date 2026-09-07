@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,16 @@
 #ifndef DOM_SVG_SVGFEIMAGEELEMENT_H_
 #define DOM_SVG_SVGFEIMAGEELEMENT_H_
 
-#include "mozilla/dom/SVGFilters.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
+#include "mozilla/dom/SVGFilters.h"
+#include "nsINode.h"
 
 nsresult NS_NewSVGFEImageElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla {
 class SVGFEImageFrame;
+class SVGObserverUtils;
 
 namespace dom {
 
@@ -23,13 +23,14 @@ using SVGFEImageElementBase = SVGFilterPrimitiveElement;
 class SVGFEImageElement final : public SVGFEImageElementBase,
                                 public nsImageLoadingContent {
   friend class mozilla::SVGFEImageFrame;
+  friend class mozilla::SVGObserverUtils;
 
  protected:
   friend nsresult(::NS_NewSVGFEImageElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
   explicit SVGFEImageElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   virtual ~SVGFEImageElement();
   JSObject* WrapNode(JSContext* aCx,
                      JS::Handle<JSObject*> aGivenProto) override;
@@ -39,6 +40,10 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
 
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
+
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SVGFEImageElement,
+                                           SVGFEImageElementBase)
 
   // EventTarget
   void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
@@ -98,6 +103,8 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
     SetAttr(nsGkAtoms::fetchpriority, aFetchPriority, IgnoreErrors());
   }
 
+  void NotifyImageContentChanged();
+
  private:
   void DidAnimateAttribute(int32_t aNameSpaceID, nsAtom* aAttribute) override;
 
@@ -118,14 +125,17 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
     return Element::GetFetchPriority();
   }
 
+  void HrefAsString(nsAString& aHref);
+
   nsCOMPtr<nsIURI> mSrcURI;
+  RefPtr<nsISupports> mImageContentObserver;
 
   enum { RESULT, HREF, XLINK_HREF };
   SVGAnimatedString mStringAttributes[3];
   static StringInfo sStringInfo[3];
 
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
-  uint16_t mImageAnimationMode;
+  uint16_t mImageAnimationMode = 0;
 };
 
 }  // namespace dom

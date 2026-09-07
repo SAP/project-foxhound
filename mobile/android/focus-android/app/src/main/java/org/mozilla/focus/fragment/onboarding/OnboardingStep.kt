@@ -6,6 +6,9 @@ package org.mozilla.focus.fragment.onboarding
 
 import org.mozilla.focus.R
 
+/**
+ * Represents the steps in the onboarding flow.
+ */
 enum class OnboardingStep(val prefId: Int) {
     ON_BOARDING_FIRST_SCREEN(R.string.pref_key_first_screen),
     ON_BOARDING_SECOND_SCREEN(R.string.pref_key_second_screen),

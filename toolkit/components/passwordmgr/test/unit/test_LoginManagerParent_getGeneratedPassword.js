@@ -106,12 +106,19 @@ add_task(async function test_getGeneratedPassword() {
     "Same password should be returned for the same origin"
   );
 
-  // Updating autosaved login to have username will reset generated password
+  // Updating autosaved login to have username will reset generated password.
+  // The stored login uses the page origin, not the principal origin —
+  // ^userContextId is only used as the in-memory cache key.
   const autoSavedLogin = await LoginTestUtils.addLogin({
-    origin: "https://www.example.com^userContextId=6",
+    origin: "https://www.example.com",
     username: "",
     password: password1,
   });
+  // Link the cache entry to the stored login's GUID, as the auto-save
+  // flow does in `LoginManagerParent._onPasswordEditedOrGenerated`
+  LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
+    "https://www.example.com^userContextId=6"
+  ).storageGUID = autoSavedLogin.QueryInterface(Ci.nsILoginMetaInfo).guid;
   const updatedLogin = autoSavedLogin.clone();
   updatedLogin.username = "anyone";
   await LoginTestUtils.modifyLogin(autoSavedLogin, updatedLogin);
@@ -174,3 +181,75 @@ add_task(async function test_getGeneratedPassword() {
     "Prevented when browsingContext is missing"
   );
 });
+
+/**
+ * The generated password cache should be cleared when the autosaved login is
+ * updated with a username.
+ * When using container tabs, where the cache key includes ^userContextId
+ * (coming from the principal origin) while the stored login uses the base page
+ * origin.
+ * In this case, the observer must find the cache entry via GUID, not by origin.
+ */
+add_task(
+  async function test_getGeneratedPassword_containerTab_cacheCleared_on_username_added() {
+    Services.prefs.setBoolPref("signon.generation.available", true);
+    Services.prefs.setBoolPref("signon.generation.enabled", true);
+
+    if (LoginHelper.improvedPasswordRulesEnabled) {
+      await LoginTestUtils.remoteSettings.setupImprovedPasswordRules();
+    }
+
+    let LMP = new LoginManagerParent();
+    LMP.useBrowsingContext(99);
+
+    // Restore any leftover stub from previous tests before creating a new one.
+    if (LoginManagerParent._browsingContextGlobal.get.restore) {
+      LoginManagerParent._browsingContextGlobal.get.restore();
+    }
+    sinon
+      .stub(LoginManagerParent._browsingContextGlobal, "get")
+      .withArgs(99)
+      .callsFake(() => ({
+        currentWindowGlobal: {
+          documentPrincipal:
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+              "https://www.example.com^userContextId=42"
+            ),
+          documentURI: Services.io.newURI("https://www.example.com"),
+        },
+      }));
+
+    const generatedPassword = await LMP.getGeneratedPassword();
+    notEqual(generatedPassword, null, "Generated password exists");
+
+    // Autosaved login is stored with the page origin, not the principal origin.
+    // The cache key has ^userContextId, the login does not.
+    const autoSavedLogin = await LoginTestUtils.addLogin({
+      origin: "https://www.example.com",
+      username: "",
+      password: generatedPassword,
+    });
+
+    // Link cache entry to stored login's GUID
+    LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().get(
+      "https://www.example.com^userContextId=42"
+    ).storageGUID = autoSavedLogin.QueryInterface(Ci.nsILoginMetaInfo).guid;
+
+    // Update the autosaved login to add a username. This should clear the cache.
+    const updatedLogin = autoSavedLogin.clone();
+    updatedLogin.username = "user@example.com";
+    await LoginTestUtils.modifyLogin(autoSavedLogin, updatedLogin);
+
+    // A new password should be generated, so we infer the cache has been cleared.
+    const newPassword = await LMP.getGeneratedPassword();
+    notEqual(
+      generatedPassword,
+      newPassword,
+      "New password generated after cache cleared for containers user"
+    );
+
+    LoginManagerParent._browsingContextGlobal.get.restore();
+    LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
+    await Services.logins.removeAllUserFacingLoginsAsync();
+  }
+);

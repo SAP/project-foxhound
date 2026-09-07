@@ -32,8 +32,10 @@
   background-color: var(--status-code-color-2xx);
 }
 
+/* 3xx are redirect http status, "cached" status code requests are read from
+   local cache (in a sense redirected to local cache) */
 .status-code[data-code^="3"] {
-  background-color: var(--status-code-color-3xx);
+  background-color: var(--status-code-color-redirect-or-cache);
 }
 
 .status-code[data-code^="4"] {
@@ -70,6 +72,11 @@
 }
 
 /* Status codes for the headers side panel */
+
+.headers-overview .summary .status {
+  display: flex;
+  align-items: center;
+}
 
 .headers-overview .summary .status .status-code {
   display: inline;

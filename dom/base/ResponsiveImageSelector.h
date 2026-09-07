@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_responsiveimageselector_h__
-#define mozilla_dom_responsiveimageselector_h__
+#ifndef mozilla_dom_responsiveimageselector_h_
+#define mozilla_dom_responsiveimageselector_h_
 
-#include "mozilla/UniquePtr.h"
-#include "mozilla/ServoBindingTypes.h"
 #include "mozilla/FunctionRef.h"
-#include "nsISupports.h"
-#include "nsIContent.h"
-#include "nsString.h"
+#include "mozilla/ServoBindingTypes.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIContent.h"
+#include "nsISupports.h"
+#include "nsString.h"
 
 class nsMediaQuery;
 class nsCSSValue;
@@ -87,6 +85,17 @@ class ResponsiveImageSelector {
   // return - true if the selected image result changed.
   bool SelectImage(bool aReselect = false);
 
+  // Set width to use for sizes=auto.
+  // Returns true if width has changed since last call.
+  bool SetAutoWidth(Maybe<nscoord> aWidth) {
+    nscoord width = aWidth.valueOr(-1);
+    if (mAutoWidth == width) {
+      return false;
+    }
+    mAutoWidth = width;
+    return true;
+  }
+
  protected:
   virtual ~ResponsiveImageSelector();
 
@@ -120,6 +129,8 @@ class ResponsiveImageSelector {
   // If this array contains an eCandidateType_Default, it should be the last
   // element, such that the Setters can preserve/replace it respectively.
   nsTArray<ResponsiveImageCandidate> mCandidates;
+  // Width if sizes=auto is used and it is known, -1 otherwise.
+  nscoord mAutoWidth = -1;
   int mSelectedCandidateIndex;
   // The cached resolved URL for mSelectedCandidateIndex, such that we only
   // resolve the absolute URL at selection time
@@ -202,4 +213,4 @@ class ResponsiveImageCandidate {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_responsiveimageselector_h__
+#endif  // mozilla_dom_responsiveimageselector_h_

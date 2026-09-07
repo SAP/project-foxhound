@@ -25,6 +25,7 @@ TEST_DIRS += [
     "TestDllBlocklist_MultipleEntries_SameProcessBackward",
     "TestDllBlocklist_MultipleEntries_SameProcessForward",
     "TestDllBlocklist_NoOpEntryPoint",
+    "TestDllBlocklist_RDDProcessOnly",
     "TestDllBlocklist_SingleNotification1",
     "TestDllBlocklist_SingleNotification2",
     "TestDllBlocklist_SocketProcessOnly",

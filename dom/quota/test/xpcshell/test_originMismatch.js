@@ -9,7 +9,7 @@
  * its directory name and the origin name in its directory metadata file.
  */
 
-async function testSteps() {
+async function testOriginMismatch() {
   const packages = ["originMismatch_profile", "defaultStorageDirectory_shared"];
 
   info("Clearing");
@@ -72,4 +72,18 @@ async function testSteps() {
 
   request = clear();
   await requestFinished(request);
+}
+
+async function testSteps() {
+  add_task(
+    {
+      pref_set: [
+        [
+          "dom.quotaManager.temporaryStorage.clearNonPersistedZeroUsageOrigins",
+          false,
+        ],
+      ],
+    },
+    testOriginMismatch
+  );
 }

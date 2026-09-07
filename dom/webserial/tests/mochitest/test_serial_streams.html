@@ -1,0 +1,816 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Web Serial API - Streams (Read/Write/Lock Management)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="serial_test_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+
+SimpleTest.registerCleanupFunction(cleanupSerialPorts);
+
+add_task(async function testWriteData() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  ok(writer, "Should get writable stream writer");
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode("Hello World");
+
+  await writer.write(data);
+  ok(true, "Should write data successfully");
+
+  writer.releaseLock();
+  await port.close();
+});
+
+add_task(async function testReadEchoedData() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("Echo"));
+  writer.releaseLock();
+
+  const reader = port.readable.getReader();
+  ok(reader, "Should get readable stream reader");
+
+  const { value, done } = await reader.read();
+  ok(!done, "Read should not be done");
+  ok(value instanceof Uint8Array, "Should receive Uint8Array");
+
+  const decoder = new TextDecoder();
+  const received = decoder.decode(value);
+  is(received, "Echo", "Should receive echoed data");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testReadWriteMultipleChunks() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+
+  const messages = ["First", "Second", "Third"];
+
+  for (const msg of messages) {
+    await writer.write(encoder.encode(msg));
+  }
+
+  writer.releaseLock();
+
+  const reader = port.readable.getReader();
+  const decoder = new TextDecoder();
+  let receivedText = "";
+  const expectedText = messages.join("");
+
+  while (receivedText.length < expectedText.length) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (value) {
+      receivedText += decoder.decode(value, { stream: true });
+    }
+  }
+
+  is(receivedText, expectedText, "Should receive all echoed messages");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testReadTimeout() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const reader = port.readable.getReader();
+
+  SimpleTest.requestFlakyTimeout("Need to wait to ensure reader.read() does not complete")
+  const timeoutPromise = new Promise((resolve) => {
+    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+    setTimeout(() => resolve({ timeout: true }), 100);
+  });
+
+  const readPromise = reader.read().then(result => ({ timeout: false, ...result }));
+
+  const result = await Promise.race([readPromise, timeoutPromise]);
+
+  ok(result.timeout, "Read should timeout since no data available");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testWriteWithoutReader() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("NoReader"));
+  writer.releaseLock();
+
+  ok(true, "Should be able to write without an active reader");
+
+  await port.close();
+});
+
+add_task(async function testLargeDataTransfer() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600, bufferSize: 2048 });
+
+  const writer = port.writable.getWriter();
+  const largeData = new Uint8Array(1024);
+  for (let i = 0; i < largeData.length; i++) {
+    largeData[i] = i % 256;
+  }
+
+  await writer.write(largeData);
+  writer.releaseLock();
+
+  const reader = port.readable.getReader();
+  let received = new Uint8Array(0);
+
+  while (received.length < largeData.length) {
+    const { value, done } = await reader.read();
+    ok(!done, "Read should not be done");
+    const combined = new Uint8Array(received.length + value.length);
+    combined.set(received);
+    combined.set(value, received.length);
+    received = combined;
+  }
+
+  is(received.length, largeData.length, "Should receive same amount of data");
+
+  let allMatch = true;
+  for (let i = 0; i < received.length; i++) {
+    if (received[i] !== largeData[i]) {
+      allMatch = false;
+      break;
+    }
+  }
+
+  ok(allMatch, "All bytes should match");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+// Regression test: verify no data is lost when bufferSize is small. The
+// continuous read loop reads all available bytes from the OS buffer regardless
+// of bufferSize, so individual chunks may exceed bufferSize.
+add_task(async function testNoDataLossWithSmallBufferSize() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600, bufferSize: 64 });
+
+  const writer = port.writable.getWriter();
+  const totalBytes = 256;
+  const largeData = new Uint8Array(totalBytes);
+  for (let i = 0; i < totalBytes; i++) {
+    largeData[i] = i % 256;
+  }
+  await writer.write(largeData);
+  writer.releaseLock();
+
+  const reader = port.readable.getReader();
+  let received = new Uint8Array(0);
+
+  while (received.length < totalBytes) {
+    const { value, done } = await reader.read();
+    ok(!done, "Read should not be done while data remains");
+    ok(!!value.length, "Each read should return some data");
+    const combined = new Uint8Array(received.length + value.length);
+    combined.set(received);
+    combined.set(value, received.length);
+    received = combined;
+  }
+
+  is(received.length, totalBytes,
+     "Should receive all bytes despite small buffer size");
+
+  let allMatch = true;
+  for (let i = 0; i < totalBytes; i++) {
+    if (received[i] !== largeData[i]) {
+      allMatch = false;
+      info("Mismatch at byte " + i + ": expected " + largeData[i] +
+           " got " + received[i]);
+      break;
+    }
+  }
+  ok(allMatch, "All bytes should match (no data lost between capped reads)");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testBYOBReaderBasic() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("BYOB"));
+  writer.releaseLock();
+
+  const reader = port.readable.getReader({ mode: "byob" });
+  ok(reader, "Should get BYOB reader");
+
+  const buffer = new Uint8Array(64);
+  const { value, done } = await reader.read(buffer);
+
+  ok(!done, "Read should not be done");
+  ok(value instanceof Uint8Array, "Should receive Uint8Array");
+  ok(value.byteLength > 0, "Should receive data");
+
+  const decoder = new TextDecoder();
+  const received = decoder.decode(value);
+  is(received, "BYOB", "Should receive written data in returned value");
+
+  is(buffer.byteLength, 0, "Original buffer should be detached after BYOB read");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testBYOBReaderBufferReuse() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("First"));
+
+  const reader = port.readable.getReader({ mode: "byob" });
+  const decoder = new TextDecoder();
+  let buffer = new Uint8Array(64);
+
+  const { value: value1 } = await reader.read(buffer);
+  const text1 = decoder.decode(value1);
+  is(text1, "First", "Should receive first message");
+
+  await writer.write(encoder.encode("Second"));
+  buffer = new Uint8Array(value1.buffer);
+  const { value: value2 } = await reader.read(buffer);
+  const text2 = decoder.decode(value2);
+  is(text2, "Second", "Should receive second message with reused buffer");
+
+  writer.releaseLock();
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testBYOBReaderDifferentBufferTypes() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const testData = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
+  await writer.write(testData);
+  writer.releaseLock();
+
+  const reader = port.readable.getReader({ mode: "byob" });
+  const buffer = new Uint16Array(32);
+
+  const { value } = await reader.read(buffer);
+  ok(value, "Should receive data into Uint16Array");
+  is(value.byteLength, testData.byteLength, "Should receive all bytes");
+  is(buffer.byteLength, 0, "Original buffer should be detached after BYOB read");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testBYOBReaderWithOffset() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("Test"));
+  writer.releaseLock();
+
+  const reader = port.readable.getReader({ mode: "byob" });
+
+  const arrayBuffer = new ArrayBuffer(64);
+  const view = new Uint8Array(arrayBuffer, 16, 32);
+
+  const { value } = await reader.read(view);
+  ok(value, "Should receive data into view with offset");
+  ok(value.byteOffset >= 16, "View should maintain offset");
+
+  const decoder = new TextDecoder();
+  const received = decoder.decode(value);
+  is(received, "Test", "Should receive correct data");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testBYOBReaderPartialRead() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const smallData = new Uint8Array([0x42, 0x43]);
+  await writer.write(smallData);
+  writer.releaseLock();
+
+  const reader = port.readable.getReader({ mode: "byob" });
+  const largeBuffer = new Uint8Array(256);
+
+  const { value } = await reader.read(largeBuffer);
+  ok(value, "Should receive data");
+  is(value.byteLength, smallData.byteLength, "Should only fill buffer with available data");
+  is(value[0], 0x42, "First byte should match");
+  is(value[1], 0x43, "Second byte should match");
+  is(largeBuffer.byteLength, 0, "Original buffer should be detached after BYOB read");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testBYOBReaderLargeTransfer() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600, bufferSize: 2048 });
+
+  const writer = port.writable.getWriter();
+  const largeData = new Uint8Array(1024);
+  for (let i = 0; i < largeData.length; i++) {
+    largeData[i] = i % 256;
+  }
+  await writer.write(largeData);
+  writer.releaseLock();
+
+  const reader = port.readable.getReader({ mode: "byob" });
+  let received = new Uint8Array(0);
+  let buffer = new Uint8Array(2048);
+
+  while (received.length < largeData.length) {
+    const { value } = await reader.read(buffer);
+    ok(value, "Should receive data");
+    const combined = new Uint8Array(received.length + value.byteLength);
+    combined.set(received);
+    combined.set(new Uint8Array(value.buffer, value.byteOffset, value.byteLength), received.length);
+    received = combined;
+    buffer = new Uint8Array(value.buffer);
+  }
+
+  is(received.length, largeData.length, "Should receive all data");
+
+  let allMatch = largeData.every((val, i) => val === received[i]);
+  ok(allMatch, "All bytes should match with BYOB reader");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testReaderReleaseLockCancelsRead() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const reader = port.readable.getReader();
+  let readPromise = reader.read();
+  reader.releaseLock();
+
+  await Assert.rejects(
+    readPromise,
+    e => e.name === "TypeError" && e.message.toLowerCase().includes("lock"),
+    "Read after releaseLock should throw TypeError mentioning lock"
+  );
+
+  await port.close();
+});
+
+add_task(async function testReaderCannotReadAfterReleaseLock() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const reader = port.readable.getReader();
+  reader.releaseLock();
+
+  await Assert.rejects(
+    reader.read(),
+    e => e.name === "TypeError" && e.message.toLowerCase().includes("lock"),
+    "Read after releaseLock should throw TypeError mentioning lock"
+  );
+
+  await port.close();
+});
+
+add_task(async function testWriterCannotWriteAfterReleaseLock() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  writer.releaseLock();
+
+  const encoder = new TextEncoder();
+  await Assert.rejects(
+    writer.write(encoder.encode("Test")),
+    /TypeError/,
+    "Write after releaseLock should throw TypeError"
+  );
+
+  await port.close();
+});
+
+add_task(async function testReaderClosedPromiseAfterReleaseLock() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const reader = port.readable.getReader();
+  const closedPromise = reader.closed;
+
+  reader.releaseLock();
+
+  await Assert.rejects(
+    closedPromise,
+    /TypeError/,
+    "Reader closed promise should be rejected with TypeError after releaseLock()"
+  );
+
+  await port.close();
+});
+
+add_task(async function testWriterClosedPromiseAfterReleaseLock() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const closedPromise = writer.closed;
+
+  writer.releaseLock();
+
+  await Assert.rejects(
+    closedPromise,
+    /TypeError/,
+    "Writer closed promise should be rejected with TypeError after releaseLock()"
+  );
+
+  await port.close();
+});
+
+add_task(async function testWriterClosedPromiseAfterClose() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const closedPromise = writer.closed;
+  closedPromise.then(async () => {
+    await Assert.rejects(
+      writer.close(),
+      /TypeError/,
+      "Second close should throw TypeError"
+    );
+  });
+  const encoder = new TextEncoder();
+
+  await writer.write(encoder.encode("Test"));
+  await writer.close();
+
+  await closedPromise;
+  ok(true, "Writer closed promise should resolve after close completes");
+
+  await port.close();
+});
+
+add_task(async function testCloseWithNoWrites() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+
+  await writer.close();
+  ok(true, "Close should succeed even with no writes");
+
+  await port.close();
+});
+
+add_task(async function testAbortWithNoWrites() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+
+  await writer.abort();
+  ok(true, "Abort should succeed even with no writes");
+
+  await port.close();
+});
+
+add_task(async function testWriterPendingWriteContinuesAfterReleaseLock() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+
+  const writePromise1 = writer.write(encoder.encode("First"));
+  const writePromise2 = writer.write(encoder.encode("Second"));
+
+  writer.releaseLock();
+
+  try {
+    await writePromise1;
+    ok(true, "First write should complete after releaseLock()");
+  } catch (e) {
+    ok(false, "First write should not fail: " + e.message);
+  }
+
+  try {
+    await writePromise2;
+    ok(true, "Second write should complete after releaseLock()");
+  } catch (e) {
+    ok(false, "Second write should not fail: " + e.message);
+  }
+
+  await port.close();
+});
+
+add_task(async function testReaderReleaseLockThenGetNewReader() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("Test"));
+  writer.releaseLock();
+
+  const reader1 = port.readable.getReader();
+  reader1.releaseLock();
+
+  const reader2 = port.readable.getReader();
+  ok(reader2, "Should be able to get new reader after releaseLock()");
+
+  const { value } = await reader2.read();
+  ok(value, "Should be able to read with new reader");
+
+  const decoder = new TextDecoder();
+  const received = decoder.decode(value);
+  is(received, "Test", "Should receive data with new reader");
+
+  reader2.releaseLock();
+  await port.close();
+});
+
+add_task(async function testWriterReleaseLockThenGetNewWriter() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer1 = port.writable.getWriter();
+  writer1.releaseLock();
+
+  const writer2 = port.writable.getWriter();
+  ok(writer2, "Should be able to get new writer after releaseLock()");
+
+  const encoder = new TextEncoder();
+  await writer2.write(encoder.encode("Test"));
+  ok(true, "Should be able to write with new writer");
+
+  writer2.releaseLock();
+  await port.close();
+});
+
+add_task(async function testWriteCloseWriterThenRead() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writer = port.writable.getWriter();
+  const encoder = new TextEncoder();
+  await writer.write(encoder.encode("FlipperTest"));
+  await writer.close();
+
+  const reader = port.readable.getReader();
+  const decoder = new TextDecoder();
+  let receivedText = "";
+  const expectedText = "FlipperTest";
+
+  while (receivedText.length < expectedText.length) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (value) {
+      receivedText += decoder.decode(value, { stream: true });
+    }
+  }
+
+  is(receivedText, expectedText,
+     "Should receive echoed data after writer.close()");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testWritableRecreatedAfterWriterClose() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  const writable1 = port.writable;
+  let writer = writable1.getWriter();
+  await writer.write(encoder.encode("FirstWrite"));
+  await writer.close();
+
+  // Per spec, the old writable is spent; the getter lazily creates a fresh one.
+  const writable2 = port.writable;
+  ok(writable2, "Should get a new writable after writer.close()");
+  isnot(writable2, writable1, "New writable should be a different object");
+
+  ok(port.readable, "Readable should still be available after writer close");
+
+  let reader = port.readable.getReader();
+  let receivedText = "";
+  const expected1 = "FirstWrite";
+  while (receivedText.length < expected1.length) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value) receivedText += decoder.decode(value, { stream: true });
+  }
+  is(receivedText, expected1, "Should receive first written data");
+  reader.releaseLock();
+
+  // Write again with new writer on the fresh writable.
+  writer = writable2.getWriter();
+  await writer.write(encoder.encode("SecondWrite"));
+  writer.releaseLock();
+
+  reader = port.readable.getReader();
+  receivedText = "";
+  const expected2 = "SecondWrite";
+  while (receivedText.length < expected2.length) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value) receivedText += decoder.decode(value, { stream: true });
+  }
+  is(receivedText, expected2,
+     "Should receive second written data on fresh writable");
+
+  reader.releaseLock();
+  await port.close();
+});
+
+add_task(async function testReadableRecreatedAfterCancel() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  let writer = port.writable.getWriter();
+  await writer.write(encoder.encode("FirstRead"));
+  writer.releaseLock();
+
+  const readable1 = port.readable;
+  const reader1 = readable1.getReader();
+  ok(reader1, "Should get first reader");
+
+  const { value: value1 } = await reader1.read();
+  ok(value1, "Should read data from first reader");
+
+  const text1 = decoder.decode(value1);
+  is(text1, "FirstRead", "Should receive first data");
+
+  await reader1.cancel();
+  ok(true, "Reader cancelled successfully");
+  reader1.releaseLock();
+
+  // Per spec, the old readable is spent; the getter lazily creates a fresh one.
+  // Writable should still be available.
+  ok(port.writable, "Writable should still be available after readable cancel");
+  const readable2 = port.readable;
+  ok(readable2, "Should get a new readable after cancel");
+  isnot(readable2, readable1,
+        "New readable should be a different object");
+
+  writer = port.writable.getWriter();
+  await writer.write(encoder.encode("SecondRead"));
+  writer.releaseLock();
+
+  const reader2 = readable2.getReader();
+  ok(reader2, "Should get reader on fresh readable");
+
+  const { value: value2 } = await reader2.read();
+  ok(value2, "Should read data on fresh readable");
+
+  const text2 = decoder.decode(value2);
+  is(text2, "SecondRead", "Should receive data on fresh readable");
+
+  reader2.releaseLock();
+  await port.close();
+});
+
+add_task(async function testAbortDiscardsTransmitBuffers() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const writable1 = port.writable;
+  const writer = writable1.getWriter();
+  const encoder = new TextEncoder();
+
+  // Write data, then abort to discard transmit buffers.
+  await writer.write(encoder.encode("Discarded"));
+  await writer.abort();
+  ok(true, "Abort should succeed after write");
+
+  // Per spec, the old writable is spent; the getter creates a fresh one.
+  ok(port.writable, "Should get fresh writable after abort");
+  isnot(port.writable, writable1, "Fresh writable should differ from original");
+  ok(port.readable, "Readable should still be available after writable abort");
+
+  await port.close();
+});
+
+add_task(async function testCancelDiscardsReceiveBuffers() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  const encoder = new TextEncoder();
+
+  // Write some data that will loop back to the read buffer.
+  let writer = port.writable.getWriter();
+  await writer.write(encoder.encode("ReceiveData"));
+  writer.releaseLock();
+
+  // Cancel the readable stream to discard receive buffers.
+  const readable1 = port.readable;
+  const reader = readable1.getReader();
+  await reader.cancel();
+  ok(true, "Cancel should succeed");
+
+  // Per spec, the old readable is spent; the getter creates a fresh one.
+  reader.releaseLock();
+  ok(port.readable, "Should get fresh readable after cancel");
+  isnot(port.readable, readable1, "Fresh readable should differ from original");
+
+  await port.close();
+});
+
+add_task(async function testCancelThenAbort() {
+  SpecialPowers.wrap(document).notifyUserGestureActivation();
+  const port = await navigator.serial.requestPort({ filters: [] });
+  await port.open({ baudRate: 9600 });
+
+  // Cancel readable, then abort writable.
+  const readable1 = port.readable;
+  const reader = readable1.getReader();
+  await reader.cancel();
+  reader.releaseLock();
+  isnot(port.readable, readable1, "Fresh readable after cancel");
+
+  const writable1 = port.writable;
+  const writer = writable1.getWriter();
+  await writer.abort();
+  isnot(port.writable, writable1, "Fresh writable after abort");
+
+  await port.close();
+});
+
+</script>
+</body>
+</html>

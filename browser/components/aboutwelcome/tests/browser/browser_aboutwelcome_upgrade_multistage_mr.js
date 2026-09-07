@@ -291,9 +291,9 @@ add_task(async function test_aboutwelcome_upgrade_show_firefox_view() {
 
   // verification
   await BrowserTestUtils.waitForEvent(gBrowser, "TabSwitchDone");
-  assertFirefoxViewTabSelected(gBrowser.ownerGlobal);
+  assertFirefoxViewTabSelected(gBrowser.documentGlobal);
 
-  closeFirefoxViewTab(gBrowser.ownerGlobal);
+  closeFirefoxViewTab(gBrowser.documentGlobal);
   await BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 

@@ -37,8 +37,8 @@ treechildren::-moz-tree-image(partial) {
 
 treechildren::-moz-tree-image(checked, selected),
 treechildren::-moz-tree-image(partial, selected) {
-  fill: var(--in-content-item-selected-text);
-  stroke: var(--in-content-item-selected);
+  fill: var(--text-color-accent-primary-selected);
+  stroke: var(--color-accent-primary-selected);
 }
 
 treechildren::-moz-tree-image(checked) {

@@ -10,23 +10,13 @@
 #ifndef NET_DCSCTP_PACKET_PARAMETER_PARAMETER_H_
 #define NET_DCSCTP_PACKET_PARAMETER_PARAMETER_H_
 
-#include <stddef.h>
-
-#include <algorithm>
 #include <cstdint>
-#include <iterator>
-#include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include "absl/algorithm/container.h"
-#include "absl/strings/string_view.h"
-#include "api/array_view.h"
-#include "net/dcsctp/packet/tlv_trait.h"
-#include "rtc_base/strings/string_builder.h"
 
 namespace dcsctp {
 
@@ -43,10 +33,10 @@ class Parameter {
 };
 
 struct ParameterDescriptor {
-  ParameterDescriptor(uint16_t type, rtc::ArrayView<const uint8_t> data)
+  ParameterDescriptor(uint16_t type, std::span<const uint8_t> data)
       : type(type), data(data) {}
   uint16_t type;
-  rtc::ArrayView<const uint8_t> data;
+  std::span<const uint8_t> data;
 };
 
 class Parameters {
@@ -61,13 +51,13 @@ class Parameters {
     std::vector<uint8_t> data_;
   };
 
-  static std::optional<Parameters> Parse(rtc::ArrayView<const uint8_t> data);
+  static std::optional<Parameters> Parse(std::span<const uint8_t> data);
 
   Parameters() {}
   Parameters(Parameters&& other) = default;
   Parameters& operator=(Parameters&& other) = default;
 
-  rtc::ArrayView<const uint8_t> data() const { return data_; }
+  std::span<const uint8_t> data() const { return data_; }
   std::vector<ParameterDescriptor> descriptors() const;
 
   template <typename P>

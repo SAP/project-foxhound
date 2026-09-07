@@ -72,7 +72,7 @@ function getShutdownNewVersion(id) {
 }
 
 // Sets up the profile by installing an add-on.
-add_task(async function setup() {
+add_setup(async function setup() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
 
   await promiseStartupManager();
@@ -81,6 +81,35 @@ add_task(async function setup() {
   for (let [name, files] of Object.entries(ADDONS)) {
     XPIS[name] = await AddonTestUtils.createTempWebExtensionFile(files);
   }
+});
+
+// The "staged" directory is expected to be removed when empty. We used to
+// create a directory inside (with the addon ID as directory name) as part of
+// staged uninstallation, despite the dependent logic having been removed 7
+// years prior: https://bugzilla.mozilla.org/show_bug.cgi?id=2006512#c4
+//
+// That directory-creating code has been removed, and this unit test is in its
+// place to verify that we eventually clean up the directory.
+//
+// We still keep the directory-removing logic in unstageAddon until a
+// replacement exists for that (bug 2010271).
+add_task(async function test_stage_dir_empty_and_cleaned_up_eventually() {
+  let stagingDir = profileDir.clone();
+  stagingDir.append("staged");
+
+  // We do not create this directory any more. This simulates old behavior,
+  // see https://bugzilla.mozilla.org/show_bug.cgi?id=2006512#c4
+  let stageAddonDir = stagingDir.clone();
+  stageAddonDir.append(ID);
+  await IOUtils.makeDirectory(stageAddonDir.path);
+
+  // This task on its own will not remove the staged/ directory. When any of
+  // the other tasks below (such as uninstallRestartless) triggers install or
+  // uninstall, the empty stageAddonDir directory should be removed.
+
+  registerCleanupFunction(() => {
+    Assert.ok(!stagingDir.exists(), "Temp staged directory should be removed");
+  });
 });
 
 // Tests that an enabled restartless add-on can be uninstalled and goes away

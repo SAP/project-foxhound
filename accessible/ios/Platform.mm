@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,12 +36,10 @@ void PlatformEvent(Accessible*, uint32_t) {}
 
 void PlatformStateChangeEvent(Accessible*, uint64_t, bool) {}
 
-void PlatformFocusEvent(Accessible* aTarget,
-                        const LayoutDeviceIntRect& aCaretRect) {}
+void PlatformFocusEvent(Accessible* aTarget) {}
 
 void PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
                             bool aIsSelectionCollapsed, int32_t aGranularity,
-                            const LayoutDeviceIntRect& aCaretRect,
                             bool aFromUser) {}
 
 void PlatformTextChangeEvent(Accessible*, const nsAString&, int32_t, uint32_t,
@@ -53,9 +49,15 @@ void PlatformShowHideEvent(Accessible*, Accessible*, bool, bool) {}
 
 void PlatformSelectionEvent(Accessible*, Accessible*, uint32_t) {}
 
+void PlatformAnnouncementEvent(Accessible* aTarget,
+                               const nsAString& aAnnouncement,
+                               uint16_t aPriority) {}
+
 uint64_t GetCacheDomainsForKnownClients(uint64_t aCacheDomains) {
   return aCacheDomains;
 }
+
+void GetHumanReadableInstantiatorStr(nsAString& aResult) { aResult.Truncate(); }
 
 }  // namespace a11y
 }  // namespace mozilla

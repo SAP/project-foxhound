@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,17 +6,15 @@
 
 #include <utility>
 
-#include "nsCOMPtr.h"
-#include "nsDebug.h"
-#include "nsError.h"
-#include "nsThreadUtils.h"
-
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/FetchEventOpParent.h"
 #include "mozilla/dom/RemoteWorkerParent.h"
 #include "mozilla/dom/ServiceWorkerOpPromise.h"
 #include "mozilla/ipc/BackgroundParent.h"
+#include "nsCOMPtr.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 
@@ -85,19 +81,18 @@ IPCResult RemoteWorkerControllerParent::RecvPFetchEventOpConstructor(
   RefPtr<FetchEventOpParent> realFetchOp =
       static_cast<FetchEventOpParent*>(aActor);
   mRemoteWorkerController->ExecServiceWorkerFetchEventOp(aArgs, realFetchOp)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [fetchOp = std::move(realFetchOp)](
-              ServiceWorkerFetchEventOpPromise::ResolveOrRejectValue&&
-                  aResult) {
-            if (NS_WARN_IF(aResult.IsReject())) {
-              MOZ_ASSERT(NS_FAILED(aResult.RejectValue()));
-              Unused << fetchOp->Send__delete__(fetchOp, aResult.RejectValue());
-              return;
-            }
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [fetchOp = std::move(realFetchOp)](
+                 ServiceWorkerFetchEventOpPromise::ResolveOrRejectValue&&
+                     aResult) {
+               if (NS_WARN_IF(aResult.IsReject())) {
+                 MOZ_ASSERT(NS_FAILED(aResult.RejectValue()));
+                 (void)fetchOp->Send__delete__(fetchOp, aResult.RejectValue());
+                 return;
+               }
 
-            Unused << fetchOp->Send__delete__(fetchOp, aResult.ResolveValue());
-          });
+               (void)fetchOp->Send__delete__(fetchOp, aResult.ResolveValue());
+             });
 
   return IPC_OK();
 }
@@ -178,7 +173,7 @@ void RemoteWorkerControllerParent::CreationFailed() {
     return;
   }
 
-  Unused << SendCreationFailed();
+  (void)SendCreationFailed();
 }
 
 void RemoteWorkerControllerParent::CreationSucceeded() {
@@ -188,7 +183,7 @@ void RemoteWorkerControllerParent::CreationSucceeded() {
     return;
   }
 
-  Unused << SendCreationSucceeded();
+  (void)SendCreationSucceeded();
 }
 
 void RemoteWorkerControllerParent::ErrorReceived(const ErrorValue& aValue) {
@@ -198,7 +193,7 @@ void RemoteWorkerControllerParent::ErrorReceived(const ErrorValue& aValue) {
     return;
   }
 
-  Unused << SendErrorReceived(aValue);
+  (void)SendErrorReceived(aValue);
 }
 
 void RemoteWorkerControllerParent::Terminated() {
@@ -208,7 +203,7 @@ void RemoteWorkerControllerParent::Terminated() {
     return;
   }
 
-  Unused << SendTerminated();
+  (void)SendTerminated();
 }
 
 }  // namespace dom

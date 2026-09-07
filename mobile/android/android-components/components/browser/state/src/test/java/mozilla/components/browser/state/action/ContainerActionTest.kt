@@ -4,22 +4,27 @@
 
 package mozilla.components.browser.state.action
 
+import mozilla.components.browser.state.reducer.BrowserStateReducer
+import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContainerState
-import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class ContainerActionTest {
+    private lateinit var state: BrowserState
+
+    @Before
+    fun setUp() {
+        state = BrowserState()
+    }
 
     @Test
     fun `AddContainerAction - Adds a container to the BrowserState containers`() {
-        val store = BrowserStore()
-
-        assertTrue(store.state.containers.isEmpty())
+        assertTrue(state.containers.isEmpty())
 
         val container = ContainerState(
             contextId = "contextId",
@@ -27,21 +32,18 @@ class ContainerActionTest {
             color = ContainerState.Color.GREEN,
             icon = ContainerState.Icon.CART,
         )
-        store.dispatch(ContainerAction.AddContainerAction(container)).joinBlocking()
+        val stateAfterAdd = BrowserStateReducer.reduce(state, ContainerAction.AddContainerAction(container))
 
-        assertFalse(store.state.containers.isEmpty())
-        assertEquals(container, store.state.containers.values.first())
+        assertFalse(stateAfterAdd.containers.isEmpty())
+        assertEquals(container, stateAfterAdd.containers.values.first())
 
-        val state = store.state
-        store.dispatch(ContainerAction.AddContainerAction(container)).joinBlocking()
-        assertSame(state, store.state)
+        state = BrowserStateReducer.reduce(stateAfterAdd, ContainerAction.AddContainerAction(container))
+        assertSame(stateAfterAdd, state)
     }
 
     @Test
     fun `AddContainersAction - Adds a list of containers to the BrowserState containers`() {
-        val store = BrowserStore()
-
-        assertTrue(store.state.containers.isEmpty())
+        assertTrue(state.containers.isEmpty())
 
         val container1 = ContainerState(
             contextId = "1",
@@ -61,30 +63,28 @@ class ContainerActionTest {
             color = ContainerState.Color.BLUE,
             icon = ContainerState.Icon.BRIEFCASE,
         )
-        store.dispatch(ContainerAction.AddContainersAction(listOf(container1, container2))).joinBlocking()
+        state = BrowserStateReducer.reduce(state, ContainerAction.AddContainersAction(listOf(container1, container2)))
 
-        assertFalse(store.state.containers.isEmpty())
-        assertEquals(container1, store.state.containers.values.first())
-        assertEquals(container2, store.state.containers.values.last())
+        assertFalse(state.containers.isEmpty())
+        assertEquals(container1, state.containers.values.first())
+        assertEquals(container2, state.containers.values.last())
 
         // Assert that the state remains the same if the existing containers are re-added.
-        val state = store.state
-        store.dispatch(ContainerAction.AddContainersAction(listOf(container1, container2))).joinBlocking()
-        assertSame(state, store.state)
+        val stateBeforeReAdd = state
+        state = BrowserStateReducer.reduce(state, ContainerAction.AddContainersAction(listOf(container1, container2)))
+        assertEquals(stateBeforeReAdd, state)
 
         // Assert that only non-existing containers are added.
-        store.dispatch(ContainerAction.AddContainersAction(listOf(container1, container2, container3))).joinBlocking()
-        assertEquals(3, store.state.containers.size)
-        assertEquals(container1, store.state.containers.values.first())
-        assertEquals(container2, store.state.containers.values.elementAt(1))
-        assertEquals(container3, store.state.containers.values.last())
+        state = BrowserStateReducer.reduce(state, ContainerAction.AddContainersAction(listOf(container1, container2, container3)))
+        assertEquals(3, state.containers.size)
+        assertEquals(container1, state.containers.values.first())
+        assertEquals(container2, state.containers.values.elementAt(1))
+        assertEquals(container3, state.containers.values.last())
     }
 
     @Test
     fun `RemoveContainerAction - Removes a container from the BrowserState containers`() {
-        val store = BrowserStore()
-
-        assertTrue(store.state.containers.isEmpty())
+        assertTrue(state.containers.isEmpty())
 
         val container1 = ContainerState(
             contextId = "1",
@@ -98,16 +98,16 @@ class ContainerActionTest {
             color = ContainerState.Color.GREEN,
             icon = ContainerState.Icon.CIRCLE,
         )
-        store.dispatch(ContainerAction.AddContainerAction(container1)).joinBlocking()
-        store.dispatch(ContainerAction.AddContainerAction(container2)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, ContainerAction.AddContainerAction(container1))
+        state = BrowserStateReducer.reduce(state, ContainerAction.AddContainerAction(container2))
 
-        assertFalse(store.state.containers.isEmpty())
-        assertEquals(container1, store.state.containers.values.first())
-        assertEquals(container2, store.state.containers.values.last())
+        assertFalse(state.containers.isEmpty())
+        assertEquals(container1, state.containers.values.first())
+        assertEquals(container2, state.containers.values.last())
 
-        store.dispatch(ContainerAction.RemoveContainerAction(container1.contextId)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, ContainerAction.RemoveContainerAction(container1.contextId))
 
-        assertEquals(1, store.state.containers.size)
-        assertEquals(container2, store.state.containers.values.first())
+        assertEquals(1, state.containers.size)
+        assertEquals(container2, state.containers.values.first())
     }
 }

@@ -160,9 +160,12 @@ interface nsIContentSecurityPolicy : nsISerializable
    * @param aParserCreated If the script element was created by the HTML Parser
    * @param aTriggeringElement The script element of the inline resource to
    *        hash. It can be null.
-   * @param aContentOfPseudoScript The content of the psuedo-script to compare
-   *                               to hash (and compare to the hashes listed in
-   *                               the policy)
+   * @param aSourceText The content of the script or pseudo-script to compare
+   *                    to hash (and compare to the hashes listed in the
+   *                    policy). For trusted inline scripts (i.e. that don't
+   *                    need to go trough the Trusted Types default policy) we
+   *                    retrieve the source text lazily for performance reasons
+   *                    (see bug 1376651) and aSourceText is void.
    * @param aLineNumber The line number of the inline resource
    *        (used for reporting)
    * @param aColumnNumber The column number of the inline resource
@@ -177,7 +180,7 @@ interface nsIContentSecurityPolicy : nsISerializable
                           in boolean aParserCreated,
                           in Element aTriggeringElement,
                           in nsICSPEventListener aCSPEventListener,
-                          in AString aContentOfPseudoScript,
+                          in AString aSourceText,
                           in unsigned long aLineNumber,
                           in unsigned long aColumnNumber);
 
@@ -401,6 +404,14 @@ typedef nsIContentSecurityPolicy_RequireTrustedTypesForDirectiveState RequireTru
 [function, scriptable, uuid(c3163b14-3a8f-46dd-a4af-bd04680364cd)]
 interface nsICSPEventListener : nsISupports
 {
-  // aJSON is the JSON format of SecurityPolicyViolationEventInit dictionary.
-  void onCSPViolationEvent(in AString aJSON);
+  /**
+   * Notify of CSP violation event.
+   * @param aJSON
+   *        Represents SecurityPolicyViolationEventInit, serialized into JSON.
+   *        See https://w3c.github.io/webappsec-csp/#securitypolicyviolationevent
+   * @param aReportGroupName
+   *        The report group name of the endpoint that the report which can be constructed
+   *        from aJSON should be sent to.
+   */
+  void onCSPViolationEvent(in AString aJSON, in AString aReportGroupName);
 };

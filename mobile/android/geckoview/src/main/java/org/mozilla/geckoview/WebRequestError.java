@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -26,7 +24,9 @@ import org.mozilla.gecko.util.XPCOMError;
  */
 @AnyThread
 public class WebRequestError extends Exception {
+  /** Defines the set of valid error categories for web request failures. */
   @Retention(RetentionPolicy.SOURCE)
+  /** Error category definitions for web request errors. */
   @IntDef({
     ERROR_CATEGORY_UNKNOWN,
     ERROR_CATEGORY_SECURITY,
@@ -38,6 +38,7 @@ public class WebRequestError extends Exception {
   })
   public @interface ErrorCategory {}
 
+  /** Error code definitions for web request errors. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     ERROR_UNKNOWN,
@@ -57,6 +58,7 @@ public class WebRequestError extends Exception {
     ERROR_SAFEBROWSING_MALWARE_URI,
     ERROR_SAFEBROWSING_UNWANTED_URI,
     ERROR_SAFEBROWSING_HARMFUL_URI,
+    ERROR_HARMFULADDON_URI,
     ERROR_CONTENT_CRASHED,
     ERROR_OFFLINE,
     ERROR_PORT_BLOCKED,
@@ -87,8 +89,13 @@ public class WebRequestError extends Exception {
   /** This is used for error codes relating to invalid or corrupt web pages. */
   public static final int ERROR_CATEGORY_CONTENT = 0x4;
 
+  /** This is used for error codes relating to URI problems. */
   public static final int ERROR_CATEGORY_URI = 0x5;
+
+  /** This is used for error codes relating to proxy problems. */
   public static final int ERROR_CATEGORY_PROXY = 0x6;
+
+  /** This is used for error codes relating to safe browsing warnings. */
   public static final int ERROR_CATEGORY_SAFEBROWSING = 0x7;
 
   /** An unknown error occurred */
@@ -192,6 +199,9 @@ public class WebRequestError extends Exception {
 
   /** The requested URI was present in the "phishing" blocklist. */
   public static final int ERROR_SAFEBROWSING_PHISHING_URI = 0x57;
+
+  /** The requested URI was present in the "harmful-addon" blocklist. */
+  public static final int ERROR_HARMFULADDON_URI = 0x67;
 
   /** The error code, e.g. {@link #ERROR_MALFORMED_URI}. */
   public final int code;
@@ -297,6 +307,9 @@ public class WebRequestError extends Exception {
     }
     if (geckoError == XPCOMError.NS_ERROR_HARMFUL_URI) {
       return ERROR_SAFEBROWSING_HARMFUL_URI;
+    }
+    if (geckoError == XPCOMError.NS_ERROR_HARMFULADDON_URI) {
+      return ERROR_HARMFULADDON_URI;
     }
     // content
     if (geckoError == XPCOMError.NS_ERROR_CONTENT_CRASHED) {

@@ -81,15 +81,15 @@ export default class DisableBackupEncryption extends MozLitElement {
           <div id="backup-disable-encryption-description">
             <span
               id="backup-disable-encryption-description-span"
-              data-l10n-id="disable-backup-encryption-description"
+              data-l10n-id="disable-backup-encryption-description2"
             >
-              <!--TODO: finalize support page links (bug 1900467)-->
             </span>
             <a
               id="backup-disable-encryption-learn-more-link"
               is="moz-support-link"
-              support-page="todo-backup"
+              support-page="firefox-backup"
               data-l10n-id="disable-backup-encryption-support-link"
+              utm-content="remove-password"
             ></a>
           </div>
           ${this.disableEncryptionErrorCode ? this.errorTemplate() : null}

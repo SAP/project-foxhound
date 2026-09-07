@@ -110,7 +110,8 @@ nsClipboard::SetNativeClipboardData(nsITransferable* aTransferable,
 
 mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
 nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
-                                    ClipboardType aWhichClipboard) {
+                                    ClipboardType aWhichClipboard,
+                                    uint64_t aThreshold) {
   MOZ_DIAGNOSTIC_ASSERT(
       nsIClipboard::IsClipboardTypeSupported(aWhichClipboard));
 
@@ -124,10 +125,17 @@ nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
     if (!text) {
       return nsCOMPtr<nsISupports>{};
     }
-    nsString buffer = text->ToString();
+    nsAutoString buffer(text->ToString());
+    buffer.StripChar(char16_t(0));
     if (buffer.IsEmpty()) {
       return nsCOMPtr<nsISupports>{};
     }
+
+    if (aThreshold && aFlavor.EqualsLiteral(kTextMime) &&
+        buffer.Length() * 2 > aThreshold) {
+      return mozilla::Err(NS_ERROR_CLIPBOARD_TOO_BIG);
+    }
+
     nsCOMPtr<nsISupports> wrapper;
     nsPrimitiveHelpers::CreatePrimitiveForData(
         aFlavor, buffer.get(), buffer.Length() * 2, getter_AddRefs(wrapper));

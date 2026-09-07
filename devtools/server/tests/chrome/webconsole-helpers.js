@@ -12,9 +12,9 @@ const {
 } = require("resource://devtools/shared/commands/commands-factory.js");
 
 // Always log packets when running tests.
-Services.prefs.setBoolPref("devtools.debugger.log", true);
+Services.prefs.setIntPref("logging.devtools_rdp", 5);
 SimpleTest.registerCleanupFunction(function () {
-  Services.prefs.clearUserPref("devtools.debugger.log");
+  Services.prefs.clearUserPref("logging.devtools_rdp");
 });
 
 if (!DevToolsServer.initialized) {
@@ -44,7 +44,7 @@ async function addTabAndCreateCommands(url) {
  * Naive implementaion of addTab working from a mochitest-chrome test.
  */
 async function addTab(url) {
-  const { gBrowser } = Services.wm.getMostRecentWindow("navigator:browser");
+  const { gBrowser } = Services.wm.getMostRecentBrowserWindow();
   const { BrowserTestUtils } = ChromeUtils.importESModule(
     "resource://testing-common/BrowserTestUtils.sys.mjs"
   );

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,9 +24,9 @@
 #include "Relation.h"
 #include "RootAccessible.h"
 #include "States.h"
+#include "nsIAccessibleAnnouncementEvent.h"
 #include "nsISimpleEnumerator.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Sprintf.h"
 #include "nsAccessibilityService.h"
 #include "nsComponentManagerUtils.h"
@@ -305,16 +303,9 @@ static uint16_t CreateMaiInterfaces(Accessible* aAccessible) {
     interfaces |= 1 << MAI_INTERFACE_SELECTION;
   }
 
-  if (aAccessible->IsRemote()) {
-    if (aAccessible->IsActionable()) {
-      interfaces |= 1 << MAI_INTERFACE_ACTION;
-    }
-  } else {
-    // XXX: Harmonize this with remote accessibles
-    if (aAccessible->ActionCount()) {
-      interfaces |= 1 << MAI_INTERFACE_ACTION;
-    }
-  }
+  // XXX: Always include the action interface because aria-actions
+  // can define actions mid-life.
+  interfaces |= 1 << MAI_INTERFACE_ACTION;
 
   return interfaces;
 }
@@ -593,7 +584,7 @@ AtkRole getRoleCB(AtkObject* aAtkObj) {
     break;
 
   switch (acc->Role()) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
     default:
       MOZ_CRASH("Unknown role.");
   }
@@ -766,15 +757,14 @@ static void TranslateStates(uint64_t aState, roles::Role aRole,
 
   // Convert every state to an entry in AtkStateMap
   uint64_t bitMask = 1;
-  for (auto stateIndex = 0U; stateIndex < gAtkStateMapLen; stateIndex++) {
-    if (gAtkStateMap[stateIndex]
-            .atkState) {  // There's potentially an ATK state for this
+  for (auto stateIndex : gAtkStateMap) {
+    if (stateIndex.atkState) {  // There's potentially an ATK state for this
       bool isStateOn = (aState & bitMask) != 0;
-      if (gAtkStateMap[stateIndex].stateMapEntryType == kMapOpposite) {
+      if (stateIndex.stateMapEntryType == kMapOpposite) {
         isStateOn = !isStateOn;
       }
       if (isStateOn) {
-        atk_state_set_add_state(aStateSet, gAtkStateMap[stateIndex].atkState);
+        atk_state_set_add_state(aStateSet, stateIndex.atkState);
       }
     }
     bitMask <<= 1;
@@ -830,7 +820,7 @@ AtkRelationSet* refRelationSetCB(AtkObject* aAtkObj) {
 #define RELATIONTYPE(geckoType, geckoTypeName, atkType, msaaType, ia2Type) \
   UpdateAtkRelation(RelationType::geckoType, acc, atkType, relation_set);
 
-#include "RelationTypeMap.h"
+#include "RelationTypeMap.inc"
 
 #undef RELATIONTYPE
 
@@ -972,6 +962,8 @@ void a11y::PlatformEvent(Accessible* aTarget, uint32_t aEventType) {
       g_signal_emit_by_name(wrapper, "text-attributes-changed");
       break;
     case nsIAccessibleEvent::EVENT_NAME_CHANGE: {
+      // Don't want to passively activate the cache because a name changed.
+      CacheDomainActivationBlocker cacheBlocker;
       nsAutoString newName;
       aTarget->Name(newName);
       MaybeFireNameChange(wrapper, newName);
@@ -1013,8 +1005,7 @@ void a11y::PlatformStateChangeEvent(Accessible* aTarget, uint64_t aState,
   atkObj->FireStateChangeEvent(aState, aEnabled);
 }
 
-void a11y::PlatformFocusEvent(Accessible* aTarget,
-                              const LayoutDeviceIntRect& aCaretRect) {
+void a11y::PlatformFocusEvent(Accessible* aTarget) {
   AtkObject* wrapper = GetWrapperFor(aTarget);
 
   // XXX Do we really need this check? If so, do we need a similar check for
@@ -1032,9 +1023,7 @@ void a11y::PlatformFocusEvent(Accessible* aTarget,
 
 void a11y::PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
                                   bool aIsSelectionCollapsed,
-                                  int32_t aGranularity,
-                                  const LayoutDeviceIntRect& aCaretRect,
-                                  bool aFromUser) {
+                                  int32_t aGranularity, bool aFromUser) {
   AtkObject* wrapper = GetWrapperFor(aTarget);
   g_signal_emit_by_name(wrapper, "text_caret_moved", aOffset);
 }
@@ -1152,6 +1141,37 @@ void MaiAtkObject::FireAtkShowHideEvent(AtkObject* aParent, bool aIsAdded,
 void a11y::PlatformSelectionEvent(Accessible*, Accessible* aWidget, uint32_t) {
   MaiAtkObject* obj = MAI_ATK_OBJECT(GetWrapperFor(aWidget));
   g_signal_emit_by_name(obj, "selection_changed");
+}
+
+// XXX Taken from atkobject.h in ATK 2.57. Updating ATK causes a plethora of
+// build errors which aren't worth fixing for a single enum.
+typedef enum { ATK_LIVE_NONE, ATK_LIVE_POLITE, ATK_LIVE_ASSERTIVE } AtkLive;
+
+void a11y::PlatformAnnouncementEvent(Accessible* aTarget,
+                                     const nsAString& aAnnouncement,
+                                     uint16_t aPriority) {
+  if (!IsAtkVersionAtLeast(2, 50)) {
+    return;
+  }
+  AtkObject* wrapper = GetWrapperFor(aTarget);
+  g_signal_emit_by_name(wrapper, "notification",
+                        NS_ConvertUTF16toUTF8(aAnnouncement).get(),
+                        aPriority == nsIAccessibleAnnouncementEvent::ASSERTIVE
+                            ? ATK_LIVE_ASSERTIVE
+                            : ATK_LIVE_POLITE);
+}
+
+mozilla::StaticAutoPtr<nsCString> sReturnedString;
+
+// static
+const char* AccessibleWrap::ReturnString(nsAString& aString) {
+  if (!sReturnedString) {
+    sReturnedString = new nsCString();
+    ClearOnShutdown(&sReturnedString);
+  }
+
+  CopyUTF16toUTF8(aString, *sReturnedString);
+  return sReturnedString->get();
 }
 
 // static

@@ -68,7 +68,6 @@ fails. This is recommended for writing novel gecko-specific lints. In
 this case the signature for lint functions is ``lint(files, config, logger,
 **kwargs)``.
 
-
 Linter Definition
 -----------------
 
@@ -107,7 +106,7 @@ Example
 -------
 
 Here is an example of an external linter that shells out to the Python ruff linter,
-let's call the file ``ruff_lint.py`` (`in-tree version <https://searchfox.org/mozilla-central/source/tools/lint/python/ruff.py>`__):
+let's call the file ``ruff_lint.py`` (:searchfox:`in-tree version <tools/lint/python/ruff.py>`):
 
 .. code-block:: python
 
@@ -190,6 +189,7 @@ to the running of the linter itself. If using ``--outgoing`` or ``--workdir``
 and one of these files was modified, the entire tree will be linted instead of
 just the modified files.
 
+
 Result definition
 -----------------
 
@@ -224,7 +224,7 @@ They should be pretty easy to write as most of the work is managed by the Mozlin
 framework. The key declaration is the ``LINTER`` variable which must match
 the linker declaration.
 
-As an example, the `ruff test <https://searchfox.org/mozilla-central/source/tools/lint/test/test_ruff.py>`_ looks like the following snippet:
+As an example, the :searchfox:`ruff test <tools/lint/test/test_ruff.py>` looks like the following snippet:
 
 .. code-block:: python
 
@@ -256,7 +256,7 @@ To run a specific test:
 
     ./mach python-test --subsuite mozlint tools/lint/test/test_black.py
 
-More tests can be `found in-tree <https://searchfox.org/mozilla-central/source/tools/lint/test>`_.
+More tests can be :searchfox:`found in-tree <tools/lint/test>`.
 
 Tracking fixed issues
 ---------------------
@@ -268,8 +268,8 @@ All the linters that provide ``fix support`` returns a dictionary instead of a l
 * results - All the linting errors it was not able to fix
 * fixed - Count of fixed errors (for ``fix=False`` this is 0)
 
-Some linters (example: `codespell <https://searchfox.org/mozilla-central/rev/0379f315c75a2875d716b4f5e1a18bf27188f1e6/tools/lint/spell/__init__.py#145-163>`_) might require two passes to count the number of fixed issues.
-Others might just need `some tuning <https://searchfox.org/mozilla-central/rev/0379f315c75a2875d716b4f5e1a18bf27188f1e6/tools/lint/file-whitespace/__init__.py#28,60,85,112>`_.
+Some linters (example: :searchfox:`codespell <mozilla-central/rev/0379f315c75a2875d716b4f5e1a18bf27188f1e6:tools/lint/spell/__init__.py#145-163>`) might require two passes to count the number of fixed issues.
+Others might just need :searchfox:`some tuning <mozilla-central/rev/0379f315c75a2875d716b4f5e1a18bf27188f1e6:tools/lint/file-whitespace/__init__.py#28,60,85,112>`.
 
 For adding tests to check your fixed count, add a global variable ``fixed = 0``
 and write a function to add your test as mentioned under ``Automated testing`` section.
@@ -308,7 +308,7 @@ complicated as pulling a whole graph of tools, plugins and their dependencies.
 Either way, to reduce the burden on users, linters should strive to provide
 automated bootstrapping of all their dependencies. To help with this,
 ``mozlint`` allows linters to define a ``setup`` config, which has the same
-path object format as an external payload. For example (`in-tree version <https://searchfox.org/mozilla-central/source/tools/lint/ruff.yml>`__):
+path object format as an external payload. For example (:searchfox:`in-tree version <tools/lint/ruff.yml>`):
 
 .. code-block:: yaml
 
@@ -347,7 +347,7 @@ Adding the linter to the CI
 
 First, the job will have to be declared in Taskcluster.
 
-This should be done in the `mozlint Taskcluster configuration <https://searchfox.org/mozilla-central/source/taskcluster/kinds/source-test/mozlint.yml>`_.
+This should be done in the :searchfox:`mozlint Taskcluster configuration <taskcluster/kinds/source-test/mozlint.yml>`.
 You will need to define a symbol, how it is executed and on what kind of change.
 
 For example, for ruff, the configuration is the following:
@@ -365,8 +365,8 @@ For example, for ruff, the configuration is the following:
                 - '**/*.py'
                 - '**/.ruff.toml'
 
-If the linter requires an external program, you will have to install it in the `setup script <https://searchfox.org/mozilla-central/source/taskcluster/docker/lint/system-setup.sh>`_
-and maybe install the necessary files in the `Docker configuration <https://searchfox.org/mozilla-central/source/taskcluster/docker/lint/Dockerfile>`_.
+If the linter requires an external program, you will have to install it in the :searchfox:`setup script <taskcluster/docker/lint/system-setup.sh>`
+and maybe install the necessary files in the :searchfox:`Docker configuration <taskcluster/docker/lint/Dockerfile>`.
 
 .. note::
 

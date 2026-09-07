@@ -22,6 +22,7 @@ import org.mockito.Mockito.doNothing
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.MockitoAnnotations
+import org.mozilla.focus.browser.integration.BrowserMenuCallbacks
 import org.mozilla.focus.browser.integration.BrowserMenuController
 import org.mozilla.focus.state.AppStore
 
@@ -78,13 +79,15 @@ class BrowserMenuControllerTest {
                 store = store,
                 topSitesUseCases = topSitesUseCases,
                 currentTabId = currentTabId,
-                shareCallback = shareCallback,
-                requestDesktopCallback = requestDesktopCallback,
-                addToHomeScreenCallback = addToHomeScreenCallback,
-                showFindInPageCallback = showFindInPageCallback,
-                openInCallback = openInCallback,
-                openInBrowser = openInBrowser,
-                showShortcutAddedSnackBar = showShortcutAddedSnackBar,
+                callbacks = BrowserMenuCallbacks(
+                    shareCallback = shareCallback,
+                    requestDesktopCallback = requestDesktopCallback,
+                    addToHomeScreenCallback = addToHomeScreenCallback,
+                    showFindInPageCallback = showFindInPageCallback,
+                    openInCallback = openInCallback,
+                    openInBrowser = openInBrowser,
+                    showShortcutAddedSnackBar = showShortcutAddedSnackBar,
+                ),
                 coroutineScope = TestScope(StandardTestDispatcher()),
             ),
         )

@@ -22,7 +22,7 @@ const AUTH_URL = TEST_PATH_AUTH + "auth-route.sjs";
 /**
  * Opens a new tab with a url that ether redirects us cross or same domain
  *
- * @param {Boolean} crossDomain - if true we will open a url that redirects us to a cross domain url,
+ * @param {boolean} crossDomain - if true we will open a url that redirects us to a cross domain url,
  *        if false, we will open a url that redirects us to a same domain url
  */
 async function trigger401AndHandle(crossDomain) {
@@ -57,7 +57,7 @@ async function waitForDialogAndDragNDropURL(crossDomain) {
   // assistive technology and keyboards, therefore this test can be excluded
   // from the accessibility tests.
   AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
-  urlBarContainer.click();
+  EventUtils.synthesizeMouseAtCenter(urlBarContainer, {});
   AccessibilityUtils.resetEnv();
   // trigger a drag event in the gUrlBar
   urlbar.dispatchEvent(urlEvent);

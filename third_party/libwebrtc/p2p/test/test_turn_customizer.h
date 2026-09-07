@@ -24,7 +24,7 @@ namespace webrtc {
 class TestTurnCustomizer : public TurnCustomizer {
  public:
   TestTurnCustomizer() {}
-  virtual ~TestTurnCustomizer() {}
+  ~TestTurnCustomizer() override {}
 
   enum TestTurnAttributeExtensions {
     // Test only attribute
@@ -32,12 +32,15 @@ class TestTurnCustomizer : public TurnCustomizer {
   };
 
   void MaybeModifyOutgoingStunMessage(PortInterface* port,
-                                      cricket::StunMessage* message) override {
+                                      StunMessage* message) override {
     modify_cnt_++;
 
     ASSERT_NE(0, message->type());
     if (add_counter_) {
-      message->AddAttribute(std::make_unique<cricket::StunUInt32Attribute>(
+      // TODO: crbug.com/504567957 - redo authentication so that
+      // attribute will not be ignored, or move caller to do
+      // modification before authentication.
+      message->AddAttribute(std::make_unique<StunUInt32Attribute>(
           STUN_ATTR_COUNTER, modify_cnt_));
     }
     return;
@@ -59,10 +62,5 @@ class TestTurnCustomizer : public TurnCustomizer {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace cricket {
-using ::webrtc::TestTurnCustomizer;
-}  // namespace cricket
 
 #endif  // P2P_TEST_TEST_TURN_CUSTOMIZER_H_

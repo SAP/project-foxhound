@@ -165,19 +165,23 @@ const Hub = {
     let windowGlobal = actor.manager;
 
     while (windowGlobal) {
-      let { browsingContext: bc, documentPrincipal: prin } = windowGlobal;
+      let {
+        parentWindowContext: parent,
+        documentPrincipal: prin,
+        remoteType,
+      } = windowGlobal;
 
       if (prin.addonId !== extensionId) {
         throw new Error(`Bad ${extensionId} principal: ${prin.URI.spec}`);
       }
-      if (bc.currentRemoteType !== prin.addonPolicy.extension.remoteType) {
-        throw new Error(`Bad ${extensionId} process: ${bc.currentRemoteType}`);
+      if (remoteType !== prin.addonPolicy.extension.remoteType) {
+        throw new Error(`Bad ${extensionId} process: ${remoteType}`);
       }
 
-      if (!bc.parent) {
+      if (!parent) {
         return true;
       }
-      windowGlobal = bc.embedderWindowGlobal;
+      windowGlobal = parent;
     }
     throw new Error(`Missing WindowGlobalParent for ${extensionId}`);
   },
@@ -335,6 +339,15 @@ export class BroadcastConduit extends BaseConduit {
         remote.extensionId === arg.extensionId &&
         remote.actor.manager.browsingContext?.top.id === arg.topBC &&
         (arg.frameId == null || remote.frameId === arg.frameId) &&
+        remote.recv.includes(method),
+
+      // Target Messengers by extensionId and documentId (innerWindowId).
+      // Note: Messenger checks context.active before dispatching events,
+      // resulting in the desired filtering of events for non-matching windows.
+      // There is no filtering of innerWindowId at the Conduits layer.
+      frame: remote =>
+        remote.extensionId === arg.extensionId &&
+        remote.actor.manager.innerWindowId === arg.innerWindowId &&
         remote.recv.includes(method),
 
       // Target Messengers by extensionId.

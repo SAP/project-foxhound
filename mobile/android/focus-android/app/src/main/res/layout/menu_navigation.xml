@@ -33,7 +33,7 @@
         android:layout_width="0dp"
         android:layout_height="48dp"
         android:layout_weight="1"
-        app:srcCompat="@drawable/mozac_ic_stop"
+        app:srcCompat="@drawable/mozac_ic_cross_24"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/content_description_stop" />
 </LinearLayout>

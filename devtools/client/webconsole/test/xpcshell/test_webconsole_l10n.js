@@ -9,7 +9,7 @@ const { require } = ChromeUtils.importESModule(
 
 function run_test() {
   const TEST_TIMESTAMP = 12345678;
-  const WCUL10n = require("resource://devtools/client/webconsole/utils/l10n.js");
+  const WCUL10n = require("resource://devtools/shared/webconsole/l10n.js");
   const date = new Date(TEST_TIMESTAMP);
   const localizedString = WCUL10n.timestampString(TEST_TIMESTAMP);
   ok(

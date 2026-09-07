@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -390,7 +389,7 @@ typedef sequence<ChannelPixelLayout> ImagePixelLayout;
 enum ImageOrientation { "none", "flipY", "from-image" };
 enum PremultiplyAlpha { "none", "premultiply", "default" };
 enum ColorSpaceConversion { "none", "default" };
-//enum ResizeQuality { "pixelated", "low", "medium", "high" };
+enum ResizeQuality { "pixelated", "low", "medium", "high" };
 
 dictionary ImageBitmapOptions {
   ImageOrientation imageOrientation = "none";
@@ -399,5 +398,5 @@ dictionary ImageBitmapOptions {
   ColorSpaceConversion colorSpaceConversion = "default";
   [EnforceRange] unsigned long resizeWidth;
   [EnforceRange] unsigned long resizeHeight;
-  //ResizeQuality resizeQuality = "low";
+  ResizeQuality resizeQuality = "low";
 };

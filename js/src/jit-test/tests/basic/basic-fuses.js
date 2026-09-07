@@ -35,6 +35,8 @@ function testRealmChange() {
   g2.evaluate(`assertEq(intact("ArrayPrototypeIteratorFuse"), false)`);
 }
 
+assertRuntimeFuseInvariants();
+
 testRealmChange();
 
 function testInNewGlobal(pre, post) {
@@ -52,9 +54,9 @@ testInNewGlobal("Object.prototype['return'] = () => 10;", `assertEq(intact("Obje
 testInNewGlobal(`assertEq(intact("ArrayIteratorPrototypeHasIteratorProto"), true); Object.setPrototypeOf(( ([])[Symbol.iterator]().__proto__ ), {a:10})`, `assertEq(intact("ArrayIteratorPrototypeHasIteratorProto"), false);`);
 testInNewGlobal(`assertEq(intact("IteratorPrototypeHasObjectProto"), true); Object.setPrototypeOf( ( ([])[Symbol.iterator]().__proto__.__proto__ ), {a:10})`, `assertEq(intact("IteratorPrototypeHasObjectProto"), false);`);
 
-testInNewGlobal(`assertEq(intact("hasSeenObjectEmulateUndefinedFuse"), true); createIsHTMLDDA()`, `assertEq(intact("hasSeenObjectEmulateUndefinedFuse"), false);`);
-testInNewGlobal(`assertEq(intact("hasSeenArrayExceedsInt32LengthFuse"), true); const x = []; x[2147483649] = 1`, `assertEq(intact("hasSeenArrayExceedsInt32LengthFuse"), false);`);
+testInNewGlobal(`assertEq(intact("HasSeenObjectEmulateUndefinedFuse"), true); createIsHTMLDDA()`, `assertEq(intact("HasSeenObjectEmulateUndefinedFuse"), false);`);
+testInNewGlobal(`assertEq(intact("HasSeenArrayExceedsInt32LengthFuse"), true); const x = []; x[2147483649] = 1`, `assertEq(intact("HasSeenArrayExceedsInt32LengthFuse"), false);`);
 
 // Runtime wide fuse.
-assertEq(intact("hasSeenObjectEmulateUndefinedFuse"), false);
-assertEq(intact("hasSeenArrayExceedsInt32LengthFuse"), false);
+assertEq(intact("HasSeenObjectEmulateUndefinedFuse"), false);
+assertEq(intact("HasSeenArrayExceedsInt32LengthFuse"), false);

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,9 +8,7 @@
 #include "AudibilityMonitor.h"
 #include "MediaEventSource.h"
 #include "MediaInfo.h"
-#include "MediaSegment.h"
 #include "MediaSink.h"
-
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
@@ -36,13 +32,14 @@ class MediaQueue;
 
 class DecodedStream : public MediaSink {
  public:
-  DecodedStream(MediaDecoderStateMachine* aStateMachine,
+  DecodedStream(AbstractThread* aOwnerThread,
                 nsMainThreadPtrHandle<SharedDummyTrack> aDummyTrack,
                 CopyableTArray<RefPtr<ProcessedMediaTrack>> aOutputTracks,
+                AbstractCanonical<PrincipalHandle>* aCanonicalOutputPrincipal,
                 double aVolume, double aPlaybackRate, bool aPreservesPitch,
+                bool aShouldConfigAudioOutput, AudioDeviceInfo* aDevice,
                 MediaQueue<AudioData>& aAudioQueue,
-                MediaQueue<VideoData>& aVideoQueue,
-                RefPtr<AudioDeviceInfo> aAudioDevice);
+                MediaQueue<VideoData>& aVideoQueue);
 
   RefPtr<EndedPromise> OnEnded(TrackType aType) override;
   media::TimeUnit GetEndTime(TrackType aType) const override;
@@ -75,6 +72,9 @@ class DecodedStream : public MediaSink {
   void GetDebugInfo(dom::MediaSinkDebugInfo& aInfo) override;
 
   MediaEventSource<bool>& AudibleEvent() { return mAudibleEvent; }
+  MediaEventSource<void>& PlaybackRateFallbackEvent() {
+    return mPlaybackRateFallbackForwarder;
+  }
 
  protected:
   virtual ~DecodedStream();
@@ -127,6 +127,11 @@ class DecodedStream : public MediaSink {
   double mPlaybackRate;
   bool mPreservesPitch;
 
+  // True if the audio output should be configured to mDevice.
+  const bool mShouldConfigAudioOutput;
+  RefPtr<AudioDeviceInfo> mDevice;
+  bool mAudioOutputRegistered MOZ_GUARDED_BY(sMainThreadCapability) = false;
+
   media::NullableTimeUnit mStartTime;
   media::TimeUnit mLastOutputTime;
   MediaInfo mInfo;
@@ -134,6 +139,7 @@ class DecodedStream : public MediaSink {
   bool mIsAudioDataAudible = false;
   Maybe<AudibilityMonitor> mAudibilityMonitor;
   MediaEventProducer<bool> mAudibleEvent;
+  MediaEventForwarder<void> mPlaybackRateFallbackForwarder;
 
   MediaQueue<AudioData>& mAudioQueue;
   MediaQueue<VideoData>& mVideoQueue;

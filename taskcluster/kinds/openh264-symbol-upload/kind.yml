@@ -1,0 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
+
+kind-dependencies:
+    - openh264-plugin
+
+transforms:
+    - taskgraph.transforms.from_deps
+    - gecko_taskgraph.transforms.name_sanity
+    - gecko_taskgraph.transforms.openh264_symbol_upload
+    - gecko_taskgraph.transforms.job
+    - gecko_taskgraph.transforms.task
+
+task-defaults:
+    run-on-repo-type: [hg]
+
+tasks:
+    openh264-symbol-upload:
+        from-deps:
+            group-by: single-with-filters

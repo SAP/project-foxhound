@@ -6,6 +6,9 @@ support-files = [
   "head.js"
 ]
 
+["browser_302_redirect_set_cookie_content_process.js"]
+support-files = ["redirect_with_cookie.sjs"]
+
 ["browser_3pcb_expection.js"]
 support-files = ["setFetchCookie.sjs"]
 
@@ -13,11 +16,16 @@ support-files = ["setFetchCookie.sjs"]
 
 ["browser_chips_partition_cap_child.js"]
 
+["browser_cookieStore_ip_domain.js"]
+
 ["browser_cookie_chips.js"]
 support-files = ["chips.sjs"]
 
 ["browser_cookie_empty_name_value.js"]
 support-files = ["cookie_empty_name_value.sjs"]
+
+["browser_cookie_file_url_domain.js"]
+support-files = ["file_cookie_domain.html"]
 
 ["browser_cookie_insecure_overwrites_secure.js"]
 
@@ -43,8 +51,14 @@ support-files = ["oversize.sjs"]
 ["browser_partitionedConsole.js"]
 support-files = ["partitioned.sjs"]
 
-["browser_partitioned_telemetry.js"]
-support-files = ["partitioned.sjs"]
+["browser_redirect_ABA_chips.js"]
+support-files = [
+  "redirect_301.sjs",
+  "serviceWorker.js",
+  "set_cookie_cors.html",
+  "set_cookie_cors.html^headers^",
+  "sw_fetch.js"
+]
 
 ["browser_sameSiteConsole.js"]
 support-files = ["sameSite.sjs"]

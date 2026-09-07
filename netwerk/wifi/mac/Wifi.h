@@ -60,8 +60,8 @@
 // The framework can be found at
 // /System/Library/PrivateFrameworks/Apple80211.framework.
 
-#ifndef GEARS_GEOLOCATION_OSX_WIFI_H__
-#define GEARS_GEOLOCATION_OSX_WIFI_H__
+#ifndef GEARS_GEOLOCATION_OSX_WIFI_H_
+#define GEARS_GEOLOCATION_OSX_WIFI_H_
 
 #include <CoreFoundation/CoreFoundation.h>
 
@@ -116,4 +116,4 @@ typedef WIErr (*WirelessScanSplitFunction)(WirelessContextPtr inContext,
 
 }  // extern "C"
 
-#endif  // GEARS_GEOLOCATION_OSX_WIFI_H__
+#endif  // GEARS_GEOLOCATION_OSX_WIFI_H_

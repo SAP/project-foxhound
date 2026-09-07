@@ -6,7 +6,7 @@
 
 declare global {
 
-// https://searchfox.org/mozilla-central/source/js/xpconnect/tests/idl/xpctest_attributes.idl
+// https://searchfox.org/firefox-main/source/js/xpconnect/tests/idl/xpctest_attributes.idl
 
 interface nsIXPCTestObjectReadOnly extends nsISupports {
   readonly strReadOnly: string;
@@ -28,7 +28,7 @@ interface nsIXPCTestObjectReadWrite extends nsISupports {
   timeProperty: PRTime;
 }
 
-// https://searchfox.org/mozilla-central/source/js/xpconnect/tests/idl/xpctest_bug809674.idl
+// https://searchfox.org/firefox-main/source/js/xpconnect/tests/idl/xpctest_bug809674.idl
 
 interface nsIXPCTestBug809674 extends nsISupports {
   addArgs(x: u32, y: u32): u32;
@@ -42,7 +42,7 @@ interface nsIXPCTestBug809674 extends nsISupports {
   methodWithOptionalArgc(): void;
 }
 
-// https://searchfox.org/mozilla-central/source/js/xpconnect/tests/idl/xpctest_cenums.idl
+// https://searchfox.org/firefox-main/source/js/xpconnect/tests/idl/xpctest_cenums.idl
 
 }  // global
 
@@ -79,7 +79,7 @@ interface nsIXPCTestCEnums extends nsISupports, Enums<typeof nsIXPCTestCEnums_te
   testCEnumOutput(): nsIXPCTestCEnums.testFlagsExplicit;
 }
 
-// https://searchfox.org/mozilla-central/source/js/xpconnect/tests/idl/xpctest_interfaces.idl
+// https://searchfox.org/firefox-main/source/js/xpconnect/tests/idl/xpctest_interfaces.idl
 
 interface nsIXPCTestInterfaceA extends nsISupports {
   name: string;
@@ -93,7 +93,7 @@ interface nsIXPCTestInterfaceC extends nsISupports {
   someInteger: i32;
 }
 
-// https://searchfox.org/mozilla-central/source/js/xpconnect/tests/idl/xpctest_params.idl
+// https://searchfox.org/firefox-main/source/js/xpconnect/tests/idl/xpctest_params.idl
 
 interface nsIXPCTestParams extends nsISupports {
   testBoolean(a: boolean, b: InOutParam<boolean>): boolean;
@@ -137,7 +137,7 @@ interface nsIXPCTestParams extends nsISupports {
   readonly testNaN: double;
 }
 
-// https://searchfox.org/mozilla-central/source/js/xpconnect/tests/idl/xpctest_returncode.idl
+// https://searchfox.org/firefox-main/source/js/xpconnect/tests/idl/xpctest_returncode.idl
 
 interface nsIXPCTestReturnCodeParent extends nsISupports {
   callChild(childBehavior: i32): nsresult;
@@ -152,7 +152,7 @@ interface nsIXPCTestReturnCodeChild extends nsISupports {
   doIt(behavior: i32): void;
 }
 
-// https://searchfox.org/mozilla-central/source/js/xpconnect/tests/idl/xpctest_utils.idl
+// https://searchfox.org/firefox-main/source/js/xpconnect/tests/idl/xpctest_utils.idl
 
 type nsIXPCTestFunctionInterface = Callable<{
   echo(arg: string): string;

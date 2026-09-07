@@ -12,14 +12,12 @@ from marionette_harness import MarionetteTestCase
 class MovedOriginDirectoryCleanupTestCase(MarionetteTestCase):
     def setUp(self):
         super().setUp()
-        self.marionette.enforce_gecko_prefs(
-            {
-                "privacy.sanitize.sanitizeOnShutdown": True,
-                "privacy.clearOnShutdown.offlineApps": True,
-                "dom.quotaManager.backgroundTask.enabled": False,
-                "browser.sanitizer.loglevel": "All",
-            }
-        )
+        self.marionette.enforce_gecko_prefs({
+            "privacy.sanitize.sanitizeOnShutdown": True,
+            "privacy.clearOnShutdown.offlineApps": True,
+            "dom.quotaManager.backgroundTask.enabled": False,
+            "browser.sanitizer.loglevel": "All",
+        })
         self.moved_origin_directory = (
             Path(self.marionette.profile_path) / "storage" / "to-be-removed" / "foo"
         )

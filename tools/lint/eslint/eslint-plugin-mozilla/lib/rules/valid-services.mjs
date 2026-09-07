@@ -24,8 +24,8 @@ export default {
     let servicesInterfaceMap = helpers.servicesData;
     let serviceAliases = new Set([
       ...Object.values(servicesInterfaceMap),
-      // This is defined only for Android, so most builds won't pick it up.
-      "androidBridge",
+      // This is defined only for Android/iOS, so most builds won't pick it up.
+      "geckoviewBridge",
       // These are defined without interfaces and hence are not in the services map.
       "cpmm",
       "crashmanager",

@@ -12,7 +12,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
   const elementRule = elementStyle.rules[1];
 
   info("Checking rules insertion order and checking the applied style");

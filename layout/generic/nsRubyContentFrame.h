@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* base class for ruby rendering objects that directly contain content */
 
-#ifndef nsRubyContentFrame_h___
-#define nsRubyContentFrame_h___
+#ifndef nsRubyContentFrame_h_
+#define nsRubyContentFrame_h_
 
 #include "nsInlineFrame.h"
 
@@ -28,4 +26,4 @@ class nsRubyContentFrame : public nsInlineFrame {
       : nsInlineFrame(aStyle, aPresContext, aID) {}
 };
 
-#endif /* nsRubyContentFrame_h___ */
+#endif /* nsRubyContentFrame_h_ */

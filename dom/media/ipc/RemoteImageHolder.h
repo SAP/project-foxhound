@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,7 @@ class IGPUVideoSurfaceManager;
 class SurfaceDescriptor;
 }  // namespace layers
 class RemoteImageHolder final {
-  friend struct ipc::IPDLParamTraits<RemoteImageHolder>;
+  friend struct IPC::ParamTraits<RemoteImageHolder>;
 
  public:
   RemoteImageHolder();
@@ -59,14 +57,13 @@ class RemoteImageHolder final {
   gfx::ColorRange mColorRange = {};
 };
 
-template <>
-struct ipc::IPDLParamTraits<RemoteImageHolder> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    RemoteImageHolder&& aParam);
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   RemoteImageHolder* aResult);
-};
-
 }  // namespace mozilla
+
+template <>
+struct IPC::ParamTraits<mozilla::RemoteImageHolder> {
+  static void Write(MessageWriter* aWriter,
+                    mozilla::RemoteImageHolder&& aParam);
+  static bool Read(MessageReader* aReader, mozilla::RemoteImageHolder* aResult);
+};
 
 #endif  // mozilla_dom_media_RemoteImageHolder_h

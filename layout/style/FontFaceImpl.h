@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,16 +6,13 @@
 #define mozilla_dom_FontFaceImpl_h
 
 #include "gfxUserFontSet.h"
-#include "mozilla/FontPropertyTypes.h"
 #include "mozilla/RWLock.h"
-#include "mozilla/ServoStyleConsts.h"
 #include "mozilla/dom/FontFaceBinding.h"
 #include "nsTHashSet.h"
 
 class gfxFontFaceBufferSource;
 
 namespace mozilla {
-struct CSSFontFaceDescriptors;
 class PostTraversalTask;
 struct StyleLockedFontFaceRule;
 namespace dom {
@@ -193,7 +188,7 @@ class FontFaceImpl final {
   void SetSizeAdjust(const nsACString& aValue, ErrorResult& aRv);
 
   FontFaceLoadStatus Status();
-  void Load(ErrorResult& aRv);
+  void Load();
 
   void Destroy();
 
@@ -201,6 +196,8 @@ class FontFaceImpl final {
 
   void InitializeSourceURL(const nsACString& aURL);
   void InitializeSourceBuffer(uint8_t* aBuffer, uint32_t aLength);
+
+  void UpdateOwnerKeepAlive();
 
   /**
    * Sets all of the descriptor values in mDescriptors using values passed
@@ -221,11 +218,12 @@ class FontFaceImpl final {
   // Helper function for Load.
   void DoLoad();
   void UpdateOwnerPromise();
+  void UpdateOwnerPromiseSync();
 
   // Helper function for the descriptor setter methods.
   // Returns true if the descriptor was modified, false if descriptor is
   // unchanged (which may not be an error: check aRv for actual failure).
-  bool SetDescriptor(nsCSSFontDesc aFontDesc, const nsACString& aValue,
+  bool SetDescriptor(FontFaceDescriptorId aFontDesc, const nsACString& aValue,
                      ErrorResult& aRv);
 
   /**
@@ -239,7 +237,7 @@ class FontFaceImpl final {
    */
   void SetStatus(FontFaceLoadStatus aStatus);
 
-  void GetDesc(nsCSSFontDesc aDescID, nsACString& aResult) const;
+  void GetDesc(FontFaceDescriptorId aDescID, nsACString& aResult) const;
 
   /**
    * Returns and takes ownership of the buffer storing the font data.

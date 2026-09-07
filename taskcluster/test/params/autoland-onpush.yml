@@ -20,7 +20,6 @@ head_rev: e14c826ee0f326bf1b454fd5b68bc4a7a7c356d2
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20231122172304'
 next_version: null
 optimize_strategies: gecko_taskgraph.optimize:project.autoland
@@ -41,8 +40,6 @@ release_partners: []
 release_product: null
 release_type: ''
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: autoland_tasks
 tasks_for: hg-push
 test_manifest_loader: bugbug

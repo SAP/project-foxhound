@@ -1,0 +1,15 @@
+{
+  "label": "www.ozon.ru",
+  "bugs": {
+    "2031974": {
+      "issue": "broken-videos",
+      "matches": ["*://www.ozon.ru/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

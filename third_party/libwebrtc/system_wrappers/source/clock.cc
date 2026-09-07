@@ -10,7 +10,15 @@
 
 #include "system_wrappers/include/clock.h"
 
+#include <atomic>
+#include <cstdint>
+
+#include "absl/base/nullability.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/time_utils.h"
+#include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
 namespace {
@@ -55,7 +63,7 @@ class RealTimeClock : public Clock {
   }
 };
 
-Clock* Clock::GetRealTimeClockRaw() {
+Clock* absl_nonnull Clock::GetRealTimeClockOnlyUseForRelativeTime() {
   static Clock* const clock = new RealTimeClock();
   return clock;
 }

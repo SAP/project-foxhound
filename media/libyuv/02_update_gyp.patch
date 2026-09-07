@@ -1,16 +1,8 @@
-# HG changeset patch
-# Parent  034c99a4c2010c8d60ff52daf0a183ac1fd05777
-Bug 1341543: Update libyuv gyp file with mozilla changes r=sotaro
-
 diff --git a/libyuv.gyp b/libyuv.gyp
+index 39484021..07bb5494 100644
 --- a/libyuv.gyp
 +++ b/libyuv.gyp
-@@ -47,17 +47,17 @@
-     {
-       'target_name': 'libyuv',
-       # Change type to 'shared_library' to build .so or .dll files.
-       'type': 'static_library',
-       'variables': {
+@@ -45,7 +45,7 @@
          'optimize': 'max',  # enable O2 and ltcg.
        },
        # Allows libyuv.a redistributable library without external dependencies.
@@ -19,17 +11,7 @@ diff --git a/libyuv.gyp b/libyuv.gyp
        'conditions': [
         # Disable -Wunused-parameter
          ['clang == 1', {
-           'cflags': [
-             '-Wno-unused-parameter',
-          ],
-         }],
-         ['build_neon != 0', {
-@@ -65,39 +65,55 @@
-             'LIBYUV_NEON',
-           ],
-           'cflags!': [
-             '-mfpu=vfp',
-             '-mfpu=vfpv3',
+@@ -63,6 +63,11 @@
              '-mfpu=vfpv3-d16',
              # '-mthumb',  # arm32 not thumb
            ],
@@ -41,14 +23,7 @@ diff --git a/libyuv.gyp b/libyuv.gyp
            'conditions': [
              # Disable LTO in libyuv_neon target due to gcc 4.9 compiler bug.
              ['clang == 0 and use_lto == 1', {
-               'cflags!': [
-                 '-flto',
-                 '-ffat-lto-objects',
-               ],
-             }],
-             # arm64 does not need -mfpu=neon option as neon is not optional
-             ['target_arch != "arm64"', {
-               'cflags': [
+@@ -77,10 +82,21 @@
                  '-mfpu=neon',
                  # '-marm',  # arm32 not thumb
                ],
@@ -56,11 +31,6 @@ diff --git a/libyuv.gyp b/libyuv.gyp
 +                '-mfpu=neon',
 +              ],
              }],
-           ],
-         }],
-         ['build_msa != 0', {
-           'defines': [
-             'LIBYUV_MSA',
            ],
          }],
 -        ['OS != "ios" and libyuv_disable_jpeg != 1', {
@@ -76,8 +46,3 @@ diff --git a/libyuv.gyp b/libyuv.gyp
            'defines': [
              'HAVE_JPEG'
            ],
-           'conditions': [
-             # Caveat system jpeg support may not support motion jpeg
-             [ 'use_system_libjpeg == 1', {
-               'dependencies': [
-                  '<(DEPTH)/third_party/libjpeg/libjpeg.gyp:libjpeg',

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 
 #include <algorithm>
 #include <stdint.h>
-#include <stdio.h>
 
 #include "CTLogVerifier.h"
 #include "CTVerifyResult.h"
@@ -41,7 +38,7 @@ class CTPolicyEnforcerTest : public ::testing::Test {
     SignedCertificateTimestamp sct;
     sct.version = SignedCertificateTimestamp::Version::V1;
     sct.timestamp = timestamp;
-    sct.leafIndex = leafIndex;
+    sct.leafIndex = std::move(leafIndex);
     Buffer logId;
     GetLogId(logId, logNo);
     sct.logId = std::move(logId);
@@ -323,7 +320,7 @@ TEST_F(CTPolicyEnforcerTest,
   CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::Compliant);
 }
 
-TEST_F(CTPolicyEnforcerTest, DoesNotConformToCTPolicyWithNoRFC6962Logs) {
+TEST_F(CTPolicyEnforcerTest, DoesConformToCTPolicyWithNoRFC6962Logs) {
   VerifiedSCTList scts;
 
   AddSct(scts, LOG_1, OPERATOR_1, ORIGIN_TLS, TIMESTAMP_1,
@@ -331,11 +328,10 @@ TEST_F(CTPolicyEnforcerTest, DoesNotConformToCTPolicyWithNoRFC6962Logs) {
   AddSct(scts, LOG_2, OPERATOR_2, ORIGIN_TLS, TIMESTAMP_1,
          CTLogState::Admissible, CTLogFormat::Tiled, Some(23));
 
-  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::NotEnoughScts);
+  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::Compliant);
 }
 
-TEST_F(CTPolicyEnforcerTest,
-       DoesNotConformToCTPolicyWithNoRFC6962LogsEmbedded) {
+TEST_F(CTPolicyEnforcerTest, DoesConformToCTPolicyWithNoRFC6962LogsEmbedded) {
   VerifiedSCTList scts;
 
   // 3 embedded SCTs required for DEFAULT_LIFETIME.
@@ -346,7 +342,7 @@ TEST_F(CTPolicyEnforcerTest,
   AddSct(scts, LOG_3, OPERATOR_2, ORIGIN_EMBEDDED, TIMESTAMP_1,
          CTLogState::Admissible, CTLogFormat::Tiled, Some(23));
 
-  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::NotEnoughScts);
+  CheckCompliance(scts, DEFAULT_LIFETIME, CTPolicyCompliance::Compliant);
 }
 
 TEST_F(CTPolicyEnforcerTest,

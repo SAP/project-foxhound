@@ -1,4 +1,7 @@
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 subsuite = "media"
 tags = "mediasession mediacontrol"
 

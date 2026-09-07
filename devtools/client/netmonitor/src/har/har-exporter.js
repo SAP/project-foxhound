@@ -117,7 +117,7 @@ const HarExporter = {
    * Helper to save the har file into a .zip file
    *
    * @param {nsIFIle} file The final zip file
-   * @param {String} fileName Name of the har file within the zip file
+   * @param {string} fileName Name of the har file within the zip file
    * @param {ArrayBuffer} buffer Content of the har file
    */
   _zip(file, fileName, buffer) {

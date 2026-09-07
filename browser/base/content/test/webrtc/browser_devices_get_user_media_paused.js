@@ -245,10 +245,14 @@ var gTests = [
       // Clone audio and video, their state will be enabled
       await cloneTracks(true, true);
 
+      observerPromise = expectObserverCalled("recording-device-events", 2);
+
       // Disable both audio and video.
       await setTrackEnabled(false, false);
 
-      observerPromise = expectObserverCalled("recording-device-events", 2);
+      await observerPromise;
+
+      observerPromise = expectObserverCalled("recording-device-events");
 
       // Stop the clones. This should disable the sharing indicators.
       await stopClonedTracks(true, true);

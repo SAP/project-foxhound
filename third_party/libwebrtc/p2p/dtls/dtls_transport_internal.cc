@@ -10,10 +10,14 @@
 
 #include "p2p/dtls/dtls_transport_internal.h"
 
-namespace cricket {
+#include "api/task_queue/task_queue_base.h"
+#include "p2p/base/packet_transport_internal.h"
 
-DtlsTransportInternal::DtlsTransportInternal() = default;
+namespace webrtc {
+
+DtlsTransportInternal::DtlsTransportInternal(TaskQueueBase* attached_queue)
+    : PacketTransportInternal(attached_queue) {}
 
 DtlsTransportInternal::~DtlsTransportInternal() = default;
 
-}  // namespace cricket
+}  // namespace webrtc

@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -9,11 +7,6 @@ if CONFIG["OS_ARCH"] == "Darwin":
         "xptcinvoke_darwin.cpp",
         "xptcstubs_darwin.cpp",
     ]
-    if CONFIG["TARGET_CPU"] == "ppc":
-        SOURCES += [
-            "!xptcstubs_asm_ppc_darwin.s",
-            "xptcinvoke_asm_ppc_rhapsody.s",
-        ]
     if CONFIG["TARGET_CPU"] == "x86_64":
         SOURCES += [
             "xptcinvoke_asm_x86_64_unix.S",

@@ -12,19 +12,21 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
-  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  DownloadsCommon:
+    "moz-src:///browser/components/downloads/DownloadsCommon.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "handlerSvc",
   "@mozilla.org/uriloader/handler-service;1",
-  "nsIHandlerService"
+  Ci.nsIHandlerService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -39,6 +41,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "contentAnalysisAgentName",
   "browser.contentanalysis.agent_name",
   "A DLP agent"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "safeBrowsingAllowOverride",
+  "browser.safebrowsing.allowOverride",
+  true
 );
 
 import { Integration } from "resource://gre/modules/Integration.sys.mjs";
@@ -197,7 +206,9 @@ export var DownloadsViewUI = {
     // Only show "unblock" for blocked (dirty) items that have not been
     // confirmed and have temporary data:
     contextMenu.querySelector(".downloadUnblockMenuItem").hidden =
-      state != DOWNLOAD_DIRTY || !element.classList.contains("temporary-block");
+      state != DOWNLOAD_DIRTY ||
+      !element.classList.contains("temporary-block") ||
+      !lazy.safeBrowsingAllowOverride;
 
     // Can only remove finished/failed/canceled/blocked downloads.
     contextMenu.querySelector(".downloadRemoveFromHistoryMenuItem").hidden = ![
@@ -444,14 +455,14 @@ DownloadsViewUI.DownloadElementShell.prototype = {
     this.element.setAttribute("active", true);
     this.element.setAttribute("orient", "horizontal");
     this.element.addEventListener("click", ev => {
-      ev.target.ownerGlobal.DownloadsView.onDownloadClick(ev);
+      ev.target.documentGlobal.DownloadsView.onDownloadClick(ev);
     });
     this.element.appendChild(
       document.importNode(downloadListItemFragment, true)
     );
     let downloadButton = this.element.querySelector(".downloadButton");
     downloadButton.addEventListener("command", function (event) {
-      event.target.ownerGlobal.DownloadsView.onDownloadButton(event);
+      event.target.documentGlobal.DownloadsView.onDownloadButton(event);
     });
     for (let [propertyName, selector] of [
       ["_downloadTypeIcon", ".downloadTypeIcon"],
@@ -498,7 +509,9 @@ DownloadsViewUI.DownloadElementShell.prototype = {
   },
 
   get browserWindow() {
-    return lazy.BrowserWindowTracker.getTopWindow();
+    return lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
   },
 
   /**
@@ -600,7 +613,13 @@ DownloadsViewUI.DownloadElementShell.prototype = {
       this.showStatus(stateLabel, hoverStatus);
       return;
     }
-    let [displayHost] = lazy.DownloadUtils.getURIHost(this.download.source.url);
+    let uri = URL.parse(this.download.source.url)?.URI;
+    let displayHost = uri
+      ? lazy.BrowserUtils.formatURIForDisplay(uri, {
+          onlyBaseDomain: true,
+        })
+      : "";
+
     let [displayDate] = lazy.DownloadUtils.getReadableDates(
       new Date(this.download.endTime)
     );
@@ -986,10 +1005,15 @@ DownloadsViewUI.DownloadElementShell.prototype = {
 
   showDeletedOrMissing() {
     this.element.removeAttribute("exists");
-    let label =
-      lazy.DownloadsCommon.strings[
-        this.download.deleted ? "fileDeleted" : "fileMovedOrMissing"
-      ];
+    let stringKey;
+    if (this.download.deleted && this.download.error?.becauseBlocked) {
+      stringKey = "fileBlockedAndDeleted";
+    } else if (this.download.deleted) {
+      stringKey = "fileDeleted";
+    } else {
+      stringKey = "fileMovedOrMissing";
+    }
+    let label = lazy.DownloadsCommon.strings[stringKey];
     this.showStatusWithDetails(label, label);
     this.hideButton();
   },
@@ -1081,12 +1105,13 @@ DownloadsViewUI.DownloadElementShell.prototype = {
         return !!referrer && referrer.asciiSpec != "about:blank";
       }
       case "downloadsCmd_confirmBlock":
+        return this.download.hasBlockedData;
       case "downloadsCmd_chooseUnblock":
       case "downloadsCmd_chooseOpen":
       case "downloadsCmd_unblock":
       case "downloadsCmd_unblockAndSave":
       case "downloadsCmd_unblockAndOpen":
-        return this.download.hasBlockedData;
+        return this.download.hasBlockedData && lazy.safeBrowsingAllowOverride;
       case "downloadsCmd_cancel":
         return this.download.hasPartialData || !this.download.stopped;
       case "downloadsCmd_open":
@@ -1099,12 +1124,12 @@ DownloadsViewUI.DownloadElementShell.prototype = {
         return this.download.target.exists;
 
       case "downloadsCmd_show":
-      case "downloadsCmd_deleteFile":
+      case "downloadsCmd_deleteFile": {
         let { target } = this.download;
         return (
           !this.download.deleted && (target.exists || target.partFileExists)
         );
-
+      }
       case "downloadsCmd_delete":
       case "cmd_delete":
         // We don't want in-progress downloads to be removed accidentally.
@@ -1151,7 +1176,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
   },
 
   downloadsCmd_openReferrer() {
-    this.element.ownerGlobal.openURL(
+    this.element.documentGlobal.openURL(
       this.download.source.referrerInfo.originalReferrer
     );
   },
@@ -1176,7 +1201,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
       return;
     }
 
-    let window = this.browserWindow || this.element.ownerGlobal;
+    let window = this.browserWindow || this.element.documentGlobal;
     let document = window.document;
 
     // Do not suggest a file name if we don't know the original target.

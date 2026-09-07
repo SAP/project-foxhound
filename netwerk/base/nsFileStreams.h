@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFileStreams_h__
-#define nsFileStreams_h__
+#ifndef nsFileStreams_h_
+#define nsFileStreams_h_
 
 #include "mozilla/UniquePtr.h"
 #include "nsIFileStreams.h"
@@ -19,7 +18,6 @@
 #include "nsCOMPtr.h"
 #include "nsIIPCSerializableInputStream.h"
 #include "nsReadLine.h"
-#include <algorithm>
 
 namespace mozilla {
 namespace ipc {
@@ -289,4 +287,4 @@ class nsFileRandomAccessStream : public nsFileStreamBase,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#endif  // nsFileStreams_h__
+#endif  // nsFileStreams_h_

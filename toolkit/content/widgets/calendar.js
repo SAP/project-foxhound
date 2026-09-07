@@ -8,7 +8,7 @@
  * Initialize the Calendar and generate nodes for week headers and days, and
  * attach event listeners.
  *
- * @param {Object} options
+ * @param {object} options
  *        {
  *          {Number} calViewSize: Number of days to appear on a calendar view
  *          {Function} getDayString: Transform day number to string
@@ -17,7 +17,7 @@
  *          {Function} setCalendarMonth: Update the month shown by the dateView
  *                     to a specific month of a specific year
  *        }
- * @param {Object} context
+ * @param {object} context
  *        {
  *          {DOMElement} weekHeader
  *          {DOMElement} daysView
@@ -50,7 +50,7 @@ Calendar.prototype = {
   /**
    * Set new properties and render them.
    *
-   * @param {Object} props
+   * @param {object} props
    *        {
    *          {Boolean} isVisible: Whether or not the calendar is in view
    *          {Array<Object>} days: Data for days
@@ -106,7 +106,8 @@ Calendar.prototype = {
 
   /**
    * Render the items onto the DOM nodes
-   * @param  {Object}
+   *
+   * @param  {object}
    *         {
    *           {Array<DOMElement>} elements
    *           {Array<Object>} items
@@ -211,7 +212,7 @@ Calendar.prototype = {
   /**
    * Generate DOM nodes with HTML table markup
    *
-   * @param  {Number} size: Number of nodes to generate
+   * @param  {number} size: Number of nodes to generate
    * @param  {DOMElement} context: Element to append the nodes to
    * @return {Array<DOMElement>}
    */
@@ -251,6 +252,7 @@ Calendar.prototype = {
 
   /**
    * Handle events
+   *
    * @param  {DOMEvent} event
    */
   handleEvent(event) {
@@ -400,7 +402,8 @@ Calendar.prototype = {
 
   /**
    * Find Data-id of the next element to focus on the daysView grid
-   * @param {Object} nextDate: Data object of the next element to focus
+   *
+   * @param {object} nextDate: Data object of the next element to focus
    */
   _calculateNextId(nextDate) {
     for (let i = 0; i < this.state.days.length; i++) {
@@ -413,9 +416,10 @@ Calendar.prototype = {
 
   /**
    * Comparing two date objects to ensure they produce the same date
+   *
    * @param  {Date} dateObj1: Date object from the updated state
    * @param  {Date} dateObj2: Date object from the previous state
-   * @return {Boolean} If two date objects are the same day
+   * @return {boolean} If two date objects are the same day
    */
   _isSameDay(dateObj1, dateObj2) {
     return (
@@ -428,9 +432,10 @@ Calendar.prototype = {
   /**
    * Comparing two date objects to ensure they produce the same day of the month,
    * while being on different months
+   *
    * @param  {Date} dateObj1: Date object from the updated state
    * @param  {Date} dateObj2: Date object from the previous state
-   * @return {Boolean} If two date objects are the same day of the month
+   * @return {boolean} If two date objects are the same day of the month
    */
   _isSameDayOfMonth(dateObj1, dateObj2) {
     return dateObj1.getUTCDate() == dateObj2.getUTCDate();
@@ -438,7 +443,8 @@ Calendar.prototype = {
 
   /**
    * Manage focus for the keyboard navigation for the daysView grid
-   * @param  {Number} offsetDays: The direction and the number of days to move
+   *
+   * @param  {number} offsetDays: The direction and the number of days to move
    *                            the focus by, where a negative number (i.e. -1)
    *                            moves the focus to the previous day
    */

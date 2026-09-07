@@ -56,10 +56,11 @@ const CACHE_WORKER_URL = "resource://newtab/lib/cache.worker.js";
 const IS_PRIVILEGED_PROCESS =
   Services.appinfo.remoteType === E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE;
 
-const PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS =
-  "browser.tabs.remote.separatePrivilegedContentProcess";
 const PREF_ACTIVITY_STREAM_DEBUG = "browser.newtabpage.activity-stream.debug";
-
+const PREF_NEWTAB_SELF_LOADING =
+  "browser.newtabpage.activity-stream.selfLoading.enabled";
+const PREF_NEWTAB_REMOTE_RENDERER_ENABLED =
+  "browser.newtabpage.activity-stream.remote-renderer.enabled";
 /**
  * The AboutHomeStartupCacheChild is responsible for connecting the
  * AboutNewTabRedirectorChild with a cached document and script for about:home
@@ -296,9 +297,10 @@ export const AboutHomeStartupCacheChild = {
     let worker = this.getOrCreateWorker();
 
     let timerId = Glean.newtab.abouthomeCacheConstruction.start();
+    let direction = Services.locale.isAppLocaleRTL ? "rtl" : "ltr";
 
     let { page, script } = await worker
-      .post("construct", [state])
+      .post("construct", [state, direction])
       .finally(() => {
         Glean.newtab.abouthomeCacheConstruction.stopAndAccumulate(timerId);
       });
@@ -403,8 +405,15 @@ class BaseAboutNewTabRedirector {
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
-      "privilegedAboutProcessEnabled",
-      PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS,
+      "selfLoadingEnabled",
+      PREF_NEWTAB_SELF_LOADING,
+      false
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "remoteRendererEnabled",
+      PREF_NEWTAB_REMOTE_RENDERER_ENABLED,
       false
     );
   }
@@ -416,6 +425,10 @@ class BaseAboutNewTabRedirector {
    * the newtab page has no effect on the result of this function.
    */
   get defaultURL() {
+    if (this.remoteRendererEnabled) {
+      return "resource://newtab/data/content/remote-renderer-host.html";
+    }
+
     // Generate the desired activity stream resource depending on state, e.g.,
     // "resource://newtab/prerendered/activity-stream.html"
     // "resource://newtab/prerendered/activity-stream-debug.html"
@@ -423,11 +436,8 @@ class BaseAboutNewTabRedirector {
     return [
       "resource://newtab/prerendered/",
       "activity-stream",
-      // Debug version loads dev scripts but noscripts separately loads scripts
-      this.activityStreamDebug && !this.privilegedAboutProcessEnabled
-        ? "-debug"
-        : "",
-      this.privilegedAboutProcessEnabled ? "-noscripts" : "",
+      this.activityStreamDebug && this.selfLoadingEnabled ? "-debug" : "",
+      this.selfLoadingEnabled ? "" : "-noscripts",
       ".html",
     ].join("");
   }
@@ -488,6 +498,7 @@ export class AboutNewTabRedirectorParent extends BaseAboutNewTabRedirector {
           pageshow: {},
           visibilitychange: {},
         },
+        observers: ["intl:l10n-sources-changed"],
       },
       // The wildcard on about:newtab is for the # parameter
       // that is used for the newtab devtools. The wildcard for about:home
@@ -517,17 +528,12 @@ export class AboutNewTabRedirectorParent extends BaseAboutNewTabRedirector {
   }
 
   /**
-   * Returns a Promise that reoslves when the newtab built-in addon has notified
-   * that it has finished initializing. If this is somehow checked when
-   * BROWSER_NEWTAB_AS_ADDON is not true, then this always resolves.
+   * Returns a Promise that resolves when the newtab built-in addon has notified
+   * that it has finished initializing.
    *
    * @type {Promise<undefined>}
    */
   get promiseBuiltInAddonInitialized() {
-    if (!AppConstants.BROWSER_NEWTAB_AS_ADDON) {
-      return Promise.resolve();
-    }
-
     return this.#addonInitializedPromise;
   }
 
@@ -547,7 +553,7 @@ export class AboutNewTabRedirectorParent extends BaseAboutNewTabRedirector {
     );
     resultChannel.originalURI = uri;
 
-    if (AppConstants.BROWSER_NEWTAB_AS_ADDON && !this.#addonInitialized) {
+    if (!this.#addonInitialized) {
       return this.#getSuspendedChannel(resultChannel);
     }
 

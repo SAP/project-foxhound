@@ -76,7 +76,7 @@
 
       let promiseSW = new Promise((resolve, reject) => {
         window.onmessage = (e) => {
-          is(e.data, "updatefound");
+          is(e.data, "updatefound", "got updatefound message");
           resolve(performance.now());
         };
       });
@@ -93,14 +93,15 @@
         };
       });
 
-      is(callbackCounter, 0);
+      is(callbackCounter, 0, "no onupdatefound calls");
       await waitForState(reg.installing, "activated");
-      is(callbackCounter, 1);
+      is(callbackCounter, 1, "one onupdatefound call");
 
       let content = document.getElementById("content");
       let iframe = document.createElement("iframe");
-      content.appendChild(iframe);
       iframe.setAttribute("src", "./fwd_messages_upward.html");
+      content.appendChild(iframe);
+      await new Promise(res => iframe.onload = res);
 
       let begin_ts = performance.now();
       await reg.update();

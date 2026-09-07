@@ -1,0 +1,62 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * An interface for unlocking Windows Limited Access Features. This allows use
+ * of Windows APIs which are otherwise gated.
+ */
+[scriptable, uuid(5d58bf99-9539-49d7-aa76-c5a262476e5a)]
+interface nsILimitedAccessFeature : nsISupports
+{
+  /**
+   * The Feature ID associated to this interface.
+   */
+  readonly attribute ACString featureId;
+
+  /**
+   * The generated token.
+   */
+  readonly attribute ACString token;
+
+  /**
+   * The generated attestation.
+   */
+  readonly attribute ACString attestation;
+
+  /**
+   * Attempts to unlock the associated Limited Access Feature.
+   *
+   * @return {bool} true if the Limited Access Feature is unlocked.
+   */
+  boolean unlock();
+};
+
+/**
+ * A factory to generate nsILimitedAccessFeature objects.
+ */
+[scriptable, uuid(115f4862-f302-42a2-a58c-d09f636ab601)]
+interface nsILimitedAccessFeatureService : nsISupports
+{
+  /**
+   * The Feature ID for taskbar pinning.
+   */
+  readonly attribute ACString taskbarPinFeatureId;
+
+  /**
+   * Generates a new object that can be used to unlock the requested Limited
+   * Access Feature.
+   *
+   * @param {ACString} featureId
+   *        The ID of the feature we want to unlock.
+   * @return {nsILimitedAccessFeature}
+   *         An object that can be used to unlock the requested Limited Access
+   *         Feature.
+   */
+  nsILimitedAccessFeature generateLimitedAccessFeature(
+    in ACString featureId
+  );
+};

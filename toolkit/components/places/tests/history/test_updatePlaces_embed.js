@@ -9,12 +9,12 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "asyncHistory",
   "@mozilla.org/browser/history;1",
-  "mozIAsyncHistory"
+  Ci.mozIAsyncHistory
 );
 
 add_task(async function test_embed_visit() {
   let place = {
-    uri: NetUtil.newURI("http://places.test/"),
+    uri: Services.io.newURI("http://places.test/"),
     visits: [
       {
         transitionType: PlacesUtils.history.TRANSITIONS.EMBED,
@@ -46,7 +46,7 @@ add_task(async function test_embed_visit() {
 
 add_task(async function test_misc_visits() {
   let place = {
-    uri: NetUtil.newURI("http://places.test/"),
+    uri: Services.io.newURI("http://places.test/"),
     visits: [
       {
         transitionType: PlacesUtils.history.TRANSITIONS.EMBED,

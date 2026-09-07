@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
 #include <CoreMedia/CoreMedia.h>
 #include <VideoToolbox/VideoToolbox.h>
 
-#include "apple/AppleUtils.h"
 #include "PlatformEncoderModule.h"
+#include "apple/AppleUtils.h"
 
 namespace mozilla {
 
@@ -38,6 +36,7 @@ class AppleVTEncoder final : public MediaDataEncoder {
 
   RefPtr<InitPromise> Init() override;
   RefPtr<EncodePromise> Encode(const MediaData* aSample) override;
+  RefPtr<EncodePromise> Encode(nsTArray<RefPtr<MediaData>>&& aSamples) override;
   RefPtr<ReconfigurationPromise> Reconfigure(
       const RefPtr<const EncoderConfigurationChangeList>& aConfigurationChanges)
       override;
@@ -86,6 +85,9 @@ class AppleVTEncoder final : public MediaDataEncoder {
   bool IsSettingColorSpaceSupported() const;
   MediaResult SetColorSpace(const EncoderConfig::SampleFormat& aFormat);
 
+  void EncodeNextSample(nsTArray<RefPtr<MediaData>>&& aInputs,
+                        MediaDataEncoder::EncodedData&& aOutputs);
+
   void AssertOnTaskQueue() { MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn()); }
 
   EncoderConfig mConfig;
@@ -95,6 +97,8 @@ class AppleVTEncoder final : public MediaDataEncoder {
   EncodedData mEncodedData;
   // Accessed only in mTaskQueue.
   MozPromiseHolder<EncodePromise> mEncodePromise;
+  MozPromiseHolder<EncodePromise> mEncodeBatchPromise;
+  MozPromiseRequestHolder<EncodePromise> mEncodeBatchRequest;
   RefPtr<MediaByteBuffer> mAvcc;  // Stores latest avcC data.
   MediaResult mError;
 

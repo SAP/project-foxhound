@@ -6,7 +6,9 @@
 Utilities for working with Web Platform Test (WPT) paths.
 """
 
-from typing import Optional
+from typing import Dict, Optional  # noqa EP035
+
+OptJs = Optional[Dict[str, bool]]  # noqa UP006
 
 WP = "testing/web-platform/"
 WPT0 = WP + "tests/infrastructure"
@@ -98,7 +100,7 @@ def parse_wpt_path(
         - anyjs is the html test file as reported by mozci (or None)
     """
     query: Optional[str] = None
-    anyjs: Optional[str] = None
+    anyjs: OptJs = None
 
     i = shortpath.find("?")
     if i > 0:
@@ -114,19 +116,19 @@ def parse_wpt_path(
     if failure_type:
         i = path.find(".any.")
         if i > 0:
-            anyjs = path
+            anyjs = {path: False}
             manifest = manifest.replace(path[i:], ".any.js")
             path = path[0:i] + ".any.js"
         else:
             i = path.find(".window.")
             if i > 0:
-                anyjs = path
+                anyjs = {path: False}
                 manifest = manifest.replace(path[i:], ".window.js")
                 path = path[0:i] + ".window.js"
             else:
                 i = path.find(".worker.")
                 if i > 0:
-                    anyjs = path
+                    anyjs = {path: False}
                     manifest = manifest.replace(path[i:], ".worker.js")
                     path = path[0:i] + ".worker.js"
         manifest += ".ini"

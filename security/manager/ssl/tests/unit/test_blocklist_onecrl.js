@@ -31,8 +31,8 @@ add_task(async function test_has_initial_dump() {
 
 add_task(async function test_default_jexl_filter_is_used() {
   Assert.deepEqual(
-    OneCRLBlocklistClient.filterFunc,
-    RemoteSettings("not-specified").filterFunc
+    OneCRLBlocklistClient.filterCreator,
+    RemoteSettings("not-specified").filterCreator
   );
 });
 

@@ -55,10 +55,10 @@ addAccessibleTask(
 
 // CacheKey::NameValueFlag, CacheDomain::NameAndDescription
 addAccessibleTask(
-  `<h3 id="test"><p>test</p></h3>`,
+  `<h3 id="test" aria-label="test me"><p>test</p></h3>`,
   async function (browser, docAcc) {
     let acc = findAccessibleChildByID(docAcc, "test");
-    verifyAttributeCachedNoRetry(acc, "explicit-name");
+    verifyAttributeCachedNoRetry(acc, "name");
   },
   {
     topLevel: true,

@@ -6,7 +6,6 @@
 #define mozilla_layers_RendererScreenshotGrabber_h
 
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/ProfilerScreenshots.h"
 #include "mozilla/webrender/webrender_ffi.h"

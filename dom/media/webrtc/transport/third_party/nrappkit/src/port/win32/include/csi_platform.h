@@ -58,9 +58,6 @@
 
 #define strcasestr stristr
 
-/* Hack version of strlcpy (in util/util.c) */
-size_t strlcat(char *dst, const char *src, size_t siz);
-
 /* Hack version of getopt() (in util/getopt.c) */
 int getopt(int argc, char *argv[], char *opstring);
 extern char *optarg;

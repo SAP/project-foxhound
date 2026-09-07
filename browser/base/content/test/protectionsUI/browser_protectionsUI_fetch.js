@@ -9,7 +9,7 @@ add_task(async function test_fetch() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: URL },
     async function (newTabBrowser) {
-      const win = newTabBrowser.ownerGlobal;
+      const win = newTabBrowser.documentGlobal;
       await openProtectionsPanel(false, win);
       let contentBlockingEvent = waitForContentBlockingEvent();
       await SpecialPowers.spawn(newTabBrowser, [], async function () {

@@ -39,7 +39,7 @@ the server, so it knows how to grab just changed records and how to pass them
 off to the ``store`` so the actual underlying storage can be updated.
 
 All of the above parts were typically in the
-`services/sync/modules/engines directory <https://searchfox.org/mozilla-central/source/services/sync/modules/engines>`_
+:searchfox:`services/sync/modules/engines directory <services/sync/modules/engines>`
 directory and decoupled from the data they were syncing.
 
 

@@ -12,8 +12,6 @@ import mozilla.components.concept.fetch.Request
 import mozilla.components.concept.fetch.Request.Body
 import mozilla.components.concept.fetch.Request.Method
 import mozilla.components.service.pocket.ContentRecommendationsRequestConfig
-import mozilla.components.service.pocket.recommendations.api.ContentRecommendationsEndpoint.Companion.newInstance
-import mozilla.components.service.pocket.stories.api.PocketEndpoint.Companion.newInstance
 import mozilla.components.support.base.ext.fetchBodyOrNull
 import org.json.JSONObject
 

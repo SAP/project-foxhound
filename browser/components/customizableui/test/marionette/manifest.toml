@@ -1,4 +1,5 @@
 [DEFAULT]
-tags = "local"
+subsuite = "integration"
+tags = "local os_integration"
 
 ["test_assert_no_toolbar_changes.py"]

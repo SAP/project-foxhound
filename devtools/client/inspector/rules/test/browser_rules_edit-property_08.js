@@ -20,7 +20,7 @@ add_task(async function () {
   await selectNode("#testid", inspector);
 
   info("Get the color property editor");
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   const propEditor = ruleEditor.rule.textProps[0].editor;
   is(ruleEditor.rule.textProps[0].name, "color");
 
@@ -33,7 +33,7 @@ add_task(async function () {
   // value gets focused), and the markupmutation event since we're modifying an
   // inline style.
   const onValueFocus = once(ruleEditor.element, "focus", true);
-  let onRuleViewChanged = ruleEditor.ruleView.once("ruleview-changed");
+  const onRuleViewChanged = ruleEditor.ruleView.once("ruleview-changed");
   const onMutation = inspector.once("markupmutation");
   EventUtils.sendString("background-color:", ruleEditor.doc.defaultView);
   await onValueFocus;
@@ -55,8 +55,8 @@ add_task(async function () {
   );
 
   // The value field is still focused. Blur it now and wait for the
-  // ruleview-changed event to avoid pending requests.
-  onRuleViewChanged = view.once("ruleview-changed");
+  // property-value-updated event to avoid pending requests.
+  const onModifications = view.once("property-value-updated");
   EventUtils.synthesizeKey("KEY_Escape");
-  await onRuleViewChanged;
+  await onModifications;
 });

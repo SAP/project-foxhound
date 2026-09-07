@@ -111,11 +111,9 @@ add_task(async function () {
   availableResources = [];
 
   info("Check that styleSheetChangeEventsEnabled persist after reloading");
-  await reloadBrowser();
+  await reloadSelectedTab();
 
-  // ⚠️ When EFT is disabled, we're only getting the stylesheets for the top-level document
-  // and the remote frames; the same-origin iframes stylesheets are missing.
-  const expectedStylesheetResources = isEveryFrameTargetEnabled() ? 5 : 3;
+  const expectedStylesheetResources = 5;
   info(
     "Wait until we're notified about all the stylesheets (top-level document + iframe)"
   );
@@ -133,27 +131,19 @@ add_task(async function () {
   await assertResource(availableResources[0], {
     styleText: `.top-level-org{}`,
   });
-  if (isEveryFrameTargetEnabled()) {
-    await assertResource(availableResources[1], {
-      styleText: `.frame-org-1{}`,
-    });
-    await assertResource(availableResources[2], {
-      styleText: `.frame-org-2{}`,
-    });
-    await assertResource(availableResources[3], {
-      styleText: `.frame-com-1{}`,
-    });
-    await assertResource(availableResources[4], {
-      styleText: `.frame-com-new-bc{}`,
-    });
-  } else {
-    await assertResource(availableResources[1], {
-      styleText: `.frame-com-1{}`,
-    });
-    await assertResource(availableResources[2], {
-      styleText: `.frame-com-new-bc{}`,
-    });
-  }
+  await assertResource(availableResources[1], {
+    styleText: `.frame-org-1{}`,
+  });
+  await assertResource(availableResources[2], {
+    styleText: `.frame-org-2{}`,
+  });
+  await assertResource(availableResources[3], {
+    styleText: `.frame-com-1{}`,
+  });
+  // Ensures that the iframe's stylesheet resets to the original one
+  await assertResource(availableResources[4], {
+    styleText: `.frame-com-2{}`,
+  });
 
   is(
     await getDocumentStyleSheetChangeEventsEnabled(tab.linkedBrowser),
@@ -161,18 +151,16 @@ add_task(async function () {
     `styleSheetChangeEventsEnabled is still true on the top level document after reloading`
   );
 
-  if (isEveryFrameTargetEnabled()) {
-    const bc = await SpecialPowers.spawn(
-      tab.linkedBrowser,
-      [],
-      () => content.document.querySelector("#same-origin-1").browsingContext
-    );
-    is(
-      await getDocumentStyleSheetChangeEventsEnabled(bc),
-      true,
-      `styleSheetChangeEventsEnabled is still true on the iframe after reloading`
-    );
-  }
+  const bc = await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [],
+    () => content.document.querySelector("#same-origin-1").browsingContext
+  );
+  is(
+    await getDocumentStyleSheetChangeEventsEnabled(bc),
+    true,
+    `styleSheetChangeEventsEnabled is still true on the iframe after reloading`
+  );
 
   // clear availableResources so it's easier to test
   availableResources = [];
@@ -216,7 +204,7 @@ add_task(async function () {
  *
  * @param {Browser|BrowsingContext} browserOrBrowsingContext: The browser element or a
  *        browsing context.
- * @returns {Promise<Boolean>}
+ * @returns {Promise<boolean>}
  */
 function getDocumentStyleSheetChangeEventsEnabled(browserOrBrowsingContext) {
   return SpecialPowers.spawn(browserOrBrowsingContext, [], () => {
@@ -231,7 +219,7 @@ function getDocumentStyleSheetChangeEventsEnabled(browserOrBrowsingContext) {
  * have a "title" attribute that represent their expected order so we can sort them in
  * a way that makes it easier for us to assert.
  *
- * @param {Array<Object>} resources: Array of stylesheet resources
+ * @param {Array<object>} resources: Array of stylesheet resources
  */
 function sortResourcesByExpectedOrder(resources) {
   resources.sort((a, b) => {
@@ -242,10 +230,10 @@ function sortResourcesByExpectedOrder(resources) {
 /**
  * Check that the resources have the expected text
  *
- * @param {Array<Object>} resources: Array of stylesheet resources
- * @param {Array<Object>} expected: Array of object of the following shape:
- * @param {Object} expected[]
- * @param {Object} expected[].styleText: Expected text content of the stylesheet
+ * @param {Array<object>} resources: Array of stylesheet resources
+ * @param {Array<object>} expected: Array of object of the following shape:
+ * @param {object} expected[]
+ * @param {object} expected[].styleText: Expected text content of the stylesheet
  */
 async function assertResource(resource, expected) {
   const styleText = (await getStyleSheetResourceText(resource)).trim();

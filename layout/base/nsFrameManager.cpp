@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,18 +8,16 @@
 
 #include "ChildIterator.h"
 #include "GeckoProfiler.h"
+#include "mozilla/AbsoluteContainingBlock.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresState.h"
 #include "mozilla/ViewportFrame.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "nsAbsoluteContainingBlock.h"
 #include "nsCOMPtr.h"
 #include "nsContainerFrame.h"
 #include "nsError.h"
-#include "nsGkAtoms.h"
 #include "nsILayoutHistoryState.h"
 #include "nsIStatefulFrame.h"
 #include "nsPlaceholderFrame.h"
@@ -64,7 +60,7 @@ void nsFrameManager::AppendFrames(nsContainerFrame* aParentFrame,
                                   FrameChildListID aListID,
                                   nsFrameList&& aFrameList) {
   if (aParentFrame->IsAbsoluteContainer() &&
-      aListID == aParentFrame->GetAbsoluteListID()) {
+      aListID == FrameChildListID::Absolute) {
     aParentFrame->GetAbsoluteContainingBlock()->AppendFrames(
         aParentFrame, aListID, std::move(aFrameList));
   } else {
@@ -85,7 +81,7 @@ void nsFrameManager::InsertFrames(nsContainerFrame* aParentFrame,
       "aPrevFrame must be the last continuation in its chain!");
 
   if (aParentFrame->IsAbsoluteContainer() &&
-      aListID == aParentFrame->GetAbsoluteListID()) {
+      aListID == FrameChildListID::Absolute) {
     aParentFrame->GetAbsoluteContainingBlock()->InsertFrames(
         aParentFrame, aListID, aPrevFrame, std::move(aFrameList));
   } else {
@@ -115,7 +111,7 @@ void nsFrameManager::RemoveFrame(DestroyContext& aContext,
                "Must call RemoveFrame on placeholder for out-of-flows.");
   nsContainerFrame* parentFrame = aOldFrame->GetParent();
   if (parentFrame->IsAbsoluteContainer() &&
-      aListID == parentFrame->GetAbsoluteListID()) {
+      aListID == FrameChildListID::Absolute) {
     parentFrame->GetAbsoluteContainingBlock()->RemoveFrame(aContext, aListID,
                                                            aOldFrame);
   } else {
@@ -192,13 +188,13 @@ void nsFrameManager::CaptureFrameState(nsIFrame* aFrame,
   }
 }
 
-// Restore state for a given frame.
-// Accept a content id here, in some cases we may not have content (scroll
-// position)
 void nsFrameManager::RestoreFrameStateFor(nsIFrame* aFrame,
                                           nsILayoutHistoryState* aState) {
-  if (!aFrame || !aState) {
-    NS_WARNING("null frame or state");
+  MOZ_ASSERT(aFrame);
+  MOZ_ASSERT(aState);
+
+  if (!aState->HasStates()) {
+    // Nothing to restore.
     return;
   }
 
@@ -238,21 +234,6 @@ void nsFrameManager::RestoreFrameStateFor(nsIFrame* aFrame,
 
   // If we restore ok, remove the state from the state table
   aState->RemoveState(stateKey);
-}
-
-void nsFrameManager::RestoreFrameState(nsIFrame* aFrame,
-                                       nsILayoutHistoryState* aState) {
-  MOZ_ASSERT(nullptr != aFrame && nullptr != aState,
-             "null parameters passed in");
-
-  RestoreFrameStateFor(aFrame, aState);
-
-  // Now restore state recursively for the frame hierarchy rooted at aFrame
-  for (const auto& childList : aFrame->ChildLists()) {
-    for (nsIFrame* child : childList.mList) {
-      RestoreFrameState(child, aState);
-    }
-  }
 }
 
 void nsFrameManager::AddSizeOfIncludingThis(nsWindowSizes& aSizes) const {

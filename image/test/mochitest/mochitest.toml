@@ -10,6 +10,9 @@ support-files = [
   "animated-gif_trailing-garbage.gif",
   "animated-gif-finalframe.gif",
   "animated-avif.avif",
+  "animation-1loop.jxl",
+  "animation-2loops.jxl",
+  "animation-infiniteloop.jxl",
   "animation.svg",
   "animationPolling.js",
   "bad.jpg",
@@ -81,6 +84,7 @@ support-files = [
   "mq_dynamic_svg_test.html",
   "mq_dynamic_svg_ref.html",
   "opaque.bmp",
+  "progressive.jxl",
   "purple.gif",
   "rainbow.gif",
   "red.gif",
@@ -90,6 +94,7 @@ support-files = [
   "restore-previous.png",
   "rillybad.jpg",
   "schrep.png",
+  "sendprogressivejxl.sjs",
   "shaver.png",
   "short_header.gif",
   "source.png",
@@ -111,18 +116,23 @@ support-files = [
 support-files = [
   "../animated_image_test_list.js"
 ]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && ccov && xorigin"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov && xorigin",
+]
 
 ["test_animated_gif.html"]
 support-files = ["child.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_animation.html"]
 
 ["test_animation2.html"]
+
+["test_animation_loop_count.html"]
+scheme = "https"
 
 ["test_animation_operators.html"]
 
@@ -135,14 +145,18 @@ skip-if = [
 ["test_bug399925.html"]
 
 ["test_bug435296.html"]
-skip-if = ["true"] # disabled - See bug 578591
+skip-if = [
+  "true", # disabled - See bug 578591
+]
 
 ["test_bug466586.html"]
 
 ["test_bug468160.html"]
 
 ["test_bug478398.html"]
-skip-if = ["true"] # disabled - See bug 579139
+skip-if = [
+  "true", # disabled - See bug 579139
+]
 
 ["test_bug490949.html"]
 
@@ -164,14 +178,14 @@ skip-if = ["true"] # disabled - See bug 579139
 
 ["test_bug671906.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug733553.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug767779.html"]
@@ -179,12 +193,15 @@ skip-if = [
 ["test_bug865919.html"]
 
 ["test_bug1132427.html"]
-skip-if = ["display == 'wayland' && os_version == '22.04'"]  # Bug 18570
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 18570
+]
 
 ["test_bug1180105.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && debug && verify-standalone",
 ]
 
 ["test_bug1217571.html"]
@@ -192,6 +209,8 @@ skip-if = [
 ["test_bug1325080.html"]
 
 ["test_bullet_animation.html"]
+
+["test_cache_eviction.html"]
 
 ["test_canvas_frame_animation.html"]
 
@@ -201,8 +220,8 @@ skip-if = [
 
 ["test_discardAnimatedImage.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_discardFinishedAnimatedImage.html"]
@@ -218,6 +237,12 @@ skip-if = [
 ["test_image_cache_notification.html"]
 
 ["test_image_crossorigin_data_url.html"]
+
+["test_jxl_progressive.html"]
+skip-if = [
+  "http2",
+  "http3",
+]
 
 ["test_mq_dynamic_svg.html"]
 
@@ -236,7 +261,9 @@ skip-if = [
 ["test_svg_filter_animation.html"]
 
 ["test_synchronized_animation.html"]
-skip-if = ["true"] # bug 1295501
+skip-if = [
+  "true", # bug 1295501
+]
 
 ["test_undisplayed_iframe.html"]
 
@@ -245,6 +272,6 @@ skip-if = ["true"] # bug 1295501
 ["test_xultree_animation.xhtml"]
 allow_xul_xbl = true
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]

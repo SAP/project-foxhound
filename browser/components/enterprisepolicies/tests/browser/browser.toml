@@ -26,13 +26,19 @@ support-files = [
 ["browser_policy_allowfileselectiondialogs.js"]
 
 ["browser_policy_app_auto_update.js"]
-run-if = ["!msix"] # Updater is disabled in MSIX builds
+run-if = [
+  "!msix", # Updater is disabled in MSIX builds
+]
 
 ["browser_policy_app_update.js"]
-run-if = ["!msix"] # Updater is disabled in MSIX builds
+run-if = [
+  "!msix", # Updater is disabled in MSIX builds
+]
 
 ["browser_policy_background_app_update.js"]
-run-if = ["!msix"] # Updater is disabled in MSIX builds
+run-if = [
+  "!msix", # Updater is disabled in MSIX builds
+]
 
 ["browser_policy_block_about.js"]
 
@@ -56,11 +62,19 @@ https_first_disabled = true
 
 ["browser_policy_disable_popup_blocker.js"]
 
+["browser_policy_disable_popup_blocker_locked.js"]
+support-files = [
+  "!/browser/base/content/test/popups/popup_blocker2.html",
+  "!/browser/base/content/test/popups/popup_blocker_a.html",
+]
+
 ["browser_policy_disable_privatebrowsing.js"]
 
 ["browser_policy_disable_profile_import.js"]
 
 ["browser_policy_disable_profile_reset.js"]
+
+["browser_policy_disable_remote_settings.js"]
 
 ["browser_policy_disable_safemode.js"]
 
@@ -86,6 +100,9 @@ https_first_disabled = true
 ["browser_policy_extensionsettings2.js"]
 
 ["browser_policy_firefoxhome.js"]
+support-files = [
+  "../../../../extensions/newtab/test/browser/topstories.json",
+]
 
 ["browser_policy_firefoxsuggest.js"]
 
@@ -96,6 +113,8 @@ https_first_disabled = true
 ["browser_policy_masterpassword_aboutlogins.js"]
 
 ["browser_policy_masterpassword_doorhanger.js"]
+
+["browser_policy_mv3_force_installed_host_permissions.js"]
 
 ["browser_policy_offertosavelogins.js"]
 
@@ -109,6 +128,10 @@ https_first_disabled = true
 
 ["browser_policy_privatebrowsingmodeavailability.js"]
 
+["browser_policy_privatebrowsingmodeavailability_srd.js"]
+
+["browser_policy_sanitize_on_shutdown.js"]
+
 ["browser_policy_search_engine.js"]
 
 ["browser_policy_searchbar.js"]
@@ -116,6 +139,16 @@ https_first_disabled = true
 ["browser_policy_set_homepage.js"]
 
 ["browser_policy_set_startpage.js"]
+
+["browser_policy_sitepolicies.js"]
+https_first_disabled = true
+support-files = [
+  "framed.html",
+  "framed_worker.html",
+  "worker.html",
+  "service-worker.js",
+  "shared-worker.js",
+]
 
 ["browser_policy_support_menu.js"]
 

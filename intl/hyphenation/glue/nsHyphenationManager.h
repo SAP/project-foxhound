@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHyphenationManager_h__
-#define nsHyphenationManager_h__
+#ifndef nsHyphenationManager_h_
+#define nsHyphenationManager_h_
 
 #include "base/process.h"
 #include "mozilla/Omnijar.h"
@@ -53,4 +52,4 @@ class nsHyphenationManager : public nsIObserver {
   static nsHyphenationManager* sInstance;
 };
 
-#endif  // nsHyphenationManager_h__
+#endif  // nsHyphenationManager_h_

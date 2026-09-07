@@ -26,13 +26,17 @@ function t3(id,expected,pid) {
   is(actual, expected, id+".offsetLeft");
 
   var p = document.getElementById(id).offsetParent; 
-  is(p.id, pid, id+".offsetParent");
+  if (pid == null) {
+    is(p, null, id + ".offsetParent");
+  } else {
+    is(p.id, pid, id + ".offsetParent");
+  }
 }
 
 function run_test() {
    t3('rel384419',135,'body');
    t3('abs384419',135,'body');
-   t3('fix384419',135,'body');
+   t3('fix384419',135,null);
 }
 </script>
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -11,7 +9,6 @@
 
 #include <inttypes.h>
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/Poison.h"
@@ -149,7 +146,7 @@ void nsPresArena<ArenaSize, ObjectId, ObjectIdCount>::AddSizeOfExcludingThis(
   case eArenaObjectID_##name_:                                   \
     aSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(name_) += totalSize; \
     break;
-#include "nsPresArenaObjectList.h"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
         default:
           MOZ_ASSERT_UNREACHABLE("Unknown arena object type");
@@ -161,7 +158,7 @@ void nsPresArena<ArenaSize, ObjectId, ObjectIdCount>::AddSizeOfExcludingThis(
   case DisplayListArenaObjectId::name_:                          \
     aSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(name_) += totalSize; \
     break;
-#include "nsDisplayListArenaTypes.h"
+#include "nsDisplayListArenaTypes.inc"
 #undef DISPLAY_LIST_ARENA_OBJECT
         default:
           MOZ_ASSERT_UNREACHABLE("Unknown display item arena type");

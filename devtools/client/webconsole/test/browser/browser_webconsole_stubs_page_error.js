@@ -103,6 +103,8 @@ async function generatePageErrorStubs() {
 
     // Note: This needs to use ContentTask rather than SpecialPowers.spawn
     // because the latter includes cross-process stack information.
+    // TODO: Switch to SpecialPowers.spawn
+    // eslint-disable-next-line mozilla/reject-contenttask-spawn
     await ContentTask.spawn(gBrowser.selectedBrowser, code, function (subCode) {
       const script = content.document.createElement("script");
       script.append(content.document.createTextNode(subCode));

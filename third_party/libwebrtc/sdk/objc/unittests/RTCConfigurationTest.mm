@@ -11,9 +11,9 @@
 #import <Foundation/Foundation.h>
 #import <XCTest/XCTest.h>
 
-#include <vector>
+#include "test/gtest.h"
 
-#include "rtc_base/gunit.h"
+#include <vector>
 
 #import "api/peerconnection/RTCConfiguration+Private.h"
 #import "api/peerconnection/RTCConfiguration.h"
@@ -81,15 +81,14 @@
   EXPECT_EQ(webrtc::PeerConnectionInterface::GATHER_CONTINUALLY,
             nativeConfig->continual_gathering_policy);
   EXPECT_EQ(true, nativeConfig->prune_turn_ports);
-  EXPECT_EQ(true, nativeConfig->crypto_options->srtp.enable_gcm_crypto_suites);
+  EXPECT_EQ(true, nativeConfig->crypto_options.srtp.enable_gcm_crypto_suites);
   EXPECT_EQ(
       true,
-      nativeConfig->crypto_options->srtp.enable_aes128_sha1_32_crypto_cipher);
-  EXPECT_EQ(true,
-            nativeConfig->crypto_options->srtp
-                .enable_encrypted_rtp_header_extensions);
-  EXPECT_EQ(true,
-            nativeConfig->crypto_options->sframe.require_frame_encryption);
+      nativeConfig->crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher);
+  EXPECT_EQ(
+      true,
+      nativeConfig->crypto_options.srtp.enable_encrypted_rtp_header_extensions);
+  EXPECT_EQ(true, nativeConfig->crypto_options.sframe.require_frame_encryption);
   EXPECT_EQ(2500, nativeConfig->audio_rtcp_report_interval_ms());
   EXPECT_EQ(3750, nativeConfig->video_rtcp_report_interval_ms());
 }

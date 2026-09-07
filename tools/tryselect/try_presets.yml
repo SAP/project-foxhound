@@ -9,6 +9,40 @@
 
 # yamllint disable rule:line-length
 
+ai:
+    selector: fuzzy
+    description: >-
+        Run AI Platform tests and tests for all createEngine consumers:
+        mochitest-browser-chrome and xpcshell on Linux, geckoview-junit
+        and engine-gecko unit on Android.
+        Use with --artifact to speed up your trypush.
+    paths: &ai-paths
+        - toolkit/components/ml/tests/
+        - toolkit/components/pageextractor/
+        - browser/components/aiwindow/
+        - mobile/android/geckoview/src/androidTest/java/org/mozilla/geckoview/test/
+        - mobile/android/android-components/components/browser/engine-gecko/
+        - toolkit/components/places/
+        - browser/components/urlbar/
+        - browser/components/tabbrowser/test/xpcshell/smarttabgrouping/
+        - browser/components/genai/
+        - toolkit/components/extensions/
+        - toolkit/components/pdfjs/
+    test_paths: *ai-paths
+    query:
+        - "'mochitest-browser-chrome 'linux !spi !asan !tsan !msix !a11y !swr !standalone !trainhop"
+        - "'xpcshell 'linux !nofis !asan !tsan !condprof !ioi"
+        - "'em-14 'geckoview-junit !shippable !iso"
+        - "'test-components 'engine-gecko"
+
+ai-perf:
+    selector: fuzzy
+    description: >-
+        Run ml-* perftests on Linux.
+    query:
+        - "^perftest-linux 'ml-"
+    full: true
+
 android-components:
     selector: fuzzy
     description: >-
@@ -17,6 +51,101 @@ android-components:
         - "'build-components"
         - "'test-components"
         - "^source-test 'android-components"
+
+android-fenix:
+    selector: fuzzy
+    description: >-
+        Run Fenix builds and tests.
+    query:
+        - "'build-apk-fenix-debug"
+        - "'signing-apk-fenix-debug"
+        - "'build-apk-fenix-android-test-debug"
+        - "'signing-apk-fenix-android-test-debug"
+        - "'test-apk-fenix-debug"
+        - "'ui-test-apk-fenix-arm-debug"
+        - "^source-test 'fenix"
+        - "'generate-baseline-profile-firebase-fenix"
+
+android-frontend:
+    selector: fuzzy
+    description: >-
+        Run android-components, Focus, and Fenix builds and tests.
+    query:
+        - "'build-components"
+        - "'test-components"
+        - "'build-apk-fenix-debug"
+        - "'signing-apk-fenix-debug"
+        - "'build-apk-fenix-android-test-debug"
+        - "'signing-apk-fenix-android-test-debug"
+        - "'test-apk-fenix-debug"
+        - "'ui-test-apk-fenix-arm-debug"
+        - "'build-apk-focus-debug"
+        - "'signing-apk-focus-debug"
+        - "'build-apk-focus-android-test-debug"
+        - "'signing-apk-focus-android-test-debug"
+        - "'test-apk-focus-debug"
+        - "'ui-test-apk-focus-arm-debug"
+        - "^source-test 'android | 'fenix | 'focus"
+        - "'generate-baseline-profile-firebase-fenix"
+
+android-focus:
+    selector: fuzzy
+    description: >-
+        Run Focus builds and tests.
+    query:
+        - "'build-apk-focus-debug"
+        - "'signing-apk-focus-debug"
+        - "'build-apk-focus-android-test-debug"
+        - "'signing-apk-focus-android-test-debug"
+        - "'test-apk-focus-debug"
+        - "'ui-test-apk-focus-arm-debug"
+        - "^source-test 'focus"
+
+android-fullstack:
+    selector: fuzzy
+    full: true
+    no_artifact: true
+    description: >-
+        Run GeckoView, android-components, Focus, and Fenix builds and tests.
+    query:
+        # All Android lints
+        - "^source-test-mozlint 'android"
+        # Firefox Android builds and tests (from firefox-android preset)
+        - "'build-components !nightly- !beta- !release-"
+        - "'test-components"
+        - "'build-apk-fenix-debug"
+        - "'signing-apk-fenix-debug"
+        - "'build-apk-fenix-android-test-debug"
+        - "'signing-apk-fenix-android-test-debug"
+        - "'test-apk-fenix-debug"
+        - "'ui-test-apk-fenix-arm-debug"
+        - "'build-apk-focus-debug"
+        - "'signing-apk-focus-debug"
+        - "'build-apk-focus-android-test-debug"
+        - "'signing-apk-focus-android-test-debug"
+        - "'test-apk-focus-debug"
+        - "'ui-test-apk-focus-arm-debug"
+        - "^source-test 'android | 'fenix | 'focus"
+        - "'generate-baseline-profile-firebase-fenix"
+        # GeckoView tests (from android-geckoview preset)
+        - "^source-test-mozlint eslint$ | rejected-words$ | file-perm$ | file-whitespace$"
+        # Miscellaneous Tests
+        - "^test-android !shippable '64 'em-14 'gtest | 'cpp | junit-fis"
+        # Mochitests
+        - "^test-android !shippable !cf !gli !iso      'em-14 'media | 'plain"
+        - "^test-android !shippable !cf !gli !iso !swr 'hw 'media 'debug"
+        - "^test-android !shippable !cf !gli !iso !swr 'hw 'mochitest-webgl 'nofis"
+        # Reftests
+        - "^test-android !shippable !iso 'em-14 'geckoview-crashtest | 'geckoview-reftest 'nofis"
+        # Web Platform Tests
+        - "^test-android !shippable !headless 'em-14 'wdspec"
+        - "^test-android !shippable       !cf !iso            'em-14 'web-platform-tests-crashtest 'debug"
+        - "^test-android !shippable       !cf !iso       !swr 'em-14 'web-platform-tests-crashtest"
+        - "^test-android !shippable !back !cf !iso !ship !swr 'em-14 'web-platform-tests-nofis"
+        - "^test-android !shippable !back !cf !iso            'em-14 'web-platform-tests-reftest 'nofis 'debug"
+        - "^test-android !shippable !back !cf !iso       !swr 'em-14 'web-platform-tests-reftest 'nofis"
+        # XPCShell
+        - "^test-android !shippable !iso 'em-14 'xpcshell"
 
 android-geckoview:
     selector: fuzzy
@@ -27,22 +156,22 @@ android-geckoview:
         # Lint
         - "^source-test-mozlint android-lints$ | eslint$ | rejected-words$ | file-perm$ | file-whitespace$"
         # Miscellaneous Tests
-        - "^test-android !shippable '64 'gtest | 'cpp | junit-fis"
+        - "^test-android !shippable '64 'em-14 'gtest | 'cpp | junit-fis"
         # Mochitests
-        - "^test-android !shippable !cf !gli !iso      'em 'media | 'plain"
+        - "^test-android !shippable !cf !gli !iso      'em-14 'media | 'plain"
         - "^test-android !shippable !cf !gli !iso !swr 'hw 'media 'debug"
         - "^test-android !shippable !cf !gli !iso !swr 'hw 'mochitest-webgl 'nofis"
         # Reftests
-        - "^test-android !shippable !iso 'geckoview-crashtest | 'geckoview-reftest 'nofis"
+        - "^test-android !shippable !iso 'em-14 'geckoview-crashtest | 'geckoview-reftest 'nofis"
         # Web Platform Tests
-        - "^test-android !shippable !headless 'wdspec"
-        - "^test-android !shippable       !cf !iso            'web-platform-tests-crashtest 'debug"
-        - "^test-android !shippable       !cf !iso       !swr 'web-platform-tests-crashtest"
-        - "^test-android !shippable !back !cf !iso !ship !swr 'web-platform-tests-nofis"
-        - "^test-android !shippable !back !cf !iso            'web-platform-tests-reftest 'nofis 'debug"
-        - "^test-android !shippable !back !cf !iso       !swr 'web-platform-tests-reftest 'nofis"
+        - "^test-android !shippable !headless 'em-14 'wdspec"
+        - "^test-android !shippable       !cf !iso            'em-14 'web-platform-tests-crashtest 'debug"
+        - "^test-android !shippable       !cf !iso       !swr 'em-14 'web-platform-tests-crashtest"
+        - "^test-android !shippable !back !cf !iso !ship !swr 'em-14 'web-platform-tests-nofis"
+        - "^test-android !shippable !back !cf !iso            'em-14 'web-platform-tests-reftest 'nofis 'debug"
+        - "^test-android !shippable !back !cf !iso       !swr 'em-14 'web-platform-tests-reftest 'nofis"
         # XPCShell
-        - "^test-android !shippable !iso 'xpcshell"
+        - "^test-android !shippable !iso 'em-14 'xpcshell"
 
 builds:
     selector: fuzzy
@@ -67,6 +196,23 @@ builds-debugopt:
     query:
         - "^build- !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols !components !apk !bundle"
 
+claudometer:
+    selector: fuzzy
+    description: >-
+        Run the full Linux test suite (linux2204-wayland, linux2404) plus cross-platform
+        wdspec-headless tests and SpiderMonkey/hazard jobs for comprehensive coverage.
+    query:
+        - "^build-linux64/"
+        - "^test-linux2204-64-wayland/"
+        - "^test-linux2204-64-wayland-shippable"
+        - "^test-linux2404-64/"
+        - "^test-linux2404-64-shippable 'headless"
+        - "^test-macosx1470-64-shippable 'wdspec-headless"
+        - "^test-macosx1500-aarch64-shippable 'wdspec-headless"
+        - "^test-windows11-64-25h2-shippable 'wdspec-headless"
+        - "^spidermonkey-sm- !win"
+        - "^hazard-linux64-shell-haz"
+
 desktop-frontend:
     description: >-
         Run mochitest-browser, xpcshell, mochitest-chrome, mochitest-a11y,
@@ -86,12 +232,28 @@ desktop-frontend:
         # results for frontend-only changes.
         # This won't run 32-bit debug tests, which seems an acceptable
         # trade-off for query complexity + runtime on infrastructure.
-        - "'browser-chrome                 !spi !asan !tsan !msix !a11y !swr | 'linux"
-        - "'mochitest-chrome               !spi !asan !tsan             !swr !gpu"
+        - "'browser-chrome     !standalone !spi !asan !tsan !msix !a11y !swr | 'linux"
+        - "'mochitest-chrome   !standalone !spi !asan !tsan             !swr !gpu"
         - "'xpcshell                       !spi !asan !tsan !msix !nofis !condprof !android"
         - "'browser-a11y | 'mochitest-a11y !spi !asan !tsan !no-cache   !swr"
         - "'marionette                          !asan       !source !headless !swr"
         - "'firefox-ui-functional               !asan !tsan"
+
+desktop-newtab-trainhop:
+    description: >-
+        Run mochitest-browser newtab trainhop tests on compatible release
+        channels. Excludes non-shipped configurations, since we really just
+        need the platforms to build in order to grab their test packages and
+        test running infrastructure. The actual builds under test here are
+        the latest beta and release builds, running the try pushes' generated
+        newtab XPI and tests.
+        Use with --artifact to speed up your trypush.
+        If these jobs are green, then the pushed revision is ready to be
+        manually tested for a potential trainhop to the green channels.
+    selector: fuzzy
+    full: true
+    query:
+        - "'mochitest trainhop !artifact !cf !tsan !ccov !asan !shippable !debug !devedition !wayland !-32"
 
 devtools:
     selector: fuzzy
@@ -122,55 +284,6 @@ devtools-linux:
         - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux !spi !asan !tsan"
         - "'xpcshell 'linux !nofis !asan !tsan !condprof !ioi"
 
-fenix:
-    selector: fuzzy
-    description: >-
-        Run Fenix builds and tests.
-    query:
-        - "'build-apk-fenix-debug"
-        - "'signing-apk-fenix-debug"
-        - "'build-apk-fenix-android-test-debug"
-        - "'signing-apk-fenix-android-test-debug"
-        - "'test-apk-fenix-debug"
-        - "'ui-test-apk-fenix-arm-debug"
-        - "^source-test 'fenix"
-        - "'generate-baseline-profile-firebase-fenix"
-
-firefox-android:
-    selector: fuzzy
-    description: >-
-        Run android-components, Focus, and Fenix builds and tests.
-    query:
-        - "'build-components"
-        - "'test-components"
-        - "'build-apk-fenix-debug"
-        - "'signing-apk-fenix-debug"
-        - "'build-apk-fenix-android-test-debug"
-        - "'signing-apk-fenix-android-test-debug"
-        - "'test-apk-fenix-debug"
-        - "'ui-test-apk-fenix-arm-debug"
-        - "'build-apk-focus-debug"
-        - "'signing-apk-focus-debug"
-        - "'build-apk-focus-android-test-debug"
-        - "'signing-apk-focus-android-test-debug"
-        - "'test-apk-focus-debug"
-        - "'ui-test-apk-focus-arm-debug"
-        - "^source-test 'android | 'fenix | 'focus"
-        - "'generate-baseline-profile-firebase-fenix"
-
-focus:
-    selector: fuzzy
-    description: >-
-        Run Focus builds and tests.
-    query:
-        - "'build-apk-focus-debug"
-        - "'signing-apk-focus-debug"
-        - "'build-apk-focus-android-test-debug"
-        - "'signing-apk-focus-android-test-debug"
-        - "'test-apk-focus-debug"
-        - "'ui-test-apk-focus-arm-debug"
-        - "^source-test 'focus"
-
 fpush-linux-android:
     selector: fuzzy
     description: >-
@@ -184,7 +297,7 @@ fpush-linux-android:
         codebase, while the builds on other platforms catch compilation problems
         that might result from only building locally on one platform.
     query:
-        - "'test-linux1804 'debug- !-shippable !-asan"
+        - "'test-linux2404 'debug- !-shippable !-asan"
         - "'test-android-em 'debug"
         - "^build !-shippable !-signing !-asan !-fuzzing !-rusttests !-base-toolchain !-aar- !components !apk !bundle"
 
@@ -200,33 +313,97 @@ geckodriver:
         - "'platform 'wdspec 'debug 'nofis"
         - "'browsertime 'amazon 'shippable 'firefox 'nofis"
 
-layout:
+layout-all-platforms:
     selector: fuzzy
     description: >-
-        Runs the tests most relevant to layout.
+        Runs the tests most relevant to layout, in all platforms.
+        Consider using layout-linux, layout-linux-debug, or layout-linux-opt
+        for faster results and less resource consumption.
         This preset can be filtered down further to limit it to
-        a specific platform or build configuration. For example:
-        |mach try --preset layout -xq "linux64 'opt"|
-    query:
+        other platforms or build configurations. For example:
+        |mach try --preset layout-all-platforms -xq "windows 'opt"|
+    query: &layout-all-platforms-query
         # Most mochitest + reftest + crashtest + wpt
-        - "!asan !tsan !jsreftest !shippable !webgl !condprof !media !webgpu 'mochitest | 'web-platform | 'crashtest | 'reftest"
+        - "!asan !tsan !jsreftest !shippable !webgl !condprof !media !standalone !webgpu !a11y-checks 'mochitest | 'web-platform | 'crashtest | 'reftest"
         # Style system unit tests
         - "'rusttests"
+
+layout-linux:
+    selector: fuzzy
+    description: >-
+        Like the layout-all-platforms preset, but runs only linux tests.
+    query: *layout-all-platforms-query
+    intersect_query: ["linux64"]
+
+layout-linux-debug:
+    selector: fuzzy
+    description: Like layout-all-platforms, but runs only linux debug tests.
+    query: *layout-all-platforms-query
+    intersect_query: ["linux64 'debug"]
+
+layout-linux-opt:
+    selector: fuzzy
+    description: Like layout-all-platforms, but runs only linux opt tests.
+    query: *layout-all-platforms-query
+    intersect_query: ["linux64 'opt"]
+
+wpt-all-platforms:
+    selector: fuzzy
+    description: >-
+        Runs web platform tests in all platforms.
+        Consider using wpt-linux, wpt-linux-debug, or wpt-linux-opt
+        for faster results and less resource consumption.
+        This preset can be filtered down further to limit it to
+        other platforms or build configurations. For example:
+        |mach try --preset wpt-all-platforms -xq "windows 'opt"|
+    query: &wpt-all-platforms-query
+        - "'web-platform !asan !tsan"
+
+wpt-linux:
+    selector: fuzzy
+    description: Like wpt-all-platforms, but runs only linux tests.
+    query: *wpt-all-platforms-query
+    intersect_query: ["linux64"]
+
+wpt-linux-debug:
+    selector: fuzzy
+    description: Like wpt-all-platforms, but runs only linux debug tests.
+    query: *wpt-all-platforms-query
+    intersect_query: ["linux64 'debug"]
+
+wpt-linux-opt:
+    selector: fuzzy
+    description: Like wpt-all-platforms, but runs only linux opt tests.
+    query: *wpt-all-platforms-query
+    intersect_query: ["linux64 'opt"]
 
 media-full:
     selector: fuzzy
     description: >-
-        Runs tests that exercise media playback and WebRTC code.
+        Runs tests that exercise media playback, WebRTC, EME, WebCodecs and
+        Media Source code. Covers mochitest-media (media-subsuite plain
+        mochitests under dom/media, including webcodecs, webaudio, webrtc),
+        mochitest-browser-media, WPT testharness and crashtest tasks (for
+        media/encrypted-media/webcodecs/webrtc/mediacapture specs), desktop
+        reftest (dom/media reftests), crashtest (dom/media crashtests),
+        and gtest (media C++ unit tests). The intersect_query keeps only
+        debug, asan and tsan builds, so opt and shippable variants are
+        dropped and try cycles run cheaper without losing the correctness
+        signal a media change needs. Push opt-only via a separate preset
+        (or via autoland) when validating timing-sensitive changes.
     query:
         - "mochitest-media !dfpi !nofis"
         - "mochitest-media android !spi !swr !lite"
-        - "mochitest-browser-chrome !dfpi !nofis !a11y"
         - "mochitest-browser-media"
-        - "web-platform-tests !dfpi !nofis !shippable"
+        - "web-platform-tests !dfpi !nofis !wdspec"
         - "web-platform-tests android !wdspec !spi !swr !lite"
         - "crashtest !wdspec !nofis"
         - "crashtest android !wdspec !spi !swr !lite"
+        - "reftest !nofis"
+        - "reftest android !spi !swr !lite"
         - "'gtest"
+    intersect_query:
+        - "'debug | '-asan | '-tsan"
 
 mochitest-bc:
     description: >-
@@ -235,7 +412,7 @@ mochitest-bc:
         tsan, msix, etc.) and some non-default configurations. For frontend
         only changes, use this with --artifact to speed up your trypushes.
     query:
-        - "'browser-chrome !tsan !asan !msix !spi !a11y !swr | 'linux"
+        - "'browser-chrome !standalone !tsan !asan !msix !spi !a11y !swr | 'linux"
     selector: fuzzy
 
 os-integration:
@@ -303,7 +480,7 @@ sample-suites:
         - ^test- -1$ !browsertime !raptor !talos
         - ^test- !1$ !2$ !3$ !4$ !5$ !6$ !7$ !8$ !9$ !0$ !raptor !talos !components !apk !browsertime
         # Only run a single talos / raptor / browsertime suite per platform
-        - ^test- raptor-speedometer$ | talos-g1$ | browsertime-tp6-firefox-imgur$
+        - ^test- speedometer3$ | talos-g1$ | browsertime-tp6-firefox-imgur$
 
 sm-shell-all:
     selector: fuzzy
@@ -354,7 +531,7 @@ webextensions:
         - toolkit/components/extensions/test/
         - toolkit/mozapps/extensions/test/
     query:
-        - "'android | '64/ | 'windows11-64-24h2 !wpt !gpu !msix !-lite !-asan"
+        - "'android | '64/ | 'windows11-64- !wpt !gpu !msix !-lite !-asan"
 
 webgpu:
     selector: fuzzy

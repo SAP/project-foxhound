@@ -1,14 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TEST_CDM_STORAGE_H__
-#define TEST_CDM_STORAGE_H__
+#ifndef TEST_CDM_STORAGE_H_
+#define TEST_CDM_STORAGE_H_
 
+#include <cstdint>
 #include <functional>
 #include <string>
-#include <cstdint>
+
 #include "content_decryption_module.h"
 
 #define IO_SUCCEEDED(x) ((x) == cdm::FileIOClient::Status::kSuccess)
@@ -42,4 +42,4 @@ class OpenContinuation {
 
 void OpenRecord(cdm::Host_11* aHost, const std::string& aRecordName,
                 std::function<void(bool)>&& aOpenComplete);
-#endif  // TEST_CDM_STORAGE_H__
+#endif  // TEST_CDM_STORAGE_H_

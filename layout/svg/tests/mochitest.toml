@@ -16,8 +16,8 @@ support-files = [
   "file_embed_sizing_both.svg",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_filter_crossorigin.html"]
@@ -29,8 +29,8 @@ support-files = [
 ]
 # Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
 skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1642198
   "xorigin",
-  "os == 'linux' && bits == 64", # Bug 1642198
 ]
 
 ["test_hover_near_text.html"]

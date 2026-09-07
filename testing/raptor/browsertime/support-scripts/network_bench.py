@@ -62,6 +62,7 @@ class NetworkBench(BasePythonSupport):
         try:
             result = subprocess.run(
                 ["caddy", "version"],
+                check=False,
                 capture_output=True,
                 text=True,
             )
@@ -256,6 +257,7 @@ class NetworkBench(BasePythonSupport):
         try:
             result = subprocess.run(
                 ["sudo", "tc", "-help"],
+                check=False,
                 capture_output=True,
                 text=True,
             )
@@ -308,8 +310,7 @@ class NetworkBench(BasePythonSupport):
             bandwidth_kbps = bandwidth_mbit * 1_000
             bdp_bits = bandwidth_kbps * rtt_ms
             bdp_bytes = bdp_bits / 8
-            if bdp_bytes < 1500:
-                bdp_bytes = 1500
+            bdp_bytes = max(bdp_bytes, 1500)
             return int(bdp_bytes)
 
         bandwidth_str, rtt_ms = self.network_type_to_bandwidth_rtt(network_type)
@@ -630,14 +631,14 @@ class NetworkBench(BasePythonSupport):
             )
             if not temp_file_path:
                 raise Exception("Failed to generate temporary file")
-            self.cleanup.append(lambda: temp_file_path.unlink())
+            self.cleanup.append(temp_file_path.unlink)
 
             download_html = self.generate_download_test_html(
                 tempfile.gettempdir(), temp_file_path.name
             )
             if not download_html:
                 raise Exception("Failed to generate file for download test")
-            self.cleanup.append(lambda: download_html.unlink())
+            self.cleanup.append(download_html.unlink)
             cmd += [
                 "--browsertime.server_url",
                 f"https://localhost:{self.caddy_port}/{download_html.name}",
@@ -701,7 +702,7 @@ class NetworkBench(BasePythonSupport):
             "alertThreshold": float(test.get("alert_threshold", 2.0)),
             "unit": unit,
             "replicates": replicates,
-            "shouldAlert": False,
+            "shouldAlert": True,
             "value": round(filters.mean(replicates), 3),
         }
 

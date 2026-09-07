@@ -29,9 +29,9 @@
 #ifndef DynamicsCompressorKernel_h
 #define DynamicsCompressorKernel_h
 
-#include "nsTArray.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
 
 namespace WebCore {
 

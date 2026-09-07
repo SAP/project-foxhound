@@ -10,12 +10,13 @@
 
 #include "modules/rtp_rtcp/source/rtp_format_vp9.h"
 
-#include <string.h>
+#include <cstdint>
+#include <cstring>
+#include <span>
 
-#include "api/video/video_codec_constants.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "modules/rtp_rtcp/source/video_rtp_depacketizer_vp9.h"
 #include "modules/video_coding/codecs/interface/common_constants.h"
+#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "rtc_base/bit_buffer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -306,7 +307,7 @@ RTPVideoHeaderVP9 RemoveInactiveSpatialLayers(
 }
 }  // namespace
 
-RtpPacketizerVp9::RtpPacketizerVp9(rtc::ArrayView<const uint8_t> payload,
+RtpPacketizerVp9::RtpPacketizerVp9(std::span<const uint8_t> payload,
                                    PayloadSizeLimits limits,
                                    const RTPVideoHeaderVP9& hdr)
     : hdr_(RemoveInactiveSpatialLayers(hdr)),
@@ -348,12 +349,11 @@ bool RtpPacketizerVp9::NextPacket(RtpPacketToSend* packet) {
   uint8_t* buffer = packet->AllocatePayload(header_size + packet_payload_len);
   RTC_CHECK(buffer);
 
-  if (!WriteHeader(layer_begin, layer_end,
-                   rtc::MakeArrayView(buffer, header_size)))
+  if (!WriteHeader(layer_begin, layer_end, std::span(buffer, header_size)))
     return false;
 
   memcpy(buffer + header_size, remaining_payload_.data(), packet_payload_len);
-  remaining_payload_ = remaining_payload_.subview(packet_payload_len);
+  remaining_payload_ = remaining_payload_.subspan(packet_payload_len);
 
   // Ensure end_of_picture is always set on top spatial layer when it is not
   // dropped.
@@ -401,7 +401,7 @@ bool RtpPacketizerVp9::NextPacket(RtpPacketToSend* packet) {
 //      +-+-+-+-+-+-+-+-+
 bool RtpPacketizerVp9::WriteHeader(bool layer_begin,
                                    bool layer_end,
-                                   rtc::ArrayView<uint8_t> buffer) const {
+                                   std::span<uint8_t> buffer) const {
   // Required payload descriptor byte.
   bool i_bit = PictureIdPresent(hdr_);
   bool p_bit = hdr_.inter_pic_predicted;

@@ -21,7 +21,7 @@ Test that List component has working keyboard interactions.
 
 "use strict";
 
-window.onload = function() {
+window.onload = async function() {
   try {
     const { a, button, div } =
       require("devtools/client/shared/vendor/react-dom-factories");
@@ -67,20 +67,24 @@ window.onload = function() {
     const defaultFocus = listEl.ownerDocument.body;
 
     function blurEl(el) {
+      const onBlur = new Promise(r => {
+        el.addEventListener("blur", r, {once: true});
+      })
       // Simulate.blur does not seem to update the activeElement.
       el.blur();
+      return onBlur;
     }
 
     function focusEl(el) {
+      const onFocus = new Promise(r => {
+        el.addEventListener("focus", r, {once: true});
+      })
       // Simulate.focus does not seem to update the activeElement.
       el.focus();
+      return onFocus;
     }
 
     function getExpectedActiveElementForFinalShiftTab() {
-      if (!SpecialPowers.getBoolPref("dom.disable_tab_focus_to_root_element")) {
-        return listEl.ownerDocument.documentElement;
-      }
-
       // When tab focus mode is applied, the "Run Chrome Tests" button is not
       // focusable, so this Shift+Tab moves the focus to a Chrome UI element
       // instead of the "Run Chrome Tests" button, which makes the focus to
@@ -243,7 +247,7 @@ window.onload = function() {
     }, {
       name: "Current item should remain set even when the list is blured. " +
             "Keyboard focus should be set back to document body.",
-      action: () => listEl.ownerDocument.activeElement.blur(),
+      action: () => blurEl(listEl.ownerDocument.activeElement),
       state: { current: 1, active: null, },
       activeElement: defaultFocus,
     }, {
@@ -280,7 +284,7 @@ window.onload = function() {
         const { type, options, el } = event;
         Simulate[type](el, options);
       } else if (action) {
-        action();
+        await action();
       }
 
       if (test.activeElement) {

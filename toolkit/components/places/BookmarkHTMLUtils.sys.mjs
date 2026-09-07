@@ -56,8 +56,6 @@
  * both require the content (= title) before actually creating it.
  */
 
-import { NetUtil } from "resource://gre/modules/NetUtil.sys.mjs";
-
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 import { PlacesUtils } from "resource://gre/modules/PlacesUtils.sys.mjs";
 
@@ -997,7 +995,7 @@ BookmarkExporter.prototype = {
 
   async _writeItem(aItem, aIndent) {
     try {
-      NetUtil.newURI(aItem.uri);
+      Services.io.newURI(aItem.uri);
     } catch (ex) {
       // If the item URI is invalid, skip the item instead of failing later.
       return;

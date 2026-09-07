@@ -128,7 +128,7 @@ function setPropertyOfXPath(browserContext, path, propName, newValue) {
       node[propNameChild] = newValueChild;
 
       let event = node.ownerDocument.createEvent("UIEvents");
-      event.initUIEvent("input", true, true, node.ownerGlobal, 0);
+      event.initUIEvent("input", true, true, node.documentGlobal, 0);
       node.dispatchEvent(event);
     }
   );
@@ -168,7 +168,7 @@ function execUsingXPath(browserContext, path, fnName, arg) {
       }
 
       let event = node.ownerDocument.createEvent("UIEvents");
-      event.initUIEvent("input", true, true, node.ownerGlobal, 0);
+      event.initUIEvent("input", true, true, node.documentGlobal, 0);
       node.dispatchEvent(event);
       return undefined;
     }

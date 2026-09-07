@@ -1,0 +1,18 @@
+{
+  "label": "diadora.com",
+  "bugs": {
+    "1936429": {
+      "issue": "extra-scrollbars",
+      "matches": ["*://www.diadora.com/*"]
+    }
+  },
+  "css": {
+    "hide-extra-scrollbars": ".select2-results { scrollbar-width: none; } .select2-container--default .select2-results > .select2-results__options { scrollbar-width: thin; overflow-x: hidden; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["hide-extra-scrollbars"]
+    }
+  ]
+}

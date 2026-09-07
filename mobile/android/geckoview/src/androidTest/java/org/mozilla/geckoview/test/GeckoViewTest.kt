@@ -17,7 +17,6 @@ import android.view.autofill.AutofillValue
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
-import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.equalTo
 import org.junit.*
@@ -112,17 +111,30 @@ class GeckoViewTest : BaseSessionTest() {
         lowPids: Collection<Int>,
     ) {
         UiThreadUtils.waitForCondition({
-            val shouldBeHighPri = getContentProcessesOomScore(highPids)
-            val shouldBeLowPri = getContentProcessesOomScore(lowPids)
-            // Note that higher oom score means less priority
-            shouldBeHighPri.count { it > 100 } == 0 &&
-                shouldBeLowPri.count { it < 300 } == 0
+            val shouldBeHighPri = getContentProcessesOomScoreAdj(highPids)
+            val shouldBeLowPri = getContentProcessesOomScoreAdj(lowPids)
+
+            // Smaller oom_score_adj indicates higher priority, with 0 indicating foreground visibility.
+            // Larger oom_score_adj indicates lower priority, with 900 indicating background visibility
+            // and the process may be killed.
+            shouldBeHighPri.count { it == 0 } == shouldBeHighPri.size &&
+                shouldBeLowPri.count { it >= 900 } == shouldBeLowPri.size
         }, env.defaultTimeoutMillis)
     }
 
-    fun getContentProcessesOomScore(pids: Collection<Int>): List<Int> =
+    /**
+     * Helper function reads oom_score_adj. oom_score_adj is set by Android based on some criteria
+     * to manage process priority.
+     *
+     * Background on oom_score_adj:
+     * https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/services/core/java/com/android/server/am/OomAdjuster.md
+     *
+     * oom_score_adj constants:
+     * https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/services/core/java/com/android/server/am/ProcessList.java
+     */
+    fun getContentProcessesOomScoreAdj(pids: Collection<Int>): List<Int> =
         pids.map { pid ->
-            val shellCommand = uiAutomation.executeShellCommand("cat /proc/$pid/oom_score")
+            val shellCommand = uiAutomation.executeShellCommand("cat /proc/$pid/oom_score_adj")
             ParcelFileDescriptor.AutoCloseInputStream(shellCommand).use { inputStream ->
                 inputStream
                     .bufferedReader(Charsets.UTF_8)
@@ -267,7 +279,7 @@ class GeckoViewTest : BaseSessionTest() {
         val initialPids = sessionRule.getAllSessionPids()
         assertTrue("Only one session PID detected on startup", initialPids.size == 1)
         val initialPid = initialPids.first()
-        val initialOomScore = getContentProcessesOomScore(listOf(initialPid)).first()
+        val initialOomScoreAdj = getContentProcessesOomScoreAdj(listOf(initialPid)).first()
 
         mainSession.setActive(true)
         mainSession.setActive(false)
@@ -275,7 +287,7 @@ class GeckoViewTest : BaseSessionTest() {
         mainSession.loadTestPath(HELLO_HTML_PATH)
         mainSession.waitForPageStop()
         val loadedPid = sessionRule.getSessionPid(mainSession)
-        val loadedOomScore = getContentProcessesOomScore(listOf(loadedPid)).first()
+        val loadedOomScoreAdj = getContentProcessesOomScoreAdj(listOf(loadedPid)).first()
 
         val isLoadedActive = sessionRule.getActive(mainSession)
         assertFalse("The session was set to inactive.", isLoadedActive)
@@ -285,17 +297,18 @@ class GeckoViewTest : BaseSessionTest() {
 
             // Note that higher oom score means less priority
             assertTrue(
-                "The initial oom score has more priority than the loaded oom score because it was backgrounded.",
-                loadedOomScore > initialOomScore,
+                "The initial oom score adj has more priority than the loaded oom score because it was backgrounded.",
+                loadedOomScoreAdj > initialOomScoreAdj,
             )
-            assertTrue("The initial oom score indicates higher priority because it started in the foreground.", initialOomScore < 300)
-            assertTrue("The loaded oom score indicates lower priority because it is backgrounded.", loadedOomScore > 300)
+            assertTrue("The initial oom score adj indicates higher priority because it started in the foreground.", initialOomScoreAdj == 0)
+            assertTrue("The loaded oom score adj indicates lower priority because it is backgrounded.", loadedOomScoreAdj == 900)
         } else {
             assertTrue("A process switch did not occur.", initialPid == loadedPid)
 
-            // setActive(false) occurred on this PID, give time for it to settle
+            // setActive(false) occurred on this PID, give time for it to settle.
+            // When it reaches 900, this indicates the pid is backgrounded.
             UiThreadUtils.waitForCondition({
-                getContentProcessesOomScore(listOf(loadedPid)).first() > 100
+                getContentProcessesOomScoreAdj(listOf(loadedPid)).first() == 900
             }, env.defaultTimeoutMillis)
             assertTrue("The loaded oom score indicates low priority.", true)
         }
@@ -316,7 +329,6 @@ class GeckoViewTest : BaseSessionTest() {
 
     @Test
     @NullDelegate(Autofill.Delegate::class)
-    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
     fun autofillWithNoSession() {
         mainSession.loadTestPath(FORMS_XORIGIN_HTML_PATH)
         mainSession.waitForPageStop()

@@ -10,7 +10,8 @@
 
 #include "modules/desktop_capture/desktop_capture_options.h"
 
-#include "api/make_ref_counted.h"
+#include "api/make_ref_counted.h"  // IWYU pragma: keep
+#include "modules/desktop_capture/linux/x11/shared_x_display.h"
 
 #if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
 #include "modules/desktop_capture/mac/full_screen_mac_application_handler.h"
@@ -23,7 +24,33 @@
 
 namespace webrtc {
 
+namespace {
+
+void ApplyDefaultSettings(DesktopCaptureOptions& result) {
+#if defined(WEBRTC_USE_X11)
+  result.set_x_display(SharedXDisplay::CreateDefault());
+#endif
+#if defined(WEBRTC_USE_PIPEWIRE)
+  result.set_screencast_stream(SharedScreenCastStream::CreateDefault());
+#endif
+#if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
+  result.set_configuration_monitor(
+      make_ref_counted<DesktopConfigurationMonitor>());
+  result.set_full_screen_window_detector(
+      make_ref_counted<FullScreenWindowDetector>(
+          CreateFullScreenMacApplicationHandler));
+#elif defined(WEBRTC_WIN)
+  result.set_full_screen_window_detector(
+      make_ref_counted<FullScreenWindowDetector>(
+          CreateFullScreenWinApplicationHandler));
+#endif
+}
+
+}  // namespace
+
 DesktopCaptureOptions::DesktopCaptureOptions() {}
+DesktopCaptureOptions::DesktopCaptureOptions(const Environment& env)
+    : env_(env) {}
 DesktopCaptureOptions::DesktopCaptureOptions(
     const DesktopCaptureOptions& options) = default;
 DesktopCaptureOptions::DesktopCaptureOptions(DesktopCaptureOptions&& options) =
@@ -38,23 +65,15 @@ DesktopCaptureOptions& DesktopCaptureOptions::operator=(
 // static
 DesktopCaptureOptions DesktopCaptureOptions::CreateDefault() {
   DesktopCaptureOptions result;
-#if defined(WEBRTC_USE_X11)
-  result.set_x_display(SharedXDisplay::CreateDefault());
-#endif
-#if defined(WEBRTC_USE_PIPEWIRE)
-  result.set_screencast_stream(SharedScreenCastStream::CreateDefault());
-#endif
-#if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
-  result.set_configuration_monitor(
-      rtc::make_ref_counted<DesktopConfigurationMonitor>());
-  result.set_full_screen_window_detector(
-      rtc::make_ref_counted<FullScreenWindowDetector>(
-          CreateFullScreenMacApplicationHandler));
-#elif defined(WEBRTC_WIN)
-  result.set_full_screen_window_detector(
-      rtc::make_ref_counted<FullScreenWindowDetector>(
-          CreateFullScreenWinApplicationHandler));
-#endif
+  ApplyDefaultSettings(result);
+  return result;
+}
+
+// static
+DesktopCaptureOptions DesktopCaptureOptions::CreateDefault(
+    const Environment& env) {
+  DesktopCaptureOptions result(env);
+  ApplyDefaultSettings(result);
   return result;
 }
 

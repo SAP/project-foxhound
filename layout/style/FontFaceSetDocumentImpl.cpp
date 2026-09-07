@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +18,6 @@
 #include "nsDOMNavigationTiming.h"
 #include "nsFontFaceLoader.h"
 #include "nsIDocShell.h"
-#include "nsINetworkPredictor.h"
 #include "nsISupportsPriority.h"
 #include "nsIWebNavigation.h"
 #include "nsPresContext.h"
@@ -82,7 +79,7 @@ void FontFaceSetDocumentImpl::Initialize() {
     CheckLoadingFinished();
   }
 
-  mDocument->CSSLoader()->AddObserver(this);
+  mDocument->EnsureCSSLoader().AddObserver(this);
 
   mStandardFontLoadPrincipal = MakeRefPtr<gfxFontSrcPrincipal>(
       mDocument->NodePrincipal(), mDocument->PartitionedPrincipal());
@@ -91,11 +88,11 @@ void FontFaceSetDocumentImpl::Initialize() {
 void FontFaceSetDocumentImpl::Destroy() {
   RemoveDOMContentLoadedListener();
 
-  if (mDocument && mDocument->CSSLoader()) {
+  if (mDocument && mDocument->GetExistingCSSLoader()) {
     // We're null checking CSSLoader() since FontFaceSetImpl::Disconnect() might
     // be being called during unlink, at which time the loader may already have
     // been unlinked from the document.
-    mDocument->CSSLoader()->RemoveObserver(this);
+    mDocument->GetExistingCSSLoader()->RemoveObserver(this);
   }
 
   mRuleFaces.Clear();
@@ -146,7 +143,8 @@ uint64_t FontFaceSetDocumentImpl::GetInnerWindowID() {
   return mDocument->InnerWindowID();
 }
 
-nsPresContext* FontFaceSetDocumentImpl::GetPresContext() const {
+FontVisibilityProvider* FontFaceSetDocumentImpl::GetFontVisibilityProvider()
+    const {
   mozilla::AssertIsMainThreadOrServoFontMetricsLocked();
   if (!mDocument) {
     return nullptr;
@@ -318,9 +316,6 @@ nsresult FontFaceSetDocumentImpl::StartLoad(gfxUserFontEntry* aUserFontEntry,
     mLoaders.PutEntry(fontLoader);
   }
 
-  net::PredictorLearn(src.mURI->get(), mDocument->GetDocumentURI(),
-                      nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, loadGroup);
-
   if (NS_SUCCEEDED(rv)) {
     fontLoader->StartedLoading(streamLoader);
     // let the font entry remember the loader, in case we need to cancel it
@@ -411,6 +406,12 @@ bool FontFaceSetDocumentImpl::UpdateRules(
   // same rules are still present.
   nsTArray<FontFaceRecord> oldRecords = std::move(mRuleFaces);
 
+  // We reverse the oldRecords array because we will most likely be using the
+  // entries in the order they were originally added, and constantly removing
+  // the first element is inefficient if the array is large; it's better if
+  // we're most often removing elements from the end.
+  oldRecords.Reverse();
+
   // Remove faces from the font family records; we need to re-insert them
   // because we might end up with faces in a different order even if they're
   // the same font entries as before. (The order can affect font selection
@@ -470,8 +471,8 @@ bool FontFaceSetDocumentImpl::UpdateRules(
       RefPtr<FontFaceImpl> f = record.mFontFace;
       if (gfxUserFontEntry* userFontEntry = f->GetUserFontEntry()) {
         if (nsFontFaceLoader* loader = userFontEntry->GetLoader()) {
+          // Cancel() removes the loader from its registering set's mLoaders.
           loader->Cancel();
-          RemoveLoader(loader);
         }
       }
 
@@ -523,8 +524,9 @@ bool FontFaceSetDocumentImpl::InsertRuleFontFace(
   // This is a rule backed FontFace.  First, we check in aOldRecords; if
   // the FontFace for the rule exists there, just move it to the new record
   // list, and put the entry into the appropriate family.
-  for (size_t i = 0; i < aOldRecords.Length(); ++i) {
-    FontFaceRecord& rec = aOldRecords[i];
+  // Note that aOldRecords was reversed, so we search it from the end.
+  for (size_t i = aOldRecords.Length(); i > 0;) {
+    FontFaceRecord& rec = aOldRecords[--i];
 
     const bool matches =
         rec.mOrigin == Some(aSheetType) &&
@@ -571,9 +573,11 @@ bool FontFaceSetDocumentImpl::InsertRuleFontFace(
       mOwner->InsertRuleFontFace(owner, aSheetType);
     }
 
-    // note the set has been modified if an old rule was skipped to find
-    // this one - something has been dropped, or ordering changed
-    return i > 0;
+    // Return that the set has been modified if an old rule was skipped to find
+    // this one: something has been dropped, or ordering changed.
+    // Note that the record at index i has been removed, so Length() is now the
+    // original last-element index.
+    return i < aOldRecords.Length();
   }
 
   RefPtr<FontFace> fontFace =
@@ -711,8 +715,10 @@ bool FontFaceSetDocumentImpl::MightHavePendingFontLoads() {
 
   // And we also wait for any CSS style sheets to finish loading, as their
   // styles might cause new fonts to load.
-  if (mDocument->CSSLoader()->HasPendingLoads()) {
-    return true;
+  if (css::Loader* loader = mDocument->GetExistingCSSLoader()) {
+    if (loader->HasPendingLoads()) {
+      return true;
+    }
   }
 
   return false;

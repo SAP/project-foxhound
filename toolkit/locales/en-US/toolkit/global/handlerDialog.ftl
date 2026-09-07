@@ -39,6 +39,22 @@ permission-dialog-description-system-app =
 permission-dialog-description-system-noapp =
   Open the { $scheme } link?
 
+# Header on a permission prompt, asking the user if they should allow the website to continue.
+wallet-custom-scheme-warning-heading =
+      .heading = Allow this site to open your digital wallet?
+
+# Warning given to the user that the current page is trying to open their digital wallet app
+wallet-custom-scheme-warning-host-app = Opening a <strong>{ $scheme }</strong> link allows <strong>{ $host }</strong> to request your real identity with <strong>{ $appName }</strong>. Only continue if you trust this site.
+
+# Warning given to the user that the current page is trying to open their digital wallet app
+wallet-custom-scheme-warning-app = Opening a <strong>{ $scheme }</strong> link allows this site to request your real identity with <strong>{ $appName }</strong>. Only continue if you trust this site.
+
+# Warning given to the user that the current page is trying to open their digital wallet app
+wallet-custom-scheme-warning-host = Opening a <strong>{ $scheme }</strong> link allows <strong>{ $host }</strong> to request your real identity from your digital wallet. Only continue if you trust this site.
+
+# Warning given to the user that the current page is trying to open their digital wallet app
+wallet-custom-scheme-warning = Opening a <strong>{ $scheme }</strong> link allows this site to request your real identity from your digital wallet. Only continue if you trust this site.
+
 ## Please keep the emphasis around the hostname and scheme (ie the
 ## `<strong>` HTML tags). Please also keep the hostname as close to the start
 ## of the sentence as your language's grammar allows.

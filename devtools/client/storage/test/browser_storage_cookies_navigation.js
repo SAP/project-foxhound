@@ -21,7 +21,7 @@ add_task(async function () {
       `<script>document.cookie = "foo=bar";</script>`
   );
   const URL_IFRAME = buildURLWithContent(
-    "example.org",
+    MAIN_DOMAIN,
     `<h1>example.org</h1>` +
       `<script>document.cookie = "hello=world; SameSite=None; Secure; Partitioned;";</script>`
   );
@@ -65,7 +65,7 @@ add_task(async function () {
   await waitUntil(() => hasCookieData("foo", "bar"));
 
   // reload the current page, and check again
-  await reloadBrowser();
+  await reloadSelectedTab();
   // wait for storage tree refresh, and check host
   info("Waiting for storage tree to refresh and show correct host…");
   await waitUntil(() => isInTree(doc, ["cookies", "https://example.net"]));

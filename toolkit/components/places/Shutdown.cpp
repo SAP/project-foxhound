@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Shutdown.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Services.h"
 #include "mozilla/SimpleEnumerator.h"
 #include "nsComponentManagerUtils.h"
@@ -60,8 +59,8 @@ PlacesShutdownBlocker::GetState(nsIPropertyBag** _state) {
   NS_ENSURE_TRUE(bag, NS_ERROR_OUT_OF_MEMORY);
 
   RefPtr<nsVariant> progress = new nsVariant();
-  Unused << NS_WARN_IF(NS_FAILED(progress->SetAsUint8(mState)));
-  Unused << NS_WARN_IF(
+  (void)NS_WARN_IF(NS_FAILED(progress->SetAsUint8(mState)));
+  (void)NS_WARN_IF(
       NS_FAILED(bag->SetProperty(u"PlacesShutdownProgress"_ns, progress)));
 
   if (mBarrier) {
@@ -75,12 +74,12 @@ PlacesShutdownBlocker::GetState(nsIPropertyBag** _state) {
         for (const auto& property : SimpleEnumerator<nsIProperty>(enumerator)) {
           nsAutoString prefix(u"Barrier: "_ns);
           nsAutoString name;
-          Unused << NS_WARN_IF(NS_FAILED(property->GetName(name)));
+          (void)NS_WARN_IF(NS_FAILED(property->GetName(name)));
           prefix.Append(name);
           nsCOMPtr<nsIVariant> value;
-          Unused << NS_WARN_IF(
+          (void)NS_WARN_IF(
               NS_FAILED(property->GetValue(getter_AddRefs(value))));
-          Unused << NS_WARN_IF(NS_FAILED(bag->SetProperty(prefix, value)));
+          (void)NS_WARN_IF(NS_FAILED(bag->SetProperty(prefix, value)));
         }
       }
     }

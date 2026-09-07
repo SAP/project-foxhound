@@ -4,6 +4,8 @@
 
 #include "nsISupports.idl"
 
+interface nsIBounceTrackingRecord;
+
 /**
  * This interface represents an entry in the global bounce tracker or user activation map.
  */
@@ -25,4 +27,7 @@ interface nsIBounceTrackingPurgeEntry : nsIBounceTrackingMapEntry {
     // class is the bounce time. This is a PRTime, which is USEC since the
     // epoch.
     readonly attribute PRTime purgeTime;
+    // The bounce tracking record for the redirect chain that led to this purge.
+    // May be null if no chain context is available.
+    readonly attribute nsIBounceTrackingRecord bounceTrackingRecord;
 };

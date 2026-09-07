@@ -13,12 +13,15 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 
+#include "api/media_stream_interface.h"
 #include "api/sequence_checker.h"
 #include "api/test/video/test_video_track_source.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_source_interface.h"
+#include "rtc_base/thread_annotations.h"
 #include "test/test_video_capturer.h"
 
 namespace webrtc {
@@ -45,7 +48,7 @@ class TestVideoCapturerVideoTrackSource : public test::TestVideoTrackSource {
   TestVideoCapturerVideoTrackSource& operator=(
       TestVideoCapturerVideoTrackSource&&) = delete;
 
-  ~TestVideoCapturerVideoTrackSource() = default;
+  ~TestVideoCapturerVideoTrackSource() override = default;
 
   void Start() override {
     SetState(kLive);
@@ -70,7 +73,7 @@ class TestVideoCapturerVideoTrackSource : public test::TestVideoTrackSource {
     return is_screencast_;
   }
 
-  void SetEnableAdaptation(bool enable_adaptation) {
+  void SetEnableAdaptation(bool enable_adaptation) override {
     video_capturer_->SetEnableAdaptation(enable_adaptation);
   }
 
@@ -86,7 +89,7 @@ class TestVideoCapturerVideoTrackSource : public test::TestVideoTrackSource {
   }
 
  protected:
-  rtc::VideoSourceInterface<VideoFrame>* source() override {
+  VideoSourceInterface<VideoFrame>* source() override {
     return video_capturer_.get();
   }
 

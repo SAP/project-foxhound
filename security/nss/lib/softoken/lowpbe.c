@@ -22,6 +22,15 @@
 
 SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
 
+/* Upper bound on PBE iteration counts accepted from parsed algorithm
+ * parameters.  This prevents denial-of-service from crafted input
+ * (e.g. PKCS#12 files with extreme iteration counts). */
+#ifdef DEBUG
+#define MAX_ITERATION_COUNT 600000
+#else
+#define MAX_ITERATION_COUNT 100000000
+#endif
+
 /* how much a crypto encrypt/decryption may expand a buffer */
 #define MAX_CRYPTO_EXPANSION 64
 
@@ -568,7 +577,7 @@ typedef struct KDFCacheItemStr KDFCacheItem;
  * hash, iterations and salt. */
 #define KDF2_CACHE_COUNT 150
 static struct {
-    PZLock *lock;
+    PRLock *lock;
     struct {
         KDFCacheItem common;
         int ivLen;
@@ -584,7 +593,7 @@ void
 sftk_PBELockInit(void)
 {
     if (!PBECache.lock) {
-        PBECache.lock = PZ_NewLock(nssIPBECacheLock);
+        PBECache.lock = PR_NewLock();
     }
 }
 
@@ -624,7 +633,7 @@ sftk_setPBECacheKDF2(const SECItem *hash,
                      const NSSPKCS5PBEParameter *pbe_param,
                      const SECItem *pwItem)
 {
-    PZ_Lock(PBECache.lock);
+    PR_Lock(PBECache.lock);
     KDFCacheItem *next = &PBECache.cacheKDF2.common[PBECache.cacheKDF2.next];
 
     sftk_clearPBECommonCacheItemsLocked(next);
@@ -635,7 +644,7 @@ sftk_setPBECacheKDF2(const SECItem *hash,
         PBECache.cacheKDF2.next = 0;
     }
 
-    PZ_Unlock(PBECache.lock);
+    PR_Unlock(PBECache.lock);
 }
 
 static void
@@ -644,7 +653,7 @@ sftk_setPBECacheKDF1(const SECItem *hash,
                      const SECItem *pwItem,
                      PRBool faulty3DES)
 {
-    PZ_Lock(PBECache.lock);
+    PR_Lock(PBECache.lock);
 
     sftk_clearPBECommonCacheItemsLocked(&PBECache.cacheKDF1.common);
 
@@ -653,7 +662,7 @@ sftk_setPBECacheKDF1(const SECItem *hash,
     PBECache.cacheKDF1.faulty3DES = faulty3DES;
     PBECache.cacheKDF1.ivLen = pbe_param->ivLen;
 
-    PZ_Unlock(PBECache.lock);
+    PR_Unlock(PBECache.lock);
 }
 
 static PRBool
@@ -678,7 +687,7 @@ sftk_getPBECacheKDF2(const NSSPKCS5PBEParameter *pbe_param,
     SECItem *result = NULL;
     int i;
 
-    PZ_Lock(PBECache.lock);
+    PR_Lock(PBECache.lock);
     for (i = 0; i < KDF2_CACHE_COUNT; i++) {
         const KDFCacheItem *cacheItem = &PBECache.cacheKDF2.common[i];
         if (sftk_comparePBECommonCacheItemLocked(cacheItem,
@@ -687,7 +696,7 @@ sftk_getPBECacheKDF2(const NSSPKCS5PBEParameter *pbe_param,
             break;
         }
     }
-    PZ_Unlock(PBECache.lock);
+    PR_Unlock(PBECache.lock);
 
     return result;
 }
@@ -700,13 +709,13 @@ sftk_getPBECacheKDF1(const NSSPKCS5PBEParameter *pbe_param,
     SECItem *result = NULL;
     const KDFCacheItem *cacheItem = &PBECache.cacheKDF1.common;
 
-    PZ_Lock(PBECache.lock);
+    PR_Lock(PBECache.lock);
     if (sftk_comparePBECommonCacheItemLocked(cacheItem, pbe_param, pwItem) &&
         PBECache.cacheKDF1.faulty3DES == faulty3DES &&
         PBECache.cacheKDF1.ivLen == pbe_param->ivLen) {
         result = SECITEM_DupItem(cacheItem->hash);
     }
-    PZ_Unlock(PBECache.lock);
+    PR_Unlock(PBECache.lock);
 
     return result;
 }
@@ -716,7 +725,7 @@ sftk_PBELockShutdown(void)
 {
     int i;
     if (PBECache.lock) {
-        PZ_DestroyLock(PBECache.lock);
+        PR_DestroyLock(PBECache.lock);
         PBECache.lock = 0;
     }
     sftk_clearPBECommonCacheItemsLocked(&PBECache.cacheKDF1.common);
@@ -738,6 +747,11 @@ nsspkcs5_ComputeKeyAndIV(NSSPKCS5PBEParameter *pbe_param, SECItem *pwitem,
     PRBool getIV = PR_FALSE;
 
     if ((pbe_param == NULL) || (pwitem == NULL)) {
+        return NULL;
+    }
+
+    if (pbe_param->iter > MAX_ITERATION_COUNT) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
     }
 
@@ -1152,7 +1166,12 @@ nsspkcs5_AlgidToParam(SECAlgorithmID *algid)
                 if (rv != SECSuccess) {
                     break;
                 }
+                PORT_SetError(0);
                 pbe_param->keyLen = DER_GetInteger(&pbe_param->keyLength);
+                if (PORT_GetError() != 0) {
+                    rv = SECFailure;
+                    break;
+                }
             }
             /* we we are encrypting, save any iv's */
             if (algorithm == SEC_OID_PKCS5_PBES2) {
@@ -1171,7 +1190,12 @@ nsspkcs5_AlgidToParam(SECAlgorithmID *algid)
 loser:
     PORT_Memset(&pbev2_param, 0, sizeof(pbev2_param));
     if (rv == SECSuccess) {
+        PORT_SetError(0);
         pbe_param->iter = DER_GetInteger(&pbe_param->iteration);
+        if (PORT_GetError() != 0) {
+            nsspkcs5_DestroyPBEParameter(pbe_param);
+            pbe_param = NULL;
+        }
     } else {
         nsspkcs5_DestroyPBEParameter(pbe_param);
         pbe_param = NULL;

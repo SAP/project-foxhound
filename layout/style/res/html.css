@@ -171,50 +171,101 @@ center {
   text-align: -moz-center;
 }
 
-h1 {
-  display: block;
-  font-size: 2em;
-  font-weight: bold;
-  margin-block: 0.67em;
+@media not (-moz-pref("dom.headingoffset.enabled")) {
+  h1 {
+    display: block;
+    font-size: 2em;
+    font-weight: bold;
+    margin-block: 0.67em;
+  }
+
+  h2 {
+    display: block;
+    font-size: 1.5em;
+    font-weight: bold;
+    margin-block: 0.83em;
+  }
+
+  h3 {
+    display: block;
+    font-size: 1.17em;
+    font-weight: bold;
+    margin-block: 1em;
+  }
+
+  h4 {
+    display: block;
+    font-size: 1em;
+    font-weight: bold;
+    margin-block: 1.33em;
+  }
+
+  h5 {
+    display: block;
+    font-size: 0.83em;
+    font-weight: bold;
+    margin-block: 1.67em;
+  }
+
+  h6 {
+    display: block;
+    font-size: 0.67em;
+    font-weight: bold;
+    margin-block: 2.33em;
+  }
 }
 
-h2 {
-  display: block;
-  font-size: 1.5em;
-  font-weight: bold;
-  margin-block: 0.83em;
-}
+@media -moz-pref("dom.headingoffset.enabled") {
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading {
+    display: block;
+    font-weight: bold;
+  }
 
-h3 {
-  display: block;
-  font-size: 1.17em;
-  font-weight: bold;
-  margin-block: 1em;
-}
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(1) {
+    font-size: 2em;
+    margin-block: 0.67em;
+  }
 
-h4 {
-  display: block;
-  font-size: 1em;
-  font-weight: bold;
-  margin-block: 1.33em;
-}
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(2) {
+    font-size: 1.5em;
+    margin-block: 0.83em;
+  }
 
-h5 {
-  display: block;
-  font-size: 0.83em;
-  font-weight: bold;
-  margin-block: 1.67em;
-}
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(3) {
+    font-size: 1.17em;
+    margin-block: 1em;
+  }
 
-h6 {
-  display: block;
-  font-size: 0.67em;
-  font-weight: bold;
-  margin-block: 2.33em;
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(4) {
+    font-size: 1em;
+    margin-block: 1.33em;
+  }
+
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(5) {
+    font-size: 0.83em;
+    margin-block: 1.67em;
+  }
+
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(6),
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(7),
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(8),
+  /* stylelint-disable-next-line  selector-pseudo-class-no-unknown */
+  :heading(9) {
+    font-size: 0.67em;
+    margin-block: 2.33em;
+  }
 }
 
 /* properties from https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/css/fullscreen.css;l=68-83;drc=4670338ccf46aaf26aee2402b0f722106d55b003  */
-/* stylelint-disable-next-line media-query-no-invalid */
 @media (-moz-in-android-pip-mode) and -moz-pref("layout.css.android-pip.enabled") {
   video {
     position: fixed !important;
@@ -235,18 +286,14 @@ h6 {
 }
 
 listing {
-  display: block;
-  font-family: -moz-fixed;
   font-size: medium;
-  white-space: pre;
-  margin-block: 1em;
 }
 
+listing,
 xmp,
 pre,
 plaintext {
   display: block;
-  font-family: -moz-fixed;
   white-space: pre;
   margin-block: 1em;
 }
@@ -512,8 +559,14 @@ dfn {
 tt,
 code,
 kbd,
-samp {
+pre,
+samp,
+listing,
+xmp,
+plaintext {
   font-family: -moz-fixed;
+  /* Replace this with text-spacing:none when the shorthand is implemented: */
+  text-autospace: no-autospace;
 }
 
 u,
@@ -525,6 +578,25 @@ s,
 strike,
 del {
   text-decoration: line-through;
+}
+
+u:lang(ja),
+u:lang(ko),
+u:lang(zh),
+s:lang(ja),
+s:lang(ko),
+s:lang(zh),
+ins:lang(ja),
+ins:lang(ko),
+ins:lang(zh),
+del:lang(ja),
+del:lang(ko),
+del:lang(zh),
+strike:lang(ja),
+strike:lang(ko),
+strike:lang(zh) {
+  /* stylelint-disable-next-line */
+  text-decoration-inset: auto;
 }
 
 big {
@@ -651,6 +723,23 @@ object[usemap] {
   color: blue;
 }
 
+/* https://drafts.csswg.org/css-overflow-4/#overflow-control:
+ *
+ * Host languages should define UA style sheet rules that apply a default value
+ * of clip to such elements and set their overflow-clip-margin to content-box.
+ *
+ * NOTE(emilio): This rule is very hand-wavy, for now the
+ * <embed>/<iframe>/<object> cases are !important to match Blink, but see
+ * https://github.com/whatwg/html/issues/11986 for some discussion about making
+ * it explicit.
+ */
+canvas,
+img,
+video {
+  overflow-clip-margin: content-box;
+  overflow: clip;
+}
+
 frameset {
   display: block !important;
   overflow: clip;
@@ -667,13 +756,17 @@ iframe {
   border: 2px inset;
 }
 
+@media -moz-pref("dom.image.sizes_auto.enabled") {
+  /* https://html.spec.whatwg.org/#images-3 */
+  img:is([sizes="auto" i], [sizes^="auto," i]) {
+    contain: size !important;
+    contain-intrinsic-size: 300px 150px;
+  }
+}
+
 spacer {
   position: static !important;
   float: none !important;
-}
-
-canvas {
-  user-select: none;
 }
 
 iframe:focus-visible,

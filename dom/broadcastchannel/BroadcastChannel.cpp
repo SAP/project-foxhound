@@ -1,31 +1,30 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BroadcastChannel.h"
+
 #include "BroadcastChannelChild.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/BroadcastChannelBinding.h"
-#include "mozilla/dom/Navigator.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
-#include "mozilla/dom/StructuredCloneHolder.h"
-#include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/SharedMessageBody.h"
-#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/StorageAccess.h"
-
+#include "nsGlobalWindowInner.h"
 #include "nsICookieJarSettings.h"
-#include "mozilla/dom/Document.h"
 
 #ifdef XP_WIN
 #  undef PostMessage
@@ -211,6 +210,14 @@ BroadcastChannel::UnpartitionedTestingChannel(const GlobalObject& aGlobal,
     bc->mWorkerRef = workerRef;
   }
 
+  // Throw if this process wouldn't be allowed to access storage.
+  if (!BackgroundChild::ValidatePrincipal(unpartitionedPrincipal, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ValidatePrincipal failure in UnpartitionedTestingChannel");
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
   // Register this component to PBackground.
   PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!actorChild)) {
@@ -334,6 +341,14 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
     return nullptr;
   }
 
+  // Throw if this process wouldn't be allowed to access storage.
+  if (!BackgroundChild::ValidatePrincipal(storagePrincipal, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ValidatePrincipal failure in UnpartitionedTestingChannel");
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
   // Register this component to PBackground.
   PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!actorChild)) {
@@ -379,7 +394,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
 void BroadcastChannel::PostMessage(JSContext* aCx,
                                    JS::Handle<JS::Value> aMessage,
                                    ErrorResult& aRv) {
-  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  nsCOMPtr<nsIGlobalObject> global = GetRelevantGlobal();
   if (!global || !global->IsEligibleForMessaging()) {
     return;
   }
@@ -391,7 +406,7 @@ void BroadcastChannel::PostMessage(JSContext* aCx,
 
   Maybe<nsID> agentClusterId = global->GetAgentClusterId();
 
-  RefPtr<SharedMessageBody> data = new SharedMessageBody(
+  auto data = MakeNotNull<RefPtr<SharedMessageBody>>(
       StructuredCloneHolder::TransferringNotSupported, agentClusterId);
 
   data->Write(aCx, aMessage, JS::UndefinedHandleValue, mPortUUID,
@@ -402,9 +417,7 @@ void BroadcastChannel::PostMessage(JSContext* aCx,
 
   RemoveDocFromBFCache();
 
-  MessageData message;
-  SharedMessageBody::FromSharedToMessageChild(mActor->Manager(), data, message);
-  mActor->SendPostMessage(message);
+  mActor->SendPostMessage(data);
 }
 
 void BroadcastChannel::Close() {
@@ -467,13 +480,13 @@ void BroadcastChannel::DisconnectFromOwner() {
   DOMEventTargetHelper::DisconnectFromOwner();
 }
 
-void BroadcastChannel::MessageReceived(const MessageData& aData) {
+void BroadcastChannel::MessageReceived(SharedMessageBody* aData) {
   if (NS_FAILED(CheckCurrentGlobalCorrectness())) {
     RemoveDocFromBFCache();
     return;
   }
 
-  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  nsCOMPtr<nsIGlobalObject> global = GetRelevantGlobal();
   if (!global || !global->IsEligibleForMessaging()) {
     return;
   }
@@ -501,18 +514,11 @@ void BroadcastChannel::MessageReceived(const MessageData& aData) {
 
   JSContext* cx = jsapi.cx();
 
-  RefPtr<SharedMessageBody> data = SharedMessageBody::FromMessageToSharedChild(
-      aData, StructuredCloneHolder::TransferringNotSupported);
-  if (NS_WARN_IF(!data)) {
-    DispatchError(cx);
-    return;
-  }
-
   IgnoredErrorResult rv;
   JS::Rooted<JS::Value> value(cx);
 
-  data->Read(cx, &value, mRefMessageBodyService,
-             SharedMessageBody::ReadMethod::KeepRefMessageBody, rv);
+  aData->Read(cx, &value, mRefMessageBodyService,
+              SharedMessageBody::ReadMethod::KeepRefMessageBody, rv);
   if (NS_WARN_IF(rv.Failed())) {
     JS_ClearPendingException(cx);
     DispatchError(cx);

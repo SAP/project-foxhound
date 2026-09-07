@@ -22,7 +22,7 @@ add_task(async function () {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   // Verify request and response headers.
@@ -200,7 +200,7 @@ async function verifyRawHeaders(monitor) {
   )) {
     ok(rawToggleInput.checked, "Toggle is checked");
     rawToggleInput.focus();
-    EventUtils.synthesizeKey("VK_SPACE", {}, rawToggleInput.ownerGlobal);
+    EventUtils.synthesizeKey("VK_SPACE", {}, rawToggleInput.documentGlobal);
   }
 
   // Wait till raw headers are not available anymore.

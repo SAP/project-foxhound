@@ -12,7 +12,7 @@ The **Application panel** provides tools for inspecting and debugging modern web
 Accessing the Application panel
 *******************************
 
-The Application panel is available on the standard DevTools tab menu under *Application*, in Firefox 79+. If you can’t see it there, you can enable it by going to the "three dot" menu and selecting *Settings* (also accessible by pressing F1), then checking the *Application* checkbox under *Default Developer Tools*.
+The Application panel is available on the standard DevTools tab menu under *Application*. If you can’t see it there, you can enable it by going to the "three dot" menu and selecting *Settings* (also accessible by pressing F1), then checking the *Application* checkbox under *Default Developer Tools*.
 
 
 Finding an example

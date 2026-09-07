@@ -3,12 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { Assert } from "resource://testing-common/Assert.sys.mjs";
-import { StructuredLogger } from "resource://testing-common/StructuredLog.sys.mjs";
 
 /*
  * This module implements useful utilites for interacting with the profiler,
  * as well as querying profiles captured during tests.
  */
+
+// The profiler may already be running via MOZ_PROFILER_STARTUP; auto-stop it
+// only on the first assertProfilerInactive() call so a later active profiler
+// (leaked by an earlier test) still fails the assertion loudly.
+let gMayStopStartupProfiler = Services.env.exists("MOZ_PROFILER_STARTUP");
+
 export var ProfilerTestUtils = {
   // The marker phases.
   markerPhases: {
@@ -18,12 +23,35 @@ export var ProfilerTestUtils = {
     INTERVAL_END: 3,
   },
 
+  async assertProfilerInactive() {
+    if (Services.profiler.IsActive()) {
+      if (gMayStopStartupProfiler) {
+        // The profiler was started via MOZ_PROFILER_STARTUP; stop it so the
+        // test can start from a clean state.
+        console.log(
+          "This test starts and stops the profiler and is not compatible " +
+            "with the use of MOZ_PROFILER_STARTUP. " +
+            "Stopping the profiler before starting the test."
+        );
+        await Services.profiler.StopProfiler();
+      } else {
+        throw new Error(
+          "The profiler must not be active before starting it in a test."
+        );
+      }
+    }
+    // Only the first call may auto-stop the startup profiler; a later active
+    // profiler is a leak from an earlier test and must fail the assertion.
+    gMayStopStartupProfiler = false;
+    Assert.ok(!Services.profiler.IsActive(), "The profiler is inactive.");
+  },
+
   /**
    * This is a helper function to start the profiler with a settings object,
    * while additionally performing checks to ensure that the profiler is not
    * already running when we call this function.
    *
-   * @param {Object} callersSettings The settings object to deconstruct and pass
+   * @param {object} callersSettings The settings object to deconstruct and pass
    *   to the profiler. Unspecified settings are overwritten by the default:
    *   {
    *     entries: 8 * 1024 * 1024
@@ -45,28 +73,7 @@ export var ProfilerTestUtils = {
       activeTabId: 0,
       duration: 0,
     };
-    if (Services.profiler.IsActive()) {
-      Assert.ok(
-        Services.env.exists("MOZ_PROFILER_STARTUP"),
-        "The profiler is active at the begining of the test, " +
-          "the MOZ_PROFILER_STARTUP environment variable should be set."
-      );
-      if (Services.env.exists("MOZ_PROFILER_STARTUP")) {
-        // If the startup profiling environment variable exists, it is likely
-        // that tests are being profiled.
-        // Stop the profiler before starting profiler tests.
-        StructuredLogger.info(
-          "This test starts and stops the profiler and is not compatible " +
-            "with the use of MOZ_PROFILER_STARTUP. " +
-            "Stopping the profiler before starting the test."
-        );
-        await Services.profiler.StopProfiler();
-      } else {
-        throw new Error(
-          "The profiler must not be active before starting it in a test."
-        );
-      }
-    }
+    await this.assertProfilerInactive();
     const settings = Object.assign({}, defaultSettings, callersSettings);
     return Services.profiler.StartProfiler(
       settings.entries,
@@ -92,7 +99,7 @@ export var ProfilerTestUtils = {
   /**
    * Get the payloads of a type recursively, including from all subprocesses.
    *
-   * @param {Object} profile The gecko profile.
+   * @param {object} profile The gecko profile.
    * @param {string} type The marker payload type, e.g. "DiskIO".
    * @param {Array} payloadTarget The recursive list of payloads.
    * @return {Array} The final payloads.
@@ -117,7 +124,7 @@ export var ProfilerTestUtils = {
   /**
    * Get the payloads of a type from a single thread.
    *
-   * @param {Object} thread The thread from a profile.
+   * @param {object} thread The thread from a profile.
    * @param {string} type The marker payload type, e.g. "DiskIO".
    * @return {Array} The payloads.
    */
@@ -136,7 +143,7 @@ export var ProfilerTestUtils = {
   /**
    * Applies the marker schema to create individual objects for each marker
    *
-   * @param {Object} thread The thread from a profile.
+   * @param {object} thread The thread from a profile.
    * @return {InflatedMarker[]} The markers.
    */
   getInflatedMarkerData(thread) {
@@ -158,7 +165,7 @@ export var ProfilerTestUtils = {
    * Applies the marker schema to create individual objects for each marker, then
    * keeps only the network markers that match the profiler tests.
    *
-   * @param {Object} thread The thread from a profile.
+   * @param {object} thread The thread from a profile.
    * @return {InflatedMarker[]} The filtered network markers.
    */
   getInflatedNetworkMarkers(thread) {
@@ -178,7 +185,7 @@ export var ProfilerTestUtils = {
    * If a stop marker can't be found for a start marker, this will return an array
    * of only 1 element.
    *
-   * @param {InflatedMarker[]} networkMarkers Network markers
+   * @param {InflatedMarker[]} allNetworkMarkers Network markers
    * @return {InflatedMarker[][]} Pairs of network markers
    */
   getPairsOfNetworkMarkers(allNetworkMarkers) {
@@ -245,7 +252,7 @@ export var ProfilerTestUtils = {
    * Verify that a given JSON string is compact - i.e. does not contain
    * unexpected whitespace.
    *
-   * @param {String} the JSON string to check
+   * @param {string} s the JSON string to check.
    * @return {Bool} Whether the string is compact or not
    */
   verifyJSONStringIsCompact(s) {
@@ -288,6 +295,7 @@ export var ProfilerTestUtils = {
   /**
    * This function pauses the profiler before getting the profile. Then after
    * getting the data, the profiler is stopped, and all profiler data is removed.
+   *
    * @returns {Promise<Profile>}
    */
   async stopNowAndGetProfile() {
@@ -311,6 +319,7 @@ export var ProfilerTestUtils = {
    * This function ensures there's at least one sample, then pauses the profiler
    * before getting the profile. Then after getting the data, the profiler is
    * stopped, and all profiler data is removed.
+   *
    * @returns {Promise<Profile>}
    */
   async waitSamplingAndStopAndGetProfile() {
@@ -321,7 +330,7 @@ export var ProfilerTestUtils = {
   /**
    * Verifies that a marker is an interval marker.
    *
-   * @param {InflatedMarker} marker
+   * @param {InflatedMarker} inflatedMarker
    * @returns {boolean}
    */
   isIntervalMarker(inflatedMarker) {

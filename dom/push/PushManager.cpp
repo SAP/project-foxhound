@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,11 @@
 #include "mozilla/dom/PushManager.h"
 
 #include "mozilla/Base64.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/Components.h"
-#include "mozilla/Unused.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/PermissionStatusBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/PushManagerBinding.h"
 #include "mozilla/dom/PushSubscription.h"
 #include "mozilla/dom/PushSubscriptionOptionsBinding.h"
@@ -18,17 +17,12 @@
 #include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
-
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/PromiseWorkerProxy.h"
-
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsIGlobalObject.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsIPushService.h"
-
-#include "nsComponentManagerUtils.h"
-#include "nsContentUtils.h"
 #include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
@@ -191,7 +185,7 @@ class GetSubscriptionCallback final : public nsIPushSubscriptionCallback {
 
   // Convenience method for use in this file.
   void OnPushSubscriptionError(nsresult aStatus) {
-    Unused << NS_WARN_IF(NS_FAILED(OnPushSubscription(aStatus, nullptr)));
+    (void)NS_WARN_IF(NS_FAILED(OnPushSubscription(aStatus, nullptr)));
   }
 
  protected:
@@ -350,7 +344,7 @@ class PermissionStateRunnable final : public Runnable {
 
     // This can fail if the worker thread is already shutting down, but there's
     // nothing we can do in that case.
-    Unused << NS_WARN_IF(!r->Dispatch(mProxy->GetWorkerPrivate()));
+    (void)NS_WARN_IF(!r->Dispatch(mProxy->GetWorkerPrivate()));
 
     return NS_OK;
   }

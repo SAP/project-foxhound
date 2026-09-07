@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,6 @@
 #include "nsPrefetchService.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/ClientInfo.h"
@@ -19,6 +17,7 @@
 #include "nsIWebProgress.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIHttpChannel.h"
+#include "nsIHttpProtocolHandler.h"
 #include "nsIURL.h"
 #include "nsISupportsPriority.h"
 #include "nsNetUtil.h"
@@ -135,6 +134,21 @@ nsresult nsPrefetchNode::OpenChannel() {
     success =
         httpChannel->SetRequestHeader("Sec-Purpose"_ns, "prefetch"_ns, false);
     MOZ_ASSERT(NS_SUCCEEDED(success));
+
+    // A prefetch request's initiator is "prefetch", so it sends the document
+    // Accept header regardless of destination.
+    // https://fetch.spec.whatwg.org/#fetching (step 12.2)
+    nsCOMPtr<nsIHttpProtocolHandler> httpHandler(
+        do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "http"));
+    if (httpHandler) {
+      nsAutoCString documentAcceptHeader;
+      success = httpHandler->GetDocumentAcceptHeader(documentAcceptHeader);
+      MOZ_ASSERT(NS_SUCCEEDED(success));
+
+      success = httpChannel->SetRequestHeader("Accept"_ns, documentAcceptHeader,
+                                              false);
+      MOZ_ASSERT(NS_SUCCEEDED(success));
+    }
   }
 
   // Reduce the priority of prefetch network requests.
@@ -206,16 +220,15 @@ nsPrefetchNode::OnStartRequest(nsIRequest* aRequest) {
     return NS_BINDING_ABORTED;
   }
 
-  //
-  // no need to prefetch a document that must be requested fresh each
-  // and every time.
-  //
   uint32_t expTime;
   if (NS_SUCCEEDED(cacheInfoChannel->GetCacheTokenExpirationTime(&expTime))) {
-    if (mozilla::net::NowInSeconds() >= expTime) {
-      LOG(
-          ("document cannot be reused from cache; "
-           "canceling prefetch\n"));
+    // expTime == 0 means the response has a MustValidate directive (no-cache,
+    // no-store, Expires in past). These cannot be reused from cache so we
+    // cancel to avoid wasting bandwidth. Responses with no explicit cache
+    // headers get expTime = now (non-zero) and are handled by ForceValidFor
+    // in nsHttpChannel (bug 1527334).
+    if (expTime == 0) {
+      LOG(("document cannot be reused from cache; canceling prefetch\n"));
       return NS_BINDING_ABORTED;
     }
   }
@@ -440,7 +453,7 @@ void nsPrefetchService::DispatchEvent(nsPrefetchNode* node, bool aSuccess) {
       // We don't dispatch synchronously since |node| might be in a DocGroup
       // that we're not allowed to touch. (Our network request happens in the
       // DocGroup of one of the mSources nodes--not necessarily this one).
-      RefPtr<AsyncEventDispatcher> dispatcher = new AsyncEventDispatcher(
+      RefPtr dispatcher = MakeRefPtr<AsyncEventDispatcher>(
           domNode, aSuccess ? u"load"_ns : u"error"_ns, CanBubble::eNo);
       dispatcher->RequireNodeInDocument();
       dispatcher->PostDOMEvent();
@@ -469,8 +482,8 @@ nsresult nsPrefetchService::EnqueueURI(nsIURI* aURI,
                                        nsIReferrerInfo* aReferrerInfo,
                                        nsINode* aSource,
                                        nsPrefetchNode** aNode) {
-  RefPtr<nsPrefetchNode> node = new nsPrefetchNode(
-      this, aURI, aReferrerInfo, aSource, nsIContentPolicy::TYPE_OTHER, false);
+  RefPtr node = MakeRefPtr<nsPrefetchNode>(this, aURI, aReferrerInfo, aSource,
+                                           nsIContentPolicy::TYPE_OTHER, false);
   mPrefetchQueue.push_back(node);
   node.forget(aNode);
   return NS_OK;

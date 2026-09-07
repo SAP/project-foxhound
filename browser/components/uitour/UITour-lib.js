@@ -19,7 +19,7 @@ if (typeof Mozilla == "undefined") {
      *
      * For security/privacy reasons `Mozilla.UITour` will only work on a list of allowed
      * secure origins. The list of allowed origins can be found in
-     * https://searchfox.org/mozilla-central/source/browser/app/permissions.
+     * https://searchfox.org/firefox-main/source/browser/app/permissions.
      *
      * @since 29
      * @namespace
@@ -322,7 +322,6 @@ if (typeof Mozilla == "undefined") {
    *
    * @see Mozilla.UITour.showMenu
    * @see Mozilla.UITour.hideMenu
-   * @see Mozilla.UITour.openSearchPanel
    */
 
   /**
@@ -432,6 +431,8 @@ if (typeof Mozilla == "undefined") {
    *                                           starting from 0 for profiles reset less than seven
    *                                           days ago. If the profile has never been reset it
    *                                           returns null. Since Fx56.
+   * @property {boolean} needsPin - Whether Firefox still needs to be pinned to the taskbar (Windows)
+   *                                or Dock (macOS). Since Fx152.
    * @property {string} version - Version string e.g. "48.0a2"
    * @since 35
    */
@@ -632,6 +633,19 @@ if (typeof Mozilla == "undefined") {
   };
 
   /**
+   * Trigger the Firefox Accounts sign-in flow for the AI Window feature.
+   *
+   * This will prompt the user to sign in and then open the AI Window
+   * upon successful authentication.
+   *
+   * @example
+   * Mozilla.UITour.showFirefoxAccountsForAIWindow();
+   */
+  Mozilla.UITour.showFirefoxAccountsForAIWindow = function () {
+    _sendEvent("showFirefoxAccountsForAIWindow");
+  };
+
+  /**
    * Request the browser open the "Connect Another Device" Firefox Accounts page.
    *
    * @param {object} extraURLParams - An object containing additional
@@ -707,6 +721,16 @@ if (typeof Mozilla == "undefined") {
   };
 
   /**
+   * Pin Firefox to the taskbar (Windows) or Dock (macOS).
+   * `getConfiguration('appinfo')` should first be used to check `data.needsPin` before calling this.
+   *
+   * @since 152
+   */
+  Mozilla.UITour.pinToTaskbar = function () {
+    _sendEvent("pinToTaskbar");
+  };
+
+  /**
    * Sets a key+value pair as a treatment tag for recording in FHR.
    *
    * @param {string} name - tag name for the treatment
@@ -757,20 +781,6 @@ if (typeof Mozilla == "undefined") {
   };
 
   /**
-   * @summary Opens the search box's panel.
-   *
-   * @description This should have been implemented via `showMenu("search", …)`.
-   *
-   * @param {Function} callback - Called once the panel has opened.
-   * @since 34
-   */
-  Mozilla.UITour.openSearchPanel = function (callback) {
-    _sendEvent("openSearchPanel", {
-      callbackID: _waitForCallback(callback),
-    });
-  };
-
-  /**
    * @summary Force the reader mode icon to appear in the address bar regardless of whether
    * heuristics determine it's appropriate.
    *
@@ -792,20 +802,15 @@ if (typeof Mozilla == "undefined") {
 
   /**
    * @param {string} pane - Pane to open/switch the preferences to.
-   * Valid values match fragments on about:preferences and are subject to change e.g.:
+   * Valid values are the keys of CONFIG_PANES in preferences.js and the
+   * legacy names in LegacyPaneMappings.mjs (which are remapped automatically
+   * when browser.settings-redesign.enabled is true).
    *
-   * For the Preferences:
-   *
-   * - general
-   * - applications
-   * - sync
-   * - privacy
-   * - advanced
-   *
-   * To open to the options of sending telemetry, health report, crash reports,
-   * that is, the privacy pane > reports on the preferences.
-   * Please call `Mozilla.UITour.openPreferences("privacy-reports")`.
-   * UITour would do route mapping automatically.
+   * To open the options for sending telemetry, the health report, and
+   * crash reports, call `Mozilla.UITour.openPreferences("privacy-reports")`.
+   * UITour handles the route mapping automatically. These settings live
+   * in the Privacy pane under the legacy UI and in the Permissions and Data
+   * pane under the settings-redesign UI.
    *
    * @since 42
    */
@@ -831,7 +836,6 @@ if (typeof Mozilla == "undefined") {
 })();
 
 // Make this library Require-able.
-/* eslint-env commonjs */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = Mozilla.UITour;
 }

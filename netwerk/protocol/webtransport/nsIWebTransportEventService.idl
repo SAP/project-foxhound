@@ -1,0 +1,28 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+[scriptable, uuid(5f34ad48-92ec-4684-ab08-76f6ead9008d)]
+interface nsIWebTransportEventListener : nsISupports
+{
+  [must_use] void webTransportSessionCreated(in uint64_t aHttpChannelId);
+
+  [must_use] void webTransportSessionClosed(in uint64_t aHttpChannelId, in unsigned short aCode,
+                                  in AString aReason);
+
+  // TODO: The other functions for this interface are still TBD. See Bug 1963028
+};
+
+[scriptable, builtinclass, uuid(0907d7d4-351b-4513-a2d9-f6e6467d59ec)]
+interface nsIWebTransportEventService : nsISupports
+{
+  [must_use] void addListener(in unsigned long long aInnerWindowID,
+                              in nsIWebTransportEventListener aListener);
+
+  [must_use] void removeListener(in unsigned long long aInnerWindowID,
+                                 in nsIWebTransportEventListener aListener);
+
+  [must_use] boolean hasListenerFor(in unsigned long long aInnerWindowID);
+};

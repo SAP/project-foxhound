@@ -1,0 +1,111 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include "mozilla/dom/MediaIPCUtils.h";
+
+include protocol PRemoteMediaManager;
+
+using mozilla::CDMKeyInfo from "mozilla/CDMProxy.h";
+using mozilla::MediaResult from "MediaResult.h";
+using mozilla::dom::MediaKeyMessageType from "mozilla/dom/MediaKeyMessageEventBinding.h";
+using mozilla::dom::MediaKeySessionType from "mozilla/dom/MediaKeysBinding.h";
+using mozilla::dom::MediaKeyStatus from "mozilla/dom/MediaKeyStatusMapBinding.h";
+[RefCounted] using class mozilla::ArrayOfRemoteMediaRawData from "mozilla/RemoteMediaData.h";
+[RefCounted] using class mozilla::ArrayOfRemoteAudioData from "mozilla/RemoteMediaData.h";
+[RefCounted] using class mozilla::ArrayOfRemoteVideoData from "mozilla/RemoteMediaData.h";
+
+namespace mozilla {
+
+// For EME spec 'message' event
+// https://w3c.github.io/encrypted-media/#queue-message
+struct RemoteCDMKeyMessageIPDL
+{
+  nsString sessionId;
+  MediaKeyMessageType type;
+  uint8_t[] message;
+};
+
+// For EME spec 'keystatuseschange' event
+// https://w3c.github.io/encrypted-media/#dom-evt-keystatuseschange
+struct RemoteCDMKeyStatusIPDL
+{
+  nsString sessionId;
+  CDMKeyInfo[] keyInfo;
+};
+
+// For EME spec Update Expiration algorithm
+// https://w3c.github.io/encrypted-media/#update-expiration
+struct RemoteCDMKeyExpirationIPDL
+{
+  nsString sessionId;
+  double expiredTimeMilliSecondsSinceEpoch;
+};
+
+struct RemoteCDMInitRequestIPDL
+{
+  bool allowDistinctiveIdentifier;
+  bool allowPersistentState;
+  nsCString originID;
+};
+
+struct RemoteCDMCreateSessionRequestIPDL
+{
+  MediaKeySessionType sessionType;
+  nsString initDataType;
+  uint8_t[] initData;
+};
+
+struct RemoteCDMLoadSessionRequestIPDL
+{
+  MediaKeySessionType sessionType;
+  nsString sessionId;
+};
+
+struct RemoteCDMUpdateSessionRequestIPDL
+{
+  nsString sessionId;
+  uint8_t[] response;
+};
+
+union RemoteCDMSessionResponseIPDL
+{
+  MediaResult;
+  RemoteCDMKeyMessageIPDL;
+};
+
+struct RemoteCDMProvisionRequestIPDL
+{
+  nsString serverUrl;
+  uint8_t[] request;
+};
+
+union RemoteCDMProvisionResponseIPDL
+{
+  MediaResult;
+  uint8_t[];
+};
+
+// This protocol provides a way to use CDMProxy across processes.
+async protocol PRemoteCDM
+{
+  manager PRemoteMediaManager;
+parent:
+  async Init(RemoteCDMInitRequestIPDL request) returns (MediaResult result);
+  async CreateSession(RemoteCDMCreateSessionRequestIPDL request) returns (RemoteCDMSessionResponseIPDL result);
+  async LoadSession(RemoteCDMLoadSessionRequestIPDL request) returns (MediaResult result);
+  async UpdateSession(RemoteCDMUpdateSessionRequestIPDL request) returns (MediaResult result);
+  async RemoveSession(nsString sessionId) returns (MediaResult result);
+  async CloseSession(nsString sessionId) returns (MediaResult result);
+  async SetServerCertificate(uint8_t[] certificate) returns (MediaResult result);
+
+  async __delete__();
+
+child:
+  async Provision(RemoteCDMProvisionRequestIPDL request) returns (RemoteCDMProvisionResponseIPDL response);
+  async OnSessionKeyStatus(RemoteCDMKeyStatusIPDL msg);
+  async OnSessionKeyExpiration(RemoteCDMKeyExpirationIPDL msg);
+  async OnSessionKeyMessage(RemoteCDMKeyMessageIPDL msg);
+};
+
+} // namespace mozilla

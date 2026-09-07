@@ -9,6 +9,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
+import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.FrameLayout
@@ -17,10 +18,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat.getColor
 import androidx.core.view.forEach
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.StandardTestDispatcher
 import mozilla.components.browser.menu.BrowserMenu
 import mozilla.components.browser.menu.BrowserMenuBuilder
 import mozilla.components.browser.menu.item.SimpleBrowserMenuItem
@@ -44,7 +42,6 @@ import mozilla.components.support.ktx.android.content.res.resolveAttribute
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.eq
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
@@ -64,9 +61,13 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.robolectric.annotation.Config
+import kotlin.test.assertIs
 
 @RunWith(AndroidJUnit4::class)
 class CustomTabsToolbarFeatureTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+
     @Test
     fun `start without sessionId invokes nothing`() {
         val store = BrowserStore()
@@ -84,6 +85,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = null, useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature, never()).init(any())
     }
@@ -105,12 +107,14 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).init(tab.config)
 
         // Calling start again should NOT call init again
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature, times(1)).init(tab.config)
     }
@@ -249,11 +253,13 @@ class CustomTabsToolbarFeatureTest {
             loadUrlUseCase = SessionUseCases(store).loadUrl,
         )
         val window: Window = mock()
-        `when`(window.decorView).thenReturn(mock())
+        val decorView: View = mock()
+        `when`(decorView.findViewById<View>(anyInt())).thenReturn(mock())
+        `when`(window.decorView).thenReturn(decorView)
         `when`(window.context).thenReturn(testContext)
         `when`(window.insetsController).thenReturn(mock())
 
-        val feature = CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases, window = window) {}
+        val feature = CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases, window = window, mainDispatcher = testDispatcher) {}
 
         feature.init(tab.config)
 
@@ -291,7 +297,9 @@ class CustomTabsToolbarFeatureTest {
             loadUrlUseCase = SessionUseCases(store).loadUrl,
         )
         val window: Window = mock()
-        `when`(window.decorView).thenReturn(mock())
+        val decorView: View = mock()
+        `when`(decorView.findViewById<View>(anyInt())).thenReturn(mock())
+        `when`(window.decorView).thenReturn(decorView)
         `when`(window.context).thenReturn(testContext)
         `when`(window.insetsController).thenReturn(mock())
         val initialDisplayToolbarColors = toolbar.display.colors
@@ -402,7 +410,9 @@ class CustomTabsToolbarFeatureTest {
             loadUrlUseCase = SessionUseCases(store).loadUrl,
         )
         val window: Window = mock()
-        `when`(window.decorView).thenReturn(mock())
+        val decorView: View = mock()
+        `when`(decorView.findViewById<View>(anyInt())).thenReturn(mock())
+        `when`(window.decorView).thenReturn(decorView)
         `when`(window.context).thenReturn(testContext)
         `when`(window.insetsController).thenReturn(mock())
 
@@ -448,7 +458,9 @@ class CustomTabsToolbarFeatureTest {
             loadUrlUseCase = SessionUseCases(store).loadUrl,
         )
         val window: Window = mock()
-        `when`(window.decorView).thenReturn(mock())
+        val decorView: View = mock()
+        `when`(decorView.findViewById<View>(anyInt())).thenReturn(mock())
+        `when`(window.decorView).thenReturn(decorView)
         `when`(window.context).thenReturn(testContext)
         `when`(window.insetsController).thenReturn(mock())
 
@@ -541,7 +553,9 @@ class CustomTabsToolbarFeatureTest {
             loadUrlUseCase = SessionUseCases(store).loadUrl,
         )
         val window: Window = mock()
-        `when`(window.decorView).thenReturn(mock())
+        val decorView: View = mock()
+        `when`(decorView.findViewById<View>(anyInt())).thenReturn(mock())
+        `when`(window.decorView).thenReturn(decorView)
         `when`(window.context).thenReturn(testContext)
         `when`(window.insetsController).thenReturn(mock())
 
@@ -588,7 +602,9 @@ class CustomTabsToolbarFeatureTest {
             loadUrlUseCase = SessionUseCases(store).loadUrl,
         )
         val window: Window = mock()
-        `when`(window.decorView).thenReturn(mock())
+        val decorView: View = mock()
+        `when`(decorView.findViewById<View>(anyInt())).thenReturn(mock())
+        `when`(window.decorView).thenReturn(decorView)
         `when`(window.context).thenReturn(testContext)
         `when`(window.insetsController).thenReturn(mock())
 
@@ -627,6 +643,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {}
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(toolbar).addNavigationAction(any())
     }
@@ -654,6 +671,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {}
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(toolbar, never()).addNavigationAction(any())
     }
@@ -682,6 +700,7 @@ class CustomTabsToolbarFeatureTest {
         }
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(toolbar).addNavigationAction(any())
 
@@ -721,6 +740,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature, never()).addRefreshButton(anyInt())
         verify(toolbar, never()).addBrowserAction(any())
@@ -755,6 +775,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addRefreshButton(anyInt())
     }
@@ -789,6 +810,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addRefreshButton(anyInt())
 
@@ -823,6 +845,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature, never()).addMenuButton()
         verify(toolbar, never()).addBrowserAction(any())
@@ -858,6 +881,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addMenuButton()
 
@@ -885,6 +909,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature, never()).addShareButton(anyInt())
         verify(toolbar, never()).addBrowserAction(any())
@@ -912,6 +937,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addShareButton(anyInt())
         verify(toolbar).addBrowserAction(any())
@@ -948,6 +974,7 @@ class CustomTabsToolbarFeatureTest {
         ) {}
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val captor = argumentCaptor<Toolbar.ActionButton>()
         verify(toolbar).addBrowserAction(captor.capture())
@@ -973,6 +1000,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addActionButton(anyInt(), any())
     }
@@ -1006,6 +1034,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addActionButton(anyInt(), any())
         verify(toolbar).addBrowserAction(captor.capture())
@@ -1045,6 +1074,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addActionButton(anyInt(), any())
         verify(toolbar).addBrowserAction(captor.capture())
@@ -1084,6 +1114,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addActionButton(anyInt(), any())
         verify(toolbar).addBrowserAction(captor.capture())
@@ -1124,13 +1155,14 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         store.dispatch(
             ContentAction.UpdateUrlAction(
                 "mozilla",
                 "https://github.com/mozilla-mobile/android-components",
             ),
-        ).joinBlocking()
+        )
 
         verify(feature).addActionButton(anyInt(), any())
         verify(toolbar).addBrowserAction(captor.capture())
@@ -1168,6 +1200,7 @@ class CustomTabsToolbarFeatureTest {
         val feature = spy(CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases) {})
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addMenuItems()
     }
@@ -1204,6 +1237,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addMenuItems()
     }
@@ -1240,6 +1274,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val menuBuilder = toolbar.display.menuBuilder
         assertEquals(1, menuBuilder!!.items.size)
@@ -1277,6 +1312,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val menuBuilder = toolbar.display.menuBuilder
         assertEquals(3, menuBuilder!!.items.size)
@@ -1315,11 +1351,12 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val menuBuilder = toolbar.display.menuBuilder!!
 
         assertEquals(3, menuBuilder.items.size)
-        assertTrue(menuBuilder.items[1] is SimpleBrowserMenuItem)
+        assertIs<SimpleBrowserMenuItem>(menuBuilder.items[1])
     }
 
     @Test
@@ -1355,11 +1392,12 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val menuBuilder = toolbar.display.menuBuilder!!
 
         assertEquals(3, menuBuilder.items.size)
-        assertTrue(menuBuilder.items[2] is SimpleBrowserMenuItem)
+        assertIs<SimpleBrowserMenuItem>(menuBuilder.items[2])
     }
 
     @Test
@@ -1395,11 +1433,12 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val menuBuilder = toolbar.display.menuBuilder!!
 
         assertEquals(3, menuBuilder.items.size)
-        assertTrue(menuBuilder.items[0] is SimpleBrowserMenuItem)
+        assertIs<SimpleBrowserMenuItem>(menuBuilder.items[0])
     }
 
     @Test
@@ -1436,13 +1475,14 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         store.dispatch(
             ContentAction.UpdateUrlAction(
                 "mozilla",
                 "https://github.com/mozilla-mobile/android-components",
             ),
-        ).joinBlocking()
+        )
 
         val menuBuilder = toolbar.display.menuBuilder!!
 
@@ -1490,6 +1530,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val result = feature.onBackPressed()
 
@@ -1525,6 +1566,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val result = feature.onBackPressed()
 
@@ -1598,6 +1640,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).updateTheme(
             tab.config.colorSchemes!!.defaultColorSchemeParams!!.toolbarColor,
@@ -1644,6 +1687,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).updateTheme(
             tab.config.colorSchemes!!.defaultColorSchemeParams!!.toolbarColor,
@@ -1684,6 +1728,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).updateTheme(
             tab.config.colorSchemes?.defaultColorSchemeParams?.toolbarColor,
@@ -1726,6 +1771,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addCloseButton(toolbar.display.colors.menu, customCloseIcon)
     }
@@ -1763,6 +1809,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(feature).addCloseButton(toolbar.display.colors.menu, null)
     }
@@ -1797,6 +1844,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val colorResId = testContext.theme.resolveAttribute(android.R.attr.textColorPrimary)
         val privateColor = getColor(testContext, colorResId)
@@ -1807,9 +1855,6 @@ class CustomTabsToolbarFeatureTest {
 
     @Test
     fun `show title only if not empty`() {
-        val dispatcher = UnconfinedTestDispatcher()
-        Dispatchers.setMain(dispatcher)
-
         val tab = createCustomTab(
             "https://www.mozilla.org",
             id = "mozilla",
@@ -1826,18 +1871,18 @@ class CustomTabsToolbarFeatureTest {
             store = store,
             loadUrlUseCase = SessionUseCases(store).loadUrl,
         )
-        val feature = spy(
-            CustomTabsToolbarFeature(
-                store,
-                toolbar,
-                sessionId = "mozilla",
-                useCases = useCases,
-                menuBuilder = BrowserMenuBuilder(listOf(mock(), mock())),
-                menuItemIndex = 4,
-            ) {},
-        )
+        val feature = CustomTabsToolbarFeature(
+            store,
+            toolbar,
+            sessionId = "mozilla",
+            useCases = useCases,
+            menuBuilder = BrowserMenuBuilder(listOf(mock(), mock())),
+            menuItemIndex = 4,
+            mainDispatcher = testDispatcher,
+        ) {}
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("", toolbar.title)
 
@@ -1846,18 +1891,14 @@ class CustomTabsToolbarFeatureTest {
                 "mozilla",
                 "Internet for people, not profit - Mozilla",
             ),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("Internet for people, not profit - Mozilla", toolbar.title)
-
-        Dispatchers.resetMain()
     }
 
     @Test
     fun `Will use URL as title if title was shown once and is now empty`() {
-        val dispatcher = UnconfinedTestDispatcher()
-        Dispatchers.setMain(dispatcher)
-
         val tab = createCustomTab(
             "https://www.mozilla.org",
             id = "mozilla",
@@ -1882,18 +1923,18 @@ class CustomTabsToolbarFeatureTest {
                 useCases = useCases,
                 menuBuilder = BrowserMenuBuilder(listOf(mock(), mock())),
                 menuItemIndex = 4,
+                mainDispatcher = testDispatcher,
             ) {},
         )
 
         feature.start()
-
-        feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("", toolbar.title)
 
         store.dispatch(
             ContentAction.UpdateUrlAction("mozilla", "https://www.mozilla.org/en-US/firefox/"),
-        ).joinBlocking()
+        )
 
         assertEquals("", toolbar.title)
 
@@ -1902,31 +1943,36 @@ class CustomTabsToolbarFeatureTest {
                 "mozilla",
                 "Firefox - Protect your life online with privacy-first products",
             ),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("Firefox - Protect your life online with privacy-first products", toolbar.title)
 
         store.dispatch(
             ContentAction.UpdateUrlAction("mozilla", "https://github.com/mozilla-mobile/android-components"),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("https://github.com/mozilla-mobile/android-components", toolbar.title)
 
         store.dispatch(
             ContentAction.UpdateTitleAction("mozilla", "Le GitHub"),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("Le GitHub", toolbar.title)
 
         store.dispatch(
             ContentAction.UpdateUrlAction("mozilla", "https://github.com/mozilla-mobile/fenix"),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("https://github.com/mozilla-mobile/fenix", toolbar.title)
 
         store.dispatch(
             ContentAction.UpdateTitleAction("mozilla", ""),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("https://github.com/mozilla-mobile/fenix", toolbar.title)
 
@@ -1935,13 +1981,15 @@ class CustomTabsToolbarFeatureTest {
                 "mozilla",
                 "A collection of Android libraries to build browsers or browser-like applications.",
             ),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("A collection of Android libraries to build browsers or browser-like applications.", toolbar.title)
 
         store.dispatch(
             ContentAction.UpdateTitleAction("mozilla", ""),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("https://github.com/mozilla-mobile/fenix", toolbar.title)
     }
@@ -1977,6 +2025,7 @@ class CustomTabsToolbarFeatureTest {
         )
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(null, toolbar.display.menuBuilder)
     }

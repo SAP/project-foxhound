@@ -94,7 +94,7 @@ add_task(
 
     storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
     info("Removing all user facing logins");
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
     await storageUpdatePromise;
     info("Writes to storage are complete after removeAllUserFacingLogins call");
     await waitForBackupUpdate();
@@ -106,7 +106,7 @@ add_task(
     // Clean up.
     // Since there is a fxa key left, we need to call removeAllLogins() or removeLogin(fxaKey)
     // to remove the fxa key. Otherwise the test will fail in verify mode when trying to add login1
-    Services.logins.removeAllLogins();
+    await Services.logins.removeAllLoginsAsync();
     await IOUtils.remove(loginStorePath);
   }
 );
@@ -137,7 +137,7 @@ add_task(async function test_deleteLoginsBackup_removeAllUserFacingLogins() {
 
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
   info("Removing all user facing logins");
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 
   await storageUpdatePromise;
   info(
@@ -180,7 +180,7 @@ add_task(async function test_deleteLoginsBackup_removeAllLogins() {
 
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
   info("Removing all logins");
-  Services.logins.removeAllLogins();
+  await Services.logins.removeAllLoginsAsync();
 
   await storageUpdatePromise;
   info("Writes to storage are complete when removeAllLogins() is called");
@@ -203,7 +203,7 @@ add_task(async function test_deleteLoginsBackup_removeAllLogins() {
 
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
   info("Removing all logins, including FxA key");
-  Services.logins.removeAllLogins();
+  await Services.logins.removeAllLoginsAsync();
   await storageUpdatePromise;
   info("Writes to storage are complete after the last removeAllLogins call");
   await loginBackupDeleted();
@@ -236,14 +236,14 @@ add_task(async function test_deleteLoginsBackup_removeLogin() {
 
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
   info("Removing one login");
-  Services.logins.removeLogin(login1);
+  await Services.logins.removeLoginAsync(login1);
   await storageUpdatePromise;
   info("Writes to storage are complete after one removeLogin call");
   await loginBackupExists();
 
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
   info("Removing the last login");
-  Services.logins.removeLogin(login2);
+  await Services.logins.removeLoginAsync(login2);
   await storageUpdatePromise;
   info("Writes to storage are complete after the last removeLogin call");
   await loginBackupDeleted();
@@ -266,7 +266,7 @@ add_task(async function test_deleteLoginsBackup_removeLogin() {
 
   storageUpdatePromise = TestUtils.topicObserved("password-storage-updated");
   let backupUpdate = waitForBackupUpdate();
-  Services.logins.removeLogin(login1);
+  await Services.logins.removeLoginAsync(login1);
   await storageUpdatePromise;
   info("Writes to storage are complete after one removeLogin call");
   await backupUpdate;
@@ -277,6 +277,6 @@ add_task(async function test_deleteLoginsBackup_removeLogin() {
   // Clean up.
   // Since there is a fxa key left, we need to call removeAllLogins() or removeLogin(fxaKey)
   // to remove the fxa key. Otherwise the test will fail in verify mode when trying to add login1
-  Services.logins.removeAllLogins();
+  await Services.logins.removeAllLoginsAsync();
   await IOUtils.remove(loginStorePath);
 });

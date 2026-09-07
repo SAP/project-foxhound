@@ -21,18 +21,16 @@ class TestSessionRestore(SessionStoreTestCase):
     """
 
     def setUp(self):
-        super(TestSessionRestore, self).setUp(
+        super().setUp(
             startup_page=3,
             include_private=False,
             restore_on_demand=False,
-            test_windows=set(
-                [
-                    (
-                        inline("lorem ipsom"),
-                        inline("dolor"),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                (
+                    inline("lorem ipsom"),
+                    inline("dolor"),
+                ),
+            ]),
         )
 
     def test_restore(self):

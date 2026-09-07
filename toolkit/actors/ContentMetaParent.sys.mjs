@@ -7,7 +7,7 @@ export class ContentMetaParent extends JSWindowActorParent {
     if (message.name == "Meta:SetPageInfo") {
       let browser = this.manager.browsingContext.top.embedderElement;
       if (browser) {
-        let event = new browser.ownerGlobal.CustomEvent("pageinfo", {
+        let event = new browser.documentGlobal.CustomEvent("pageinfo", {
           bubbles: true,
           cancelable: false,
           detail: {

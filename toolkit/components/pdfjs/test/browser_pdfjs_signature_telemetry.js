@@ -22,7 +22,7 @@ const signaturePref = "pdfjs.enableSignatureEditor";
 
 add_setup(async function () {
   requestLongerTimeout(2);
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.setFiles([file]);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
   registerCleanupFunction(function () {

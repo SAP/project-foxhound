@@ -33,22 +33,16 @@ class XULInfo:
         """Return JS that when executed sets up variables so that JS expression
         predicates on XUL build info evaluate properly."""
 
-        return (
-            "var winWidget = {};"
-            "var gtkWidget = {};"
-            "var cocoaWidget = {};"
-            "var is64Bit = {};"
-            "var xulRuntime = {{ shell: true }};"
-            "var release_or_beta = getBuildConfiguration('release_or_beta');"
-            "var isDebugBuild={}; var Android={}; ".format(
-                str(self.os == "WINNT").lower(),
-                str(self.os == "Darwin").lower(),
-                str(self.os == "Linux").lower(),
-                str("x86-" not in self.abi).lower(),
-                str(self.isdebug).lower(),
-                str(self.os == "Android").lower(),
-            )
-        )
+        return f"""
+var winWidget = {str(self.os == "WINNT").lower()};
+var gtkWidget = {str(self.os == "Linux").lower()};
+var cocoaWidget = {str(self.os == "Darwin").lower()};
+var is64Bit = {str("x86-" not in self.abi).lower()};
+var xulRuntime = {{ shell: true }};
+var release_or_beta = getBuildConfiguration('release_or_beta');
+var isDebugBuild={str(self.isdebug).lower()};
+var Android={str(self.os == "Android").lower()};
+""".replace("\n", "")
 
     @classmethod
     def create(cls, jsdir):
@@ -287,20 +281,16 @@ def _build_manifest_script_entry(script_name, test):
     properties = []
     if test.terms:
         # Remove jsreftest internal terms.
-        terms = " ".join(
-            [
-                term
-                for term in test.terms.split()
-                if not (
-                    term == "module"
-                    or term == "async"
-                    or term.startswith("error:")
-                    or term.startswith("ignore-flag(")
-                    or term.startswith("shell-option(")
-                    or term == "test262-raw"
-                )
-            ]
-        )
+        terms = " ".join([
+            term
+            for term in test.terms.split()
+            if not (
+                term in {"module", "async", "test262-raw"}
+                or term.startswith("error:")
+                or term.startswith("ignore-flag(")
+                or term.startswith("shell-option(")
+            )
+        ])
         if terms:
             line.append(terms)
     if test.error:
@@ -518,7 +508,7 @@ def _parse_external_manifest(filename, relpath):
             if not matches:
                 matches = include_re.match(line)
                 if not matches:
-                    print("warning: unrecognized line in jstests.list:" f" {line}")
+                    print(f"warning: unrecognized line in jstests.list: {line}")
                     continue
 
                 include_file = matches.group("path")
@@ -539,13 +529,11 @@ def _parse_external_manifest(filename, relpath):
                 assert path.endswith("jstests.list")
                 path = path[: -len("jstests.list")]
 
-            entries.append(
-                {
-                    "path": path,
-                    "terms": matches.group("terms"),
-                    "comment": comment.strip(),
-                }
-            )
+            entries.append({
+                "path": path,
+                "terms": matches.group("terms"),
+                "comment": comment.strip(),
+            })
 
     # if one directory name is a prefix of another, we want the shorter one
     # first
@@ -572,16 +560,14 @@ def _apply_external_manifests(filename, testcase, entries, xul_tester):
 
 def _is_test_file(path_from_root, basename, filename, path_options):
     # Any file whose basename matches something in this set is ignored.
-    EXCLUDED = set(
-        (
-            "browser.js",
-            "shell.js",
-            "template.js",
-            "user.js",
-            "js-test-driver-begin.js",
-            "js-test-driver-end.js",
-        )
-    )
+    EXCLUDED = set((
+        "browser.js",
+        "shell.js",
+        "template.js",
+        "user.js",
+        "js-test-driver-begin.js",
+        "js-test-driver-end.js",
+    ))
 
     # Skip js files in the root test directory.
     if not path_from_root:

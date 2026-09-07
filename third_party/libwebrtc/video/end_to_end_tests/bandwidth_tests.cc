@@ -8,30 +8,42 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <cstdint>
 #include <memory>
+#include <span>
+#include <vector>
 
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_parameters.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/test/simulated_network.h"
+#include "api/transport/bitrate_settings.h"
 #include "api/units/time_delta.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "api/video/video_bitrate_allocation.h"
-#include "call/fake_network_pipe.h"
+#include "api/video/video_bitrate_allocator_factory.h"
+#include "call/call.h"
+#include "call/video_receive_stream.h"
+#include "call/video_send_stream.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/task_queue_for_test.h"
-#include "system_wrappers/include/sleep.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/thread_annotations.h"
 #include "test/call_test.h"
 #include "test/fake_encoder.h"
-#include "test/field_trial.h"
 #include "test/gtest.h"
-#include "test/network/simulated_network.h"
 #include "test/rtcp_packet_parser.h"
 #include "test/rtp_rtcp_observer.h"
 #include "test/video_encoder_proxy_factory.h"
 #include "test/video_test_constants.h"
+#include "video/config/video_encoder_config.h"
 
 namespace webrtc {
 namespace {
@@ -60,7 +72,7 @@ TEST_F(BandwidthEndToEndTest, ReceiveStreamSendsRemb) {
           RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeExtensionId));
     }
 
-    Action OnReceiveRtcp(rtc::ArrayView<const uint8_t> packet) override {
+    Action OnReceiveRtcp(std::span<const uint8_t> packet) override {
       test::RtcpPacketParser parser;
       EXPECT_TRUE(parser.Parse(packet));
 
@@ -129,7 +141,7 @@ class BandwidthStatsTest : public test::EndToEndTest {
   }
 
   // Called on the pacer thread.
-  Action OnSendRtp(rtc::ArrayView<const uint8_t> packet) override {
+  Action OnSendRtp(std::span<const uint8_t> packet) override {
     // Stats need to be fetched on the thread where the caller objects were
     // constructed.
     task_queue_->PostTask([this]() {
@@ -223,7 +235,6 @@ TEST_F(BandwidthEndToEndTest, RembWithSendSideBwe) {
       encoder_config->max_bitrate_bps = 2000000;
 
       ASSERT_EQ(1u, receive_configs->size());
-      remb_sender_local_ssrc_ = (*receive_configs)[0].rtp.local_ssrc;
       remb_sender_remote_ssrc_ = (*receive_configs)[0].rtp.remote_ssrc;
     }
 
@@ -242,9 +253,9 @@ TEST_F(BandwidthEndToEndTest, RembWithSendSideBwe) {
       config.receiver_only = true;
       config.outgoing_transport = to_sender;
       config.retransmission_rate_limiter = &retransmission_rate_limiter_;
-      config.local_media_ssrc = remb_sender_local_ssrc_;
 
-      rtp_rtcp_ = std::make_unique<ModuleRtpRtcpImpl2>(env_, config);
+      rtp_rtcp_ = ModuleRtpRtcpImpl2::CreateReceiveModule(
+          env_, config, [&] { return kFallbackRtcpSsrcForVideo; });
       rtp_rtcp_->SetRemoteSSRC(remb_sender_remote_ssrc_);
       rtp_rtcp_->SetRTCPStatus(RtcpMode::kReducedSize);
     }
@@ -297,7 +308,6 @@ TEST_F(BandwidthEndToEndTest, RembWithSendSideBwe) {
     Call* sender_call_;
     const Environment env_;
     uint32_t sender_ssrc_;
-    uint32_t remb_sender_local_ssrc_ = 0;
     uint32_t remb_sender_remote_ssrc_ = 0;
     int remb_bitrate_bps_;
     std::unique_ptr<ModuleRtpRtcpImpl2> rtp_rtcp_;
@@ -312,9 +322,7 @@ TEST_F(BandwidthEndToEndTest, RembWithSendSideBwe) {
 TEST_F(BandwidthEndToEndTest, ReportsSetEncoderRates) {
   // If these fields trial are on, we get lower bitrates than expected by this
   // test, due to the packetization overhead and encoder pushback.
-  webrtc::test::ScopedFieldTrials field_trials(
-      std::string(field_trial::GetFieldTrialString()) +
-      "WebRTC-VideoRateControl/bitrate_adjuster:false/");
+  field_trials().Set("WebRTC-VideoRateControl", "bitrate_adjuster:false");
   class EncoderRateStatsTest : public test::EndToEndTest,
                                public test::FakeEncoder {
    public:
@@ -377,7 +385,7 @@ TEST_F(BandwidthEndToEndTest, ReportsSetEncoderRates) {
             return;
           }
         }
-        SleepMs(1);
+        Thread::SleepMs(1);
       }
       FAIL()
           << "Timed out waiting for stats reporting the currently set bitrate.";
@@ -388,7 +396,7 @@ TEST_F(BandwidthEndToEndTest, ReportsSetEncoderRates) {
         if (send_stream_->GetStats().target_media_bitrate_bps == 0) {
           return;
         }
-        SleepMs(1);
+        Thread::SleepMs(1);
       }
       FAIL() << "Timed out waiting for stats reporting zero bitrate.";
     }

@@ -10,10 +10,14 @@
 
 #include "modules/desktop_capture/fake_desktop_capturer.h"
 
+#include <memory>
 #include <utility>
 
 #include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/desktop_capturer.h"
 #include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_frame_generator.h"
+#include "modules/desktop_capture/shared_memory.h"
 
 namespace webrtc {
 
@@ -72,8 +76,9 @@ void FakeDesktopCapturer::SetSharedMemoryFactory(
 }
 
 bool FakeDesktopCapturer::GetSourceList(DesktopCapturer::SourceList* sources) {
-  sources->push_back({kWindowId, 1, "A-Fake-DesktopCapturer-Window"});
-  sources->push_back({kScreenId, 1});
+  sources->push_back(
+      {.id = kWindowId, .pid = 1, .title = "A-Fake-DesktopCapturer-Window"});
+  sources->push_back({.id = kScreenId, .pid = 1});
   return true;
 }
 

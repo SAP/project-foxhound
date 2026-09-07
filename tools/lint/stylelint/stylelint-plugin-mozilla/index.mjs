@@ -4,8 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-/* eslint-env node */
-
 import stylelint from "stylelint";
 import rules from "./rules/index.mjs";
 import { namespace } from "./helpers.mjs";

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,8 @@
 #define nsWindowSizes_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/SizeOfState.h"
+#include "nsStyleStructList.h"
 
 class nsTabSizes {
  public:
@@ -52,33 +50,33 @@ class nsTabSizes {
 struct nsStyleSizes {
   nsStyleSizes()
       :
-#define STYLE_STRUCT(name_) NS_STYLE_SIZES_FIELD(name_)(0),
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+#define INIT_FIELD(name_) NS_STYLE_SIZES_FIELD(name_)(0),
+        FOR_EACH_STYLE_STRUCT(INIT_FIELD, INIT_FIELD)
+#undef INIT_FIELD
 
-        dummy() {
+            dummy() {
   }
 
   void addToTabSizes(nsTabSizes* aSizes) const {
-#define STYLE_STRUCT(name_) \
+#define ADD_TO_TAB(name_) \
   aSizes->add(nsTabSizes::Style, NS_STYLE_SIZES_FIELD(name_));
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+    FOR_EACH_STYLE_STRUCT(ADD_TO_TAB, ADD_TO_TAB)
+#undef ADD_TO_TAB
   }
 
   size_t getTotalSize() const {
     size_t total = 0;
 
-#define STYLE_STRUCT(name_) total += NS_STYLE_SIZES_FIELD(name_);
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+#define ADD_TO_TOTAL(name_) total += NS_STYLE_SIZES_FIELD(name_);
+    FOR_EACH_STYLE_STRUCT(ADD_TO_TOTAL, ADD_TO_TOTAL)
+#undef ADD_TO_TOTAL
 
     return total;
   }
 
-#define STYLE_STRUCT(name_) size_t NS_STYLE_SIZES_FIELD(name_);
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+#define DECLARE_FIELD(name_) size_t NS_STYLE_SIZES_FIELD(name_);
+  FOR_EACH_STYLE_STRUCT(DECLARE_FIELD, DECLARE_FIELD)
+#undef DECLARE_FIELD
 
   // Present just to absorb the trailing comma in the constructor.
   int dummy;
@@ -91,8 +89,8 @@ struct nsArenaSizes {
       :
 #define PRES_ARENA_OBJECT(name_) NS_ARENA_SIZES_FIELD(name_)(0),
 #define DISPLAY_LIST_ARENA_OBJECT(name_) PRES_ARENA_OBJECT(name_)
-#include "nsPresArenaObjectList.h"
-#include "nsDisplayListArenaTypes.h"
+#include "nsDisplayListArenaTypes.inc"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
 #undef DISPLAY_LIST_ARENA_OBJECT
         dummy() {
@@ -102,8 +100,8 @@ struct nsArenaSizes {
 #define PRES_ARENA_OBJECT(name_) \
   aSizes->add(nsTabSizes::Other, NS_ARENA_SIZES_FIELD(name_));
 #define DISPLAY_LIST_ARENA_OBJECT(name_) PRES_ARENA_OBJECT(name_)
-#include "nsPresArenaObjectList.h"
-#include "nsDisplayListArenaTypes.h"
+#include "nsDisplayListArenaTypes.inc"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
 #undef DISPLAY_LIST_ARENA_OBJECT
   }
@@ -113,8 +111,8 @@ struct nsArenaSizes {
 
 #define PRES_ARENA_OBJECT(name_) total += NS_ARENA_SIZES_FIELD(name_);
 #define DISPLAY_LIST_ARENA_OBJECT(name_) PRES_ARENA_OBJECT(name_)
-#include "nsPresArenaObjectList.h"
-#include "nsDisplayListArenaTypes.h"
+#include "nsDisplayListArenaTypes.inc"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
 #undef DISPLAY_LIST_ARENA_OBJECT
 
@@ -123,8 +121,8 @@ struct nsArenaSizes {
 
 #define PRES_ARENA_OBJECT(name_) size_t NS_ARENA_SIZES_FIELD(name_);
 #define DISPLAY_LIST_ARENA_OBJECT(name_) PRES_ARENA_OBJECT(name_)
-#include "nsPresArenaObjectList.h"
-#include "nsDisplayListArenaTypes.h"
+#include "nsDisplayListArenaTypes.inc"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
 #undef DISPLAY_LIST_ARENA_OBJECT
 
@@ -193,6 +191,7 @@ class nsWindowSizes {
   explicit nsWindowSizes(mozilla::SizeOfState& aState)
       : FOR_EACH_SIZE(ZERO_SIZE) mDOMEventTargetsCount(0),
         mDOMEventListenersCount(0),
+        mMediaSourceURLsCount(0),
         mState(aState) {}
 
   void addToTabSizes(nsTabSizes* aSizes) const {
@@ -217,6 +216,8 @@ class nsWindowSizes {
 
   uint32_t mDOMEventTargetsCount;
   uint32_t mDOMEventListenersCount;
+
+  uint32_t mMediaSourceURLsCount;
 
   nsDOMSizes mDOMSizes;
 

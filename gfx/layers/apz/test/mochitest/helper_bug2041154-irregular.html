@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width; initial-scale=1.0">
+<title>Test that scrolling is not lagged when an irregular area causes dispatch-to-content without any APZ-aware listener</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<style>
+  #target {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 300px;
+    background: green;
+    clip-path: polygon(0% 0%, 100% 100%, 0% 100%);
+  }
+</style>
+<div id="target"></div>
+<div style="height: 500vh;"></div>
+<script>
+async function test() {
+  // The clipped element causes eIrregularArea on its hit result, which
+  // makes mDispatchToContent true even though there is no APZ-aware
+  // listener. APZ must not wait for a content response on the first
+  // touchmove; there is nothing in content that could preventDefault().
+  await promiseApzFlushedRepaints();
+
+  await synthesizeNativeTouch(window, 50, 200,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 50, 150,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 50, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 50, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_REMOVE);
+
+  await promiseApzFlushedRepaints();
+
+  isnot(window.scrollY, 0, "Should have scrolled");
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</html>

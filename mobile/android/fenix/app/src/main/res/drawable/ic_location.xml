@@ -5,9 +5,9 @@
 <animated-selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item
             android:id="@+id/enabled"
-            android:drawable="@drawable/ic_location_enabled"
+            android:drawable="@drawable/mozac_ic_location_24"
             android:state_enabled="true" />
     <item
             android:id="@+id/disabled"
-            android:drawable="@drawable/ic_location_disabled" />
+            android:drawable="@drawable/mozac_ic_location_slash_24" />
 </animated-selector>

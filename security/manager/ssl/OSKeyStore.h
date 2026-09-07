@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,7 +69,8 @@ class OSKeyStore final : public nsIOSKeyStore {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOSKEYSTORE
 
-  OSKeyStore();
+  static already_AddRefed<OSKeyStore> GetSingleton();
+
   nsresult GenerateSecret(const nsACString& aLabel,
                           /* out */ nsACString& aRecoveryPhrase);
   nsresult SecretAvailable(const nsACString& aLabel,
@@ -89,6 +89,7 @@ class OSKeyStore final : public nsIOSKeyStore {
                         /*out*/ uint8_t** outBytes);
 
  private:
+  OSKeyStore();
   ~OSKeyStore() = default;
 
   std::unique_ptr<AbstractOSKeyStore> mKs;

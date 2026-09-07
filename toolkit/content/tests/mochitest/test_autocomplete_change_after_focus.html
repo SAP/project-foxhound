@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=998893
   <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="text/javascript">
-  /** Test for Bug 998893 **/
+  /** Test for Bug 998893 */
   add_task(async function waitForFocus() {
     await new Promise(resolve => SimpleTest.waitForFocus(resolve));
   });
@@ -18,7 +18,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=998893
   add_task(async function setup() {
     await new Promise(resolve => {
       let chromeScript = SpecialPowers.loadChromeScript(function() {
-        /* eslint-env mozilla/chrome-script */
         const {FormHistory} = ChromeUtils.importESModule(
           "resource://gre/modules/FormHistory.sys.mjs"
         );
@@ -41,7 +40,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=998893
   add_task(async function runTest() {
     let promisePopupShown = new Promise(resolve => {
       let chromeScript = SpecialPowers.loadChromeScript(function() {
-        /* eslint-env mozilla/chrome-script */
         let window = Services.wm.getMostRecentWindow("navigator:browser");
         let popup = window.document.getElementById("PopupAutoComplete");
         popup.addEventListener("popupshown", function() {
@@ -59,7 +57,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=998893
     let field = document.getElementById("field1");
 
     let promiseFieldFocus = new Promise(resolve => {
-      field.addEventListener("focus", function onFocus() {
+      field.addEventListener("focusin", function onFocus() {
         info("field focused");
         field.value = "New value";
         sendKey("DOWN");

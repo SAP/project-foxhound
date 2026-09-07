@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,24 +34,14 @@ bool CheckboxAccessible::HasPrimaryAction() const { return true; }
 
 uint64_t CheckboxAccessible::NativeState() const {
   uint64_t state = LeafAccessible::NativeState();
-
   state |= states::CHECKABLE;
-  dom::HTMLInputElement* input = dom::HTMLInputElement::FromNode(mContent);
-  if (input) {  // HTML:input@type="checkbox"
-    if (input->Indeterminate()) {
-      return state | states::MIXED;
-    }
-
-    if (input->Checked()) {
-      return state | states::CHECKED;
-    }
-
-  } else if (mContent->AsElement()->AttrValueIs(
-                 kNameSpaceID_None, nsGkAtoms::checked, nsGkAtoms::_true,
-                 eCaseMatters)) {  // XUL checkbox
+  if (auto* input = dom::HTMLInputElement::FromNode(mContent);
+      input && input->Indeterminate()) {
+    return state | states::MIXED;
+  }
+  if (mContent->AsElement()->State().HasState(dom::ElementState::CHECKED)) {
     return state | states::CHECKED;
   }
-
   return state;
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,13 +8,12 @@
  * string that could be parsed into more or less the original DOM.
  */
 
-#ifndef nsXHTMLContentSerializer_h__
-#define nsXHTMLContentSerializer_h__
+#ifndef nsXHTMLContentSerializer_h_
+#define nsXHTMLContentSerializer_h_
 
-#include "mozilla/Attributes.h"
-#include "nsXMLContentSerializer.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsXMLContentSerializer.h"
 
 class nsIContent;
 class nsAtom;
@@ -35,7 +32,7 @@ class nsXHTMLContentSerializer : public nsXMLContentSerializer {
                   bool aRewriteEncodingDeclaration,
                   bool* aNeedsPreformatScanning, nsAString& aOutput) override;
 
-  NS_IMETHOD AppendText(nsIContent* aText, int32_t aStartOffset,
+  NS_IMETHOD AppendText(mozilla::dom::Text* aText, int32_t aStartOffset,
                         int32_t aEndOffset) override;
 
   NS_IMETHOD AppendDocumentStart(mozilla::dom::Document* aDocument) override;

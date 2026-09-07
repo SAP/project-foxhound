@@ -24,10 +24,10 @@ async function startTest()
   onAttach(state);
 }
 
-function onAttach(aState)
+function onAttach(state)
 {
-  onLogMessage = onLogMessage.bind(null, aState);
-  aState.webConsoleFront.on("logMessage", onLogMessage);
+  onLogMessage = onLogMessage.bind(null, state);
+  state.webConsoleFront.on("logMessage", onLogMessage);
 
   expectedMessages = [{
     message: "hello world! bug859756",
@@ -41,13 +41,13 @@ function onAttach(aState)
 
 const receivedMessages = [];
 
-function onLogMessage(aState, aPacket)
+function onLogMessage(state, packet)
 {
-  info("received message: " + aPacket.message);
+  info("received message: " + packet.message);
 
   let found = false;
   for (const expected of expectedMessages) {
-    if (expected.message == aPacket.message) {
+    if (expected.message == packet.message) {
       found = true;
       break;
     }
@@ -56,16 +56,16 @@ function onLogMessage(aState, aPacket)
     return;
   }
 
-  receivedMessages.push(aPacket);
+  receivedMessages.push(packet);
   if (receivedMessages.length != expectedMessages.length) {
     return;
   }
 
-  aState.webConsoleFront.off("logMessage", onLogMessage);
+  state.webConsoleFront.off("logMessage", onLogMessage);
 
   checkObject(receivedMessages, expectedMessages);
 
-  closeDebugger(aState, () => SimpleTest.finish());
+  closeDebugger(state, () => SimpleTest.finish());
 }
 
 addEventListener("load", startTest);

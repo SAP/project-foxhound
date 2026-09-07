@@ -69,6 +69,11 @@ jar_parse_any(JAR *jar, int type, JAR_Signer *signer,
               const char *url);
 
 static int
+jar_parse_any_impl(JAR *jar, int type, JAR_Signer *signer,
+                   char *raw_manifest, long length, const char *path,
+                   const char *url);
+
+static int
 jar_internal_digest(JAR *jar, const char *path, char *x_name, JAR_Digest *dig);
 
 /*
@@ -113,9 +118,13 @@ JAR_parse_manifest(JAR *jar, char *raw_manifest, long length,
     /* Determine what kind of file this is from the META-INF
        directory. It could be MF, SF, or a binary RSA/DSA file */
 
-    if (!PORT_Strncasecmp(raw_manifest, "Manifest-Version:", 17)) {
+    /* length must cover the literal prefix before calling PORT_Strncasecmp,
+     * otherwise it may read past the end of raw_manifest. */
+    if (length >= 17 &&
+        !PORT_Strncasecmp(raw_manifest, "Manifest-Version:", 17)) {
         return jar_parse_mf(jar, raw_manifest, length, path, url);
-    } else if (!PORT_Strncasecmp(raw_manifest, "Signature-Version:", 18)) {
+    } else if (length >= 18 &&
+               !PORT_Strncasecmp(raw_manifest, "Signature-Version:", 18)) {
         return jar_parse_sf(jar, raw_manifest, length, path, url);
     } else {
         /* This is probably a binary signature */
@@ -265,11 +274,15 @@ loser:
  *
  *  Parse a MF or SF manifest file.
  *
+ *  jar_parse_any() below makes a NUL-terminated copy of the input and
+ *  dispatches into this implementation, so jar_eat_line() and the
+ *  C-string scans below stay bounded even when the caller-provided
+ *  buffer has no trailing CR/LF/NUL.
  */
-int
-jar_parse_any(JAR *jar, int type, JAR_Signer *signer,
-              char *raw_manifest, long length, const char *path,
-              const char *url)
+static int
+jar_parse_any_impl(JAR *jar, int type, JAR_Signer *signer,
+                   char *raw_manifest, long length, const char *path,
+                   const char *url)
 {
     int status;
     long raw_len;
@@ -564,6 +577,34 @@ jar_parse_any(JAR *jar, int type, JAR_Signer *signer,
     }
 
     return 0;
+}
+
+int
+jar_parse_any(JAR *jar, int type, JAR_Signer *signer,
+              char *raw_manifest, long length, const char *path,
+              const char *url)
+{
+    char *copy;
+    int status;
+
+    if (length <= 0) {
+        return JAR_ERR_CORRUPT;
+    }
+
+    /* jar_eat_line() cannot NUL-terminate the final line when the buffer
+     * ends without CR/LF, so parse a NUL-terminated copy to keep the
+     * C-string operations in jar_parse_any_impl bounded even for
+     * non-terminated callers (e.g. fully filled inflate output). */
+    copy = (char *)PORT_ZAlloc(length + 1);
+    if (copy == NULL) {
+        return JAR_ERR_MEMORY;
+    }
+    PORT_Memcpy(copy, raw_manifest, length);
+
+    status = jar_parse_any_impl(jar, type, signer, copy, length, path, url);
+
+    PORT_Free(copy);
+    return status;
 }
 
 static int

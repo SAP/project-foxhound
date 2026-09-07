@@ -3,7 +3,7 @@
 
 /* Ensure that clicking the button in the Offline mode neterror page makes the browser go online. See bug 435325. */
 
-add_task(async function checkSwitchPageToOnlineMode() {
+async function checkSwitchPageToOnlineMode(useFelt) {
   // Go offline and disable the proxy and cache, then try to load the test URL.
   Services.io.offline = true;
 
@@ -15,6 +15,7 @@ add_task(async function checkSwitchPageToOnlineMode() {
       ["network.proxy.type", 0],
       ["browser.cache.disk.enable", false],
       ["browser.cache.memory.enable", false],
+      ["security.certerrors.felt-privacy-v1", useFelt],
     ],
   });
 
@@ -35,14 +36,18 @@ add_task(async function checkSwitchPageToOnlineMode() {
     );
 
     // Click on the 'Try again' button.
-    await SpecialPowers.spawn(browser, [], async function () {
+    await SpecialPowers.spawn(browser, [useFelt], async function (use_felt) {
       ok(
         content.document.documentURI.startsWith("about:neterror?e=netOffline"),
         "Should be showing error page"
       );
-      content.document
-        .querySelector("#netErrorButtonContainer > .try-again")
-        .click();
+      const button = use_felt
+        ? content.document.querySelector("net-error-card").wrappedJSObject
+            .tryAgainButton
+        : content.document.querySelector(
+            "#netErrorButtonContainer > .try-again"
+          );
+      button.click();
     });
 
     await changeObserved;
@@ -51,6 +56,11 @@ add_task(async function checkSwitchPageToOnlineMode() {
       "After clicking the 'Try Again' button, we're back online."
     );
   });
+}
+add_task(async function runCheckSwitchPageToOnlineMode() {
+  for (const useFelt of [true, false]) {
+    await checkSwitchPageToOnlineMode(useFelt);
+  }
 });
 
 registerCleanupFunction(function () {

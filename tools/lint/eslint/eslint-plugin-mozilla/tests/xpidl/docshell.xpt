@@ -5842,13 +5842,6 @@
         "value": 1
       },
       {
-        "name": "FALLBACK",
-        "type": {
-          "tag": "TD_UINT32"
-        },
-        "value": 2
-      },
-      {
         "name": "OTHER",
         "type": {
           "tag": "TD_UINT32"

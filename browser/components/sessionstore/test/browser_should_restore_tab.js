@@ -8,7 +8,7 @@ add_setup(async () => {
 
 async function check_tab_close_notification(openedTab, expectNotification) {
   let tabUrl = openedTab.linkedBrowser.currentURI.spec;
-  let win = openedTab.ownerGlobal;
+  let win = openedTab.documentGlobal;
   let initialTabCount = SessionStore.getClosedTabCountForWindow(win);
 
   let tabClosed = BrowserTestUtils.waitForTabClosing(openedTab);

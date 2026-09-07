@@ -1,0 +1,282 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>WebNavigation documentId test</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+"use strict";
+
+// Tests that documentId and parentDocumentId are present and consistent across
+// webNavigation events and the getAllFrames / getFrame API calls.
+add_task(async function test_webNavigation_documentId() {
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["webNavigation", "tabs", "<all_urls>"] },
+
+    async background() {
+      const BASE =
+        "https://example.com/tests/toolkit/components/extensions/test/mochitest/";
+      const PAGE_URL = BASE + "file_webNavigation_manualSubframe.html";
+      const FRAME_URL = BASE + "file_webNavigation_manualSubframe_page1.html";
+
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      function assertUUID(value, msg) {
+        browser.test.assertTrue(UUID_RE.test(value), `${msg}: got ${value}`);
+      }
+      function docIds({ documentId, parentDocumentId }) {
+        return { documentId, parentDocumentId };
+      }
+
+      const filter = { url: [{ urlContains: "file_webNavigation_manualSubframe" }] };
+
+      const collected = { onBeforeNavigate: [], onCommitted: [], onDOMContentLoaded: [] };
+      for (const name of ["onBeforeNavigate", "onCommitted", "onDOMContentLoaded"]) {
+        browser.webNavigation[name].addListener(d => collected[name].push(d), filter);
+      }
+
+      const { promise: pageLoaded, resolve: resolvePageLoaded } = Promise.withResolvers();
+      const { promise: frameLoaded, resolve: resolveFrameLoaded } = Promise.withResolvers();
+      browser.webNavigation.onCompleted.addListener(details => {
+        if (details.url === PAGE_URL && details.frameId === 0) {
+          resolvePageLoaded(details);
+        } else if (details.url === FRAME_URL) {
+          resolveFrameLoaded(details);
+        }
+      }, filter);
+
+      // Ensure that webNavigation listeners are registered before we trigger
+      // navigations (work-around for bug 1300234). Not doing so could cause
+      // intermittent test failures when the file is run in isolation with
+      // --verify due to missing a webNavigation.onBeforeNavigate event.
+      await browser.webNavigation.getAllFrames({ tabId: 123 }).catch(() => {});
+
+      const { id: tabId } = await browser.tabs.create({ url: PAGE_URL });
+      const completedPage = await pageLoaded;
+      const completedFrame = await frameLoaded;
+
+      // onBeforeNavigate: documentId is undefined because the event is
+      // triggered before we have a document for the requested load.
+      const beforeNavPage = collected.onBeforeNavigate.find(e => e.url === PAGE_URL && e.frameId === 0);
+      const beforeNavFrame = collected.onBeforeNavigate.find(e => e.url === FRAME_URL);
+      browser.test.assertTrue(!!beforeNavPage, "onBeforeNavigate fired for main frame");
+      browser.test.assertTrue(!!beforeNavFrame, "onBeforeNavigate fired for iframe");
+      browser.test.assertDeepEq(
+        { documentId: undefined, parentDocumentId: undefined },
+        docIds(beforeNavPage),
+        "onBeforeNavigate main frame"
+      );
+      browser.test.assertDeepEq(
+        { documentId: undefined, parentDocumentId: completedPage.documentId },
+        docIds(beforeNavFrame),
+        "onBeforeNavigate sub-frame"
+      );
+
+      assertUUID(completedPage.documentId, "onCompleted main frame documentId");
+      assertUUID(completedFrame.documentId, "onCompleted sub-frame documentId");
+      browser.test.assertEq(undefined, completedPage.parentDocumentId, "onCompleted: main frame has no parentDocumentId");
+      browser.test.assertEq(completedPage.documentId, completedFrame.parentDocumentId, "onCompleted sub-frame parentDocumentId");
+
+      const mainExpected = { documentId: completedPage.documentId, parentDocumentId: undefined };
+      const frameExpected = { documentId: completedFrame.documentId, parentDocumentId: completedPage.documentId };
+
+      // documentId and parentDocumentId are consistent across events,
+      // onCompleted (expectations) vs onCommitted vs onDOMContentLoaded.
+      const mainCommitted = collected.onCommitted.find(e => e.url === PAGE_URL && e.frameId === 0);
+      const mainDOMLoaded = collected.onDOMContentLoaded.find(e => e.url === PAGE_URL && e.frameId === 0);
+      const frameCommitted = collected.onCommitted.find(e => e.url === FRAME_URL);
+      const frameDOMLoaded = collected.onDOMContentLoaded.find(e => e.url === FRAME_URL);
+      browser.test.assertDeepEq(mainExpected, docIds(mainCommitted), "main onCommitted");
+      browser.test.assertDeepEq(mainExpected, docIds(mainDOMLoaded), "main onDOMContentLoaded");
+      browser.test.assertDeepEq(frameExpected, docIds(frameCommitted), "frame onCommitted");
+      browser.test.assertDeepEq(frameExpected, docIds(frameDOMLoaded), "frame onDOMContentLoaded");
+
+      // getAllFrames and getFrame are consistent with events.
+      const allFrames = await browser.webNavigation.getAllFrames({ tabId });
+      const mainFrame = allFrames.find(f => f.frameId === 0);
+      const subFrame = allFrames.find(f => f.url === FRAME_URL);
+      browser.test.assertDeepEq(mainExpected, docIds(mainFrame), "getAllFrames main frame");
+      browser.test.assertDeepEq(frameExpected, docIds(subFrame), "getAllFrames sub-frame");
+
+      const gotFrame = await browser.webNavigation.getFrame({ tabId, frameId: subFrame.frameId });
+      browser.test.assertDeepEq(frameExpected, docIds(gotFrame), "getFrame sub-frame");
+
+      // Same-document navigations preserve documentId.
+      async function assertSameDocNav(event, code) {
+        const { promise, resolve } = Promise.withResolvers();
+        browser.webNavigation[event].addListener(details => {
+          if (details.tabId === tabId && details.frameId === 0) {
+            resolve(details);
+          }
+        }, filter);
+        await browser.tabs.executeScript(tabId, { code });
+        const details = await promise;
+        browser.test.assertEq(completedPage.documentId, details.documentId, `${event} preserves documentId`);
+      }
+      await assertSameDocNav("onReferenceFragmentUpdated", "window.location.hash = '#section';");
+      await assertSameDocNav("onHistoryStateUpdated", "history.pushState({}, '', '?pushed');");
+
+      // Cross-document navigation produces a new documentId.
+      const { promise: navDone, resolve: resolveNavDone } = Promise.withResolvers();
+      browser.webNavigation.onCompleted.addListener(details => {
+        if (details.tabId === tabId && details.frameId === 0) {
+          resolveNavDone(details);
+        }
+      }, filter);
+      await browser.tabs.update(tabId, { url: PAGE_URL + "?reload" });
+      const navDetails = await navDone;
+      assertUUID(navDetails.documentId, "new navigation documentId");
+      browser.test.assertTrue(
+        navDetails.documentId !== completedPage.documentId,
+        "documentId changes after navigation"
+      );
+
+      await browser.tabs.remove(tabId);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+// Verifies that onCommitted fires with the documentId of the new document.
+// This is also one of the regression tests for bug 1750196.
+add_task(async function test_onCommitted_documentId_in_subframe() {
+  const FRAME_URLS = [
+    // Same-origin URL:
+    "/tests/toolkit/components/extensions/test/mochitest/file_sample.html",
+    // Cross-origin URL:
+    "https://example.net/tests/toolkit/components/extensions/test/mochitest/file_sample.html",
+  ];
+
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["webNavigation"] },
+    background() {
+      const filter = { url: [{ urlContains: "file_sample.html" }] };
+      let committedDocumentId;
+      browser.webNavigation.onCommitted.addListener(({ documentId }) => {
+        committedDocumentId = documentId;
+      }, filter);
+      browser.webNavigation.onCompleted.addListener(({ documentId }) => {
+        browser.test.assertEq(
+          documentId,
+          committedDocumentId,
+          "onCommitted and onCompleted must report the same documentId"
+        );
+        browser.test.sendMessage("done");
+      }, filter);
+    },
+  });
+
+  await extension.startup();
+
+  for (const frameUrl of FRAME_URLS) {
+    const iframe = document.createElement("iframe");
+    iframe.src = frameUrl;
+    document.body.append(iframe);
+    await extension.awaitMessage("done");
+    iframe.remove();
+  }
+
+  await extension.unload();
+});
+
+// Tests the documentId parameter of webNavigation.getFrame.
+add_task(async function test_webNavigation_getFrame_by_documentId() {
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["webNavigation", "tabs", "<all_urls>"] },
+
+    async background() {
+      const BASE =
+        "https://example.com/tests/toolkit/components/extensions/test/mochitest/";
+      const PAGE_URL = BASE + "file_webNavigation_manualSubframe.html";
+      const FRAME_URL = BASE + "file_webNavigation_manualSubframe_page1.html";
+
+      const loadedPromise = new Promise(resolve => {
+        browser.webNavigation.onCompleted.addListener(details => {
+          if (details.url === FRAME_URL) {
+            resolve(details);
+          }
+        });
+      });
+
+      const { id: tabId } = await browser.tabs.create({ url: PAGE_URL });
+      const eventDetails = await loadedPromise;
+      const expectedFrameDetails = {
+        tabId,
+        frameId: eventDetails.frameId,
+        parentFrameId: 0,
+        documentId: eventDetails.documentId,
+        parentDocumentId: eventDetails.parentDocumentId,
+        url: FRAME_URL,
+      };
+      const { documentId, frameId } = eventDetails;
+
+      browser.test.assertDeepEq(
+        expectedFrameDetails,
+        await browser.webNavigation.getFrame({ documentId }),
+        "getFrame for a given documentId returns the expected frame"
+      );
+
+      browser.test.assertDeepEq(
+        expectedFrameDetails,
+        await browser.webNavigation.getFrame({ documentId, tabId, frameId }),
+        "getFrame with all matching params returns the expected frame"
+      );
+
+      // Mismatches and unknown IDs return null.
+      browser.test.assertEq(
+        null,
+        await browser.webNavigation.getFrame({ documentId, tabId: tabId + 1 }),
+        "getFrame with mismatched tabId returns null"
+      );
+      browser.test.assertEq(
+        null,
+        await browser.webNavigation.getFrame({ documentId, frameId: 0 }),
+        "getFrame with mismatched frameId returns null"
+      );
+      browser.test.assertEq(
+        null,
+        await browser.webNavigation.getFrame({ documentId, tabId: tabId + 1, frameId: 0  }),
+        "getFrame with mismatched tabId and frameId returns null"
+      );
+      browser.test.assertEq(
+        null,
+        await browser.webNavigation.getFrame({ documentId: "00000000-0000-0000-0000-000000000000" }),
+        "getFrame with unknown documentId returns null"
+      );
+
+      // No parameters: should throw (actually: reject because validation is
+      // implemented in the parent instead of the child).
+      await browser.test.assertRejects(
+        browser.webNavigation.getFrame({}),
+        "Either documentId or both tabId and frameId must be specified.",
+        "getFrame with no identifiers throws"
+      );
+
+      const bgDocumentId = browser.runtime.getDocumentId(window);
+      browser.test.assertDeepEq(
+        null,
+        await browser.webNavigation.getFrame({ documentId: bgDocumentId }),
+        "getFrame for documentId of non-tab (background page) returns null"
+      );
+
+      await browser.tabs.remove(tabId);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
+});
+
+</script>
+</body>
+</html>

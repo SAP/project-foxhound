@@ -32,6 +32,7 @@ import shutil
 import socket
 import stat
 import subprocess
+import threading
 import urllib.error
 import urllib.request
 
@@ -112,6 +113,17 @@ def print_line(prefix, m):
     sys.stdout.buffer.flush()
 
 
+def reap_zombies(main_subprocess):
+    """Wait for main_subprocess to exit, while awaiting any other child processes"""
+    while main_subprocess.poll() is None:
+        with main_subprocess._waitpid_lock:
+            if main_subprocess.returncode is not None:
+                return
+            pid, status = os.wait()
+            if pid == main_subprocess.pid:
+                main_subprocess._handle_exitstatus(status)
+
+
 def run_and_prefix_output(prefix, args, *, extra_env=None, cwd=None):
     """Runs a process and prefixes its output with the time.
 
@@ -151,6 +163,13 @@ def run_and_prefix_output(prefix, args, *, extra_env=None, cwd=None):
 
     stdout = io.TextIOWrapper(p.stdout, encoding="latin1")
 
+    if os.getpid() == 1:
+        # in docker we're init, so we get to adopt unawaited zombies
+        reaper_thread = threading.Thread(target=reap_zombies, args=(p,))
+        reaper_thread.start()
+    else:
+        reaper_thread = None
+
     while True:
         data = stdout.readline().encode("latin1")
 
@@ -159,6 +178,8 @@ def run_and_prefix_output(prefix, args, *, extra_env=None, cwd=None):
 
         print_line(prefix, data)
 
+    if reaper_thread:
+        reaper_thread.join()
     return p.wait()
 
 
@@ -556,16 +577,6 @@ def fetch_artifacts():
     print_line(b"fetches", b"fetching artifacts\n")
 
     fetch_content = shutil.which("fetch-content")
-    if not fetch_content and os.environ.get("GECKO_PATH"):
-        fetch_content = os.path.join(
-            os.environ["GECKO_PATH"],
-            "third_party",
-            "python",
-            "taskcluster_taskgraph",
-            "taskgraph",
-            "run-task",
-            "fetch-content",
-        )
 
     if not fetch_content or not os.path.isfile(fetch_content):
         fetch_content = os.path.join(os.path.dirname(__file__), "fetch-content")
@@ -718,7 +729,7 @@ def collect_vcs_options(args, project):
     if checkout:
         checkout = os.path.expanduser(checkout)
     if store_path:
-        store_path = os.path.expanduser(store_path)
+        store_path = normalize_store_path(store_path)
 
     # Some callers set the base repository to mozilla-central for historical
     # reasons. Switch to mozilla-unified because robustcheckout works best
@@ -742,6 +753,19 @@ def collect_vcs_options(args, project):
         "revision": revision,
         "branch": branch,
     }
+
+
+def normalize_store_path(path):
+    path = os.path.expandvars(os.path.expanduser(path))
+
+    if IS_WINDOWS and path.startswith(("\\", "/")) and not os.path.splitdrive(path)[0]:
+        hg_cache = os.environ.get("HG_CACHE")
+        if hg_cache:
+            cache_drive = os.path.splitdrive(os.path.abspath(hg_cache))[0]
+            if cache_drive:
+                path = f"{cache_drive}{path}"
+
+    return os.path.abspath(os.path.normpath(path))
 
 
 def vcs_checkout_from_args(args, project):
@@ -953,7 +977,8 @@ def main(args):
             print("error: HG_STORE_PATH environment variable not set")
             sys.exit(1)
 
-        store_path = os.environ["HG_STORE_PATH"]
+        store_path = normalize_store_path(os.environ["HG_STORE_PATH"])
+        os.environ["HG_STORE_PATH"] = store_path
 
         if not path_in_cache_or_volume(store_path):
             print_line(

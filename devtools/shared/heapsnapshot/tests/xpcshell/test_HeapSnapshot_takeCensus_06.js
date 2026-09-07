@@ -12,7 +12,7 @@ function run_test() {
   const g = newGlobal();
   const dbg = new Debugger(g);
 
-  Pattern({ count: Pattern.NATURAL, bytes: Pattern.NATURAL }).assert(
+  new Pattern({ count: Pattern.NATURAL, bytes: Pattern.NATURAL }).assert(
     saveHeapSnapshotAndTakeCensus(dbg, { breakdown: { by: "count" } })
   );
 
@@ -43,7 +43,7 @@ function run_test() {
   // Pattern doesn't mind objects with extra properties, so we'll restrict this
   // list to the object classes we're pretty sure are going to stick around for
   // the forseeable future.
-  Pattern({
+  new Pattern({
     Function: { count: Pattern.NATURAL },
     Object: { count: Pattern.NATURAL },
     DebuggerPrototype: { count: Pattern.NATURAL },
@@ -52,7 +52,7 @@ function run_test() {
     saveHeapSnapshotAndTakeCensus(dbg, { breakdown: { by: "objectClass" } })
   );
 
-  Pattern({
+  new Pattern({
     objects: { count: Pattern.NATURAL },
     scripts: { count: Pattern.NATURAL },
     strings: { count: Pattern.NATURAL },
@@ -63,7 +63,7 @@ function run_test() {
 
   // As for { by: 'objectClass' }, restrict our pattern to the types
   // we predict will stick around for a long time.
-  Pattern({
+  new Pattern({
     JSString: { count: Pattern.NATURAL },
     "js::Shape": { count: Pattern.NATURAL },
     JSObject: { count: Pattern.NATURAL },
@@ -80,7 +80,7 @@ function run_test() {
     other: { count: Pattern.NATURAL },
   };
 
-  Pattern({
+  new Pattern({
     JSString: coarseTypePattern,
     "js::Shape": coarseTypePattern,
     JSObject: coarseTypePattern,
@@ -90,7 +90,7 @@ function run_test() {
     })
   );
 
-  Pattern({
+  new Pattern({
     Function: { count: Pattern.NATURAL },
     Object: { count: Pattern.NATURAL },
     DebuggerPrototype: { count: Pattern.NATURAL },
@@ -106,7 +106,7 @@ function run_test() {
     })
   );
 
-  Pattern({
+  new Pattern({
     objects: { count: Pattern.NATURAL, label: "object" },
     scripts: { count: Pattern.NATURAL, label: "scripts" },
     strings: { count: Pattern.NATURAL, label: "strings" },

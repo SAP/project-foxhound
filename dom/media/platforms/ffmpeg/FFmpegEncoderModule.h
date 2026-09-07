@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 
 #include "FFmpegLibWrapper.h"
 #include "PlatformEncoderModule.h"
+#include "mozilla/DataMutex.h"
 
 namespace mozilla {
 
@@ -19,10 +18,10 @@ class FFmpegEncoderModule final : public PlatformEncoderModule {
  public:
   virtual ~FFmpegEncoderModule() = default;
 
-  static void Init(FFmpegLibWrapper* aLib);
+  static void Init(const FFmpegLibWrapper* aLib);
 
   static already_AddRefed<PlatformEncoderModule> Create(
-      FFmpegLibWrapper* aLib) {
+      const FFmpegLibWrapper* aLib) {
     RefPtr<PlatformEncoderModule> pem = new FFmpegEncoderModule(aLib);
     return pem.forget();
   }
@@ -40,14 +39,15 @@ class FFmpegEncoderModule final : public PlatformEncoderModule {
       const RefPtr<TaskQueue>& aTaskQueue) const override;
 
  protected:
-  explicit FFmpegEncoderModule(FFmpegLibWrapper* aLib) : mLib(aLib) {
+  explicit FFmpegEncoderModule(const FFmpegLibWrapper* aLib) : mLib(aLib) {
     MOZ_ASSERT(mLib);
   }
 
  private:
   // This refers to a static FFmpegLibWrapper, so raw pointer is adequate.
   const FFmpegLibWrapper* mLib;  // set in constructor
-  MOZ_RUNINIT static inline nsTArray<uint32_t> sSupportedHWCodecs;
+  constinit static inline StaticDataMutex<nsTArray<uint32_t>>
+      sSupportedHWCodecs{"sSupportedHWCodecs"};
 };
 
 }  // namespace mozilla

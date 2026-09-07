@@ -32,13 +32,13 @@ add_task(async function () {
     "resource://devtools/client/webconsole/constants.js",
     "resource://devtools/client/webconsole/utils.js",
     "resource://devtools/client/webconsole/utils/messages.js",
-    "resource://devtools/client/webconsole/utils/l10n.js",
     "resource://devtools/client/netmonitor/src/utils/request-utils.js",
     "resource://devtools/client/webconsole/types.js",
     "resource://devtools/client/shared/vendor/fluent-react.js",
     "resource://devtools/client/shared/vendor/react-redux.js",
     "resource://devtools/client/shared/vendor/redux.js",
     "resource://devtools/client/shared/redux/middleware/thunk.js",
+    "resource://devtools/client/shared/redux/middleware/ignore.js",
 
     // React components loaded from Toolbox and Panel BrowserLoaders
     "resource://devtools/client/shared/components/menu/MenuButton.js",

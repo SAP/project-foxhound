@@ -5,44 +5,7 @@
 Firefox DevTools Contributor Docs
 =================================
 
-This is a guide to working on the code for Firefox Developer Tools. If you're looking for help with using the tools, see the `user docs </devtools-user>`_. For other ways to get involved, check out our `community site <https://firefox-dev.tools/>`__.
-
-
-Getting Started
-===============
-.. toctree::
-   :maxdepth: 1
-
-   Getting Started <getting-started/README.md>
-   Get a Bugzilla account <getting-started/bugzilla.md>
-   Create a development profile <getting-started/development-profiles.md>
-
-
-Contributing
-============
-.. toctree::
-   :maxdepth: 1
-
-   Contributing <contributing.md>
-   Find bugs to work on <contributing/find-bugs.md>
-   How to fix a bug <contributing/fixing-bugs.md>
-   Code reviews <contributing/code-reviews.md>
-   Landing code <contributing/landing-code.md>
-   Leveling up <https://firefox-source-docs.mozilla.org/contributing/levelling-up.html>
-   Coding standards <contributing/coding-standards.md>
-   Filing good bugs <https://firefox-source-docs.mozilla.org/contributing/filing-good-bugs.html>
-   Investigating performance issues <contributing/performance.md>
-   Writing efficient React code <contributing/react-performance-tips.md>
-
-
-Recurring tasks
-===============
-.. toctree::
-   :maxdepth: 1
-
-   Release tasks<release.md>
-   Performance sheriffing<performance-sheriffing.md>
-
+This is the contributor documentation for Firefox Developer Tools. If you're looking for help with using the tools, see the `user docs </devtools-user>`_. Note that this section only contains technical information specific to Firefox DevTools, make sure to first read the `Firefox contributor documentation <https://firefox-source-docs.mozilla.org/contributing/index.html>`_ which explains how to contribute to Firefox in general (setting up the environment, submitting patches, etc.).
 
 Automated tests
 ===============
@@ -93,6 +56,7 @@ Frontend
 .. toctree::
    :maxdepth: 1
 
+   CSS <frontend/css.md>
    Panel SVGs <frontend/svgs.md>
    React <frontend/react.md>
    React Guidelines <frontend/react-guidelines.md>
@@ -117,9 +81,28 @@ Backend
    Registering A New Actor <backend/actor-registration.md>
    Actor Best Practices <backend/actor-best-practices.md>
 
+
+Performance
+============
+.. toctree::
+   :maxdepth: 1
+
+   Investigating performance issues <performance/performance.md>
+   Writing efficient React code <performance/react-performance-tips.md>
+
+
 Preferences
 ===========
 .. toctree::
    :maxdepth: 1
 
    Preferences <preferences.md>
+
+
+Recurring tasks
+===============
+.. toctree::
+   :maxdepth: 1
+
+   Release tasks<release.md>
+   Performance sheriffing<performance-sheriffing.md>

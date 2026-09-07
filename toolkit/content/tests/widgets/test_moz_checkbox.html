@@ -32,7 +32,9 @@
       });
 
       add_task(async function testMozCheckboxProperties() {
-        await testHelpers.testCommonInputProperties("moz-checkbox");
+        await testHelpers.testCommonInputProperties("moz-checkbox", {
+          type: "checkbox",
+        });
       });
 
       add_task(async function testCheckboxEvents() {

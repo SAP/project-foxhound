@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +6,10 @@
 #define mozilla_dom_WebTaskSchedulerWorker_h
 
 #include "WebTaskScheduler.h"
-
-#include "mozilla/LinkedList.h"
-#include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/WebTaskSchedulingBinding.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
-#include "mozilla/dom/WebTaskSchedulingBinding.h"
+#include "mozilla/dom/WorkerRunnable.h"
 
 namespace mozilla::dom {
 

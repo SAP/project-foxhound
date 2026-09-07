@@ -2,10 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 /**
  * Wait for view source tab after calling given function to open it.
  *
@@ -54,30 +50,7 @@ function openViewSourceForBrowser(browser) {
  * @returns the new tab which shows the source.
  */
 async function openViewSource() {
-  let contentAreaContextMenuPopup = document.getElementById(
-    "contentAreaContextMenu"
-  );
-  let popupShownPromise = BrowserTestUtils.waitForEvent(
-    contentAreaContextMenuPopup,
-    "popupshown"
-  );
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "body",
-    { type: "contextmenu", button: 2 },
-    gBrowser.selectedBrowser
-  );
-  await popupShownPromise;
-
-  return waitForViewSourceTab(async () => {
-    let popupHiddenPromise = BrowserTestUtils.waitForEvent(
-      contentAreaContextMenuPopup,
-      "popuphidden"
-    );
-    contentAreaContextMenuPopup.activateItem(
-      document.getElementById("context-viewsource")
-    );
-    await popupHiddenPromise;
-  });
+  return openViewSourceForBrowser(gBrowser.selectedBrowser);
 }
 
 /**
@@ -218,14 +191,4 @@ async function openDocument(aURI) {
 
 function pushPrefs(...aPrefs) {
   return SpecialPowers.pushPrefEnv({ set: aPrefs });
-}
-
-function waitForPrefChange(pref) {
-  let deferred = Promise.withResolvers();
-  let observer = () => {
-    Preferences.ignore(pref, observer);
-    deferred.resolve();
-  };
-  Preferences.observe(pref, observer);
-  return deferred.promise;
 }

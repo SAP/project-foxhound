@@ -353,9 +353,7 @@ Line1<br>Line2<br>Line3<br>Line4
 <select><b><option><select><option></b></select>X
 #errors
 (1,8): expected-doctype-but-got-start-tag
-(1,11): unexpected-start-tag-in-select
 (1,27): unexpected-select-in-select
-(1,39): unexpected-end-tag
 (1,48): unexpected-end-tag
 (1,49): expected-closing-tag-but-got-eof
 #document
@@ -363,9 +361,11 @@ Line1<br>Line2<br>Line3<br>Line4
 |   <head>
 |   <body>
 |     <select>
+|       <b>
+|         <option>
+|     <b>
 |       <option>
-|     <option>
-|       "X"
+|     "X"
 
 #data
 <a><table><td><a><table></table><a></tr><a></table><b>X</b>C<a>Y
@@ -1535,9 +1535,7 @@ Line1<br>Line2<br>Line3<br>Line4
 <select><b><option><select><option></b></select>
 #errors
 (1,8): expected-doctype-but-got-start-tag
-(1,11): unexpected-start-tag-in-select
 (1,27): unexpected-select-in-select
-(1,39): unexpected-end-tag
 (1,48): unexpected-end-tag
 (1,48): expected-closing-tag-but-got-eof
 #document
@@ -1545,8 +1543,10 @@ Line1<br>Line2<br>Line3<br>Line4
 |   <head>
 |   <body>
 |     <select>
+|       <b>
+|         <option>
+|     <b>
 |       <option>
-|     <option>
 
 #data
 <html><head><title></title><body></body></html>

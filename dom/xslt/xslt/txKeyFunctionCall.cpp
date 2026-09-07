@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -183,6 +182,13 @@ nsresult txKeyHash::getKeyNodes(const txExpandedName& aKeyName,
     return NS_OK;
   }
 
+  // This means an xsl:key's match or use expression is (indirectly)
+  // looking up the same key.
+  // XSLT allows for recursion but prohibits circularity.
+  if (indexEntry->mIsBeingIndexed) {
+    return NS_ERROR_XSLT_BAD_RECURSION;
+  }
+
   // The key needs to be indexed.
   txXSLKey* xslKey = mKeys.get(aKeyName);
   if (!xslKey) {
@@ -190,10 +196,15 @@ nsresult txKeyHash::getKeyNodes(const txExpandedName& aKeyName,
     return NS_ERROR_INVALID_ARG;
   }
 
+  indexEntry->mIsBeingIndexed = true;
   nsresult rv = xslKey->indexSubtreeRoot(aRoot, mKeyValues, aEs);
   NS_ENSURE_SUCCESS(rv, rv);
+  indexEntry = mIndexedKeys.GetEntry(indexKey);
 
-  indexEntry->mIndexed = true;
+  if (MOZ_LIKELY(indexEntry)) {
+    indexEntry->mIsBeingIndexed = false;
+    indexEntry->mIndexed = true;
+  }
 
   // Now that the key is indexed we can get its value.
   valueEntry = mKeyValues.GetEntry(valueKey);

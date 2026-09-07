@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 // Collation can be set as Unicode locale extension or as a property.
 {
   let c1 = new Intl.Collator("de", {usage: "sort"});

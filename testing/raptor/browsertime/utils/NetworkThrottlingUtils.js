@@ -25,6 +25,7 @@ class NetworkEventRecord {
   addEventTimings() {}
   addResponseCache() {}
   addResponseContent() {}
+  addResponseContentComplete() {}
   addServerTimings() {}
   addServiceWorkerTimings() {}
 }

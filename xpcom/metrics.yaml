@@ -54,7 +54,65 @@ memory_watcher:
           event's `value` parameter.
           The stringified, comma-separated stats.
         type: string
-    telemetry_mirror: Memory_watcher_OnHighMemory_Stats
+
+  process_oom_killed:
+    type: event
+    description: >
+      Recorded when a content process is killed by the Linux OOM killer (SIGKILL).
+      PSI (Pressure Stall Information) metrics are included to understand memory
+      pressure context at the time of the kill. This helps analyze memory pressure
+      patterns and OOM kill correlation.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995907
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995907
+    notification_emails:
+      - tli@mozilla.com
+    expires: never
+    extra_keys:
+      psi_some_avg10:
+        description: PSI some avg10 value (10-second average partial stall percentage)
+        type: string
+      psi_some_avg60:
+        description: PSI some avg60 value (60-second average partial stall percentage)
+        type: string
+      psi_full_avg10:
+        description: PSI full avg10 value (10-second average complete stall percentage)
+        type: string
+      psi_full_avg60:
+        description: PSI full avg60 value (60-second average complete stall percentage)
+        type: string
+      psi_available:
+        description:  PSI values are available.
+        type: boolean
+
+  non_oom_sample:
+    type: event
+    description: >
+      Records PSI (Pressure Stall Information) metrics sampled 120 seconds
+      after an OOM-killed content process. By capturing memory pressure
+      values that did not trigger further OOM kills, this helps establish
+      the boundary between recoverable memory pressure and OOM conditions.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010734
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010734
+    notification_emails:
+      - tli@mozilla.com
+    expires: never
+    extra_keys:
+      psi_some_avg10:
+        description: PSI some avg10 value (10-second average partial stall percentage)
+        type: string
+      psi_some_avg60:
+        description: PSI some avg60 value (60-second average partial stall percentage)
+        type: string
+      psi_full_avg10:
+        description: PSI full avg10 value (10-second average complete stall percentage)
+        type: string
+      psi_full_avg60:
+        description: PSI full avg60 value (60-second average complete stall percentage)
+        type: string
 
 memory_phc:
   slop:
@@ -70,14 +128,14 @@ memory_phc:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1969177
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2026442
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
       - pbone@mozilla.com
-    expires: 152
-    telemetry_mirror: MEMORY_PHC_SLOP
+    expires: 160
 
   slots_allocated:
     type: custom_distribution
@@ -95,14 +153,14 @@ memory_phc:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1969177
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2026442
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
       - pbone@mozilla.com
-    expires: 152
-    telemetry_mirror: MEMORY_PHC_SLOTS_ALLOCATED
+    expires: 160
 
   slots_freed:
     type: custom_distribution
@@ -120,49 +178,43 @@ memory_phc:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1969177
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2026442
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
       - pbone@mozilla.com
-    expires: 152
-    telemetry_mirror: MEMORY_PHC_SLOTS_FREED
+    expires: 160
 
 cycle_collector:
   time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
-      Time spent on one cycle collection (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram CYCLE_COLLECTOR.
+      Time spent on one cycle collection (ms), labeled by process type.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: CYCLE_COLLECTOR
 
   worker_time:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
-      Time spent on one cycle collection in a worker (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram CYCLE_COLLECTOR_WORKER.
+      Time spent on one cycle collection in a worker (ms), labeled by process type.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: CYCLE_COLLECTOR_WORKER
 
   visited_ref_counted:
     type: custom_distribution
@@ -329,39 +381,34 @@ cycle_collector:
     telemetry_mirror: h#CYCLE_COLLECTOR_WORKER_NEED_GC
 
   full:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
-      Full pause time for one cycle collection, including preparation (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram CYCLE_COLLECTOR_FULL.
+      Full pause time for one cycle collection, including preparation (ms),
+      labeled by process type.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: CYCLE_COLLECTOR_FULL
 
   max_pause:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
       Longest pause for an individual slice of one cycle collection, including
-      preparation (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram CYCLE_COLLECTOR_MAX_PAUSE.
+      preparation (ms), labeled by process type.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1364503
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1364503
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: CYCLE_COLLECTOR_MAX_PAUSE
 
   finish_igc:
     type: labeled_counter
@@ -402,21 +449,18 @@ cycle_collector:
     telemetry_mirror: h#CYCLE_COLLECTOR_SYNC_SKIPPABLE
 
   time_between:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
-      Time spent in between cycle collections (seconds)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram CYCLE_COLLECTOR_TIME_BETWEEN.
+      Time spent in between cycle collections (seconds), labeled by process type.
     time_unit: second
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: CYCLE_COLLECTOR_TIME_BETWEEN
 
   slice_during_idle:
     type: custom_distribution
@@ -440,61 +484,52 @@ cycle_collector:
     telemetry_mirror: CYCLE_COLLECTOR_SLICE_DURING_IDLE
 
   async_snow_white_freeing:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
-      Time spent on one asynchronous SnowWhite freeing (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram CYCLE_COLLECTOR_ASYNC_SNOW_WHITE_FREEING.
+      Time spent on one asynchronous SnowWhite freeing (ms), labeled by process type.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: CYCLE_COLLECTOR_ASYNC_SNOW_WHITE_FREEING
 
   deferred_finalize_async:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
-      Pause time for asynchronous deferred finalization (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram DEFERRED_FINALIZE_ASYNC.
+      Pause time for asynchronous deferred finalization (ms), labeled by process type.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: DEFERRED_FINALIZE_ASYNC
 
   forget_skippable_max:
-    type: timing_distribution
+    type: labeled_timing_distribution
     description: >
-      Max time spent on one forget skippable (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram FORGET_SKIPPABLE_MAX.
+      Max time spent on one forget skippable (ms), labeled by process type.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1956726
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2035873
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1956726
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
     expires: never
-    telemetry_mirror: FORGET_SKIPPABLE_MAX
 
 memory:
   resident_fast:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Resident memory size (KB)
+      Resident memory size (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_RESIDENT_FAST.
@@ -508,12 +543,11 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_RESIDENT_FAST
 
   resident_peak:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Peak resident memory size (KB)
+      Peak resident memory size (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_RESIDENT_PEAK.
@@ -528,7 +562,6 @@ memory:
       - memshrink-telemetry-alerts@mozilla.com
       - amccreight@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_RESIDENT_PEAK
 
   total:
     type: memory_distribution
@@ -549,7 +582,6 @@ memory:
       - memshrink-telemetry-alerts@mozilla.com
       - amccreight@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_TOTAL
 
   distribution_among_content:
     type: labeled_custom_distribution
@@ -576,12 +608,11 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_DISTRIBUTION_AMONG_CONTENT
 
   unique:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Unique Set Size (KB)
+      Unique Set Size (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_UNIQUE.
@@ -595,7 +626,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_UNIQUE
 
   vsize:
     type: memory_distribution
@@ -612,7 +642,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_VSIZE
 
   vsize_max_contiguous:
     type: memory_distribution
@@ -629,7 +658,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_VSIZE_MAX_CONTIGUOUS
 
   js_compartments_system:
     type: custom_distribution
@@ -650,7 +678,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_JS_COMPARTMENTS_SYSTEM
 
   js_compartments_user:
     type: custom_distribution
@@ -671,7 +698,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_JS_COMPARTMENTS_USER
 
   js_realms_system:
     type: custom_distribution
@@ -693,7 +719,6 @@ memory:
       - memshrink-telemetry-alerts@mozilla.com
       - jdemooij@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_JS_REALMS_SYSTEM
 
   js_realms_user:
     type: custom_distribution
@@ -715,12 +740,11 @@ memory:
       - memshrink-telemetry-alerts@mozilla.com
       - jdemooij@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_JS_REALMS_USER
 
   js_gc_heap:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Memory used by the garbage-collected JavaScript heap (KB)
+      Memory used by the garbage-collected JavaScript heap (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_JS_GC_HEAP.
@@ -732,7 +756,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_JS_GC_HEAP
 
   storage_sqlite:
     type: memory_distribution
@@ -749,7 +772,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_STORAGE_SQLITE
 
   images_content_used_uncompressed:
     type: memory_distribution
@@ -766,7 +788,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_IMAGES_CONTENT_USED_UNCOMPRESSED
 
   heap_allocated:
     type: memory_distribution
@@ -783,7 +804,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_HEAP_ALLOCATED
 
   heap_overhead_fraction:
     type: custom_distribution
@@ -804,7 +824,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_HEAP_OVERHEAD_FRACTION
 
   ghost_windows:
     type: custom_distribution
@@ -824,7 +843,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: GHOST_WINDOWS
 
   low_memory_events_physical:
     type: custom_distribution
@@ -847,7 +865,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: LOW_MEMORY_EVENTS_PHYSICAL
 
   page_faults_hard:
     type: custom_distribution
@@ -868,7 +885,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: PAGE_FAULTS_HARD
 
   collection_time:
     type: timing_distribution
@@ -885,7 +901,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_COLLECTION_TIME
 
   free_purged_pages:
     type: timing_distribution
@@ -902,7 +917,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_FREE_PURGED_PAGES_MS
 
   unique_content_startup:
     type: memory_distribution
@@ -920,7 +934,6 @@ memory:
       - amccreight@mozilla.com
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_UNIQUE_CONTENT_STARTUP
 
 event:
   longtask:
@@ -940,7 +953,6 @@ event:
       - rjesup@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: EVENT_LONGTASK
 
 xpcom:
   abi:
@@ -1396,6 +1408,28 @@ system.os:
       - update
       - third-party-modules
 
+  libstdcxx_version:
+    type: string
+    lifetime: application
+    description: |
+      The Operating System's libstdc++ highest GLIBCXX version.
+      Linux only.
+      e.g. "3.4.33"
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016621
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016621
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - mhommey@mozilla.com
+    expires: never
+    send_in_pings:
+      - metrics
+      - sync
+      - update
+      - third-party-modules
+
   service_pack_major:
     type: quantity
     unit: version
@@ -1630,20 +1664,3 @@ system:
     notification_emails:
       - gijs@mozilla.com
     expires: never
-
-  special_directory_appdata_fallback:
-    type: labeled_boolean
-    lifetime: ping
-    description: |
-      Success status of using SpecialSystemDirectory's fallback path to retrieve
-      either %AppData% or %LocalAppData%.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1974357
-    data_reviews:
-      - https://phabricator.services.mozilla.com/D255241
-    notification_emails:
-      - nrishel@mozilla.com
-    expires: 145
-    labels:
-      - appdata
-      - localappdata

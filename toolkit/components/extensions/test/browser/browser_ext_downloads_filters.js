@@ -1,6 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
-
 "use strict";
 
 async function testAppliedFilters(ext, expectedFilter, expectedFilterCount) {
@@ -10,7 +7,7 @@ async function testAppliedFilters(ext, expectedFilter, expectedFilterCount) {
   let filterCount = 0;
 
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.displayDirectory = tempDir;
   MockFilePicker.returnValue = MockFilePicker.returnCancel;
   MockFilePicker.appendFiltersCallback = function (fp, val) {
@@ -108,6 +105,14 @@ add_task(async function testDownload_webp_Images() {
 
 add_task(async function testDownload_heic_Images() {
   await testAppliedFilters(".heic", Ci.nsIFilePicker.filterImages, 2);
+});
+
+add_task(async function testDownload_avif_Images() {
+  await testAppliedFilters(".avif", Ci.nsIFilePicker.filterImages, 2);
+});
+
+add_task(async function testDownload_jxl_Images() {
+  await testAppliedFilters(".jxl", Ci.nsIFilePicker.filterImages, 2);
 });
 
 add_task(async function testDownload_xml_XML() {

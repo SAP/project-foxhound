@@ -1,20 +1,8 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-
-var USERSCRIPT_PREFNAME = "extensions.webextensions.userScripts.enabled";
-var USERSCRIPT_DISABLED_ERRORMSG = `userScripts APIs are currently experimental and must be enabled with the ${USERSCRIPT_PREFNAME} preference.`;
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "userScriptsEnabled",
-  USERSCRIPT_PREFNAME,
-  false
-);
 
 // eslint-disable-next-line mozilla/reject-importGlobalProperties
 Cu.importGlobalProperties(["crypto", "TextEncoder"]);
@@ -170,10 +158,6 @@ this.userScripts = class extends ExtensionAPI {
     return {
       userScripts: {
         register(options) {
-          if (!userScriptsEnabled) {
-            throw new ExtensionError(USERSCRIPT_DISABLED_ERRORMSG);
-          }
-
           let scriptId = getUniqueId();
           return context.cloneScope.Promise.resolve().then(async () => {
             options.scriptId = scriptId;

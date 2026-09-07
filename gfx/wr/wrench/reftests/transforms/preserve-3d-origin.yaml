@@ -1,0 +1,34 @@
+# Regression test for bug 2034283 (a follow-up to bug 2021812).
+# The middle stacking context has a non-zero origin but no transform, which
+# triggers the translate-only reference frame insertion path. That reference
+# frame must inherit the preserve-3d transform-style, otherwise it becomes
+# a flattening boundary inside the preserve-3d hierarchy established by the
+# outer reference frame — and the inner rotate-x(60) + translate(0, 0, 200)
+# chain gets its z output zeroed, producing the wrong screen position.
+---
+root:
+  items:
+    -
+      type: "stacking-context"
+      transform: rotate-y(1)
+      transform-style: preserve-3d
+      items:
+        -
+          bounds: [100, 100, 0, 0]
+          type: "stacking-context"
+          transform-style: preserve-3d
+          items:
+            -
+              type: "stacking-context"
+              transform: rotate-x(60)
+              transform-style: preserve-3d
+              items:
+                -
+                  type: "stacking-context"
+                  transform: translate(0, 0, 200)
+                  transform-style: preserve-3d
+                  items:
+                    -
+                      bounds: [0, 0, 150, 150]
+                      type: rect
+                      color: green

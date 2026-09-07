@@ -4,33 +4,30 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
-import com.google.android.material.bottomsheet.BottomSheetBehavior
-import mozilla.components.concept.engine.mediasession.MediaSession
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.customannotations.SkipLeaks
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
-import org.mozilla.fenix.helpers.RetryTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.genericAssets
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
 import org.mozilla.fenix.helpers.TestHelper.closeApp
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.restartApp
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
-import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
+import org.mozilla.fenix.helpers.TestHelper.waitUntilSnackbarGone
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
-import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.notificationShade
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  *  Tests for verifying basic functionality of tabbed browsing
@@ -49,68 +46,70 @@ import org.mozilla.fenix.ui.robots.notificationShade
  *  - Shortcut context menu navigation
  */
 
-class TabbedBrowsingTest : TestSetup() {
+class TabbedBrowsingTest {
     @get:Rule(order = 0)
-    val composeTestRule =
-        AndroidComposeTestRule(
-            HomeActivityIntentTestRule.withDefaultSettingsOverrides(
-                skipOnboarding = true,
-            ),
-        ) { it.activity }
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
 
     @get:Rule(order = 1)
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    val composeTestRule =
+        AndroidComposeTestRuleV2(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
-    @Rule(order = 2)
-    @JvmField
-    val retryTestRule = RetryTestRule(3)
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
+
+    // @Rule(order = 2)
+    // @JvmField
+    // val retryTestRule = RetryTestRule(3)
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903599
     @Test
     fun closeAllTabsTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openTabDrawer(composeTestRule) {
             verifyNormalTabsList()
         }.openThreeDotMenu {
             verifyCloseAllTabsButton()
-            verifyShareAllTabsButton()
             verifySelectTabsButton()
         }.closeAllTabs {
             verifyTabCounter("0")
         }
 
         // Repeat for Private Tabs
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.togglePrivateBrowsingMode()
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openTabDrawer(composeTestRule) {
             verifyPrivateTabsList()
         }.openThreeDotMenu {
             verifyCloseAllTabsButton()
         }.closeAllTabs {
-            verifyTabCounter("0")
+            verifyTabCounter("0", isPrivateBrowsingEnabled = true)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2349580
     @Test
     fun closingTabsTest() {
-        val genericURL = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val genericURL = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericURL.url) {
         }.openTabDrawer(composeTestRule) {
             verifyExistingOpenTabs("Test_Page_1")
             closeTab()
-            verifySnackBarText("Tab closed")
+            verifySnackBarText(composeTestRule, "Tab closed")
             clickSnackbarButton(composeTestRule, "UNDO")
         }
-        browserScreen {
+        browserScreen(composeTestRule) {
             verifyTabCounter("1")
         }
     }
@@ -118,27 +117,40 @@ class TabbedBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903604
     @Test
     fun swipeToCloseTabsTest() {
-        val genericURL = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val webPages = mockWebServer.genericAssets
 
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-            waitForPageToLoad()
+        MockBrowserDataHelper.createTabItem(webPages[0].url.toString())
+        MockBrowserDataHelper.createTabItem(webPages[1].url.toString())
+
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
+            verifyExistingOpenTabs(webPages[0].title)
+            verifyExistingOpenTabs(webPages[1].title)
+            swipeTabRight(webPages[0].title)
+            verifySnackBarText("Tab closed")
+            waitForAppWindowToBeUpdated()
+            clickSnackbarButton(composeTestRule, "UNDO")
+            waitForAppWindowToBeUpdated()
+            verifyExistingOpenTabs(webPages[0].title)
+            verifyExistingOpenTabs(webPages[1].title)
+            swipeTabRight(webPages[0].title)
+            verifySnackBarText("Tab closed")
+            verifyNoExistingOpenTabs(webPages[0].title)
+            verifyExistingOpenTabs(webPages[1].title)
+            swipeTabLeft(webPages[1].title)
+            verifySnackBarText("Tab closed")
+            waitForAppWindowToBeUpdated()
+            clickSnackbarButton(composeTestRule, "UNDO")
+            waitForAppWindowToBeUpdated()
+        }
+        browserScreen(composeTestRule) {
+            verifyPageContent(webPages[1].content)
         }.openTabDrawer(composeTestRule) {
-            verifyExistingOpenTabs("Test_Page_1")
-            swipeTabRight("Test_Page_1")
+            verifyExistingOpenTabs(webPages[1].title)
+            swipeTabLeft(webPages[1].title)
             verifySnackBarText("Tab closed")
         }
-        homeScreen {
-            verifyTabCounter("0")
-        }.openNavigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-            waitForPageToLoad()
-        }.openTabDrawer(composeTestRule) {
-            verifyExistingOpenTabs("Test_Page_1")
-            swipeTabLeft("Test_Page_1")
-            verifySnackBarText("Tab closed")
-        }
-        homeScreen {
+        homeScreen(composeTestRule) {
             verifyTabCounter("0")
         }
     }
@@ -146,95 +158,52 @@ class TabbedBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903591
     @Test
     fun closingPrivateTabsTest() {
-        val genericURL = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val genericURL = mockWebServer.getGenericAsset(1)
 
-        homeScreen { }.togglePrivateBrowsingMode(switchPBModeOn = true)
-        navigationToolbar {
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode(switchPBModeOn = true)
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericURL.url) {
         }.openTabDrawer(composeTestRule) {
             verifyExistingOpenTabs("Test_Page_1")
             closeTab()
-            verifySnackBarText("Private tab closed")
+            verifySnackBarText(composeTestRule, "Private tab closed")
             clickSnackbarButton(composeTestRule, "UNDO")
         }
-        browserScreen {
-            verifyTabCounter("1")
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903606
-    @SmokeTest
-    @Test
-    fun tabMediaControlButtonTest() {
-        val audioTestPage = TestAssetHelper.getAudioPageAsset(mockWebServer)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(audioTestPage.url) {
-            mDevice.waitForIdle()
-            clickPageObject(MatcherHelper.itemWithText("Play"))
-            assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
-        }.openTabDrawer(composeTestRule) {
-            verifyTabMediaControlButtonState("Pause")
-            clickTabMediaControlButton("Pause")
-            verifyTabMediaControlButtonState("Play")
-        }.openTab(audioTestPage.title) {
-            assertPlaybackState(browserStore, MediaSession.PlaybackState.PAUSED)
+        browserScreen(composeTestRule) {
+            verifyTabCounter("1", isPrivateBrowsingEnabled = true)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903592
     @SmokeTest
     @Test
-    @SkipLeaks
     fun verifyCloseAllPrivateTabsNotificationTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.togglePrivateBrowsingMode()
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             mDevice.openNotification()
         }
 
         notificationShade {
             verifyPrivateTabsNotification()
-        }.clickClosePrivateTabsNotification {
+        }.clickClosePrivateTabsNotification(composeTestRule) {
             verifyHomeScreen()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903602
-    @Test
-    fun verifyTabTrayNotShowingStateHalfExpanded() {
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
-            verifyNoOpenTabsInNormalBrowsing()
-            // With no tabs opened the state should be STATE_COLLAPSED.
-            verifyTabsTrayBehaviorState(BottomSheetBehavior.STATE_COLLAPSED)
-            // Need to ensure the halfExpandedRatio is very small so that when in STATE_HALF_EXPANDED
-            // the tabTray will actually have a very small height (for a very short time) akin to being hidden.
-            verifyMinusculeHalfExpandedRatio()
-        }.clickTopBar {
-        }.waitForTabTrayBehaviorToIdle {
-            // Touching the topBar would normally advance the tabTray to the next state.
-            // We don't want that.
-            verifyTabsTrayBehaviorState(BottomSheetBehavior.STATE_COLLAPSED)
-        }.advanceToHalfExpandedState {
-        }.waitForTabTrayBehaviorToIdle {
-            // TabTray should not be displayed in STATE_HALF_EXPANDED.
-            // When advancing to this state it should immediately be hidden.
-            verifyTabTrayIsClosed()
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903600
     @Test
     fun verifyEmptyTabTray() {
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
             verifyNormalBrowsingButtonIsSelected()
             verifyPrivateBrowsingButtonIsSelected(false)
+            verifyTabGroupsButtonIsSelected(false)
             verifySyncedTabsButtonIsSelected(false)
             verifyNoOpenTabsInNormalBrowsing()
             verifyFab()
@@ -248,11 +217,12 @@ class TabbedBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903585
     @Test
     fun verifyEmptyPrivateTabsTrayTest() {
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
         }.toggleToPrivateTabs {
             verifyNormalBrowsingButtonIsSelected(false)
             verifyPrivateBrowsingButtonIsSelected(true)
+            verifyTabGroupsButtonIsSelected(false)
             verifySyncedTabsButtonIsSelected(false)
             verifyNoOpenTabsInPrivateBrowsing()
             verifyFab()
@@ -266,13 +236,14 @@ class TabbedBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903601
     @Test
     fun verifyTabsTrayWithOpenTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openTabDrawer(composeTestRule) {
             verifyNormalBrowsingButtonIsSelected()
             verifyPrivateBrowsingButtonIsSelected(isSelected = false)
+            verifyTabGroupsButtonIsSelected(isSelected = false)
             verifySyncedTabsButtonIsSelected(isSelected = false)
             verifyThreeDotButton()
             verifyNormalTabsList()
@@ -287,19 +258,25 @@ class TabbedBrowsingTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903587
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.TabbedBrowsingTest#verifyPrivateTabsTrayWithOpenTabTest"],
+        bug = 2043491,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyPrivateTabsTrayWithOpenTabTest() {
-        val website = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val website = mockWebServer.getGenericAsset(1)
 
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
         }.toggleToPrivateTabs {
         }.openNewTab {
         }.submitQuery(website.url.toString()) {
         }.openTabDrawer(composeTestRule) {
             verifyNormalBrowsingButtonIsSelected(false)
             verifyPrivateBrowsingButtonIsSelected(true)
+            verifyTabGroupsButtonIsSelected(false)
             verifySyncedTabsButtonIsSelected(false)
             verifyThreeDotButton()
             verifyPrivateTabsList()
@@ -313,22 +290,23 @@ class TabbedBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/927314
     @Test
     fun tabsCounterShortcutMenuCloseTabTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.getGenericAsset(2)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {
             waitForPageToLoad()
-        }.goToHomescreen(composeTestRule) {
-        }.openNavigationToolbar {
+        }.goToHomescreen(isPrivateModeEnabled = false) {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(secondWebPage.url) {
             waitForPageToLoad()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.openTabButtonShortcutsMenu {
             verifyTabButtonShortcutMenuItems()
         }.closeTabFromShortcutsMenu {
-            browserScreen {
+            browserScreen(composeTestRule) {
                 verifyTabCounter("1")
                 verifyPageContent(firstWebPage.content)
             }
@@ -337,18 +315,12 @@ class TabbedBrowsingTest : TestSetup() {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2343663
     @Test
-    @SkipLeaks(
-        reasons = [
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1962065",
-            "https://bugzilla.mozilla.org/show_bug.cgi?id=1962070",
-        ],
-    )
     fun tabsCounterShortcutMenuNewPrivateTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {}
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.openTabButtonShortcutsMenu {
         }.openNewPrivateTabFromShortcutsMenu {
             verifySearchBarPlaceholder("Search or enter address")
@@ -359,13 +331,12 @@ class TabbedBrowsingTest : TestSetup() {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2343662
     @Test
-    @SkipLeaks(reasons = ["https://bugzilla.mozilla.org/show_bug.cgi?id=1962065"])
     fun tabsCounterShortcutMenuNewTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {}
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.openTabButtonShortcutsMenu {
         }.openNewTabFromShortcutsMenu {
             verifySearchBarPlaceholder("Search or enter address")
@@ -376,31 +347,32 @@ class TabbedBrowsingTest : TestSetup() {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/927315
     @Test
-    @SkipLeaks(reasons = ["https://bugzilla.mozilla.org/show_bug.cgi?id=1962065"])
     fun privateTabsCounterShortcutMenuCloseTabTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.getGenericAsset(2)
 
-        homeScreen {}.togglePrivateBrowsingMode(switchPBModeOn = true)
-        navigationToolbar {
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode(switchPBModeOn = true)
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {
             waitForPageToLoad()
-        }.goToHomescreen(composeTestRule) {
-        }.openNavigationToolbar {
+        }.goToHomescreen(isPrivateModeEnabled = true) {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(secondWebPage.url) {
             waitForPageToLoad()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.openTabButtonShortcutsMenu {
             verifyTabButtonShortcutMenuItems()
         }.closeTabFromShortcutsMenu {
-            browserScreen {
-                verifyTabCounter("1")
+            browserScreen(composeTestRule) {
+                verifyTabCounter("1", isPrivateBrowsingEnabled = true)
                 verifyPageContent(firstWebPage.content)
             }
         }.openTabButtonShortcutsMenu {
         }.closeTabFromShortcutsMenu {
-            homeScreen {
+            homeScreen(composeTestRule) {
                 verifyIfInPrivateOrNormalMode(privateBrowsingEnabled = true)
             }
         }
@@ -408,16 +380,16 @@ class TabbedBrowsingTest : TestSetup() {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2344199
     @Test
-    @SkipLeaks(reasons = ["https://bugzilla.mozilla.org/show_bug.cgi?id=1962065"])
     fun privateTabsCounterShortcutMenuNewPrivateTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        homeScreen {}.togglePrivateBrowsingMode(switchPBModeOn = true)
-        navigationToolbar {
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode(switchPBModeOn = true)
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             waitForPageToLoad()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.openTabButtonShortcutsMenu {
         }.openNewPrivateTabFromShortcutsMenu {
             verifySearchBarPlaceholder("Search or enter address")
@@ -428,16 +400,16 @@ class TabbedBrowsingTest : TestSetup() {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2344198
     @Test
-    @SkipLeaks(reasons = ["https://bugzilla.mozilla.org/show_bug.cgi?id=1962065"])
     fun privateTabsCounterShortcutMenuNewTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        homeScreen {}.togglePrivateBrowsingMode(switchPBModeOn = true)
-        navigationToolbar {
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode(switchPBModeOn = true)
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             verifyPageContent(defaultWebPage.content)
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.openTabButtonShortcutsMenu {
         }.openNewTabFromShortcutsMenu {
             verifySearchToolbar(isDisplayed = true)
@@ -447,10 +419,15 @@ class TabbedBrowsingTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1046683
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.TabbedBrowsingTest#verifySyncedTabsWhenUserIsNotSignedInTest"],
+        bug = 2039245,
+        since = "2026-05",
+    )
     @Test
     fun verifySyncedTabsWhenUserIsNotSignedInTest() {
-        navigationToolbar {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
             verifySyncedTabsButtonIsSelected(isSelected = false)
         }.toggleToSyncedTabs {
             verifySyncedTabsButtonIsSelected(isSelected = true)
@@ -464,15 +441,14 @@ class TabbedBrowsingTest : TestSetup() {
     @SmokeTest
     @Test
     fun shareTabsFromTabsTrayTest() {
-        val firstWebsite = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebsite = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val firstWebsite = mockWebServer.getGenericAsset(1)
+        val secondWebsite = mockWebServer.getGenericAsset(2)
         val firstWebsiteTitle = firstWebsite.title
         val secondWebsiteTitle = secondWebsite.title
         val sharingApp = "Gmail"
         val sharedUrlsString = "${firstWebsite.url}\n\n${secondWebsite.url}"
 
-        homeScreen {
-        }.openNavigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstWebsite.url) {
             verifyPageContent(firstWebsite.content)
         }.openTabDrawer(composeTestRule) {
@@ -483,8 +459,13 @@ class TabbedBrowsingTest : TestSetup() {
             verifyExistingOpenTabs("Test_Page_1")
             verifyExistingOpenTabs("Test_Page_2")
         }.openThreeDotMenu {
-            verifyShareAllTabsButton()
-        }.clickShareAllTabsButton {
+            verifySelectTabsButton()
+        }.clickSelectTabsButton {
+            selectTab("Test_Page_1", 1)
+            selectTab("Test_Page_2", 2)
+        }.openThreeDotMenu {
+            verifyShareTabsButton()
+        }.clickShareTabsButton {
             verifyShareTabsOverlay(firstWebsiteTitle, secondWebsiteTitle)
             verifySharingWithSelectedApp(
                 sharingApp,
@@ -494,22 +475,22 @@ class TabbedBrowsingTest : TestSetup() {
         }
     }
 
-    @Ignore("Temporarily disabled: https://bugzilla.mozilla.org/show_bug.cgi?id=1972361")
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/526244
     @Test
     fun privateModeStaysAsDefaultAfterRestartTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-        }.goToHomescreen(composeTestRule) {
+        }.goToHomescreen {
         }.togglePrivateBrowsingMode()
 
         closeApp(composeTestRule.activityRule)
         restartApp(composeTestRule.activityRule)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
             verifyPrivateBrowsingHomeScreenItems()
-        }.openTabDrawer(composeTestRule) {
+        }.openTabDrawer {
         }.toggleToNormalTabs {
             verifyExistingOpenTabs(defaultWebPage.title)
         }
@@ -519,13 +500,13 @@ class TabbedBrowsingTest : TestSetup() {
     @SmokeTest
     @Test
     fun privateTabsDoNotPersistAfterClosingAppTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.getGenericAsset(2)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.togglePrivateBrowsingMode()
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {
         }.openTabDrawer(composeTestRule) {
         }.openNewTab {
@@ -533,64 +514,98 @@ class TabbedBrowsingTest : TestSetup() {
         }
         closeApp(composeTestRule.activityRule)
         restartApp(composeTestRule.activityRule)
-        homeScreen {
+        homeScreen(composeTestRule) {
             verifyPrivateBrowsingHomeScreenItems()
-        }.openTabDrawer(composeTestRule) {
+        }.openTabDrawer {
             verifyNoOpenTabsInPrivateBrowsing()
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3024942
     @Test
-    fun verifyTabsTrayListView() {
-        appContext.settings().gridTabView = false
+    fun verifyTabsTrayListViewTest() {
+        appContext.components.settings.gridTabView = false
+        appContext.components.settings.tabGroupsOnboardingEnabled = false
 
-        val webPages = TestAssetHelper.getGenericAssets(mockWebServer)
+        val webPages = mockWebServer.genericAssets
 
         MockBrowserDataHelper.createTabItem(webPages[0].url.toString())
         MockBrowserDataHelper.createTabItem(webPages[1].url.toString())
         MockBrowserDataHelper.createTabItem(webPages[2].url.toString())
         MockBrowserDataHelper.createTabItem(webPages[3].url.toString())
 
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
             verifyNormalTabsList()
         }.closeTabDrawer {}
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
             verifyOpenTabsOrder(title = webPages[0].title, position = 1, isListViewEnabled = true)
             verifyOpenTabsOrder(title = webPages[1].title, position = 2, isListViewEnabled = true)
             verifyOpenTabsOrder(title = webPages[2].title, position = 3, isListViewEnabled = true)
             verifyOpenTabsOrder(title = webPages[3].title, position = 4, isListViewEnabled = true)
             swipeTabLeft(title = webPages[0].title, isListViewEnabled = true)
+            verifySnackBarText("Tab closed")
+            waitUntilSnackbarGone()
+            verifyNoExistingOpenTabs(webPages[0].title)
             verifyOpenTabsOrder(title = webPages[1].title, position = 1, isListViewEnabled = true)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1126911
     @Test
-    fun verifyTabsTrayGridView() {
-        appContext.settings().gridTabView = true
+    fun verifyTabsTrayGridViewTest() {
+        appContext.components.settings.gridTabView = true
+        appContext.components.settings.tabGroupsOnboardingEnabled = false
 
-        val webPages = TestAssetHelper.getGenericAssets(mockWebServer)
+        val webPages = mockWebServer.genericAssets
 
         MockBrowserDataHelper.createTabItem(webPages[0].url.toString())
         MockBrowserDataHelper.createTabItem(webPages[1].url.toString())
         MockBrowserDataHelper.createTabItem(webPages[2].url.toString())
         MockBrowserDataHelper.createTabItem(webPages[3].url.toString())
 
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
             verifyNormalTabsList()
         }.closeTabDrawer {}
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
             verifyOpenTabsOrder(title = webPages[0].title, position = 1)
             verifyOpenTabsOrder(title = webPages[1].title, position = 2)
             verifyOpenTabsOrder(title = webPages[2].title, position = 3)
             verifyOpenTabsOrder(title = webPages[3].title, position = 4)
             swipeTabLeft(title = webPages[0].title)
             verifyOpenTabsOrder(title = webPages[1].title, position = 1)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3968085
+    @SmokeTest
+    @Test
+    fun verifyTheSearchTabsFunctionalityTest() {
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.getGenericAsset(2)
+
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(firstWebPage.url) {
+            waitForPageToLoad()
+            verifyPageContent(firstWebPage.content)
+        }.openTabDrawer(composeTestRule) {
+        }.openNewTab {
+        }.submitQuery(secondWebPage.url.toString()) {
+            waitForPageToLoad()
+            verifyPageContent(secondWebPage.content)
+        }.openTabDrawer(composeTestRule) {
+            clickSearchTabsButton()
+            searchTab("android")
+            verifyNoTabsFoundScreen()
+            clickClearTabSearchButton()
+            searchTab("localhost")
+            verifySearchedTabIsDisplayed(firstWebPage.title)
+        }.clickSearchedTab(firstWebPage.title) {
+            verifyPageContent(firstWebPage.content)
+            verifyTabCounter("2")
         }
     }
 }

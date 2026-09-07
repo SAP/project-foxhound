@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,17 +11,16 @@
 
 // Global includes
 #include <stdint.h>
+
 #include <utility>
+
 #include "MainThreadUtils.h"
 #include "js/ArrayBuffer.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/MacroForEach.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Variant.h"
 #include "mozilla/dom/PBackgroundSDBConnection.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/quota/PrincipalUtils.h"
@@ -237,6 +234,12 @@ SDBConnection::Init(nsIPrincipal* aPrincipal,
                     const nsACString& aPersistenceType) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
+
+  if (!BackgroundChild::ValidatePrincipal(aPrincipal, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Process is not allowed to access simpleDB for this principal");
+    return NS_ERROR_INVALID_ARG;
+  }
 
   UniquePtr<PrincipalInfo> principalInfo(new PrincipalInfo());
   nsresult rv = PrincipalToPrincipalInfo(aPrincipal, principalInfo.get());

@@ -5,9 +5,7 @@
 package org.mozilla.fenix.microsurvey.ui
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,11 +22,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.compose.base.button.IconButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * The header UI used for microsurvey.
@@ -52,33 +51,35 @@ fun MicrosurveyHeader(
             modifier = Modifier
                 .wrapContentWidth()
                 .weight(1f, fill = false)
-                .padding(start = 32.dp),
+                .padding(start = 32.dp, end = 16.dp),
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_firefox),
                 contentDescription = stringResource(id = R.string.microsurvey_app_icon_content_description),
                 modifier = Modifier.size(24.dp),
             )
+
             Spacer(modifier = Modifier.width(8.dp))
+
             Text(
                 text = title,
                 style = FirefoxTheme.typography.headline6,
-                color = FirefoxTheme.colors.textPrimary,
             )
         }
-        IconButton(onClick = onCloseButtonClick) {
+
+        IconButton(
+            onClick = onCloseButtonClick,
+            contentDescription = stringResource(id = R.string.microsurvey_close_button_content_description),
+        ) {
             Icon(
-                painter = painterResource(id = R.drawable.ic_close),
-                contentDescription = stringResource(id = R.string.microsurvey_close_button_content_description),
-                tint = FirefoxTheme.colors.iconPrimary,
-                modifier = Modifier.size(20.dp),
+                painter = painterResource(id = iconsR.drawable.mozac_ic_cross_20),
+                contentDescription = null,
             )
         }
     }
 }
 
-@PreviewScreenSizes
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Preview(
     name = "Large Font",
     fontScale = 2.0f,
@@ -86,9 +87,7 @@ fun MicrosurveyHeader(
 @Composable
 private fun MicrosurveyHeaderPreview() {
     FirefoxTheme {
-        Box(
-            modifier = Modifier.background(color = FirefoxTheme.colors.layer1),
-        ) {
+        Surface {
             MicrosurveyHeader(stringResource(R.string.micro_survey_survey_header_2)) {}
         }
     }

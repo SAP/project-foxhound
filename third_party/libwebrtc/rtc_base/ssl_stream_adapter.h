@@ -16,14 +16,20 @@
 
 #include <memory>
 #include <optional>
+#include <set>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/base/macros.h"
+#include "absl/base/nullability.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "api/field_trials_view.h"
 #include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/ssl_certificate.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/stream.h"
@@ -119,14 +125,22 @@ enum class SSLHandshakeError { UNKNOWN, INCOMPATIBLE_CIPHERSUITE, MAX_VALUE };
 
 class SSLStreamAdapter : public StreamInterface {
  public:
-  // Instantiate an SSLStreamAdapter wrapping the given stream,
-  // (using the selected implementation for the platform).
-  // Caller is responsible for freeing the returned object.
+  ABSL_DEPRECATE_AND_INLINE()
   static std::unique_ptr<SSLStreamAdapter> Create(
       std::unique_ptr<StreamInterface> stream,
-      absl::AnyInvocable<void(webrtc::SSLHandshakeError)> handshake_error =
-          nullptr,
-      const FieldTrialsView* field_trials = nullptr);
+      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error,
+      std::nullptr_t /*field_trials*/) {
+    return Create(std::move(stream), std::move(handshake_error));
+  }
+
+  static absl_nonnull std::unique_ptr<SSLStreamAdapter> Create(
+      std::unique_ptr<StreamInterface> stream,
+      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error = nullptr);
+
+  static absl_nonnull std::unique_ptr<SSLStreamAdapter> Create(
+      const Environment& env,
+      std::unique_ptr<StreamInterface> stream,
+      absl::AnyInvocable<void(SSLHandshakeError)> handshake_error);
 
   SSLStreamAdapter() = default;
   ~SSLStreamAdapter() override = default;
@@ -134,8 +148,8 @@ class SSLStreamAdapter : public StreamInterface {
   // Specify our SSL identity: key and certificate. SSLStream takes ownership
   // of the SSLIdentity object and will free it when appropriate. Should be
   // called no more than once on a given SSLStream instance.
-  virtual void SetIdentity(std::unique_ptr<rtc::SSLIdentity> identity) = 0;
-  virtual rtc::SSLIdentity* GetIdentityForTesting() const = 0;
+  virtual void SetIdentity(std::unique_ptr<SSLIdentity> identity) = 0;
+  virtual SSLIdentity* GetIdentityForTesting() const = 0;
 
   // Call this to indicate that we are to play the server role (or client role,
   // if the default argument is replaced by SSL_CLIENT).
@@ -158,6 +172,10 @@ class SSLStreamAdapter : public StreamInterface {
   // increased.
   // This should only be called before StartSSL().
   virtual void SetInitialRetransmissionTimeout(int timeout_ms) = 0;
+  virtual void UpdateRetransmissionTimeout(int timeout_ms) {}
+
+  // Set MTU to be used for next handshake flight.
+  virtual void SetMTU(int mtu) = 0;
 
   // StartSSL starts negotiation with a peer, whose certificate is verified
   // using the certificate digest. Generally, SetIdentity() and possibly
@@ -186,9 +204,9 @@ class SSLStreamAdapter : public StreamInterface {
   // Returns SSLPeerCertificateDigestError::NONE if successful.
   virtual SSLPeerCertificateDigestError SetPeerCertificateDigest(
       absl::string_view digest_alg,
-      rtc::ArrayView<const uint8_t> digest_val) = 0;
+      std::span<const uint8_t> digest_val) = 0;
   [[deprecated(
-      "Use SetPeerCertificateDigest with ArrayView instead")]] virtual bool
+      "Use SetPeerCertificateDigest with std::span instead")]] virtual bool
   SetPeerCertificateDigest(absl::string_view digest_alg,
                            const unsigned char* digest_val,
                            size_t digest_len,
@@ -196,7 +214,7 @@ class SSLStreamAdapter : public StreamInterface {
 
   // Retrieves the peer's certificate chain including leaf certificate, if a
   // connection has been established.
-  virtual std::unique_ptr<rtc::SSLCertChain> GetPeerSSLCertChain() const = 0;
+  virtual std::unique_ptr<SSLCertChain> GetPeerSSLCertChain() const = 0;
 
   // Retrieves the IANA registration id of the cipher suite used for the
   // connection (e.g. 0x2F for "TLS_RSA_WITH_AES_128_CBC_SHA").
@@ -214,8 +232,19 @@ class SSLStreamAdapter : public StreamInterface {
   virtual bool GetSslVersionBytes(int* version) const = 0;
 
   // Key Exporter interface from RFC 5705
-  virtual bool ExportSrtpKeyingMaterial(
-      rtc::ZeroOnFreeBuffer<uint8_t>& keying_material) = 0;
+  // The buffer must be preinitialized with a `size()` that will fit exactly
+  // the keying material.
+  [[deprecated("Use AppendSrtpKeyingMaterial")]] virtual bool
+  ExportSrtpKeyingMaterial(ZeroOnFreeBuffer<uint8_t>& keying_material) {
+    RTC_DCHECK_NOTREACHED() << "Use AppendSrtpKeyingMaterial";
+    return false;
+  }
+
+  // Extract the keys and append them to the buffer. The function will compute
+  // the amount of keying material needed and append this many bytes.
+  // The buffer size will grow by the number of bytes appended.
+  virtual bool AppendSrtpKeyingMaterial(
+      ZeroOnFreeBuffer<uint8_t>& keying_material) = 0;
 
   // Returns the signature algorithm or 0 if not applicable.
   virtual uint16_t GetPeerSignatureAlgorithm() const = 0;
@@ -238,9 +267,15 @@ class SSLStreamAdapter : public StreamInterface {
 
   // Returns true iff the supplied cipher is deemed to be strong.
   // TODO(torbjorng): Consider removing the KeyType argument.
-  static bool IsAcceptableCipher(int cipher, rtc::KeyType key_type);
-  static bool IsAcceptableCipher(absl::string_view cipher,
-                                 rtc::KeyType key_type);
+  static bool IsAcceptableCipher(int cipher, KeyType key_type);
+  static bool IsAcceptableCipher(absl::string_view cipher, KeyType key_type);
+
+  static std::set<uint16_t> GetSupportedEphemeralKeyExchangeCipherGroups()
+      { return {}; }
+  static std::optional<std::string> GetEphemeralKeyExchangeCipherGroupName(
+      uint16_t group_id) { return std::nullopt; }
+  static std::vector<uint16_t> GetDefaultEphemeralKeyExchangeCipherGroups(
+      const FieldTrialsView* field_trials) { return {}; }
 
   ////////////////////////////////////////////////////////////////////////////
   // Testing only member functions
@@ -268,6 +303,14 @@ class SSLStreamAdapter : public StreamInterface {
   // Used for testing (and maybe put into stats?).
   virtual int GetRetransmissionCount() const = 0;
 
+  // Set cipher group ids to use during DTLS handshake to establish ephemeral
+  // key, see CryptoOptions::EphemeralKeyExchangeCipherGroups.
+  virtual bool SetSslGroupIds(const std::vector<uint16_t>& group_ids) = 0;
+
+  // Return the the ID of the group used by the adapters most recently
+  // completed handshake, or 0 if not applicable (e.g. before the handshake).
+  virtual uint16_t GetSslGroupId() const = 0;
+
  private:
   // If true (default), the client is required to provide a certificate during
   // handshake. If no certificate is given, handshake fails. This applies to
@@ -277,48 +320,5 @@ class SSLStreamAdapter : public StreamInterface {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::GetSrtpKeyAndSaltLengths;
-using ::webrtc::IsGcmCryptoSuite;
-using ::webrtc::kCsAeadAes128Gcm;
-using ::webrtc::kCsAeadAes256Gcm;
-using ::webrtc::kCsAesCm128HmacSha1_32;
-using ::webrtc::kCsAesCm128HmacSha1_80;
-using ::webrtc::kDtls10VersionBytes;
-using ::webrtc::kDtls12VersionBytes;
-using ::webrtc::kDtls13VersionBytes;
-using ::webrtc::kSrtpAeadAes128Gcm;
-using ::webrtc::kSrtpAeadAes256Gcm;
-using ::webrtc::kSrtpAes128CmSha1_32;
-using ::webrtc::kSrtpAes128CmSha1_80;
-using ::webrtc::kSrtpCryptoSuiteMaxValue;
-using ::webrtc::kSrtpInvalidCryptoSuite;
-using ::webrtc::kSslCipherSuiteMaxValue;
-using ::webrtc::kSslSignatureAlgorithmMaxValue;
-using ::webrtc::kSslSignatureAlgorithmUnknown;
-using ::webrtc::kTlsNullWithNullNull;
-using ::webrtc::SrtpCryptoSuiteToName;
-using ::webrtc::SSE_MSG_TRUNC;
-using ::webrtc::SSL_CLIENT;
-using ::webrtc::SSL_MODE_DTLS;
-using ::webrtc::SSL_MODE_TLS;
-using ::webrtc::SSL_PROTOCOL_DTLS_10;
-using ::webrtc::SSL_PROTOCOL_DTLS_12;
-using ::webrtc::SSL_PROTOCOL_DTLS_13;
-using ::webrtc::SSL_PROTOCOL_NOT_GIVEN;
-using ::webrtc::SSL_PROTOCOL_TLS_10;
-using ::webrtc::SSL_PROTOCOL_TLS_11;
-using ::webrtc::SSL_PROTOCOL_TLS_12;
-using ::webrtc::SSL_PROTOCOL_TLS_13;
-using ::webrtc::SSL_SERVER;
-using ::webrtc::SSLHandshakeError;
-using ::webrtc::SSLMode;
-using ::webrtc::SSLPeerCertificateDigestError;
-using ::webrtc::SSLProtocolVersion;
-using ::webrtc::SSLRole;
-using ::webrtc::SSLStreamAdapter;
-}  // namespace rtc
 
 #endif  // RTC_BASE_SSL_STREAM_ADAPTER_H_

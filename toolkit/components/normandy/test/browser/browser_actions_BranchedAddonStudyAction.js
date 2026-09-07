@@ -6,9 +6,6 @@ const { BaseAction } = ChromeUtils.importESModule(
 const { BranchedAddonStudyAction } = ChromeUtils.importESModule(
   "resource://normandy/actions/BranchedAddonStudyAction.sys.mjs"
 );
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 
 const { NormandyTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NormandyTestUtils.sys.mjs"

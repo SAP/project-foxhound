@@ -1,0 +1,22 @@
+{
+  "outline": {
+    "@base": {
+      "value": "{focus.outline.width} solid {focus.outline.color}"
+    },
+    "color": {
+      "value": {
+        "default": "{color.accent.primary.@base}",
+        "forcedColors": "{text.color.@base}"
+      }
+    },
+    "inset": {
+      "value": "calc(-1 * {focus.outline.width})"
+    },
+    "offset": {
+      "value": "2px"
+    },
+    "width": {
+      "value": "2px"
+    }
+  }
+}

@@ -17,35 +17,122 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    var gQueue = null;
 
-    // gA11yEventDumpID = "eventdump"; // debug stuff
-    // gA11yEventDumpToConsole = true;
-
-    function getOnclickSeq(aID) {
-      return [
-        new caretMoveChecker(0, true, aID),
-        new unexpectedInvokerChecker(EVENT_TEXT_SELECTION_CHANGED, aID),
-      ];
-    }
-
-    function doTests() {
+    async function doTests() {
       // test caret move events and caret offsets
-      gQueue = new eventQueue();
 
-      gQueue.push(new synthClick("c1_p1", getOnclickSeq("c1_p1")));
-      gQueue.push(new synthDownKey("c1", new textSelectionChecker("c1", 0, 1, "c1_p1", 0, "c1_p2", 0), { shiftKey: true }));
-      gQueue.push(new synthDownKey("c1", new textSelectionChecker("c1", 0, 2, "c1_p1", 0, "c1_p2", 9), { shiftKey: true }));
+      // synthClick c1_p1: expect caret move, no text selection change
+      {
+        let p = waitForEvents({
+          expected: [[EVENT_TEXT_CARET_MOVED, "c1_p1"]],
+          unexpected: [[EVENT_TEXT_SELECTION_CHANGED, "c1_p1"]],
+        }, null, false, window);
+        getNode("c1_p1").scrollIntoView(true);
+        synthesizeMouse(getNode("c1_p1"), 1, 1, {});
+        let [caretEvt] = await p;
+        caretEvt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(caretEvt.caretOffset, 0, "Wrong caret offset for c1_p1");
+        is(caretEvt.isSelectionCollapsed, true, "Wrong collapsed for c1_p1");
+      }
 
-      gQueue.push(new synthClick("ta1", getOnclickSeq("ta1")));
-      gQueue.push(new synthRightKey("ta1",
-                                    new textSelectionChecker("ta1", 0, 1, "ta1", 0, "ta1", 1),
-                                    { shiftKey: true }));
-      gQueue.push(new synthLeftKey("ta1",
-                                    [new textSelectionChecker("ta1", 0, 0, "ta1", 0, "ta1", 0),
-                                     new caretMoveChecker(0, true, "ta1")]));
+      // shift+down in c1: text selection change event
+      {
+        let p = waitForEvent(EVENT_TEXT_SELECTION_CHANGED, "c1");
+        synthesizeKey("KEY_ArrowDown", { shiftKey: true });
+        let selEvt = await p;
+        testTextGetSelection("c1", 0, 1, 0);
+        selEvt.QueryInterface(nsIAccessibleTextSelectionChangeEvent);
+        let selectionRanges = selEvt.selectionRanges;
+        let range = selectionRanges.queryElementAt(0, nsIAccessibleTextRange);
+        is(
+          range.startContainer,
+          getAccessible("c1_p1"),
+          "correct range start container"
+        );
+        is(range.startOffset, 0, "correct range start offset");
+        is(range.endOffset, 0, "correct range end offset");
+        is(
+          range.endContainer,
+          getAccessible("c1_p2"),
+          "correct range end container"
+        );
+      }
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      // shift+down in c1 again
+      {
+        let p = waitForEvent(EVENT_TEXT_SELECTION_CHANGED, "c1");
+        synthesizeKey("KEY_ArrowDown", { shiftKey: true });
+        let selEvt = await p;
+        testTextGetSelection("c1", 0, 2, 0);
+        selEvt.QueryInterface(nsIAccessibleTextSelectionChangeEvent);
+        let selectionRanges = selEvt.selectionRanges;
+        let range = selectionRanges.queryElementAt(0, nsIAccessibleTextRange);
+        is(
+          range.startContainer,
+          getAccessible("c1_p1"),
+          "correct range start container"
+        );
+        is(range.startOffset, 0, "correct range start offset");
+        is(range.endOffset, 9, "correct range end offset");
+        is(
+          range.endContainer,
+          getAccessible("c1_p2"),
+          "correct range end container"
+        );
+      }
+
+      // synthClick ta1: expect caret move, no text selection change
+      {
+        let p = waitForEvents({
+          expected: [[EVENT_TEXT_CARET_MOVED, "ta1"]],
+          unexpected: [[EVENT_TEXT_SELECTION_CHANGED, "ta1"]],
+        }, null, false, window);
+        getNode("ta1").scrollIntoView(true);
+        synthesizeMouse(getNode("ta1"), 1, 1, {});
+        let [caretEvt] = await p;
+        caretEvt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(caretEvt.caretOffset, 0, "Wrong caret offset for ta1");
+        is(caretEvt.isSelectionCollapsed, true, "Wrong collapsed for ta1");
+      }
+
+      // shift+right in ta1
+      {
+        let p = waitForEvent(EVENT_TEXT_SELECTION_CHANGED, "ta1");
+        synthesizeKey("KEY_ArrowRight", { shiftKey: true });
+        let selEvt = await p;
+        testTextGetSelection("ta1", 0, 1, 0);
+        selEvt.QueryInterface(nsIAccessibleTextSelectionChangeEvent);
+        let selectionRanges = selEvt.selectionRanges;
+        let range = selectionRanges.queryElementAt(0, nsIAccessibleTextRange);
+        is(
+          range.startContainer,
+          getAccessible("ta1"),
+          "correct range start container"
+        );
+        is(range.startOffset, 0, "correct range start offset");
+        is(range.endOffset, 1, "correct range end offset");
+        is(
+          range.endContainer,
+          getAccessible("ta1"),
+          "correct range end container"
+        );
+      }
+
+      // shift+left in ta1: selection collapses, expect text selection change and caret move
+      {
+        let p = waitForEvents([
+          [EVENT_TEXT_SELECTION_CHANGED, "ta1"],
+          [EVENT_TEXT_CARET_MOVED, "ta1"],
+        ]);
+        synthesizeKey("KEY_ArrowLeft");
+        let [, caretEvt] = await p;
+        ok(true, "Collapsed selection triggered text selection change event.");
+        caretEvt.QueryInterface(nsIAccessibleCaretMoveEvent);
+        is(caretEvt.caretOffset, 0, "Wrong caret offset for ta1");
+        is(caretEvt.isSelectionCollapsed, true, "Wrong collapsed for ta1");
+      }
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

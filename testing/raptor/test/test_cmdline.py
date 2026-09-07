@@ -36,6 +36,7 @@ def test_verify_options(filedir):
         benchmark_branch=None,
         post_startup_delay=None,
         power_test=False,
+        simpleperf=False,
     )
     parser = ArgumentParser()
 
@@ -66,6 +67,7 @@ def test_verify_options(filedir):
         benchmark_branch=None,
         post_startup_delay=None,
         power_test=False,
+        simpleperf=False,
     )
     verify_options(parser, args)  # assert no exception
 
@@ -90,6 +92,7 @@ def test_verify_options(filedir):
         benchmark_branch=None,
         post_startup_delay=None,
         power_test=False,
+        simpleperf=False,
     )
     verify_options(parser, args)  # assert no exception
 
@@ -114,6 +117,7 @@ def test_verify_options(filedir):
         benchmark_branch=None,
         post_startup_delay=None,
         power_test=False,
+        simpleperf=False,
     )
     verify_options(parser, args)  # assert no exception
 
@@ -138,6 +142,7 @@ def test_verify_options(filedir):
         benchmark_branch=None,
         post_startup_delay=None,
         power_test=False,
+        simpleperf=False,
     )
     verify_options(parser, args)  # assert no exception
 
@@ -162,6 +167,7 @@ def test_verify_options(filedir):
         benchmark_branch=None,
         post_startup_delay=None,
         power_test=False,
+        simpleperf=False,
     )
     parser = ArgumentParser()
 
@@ -271,6 +277,7 @@ def test_perftest_setup_with_args(ConcretePerftest, args, settings_to_check):
                 "benchmark_branch": None,
                 "post_startup_delay": None,
                 "power_test": True,
+                "simpleperf": False,
             },
             SystemExit,
         ],

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width; initial-scale=1.0">
+<title>Test that preventDefault() in a static (eApzAwareListeners) touchmove listener suppresses scrolling</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<div style="height: 500vh;"></div>
+<script>
+async function test() {
+  // A non-passive touchmove listener is registered statically. The initial
+  // hit-test result has eApzAwareListeners (no irregular area). APZ must
+  // wait for a content response on the first touchmove so preventDefault()
+  // is honored.
+  document.addEventListener("touchmove", e => {
+    e.preventDefault();
+  }, { passive: false });
+
+  await promiseApzFlushedRepaints();
+
+  await synthesizeNativeTouch(window, 100, 200,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 150,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await synthesizeNativeTouch(window, 100, 100,
+                              SpecialPowers.DOMWindowUtils.TOUCH_REMOVE);
+
+  await promiseApzFlushedRepaints();
+
+  is(window.scrollY, 0, "Should not have scrolled");
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</html>

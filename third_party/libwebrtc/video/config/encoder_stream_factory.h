@@ -10,11 +10,12 @@
 #ifndef VIDEO_CONFIG_ENCODER_STREAM_FACTORY_H_
 #define VIDEO_CONFIG_ENCODER_STREAM_FACTORY_H_
 
-#include <string>
+#include <optional>
 #include <vector>
 
 #include "api/field_trials_view.h"
 #include "api/units/data_rate.h"
+#include "api/video/resolution.h"
 #include "api/video_codecs/video_encoder.h"
 #include "call/adaptation/video_source_restrictions.h"
 #include "video/config/video_encoder_config.h"
@@ -22,10 +23,10 @@
 namespace webrtc {
 
 class EncoderStreamFactory
-    : public webrtc::VideoEncoderConfig::VideoStreamFactoryInterface {
+    : public VideoEncoderConfig::VideoStreamFactoryInterface {
  public:
   EncoderStreamFactory(
-      const webrtc::VideoEncoder::EncoderInfo& encoder_info,
+      const VideoEncoder::EncoderInfo& encoder_info,
       std::optional<VideoSourceRestrictions> restrictions = std::nullopt);
 
   std::vector<VideoStream> CreateEncoderStreams(
@@ -65,10 +66,5 @@ class EncoderStreamFactory
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace cricket {
-using ::webrtc::EncoderStreamFactory;
-}  // namespace cricket
 
 #endif  // VIDEO_CONFIG_ENCODER_STREAM_FACTORY_H_

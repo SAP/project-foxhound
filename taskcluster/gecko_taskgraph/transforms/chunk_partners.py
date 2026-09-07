@@ -5,7 +5,6 @@
 Chunk the partner repack tasks by subpartner and locale
 """
 
-
 import copy
 
 from mozbuild.chunkify import chunkify

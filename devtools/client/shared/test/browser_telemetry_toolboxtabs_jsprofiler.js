@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { ProfilerTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ProfilerTestUtils.sys.mjs"
+);
+
 const TEST_URI =
   "data:text/html;charset=utf-8," +
   "<p>browser_telemetry_toolboxtabs_jsprofiler.js</p>";
@@ -11,9 +15,11 @@ const TEST_URI =
 // opened we make use of setTimeout() to create tool active times.
 const TOOL_DELAY = 200;
 
+add_setup(ProfilerTestUtils.assertProfilerInactive);
+
 add_task(async function () {
   await addTab(TEST_URI);
-  startTelemetry();
+  Services.fog.testResetFOG();
 
   await openAndCloseToolbox(2, TOOL_DELAY, "performance");
   checkResults();
@@ -22,18 +28,6 @@ add_task(async function () {
 });
 
 function checkResults() {
-  // For help generating these tests use generateTelemetryTests("DEVTOOLS_JSPROFILER")
-  // here.
-  checkTelemetry(
-    "DEVTOOLS_JSPROFILER_OPENED_COUNT",
-    "",
-    { 0: 2, 1: 0 },
-    "array"
-  );
-  checkTelemetry(
-    "DEVTOOLS_JSPROFILER_TIME_ACTIVE_SECONDS",
-    "",
-    null,
-    "hasentries"
-  );
+  is(2, Glean.devtools.jsprofilerOpenedCount.testGetValue());
+  Assert.greater(Glean.devtools.jsprofilerTimeActive.testGetValue().sum, 0);
 }

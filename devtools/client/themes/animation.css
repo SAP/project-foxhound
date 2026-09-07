@@ -5,6 +5,7 @@
 /* Animation-inspector specific theme variables */
 
 :root {
+  --animation-delay-color: light-dark(#cccccc, #757873);
   --animation-item-hover-color: rgba(215, 215, 219, 0.4);
   --animation-item-selected-color: rgba(215, 215, 219, 0.9);
   --cssanimation-color: var(--purple-50);
@@ -288,7 +289,7 @@ select.playback-rate-selector.devtools-button:not(:empty, :disabled, .checked):h
 .animation-negative-delay-path path,
 .animation-negative-end-delay-path path {
   fill: none;
-  stroke: var(--theme-graphs-grey);
+  stroke: var(--animation-delay-color);
   stroke-dasharray: 2px 2px;
   transform: scale(1, -1);
   vector-effect: non-scaling-stroke;
@@ -296,7 +297,7 @@ select.playback-rate-selector.devtools-button:not(:empty, :disabled, .checked):h
 
 .animation-delay-sign,
 .animation-end-delay-sign {
-  background-color: var(--theme-graphs-grey);
+  background-color: var(--animation-delay-color);
   height: 3px;
   position: absolute;
   bottom: 2px;
@@ -371,11 +372,11 @@ select.playback-rate-selector.devtools-button:not(:empty, :disabled, .checked):h
 
 .animation-name text {
   dominant-baseline: middle;
-  fill: var(--theme-focus-outline-color);
+  fill: var(--theme-body-color);
   paint-order: stroke;
   stroke: var(--theme-body-background);
   stroke-linejoin: round;
-  stroke-opacity: 0.5;
+  stroke-opacity: 0.7;
   stroke-width: 4;
   text-anchor: end;
 }

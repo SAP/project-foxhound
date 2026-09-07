@@ -13,7 +13,11 @@
 #include <libproc.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <functional>
+#include <iterator>
+#include <memory>
 #include <string>
 
 #include "absl/strings/match.h"
@@ -67,8 +71,7 @@ class FullScreenMacApplicationHandler : public FullScreenApplicationHandler {
         ignore_original_window_(ignore_original_window) {}
 
  protected:
-  using CachePredicate =
-      rtc::FunctionView<bool(const DesktopCapturer::Source&)>;
+  using CachePredicate = FunctionView<bool(const DesktopCapturer::Source&)>;
 
   void InvalidateCacheIfNeeded(const DesktopCapturer::SourceList& source_list,
                                int64_t timestamp,

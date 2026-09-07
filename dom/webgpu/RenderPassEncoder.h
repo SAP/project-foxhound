@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +5,16 @@
 #ifndef GPU_RenderPassEncoder_H_
 #define GPU_RenderPassEncoder_H_
 
-#include "mozilla/dom/TypedArray.h"
 #include "CanvasContext.h"
 #include "ObjectModel.h"
+#include "mozilla/dom/TypedArray.h"
 
 namespace mozilla {
 class ErrorResult;
 
 namespace dom {
 class DoubleSequenceOrGPUColorDict;
+enum class GPUIndexFormat : uint8_t;
 struct GPURenderPassDescriptor;
 template <typename T>
 class Sequence;
@@ -39,18 +39,18 @@ struct ffiWGPURenderPassDeleter {
   void operator()(ffi::WGPURecordedRenderPass*);
 };
 
-class RenderPassEncoder final : public ObjectBase,
+class RenderPassEncoder final : public nsWrapperCache,
+                                public ObjectBase,
                                 public ChildOf<CommandEncoder> {
  public:
   GPU_DECL_CYCLE_COLLECTION(RenderPassEncoder)
   GPU_DECL_JS_WRAP(RenderPassEncoder)
 
-  RenderPassEncoder(CommandEncoder* const aParent,
+  RenderPassEncoder(CommandEncoder* const aParent, RawId aId,
                     const dom::GPURenderPassDescriptor& aDesc);
 
  protected:
   virtual ~RenderPassEncoder();
-  void Cleanup();
 
   std::unique_ptr<ffi::WGPURecordedRenderPass, ffiWGPURenderPassDeleter> mPass;
   // keep all the used objects alive while the pass is recorded
@@ -66,9 +66,11 @@ class RenderPassEncoder final : public ObjectBase,
 
   // programmable pass encoder
  private:
+  bool mValid = true;
+
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const uint32_t* aDynamicOffsets,
-                    uint64_t aDynamicOffsetsLength);
+                    size_t aDynamicOffsetsLength);
 
  public:
   void Invalidate() { mValid = false; }
@@ -85,8 +87,8 @@ class RenderPassEncoder final : public ObjectBase,
   void SetIndexBuffer(const Buffer& aBuffer,
                       const dom::GPUIndexFormat& aIndexFormat, uint64_t aOffset,
                       const dom::Optional<uint64_t>& aSize);
-  void SetVertexBuffer(uint32_t aSlot, const Buffer& aBuffer, uint64_t aOffset,
-                       const dom::Optional<uint64_t>& aSize);
+  void SetVertexBuffer(uint32_t aSlot, const Buffer* const aBuffer,
+                       uint64_t aOffset, const dom::Optional<uint64_t>& aSize);
   void Draw(uint32_t aVertexCount, uint32_t aInstanceCount,
             uint32_t aFirstVertex, uint32_t aFirstInstance);
   void DrawIndexed(uint32_t aIndexCount, uint32_t aInstanceCount,

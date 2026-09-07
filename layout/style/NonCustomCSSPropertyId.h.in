@@ -1,0 +1,85 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* enum types for CSS properties and their values */
+
+#ifndef NonCustomCSSPropertyId_h___
+#define NonCustomCSSPropertyId_h___
+
+#include <nsHashKeys.h>
+
+/*
+   Declare the enum list using the magic of preprocessing
+   enum values are "eCSSProperty_foo" (where foo is the property)
+
+   To change the list of properties, see ServoCSSPropList.h
+
+ */
+enum NonCustomCSSPropertyId : uint16_t {
+$property_ids
+
+  // Some of the values below could probably overlap with each other
+  // if we had a need for them to do so.
+
+  // Extra value to represent custom properties (--*).
+  eCSSPropertyExtra_variable,
+
+  eCSSProperty_UNKNOWN,
+
+  // Only needed for IPC serialization helper, should never be used in code.
+  eCSSProperty_INVALID,
+};
+
+// MOZ_DBG support is defined in nsCSSProps.h since it depends on
+// nsCSSProps::GetStringValue
+
+static_assert(static_cast<uint64_t>($longhand_first) == 0);
+
+const NonCustomCSSPropertyId
+  eCSSProperty_FIRST = NonCustomCSSPropertyId(0);
+const NonCustomCSSPropertyId
+  eCSSProperty_COUNT_no_shorthands = $longhand_count;
+const NonCustomCSSPropertyId
+  eCSSProperty_COUNT = $shorthand_count;
+const NonCustomCSSPropertyId
+  eCSSProperty_COUNT_with_aliases = eCSSPropertyExtra_variable;
+
+namespace mozilla {
+
+template<>
+inline PLDHashNumber
+Hash<NonCustomCSSPropertyId>(const NonCustomCSSPropertyId& aValue)
+{
+  return uint32_t(aValue);
+}
+
+
+// The "descriptors" that can appear in a @font-face rule.
+// They have the syntax of properties but different value rules.
+enum class FontFaceDescriptorId : uint8_t {
+$font_face_descriptors
+};
+
+constexpr size_t kFontFaceDescriptorCount = $font_face_descriptor_count;
+
+// The "descriptors" that can appear in a @counter-style rule.
+// They have the syntax of properties but different value rules.
+enum class CounterStyleDescriptorId : uint8_t {
+$counter_style_descriptors
+};
+
+constexpr size_t kCounterStyleDescriptorCount = $counter_style_descriptor_count;
+
+// FIXME: The underlying type of this enum should be uint8_t, but we can't do
+// that because of https://bugs.llvm.org/show_bug.cgi?id=44228.
+enum class CountedUnknownProperty : uint32_t {
+#define COUNTED_UNKNOWN_PROPERTY(name_, method_) method_,
+#include "mozilla/CountedUnknownProperties.h"
+#undef COUNTED_UNKNOWN_PROPERTY
+  Count,
+};
+
+} // namespace mozilla
+
+#endif /* NonCustomCSSPropertyId_h___ */

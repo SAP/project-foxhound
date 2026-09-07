@@ -1,0 +1,19 @@
+{
+  "label": "MSTP+MSTG on window shim test-page",
+  "bugs": {
+    "1994562": {
+      "issue": "broken-meetings",
+      "matches": ["https://jan-ivar.github.io/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "only_channels": ["nightly"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["bug1994562-shim-mstp-mstg-on-window.js"]
+      }
+    }
+  ]
+}

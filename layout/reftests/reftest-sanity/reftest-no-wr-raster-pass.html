@@ -1,0 +1,13 @@
+<!DOCTYPE HTML>
+<html class="reftest-wait reftest-no-wr-raster">
+<body style="background-color: green">
+<div style="width:100px; height:100px; background: blue;"></div>
+<script>
+function doTest() {
+  // Don't change anything that would trigger rasterization
+  document.documentElement.classList.remove("reftest-wait");
+}
+document.addEventListener("MozReftestInvalidate", doTest);
+</script>
+</body>
+</html>

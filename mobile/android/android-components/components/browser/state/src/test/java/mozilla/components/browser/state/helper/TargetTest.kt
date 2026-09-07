@@ -9,7 +9,6 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createCustomTab
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -69,7 +68,7 @@ class TargetTest {
 
         store.dispatch(
             TabListAction.SelectTabAction("example"),
-        ).joinBlocking()
+        )
 
         assertEquals(
             "https://www.example.org",
@@ -78,7 +77,7 @@ class TargetTest {
 
         store.dispatch(
             TabListAction.RemoveAllTabsAction(),
-        ).joinBlocking()
+        )
 
         assertNull(
             Target.SelectedTab.lookupIn(store),

@@ -30,7 +30,7 @@ pub extern "C" fn certs_are_available() -> bool {
 }
 
 #[no_mangle]
-pub extern "C" fn decompress(
+pub unsafe extern "C" fn decompress(
     input: *const u8,
     input_len: usize,
     output: *mut u8,

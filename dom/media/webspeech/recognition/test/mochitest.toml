@@ -20,7 +20,9 @@ support-files = [
 tags = "capturestream"
 
 ["test_nested_eventloop.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_online_400_response.html"]
 
@@ -41,4 +43,6 @@ skip-if = ["os == 'android'"]
 ["test_success_without_recognition_service.html"]
 
 ["test_timeout.html"]
-skip-if = ["os == 'linux'"] # Bug 1307991 - low frequency on try pushes
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1307991 - low frequency on try pushes
+]

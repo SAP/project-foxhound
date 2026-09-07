@@ -1,0 +1,14 @@
+import pytest
+
+URL = "https://www.languageacademy.com.au/"
+
+UNSUPPORTED_TEXT = "BROWSER NOT SUPPORTED"
+APP_RECOMMENDATION_CSS = "#staticBackdrop"
+
+
+@pytest.mark.asyncio
+@pytest.mark.without_interventions
+async def test_regression(client):
+    await client.navigate(URL)
+    client.hide_elements(APP_RECOMMENDATION_CSS)
+    assert not client.find_text(UNSUPPORTED_TEXT, is_displayed=True)

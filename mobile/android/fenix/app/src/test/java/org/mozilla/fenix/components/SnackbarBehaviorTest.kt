@@ -59,16 +59,6 @@ class SnackbarBehaviorTest {
     }
 
     @Test
-    fun `GIVEN a toolbar layout shown at top WHEN the snackbar is shown THEN don't anchor it`() {
-        dependency.id = R.id.toolbarLayout
-        val behavior = SnackbarBehavior<ViewGroup>(testContext, ToolbarPosition.TOP, false)
-
-        behavior.layoutDependsOn(parent, snackbarContainer, dependency)
-
-        assertSnackbarIsPlacedAtTheBottomOfTheScreen()
-    }
-
-    @Test
     fun `GIVEN a bottom toolbar is shown WHEN the snackbar is shown THEN place the snackbar above the toolbar`() {
         dependency.id = R.id.toolbar
         val behavior = SnackbarBehavior<ViewGroup>(testContext, ToolbarPosition.BOTTOM, false)

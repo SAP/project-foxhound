@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-promise-try) skip-if(!Promise.try||!xulRuntime.shell)
+// |reftest| skip-if(!xulRuntime.shell)
 {
   // Check the value of `this` in the callback is undefined.
   let this_ = {};

@@ -1,0 +1,18 @@
+{
+  "label": "circuitdesremparts.com",
+  "bugs": {
+    "2009380": {
+      "issue": "page-fails-to-load",
+      "matches": [
+        "*://www.circuitdesremparts.com/prochaine-edition/billetterie/*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "skip_if": ["relaxed_name_validation_rules"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

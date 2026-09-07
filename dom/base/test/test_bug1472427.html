@@ -11,7 +11,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1472427
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 1472427 **/
+  /** Test for Bug 1472427 */
 
   SimpleTest.waitForExplicitFinish();
   var image100x100 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAAnUlEQVR42u3RAQ0AAAQAMLJqqCA1zP4Kz+qe4IwUIgQhQhAiBCFCECJEiBCECEGIEIQIQYgQhCBECEKEIEQIQoQgBCFCECIEIUIQIgQhCBGCECEIEYIQIQhBiBCECEGIEIQIQQhChCBECEKEIEQIQhAiBCFCECIEIUIQghAhCBGCECEIEYIQhAhBiBCECEGIEIQIESIEIUIQIgQh3y1XQhXMIlaKKwAAAABJRU5ErkJggg==";
@@ -26,8 +26,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1472427
   function initPage() {
     ifr = document.createElement("iframe");
     ifr.src = "about:blank";
-    document.body.appendChild(ifr);
     ifr.onload = initIframe;
+    document.body.appendChild(ifr);
   }
 
   function initIframe() {

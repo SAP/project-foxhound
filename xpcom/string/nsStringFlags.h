@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,7 +29,7 @@ enum class StringDataFlags : uint16_t {
   //                         buffer, it allocates some additional space at
   //                         the beginning of the buffer for additional
   //                         fields, including a reference count and a
-  //                         buffer length.  See nsStringHeader.
+  //                         buffer length.  See mozilla::StringBuffer.
   //
   //   "adopted buffer"      An adopted buffer is a raw string buffer
   //                         allocated on the heap (using moz_xmalloc)
@@ -39,17 +37,25 @@ enum class StringDataFlags : uint16_t {
   //
   // Some comments about the string data flags:
   //
-  //   REFCOUNTED, OWNED, and INLINE are all mutually exlusive.  They
-  //   indicate the allocation type of mData.  If none of these flags
-  //   are set, then the string buffer is dependent.
+  //   The allocation type of mData is determined as follows:
+  //     * LITERAL: Points to a static string.
+  //     * INLINE: Points to our inline buffer, exclusive with other flags in
+  //       this list.
+  //     * STRINGBUFFER: Points to a (potentially dependent) StringBuffer.
+  //     * OWNED: Points to heap-allocated data, or to an StringBuffer that we
+  //       keep alive (depending on whether STRINGBUFFER) is set.
   //
-  //   REFCOUNTED, OWNED, or INLINE imply TERMINATED.  This is because
+  //   If none of these flags are set, then the data pointer is dependent and
+  //   pointing to unknown data (it can also be dependent and pointing to a
+  //   STRINGBUFFER).
+  //
+  //   STRINGBUFFER, OWNED, or INLINE imply TERMINATED.  This is because
   //   the string classes always allocate null-terminated buffers, and
   //   non-terminated substrings are always dependent.
   //
   //   VOIDED implies TERMINATED, and moreover it implies that mData
   //   points to char_traits::sEmptyBuffer.  Therefore, VOIDED is
-  //   mutually exclusive with REFCOUNTED, OWNED, and INLINE.
+  //   mutually exclusive with STRINGBUFFER, OWNED, and INLINE.
   //
   //   INLINE requires StringClassFlags::INLINE to be set on the type.
 
@@ -59,10 +65,12 @@ enum class StringDataFlags : uint16_t {
   // IsVoid returns true
   VOIDED = 1 << 1,
 
-  // mData points to a heap-allocated, shareable, refcounted buffer
-  REFCOUNTED = 1 << 2,
+  // mData points to a heap-allocated, shareable StringBuffer. The buffer is
+  // only owned iff OWNED is also set.
+  STRINGBUFFER = 1 << 2,
 
-  // mData points to a heap-allocated, raw buffer
+  // mData points either to a heap-allocated, raw buffer, or to an owned
+  // StringBuffer, iff STRINGBUFFER is also set.
   OWNED = 1 << 3,
 
   // mData points to a writable, inline buffer

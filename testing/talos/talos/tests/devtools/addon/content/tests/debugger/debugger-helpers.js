@@ -210,8 +210,8 @@ async function waitForLoadedScopes(dbg) {
  * Waits for the currently triggered scroll to complete
  *
  * @param {*} dbg
- * @param {Object} options
- * @param {Boolean} options.useTimeoutFallback - defaults to true. When set to false
+ * @param {object} options
+ * @param {boolean} options.useTimeoutFallback - defaults to true. When set to false
  *                                               a scroll must happen for the wait for scrolling to complete
  * @returns
  */
@@ -229,8 +229,8 @@ async function waitForScrolling(dbg, { useTimeoutFallback = true } = {}) {
  * Scrolls a specific line and column into view in the editor
  *
  * @param {*} dbg
- * @param {Number} line
- * @param {Number} column
+ * @param {number} line
+ * @param {number} column
  * @returns
  */
 async function scrollEditorIntoView(dbg, line, column) {

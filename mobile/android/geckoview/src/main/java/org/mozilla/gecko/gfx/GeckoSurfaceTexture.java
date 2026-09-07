@@ -1,17 +1,14 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.gfx;
 
 import android.graphics.SurfaceTexture;
-import android.os.Build;
 import android.util.Log;
 import android.util.LongSparseArray;
 import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.JNIObject;
 
@@ -226,12 +223,6 @@ import org.mozilla.gecko.mozglue.JNIObject;
   }
 
   public static GeckoSurfaceTexture acquire(final boolean singleBufferMode, final long handle) {
-    // Attempting to create a SurfaceTexture from an isolated process on Android versions prior to
-    // 8.0 results in an indefinite hang. See bug 1706656.
-    if (GeckoAppShell.isIsolatedProcess() && Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-      return null;
-    }
-
     synchronized (sSurfaceTextures) {
       // We want to limit the maximum number of SurfaceTextures at any one time.
       // This is because they use a large number of fds, and once the process' limit

@@ -62,7 +62,9 @@ class OriginViewTest {
 
         view.url = spannedUrl
 
-        assertEquals(300, view.urlView.scrollX)
+        val halfFadingEdgeSize = view.urlView.horizontalFadingEdgeLength / 2
+
+        assertEquals(300 + halfFadingEdgeSize, view.urlView.scrollX)
     }
 
     @Test

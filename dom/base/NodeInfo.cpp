@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,25 +9,22 @@
  */
 
 #include "mozilla/dom/NodeInfo.h"
-#include "mozilla/dom/NodeInfoInlines.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Likely.h"
-
-#include "nsNodeInfoManager.h"
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsAtom.h"
-#include "nsDOMString.h"
-#include "nsCRT.h"
-#include "nsINode.h"
-#include "nsContentUtils.h"
-#include "nsReadableUtils.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/dom/Document.h"
-#include "nsGkAtoms.h"
+#include "mozilla/dom/NodeInfoInlines.h"
+#include "nsAtom.h"
 #include "nsCCUncollectableMarker.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsDOMString.h"
+#include "nsINode.h"
 #include "nsNameSpaceManager.h"
+#include "nsNodeInfoManager.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
 
 using namespace mozilla;
 using mozilla::dom::NodeInfo;
@@ -176,12 +171,19 @@ bool NodeInfo::NamespaceEquals(const nsAString& aNamespaceURI) const {
 
 void NodeInfo::DeleteCycleCollectable() {
   RefPtr<nsNodeInfoManager> kungFuDeathGrip = mOwnerManager;
-  mozilla::Unused
-      << kungFuDeathGrip;  // Just keeping value alive for longer than this
+  (void)kungFuDeathGrip;  // Just keeping value alive for longer than this
   delete this;
 }
 
 bool NodeInfo::CanSkip() {
   return mDocument && nsCCUncollectableMarker::InGeneration(
                           mDocument->GetMarkedCCGeneration());
+}
+
+const Maybe<const nsHTMLTag>& NodeInfo::NodeInfoInner::HTMLTag() const {
+  if (!mHTMLTag && mNodeType == nsINode::ELEMENT_NODE &&
+      mNamespaceID == kNameSpaceID_XHTML) {
+    mHTMLTag.emplace(nsHTMLTags::CaseSensitiveAtomTagToId(mName));
+  }
+  return mHTMLTag;
 }

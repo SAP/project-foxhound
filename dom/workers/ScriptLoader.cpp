@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,47 @@
 #include "ScriptLoader.h"
 
 #include <algorithm>
-#include <type_traits>
 
+#include "WorkerRunnable.h"
+#include "WorkerScope.h"
+#include "js/CompilationAndEvaluation.h"
+#include "js/Exception.h"
+#include "js/SourceText.h"
+#include "js/TypeDecls.h"
+#include "js/loader/ModuleLoadRequest.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
+#include "mozilla/AntiTrackingUtils.h"
+#include "mozilla/ArrayAlgorithm.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/LoadContext.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/ClientChannelHelper.h"
+#include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/RequestBinding.h"
+#include "mozilla/dom/Response.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SerializedStackHolder.h"
+#include "mozilla/dom/nsCSPService.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/workerinternals/CacheLoadHandler.h"
+#include "mozilla/dom/workerinternals/NetworkLoadHandler.h"
+#include "mozilla/dom/workerinternals/ScriptResponseHeaderProcessor.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentSecurityUtils.h"
+#include "nsContentUtils.h"
+#include "nsDocShellCID.h"
+#include "nsError.h"
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
@@ -19,64 +55,23 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsIIOService.h"
 #include "nsIOService.h"
+#include "nsIOutputStream.h"
+#include "nsIPipe.h"
 #include "nsIPrincipal.h"
-#include "nsIProtocolHandler.h"
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIStreamListenerTee.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIURI.h"
 #include "nsIXPConnect.h"
-
-#include "jsapi.h"
-#include "jsfriendapi.h"
-#include "js/CompilationAndEvaluation.h"
-#include "js/Exception.h"
-#include "js/SourceText.h"
-#include "js/TypeDecls.h"
-#include "nsError.h"
-#include "nsComponentManagerUtils.h"
-#include "nsContentSecurityManager.h"
-#include "nsContentPolicyUtils.h"
-#include "nsContentUtils.h"
-#include "nsDocShellCID.h"
 #include "nsJSEnvironment.h"
 #include "nsNetUtil.h"
-#include "nsIPipe.h"
-#include "nsIOutputStream.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
 #include "xpcpublic.h"
-
-#include "mozilla/AntiTrackingUtils.h"
-#include "mozilla/ArrayAlgorithm.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/LoadContext.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/dom/ClientChannelHelper.h"
-#include "mozilla/dom/ClientInfo.h"
-#include "mozilla/dom/Exceptions.h"
-#include "mozilla/dom/nsCSPService.h"
-#include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/PerformanceStorage.h"
-#include "mozilla/dom/Response.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/SerializedStackHolder.h"
-#include "mozilla/dom/workerinternals/CacheLoadHandler.h"
-#include "mozilla/dom/workerinternals/NetworkLoadHandler.h"
-#include "mozilla/dom/workerinternals/ScriptResponseHeaderProcessor.h"
-#include "mozilla/Result.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/UniquePtr.h"
-#include "WorkerRunnable.h"
-#include "WorkerScope.h"
 
 #define MAX_CONCURRENT_SCRIPTS 1000
 
@@ -225,13 +220,18 @@ void LoadAllScripts(WorkerPrivate* aWorkerPrivate,
   }
 
   RefPtr<loader::WorkerScriptLoader> loader =
-      loader::WorkerScriptLoader::Create(
-          aWorkerPrivate, std::move(aOriginStack), syncLoopTarget,
-          aWorkerScriptType, aRv);
+      loader::WorkerScriptLoader::Create(aWorkerPrivate,
+                                         std::move(aOriginStack),
+                                         syncLoopTarget, aWorkerScriptType);
 
-  if (NS_WARN_IF(aRv.Failed())) {
+  if (NS_WARN_IF(!loader)) {
+    aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
+
+  // Move any WorkerScriptLoader error back to the caller
+  auto takeErrorResult =
+      MakeScopeExit([&] { aRv = loader->TakeErrorResult(); });
 
   bool ok = loader->CreateScriptRequests(aScriptURLs, aDocumentEncoding,
                                          aIsMainScript);
@@ -364,15 +364,11 @@ nsresult GetCommonSecFlags(bool aIsMainScript, nsIURI* uri,
   }
 
   if (aWorkerScriptType == DebuggerScript) {
-    // A DebuggerScript needs to be a local resource like chrome: or resource:
-    bool isUIResource = false;
-    nsresult rv = NS_URIChainHasFlags(
-        uri, nsIProtocolHandler::URI_IS_UI_RESOURCE, &isUIResource);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    if (!isUIResource) {
+    // A DebuggerScript needs to be a chrome script resource like chrome: or
+    // resource:. We restrict it to those trusted schemes rather than the broad
+    // URI_IS_UI_RESOURCE flag, which image/UI data protocols (page-icon:,
+    // moz-icon:, ...) also carry and must never be loaded as worker scripts.
+    if (!nsContentSecurityUtils::IsTrustedScheme(uri)) {
       return NS_ERROR_DOM_SECURITY_ERR;
     }
 
@@ -460,37 +456,28 @@ class ScriptExecutorRunnable final : public MainThreadWorkerSyncRunnable {
   nsresult Cancel() override;
 };
 
-static bool EvaluateSourceBuffer(JSContext* aCx, JS::Handle<JSScript*> aScript,
-                                 JS::loader::ClassicScript* aClassicScript) {
-  if (aClassicScript) {
-    aClassicScript->AssociateWithScript(aScript);
-  }
-
-  JS::Rooted<JS::Value> unused(aCx);
-  return JS_ExecuteScript(aCx, aScript, &unused);
-}
-
 WorkerScriptLoader::WorkerScriptLoader(
     UniquePtr<SerializedStackHolder> aOriginStack,
-    nsISerialEventTarget* aSyncLoopTarget, WorkerScriptType aWorkerScriptType,
-    ErrorResult& aRv)
+    nsISerialEventTarget* aSyncLoopTarget, WorkerScriptType aWorkerScriptType)
     : mOriginStack(std::move(aOriginStack)),
       mSyncLoopTarget(aSyncLoopTarget),
       mWorkerScriptType(aWorkerScriptType),
-      mRv(aRv),
       mLoadingModuleRequestCount(0),
       mCleanedUp(false),
       mCleanUpLock("cleanUpLock") {}
 
+WorkerScriptLoader::~WorkerScriptLoader() { mRv.SuppressException(); }
+
+ErrorResult WorkerScriptLoader::TakeErrorResult() { return std::move(mRv); }
+
 already_AddRefed<WorkerScriptLoader> WorkerScriptLoader::Create(
     WorkerPrivate* aWorkerPrivate,
     UniquePtr<SerializedStackHolder> aOriginStack,
-    nsISerialEventTarget* aSyncLoopTarget, WorkerScriptType aWorkerScriptType,
-    ErrorResult& aRv) {
+    nsISerialEventTarget* aSyncLoopTarget, WorkerScriptType aWorkerScriptType) {
   aWorkerPrivate->AssertIsOnWorkerThread();
 
   RefPtr<WorkerScriptLoader> self = new WorkerScriptLoader(
-      std::move(aOriginStack), aSyncLoopTarget, aWorkerScriptType, aRv);
+      std::move(aOriginStack), aSyncLoopTarget, aWorkerScriptType);
 
   RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
       aWorkerPrivate, "WorkerScriptLoader::Create", [self]() {
@@ -501,12 +488,10 @@ already_AddRefed<WorkerScriptLoader> WorkerScriptLoader::Create(
         self->TryShutdown();
       });
 
-  if (workerRef) {
-    self->mWorkerRef = new ThreadSafeWorkerRef(workerRef);
-  } else {
-    self->mRv.Throw(NS_ERROR_FAILURE);
+  if (!workerRef) {
     return nullptr;
   }
+  self->mWorkerRef = new ThreadSafeWorkerRef(workerRef);
 
   nsIGlobalObject* global = self->GetGlobal();
   self->mController = global->GetController();
@@ -564,9 +549,12 @@ bool WorkerScriptLoader::CreateScriptRequests(
     return false;
   }
   for (const nsString& scriptURL : aScriptURLs) {
-    RefPtr<ScriptLoadRequest> request =
-        CreateScriptLoadRequest(scriptURL, aDocumentEncoding, aIsMainScript);
+    nsresult rv = NS_OK;
+    RefPtr<ScriptLoadRequest> request = CreateScriptLoadRequest(
+        scriptURL, aDocumentEncoding, aIsMainScript, &rv);
     if (!request) {
+      mLoadingRequests.CancelRequestsAndClear();
+      workerinternals::ReportLoadError(mRv, rv, scriptURL);
       return false;
     }
     mLoadingRequests.AppendElement(request);
@@ -601,8 +589,19 @@ nsContentPolicyType WorkerScriptLoader::GetContentPolicyType(
     return mWorkerRef->Private()->ContentPolicyType();
   }
   if (aRequest->IsModuleRequest()) {
+    if (aRequest->AsModuleRequest()->mModuleType == JS::ModuleType::Text) {
+      return nsIContentPolicy::TYPE_TEXT;
+    }
+
     if (aRequest->AsModuleRequest()->IsDynamicImport()) {
-      return nsIContentPolicy::TYPE_INTERNAL_MODULE;
+      if (aRequest->AsModuleRequest()->mModuleType ==
+          JS::ModuleType::JavaScript) {
+        return nsIContentPolicy::TYPE_INTERNAL_MODULE;
+      } else {
+        MOZ_ASSERT(aRequest->AsModuleRequest()->mModuleType ==
+                   JS::ModuleType::JSON);
+        return nsIContentPolicy::TYPE_JSON;
+      }
     }
 
     // Implements the destination for Step 14 in
@@ -619,7 +618,7 @@ nsContentPolicyType WorkerScriptLoader::GetContentPolicyType(
 
 already_AddRefed<ScriptLoadRequest> WorkerScriptLoader::CreateScriptLoadRequest(
     const nsString& aScriptURL, const mozilla::Encoding* aDocumentEncoding,
-    bool aIsMainScript) {
+    bool aIsMainScript, nsresult* aRv) {
   mWorkerRef->Private()->AssertIsOnWorkerThread();
   WorkerLoadContext::Kind kind =
       WorkerLoadContext::GetKind(aIsMainScript, IsDebuggerScript());
@@ -652,14 +651,29 @@ already_AddRefed<ScriptLoadRequest> WorkerScriptLoader::CreateScriptLoadRequest(
                 aIsMainScript && !mWorkerRef->Private()->GetParent());
   nsCOMPtr<nsIURI> baseURI = aIsMainScript ? GetInitialBaseURI() : GetBaseURI();
   nsCOMPtr<nsIURI> uri;
-  bool setErrorResult = false;
   nsresult rv =
       ConstructURI(aScriptURL, baseURI, aDocumentEncoding, getter_AddRefs(uri));
   // If we failed to construct the URI, handle it in the LoadContext so it is
   // thrown in the right order.
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    setErrorResult = true;
-    loadContext->mLoadResult = rv;
+    // This function is used by the following:
+    //   * Worker constructor
+    //   * WorkerGlobalScope.importScripts
+    //   * WorkerDebuggerGlobalScope.loadSubScript
+    //
+    // Worker constructor validates the URL in WorkerPrivate::Constructor,
+    // and this branch shouldn't taken.
+    //
+    // importScripts is available only to classic scripts.
+    //
+    // loadSubScript is available only to privileged scripts, and we don't
+    // care any invalid URLs.
+    //
+    // Module imports should use WorkerModuleLoader instead.
+    MOZ_ASSERT(mWorkerRef->Private()->WorkerType() == WorkerType::Classic);
+
+    *aRv = rv;
+    return nullptr;
   }
 
   // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-worker-script
@@ -679,8 +693,7 @@ already_AddRefed<ScriptLoadRequest> WorkerScriptLoader::CreateScriptLoadRequest(
   // Bug 1817259 - For now the debugger scripts are always loaded a Classic.
   if (mWorkerRef->Private()->WorkerType() == WorkerType::Classic ||
       IsDebuggerScript()) {
-    request = new ScriptLoadRequest(ScriptKind::eClassic, uri, referrerPolicy,
-                                    fetchOptions, SRIMetadata(),
+    request = new ScriptLoadRequest(ScriptKind::eClassic, SRIMetadata(),
                                     nullptr,  // mReferrer
                                     loadContext);
   } else {
@@ -707,25 +720,16 @@ already_AddRefed<ScriptLoadRequest> WorkerScriptLoader::CreateScriptLoadRequest(
     nsCOMPtr<nsIURI> referrer =
         mWorkerRef->Private()->GetReferrerInfo()->GetOriginalReferrer();
 
-    RefPtr<JS::loader::VisitedURLSet> visitedSet =
-        ModuleLoadRequest::NewVisitedSetForTopLevelImport(
-            uri, JS::ModuleType::JavaScript);
-
     // Part of Step 2. This sets the Top-level flag to true
     request = new ModuleLoadRequest(
-        uri, JS::ModuleType::JavaScript, referrerPolicy, fetchOptions,
-        SRIMetadata(), referrer, loadContext, ModuleLoadRequest::Kind::TopLevel,
-        moduleLoader, visitedSet, nullptr);
+        JS::ModuleType::JavaScript, SRIMetadata(), referrer, loadContext,
+        ModuleLoadRequest::Kind::TopLevel, moduleLoader, nullptr);
   }
 
   // Set the mURL, it will be used for error handling and debugging.
   request->mURL = NS_ConvertUTF16toUTF8(aScriptURL);
 
-  if (setErrorResult) {
-    request->SetPendingFetchingError();
-  } else {
-    request->NoCacheEntryFound();
-  }
+  request->NoCacheEntryFound(referrerPolicy, fetchOptions, uri);
 
   return request.forget();
 }
@@ -740,30 +744,19 @@ bool WorkerScriptLoader::DispatchLoadScript(ScriptLoadRequest* aRequest) {
       new ThreadSafeRequestHandle(aRequest, mSyncLoopTarget.get());
   scriptLoadList.AppendElement(handle.forget());
 
-  RefPtr<ScriptLoaderRunnable> runnable =
-      new ScriptLoaderRunnable(this, std::move(scriptLoadList));
-
-  RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
-      mWorkerRef->Private(), "WorkerScriptLoader::DispatchLoadScript",
-      [runnable]() {
-        NS_DispatchToMainThread(NewRunnableMethod(
-            "ScriptLoaderRunnable::CancelMainThreadWithBindingAborted",
-            runnable,
-            &ScriptLoaderRunnable::CancelMainThreadWithBindingAborted));
-      });
-
-  if (NS_FAILED(NS_DispatchToMainThread(runnable))) {
-    NS_ERROR("Failed to dispatch!");
-    mRv.Throw(NS_ERROR_FAILURE);
-    return false;
-  }
-  return true;
+  return DispatchLoadScripts(std::move(scriptLoadList));
 }
 
-bool WorkerScriptLoader::DispatchLoadScripts() {
-  mWorkerRef->Private()->AssertIsOnWorkerThread();
+bool WorkerScriptLoader::DispatchLoadScripts(
+    nsTArray<RefPtr<ThreadSafeRequestHandle>>&& aLoadingList) {
+  MOZ_ASSERT(mWorkerRef->Private()->IsOnWorkerThread());
 
-  nsTArray<RefPtr<ThreadSafeRequestHandle>> scriptLoadList = GetLoadingList();
+  nsTArray<RefPtr<ThreadSafeRequestHandle>> scriptLoadList =
+      std::move(aLoadingList);
+  if (!scriptLoadList.Length()) {
+    // Try to get a loading list if we were not passed one explcitly.
+    scriptLoadList = GetLoadingList();
+  }
 
   RefPtr<ScriptLoaderRunnable> runnable =
       new ScriptLoaderRunnable(this, std::move(scriptLoadList));
@@ -840,7 +833,7 @@ void WorkerScriptLoader::MaybeMoveToLoadedList(ScriptLoadRequest* aRequest) {
   }
 }
 
-bool WorkerScriptLoader::StoreCSP() {
+bool WorkerScriptLoader::StorePolicyContainerArgs() {
   // We must be on the same worker as we started on.
   mWorkerRef->Private()->AssertIsOnWorkerThread();
 
@@ -850,9 +843,9 @@ bool WorkerScriptLoader::StoreCSP() {
 
   MOZ_ASSERT(!mRv.Failed());
 
-  // Move the CSP from the workerLoadInfo in the corresponding Client
-  // where the CSP code expects it!
-  mWorkerRef->Private()->StoreCSPOnClient();
+  // Store the policy container args (CSP, IP address space, etc.) from
+  // WorkerLoadInfo into the worker's ClientSource.
+  mWorkerRef->Private()->StorePolicyContainerArgsOnClient();
   return true;
 }
 
@@ -990,7 +983,7 @@ nsresult WorkerScriptLoader::LoadScript(
               : mWorkerRef->Private()->WorkerCredentials();
 
       rv = GetModuleSecFlags(loadContext->IsTopLevel(), principal,
-                             mWorkerScriptType, request->mURI, credentials,
+                             mWorkerScriptType, request->URI(), credentials,
                              secFlags);
     } else {
       referrerInfo = ReferrerInfo::CreateForFetch(principal, nullptr);
@@ -999,7 +992,7 @@ nsresult WorkerScriptLoader::LoadScript(
             static_cast<ReferrerInfo*>(referrerInfo.get())
                 ->CloneWithNewPolicy(parentWorker->GetReferrerPolicy());
       }
-      rv = GetClassicSecFlags(loadContext->IsTopLevel(), request->mURI,
+      rv = GetClassicSecFlags(loadContext->IsTopLevel(), request->URI(),
                               principal, mWorkerScriptType, secFlags);
     }
 
@@ -1011,7 +1004,7 @@ nsresult WorkerScriptLoader::LoadScript(
 
     rv = ChannelFromScriptURL(
         principal, parentDoc, mWorkerRef->Private(), loadGroup, ios, secMan,
-        request->mURI, loadContext->mClientInfo, mController,
+        request->URI(), loadContext->mClientInfo, mController,
         loadContext->IsTopLevel(), mWorkerScriptType, contentPolicyType,
         loadFlags, secFlags, mWorkerRef->Private()->CookieJarSettings(),
         referrerInfo, getter_AddRefs(channel));
@@ -1144,8 +1137,15 @@ nsresult WorkerScriptLoader::FillCompileOptionsForRequest(
   aOptions->setMutedErrors(
       aRequest->GetWorkerLoadContext()->mMutedErrorFlag.value());
 
-  if (aRequest->mSourceMapURL) {
-    aOptions->setSourceMapURL(aRequest->mSourceMapURL->get());
+  if (aRequest->HasSourceMapURL()) {
+    aOptions->setSourceMapURL(aRequest->GetSourceMapURL().get());
+  }
+
+  // disable top-level await for sw module scripts
+  const auto* workerPrivate = GetCurrentThreadWorkerPrivate();
+  if (workerPrivate && workerPrivate->IsServiceWorker() &&
+      aRequest->IsModuleRequest()) {
+    aOptions->topLevelAwait = false;
   }
 
   return NS_OK;
@@ -1195,7 +1195,8 @@ bool WorkerScriptLoader::EvaluateScript(JSContext* aCx,
     //    relevant global object to fire an event named error at worker.
     //
     // The event will be dispatched in CompileScriptRunnable.
-    if (request->mModuleScript->HasParseError()) {
+    if (request->mModuleScript->HasParseError() ||
+        request->mModuleScript->HasErrorToRethrow()) {
       // Here we assign an error code that is not a JS Exception, so
       // CompileRunnable can dispatch the event.
       mRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
@@ -1242,7 +1243,6 @@ bool WorkerScriptLoader::EvaluateScript(JSContext* aCx,
     return false;
   }
 
-  RefPtr<JS::loader::ClassicScript> classicScript = nullptr;
   if (!mWorkerRef->Private()->IsServiceWorker()) {
     // We need a LoadedScript to be associated with the JSScript in order to
     // correctly resolve the referencing private for dynamic imports. In turn
@@ -1257,13 +1257,10 @@ bool WorkerScriptLoader::EvaluateScript(JSContext* aCx,
     if (loadContext->mMutedErrorFlag.valueOr(false)) {
       NS_NewURI(getter_AddRefs(requestBaseURI), "about:blank"_ns);
     } else {
-      requestBaseURI = aRequest->mBaseURL;
+      requestBaseURI = aRequest->BaseURL();
     }
     MOZ_ASSERT(aRequest->mLoadedScript->IsClassicScript());
-    MOZ_ASSERT(aRequest->mLoadedScript->GetFetchOptions() ==
-               aRequest->mFetchOptions);
-    aRequest->mLoadedScript->SetBaseURL(requestBaseURI);
-    classicScript = aRequest->mLoadedScript->AsClassicScript();
+    aRequest->SetBaseURL(requestBaseURI);
   }
 
   JS::Rooted<JSScript*> script(aCx);
@@ -1297,7 +1294,12 @@ bool WorkerScriptLoader::EvaluateScript(JSContext* aCx,
     return false;
   }
 
-  bool successfullyEvaluated = EvaluateSourceBuffer(aCx, script, classicScript);
+  if (!mWorkerRef->Private()->IsServiceWorker()) {
+    aRequest->FetchInfo()->AssociateWithScript(script);
+  }
+
+  JS::Rooted<JS::Value> unused(aCx);
+  bool successfullyEvaluated = JS_ExecuteScript(aCx, script, &unused);
   if (aRequest->IsCanceled()) {
     return false;
   }
@@ -1380,7 +1382,7 @@ void WorkerScriptLoader::ShutdownScriptLoader(bool aResult, bool aMutedError) {
 void WorkerScriptLoader::ReportErrorToConsole(ScriptLoadRequest* aRequest,
                                               nsresult aResult) const {
   nsAutoString url = NS_ConvertUTF8toUTF16(aRequest->mURL);
-  workerinternals::ReportLoadError(mRv, aResult, url);
+  workerinternals::ReportLoadError(const_cast<ErrorResult&>(mRv), aResult, url);
 }
 
 void WorkerScriptLoader::LogExceptionToConsole(JSContext* aCx,
@@ -1459,7 +1461,7 @@ nsresult ScriptLoaderRunnable::Run() {
   if (!mWorkerRef->Private()->IsServiceWorker() ||
       mScriptLoader->IsDebuggerScript()) {
     for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
-      handle->mRunnable = this;
+      handle->SetRunnable(this);
     }
 
     for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
@@ -1478,7 +1480,7 @@ nsresult ScriptLoaderRunnable::Run() {
   mCacheCreator = new CacheCreator(mWorkerRef->Private());
 
   for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
-    handle->mRunnable = this;
+    handle->SetRunnable(this);
     WorkerLoadContext* loadContext = handle->GetContext();
     mCacheCreator->AddLoader(MakeNotNull<RefPtr<CacheLoadHandler>>(
         mWorkerRef, handle, loadContext->IsTopLevel(),
@@ -1698,7 +1700,7 @@ bool ScriptExecutorRunnable::PreRun(WorkerPrivate* aWorkerPrivate) {
     }
   }
 
-  return mScriptLoader->StoreCSP();
+  return mScriptLoader->StorePolicyContainerArgs();
 }
 
 bool ScriptExecutorRunnable::ProcessModuleScript(
@@ -1730,6 +1732,9 @@ bool ScriptExecutorRunnable::ProcessModuleScript(
 
   WorkerLoadContext* loadContext = request->GetWorkerLoadContext();
   ModuleLoadRequest* moduleRequest = request->AsModuleRequest();
+  if (aWorkerPrivate->GetReferrerPolicy() != ReferrerPolicy::_empty) {
+    moduleRequest->UpdateReferrerPolicy(aWorkerPrivate->GetReferrerPolicy());
+  }
 
   // DecreaseLoadingModuleRequestCount must be called before OnFetchComplete.
   // OnFetchComplete will call ProcessPendingRequests, and in
@@ -1739,16 +1744,8 @@ bool ScriptExecutorRunnable::ProcessModuleScript(
   moduleRequest->OnFetchComplete(loadContext->mLoadResult);
 
   if (NS_FAILED(loadContext->mLoadResult)) {
-    if (moduleRequest->IsDynamicImport()) {
-      if (request->isInList()) {
-        moduleRequest->CancelDynamicImport(loadContext->mLoadResult);
-        mScriptLoader->TryShutdown();
-      }
-    } else if (!moduleRequest->IsTopLevel()) {
-      moduleRequest->Cancel();
+    if (moduleRequest->IsDynamicImport() || !moduleRequest->IsTopLevel()) {
       mScriptLoader->TryShutdown();
-    } else {
-      moduleRequest->LoadFailed();
     }
   }
   return true;
@@ -1785,6 +1782,10 @@ bool ScriptExecutorRunnable::WorkerRun(JSContext* aCx,
   MOZ_ASSERT(
       mScriptLoader->mSyncLoopTarget == mSyncLoopTarget,
       "Unexpected SyncLoopTarget. Check if the sync loop was closed early");
+
+  if (mLoadedRequests.begin()->get()->GetContext()->IsTopLevel()) {
+    aWorkerPrivate->InitializeGlobalReportingEndpoints();
+  }
 
   if (mLoadedRequests.begin()->get()->GetRequest()->IsModuleRequest()) {
     return ProcessModuleScript(aCx, aWorkerPrivate);

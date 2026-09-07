@@ -22,7 +22,6 @@ import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.util.AttributeSet
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.BaseInputConnection
@@ -30,6 +29,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.TextAttribute
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.widget.AppCompatEditText
 import mozilla.components.support.base.Component
@@ -149,11 +150,30 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
     // Do not process autocomplete result
     private var discardAutoCompleteResult: Boolean = false
 
+    /**
+     * Set of flags to be added to the next [AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED]
+     * accessibility event.
+     */
+    private var pendingTextChangeTypes: Int = 0
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.CINNAMON_BUN)
+    internal fun isAtLeastCinnamonBun(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    internal var onPendingTextChangeTypesSet: ((Int) -> Unit)? = null
+
     val nonAutocompleteText: String
         get() = getNonAutocompleteText(text)
 
     override val originalText: String
-        get() = text.subSequence(0, autoCompletePrefixLength).toString()
+        get() = try {
+            text.subSequence(0, autoCompletePrefixLength).toString()
+        } catch (_: IndexOutOfBoundsException) {
+            autoCompletePrefixLength = text.length
+            text.toString()
+        }
 
     /**
      * The background color used for the autocomplete suggestion.
@@ -271,13 +291,6 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
         }
 
         removeAutocomplete(text)
-
-        try {
-            restartInput()
-            inputMethodManger?.hideSoftInputFromWindow(windowToken, 0)
-        } catch (ignored: NullPointerException) {
-            // See bug 782096 for details
-        }
     }
 
     override fun setText(text: CharSequence?, type: BufferType) {
@@ -321,6 +334,14 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
     }
 
     override fun sendAccessibilityEventUnchecked(event: AccessibilityEvent) {
+        if (isAtLeastCinnamonBun() &&
+            event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED &&
+            pendingTextChangeTypes != 0
+        ) {
+            event.textChangeTypes = pendingTextChangeTypes
+            clearPendingTextChangeTypes()
+        }
+
         // We need to bypass the isShown() check in the default implementation
         // for TYPE_VIEW_TEXT_SELECTION_CHANGED events so that accessibility
         // services could detect a url change.
@@ -573,7 +594,7 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
      *
      * Also turns off text prediction for private mode tabs.
      */
-    @SuppressWarnings("ComplexMethod")
+    @Suppress("CognitiveComplexMethod")
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         val ic = super.onCreateInputConnection(outAttrs) ?: return null
 
@@ -641,21 +662,70 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
             }
 
             override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
-                return if (removeAutocompleteOnComposing(text)) {
-                    false
-                } else {
-                    super.commitText(text, newCursorPosition)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    return commitText(text, newCursorPosition, null)
                 }
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                return super.commitText(text, newCursorPosition)
+            }
+
+            override fun commitText(
+                text: CharSequence,
+                newCursorPosition: Int,
+                textAttribute: TextAttribute?,
+            ): Boolean {
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                if (isAtLeastCinnamonBun()) {
+                    var types = AccessibilityEvent.TEXT_CHANGE_TYPE_COMMITTED_BY_IME
+                    if (textAttribute?.isTextSuggestionSelected == true) {
+                        types = types or AccessibilityEvent.TEXT_CHANGE_TYPE_CONVERSION_SUGGESTION_SELECTED_BY_IME
+                    }
+                    setPendingTextChangeTypes(types)
+                }
+                return super.commitText(text, newCursorPosition, textAttribute)
             }
 
             override fun setComposingText(text: CharSequence, newCursorPosition: Int): Boolean {
-                return if (removeAutocompleteOnComposing(text)) {
-                    false
-                } else {
-                    super.setComposingText(text, newCursorPosition)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    return setComposingText(text, newCursorPosition, null)
                 }
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                return super.setComposingText(text, newCursorPosition)
+            }
+
+            override fun setComposingText(
+                text: CharSequence,
+                newCursorPosition: Int,
+                textAttribute: TextAttribute?,
+            ): Boolean {
+                if (removeAutocompleteOnComposing(text)) {
+                    return false
+                }
+                if (isAtLeastCinnamonBun()) {
+                    var types = AccessibilityEvent.TEXT_CHANGE_TYPE_IN_COMPOSITION
+                    if (textAttribute?.isTextSuggestionSelected == true) {
+                        types = types or AccessibilityEvent.TEXT_CHANGE_TYPE_CONVERSION_SUGGESTION_SELECTED_BY_IME
+                    }
+                    setPendingTextChangeTypes(types)
+                }
+                return super.setComposingText(text, newCursorPosition, textAttribute)
             }
         }
+    }
+
+    private fun setPendingTextChangeTypes(types: Int) {
+        pendingTextChangeTypes = types
+        onPendingTextChangeTypesSet?.invoke(types)
+    }
+
+    private fun clearPendingTextChangeTypes() {
+        pendingTextChangeTypes = 0
     }
 
     private fun restartInput() {
@@ -789,46 +859,12 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
             val min = 0.coerceAtLeast(selectionStart.coerceAtMost(selectionEnd))
             val max = 0.coerceAtLeast(selectionStart.coerceAtLeast(selectionEnd))
 
-            if (id == android.R.id.pasteAsPlainText ||
-                (id == android.R.id.paste && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-            ) {
-                paste(min, max, false)
-            } else {
-                paste(min, max, true)
-            }
+            paste(min, max, false)
 
             return true // action was performed
         }
 
         return callOnTextContextMenuItemSuper(id)
-    }
-
-    @Suppress("ClickableViewAccessibility")
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        return if (Build.VERSION.SDK_INT == Build.VERSION_CODES.M &&
-            event.actionMasked == MotionEvent.ACTION_UP
-        ) {
-            // Android 6 occasionally throws a NullPointerException inside Editor.onTouchEvent()
-            // for ACTION_UP when attempting to display (uninitialised) text handles. The Editor
-            // and TextView IME interactions are quite complex, so I don't know how to properly
-            // work around this issue, but we can at least catch the NPE to prevent crashing
-            // the whole app.
-            // (Editor tries to make both selection handles visible, but in certain cases they haven't
-            // been initialised yet, causing the NPE. It doesn't bother to check the selection handle
-            // state, and making some other calls to ensure the handles exist doesn't seem like a
-            // clean solution either since I don't understand most of the selection logic. This implementation
-            // only seems to exist in Android 6, both Android 5 and 7 have different implementations.)
-            try {
-                super.onTouchEvent(event)
-            } catch (ignored: NullPointerException) {
-                // Ignore this (see above) - since we're now in an unknown state let's clear all selection
-                // (which is still better than an arbitrary crash that we can't control):
-                clearFocus()
-                true
-            }
-        } else {
-            super.onTouchEvent(event)
-        }
     }
 
     @VisibleForTesting
@@ -839,7 +875,7 @@ open class InlineAutocompleteEditText @JvmOverloads constructor(
      *
      * Method matching TextView#paste() but which also strips unwanted schemes before actually pasting.
      */
-    @Suppress("NestedBlockDepth")
+    @Suppress("NestedBlockDepth", "CognitiveComplexMethod")
     @VisibleForTesting
     internal fun paste(min: Int, max: Int, withFormatting: Boolean) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

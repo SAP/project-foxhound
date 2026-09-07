@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,20 +5,20 @@
 #ifndef GMPTimerParent_h_
 #define GMPTimerParent_h_
 
-#include "mozilla/gmp/PGMPTimerParent.h"
-#include "nsITimer.h"
-#include "nsCOMPtr.h"
-#include "nsTHashSet.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/gmp/PGMPTimerParent.h"
+#include "nsCOMPtr.h"
+#include "nsITimer.h"
+#include "nsTHashSet.h"
 
 namespace mozilla::gmp {
 
-class GMPTimerParent : public PGMPTimerParent {
+class GMPTimerParent final : public PGMPTimerParent {
   friend class PGMPTimerParent;
 
  public:
-  NS_INLINE_DECL_REFCOUNTING(GMPTimerParent)
-  explicit GMPTimerParent(nsISerialEventTarget* aGMPEventTarget);
+  NS_INLINE_DECL_REFCOUNTING(GMPTimerParent, final)
+  explicit GMPTimerParent(nsCOMPtr<nsISerialEventTarget>&& aGMPEventTarget);
 
   void Shutdown();
 

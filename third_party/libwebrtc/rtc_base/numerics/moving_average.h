@@ -63,9 +63,4 @@ class MovingAverage {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::MovingAverage;
-}  // namespace rtc
 #endif  // RTC_BASE_NUMERICS_MOVING_AVERAGE_H_

@@ -31,10 +31,9 @@
 
 #include "DynamicsCompressorKernel.h"
 #include "ZeroPole.h"
-
-#include "nsTArray.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 class AudioBlock;

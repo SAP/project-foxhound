@@ -303,6 +303,16 @@ export function reorder<R>(order: ReorderOrder, arr: R[]): R[] {
   }
 }
 
+/**
+ * A typed version of Object.entries
+ */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+export function typedEntries<T extends Record<string, any>>(obj: T): Array<[keyof T, T[keyof T]]> {
+  // The cast is done once, inside the helper function,
+  // keeping the call site clean and type-safe.
+  return Object.entries(obj) as Array<[keyof T, T[keyof T]]>;
+}
+
 const TypedArrayBufferViewInstances = [
   new Uint8Array(),
   new Uint8ClampedArray(),
@@ -485,4 +495,46 @@ export function filterUniqueValueTestVariants(valueTestVariants: ValueTestVarian
  */
 export function makeValueTestVariant(base: number, variant: ValueTestVariant) {
   return base * variant.mult + variant.add;
+}
+
+/**
+ * Use instead of features.has because feature's has takes any string
+ * and we want to prevent typos.
+ */
+export function hasFeature(features: GPUSupportedFeatures, feature: GPUFeatureName) {
+  // eslint-disable-next-line no-restricted-syntax
+  return features.has(feature);
+}
+
+/** Convenience helper for combinations of 1-2 usage bits from a list of usage bits. */
+export function combinationsOfOneOrTwoUsages(usages: readonly number[]) {
+  const combinations = [];
+  for (const usage0 of usages) {
+    for (const usage1 of usages) {
+      if (usage0 <= usage1) {
+        combinations.push(usage0 | usage1);
+      }
+    }
+  }
+  return combinations;
+}
+
+/**
+ * Checks if the browser supports immediate data (experimental).
+ *
+ * Checks for:
+ * - `setImmediates` method on `GPURenderPassEncoder`, `GPUComputePassEncoder`, or `GPURenderBundleEncoder` prototypes.
+ * - `maxImmediateSize` property on `GPUSupportedLimits` prototype.
+ * - `immediate_address_space` feature in `gpu.wgslLanguageFeatures`.
+ *
+ * This helper is used to skip tests when the environment does not support immediate data functionality.
+ */
+export function supportsImmediateData(gpu: GPU): boolean {
+  return (
+    'setImmediates' in GPURenderPassEncoder.prototype ||
+    'setImmediates' in GPUComputePassEncoder.prototype ||
+    'setImmediates' in GPURenderBundleEncoder.prototype ||
+    'maxImmediateSize' in GPUSupportedLimits.prototype ||
+    gpu.wgslLanguageFeatures.has('immediate_address_space')
+  );
 }

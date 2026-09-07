@@ -22,6 +22,7 @@ import java.lang.ref.WeakReference
 
 class AppRequestInterceptor(
     private val context: Context,
+    private val isPrivateForSession: (EngineSession) -> Boolean = { false },
 ) : RequestInterceptor {
 
     private var navController: WeakReference<NavController>? = null
@@ -48,16 +49,21 @@ class AppRequestInterceptor(
         }
 
         val services = context.components.services
-        return services.appLinksInterceptor.onLoadRequest(
-            engineSession,
-            uri,
-            lastUri,
-            hasUserGesture,
-            isSameDomain,
-            isRedirect,
-            isDirectNavigation,
-            isSubframeRequest,
-        )
+        return listOf(
+            services.appLinksInterceptor,
+            services.storyUTMRequestInterceptor,
+        ).firstNotNullOfOrNull {
+            it.onLoadRequest(
+                engineSession,
+                uri,
+                lastUri,
+                hasUserGesture,
+                isSameDomain,
+                isRedirect,
+                isDirectNavigation,
+                isSubframeRequest,
+            )
+        }
     }
 
     override fun onErrorRequest(
@@ -75,6 +81,8 @@ class AppRequestInterceptor(
             ErrorPage.visitedError.record(ErrorPage.VisitedErrorExtra(errorType = "ERROR_CONTENT_URI_NOT_FOUND"))
         }
 
+        val isPrivate = isPrivateForSession(session)
+
         val errorPageUri = ErrorPages.createUrlEncodedErrorPage(
             context = context,
             errorType = improvedErrorType,
@@ -82,13 +90,14 @@ class AppRequestInterceptor(
             htmlResource = riskLevel.htmlRes,
             titleOverride = { type -> getErrorPageTitle(context, type) },
             descriptionOverride = { type -> getErrorPageDescription(context, type) },
+            isPrivate = isPrivate,
         )
 
         return RequestInterceptor.ErrorResponse(errorPageUri)
     }
 
     /**
-     * Intercepts [uri] request to [ABOUT_HOME] and navigates to the homepage.
+     * Intercepts [uri] request to [ABOUT_HOME_URL] and navigates to the homepage.
      *
      * @param uri The URI of the request.
      * @return True if the [uri] request was intercepted and false otherwise.
@@ -98,7 +107,8 @@ class AppRequestInterceptor(
             return false
         }
 
-        if (navController?.get()?.currentDestination?.id != R.id.homeFragment) {
+        val currentDestination = navController?.get()?.currentDestination?.id
+        if (!listOf(R.id.homeFragment, R.id.onboardingFragment).contains(currentDestination)) {
             navController?.get()?.navigate(NavGraphDirections.actionGlobalHome())
         }
 
@@ -162,6 +172,7 @@ class AppRequestInterceptor(
         ErrorType.ERROR_SAFEBROWSING_MALWARE_URI,
         ErrorType.ERROR_SAFEBROWSING_PHISHING_URI,
         ErrorType.ERROR_SAFEBROWSING_UNWANTED_URI,
+        ErrorType.ERROR_HARMFULADDON_URI,
         -> RiskLevel.High
     }
 

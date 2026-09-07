@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+<script>
+async function test() {
+  const mc = navigator.mediaCapabilities;
+  try {
+    await mc.decodingInfo({
+      type: "file",
+      video: {
+        contentType: 'video/mp4; codecs="av01.0.01M.08"',
+        width: 0,
+        height: 0,
+        bitrate: 1000000,
+        framerate: 30
+      }
+    });
+  } catch (e) {
+  }
+  document.documentElement.removeAttribute("class");
+}
+
+test();
+</script>
+</body>
+</html>

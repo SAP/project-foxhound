@@ -10,7 +10,7 @@ const { EventEmitter } = ChromeUtils.importESModule(
   "resource://gre/modules/EventEmitter.sys.mjs"
 );
 ChromeUtils.defineESModuleGetters(this, {
-  jwcrypto: "resource://services-crypto/jwcrypto.sys.mjs",
+  jwcrypto: "moz-src:///services/crypto/modules/jwcrypto.sys.mjs",
 });
 
 const CHANNEL_ID = "sW-UA97Q6Dljqen7XRlYPw";

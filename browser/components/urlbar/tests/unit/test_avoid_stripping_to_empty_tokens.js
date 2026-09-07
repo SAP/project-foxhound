@@ -16,6 +16,7 @@ add_task(async function test_protocol_trimming() {
           "www.foo"
       ),
       title: "Test title",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     };
     await PlacesTestUtils.addVisits(visit);
 
@@ -29,7 +30,7 @@ add_task(async function test_protocol_trimming() {
       matches: [
         makeVisitResult(context, {
           uri: prot + "://www.mozilla.org/",
-          fallbackTitle: UrlbarTestUtils.trimURL(prot + "://www.mozilla.org"),
+          title: UrlbarTestUtils.trimURL(prot + "://www.mozilla.org"),
           heuristic: true,
         }),
         makeVisitResult(context, {
@@ -49,7 +50,7 @@ add_task(async function test_protocol_trimming() {
       matches: [
         makeVisitResult(context, {
           uri: prot + "://www.mozilla.org/",
-          fallbackTitle: UrlbarTestUtils.trimURL(prot + "://www.mozilla.org"),
+          title: UrlbarTestUtils.trimURL(prot + "://www.mozilla.org"),
           heuristic: true,
         }),
         makeVisitResult(context, {
@@ -68,15 +69,15 @@ add_task(async function test_protocol_trimming() {
         makeVisitResult(context, {
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           uri: `${input.trim()}/`,
-          fallbackTitle: `${input.trim()}/`,
+          title: `${input.trim()}/`,
           iconUri: "",
           heuristic: true,
-          providerName: "HeuristicFallback",
+          providerName: "UrlbarProviderHeuristicFallback",
         }),
         makeVisitResult(context, {
           uri: visit.uri.spec,
           title: visit.title,
-          providerName: "Places",
+          providerName: "UrlbarProviderPlaces",
         }),
       ],
     });
@@ -106,7 +107,7 @@ add_task(async function test_protocol_trimming() {
           makeVisitResult(context, {
             uri: visit.uri.spec,
             title: visit.title,
-            providerName: "Places",
+            providerName: "UrlbarProviderPlaces",
           }),
         ],
       });

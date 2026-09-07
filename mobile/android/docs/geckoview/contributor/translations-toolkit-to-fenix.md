@@ -2,13 +2,12 @@
 
 **Author**: [Olivia Hall](mailto:ohall@mozilla.com)
 
-
 ## Usage
 
 The focus of this guide is on how to connect Gecko JavaScript toolkit features to Fenix UI. The goal is to provide a cursory overview of the steps, architecture, and implementation details.
 
 ```{note}
-Toolkit code in this document refers to JavaScript cross-platform browser code located in the [toolkit directory](https://searchfox.org/mozilla-central/source/toolkit).
+Toolkit code in this document refers to JavaScript cross-platform browser code located in the [toolkit directory](https://searchfox.org/firefox-main/source/toolkit).
 ```
 
 ## Outline
@@ -32,6 +31,7 @@ This guide is not intended to be all encompassing or cover every scenario, but t
 ```{seealso}
 For an alternative approach to connecting with Gecko on the C++ side, please see [this documentation for connecting to C++ code to Java using the JNI](./geckoview-architecture.rst#jni).
 ```
+
 ## Overview
 
 The architecture diagram below outlines the different layers a feature must cross to reach from toolkit all the way to the Fenix UI. The layers include toolkit, GeckoView (GV), Android Components (AC), and finally Fenix. The languages traversed include JavaScript, Java, and Kotlin.
@@ -43,9 +43,11 @@ This document will traverse layer-by-layer and emphasize key and noteworthy poin
 Some key files or components for the translations feature include:
 
 **Toolkit:**
+
 * [TranslationsParent.sys.mjs](https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/toolkit/components/translations/actors/TranslationsParent.sys.mjs) \- Primary entryway into toolkit for this feature and where most of the key calls (such as `translate()`) or messages (such as `TranslationsParent:OfferTranslation`) originate from.
 
 **GeckoView:**
+
 * [GeckoViewTranslations.sys.mjs](https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/mobile/shared/modules/geckoview/GeckoViewTranslations.sys.mjs) \- JavaScript side module which both listens to relevant messages and calls `TranslationsParent`.
 * [TranslationsController.java](https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/TranslationsController.java) \- Java side class which coordinates both [session and runtime](./geckoview-architecture.rst#view-runtime-and-session) specific calls, listens for events, as well as defines a delegate.
 
@@ -59,7 +61,7 @@ Some key files or components for the translations feature include:
 **Fenix:**
 
 * [TranslationsDialogBinding.kt](https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogBinding.kt) \- Observes the various translations state and sends `TranslationsDialogActions`.
-* [TranslationsDialogStore.kt](https://searchfox.org/mozilla-central/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogStore.kt) \- Middleware which tracks translations state for the dialog and defines `TranslationsDialogActions`.
+* [TranslationsDialogStore.kt](https://searchfox.org/firefox-main/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogStore.kt) \- Middleware which tracks translations state for the dialog and defines `TranslationsDialogActions`.
 * [TranslationsDialogFragment.kt](https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt) \- Fragment which displays the UI, observes certain states to react, and sends actions.
 
 ![Diagram shows summary of classes, modules, files, and relationships to illustrate information flow from Fenix to toolkit.](../assets/translations-toolkit-to-fenix-diagram.png)
@@ -69,49 +71,54 @@ Some key files or components for the translations feature include:
 Abbreviated pseduo-call stack for what happens when Fenix's translation dialog is opened and translate is pressed:
 
 **Fenix:**
+
 * [`TranslationsDialogFragment.kt - onCreateView`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt#100)
 * [`TranslationsDialogFragment.kt - TranslationsOptionsDialogContent`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt#390)
 * [`TranslationsDialogFragment.kt - private fun translate`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt#350)
 * [`TranslationsDialogStore.kt - TranslationsDialogAction.TranslateAction`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogStore.kt#317,326)
 * [`TranslationsDialogMiddleware.kt - TranslationsDialogAction.TranslateAction`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogMiddleware.kt#76)
 
-
 **Android Components:**
+
 * [`EngineDelegateMiddleware.kt - TranslationsAction.TranslateAction`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/android-components/components/browser/state/src/main/java/mozilla/components/browser/state/engine/middleware/EngineDelegateMiddleware.kt#49)
 * [`EngineDelegateMiddleware.kt - private fun translate`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/android-components/components/browser/state/src/main/java/mozilla/components/browser/state/engine/middleware/EngineDelegateMiddleware.kt#163)
 * [`GeckoEngineSession.kt - override fun requestTranslate`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/GeckoEngineSession.kt#979)
 
 **GeckoView:**
+
 * [`TranslationsController.java - public @NonNull GeckoResult<Void> translate`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/TranslationsController.java#743)
 * [`GeckoViewTranslations.sys.mjs - onEvent case "GeckoView:Translations:Translate"`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/mobile/shared/modules/geckoview/GeckoViewTranslations.sys.mjs#42)
 
 **Toolkit:**
+
 * [`TranslationsParent.sys.mjs - async translate(fromLanguage, toLanguage, reportAsAutoTranslate)`](https://searchfox.org/mozilla-central/rev/044802a2108a5163bd5288ea18eb6a88234d45f0/toolkit/components/translations/actors/TranslationsParent.sys.mjs#2561)
 
 ## Identifying and preparing toolkit code
 
 ### Overview of directory structure
+
 | Directory | Platform | Description | Sample Key Files<sup>+</sup> |
 | :---- | :---- | :---- | :---- |
-| [toolkit](https://searchfox.org/mozilla-central/source/toolkit) | Cross platform | Browser code that may be used on all platforms.  | `*Parent.sys.mjs`, `*Child.sys.mjs`, `*Utils.mjs` |
-| [browser](https://searchfox.org/mozilla-central/source/browser) | Desktop | Desktop specific browser and chrome (view layer) code. | Similar to toolkit \+ `*.js`, `*.xhtml` |
-| [mobile](https://searchfox.org/mozilla-central/source/mobile) | Android and iOS | Area related to mobile platforms. | Varies based on directory |
-| [geckoview](https://searchfox.org/mozilla-central/source/mobile/android/geckoview) and [mobile/android](https://searchfox.org/mozilla-central/source/mobile/android) | Android | GeckoView code provides a Java API surface to interface with Gecko. Much of the top level mobile/android code is under the GeckoView purview.  | `GeckoView*.sys.mjs`, `GeckoView*Child.sys.mjs`, `GeckoView*Parent.sys.mjs`,`*Controller.java` |
-| [android-components](https://searchfox.org/mozilla-central/source/mobile/android/android-*s) | Android | Android's code is a reusable Android library that aims to provide a toolbox of building blocks relevant to building a browser. Includes reusable UI and connections to GeckoView as a browser engine. | `*Middleware.kt`, `*StateReducer.kt`, `*State.kt` |
-| [fenix](https://searchfox.org/mozilla-central/source/mobile/android/fenix) | Android | Chrome (view layer) code connected to Android's to form the [Firefox on Android](https://www.mozilla.org/en-US/firefox/browsers/mobile/android/) experience. | `*DialogBinding.kt` , `*DialogStore.kt`, `*Fragment.kt` |
-| [focus-android](https://searchfox.org/mozilla-central/source/mobile/android/focus-android) | Android | Chrome (view layer) code connected to Android's to form the [Focus (aka Klar)](https://www.mozilla.org/en-US/firefox/browsers/mobile/focus/) experience.  | Same as Fenix |
+| [toolkit](https://searchfox.org/firefox-main/source/toolkit) | Cross platform | Browser code that may be used on all platforms.  | `*Parent.sys.mjs`, `*Child.sys.mjs`, `*Utils.mjs` |
+| [browser](https://searchfox.org/firefox-main/source/browser) | Desktop | Desktop specific browser and chrome (view layer) code. | Similar to toolkit \+ `*.js`, `*.xhtml` |
+| [mobile](https://searchfox.org/firefox-main/source/mobile) | Android and iOS | Area related to mobile platforms. | Varies based on directory |
+| [geckoview](https://searchfox.org/firefox-main/source/mobile/android/geckoview) and [mobile/android](https://searchfox.org/firefox-main/source/mobile/android) | Android | GeckoView code provides a Java API surface to interface with Gecko. Much of the top level mobile/android code is under the GeckoView purview.  | `GeckoView*.sys.mjs`, `GeckoView*Child.sys.mjs`, `GeckoView*Parent.sys.mjs`,`*Controller.java` |
+| [android-components](https://searchfox.org/firefox-main/source/mobile/android/android-*s) | Android | Android's code is a reusable Android library that aims to provide a toolbox of building blocks relevant to building a browser. Includes reusable UI and connections to GeckoView as a browser engine. | `*Middleware.kt`, `*StateReducer.kt`, `*State.kt` |
+| [fenix](https://searchfox.org/firefox-main/source/mobile/android/fenix) | Android | Chrome (view layer) code connected to Android's to form the [Firefox on Android](https://www.mozilla.org/en-US/firefox/browsers/mobile/android/) experience. | `*DialogBinding.kt` , `*DialogStore.kt`, `*Fragment.kt` |
+| [focus-android](https://searchfox.org/firefox-main/source/mobile/android/focus-android) | Android | Chrome (view layer) code connected to Android's to form the [Focus (aka Klar)](https://www.mozilla.org/en-US/firefox/browsers/mobile/focus/) experience.  | Same as Fenix |
 
 (<sup>+</sup> Where `*` is the Component name.)
 
 ### Identifying toolkit code
 
-The first step is to identify toolkit code to see if the module is already in the [`toolkit` directory.](https://searchfox.org/mozilla-central/source/toolkit)  (See above table for summary of locations.) If this is the case, then it should already be possible to connect it to GeckoView without too many adjustments.
+The first step is to identify toolkit code to see if the module is already in the [`toolkit` directory.](https://searchfox.org/firefox-main/source/toolkit) (See above table for summary of locations.) If this is the case, then it should already be possible to connect it to GeckoView without too many adjustments.
 
 Some adjustments to the toolkit code might also be necessary for it to run on Android. For example, Android does not have a `gBrowser` and code calling `gBrowser` will need to be changed. These minor adjustments can usually be quickly identified through testing. These issues are usually fixed through availability checks or use of `AppConstants.platform \!== "android"` style checks.
 
 An example of this in translations is that the `TranslationsParent` only offers a translation if the user is on the same page. Important to note is that the Android paradigm for windows is different from desktop. For Android, there is always [one window for one tab](./geckoview-architecture.rst#window-model). Because of that, branching behavior to check if on the same current page was added to Android:
 
 [`TranslationsParent.sys.mjs`](https://searchfox.org/mozilla-central/rev/dd8b64a6198ff599a5eb2ca096845ebd6997457f/toolkit/components/translations/actors/TranslationsParent.sys.mjs#735):
+
 ```js
 // Only offer the translation if it's still the current page.
 let isCurrentPage = false;
@@ -128,6 +135,7 @@ if (AppConstants.platform !== "android") {
 An alternative adjustment may also be performing stricter availability checks. For example, on Android, ``BrowserHandler``was sometimes not available and was causing an issue when checking for ``kiosk`` mode (a desktop feature).
 
 [`TranslationsParent.sys.mjs`](https://searchfox.org/mozilla-central/rev/dd8b64a6198ff599a5eb2ca096845ebd6997457f/toolkit/components/translations/actors/TranslationsParent.sys.mjs#647):
+
 ```js
 // Check that the component is available before de-lazifying lazy.BrowserHandler.
 if (Cc["@mozilla.org/browser/clh;1"] && lazy.BrowserHandler?.kiosk) {
@@ -156,7 +164,7 @@ Two examples of different options on how to perform this connection are outlined
 
 ### Example directly connecting toolkit actors
 
-There was not a translations example available for this situation, so in this example, the toolkit Parent and Child actors are in use with [GeckoViewAutocomplete.sys.mjs](https://searchfox.org/mozilla-central/source/mobile/shared/modules/geckoview/GeckoViewAutocomplete.sys.mjs) coordinating on the JavaScript side and [Autocomplete.java](https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/Autocomplete.java) on the Java side.
+There was not a translations example available for this situation, so in this example, the toolkit Parent and Child actors are in use with [GeckoViewAutocomplete.sys.mjs](https://searchfox.org/firefox-main/source/mobile/shared/modules/geckoview/GeckoViewAutocomplete.sys.mjs) coordinating on the JavaScript side and [Autocomplete.java](https://searchfox.org/firefox-main/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/Autocomplete.java) on the Java side.
 
 First, items must be declared statically in [geckoview.js](https://gist.github.com/agi/c900f3e473ff681158c0c907e34780e4#actors) to register them.
 
@@ -190,6 +198,7 @@ First, items must be declared statically in [geckoview.js](https://gist.github.c
 The example shows connecting a GeckoView module for use and how toolkit calls may be referenced.
 
 [`geckoview.js`](https://searchfox.org/mozilla-central/rev/a965e3c683ecc035dee1de72bd33a8d91b1203ed/mobile/shared/chrome/geckoview/geckoview.js#856):
+
 ```js
 {
   name: "GeckoViewTranslations",
@@ -207,7 +216,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
 });
 
-…
+// ...
 // Static call example
 lazy.TranslationsParent.getIsTranslationsEngineSupported()
 
@@ -231,12 +240,12 @@ One way to begin is to outline all of the toolkit function calls or messages tha
 It is also helpful to note if the call should be a [session or runtime call](./geckoview-architecture.rst#view-runtime-and-session). Session calls require the state of the page to be known. For example, requesting a page restore. These calls should not outlive the session. Runtime calls do not require the state of the page. They can be statically declared functions or anything else that does not depend on session state. For example, changing a preference.
 
 ```{tip}
-**Aside on preferences:** Generally Gecko preferences can be connected specifically on the Java side in [GeckoRuntimeSettings.java](https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/GeckoRuntimeSettings.java), but some cases may wish to run through the toolkit if there is additional setting/getting logic.
+**Aside on preferences:** Generally Gecko preferences can be connected specifically on the Java side in [GeckoRuntimeSettings.java](https://searchfox.org/firefox-main/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/GeckoRuntimeSettings.java), but some cases may wish to run through the toolkit if there is additional setting/getting logic.
 ```
 
 This call and message identification step is important and should not be skipped because it will help drive API design decisions. Be sure to note any missing calls or data that the feature needs and does not already exist in the toolkit. New toolkit calls or the GeckoView module can help fill out these gaps. This process is iterative, but a good foundation of what is needed will help with organization.
 
-#### Example early outline of toolkit calls for translations:
+#### Example early outline of toolkit calls for translations
 
 ```
 Toolkit outline:
@@ -268,6 +277,7 @@ Data objects:
   * String display name
   * String BCP 47 Code
 ```
+
 This list will change and grow as more details are uncovered.
 
 ### Map toolkit calls to Java equivalent
@@ -280,7 +290,7 @@ For example, the JS toolkit signature `string[] getPreferredLanguages()` could h
 
 ### A quick overview of GeckoView delegates
 
-If the application needs to listen to an event or react to information, then there is a good chance the API will also need [a delegate](./geckoview-architecture.rst#delegates). GeckoView only provides base functionality. Embedders of GeckoView, such as Android Components, which powers Fenix, need to implement the specifics of what the reaction should be to an event. If the app needs to do something in response to an event, such as paint UI,  then the embedding application needs to implement the delegate.
+If the application needs to listen to an event or react to information, then there is a good chance the API will also need [a delegate](./geckoview-architecture.rst#delegates). GeckoView only provides base functionality. Embedders of GeckoView, such as Android Components, which powers Fenix, need to implement the specifics of what the reaction should be to an event. If the app needs to do something in response to an event, such as paint UI, then the embedding application needs to implement the delegate.
 
 For example, a UI/UX requirement for translations might be: “When the user visits a page not in their set of expected known languages, then pop-up the translate feature dialog.” GeckoView does not implement this UI, but provides a mechanism for this to occur and others to implement the work. So, in this case, in toolkit, there is already a message called `TranslationsParent:OfferTranslation` that signals when a translation should be offered. To implement the functionality, a listener on the GeckoView JavaScript side should be set up to tell the GeckoView Java delegate that the event occurred. If the embedder implements this delegate, then that app can react as needed to this information.
 
@@ -289,6 +299,7 @@ For example, a UI/UX requirement for translations might be: “When the user vis
 Notice for this outline that the original toolkit calls outlined above are now outlined with how they will be presented in the public API. `GeckoResult<Void>` is used if we just need to know the call successfully resolved, `void` if no feedback is required to the caller, `GeckoResult<T>` is used if a return value is required.
 
 For the delegate outline, notice that each is reacting to a specific message broadcast by the `TranslationsParent`. Other message types or signals could also be used to activate the delegate.
+
 ```
 GeckoView API outline:
 
@@ -319,11 +330,13 @@ Delegate:
   * Will listen to message TranslationsParent:OfferTranslation
 
 ```
+
 Notice in the example that most items directly map from a JavaScript to a Java equivalent, but others needed a new object. Usually the function name is kept similar, but might be refined to make more sense in context. The state listeners were mapped to what will be a delegate.
 
 ```{seealso}
 See the [GeckoView Translations API RFC](https://docs.google.com/document/d/1pMn3IZthtsWPzg-tBGRGoeWebIaI8KJt42odiMTjMII/edit?tab=t.0#heading=h.rkn3k63wwhae) for a more extended example. Or other [design documents here](https://firefox-source-docs.mozilla.org/mobile/android/geckoview/design/index.html).
 ```
+
 ### Proposed API Review
 
 It is highly recommended that you send a draft of proposed GeckoView API changes or additions to [geckoview-reviewers](https://firefox-source-docs.mozilla.org/mots/index.html#core-geckoview) before implementing. The [RFC template may be found here](https://docs.google.com/document/d/1oHc4BbqM8pzEtVIq-MD1s2itRYAGTVQ8LkyHvy4s168/edit?tab=t.0#heading=h.ls1dr18v7zrx). This is especially important for non-trivial additions or changes. Some examples of non-trivial changes are introducing an API to support a new end-to-end feature, introduction of a new class or module, significant updates to an existing API, or introduction of an API that traverses multiple layers. Examples of trivial changes are introducing a new preference setting API, adding or updating parameters or responses, or minor updates to reflect changes in Gecko. (Also, extremely important note, public APIs cannot be directly changed, they must go through a [deprecation process](./geckoview-quick-start.rst#updating-the-changelog-and-api-documentation) to avoid [breaking changes](https://firefox-source-docs.mozilla.org/mobile/android/geckoview/design/breaking-changes.rst).) The review group can provide comments and recommendations before implementing. This can save time and potential issues during code review.
@@ -351,6 +364,7 @@ One of the requirements of the translations feature is to translate a page. For 
 Adding a new module on the JS side:
 
 [`GeckoViewTranslations.sys.mjs`](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/shared/modules/geckoview/GeckoViewTranslations.sys.mjs#44):
+
 ```js
 // Notice the use of GeckoViewModule to inherit behaviors`
 export class GeckoViewTranslations extends GeckoViewModule {
@@ -383,6 +397,7 @@ onEvent(aEvent, aData, aCallback) {
     break;
 ...
 ```
+
 Be sure to add to `mozbuild` this new file and register it in `geckoview.js`.
 
 Now that there is a JS listener, now add the Java side:
@@ -430,9 +445,9 @@ See [the patch for initially adding the GeckoView session APIs](https://phabrica
 
 #### Session Delegate API Example
 
-Adding a delegate that listens to an event is similar to the session API example, with just the addition of listening for the code. In this example, an `Offer` event listener is set up on the Java session side of the translations controller.  The JavaScript side then registers a listener for the toolkit parent’s message and sends an `Offer` message to the Java side
+Adding a delegate that listens to an event is similar to the session API example, with just the addition of listening for the code. In this example, an `Offer` event listener is set up on the Java session side of the translations controller. The JavaScript side then registers a listener for the toolkit parent’s message and sends an `Offer` message to the Java side
 
-#### Example setting up the delegate and listener for the triggering event:
+#### Example setting up the delegate and listener for the triggering event
 
 * Notice `onOfferTranslate` is only a stub. The implementation will be set up in the embedding application.
 
@@ -495,6 +510,7 @@ public class TranslationsController {
   }
 }
 ```
+
 [`GeckoViewTranslations.sys.mjs`](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/shared/modules/geckoview/GeckoViewTranslations.sys.mjs#111):
 
 ```js
@@ -515,9 +531,9 @@ handleEvent(aEvent) {
   switch (aEvent.type) {
     case "TranslationsParent:OfferTranslation":
      // Send the event to GeckoView’s Java-side.
-     this.eventDispatcher.sendRequest({
-       type: "GeckoView:Translations:Offer",
-       });
+     this.eventDispatcher.sendRequest(
+       "GeckoView:Translations:Offer",
+     );
      break;
   }
 }
@@ -532,6 +548,7 @@ See [the patch for initially adding the GeckoView session APIs](https://phabrica
 A runtime endpoint is similar to a session endpoint, with a few key differences. The differences are a different event dispatcher and events are listened to differently.
 
 [`GeckoViewTranslations.sys.mjs`](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/shared/modules/geckoview/GeckoViewTranslations.sys.mjs#145):
+
 ```js
 export const GeckoViewTranslationsSettings = {
 
@@ -546,6 +563,7 @@ export const GeckoViewTranslationsSettings = {
 ```
 
 Registered in [`GeckoViewStartup.sys.mjs`](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/shared/components/geckoview/GeckoViewStartup.sys.mjs#204):
+
 ```js
 GeckoViewUtils.addLazyGetter(this, "GeckoViewTranslationsSettings", {
 	module: "resource://gre/modules/GeckoViewTranslations.sys.mjs",
@@ -587,7 +605,7 @@ See the [initial translations runtime patch](https://phabricator.services.mozill
 
 #### Testing
 
-On the GeckoView side, the most common test is a junit or plain mochitest. Cross-platform tests generally run as well. The tests for the GeckoView side of translations may be found in [TranslationsTests.kt](http://TranslationsTests.kt) or [test\_geckoview\_translations.html](https://searchfox.org/mozilla-central/source/mobile/shared/modules/geckoview/test/mochitest/test_geckoview_translations.html) for reference.
+On the GeckoView side, the most common test is a junit or plain mochitest. Cross-platform tests generally run as well. The tests for the GeckoView side of translations may be found in [TranslationsTests.kt](http://TranslationsTests.kt) or [test\_geckoview\_translations.html](https://searchfox.org/firefox-main/source/mobile/shared/modules/geckoview/test/mochitest/test_geckoview_translations.html) for reference.
 
 ```{seealso}
 See [junit testing guide](./junit.rst#the-test-runner-extension) for more details.
@@ -600,6 +618,7 @@ It is highly recommended at this point to make a minimal menu option in GeckoVie
 Example add a new item to the GVE menu with some basic test functionality:
 
 [`GeckoViewActivity.java`](https://searchfox.org/mozilla-central/rev/206eaea9a2fd4307da16e1614cd934920368165a/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/GeckoViewActivity.java#1340):
+
 ```java
 // Member variables to help manage states for UI
 private String mDetectedLanguage = null;
@@ -667,6 +686,7 @@ Generally, many of the design decisions in GeckoView will have a parallel in And
 This example shows how to connect the basic `translate` function established in GeckoView to Android components. This is a session level API.
 
 In [`EngineSession.kt`](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/android-components/components/concept/engine/src/main/java/mozilla/components/concept/engine/EngineSession.kt#1018):
+
 ```kotlin
 abstract fun requestTranslate(
     fromLanguage: String,
@@ -676,6 +696,7 @@ abstract fun requestTranslate(
 ```
 
 In [`GeckoEngineSession.kt`](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/GeckoEngineSession.kt#979) implement the method:
+
 ```kotlin
 override fun requestTranslate(
 fromLanguage: String,
@@ -711,7 +732,8 @@ For more details on this session example [see this pull request](https://github.
 ```
 
 ### Managing State
-This guide will only provide code examples on the basics of connecting the GV API to AC.  However, for completeness, this section will outline the importance of managing state in AC. In general, AC uses Flux architecture to coordinate data flow. If an action occurs that will change the state or require a reaction, then setting up an observer is the typical pattern. One of the key observers is almost always a store dispatcher which will dispatch an action to the store. The action will then be watched for by a state reducer. The state reducer then will properly update the data store model with the correct information.
+
+This guide will only provide code examples on the basics of connecting the GV API to AC. However, for completeness, this section will outline the importance of managing state in AC. In general, AC uses Flux architecture to coordinate data flow. If an action occurs that will change the state or require a reaction, then setting up an observer is the typical pattern. One of the key observers is almost always a store dispatcher which will dispatch an action to the store. The action will then be watched for by a state reducer. The state reducer then will properly update the data store model with the correct information.
 
 Recommend reviewing [Fenix’s Architecture Overview](https://firefox-source-docs.mozilla.org/mobile/android/fenix/architecture-overview.html) for more information, as the concepts apply the same to Android Components.
 
@@ -719,8 +741,8 @@ Briefly, an example outline of how state propagates through the app:
 
 * Translate was [completed for the session](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/GeckoEngineSession.kt#1003), which calls: ``notifyObservers{onTranslateComplete}``
 * An [observer](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/android-components/components/browser/state/src/main/java/mozilla/components/browser/state/engine/EngineObserver.kt#489) of `onTranslateComplete` then calls: ``store.dispatch(TranslationsAction.TranslateSuccessAction(tabId)``
-* [Reducers](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/state/src/main/java/mozilla/components/browser/state/reducer/TranslationsStateReducer.kt#113) and [Middleware](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/state/src/main/java/mozilla/components/browser/state/engine/middleware/TranslationsMiddleware.kt#323) for the `TranslateSuccessAction:`
-  * Send [telemetry](https://searchfox.org/mozilla-central/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/telemetry/TelemetryMiddleware.kt#174)
+* [Reducers](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/state/src/main/java/mozilla/components/browser/state/reducer/TranslationsStateReducer.kt#113) and [Middleware](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/state/src/main/java/mozilla/components/browser/state/engine/middleware/TranslationsMiddleware.kt#323) for the `TranslateSuccessAction:`
+  * Send [telemetry](https://searchfox.org/firefox-main/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/telemetry/TelemetryMiddleware.kt#174)
   * Update the state of ``isTranslated`` on ``SessionState.translationsState`` to ``true``
     * Store [observers](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogBinding.kt#135) connected to [UI](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt#203) will react to ``isTranslated``
 
@@ -730,7 +752,8 @@ A delegate can be implemented as a session or runtime delegate depending on the 
 
 For example, `onOfferTranslate` needs to be implemented in AC.
 
-[`GeckoTranslateSessionDelegate.kt`](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/translate/GeckoTranslateSessionDelegate.kt) is created in the Gecko namespace:
+[`GeckoTranslateSessionDelegate.kt`](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/translate/GeckoTranslateSessionDelegate.kt) is created in the Gecko namespace:
+
 ```kotlin
 internal class GeckoTranslateSessionDelegate(
 private val engineSession: GeckoEngineSession,
@@ -745,7 +768,7 @@ private val engineSession: GeckoEngineSession,
 }
 ```
 
-[`GeckoEngineSession.kt`](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/GeckoEngineSession.kt):
+[`GeckoEngineSession.kt`](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/GeckoEngineSession.kt):
 
 ```kotlin
 // Register delegate
@@ -784,7 +807,7 @@ See this [example pull request](https://github.com/mozilla-mobile/firefox-androi
 
 ### Testing
 
-Tests on the AC side generally correspond to the filename where it was added. For example, translation tests may be found in [GeckoEngineTest.kt](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/android-components/components/browser/engine-gecko/src/test/java/mozilla/components/browser/engine/gecko/GeckoEngineTest.kt#3550), [GeckoTranslateSessionDelegateTest.kt](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/engine-gecko/src/test/java/mozilla/components/browser/engine/gecko/translate/GeckoTranslateSessionDelegateTest.kt), [TranslationsActionTest.kt](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/state/src/test/java/mozilla/components/browser/state/action/TranslationsActionTest.kt), and [TranslationsMiddlewareTest.kt](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/state/src/test/java/mozilla/components/browser/state/engine/middleware/TranslationsMiddlewareTest.kt).
+Tests on the AC side generally correspond to the filename where it was added. For example, translation tests may be found in [GeckoEngineTest.kt](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/android-components/components/browser/engine-gecko/src/test/java/mozilla/components/browser/engine/gecko/GeckoEngineTest.kt#3550), [GeckoTranslateSessionDelegateTest.kt](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/engine-gecko/src/test/java/mozilla/components/browser/engine/gecko/translate/GeckoTranslateSessionDelegateTest.kt), [TranslationsActionTest.kt](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/state/src/test/java/mozilla/components/browser/state/action/TranslationsActionTest.kt), and [TranslationsMiddlewareTest.kt](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/state/src/test/java/mozilla/components/browser/state/engine/middleware/TranslationsMiddlewareTest.kt).
 
 ```{seealso}
 See [Fenix’s testing guidelines for more information.](https://firefox-source-docs.mozilla.org/mobile/android/fenix/Development-Test-Plan.html)
@@ -818,6 +841,7 @@ To add a menu option to Reference Browser:
   },
 }
 ```
+
 ```{seealso}
 Please [see this PR](https://github.com/mozilla-mobile/firefox-android/pull/4231/files#diff-3f5014b9ddff0dd60214e8d40638a54391901e134646fd22de888a35fbcc98f7) for an extended example.
 ```
@@ -840,7 +864,8 @@ Fenix’s ``TranslationsDialogAction.TranslateAction`` maps directly to AC’s `
 See [Fenix Architecture Overview](https://firefox-source-docs.mozilla.org/mobile/android/fenix/architecture-overview.html) for more guidance.
 ```
 
-[`TranslationsDialogFragment.kt`](https://searchfox.org/mozilla-central/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt):
+[`TranslationsDialogFragment.kt`](https://searchfox.org/firefox-main/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt):
+
 ```kotlin
 private lateinit var translationsDialogStore: TranslationsDialogStore
 
@@ -874,6 +899,7 @@ Managing state is also extremely important with the UI.
 This snippet checks for the translations state to change and passes it on to the Fenix store:
 
 [`TranslationsDialogBinding.kt`](https://searchfox.org/mozilla-central/rev/0b189f017bc9d48b62012205c5b9f8a8b560497b/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogBinding.kt):
+
 ```kotlin
 // Session Translations State Behavior (Tab)
 // This is the AC state information
@@ -889,7 +915,8 @@ if (!translationsDialogStore.state.isTranslated) {
 
 From there, an observer can monitor `isTranslated` and react appropriately.
 
-[`TranslationsDialogFragment.kt`](https://searchfox.org/mozilla-central/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt):
+[`TranslationsDialogFragment.kt`](https://searchfox.org/firefox-main/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/TranslationsDialogFragment.kt):
+
 ```kotlin
 val translationsDialogState =
 translationsDialogStore.observeAsComposableState { it }.value
@@ -919,7 +946,6 @@ The translations feature was released in four waves. Three of those waves had sp
 * [QA-2218](https://mozilla-hub.atlassian.net/browse/QA-2218) \- Website Translations for Fenix on Android (wave 1): Basic Feature and Page Settings
 * [QA-2414](https://mozilla-hub.atlassian.net/browse/QA-2414) \- Website Translations for Fenix on Android (wave 2): Global Settings and Bug Fixes
 * [QA-2415](https://mozilla-hub.atlassian.net/browse/QA-2415) \- Website Translations for Fenix on Android (wave 3): Downloads and Bug Fixes
-
 
 ### Accessibility Testing Requests
 

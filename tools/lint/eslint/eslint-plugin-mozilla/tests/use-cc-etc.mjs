@@ -25,7 +25,6 @@ function invalidCode(code, originalName, newName, output) {
           shortName: newName,
           oldName: originalName,
         },
-        type: "MemberExpression",
       },
     ],
   };

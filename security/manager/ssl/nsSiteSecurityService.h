@@ -2,12 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsSiteSecurityService_h__
-#define __nsSiteSecurityService_h__
+#ifndef _nsSiteSecurityService_h_
+#define _nsSiteSecurityService_h_
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Dafsa.h"
-#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsIDataStorage.h"
 #include "nsISiteSecurityService.h"
@@ -126,9 +125,6 @@ class nsSiteSecurityService : public nsISiteSecurityService {
   bool GetPreloadStatus(
       const nsACString& aHost,
       /*optional out*/ bool* aIncludeSubdomains = nullptr) const;
-  nsresult IsSecureHost(const nsACString& aHost,
-                        const OriginAttributes& aOriginAttributes,
-                        bool* aResult);
 
   nsresult GetWithMigration(const nsACString& aHostname,
                             const OriginAttributes& aOriginAttributes,
@@ -146,4 +142,4 @@ class nsSiteSecurityService : public nsISiteSecurityService {
   const mozilla::Dafsa mDafsa;
 };
 
-#endif  // __nsSiteSecurityService_h__
+#endif  // _nsSiteSecurityService_h_

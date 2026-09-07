@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -12,6 +12,6 @@ features: [Temporal]
 const apr2000 = new Temporal.PlainYearMonth(2000, 4, "gregory");
 
 TemporalHelpers.assertPlainYearMonth(apr2000.with({year: -271821}),
-                                     -271821, 4, "M04", "", "gregory-inverse", 271822);
+                                     -271821, 4, "M04", "", "bce", 271822);
 
 reportCompare(0, 0);

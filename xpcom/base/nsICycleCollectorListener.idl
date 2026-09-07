@@ -36,6 +36,10 @@ interface nsIFile;
  *     describe the node itself; and
  *   - for each edge starting at that node, a call is made to |noteEdge|.
  *
+ * - For each weak map entry, a call is made to |noteWeakMapEntry|. Each of the
+ *   values passed to noteWeakMapEntry can be null, which indicates that it is
+ *   something that is not part of a garbage cycle.
+ *
  * - Then, a series of calls are made to:
  *   - |describeRoot|, for reference-counted nodes that the CC has identified as
  *     being alive because there are unknown references to those nodes.
@@ -58,6 +62,10 @@ interface nsICycleCollectorHandler : nsISupports
     void noteEdge(in ACString aFromAddress,
                   in ACString aToAddress,
                   in ACString aEdgeName);
+    void noteWeakMapEntry(in ACString aMap,
+                          in ACString aKey,
+                          in ACString aKeyDelegate,
+                          in ACString aValue);
     void describeRoot(in ACString aAddress,
                       in unsigned long aKnownEdges);
     void describeGarbage(in ACString aAddress);

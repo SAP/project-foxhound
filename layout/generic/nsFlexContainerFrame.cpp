@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/WritingModes.h"
 #include "nsBlockFrame.h"
@@ -58,8 +57,6 @@ static mozilla::LazyLogModule gFlexContainerLog("FlexContainer");
 // of indentation, just add two extra spaces at the start of the message string.
 #define FLEX_LOGV(message, ...) \
   MOZ_LOG(gFlexContainerLog, LogLevel::Verbose, ("  " message, ##__VA_ARGS__));
-
-static const char* BoolToYesNo(bool aArg) { return aArg ? "yes" : "no"; }
 
 // Returns the OrderState enum we should pass to CSSOrderAwareFrameIterator
 // (depending on whether aFlexContainer has
@@ -432,7 +429,7 @@ class nsFlexContainerFrame::FlexItem final {
 
     // We couldn't determine a baseline, so we synthesize one from border box:
     ascent = Baseline::SynthesizeBOffsetFromBorderBox(
-        mFrame, mWM, BaselineSharingGroup::First);
+        mFrame, mCBWM, BaselineSharingGroup::First);
     return ascent;
   }
 
@@ -459,20 +456,18 @@ class nsFlexContainerFrame::FlexItem final {
   // ReflowInput for flex items.
   StyleSize StyleMainSize() const {
     nscoord mainSize = MainSize();
-    if (Frame()->StylePosition()->mBoxSizing == StyleBoxSizing::Border) {
+    if (Frame()->StylePosition()->mBoxSizing == StyleBoxSizing::BorderBox) {
       mainSize += BorderPaddingSizeInMainAxis();
     }
-    return StyleSize::LengthPercentage(
-        LengthPercentage::FromAppUnits(mainSize));
+    return StyleSize::FromAppUnits(mainSize);
   }
 
   StyleSize StyleCrossSize() const {
     nscoord crossSize = CrossSize();
-    if (Frame()->StylePosition()->mBoxSizing == StyleBoxSizing::Border) {
+    if (Frame()->StylePosition()->mBoxSizing == StyleBoxSizing::BorderBox) {
       crossSize += BorderPaddingSizeInCrossAxis();
     }
-    return StyleSize::LengthPercentage(
-        LengthPercentage::FromAppUnits(crossSize));
+    return StyleSize::FromAppUnits(crossSize);
   }
 
   // Returns the distance between this FlexItem's baseline and the cross-start
@@ -973,7 +968,8 @@ class nsFlexContainerFrame::FlexLine final {
   explicit FlexLine(nscoord aMainGapSize) : mMainGapSize(aMainGapSize) {}
 
   nscoord SumOfGaps() const {
-    return NumItems() > 0 ? (NumItems() - 1) * mMainGapSize : 0;
+    return mNumNonCollapsedItems ? (mNumNonCollapsedItems - 1) * mMainGapSize
+                                 : 0;
   }
 
   // Returns the sum of our FlexItems' outer hypothetical main sizes plus the
@@ -1021,14 +1017,17 @@ class nsFlexContainerFrame::FlexLine final {
       mNumFrozenItems++;
     }
 
+    // If the item added was not the first non-collapsed item in the line,
+    // we add in any gap space as needed.
+    if (!lastItem.IsStrut()) {
+      if (mNumNonCollapsedItems) {
+        mTotalOuterHypotheticalMainSize += mMainGapSize;
+      }
+      mNumNonCollapsedItems++;
+    }
+
     mTotalItemMBP += lastItem.MarginBorderPaddingSizeInMainAxis();
     mTotalOuterHypotheticalMainSize += lastItem.OuterMainSize();
-
-    // If the item added was not the first item in the line, we add in any gap
-    // space as needed.
-    if (NumItems() >= 2) {
-      mTotalOuterHypotheticalMainSize += mMainGapSize;
-    }
   }
 
   // Computes the cross-size and baseline position of this FlexLine, based on
@@ -1119,6 +1118,8 @@ class nsFlexContainerFrame::FlexLine final {
   // Mostly used for optimization purposes, e.g. to bail out early from loops
   // when we can tell they have nothing left to do.
   uint32_t mNumFrozenItems = 0;
+  // Number of items that are not collapsed.
+  uint32_t mNumNonCollapsedItems = 0;
 
   // Sum of margin/border/padding for the FlexItems in this FlexLine.
   nscoord mTotalItemMBP = 0;
@@ -1373,7 +1374,7 @@ StyleAlignFlags nsFlexContainerFrame::CSSAlignmentForAbsPosChild(
              "We should've converted 'stretch' to the fallback alignment!");
   MOZ_ASSERT(alignment != StyleAlignFlags::FLEX_START &&
                  alignment != StyleAlignFlags::FLEX_END,
-             "nsAbsoluteContainingBlock doesn't know how to handle "
+             "AbsoluteContainingBlock doesn't know how to handle "
              "flex-relative axis for flex containers!");
 
   return (alignment | alignmentFlags);
@@ -1401,7 +1402,7 @@ nsFlexContainerFrame::UsedAlignSelfAndFlagsForItem(
   // Note: we don't need to call nsLayoutUtils::GetStyleFrame(aFlexItem) because
   // the table wrapper frame inherits 'align-self' property from the table
   // frame.
-  StyleAlignSelf usedAlignSelf =
+  StyleSelfAlignment usedAlignSelf =
       aFlexItem->StylePosition()->UsedAlignSelf(Style());
   if (MOZ_LIKELY(usedAlignSelf._0 == StyleAlignFlags::NORMAL)) {
     // For flex items, 'align-self:normal' behaves as 'align-self:stretch'.
@@ -1589,7 +1590,7 @@ nscoord nsFlexContainerFrame::PartiallyResolveAutoMinSize(
   const auto maxMainStyleSize = aItemReflowInput.mStylePosition->MaxSize(
       aAxisTracker.MainAxis(), cbWM, anchorResolutionParams);
   const auto boxSizingAdjust =
-      aItemReflowInput.mStylePosition->mBoxSizing == StyleBoxSizing::Border
+      aItemReflowInput.mStylePosition->mBoxSizing == StyleBoxSizing::BorderBox
           ? aFlexItem.BorderPadding().Size(cbWM)
           : LogicalSize(cbWM);
 
@@ -1691,7 +1692,7 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
   FLEX_ITEM_LOG(
       aFlexItem.Frame(),
       "Resolving auto main size? %s; resolving auto min main size? %s",
-      BoolToYesNo(isMainSizeAuto), BoolToYesNo(isMainMinSizeAuto));
+      YesOrNo(isMainSizeAuto), YesOrNo(isMainMinSizeAuto));
 
   nscoord resolvedMinSize;  // (only set/used if isMainMinSizeAuto==true)
   bool minSizeNeedsToMeasureContent = false;  // assume the best
@@ -1737,8 +1738,8 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
           sizeOverrides.mStyleBSize.emplace(aFlexItem.StyleCrossSize());
         }
         const auto sizeInItemWM = aFlexItem.Frame()->ComputeSize(
-            aItemReflowInput.mRenderingContext, itemWM,
-            aItemReflowInput.mContainingBlockSize, availISize,
+            aItemReflowInput, itemWM, aItemReflowInput.mContainingBlockSize,
+            availISize,
             aItemReflowInput.ComputedLogicalMargin(itemWM).Size(itemWM),
             aItemReflowInput.ComputedLogicalBorderPadding(itemWM).Size(itemWM),
             sizeOverrides, {ComputeSizeFlag::ShrinkWrap});
@@ -1872,12 +1873,7 @@ class nsFlexContainerFrame::CachedBAxisMeasurement {
           mComputedMaxBSize(aRI.ComputedMaxBSize()),
           mAvailableBSize(aRI.AvailableBSize()) {}
 
-    bool operator==(const Key& aOther) const {
-      return mComputedSize == aOther.mComputedSize &&
-             mComputedMinBSize == aOther.mComputedMinBSize &&
-             mComputedMaxBSize == aOther.mComputedMaxBSize &&
-             mAvailableBSize == aOther.mAvailableBSize;
-    }
+    bool operator==(const Key& aOther) const = default;
   };
 
   const Key mKey;
@@ -2481,7 +2477,7 @@ void FlexItem::ResolveFlexBaseSizeFromAspectRatio(
               AnchorPosResolutionParams::From(&aItemReflowInput))) &&
       IsCrossSizeDefinite(aItemReflowInput)) {
     const LogicalSize contentBoxSizeToBoxSizingAdjust =
-        aItemReflowInput.mStylePosition->mBoxSizing == StyleBoxSizing::Border
+        aItemReflowInput.mStylePosition->mBoxSizing == StyleBoxSizing::BorderBox
             ? BorderPadding().Size(mCBWM)
             : LogicalSize(mCBWM);
     const nscoord mainSizeFromRatio = mAspectRatio.ComputeRatioDependentSize(
@@ -2570,7 +2566,7 @@ nscoord FlexItem::ClampMainSizeViaCrossAxisConstraints(
   MOZ_ASSERT(HasAspectRatio(), "Caller should've checked the ratio is valid!");
 
   const LogicalSize contentBoxSizeToBoxSizingAdjust =
-      aItemReflowInput.mStylePosition->mBoxSizing == StyleBoxSizing::Border
+      aItemReflowInput.mStylePosition->mBoxSizing == StyleBoxSizing::BorderBox
           ? BorderPadding().Size(mCBWM)
           : LogicalSize(mCBWM);
 
@@ -2961,7 +2957,7 @@ void nsFlexContainerFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // (or a blockified version thereof, to not hit bug 456484).
   if (displayInside == StyleDisplayInside::Flow) {
     MOZ_ASSERT(StyleDisplay()->mDisplay == StyleDisplay::Block);
-    MOZ_ASSERT(Style()->GetPseudoType() == PseudoStyleType::scrolledContent,
+    MOZ_ASSERT(Style()->GetPseudoType() == PseudoStyleType::MozScrolledContent,
                "The only way a nsFlexContainerFrame can have 'display:block' "
                "should be if it's the inner part of a scrollable element");
     displayInside = GetParent()->StyleDisplay()->DisplayInside();
@@ -2981,8 +2977,12 @@ nsresult nsFlexContainerFrame::GetFrameName(nsAString& aResult) const {
 void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                             const nsDisplayListSet& aLists) {
   nsDisplayListCollection tempLists(aBuilder);
-
   DisplayBorderBackgroundOutline(aBuilder, tempLists);
+  if (HidesContent()) {
+    tempLists.MoveTo(aLists);
+    return;
+  }
+
   if (GetPrevInFlow()) {
     DisplayOverflowContainers(aBuilder, tempLists);
   }
@@ -3000,6 +3000,10 @@ void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   for (; !iter.AtEnd(); iter.Next()) {
     nsIFrame* childFrame = *iter;
     BuildDisplayListForChild(aBuilder, childFrame, childLists, flags);
+  }
+
+  if (GetPrevInFlow() || GetNextInFlow()) {
+    DisplayAbsoluteFramesNotBuiltByPlaceholder(aBuilder, tempLists);
   }
 
   tempLists.MoveTo(aLists);
@@ -3906,12 +3910,12 @@ nscoord FlexLine::ExtractBaselineOffset(
     return offset != nscoord_MIN ? LineCrossSize() - offset : offset;
   };
 
-  auto PrimaryBaseline = [=]() {
+  auto PrimaryBaseline = [=, this]() {
     return aBaselineGroup == BaselineSharingGroup::First
                ? FirstBaselineOffset()
                : LastBaselineOffsetFromStartEdge();
   };
-  auto SecondaryBaseline = [=]() {
+  auto SecondaryBaseline = [=, this]() {
     return aBaselineGroup == BaselineSharingGroup::First
                ? LastBaselineOffsetFromStartEdge()
                : FirstBaselineOffset();
@@ -4538,7 +4542,13 @@ void FlexLine::PositionItemsInMainAxis(
     nscoord aContentBoxMainSize, const FlexboxAxisTracker& aAxisTracker) {
   MainAxisPositionTracker mainAxisPosnTracker(
       aAxisTracker, this, aJustifyContent, aContentBoxMainSize);
+  bool hadItemBefore = false;
   for (FlexItem& item : Items()) {
+    const bool strut = item.IsStrut();
+    if (hadItemBefore && !strut) {
+      mainAxisPosnTracker.TraverseGap(mMainGapSize);
+    }
+
     nscoord itemMainBorderBoxSize =
         item.MainSize() + item.BorderPaddingSizeInMainAxis();
 
@@ -4555,9 +4565,7 @@ void FlexLine::PositionItemsInMainAxis(
     mainAxisPosnTracker.ExitChildFrame(itemMainBorderBoxSize);
     mainAxisPosnTracker.ExitMargin(item.Margin());
     mainAxisPosnTracker.TraversePackingSpace();
-    if (&item != &Items().LastElement()) {
-      mainAxisPosnTracker.TraverseGap(mMainGapSize);
-    }
+    hadItemBefore |= !strut;
   }
 }
 
@@ -4626,6 +4634,8 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
                                   ReflowOutput& aReflowOutput,
                                   const ReflowInput& aReflowInput,
                                   nsReflowStatus& aStatus) {
+  NormalizeChildLists();
+
   if (IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
     return;
   }
@@ -4644,8 +4654,6 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
   if (IsFrameTreeTooDeep(aReflowInput, aReflowOutput, aStatus)) {
     return;
   }
-
-  NormalizeChildLists();
 
 #ifdef DEBUG
   mDidPushItemsBitMayLie = false;
@@ -4955,7 +4963,7 @@ void nsFlexContainerFrame::UnionInFlowChildOverflow(
   // [1] https://drafts.csswg.org/css-overflow-3/#scrollable.
   const bool isScrolledContent =
       aAsIfScrolled ||
-      Style()->GetPseudoType() == PseudoStyleType::scrolledContent;
+      Style()->GetPseudoType() == PseudoStyleType::MozScrolledContent;
   bool anyScrolledContentItem = false;
   // Union of normal-positioned margin boxes for all the items.
   nsRect itemMarginBoxes;
@@ -4973,7 +4981,9 @@ void nsFlexContainerFrame::UnionInFlowChildOverflow(
     if (useMozBoxCollapseBehavior && f->StyleVisibility()->IsCollapse()) {
       continue;
     }
-    ConsiderChildOverflow(aOverflowAreas, f, aAsIfScrolled);
+    ConsiderChildOverflow(aOverflowAreas, f,
+                          aAsIfScrolled ? OverflowAreaUnionFlags::AsIfScrolled
+                                        : OverflowAreaUnionFlags::None);
     if (!isScrolledContent) {
       continue;
     }
@@ -5197,27 +5207,12 @@ void nsFlexContainerFrame::UpdateFlexLineAndItemInfo(
 nsFlexContainerFrame* nsFlexContainerFrame::GetFlexFrameWithComputedInfo(
     nsIFrame* aFrame) {
   // Prepare a lambda function that we may need to call multiple times.
-  auto GetFlexContainerFrame = [](nsIFrame* aFrame) {
-    // Return the aFrame's content insertion frame, iff it is
-    // a flex container frame.
-    nsFlexContainerFrame* flexFrame = nullptr;
-
-    if (aFrame) {
-      nsIFrame* inner = aFrame;
-      if (MOZ_UNLIKELY(aFrame->IsFieldSetFrame())) {
-        inner = static_cast<nsFieldSetFrame*>(aFrame)->GetInner();
-      }
-      // Since "Get" methods like GetInner and GetContentInsertionFrame can
-      // return null, we check the return values before dereferencing. Our
-      // calling pattern makes this unlikely, but we're being careful.
-      nsIFrame* insertionFrame =
-          inner ? inner->GetContentInsertionFrame() : nullptr;
-      nsIFrame* possibleFlexFrame = insertionFrame ? insertionFrame : aFrame;
-      flexFrame = possibleFlexFrame->IsFlexContainerFrame()
-                      ? static_cast<nsFlexContainerFrame*>(possibleFlexFrame)
-                      : nullptr;
+  auto GetFlexContainerFrame = [](nsIFrame* aFrame) -> nsFlexContainerFrame* {
+    // Return the aFrame's content insertion frame, iff it is a flex container.
+    if (!aFrame) {
+      return nullptr;
     }
-    return flexFrame;
+    return do_QueryFrame(aFrame->GetContentInsertionFrame());
   };
 
   nsFlexContainerFrame* flexFrame = GetFlexContainerFrame(aFrame);
@@ -6263,8 +6258,6 @@ void nsFlexContainerFrame::MoveFlexItemToFinalPosition(
   FLEX_ITEM_LOG(aItem.Frame(), "Moving item to its desired position %s",
                 ToString(pos).c_str());
   aItem.Frame()->SetPosition(outerWM, pos, aContainerSize);
-  PositionFrameView(aItem.Frame());
-  PositionChildViews(aItem.Frame());
 }
 
 nsReflowStatus nsFlexContainerFrame::ReflowFlexItem(
@@ -6509,8 +6502,6 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
                                                     NS_UNCONSTRAINEDSIZE);
   }
 
-  const bool useMozBoxCollapseBehavior =
-      StyleVisibility()->UseLegacyCollapseBehavior();
   const bool isSingleLine = IsSingleLine(this, stylePos);
   const auto flexWM = GetWritingMode();
 
@@ -6524,10 +6515,8 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
       continue;
     }
 
-    if (useMozBoxCollapseBehavior &&
-        childFrame->StyleVisibility()->IsCollapse()) {
-      // If we're using legacy "visibility:collapse" behavior, then we don't
-      // care about the sizes of any collapsed children.
+    if (childFrame->StyleVisibility()->IsCollapse()) {
+      // If we're collapsed, we don't take space in the main axis.
       continue;
     }
 
@@ -6591,14 +6580,14 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
     if (childShouldStretchCrossSize) {
       const auto offsetData = childFrame->IntrinsicBSizeOffsets();
       const nscoord boxSizingToMarginEdgeSize =
-          childStylePos->mBoxSizing == StyleBoxSizing::Content
+          childStylePos->mBoxSizing == StyleBoxSizing::ContentBox
               ? offsetData.MarginBorderPadding()
               : offsetData.margin;
       const nscoord stretchedCrossSize =
           std::max(0, aInput.mPercentageBasisForChildren->BSize(flexWM) -
                           boxSizingToMarginEdgeSize);
-      const auto stretchedStyleCrossSize = StyleSize::LengthPercentage(
-          LengthPercentage::FromAppUnits(stretchedCrossSize));
+      const auto stretchedStyleCrossSize =
+          StyleSize::FromAppUnits(stretchedCrossSize);
       // The size override is in the child's own writing mode.
       if (flexWM.IsOrthogonalTo(childWM)) {
         sizeOverrides.mStyleISize.emplace(stretchedStyleCrossSize);
@@ -6678,7 +6667,7 @@ Result<nsILineIterator::LineInfo, nsresult> nsFlexContainerFrame::GetLine(
   return lineInfo;
 }
 
-int32_t nsFlexContainerFrame::FindLineContaining(nsIFrame* aFrame,
+int32_t nsFlexContainerFrame::FindLineContaining(const nsIFrame* aFrame,
                                                  int32_t aStartLine) {
   const int32_t index = mFrames.IndexOf(aFrame);
   if (index < 0) {

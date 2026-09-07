@@ -15,8 +15,9 @@ support-files = [
   "popup_blocker_10_popups.html",
 ]
 skip-if = [
-  "os == 'linux'", # Frequent bug 1081925 and bug 1125520 failures
   "debug",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Frequent bug 1081925 and bug 1125520 failures
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Frequent bug 1081925 and bug 1125520 failures
 ]
 
 ["browser_popup_blocker_frames.js"]
@@ -42,7 +43,9 @@ support-files = [
   "popup_blocker_a.html",
   "popup_blocker_b.html",
 ]
-skip-if = ["debug"] # This test triggers Bug 1578794 due to opening many popups.
+skip-if = [
+  "debug", # This test triggers Bug 1578794 due to opening many popups.
+]
 
 ["browser_popup_close_main_window.js"]
 
@@ -57,17 +60,28 @@ support-files = [
 ["browser_popup_inner_outer_size.js"]
 
 ["browser_popup_linux_move.js"]
-run-if = ["os == 'linux' && !headless"] # subset of other move tests
-skip-if = ["os == 'linux' && os_version == '18.04' && opt"] # Bug 1951203
+run-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # subset of other move tests
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # subset of other move tests
+]
 
 ["browser_popup_linux_resize.js"]
-run-if = ["os == 'linux' && !headless"] # subset of other resize tests
+run-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # subset of other resize tests
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # subset of other resize tests
+]
 
 ["browser_popup_move.js"]
-skip-if = ["os == 'linux' && !headless"] # Wayland doesn't like moving windows, X11/XWayland unreliable current positions
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # Wayland doesn't like moving windows, X11/XWayland unreliable current positions
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # Wayland doesn't like moving windows, X11/XWayland unreliable current positions
+]
 
 ["browser_popup_move_instant.js"]
-skip-if = ["os == 'linux' && !headless"] # Wayland doesn't like moving windows, X11/XWayland unreliable current positions
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # Wayland doesn't like moving windows, X11/XWayland unreliable current positions
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # Wayland doesn't like moving windows, X11/XWayland unreliable current positions
+]
 
 ["browser_popup_new_window_resize.js"]
 
@@ -75,19 +89,37 @@ skip-if = ["os == 'linux' && !headless"] # Wayland doesn't like moving windows, 
 support-files = ["popup_size.html"]
 
 ["browser_popup_resize.js"]
-skip-if = ["os == 'linux' && !headless"] # outdated current sizes
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # outdated current sizes
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # outdated current sizes
+]
 
 ["browser_popup_resize_instant.js"]
-skip-if = ["os == 'linux' && !headless"] # outdated current sizes
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # outdated current sizes
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # outdated current sizes
+]
 
 ["browser_popup_resize_repeat.js"]
-skip-if = ["os == 'linux' && !headless"] # outdated current sizes
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # outdated current sizes
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # outdated current sizes
+]
 
 ["browser_popup_resize_repeat_instant.js"]
-skip-if = ["os == 'linux' && !headless"] # outdated current sizes
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # outdated current sizes
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # outdated current sizes
+]
 
 ["browser_popup_resize_revert.js"]
-skip-if = ["os == 'linux' && !headless"] # outdated current sizes
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # outdated current sizes
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # outdated current sizes
+]
 
 ["browser_popup_resize_revert_instant.js"]
-skip-if = ["os == 'linux' && !headless"] # outdated current sizes
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && !headless", # outdated current sizes
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !headless", # outdated current sizes
+]

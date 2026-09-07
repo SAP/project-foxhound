@@ -20,7 +20,8 @@ function createMockDefaultAgent(mockData) {
       defaultPdfHandler,
       shown,
       action,
-      daysSinceLastAppLaunch
+      daysSinceLastAppLaunch,
+      isTaskbarPinned
     ) => {
       sentPings.push({
         defaultBrowser,
@@ -29,6 +30,7 @@ function createMockDefaultAgent(mockData) {
         shown,
         action,
         daysSinceLastAppLaunch,
+        isTaskbarPinned,
       });
     },
     getSentPings: () => sentPings,
@@ -55,4 +57,5 @@ add_task(async function testDoTask() {
   Assert.equal(sentPings[0].shown, "not-shown");
   Assert.equal(sentPings[0].action, "no-action");
   Assert.equal(sentPings[0].daysSinceLastAppLaunch, 7);
+  Assert.equal(sentPings[0].isTaskbarPinned, "Error");
 });

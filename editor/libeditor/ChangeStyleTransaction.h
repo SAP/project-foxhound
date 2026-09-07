@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,8 @@
 
 #include "EditTransactionBase.h"  // base class
 
-#include "nsCOMPtr.h"                      // nsCOMPtr members
+#include "EditorForwards.h"
+
 #include "nsCycleCollectionParticipant.h"  // various macros
 #include "nsString.h"                      // nsString members
 
@@ -27,7 +27,8 @@ class Element;
  */
 class ChangeStyleTransaction final : public EditTransactionBase {
  protected:
-  ChangeStyleTransaction(nsStyledElement& aStyledElement, nsAtom& aProperty,
+  ChangeStyleTransaction(HTMLEditor& aHTMLEditor,
+                         nsStyledElement& aStyledElement, nsAtom& aProperty,
                          const nsAString& aValue, bool aRemove);
 
  public:
@@ -39,8 +40,8 @@ class ChangeStyleTransaction final : public EditTransactionBase {
    * @param aValue          New value for aProperty.
    */
   static already_AddRefed<ChangeStyleTransaction> Create(
-      nsStyledElement& aStyledElement, nsAtom& aProperty,
-      const nsAString& aValue);
+      HTMLEditor& aHTMLEditor, nsStyledElement& aStyledElement,
+      nsAtom& aProperty, const nsAString& aValue);
 
   /**
    * Creates a change style transaction.  This never returns nullptr.
@@ -50,8 +51,8 @@ class ChangeStyleTransaction final : public EditTransactionBase {
    * @param aValue          The value to remove from aProperty.
    */
   static already_AddRefed<ChangeStyleTransaction> CreateToRemove(
-      nsStyledElement& aStyledElement, nsAtom& aProperty,
-      const nsAString& aValue);
+      HTMLEditor& aHTMLEditor, nsStyledElement& aStyledElement,
+      nsAtom& aProperty, const nsAString& aValue);
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ChangeStyleTransaction,
                                            EditTransactionBase)
@@ -104,6 +105,8 @@ class ChangeStyleTransaction final : public EditTransactionBase {
    */
   MOZ_CAN_RUN_SCRIPT nsresult SetStyle(bool aAttributeWasSet,
                                        nsACString& aValue);
+
+  RefPtr<HTMLEditor> mHTMLEditor;
 
   // The element to operate upon.
   RefPtr<nsStyledElement> mStyledElement;

@@ -4,7 +4,7 @@
 "use strict";
 
 const { isInitialDocument } = ChromeUtils.importESModule(
-  "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs"
+  "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs"
 );
 const { RootMessageHandler } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs"

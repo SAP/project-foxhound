@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_MessageManagerFuzzer_h__
-#define mozilla_dom_MessageManagerFuzzer_h__
+#ifndef mozilla_dom_MessageManagerFuzzer_h_
+#define mozilla_dom_MessageManagerFuzzer_h_
 
 #include "jspubtd.h"
 #include "nsAString.h"
@@ -35,7 +33,7 @@ MESSAGEMANAGER_FUZZER_BLACKLIST=<path> (optional)
 class MessageManagerFuzzer {
  public:
   static void TryMutate(JSContext* aCx, const nsAString& aMessageName,
-                        ipc::StructuredCloneData* aData,
+                        NotNull<RefPtr<ipc::StructuredCloneData>>& aData,
                         const JS::Value& aTransfer);
 
  private:
@@ -43,7 +41,7 @@ class MessageManagerFuzzer {
   static nsCString GetFuzzValueFromFile();
   static bool IsMessageNameBlacklisted(const nsAString& aMessageName);
   static bool Mutate(JSContext* aCx, const nsAString& aMessageName,
-                     ipc::StructuredCloneData* aData,
+                     NotNull<RefPtr<ipc::StructuredCloneData>>& aData,
                      const JS::Value& aTransfer);
   static void Mutate(JSContext* aCx, JS::Rooted<JS::Value>& aMutation);
   static void MutateObject(JSContext* aCx, JS::Handle<JS::Value> aValue,

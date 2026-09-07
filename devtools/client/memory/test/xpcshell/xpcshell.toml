@@ -2,7 +2,9 @@
 tags = "devtools devtools-memory"
 head = "../../../shared/test/shared-head.js head.js"
 firefox-appdir = "browser"
-run-if = ["os != 'android'"]
+run-if = [
+  "os != 'android'",
+]
 
 ["test_action-clear-snapshots_01.js"]
 

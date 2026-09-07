@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=376075
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 376075 **/
+/** Test for Bug 376075 */
 
 var e = document.getElementById("display");
 
@@ -235,16 +235,14 @@ is(e.style.cssText,
 e.setAttribute("style", 'border-image: url("foo.png") 5 5 5 5; border: solid green');
 is(e.style.cssText, 'border: solid green;', "border DOES reset border-image");
 
-// Test that the color goes at the beginning of the last item of the
+// Test that the color goes at the end of the last item of the
 // background shorthand.
 e.setAttribute("style", "background: url(foo.png) blue");
-is(e.style.cssText,
-   "background: blue url(\"foo.png\");",
-   "color should be at start of single-item background");
+is(e.style.cssText, "background: url(\"foo.png\") blue;",
+   "color should be at end of single-item background");
 e.setAttribute("style", "background: url(bar.png), url(foo.png) blue");
-is(e.style.cssText,
-   "background: url(\"bar.png\"), blue url(\"foo.png\");",
-   "color should be at start of single-item background");
+is(e.style.cssText, "background: url(\"bar.png\"), url(\"foo.png\") blue;",
+   "color should be at end of multi-item background");
 
 </script>
 </pre>

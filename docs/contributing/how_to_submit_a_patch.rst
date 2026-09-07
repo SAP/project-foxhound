@@ -14,13 +14,23 @@ each step is detailed below:
 .. mermaid::
 
      graph TD;
-         Preparation --> c[Working on a patch];
+         Preparation --> Bugzilla[(Bugzilla)];
+         Bugzilla[(Bugzilla)] --> Git[(Git)];
+         Git[(Git)] --> c[Working on a patch];
          c[Working on a patch] --> Testing;
          Testing --> c[Working on a patch];
          Testing --> e[Submit the patch];
-         e[Submit the patch] --> d[Getting Reviews]
+         e[Submit the patch] --> Phabricator[(Phabricator)];
+         Phabricator[(Phabricator)] --> d[Getting Reviews];
          d[Getting Reviews] -- Addressing Review comment --> c[Working on a patch];
-         d[Getting Reviews] --> h[Push the change];
+         d[Getting Reviews] --> Lando[(Lando)];
+         Lando[(Lando)] --> h[Push the change];
+         h[Push the change] --> Git2[(Git)];
+         style Bugzilla fill:#e1f5ff,stroke:#0366d6
+         style Git fill:#e1f5ff,stroke:#0366d6
+         style Phabricator fill:#e1f5ff,stroke:#0366d6
+         style Lando fill:#e1f5ff,stroke:#0366d6
+         style Git2 fill:#e1f5ff,stroke:#0366d6
 
 
 
@@ -69,7 +79,7 @@ If module ownership is not clear, ask on the newsgroups or `on
 Matrix <https://chat.mozilla.org>`__. The revision log for the relevant
 file might also be helpful. For example, see the change log for
 ``browser/base/content/browser.js``, by clicking the "Git Log"
-link at the top of `Searchfox <https://searchfox.org/mozilla-central/source/>`__, or
+link at the top of `Searchfox <https://searchfox.org/firefox-main/source/>`__, or
 by running ``git log browser/base/content/browser.js``. The corresponding
 checkin message will contain something like "r=nickname", identifying
 active code submissions, and potential code reviewers.
@@ -86,7 +96,7 @@ Each patch should represent a single complete change, separating
 distinct changes into multiple individual patches. If your change
 results in a large, complex patch, seek if it can be broken into
 `smaller, easy to understand patches representing complete
-steps <https://secure.phabricator.com/book/phabflavor/article/writing_reviewable_code/#many-small-commits>`__,
+steps <https://we.phorge.it/book/flavor/article/writing_reviewable_code/#many-small-commits>`__,
 applied on top of each other. This makes it easier to review your
 changes, `leading to quicker
 reviews, <https://groups.google.com/group/mozilla.dev.planning/msg/2f99460f57f776ef?hl=en>`__
@@ -102,7 +112,7 @@ simple commit message should look like this:
 The text of the message should be what you did to fix the bug, not a
 description of what the bug was. If it is not obvious why this change is
 appropriate, then `explain why in the commit
-message <https://mozilla-version-control-tools.readthedocs.io/en/latest/mozreview/commits.html#write-detailed-commit-messages>`__.
+message <https://we.phorge.it/book/flavor/article/writing_reviewable_code/#write-sensible-commit-messages>`__.
 If this does not fit on one line, then leave a blank line and add
 further lines for more detail and/or reasoning.
 
@@ -122,8 +132,7 @@ require.
 Testing
 -------
 
-All changes must be tested. In most cases, an `automated
-test <https://developer.mozilla.org/docs/Mozilla/QA/Automated_testing>`__ is required for every
+All changes must be tested. In most cases, :ref:`Automated Testing` is required for every
 change to the code.
 
 While we desire to have automated tests for all code, we also have a

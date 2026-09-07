@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,6 +62,21 @@ class GroupInfoPair {
     return mTemporaryStorageGroupInfo || mDefaultStorageGroupInfo ||
            mPrivateStorageGroupInfo;
   }
+
+  template <typename Iterator, typename Pred>
+  void MaybeInsertOriginInfos(Iterator aDest, Pred aPred) const;
+
+  template <typename Iterator>
+  void MaybeInsertNonPersistedOriginInfos(Iterator aDest) const;
+
+  // Inserts non-persisted origins that also have zero quota-charged usage.
+  // Used by cleanup routines to identify candidate origins for removal.
+  //
+  // See QuotaManager::GetOriginInfosWithZeroUsage for the semantics and time
+  // units of |aCutoffAccessTime|.
+  template <typename Iterator>
+  void MaybeInsertNonPersistedZeroUsageOriginInfos(
+      Iterator aDest, const Maybe<int64_t>& aCutoffAccessTime) const;
 
  private:
   RefPtr<GroupInfo>& GetGroupInfoForPersistenceType(

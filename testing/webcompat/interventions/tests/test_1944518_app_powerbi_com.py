@@ -1,10 +1,11 @@
 import pytest
 from webdriver import NoSuchElementException
 
-URL = "https://app.powerbi.com/view?r=eyJrIjoiYmVjMjViZjgtYTI2NS00NzcxLWFiMDQtYjM5OGI2YWQzMDUwIiwidCI6IjA0MmQ3NzA5LWMwNWItNGRlZC1hYjg4LTc0NDMwYzU0YmZlNyJ9"
+URL = "https://app.powerbi.com/view?r=eyJrIjoiN2U3NGMyNWEtZTAxNS00MzVhLWExNmMtOThhZjdiYjQ4MWNkIiwidCI6IjEyNGU2OWRiLWVmNjUtNDk2Yi05NmE5LTVkNTZiZWMxZDI5MSIsImMiOjl9"
 
 HERO_CSS = "visual-modern"
 SCROLLBAR_CSS = ".scroll-element"
+SCROLL_CONTAINER_CSS = ".scrollbar-inner.scroll-content"
 
 
 async def is_scrollbar_added(client):
@@ -12,9 +13,14 @@ async def is_scrollbar_added(client):
     client.await_css(HERO_CSS, is_displayed=True)
     try:
         assert client.await_css(SCROLLBAR_CSS, timeout=3)
-        return True
     except NoSuchElementException:
         return False
+
+    container = client.await_css(SCROLL_CONTAINER_CSS)
+    return client.execute_script(
+        """return arguments[0].clientWidth == arguments[0].parentNode.clientWidth""",
+        container,
+    )
 
 
 @pytest.mark.only_platforms("mac")

@@ -1,0 +1,17 @@
+<script>
+requestIdleCallback(() => {
+  opener.postMessage('closing');
+  close();
+})
+document.onselectstart = () => {
+  let elapsed = false;
+  setTimeout(() => {
+    elapsed = true;
+  }, 200);
+  SpecialPowers.Services.tm.spinEventLoopUntil("spin for 200 ms", () => elapsed);
+}
+document.addEventListener("DOMContentLoaded", () => {
+  document.execCommand("selectAll", false)
+});
+</script>
+<body></body>

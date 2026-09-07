@@ -4,10 +4,7 @@
 
 // Shared code for platforms that use raw HID access (Linux, FreeBSD, etc.)
 
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(clippy::cast_lossless, clippy::needless_lifetimes)
-)]
+#![allow(clippy::cast_lossless, clippy::needless_lifetimes)]
 
 #[cfg(target_os = "linux")]
 use std::io;
@@ -50,6 +47,7 @@ pub enum Data {
     Usage { data: u32 },
     Input,
     Output,
+    #[allow(dead_code)] // we only read this on linux
     ReportCount { data: u32 },
 }
 

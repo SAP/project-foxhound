@@ -261,7 +261,7 @@
       var tree4element = document.getElementById("tree4_ti1");
       var tree4acc = getAccessible("tree4");
       tree4element.remove();
-      waitForEvent(EVENT_REORDER, tree4acc, function() {
+      waitForEvent(EVENT_REORDER, tree4acc).then(() => {
         testGroupAttrs("tree4_ti2", 1, 1, 1);
         testGroupParentAttrs("tree4", 1, true);
         SimpleTest.finish();

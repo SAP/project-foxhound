@@ -12,35 +12,6 @@ const TEST_PAGES = [
 
 var gBookmarkElements = [];
 
-function waitForBookmarkElements(expectedCount) {
-  let container = document.getElementById("PlacesToolbarItems");
-  if (container.childElementCount == expectedCount) {
-    return Promise.resolve();
-  }
-  return new Promise(resolve => {
-    info("Waiting for bookmarks");
-    let mut = new MutationObserver(() => {
-      info("Elements appeared");
-      if (container.childElementCount == expectedCount) {
-        resolve();
-        mut.disconnect();
-      }
-    });
-
-    mut.observe(container, { childList: true });
-  });
-}
-
-function getToolbarNodeForItemGuid(aItemGuid) {
-  var children = document.getElementById("PlacesToolbarItems").children;
-  for (let child of children) {
-    if (aItemGuid == child._placesNode.bookmarkGuid) {
-      return child;
-    }
-  }
-  return null;
-}
-
 function waitForLoad(browser, url) {
   return BrowserTestUtils.browserLoaded(browser, false, url);
 }
@@ -83,7 +54,7 @@ add_setup(async function () {
     await promiseSetToolbarVisibility(toolbar, true);
   }
 
-  await waitForBookmarkElements(TEST_PAGES.length);
+  await waitForBookmarksToolbarElements(TEST_PAGES.length);
   for (let bookmark of bookmarks) {
     let element = getToolbarNodeForItemGuid(bookmark.guid);
     Assert.notEqual(element, null, "Found node on toolbar");

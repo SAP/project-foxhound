@@ -1,7 +1,21 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill-opacity="context-fill-opacity">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="context-fill" fill-opacity="context-fill-opacity">
+<style>
+.nova { display: none; }
+
+@media -moz-pref("browser.nova.enabled") {
+  .proton { display: none; }
+  .nova { display: revert; }
+}
+</style>
+<g class="proton">
   <circle fill="context-stroke" cx="7.6" cy="7.6" r="7.5"/>
   <path fill="context-fill" d="M11 8.2H8.6l-.4.4V11c0 .3-.3.6-.6.6S7 11.3 7 11V8.6l-.3-.4H4.2c-.3 0-.6-.2-.6-.6s.3-.6.6-.6h2.4l.4-.3V4.2c0-.3.3-.6.6-.6s.6.3.6.6v2.4l.4.4H11c.3 0 .6.3.6.6s-.3.6-.6.6z"/>
+</g>
+<g class="nova">
+  <circle fill="context-stroke" cx="8" cy="8" r="8"/>
+  <path fill-rule="evenodd" d="M8 4a.75.75 0 0 0-.75.75v2.5h-2.5a.75.75 0 0 0 0 1.5h2.5v2.5a.75.75 0 0 0 1.5 0v-2.5h2.5a.75.75 0 0 0 0-1.5h-2.5v-2.5A.75.75 0 0 0 8 4" clip-rule="evenodd"/>
+</g>
 </svg>

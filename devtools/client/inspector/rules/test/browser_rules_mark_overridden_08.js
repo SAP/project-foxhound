@@ -28,7 +28,7 @@ add_task(async function () {
   info(
     "Check the CSS declarations for ::before in the Pseudo-elements accordion."
   );
-  const pseudoRule = getRuleViewRuleEditor(view, 1, 0).rule;
+  const pseudoRule = getRuleViewRuleEditorAt(view, 0).rule;
   const pseudoProp1 = pseudoRule.textProps[1];
   const pseudoProp2 = pseudoRule.textProps[2];
   ok(
@@ -43,7 +43,7 @@ add_task(async function () {
   info(
     "Check that pseudo-element declarations do not override the host's declarations"
   );
-  const idProp = getTextProperty(view, 4, { color: "blue" });
+  const idProp = getTextProperty(view, 2, { color: "blue" });
   ok(
     !idProp.overridden,
     "The single declaration of color in ID selector should not be overridden"

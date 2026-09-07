@@ -58,7 +58,7 @@ async function setupManifests(modules) {
 
   switch (AppConstants.platform) {
     case "macosx":
-    case "linux":
+    case "linux": {
       let dirProvider = {
         getFile(property) {
           if (
@@ -80,8 +80,9 @@ async function setupManifests(modules) {
         await writeManifest(module);
       }
       break;
+    }
 
-    case "win":
+    case "win": {
       const REGKEY = String.raw`Software\Mozilla\PKCS11Modules`;
 
       let registry = new MockRegistry();
@@ -99,6 +100,7 @@ async function setupManifests(modules) {
         );
       }
       break;
+    }
 
     default:
       ok(
@@ -167,9 +169,9 @@ add_task(async function test_pkcs11() {
         "The token firmware version matches the expected version"
       );
       browser.test.assertEq(
-        "",
+        "0000000000000000",
         slots[1].token.serial,
-        "The token has no serial number"
+        "The token serial number matches the expected value"
       );
       browser.test.assertFalse(
         slots[1].token.isLoggedIn,

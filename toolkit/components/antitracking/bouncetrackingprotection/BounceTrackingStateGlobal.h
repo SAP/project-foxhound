@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,13 +7,21 @@
 
 #include "BounceTrackingMapEntry.h"
 #include "BounceTrackingProtectionStorage.h"
+#include "BounceTrackingRecord.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/WeakPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTHashMap.h"
 #include "nsTArray.h"
 #include "nsISupports.h"
+#include "fmt/format.h"
 
 namespace mozilla {
+
+struct BounceTrackerCandidate {
+  PRTime mBounceTime;
+  RefPtr<BounceTrackingRecord> mRecord;
+};
 
 /**
  * This class holds the global state maps which are used to keep track of
@@ -60,9 +66,9 @@ class BounceTrackingStateGlobal final {
 
   // Store a bounce tracker flag for the given host. A host which received user
   // interaction recently can not be recorded as a bounce tracker.
-  [[nodiscard]] nsresult RecordBounceTracker(const nsACString& aSiteHost,
-                                             PRTime aTime,
-                                             bool aSkipStorage = false);
+  [[nodiscard]] nsresult RecordBounceTracker(
+      const nsACString& aSiteHost, PRTime aTime, bool aSkipStorage = false,
+      BounceTrackingRecord* aRecord = nullptr);
 
   // Record the fact that we have purged state for a bounce tracker. This is
   // used in the purged trackers log.
@@ -89,7 +95,8 @@ class BounceTrackingStateGlobal final {
     return mUserActivation;
   }
 
-  const nsTHashMap<nsCStringHashKey, PRTime>& BounceTrackersMapRef() {
+  const nsTHashMap<nsCStringHashKey, BounceTrackerCandidate>&
+  BounceTrackersMapRef() {
     return mBounceTrackers;
   }
 
@@ -98,9 +105,6 @@ class BounceTrackingStateGlobal final {
   RecentPurgesMapRef() {
     return mRecentPurges;
   }
-
-  // Create a string that describes this object. Used for logging.
-  nsCString Describe();
 
  private:
   ~BounceTrackingStateGlobal() = default;
@@ -121,11 +125,11 @@ class BounceTrackingStateGlobal final {
   // associated site host.
   nsTHashMap<nsCStringHashKey, PRTime> mUserActivation;
 
-  // Map of site hosts to moments. The moments represent the first wall clock
-  // time since the last execution of the bounce tracking timer at which a page
-  // on the given site host performed an action that could indicate stateful
-  // bounce tracking took place.
-  nsTHashMap<nsCStringHashKey, PRTime> mBounceTrackers;
+  // Map of site hosts to BounceTrackerCandidate. The bounce time represents the
+  // first wall clock time since the last execution of the bounce tracking timer
+  // at which a page on the given site host performed an action that could
+  // indicate stateful bounce tracking took place.
+  nsTHashMap<nsCStringHashKey, BounceTrackerCandidate> mBounceTrackers;
 
   // Log of purges which happened since application startup. Keyed by site host.
   // The log is used for both troubleshooting purposes and for logging warnings
@@ -133,11 +137,43 @@ class BounceTrackingStateGlobal final {
   nsTHashMap<nsCStringHashKey, nsTArray<RefPtr<BounceTrackingPurgeEntry>>>
       mRecentPurges;
 
-  // Helper to create a string representation of a siteHost -> timestamp map.
-  static nsCString DescribeMap(
-      const nsTHashMap<nsCStringHashKey, PRTime>& aMap);
+  friend struct fmt::formatter<BounceTrackingStateGlobal>;
 };
 
 }  // namespace mozilla
+
+template <>
+struct fmt::formatter<mozilla::BounceTrackingStateGlobal>
+    : fmt::formatter<std::string_view> {
+  auto format(const mozilla::BounceTrackingStateGlobal& aGlobal,
+              fmt::format_context& aCtx) const {
+    nsAutoCString originAttributeSuffix;
+    aGlobal.mOriginAttributes.CreateSuffix(originAttributeSuffix);
+
+    auto out = aCtx.out();
+    out = fmt::format_to(out, "{{ mOriginAttributes: {}, mUserActivation: {{",
+                         originAttributeSuffix);
+    bool first = true;
+    for (auto iter = aGlobal.mUserActivation.ConstIter(); !iter.Done();
+         iter.Next()) {
+      if (!first) {
+        out = fmt::format_to(out, ", ");
+      }
+      out = fmt::format_to(out, "{}: {}", iter.Key(), iter.Data());
+      first = false;
+    }
+    out = fmt::format_to(out, "}}, mBounceTrackers: {{");
+    first = true;
+    for (auto iter = aGlobal.mBounceTrackers.ConstIter(); !iter.Done();
+         iter.Next()) {
+      if (!first) {
+        out = fmt::format_to(out, ", ");
+      }
+      out = fmt::format_to(out, "{}: {}", iter.Key(), iter.Data().mBounceTime);
+      first = false;
+    }
+    return fmt::format_to(out, "}} }}");
+  }
+};
 
 #endif

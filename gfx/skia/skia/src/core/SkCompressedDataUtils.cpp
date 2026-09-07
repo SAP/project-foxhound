@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -257,7 +257,7 @@ size_t SkCompressedDataSize(SkTextureCompressionType type, SkISize dimensions,
 
     int numMipLevels = 1;
     if (mipmapped) {
-        numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height()) + 1;
+        numMipLevels = SkMipmap::ComputeLevelCount(dimensions) + 1;
     }
 
     size_t totalSize = 0;

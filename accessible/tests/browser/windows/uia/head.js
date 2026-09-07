@@ -4,7 +4,7 @@
 
 "use strict";
 
-/* exported gIsUiaEnabled, addUiaTask, definePyVar, assignPyVarToUiaWithId, setUpWaitForUiaEvent, setUpWaitForUiaPropEvent, waitForUiaEvent, testPatternAbsent, testPythonRaises, isUiaElementArray */
+/* exported definePyVar, assignPyVarToUiaWithId, setUpWaitForUiaEvent, setUpWaitForUiaPropEvent, waitForUiaEvent, testPatternSupported, testPatternAbsent, testPythonRaises, isUiaElementArray */
 
 // Load the shared-head file first.
 Services.scriptloader.loadSubScript(
@@ -12,62 +12,13 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Loading and common.js from accessible/tests/mochitest/ for all tests, as
-// well as promisified-events.js and layout.js.
+// Loading helpers from accessible/tests/mochitest/ for all tests, as
+// well as events.js and layout.js.
 loadScripts(
   { name: "common.js", dir: MOCHITESTS_DIR },
-  { name: "promisified-events.js", dir: MOCHITESTS_DIR },
+  { name: "events.js", dir: MOCHITESTS_DIR },
   { name: "layout.js", dir: MOCHITESTS_DIR }
 );
-
-let gIsUiaEnabled = false;
-
-/**
- * This is like addAccessibleTask, but takes two additional boolean options:
- * - uiaEnabled: Whether to run a variation of this test with Gecko UIA enabled.
- * - uiaDisabled: Whether to run a variation of this test with UIA disabled. In
- *   this case, UIA will rely entirely on the IA2 -> UIA proxy.
- * If both are set, the test will be run twice with different configurations.
- * You can determine which variant is currently running using the gIsUiaEnabled
- * variable. This is useful for conditional tests; e.g. if Gecko UIA supports
- * something that the IA2 -> UIA proxy doesn't support.
- */
-function addUiaTask(doc, task, options = {}) {
-  const { uiaEnabled = true, uiaDisabled = true } = options;
-
-  function addTask(shouldEnable) {
-    async function uiaTask(browser, docAcc, topDocAcc) {
-      await SpecialPowers.pushPrefEnv({
-        // 1 means enable unconditionally. 2 means enable only if NVDA or JAWS
-        // isn't detected. The user could be running a screen reader while
-        // running the tests, so use 1 to enable unconditionally lest the tests
-        // fail.
-        set: [["accessibility.uia.enable", shouldEnable ? 1 : 0]],
-      });
-      gIsUiaEnabled = shouldEnable;
-      info(shouldEnable ? "Gecko UIA enabled" : "Gecko UIA disabled");
-      await task(browser, docAcc, topDocAcc);
-    }
-    // Propagate the name of the task function to our wrapper function so it shows
-    // up in test run output. Suffix with the test type. For example:
-    // 0:39.16 INFO Entering test bound testProtected_uiaEnabled_remoteIframe
-    // The "name" property of functions is not writable, but we can override that
-    // using Object.defineProperty.
-    let name = task.name;
-    if (name) {
-      name += shouldEnable ? "_uiaEnabled" : "_uiaDisabled";
-    }
-    Object.defineProperty(uiaTask, "name", { value: name });
-    addAccessibleTask(doc, uiaTask, options);
-  }
-
-  if (uiaEnabled) {
-    addTask(true);
-  }
-  if (uiaDisabled) {
-    addTask(false);
-  }
-}
 
 /**
  * Define a global Python variable and assign it to a given Python expression.
@@ -110,12 +61,27 @@ function setUpWaitForUiaPropEvent(propName, id) {
 }
 
 /**
- * Wait for the event requested in setUpWaitForUia*Event.
+ * Wait for the event requested in setUpWaitForUia*Event. The data for the
+ * matching event will be placed in a Python global named `event`. We do this
+ * rather than just returning the data because some event data can't be
+ * serialized to JSON.
  */
 function waitForUiaEvent() {
   return runPython(`
-    onEvent.wait()
+    global event
+    event = onEvent.wait()
   `);
+}
+
+/**
+ * Verify that a UIA element supports the given control pattern.
+ */
+async function testPatternSupported(id, patternName) {
+  const hasPattern = await runPython(`
+    el = findUiaByDomId(doc, "${id}")
+    return bool(getUiaPattern(el, "${patternName}"))
+  `);
+  ok(hasPattern, `${id} has ${patternName} pattern`);
 }
 
 /**

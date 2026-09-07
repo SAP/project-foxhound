@@ -2,38 +2,119 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-translations.inference:
-    description: The bergamot-translator WASM artifact (version 3.0)
+tr8ns.inference:
+    description: The bergamot-translator WASM artifact (version 4.0)
     fetch:
-        artifact-name: bergamot-translator
+        artifact-name: bergamot-translator.zst
         type: static-url
-        url: https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-wasm/05082c31-aee8-4249-9e01-c1865afd7520.wasm
-        sha256: a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc
-        size: 4960506
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/wasm/bergamot-translator.wasm.zst
+        sha256: 327fcfc7b7e9d95f6fa0844ebf899cfc05469872ef02d3aef5783182839a6255
+        size: 1211955
 
-translations.esen.lex:
-    description: The Spanish to English translation lex artifact (version 1.0)
+tr8ns.T.esen.lex:
+    description: Spanish to English lex artifact (tiny)
     fetch:
-        artifact-name: lex.50.50.esen.s2t.bin
+        artifact-name: tiny.lex.50.50.esen.s2t.bin.zst
         type: static-url
-        url: https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/54c5d8e2-3900-4a31-860e-8a18f7d028b5.bin
-        sha256: f11a2c23ef85ab1fee1c412b908d69bc20d66fd59faa8f7da5a5f0347eddf969
-        size: 3860888
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/tiny/es-en/lex.50.50.esen.s2t.bin.zst
+        sha256: 04f64a043ed724dc93aea1e5a322a26f0b1be937849a066d4141225634901aa5
+        size: 1554839
 
-translations.esen.model:
-    description: The Spanish to English translation model artifact (version 1.0)
+tr8ns.T.esen.model:
+    description: Spanish to English model artifact (tiny)
     fetch:
-        artifact-name: model.esen.intgemm.alphas.bin
+        artifact-name: tiny.model.esen.intgemm.alphas.bin.zst
         type: static-url
-        url: https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/9ee26e91-9b52-44ba-8d30-c0230dd587b2.bin
-        sha256: 4b6b7f451094aaa447d012658af158ffc708fc8842dde2f871a58404f5457fe0
-        size: 17140755
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/tiny/es-en/model.esen.intgemm.alphas.bin.zst
+        sha256: 4b8a8fbd065a74af3173aa6df8480a5977f2b77e0a7ea1b978174e98a45e58f1
+        size: 13112217
 
-translations.esen.vocab:
-    description: The Spanish to English translation vocab artifact (version 1.0)
+tr8ns.T.esen.vocab:
+    description: Spanish to English vocab artifact (tiny)
     fetch:
-        artifact-name: vocab.esen.spm
+        artifact-name: tiny.vocab.esen.spm.zst
         type: static-url
-        url: https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/cab5e093-7b55-47ea-a247-9747cc0109e3.spm
-        sha256: 909b1eea1face0d7f90a474fe29a8c0fef8d104b6e41e65616f864c964ba8845
-        size: 825463
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/tiny/es-en/vocab.esen.spm.zst
+        sha256: 872d8e312297dfcbcc20d3d94b42d0cb872dcabfa16195d103bfc96c441d70e4
+        size: 351388
+
+tr8ns.T.enru.lex:
+    description: English to Russian lex artifact (tiny)
+    fetch:
+        artifact-name: tiny.lex.50.50.enru.s2t.bin.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/tiny/en-ru/lex.50.50.enru.s2t.bin.zst
+        sha256: d5a33e067e7a7b2a1168f70d403424c4e68c539c333837bde05b150f83c39e8b
+        size: 990112
+
+tr8ns.T.enru.model:
+    description: English to Russian model artifact (tiny)
+    fetch:
+        artifact-name: tiny.model.enru.intgemm.alphas.bin.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/tiny/en-ru/model.enru.intgemm.alphas.bin.zst
+        sha256: 416e1ecb3077a01cc899f3f8d86cee1a5dfc55c9621c5e1de454aa59ad0c7d1b
+        size: 12107280
+
+tr8ns.T.enru.vocab:
+    description: English to Russian vocab artifact (tiny)
+    fetch:
+        artifact-name: tiny.vocab.enru.spm.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/tiny/en-ru/vocab.enru.spm.zst
+        sha256: 088a38d8b5faf6315b284e3088714f70a8c79438496b15826b6c62496503c447
+        size: 345737
+
+tr8ns.BM.enru.lex:
+    description: English to Russian lex artifact (base memory)
+    fetch:
+        artifact-name: base-memory.lex.50.50.enru.s2t.bin.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/base-memory/en-ru/lex.50.50.enru.s2t.bin.zst
+        sha256: d7998ec23c850255c2436bab1a248944877f63bf1842e02f67e50807d172b1bf
+        size: 1013057
+
+tr8ns.BM.enru.model:
+    description: English to Russian model artifact (base memory)
+    fetch:
+        artifact-name: base-memory.model.enru.intgemm.alphas.bin.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/base-memory/en-ru/model.enru.intgemm.alphas.bin.zst
+        sha256: a55b2af86653d6e5f4501c674f3806535734f93540e83db19bffdafe456d0887
+        size: 21044601
+
+tr8ns.BM.enru.vocab:
+    description: English to Russian vocab artifact (base memory)
+    fetch:
+        artifact-name: base-memory.vocab.enru.spm.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/base-memory/en-ru/vocab.enru.spm.zst
+        sha256: 088a38d8b5faf6315b284e3088714f70a8c79438496b15826b6c62496503c447
+        size: 345737
+
+tr8ns.B.enru.lex:
+    description: English to Russian lex artifact (base)
+    fetch:
+        artifact-name: base.lex.50.50.enru.s2t.bin.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/base/en-ru/lex.50.50.enru.s2t.bin.zst
+        sha256: d5a33e067e7a7b2a1168f70d403424c4e68c539c333837bde05b150f83c39e8b
+        size: 990112
+
+tr8ns.B.enru.model:
+    description: English to Russian model artifact (base)
+    fetch:
+        artifact-name: base.model.enru.intgemm.alphas.bin.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/base/en-ru/model.enru.intgemm.alphas.bin.zst
+        sha256: 8a9ee496752361b7d7dd449dab046929880d21ab3ebcd2a261f076441d52dc30
+        size: 29744901
+
+tr8ns.B.enru.vocab:
+    description: English to Russian vocab artifact (base)
+    fetch:
+        artifact-name: base.vocab.enru.spm.zst
+        type: static-url
+        url: https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/firefox-ci/models/base/en-ru/vocab.enru.spm.zst
+        sha256: 088a38d8b5faf6315b284e3088714f70a8c79438496b15826b6c62496503c447
+        size: 345737

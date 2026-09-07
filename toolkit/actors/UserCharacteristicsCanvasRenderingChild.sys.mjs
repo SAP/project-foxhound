@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -75,9 +74,11 @@ export class UserCharacteristicsCanvasRenderingChild extends JSWindowActorChild 
         };
       }
 
-      return sha1Uint8Array(
-        ctx.getImageData(0, 0, canvas.width, canvas.height).data
-      ).catch(stringifyError);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hash = await sha1Uint8Array(imageData.data).catch(stringifyError);
+      const raw = btoa(String.fromCharCode.apply(null, imageData.data));
+
+      return { hash, raw };
     };
 
     const errors = [];
@@ -105,7 +106,8 @@ export class UserCharacteristicsCanvasRenderingChild extends JSWindowActorChild 
         });
         continue;
       }
-      renderings.set(name, result);
+      renderings.set(name, result.hash);
+      renderings.set(name + "Raw", result.raw);
     }
 
     // Run SW renderings
@@ -114,13 +116,14 @@ export class UserCharacteristicsCanvasRenderingChild extends JSWindowActorChild 
       const result = await runRecipe(false, recipe);
       if (result.error) {
         errors.push({
-          name: name + "software",
+          name: name + "Software",
           error: result.error,
           originalError: result.originalError,
         });
         continue;
       }
-      renderings.set(name + "software", result);
+      renderings.set(name + "Software", result.hash);
+      renderings.set(name + "SoftwareRaw", result.raw);
     }
 
     const data = new Map();

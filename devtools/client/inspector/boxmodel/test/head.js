@@ -12,8 +12,9 @@ Services.scriptloader.loadSubScript(
 
 /**
  * Is the given node visible in the page (rendered in the frame tree).
+ *
  * @param {DOMNode}
- * @return {Boolean}
+ * @return {boolean}
  */
 function isNodeVisible(node) {
   return !!node.getClientRects().length;
@@ -24,7 +25,7 @@ function isNodeVisible(node) {
  *
  * @param  {InspectorPanel} inspector
  *         The instance of InspectorPanel currently loaded in the toolbox.
- * @param  {Boolean} waitForSelectionUpdate
+ * @param  {boolean} waitForSelectionUpdate
  *         Should the boxmodel-view-updated event come from a new selection.
  * @return {Promise} a promise
  */
@@ -105,7 +106,7 @@ selectNode = async function (node, inspector, reason) {
  *
  * @param {DOMNode} element
  *        The element to check.
- * @param {String} expectedText
+ * @param {string} expectedText
  *        The text that is expected to be set as textContent of the element.
  */
 async function waitForElementTextContent(element, expectedText) {

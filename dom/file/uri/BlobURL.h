@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define mozilla_dom_BlobURL_h
 
 #include "nsCOMPtr.h"
+#include "nsIPrincipal.h"
 #include "nsISerializable.h"
 #include "nsSimpleURI.h"
 #include "prtime.h"
@@ -22,9 +21,8 @@ class NS_NO_VTABLE nsIBlobURLMutator : public nsISupports {
  public:
   NS_INLINE_DECL_STATIC_IID(NS_IBLOBURLMUTATOR_IID)
   NS_IMETHOD SetRevoked(bool aRevoked) = 0;
+  NS_IMETHOD MaybeSetNullPrincipal(nsIPrincipal* aPrincipal) = 0;
 };
-
-inline NS_DEFINE_CID(kHOSTOBJECTURICID, NS_HOSTOBJECTURI_CID);
 
 namespace mozilla::dom {
 
@@ -36,20 +34,37 @@ class BlobURL final : public mozilla::net::nsSimpleURI {
   BlobURL();
 
  public:
+  NS_INLINE_DECL_STATIC_IID(NS_HOSTOBJECTURI_CID)
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSISERIALIZABLE
 
   // Override EqualsInternal()
   nsresult EqualsInternal(nsIURI* aOther, RefHandlingEnum aRefHandlingMode,
                           bool* aResult) override;
-  NS_IMETHOD_(void) Serialize(mozilla::ipc::URIParams& aParams) override;
+  virtual void Serialize(mozilla::ipc::URIParams& aParams) override;
 
   // Override StartClone to hand back a BlobURL with mRevoked set.
   already_AddRefed<mozilla::net::nsSimpleURI> StartClone() override {
     RefPtr<BlobURL> url = new BlobURL();
     url->mRevoked = mRevoked;
+    url->mNullPrincipal = mNullPrincipal;
     return url.forget();
   }
+
+  // Extract the origin part from this BlobURL. In a valid URL, this will be the
+  // web-exposed origin serialization of the underlying Blob.
+  nsDependentCSubstring OriginPart() {
+    int32_t lastSlash = Path().RFindChar('/');
+    if (lastSlash == kNotFound) {
+      return nsDependentCSubstring{};
+    }
+    return Substring(Path(), 0, lastSlash);
+  }
+
+  // Get the principal used by this BlobURL.
+  // Only ever set if OriginPart() == "null".
+  // NOTE: This will be null for all MediaStream URLs.
+  nsIPrincipal* GetNullPrincipal() const { return mNullPrincipal; }
 
   bool Revoked() const { return mRevoked; }
 
@@ -63,6 +78,7 @@ class BlobURL final : public mozilla::net::nsSimpleURI {
   nsresult ReadPrivate(nsIObjectInputStream* stream);
 
   bool mRevoked;
+  nsCOMPtr<nsIPrincipal> mNullPrincipal;
 
  public:
   class Mutator final : public nsIURIMutator,
@@ -84,6 +100,13 @@ class BlobURL final : public mozilla::net::nsSimpleURI {
 
     NS_IMETHOD SetRevoked(bool aRevoked) override {
       mURI->mRevoked = aRevoked;
+      return NS_OK;
+    }
+
+    NS_IMETHOD MaybeSetNullPrincipal(nsIPrincipal* aPrincipal) override {
+      // Only record the principal if the origin part is "null".
+      mURI->mNullPrincipal =
+          mURI->OriginPart() == "null"_ns ? aPrincipal : nullptr;
       return NS_OK;
     }
 

@@ -20,7 +20,7 @@
  * @param {Array} sortedItems
  *        Array of sorted items that suggestions are evaluated against. Array
  *        should be sorted by relevance, most relevant item first.
- * @return {Number}
+ * @return {number}
  */
 function findMostRelevantIndex(items, sortedItems) {
   if (!Array.isArray(items) || !Array.isArray(sortedItems)) {

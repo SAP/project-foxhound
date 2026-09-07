@@ -6,6 +6,10 @@
   --header-avatar-size: 80px;
 }
 
+:root {
+  background-color: var(--newtab-background-color, var(--background-color-canvas));
+}
+
 html,
 body {
   min-width: 100%;
@@ -16,8 +20,6 @@ body {
 body {
   display: flex;
   justify-content: center;
-
-  background-color: var(--newtab-background-color, var(--background-color-canvas));
 }
 
 edit-profile-card,
@@ -74,6 +76,11 @@ new-profile-card {
   width: var(--header-avatar-size);
   height: var(--header-avatar-size);
   border-radius: var(--border-radius-circle);
+  border: var(--card-border);
+}
+
+#more-themes {
+  width: fit-content;
 }
 
 .sub-header {

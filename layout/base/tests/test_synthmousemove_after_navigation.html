@@ -1,0 +1,22 @@
+<!doctype html>
+<title>Test for bug 2038491: synth mouse move dispatches after top-level navigation</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+
+<script>
+SimpleTest.waitForExplicitFinish();
+
+function reportResult(passed, msg) {
+  ok(passed, msg);
+  SimpleTest.finish();
+}
+
+function runTest() {
+  window.open(
+    "file_synthmousemove_after_navigation.html",
+    "_blank",
+    "width=400,height=400"
+  );
+}
+
+SimpleTest.waitForFocus(runTest);
+</script>

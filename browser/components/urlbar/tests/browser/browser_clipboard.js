@@ -9,7 +9,7 @@
 
 const { UrlbarProviderClipboard, CLIPBOARD_IMPRESSION_LIMIT } =
   ChromeUtils.importESModule(
-    "resource:///modules/UrlbarProviderClipboard.sys.mjs"
+    "moz-src:///browser/components/urlbar/UrlbarProviderClipboard.sys.mjs"
   );
 
 add_setup(async function () {
@@ -69,9 +69,9 @@ add_task(async function testFormattingOfClipboardSuggestion() {
         "The Clipboard suggestion URL should not be decoded."
       );
       Assert.equal(
-        result.payload.fallbackTitle,
+        result.payload.title,
         unicodeURL,
-        "The Clipboard suggestion fallback title should be decoded."
+        "The Clipboard suggestion title should be decoded."
       );
     }
   );

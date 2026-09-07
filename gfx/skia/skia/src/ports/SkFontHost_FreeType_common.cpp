@@ -16,8 +16,8 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkOpenTypeSVGDecoder.h"
 #include "include/core/SkPath.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/pathops/SkPathOps.h"
+#include "include/core/SkPathBuilder.h"
+#include "include/effects/SkGradient.h"
 #include "include/private/base/SkTo.h"
 #include "src/core/SkColorData.h"
 #include "src/core/SkFDot6.h"
@@ -25,6 +25,7 @@
 #include "src/core/SkTHash.h"
 
 #include <algorithm>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -506,7 +507,8 @@ struct OpaquePaintHasher {
 
 using VisitedSet = THashSet<FT_OpaquePaint, OpaquePaintHasher>;
 
-bool generateFacePathCOLRv1(FT_Face face, SkGlyphID glyphID, SkPath* path);
+std::optional<SkPath> generateFacePathCOLRv1(FT_Face face, SkGlyphID glyphID,
+                                             const SkMatrix* = nullptr);
 
 inline float SkColrV1AlphaToFloat(uint16_t alpha) { return (alpha / float(1 << 14)); }
 
@@ -766,16 +768,14 @@ bool colrv1_configure_skpaint(FT_Face face,
                 }
             }
 
-            sk_sp<SkShader> shader(SkGradientShader::MakeLinear(
+            sk_sp<SkShader> shader(SkShaders::LinearGradient(
                 linePositions,
-                colors.data(), SkColorSpace::MakeSRGB(), stops.data(), stops.size(),
-                tileMode,
-                SkGradientShader::Interpolation{
-                    SkGradientShader::Interpolation::InPremul::kNo,
-                    SkGradientShader::Interpolation::ColorSpace::kSRGB,
-                    SkGradientShader::Interpolation::HueMethod::kShorter
-                },
-                nullptr));
+                {{colors, stops, tileMode, SkColorSpace::MakeSRGB()},
+                SkGradient::Interpolation{
+                    SkGradient::Interpolation::InPremul::kNo,
+                    SkGradient::Interpolation::ColorSpace::kSRGB,
+                    SkGradient::Interpolation::HueMethod::kShorter
+                }}));
 
             SkASSERT(shader);
             // An opaque color is needed to ensure the gradient is not modulated by alpha.
@@ -950,15 +950,14 @@ bool colrv1_configure_skpaint(FT_Face face,
             // An opaque color is needed to ensure the gradient is not modulated by alpha.
             paint->setColor(SK_ColorBLACK);
 
-            paint->setShader(SkGradientShader::MakeTwoPointConical(
+            paint->setShader(SkShaders::TwoPointConicalGradient(
                 start, startRadius, end, endRadius,
-                colors.data(), SkColorSpace::MakeSRGB(), stops.data(), stops.size(),
-                tileMode,
-                SkGradientShader::Interpolation{
-                    SkGradientShader::Interpolation::InPremul::kNo,
-                    SkGradientShader::Interpolation::ColorSpace::kSRGB,
-                    SkGradientShader::Interpolation::HueMethod::kShorter
-                },
+                {{colors, stops, tileMode, SkColorSpace::MakeSRGB()},
+                SkGradient::Interpolation{
+                    SkGradient::Interpolation::InPremul::kNo,
+                    SkGradient::Interpolation::ColorSpace::kSRGB,
+                    SkGradient::Interpolation::HueMethod::kShorter
+                }},
                 nullptr));
 
             return true;
@@ -1059,16 +1058,14 @@ bool colrv1_configure_skpaint(FT_Face face,
                 }
             }
 
-            paint->setShader(SkGradientShader::MakeSweep(
-                center.x(), center.y(),
-                colors.data(), SkColorSpace::MakeSRGB(), stops.data(), stops.size(),
-                tileMode,
-                startAngleScaled, endAngleScaled,
-                SkGradientShader::Interpolation{
-                    SkGradientShader::Interpolation::InPremul::kNo,
-                    SkGradientShader::Interpolation::ColorSpace::kSRGB,
-                    SkGradientShader::Interpolation::HueMethod::kShorter
-                },
+            paint->setShader(SkShaders::SweepGradient(
+                center, startAngleScaled, endAngleScaled,
+                {{colors, stops, tileMode, SkColorSpace::MakeSRGB()},
+                {
+                    SkGradient::Interpolation::InPremul::kNo,
+                    SkGradient::Interpolation::ColorSpace::kSRGB,
+                    SkGradient::Interpolation::HueMethod::kShorter
+                }},
                 nullptr));
 
             return true;
@@ -1088,21 +1085,16 @@ bool colrv1_draw_paint(SkCanvas* canvas,
                        const FT_COLR_Paint& colrPaint) {
     switch (colrPaint.format) {
         case FT_COLR_PAINTFORMAT_GLYPH: {
-            FT_UInt glyphID = colrPaint.u.glyph.glyphID;
-            SkPath path;
-            /* TODO: Currently this call retrieves the path at units_per_em size. If we want to get
-             * correct hinting for the scaled size under the transforms at this point in the color
-             * glyph graph, we need to extract at least the requested glyph width and height and
-             * pass that to the path generation. */
-            if (!generateFacePathCOLRv1(face, glyphID, &path)) {
+            auto path = generateFacePathCOLRv1(face, colrPaint.u.glyph.glyphID);
+            if (!path) {
                 return false;
             }
             if constexpr (kSkShowTextBlitCoverage) {
                 SkPaint highlight_paint;
                 highlight_paint.setColor(0x33FF0000);
-                canvas->drawRect(path.getBounds(), highlight_paint);
+                canvas->drawRect(path->getBounds(), highlight_paint);
             }
-            canvas->clipPath(path, true /* doAntiAlias */);
+            canvas->clipPath(*path, true /* doAntiAlias */);
             return true;
         }
         case FT_COLR_PAINTFORMAT_SOLID:
@@ -1145,21 +1137,16 @@ bool colrv1_draw_glyph_with_path(SkCanvas* canvas,
         return false;
     }
 
-    FT_UInt glyphID = glyphPaint.u.glyph.glyphID;
-    SkPath path;
-    /* TODO: Currently this call retrieves the path at units_per_em size. If we want to get
-     * correct hinting for the scaled size under the transforms at this point in the color
-     * glyph graph, we need to extract at least the requested glyph width and height and
-     * pass that to the path generation. */
-    if (!generateFacePathCOLRv1(face, glyphID, &path)) {
+    auto path = generateFacePathCOLRv1(face, glyphPaint.u.glyph.glyphID);
+    if (!path) {
         return false;
     }
     if constexpr (kSkShowTextBlitCoverage) {
         SkPaint highlightPaint;
         highlightPaint.setColor(0x33FF0000);
-        canvas->drawRect(path.getBounds(), highlightPaint);
+        canvas->drawRect(path->getBounds(), highlightPaint);
     }
-    canvas->drawPath(path, skiaFillPaint);
+    canvas->drawPath(*path, skiaFillPaint);
     return true;
 }
 
@@ -1388,14 +1375,14 @@ SkPath GetClipBoxPath(FT_Face face, SkGlyphID glyphId, bool untransformed) {
 
     FT_ClipBox colrGlyphClipBox;
     if (FT_Get_Color_Glyph_ClipBox(face, glyphId, &colrGlyphClipBox)) {
-        resultPath = SkPath::Polygon({{ SkFDot6ToScalar(colrGlyphClipBox.bottom_left.x),
+        resultPath = SkPath::Polygon({{{ SkFDot6ToScalar(colrGlyphClipBox.bottom_left.x),
                                        -SkFDot6ToScalar(colrGlyphClipBox.bottom_left.y)},
                                       { SkFDot6ToScalar(colrGlyphClipBox.top_left.x),
                                        -SkFDot6ToScalar(colrGlyphClipBox.top_left.y)},
                                       { SkFDot6ToScalar(colrGlyphClipBox.top_right.x),
                                        -SkFDot6ToScalar(colrGlyphClipBox.top_right.y)},
                                       { SkFDot6ToScalar(colrGlyphClipBox.bottom_right.x),
-                                       -SkFDot6ToScalar(colrGlyphClipBox.bottom_right.y)}},
+                                       -SkFDot6ToScalar(colrGlyphClipBox.bottom_right.y)}}},
                                      true);
     }
 
@@ -1476,13 +1463,11 @@ bool colrv1_traverse_paint_bounds(SkMatrix* ctm,
             return true;
         }
         case FT_COLR_PAINTFORMAT_GLYPH: {
-            FT_UInt glyphID = paint.u.glyph.glyphID;
-            SkPath path;
-            if (!generateFacePathCOLRv1(face, glyphID, &path)) {
+            auto path = generateFacePathCOLRv1(face, paint.u.glyph.glyphID, ctm);
+            if (!path) {
                 return false;
             }
-            path.transform(*ctm);
-            bounds->join(path.getBounds());
+            bounds->join(path->getBounds());
             return true;
         }
         case FT_COLR_PAINTFORMAT_COLR_GLYPH: {
@@ -1604,9 +1589,9 @@ bool SkScalerContextFTUtils::drawCOLRv0Glyph(FT_Face face, const SkGlyph& glyph,
         } else {
             paint.setColor(palette[layerColorIndex]);
         }
-        SkPath path;
-        if (this->generateFacePath(face, layerGlyphIndex, flags, &path)) {
-            canvas->drawPath(path, paint);
+        SkPathBuilder builder;
+        if (this->generateFacePath(face, layerGlyphIndex, flags, &builder)) {
+            canvas->drawPath(builder.detach(), paint);
         }
     }
     SkASSERTF(haveLayers, "Could not get COLRv0 layers from '%s'.", face->family_name);
@@ -1917,14 +1902,14 @@ void SkScalerContextFTUtils::generateGlyphImage(FT_Face face, const SkGlyph& gly
 namespace {
 
 class SkFTGeometrySink {
-    SkPath* fPath;
+    SkPathBuilder* fBuilder;
     bool fStarted;
     FT_Vector fCurrent;
 
     void goingTo(const FT_Vector* pt) {
         if (!fStarted) {
             fStarted = true;
-            fPath->moveTo(SkFDot6ToScalar(fCurrent.x), -SkFDot6ToScalar(fCurrent.y));
+            fBuilder->moveTo(SkFDot6ToScalar(fCurrent.x), -SkFDot6ToScalar(fCurrent.y));
         }
         fCurrent = *pt;
     }
@@ -1936,7 +1921,7 @@ class SkFTGeometrySink {
     static int Move(const FT_Vector* pt, void* ctx) {
         SkFTGeometrySink& self = *(SkFTGeometrySink*)ctx;
         if (self.fStarted) {
-            self.fPath->close();
+            self.fBuilder->close();
             self.fStarted = false;
         }
         self.fCurrent = *pt;
@@ -1947,7 +1932,7 @@ class SkFTGeometrySink {
         SkFTGeometrySink& self = *(SkFTGeometrySink*)ctx;
         if (self.currentIsNot(pt)) {
             self.goingTo(pt);
-            self.fPath->lineTo(SkFDot6ToScalar(pt->x), -SkFDot6ToScalar(pt->y));
+            self.fBuilder->lineTo(SkFDot6ToScalar(pt->x), -SkFDot6ToScalar(pt->y));
         }
         return 0;
     }
@@ -1956,8 +1941,8 @@ class SkFTGeometrySink {
         SkFTGeometrySink& self = *(SkFTGeometrySink*)ctx;
         if (self.currentIsNot(pt0) || self.currentIsNot(pt1)) {
             self.goingTo(pt1);
-            self.fPath->quadTo(SkFDot6ToScalar(pt0->x), -SkFDot6ToScalar(pt0->y),
-                               SkFDot6ToScalar(pt1->x), -SkFDot6ToScalar(pt1->y));
+            self.fBuilder->quadTo(SkFDot6ToScalar(pt0->x), -SkFDot6ToScalar(pt0->y),
+                                  SkFDot6ToScalar(pt1->x), -SkFDot6ToScalar(pt1->y));
         }
         return 0;
     }
@@ -1966,15 +1951,15 @@ class SkFTGeometrySink {
         SkFTGeometrySink& self = *(SkFTGeometrySink*)ctx;
         if (self.currentIsNot(pt0) || self.currentIsNot(pt1) || self.currentIsNot(pt2)) {
             self.goingTo(pt2);
-            self.fPath->cubicTo(SkFDot6ToScalar(pt0->x), -SkFDot6ToScalar(pt0->y),
-                                SkFDot6ToScalar(pt1->x), -SkFDot6ToScalar(pt1->y),
-                                SkFDot6ToScalar(pt2->x), -SkFDot6ToScalar(pt2->y));
+            self.fBuilder->cubicTo(SkFDot6ToScalar(pt0->x), -SkFDot6ToScalar(pt0->y),
+                                   SkFDot6ToScalar(pt1->x), -SkFDot6ToScalar(pt1->y),
+                                   SkFDot6ToScalar(pt2->x), -SkFDot6ToScalar(pt2->y));
         }
         return 0;
     }
 
 public:
-    SkFTGeometrySink(SkPath* path) : fPath{path}, fStarted{false}, fCurrent{0,0} {}
+    SkFTGeometrySink(SkPathBuilder* builder) : fBuilder{builder}, fStarted{false}, fCurrent{0,0} {}
 
     inline static constexpr const FT_Outline_Funcs Funcs{
         /*move_to =*/ SkFTGeometrySink::Move,
@@ -1986,33 +1971,35 @@ public:
     };
 };
 
-bool generateGlyphPathStatic(FT_Face face, SkPath* path) {
-    SkFTGeometrySink sink{path};
+bool generateGlyphPathStatic(FT_Face face, SkPathBuilder* builder) {
+    SkFTGeometrySink sink{builder};
     if (face->glyph->format != FT_GLYPH_FORMAT_OUTLINE ||
         FT_Outline_Decompose(&face->glyph->outline, &SkFTGeometrySink::Funcs, &sink))
     {
-        path->reset();
         return false;
     }
-    path->close();
+    builder->close();
     return true;
 }
 
 bool generateFacePathStatic(FT_Face face, SkGlyphID glyphID,
-                            SkScalerContextFTUtils::LoadGlyphFlags flags, SkPath* path){
+                            SkScalerContextFTUtils::LoadGlyphFlags flags, SkPathBuilder* builder) {
     flags |= FT_LOAD_BITMAP_METRICS_ONLY;  // Don't decode any bitmaps.
     flags |= FT_LOAD_NO_BITMAP; // Ignore embedded bitmaps.
     flags &= ~FT_LOAD_RENDER;  // Don't scan convert.
     flags &= ~FT_LOAD_COLOR;  // Ignore SVG.
     if (FT_Load_Glyph(face, glyphID, flags)) {
-        path->reset();
         return false;
     }
-    return generateGlyphPathStatic(face, path);
+    return generateGlyphPathStatic(face, builder);
 }
 
 #ifdef TT_SUPPORT_COLRV1
-bool generateFacePathCOLRv1(FT_Face face, SkGlyphID glyphID, SkPath* path) {
+/* TODO: Currently this call retrieves the path at units_per_em size. If we want to get
+ * correct hinting for the scaled size under the transforms at this point in the color
+ * glyph graph, we need to extract at least the requested glyph width and height and
+ * pass that to the path generation. */
+std::optional<SkPath> generateFacePathCOLRv1(FT_Face face, SkGlyphID glyphID, const SkMatrix* mx) {
     uint32_t flags = 0;
     flags |= FT_LOAD_BITMAP_METRICS_ONLY;  // Don't decode any bitmaps.
     flags |= FT_LOAD_NO_BITMAP; // Ignore embedded bitmaps.
@@ -2034,66 +2021,62 @@ bool generateFacePathCOLRv1(FT_Face face, SkGlyphID glyphID, SkPath* path) {
     }());
 
     if (!unscaledFtSize) {
-      return false;
+        return {};
     }
 
     FT_Size oldSize = face->size;
+    SkPathBuilder builder;
 
-    auto tryGeneratePath = [face, &unscaledFtSize, glyphID, flags, path]() {
+    auto tryGeneratePath = [face, &unscaledFtSize, glyphID, flags, &builder]() {
         FT_Error err = 0;
 
         err = FT_Activate_Size(unscaledFtSize.get());
         if (err != 0) {
-          return false;
+            return false;
         }
 
         err = FT_Set_Char_Size(face, SkIntToFDot6(face->units_per_EM),
-                                     SkIntToFDot6(face->units_per_EM), 72, 72);
+                               SkIntToFDot6(face->units_per_EM), 72, 72);
         if (err != 0) {
             return false;
         }
 
         err = FT_Load_Glyph(face, glyphID, flags);
         if (err != 0) {
-            path->reset();
             return false;
         }
 
-        if (!generateGlyphPathStatic(face, path)) {
-            path->reset();
-            return false;
-        }
-
-        return true;
+        return generateGlyphPathStatic(face, &builder);
     };
 
     bool pathGenerationResult = tryGeneratePath();
 
     FT_Activate_Size(oldSize);
 
-    return pathGenerationResult;
+    if (pathGenerationResult) {
+        if (mx) {
+            builder.transform(*mx);
+        }
+        return builder.detach();
+    } else {
+        return {};
+    }
 }
 #endif
 
 }  // namespace
 
-bool SkScalerContextFTUtils::generateGlyphPath(FT_Face face, SkPath* path) const {
-    if (!generateGlyphPathStatic(face, path)) {
-        return false;
-    }
-    if (face->glyph->outline.flags & FT_OUTLINE_OVERLAP) {
-        Simplify(*path, path);
-        // Simplify will return an even-odd path.
-        // A stroke+fill (for fake bold) may be incorrect for even-odd.
-        // https://github.com/flutter/flutter/issues/112546
-        AsWinding(*path, path);
-    }
-    return true;
+bool SkScalerContextFTUtils::generateGlyphPath(FT_Face face, SkPathBuilder* builder) const {
+    // We used to try simplifying overlapping contours (flags & FT_OUTLINE_OVERLAP)
+    // at this stage, but that was not 100% reliable, and other font backends
+    // (e.g. CoreText) do not attempt this, so we removed it.
+
+    return generateGlyphPathStatic(face, builder);
 }
 
 bool SkScalerContextFTUtils::generateFacePath(FT_Face face, SkGlyphID glyphID, LoadGlyphFlags flags,
-                                              SkPath* path) const {
-    return generateFacePathStatic(face, glyphID, flags, path);
+                                              SkPathBuilder* builder) const {
+    return generateFacePathStatic(face, glyphID, flags, builder);
 }
 
 #ifdef TT_SUPPORT_COLRV1

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,9 +36,9 @@ NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmfracFrame)
 
 nsMathMLmfracFrame::~nsMathMLmfracFrame() = default;
 
-eMathMLFrameType nsMathMLmfracFrame::GetMathMLFrameType() {
+MathMLFrameType nsMathMLmfracFrame::GetMathMLFrameType() {
   // frac is "inner" in TeXBook, Appendix G, rule 15e. See also page 170.
-  return eMathMLFrameType_Inner;
+  return MathMLFrameType::Inner;
 }
 
 uint8_t nsMathMLmfracFrame::ScriptIncrement(nsIFrame* aFrame) {
@@ -53,11 +51,6 @@ uint8_t nsMathMLmfracFrame::ScriptIncrement(nsIFrame* aFrame) {
 
 NS_IMETHODIMP
 nsMathMLmfracFrame::TransmitAutomaticData() {
-  // The TeXbook (Ch 17. p.141) says the numerator inherits the compression
-  //  while the denominator is compressed
-  UpdatePresentationDataFromChildAt(1, 1, NS_MATHML_COMPRESSED,
-                                    NS_MATHML_COMPRESSED);
-
   // If displaystyle is false, then scriptlevel is incremented, so notify the
   // children of this.
   if (StyleFont()->mMathStyle == StyleMathStyle::Compact) {
@@ -69,10 +62,10 @@ nsMathMLmfracFrame::TransmitAutomaticData() {
 
   // if our numerator is an embellished operator, let its state bubble to us
   GetEmbellishDataFrom(mFrames.FirstChild(), mEmbellishData);
-  if (NS_MATHML_IS_EMBELLISH_OPERATOR(mEmbellishData.flags)) {
+  if (mEmbellishData.flags.contains(MathMLEmbellishFlag::EmbellishedOperator)) {
     // even when embellished, we need to record that <mfrac> won't fire
     // Stretch() on its embellished child
-    mEmbellishData.direction = NS_STRETCH_DIRECTION_UNSUPPORTED;
+    mEmbellishData.direction = StretchDirection::Unsupported;
   }
 
   return NS_OK;
@@ -91,8 +84,8 @@ nscoord nsMathMLmfracFrame::CalcLineThickness(nsString& aThicknessAttribute,
   if (!aThicknessAttribute.IsEmpty()) {
     lineThickness = defaultThickness;
     ParseAndCalcNumericValue(aThicknessAttribute, &lineThickness,
-                             dom::MathMLElement::PARSE_ALLOW_NEGATIVE,
-                             aFontSizeInflation, this);
+                             aFontSizeInflation, this,
+                             dom::MathMLElement::ParseFlag::AllowNegative);
     // MathML Core says a negative value is interpreted as 0.
     if (lineThickness < 0) {
       lineThickness = 0;
@@ -119,7 +112,7 @@ void nsMathMLmfracFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 nsresult nsMathMLmfracFrame::AttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType) {
+                                              AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       nsGkAtoms::linethickness == aAttribute) {
     // The thickness changes, so a repaint of the bar is needed.
@@ -144,9 +137,9 @@ nscoord nsMathMLmfracFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize) {
 }
 
 /* virtual */
-nsresult nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
-                                   const PlaceFlags& aFlags,
-                                   ReflowOutput& aDesiredSize) {
+void nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
+                               const PlaceFlags& aFlags,
+                               ReflowOutput& aDesiredSize) {
   ////////////////////////////////////
   // Get the children's desired sizes
   nsBoundingMetrics bmNum, bmDen;
@@ -211,8 +204,10 @@ nsresult nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
   // in the core since our last visit there)
   nscoord leftSpace = 0;
   nscoord rightSpace = 0;
-  if (outermostEmbellished) {
-    const bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
+  if (!StaticPrefs::
+          mathml_lspace_rspace_for_child_spacing_during_mrow_layout_enabled() &&
+      outermostEmbellished) {
+    const bool isRTL = GetWritingMode().IsBidiRTL();
     nsEmbellishData coreData;
     GetEmbellishDataFrom(mEmbellishData.coreFrame, coreData);
     leftSpace += isRTL ? coreData.trailingSpace : coreData.leadingSpace;
@@ -404,6 +399,4 @@ nsresult nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
     mLineRect.SetRect(leftSpace, dy, width - (leftSpace + rightSpace),
                       actualRuleThickness);
   }
-
-  return NS_OK;
 }

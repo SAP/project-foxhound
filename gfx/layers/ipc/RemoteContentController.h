@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,21 +27,21 @@ struct DoubleTapToZoomMetrics;
  * which must be called on the repaint thread, which in this case is the
  * compositor thread.
  */
-class RemoteContentController : public GeckoContentController,
-                                public PAPZParent {
+class RemoteContentController final : public GeckoContentController,
+                                      public PAPZParent {
   using GeckoContentController::APZStateChange;
   using GeckoContentController::TapType;
 
  public:
-  RemoteContentController();
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteContentController, final);
 
-  virtual ~RemoteContentController();
+  RemoteContentController();
 
   void NotifyLayerTransforms(nsTArray<MatrixMessage>&& aTransforms) override;
 
   void RequestContentRepaint(const RepaintRequest& aRequest) override;
 
-  void HandleTap(
+  MOZ_CAN_RUN_SCRIPT void HandleTap(
       TapType aTapType, const LayoutDevicePoint& aPoint, Modifiers aModifiers,
       const ScrollableLayerGuid& aGuid, uint64_t aInputBlockId,
       const Maybe<DoubleTapToZoomMetrics>& aDoubleTapToZoomMetrics) override;
@@ -97,10 +95,12 @@ class RemoteContentController : public GeckoContentController,
   bool IsRemote() override;
 
  private:
+  virtual ~RemoteContentController();
+
   nsCOMPtr<nsISerialEventTarget> mCompositorThread;
   bool mCanSend;
 
-  void HandleTapOnParentProcessMainThread(
+  MOZ_CAN_RUN_SCRIPT void HandleTapOnParentProcessMainThread(
       TapType aTapType, LayoutDevicePoint aPoint, Modifiers aModifiers,
       ScrollableLayerGuid aGuid, uint64_t aInputBlockId,
       const Maybe<DoubleTapToZoomMetrics>& aDoubleTapToZoomMetrics);

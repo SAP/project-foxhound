@@ -1,0 +1,146 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+@import "chrome://global/skin/global.css";
+
+:host {
+  --border-color: var(--card-border-color);
+}
+
+.disconnected,
+.generic-error {
+  background-color: var(--background-color-box-info);
+}
+
+.connected {
+  background-color: var(--background-color-success);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color-success);
+  }
+}
+
+.excluded {
+  background-color: var(--background-color-success);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill, stroke;
+    fill: transparent;
+    stroke: var(--icon-color-success);
+  }
+}
+
+.paused {
+  background-color: var(--background-color-box-info);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color);
+  }
+}
+
+.connecting {
+  background-color: var(--background-color-box-info);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color);
+  }
+}
+
+.network-error {
+  background-color: var(--background-color-information);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color-information);
+  }
+}
+
+.catastrophic-error {
+  background-color: var(--background-color-critical);
+
+  ::slotted([slot="image"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color-critical);
+  }
+}
+
+#content-container {
+  display: flex;
+  flex-direction: column;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-medium);
+  padding: var(--space-medium);
+}
+
+#header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-medium);
+  min-block-size: var(--size-image-small);
+}
+
+#title {
+  font-weight: var(--font-weight-semibold);
+  padding-bottom: var(--space-xsmall);
+  margin-block: 0;
+  /* Intentionally using a larger font size for clearer visual hierarchy */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: 1.4lh;
+}
+
+#description {
+  /* Intentionally using a larger font size for clearer visual hierarchy */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: 1.23em;
+  color: var(--text-color-deemphasized);
+}
+
+#content {
+  display: flex;
+  flex-direction: column;
+}
+
+#bandwidth {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xsmall);
+  margin-top: var(--space-xsmall);
+}
+
+::slotted([slot="content"]) {
+  border-top: var(--border-width) solid var(--border-color-deemphasized);
+  margin-top: var(--space-large);
+}
+
+::slotted([slot="content"].location-message) {
+  border: none;
+  margin-top: var(--space-small);
+  color: var(--text-color-deemphasized);
+  text-align: center;
+}
+
+::slotted([slot="image"]) {
+  display: block;
+  height: var(--size-image-small);
+  width: var(--size-image-small);
+}
+
+::slotted([slot="bandwidth"]) {
+  color: var(--text-color-deemphasized);
+}
+
+::slotted([slot="action"]) {
+  margin-block-start: var(--space-xxlarge);
+  --button-padding: var(--space-medium);
+  width: 100%;
+}
+
+::slotted([slot="location-action"]) {
+  margin-block-start: var(--space-small);
+  width: 100%;
+  --button-padding: var(--space-medium);
+}

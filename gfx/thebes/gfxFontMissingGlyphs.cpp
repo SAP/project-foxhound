@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,7 +18,8 @@
 using namespace mozilla;
 using namespace mozilla::gfx;
 
-#define X 255
+#ifndef MOZ_GFX_OPTIMIZE_MOBILE
+#  define X 255
 static const uint8_t gMiniFontData[] = {
     0, X, 0, 0, X, 0, X, X, X, X, X, X, X, 0, X, X, X, X, X, X, X, X, X, X,
     X, X, X, X, X, X, X, X, X, X, X, 0, 0, X, X, X, X, 0, X, X, X, X, X, X,
@@ -32,7 +32,8 @@ static const uint8_t gMiniFontData[] = {
     0, X, 0, 0, X, 0, X, X, X, X, X, X, 0, 0, X, X, X, X, X, X, X, 0, 0, X,
     X, X, X, 0, 0, X, X, 0, X, X, X, 0, 0, X, X, X, X, 0, X, X, X, X, 0, 0,
 };
-#undef X
+#  undef X
+#endif
 
 /* Parameters that control the rendering of hexboxes. They look like this:
 
@@ -59,7 +60,9 @@ static const uint8_t gMiniFontData[] = {
 /** Width of a minifont glyph (see above) */
 static const int MINIFONT_WIDTH = 3;
 /** Height of a minifont glyph (see above) */
+#ifndef MOZ_GFX_OPTIMIZE_MOBILE
 static const int MINIFONT_HEIGHT = 5;
+#endif
 /**
  * Gap between minifont glyphs (both horizontal and vertical) and also
  * the minimum desired gap between the box border and the glyphs
@@ -196,8 +199,8 @@ static void DestroyImageKey(void* aClosure) {
   delete key;
 }
 
-MOZ_RUNINIT static RefPtr<SourceSurface> gWRGlyphAtlas[8];
-MOZ_RUNINIT static LinkedList<WRUserData> gWRUsers;
+constinit static RefPtr<SourceSurface> gWRGlyphAtlas[8];
+constinit static LinkedList<WRUserData> gWRUsers;
 UserDataKey WRUserData::sWRUserDataKey;
 
 /**
@@ -251,10 +254,10 @@ static void PurgeWRGlyphAtlas() {
   // from the layer manager.
   for (WRUserData* user : gWRUsers) {
     auto* manager = user->mManager;
-    for (size_t i = 0; i < 8; i++) {
-      if (gWRGlyphAtlas[i]) {
-        auto* key = static_cast<wr::ImageKey*>(gWRGlyphAtlas[i]->GetUserData(
-            reinterpret_cast<UserDataKey*>(manager)));
+    for (const auto& gWRGlyphAtla : gWRGlyphAtlas) {
+      if (gWRGlyphAtla) {
+        auto* key = static_cast<wr::ImageKey*>(
+            gWRGlyphAtla->GetUserData(reinterpret_cast<UserDataKey*>(manager)));
         if (key) {
           manager->GetRenderRootStateManager()->AddImageKeyForDiscard(*key);
         }
@@ -267,8 +270,8 @@ static void PurgeWRGlyphAtlas() {
     gWRUsers.popFirst()->Remove();
   }
   // Finally, clear out the atlases.
-  for (size_t i = 0; i < 8; i++) {
-    gWRGlyphAtlas[i] = nullptr;
+  for (auto& gWRGlyphAtla : gWRGlyphAtlas) {
+    gWRGlyphAtla = nullptr;
   }
 }
 
@@ -281,10 +284,9 @@ WRUserData::~WRUserData() {
   // When the layer manager is destroyed, we need go through each
   // atlas and remove any assigned image keys.
   if (isInList()) {
-    for (size_t i = 0; i < 8; i++) {
-      if (gWRGlyphAtlas[i]) {
-        gWRGlyphAtlas[i]->RemoveUserData(
-            reinterpret_cast<UserDataKey*>(mManager));
+    for (const auto& gWRGlyphAtla : gWRGlyphAtlas) {
+      if (gWRGlyphAtla) {
+        gWRGlyphAtla->RemoveUserData(reinterpret_cast<UserDataKey*>(mManager));
       }
     }
   }

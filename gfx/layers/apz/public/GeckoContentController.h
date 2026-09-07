@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,6 @@
 #include "InputData.h"              // for PinchGestureInput
 #include "LayersTypes.h"            // for ScrollDirection
 #include "Units.h"                  // for CSSPoint, CSSRect, etc
-#include "mozilla/Assertions.h"     // for MOZ_ASSERT_HELPER2
 #include "mozilla/Attributes.h"     // for MOZ_CAN_RUN_SCRIPT
 #include "mozilla/DefineEnum.h"     // for MOZ_DEFINE_ENUM
 #include "mozilla/EventForwards.h"  // for Modifiers
@@ -33,7 +30,7 @@ class GeckoContentController {
  public:
   using APZStateChange = GeckoContentController_APZStateChange;
   using TapType = GeckoContentController_TapType;
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GeckoContentController)
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
   /**
    * Notifies the content side of the most recently computed transforms for

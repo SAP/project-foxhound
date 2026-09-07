@@ -1,0 +1,15 @@
+{
+  "label": "app.simplenote.com",
+  "bugs": {
+    "1980129": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://app.simplenote.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["change_Firefox_to_FireFox"]
+    }
+  ]
+}

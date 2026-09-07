@@ -5,6 +5,7 @@
 loader: taskgraph.loader.transform:loader
 
 transforms:
+    - taskgraph.transforms.from_deps
     - gecko_taskgraph.transforms.attribution:resolve_keyed_by_transforms
     - taskgraph.transforms.task_context
     - gecko_taskgraph.transforms.attribution:transforms
@@ -19,21 +20,12 @@ kind-dependencies:
     - repackage
 
 task-defaults:
+    run-on-repo-type: [hg]
     description: Attribute release builds
     shipping-phase: promote
     # never run as part of CI
     run-on-projects: []
-    worker-type: b-linux-gcp
-    fetches:
-        by-build-platform:
-            win.*:
-                repackage-signing:
-                    - target.installer.exe
-            mac.*:
-                repackage:
-                    - target.dmg
-                toolchain:
-                    - linux64-libdmg
+    worker-type: b-linux
     attributes:
         release_artifacts:
             by-build-platform:
@@ -82,90 +74,34 @@ task-defaults:
     use-python: default
 
 tasks:
-    win32-devedition/opt:
-        label: attribution-win32-devedition/opt
-        shipping-product: devedition
-        attributes:
-            build_platform: win32-devedition
-            build_type: opt
-        treeherder:
-            platform: win32-devedition/opt
-        dependencies:
-            repackage-signing: repackage-signing-win32-devedition/opt
+    windows:
+        from-deps:
+            kinds:
+                - repackage-signing
+            with-attributes:
+                build_platform:
+                    - win32-devedition
+                    - win32-shippable
+                    - win64-aarch64-devedition
+                    - win64-aarch64-shippable
+                    - win64-devedition
+                    - win64-shippable
+                build_type: opt
+            copy-attributes: true
+            fetches:
+                repackage-signing:
+                    - artifact: target.installer.exe
 
-    win32-shippable/opt:
-        label: attribution-win32-shippable/opt
-        shipping-product: firefox
-        attributes:
-            build_platform: win32-shippable
-            build_type: opt
-        treeherder:
-            platform: win32-shippable/opt
-        dependencies:
-            repackage-signing: repackage-signing-win32-shippable/opt
-
-    win64-devedition/opt:
-        label: attribution-win64-devedition/opt
-        shipping-product: devedition
-        attributes:
-            build_platform: win64-devedition
-            build_type: opt
-        treeherder:
-            platform: win64-devedition/opt
-        dependencies:
-            repackage-signing: repackage-signing-win64-devedition/opt
-
-    win64-shippable/opt:
-        label: attribution-win64-shippable/opt
-        shipping-product: firefox
-        attributes:
-            build_platform: win64-shippable
-            build_type: opt
-        treeherder:
-            platform: win64-shippable/opt
-        dependencies:
-            repackage-signing: repackage-signing-win64-shippable/opt
-
-    win64-aarch64-shippable/opt:
-        label: attribution-win64-aarch64-shippable/opt
-        shipping-product: firefox
-        attributes:
-            build_platform: win64-aarch64-shippable
-            build_type: opt
-        treeherder:
-            platform: win64-aarch64-shippable/opt
-        dependencies:
-            repackage-signing: repackage-signing-win64-aarch64-shippable/opt
-
-    win64-aarch64-devedition/opt:
-        label: attribution-win64-aarch64-devedition/opt
-        shipping-product: devedition
-        attributes:
-            build_platform: win64-aarch64-devedition
-            build_type: opt
-        treeherder:
-            platform: win64-aarch64-devedition/opt
-        dependencies:
-            repackage-signing: repackage-signing-win64-aarch64-devedition/opt
-
-    macosx64-devedition/opt:
-        label: attribution-macosx64-devedition/opt
-        shipping-product: devedition
-        attributes:
-            build_platform: macosx64-devedition
-            build_type: opt
-        treeherder:
-            platform: macosx64-devedition/opt
-        dependencies:
-            repackage: repackage-macosx64-devedition/opt
-
-    macosx64-shippable/opt:
-        label: attribution-macosx64-shippable/opt
-        shipping-product: firefox
-        attributes:
-            build_platform: macosx64-shippable
-            build_type: opt
-        treeherder:
-            platform: macosx64-shippable/opt
-        dependencies:
-            repackage: repackage-macosx64-shippable/opt
+    macosx:
+        from-deps:
+            kinds:
+                - repackage
+            with-attributes:
+                build_platform:
+                    - macosx64-devedition
+                    - macosx64-shippable
+                build_type: opt
+            copy-attributes: true
+            fetches:
+                repackage:
+                    - artifact: target.dmg

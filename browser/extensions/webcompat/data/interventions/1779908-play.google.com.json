@@ -1,0 +1,27 @@
+{
+  "label": "play.google.com",
+  "bugs": {
+    "1779908": {
+      "issue": "extra-scrollbars",
+      "matches": ["*://play.google.com/store/*"]
+    }
+  },
+  "css": {
+    "hide_extra_scrollbars": ".aoJE7e { scrollbar-width: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "max_version": 150,
+      "css": ["hide_extra_scrollbars"]
+    },
+    {
+      "platforms": ["desktop"],
+      "min_version": 151,
+      "pref_check": {
+        "layout.css.fake-webkit-scrollbar.enabled": false
+      },
+      "css": ["hide_extra_scrollbars"]
+    }
+  ]
+}

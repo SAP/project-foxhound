@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!--
+    Longfox is the name of an easter egg game available through
+    secret settings. Since that's not localized, keep the name unchanged.
+  -->
+  <string name="longfox">ലോങ്ങുഫോക്സ്</string>
+  <string name="tap_to_play">കളിക്കാൻ ഞെക്കുക!</string>
+  <string name="sound_on">ശബ്ദം തുടങ്ങിവച്ചതു്</string>
+  <string name="sound_off">ശബ്ദം അണച്ചുവച്ചതു്</string>
+  <!-- Back button -->
+  <string name="back">തിരിച്ചു്</string>
+</resources>

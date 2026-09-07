@@ -26,10 +26,11 @@ kind-dependencies:
     - shippable-l10n-mac-signing
     - shippable-l10n-mac-notarization
     - repackage-signing-l10n
-    - partials
     - partials-signing
     - repackage-signing-msi
     - repackage-signing-shippable-l10n-msix
+    - repackage-pkg-notarization
+    - repackage-l10n-pkg-notarization
     - mar-signing
     - mar-signing-l10n
     - attribution
@@ -39,23 +40,22 @@ kind-dependencies:
     - upload-symbols
     - upload-symbols-dummy
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
-    - linux-shippable/opt
     - linux64-shippable/opt
     - linux64-aarch64-shippable/opt
     - macosx64-shippable/opt
     - win32-shippable/opt
     - win64-shippable/opt
     - win64-aarch64-shippable/opt
-    - linux-devedition/opt
     - linux64-devedition/opt
     - linux64-aarch64-devedition/opt
     - macosx64-devedition/opt
     - win32-devedition/opt
     - win64-devedition/opt
     - win64-aarch64-devedition/opt
-    - linux64-asan-reporter-shippable/opt
-    - win64-asan-reporter-shippable/opt
 
 tasks:
     beetmover-repackage:
@@ -65,5 +65,5 @@ tasks:
         attributes:
             artifact_map:
                 by-release-type:
-                    beta|release.*|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates.yml
+                    beta|release|esr.*: taskcluster/gecko_taskgraph/manifests/firefox_candidates.yml
                     default: taskcluster/gecko_taskgraph/manifests/firefox_nightly.yml

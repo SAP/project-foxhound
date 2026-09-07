@@ -6,9 +6,6 @@
   canvas { border: 2px solid black;}
 </style>
 
-<img id="img"
-     onload="go()"
-     src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==">
 <canvas id="canvas"></canvas>
 <script>
   const ctx = canvas.getContext("2d", { desynchronized: true });
@@ -38,3 +35,6 @@
     setTimeout(() => { document.documentElement.removeAttribute("class")}, 0);
   }
 </script>
+<img id="img"
+     onload="go()"
+     src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==">

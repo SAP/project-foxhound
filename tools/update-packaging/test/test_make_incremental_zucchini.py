@@ -1,0 +1,280 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+import hashlib
+import importlib.util
+import sys
+import types
+from pathlib import Path
+
+from mozunit import main
+
+# Pre-populate sys.modules with stub modules for mardor so the script's
+# top-level "from mardor.* import ..." statements resolve without needing
+# the real mardor package installed in the test environment. This must
+# run before the script is loaded below; a fixture would fire too late.
+mardor_pkg = types.ModuleType("mardor")
+mardor_reader = types.ModuleType("mardor.reader")
+mardor_reader.MarReader = object
+mardor_signing = types.ModuleType("mardor.signing")
+mardor_signing.get_keysize = lambda _cert: 4096
+sys.modules.setdefault("mardor", mardor_pkg)
+sys.modules.setdefault("mardor.reader", mardor_reader)
+sys.modules.setdefault("mardor.signing", mardor_signing)
+
+# tools/update-packaging is a script directory, not a Python package, so
+# `import make_incremental_zucchini` wouldn't find it. Load the file by
+# absolute path through importlib instead.
+SCRIPT_PATH = Path(__file__).resolve().parent.parent / "make_incremental_zucchini.py"
+spec = importlib.util.spec_from_file_location("make_incremental_zucchini", SCRIPT_PATH)
+mz = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mz)
+
+
+def _write(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+
+def _sha256(path):
+    """Compute sha256 of a file via stdlib so test fixtures stay independent
+    of the script's own get_hash helper."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def test_hash_dir_walks_files(tmp_path):
+    _write(tmp_path / "a.txt", b"alpha")
+    _write(tmp_path / "sub/b.txt", b"beta")
+    _write(tmp_path / "sub/nested/c.txt", b"gamma")
+
+    hashes = mz._hash_dir(str(tmp_path))
+
+    assert hashes == {
+        "a.txt": _sha256(tmp_path / "a.txt"),
+        "sub/b.txt": _sha256(tmp_path / "sub/b.txt"),
+        "sub/nested/c.txt": _sha256(tmp_path / "sub/nested/c.txt"),
+    }
+
+
+def test_hash_dir_empty(tmp_path):
+    assert mz._hash_dir(str(tmp_path)) == {}
+
+
+def _make_cache_setup(tmp_path, rel_path, from_bytes, to_bytes, cache_state):
+    """Build a fixture: returns (cache_entry, partials_dir, manifest_file,
+    cache_extracted_dir) and writes the local from/to files.
+    cache_state is "patch", "full", or "missing"."""
+    local_from = tmp_path / "from" / rel_path
+    local_to = tmp_path / "to" / rel_path
+    _write(local_from, from_bytes)
+    _write(local_to, to_bytes)
+
+    cache_extracted_dir = tmp_path / "cache_extracted"
+    cache_extracted_dir.mkdir()
+    if cache_state == "patch":
+        _write(cache_extracted_dir / f"{rel_path}.patch", b"PATCH-BYTES")
+    elif cache_state == "full":
+        _write(cache_extracted_dir / rel_path, to_bytes)
+    # "missing" leaves the cache dir empty
+
+    partials_dir = tmp_path / "partials"
+    partials_dir.mkdir()
+    manifest_file = tmp_path / "updatev3.manifest"
+    manifest_file.write_text("")
+
+    cache_entry = {
+        "from_mar_files": {rel_path: _sha256(local_from)},
+        "to_mar_files": {rel_path: _sha256(local_to)},
+    }
+    return (
+        cache_entry,
+        str(local_from),
+        str(local_to),
+        str(cache_extracted_dir),
+        str(partials_dir),
+        str(manifest_file),
+    )
+
+
+def test_cache_lookup_patch_hit(tmp_path):
+    rel = "firefox.exe"
+    (
+        cache_entry,
+        local_from,
+        local_to,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    ) = _make_cache_setup(tmp_path, rel, b"OLD", b"NEW", "patch")
+
+    result = mz._maybe_use_cached_file(
+        cache_entry,
+        rel,
+        cache_entry["from_mar_files"][rel],
+        cache_entry["to_mar_files"][rel],
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    )
+
+    assert result == f"{rel}.patch"
+    assert (Path(partials_dir) / f"{rel}.patch").read_bytes() == b"PATCH-BYTES"
+    assert Path(manifest_file).read_text() == f'patch "{rel}.patch" "{rel}"\n'
+
+
+def test_cache_lookup_full_hit(tmp_path):
+    rel = "libxul.so"
+    (
+        cache_entry,
+        local_from,
+        local_to,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    ) = _make_cache_setup(tmp_path, rel, b"OLD", b"NEW", "full")
+
+    result = mz._maybe_use_cached_file(
+        cache_entry,
+        rel,
+        cache_entry["from_mar_files"][rel],
+        cache_entry["to_mar_files"][rel],
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    )
+
+    assert result == rel
+    assert (Path(partials_dir) / rel).read_bytes() == b"NEW"
+    assert Path(manifest_file).read_text() == f'add "{rel}"\n'
+
+
+def test_cache_lookup_from_hash_miss(tmp_path):
+    rel = "firefox.exe"
+    (
+        cache_entry,
+        local_from,
+        local_to,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    ) = _make_cache_setup(tmp_path, rel, b"OLD", b"NEW", "patch")
+
+    result = mz._maybe_use_cached_file(
+        cache_entry,
+        rel,
+        "deadbeef" * 8,
+        cache_entry["to_mar_files"][rel],
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    )
+
+    assert result is None
+    assert Path(manifest_file).read_text() == ""
+    assert not (Path(partials_dir) / f"{rel}.patch").exists()
+
+
+def test_cache_lookup_to_hash_miss(tmp_path):
+    rel = "firefox.exe"
+    (
+        cache_entry,
+        local_from,
+        local_to,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    ) = _make_cache_setup(tmp_path, rel, b"OLD", b"NEW", "patch")
+
+    result = mz._maybe_use_cached_file(
+        cache_entry,
+        rel,
+        cache_entry["from_mar_files"][rel],
+        "deadbeef" * 8,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    )
+
+    assert result is None
+    assert Path(manifest_file).read_text() == ""
+
+
+def test_cache_lookup_relpath_absent_from_index(tmp_path):
+    rel = "firefox.exe"
+    (
+        cache_entry,
+        local_from,
+        local_to,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    ) = _make_cache_setup(tmp_path, rel, b"OLD", b"NEW", "patch")
+
+    cache_entry["from_mar_files"].pop(rel)
+    cache_entry["to_mar_files"].pop(rel)
+
+    result = mz._maybe_use_cached_file(
+        cache_entry,
+        rel,
+        "deadbeef" * 8,
+        "deadbeef" * 8,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    )
+
+    assert result is None
+
+
+def test_cache_lookup_hashes_match_but_file_missing(tmp_path):
+    rel = "firefox.exe"
+    (
+        cache_entry,
+        local_from,
+        local_to,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    ) = _make_cache_setup(tmp_path, rel, b"OLD", b"NEW", "missing")
+
+    result = mz._maybe_use_cached_file(
+        cache_entry,
+        rel,
+        cache_entry["from_mar_files"][rel],
+        cache_entry["to_mar_files"][rel],
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    )
+
+    assert result is None
+    assert Path(manifest_file).read_text() == ""
+
+
+def test_cache_lookup_none_local_hash(tmp_path):
+    rel = "firefox.exe"
+    (
+        cache_entry,
+        local_from,
+        local_to,
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    ) = _make_cache_setup(tmp_path, rel, b"OLD", b"NEW", "patch")
+
+    result = mz._maybe_use_cached_file(
+        cache_entry,
+        rel,
+        None,
+        cache_entry["to_mar_files"][rel],
+        cache_extracted_dir,
+        partials_dir,
+        manifest_file,
+    )
+
+    assert result is None
+
+
+if __name__ == "__main__":
+    main()

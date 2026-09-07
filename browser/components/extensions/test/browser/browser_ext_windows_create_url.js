@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 add_task(async function testWindowCreate() {
@@ -206,7 +204,7 @@ add_task(async function testWindowCreate() {
       );
       let dialogEl = dialog._frame.contentDocument.querySelector("dialog");
       Assert.ok(dialogEl, "Dialog element should exist");
-      dialogEl.setAttribute("buttondisabledaccept", false);
+      dialogEl.removeAttribute("buttondisabledaccept");
       dialogEl.acceptDialog();
     });
   };

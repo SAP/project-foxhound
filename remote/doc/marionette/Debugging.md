@@ -56,7 +56,7 @@ whenever the `WebDriver:GetPageSource` command is called:
 ```javascript
     GeckoDriver.prototype.getPageSource = async function() {
       debugger;
-      …
+      // ...
     }
 ```
 

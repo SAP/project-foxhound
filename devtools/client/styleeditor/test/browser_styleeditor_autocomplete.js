@@ -245,7 +245,7 @@ function checkState(testCases, index, sourceEditor, popup) {
  * Returns a list of all property names and a map of property name vs possible
  * CSS values provided by the Gecko engine.
  *
- * @return {Object} An object with following properties:
+ * @return {object} An object with following properties:
  *         - CSSProperties {Array} Array of string containing all the possible
  *                         CSS property names.
  *         - CSSValues {Object|Map} A map where key is the property name and

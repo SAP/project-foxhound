@@ -13,9 +13,6 @@ const { Preferences } = ChromeUtils.importESModule(
   "resource://gre/modules/Preferences.sys.mjs"
 );
 
-// eslint-disable-next-line mozilla/reject-importGlobalProperties
-Cu.importGlobalProperties(["PathUtils"]);
-
 this.test = class extends ExtensionAPI {
   onStartup() {
     ChromeUtils.registerWindowActor("TestSupport", {
@@ -222,10 +219,6 @@ this.test = class extends ExtensionAPI {
           return sss.clearAll();
         },
 
-        async isSessionHistoryInParentRunning() {
-          return Services.appinfo.sessionHistoryInParent;
-        },
-
         async isFissionRunning() {
           return Services.appinfo.fissionAutostart;
         },
@@ -246,7 +239,7 @@ this.test = class extends ExtensionAPI {
 
         async triggerTranslationsOffer(tabId) {
           const browser = context.extension.tabManager.get(tabId).browser;
-          const { CustomEvent } = browser.ownerGlobal;
+          const { CustomEvent } = browser.documentGlobal;
           return browser.dispatchEvent(
             new CustomEvent("TranslationsParent:OfferTranslation", {
               bubbles: true,
@@ -256,7 +249,7 @@ this.test = class extends ExtensionAPI {
 
         async triggerLanguageStateChange(tabId, languageState) {
           const browser = context.extension.tabManager.get(tabId).browser;
-          const { CustomEvent } = browser.ownerGlobal;
+          const { CustomEvent } = browser.documentGlobal;
           return browser.dispatchEvent(
             new CustomEvent("TranslationsParent:LanguageState", {
               bubbles: true,
@@ -277,6 +270,56 @@ this.test = class extends ExtensionAPI {
             "resource://gre/modules/Schemas.sys.mjs"
           );
           return Schemas.getPermissionNames(typeNames);
+        },
+
+        async teardownAlertsService() {
+          const alertsService = Cc["@mozilla.org/alerts-service;1"].getService(
+            Ci.nsIAlertsService
+          );
+          alertsService.teardown();
+        },
+
+        async notifyUserGestureActivation(tabId) {
+          return getActorForTab(tabId, "TestSupport").sendQuery(
+            "NotifyUserGestureActivation"
+          );
+        },
+
+        /* Seeds the tracking protection database with the given content blocking log. */
+        async saveTrackingDBEvents(logJson) {
+          const trackingDBService = Cc[
+            "@mozilla.org/tracking-db-service;1"
+          ].getService(Ci.nsITrackingDBService);
+          await trackingDBService.saveEvents(logJson);
+        },
+
+        /* Removes all entries from the tracking protection database. */
+        async clearTrackingDB() {
+          const trackingDBService = Cc[
+            "@mozilla.org/tracking-db-service;1"
+          ].getService(Ci.nsITrackingDBService);
+          await trackingDBService.clearAll();
+        },
+
+        async addVirtualAuthenticator() {
+          const webauthnService = Cc[
+            "@mozilla.org/webauthn/service;1"
+          ].getService(Ci.nsIWebAuthnService);
+          return webauthnService.addVirtualAuthenticator(
+            "ctap2_1",
+            "internal",
+            true,
+            true,
+            true,
+            true
+          );
+        },
+
+        async removeVirtualAuthenticator(authenticatorId) {
+          const webauthnService = Cc[
+            "@mozilla.org/webauthn/service;1"
+          ].getService(Ci.nsIWebAuthnService);
+          webauthnService.removeVirtualAuthenticator(authenticatorId);
         },
       },
     };

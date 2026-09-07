@@ -20,14 +20,15 @@ export var AppMenuNotifications = {
 
   _lazyInit() {
     if (!this._hasInitialized) {
+      this._hasInitialized = true;
       Services.obs.addObserver(this, "xpcom-shutdown");
       Services.obs.addObserver(this, "appMenu-notifications-request");
     }
   },
 
   uninit() {
-    Services.obs.removeObserver(this, "xpcom-shutdown");
     Services.obs.removeObserver(this, "appMenu-notifications-request");
+    Services.obs.removeObserver(this, "xpcom-shutdown");
   },
 
   observe(subject, topic) {

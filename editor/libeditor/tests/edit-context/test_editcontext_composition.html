@@ -1,0 +1,236 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test that composed text input works for EditContext</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<div id="dom-host"></div>
+<canvas id="canvas-host"></canvas>
+<script>
+'use strict';
+
+const domHost = document.getElementById('dom-host');
+const canvasHost = document.getElementById('canvas-host');
+const textNode = new Text('');
+domHost.append(textNode);
+const editContext = new EditContext();
+let events = [];
+editContext.addEventListener('textupdate', e => {
+  events.push(e);
+  is(editContext.selectionStart, e.selectionStart, 'EditContext.selectionStart should match TextUpdateEvent.selectionStart');
+  is(editContext.selectionEnd, e.selectionEnd, 'EditContext.selectionEnd should match TextUpdateEvent.selectionEnd');
+  textNode.data = editContext.text;
+  if (editContext.attachedElements()[0] === domHost) {
+    getSelection().setBaseAndExtent(textNode, editContext.selectionStart,
+                                    textNode, editContext.selectionEnd);
+  }
+});
+
+// event properties we care about
+const kEventProperties = {
+  beforeinput: [],
+  compositionend: ['data'],
+  compositionstart: ['data'],
+  compositionupdate: ['data'],
+  keydown: ['key'],
+  keypress: ['key'],
+  keyup: ['key'],
+  textupdate: ['text', 'selectionStart', 'selectionEnd', 'updateRangeStart', 'updateRangeEnd'],
+};
+
+function stringifyEvent(e) {
+  if (!e) {
+    return 'undefined';
+  }
+  let string = e.type + ' {';
+  for (let property of kEventProperties[e.type]) {
+    if (!string.endsWith('{')) {
+      string += ', ';
+    }
+    string += `${property}: ${JSON.stringify(e[property])}`;
+  }
+  return string + '}';
+}
+
+function stringifyEvents(eventArray) {
+  return '[' + eventArray.map(stringifyEvent).join(', ') + ']';
+}
+
+for (let type of ['compositionstart', 'compositionupdate', 'compositionend']) {
+  domHost.addEventListener(type, () => {
+    ok(false, 'EditContext associated element should not receive composition events.');
+  });
+  canvasHost.addEventListener(type, () => {
+    ok(false, 'EditContext associated canvas should not receive composition events.');
+  });
+  editContext.addEventListener(type, e => {
+    if (e.type === 'compositionupdate') {
+      ok(false, 'EditContext should not receive compositionupdate events.');
+      return;
+    }
+    is(e.view, window, `view should be set for ${e.type} event`);
+    events.push(e);
+  });
+}
+
+for (let host of [domHost, canvasHost]) {
+  for (let type of ['keydown', 'keypress', 'keyup']) {
+    host.addEventListener(type, e => {
+      events.push(e);
+    });
+  }
+  host.addEventListener('beforeinput', e => {
+    events.push(e);
+    // XXX: It's unclear what target ranges should be for composition, or
+    //      even whether there should be beforeinput at all:
+    //         https://github.com/w3c/edit-context/issues/133
+    isDeeply(e.getTargetRanges(), [],
+             'beforeinput for EditContext composition should not have target ranges');
+  });
+}
+
+for (let type of ['keydown', 'keypress', 'keyup', 'beforeinput']) {
+  editContext.addEventListener(type, () => {
+    ok(false, `EditContext should not receive ${type} events.`);
+  });
+}
+
+function compositionUpdate(newString) {
+  synthesizeCompositionChange({
+    composition: {
+      string: newString,
+      clauses: [
+        {length: newString.length, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+      ]
+    },
+    caret: {
+      start: newString.length,
+      length: 0,
+    },
+    key: {
+      key: 'a',
+    }
+  });
+}
+
+function compositionEnd() {
+  synthesizeComposition({
+    type: 'compositioncommitasis',
+    key: {
+      key: 'b'
+    }
+  });
+}
+
+function check(expectedText, expectedEvents, description) {
+  is(editContext.text, expectedText,
+    `${description}: Check EditContext.text`);
+  for (let expected of expectedEvents) {
+    ok(kEventProperties[expected.type], `Event type ${expected.type} should be in kEventProperties.`);
+    for (let key in expected) {
+      if (key !== 'type') {
+        ok(kEventProperties[expected.type].includes(key),
+          `Key "${key}" from expected event should be in kEventProperties.${expected.type}.`);
+      }
+    }
+  }
+  is(stringifyEvents(events),
+     stringifyEvents(expectedEvents),
+    `${description}: Check events.`);
+  events = [];
+}
+
+function cleanup() {
+  textNode.data = '';
+  // reset EditContext
+  let element = editContext.attachedElements()[0];
+  if (element) {
+    element.editContext = null;
+  }
+  editContext.updateSelection(0, 0);
+  editContext.updateText(0, editContext.text.length, '');
+}
+
+SimpleTest.registerTaskCleanupFunction(cleanup);
+
+async function runTests() {
+  await SimpleTest.promiseFocus();
+  compositionUpdate('foo');
+  check('foo', [
+    {type: 'keydown', key: 'Process'},
+    {type: 'compositionstart', data: ''},
+    {type: 'beforeinput'},
+    {type: 'textupdate', text: 'foo', selectionStart: 3, selectionEnd: 3, updateRangeStart: 0, updateRangeEnd: 0},
+    {type: 'keyup', key: 'a'},
+  ], 'Start composition with text "foo"');
+  compositionUpdate('');
+  check('', [
+    {type: 'keydown', key: 'Process'},
+    {type: 'beforeinput'},
+    {type: 'textupdate', text: '', selectionStart: 0, selectionEnd: 0, updateRangeStart: 0, updateRangeEnd: 3},
+    {type: 'keyup', key: 'a'},
+  ], 'Update composition with empty text');
+  compositionUpdate('bar');
+  check('bar', [
+    {type: 'keydown', key: 'Process'},
+    {type: 'beforeinput'},
+    {type: 'textupdate', text: 'bar', selectionStart: 3, selectionEnd: 3, updateRangeStart: 0, updateRangeEnd: 0},
+    {type: 'keyup', key: 'a'},
+  ], 'Update composition with text "bar"');
+  compositionUpdate('abcd');
+  check('abcd', [
+    {type: 'keydown', key: 'Process'},
+    {type: 'beforeinput'},
+    {type: 'textupdate', text: 'abcd', selectionStart: 4, selectionEnd: 4, updateRangeStart: 0, updateRangeEnd: 3},
+    {type: 'keyup', key: 'a'},
+  ], 'Update composition with text "abcd"');
+  compositionEnd();
+  check('abcd', [
+    {type: 'keydown', key: 'Process'},
+    {type: 'beforeinput'},
+    // textupdate is fired when composition is comitted, even if the text didn't change.
+    // This matches Chrome's behaviour currently.
+    {type: 'textupdate', text: 'abcd', selectionStart: 4, selectionEnd: 4, updateRangeStart: 0, updateRangeEnd: 4},
+    {type: 'compositionend', data: 'abcd'},
+    {type: 'keyup', key: 'b'},
+  ], 'End composition with text "abcd"');
+  compositionUpdate('efg');
+  check('abcdefg', [
+    {type: 'keydown', key: 'Process'},
+    {type: 'compositionstart', data: ''},
+    {type: 'beforeinput'},
+    {type: 'textupdate', text: 'efg', selectionStart: 7, selectionEnd: 7, updateRangeStart: 4, updateRangeEnd: 4},
+    {type: 'keyup', key: 'a'},
+  ], 'Start composition with text "efg"');
+  compositionEnd();
+  check('abcdefg', [
+    {type: 'keydown', key: 'Process'},
+    {type: 'beforeinput'},
+    {type: 'textupdate', text: 'efg', selectionStart: 7, selectionEnd: 7, updateRangeStart: 4, updateRangeEnd: 7},
+    {type: 'compositionend', data: 'efg'},
+    {type: 'keyup', key: 'b'},
+  ], 'End composition with text "efg"');
+}
+
+add_task(async () => {
+  info('Test DOM-based EditContext');
+  domHost.editContext = editContext;
+  domHost.focus();
+  await runTests();
+});
+
+add_task(async () => {
+  info('Test <canvas>-based EditContext');
+  canvasHost.editContext = editContext;
+  canvasHost.focus();
+  await runTests();
+});
+
+
+</script>
+</body>
+</html>

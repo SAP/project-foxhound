@@ -23,28 +23,39 @@
 
 class SkStrikeClient;
 
-using MaskFormat = skgpu::MaskFormat;
-
 namespace sktext::gpu {
-class Glyph;
 
-// -- GlyphVector ----------------------------------------------------------------------------------
-GlyphVector::GlyphVector(SkStrikePromise&& strikePromise, SkSpan<Variant> glyphs)
-        : fStrikePromise{std::move(strikePromise)}
-        , fGlyphs{glyphs} {
+GlyphVector::GlyphVector(SkStrikePromise&& strikePromise, SkSpan<GlyphBytes> glyphs)
+        : fStrikePromise{std::move(strikePromise)}, fGlyphs{glyphs} {
     SkASSERT(!fGlyphs.empty());
+}
+
+GlyphVector::GlyphVector(GlyphVector&& that)
+        : fStrikePromise{std::move(that.fStrikePromise)}, fGlyphs{that.fGlyphs} {
+    // We move this when creating AtlasSubRuns, before initializing backend data.
+    // To support backend data we'd have to record a move proc in initBackendData to
+    // do type-specific move.
+    SkASSERT(!that.hasBackendData());
+}
+
+GlyphVector::~GlyphVector() {
+    if (!this->hasBackendData()) {
+        return;
+    }
+    fBackendDataReleaser(fBackendDataBytes.data());
 }
 
 GlyphVector GlyphVector::Make(SkStrikePromise&& promise,
                               SkSpan<const SkPackedGlyphID> packedIDs,
                               SubRunAllocator* alloc) {
     SkASSERT(!packedIDs.empty());
-    auto packedIDToVariant = [] (SkPackedGlyphID packedID) {
-        return Variant{packedID};
-    };
-
-    return GlyphVector{std::move(promise),
-                       alloc->makePODArray<Variant>(packedIDs, packedIDToVariant)};
+    int count = SkToInt(packedIDs.size());
+    GlyphBytes* glyphs =
+        alloc->makePODArray<GlyphBytes, GlyphVector_Concepts::kMaxGlyphTypeSize>(count);
+    for (int i = 0; i < count; i++) {
+        *reinterpret_cast<SkPackedGlyphID*>(glyphs[i].data()) = packedIDs[i];
+    }
+    return GlyphVector{std::move(promise), SkSpan{glyphs, count}};
 }
 
 std::optional<GlyphVector> GlyphVector::MakeFromBuffer(SkReadBuffer& buffer,
@@ -62,23 +73,23 @@ std::optional<GlyphVector> GlyphVector::MakeFromBuffer(SkReadBuffer& buffer,
         return std::nullopt;
     }
 
-    // Make sure we can multiply without overflow in the check below.
-    static constexpr int kMaxCount = (int)(INT_MAX / sizeof(uint32_t));
-    if (!buffer.validate(glyphCount <= kMaxCount)) {
+    // Make sure we won't overflow the glyphCount math or allocation below.
+    if (!buffer.validate(BagOfBytes::WillCountFit<GlyphBytes>(glyphCount))) {
         return std::nullopt;
     }
 
     // Check for enough bytes to populate the packedGlyphID array. If not enough something has
     // gone wrong.
+    static_assert(sizeof(GlyphBytes) >= sizeof(uint32_t));
     if (!buffer.validate(glyphCount * sizeof(uint32_t) <= buffer.available())) {
         return std::nullopt;
     }
 
-    Variant* variants = alloc->makePODArray<Variant>(glyphCount);
+    GlyphBytes* glyphs = alloc->makePODArray<GlyphBytes>(glyphCount);
     for (int i = 0; i < glyphCount; i++) {
-        variants[i].packedGlyphID = SkPackedGlyphID(buffer.readUInt());
+        *reinterpret_cast<SkPackedGlyphID*>(glyphs[i].data()) = SkPackedGlyphID(buffer.readUInt());
     }
-    return GlyphVector{std::move(promise.value()), SkSpan(variants, glyphCount)};
+    return GlyphVector{std::move(promise.value()), SkSpan{glyphs, glyphCount}};
 }
 
 void GlyphVector::flatten(SkWriteBuffer& buffer) const {
@@ -88,32 +99,15 @@ void GlyphVector::flatten(SkWriteBuffer& buffer) const {
 
     // Write out the span of packedGlyphIDs.
     buffer.write32(SkTo<int32_t>(fGlyphs.size()));
-    for (Variant variant : fGlyphs) {
-        buffer.writeUInt(variant.packedGlyphID.value());
-    }
-}
-
-SkSpan<const Glyph*> GlyphVector::glyphs() const {
-    return SkSpan(reinterpret_cast<const Glyph**>(fGlyphs.data()), fGlyphs.size());
-}
-
-// packedGlyphIDToGlyph must be run in single-threaded mode.
-// If fSkStrike is not sk_sp<SkStrike> then the conversion to Glyph* has not happened.
-void GlyphVector::packedGlyphIDToGlyph(StrikeCache* cache) {
-    if (fTextStrike == nullptr) {
-        SkStrike* strike = fStrikePromise.strike();
-        fTextStrike = cache->findOrCreateStrike(strike->strikeSpec());
-
-        // Get all the atlas locations for each glyph.
-        for (Variant& variant : fGlyphs) {
-            variant.glyph = fTextStrike->getGlyph(variant.packedGlyphID);
+    for (const auto& g : fGlyphs) {
+        SkPackedGlyphID id;
+        if (this->hasBackendData()) {
+            id = fGetGlyphID(g.data());
+        } else {
+            id = *reinterpret_cast<const SkPackedGlyphID*>(g.data());
         }
-
-        // This must be pinned for the Atlas filling to work.
-        strike->verifyPinnedStrike();
-
-        // Drop the ref to the strike so that it can be purged if needed.
-        fStrikePromise.resetStrike();
+        buffer.writeUInt(id.value());
     }
 }
+
 }  // namespace sktext::gpu

@@ -1,5 +1,3 @@
-/* eslint-env worker */
-
 importScripts("urlSearchParams_commons.js");
 
 function ok(a, msg) {

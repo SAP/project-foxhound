@@ -8,9 +8,9 @@ import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.ui.widgets.WidgetSiteItemView
-import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.loadIntoView
+import com.google.android.material.R as materialR
 
 class TabHistoryViewHolder(
     private val view: WidgetSiteItemView,
@@ -32,7 +32,7 @@ class TabHistoryViewHolder(
 
         if (item.isSelected) {
             view.setBackgroundColor(
-                view.context.getColorFromAttr(R.attr.layerNonOpaque),
+                view.context.getColorFromAttr(materialR.attr.colorPrimaryContainer),
             )
         } else {
             view.background = null

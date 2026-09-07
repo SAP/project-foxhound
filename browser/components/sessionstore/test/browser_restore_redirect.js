@@ -16,6 +16,12 @@ add_task(async function check_http_redirect() {
   // Open a new tab to restore into.
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
+
+  // addTab sends a message to the child to load about:blank, which sends a
+  // message to the parent to add the SH entry.
+  // promiseTabState modifies the SH syncronously, so ensure it is settled.
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
+
   await promiseTabState(tab, state);
 
   info("Restored tab");
@@ -47,6 +53,12 @@ add_task(async function check_js_redirect() {
   // Open a new tab to restore into.
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
+
+  // addTab sends a message to the child to load about:blank, which sends a
+  // message to the parent to add the SH entry.
+  // promiseTabState modifies the SH syncronously, so ensure it is settled.
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
+
   let loadPromise = BrowserTestUtils.browserLoaded(browser, true, url =>
     url.endsWith("restore_redirect_target.html")
   );

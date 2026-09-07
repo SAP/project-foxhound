@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,21 @@
 #ifndef GPU_RenderBundleEncoder_H_
 #define GPU_RenderBundleEncoder_H_
 
-#include "mozilla/dom/TypedArray.h"
 #include "CanvasContext.h"
 #include "ObjectModel.h"
+#include "mozilla/dom/TypedArray.h"
+
+namespace mozilla::dom {
+struct GPURenderBundleEncoderDescriptor;
+struct GPURenderBundleDescriptor;
+enum class GPUIndexFormat : uint8_t;
+}  // namespace mozilla::dom
 
 namespace mozilla::webgpu {
+class BindGroup;
+class Buffer;
+class RenderPipeline;
+
 namespace ffi {
 struct WGPURenderBundleEncoder;
 }  // namespace ffi
@@ -22,17 +31,18 @@ struct ffiWGPURenderBundleEncoderDeleter {
   void operator()(ffi::WGPURenderBundleEncoder*);
 };
 
-class RenderBundleEncoder final : public ObjectBase, public ChildOf<Device> {
+class RenderBundleEncoder final : public nsWrapperCache,
+                                  public ObjectBase,
+                                  public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(RenderBundleEncoder)
   GPU_DECL_JS_WRAP(RenderBundleEncoder)
 
-  RenderBundleEncoder(Device* const aParent, WebGPUChild* const aBridge,
+  RenderBundleEncoder(Device* const aParent, RawId aId,
                       const dom::GPURenderBundleEncoderDescriptor& aDesc);
 
  private:
-  ~RenderBundleEncoder();
-  void Cleanup();
+  virtual ~RenderBundleEncoder();
 
   std::unique_ptr<ffi::WGPURenderBundleEncoder,
                   ffiWGPURenderBundleEncoderDeleter>
@@ -48,9 +58,11 @@ class RenderBundleEncoder final : public ObjectBase, public ChildOf<Device> {
 
   // programmable pass encoder
  private:
+  bool mValid = true;
+
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const uint32_t* aDynamicOffsets,
-                    uint64_t aDynamicOffsetsLength);
+                    size_t aDynamicOffsetsLength);
 
  public:
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
@@ -65,8 +77,8 @@ class RenderBundleEncoder final : public ObjectBase, public ChildOf<Device> {
   void SetIndexBuffer(const Buffer& aBuffer,
                       const dom::GPUIndexFormat& aIndexFormat, uint64_t aOffset,
                       const dom::Optional<uint64_t>& aSize);
-  void SetVertexBuffer(uint32_t aSlot, const Buffer& aBuffer, uint64_t aOffset,
-                       const dom::Optional<uint64_t>& aSize);
+  void SetVertexBuffer(uint32_t aSlot, const Buffer* const aBuffer,
+                       uint64_t aOffset, const dom::Optional<uint64_t>& aSize);
   void Draw(uint32_t aVertexCount, uint32_t aInstanceCount,
             uint32_t aFirstVertex, uint32_t aFirstInstance);
   void DrawIndexed(uint32_t aIndexCount, uint32_t aInstanceCount,

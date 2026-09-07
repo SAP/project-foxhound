@@ -51,8 +51,8 @@ export default class MozBoxButton extends MozBoxBase {
       is="moz-label"
       class="label"
       shownaccesskey=${ifDefined(this.accessKey)}
+      .textContent=${this.label}
     >
-      ${this.label}
     </label>`;
   }
 
@@ -72,7 +72,7 @@ export default class MozBoxButton extends MozBoxBase {
         <img
           class="icon nav-icon"
           src="chrome://global/skin/icons/arrow-right.svg"
-          role="presentation"
+          alt=""
         />
       </button>
     `;

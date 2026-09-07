@@ -1,27 +1,27 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "txXPathTreeWalker.h"
-#include "nsAtom.h"
-#include "nsINode.h"
-#include "nsPrintfCString.h"
-#include "nsReadableUtils.h"
-#include "nsString.h"
-#include "nsTextFragment.h"
-#include "txXMLUtils.h"
-#include "txLog.h"
-#include "nsUnicharUtils.h"
-#include "nsAttrName.h"
-#include "nsNameSpaceManager.h"
-#include "nsTArray.h"
+#include <stdint.h>
+
+#include <algorithm>
+
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/CharacterData.h"
 #include "mozilla/dom/Element.h"
-#include <stdint.h>
-#include <algorithm>
+#include "nsAtom.h"
+#include "nsAttrName.h"
+#include "nsINode.h"
+#include "nsNameSpaceManager.h"
+#include "nsPrintfCString.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsUnicharUtils.h"
+#include "txLog.h"
+#include "txXMLUtils.h"
+#include "txXPathTreeWalker.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

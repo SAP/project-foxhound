@@ -56,7 +56,7 @@ ID01:
         - clockSkewError-title
         - connectionFailure-title
         - contentEncodingError-title
-        - corruptedContentError-title
+        - corruptedContentErrorv2-title
         - deniedPortAccess-title
         - dnsNotFound-title
         - fileAccessDenied-title
@@ -137,12 +137,15 @@ CO01:
         - trademarkInfo
         # browser/addonNotifications.ftl
         - addon-install-error-hard-blocked
-        - addon-install-error-soft-blocked
         # browser/appExtensionFields.ftl
         - extension-firefox-alpenglow-name
         # browser/browser.ftl
         - identity-custom-root
         - identity-description-custom-root2
+        # browser/components/urlbar/content/enUS-searchFeatures.ftl
+        - addressbar-firefox-suggest-online
+        # browser/customkeys.ftl
+        - customkeys-dev-network
         # browser/migrationWizard.ftl
         - migration-wizard-migrator-display-name-firefox
         # browser/newtab/onboarding.ftl
@@ -155,11 +158,8 @@ CO01:
         - sync-engine-addons
         - sync-mobile-promo
         # browser/unifiedExtensions.ftl
-        - unified-extensions-item-messagebar-softblocked
         - unified-extensions-mb-blocklist-error-multiple
         - unified-extensions-mb-blocklist-error-single
-        - unified-extensions-mb-blocklist-warning-multiple
-        - unified-extensions-mb-blocklist-warning-single
         # devtools/client/locales/en-US/aboutdebugging.ftl
         - about-debugging-setup-usb-step-enable-debug-firefox2
         - about-debugging-browser-version-too-old-fennec
@@ -175,10 +175,6 @@ CO01:
         - addon-badge-verified4
         - details-notification-hard-blocked-extension
         - details-notification-hard-blocked-other
-        - details-notification-soft-blocked-extension-disabled
-        - details-notification-soft-blocked-extension-enabled
-        - details-notification-soft-blocked-other-disabled
-        - details-notification-soft-blocked-other-enabled
         - plugins-openh264-description
         - recommended-theme-1
         # toolkit/about/aboutSupport.ftl
@@ -197,6 +193,8 @@ CO01:
         - cert-error-mitm-connection
         # browser/search.ftl
         - add-engine-name-placeholder
+        # browser/appmenu.ftl
+        - appmenu-other-protection-header2
     files:
         - browser/locales/en-US/browser/profile/default-bookmarks.ftl
         - toolkit/locales/en-US/toolkit/about/aboutMozilla.ftl

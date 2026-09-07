@@ -12,7 +12,7 @@ import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.utils.Settings
 
 /**
- * When the open password manager shortcut is tapped, Fenix should open to the password and login fragment.
+ * When the open password manager shortcut is tapped, Fenix should open to the logins list fragment.
  */
 class OpenPasswordManagerIntentProcessor : HomeIntentProcessor {
 
@@ -20,7 +20,7 @@ class OpenPasswordManagerIntentProcessor : HomeIntentProcessor {
         return if (intent.extras?.getBoolean(HomeActivity.OPEN_PASSWORD_MANAGER) == true) {
             out.removeExtra(HomeActivity.OPEN_PASSWORD_MANAGER)
 
-            val directions = NavGraphDirections.actionGlobalSavedLoginsAuthFragment()
+            val directions = NavGraphDirections.actionLoginsListFragment()
             navController.nav(null, directions)
             true
         } else {

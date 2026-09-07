@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,13 +15,9 @@ class nsAtom;
 class nsIContent;
 
 nsresult NS_NewSVGTextPathElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla::dom {
-
-// textPath side types
-static const uint16_t TEXTPATH_SIDETYPE_LEFT = 1;
-static const uint16_t TEXTPATH_SIDETYPE_RIGHT = 2;
 
 using SVGTextPathElementBase = SVGTextContentElement;
 
@@ -33,9 +27,9 @@ class SVGTextPathElement final : public SVGTextPathElementBase {
  protected:
   friend nsresult(::NS_NewSVGTextPathElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
   explicit SVGTextPathElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   JSObject* WrapNode(JSContext* cx, JS::Handle<JSObject*> aGivenProto) override;
 
  public:
@@ -60,6 +54,12 @@ class SVGTextPathElement final : public SVGTextPathElementBase {
   EnumAttributesInfo GetEnumInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
+  SVGAnimatedPathSegList mPath;
+
+  enum { HREF, XLINK_HREF };
+  SVGAnimatedString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
+
   enum { /* TEXTLENGTH, */ STARTOFFSET = 1 };
   SVGAnimatedLength mLengthAttributes[2];
   SVGAnimatedLength* LengthAttributes() override { return mLengthAttributes; }
@@ -72,12 +72,6 @@ class SVGTextPathElement final : public SVGTextPathElementBase {
   static SVGEnumMapping sSpacingMap[];
   static SVGEnumMapping sSideMap[];
   static EnumInfo sEnumInfo[4];
-
-  enum { HREF, XLINK_HREF };
-  SVGAnimatedString mStringAttributes[2];
-  static StringInfo sStringInfo[2];
-
-  SVGAnimatedPathSegList mPath;
 };
 
 }  // namespace mozilla::dom

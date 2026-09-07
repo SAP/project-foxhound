@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,16 +15,11 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
 });
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "USE_OLD_DIALOG",
-  "privacy.sanitize.useOldClearHistoryDialog",
-  false
-);
 
 Preferences.addAll([
   { id: "privacy.cpd.history", type: "bool" },
@@ -93,7 +87,7 @@ var gSanitizePromptDialog = {
     this._inClearOnShutdownNewDialog = false;
     this._inClearSiteDataNewDialog = false;
     this._inBrowserWindow = !!arg.inBrowserWindow;
-    if (arg.mode && !lazy.USE_OLD_DIALOG) {
+    if (arg.mode) {
       this._inClearOnShutdownNewDialog = arg.mode == "clearOnShutdown";
       this._inClearSiteDataNewDialog = arg.mode == "clearSiteData";
     }
@@ -110,10 +104,8 @@ var gSanitizePromptDialog = {
       }
     }
 
-    if (!lazy.USE_OLD_DIALOG) {
-      this._dataSizesUpdated = false;
-      this.dataSizesFinishedUpdatingPromise = this.getAndUpdateDataSizes(); // this promise is still used in tests
-    }
+    this._dataSizesUpdated = false;
+    this.dataSizesFinishedUpdatingPromise = this.getAndUpdateDataSizes(); // this promise is still used in tests
 
     let OKButton = this._dialog.getButton("accept");
     let clearOnShutdownGroupbox = document.getElementById(
@@ -138,7 +130,7 @@ var gSanitizePromptDialog = {
       // If this is the first time the user is opening the new clear on shutdown
       // dialog, migrate their prefs
       Sanitizer.maybeMigratePrefs("clearOnShutdown");
-    } else if (!lazy.USE_OLD_DIALOG) {
+    } else {
       okButtonl10nID = "sanitize-button-ok2";
       clearOnShutdownGroupbox.remove();
       if (this._inClearSiteDataNewDialog) {
@@ -154,23 +146,46 @@ var gSanitizePromptDialog = {
     }
     document.l10n.setAttributes(OKButton, okButtonl10nID);
 
-    if (!lazy.USE_OLD_DIALOG) {
-      this._sinceMidnightSanitizeDurationOption = document.getElementById(
-        "sanitizeSinceMidnight"
-      );
-      this._cookiesAndSiteDataCheckbox =
-        document.getElementById("cookiesAndStorage");
-      this._cacheCheckbox = document.getElementById("cache");
+    this._sinceMidnightSanitizeDurationOption = document.getElementById(
+      "sanitizeSinceMidnight"
+    );
+    this._cookiesAndSiteDataCheckbox =
+      document.getElementById("cookiesAndStorage");
+    this._cacheCheckbox = document.getElementById("cache");
+    this._cookiesLoading = document.getElementById("cookiesAndStorage-loading");
+    this._cacheLoading = document.getElementById("cache-loading");
 
-      let midnightTime = Intl.DateTimeFormat(navigator.language, {
-        hour: "numeric",
-        minute: "numeric",
-      }).format(new Date().setHours(0, 0, 0, 0));
-      document.l10n.setAttributes(
-        this._sinceMidnightSanitizeDurationOption,
-        "clear-time-duration-value-since-midnight",
-        { midnightTime }
-      );
+    let midnightTime = Intl.DateTimeFormat(navigator.language, {
+      hour: "numeric",
+      minute: "numeric",
+    }).format(new Date().setHours(0, 0, 0, 0));
+    document.l10n.setAttributes(
+      this._sinceMidnightSanitizeDurationOption,
+      "clear-time-duration-value-since-midnight",
+      { midnightTime }
+    );
+
+    // Show loading spinners while data sizes are being fetched
+    this.showLoadingSpinners();
+
+    // Update history labels to include chat conversations if Smart Window is enabled.
+    if (lazy.AIWindow.isEnabled) {
+      for (let checkbox of document.querySelectorAll(
+        "#browsingHistoryAndDownloads"
+      )) {
+        document.l10n.setAttributes(
+          checkbox,
+          "item-history-downloads-and-chat"
+        );
+      }
+      for (let desc of document.querySelectorAll(
+        "#browsing-history-downloads-description"
+      )) {
+        document.l10n.setAttributes(
+          desc,
+          "item-history-downloads-and-chat-description"
+        );
+      }
     }
 
     document
@@ -185,6 +200,14 @@ var gSanitizePromptDialog = {
       }
     });
 
+    const { onAccept, onCancel } = arg.wrappedJSObject ?? arg;
+    if (typeof onAccept === "function") {
+      document.addEventListener("dialogaccept", onAccept);
+    }
+    if (typeof onCancel === "function") {
+      document.addEventListener("dialogcancel", onCancel);
+    }
+
     this._allCheckboxes = document.querySelectorAll("checkbox[preference]");
 
     this.registerSyncFromPrefListeners();
@@ -196,12 +219,6 @@ var gSanitizePromptDialog = {
     ) {
       this.prepareWarning();
       this.warningBox.hidden = false;
-      if (lazy.USE_OLD_DIALOG) {
-        document.l10n.setAttributes(
-          document.documentElement,
-          "sanitize-dialog-title-everything"
-        );
-      }
       let warningDesc = document.getElementById("sanitizeEverythingWarning");
       // Ensure we've translated and sized the warning.
       await document.l10n.translateFragment(warningDesc);
@@ -240,17 +257,8 @@ var gSanitizePromptDialog = {
         window.resizeBy(0, diff);
       }
 
-      // update title for the old dialog
-      if (lazy.USE_OLD_DIALOG) {
-        document.l10n.setAttributes(
-          document.documentElement,
-          "sanitize-dialog-title-everything"
-        );
-      }
-      // make sure the sizes are updated in the new dialog
-      else {
-        await this.updateDataSizesInUI();
-      }
+      // make sure the sizes are updated
+      await this.updateDataSizesInUI();
       return;
     }
 
@@ -262,15 +270,13 @@ var gSanitizePromptDialog = {
       window.resizeBy(0, -diff);
       warningBox.hidden = true;
     }
-    let datal1OnId = lazy.USE_OLD_DIALOG
-      ? "sanitize-dialog-title"
-      : "sanitize-dialog-title2";
-    document.l10n.setAttributes(document.documentElement, datal1OnId);
+    document.l10n.setAttributes(
+      document.documentElement,
+      "sanitize-dialog-title2"
+    );
 
-    if (!lazy.USE_OLD_DIALOG) {
-      // We only update data sizes to display on the new dialog
-      await this.updateDataSizesInUI();
-    }
+    // Update data sizes to display
+    await this.updateDataSizesInUI();
   },
 
   sanitize(event) {
@@ -363,15 +369,35 @@ var gSanitizePromptDialog = {
   },
 
   /**
+   * Show loading indicators (spinner + text) next to cookies and cache checkboxes
+   */
+  showLoadingSpinners() {
+    if (this._cookiesLoading) {
+      this._cookiesLoading.hidden = false;
+    }
+    if (this._cacheLoading) {
+      this._cacheLoading.hidden = false;
+    }
+  },
+
+  /**
+   * Hide loading indicators after data sizes are calculated
+   */
+  hideLoadingSpinners() {
+    if (this._cookiesLoading) {
+      this._cookiesLoading.hidden = true;
+    }
+    if (this._cacheLoading) {
+      this._cacheLoading.hidden = true;
+    }
+  },
+
+  /**
    * Gets the latest usage data and then updates the UI
    *
    * @returns {Promise} resolves when updating the UI is complete
    */
   async getAndUpdateDataSizes() {
-    if (lazy.USE_OLD_DIALOG) {
-      return;
-    }
-
     // We have to update sites before displaying data sizes
     // when the dialog is opened in the browser context, since users
     // can open the dialog in this context without opening about:preferences.
@@ -402,6 +428,9 @@ var gSanitizePromptDialog = {
 
     this._dataSizesUpdated = true;
     await this.updateDataSizesInUI();
+
+    // Hide loading spinners after data is loaded
+    this.hideLoadingSpinners();
   },
 
   /**
@@ -413,13 +442,6 @@ var gSanitizePromptDialog = {
    */
   updatePrefs() {
     Services.prefs.setIntPref(Sanitizer.PREF_TIMESPAN, this.selectedTimespan);
-
-    if (lazy.USE_OLD_DIALOG) {
-      let historyValue = Preferences.get(`privacy.cpd.history`).value;
-      // Keep the pref for the download history in sync with the history pref.
-      Preferences.get("privacy.cpd.downloads").value = historyValue;
-      Services.prefs.setBoolPref("privacy.cpd.downloads", historyValue);
-    }
 
     // Now manually set the prefs from their corresponding preference
     // elements.
@@ -527,11 +549,6 @@ var gSanitizePromptDialog = {
    * @returns {string[]} array of items ["cache", "browsingHistoryAndDownloads"...]
    */
   getItemsToClear() {
-    // the old dialog uses the preferences to decide what to clear
-    if (lazy.USE_OLD_DIALOG) {
-      return null;
-    }
-
     let items = [];
     for (let cb of this._allCheckboxes) {
       if (cb.checked) {

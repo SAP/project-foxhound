@@ -25,10 +25,28 @@ add_task(async function () {
   await selectNode("#testid", inspector);
 
   info(
-    "Checking that the rule-view has the element, #testid and " +
-      ".testclass selectors"
+    "Checking that the rule-view has the element, #testid and .testclass selectors"
   );
-  checkRuleViewContent(view, ["element", "#testid", ".testclass"]);
+  checkRuleViewContent(view, [
+    {
+      selector: "element",
+      selectorEditable: false,
+      declarations: [
+        { name: "margin-top", value: "1px" },
+        { name: "padding-top", value: "5px" },
+      ],
+    },
+    {
+      selector: "#testid",
+      declarations: [{ name: "background-color", value: "blue" }],
+    },
+    {
+      selector: ".testclass",
+      declarations: [
+        { name: "background-color", value: "green", overridden: true },
+      ],
+    },
+  ]);
 
   info(
     "Changing the node's ID attribute and waiting for the " +
@@ -39,7 +57,20 @@ add_task(async function () {
   await ruleViewRefreshed;
 
   info("Checking that the rule-view doesn't have the #testid selector anymore");
-  checkRuleViewContent(view, ["element", ".testclass"]);
+  checkRuleViewContent(view, [
+    {
+      selector: "element",
+      selectorEditable: false,
+      declarations: [
+        { name: "margin-top", value: "1px" },
+        { name: "padding-top", value: "5px" },
+      ],
+    },
+    {
+      selector: ".testclass",
+      declarations: [{ name: "background-color", value: "green" }],
+    },
+  ]);
 
   info("Reverting the ID attribute change");
   ruleViewRefreshed = inspector.once("rule-view-refreshed");
@@ -47,25 +78,24 @@ add_task(async function () {
   await ruleViewRefreshed;
 
   info("Checking that the rule-view has all the selectors again");
-  checkRuleViewContent(view, ["element", "#testid", ".testclass"]);
+  checkRuleViewContent(view, [
+    {
+      selector: "element",
+      selectorEditable: false,
+      declarations: [
+        { name: "margin-top", value: "1px" },
+        { name: "padding-top", value: "5px" },
+      ],
+    },
+    {
+      selector: "#testid",
+      declarations: [{ name: "background-color", value: "blue" }],
+    },
+    {
+      selector: ".testclass",
+      declarations: [
+        { name: "background-color", value: "green", overridden: true },
+      ],
+    },
+  ]);
 });
-
-function checkRuleViewContent(view, expectedSelectors) {
-  const selectors = view.styleDocument.querySelectorAll(
-    ".ruleview-selectors-container"
-  );
-
-  is(
-    selectors.length,
-    expectedSelectors.length,
-    expectedSelectors.length + " selectors are displayed"
-  );
-
-  for (let i = 0; i < expectedSelectors.length; i++) {
-    is(
-      selectors[i].textContent.indexOf(expectedSelectors[i]),
-      0,
-      "Selector " + (i + 1) + " is " + expectedSelectors[i]
-    );
-  }
-}

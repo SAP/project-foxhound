@@ -22,12 +22,13 @@
     result.pluginsLength = navigator.plugins.length;
     result.oscpu = navigator.oscpu;
     result.hardwareConcurrency = navigator.hardwareConcurrency;
+    result.maxTouchPoints = navigator.maxTouchPoints;
 
-    document.getElementById("result").innerHTML = JSON.stringify(result);
+    document.getElementById("result").textContent = JSON.stringify(result);
   }
 </script>
 </head>
 <body onload="collect();">
-<p id="result"></p>
+<pre id="result"></pre>
 </body>
 </html>

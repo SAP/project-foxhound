@@ -6,6 +6,7 @@ loader: taskgraph.loader.transform:loader
 
 transforms:
     - taskgraph.transforms.chunking
+    - taskgraph.transforms.matrix
     - gecko_taskgraph.transforms.try_job:transforms
     - gecko_taskgraph.transforms.source_test:transforms
     - taskgraph.transforms.task_context
@@ -20,9 +21,10 @@ kind-dependencies:
     - build-fat-aar
 
 tasks-from:
-    - android-compare-locales.yml
+    - android-l10n-lint.yml
     - android-detekt.yml
     - android-lint.yml
+    - android-gradle-plugins.yml
     - buildconfig.yml
     - clang.yml
     - doc.yml
@@ -34,6 +36,7 @@ tasks-from:
     - node.yml
     - puppeteer.yml
     - python.yml
+    - python-android.yml
     - shadow-scheduler.yml
     - taskgraph.yml
     - vendor.yml

@@ -5,7 +5,7 @@
 package org.mozilla.fenix.debugsettings.gleandebugtools
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.ktx.kotlin.urlEncode
 import mozilla.components.support.utils.ClipboardHandler
 
@@ -26,25 +26,25 @@ class GleanDebugToolsMiddleware(
     private val showToast: (String) -> Unit,
 ) : Middleware<GleanDebugToolsState, GleanDebugToolsAction> {
     override fun invoke(
-        context: MiddlewareContext<GleanDebugToolsState, GleanDebugToolsAction>,
+        store: Store<GleanDebugToolsState, GleanDebugToolsAction>,
         next: (GleanDebugToolsAction) -> Unit,
         action: GleanDebugToolsAction,
     ) {
         next(action)
         when (action) {
             is GleanDebugToolsAction.LogPingsToConsoleToggled -> {
-                gleanDebugToolsStorage.setLogPings(context.state.logPingsToConsoleEnabled)
+                gleanDebugToolsStorage.setLogPings(store.state.logPingsToConsoleEnabled)
             }
             is GleanDebugToolsAction.OpenDebugView -> {
                 val debugViewLink = getDebugViewLink(
-                    debugViewTag = context.state.debugViewTag,
+                    debugViewTag = store.state.debugViewTag,
                     useDebugViewTag = action.useDebugViewTag,
                 )
                 openDebugView(debugViewLink)
             }
             is GleanDebugToolsAction.CopyDebugViewLink -> {
                 val debugViewLink = getDebugViewLink(
-                    debugViewTag = context.state.debugViewTag,
+                    debugViewTag = store.state.debugViewTag,
                     useDebugViewTag = action.useDebugViewTag,
                 )
                 clipboardHandler.text = debugViewLink
@@ -52,10 +52,10 @@ class GleanDebugToolsMiddleware(
             is GleanDebugToolsAction.DebugViewTagChanged -> {} // No-op
             is GleanDebugToolsAction.SendPing -> {
                 gleanDebugToolsStorage.sendPing(
-                    pingType = context.state.pingType,
-                    debugViewTag = context.state.debugViewTag,
+                    pingType = store.state.pingType,
+                    debugViewTag = store.state.debugViewTag,
                 )
-                showToast(context.state.pingType)
+                showToast(store.state.pingType)
             }
             is GleanDebugToolsAction.ChangePingType -> {} // No-op
         }

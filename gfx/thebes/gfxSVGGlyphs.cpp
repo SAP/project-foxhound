@@ -102,28 +102,26 @@ gfxSVGGlyphsDocument* gfxSVGGlyphs::FindOrCreateGlyphsDocument(
     return nullptr;
   }
 
-  return mGlyphDocs.WithEntryHandle(
-      entry->mDocOffset, [&](auto&& glyphDocsEntry) -> gfxSVGGlyphsDocument* {
-        if (!glyphDocsEntry) {
-          unsigned int length;
-          const uint8_t* data =
-              (const uint8_t*)hb_blob_get_data(mSVGData, &length);
-          if (entry->mDocOffset > 0 && uint64_t(mHeader->mDocIndexOffset) +
-                                               entry->mDocOffset +
-                                               entry->mDocLength <=
-                                           length) {
-            return glyphDocsEntry
-                .Insert(MakeUnique<gfxSVGGlyphsDocument>(
-                    data + mHeader->mDocIndexOffset + entry->mDocOffset,
-                    entry->mDocLength, this))
-                .get();
-          }
+  // Do not hold an EntryHandle on mGlyphDocs while constructing the
+  // gfxSVGGlyphsDocument: its SetupPresentation() flushes layout and may
+  // re-enter font code, which could mutate our hashtables and invalidate the
+  // handle.
+  if (auto existing = mGlyphDocs.Lookup(entry->mDocOffset)) {
+    return existing.Data().get();
+  }
 
-          return nullptr;
-        }
+  unsigned int length;
+  const uint8_t* data = (const uint8_t*)hb_blob_get_data(mSVGData, &length);
+  if (entry->mDocOffset > 0 && uint64_t(mHeader->mDocIndexOffset) +
+                                       entry->mDocOffset + entry->mDocLength <=
+                                   length) {
+    auto doc = MakeUnique<gfxSVGGlyphsDocument>(
+        data + mHeader->mDocIndexOffset + entry->mDocOffset, entry->mDocLength,
+        this);
+    return mGlyphDocs.InsertOrUpdate(entry->mDocOffset, std::move(doc)).get();
+  }
 
-        return glyphDocsEntry->get();
-      });
+  return nullptr;
 }
 
 nsresult gfxSVGGlyphsDocument::SetupPresentation() {
@@ -139,7 +137,7 @@ nsresult gfxSVGGlyphsDocument::SetupPresentation() {
   auto upem = mOwner->FontEntry()->UnitsPerEm();
   rv = viewer->Init(nullptr, LayoutDeviceIntRect(0, 0, upem, upem), nullptr);
   if (NS_SUCCEEDED(rv)) {
-    rv = viewer->Open(nullptr, nullptr);
+    rv = viewer->Open();
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -152,7 +150,8 @@ nsresult gfxSVGGlyphsDocument::SetupPresentation() {
   mDocument->FlushPendingNotifications(FlushType::Layout);
 
   if (mDocument->HasAnimationController()) {
-    mDocument->GetAnimationController()->Resume(SMILTimeContainer::PAUSE_IMAGE);
+    mDocument->GetAnimationController()->Resume(
+        SMILTimeContainer::PauseType::Image);
   }
   mDocument->SetImageAnimationState(true);
 
@@ -222,13 +221,19 @@ bool gfxSVGGlyphs::GetGlyphExtents(uint32_t aGlyphId,
 }
 
 Element* gfxSVGGlyphs::GetGlyphElement(uint32_t aGlyphId) {
-  return mGlyphIdMap.LookupOrInsertWith(aGlyphId, [&] {
-    Element* elem = nullptr;
-    if (gfxSVGGlyphsDocument* set = FindOrCreateGlyphsDocument(aGlyphId)) {
-      elem = set->GetGlyphElement(aGlyphId);
-    }
-    return elem;
-  });
+  // Do not hold an EntryHandle on mGlyphIdMap across
+  // FindOrCreateGlyphsDocument: creating the glyphs document flushes layout
+  // and may recursively enter this method, mutating mGlyphIdMap and
+  // invalidating the handle.
+  if (auto existing = mGlyphIdMap.Lookup(aGlyphId)) {
+    return existing.Data();
+  }
+  Element* elem = nullptr;
+  if (gfxSVGGlyphsDocument* set = FindOrCreateGlyphsDocument(aGlyphId)) {
+    elem = set->GetGlyphElement(aGlyphId);
+  }
+  mGlyphIdMap.InsertOrUpdate(aGlyphId, elem);
+  return elem;
 }
 
 bool gfxSVGGlyphs::HasSVGGlyph(uint32_t aGlyphId) {
@@ -271,7 +276,7 @@ gfxSVGGlyphsDocument::gfxSVGGlyphsDocument(const uint8_t* aBuffer,
                      size_t(aBuffer[aBufLen - 4]);
     AutoTArray<uint8_t, 4096> outBuf;
     if (outBuf.SetLength(origLen, mozilla::fallible)) {
-      z_stream s = {0};
+      z_stream s = {nullptr};
       s.next_in = const_cast<Byte*>(aBuffer);
       s.avail_in = aBufLen;
       s.next_out = outBuf.Elements();
@@ -281,8 +286,7 @@ gfxSVGGlyphsDocument::gfxSVGGlyphsDocument(const uint8_t* aBuffer,
       if (Z_OK == inflateInit2(&s, 16 + MAX_WBITS)) {
         int result = inflate(&s, Z_FINISH);
         if (Z_STREAM_END == result) {
-          MOZ_ASSERT(size_t(s.next_out - outBuf.Elements()) == origLen);
-          ParseDocument(outBuf.Elements(), outBuf.Length());
+          ParseDocument(outBuf.Elements(), s.total_out);
         } else {
           NS_WARNING("Failed to decompress SVG glyphs document");
         }
@@ -323,7 +327,7 @@ gfxSVGGlyphsDocument::~gfxSVGGlyphsDocument() {
     mPresShell->RemovePostRefreshObserver(this);
   }
   if (mViewer) {
-    mViewer->Close(nullptr);
+    mViewer->Close();
     mViewer->Destroy();
   }
 }
@@ -372,8 +376,8 @@ nsresult gfxSVGGlyphsDocument::ParseDocument(const uint8_t* aBuffer,
                          u""_ns,   // aQualifiedName
                          nullptr,  // aDoctype
                          uri, uri, principal,
-                         false,    // aLoadedAsData
-                         nullptr,  // aEventObject
+                         mozilla::dom::LoadedAsData::No,  // aLoadedAsData
+                         nullptr,                         // aEventObject
                          DocumentFlavor::SVG);
   NS_ENSURE_SUCCESS(rv, rv);
 

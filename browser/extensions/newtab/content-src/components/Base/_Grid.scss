@@ -1,0 +1,127 @@
+/**
+ * Nova Grid System
+ *
+ * Layout structure:
+ * .container (full grid)
+ *   ├── .sidebar-inline-start (148px - left sidebar for logo/navigation)
+ *   ├── .content (flexible - fills remaining space with 75px columns)
+ *   └── .sidebar-inline-end (148px - right sidebar for mini widgets)
+ *
+ * DOM order: sidebar-inline-end precedes content (for tab focus order).
+ * CSS grid-column placement preserves the visual order above.
+ *
+ * Column width:
+ *   1 column = 1/4 of an IAB Medium Rectangle (MREC) = 300px ÷ 4 = 75px
+ * Row height:
+ *   1 row = 1/4 of an IAB Medium Rectangle (MREC) = 250px ÷ 4 = 62.5px
+ */
+
+:root {
+  // IAB Medium Rectangle ad unit dimensions
+  --mrec-width: 300px;
+
+  // A card spans exactly 4 columns. Use this as our base unit.
+  --col-width: calc(var(--mrec-width) / 4);
+
+  // Bug 2020983: Enable property to set card height
+  --mrec-height: 250px;
+  --row-height: calc(var(--mrec-height) / 4);
+
+  // Side Columns (.sidebar-inline-start/end) are 2 columns wide each side
+  --side-col-width: calc(2 * var(--col-width));
+
+  // Content area (.content): minimum 4 columns wide, grows up to 16 columns max
+  --content-col-width: minmax(calc((4 * var(--col-width)) + 34px), var(--content-max-width));
+
+  // Pre-computed widths spanning N grid columns including (N-1) gaps
+  --col-span-2: #{--col-span(2)};
+  --col-span-3: #{--col-span(3)};
+  --col-span-12: #{--col-span(12)};
+  --col-span-16: #{--col-span(16)};
+
+  // Maximum width of .content: 16 columns + 15 gaps
+  --content-max-width: var(--col-span-16);
+}
+
+.nova-enabled.container {
+  container-type: inline-size;
+  container-name: outer-grid;
+  display: grid;
+  grid-template-columns: var(--side-col-width) var(--content-col-width) var(--side-col-width);
+  grid-auto-rows: var(--row-height);
+  gap: var(--space-medium);
+  justify-content: space-between;
+  margin-inline: auto;
+  padding-inline: var(--space-xlarge);
+}
+
+.nova-enabled .content {
+  container-type: inline-size;
+  container-name: content-grid;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--col-width));
+  gap: var(--space-medium);
+  justify-content: center;
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  // Size to intrinsic content rather than stretching to the fixed-size
+  // grid track so descendants with position: sticky have a containing
+  // block that extends through the full document.
+  align-self: start;
+}
+
+.nova-enabled .sidebar-inline-end {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  grid-template-rows: subgrid;
+  position: relative;
+}
+
+.nova-enabled .sidebar-inline-start {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.nova-enabled.logo-in-content .content {
+  grid-row: 3 / span 2;
+}
+
+.nova-enabled .content > * {
+  grid-column: 1 / -1;
+  container-type: inline-size;
+  container-name: component;
+}
+
+// Fixed-width columns - always span the specified number
+.nova-enabled .col-1 {
+  grid-column: span 1;
+}
+
+.nova-enabled .col-2 {
+  grid-column: span 2;
+}
+
+.nova-enabled .col-3 {
+  grid-column: span 3;
+}
+
+.nova-enabled .col-4 {
+  grid-column: span 4;
+}
+
+.nova-enabled .col-8 {
+  grid-column: span 8;
+}
+
+.nova-enabled .col-12 {
+  grid-column: span 12;
+}
+
+.nova-enabled .col-18 {
+  grid-column: span 18;
+}
+
+.nova-enabled .col-26 {
+  grid-column: span 26;
+}

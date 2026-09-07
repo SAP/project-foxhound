@@ -1,0 +1,19 @@
+[package]
+name = "rust-log-forwarder"
+version = "0.1.0"
+edition = "2021"
+authors = ["Sync Team <sync-team@mozilla.com>"]
+license = "MPL-2.0"
+exclude = ["/android", "/ios"]
+
+[dependencies]
+uniffi = { version = "0.31" }
+error-support = { path = "../error", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+tracing-support = { path = "../tracing" }
+
+[dev-dependencies]
+tracing = "0.1"
+
+[build-dependencies]
+uniffi = { version = "0.31", features=["build"]}

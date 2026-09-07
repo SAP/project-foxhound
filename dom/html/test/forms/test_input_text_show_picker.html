@@ -1,0 +1,73 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>input.showPicker() with datalist shows the autocomplete popup</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+  <script>
+    const controller = SpecialPowers.Cc["@mozilla.org/autocomplete/controller;1"].getService(
+      SpecialPowers.Ci.nsIAutoCompleteController
+    );
+
+    async function testWithInputType(aType) {
+      const inp = document.getElementById("inp-showPicker");
+      inp.type = aType;
+
+      ok(!controller.input?.popupOpen, `Initially no input popup`);
+
+      SpecialPowers.wrap(document).notifyUserGestureActivation();
+      try {
+        inp.showPicker();
+      } catch (e) {
+        if (e.name == "SecurityError" && isXOrigin) {
+          ok(true, "showPicker was blocked in xorigin document");
+          return;
+        }
+        throw e;
+      }
+      is(isXOrigin, false, "showPicker should be blocked in xorigin document");
+
+      await SimpleTest.promiseWaitForCondition(
+        () => controller.input?.popupOpen,
+        `input[type=${aType}] popup was not opened`
+      );
+      ok(controller.input?.popupOpen, `input[type=${aType}] popup open`);
+
+      // focus a different element
+      synthesizeMouseAtCenter(document.getElementById("inp-blur"), {});
+      await SimpleTest.promiseWaitForCondition(
+        () => !controller.input?.popupOpen,
+        `input[type=${aType}] popup was closed`
+      );
+    }
+
+    SimpleTest.waitForExplicitFinish();
+    window.onload = async function() {
+      await SpecialPowers.pushPrefEnv({
+        set: [["dom.input.showPicker_datalist.enabled", true]],
+      });
+
+      for (const type of ["text", "search", "email", "url", "tel", "number"]) {
+        await testWithInputType(type);
+      }
+      SimpleTest.finish();
+    };
+  </script>
+</head>
+<body>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<pre id="test"></pre>
+
+<input list="id-list" id="inp-showPicker" />
+<datalist id="id-list">
+  <option value="Chocolate"></option>
+  <option value="Coconut"></option>
+</datalist>
+
+<input id="inp-blur">
+
+</body>
+</html>

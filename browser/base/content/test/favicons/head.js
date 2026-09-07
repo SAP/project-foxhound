@@ -34,7 +34,6 @@ function waitForFaviconMessage(isTabIcon = undefined, expectedURL = undefined) {
       if (name == "SetIcon") {
         resolve({
           iconURL: data.originalURL,
-          dataURL: data.iconURL,
           isRichIcon: data.isRichIcon,
         });
       } else {

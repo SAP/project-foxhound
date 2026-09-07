@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_GFX_SIMD_H_
-#define _MOZILLA_GFX_SIMD_H_
+#ifndef MOZILLA_GFX_SIMD_H_
+#define MOZILLA_GFX_SIMD_H_
 
 /**
  * Consumers of this file need to #define SIMD_COMPILE_SSE2 before including it
@@ -1036,4 +1034,4 @@ inline __m128i F32ToI32(__m128 m) { return _mm_cvtps_epi32(m); }
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _MOZILLA_GFX_SIMD_H_
+#endif  // MOZILLA_GFX_SIMD_H_

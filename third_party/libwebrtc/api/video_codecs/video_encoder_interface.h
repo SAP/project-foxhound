@@ -14,10 +14,10 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <variant>
 #include <vector>
 
-#include "api/array_view.h"
 #include "api/scoped_refptr.h"
 #include "api/units/data_rate.h"
 #include "api/units/data_size.h"
@@ -43,7 +43,7 @@ class VideoEncoderInterface {
 
   struct FrameOutput {
     virtual ~FrameOutput() = default;
-    virtual rtc::ArrayView<uint8_t> GetBitstreamOutputBuffer(DataSize size) = 0;
+    virtual std::span<uint8_t> GetBitstreamOutputBuffer(DataSize size) = 0;
     virtual void EncodeComplete(const EncodeResult& encode_result) = 0;
   };
 
@@ -75,7 +75,7 @@ class VideoEncoderInterface {
     std::unique_ptr<FrameOutput> frame_output;
   };
 
-  virtual void Encode(rtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_buffer,
+  virtual void Encode(scoped_refptr<VideoFrameBuffer> frame_buffer,
                       const TemporalUnitSettings& settings,
                       std::vector<FrameEncodeSettings> frame_settings) = 0;
 };

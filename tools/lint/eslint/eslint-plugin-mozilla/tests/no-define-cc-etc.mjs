@@ -24,7 +24,6 @@ function invalidCode(code, varNames) {
       return {
         messageId: "noSeparateDefinition",
         data: { name: variableName },
-        type: "VariableDeclarator",
       };
     }),
   };

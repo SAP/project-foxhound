@@ -6,6 +6,7 @@ package org.mozilla.fenix.exceptions.viewholders
 
 import android.view.View
 import android.widget.TextView
+import androidx.annotation.LayoutRes
 import androidx.annotation.StringRes
 import androidx.recyclerview.widget.RecyclerView
 import org.mozilla.fenix.R
@@ -25,6 +26,7 @@ class ExceptionsHeaderViewHolder(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.exceptions_description
+        @LayoutRes
+        val LAYOUT_ID = R.layout.exceptions_description
     }
 }

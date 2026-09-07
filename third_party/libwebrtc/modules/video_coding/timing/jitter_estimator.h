@@ -11,10 +11,10 @@
 #ifndef MODULES_VIDEO_CODING_TIMING_JITTER_ESTIMATOR_H_
 #define MODULES_VIDEO_CODING_TIMING_JITTER_ESTIMATOR_H_
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
-#include <queue>
 
 #include "absl/strings/string_view.h"
 #include "api/field_trials_view.h"
@@ -52,7 +52,9 @@ class JitterEstimator {
           "num_stddev_delay_outlier", &num_stddev_delay_outlier,
           "num_stddev_size_outlier", &num_stddev_size_outlier,
           "congestion_rejection_factor", &congestion_rejection_factor,
-          "estimate_noise_when_congested", &estimate_noise_when_congested);
+          "estimate_noise_when_congested", &estimate_noise_when_congested,
+          "nack_limit", &nack_limit,
+          "nack_count_timeout", &nack_count_timeout);
       // clang-format on
     }
 
@@ -103,6 +105,14 @@ class JitterEstimator {
     // since congested frames typically are not spread around the line with
     // Gaussian noise. (This is the whole reason for the congestion rejection!)
     bool estimate_noise_when_congested = true;
+
+    // The number of frames required to be NACKed within `nack_count_timeout`
+    // in order for RttMult to be enabled.
+    std::optional<int> nack_limit = std::nullopt;
+
+    // The time period in which `nack_limit` number of frames required to be
+    // NACKed in order for RttMult to be enabled.
+    std::optional<TimeDelta> nack_count_timeout = std::nullopt;
   };
 
   JitterEstimator(Clock* clock, const FieldTrialsView& field_trials);
@@ -122,13 +132,7 @@ class JitterEstimator {
 
   // Returns the current jitter estimate and adds an RTT dependent term in cases
   // of retransmission.
-  //  Input:
-  //          - rtt_multiplier   : RTT param multiplier (when applicable).
-  //          - rtt_mult_add_cap : Multiplier cap from the RTTMultExperiment.
-  //
-  // Return value              : Jitter estimate.
-  TimeDelta GetJitterEstimate(double rtt_multiplier,
-                              std::optional<TimeDelta> rtt_mult_add_cap);
+  TimeDelta GetEstimate();
 
   // Updates the nack counter.
   void FrameNacked();
@@ -205,11 +209,11 @@ class JitterEstimator {
   Timestamp latest_nack_ = Timestamp::Zero();
   // Keeps track of the number of nacks received, but never goes above
   // kNackLimit.
-  size_t nack_count_;
+  int nack_count_;
   RttFilter rtt_filter_;
 
   // Tracks frame rates in microseconds.
-  rtc::RollingAccumulator<uint64_t> fps_counter_;
+  RollingAccumulator<uint64_t> fps_counter_;
   Clock* clock_;
 };
 

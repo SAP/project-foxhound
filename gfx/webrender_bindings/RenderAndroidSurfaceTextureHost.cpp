@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -153,6 +151,14 @@ void RenderAndroidSurfaceTextureHost::PrepareForUse() {
 void RenderAndroidSurfaceTextureHost::NotifyForUse() {
   MOZ_ASSERT(RenderThread::IsInRenderThread());
 
+  if (mPrepareStatus == STATUS_NONE) {
+    // This happens either for RemoteTextureHost or when we lose a race to call
+    // PrepareForUse with a GPUVideoTextureHost when the content process
+    // attempts to use said texture host before the decoding process has setup
+    // the underlying SurfaceTextureHost. See bug 1986472.
+    PrepareForUse();
+  }
+
   if (mPrepareStatus == STATUS_MIGHT_BE_USED_BY_WR) {
     // This happens when SurfaceTexture of video is rendered on WebRender.
     // There is a case that SurfaceTexture is not rendered on WebRender, instead
@@ -198,12 +204,7 @@ void RenderAndroidSurfaceTextureHost::NotifyNotUsed() {
 void RenderAndroidSurfaceTextureHost::UpdateTexImageIfNecessary() {
   if (mIsRemoteTexture) {
     EnsureAttachedToGLContext();
-    if (mPrepareStatus == STATUS_NONE) {
-      PrepareForUse();
-    }
-    if (mPrepareStatus == STATUS_MIGHT_BE_USED_BY_WR) {
-      NotifyForUse();
-    }
+    NotifyForUse();
   }
 
   if (mContinuousUpdate) {

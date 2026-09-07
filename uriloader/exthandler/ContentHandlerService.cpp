@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,7 @@ namespace dom {
 
 NS_IMPL_ISUPPORTS(ContentHandlerService, nsIHandlerService)
 
-ContentHandlerService::ContentHandlerService() {}
+ContentHandlerService::ContentHandlerService() = default;
 
 /* static */ already_AddRefed<nsIHandlerService>
 ContentHandlerService::Create() {
@@ -105,9 +103,9 @@ void ContentHandlerService::nsIHandlerInfoToHandlerInfo(
 
   nsHandlerInfoAction action;
   aInfo->GetPreferredAction(&action);
-  HandlerInfo info(type, isMIMEInfo, description, alwaysAskBeforeHandling,
-                   std::move(extensions), happ, happs, action);
-  *aHandlerInfo = info;
+  *aHandlerInfo =
+      HandlerInfo(type, isMIMEInfo, description, alwaysAskBeforeHandling,
+                  std::move(extensions), happ, happs, action);
 }
 
 NS_IMETHODIMP RemoteHandlerApp::GetName(nsAString& aName) {
@@ -164,7 +162,7 @@ static inline void CopyHandlerInfoTonsIHandlerInfo(
   }
 }
 
-ContentHandlerService::~ContentHandlerService() {}
+ContentHandlerService::~ContentHandlerService() = default;
 
 NS_IMETHODIMP ContentHandlerService::AsyncInit() {
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -197,8 +195,7 @@ NS_IMETHODIMP ContentHandlerService::GetMIMEInfoFromOS(
     return rv;
   }
 
-  RefPtr<nsChildProcessMIMEInfo> mimeInfo =
-      new nsChildProcessMIMEInfo(returnedInfo.type());
+  RefPtr mimeInfo = MakeRefPtr<nsChildProcessMIMEInfo>(returnedInfo.type());
   CopyHandlerInfoTonsIHandlerInfo(returnedInfo, mimeInfo);
   mimeInfo.forget(aMIMEInfo);
   return NS_OK;

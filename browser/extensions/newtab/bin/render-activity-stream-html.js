@@ -16,7 +16,6 @@ const DEFAULT_OPTIONS = {
   addonPath: "..",
   // depends on the registration in browser/extensions/newtab/jar.mn
   baseUrl: "resource://newtab/",
-  baseVendorUrl: "chrome://global/content/",
 };
 
 /**
@@ -25,24 +24,13 @@ const DEFAULT_OPTIONS = {
  *
  * @param  {obj} options
  *         {str} options.baseUrl        The base URL for all local assets
- *  *      {str} options.baseVendorUrl  The base URL for all vendor dependencies
- *         {bool} options.debug         Should we use dev versions of JS libraries?
  *         {bool} options.noscripts     Should we include scripts in the prerendered files?
  * @return {str}         An HTML document as a string
  */
 function templateHTML(options) {
-  const debugString = options.debug ? "-dev" : "";
-  // This list must match any similar ones in AboutNewTabChild.sys.mjs
   const scripts = [
-    "chrome://browser/content/contentSearchUI.js",
-    "chrome://browser/content/contentSearchHandoffUI.js",
     "chrome://browser/content/contentTheme.js",
-    `${options.baseVendorUrl}vendor/react${debugString}.js`,
-    `${options.baseVendorUrl}vendor/react-dom${debugString}.js`,
-    `${options.baseVendorUrl}vendor/prop-types.js`,
-    `${options.baseVendorUrl}vendor/redux.js`,
-    `${options.baseVendorUrl}vendor/react-redux.js`,
-    `${options.baseVendorUrl}vendor/react-transition-group.js`,
+    `${options.baseUrl}data/content/vendor.bundle.js`,
     `${options.baseUrl}data/content/activity-stream.bundle.js`,
     `${options.baseUrl}data/content/newtab-render.js`,
   ];
@@ -67,7 +55,7 @@ function templateHTML(options) {
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; object-src 'none'; script-src resource: chrome:; connect-src https:; img-src https: data: blob: chrome:; style-src 'unsafe-inline';"
+      content="default-src 'none'; object-src 'none'; script-src resource: chrome:; connect-src https:; img-src https: data: blob: chrome:; media-src chrome:; style-src 'unsafe-inline';"
     />
     <meta name="color-scheme" content="light dark" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -87,10 +75,6 @@ function templateHTML(options) {
     />
     <link
       rel="stylesheet"
-      href="chrome://browser/content/contentSearchUI.css"
-    />
-    <link
-      rel="stylesheet"
       href="chrome://newtab/content/css/activity-stream.css"
     />
   </head>
@@ -104,12 +88,27 @@ function templateHTML(options) {
     <script
       async
       type="module"
+      src="chrome://global/content/elements/moz-badge.mjs"
+    ></script>
+    <script
+      async
+      type="module"
       src="chrome://global/content/elements/moz-button.mjs"
     ></script>
     <script
       async
       type="module"
       src="chrome://global/content/elements/moz-button-group.mjs"
+    ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/moz-input-text.mjs"
+    ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/moz-input-search.mjs"
     ></script>
     <script
       async
@@ -136,6 +135,21 @@ function templateHTML(options) {
       type="module"
       src="chrome://global/content/elements/moz-reorderable-list.mjs"
     ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/panel-list.js"
+    ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/moz-support-link.mjs"
+    ></script>
+    <script
+      async
+      type="module"
+      src="chrome://global/content/elements/moz-checkbox.mjs"
+    ></script>
   </body>
 </html>
 `.trimLeft();
@@ -147,7 +161,7 @@ function templateHTML(options) {
  *
  * @param {string} destPath      Path to write the files to
  * @param {Map}    filesMap      Mapping of a string file name to templater
- * @param {Object} options       Various options for the templater
+ * @param {object} options       Various options for the templater
  */
 function writeFiles(destPath, filesMap, options) {
   for (const [file, templater] of filesMap) {
@@ -158,10 +172,11 @@ function writeFiles(destPath, filesMap, options) {
 
 const STATIC_FILES = new Map([
   ["activity-stream.html", ({ options }) => templateHTML(options)],
-  [
-    "activity-stream-debug.html",
-    ({ options }) => templateHTML(Object.assign({}, options, { debug: true })),
-  ],
+  // With vendor bundling there is no separate dev/prod vendor build, so the
+  // debug variant is intentionally identical to the release variant.
+  // TODO: remove the activityStreamDebug pref from AboutNewTabRedirector.sys.mjs
+  // (non-trainhoppable, must ride the release train).
+  ["activity-stream-debug.html", ({ options }) => templateHTML(options)],
   [
     "activity-stream-noscripts.html",
     ({ options }) =>
@@ -213,16 +228,11 @@ async function main() {
           shortFlag: "b",
           default: DEFAULT_OPTIONS.baseUrl,
         },
-        baseVendorUrl: {
-          type: "string",
-          shortFlag: "v",
-          default: DEFAULT_OPTIONS.baseVendorUrl,
-        },
       },
     }
   );
 
-  const options = Object.assign({ debug: false }, cli.flags || {});
+  const options = cli.flags || {};
   const addonPath = path.resolve(__dirname, options.addonPath);
   const prerenderedPath = path.join(addonPath, "prerendered");
   console.log(`Writing prerendered files to ${prerenderedPath}:`);

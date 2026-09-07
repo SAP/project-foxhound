@@ -10,14 +10,16 @@
 #ifndef TEST_LAYER_FILTERING_TRANSPORT_H_
 #define TEST_LAYER_FILTERING_TRANSPORT_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <span>
 
 #include "api/call/transport.h"
+#include "api/environment/environment.h"
 #include "api/media_types.h"
+#include "api/rtp_parameters.h"
+#include "api/task_queue/task_queue_base.h"
 #include "call/call.h"
 #include "call/simulated_packet_receiver.h"
 #include "modules/rtp_rtcp/source/video_rtp_depacketizer.h"
@@ -30,6 +32,7 @@ namespace test {
 class LayerFilteringTransport : public test::DirectTransport {
  public:
   LayerFilteringTransport(
+      const Environment& env,
       TaskQueueBase* task_queue,
       std::unique_ptr<SimulatedPacketReceiverInterface> pipe,
       Call* send_call,
@@ -40,9 +43,10 @@ class LayerFilteringTransport : public test::DirectTransport {
       const std::map<uint8_t, MediaType>& payload_type_map,
       uint32_t ssrc_to_filter_min,
       uint32_t ssrc_to_filter_max,
-      rtc::ArrayView<const RtpExtension> audio_extensions,
-      rtc::ArrayView<const RtpExtension> video_extensions);
+      std::span<const RtpExtension> audio_extensions,
+      std::span<const RtpExtension> video_extensions);
   LayerFilteringTransport(
+      const Environment& env,
       TaskQueueBase* task_queue,
       std::unique_ptr<SimulatedPacketReceiverInterface> pipe,
       Call* send_call,
@@ -51,10 +55,10 @@ class LayerFilteringTransport : public test::DirectTransport {
       int selected_tl,
       int selected_sl,
       const std::map<uint8_t, MediaType>& payload_type_map,
-      rtc::ArrayView<const RtpExtension> audio_extensions,
-      rtc::ArrayView<const RtpExtension> video_extensions);
+      std::span<const RtpExtension> audio_extensions,
+      std::span<const RtpExtension> video_extensions);
   bool DiscardedLastPacket() const;
-  bool SendRtp(rtc::ArrayView<const uint8_t> data,
+  bool SendRtp(std::span<const uint8_t> data,
                const PacketOptions& options) override;
 
  private:

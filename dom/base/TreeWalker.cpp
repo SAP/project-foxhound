@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,12 +8,12 @@
 
 #include "mozilla/dom/TreeWalker.h"
 
-#include "nsIContent.h"
-#include "nsError.h"
-#include "nsINode.h"
-#include "nsContentUtils.h"
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/TreeWalkerBinding.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsIContent.h"
+#include "nsINode.h"
 
 namespace mozilla::dom {
 
@@ -27,7 +25,7 @@ TreeWalker::TreeWalker(nsINode* aRoot, uint32_t aWhatToShow,
                        NodeFilter* aFilter)
     : nsTraversal(aRoot, aWhatToShow, aFilter), mCurrentNode(aRoot) {}
 
-TreeWalker::~TreeWalker() { /* destructor code */ }
+TreeWalker::~TreeWalker() = default;
 
 /*
  * nsISupports and cycle collection stuff
@@ -149,7 +147,7 @@ already_AddRefed<nsINode> TreeWalker::NextNode(ErrorResult& aResult) {
 
   nsCOMPtr<nsINode> node = mCurrentNode;
 
-  while (1) {
+  while (true) {
     nsINode* firstChild;
     while (filtered != NodeFilter_Binding::FILTER_REJECT &&
            (firstChild = node->GetFirstChild())) {
@@ -276,7 +274,7 @@ already_AddRefed<nsINode> TreeWalker::NextSiblingInternal(
     return nullptr;
   }
 
-  while (1) {
+  while (true) {
     nsINode* sibling =
         aReversed ? node->GetPreviousSibling() : node->GetNextSibling();
 

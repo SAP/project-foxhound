@@ -8,17 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <stdio.h>
-#include <string.h>
-
 #include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
-#include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
@@ -28,19 +23,19 @@
 #include "absl/flags/usage_config.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
-#include "api/neteq/neteq.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
 #include "api/units/time_delta.h"
 #include "logging/rtc_event_log/rtc_event_log_parser.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_tools/rtc_event_log_visualizer/alerts.h"
-#include "rtc_tools/rtc_event_log_visualizer/analyze_audio.h"
 #include "rtc_tools/rtc_event_log_visualizer/analyzer.h"
 #include "rtc_tools/rtc_event_log_visualizer/analyzer_common.h"
 #include "rtc_tools/rtc_event_log_visualizer/conversational_speech_en.h"
 #include "rtc_tools/rtc_event_log_visualizer/plot_base.h"
 #include "rtc_tools/rtc_event_log_visualizer/proto/chart.pb.h"
-#include "system_wrappers/include/field_trial.h"
 
 ABSL_FLAG(std::string,
           plot,
@@ -59,24 +54,24 @@ ABSL_FLAG(
 ABSL_FLAG(std::string,
           wav_filename,
           "",
-          "Path to wav file used for simulation of jitter buffer");
+          "Path to wav file used for simulation of jitter buffer.");
 
 ABSL_FLAG(bool,
           show_detector_state,
           false,
           "Show the state of the delay based BWE detector on the total "
-          "bitrate graph");
+          "bitrate graph.");
 
 ABSL_FLAG(bool,
           show_alr_state,
           false,
-          "Show the state ALR state on the total bitrate graph");
+          "Show the state ALR state on the total bitrate graph.");
 
 ABSL_FLAG(bool,
           show_link_capacity,
           true,
           "Show the lower and upper link capacity on the outgoing bitrate "
-          "graph");
+          "graph.");
 
 ABSL_FLAG(bool,
           parse_unconfigured_header_extensions,
@@ -102,6 +97,8 @@ ABSL_FLAG(bool,
           "updates all the others too. A downside is that certain "
           "operations like panning become much slower.");
 
+ABSL_FLAG(bool, show_grid, false, "Show a grid in all plots.");
+
 ABSL_FLAG(bool,
           protobuf_output,
           false,
@@ -110,12 +107,22 @@ ABSL_FLAG(bool,
 ABSL_FLAG(std::string,
           figure_output_path,
           "",
-          "A path to output the python plots into");
+          "A path to output the python plots into.");
 
 ABSL_FLAG(bool,
           list_plots,
           false,
-          "List of registered plots (for use with the --plot flag)");
+          "List of registered plots (for use with the --plot flag).");
+
+ABSL_FLAG(int,
+          averaging_window,
+          250,
+          "Time window (in ms) used for calculating moving average bitrates.");
+
+ABSL_FLAG(int,
+          averaging_step,
+          10,
+          "How often (in ms) a data point is generated in bitrate plots.");
 
 namespace {
 std::vector<std::string> StrSplit(const std::string& s,
@@ -152,15 +159,14 @@ int main(int argc, char* argv[]) {
   std::vector<char*> args = absl::ParseCommandLine(argc, argv);
 
   // Print RTC_LOG warnings and errors even in release builds.
-  if (rtc::LogMessage::GetLogToDebug() > rtc::LS_WARNING) {
-    rtc::LogMessage::LogToDebug(rtc::LS_WARNING);
+  if (webrtc::LogMessage::GetLogToDebug() > webrtc::LS_WARNING) {
+    webrtc::LogMessage::LogToDebug(webrtc::LS_WARNING);
   }
-  rtc::LogMessage::SetLogToStderr(true);
+  webrtc::LogMessage::SetLogToStderr(true);
 
-  // InitFieldTrialsFromString stores the char*, so the char array must outlive
-  // the application.
   const std::string field_trials = absl::GetFlag(FLAGS_force_fieldtrials);
-  webrtc::field_trial::InitFieldTrialsFromString(field_trials.c_str());
+  webrtc::Environment env = webrtc::CreateEnvironment(
+      std::make_unique<webrtc::FieldTrials>(field_trials));
 
   webrtc::ParsedRtcEventLog::UnconfiguredHeaderExtensions header_extensions =
       webrtc::ParsedRtcEventLog::UnconfiguredHeaderExtensions::kDontParse;
@@ -181,16 +187,11 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  webrtc::AnalyzerConfig config;
-  config.window_duration_ = webrtc::TimeDelta::Millis(250);
-  config.step_ = webrtc::TimeDelta::Millis(10);
-  if (!parsed_log.start_log_events().empty()) {
-    config.rtc_to_utc_offset_ = parsed_log.start_log_events()[0].utc_time() -
-                                parsed_log.start_log_events()[0].log_time();
-  }
-  config.normalize_time_ = absl::GetFlag(FLAGS_normalize_time);
-  config.begin_time_ = parsed_log.first_timestamp();
-  config.end_time_ = parsed_log.last_timestamp();
+  webrtc::AnalyzerConfig config(env, parsed_log,
+                                absl::GetFlag(FLAGS_normalize_time));
+  config.window_duration_ =
+      webrtc::TimeDelta::Millis(absl::GetFlag(FLAGS_averaging_window));
+  config.step_ = webrtc::TimeDelta::Millis(absl::GetFlag(FLAGS_averaging_step));
   if (config.end_time_ < config.begin_time_) {
     RTC_LOG(LS_WARNING) << "Log end time " << config.end_time_
                         << " not after begin time " << config.begin_time_
@@ -217,6 +218,7 @@ int main(int argc, char* argv[]) {
   analyzer.InitializeMapOfNamedGraphs(absl::GetFlag(FLAGS_show_detector_state),
                                       absl::GetFlag(FLAGS_show_alr_state),
                                       absl::GetFlag(FLAGS_show_link_capacity));
+  analyzer.SetNetEqReplacementFile(wav_path, 48000);
 
   // Flag replacements
   std::map<std::string, std::vector<std::string>> flag_aliases = {
@@ -247,7 +249,11 @@ int main(int argc, char* argv[]) {
         "simulated_neteq_expand_rate"}},
       {"l4s",
        {"incoming_bitrate", "outgoing_bitrate", "incoming_ecn_feedback",
-        "outgoing_ecn_feedback"}}};
+        "outgoing_ecn_feedback"}},
+      {"scream",
+       {"scream_ref_window", "simulated_scream_delay",
+        "simulated_scream_bitrates", "simulated_scream_ref_window",
+        "simulated_scream_ratios", "network_delay_feedback", "pacer_delay"}}};
 
   if (absl::GetFlag(FLAGS_list_plots)) {
     std::cerr << "List of registered plots (for use with the --plot flag):"
@@ -256,11 +262,6 @@ int main(int argc, char* argv[]) {
       // TODO(terelius): Also print a help text.
       std::cerr << "  " << plot_name;
     }
-    // The following flags don't fit the model used for the other plots.
-    for (const auto& plot_name : flag_aliases["simulated_neteq_stats"]) {
-      std::cerr << " " << plot_name;
-    }
-    std::cerr << std::endl;
 
     std::cerr << "List of plot aliases (for use with the --plot flag):"
               << std::endl;
@@ -285,13 +286,7 @@ int main(int argc, char* argv[]) {
   std::vector<std::string> plot_flags =
       StrSplit(absl::GetFlag(FLAGS_plot), ",");
   std::vector<std::string> plot_names;
-  const std::vector<std::string> known_analyzer_plots =
-      analyzer.GetGraphNames();
-  const std::vector<std::string> known_neteq_plots =
-      flag_aliases["simulated_neteq_stats"];
-  std::vector<std::string> all_known_plots = known_analyzer_plots;
-  all_known_plots.insert(all_known_plots.end(), known_neteq_plots.begin(),
-                         known_neteq_plots.end());
+  const std::vector<std::string> all_known_plots = analyzer.GetGraphNames();
   for (const std::string& flag : plot_flags) {
     if (flag == "all") {
       plot_names = all_known_plots;
@@ -319,108 +314,6 @@ int main(int argc, char* argv[]) {
   webrtc::PlotCollection collection;
   analyzer.CreateGraphsByName(plot_names, &collection);
 
-  // The simulated neteq charts are treated separately because they have a
-  // different behavior compared to all other plots. In particular, the neteq
-  // plots
-  //  * cache the simulation results between different plots
-  //  * open and read files
-  //  * dont have a 1-to-1 mapping between IDs and charts.
-  std::optional<webrtc::NetEqStatsGetterMap> neteq_stats;
-  if (absl::c_find(plot_names, "simulated_neteq_expand_rate") !=
-      plot_names.end()) {
-    if (!neteq_stats) {
-      neteq_stats = webrtc::SimulateNetEq(parsed_log, config, wav_path, 48000);
-    }
-    webrtc::CreateNetEqNetworkStatsGraph(
-        parsed_log, config, *neteq_stats,
-        [](const webrtc::NetEqNetworkStatistics& stats) {
-          return stats.expand_rate / 16384.f;
-        },
-        "Expand rate", collection.AppendNewPlot("simulated_neteq_expand_rate"));
-  }
-  if (absl::c_find(plot_names, "simulated_neteq_speech_expand_rate") !=
-      plot_names.end()) {
-    if (!neteq_stats) {
-      neteq_stats = webrtc::SimulateNetEq(parsed_log, config, wav_path, 48000);
-    }
-    webrtc::CreateNetEqNetworkStatsGraph(
-        parsed_log, config, *neteq_stats,
-        [](const webrtc::NetEqNetworkStatistics& stats) {
-          return stats.speech_expand_rate / 16384.f;
-        },
-        "Speech expand rate",
-        collection.AppendNewPlot("simulated_neteq_speech_expand_rate"));
-  }
-  if (absl::c_find(plot_names, "simulated_neteq_accelerate_rate") !=
-      plot_names.end()) {
-    if (!neteq_stats) {
-      neteq_stats = webrtc::SimulateNetEq(parsed_log, config, wav_path, 48000);
-    }
-    webrtc::CreateNetEqNetworkStatsGraph(
-        parsed_log, config, *neteq_stats,
-        [](const webrtc::NetEqNetworkStatistics& stats) {
-          return stats.accelerate_rate / 16384.f;
-        },
-        "Accelerate rate",
-        collection.AppendNewPlot("simulated_neteq_accelerate_rate"));
-  }
-  if (absl::c_find(plot_names, "simulated_neteq_preemptive_rate") !=
-      plot_names.end()) {
-    if (!neteq_stats) {
-      neteq_stats = webrtc::SimulateNetEq(parsed_log, config, wav_path, 48000);
-    }
-    webrtc::CreateNetEqNetworkStatsGraph(
-        parsed_log, config, *neteq_stats,
-        [](const webrtc::NetEqNetworkStatistics& stats) {
-          return stats.preemptive_rate / 16384.f;
-        },
-        "Preemptive rate",
-        collection.AppendNewPlot("simulated_neteq_preemptive_rate"));
-  }
-  if (absl::c_find(plot_names, "simulated_neteq_concealment_events") !=
-      plot_names.end()) {
-    if (!neteq_stats) {
-      neteq_stats = webrtc::SimulateNetEq(parsed_log, config, wav_path, 48000);
-    }
-    webrtc::CreateNetEqLifetimeStatsGraph(
-        parsed_log, config, *neteq_stats,
-        [](const webrtc::NetEqLifetimeStatistics& stats) {
-          return static_cast<float>(stats.concealment_events);
-        },
-        "Concealment events",
-        collection.AppendNewPlot("simulated_neteq_concealment_events"));
-  }
-  if (absl::c_find(plot_names, "simulated_neteq_preferred_buffer_size") !=
-      plot_names.end()) {
-    if (!neteq_stats) {
-      neteq_stats = webrtc::SimulateNetEq(parsed_log, config, wav_path, 48000);
-    }
-    webrtc::CreateNetEqNetworkStatsGraph(
-        parsed_log, config, *neteq_stats,
-        [](const webrtc::NetEqNetworkStatistics& stats) {
-          return stats.preferred_buffer_size_ms;
-        },
-        "Preferred buffer size (ms)",
-        collection.AppendNewPlot("simulated_neteq_preferred_buffer_size"));
-  }
-
-  // The model we use for registering plots assumes that the each plot label
-  // can be mapped to a lambda that will produce exactly one plot. The
-  // simulated_neteq_jitter_buffer_delay plot doesn't fit this model since it
-  // creates multiple plots, and would need some state kept between the lambda
-  // calls.
-  if (absl::c_find(plot_names, "simulated_neteq_jitter_buffer_delay") !=
-      plot_names.end()) {
-    if (!neteq_stats) {
-      neteq_stats = webrtc::SimulateNetEq(parsed_log, config, wav_path, 48000);
-    }
-    for (auto it = neteq_stats->cbegin(); it != neteq_stats->cend(); ++it) {
-      webrtc::CreateAudioJitterBufferGraph(
-          parsed_log, config, it->first, it->second.get(),
-          collection.AppendNewPlot("simulated_neteq_jitter_buffer_delay"));
-    }
-  }
-
   collection.SetCallTimeToUtcOffsetMs(config.CallTimeToUtcOffsetMs());
 
   if (absl::GetFlag(FLAGS_protobuf_output)) {
@@ -429,6 +322,7 @@ int main(int argc, char* argv[]) {
     std::cout << proto_charts.SerializeAsString();
   } else {
     collection.PrintPythonCode(absl::GetFlag(FLAGS_shared_xaxis),
+                               absl::GetFlag(FLAGS_show_grid),
                                absl::GetFlag(FLAGS_figure_output_path));
   }
 

@@ -3,7 +3,7 @@ android-ac:
     description: Android formatting lint for Android Components
     include: ['mobile/android/android-components']
     exclude: []
-    extensions: ['java', 'kt']
+    extensions: ['java', 'kt', 'xml']
     support-files:
         - 'mobile/android/**/Makefile.in'
         - 'mobile/android/config/**'

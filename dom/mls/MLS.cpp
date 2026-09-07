@@ -1,30 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MLS.h"
+
+#include "MLSGroupView.h"
+#include "MLSLogging.h"
+#include "MLSTypeUtils.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/MLSGroupView.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/Promise.h"
-#include "nsTArray.h"
-#include "nsCOMPtr.h"
-#include "nsIGlobalObject.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/dom/MLSTransactionChild.h"
 #include "mozilla/dom/MLSTransactionMessage.h"
 #include "mozilla/dom/PMLSTransaction.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/TypedArray.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
-#include "mozilla/BasePrincipal.h"
-#include "MLSGroupView.h"
-#include "nsTArray.h"
-#include "mozilla/Logging.h"
-#include "mozilla/Span.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "nsCOMPtr.h"
 #include "nsDebug.h"
-#include "MLSLogging.h"
-#include "MLSTypeUtils.h"
+#include "nsIGlobalObject.h"
+#include "nsTArray.h"
 
 namespace mozilla::dom {
 

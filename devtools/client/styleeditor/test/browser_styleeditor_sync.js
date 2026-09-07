@@ -54,7 +54,7 @@ add_task(async function () {
   await addTab(TESTCASE_URI);
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
+  let ruleEditor = getRuleViewRuleEditorAt(view, 1);
 
   // Disable the "font-size" property.
   let { onResourceUpdated } =
@@ -71,7 +71,7 @@ add_task(async function () {
   // situation.
   ({ onResourceUpdated } =
     await waitForNextStyleSheetResourceUpdate(inspector));
-  ruleEditor = getRuleViewRuleEditor(view, 3);
+  ruleEditor = getRuleViewRuleEditorAt(view, 2);
   propEditor = ruleEditor.rule.textProps[1].editor;
   onModification = view.once("ruleview-changed");
   propEditor.enable.click();

@@ -10,7 +10,7 @@ const { sinon } = ChromeUtils.importESModule(
 const NEW_VIDEO_ASPECT_RATIO = 1.334;
 
 async function switchVideoSource(browser, src) {
-  await ContentTask.spawn(browser, { src }, async ({ src }) => {
+  await SpecialPowers.spawn(browser, [{ src }], async ({ src }) => {
     let doc = content.document;
     let video = doc.getElementById("no-controls");
     video.src = src;
@@ -19,9 +19,9 @@ async function switchVideoSource(browser, src) {
 
 /**
  *
- * @param {Object} actual The actual size and position of the window
- * @param {Object} expected The expected size and position of the window
- * @param {String} message A message to print before asserting the size and position
+ * @param {object} actual The actual size and position of the window
+ * @param {object} expected The expected size and position of the window
+ * @param {string} message A message to print before asserting the size and position
  */
 function assertEvent(actual, expected, message) {
   info(message);

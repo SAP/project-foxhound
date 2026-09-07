@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,25 +5,96 @@
 #include "PKCS11ModuleDB.h"
 
 #include "CertVerifier.h"
+#include "PKCS11Module.h"
 #include "ScopedNSSTypes.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIMutableArray.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSComponent.h"
 #include "nsNativeCharsetUtils.h"
-#include "nsPKCS11Slot.h"
 #include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
+#include "nss.h"
+#include "pk11pub.h"
+#include "xpcpublic.h"
 
 #if defined(XP_MACOSX)
 #  include "nsMacUtilsImpl.h"
 #  include "nsIFile.h"
 #endif  // defined(XP_MACOSX)
 
+using mozilla::ErrorResult;
+using mozilla::dom::Promise;
+
 namespace mozilla {
 namespace psm {
 
 NS_IMPL_ISUPPORTS(PKCS11ModuleDB, nsIPKCS11ModuleDB)
+
+PKCS11ModuleDB::PKCS11ModuleDB() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled() &&
+      !GetInSafeMode()) {
+    auto manager = ipc::UtilityProcessManager::GetSingleton();
+    MOZ_ASSERT(manager);
+    if (manager) {
+      // It would be nice to simply say
+      // `mPKCS11ModuleProcessPromise = manager->StartPKCS11Module();` here, but
+      // `StartPKCS11Module()` is an exclusive promise, whereas what's needed
+      // here is a non-exclusive promise.
+      mPKCS11ModuleProcessPromise = manager->StartPKCS11Module()->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [](RefPtr<PKCS11ModuleParent>&& parent) {
+            MOZ_RELEASE_ASSERT(parent);
+            return PKCS11ModuleProcessPromise::CreateAndResolve(
+                std::move(parent), __func__);
+          },
+          [](base::LaunchError&& _) {
+            return PKCS11ModuleProcessPromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                               __func__);
+          });
+    }
+  }
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
+}
+
+StaticRefPtr<PKCS11ModuleDB> sPKCS11ModuleDB;
+
+already_AddRefed<PKCS11ModuleDB> PKCS11ModuleDB::GetSingleton() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return nullptr;
+  }
+
+  if (!sPKCS11ModuleDB) {
+    sPKCS11ModuleDB = new PKCS11ModuleDB();
+    ClearOnShutdown(&sPKCS11ModuleDB);
+  }
+
+  return do_AddRef(sPKCS11ModuleDB);
+}
+
+// Using the NSS serial task queue avoids threading issues in NSS'
+// implementation of module loading and unloading.
+nsresult DispatchToNSSTaskQueue(already_AddRefed<nsIRunnable> aRunnable) {
+  nsCOMPtr<nsIRunnable> runnable(aRunnable);
+  nsCOMPtr<nsINSSComponent> nss(do_GetService(PSM_COMPONENT_CONTRACTID));
+  if (!nss) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  nsCOMPtr<nsISerialEventTarget> nssTaskQueue;
+  nsresult rv = nss->GetNssTaskQueue(getter_AddRefs(nssTaskQueue));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  return nssTaskQueue->Dispatch(runnable.forget());
+}
 
 // Convert the UTF16 name of the module as it appears to the user to the
 // internal representation. For most modules this just involves converting from
@@ -47,9 +116,31 @@ static nsresult NormalizeModuleNameIn(const nsAString& moduleNameIn,
   return NS_OK;
 }
 
+nsresult PKCS11ModuleDB::DoDeleteModule(const nsCString& moduleName) {
+  if (!NSS_IsInitialized()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  // modType is an output variable. We ignore it.
+  int32_t modType;
+  SECStatus srv = SECMOD_DeleteModule(moduleName.get(), &modType);
+  if (srv != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+
+  CollectThirdPartyPKCS11ModuleTelemetry();
+
+  return NS_OK;
+}
+
 // Delete a PKCS11 module from the user's profile.
 NS_IMETHODIMP
-PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName) {
+PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName, JSContext* aCx,
+                             Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
   if (aModuleName.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -59,22 +150,76 @@ PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName) {
   if (NS_FAILED(rv)) {
     return rv;
   }
-  // modType is an output variable. We ignore it.
-  int32_t modType;
-  SECStatus srv = SECMOD_DeleteModule(moduleNameNormalized.get(), &modType);
-  if (srv != SECSuccess) {
-    return NS_ERROR_FAILURE;
+
+  ErrorResult result;
+  RefPtr<Promise> promise =
+      Promise::Create(xpc::CurrentNativeGlobal(aCx), result);
+  if (result.Failed()) {
+    return result.StealNSResult();
   }
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<Promise>>(
+      "DeleteModule promise", promise);
 
-  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
-  if (!certVerifier) {
-    return NS_ERROR_FAILURE;
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled()) {
+    if (!mPKCS11ModuleProcessPromise) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+    mPKCS11ModuleProcessPromise->Then(
+        GetCurrentSerialEventTarget(), __func__,
+        [promiseHolder, moduleNameNormalized = std::move(moduleNameNormalized)](
+            const RefPtr<PKCS11ModuleParent>& parent) {
+          MOZ_RELEASE_ASSERT(parent);
+          parent->SendDeleteModule(moduleNameNormalized)
+              ->Then(GetCurrentSerialEventTarget(), __func__,
+                     [promiseHolder](
+                         const PPKCS11ModuleParent::DeleteModulePromise::
+                             ResolveOrRejectValue& value) {
+                       RefPtr<SharedCertVerifier> certVerifier(
+                           GetDefaultCertVerifier());
+                       if (certVerifier) {
+                         certVerifier->ClearTrustCache();
+                       }
+                       if (value.IsResolve()) {
+                         nsresult rv = value.ResolveValue();
+                         if (NS_SUCCEEDED(rv)) {
+                           promiseHolder->get()->MaybeResolveWithUndefined();
+                         } else {
+                           promiseHolder->get()->MaybeReject(rv);
+                         }
+                       } else {
+                         promiseHolder->get()->MaybeReject(NS_ERROR_FAILURE);
+                       }
+                     });
+        },
+        [promiseHolder](nsresult rv) {
+          promiseHolder->get()->MaybeReject(rv);
+        });
+    promise.forget(aPromise);
+    return NS_OK;
   }
-  certVerifier->ClearTrustCache();
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
-  CollectThirdPartyPKCS11ModuleTelemetry();
+  nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
+      "DeleteModule runnable", [promiseHolder, moduleNameNormalized = std::move(
+                                                   moduleNameNormalized)]() {
+        nsresult rv = DoDeleteModule(moduleNameNormalized);
+        RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
+        if (certVerifier) {
+          certVerifier->ClearTrustCache();
+        }
+        NS_DispatchToMainThread(NS_NewRunnableFunction(
+            "DeleteModule callback", [rv, promiseHolder] {
+              if (NS_SUCCEEDED(rv)) {
+                promiseHolder->get()->MaybeResolveWithUndefined();
+              } else {
+                promiseHolder->get()->MaybeReject(rv);
+              }
+            }));
+      }));
 
-  return NS_OK;
+  promise.forget(aPromise);
+  return DispatchToNSSTaskQueue(runnable.forget());
 }
 
 #if defined(XP_MACOSX)
@@ -127,11 +272,43 @@ void CollectThirdPartyModuleFilename(const nsCString& aModulePath) {
 }
 #endif  // defined(XP_MACOSX)
 
+nsresult PKCS11ModuleDB::DoAddModule(const nsCString& moduleName,
+                                     const nsCString& libraryPath,
+                                     uint32_t mechanismFlags,
+                                     uint32_t cipherFlags) {
+  if (!NSS_IsInitialized()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  uint32_t internalMechanismFlags =
+      SECMOD_PubMechFlagstoInternal(mechanismFlags);
+  uint32_t internalCipherFlags = SECMOD_PubCipherFlagstoInternal(cipherFlags);
+  SECStatus srv =
+      SECMOD_AddNewModule(moduleName.get(), libraryPath.get(),
+                          internalMechanismFlags, internalCipherFlags);
+  if (srv != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+
+#if defined(XP_MACOSX)
+  CollectThirdPartyModuleSignatureType(libraryPath);
+#endif  // defined(XP_MACOSX)
+
+  CollectThirdPartyPKCS11ModuleTelemetry();
+
+  return NS_OK;
+}
+
 // Add a new PKCS11 module to the user's profile.
 NS_IMETHODIMP
 PKCS11ModuleDB::AddModule(const nsAString& aModuleName,
-                          const nsAString& aLibraryFullPath,
-                          int32_t aCryptoMechanismFlags, int32_t aCipherFlags) {
+                          const nsAString& aLibraryPath,
+                          uint32_t aMechanismFlags, uint32_t aCipherFlags,
+                          JSContext* aCx, Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
   if (aModuleName.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -147,114 +324,260 @@ PKCS11ModuleDB::AddModule(const nsAString& aModuleName,
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  // There appears to be a deadlock if we try to load modules concurrently, so
-  // just wait until the loadable roots module has been loaded.
-  nsresult rv = BlockUntilLoadableCertsLoaded();
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
   nsAutoCString moduleNameNormalized;
-  rv = NormalizeModuleNameIn(aModuleName, moduleNameNormalized);
+  nsresult rv = NormalizeModuleNameIn(aModuleName, moduleNameNormalized);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  nsCString fullPath;
-  CopyUTF16toUTF8(aLibraryFullPath, fullPath);
-  uint32_t mechFlags = SECMOD_PubMechFlagstoInternal(aCryptoMechanismFlags);
-  uint32_t cipherFlags = SECMOD_PubCipherFlagstoInternal(aCipherFlags);
-  SECStatus srv = SECMOD_AddNewModule(moduleNameNormalized.get(),
-                                      fullPath.get(), mechFlags, cipherFlags);
-  if (srv != SECSuccess) {
-    return NS_ERROR_FAILURE;
+
+  nsAutoCString libraryPath;
+  CopyUTF16toUTF8(aLibraryPath, libraryPath);
+
+  ErrorResult result;
+  RefPtr<Promise> promise =
+      Promise::Create(xpc::CurrentNativeGlobal(aCx), result);
+  if (result.Failed()) {
+    return result.StealNSResult();
   }
+  auto promiseHolder =
+      MakeRefPtr<nsMainThreadPtrHolder<Promise>>("AddModule promise", promise);
 
-  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
-  if (!certVerifier) {
-    return NS_ERROR_FAILURE;
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled()) {
+    if (!mPKCS11ModuleProcessPromise) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+    mPKCS11ModuleProcessPromise->Then(
+        GetCurrentSerialEventTarget(), __func__,
+        [promiseHolder, moduleNameNormalized, libraryPath, aMechanismFlags,
+         aCipherFlags](const RefPtr<PKCS11ModuleParent>& parent) {
+          parent
+              ->SendAddModule(moduleNameNormalized, libraryPath,
+                              aMechanismFlags, aCipherFlags)
+              ->Then(
+                  GetCurrentSerialEventTarget(), __func__,
+                  [promiseHolder](const PPKCS11ModuleParent::AddModulePromise::
+                                      ResolveOrRejectValue& value) {
+                    RefPtr<SharedCertVerifier> certVerifier(
+                        GetDefaultCertVerifier());
+                    if (certVerifier) {
+                      certVerifier->ClearTrustCache();
+                    }
+                    if (value.IsResolve()) {
+                      nsresult rv = value.ResolveValue();
+                      if (NS_SUCCEEDED(rv)) {
+                        promiseHolder->get()->MaybeResolveWithUndefined();
+                      } else {
+                        promiseHolder->get()->MaybeReject(rv);
+                      }
+                    } else {
+                      promiseHolder->get()->MaybeReject(NS_ERROR_FAILURE);
+                    }
+                  });
+        },
+        [promiseHolder](nsresult rv) {
+          promiseHolder->get()->MaybeReject(rv);
+        });
+    promise.forget(aPromise);
+    return NS_OK;
   }
-  certVerifier->ClearTrustCache();
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
-#if defined(XP_MACOSX)
-  CollectThirdPartyModuleSignatureType(fullPath);
-#endif  // defined(XP_MACOSX)
+  nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
+      "AddModule runnable",
+      [promiseHolder, moduleNameNormalized = std::move(moduleNameNormalized),
+       libraryPath = std::move(libraryPath), mechanismFlags = aMechanismFlags,
+       cipherFlags = aCipherFlags]() {
+        nsresult rv = DoAddModule(moduleNameNormalized, libraryPath,
+                                  mechanismFlags, cipherFlags);
+        RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
+        if (certVerifier) {
+          certVerifier->ClearTrustCache();
+        }
+        NS_DispatchToMainThread(
+            NS_NewRunnableFunction("AddModule callback", [rv, promiseHolder] {
+              if (NS_SUCCEEDED(rv)) {
+                promiseHolder->get()->MaybeResolveWithUndefined();
+              } else {
+                promiseHolder->get()->MaybeReject(rv);
+              }
+            }));
+      }));
 
-  CollectThirdPartyPKCS11ModuleTelemetry();
-
-  return NS_OK;
+  promise.forget(aPromise);
+  return DispatchToNSSTaskQueue(runnable.forget());
 }
 
-NS_IMETHODIMP
-PKCS11ModuleDB::ListModules(nsISimpleEnumerator** _retval) {
-  NS_ENSURE_ARG_POINTER(_retval);
-
-  nsresult rv = BlockUntilLoadableCertsLoaded();
-  if (NS_FAILED(rv)) {
-    return rv;
+nsresult CollectModules(nsTArray<UniqueSECMODModule>& modules) {
+  if (!NSS_IsInitialized()) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsCOMPtr<nsIMutableArray> array = do_CreateInstance(NS_ARRAY_CONTRACTID);
-  if (!array) {
-    return NS_ERROR_FAILURE;
-  }
+  modules.Clear();
 
-  /* lock down the list for reading */
   AutoSECMODListReadLock lock;
   for (SECMODModuleList* list = SECMOD_GetDefaultModuleList(); list;
        list = list->next) {
-    nsCOMPtr<nsIPKCS11Module> module = new nsPKCS11Module(list->module);
-    nsresult rv = array->AppendElement(module);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
+    modules.AppendElement(SECMOD_ReferenceModule(list->module));
   }
-
-  /* Get the modules in the database that didn't load */
   for (SECMODModuleList* list = SECMOD_GetDeadModuleList(); list;
        list = list->next) {
-    nsCOMPtr<nsIPKCS11Module> module = new nsPKCS11Module(list->module);
-    nsresult rv = array->AppendElement(module);
+    modules.AppendElement(SECMOD_ReferenceModule(list->module));
+  }
+  return NS_OK;
+}
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+// Called in the utility process to list modules loaded there.
+nsresult PKCS11ModuleDB::DoListModules(nsTArray<ModuleInfo>& modules) {
+  modules.Clear();
+  nsTArray<UniqueSECMODModule> rawModules;
+  nsresult rv = CollectModules(rawModules);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  for (const auto& rawModule : rawModules) {
+    // Don't list the internal module loaded in the utility process.
+    if (rawModule.get() == SECMOD_GetInternalModule()) {
+      continue;
+    }
+    RefPtr<PKCS11Module> module(new PKCS11Module(rawModule.get()));
+    ModuleInfo moduleInfo;
+    rv = module->GetModuleInfo(moduleInfo);
     if (NS_FAILED(rv)) {
       return rv;
     }
-  }
-
-  return array->Enumerate(_retval, NS_GET_IID(nsIPKCS11Module));
-}
-
-NS_IMETHODIMP
-PKCS11ModuleDB::GetCanToggleFIPS(bool* aCanToggleFIPS) {
-  NS_ENSURE_ARG_POINTER(aCanToggleFIPS);
-
-  *aCanToggleFIPS = SECMOD_CanDeleteInternalModule();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-PKCS11ModuleDB::ToggleFIPSMode() {
-  // The way to toggle FIPS mode in NSS is extremely obscure. Basically, we
-  // delete the internal module, and it gets replaced with the opposite module
-  // (i.e. if it was FIPS before, then it becomes non-FIPS next).
-  // SECMOD_GetInternalModule() returns a pointer to a local copy of the
-  // internal module stashed in NSS.  We don't want to delete it since it will
-  // cause much pain in NSS.
-  SECMODModule* internal = SECMOD_GetInternalModule();
-  if (!internal) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (SECMOD_DeleteInternalModule(internal->commonName) != SECSuccess) {
-    return NS_ERROR_FAILURE;
+    modules.AppendElement(std::move(moduleInfo));
   }
 
   return NS_OK;
 }
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
+
+RefPtr<PKCS11ModuleDB::ListModulesPromise>
+PKCS11ModuleDB::ListMainProcessModules() {
+  nsCOMPtr<nsINSSComponent> nss(do_GetService(PSM_COMPONENT_CONTRACTID));
+  if (!nss) {
+    return ListModulesPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
+                                               __func__);
+  }
+  nsCOMPtr<nsISerialEventTarget> nssTaskQueue;
+  nsresult rv = nss->GetNssTaskQueue(getter_AddRefs(nssTaskQueue));
+  if (NS_FAILED(rv)) {
+    return ListModulesPromise::CreateAndReject(rv, __func__);
+  }
+  nsCOMPtr<nsISerialEventTarget> mainThread(do_GetMainThread());
+  using ListRawModulesPromise =
+      MozPromise<nsTArray<UniqueSECMODModule>, nsresult, true>;
+  return InvokeAsync(nssTaskQueue, __func__,
+                     []() -> RefPtr<ListRawModulesPromise> {
+                       nsTArray<UniqueSECMODModule> rawModules;
+                       nsresult rv = CollectModules(rawModules);
+                       if (NS_FAILED(rv)) {
+                         return ListRawModulesPromise::CreateAndReject(
+                             rv, __func__);
+                       }
+                       return ListRawModulesPromise::CreateAndResolve(
+                           std::move(rawModules), __func__);
+                     })
+      ->Then(
+          mainThread, __func__,
+          [](nsTArray<UniqueSECMODModule> rawModules) {
+            nsTArray<RefPtr<nsIPKCS11Module>> modules;
+            for (const auto& rawModule : rawModules) {
+              modules.AppendElement(new PKCS11Module(rawModule.get()));
+            }
+            return ListModulesPromise::CreateAndResolve(std::move(modules),
+                                                        __func__);
+          },
+          [](nsresult rv) {
+            return ListModulesPromise::CreateAndReject(rv, __func__);
+          });
+}
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+RefPtr<PKCS11ModuleDB::ListModulesPromise>
+PKCS11ModuleDB::ListRemoteProcessModulesGivenParent(
+    const RefPtr<PKCS11ModuleParent>& parent) {
+  using ReturnType = std::tuple<const nsresult&, nsTArray<ModuleInfo>&&>;
+  return parent->SendListModules()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [](ReturnType rv) {
+        if (NS_FAILED(std::get<0>(rv))) {
+          return ListModulesPromise::CreateAndReject(std::get<0>(rv), __func__);
+        }
+        nsTArray<RefPtr<nsIPKCS11Module>> modules;
+        for (const auto& moduleInfo : std::get<1>(rv)) {
+          modules.AppendElement(new RemotePKCS11Module(moduleInfo));
+        }
+        return ListModulesPromise::CreateAndResolve(std::move(modules),
+                                                    __func__);
+      },
+      [](ipc::ResponseRejectReason reason) {
+        return ListModulesPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+      });
+}
+
+RefPtr<PKCS11ModuleDB::ListModulesPromise>
+PKCS11ModuleDB::ListRemoteProcessModules() {
+  if (!mPKCS11ModuleProcessPromise) {
+    return ListModulesPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
+                                               __func__);
+  }
+  return mPKCS11ModuleProcessPromise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [](const RefPtr<PKCS11ModuleParent>& parent) {
+        MOZ_RELEASE_ASSERT(parent);
+        return ListRemoteProcessModulesGivenParent(parent);
+      },
+      [](nsresult rv) {
+        return ListModulesPromise::CreateAndReject(rv, __func__);
+      });
+}
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
 NS_IMETHODIMP
-PKCS11ModuleDB::GetIsFIPSEnabled(bool* aIsFIPSEnabled) {
-  NS_ENSURE_ARG_POINTER(aIsFIPSEnabled);
+PKCS11ModuleDB::ListModules(JSContext* aCx, Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
 
-  *aIsFIPSEnabled = PK11_IsFIPS();
+  nsTArray<RefPtr<ListModulesPromise>> promises;
+  promises.AppendElement(ListMainProcessModules());
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled()) {
+    promises.AppendElement(ListRemoteProcessModules());
+  }
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
+
+  ErrorResult result;
+  RefPtr<Promise> promise =
+      Promise::Create(xpc::CurrentNativeGlobal(aCx), result);
+  if (result.Failed()) {
+    return result.StealNSResult();
+  }
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<Promise>>(
+      "ListModules promise", promise);
+
+  ListModulesPromise::All(GetCurrentSerialEventTarget(), promises)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [promiseHolder](
+              const nsTArray<nsTArray<RefPtr<nsIPKCS11Module>>>& moduleLists) {
+            nsTArray<RefPtr<nsIPKCS11Module>> modules;
+            for (const auto& moduleList : moduleLists) {
+              modules.AppendElements(moduleList);
+            }
+            promiseHolder->get()->MaybeResolve(modules);
+          },
+          [promiseHolder]() {
+            promiseHolder->get()->MaybeReject(NS_ERROR_FAILURE);
+          });
+
+  promise.forget(aPromise);
   return NS_OK;
 }
 

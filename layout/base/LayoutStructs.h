@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,6 +50,14 @@ struct StyleSizeOverrides {
   // actually produce any user-visible tables whose final inline size is smaller
   // than their min-content inline size.
   bool mApplyOverridesVerbatim = false;
+};
+
+// Defines container types that force fragmentation boundaries.
+// This supports CSS fragmentation behavior such as 'break-before: page'.
+enum class BreakType : uint8_t {
+  Auto,
+  Column,
+  Page,
 };
 
 }  // namespace mozilla

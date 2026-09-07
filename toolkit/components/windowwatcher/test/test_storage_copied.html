@@ -15,9 +15,9 @@ same domain as the opener.
   <script type="application/javascript">
     "use strict";
 
-    function waitForMessage(win) {
+    function waitForMessage() {
       return new Promise(resolve => {
-        win.addEventListener("message", function(event) {
+        window.addEventListener("message", function(event) {
           resolve(event.data);
         }, {once: true});
       });
@@ -33,8 +33,24 @@ same domain as the opener.
       ]});
 
       window.sessionStorage.setItem("test-item", TEST_VALUE);
-      let win = window.open("file_storage_copied.html", "my_window");
-      let data = await waitForMessage(win);
+
+      let popupUrl;
+      if (isXOrigin) {
+        // In xorigin mode, this test runs in a third-party iframe
+        // (mochi.test inside mochi.xorigin-test). Open the popup on the
+        // top-level origin so it can embed a frame with the same partition
+        // key, allowing the cloned sessionStorage to be read.
+        let path = location.pathname.replace(
+          "test_storage_copied.html", "file_storage_copied_xorigin_wrapper.html");
+        popupUrl = "http://mochi.xorigin-test:8888" + path +
+          "?origin=" + encodeURIComponent(location.origin);
+      } else {
+        popupUrl = "file_storage_copied.html";
+      }
+
+      let loadPromise = waitForMessage();
+      let win = window.open(popupUrl, "my_window");
+      let data = await loadPromise;
       is(data, TEST_VALUE, "Should have cloned the test value");
       win.close();
     });

@@ -10,8 +10,6 @@
 
 #include "pc/peer_connection_wrapper.h"
 
-#include <stdint.h>
-
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,15 +30,17 @@
 #include "api/scoped_refptr.h"
 #include "api/stats/rtc_stats_report.h"
 #include "api/test/rtc_error_matchers.h"
+#include "api/units/time_delta.h"
 #include "pc/peer_connection.h"
 #include "pc/peer_connection_proxy.h"
-#include "pc/sdp_utils.h"
 #include "pc/test/fake_video_track_source.h"
 #include "pc/test/mock_peer_connection_observers.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/event.h"
 #include "rtc_base/logging.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
@@ -49,8 +49,8 @@ using ::testing::Eq;
 using RTCOfferAnswerOptions = PeerConnectionInterface::RTCOfferAnswerOptions;
 
 PeerConnectionWrapper::PeerConnectionWrapper(
-    rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory,
-    rtc::scoped_refptr<PeerConnectionInterface> pc,
+    scoped_refptr<PeerConnectionFactoryInterface> pc_factory,
+    scoped_refptr<PeerConnectionInterface> pc,
     std::unique_ptr<MockPeerConnectionObserver> observer)
     : pc_factory_(std::move(pc_factory)),
       observer_(std::move(observer)),
@@ -108,11 +108,11 @@ PeerConnectionWrapper::CreateOfferAndSetAsLocal() {
 std::unique_ptr<SessionDescriptionInterface>
 PeerConnectionWrapper::CreateOfferAndSetAsLocal(
     const PeerConnectionInterface::RTCOfferAnswerOptions& options) {
-  auto offer = CreateOffer(options);
+  std::unique_ptr<SessionDescriptionInterface> offer = CreateOffer(options);
   if (!offer) {
     return nullptr;
   }
-  EXPECT_TRUE(SetLocalDescription(CloneSessionDescription(offer.get())));
+  EXPECT_TRUE(SetLocalDescription(offer->Clone()));
   return offer;
 }
 
@@ -140,27 +140,37 @@ PeerConnectionWrapper::CreateAnswerAndSetAsLocal() {
 std::unique_ptr<SessionDescriptionInterface>
 PeerConnectionWrapper::CreateAnswerAndSetAsLocal(
     const PeerConnectionInterface::RTCOfferAnswerOptions& options) {
-  auto answer = CreateAnswer(options);
+  std::unique_ptr<SessionDescriptionInterface> answer = CreateAnswer(options);
   if (!answer) {
     return nullptr;
   }
-  EXPECT_TRUE(SetLocalDescription(CloneSessionDescription(answer.get())));
+  EXPECT_TRUE(SetLocalDescription(answer->Clone()));
   return answer;
 }
 
 std::unique_ptr<SessionDescriptionInterface>
 PeerConnectionWrapper::CreateRollback() {
-  return CreateSessionDescription(SdpType::kRollback, "");
+  return CreateRollbackSessionDescription();
 }
 
 std::unique_ptr<SessionDescriptionInterface> PeerConnectionWrapper::CreateSdp(
     FunctionView<void(CreateSessionDescriptionObserver*)> fn,
     std::string* error_out) {
-  auto observer = rtc::make_ref_counted<MockCreateSessionDescriptionObserver>();
+  // Tests in SdpMungingTest call this method from outside the signaling thread.
+  const bool signaling_is_current =
+      GetInternalPeerConnection()->signaling_thread()->IsCurrent();
+  Event done;
+  auto observer = make_ref_counted<MockCreateSessionDescriptionObserver>(
+      [&]() { done.Set(); });
   fn(observer.get());
-  EXPECT_THAT(
-      WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
-      IsRtcOk());
+  if (signaling_is_current) {
+    EXPECT_THAT(
+        WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
+        IsRtcOk());
+  } else {
+    done.Wait(Event::kForever);
+    EXPECT_TRUE(observer->called());
+  }
   if (error_out && !observer->result()) {
     *error_out = observer->error();
   }
@@ -180,7 +190,7 @@ bool PeerConnectionWrapper::SetLocalDescription(
 bool PeerConnectionWrapper::SetLocalDescription(
     std::unique_ptr<SessionDescriptionInterface> desc,
     RTCError* error_out) {
-  auto observer = rtc::make_ref_counted<FakeSetLocalDescriptionObserver>();
+  auto observer = make_ref_counted<FakeSetLocalDescriptionObserver>();
   pc()->SetLocalDescription(std::move(desc), observer);
   EXPECT_THAT(
       WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
@@ -204,7 +214,7 @@ bool PeerConnectionWrapper::SetRemoteDescription(
 bool PeerConnectionWrapper::SetRemoteDescription(
     std::unique_ptr<SessionDescriptionInterface> desc,
     RTCError* error_out) {
-  auto observer = rtc::make_ref_counted<FakeSetRemoteDescriptionObserver>();
+  auto observer = make_ref_counted<FakeSetRemoteDescriptionObserver>();
   pc()->SetRemoteDescription(std::move(desc), observer);
   EXPECT_THAT(
       WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
@@ -218,7 +228,7 @@ bool PeerConnectionWrapper::SetRemoteDescription(
 bool PeerConnectionWrapper::SetSdp(
     FunctionView<void(SetSessionDescriptionObserver*)> fn,
     std::string* error_out) {
-  auto observer = rtc::make_ref_counted<MockSetSessionDescriptionObserver>();
+  auto observer = make_ref_counted<MockSetSessionDescriptionObserver>();
   fn(observer.get());
   EXPECT_THAT(
       WaitUntil([&] { return observer->called(); }, ::testing::IsTrue()),
@@ -244,13 +254,13 @@ bool PeerConnectionWrapper::ExchangeOfferAnswerWith(
     RTC_LOG(LS_ERROR) << "Cannot exchange offer/answer with ourself!";
     return false;
   }
-  auto offer = CreateOffer(offer_options);
+  std::unique_ptr<SessionDescriptionInterface> offer =
+      CreateOffer(offer_options);
   EXPECT_TRUE(offer);
   if (!offer) {
     return false;
   }
-  bool set_local_offer =
-      SetLocalDescription(CloneSessionDescription(offer.get()));
+  bool set_local_offer = SetLocalDescription(offer->Clone());
   EXPECT_TRUE(set_local_offer);
   if (!set_local_offer) {
     return false;
@@ -260,13 +270,13 @@ bool PeerConnectionWrapper::ExchangeOfferAnswerWith(
   if (!set_remote_offer) {
     return false;
   }
-  auto answer = answerer->CreateAnswer(answer_options);
+  std::unique_ptr<SessionDescriptionInterface> answer =
+      answerer->CreateAnswer(answer_options);
   EXPECT_TRUE(answer);
   if (!answer) {
     return false;
   }
-  bool set_local_answer =
-      answerer->SetLocalDescription(CloneSessionDescription(answer.get()));
+  bool set_local_answer = answerer->SetLocalDescription(answer->Clone());
   EXPECT_TRUE(set_local_answer);
   if (!set_local_answer) {
     return false;
@@ -276,85 +286,82 @@ bool PeerConnectionWrapper::ExchangeOfferAnswerWith(
   return set_remote_answer;
 }
 
-rtc::scoped_refptr<RtpTransceiverInterface>
-PeerConnectionWrapper::AddTransceiver(webrtc::MediaType media_type) {
-  RTCErrorOr<rtc::scoped_refptr<RtpTransceiverInterface>> result =
+scoped_refptr<RtpTransceiverInterface> PeerConnectionWrapper::AddTransceiver(
+    MediaType media_type) {
+  RTCErrorOr<scoped_refptr<RtpTransceiverInterface>> result =
       pc()->AddTransceiver(media_type);
   EXPECT_EQ(RTCErrorType::NONE, result.error().type());
   return result.MoveValue();
 }
 
-rtc::scoped_refptr<RtpTransceiverInterface>
-PeerConnectionWrapper::AddTransceiver(webrtc::MediaType media_type,
-                                      const RtpTransceiverInit& init) {
-  RTCErrorOr<rtc::scoped_refptr<RtpTransceiverInterface>> result =
+scoped_refptr<RtpTransceiverInterface> PeerConnectionWrapper::AddTransceiver(
+    MediaType media_type,
+    const RtpTransceiverInit& init) {
+  RTCErrorOr<scoped_refptr<RtpTransceiverInterface>> result =
       pc()->AddTransceiver(media_type, init);
   EXPECT_EQ(RTCErrorType::NONE, result.error().type());
   return result.MoveValue();
 }
 
-rtc::scoped_refptr<RtpTransceiverInterface>
-PeerConnectionWrapper::AddTransceiver(
-    rtc::scoped_refptr<MediaStreamTrackInterface> track) {
-  RTCErrorOr<rtc::scoped_refptr<RtpTransceiverInterface>> result =
+scoped_refptr<RtpTransceiverInterface> PeerConnectionWrapper::AddTransceiver(
+    scoped_refptr<MediaStreamTrackInterface> track) {
+  RTCErrorOr<scoped_refptr<RtpTransceiverInterface>> result =
       pc()->AddTransceiver(track);
   EXPECT_EQ(RTCErrorType::NONE, result.error().type());
   return result.MoveValue();
 }
 
-rtc::scoped_refptr<RtpTransceiverInterface>
-PeerConnectionWrapper::AddTransceiver(
-    rtc::scoped_refptr<MediaStreamTrackInterface> track,
+scoped_refptr<RtpTransceiverInterface> PeerConnectionWrapper::AddTransceiver(
+    scoped_refptr<MediaStreamTrackInterface> track,
     const RtpTransceiverInit& init) {
-  RTCErrorOr<rtc::scoped_refptr<RtpTransceiverInterface>> result =
+  RTCErrorOr<scoped_refptr<RtpTransceiverInterface>> result =
       pc()->AddTransceiver(track, init);
   EXPECT_EQ(RTCErrorType::NONE, result.error().type());
   return result.MoveValue();
 }
 
-rtc::scoped_refptr<AudioTrackInterface> PeerConnectionWrapper::CreateAudioTrack(
+scoped_refptr<AudioTrackInterface> PeerConnectionWrapper::CreateAudioTrack(
     const std::string& label) {
   return pc_factory()->CreateAudioTrack(label, nullptr);
 }
 
-rtc::scoped_refptr<VideoTrackInterface> PeerConnectionWrapper::CreateVideoTrack(
+scoped_refptr<VideoTrackInterface> PeerConnectionWrapper::CreateVideoTrack(
     const std::string& label) {
   return pc_factory()->CreateVideoTrack(FakeVideoTrackSource::Create(), label);
 }
 
-rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddTrack(
-    rtc::scoped_refptr<MediaStreamTrackInterface> track,
+scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddTrack(
+    scoped_refptr<MediaStreamTrackInterface> track,
     const std::vector<std::string>& stream_ids) {
-  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> result =
+  RTCErrorOr<scoped_refptr<RtpSenderInterface>> result =
       pc()->AddTrack(track, stream_ids);
   EXPECT_EQ(RTCErrorType::NONE, result.error().type());
   return result.MoveValue();
 }
 
-rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddTrack(
-    rtc::scoped_refptr<MediaStreamTrackInterface> track,
+scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddTrack(
+    scoped_refptr<MediaStreamTrackInterface> track,
     const std::vector<std::string>& stream_ids,
     const std::vector<RtpEncodingParameters>& init_send_encodings) {
-  RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> result =
+  RTCErrorOr<scoped_refptr<RtpSenderInterface>> result =
       pc()->AddTrack(track, stream_ids, init_send_encodings);
   EXPECT_EQ(RTCErrorType::NONE, result.error().type());
   return result.MoveValue();
 }
 
-rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddAudioTrack(
+scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddAudioTrack(
     const std::string& track_label,
     const std::vector<std::string>& stream_ids) {
   return AddTrack(CreateAudioTrack(track_label), stream_ids);
 }
 
-rtc::scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddVideoTrack(
+scoped_refptr<RtpSenderInterface> PeerConnectionWrapper::AddVideoTrack(
     const std::string& track_label,
     const std::vector<std::string>& stream_ids) {
   return AddTrack(CreateVideoTrack(track_label), stream_ids);
 }
 
-rtc::scoped_refptr<DataChannelInterface>
-PeerConnectionWrapper::CreateDataChannel(
+scoped_refptr<DataChannelInterface> PeerConnectionWrapper::CreateDataChannel(
     const std::string& label,
     const std::optional<DataChannelInit>& config) {
   const DataChannelInit* config_ptr = config.has_value() ? &(*config) : nullptr;
@@ -381,13 +388,27 @@ bool PeerConnectionWrapper::IsIceConnected() {
   return observer()->ice_connected_;
 }
 
-rtc::scoped_refptr<const RTCStatsReport> PeerConnectionWrapper::GetStats() {
-  auto callback = rtc::make_ref_counted<MockRTCStatsCollectorCallback>();
+scoped_refptr<const RTCStatsReport> PeerConnectionWrapper::GetStats() {
+  auto callback = make_ref_counted<MockRTCStatsCollectorCallback>();
   pc()->GetStats(callback.get());
   EXPECT_THAT(
       WaitUntil([&] { return callback->called(); }, ::testing::IsTrue()),
       IsRtcOk());
   return callback->report();
+}
+
+bool PeerConnectionWrapper::RunUntilIceGatheringDone(test::RunLoop& run_loop,
+                                                     TimeDelta timeout) {
+  if (observer()->ice_gathering_complete()) {
+    return true;
+  }
+  observer()->SetIceGatheringCompleteCallback(run_loop.QuitClosure());
+  run_loop.RunFor(timeout);
+
+  // Clear the callback just in case the timeout happened before it fired.
+  observer()->SetIceGatheringCompleteCallback(nullptr);
+
+  return observer()->ice_gathering_complete();
 }
 
 }  // namespace webrtc

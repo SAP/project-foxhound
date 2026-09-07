@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,11 +15,10 @@ class WeakCollectionObject : public NativeObject {
  public:
   enum { DataSlot, SlotCount };
 
-  ValueValueWeakMap* getMap() {
-    return maybePtrFromReservedSlot<ValueValueWeakMap>(DataSlot);
-  }
+  using Map = WeakMap<Value, Value, BufferAllocPolicy>;
+  Map* getMap() { return maybePtrFromReservedSlot<Map>(DataSlot); }
 
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf);
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
   size_t nondeterministicGetSize();
   [[nodiscard]] static bool nondeterministicGetKeys(
@@ -30,6 +27,9 @@ class WeakCollectionObject : public NativeObject {
 
  protected:
   static const JSClassOps classOps_;
+
+  static void trace(JSTracer* trc, JSObject* obj);
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
 };
 
 class WeakMapObject : public WeakCollectionObject {
@@ -40,6 +40,9 @@ class WeakMapObject : public WeakCollectionObject {
   [[nodiscard]] static bool has(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool get(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool set(JSContext* cx, unsigned argc, Value* vp);
+
+  static void getObject(WeakMapObject* weakMap, JSObject* obj, Value* result);
+  static bool hasObject(WeakMapObject* weakMap, JSObject* obj);
 
  private:
   static const ClassSpec classSpec_;
@@ -64,12 +67,10 @@ class WeakMapObject : public WeakCollectionObject {
   [[nodiscard]] static bool delete_(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static MOZ_ALWAYS_INLINE bool set_impl(JSContext* cx,
                                                        const CallArgs& args);
-#ifdef NIGHTLY_BUILD
   [[nodiscard]] static MOZ_ALWAYS_INLINE bool getOrInsert_impl(
       JSContext* cx, const CallArgs& args);
   [[nodiscard]] static bool getOrInsert(JSContext* cx, unsigned argc,
                                         Value* vp);
-#endif  // #ifdef NIGHTLY_BUILD
 };
 
 }  // namespace js

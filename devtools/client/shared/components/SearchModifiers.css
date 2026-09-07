@@ -44,15 +44,15 @@
 }
 
 .search-modifiers button > span.case-match {
-  background-image: url(chrome://devtools/content/debugger/images/case-match.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/case-match.svg);
 }
 
 .search-modifiers button > span.regex-match {
-  background-image: url(chrome://devtools/content/debugger/images/regex-match.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/regex-match.svg);
 }
 
 .search-modifiers button > span.whole-word-match {
-  background-image: url(chrome://devtools/content/debugger/images/whole-word-match.svg);
+  background-image: url(chrome://devtools/content/shared/components/images/whole-word-match.svg);
 }
 
 .search-modifiers button:hover {

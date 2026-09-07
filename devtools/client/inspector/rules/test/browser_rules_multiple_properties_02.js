@@ -13,7 +13,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("div", inspector);
 
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   let onDone = view.once("ruleview-changed");
   await createNewRuleViewProperty(ruleEditor, "width:");
   await onDone;

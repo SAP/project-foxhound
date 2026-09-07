@@ -1,0 +1,22 @@
+{
+  "label": "teams.microsoft.com",
+  "bugs": {
+    "2000906": {
+      "issue": "broken-meetings",
+      "matches": [
+        "*://teams.cloud.microsoft/*",
+        "*://teams.microsoft.com/*",
+        "*://teams.live.com/*"
+      ]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["disable_resizeMode_in_GDM.js"]
+      }
+    }
+  ]
+}

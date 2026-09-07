@@ -1,24 +1,25 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef IntegrityPolicy_h___
-#define IntegrityPolicy_h___
-
-#include "nsIIntegrityPolicy.h"
-
-#include "nsIContentPolicy.h"
+#ifndef IntegrityPolicy_h_
+#define IntegrityPolicy_h_
 
 #include "mozilla/EnumSet.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/WAICTManifestBinding.h"
+#include "mozilla/net/SFV.h"
+#include "nsHashKeys.h"
+#include "nsIContentPolicy.h"
+#include "nsIIntegrityPolicy.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
+#include "nsTHashSet.h"
 
 #define NS_INTEGRITYPOLICY_CONTRACTID "@mozilla.org/integritypolicy;1"
 
-class nsISFVDictionary;
 class nsILoadInfo;
 
 namespace mozilla {
@@ -26,6 +27,8 @@ namespace ipc {
 class IntegrityPolicyArgs;
 }  // namespace ipc
 namespace dom {
+
+class Document;
 
 class IntegrityPolicy : public nsIIntegrityPolicy {
  public:
@@ -42,13 +45,16 @@ class IntegrityPolicy : public nsIIntegrityPolicy {
   enum class SourceType : uint8_t { Inline };
 
   // Trimmed down version of dom::RequestDestination
-  enum class DestinationType : uint8_t { Script, Style };
+  enum class DestinationType : uint8_t { Script, Style, Image };
 
   using Sources = EnumSet<SourceType>;
   using Destinations = EnumSet<DestinationType>;
 
   void PolicyContains(DestinationType aDestination, bool* aContains,
                       bool* aROContains) const;
+
+  void Endpoints(nsTArray<nsCString>& aEnforcement,
+                 nsTArray<nsCString>& aReportOnly) const;
 
   static Maybe<DestinationType> ContentTypeToDestinationType(
       nsContentPolicyType aType);
@@ -68,8 +74,14 @@ class IntegrityPolicy : public nsIIntegrityPolicy {
   static bool Equals(const IntegrityPolicy* aPolicy,
                      const IntegrityPolicy* aOtherPolicy);
 
+  static Result<IntegrityPolicy::Destinations, nsresult> ParseDestinations(
+      const net::SFV::DictResult& aDict, bool aIsWAICT);
+
+  static Result<nsTArray<nsCString>, nsresult> ParseEndpoints(
+      const net::SFV::DictResult& aDict);
+
  protected:
-  virtual ~IntegrityPolicy();
+  virtual ~IntegrityPolicy() = default;
 
  private:
   class Entry final {
@@ -98,6 +110,7 @@ class IntegrityPolicy : public nsIIntegrityPolicy {
   Maybe<Entry> mEnforcement;
   Maybe<Entry> mReportOnly;
 };
+
 }  // namespace dom
 
 template <>
@@ -109,9 +122,9 @@ struct MaxEnumValue<dom::IntegrityPolicy::SourceType> {
 template <>
 struct MaxEnumValue<dom::IntegrityPolicy::DestinationType> {
   static constexpr unsigned int value =
-      static_cast<unsigned int>(dom::IntegrityPolicy::DestinationType::Script);
+      static_cast<unsigned int>(dom::IntegrityPolicy::DestinationType::Image);
 };
 
 }  // namespace mozilla
 
-#endif /* IntegrityPolicy_h___ */
+#endif /* IntegrityPolicy_h_ */

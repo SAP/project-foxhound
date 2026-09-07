@@ -23,11 +23,12 @@ export class VacuumParticipant {
    *
    * @param {mozIStorageAsyncConnection} databaseConnection
    *   The connection to be vacuumed.
-   * @param {Number} [expectedPageSize]
+   * @param {object} options
+   * @param {number} [options.expectedPageSize]
    *   Used to change the database page size.
-   * @param {boolean} [useIncrementalVacuum]
+   * @param {boolean} [options.useIncrementalVacuum]
    *   Whether to enable incremental vacuum on the database.
-   * @param {boolean} [grant]
+   * @param {boolean} [options.grant]
    *   Whether the vacuum operation should be granted.
    */
   constructor(

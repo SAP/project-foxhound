@@ -196,10 +196,7 @@ JS stack in addition to the C++ stack.
 Please note that if `gdb` has been attached to a process, the stack might be
 printed in the terminal window in which Firefox was started.
 
-See
-`this MDN page
-<https://developer.mozilla.org/en-US/docs/Mozilla/Debugging/Debugging_JavaScript>`__
-for more JS debugging tricks.
+See :ref:`Debugging On Windows` for more JS debugging tricks.
 
 How can I debug race conditions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -33,7 +33,7 @@ assertEq(tByteSize({ w: 1 }),                           s(32,  40));
 assertEq(tByteSize({ w: 1, x: 2 }),                     s(32,  40));
 assertEq(tByteSize({ w: 1, x: 2, y: 3 }),               s(48,  56));
 assertEq(tByteSize({ w: 1, x: 2, y: 3, z:4 }),          s(48,  56));
-assertEq(tByteSize({ w: 1, x: 2, y: 3, z:4, a: 5 }),    s(80,  88));
+assertEq(tByteSize({ w: 1, x: 2, y: 3, z:4, a: 5 }),    s(64,  72));
 
 // Try objects with only indexed properties.
 assertEq(tByteSize({ 0:0 }),                            s(80,  88));
@@ -50,16 +50,16 @@ assertEq(tByteSize({ w:1,                     0:0, 1:1, 2:2, 3:3, 4:4 }),  s(96,
 assertEq(tByteSize({ w:1, x:2, y:3,           0:0                     }),  s(112, 120));
 assertEq(tByteSize({ w:1, x:2, y:3,           0:0, 1:1, 2:2           }),  s(112, 120));
 assertEq(tByteSize({ w:1, x:2, y:3,           0:0, 1:1, 2:2, 3:3, 4:4 }),  s(112, 120));
-assertEq(tByteSize({ w:1, x:2, y:3, z:4, a:6, 0:0                     }),  s(144, 152));
-assertEq(tByteSize({ w:1, x:2, y:3, z:4, a:6, 0:0, 1:1, 2:2           }),  s(144, 152));
-assertEq(tByteSize({ w:1, x:2, y:3, z:4, a:6, 0:0, 1:1, 2:2, 3:3, 4:4 }),  s(144, 152));
+assertEq(tByteSize({ w:1, x:2, y:3, z:4, a:6, 0:0                     }),  s(128, 136));
+assertEq(tByteSize({ w:1, x:2, y:3, z:4, a:6, 0:0, 1:1, 2:2           }),  s(128, 136));
+assertEq(tByteSize({ w:1, x:2, y:3, z:4, a:6, 0:0, 1:1, 2:2, 3:3, 4:4 }),  s(128, 136));
 
 // Check various lengths of array.
 assertEq(tByteSize([]),                                 s(80,  88));
 assertEq(tByteSize([1]),                                s(48,  56));
 assertEq(tByteSize([1, 2]),                             s(48,  56));
-assertEq(tByteSize([1, 2, 3]),                          s(80,  88));
-assertEq(tByteSize([1, 2, 3, 4]),                       s(80,  88));
+assertEq(tByteSize([1, 2, 3]),                          s(64,  72));
+assertEq(tByteSize([1, 2, 3, 4]),                       s(64,  72));
 assertEq(tByteSize([1, 2, 3, 4, 5]),                    s(80,  88));
 assertEq(tByteSize([1, 2, 3, 4, 5, 6]),                 s(80,  88));
 assertEq(tByteSize([1, 2, 3, 4, 5, 6, 7]),              s(112, 120));

@@ -1,11 +1,9 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <errno.h>
 #include <jni.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 
@@ -53,6 +51,13 @@ Java_org_mozilla_gecko_media_SampleBuffer_nativeWriteToDirectBuffer(
   }
 
   memcpy(to, from + offset, size);
+}
+
+JNIEXPORT
+void JNICALL Java_org_mozilla_gecko_media_SampleBuffer_nativeMemcpy(
+    JNIEnv*, jclass, jlong dest, jlong src, jint size) {
+  memcpy(reinterpret_cast<void*>(dest), reinterpret_cast<const void*>(src),
+         size);
 }
 
 JNIEXPORT

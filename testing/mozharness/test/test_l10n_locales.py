@@ -3,9 +3,9 @@ import shutil
 import unittest
 from unittest import mock
 
-import mozharness.base.script as script
-import mozharness.mozilla.l10n.locales as locales
 import mozunit
+from mozharness.base import script
+from mozharness.mozilla.l10n import locales
 
 ALL_LOCALES = ["ar", "be", "de", "es-ES"]
 
@@ -23,7 +23,7 @@ class LocalesTest(locales.LocalesMixin, script.BaseScript):
             kwargs["config"] = {"log_type": "simple", "log_level": "error"}
         if "initial_config_file" not in kwargs:
             kwargs["initial_config_file"] = "test/test.json"
-        super(LocalesTest, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.config = {}
         self.log_obj = None
 

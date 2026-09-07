@@ -13,7 +13,6 @@ add_setup(async function () {
     set: [
       ["test.wait300msAfterTabSwitch", true],
       ["privacy.query_stripping.strip_list", "stripParam"],
-      ["privacy.query_stripping.strip_on_share.canDisable", false],
     ],
   });
 
@@ -116,15 +115,15 @@ async function testStripOnShare({ originalURI, strippedURI }) {
   let testJson = {
     global: {
       queryParams: ["utm_ad"],
-      topLevelSites: ["*"],
+      isGlobal: true,
     },
     example: {
       queryParams: ["test_2", "test_1"],
-      topLevelSites: ["www.example.com"],
+      origins: ["www.example.com"],
     },
     exampleNet: {
       queryParams: ["test_3", "test_4"],
-      topLevelSites: ["www.example.net"],
+      origins: ["www.example.net"],
     },
   };
 

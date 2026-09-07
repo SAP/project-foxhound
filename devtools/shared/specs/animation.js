@@ -17,11 +17,11 @@ const {
 types.addDictType("animationMutationChange", {
   // The type of change ("added" or "removed").
   type: "string",
-  // The changed AnimationPlayerActor.
+  // The changed AnimationActor.
   player: "animationplayer",
 });
 
-const animationPlayerSpec = generateActorSpec({
+const animationSpec = generateActorSpec({
   typeName: "animationplayer",
 
   events: {
@@ -50,7 +50,7 @@ const animationPlayerSpec = generateActorSpec({
   },
 });
 
-exports.animationPlayerSpec = animationPlayerSpec;
+exports.animationSpec = animationSpec;
 
 const animationsSpec = generateActorSpec({
   typeName: "animations",
@@ -94,13 +94,6 @@ const animationsSpec = generateActorSpec({
         players: Arg(0, "array:animationplayer"),
         time: Arg(1, "number"),
         shouldPause: Arg(2, "boolean"),
-      },
-      response: {},
-    },
-    setPlaybackRates: {
-      request: {
-        players: Arg(0, "array:animationplayer"),
-        rate: Arg(1, "number"),
       },
       response: {},
     },

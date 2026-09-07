@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "builtin/ParseRecordObject.h"
 
-#include "jsapi.h"  // JS_ValueToId, JS_IdToValue
 #include "builtin/Object.h"
 #include "js/PropertyAndElement.h"  // JS_SetPropertyById
 #include "vm/PlainObject.h"
@@ -38,31 +35,14 @@ ParseRecordObject* ParseRecordObject::create(JSContext* cx,
   }
 
   if (parseNode) {
-    obj->initSlot(ParseNodeSlot, StringValue(parseNode));
+    obj->initReservedSlot(ParseNodeSlot, StringValue(parseNode));
   }
-  obj->initSlot(ValueSlot, val);
+  obj->initReservedSlot(ValueSlot, val);
   return obj;
-}
-
-JS::PropertyKey ParseRecordObject::getKey(JSContext* cx) const {
-  Rooted<Value> slot(cx, getSlot(KeySlot));
-  Rooted<JS::PropertyKey> key(cx);
-  MOZ_ALWAYS_TRUE(JS_ValueToId(cx, slot, &key));
-  return key;
-};
-
-bool ParseRecordObject::setKey(JSContext* cx, const JS::PropertyKey& key) {
-  Rooted<Value> val(cx);
-  if (!JS_IdToValue(cx, key, &val)) {
-    return false;
-  }
-  setSlot(KeySlot, val);
-  return true;
 }
 
 bool ParseRecordObject::addEntries(JSContext* cx, Handle<JS::PropertyKey> key,
                                    Handle<ParseRecordObject*> parseRecord) {
-  parseRecord->setKey(cx, key.get());
   Rooted<Value> pro(cx, ObjectValue(*parseRecord));
   Rooted<JSObject*> obj(cx, this);
   return JS_SetPropertyById(cx, obj, key, pro);

@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ImageTrackList.h"
+
 #include "MediaResult.h"
 #include "mozilla/dom/ImageDecoder.h"
 #include "mozilla/dom/ImageTrack.h"
@@ -73,6 +72,14 @@ void ImageTrackList::OnMetadataSuccess(
   // 4. Let newTrackList be a new list.
   MOZ_ASSERT(mTracks.IsEmpty());
 
+  // Mozilla-internal-only addition
+  nsTArray<ImageSize> imageSizes;
+  for (const OrientedIntSize& nativeSize : aMetadata.mNativeSizes) {
+    ImageSize* imageSize = imageSizes.AppendElement();
+    imageSize->mWidth = nativeSize.width;
+    imageSize->mHeight = nativeSize.height;
+  }
+
   // 5. For each image track found in [[encoded data]]:
   // 5.1. Let newTrack be a new ImageTrack, initialized as follows:
   // 5.1.1. Assign this to [[ImageDecoder]].
@@ -96,8 +103,9 @@ void ImageTrackList::OnMetadataSuccess(
                                 ? std::numeric_limits<float>::infinity()
                                 : static_cast<float>(aMetadata.mRepetitions);
   auto track = MakeRefPtr<ImageTrack>(
-      this, /* aIndex */ 0, /* aSelected */ true, aMetadata.mAnimated,
-      aMetadata.mFrameCount, aMetadata.mFrameCountComplete, repetitions);
+      this, /* aIndex */ 0, std::move(imageSizes), /* aSelected */ true,
+      aMetadata.mAnimated, aMetadata.mFrameCount, aMetadata.mFrameCountComplete,
+      repetitions);
 
   // 11. Queue a task to perform the following steps:
   //
@@ -193,14 +201,16 @@ void ImageTrackList::SetSelectedIndex(int32_t aIndex, bool aSelected) {
   }
 
   // 10. Run the Reset ImageDecoder algorithm on [[ImageDecoder]].
-  mDecoder->Reset();
+  RefPtr<ImageDecoder> decoder = mDecoder;
+  decoder->ResetWithoutRef(
+      MediaResult(NS_ERROR_DOM_ABORT_ERR, "Reset decoder (select index)"_ns));
 
   // 11. Queue a control message to [[ImageDecoder]]'s control message queue to
   //     update the internal selected track index with selectedIndex.
-  mDecoder->QueueSelectTrackMessage(mSelectedIndex);
+  decoder->QueueSelectTrackMessage(mSelectedIndex);
 
   // 12. Process the control message queue belonging to [[ImageDecoder]].
-  mDecoder->ProcessControlMessageQueue();
+  decoder->ProcessControlMessageQueue();
 }
 
 }  // namespace mozilla::dom

@@ -4,7 +4,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gProxyService",
   "@mozilla.org/network/protocol-proxy-service;1",
-  "nsIProtocolProxyService"
+  Ci.nsIProtocolProxyService
 );
 
 const TRANSPARENT_PROXY_RESOLVES_HOST =
@@ -194,7 +194,7 @@ add_task(async function test_proxyInfo_results() {
       ],
       expected: {
         error:
-          'ProxyInfoData: ProxyAuthorizationHeader requires type "https" or "http"',
+          'ProxyInfoData: ProxyAuthorizationHeader requires type "https" or "http" or "masque"',
       },
     },
     {
@@ -304,7 +304,7 @@ add_task(async function test_proxyInfo_results() {
       expected: {
         proxyInfo: {
           host: "foo.bar",
-          port: "3128",
+          port: 3128,
           type: "http",
         },
       },
@@ -342,7 +342,7 @@ add_task(async function test_proxyInfo_results() {
       expected: {
         proxyInfo: {
           host: "foo.bar",
-          port: "3128",
+          port: 3128,
           type: "https",
         },
       },
@@ -441,7 +441,7 @@ add_task(async function test_proxyInfo_results() {
       expected: {
         proxyInfo: {
           host: "foo.bar",
-          port: "3128",
+          port: 3128,
           type: "https",
           proxyAuthorizationHeader: "test",
           connectionIsolationKey: "key",
@@ -461,11 +461,121 @@ add_task(async function test_proxyInfo_results() {
       expected: {
         proxyInfo: {
           host: "foo.bar",
-          port: "3128",
+          port: 3128,
           type: "http",
           proxyAuthorizationHeader: "test",
           connectionIsolationKey: "key",
         },
+      },
+    },
+    {
+      proxy: [
+        {
+          type: "http",
+          host: "foo.bar",
+          port: 8080,
+          username: "mungosantamaria",
+          password: "pass123",
+          proxyDNS: true,
+          failoverTimeout: 3,
+          masqueTemplate:
+            "/.well-known/masque/udp/{target_host}/{target_port}/",
+        },
+      ],
+      expected: {
+        error: `ProxyInfoData: masqueTemplate can only be used for "masque" proxies`,
+      },
+    },
+    {
+      proxy: [
+        {
+          host: "foo.bar",
+          port: 3128,
+          masqueTemplate:
+            "/.well-known/masque/udp/{target_host}/{target_port}/",
+          type: "masque",
+        },
+      ],
+      expected: {
+        proxyInfo: {
+          host: "foo.bar",
+          port: 3128,
+          type: "masque",
+          masqueTemplate:
+            "/.well-known/masque/udp/{target_host}/{target_port}/",
+        },
+      },
+    },
+    {
+      proxy: [
+        {
+          host: "foo.bar",
+          port: 3128,
+          proxyAuthorizationHeader: "test",
+          connectionIsolationKey: "key",
+          masqueTemplate:
+            "/.well-known/masque/udp/{target_host}/{target_port}/",
+          type: "masque",
+        },
+      ],
+      expected: {
+        proxyInfo: {
+          host: "foo.bar",
+          port: 3128,
+          type: "masque",
+          proxyAuthorizationHeader: "test",
+          connectionIsolationKey: "key",
+          masqueTemplate:
+            "/.well-known/masque/udp/{target_host}/{target_port}/",
+        },
+      },
+    },
+    {
+      proxy: [
+        {
+          type: "masque",
+          host: "foo.bar",
+          port: 3128,
+          proxyAuthorizationHeader: "test",
+          connectionIsolationKey: "key",
+        },
+      ],
+      expected: {
+        error: `ProxyInfoData: Invalid proxy masque template: "undefined"`,
+      },
+    },
+    {
+      proxy: [
+        {
+          type: "masque",
+          host: "foo.bar",
+          port: 3128,
+          proxyAuthorizationHeader: "test",
+          connectionIsolationKey: "key",
+          masqueTemplate:
+            "/.well-known/masque/udp/{target_host}/{target_port}/",
+          username: "mungosantamaria",
+        },
+      ],
+      expected: {
+        error: `ProxyInfoData: Username not expected for "masque" proxy info`,
+      },
+    },
+    {
+      proxy: [
+        {
+          host: "foo.bar",
+          port: 3128,
+          proxyAuthorizationHeader: "test",
+          connectionIsolationKey: "key",
+          masqueTemplate:
+            "/.well-known/masque/udp/{target_host}/{target_port}/",
+          type: "masque",
+          password: "pass123",
+        },
+      ],
+      expected: {
+        error: `ProxyInfoData: Password not expected for "masque" proxy info`,
       },
     },
   ];

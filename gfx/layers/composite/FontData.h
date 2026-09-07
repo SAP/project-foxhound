@@ -1,11 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This is explicitly not guarded as we want only 1 file to include this and
 // it's good if things break if someone else does.
+
+#ifndef GFX_LAYERS_COMPOSITE_FONTDATA_H_
+#define GFX_LAYERS_COMPOSITE_FONTDATA_H_
 
 namespace mozilla {
 namespace layers {
@@ -302,3 +303,5 @@ const FontBitmapInfo sDefaultCompositorFont = {
 
 }  // namespace layers
 }  // namespace mozilla
+
+#endif  // GFX_LAYERS_COMPOSITE_FONTDATA_H_

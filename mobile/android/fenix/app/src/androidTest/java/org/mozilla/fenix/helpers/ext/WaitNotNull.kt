@@ -7,9 +7,9 @@ package org.mozilla.fenix.helpers.ext
 import android.util.Log
 import androidx.test.uiautomator.SearchCondition
 import androidx.test.uiautomator.UiDevice
-import org.junit.Assert.assertNotNull
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.TestAssetHelper
+import kotlin.test.assertNotNull
 
 /**
  * Blocks the test for [waitTime] miliseconds before continuing.

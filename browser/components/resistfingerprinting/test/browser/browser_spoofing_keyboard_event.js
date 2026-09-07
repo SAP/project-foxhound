@@ -1940,80 +1940,68 @@ async function testKeyEvent(aTab, aTestCase) {
     testEvents.push("keyup");
   }
 
-  let allKeyEventPromises = [];
+  // Focus the input box before registering listeners to avoid a race.
+  await SpecialPowers.spawn(aTab.linkedBrowser, [], async () => {
+    let inputBox = content.document.getElementById("test");
+    if (content.document.activeElement !== inputBox) {
+      await new Promise(resolve => {
+        inputBox.addEventListener("focus", resolve, { once: true });
+        inputBox.focus();
+      });
+    }
+  });
 
-  for (let testEvent of testEvents) {
-    let keyEventPromise = ContentTask.spawn(
-      aTab.linkedBrowser,
-      { testEvent, result: aTestCase.result },
-      async aInput => {
-        function verifyKeyboardEvent(
-          aEvent,
-          aResult,
-          aSameKeyCodeAndCharCodeValue
-        ) {
-          is(
-            aEvent.key,
-            aResult.key,
-            "KeyboardEvent.key is correctly spoofed."
-          );
-          is(
-            aEvent.code,
-            aResult.code,
-            "KeyboardEvent.code is correctly spoofed."
-          );
-          is(
-            aEvent.location,
-            aResult.location,
-            "KeyboardEvent.location is correctly spoofed."
-          );
-          is(
-            aEvent.altKey,
-            aResult.altKey,
-            "KeyboardEvent.altKey is correctly spoofed."
-          );
-          is(
-            aEvent.shiftKey,
-            aResult.shiftKey,
-            "KeyboardEvent.shiftKey is correctly spoofed."
-          );
-          is(
-            aEvent.ctrlKey,
-            aResult.ctrlKey,
-            "KeyboardEvent.ctrlKey is correctly spoofed."
-          );
+  // Synthesize the key and wait for it to be fully processed in content.
+  // By the time sendQuery resolves, all synchronous event handlers have run
+  // and the result-* elements are already populated.
+  await BrowserTestUtils.synthesizeKey(
+    aTestCase.key,
+    aTestCase.modifiers,
+    aTab.linkedBrowser
+  );
 
-          // If the charCode is not 0, this is a character. The keyCode will be remained as 0.
-          // Otherwise, we should check the keyCode.
-          if (!aSameKeyCodeAndCharCodeValue) {
-            if (aEvent.charCode != 0) {
-              is(
-                aEvent.keyCode,
-                0,
-                "KeyboardEvent.keyCode should be 0 for this case."
-              );
-              is(
-                aEvent.charCode,
-                aResult.charCode,
-                "KeyboardEvent.charCode is correctly spoofed."
-              );
-            } else {
-              is(
-                aEvent.keyCode,
-                aResult.keyCode,
-                "KeyboardEvent.keyCode is correctly spoofed."
-              );
-              is(
-                aEvent.charCode,
-                0,
-                "KeyboardEvent.charCode should be 0 for this case."
-              );
-            }
-          } else if (aResult.charCode) {
+  await SpecialPowers.spawn(
+    aTab.linkedBrowser,
+    [{ testEvents, result: aTestCase.result }],
+    async ({ testEvents: aTestEvents, result }) => {
+      function verifyKeyboardEvent(
+        aEvent,
+        aResult,
+        aSameKeyCodeAndCharCodeValue
+      ) {
+        is(aEvent.key, aResult.key, "KeyboardEvent.key is correctly spoofed.");
+        is(
+          aEvent.code,
+          aResult.code,
+          "KeyboardEvent.code is correctly spoofed."
+        );
+        is(
+          aEvent.location,
+          aResult.location,
+          "KeyboardEvent.location is correctly spoofed."
+        );
+        is(
+          aEvent.altKey,
+          aResult.altKey,
+          "KeyboardEvent.altKey is correctly spoofed."
+        );
+        is(
+          aEvent.shiftKey,
+          aResult.shiftKey,
+          "KeyboardEvent.shiftKey is correctly spoofed."
+        );
+        is(
+          aEvent.ctrlKey,
+          aResult.ctrlKey,
+          "KeyboardEvent.ctrlKey is correctly spoofed."
+        );
+
+        if (!aSameKeyCodeAndCharCodeValue) {
+          if (aEvent.charCode != 0) {
             is(
               aEvent.keyCode,
-              aResult.charCode,
-              "KeyboardEvent.keyCode should be same as expected charCode for this case."
+              0,
+              "KeyboardEvent.keyCode should be 0 for this case."
             );
             is(
               aEvent.charCode,
@@ -2028,89 +2016,66 @@ async function testKeyEvent(aTab, aTestCase) {
             );
             is(
               aEvent.charCode,
-              aResult.keyCode,
-              "KeyboardEvent.charCode should be same as expected keyCode for this case."
+              0,
+              "KeyboardEvent.charCode should be 0 for this case."
             );
           }
-
-          // Check getModifierState().
+        } else if (aResult.charCode) {
           is(
-            aEvent.modifierState.Alt,
-            aResult.altKey,
-            "KeyboardEvent.getModifierState() reports a correctly spoofed value for 'Alt'."
+            aEvent.keyCode,
+            aResult.charCode,
+            "KeyboardEvent.keyCode should be same as expected charCode for this case."
           );
           is(
-            aEvent.modifierState.AltGraph,
-            aResult.altGraphKey,
-            "KeyboardEvent.getModifierState() reports a correctly spoofed value for 'AltGraph'."
+            aEvent.charCode,
+            aResult.charCode,
+            "KeyboardEvent.charCode is correctly spoofed."
+          );
+        } else {
+          is(
+            aEvent.keyCode,
+            aResult.keyCode,
+            "KeyboardEvent.keyCode is correctly spoofed."
           );
           is(
-            aEvent.modifierState.Shift,
-            aResult.shiftKey,
-            `KeyboardEvent.getModifierState() reports a correctly spoofed value for 'Shift'.`
-          );
-          is(
-            aEvent.modifierState.Control,
-            aResult.ctrlKey,
-            `KeyboardEvent.getModifierState() reports a correctly spoofed value for 'Control'.`
+            aEvent.charCode,
+            aResult.keyCode,
+            "KeyboardEvent.charCode should be same as expected keyCode for this case."
           );
         }
 
-        let { testEvent: eventType, result } = aInput;
-        let inputBox = content.document.getElementById("test");
-
-        // We need to put the real access of event object into the content page instead of
-        // here, ContentTask.spawn, since the script running here is under chrome privilege.
-        // So the fingerprinting resistance won't work here.
-        let resElement = content.document.getElementById("result-" + eventType);
-
-        // First, try to focus on the input box.
-        await new Promise(resolve => {
-          if (content.document.activeElement == inputBox) {
-            // the input box already got focused.
-            resolve();
-          } else {
-            inputBox.onfocus = () => {
-              resolve();
-            };
-            inputBox.focus();
-          }
-        });
-
-        // Once the result of the keyboard event ready, the content page will send
-        // a custom event 'resultAvailable' for informing the script to check the
-        // result.
-        await new Promise(resolve => {
-          function eventHandler() {
-            verifyKeyboardEvent(
-              JSON.parse(resElement.value),
-              result,
-              eventType == "keypress"
-            );
-            resElement.removeEventListener(
-              "resultAvailable",
-              eventHandler,
-              true
-            );
-            resolve();
-          }
-
-          resElement.addEventListener("resultAvailable", eventHandler, true);
-        });
+        is(
+          aEvent.modifierState.Alt,
+          aResult.altKey,
+          "KeyboardEvent.getModifierState() reports a correctly spoofed value for 'Alt'."
+        );
+        is(
+          aEvent.modifierState.AltGraph,
+          aResult.altGraphKey,
+          "KeyboardEvent.getModifierState() reports a correctly spoofed value for 'AltGraph'."
+        );
+        is(
+          aEvent.modifierState.Shift,
+          aResult.shiftKey,
+          `KeyboardEvent.getModifierState() reports a correctly spoofed value for 'Shift'.`
+        );
+        is(
+          aEvent.modifierState.Control,
+          aResult.ctrlKey,
+          `KeyboardEvent.getModifierState() reports a correctly spoofed value for 'Control'.`
+        );
       }
-    );
 
-    allKeyEventPromises.push(keyEventPromise);
-  }
-
-  // Send key event to the tab.
-  BrowserTestUtils.synthesizeKey(
-    aTestCase.key,
-    aTestCase.modifiers,
-    aTab.linkedBrowser
+      for (let eventType of aTestEvents) {
+        let resElement = content.document.getElementById("result-" + eventType);
+        verifyKeyboardEvent(
+          JSON.parse(resElement.value),
+          result,
+          eventType == "keypress"
+        );
+      }
+    }
   );
-
-  await Promise.all(allKeyEventPromises);
 }
 
 function eventConsumer(aEvent) {
@@ -2170,41 +2135,22 @@ add_task(async function runTestForSuppressModifierKeys() {
 
   for (let eventType of ["keydown", "keyup"]) {
     for (let modifierKey of ["Alt", "Shift", "Control"]) {
-      let testPromise = ContentTask.spawn(
+      // Focus the input box before registering the listener.
+      await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+        let inputBox = content.document.getElementById("test");
+        if (content.document.activeElement !== inputBox) {
+          await new Promise(resolve => {
+            inputBox.addEventListener("focus", resolve, { once: true });
+            inputBox.focus();
+          });
+        }
+      });
+
+      let testPromise = BrowserTestUtils.waitForContentEvent(
         tab.linkedBrowser,
         eventType,
-        async aEventType => {
-          let inputBox = content.document.getElementById("test");
-
-          // First, try to focus on the input box.
-          await new Promise(resolve => {
-            if (content.document.activeElement == inputBox) {
-              // the input box already got focused.
-              resolve();
-            } else {
-              inputBox.onfocus = () => {
-                resolve();
-              };
-              inputBox.focus();
-            }
-          });
-
-          let event = await new Promise(resolve => {
-            inputBox.addEventListener(
-              aEventType,
-              aEvent => {
-                resolve(aEvent);
-              },
-              { once: true }
-            );
-          });
-
-          is(
-            event.key,
-            "x",
-            "'x' should be seen and the modifier key should be suppressed"
-          );
-        }
+        true,
+        e => e.key == "x"
       );
 
       let modifierState;

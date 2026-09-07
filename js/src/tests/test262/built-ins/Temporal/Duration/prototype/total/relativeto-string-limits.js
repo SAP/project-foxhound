@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -65,5 +65,9 @@ for (const relativeTo of invalidStrings) {
     `"${relativeTo}" is outside the representable range for a relativeTo parameter`
   );
 }
+
+const duration = Temporal.Duration.from({nanoseconds: 0});
+const options = {unit: "nanoseconds", relativeTo: "+999999-01-01"};
+assert.throws(RangeError, () => duration.total(options));
 
 reportCompare(0, 0);

@@ -4,9 +4,9 @@ import pytest
 
 URL = "https://www.dell.com/nl-nl/shop/dell-laptops/scr/laptops"
 
-PRODUCTS_CSS = ".media-gallery-mfe.variant-stack"
+PRODUCTS_CSS = ".media-gallery-mfe.variant-stack-v2"
 POPUP_CSS = "#didomi-notice-agree-button"
-IMAGES_CSS = ".media-gallery-mfe.variant-stack.variant-stack .hero-dell-media figure"
+IMAGES_CSS = ".media-gallery-mfe.variant-stack-v2 .hero-dell-media figure"
 
 
 async def are_images_fullsize(client):
@@ -25,13 +25,6 @@ async def are_images_fullsize(client):
 
 @pytest.mark.skip_platforms("mac")
 @pytest.mark.asyncio
-@pytest.mark.with_interventions
-async def test_enabled(client):
-    assert await are_images_fullsize(client)
-
-
-@pytest.mark.skip_platforms("mac")
-@pytest.mark.asyncio
 @pytest.mark.without_interventions
-async def test_disabled(client):
-    assert not await are_images_fullsize(client)
+async def test_regression(client):
+    assert await are_images_fullsize(client)

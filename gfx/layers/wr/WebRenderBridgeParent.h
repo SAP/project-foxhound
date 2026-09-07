@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #define mozilla_layers_WebRenderBridgeParent_h
 
 #include <unordered_map>
-#include <unordered_set>
 
 #include "CompositableHost.h"  // for CompositableHost, ImageCompositeNotificationInfo
 #include "GLContextProvider.h"
@@ -16,9 +13,7 @@
 #include "mozilla/layers/CompositableTransactionParent.h"
 #include "mozilla/layers/CompositorVsyncSchedulerOwner.h"
 #include "mozilla/layers/PWebRenderBridgeParent.h"
-#include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Result.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
@@ -44,8 +39,10 @@ namespace layers {
 
 class AsyncImagePipelineManager;
 class Compositor;
+class CompositorBridgeParent;
 class CompositorBridgeParentBase;
 class CompositorVsyncScheduler;
+class ContentCompositorBridgeParent;
 class OMTASampler;
 class RemoteTextureTxnScheduler;
 class UiCompositorControllerParent;
@@ -67,25 +64,45 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                                     public CompositableParentManager,
                                     public FrameRecorder {
  public:
-  WebRenderBridgeParent(CompositorBridgeParentBase* aCompositorBridge,
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebRenderBridgeParent, final);
+
+  // Constructor for root WebRenderBridgeParents.
+  WebRenderBridgeParent(CompositorBridgeParent* aCompositorBridge,
                         const wr::PipelineId& aPipelineId,
                         widget::CompositorWidget* aWidget,
+                        TimeDuration aVsyncRate);
+
+  // Constructor for content WebRenderBridgeParents.
+  WebRenderBridgeParent(ContentCompositorBridgeParent* aCompositorBridge,
+                        const wr::PipelineId& aPipelineId,
                         CompositorVsyncScheduler* aScheduler,
                         RefPtr<wr::WebRenderAPI>&& aApi,
                         RefPtr<AsyncImagePipelineManager>&& aImageMgr,
                         TimeDuration aVsyncRate);
 
-  static WebRenderBridgeParent* CreateDestroyed(
+  WebRenderBridgeParent(const wr::PipelineId& aPipelineId, nsCString&& aError);
+
+  static already_AddRefed<WebRenderBridgeParent> CreateDestroyed(
       const wr::PipelineId& aPipelineId, nsCString&& aError);
 
+  // Ensures the WebRenderBridgeParent has completed initialization, returning
+  // true if successful, or false if initialization failed or the bridge is
+  // alreay destroyed. Must only be called from Compositor thread.
+  bool EnsureInitialized();
+
+  // Called for root WebRenderBridgeParents to complete initialization once the
+  // WebRenderAPI and AsyncImagePipelineManager have been created.
+  void FinishInitialization(RefPtr<wr::WebRenderAPI>&& aApi,
+                            RefPtr<AsyncImagePipelineManager>&& aImageMgr);
+  void FinishInitializationError(nsCString&& aError);
+
   wr::PipelineId PipelineId() { return mPipelineId; }
-  already_AddRefed<wr::WebRenderAPI> GetWebRenderAPI() {
-    return do_AddRef(mApi);
-  }
-  AsyncImagePipelineManager* AsyncImageManager() { return mAsyncImageManager; }
-  CompositorVsyncScheduler* CompositorScheduler() {
-    return mCompositorScheduler.get();
-  }
+  // Must only be called from Compositor thread.
+  already_AddRefed<wr::WebRenderAPI> GetWebRenderAPI();
+  // Must only be called from Compositor thread.
+  AsyncImagePipelineManager* AsyncImageManager();
+  // Must only be called from Compositor thread.
+  CompositorVsyncScheduler* CompositorScheduler();
   CompositorBridgeParentBase* GetCompositorBridge() {
     return mCompositorBridge;
   }
@@ -145,7 +162,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       const wr::RenderReasons& aReasons) override;
   mozilla::ipc::IPCResult RecvCapture() override;
   mozilla::ipc::IPCResult RecvStartCaptureSequence(
-      const nsACString& path, const uint32_t& aFlags) override;
+      const uint32_t& aFlags) override;
   mozilla::ipc::IPCResult RecvStopCaptureSequence() override;
   mozilla::ipc::IPCResult RecvSyncWithCompositor() override;
 
@@ -196,8 +213,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   dom::ContentParentId GetContentId() override;
   void NotifyNotUsed(PTextureParent* aTexture,
                      uint64_t aTransactionId) override;
-  void SendAsyncMessage(
-      const nsTArray<AsyncParentMessageData>& aMessage) override;
+  void SendAsyncMessage(Span<const AsyncParentMessageData>) override;
   void SendPendingAsyncMessages() override;
   void SetAboutToSendAsyncMessages() override;
 
@@ -227,10 +243,9 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       nsTArray<ImageCompositeNotificationInfo>* aNotifications);
 
   wr::Epoch GetCurrentEpoch() const { return mWrEpoch; }
-  wr::IdNamespace GetIdNamespace() { return mIdNamespace; }
 
   bool MatchesNamespace(const wr::ImageKey& aImageKey) const {
-    return aImageKey.mNamespace == mIdNamespace;
+    return aImageKey.mNamespace == mLateInit->mIdNamespace;
   }
 
   bool MatchesNamespace(const wr::BlobImageKey& aBlobKey) const {
@@ -242,11 +257,16 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   }
 
   bool MatchesNamespace(const wr::FontKey& aFontKey) const {
-    return aFontKey.mNamespace == mIdNamespace;
+    return aFontKey.mNamespace == mLateInit->mIdNamespace;
   }
 
   bool MatchesNamespace(const wr::FontInstanceKey& aFontKey) const {
-    return aFontKey.mNamespace == mIdNamespace;
+    return aFontKey.mNamespace == mLateInit->mIdNamespace;
+  }
+
+  bool OwnsExternalImageId(const wr::ExternalImageId& aId) const {
+    return static_cast<uint32_t>(wr::AsUint64(aId) >> 32) ==
+           mLateInit->mIdNamespace.mHandle;
   }
 
   void FlushRendering(wr::RenderReasons aReasons, bool aBlocking);
@@ -296,18 +316,20 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   void BeginRecording(const TimeStamp& aRecordingStart);
 
 #if defined(MOZ_WIDGET_ANDROID)
+  using ScreenPixelsPromise =
+      MozPromise<RefPtr<layers::AndroidHardwareBuffer>, nsresult, true>;
   /**
    * Request a screengrab for android
    */
-  void RequestScreenPixels(UiCompositorControllerParent* aController);
-  void MaybeCaptureScreenPixels();
+  RefPtr<ScreenPixelsPromise> RequestScreenPixels(gfx::IntRect aSourceRect,
+                                                  gfx::IntSize aDestSize);
 #endif
+
   /**
    * Stop recording and the frames collected since the call to BeginRecording
    */
   RefPtr<wr::WebRenderAPI::EndRecordingPromise> EndRecording();
 
-  void DisableNativeCompositor();
   void AddPendingScrollPayload(CompositionPayload& aPayload,
                                const VsyncId& aCompositeStartId);
 
@@ -321,7 +343,6 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
  private:
   class ScheduleSharedSurfaceRelease;
 
-  WebRenderBridgeParent(const wr::PipelineId& aPipelineId, nsCString&& aError);
   virtual ~WebRenderBridgeParent();
 
   bool ProcessEmptyTransactionUpdates(TransactionData& aData,
@@ -333,7 +354,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                               const VsyncId& aVsyncId);
 
   bool SetDisplayList(const LayoutDeviceRect& aRect, ipc::ByteBuf&& aDLItems,
-                      ipc::ByteBuf&& aDLCache, ipc::ByteBuf&& aSpatialTreeDL,
+                      ipc::ByteBuf&& aSpatialTreeDL,
                       const wr::BuiltDisplayListDescriptor& aDLDesc,
                       const nsTArray<OpUpdateResource>& aResourceUpdates,
                       const nsTArray<RefCountedShmem>& aSmallShmems,
@@ -415,6 +436,13 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   void MaybeGenerateFrame(VsyncId aId, bool aForceGenerateFrame,
                           wr::RenderReasons aReasons);
 
+#if defined(MOZ_WIDGET_ANDROID)
+  // If screen pixels have been requested via RequestScreenPixels(), sends the
+  // request to the renderer. Should be called immediately prior to generating
+  // the frame for which we want the pixels to be captured.
+  void MaybeCaptureScreenPixels();
+#endif
+
   VsyncId GetVsyncIdForEpoch(const wr::Epoch& aEpoch) {
     for (auto& id : mPendingTransactionIds) {
       if (id.mEpoch.mHandle == aEpoch.mHandle) {
@@ -466,9 +494,18 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   CompositorBridgeParentBase* MOZ_NON_OWNING_REF mCompositorBridge;
   wr::PipelineId mPipelineId;
   RefPtr<widget::CompositorWidget> mWidget;
-  RefPtr<wr::WebRenderAPI> mApi;
-  RefPtr<AsyncImagePipelineManager> mAsyncImageManager;
-  RefPtr<CompositorVsyncScheduler> mCompositorScheduler;
+
+  // Members that may be initialized after construction. Accessing via a `Maybe`
+  // ensures a safe crash when attempting to access a member before it has been
+  // initialized.
+  struct LateInit {
+    RefPtr<wr::WebRenderAPI> mApi;
+    RefPtr<AsyncImagePipelineManager> mAsyncImageManager;
+    RefPtr<CompositorVsyncScheduler> mCompositorScheduler;
+    wr::IdNamespace mIdNamespace;
+  };
+  Maybe<LateInit> mLateInit;
+
   // mActiveAnimations is used to avoid leaking animations when
   // WebRenderBridgeParent is destroyed abnormally and Tab move between
   // different windows.
@@ -482,8 +519,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
 
   std::deque<PendingTransactionId> mPendingTransactionIds;
   std::queue<CompositorAnimationIdsForEpoch> mCompositorAnimationsToDelete;
-  wr::Epoch mWrEpoch;
-  wr::IdNamespace mIdNamespace;
+  wr::Epoch mWrEpoch{0};
   CompositionOpportunityId mCompositionOpportunityId;
   nsCString mInitError;
 
@@ -492,20 +528,25 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   RefPtr<WebRenderBridgeParentRef> mWebRenderBridgeRef;
 
 #if defined(MOZ_WIDGET_ANDROID)
-  UiCompositorControllerParent* mScreenPixelsTarget;
+  struct ScreenPixelsRequest {
+    gfx::IntRect mSourceRect;
+    gfx::IntSize mDestSize;
+    RefPtr<ScreenPixelsPromise::Private> mPromise;
+  };
+  Maybe<ScreenPixelsRequest> mScreenPixelsRequest;
 #endif
-  uint32_t mBoolParameterBits;
-  uint16_t mBlobTileSize;
-  wr::RenderReasons mSkippedCompositeReasons;
-  bool mDestroyed;
-  bool mIsFirstPaint;
+
+  uint32_t mBoolParameterBits = 0;
+  uint16_t mBlobTileSize = 256;
+  wr::RenderReasons mSkippedCompositeReasons = wr::RenderReasons::NONE;
+  bool mDestroyed = false;
+  bool mIsFirstPaint = false;
   bool mLastNotifiedHasLayers = false;
   bool mReceivedDisplayList = false;
   bool mSkippedComposite = false;
-  bool mDisablingNativeCompositor = false;
   // These payloads are being used for SCROLL_PRESENT_LATENCY telemetry
   DataMutex<nsClassHashtable<nsUint64HashKey, nsTArray<CompositionPayload>>>
-      mPendingScrollPayloads;
+      mPendingScrollPayloads{"WebRenderBridgeParent::mPendingScrollPayloads"};
 
   RefPtr<RemoteTextureTxnScheduler> mRemoteTextureTxnScheduler;
 };

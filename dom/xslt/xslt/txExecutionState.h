@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,18 +5,18 @@
 #ifndef TRANSFRMX_TXEXECUTIONSTATE_H
 #define TRANSFRMX_TXEXECUTIONSTATE_H
 
-#include "txCore.h"
-#include "txStack.h"
-#include "txXMLUtils.h"
-#include "txIXPathContext.h"
-#include "txVariableMap.h"
-#include "nsTHashtable.h"
-#include "nsHashKeys.h"
-#include "txKey.h"
-#include "txStylesheet.h"
-#include "txXPathTreeWalker.h"
-#include "nsTArray.h"
 #include "mozilla/Result.h"
+#include "nsHashKeys.h"
+#include "nsTArray.h"
+#include "nsTHashtable.h"
+#include "txCore.h"
+#include "txIXPathContext.h"
+#include "txKey.h"
+#include "txStack.h"
+#include "txStylesheet.h"
+#include "txVariableMap.h"
+#include "txXMLUtils.h"
+#include "txXPathTreeWalker.h"
 
 class txAOutputHandlerFactory;
 class txAXMLEventHandler;

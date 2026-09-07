@@ -242,10 +242,9 @@ def start_script(
             timeout=script_timeout,
             yield_stdout=True,
         )
-        for test_output in aggregate_script_stdout(
+        yield from aggregate_script_stdout(
             adb_process, prefix, tempdir, uniq_tag, tests, options
-        ):
-            yield test_output
+        )
     except ADBProcessError as e:
         # After a device error, the device is typically in a
         # state where all further tests will fail so there is no point in
@@ -276,7 +275,6 @@ def get_remote_results(tests, prefix, pb, options):
         device, prefix, tempdir, options, uniq_tag, tests
     )
 
-    for test_output in start_script(
+    yield from start_script(
         device, prefix, tempdir, script, uniq_tag, script_timeout, tests, options
-    ):
-        yield test_output
+    )

@@ -19,13 +19,13 @@ impl DC {
     /// Create a new DC.
     pub fn new(hwnd: HWND) -> Option<Self> {
         let hdc = unsafe { Gdi::GetDC(hwnd) };
-        (hdc != 0).then_some(DC { hwnd, hdc })
+        (!hdc.is_null()).then_some(DC { hwnd, hdc })
     }
 
     /// Call the given function with a gdi object selected.
     pub fn with_object_selected<R>(&self, object: HGDIOBJ, f: impl FnOnce(HDC) -> R) -> Option<R> {
         let old_object = unsafe { Gdi::SelectObject(self.hdc, object) };
-        if old_object == 0 || old_object == GDI_ERROR as isize {
+        if old_object.is_null() || old_object == GDI_ERROR as HGDIOBJ {
             return None;
         }
         let ret = f(self.hdc);

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -16,7 +16,7 @@ includes: [temporalHelpers.js]
 
 let d1 = new Temporal.Duration();
 TemporalHelpers.assertDuration(
-    d1.abs(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "empty");
+    d1.abs(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "blank");
 
 let d2 = new Temporal.Duration(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 TemporalHelpers.assertDuration(

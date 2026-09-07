@@ -12,10 +12,12 @@
 
 #include <string>
 
-namespace cricket {
+#include "absl/strings/string_view.h"
+
+namespace webrtc {
 
 RidDescription::RidDescription() = default;
-RidDescription::RidDescription(const std::string& rid, RidDirection direction)
+RidDescription::RidDescription(absl::string_view rid, RidDirection direction)
     : rid{rid}, direction{direction} {}
 RidDescription::RidDescription(const RidDescription& other) = default;
 RidDescription::~RidDescription() = default;
@@ -26,4 +28,4 @@ bool RidDescription::operator==(const RidDescription& other) const {
          codecs == other.codecs && restrictions == other.restrictions;
 }
 
-}  // namespace cricket
+}  // namespace webrtc

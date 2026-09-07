@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 4 -*-
- * vim: sw=4 ts=4 sts=4 et filetype=javascript
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -28,17 +26,17 @@ export var NetUtil = {
    * to aSink (an output stream).  The copy will happen on some background
    * thread.  Both streams will be closed when the copy completes.
    *
-   * @param aSource
+   * @param {nsIInputStream} aSource
    *        The input stream to read from
-   * @param aSink
+   * @param {nsIOutputStream} aSink
    *        The output stream to write to
-   * @param aCallback [optional]
+   * @param {(arg0: nsresult) => void}[aCallback]
    *        A function that will be called at copy completion with a single
    *        argument: the nsresult status code for the copy operation.
    *
-   * @return An nsIRequest representing the copy operation (for example, this
-   *         can be used to cancel the copying).  The consumer can ignore the
-   *         return value if desired.
+   * @return {nsIAsyncStreamCopier2}
+   *   Represents the copy operation (for example, this can be used to cancel
+   *   the copying). The consumer can ignore the return value if desired.
    */
   asyncCopy: function NetUtil_asyncCopy(aSource, aSink, aCallback = null) {
     if (!aSource || !aSink) {
@@ -85,13 +83,13 @@ export var NetUtil = {
    * is asynchronous, I/O may happen on the main thread.  When reading from
    * a local file, prefer using IOUtils methods instead.
    *
-   * @param aSource
+   * @param {nsIChannel|nsIInputStream} aSource
    *        This argument can be one of the following:
    *         - An options object that will be passed to NetUtil.newChannel.
    *         - An existing nsIChannel.
    *         - An existing nsIInputStream.
    *        Using an nsIURI, nsIFile, or string spec directly is deprecated.
-   * @param aCallback
+   * @param {(stream: nsIInputStream, status: nsresult, request: nsIRequest) => void} aCallback
    *        The callback function that will be notified upon completion.  It
    *        will get these arguments:
    *        1) An nsIInputStream containing the data from aSource, if any.
@@ -158,12 +156,12 @@ export var NetUtil = {
    * Constructs a new URI for the given spec, character set, and base URI, or
    * an nsIFile.
    *
-   * @param aTarget
-   *        The string spec for the desired URI or an nsIFile.
-   * @param aOriginCharset [optional]
+   * @param {string|nsIFile} aTarget
+   *        The desired URI.
+   * @param {string} [aOriginCharset]
    *        The character set for the URI.  Only used if aTarget is not an
    *        nsIFile.
-   * @param aBaseURI [optional]
+   * @param {nsIURI} [aBaseURI]
    *        The base URI for the spec.  Only used if aTarget is not an
    *        nsIFile.
    *
@@ -192,31 +190,25 @@ export var NetUtil = {
    * Keep in mind that URIs coming from a webpage should *never* use the
    * systemPrincipal as the loadingPrincipal.
    *
-   * @param aWhatToLoad
-   *        This argument used to be a string spec for the desired URI, an
-   *        nsIURI, or an nsIFile.  Now it should be an options object with
-   *        the following properties:
-   *        {
-   *          uri:
-   *            The full URI spec string, nsIURI or nsIFile to create the
-   *            channel for.
-   *            Note that this cannot be an nsIFile if you have to specify a
-   *            non-default charset or base URI.  Call NetUtil.newURI first if
-   *            you need to construct an URI using those options.
-   *          loadingNode:
-   *          loadingPrincipal:
-   *          triggeringPrincipal:
-   *          securityFlags:
-   *          contentPolicyType:
-   *            These will be used as values for the nsILoadInfo object on the
-   *            created channel. For details, see nsILoadInfo in nsILoadInfo.idl
-   *          loadUsingSystemPrincipal:
-   *            Set this to true to use the system principal as
-   *            loadingPrincipal.  This must be omitted if loadingPrincipal or
-   *            loadingNode are present.
-   *            This should be used with care as it skips security checks.
-   *        }
-   * @return an nsIChannel object.
+   * @param {object} aWhatToLoad
+   *        The options for what to load.
+   * @param {string|nsIURI|nsIFile} aWhatToLoad.uri
+   *        The URI to create the channel for.
+   *        Note that this cannot be an nsIFile if you have to specify a
+   *        non-default charset or base URI.  Call NetUtil.newURI first if
+   *        you need to construct an URI using those options.
+   * @param {Node} aWhatToLoad.loadingNode
+   * @param {nsIPrincipal} aWhatToLoad.loadingPrincipal
+   * @param {nsIPrincipal} aWhatToLoad.triggeringPrincipal
+   * @param {number} [aWhatToLoad.securityFlags]
+   * @param {nsContentPolicyType} [aWhatToLoad.contentPolicyType]
+   *        These will be used as values for the nsILoadInfo object on the
+   *        created channel. For details, see nsILoadInfo in nsILoadInfo.idl
+   * @param {boolean} [aWhatToLoad.loadUsingSystemPrincipal]
+   *        Set this to true to use the system principal as loadingPrincipal.
+   *        Yhis must be omitted if loadingPrincipal or loadingNode are present.
+   *        This should be used with care as it skips security checks.
+   * @return {nsIChannel}
    */
   newChannel: function NetUtil_newChannel(aWhatToLoad) {
     // Make sure the API is called using only the options object.
@@ -325,18 +317,18 @@ export var NetUtil = {
   /**
    * Reads aCount bytes from aInputStream into a string.
    *
-   * @param aInputStream
+   * @param {nsIInputStream} aInputStream
    *        The input stream to read from.
-   * @param aCount
+   * @param {number} aCount
    *        The number of bytes to read from the stream.
-   * @param aOptions [optional]
-   *        charset
-   *          The character encoding of stream data.
-   *        replacement
-   *          The character to replace unknown byte sequences.
-   *          If unset, it causes an exceptions to be thrown.
+   * @param {object} [aOptions]
+   * @param {string} [aOptions.charset]
+   *        The character encoding of stream data.
+   * @param {number} [aOptions.replacement]
+   *        The character to replace unknown byte sequences.
+   *        If unset, it causes an exceptions to be thrown.
    *
-   * @return the bytes from the input stream in string form.
+   * @return {string} the bytes from the input stream in string form.
    *
    * @throws NS_ERROR_INVALID_ARG if aInputStream is not an nsIInputStream.
    * @throws NS_BASE_STREAM_WOULD_BLOCK if reading from aInputStream would
@@ -420,10 +412,10 @@ export var NetUtil = {
    *
    * @param {nsIInputStream} aInputStream
    *        The input stream to read from.
-   * @param {integer} [aCount = aInputStream.available()]
+   * @param {number} [aCount = aInputStream.available()]
    *        The number of bytes to read from the stream.
    *
-   * @return the bytes from the input stream in string form.
+   * @return {ArrayBuffer} the bytes from the input stream in string form.
    *
    * @throws NS_ERROR_INVALID_ARG if aInputStream is not an nsIInputStream.
    * @throws NS_BASE_STREAM_WOULD_BLOCK if reading from aInputStream would

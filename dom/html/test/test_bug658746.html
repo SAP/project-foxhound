@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=658746
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 658746 **/
+/** Test for Bug 658746 */
 
 /**
  * Sets property, gets property and deletes property.
@@ -83,8 +83,9 @@ SetGetDelete(undefined);
 SetGetDelete(new Array());
 SetGetDelete([]);
 
-// Non-empty array and object as properties.
-SetExpectException(['a', 'b']);
+// Non-empty array as property - comma is now valid with relaxed attribute rules.
+SetGetDelete(['a', 'b']);
+// Object as property - "[object Object]" contains space which is still invalid.
 SetExpectException({'a':'b'});
 
 // Objects as properties.

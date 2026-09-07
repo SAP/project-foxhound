@@ -342,7 +342,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=772796
 ],
 ];
 
-    /** Test for Bug 772796 **/
+    /** Test for Bug 772796 */
 
     SimpleTest.waitForExplicitFinish();
     SimpleTest.waitForFocus(function() {
@@ -385,7 +385,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=772796
         }
 
         let todoCount = 0;
-        /** First round: Forward delete. **/
+        /** First round: Forward delete. */
         synthesizeKey("KEY_Delete");
         normalizeStyeAttributeValues(theDiv);
         if (tests[i].length == 2 || theDiv.innerHTML == tests[i][1]) {
@@ -403,7 +403,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=772796
         sel.collapse(theDiv, 0);
         synthesizeMouse(theDiv, 100, 2, {}); /* click behind and down */
 
-        /** Second round: Backspace. **/
+        /** Second round: Backspace. */
         synthesizeKey("KEY_ArrowRight");
         synthesizeKey("KEY_Backspace");
         normalizeStyeAttributeValues(theDiv);
@@ -422,7 +422,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=772796
         sel.collapse(theDiv, 0);
         synthesizeMouse(theDiv, 100, 2, {}); /* click behind and down */
 
-        /** Third round: Delete with non-collapsed selection. **/
+        /** Third round: Delete with non-collapsed selection. */
         if (i == 72) {
           if (tests[i].length == 3) {
             ok(!!todoCount, `All tests unexpectedly passed in ${testName}`);

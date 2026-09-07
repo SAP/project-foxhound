@@ -14,6 +14,8 @@
 #include <string>
 
 #include "api/async_dns_resolver.h"
+#include "api/environment/environment.h"
+#include "api/local_network_access_permission.h"
 #include "api/ref_count.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/scoped_refptr.h"
@@ -35,13 +37,13 @@ class IceTransportInterface : public RefCountInterface {
   // The returned object can only be safely used on the signalling thread.
   // TODO(crbug.com/907849): Add API calls for the functions that have to
   // be exposed to clients, and stop allowing access to the
-  // cricket::IceTransportInternal API.
+  // IceTransportInternal API.
   virtual IceTransportInternal* internal() = 0;
 };
 
-struct IceTransportInit final {
+class IceTransportInit final {
  public:
-  IceTransportInit() = default;
+  explicit IceTransportInit(const Environment& env) : env_(env) {}
   IceTransportInit(const IceTransportInit&) = delete;
   IceTransportInit(IceTransportInit&&) = default;
   IceTransportInit& operator=(const IceTransportInit&) = delete;
@@ -60,8 +62,16 @@ struct IceTransportInit final {
     async_dns_resolver_factory_ = async_dns_resolver_factory;
   }
 
-  RtcEventLog* event_log() { return event_log_; }
-  void set_event_log(RtcEventLog* event_log) { event_log_ = event_log; }
+  LocalNetworkAccessPermissionFactoryInterface* lna_permission_factory() {
+    return lna_permission_factory_;
+  }
+
+  void set_lna_permission_factory(
+      LocalNetworkAccessPermissionFactoryInterface* lna_permission_factory) {
+    lna_permission_factory_ = lna_permission_factory;
+  }
+
+  RtcEventLog* event_log() { return &env_.event_log(); }
 
   void set_ice_controller_factory(
       IceControllerFactoryInterface* ice_controller_factory) {
@@ -90,18 +100,18 @@ struct IceTransportInit final {
     return active_ice_controller_factory_;
   }
 
-  const FieldTrialsView* field_trials() { return field_trials_; }
-  void set_field_trials(const FieldTrialsView* field_trials) {
-    field_trials_ = field_trials;
-  }
+  const FieldTrialsView* field_trials() { return &env_.field_trials(); }
+
+  const Environment& env() { return env_; }
 
  private:
+  Environment env_;
   PortAllocator* port_allocator_ = nullptr;
   AsyncDnsResolverFactoryInterface* async_dns_resolver_factory_ = nullptr;
-  RtcEventLog* event_log_ = nullptr;
+  LocalNetworkAccessPermissionFactoryInterface* lna_permission_factory_ =
+      nullptr;
   IceControllerFactoryInterface* ice_controller_factory_ = nullptr;
   ActiveIceControllerFactoryInterface* active_ice_controller_factory_ = nullptr;
-  const FieldTrialsView* field_trials_ = nullptr;
   // TODO(https://crbug.com/webrtc/12657): Redesign to have const members.
 };
 
@@ -121,7 +131,7 @@ class IceTransportFactory {
   // requires the returned transport to be constructed and destroyed on the
   // network thread and an ICE transport factory that intends to work with a
   // peer connection should offer transports compatible with these assumptions.
-  virtual rtc::scoped_refptr<IceTransportInterface> CreateIceTransport(
+  virtual scoped_refptr<IceTransportInterface> CreateIceTransport(
       const std::string& transport_name,
       int component,
       IceTransportInit init) = 0;

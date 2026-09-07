@@ -16,25 +16,13 @@ SimpleTest.requestFlakyTimeout(
   "Wait for a period of the time where touch events trigger a fast fling"
 );
 
-const isAndroid = getPlatform() == "android";
-async function synthesizeNativeTouchOnWindow(aX, aY, aType) {
-  // We use `synthesizeNativeTouch` directly here since with
-  // `synthesizeNativeTouchSequences` we can't do fast fling because
-  // every time stamp difference of each touch event becomes smaller than
-  // `MIN_VELOCITY_SAMPLE_TIME` (50ms) on desktops.
-  await synthesizeNativeTouch(document.documentElement, aX, aY, aType);
-  if (!isAndroid) {
-    // Wait 50ms.
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-}
-
 async function test() {
   let scrollEventPromise = waitForScrollEvent(window);
   let touchendEventPromise = promiseOneEvent(window, "touchend");
 
   // Do a fast fling.
-  await synthesizeNativeTouchOnWindow(
+  await synthesizeNativeTouchForFastFling(
+                              document.documentElement,
                               100, 400,
                               SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
 
@@ -42,16 +30,20 @@ async function test() {
   // main-thread has been received in APZ.
   await promiseApzFlushedRepaints();
 
-  await synthesizeNativeTouchOnWindow(
+  await synthesizeNativeTouchForFastFling(
+                              document.documentElement,
                               100, 390,
                               SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
-  await synthesizeNativeTouchOnWindow(
+  await synthesizeNativeTouchForFastFling(
+                              document.documentElement,
                               100, 380,
                               SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
-  await synthesizeNativeTouchOnWindow(
+  await synthesizeNativeTouchForFastFling(
+                              document.documentElement,
                               100, 370,
                               SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
-  await synthesizeNativeTouchOnWindow(
+  await synthesizeNativeTouchForFastFling(
+                              document.documentElement,
                               100, 100,
                               SpecialPowers.DOMWindowUtils.TOUCH_REMOVE);
 

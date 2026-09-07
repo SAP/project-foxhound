@@ -8,8 +8,8 @@ import android.content.Context
 import android.util.AttributeSet
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
-import com.google.android.material.switchmaterial.SwitchMaterial
-import mozilla.components.support.utils.BrowsersCache
+import com.google.android.material.materialswitch.MaterialSwitch
+import mozilla.components.support.utils.Browsers
 import org.mozilla.fenix.R
 
 class DefaultBrowserPreference @JvmOverloads constructor(
@@ -17,7 +17,7 @@ class DefaultBrowserPreference @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : Preference(context, attrs) {
 
-    private var switchView: SwitchMaterial? = null
+    private var switchView: MaterialSwitch? = null
 
     init {
         widgetLayoutResource = R.layout.preference_default_browser
@@ -25,13 +25,12 @@ class DefaultBrowserPreference @JvmOverloads constructor(
 
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
-        switchView = holder.findViewById(R.id.switch_widget) as SwitchMaterial
+        switchView = holder.findViewById(R.id.switch_widget) as MaterialSwitch
 
         updateSwitch()
     }
 
     fun updateSwitch() {
-        val browsers = BrowsersCache.all(context)
-        switchView?.isChecked = browsers.isDefaultBrowser
+        switchView?.isChecked = Browsers.isDefaultBrowser(context)
     }
 }

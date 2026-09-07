@@ -121,7 +121,7 @@
               case "url":
                 is(text, node.uri, "Uri is correct");
                 break;
-              case "date":
+              case "date": {
                 let timeObj = new Date(node.time / 1000);
                 // Default is short date format.
                 let dtOptions = {
@@ -142,6 +142,7 @@
 
                 is(text, timeStr, "Date format is correct");
                 break;
+              }
               case "visitCount":
                 is(text, 1, "Visit count is correct");
                 break;

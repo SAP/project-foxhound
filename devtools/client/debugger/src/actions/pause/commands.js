@@ -8,7 +8,9 @@ import {
   getIsCurrentThreadPaused,
   getIsPaused,
 } from "../../selectors/index";
-import { PROMISE } from "../utils/middleware/promise";
+const {
+  PROMISE,
+} = require("resource://devtools/client/shared/redux/middleware/promise.js");
 import { evaluateExpressions } from "../expressions";
 import { selectLocation } from "../sources/index";
 import { fetchScopes } from "./fetchScopes";

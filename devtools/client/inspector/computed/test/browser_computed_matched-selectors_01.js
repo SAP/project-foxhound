@@ -24,7 +24,7 @@ async function testMatchedSelectors(view, inspector) {
   const nodeFront = await getNodeFront("#test", inspector);
   is(
     nodeFront,
-    view.viewedElement,
+    view.selectedNodeFront,
     "style inspector node matches the selected node"
   );
 

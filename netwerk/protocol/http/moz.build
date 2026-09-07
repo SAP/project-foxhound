@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -14,8 +12,10 @@ XPIDL_SOURCES += [
     "nsICORSPreflightCacheEntry.idl",
     "nsIEarlyHintObserver.idl",
     "nsIHttpActivityObserver.idl",
+    "nsIHttpAuthCache.idl",
     "nsIHttpAuthenticableChannel.idl",
     "nsIHttpAuthenticator.idl",
+    "nsIHttpAuthEntry.idl",
     "nsIHttpAuthManager.idl",
     "nsIHttpChannel.idl",
     "nsIHttpChannelAuthProvider.idl",
@@ -26,7 +26,6 @@ XPIDL_SOURCES += [
     "nsINetworkErrorLogging.idl",
     "nsIObliviousHttp.idl",
     "nsIObliviousHttpChannel.idl",
-    "nsIRaceCacheWithNetwork.idl",
     "nsIReplacedHttpResponse.idl",
     "nsITlsHandshakeListener.idl",
     "nsIWellKnownOpportunisticUtils.idl",
@@ -37,7 +36,7 @@ XPIDL_MODULE = "necko_http"
 EXPORTS += [
     "nsCORSListenerProxy.h",
     "nsHttp.h",
-    "nsHttpAtomList.h",
+    "nsHttpAtomList.inc",
     "nsHttpHeaderArray.h",
     "nsHttpRequestHead.h",
     "nsHttpResponseHead.h",
@@ -54,6 +53,8 @@ EXPORTS.mozilla.net += [
     "BackgroundDataBridgeChild.h",
     "BackgroundDataBridgeParent.h",
     "CacheControlParser.h",
+    "CacheEntryWriteHandleChild.h",
+    "CacheEntryWriteHandleParent.h",
     "ClassOfService.h",
     "EarlyHintPreloader.h",
     "EarlyHintRegistrar.h",
@@ -68,6 +69,7 @@ EXPORTS.mozilla.net += [
     "HttpConnectionMgrParent.h",
     "HttpConnectionMgrShell.h",
     "HttpInfo.h",
+    "HttpTrafficAnalyzer.h",
     "HttpTransactionChild.h",
     "HttpTransactionParent.h",
     "HttpTransactionShell.h",
@@ -105,14 +107,19 @@ UNIFIED_SOURCES += [
     "CapsuleDecoder.cpp",
     "CapsuleEncoder.cpp",
     "CapsuleParser.cpp",
+    "ConnectionAttempt.cpp",
+    "ConnectionAttemptPool.cpp",
     "ConnectionDiagnostics.cpp",
     "ConnectionEntry.cpp",
+    "ConnectionEstablisher.cpp",
     "ConnectionHandle.cpp",
     "DnsAndConnectSocket.cpp",
     "EarlyHintPreconnect.cpp",
     "EarlyHintPreloader.cpp",
     "EarlyHintRegistrar.cpp",
     "EarlyHintsService.cpp",
+    "HappyEyeballsConnectionAttempt.cpp",
+    "HappyEyeballsTransaction.cpp",
     "Http2Compression.cpp",
     "Http2Session.cpp",
     "Http2Stream.cpp",
@@ -120,8 +127,10 @@ UNIFIED_SOURCES += [
     "Http2StreamTunnel.cpp",
     "Http2WebTransportSession.cpp",
     "Http2WebTransportStream.cpp",
+    "Http3ConnectUDPStream.cpp",
     "Http3Session.cpp",
     "Http3Stream.cpp",
+    "Http3StreamTunnel.cpp",
     "Http3WebTransportSession.cpp",
     "Http3WebTransportStream.cpp",
     "HttpAuthUtils.cpp",
@@ -179,6 +188,7 @@ UNIFIED_SOURCES += [
     "WebTransportFlowControl.cpp",
     "WebTransportSessionBase.cpp",
     "WebTransportStreamBase.cpp",
+    "ZeroRttHandle.cpp",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
@@ -205,6 +215,7 @@ IPDL_SOURCES += [
     "PAltService.ipdl",
     "PAltSvcTransaction.ipdl",
     "PBackgroundDataBridge.ipdl",
+    "PCacheEntryWriteHandle.ipdl",
     "PHttpBackgroundChannel.ipdl",
     "PHttpChannel.ipdl",
     "PHttpConnectionMgr.ipdl",
@@ -238,6 +249,8 @@ EXTRA_JS_MODULES += [
     "ObliviousHTTP.sys.mjs",
     "WellKnownOpportunisticUtils.sys.mjs",
 ]
+
+DIRS += ["happy_eyeballs_glue"]
 
 XPCOM_MANIFESTS += [
     "components.conf",

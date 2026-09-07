@@ -377,497 +377,503 @@ assert_malformed(
 
 // ./test/core/simd/simd_const.wast:137
 assert_malformed(
-  () => instantiate(`(func (v128.const i8x16 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256) drop) `),
+  () => instantiate(`(func (v128.const i8x16 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101 -0x101) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:141
 assert_malformed(
-  () => instantiate(`(func (v128.const i8x16 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129) drop) `),
+  () => instantiate(`(func (v128.const i8x16 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256 256) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:145
 assert_malformed(
-  () => instantiate(`(func (v128.const i16x8 0x10000 0x10000 0x10000 0x10000 0x10000 0x10000 0x10000 0x10000) drop) `),
+  () => instantiate(`(func (v128.const i8x16 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129 -129) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:149
 assert_malformed(
-  () => instantiate(`(func (v128.const i16x8 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001) drop) `),
+  () => instantiate(`(func (v128.const i16x8 0x10000 0x10000 0x10000 0x10000 0x10000 0x10000 0x10000 0x10000) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:153
 assert_malformed(
-  () => instantiate(`(func (v128.const i16x8 65536 65536 65536 65536 65536 65536 65536 65536) drop) `),
+  () => instantiate(`(func (v128.const i16x8 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001 -0x8001) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:157
 assert_malformed(
-  () => instantiate(`(func (v128.const i16x8 -32769 -32769 -32769 -32769 -32769 -32769 -32769 -32769) drop) `),
+  () => instantiate(`(func (v128.const i16x8 65536 65536 65536 65536 65536 65536 65536 65536) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:161
 assert_malformed(
-  () => instantiate(`(func (v128.const i32x4  0x100000000  0x100000000  0x100000000  0x100000000) drop) `),
+  () => instantiate(`(func (v128.const i16x8 -32769 -32769 -32769 -32769 -32769 -32769 -32769 -32769) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:165
 assert_malformed(
-  () => instantiate(`(func (v128.const i32x4 -0x80000001 -0x80000001 -0x80000001 -0x80000001) drop) `),
+  () => instantiate(`(func (v128.const i32x4  0x100000000  0x100000000  0x100000000  0x100000000) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:169
 assert_malformed(
-  () => instantiate(`(func (v128.const i32x4  4294967296  4294967296  4294967296  4294967296) drop) `),
+  () => instantiate(`(func (v128.const i32x4 -0x80000001 -0x80000001 -0x80000001 -0x80000001) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:173
 assert_malformed(
-  () => instantiate(`(func (v128.const i32x4 -2147483649 -2147483649 -2147483649 -2147483649) drop) `),
+  () => instantiate(`(func (v128.const i32x4  4294967296  4294967296  4294967296  4294967296) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:177
 assert_malformed(
-  () => instantiate(`(func (v128.const f32x4  0x1p128  0x1p128  0x1p128  0x1p128) drop) `),
+  () => instantiate(`(func (v128.const i32x4 -2147483649 -2147483649 -2147483649 -2147483649) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:181
 assert_malformed(
-  () => instantiate(`(func (v128.const f32x4 -0x1p128 -0x1p128 -0x1p128 -0x1p128) drop) `),
+  () => instantiate(`(func (v128.const f32x4  0x1p128  0x1p128  0x1p128  0x1p128) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:185
 assert_malformed(
-  () => instantiate(`(func (v128.const f32x4  1e39  1e39  1e39  1e39) drop) `),
+  () => instantiate(`(func (v128.const f32x4 -0x1p128 -0x1p128 -0x1p128 -0x1p128) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:189
 assert_malformed(
-  () => instantiate(`(func (v128.const f32x4 -1e39 -1e39 -1e39 -1e39) drop) `),
+  () => instantiate(`(func (v128.const f32x4  1e39  1e39  1e39  1e39) drop) `),
   `constant out of range`,
 );
 
 // ./test/core/simd/simd_const.wast:193
 assert_malformed(
+  () => instantiate(`(func (v128.const f32x4 -1e39 -1e39 -1e39 -1e39) drop) `),
+  `constant out of range`,
+);
+
+// ./test/core/simd/simd_const.wast:197
+assert_malformed(
   () => instantiate(`(func (v128.const f32x4  340282356779733661637539395458142568448 340282356779733661637539395458142568448                          340282356779733661637539395458142568448 340282356779733661637539395458142568448) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:198
+// ./test/core/simd/simd_const.wast:202
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 -340282356779733661637539395458142568448 -340282356779733661637539395458142568448                         -340282356779733661637539395458142568448 -340282356779733661637539395458142568448) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:204
+// ./test/core/simd/simd_const.wast:208
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 nan:0x80_0000 nan:0x80_0000 nan:0x80_0000 nan:0x80_0000) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:209
+// ./test/core/simd/simd_const.wast:213
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2  269653970229347356221791135597556535197105851288767494898376215204735891170042808140884337949150317257310688430271573696351481990334196274152701320055306275479074865864826923114368235135583993416113802762682700913456874855354834422248712838998185022412196739306217084753107265771378949821875606039276187287552                          269653970229347356221791135597556535197105851288767494898376215204735891170042808140884337949150317257310688430271573696351481990334196274152701320055306275479074865864826923114368235135583993416113802762682700913456874855354834422248712838998185022412196739306217084753107265771378949821875606039276187287552) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:214
+// ./test/core/simd/simd_const.wast:218
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 -269653970229347356221791135597556535197105851288767494898376215204735891170042808140884337949150317257310688430271573696351481990334196274152701320055306275479074865864826923114368235135583993416113802762682700913456874855354834422248712838998185022412196739306217084753107265771378949821875606039276187287552                         -269653970229347356221791135597556535197105851288767494898376215204735891170042808140884337949150317257310688430271573696351481990334196274152701320055306275479074865864826923114368235135583993416113802762682700913456874855354834422248712838998185022412196739306217084753107265771378949821875606039276187287552) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:220
+// ./test/core/simd/simd_const.wast:224
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 nan:0x10_0000_0000_0000 nan:0x10_0000_0000_0000) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:226
+// ./test/core/simd/simd_const.wast:230
 assert_malformed(() => instantiate(`(func (v128.const) drop) `), `unexpected token`);
 
-// ./test/core/simd/simd_const.wast:231
+// ./test/core/simd/simd_const.wast:235
 assert_malformed(
   () => instantiate(`(func (v128.const 0 0 0 0) drop) `),
   `unexpected token`,
 );
 
-// ./test/core/simd/simd_const.wast:235
+// ./test/core/simd/simd_const.wast:239
 assert_malformed(
   () => instantiate(`(func (v128.const i8x16) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:239
+// ./test/core/simd/simd_const.wast:243
 assert_malformed(
   () => instantiate(`(func (v128.const i8x16 0x 0x 0x 0x 0x 0x 0x 0x 0x 0x 0x 0x 0x 0x 0x 0x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:243
+// ./test/core/simd/simd_const.wast:247
 assert_malformed(
   () => instantiate(`(func (v128.const i8x16 1x 1x 1x 1x 1x 1x 1x 1x 1x 1x 1x 1x 1x 1x 1x 1x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:247
+// ./test/core/simd/simd_const.wast:251
 assert_malformed(
   () => instantiate(`(func (v128.const i8x16 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:252
+// ./test/core/simd/simd_const.wast:256
 assert_malformed(
   () => instantiate(`(func (v128.const i16x8) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:256
+// ./test/core/simd/simd_const.wast:260
 assert_malformed(
   () => instantiate(`(func (v128.const i16x8 0x 0x 0x 0x 0x 0x 0x 0x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:260
+// ./test/core/simd/simd_const.wast:264
 assert_malformed(
   () => instantiate(`(func (v128.const i16x8 1x 1x 1x 1x 1x 1x 1x 1x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:264
+// ./test/core/simd/simd_const.wast:268
 assert_malformed(
   () => instantiate(`(func (v128.const i16x8 0xg 0xg 0xg 0xg 0xg 0xg 0xg 0xg) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:269
+// ./test/core/simd/simd_const.wast:273
 assert_malformed(
   () => instantiate(`(func (v128.const i32x4) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:273
+// ./test/core/simd/simd_const.wast:277
 assert_malformed(
   () => instantiate(`(func (v128.const i32x4 0x 0x 0x 0x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:277
+// ./test/core/simd/simd_const.wast:281
 assert_malformed(
   () => instantiate(`(func (v128.const i32x4 1x 1x 1x 1x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:281
+// ./test/core/simd/simd_const.wast:285
 assert_malformed(
   () => instantiate(`(func (v128.const i32x4 0xg 0xg 0xg 0xg) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:286
+// ./test/core/simd/simd_const.wast:290
 assert_malformed(
   () => instantiate(`(func (v128.const i64x2) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:290
+// ./test/core/simd/simd_const.wast:294
 assert_malformed(
   () => instantiate(`(func (v128.const i64x2 0x 0x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:294
+// ./test/core/simd/simd_const.wast:298
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 1x 1x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:298
+// ./test/core/simd/simd_const.wast:302
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0xg 0xg) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:303
+// ./test/core/simd/simd_const.wast:307
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:307
+// ./test/core/simd/simd_const.wast:311
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 .0 .0 .0 .0) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:311
+// ./test/core/simd/simd_const.wast:315
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 .0e0 .0e0 .0e0 .0e0) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:315
+// ./test/core/simd/simd_const.wast:319
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0e 0e 0e 0e) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:319
+// ./test/core/simd/simd_const.wast:323
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0e+ 0e+ 0e+ 0e+) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:323
+// ./test/core/simd/simd_const.wast:327
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0.0e 0.0e 0.0e 0.0e) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:327
+// ./test/core/simd/simd_const.wast:331
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0.0e- 0.0e- 0.0e- 0.0e-) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:331
+// ./test/core/simd/simd_const.wast:335
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x 0x 0x 0x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:335
+// ./test/core/simd/simd_const.wast:339
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 1x 1x 1x 1x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:339
+// ./test/core/simd/simd_const.wast:343
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0xg 0xg 0xg 0xg) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:343
+// ./test/core/simd/simd_const.wast:347
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x. 0x. 0x. 0x.) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:347
+// ./test/core/simd/simd_const.wast:351
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0.g 0x0.g 0x0.g 0x0.g) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:351
+// ./test/core/simd/simd_const.wast:355
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0p 0x0p 0x0p 0x0p) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:355
+// ./test/core/simd/simd_const.wast:359
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0p+ 0x0p+ 0x0p+ 0x0p+) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:359
+// ./test/core/simd/simd_const.wast:363
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0p- 0x0p- 0x0p- 0x0p-) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:363
+// ./test/core/simd/simd_const.wast:367
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0.0p 0x0.0p 0x0.0p 0x0.0p) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:367
+// ./test/core/simd/simd_const.wast:371
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0.0p+ 0x0.0p+ 0x0.0p+ 0x0.0p+) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:371
+// ./test/core/simd/simd_const.wast:375
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0.0p- 0x0.0p- 0x0.0p- 0x0.0p-) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:375
+// ./test/core/simd/simd_const.wast:379
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 0x0pA 0x0pA 0x0pA 0x0pA) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:379
+// ./test/core/simd/simd_const.wast:383
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 nan:1 nan:1 nan:1 nan:1) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:383
+// ./test/core/simd/simd_const.wast:387
 assert_malformed(
   () => instantiate(`(func (v128.const f32x4 nan:0x0 nan:0x0 nan:0x0 nan:0x0) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:388
+// ./test/core/simd/simd_const.wast:392
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:392
+// ./test/core/simd/simd_const.wast:396
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 .0 .0) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:396
+// ./test/core/simd/simd_const.wast:400
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 .0e0 .0e0) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:400
+// ./test/core/simd/simd_const.wast:404
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0e 0e) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:404
+// ./test/core/simd/simd_const.wast:408
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0e+ 0e+) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:408
+// ./test/core/simd/simd_const.wast:412
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0.0e+ 0.0e+) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:412
+// ./test/core/simd/simd_const.wast:416
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0.0e- 0.0e-) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:416
+// ./test/core/simd/simd_const.wast:420
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x 0x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:420
+// ./test/core/simd/simd_const.wast:424
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 1x 1x) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:424
+// ./test/core/simd/simd_const.wast:428
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0xg 0xg) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:428
+// ./test/core/simd/simd_const.wast:432
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x. 0x.) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:432
+// ./test/core/simd/simd_const.wast:436
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0.g 0x0.g) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:436
+// ./test/core/simd/simd_const.wast:440
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0p 0x0p) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:440
+// ./test/core/simd/simd_const.wast:444
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0p+ 0x0p+) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:444
+// ./test/core/simd/simd_const.wast:448
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0p- 0x0p-) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:448
+// ./test/core/simd/simd_const.wast:452
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0.0p 0x0.0p) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:452
+// ./test/core/simd/simd_const.wast:456
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0.0p+ 0x0.0p+) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:456
+// ./test/core/simd/simd_const.wast:460
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0.0p- 0x0.0p-) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:460
+// ./test/core/simd/simd_const.wast:464
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 0x0pA 0x0pA) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:464
+// ./test/core/simd/simd_const.wast:468
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 nan:1 nan:1) drop) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:468
+// ./test/core/simd/simd_const.wast:472
 assert_malformed(
   () => instantiate(`(func (v128.const f64x2 nan:0x0 nan:0x0) drop) `),
   `constant out of range`,
 );
 
-// ./test/core/simd/simd_const.wast:475
+// ./test/core/simd/simd_const.wast:479
 assert_malformed(
   () => instantiate(`(func (v128.const i32x4 0x10000000000000000 0x10000000000000000) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:481
+// ./test/core/simd/simd_const.wast:485
 assert_malformed(
   () => instantiate(`(func (v128.const i32x4 0x1 0x1 0x1 0x1 0x1) drop) `),
   `wrong number of lane literals`,
 );
 
-// ./test/core/simd/simd_const.wast:489
+// ./test/core/simd/simd_const.wast:493
 let $113 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x1.00000100000000000p-50 +0x1.00000100000000000p-50 +0x1.00000100000000000p-50 +0x1.00000100000000000p-50)))`);
 
-// ./test/core/simd/simd_const.wast:490
+// ./test/core/simd/simd_const.wast:494
 assert_return(
   () => invoke($113, `f`, []),
   [
@@ -880,10 +886,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:491
+// ./test/core/simd/simd_const.wast:495
 let $114 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x1.00000100000000000p-50 -0x1.00000100000000000p-50 -0x1.00000100000000000p-50 -0x1.00000100000000000p-50)))`);
 
-// ./test/core/simd/simd_const.wast:492
+// ./test/core/simd/simd_const.wast:496
 assert_return(
   () => invoke($114, `f`, []),
   [
@@ -896,10 +902,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:493
+// ./test/core/simd/simd_const.wast:497
 let $115 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x1.00000500000000001p-50 +0x1.00000500000000001p-50 +0x1.00000500000000001p-50 +0x1.00000500000000001p-50)))`);
 
-// ./test/core/simd/simd_const.wast:494
+// ./test/core/simd/simd_const.wast:498
 assert_return(
   () => invoke($115, `f`, []),
   [
@@ -912,10 +918,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:495
+// ./test/core/simd/simd_const.wast:499
 let $116 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x1.00000500000000001p-50 -0x1.00000500000000001p-50 -0x1.00000500000000001p-50 -0x1.00000500000000001p-50)))`);
 
-// ./test/core/simd/simd_const.wast:496
+// ./test/core/simd/simd_const.wast:500
 assert_return(
   () => invoke($116, `f`, []),
   [
@@ -928,10 +934,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:498
+// ./test/core/simd/simd_const.wast:502
 let $117 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x4000.004000000p-64 +0x4000.004000000p-64 +0x4000.004000000p-64 +0x4000.004000000p-64)))`);
 
-// ./test/core/simd/simd_const.wast:499
+// ./test/core/simd/simd_const.wast:503
 assert_return(
   () => invoke($117, `f`, []),
   [
@@ -944,10 +950,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:500
+// ./test/core/simd/simd_const.wast:504
 let $118 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x4000.004000000p-64 -0x4000.004000000p-64 -0x4000.004000000p-64 -0x4000.004000000p-64)))`);
 
-// ./test/core/simd/simd_const.wast:501
+// ./test/core/simd/simd_const.wast:505
 assert_return(
   () => invoke($118, `f`, []),
   [
@@ -960,10 +966,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:502
+// ./test/core/simd/simd_const.wast:506
 let $119 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x4000.014000001p-64 +0x4000.014000001p-64 +0x4000.014000001p-64 +0x4000.014000001p-64)))`);
 
-// ./test/core/simd/simd_const.wast:503
+// ./test/core/simd/simd_const.wast:507
 assert_return(
   () => invoke($119, `f`, []),
   [
@@ -976,10 +982,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:504
+// ./test/core/simd/simd_const.wast:508
 let $120 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x4000.014000001p-64 -0x4000.014000001p-64 -0x4000.014000001p-64 -0x4000.014000001p-64)))`);
 
-// ./test/core/simd/simd_const.wast:505
+// ./test/core/simd/simd_const.wast:509
 assert_return(
   () => invoke($120, `f`, []),
   [
@@ -992,10 +998,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:507
+// ./test/core/simd/simd_const.wast:511
 let $121 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +8.8817847263968443573e-16 +8.8817847263968443573e-16 +8.8817847263968443573e-16 +8.8817847263968443573e-16)))`);
 
-// ./test/core/simd/simd_const.wast:508
+// ./test/core/simd/simd_const.wast:512
 assert_return(
   () => invoke($121, `f`, []),
   [
@@ -1008,10 +1014,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:509
+// ./test/core/simd/simd_const.wast:513
 let $122 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -8.8817847263968443573e-16 -8.8817847263968443573e-16 -8.8817847263968443573e-16 -8.8817847263968443573e-16)))`);
 
-// ./test/core/simd/simd_const.wast:510
+// ./test/core/simd/simd_const.wast:514
 assert_return(
   () => invoke($122, `f`, []),
   [
@@ -1024,10 +1030,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:511
+// ./test/core/simd/simd_const.wast:515
 let $123 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +8.8817857851880284253e-16 +8.8817857851880284253e-16 +8.8817857851880284253e-16 +8.8817857851880284253e-16)))`);
 
-// ./test/core/simd/simd_const.wast:512
+// ./test/core/simd/simd_const.wast:516
 assert_return(
   () => invoke($123, `f`, []),
   [
@@ -1040,10 +1046,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:513
+// ./test/core/simd/simd_const.wast:517
 let $124 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -8.8817857851880284253e-16 -8.8817857851880284253e-16 -8.8817857851880284253e-16 -8.8817857851880284253e-16)))`);
 
-// ./test/core/simd/simd_const.wast:514
+// ./test/core/simd/simd_const.wast:518
 assert_return(
   () => invoke($124, `f`, []),
   [
@@ -1056,10 +1062,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:517
+// ./test/core/simd/simd_const.wast:521
 let $125 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x1.00000100000000000p+50 +0x1.00000100000000000p+50 +0x1.00000100000000000p+50 +0x1.00000100000000000p+50)))`);
 
-// ./test/core/simd/simd_const.wast:518
+// ./test/core/simd/simd_const.wast:522
 assert_return(
   () => invoke($125, `f`, []),
   [
@@ -1072,10 +1078,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:519
+// ./test/core/simd/simd_const.wast:523
 let $126 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x1.00000100000000000p+50 -0x1.00000100000000000p+50 -0x1.00000100000000000p+50 -0x1.00000100000000000p+50)))`);
 
-// ./test/core/simd/simd_const.wast:520
+// ./test/core/simd/simd_const.wast:524
 assert_return(
   () => invoke($126, `f`, []),
   [
@@ -1088,10 +1094,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:521
+// ./test/core/simd/simd_const.wast:525
 let $127 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x1.00000500000000001p+50 +0x1.00000500000000001p+50 +0x1.00000500000000001p+50 +0x1.00000500000000001p+50)))`);
 
-// ./test/core/simd/simd_const.wast:522
+// ./test/core/simd/simd_const.wast:526
 assert_return(
   () => invoke($127, `f`, []),
   [
@@ -1104,10 +1110,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:523
+// ./test/core/simd/simd_const.wast:527
 let $128 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x1.00000500000000001p+50 -0x1.00000500000000001p+50 -0x1.00000500000000001p+50 -0x1.00000500000000001p+50)))`);
 
-// ./test/core/simd/simd_const.wast:524
+// ./test/core/simd/simd_const.wast:528
 assert_return(
   () => invoke($128, `f`, []),
   [
@@ -1120,10 +1126,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:526
+// ./test/core/simd/simd_const.wast:530
 let $129 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x4000004000000 +0x4000004000000 +0x4000004000000 +0x4000004000000)))`);
 
-// ./test/core/simd/simd_const.wast:527
+// ./test/core/simd/simd_const.wast:531
 assert_return(
   () => invoke($129, `f`, []),
   [
@@ -1136,10 +1142,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:528
+// ./test/core/simd/simd_const.wast:532
 let $130 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x4000004000000 -0x4000004000000 -0x4000004000000 -0x4000004000000)))`);
 
-// ./test/core/simd/simd_const.wast:529
+// ./test/core/simd/simd_const.wast:533
 assert_return(
   () => invoke($130, `f`, []),
   [
@@ -1152,10 +1158,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:530
+// ./test/core/simd/simd_const.wast:534
 let $131 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x400000c000000 +0x400000c000000 +0x400000c000000 +0x400000c000000)))`);
 
-// ./test/core/simd/simd_const.wast:531
+// ./test/core/simd/simd_const.wast:535
 assert_return(
   () => invoke($131, `f`, []),
   [
@@ -1168,10 +1174,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:532
+// ./test/core/simd/simd_const.wast:536
 let $132 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x400000c000000 -0x400000c000000 -0x400000c000000 -0x400000c000000)))`);
 
-// ./test/core/simd/simd_const.wast:533
+// ./test/core/simd/simd_const.wast:537
 assert_return(
   () => invoke($132, `f`, []),
   [
@@ -1184,10 +1190,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:535
+// ./test/core/simd/simd_const.wast:539
 let $133 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +1125899973951488 +1125899973951488 +1125899973951488 +1125899973951488)))`);
 
-// ./test/core/simd/simd_const.wast:536
+// ./test/core/simd/simd_const.wast:540
 assert_return(
   () => invoke($133, `f`, []),
   [
@@ -1200,10 +1206,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:537
+// ./test/core/simd/simd_const.wast:541
 let $134 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -1125899973951488 -1125899973951488 -1125899973951488 -1125899973951488)))`);
 
-// ./test/core/simd/simd_const.wast:538
+// ./test/core/simd/simd_const.wast:542
 assert_return(
   () => invoke($134, `f`, []),
   [
@@ -1216,10 +1222,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:539
+// ./test/core/simd/simd_const.wast:543
 let $135 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +1125900108169216 +1125900108169216 +1125900108169216 +1125900108169216)))`);
 
-// ./test/core/simd/simd_const.wast:540
+// ./test/core/simd/simd_const.wast:544
 assert_return(
   () => invoke($135, `f`, []),
   [
@@ -1232,10 +1238,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:541
+// ./test/core/simd/simd_const.wast:545
 let $136 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -1125900108169216 -1125900108169216 -1125900108169216 -1125900108169216)))`);
 
-// ./test/core/simd/simd_const.wast:542
+// ./test/core/simd/simd_const.wast:546
 assert_return(
   () => invoke($136, `f`, []),
   [
@@ -1248,10 +1254,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:545
+// ./test/core/simd/simd_const.wast:549
 let $137 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x0.00000100000000000p-126 +0x0.00000100000000000p-126 +0x0.00000100000000000p-126 +0x0.00000100000000000p-126)))`);
 
-// ./test/core/simd/simd_const.wast:546
+// ./test/core/simd/simd_const.wast:550
 assert_return(
   () => invoke($137, `f`, []),
   [
@@ -1264,10 +1270,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:547
+// ./test/core/simd/simd_const.wast:551
 let $138 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x0.00000100000000000p-126 -0x0.00000100000000000p-126 -0x0.00000100000000000p-126 -0x0.00000100000000000p-126)))`);
 
-// ./test/core/simd/simd_const.wast:548
+// ./test/core/simd/simd_const.wast:552
 assert_return(
   () => invoke($138, `f`, []),
   [
@@ -1280,10 +1286,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:549
+// ./test/core/simd/simd_const.wast:553
 let $139 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x0.00000500000000001p-126 +0x0.00000500000000001p-126 +0x0.00000500000000001p-126 +0x0.00000500000000001p-126)))`);
 
-// ./test/core/simd/simd_const.wast:550
+// ./test/core/simd/simd_const.wast:554
 assert_return(
   () => invoke($139, `f`, []),
   [
@@ -1296,10 +1302,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:551
+// ./test/core/simd/simd_const.wast:555
 let $140 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x0.00000500000000001p-126 -0x0.00000500000000001p-126 -0x0.00000500000000001p-126 -0x0.00000500000000001p-126)))`);
 
-// ./test/core/simd/simd_const.wast:552
+// ./test/core/simd/simd_const.wast:556
 assert_return(
   () => invoke($140, `f`, []),
   [
@@ -1312,10 +1318,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:555
+// ./test/core/simd/simd_const.wast:559
 let $141 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x1.fffffe8p127 +0x1.fffffe8p127 +0x1.fffffe8p127 +0x1.fffffe8p127)))`);
 
-// ./test/core/simd/simd_const.wast:556
+// ./test/core/simd/simd_const.wast:560
 assert_return(
   () => invoke($141, `f`, []),
   [
@@ -1328,10 +1334,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:557
+// ./test/core/simd/simd_const.wast:561
 let $142 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x1.fffffe8p127 -0x1.fffffe8p127 -0x1.fffffe8p127 -0x1.fffffe8p127)))`);
 
-// ./test/core/simd/simd_const.wast:558
+// ./test/core/simd/simd_const.wast:562
 assert_return(
   () => invoke($142, `f`, []),
   [
@@ -1344,10 +1350,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:559
+// ./test/core/simd/simd_const.wast:563
 let $143 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 +0x1.fffffefffffffffffp127 +0x1.fffffefffffffffffp127 +0x1.fffffefffffffffffp127 +0x1.fffffefffffffffffp127)))`);
 
-// ./test/core/simd/simd_const.wast:560
+// ./test/core/simd/simd_const.wast:564
 assert_return(
   () => invoke($143, `f`, []),
   [
@@ -1360,10 +1366,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:561
+// ./test/core/simd/simd_const.wast:565
 let $144 = instantiate(`(module (func (export "f") (result v128) (v128.const f32x4 -0x1.fffffefffffffffffp127 -0x1.fffffefffffffffffp127 -0x1.fffffefffffffffffp127 -0x1.fffffefffffffffffp127)))`);
 
-// ./test/core/simd/simd_const.wast:562
+// ./test/core/simd/simd_const.wast:566
 assert_return(
   () => invoke($144, `f`, []),
   [
@@ -1376,10 +1382,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:565
+// ./test/core/simd/simd_const.wast:569
 let $145 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000080000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:566
+// ./test/core/simd/simd_const.wast:570
 assert_return(
   () => invoke($145, `f`, []),
   [
@@ -1387,10 +1393,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:567
+// ./test/core/simd/simd_const.wast:571
 let $146 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000080000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:568
+// ./test/core/simd/simd_const.wast:572
 assert_return(
   () => invoke($146, `f`, []),
   [
@@ -1398,10 +1404,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:569
+// ./test/core/simd/simd_const.wast:573
 let $147 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000080000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:570
+// ./test/core/simd/simd_const.wast:574
 assert_return(
   () => invoke($147, `f`, []),
   [
@@ -1409,10 +1415,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:571
+// ./test/core/simd/simd_const.wast:575
 let $148 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000080000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:572
+// ./test/core/simd/simd_const.wast:576
 assert_return(
   () => invoke($148, `f`, []),
   [
@@ -1420,10 +1426,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:573
+// ./test/core/simd/simd_const.wast:577
 let $149 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.0000000000000fffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:574
+// ./test/core/simd/simd_const.wast:578
 assert_return(
   () => invoke($149, `f`, []),
   [
@@ -1431,10 +1437,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:575
+// ./test/core/simd/simd_const.wast:579
 let $150 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.0000000000000fffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:576
+// ./test/core/simd/simd_const.wast:580
 assert_return(
   () => invoke($150, `f`, []),
   [
@@ -1442,10 +1448,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:577
+// ./test/core/simd/simd_const.wast:581
 let $151 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000100000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:578
+// ./test/core/simd/simd_const.wast:582
 assert_return(
   () => invoke($151, `f`, []),
   [
@@ -1453,10 +1459,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:579
+// ./test/core/simd/simd_const.wast:583
 let $152 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000100000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:580
+// ./test/core/simd/simd_const.wast:584
 assert_return(
   () => invoke($152, `f`, []),
   [
@@ -1464,10 +1470,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:581
+// ./test/core/simd/simd_const.wast:585
 let $153 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000100000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:582
+// ./test/core/simd/simd_const.wast:586
 assert_return(
   () => invoke($153, `f`, []),
   [
@@ -1475,10 +1481,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:583
+// ./test/core/simd/simd_const.wast:587
 let $154 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000100000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:584
+// ./test/core/simd/simd_const.wast:588
 assert_return(
   () => invoke($154, `f`, []),
   [
@@ -1486,10 +1492,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:585
+// ./test/core/simd/simd_const.wast:589
 let $155 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.00000000000017ffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:586
+// ./test/core/simd/simd_const.wast:590
 assert_return(
   () => invoke($155, `f`, []),
   [
@@ -1497,10 +1503,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:587
+// ./test/core/simd/simd_const.wast:591
 let $156 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.00000000000017ffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:588
+// ./test/core/simd/simd_const.wast:592
 assert_return(
   () => invoke($156, `f`, []),
   [
@@ -1508,10 +1514,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:589
+// ./test/core/simd/simd_const.wast:593
 let $157 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000180000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:590
+// ./test/core/simd/simd_const.wast:594
 assert_return(
   () => invoke($157, `f`, []),
   [
@@ -1519,10 +1525,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:591
+// ./test/core/simd/simd_const.wast:595
 let $158 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000180000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:592
+// ./test/core/simd/simd_const.wast:596
 assert_return(
   () => invoke($158, `f`, []),
   [
@@ -1530,10 +1536,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:593
+// ./test/core/simd/simd_const.wast:597
 let $159 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000180000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:594
+// ./test/core/simd/simd_const.wast:598
 assert_return(
   () => invoke($159, `f`, []),
   [
@@ -1541,10 +1547,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:595
+// ./test/core/simd/simd_const.wast:599
 let $160 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000180000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:596
+// ./test/core/simd/simd_const.wast:600
 assert_return(
   () => invoke($160, `f`, []),
   [
@@ -1552,10 +1558,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:597
+// ./test/core/simd/simd_const.wast:601
 let $161 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.0000000000001fffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:598
+// ./test/core/simd/simd_const.wast:602
 assert_return(
   () => invoke($161, `f`, []),
   [
@@ -1563,10 +1569,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:599
+// ./test/core/simd/simd_const.wast:603
 let $162 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.0000000000001fffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:600
+// ./test/core/simd/simd_const.wast:604
 assert_return(
   () => invoke($162, `f`, []),
   [
@@ -1574,10 +1580,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:601
+// ./test/core/simd/simd_const.wast:605
 let $163 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000200000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:602
+// ./test/core/simd/simd_const.wast:606
 assert_return(
   () => invoke($163, `f`, []),
   [
@@ -1585,10 +1591,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:603
+// ./test/core/simd/simd_const.wast:607
 let $164 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000200000000000p-600)))`);
 
-// ./test/core/simd/simd_const.wast:604
+// ./test/core/simd/simd_const.wast:608
 assert_return(
   () => invoke($164, `f`, []),
   [
@@ -1596,10 +1602,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:605
+// ./test/core/simd/simd_const.wast:609
 let $165 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000200000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:606
+// ./test/core/simd/simd_const.wast:610
 assert_return(
   () => invoke($165, `f`, []),
   [
@@ -1607,10 +1613,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:607
+// ./test/core/simd/simd_const.wast:611
 let $166 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000200000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:608
+// ./test/core/simd/simd_const.wast:612
 assert_return(
   () => invoke($166, `f`, []),
   [
@@ -1618,10 +1624,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:609
+// ./test/core/simd/simd_const.wast:613
 let $167 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.00000000000027ffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:610
+// ./test/core/simd/simd_const.wast:614
 assert_return(
   () => invoke($167, `f`, []),
   [
@@ -1629,10 +1635,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:611
+// ./test/core/simd/simd_const.wast:615
 let $168 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.00000000000027ffffffffffp-600)))`);
 
-// ./test/core/simd/simd_const.wast:612
+// ./test/core/simd/simd_const.wast:616
 assert_return(
   () => invoke($168, `f`, []),
   [
@@ -1640,10 +1646,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:613
+// ./test/core/simd/simd_const.wast:617
 let $169 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x1.000000000000280000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:614
+// ./test/core/simd/simd_const.wast:618
 assert_return(
   () => invoke($169, `f`, []),
   [
@@ -1651,10 +1657,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:615
+// ./test/core/simd/simd_const.wast:619
 let $170 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x1.000000000000280000000001p-600)))`);
 
-// ./test/core/simd/simd_const.wast:616
+// ./test/core/simd/simd_const.wast:620
 assert_return(
   () => invoke($170, `f`, []),
   [
@@ -1662,10 +1668,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:617
+// ./test/core/simd/simd_const.wast:621
 let $171 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000400000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:618
+// ./test/core/simd/simd_const.wast:622
 assert_return(
   () => invoke($171, `f`, []),
   [
@@ -1673,10 +1679,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:619
+// ./test/core/simd/simd_const.wast:623
 let $172 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000400000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:620
+// ./test/core/simd/simd_const.wast:624
 assert_return(
   () => invoke($172, `f`, []),
   [
@@ -1684,10 +1690,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:621
+// ./test/core/simd/simd_const.wast:625
 let $173 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000400000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:622
+// ./test/core/simd/simd_const.wast:626
 assert_return(
   () => invoke($173, `f`, []),
   [
@@ -1695,10 +1701,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:623
+// ./test/core/simd/simd_const.wast:627
 let $174 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000400000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:624
+// ./test/core/simd/simd_const.wast:628
 assert_return(
   () => invoke($174, `f`, []),
   [
@@ -1706,10 +1712,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:625
+// ./test/core/simd/simd_const.wast:629
 let $175 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.0000007fffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:626
+// ./test/core/simd/simd_const.wast:630
 assert_return(
   () => invoke($175, `f`, []),
   [
@@ -1717,10 +1723,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:627
+// ./test/core/simd/simd_const.wast:631
 let $176 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.0000007fffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:628
+// ./test/core/simd/simd_const.wast:632
 assert_return(
   () => invoke($176, `f`, []),
   [
@@ -1728,10 +1734,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:629
+// ./test/core/simd/simd_const.wast:633
 let $177 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000800000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:630
+// ./test/core/simd/simd_const.wast:634
 assert_return(
   () => invoke($177, `f`, []),
   [
@@ -1739,10 +1745,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:631
+// ./test/core/simd/simd_const.wast:635
 let $178 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000800000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:632
+// ./test/core/simd/simd_const.wast:636
 assert_return(
   () => invoke($178, `f`, []),
   [
@@ -1750,10 +1756,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:633
+// ./test/core/simd/simd_const.wast:637
 let $179 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000800000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:634
+// ./test/core/simd/simd_const.wast:638
 assert_return(
   () => invoke($179, `f`, []),
   [
@@ -1761,10 +1767,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:635
+// ./test/core/simd/simd_const.wast:639
 let $180 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000800000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:636
+// ./test/core/simd/simd_const.wast:640
 assert_return(
   () => invoke($180, `f`, []),
   [
@@ -1772,10 +1778,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:637
+// ./test/core/simd/simd_const.wast:641
 let $181 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000bfffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:638
+// ./test/core/simd/simd_const.wast:642
 assert_return(
   () => invoke($181, `f`, []),
   [
@@ -1783,10 +1789,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:639
+// ./test/core/simd/simd_const.wast:643
 let $182 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000bfffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:640
+// ./test/core/simd/simd_const.wast:644
 assert_return(
   () => invoke($182, `f`, []),
   [
@@ -1794,10 +1800,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:641
+// ./test/core/simd/simd_const.wast:645
 let $183 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000c00000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:642
+// ./test/core/simd/simd_const.wast:646
 assert_return(
   () => invoke($183, `f`, []),
   [
@@ -1805,10 +1811,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:643
+// ./test/core/simd/simd_const.wast:647
 let $184 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000c00000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:644
+// ./test/core/simd/simd_const.wast:648
 assert_return(
   () => invoke($184, `f`, []),
   [
@@ -1816,10 +1822,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:645
+// ./test/core/simd/simd_const.wast:649
 let $185 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000c00000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:646
+// ./test/core/simd/simd_const.wast:650
 assert_return(
   () => invoke($185, `f`, []),
   [
@@ -1827,10 +1833,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:647
+// ./test/core/simd/simd_const.wast:651
 let $186 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000c00000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:648
+// ./test/core/simd/simd_const.wast:652
 assert_return(
   () => invoke($186, `f`, []),
   [
@@ -1838,10 +1844,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:649
+// ./test/core/simd/simd_const.wast:653
 let $187 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000000ffffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:650
+// ./test/core/simd/simd_const.wast:654
 assert_return(
   () => invoke($187, `f`, []),
   [
@@ -1849,10 +1855,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:651
+// ./test/core/simd/simd_const.wast:655
 let $188 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000000ffffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:652
+// ./test/core/simd/simd_const.wast:656
 assert_return(
   () => invoke($188, `f`, []),
   [
@@ -1860,10 +1866,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:653
+// ./test/core/simd/simd_const.wast:657
 let $189 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000001000000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:654
+// ./test/core/simd/simd_const.wast:658
 assert_return(
   () => invoke($189, `f`, []),
   [
@@ -1871,10 +1877,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:655
+// ./test/core/simd/simd_const.wast:659
 let $190 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000001000000000000p-627)))`);
 
-// ./test/core/simd/simd_const.wast:656
+// ./test/core/simd/simd_const.wast:660
 assert_return(
   () => invoke($190, `f`, []),
   [
@@ -1882,10 +1888,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:657
+// ./test/core/simd/simd_const.wast:661
 let $191 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000001000000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:658
+// ./test/core/simd/simd_const.wast:662
 assert_return(
   () => invoke($191, `f`, []),
   [
@@ -1893,10 +1899,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:659
+// ./test/core/simd/simd_const.wast:663
 let $192 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000001000000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:660
+// ./test/core/simd/simd_const.wast:664
 assert_return(
   () => invoke($192, `f`, []),
   [
@@ -1904,10 +1910,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:661
+// ./test/core/simd/simd_const.wast:665
 let $193 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.0000013fffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:662
+// ./test/core/simd/simd_const.wast:666
 assert_return(
   () => invoke($193, `f`, []),
   [
@@ -1915,10 +1921,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:663
+// ./test/core/simd/simd_const.wast:667
 let $194 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.0000013fffffffffffp-627)))`);
 
-// ./test/core/simd/simd_const.wast:664
+// ./test/core/simd/simd_const.wast:668
 assert_return(
   () => invoke($194, `f`, []),
   [
@@ -1926,10 +1932,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:665
+// ./test/core/simd/simd_const.wast:669
 let $195 = instantiate(`(module (func (export "f") (result f64) (f64.const +0x8000000.000001400000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:666
+// ./test/core/simd/simd_const.wast:670
 assert_return(
   () => invoke($195, `f`, []),
   [
@@ -1937,10 +1943,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:667
+// ./test/core/simd/simd_const.wast:671
 let $196 = instantiate(`(module (func (export "f") (result f64) (f64.const -0x8000000.000001400000000001p-627)))`);
 
-// ./test/core/simd/simd_const.wast:668
+// ./test/core/simd/simd_const.wast:672
 assert_return(
   () => invoke($196, `f`, []),
   [
@@ -1948,10 +1954,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:669
+// ./test/core/simd/simd_const.wast:673
 let $197 = instantiate(`(module (func (export "f") (result f64) (f64.const +5.3575430359313371995e+300)))`);
 
-// ./test/core/simd/simd_const.wast:670
+// ./test/core/simd/simd_const.wast:674
 assert_return(
   () => invoke($197, `f`, []),
   [
@@ -1959,10 +1965,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:671
+// ./test/core/simd/simd_const.wast:675
 let $198 = instantiate(`(module (func (export "f") (result f64) (f64.const -5.3575430359313371995e+300)))`);
 
-// ./test/core/simd/simd_const.wast:672
+// ./test/core/simd/simd_const.wast:676
 assert_return(
   () => invoke($198, `f`, []),
   [
@@ -1970,10 +1976,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:673
+// ./test/core/simd/simd_const.wast:677
 let $199 = instantiate(`(module (func (export "f") (result f64) (f64.const +5.3575430359313371996e+300)))`);
 
-// ./test/core/simd/simd_const.wast:674
+// ./test/core/simd/simd_const.wast:678
 assert_return(
   () => invoke($199, `f`, []),
   [
@@ -1981,10 +1987,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:675
+// ./test/core/simd/simd_const.wast:679
 let $200 = instantiate(`(module (func (export "f") (result f64) (f64.const -5.3575430359313371996e+300)))`);
 
-// ./test/core/simd/simd_const.wast:676
+// ./test/core/simd/simd_const.wast:680
 assert_return(
   () => invoke($200, `f`, []),
   [
@@ -1992,10 +1998,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:677
+// ./test/core/simd/simd_const.wast:681
 let $201 = instantiate(`(module (func (export "f") (result f64) (f64.const +5.3575430359313383891e+300)))`);
 
-// ./test/core/simd/simd_const.wast:678
+// ./test/core/simd/simd_const.wast:682
 assert_return(
   () => invoke($201, `f`, []),
   [
@@ -2003,10 +2009,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:679
+// ./test/core/simd/simd_const.wast:683
 let $202 = instantiate(`(module (func (export "f") (result f64) (f64.const -5.3575430359313383891e+300)))`);
 
-// ./test/core/simd/simd_const.wast:680
+// ./test/core/simd/simd_const.wast:684
 assert_return(
   () => invoke($202, `f`, []),
   [
@@ -2014,10 +2020,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:681
+// ./test/core/simd/simd_const.wast:685
 let $203 = instantiate(`(module (func (export "f") (result f64) (f64.const +5.3575430359313383892e+300)))`);
 
-// ./test/core/simd/simd_const.wast:682
+// ./test/core/simd/simd_const.wast:686
 assert_return(
   () => invoke($203, `f`, []),
   [
@@ -2025,10 +2031,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:683
+// ./test/core/simd/simd_const.wast:687
 let $204 = instantiate(`(module (func (export "f") (result f64) (f64.const -5.3575430359313383892e+300)))`);
 
-// ./test/core/simd/simd_const.wast:684
+// ./test/core/simd/simd_const.wast:688
 assert_return(
   () => invoke($204, `f`, []),
   [
@@ -2036,10 +2042,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:687
+// ./test/core/simd/simd_const.wast:691
 let $205 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000080000000000p+600 +0x1.000000000000080000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:688
+// ./test/core/simd/simd_const.wast:692
 assert_return(
   () => invoke($205, `f`, []),
   [
@@ -2050,10 +2056,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:689
+// ./test/core/simd/simd_const.wast:693
 let $206 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000080000000000p+600 -0x1.000000000000080000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:690
+// ./test/core/simd/simd_const.wast:694
 assert_return(
   () => invoke($206, `f`, []),
   [
@@ -2064,10 +2070,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:691
+// ./test/core/simd/simd_const.wast:695
 let $207 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000080000000001p+600 +0x1.000000000000080000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:692
+// ./test/core/simd/simd_const.wast:696
 assert_return(
   () => invoke($207, `f`, []),
   [
@@ -2078,10 +2084,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:693
+// ./test/core/simd/simd_const.wast:697
 let $208 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000080000000001p+600 -0x1.000000000000080000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:694
+// ./test/core/simd/simd_const.wast:698
 assert_return(
   () => invoke($208, `f`, []),
   [
@@ -2092,10 +2098,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:695
+// ./test/core/simd/simd_const.wast:699
 let $209 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.0000000000000fffffffffffp+600 +0x1.0000000000000fffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:696
+// ./test/core/simd/simd_const.wast:700
 assert_return(
   () => invoke($209, `f`, []),
   [
@@ -2106,10 +2112,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:697
+// ./test/core/simd/simd_const.wast:701
 let $210 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.0000000000000fffffffffffp+600 -0x1.0000000000000fffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:698
+// ./test/core/simd/simd_const.wast:702
 assert_return(
   () => invoke($210, `f`, []),
   [
@@ -2120,10 +2126,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:699
+// ./test/core/simd/simd_const.wast:703
 let $211 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000100000000000p+600 +0x1.000000000000100000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:700
+// ./test/core/simd/simd_const.wast:704
 assert_return(
   () => invoke($211, `f`, []),
   [
@@ -2134,10 +2140,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:701
+// ./test/core/simd/simd_const.wast:705
 let $212 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000100000000000p+600 -0x1.000000000000100000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:702
+// ./test/core/simd/simd_const.wast:706
 assert_return(
   () => invoke($212, `f`, []),
   [
@@ -2148,10 +2154,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:703
+// ./test/core/simd/simd_const.wast:707
 let $213 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000100000000001p+600 +0x1.000000000000100000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:704
+// ./test/core/simd/simd_const.wast:708
 assert_return(
   () => invoke($213, `f`, []),
   [
@@ -2162,10 +2168,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:705
+// ./test/core/simd/simd_const.wast:709
 let $214 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000100000000001p+600 -0x1.000000000000100000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:706
+// ./test/core/simd/simd_const.wast:710
 assert_return(
   () => invoke($214, `f`, []),
   [
@@ -2176,10 +2182,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:707
+// ./test/core/simd/simd_const.wast:711
 let $215 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.00000000000017ffffffffffp+600 +0x1.00000000000017ffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:708
+// ./test/core/simd/simd_const.wast:712
 assert_return(
   () => invoke($215, `f`, []),
   [
@@ -2190,10 +2196,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:709
+// ./test/core/simd/simd_const.wast:713
 let $216 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.00000000000017ffffffffffp+600 -0x1.00000000000017ffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:710
+// ./test/core/simd/simd_const.wast:714
 assert_return(
   () => invoke($216, `f`, []),
   [
@@ -2204,10 +2210,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:711
+// ./test/core/simd/simd_const.wast:715
 let $217 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000180000000000p+600 +0x1.000000000000180000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:712
+// ./test/core/simd/simd_const.wast:716
 assert_return(
   () => invoke($217, `f`, []),
   [
@@ -2218,10 +2224,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:713
+// ./test/core/simd/simd_const.wast:717
 let $218 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000180000000000p+600 -0x1.000000000000180000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:714
+// ./test/core/simd/simd_const.wast:718
 assert_return(
   () => invoke($218, `f`, []),
   [
@@ -2232,10 +2238,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:715
+// ./test/core/simd/simd_const.wast:719
 let $219 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000180000000001p+600 +0x1.000000000000180000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:716
+// ./test/core/simd/simd_const.wast:720
 assert_return(
   () => invoke($219, `f`, []),
   [
@@ -2246,10 +2252,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:717
+// ./test/core/simd/simd_const.wast:721
 let $220 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000180000000001p+600 -0x1.000000000000180000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:718
+// ./test/core/simd/simd_const.wast:722
 assert_return(
   () => invoke($220, `f`, []),
   [
@@ -2260,10 +2266,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:719
+// ./test/core/simd/simd_const.wast:723
 let $221 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.0000000000001fffffffffffp+600 +0x1.0000000000001fffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:720
+// ./test/core/simd/simd_const.wast:724
 assert_return(
   () => invoke($221, `f`, []),
   [
@@ -2274,10 +2280,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:721
+// ./test/core/simd/simd_const.wast:725
 let $222 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.0000000000001fffffffffffp+600 -0x1.0000000000001fffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:722
+// ./test/core/simd/simd_const.wast:726
 assert_return(
   () => invoke($222, `f`, []),
   [
@@ -2288,10 +2294,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:723
+// ./test/core/simd/simd_const.wast:727
 let $223 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000200000000000p+600 +0x1.000000000000200000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:724
+// ./test/core/simd/simd_const.wast:728
 assert_return(
   () => invoke($223, `f`, []),
   [
@@ -2302,10 +2308,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:725
+// ./test/core/simd/simd_const.wast:729
 let $224 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000200000000000p+600 -0x1.000000000000200000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:726
+// ./test/core/simd/simd_const.wast:730
 assert_return(
   () => invoke($224, `f`, []),
   [
@@ -2316,10 +2322,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:727
+// ./test/core/simd/simd_const.wast:731
 let $225 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000200000000001p+600 +0x1.000000000000200000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:728
+// ./test/core/simd/simd_const.wast:732
 assert_return(
   () => invoke($225, `f`, []),
   [
@@ -2330,10 +2336,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:729
+// ./test/core/simd/simd_const.wast:733
 let $226 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000200000000001p+600 -0x1.000000000000200000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:730
+// ./test/core/simd/simd_const.wast:734
 assert_return(
   () => invoke($226, `f`, []),
   [
@@ -2344,10 +2350,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:731
+// ./test/core/simd/simd_const.wast:735
 let $227 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.00000000000027ffffffffffp+600 +0x1.00000000000027ffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:732
+// ./test/core/simd/simd_const.wast:736
 assert_return(
   () => invoke($227, `f`, []),
   [
@@ -2358,10 +2364,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:733
+// ./test/core/simd/simd_const.wast:737
 let $228 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.00000000000027ffffffffffp+600 -0x1.00000000000027ffffffffffp+600)))`);
 
-// ./test/core/simd/simd_const.wast:734
+// ./test/core/simd/simd_const.wast:738
 assert_return(
   () => invoke($228, `f`, []),
   [
@@ -2372,10 +2378,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:735
+// ./test/core/simd/simd_const.wast:739
 let $229 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000280000000000p+600 +0x1.000000000000280000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:736
+// ./test/core/simd/simd_const.wast:740
 assert_return(
   () => invoke($229, `f`, []),
   [
@@ -2386,10 +2392,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:737
+// ./test/core/simd/simd_const.wast:741
 let $230 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000280000000000p+600 -0x1.000000000000280000000000p+600)))`);
 
-// ./test/core/simd/simd_const.wast:738
+// ./test/core/simd/simd_const.wast:742
 assert_return(
   () => invoke($230, `f`, []),
   [
@@ -2400,10 +2406,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:739
+// ./test/core/simd/simd_const.wast:743
 let $231 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000280000000001p+600 +0x1.000000000000280000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:740
+// ./test/core/simd/simd_const.wast:744
 assert_return(
   () => invoke($231, `f`, []),
   [
@@ -2414,10 +2420,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:741
+// ./test/core/simd/simd_const.wast:745
 let $232 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000280000000001p+600 -0x1.000000000000280000000001p+600)))`);
 
-// ./test/core/simd/simd_const.wast:742
+// ./test/core/simd/simd_const.wast:746
 assert_return(
   () => invoke($232, `f`, []),
   [
@@ -2428,10 +2434,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:743
+// ./test/core/simd/simd_const.wast:747
 let $233 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000100000000000 +0x2000000000000100000000000)))`);
 
-// ./test/core/simd/simd_const.wast:744
+// ./test/core/simd/simd_const.wast:748
 assert_return(
   () => invoke($233, `f`, []),
   [
@@ -2442,10 +2448,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:745
+// ./test/core/simd/simd_const.wast:749
 let $234 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000100000000000 -0x2000000000000100000000000)))`);
 
-// ./test/core/simd/simd_const.wast:746
+// ./test/core/simd/simd_const.wast:750
 assert_return(
   () => invoke($234, `f`, []),
   [
@@ -2456,10 +2462,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:747
+// ./test/core/simd/simd_const.wast:751
 let $235 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000100000000001 +0x2000000000000100000000001)))`);
 
-// ./test/core/simd/simd_const.wast:748
+// ./test/core/simd/simd_const.wast:752
 assert_return(
   () => invoke($235, `f`, []),
   [
@@ -2470,10 +2476,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:749
+// ./test/core/simd/simd_const.wast:753
 let $236 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000100000000001 -0x2000000000000100000000001)))`);
 
-// ./test/core/simd/simd_const.wast:750
+// ./test/core/simd/simd_const.wast:754
 assert_return(
   () => invoke($236, `f`, []),
   [
@@ -2484,10 +2490,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:751
+// ./test/core/simd/simd_const.wast:755
 let $237 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x20000000000001fffffffffff +0x20000000000001fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:752
+// ./test/core/simd/simd_const.wast:756
 assert_return(
   () => invoke($237, `f`, []),
   [
@@ -2498,10 +2504,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:753
+// ./test/core/simd/simd_const.wast:757
 let $238 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x20000000000001fffffffffff -0x20000000000001fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:754
+// ./test/core/simd/simd_const.wast:758
 assert_return(
   () => invoke($238, `f`, []),
   [
@@ -2512,10 +2518,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:755
+// ./test/core/simd/simd_const.wast:759
 let $239 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000200000000000 +0x2000000000000200000000000)))`);
 
-// ./test/core/simd/simd_const.wast:756
+// ./test/core/simd/simd_const.wast:760
 assert_return(
   () => invoke($239, `f`, []),
   [
@@ -2526,10 +2532,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:757
+// ./test/core/simd/simd_const.wast:761
 let $240 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000200000000000 -0x2000000000000200000000000)))`);
 
-// ./test/core/simd/simd_const.wast:758
+// ./test/core/simd/simd_const.wast:762
 assert_return(
   () => invoke($240, `f`, []),
   [
@@ -2540,10 +2546,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:759
+// ./test/core/simd/simd_const.wast:763
 let $241 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000200000000001 +0x2000000000000200000000001)))`);
 
-// ./test/core/simd/simd_const.wast:760
+// ./test/core/simd/simd_const.wast:764
 assert_return(
   () => invoke($241, `f`, []),
   [
@@ -2554,10 +2560,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:761
+// ./test/core/simd/simd_const.wast:765
 let $242 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000200000000001 -0x2000000000000200000000001)))`);
 
-// ./test/core/simd/simd_const.wast:762
+// ./test/core/simd/simd_const.wast:766
 assert_return(
   () => invoke($242, `f`, []),
   [
@@ -2568,10 +2574,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:763
+// ./test/core/simd/simd_const.wast:767
 let $243 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x20000000000002fffffffffff +0x20000000000002fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:764
+// ./test/core/simd/simd_const.wast:768
 assert_return(
   () => invoke($243, `f`, []),
   [
@@ -2582,10 +2588,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:765
+// ./test/core/simd/simd_const.wast:769
 let $244 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x20000000000002fffffffffff -0x20000000000002fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:766
+// ./test/core/simd/simd_const.wast:770
 assert_return(
   () => invoke($244, `f`, []),
   [
@@ -2596,10 +2602,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:767
+// ./test/core/simd/simd_const.wast:771
 let $245 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000300000000000 +0x2000000000000300000000000)))`);
 
-// ./test/core/simd/simd_const.wast:768
+// ./test/core/simd/simd_const.wast:772
 assert_return(
   () => invoke($245, `f`, []),
   [
@@ -2610,10 +2616,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:769
+// ./test/core/simd/simd_const.wast:773
 let $246 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000300000000000 -0x2000000000000300000000000)))`);
 
-// ./test/core/simd/simd_const.wast:770
+// ./test/core/simd/simd_const.wast:774
 assert_return(
   () => invoke($246, `f`, []),
   [
@@ -2624,10 +2630,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:771
+// ./test/core/simd/simd_const.wast:775
 let $247 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000300000000001 +0x2000000000000300000000001)))`);
 
-// ./test/core/simd/simd_const.wast:772
+// ./test/core/simd/simd_const.wast:776
 assert_return(
   () => invoke($247, `f`, []),
   [
@@ -2638,10 +2644,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:773
+// ./test/core/simd/simd_const.wast:777
 let $248 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000300000000001 -0x2000000000000300000000001)))`);
 
-// ./test/core/simd/simd_const.wast:774
+// ./test/core/simd/simd_const.wast:778
 assert_return(
   () => invoke($248, `f`, []),
   [
@@ -2652,10 +2658,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:775
+// ./test/core/simd/simd_const.wast:779
 let $249 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x20000000000003fffffffffff +0x20000000000003fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:776
+// ./test/core/simd/simd_const.wast:780
 assert_return(
   () => invoke($249, `f`, []),
   [
@@ -2666,10 +2672,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:777
+// ./test/core/simd/simd_const.wast:781
 let $250 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x20000000000003fffffffffff -0x20000000000003fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:778
+// ./test/core/simd/simd_const.wast:782
 assert_return(
   () => invoke($250, `f`, []),
   [
@@ -2680,10 +2686,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:779
+// ./test/core/simd/simd_const.wast:783
 let $251 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000400000000000 +0x2000000000000400000000000)))`);
 
-// ./test/core/simd/simd_const.wast:780
+// ./test/core/simd/simd_const.wast:784
 assert_return(
   () => invoke($251, `f`, []),
   [
@@ -2694,10 +2700,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:781
+// ./test/core/simd/simd_const.wast:785
 let $252 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000400000000000 -0x2000000000000400000000000)))`);
 
-// ./test/core/simd/simd_const.wast:782
+// ./test/core/simd/simd_const.wast:786
 assert_return(
   () => invoke($252, `f`, []),
   [
@@ -2708,10 +2714,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:783
+// ./test/core/simd/simd_const.wast:787
 let $253 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000400000000001 +0x2000000000000400000000001)))`);
 
-// ./test/core/simd/simd_const.wast:784
+// ./test/core/simd/simd_const.wast:788
 assert_return(
   () => invoke($253, `f`, []),
   [
@@ -2722,10 +2728,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:785
+// ./test/core/simd/simd_const.wast:789
 let $254 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000400000000001 -0x2000000000000400000000001)))`);
 
-// ./test/core/simd/simd_const.wast:786
+// ./test/core/simd/simd_const.wast:790
 assert_return(
   () => invoke($254, `f`, []),
   [
@@ -2736,10 +2742,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:787
+// ./test/core/simd/simd_const.wast:791
 let $255 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x20000000000004fffffffffff +0x20000000000004fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:788
+// ./test/core/simd/simd_const.wast:792
 assert_return(
   () => invoke($255, `f`, []),
   [
@@ -2750,10 +2756,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:789
+// ./test/core/simd/simd_const.wast:793
 let $256 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x20000000000004fffffffffff -0x20000000000004fffffffffff)))`);
 
-// ./test/core/simd/simd_const.wast:790
+// ./test/core/simd/simd_const.wast:794
 assert_return(
   () => invoke($256, `f`, []),
   [
@@ -2764,10 +2770,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:791
+// ./test/core/simd/simd_const.wast:795
 let $257 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000500000000000 +0x2000000000000500000000000)))`);
 
-// ./test/core/simd/simd_const.wast:792
+// ./test/core/simd/simd_const.wast:796
 assert_return(
   () => invoke($257, `f`, []),
   [
@@ -2778,10 +2784,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:793
+// ./test/core/simd/simd_const.wast:797
 let $258 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000500000000000 -0x2000000000000500000000000)))`);
 
-// ./test/core/simd/simd_const.wast:794
+// ./test/core/simd/simd_const.wast:798
 assert_return(
   () => invoke($258, `f`, []),
   [
@@ -2792,10 +2798,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:795
+// ./test/core/simd/simd_const.wast:799
 let $259 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x2000000000000500000000001 +0x2000000000000500000000001)))`);
 
-// ./test/core/simd/simd_const.wast:796
+// ./test/core/simd/simd_const.wast:800
 assert_return(
   () => invoke($259, `f`, []),
   [
@@ -2806,10 +2812,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:797
+// ./test/core/simd/simd_const.wast:801
 let $260 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x2000000000000500000000001 -0x2000000000000500000000001)))`);
 
-// ./test/core/simd/simd_const.wast:798
+// ./test/core/simd/simd_const.wast:802
 assert_return(
   () => invoke($260, `f`, []),
   [
@@ -2820,10 +2826,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:799
+// ./test/core/simd/simd_const.wast:803
 let $261 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +1152921504606847104 +1152921504606847104)))`);
 
-// ./test/core/simd/simd_const.wast:800
+// ./test/core/simd/simd_const.wast:804
 assert_return(
   () => invoke($261, `f`, []),
   [
@@ -2834,10 +2840,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:801
+// ./test/core/simd/simd_const.wast:805
 let $262 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -1152921504606847104 -1152921504606847104)))`);
 
-// ./test/core/simd/simd_const.wast:802
+// ./test/core/simd/simd_const.wast:806
 assert_return(
   () => invoke($262, `f`, []),
   [
@@ -2848,10 +2854,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:803
+// ./test/core/simd/simd_const.wast:807
 let $263 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +1152921504606847105 +1152921504606847105)))`);
 
-// ./test/core/simd/simd_const.wast:804
+// ./test/core/simd/simd_const.wast:808
 assert_return(
   () => invoke($263, `f`, []),
   [
@@ -2862,10 +2868,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:805
+// ./test/core/simd/simd_const.wast:809
 let $264 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -1152921504606847105 -1152921504606847105)))`);
 
-// ./test/core/simd/simd_const.wast:806
+// ./test/core/simd/simd_const.wast:810
 assert_return(
   () => invoke($264, `f`, []),
   [
@@ -2876,10 +2882,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:807
+// ./test/core/simd/simd_const.wast:811
 let $265 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +1152921504606847359 +1152921504606847359)))`);
 
-// ./test/core/simd/simd_const.wast:808
+// ./test/core/simd/simd_const.wast:812
 assert_return(
   () => invoke($265, `f`, []),
   [
@@ -2890,10 +2896,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:809
+// ./test/core/simd/simd_const.wast:813
 let $266 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -1152921504606847359 -1152921504606847359)))`);
 
-// ./test/core/simd/simd_const.wast:810
+// ./test/core/simd/simd_const.wast:814
 assert_return(
   () => invoke($266, `f`, []),
   [
@@ -2904,10 +2910,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:811
+// ./test/core/simd/simd_const.wast:815
 let $267 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +1152921504606847360 +1152921504606847360)))`);
 
-// ./test/core/simd/simd_const.wast:812
+// ./test/core/simd/simd_const.wast:816
 assert_return(
   () => invoke($267, `f`, []),
   [
@@ -2918,10 +2924,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:813
+// ./test/core/simd/simd_const.wast:817
 let $268 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -1152921504606847360 -1152921504606847360)))`);
 
-// ./test/core/simd/simd_const.wast:814
+// ./test/core/simd/simd_const.wast:818
 assert_return(
   () => invoke($268, `f`, []),
   [
@@ -2932,22 +2938,22 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:817
+// ./test/core/simd/simd_const.wast:821
 let $269 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000080000000000p-1022 +0x0.000000000000080000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:818
+// ./test/core/simd/simd_const.wast:822
 assert_return(() => invoke($269, `f`, []), [new F64x2Pattern(value("f64", 0), value("f64", 0))]);
 
-// ./test/core/simd/simd_const.wast:819
+// ./test/core/simd/simd_const.wast:823
 let $270 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000080000000000p-1022 -0x0.000000000000080000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:820
+// ./test/core/simd/simd_const.wast:824
 assert_return(() => invoke($270, `f`, []), [new F64x2Pattern(value("f64", -0), value("f64", -0))]);
 
-// ./test/core/simd/simd_const.wast:821
+// ./test/core/simd/simd_const.wast:825
 let $271 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000080000000001p-1022 +0x0.000000000000080000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:822
+// ./test/core/simd/simd_const.wast:826
 assert_return(
   () => invoke($271, `f`, []),
   [
@@ -2958,10 +2964,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:823
+// ./test/core/simd/simd_const.wast:827
 let $272 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000080000000001p-1022 -0x0.000000000000080000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:824
+// ./test/core/simd/simd_const.wast:828
 assert_return(
   () => invoke($272, `f`, []),
   [
@@ -2972,10 +2978,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:825
+// ./test/core/simd/simd_const.wast:829
 let $273 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.0000000000000fffffffffffp-1022 +0x0.0000000000000fffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:826
+// ./test/core/simd/simd_const.wast:830
 assert_return(
   () => invoke($273, `f`, []),
   [
@@ -2986,10 +2992,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:827
+// ./test/core/simd/simd_const.wast:831
 let $274 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.0000000000000fffffffffffp-1022 -0x0.0000000000000fffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:828
+// ./test/core/simd/simd_const.wast:832
 assert_return(
   () => invoke($274, `f`, []),
   [
@@ -3000,10 +3006,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:829
+// ./test/core/simd/simd_const.wast:833
 let $275 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000100000000000p-1022 +0x0.000000000000100000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:830
+// ./test/core/simd/simd_const.wast:834
 assert_return(
   () => invoke($275, `f`, []),
   [
@@ -3014,10 +3020,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:831
+// ./test/core/simd/simd_const.wast:835
 let $276 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000100000000000p-1022 -0x0.000000000000100000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:832
+// ./test/core/simd/simd_const.wast:836
 assert_return(
   () => invoke($276, `f`, []),
   [
@@ -3028,10 +3034,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:833
+// ./test/core/simd/simd_const.wast:837
 let $277 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000100000000001p-1022 +0x0.000000000000100000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:834
+// ./test/core/simd/simd_const.wast:838
 assert_return(
   () => invoke($277, `f`, []),
   [
@@ -3042,10 +3048,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:835
+// ./test/core/simd/simd_const.wast:839
 let $278 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000100000000001p-1022 -0x0.000000000000100000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:836
+// ./test/core/simd/simd_const.wast:840
 assert_return(
   () => invoke($278, `f`, []),
   [
@@ -3056,10 +3062,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:837
+// ./test/core/simd/simd_const.wast:841
 let $279 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.00000000000017ffffffffffp-1022 +0x0.00000000000017ffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:838
+// ./test/core/simd/simd_const.wast:842
 assert_return(
   () => invoke($279, `f`, []),
   [
@@ -3070,10 +3076,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:839
+// ./test/core/simd/simd_const.wast:843
 let $280 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.00000000000017ffffffffffp-1022 -0x0.00000000000017ffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:840
+// ./test/core/simd/simd_const.wast:844
 assert_return(
   () => invoke($280, `f`, []),
   [
@@ -3084,10 +3090,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:841
+// ./test/core/simd/simd_const.wast:845
 let $281 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000180000000000p-1022 +0x0.000000000000180000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:842
+// ./test/core/simd/simd_const.wast:846
 assert_return(
   () => invoke($281, `f`, []),
   [
@@ -3098,10 +3104,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:843
+// ./test/core/simd/simd_const.wast:847
 let $282 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000180000000000p-1022 -0x0.000000000000180000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:844
+// ./test/core/simd/simd_const.wast:848
 assert_return(
   () => invoke($282, `f`, []),
   [
@@ -3112,10 +3118,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:845
+// ./test/core/simd/simd_const.wast:849
 let $283 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000180000000001p-1022 +0x0.000000000000180000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:846
+// ./test/core/simd/simd_const.wast:850
 assert_return(
   () => invoke($283, `f`, []),
   [
@@ -3126,10 +3132,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:847
+// ./test/core/simd/simd_const.wast:851
 let $284 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000180000000001p-1022 -0x0.000000000000180000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:848
+// ./test/core/simd/simd_const.wast:852
 assert_return(
   () => invoke($284, `f`, []),
   [
@@ -3140,10 +3146,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:849
+// ./test/core/simd/simd_const.wast:853
 let $285 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.0000000000001fffffffffffp-1022 +0x0.0000000000001fffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:850
+// ./test/core/simd/simd_const.wast:854
 assert_return(
   () => invoke($285, `f`, []),
   [
@@ -3154,10 +3160,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:851
+// ./test/core/simd/simd_const.wast:855
 let $286 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.0000000000001fffffffffffp-1022 -0x0.0000000000001fffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:852
+// ./test/core/simd/simd_const.wast:856
 assert_return(
   () => invoke($286, `f`, []),
   [
@@ -3168,10 +3174,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:853
+// ./test/core/simd/simd_const.wast:857
 let $287 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000200000000000p-1022 +0x0.000000000000200000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:854
+// ./test/core/simd/simd_const.wast:858
 assert_return(
   () => invoke($287, `f`, []),
   [
@@ -3182,10 +3188,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:855
+// ./test/core/simd/simd_const.wast:859
 let $288 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000200000000000p-1022 -0x0.000000000000200000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:856
+// ./test/core/simd/simd_const.wast:860
 assert_return(
   () => invoke($288, `f`, []),
   [
@@ -3196,10 +3202,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:857
+// ./test/core/simd/simd_const.wast:861
 let $289 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000200000000001p-1022 +0x0.000000000000200000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:858
+// ./test/core/simd/simd_const.wast:862
 assert_return(
   () => invoke($289, `f`, []),
   [
@@ -3210,10 +3216,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:859
+// ./test/core/simd/simd_const.wast:863
 let $290 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000200000000001p-1022 -0x0.000000000000200000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:860
+// ./test/core/simd/simd_const.wast:864
 assert_return(
   () => invoke($290, `f`, []),
   [
@@ -3224,10 +3230,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:861
+// ./test/core/simd/simd_const.wast:865
 let $291 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.00000000000027ffffffffffp-1022 +0x0.00000000000027ffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:862
+// ./test/core/simd/simd_const.wast:866
 assert_return(
   () => invoke($291, `f`, []),
   [
@@ -3238,10 +3244,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:863
+// ./test/core/simd/simd_const.wast:867
 let $292 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.00000000000027ffffffffffp-1022 -0x0.00000000000027ffffffffffp-1022)))`);
 
-// ./test/core/simd/simd_const.wast:864
+// ./test/core/simd/simd_const.wast:868
 assert_return(
   () => invoke($292, `f`, []),
   [
@@ -3252,10 +3258,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:865
+// ./test/core/simd/simd_const.wast:869
 let $293 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x0.000000000000280000000000p-1022 +0x0.000000000000280000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:866
+// ./test/core/simd/simd_const.wast:870
 assert_return(
   () => invoke($293, `f`, []),
   [
@@ -3266,10 +3272,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:867
+// ./test/core/simd/simd_const.wast:871
 let $294 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x0.000000000000280000000000p-1022 -0x0.000000000000280000000000p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:868
+// ./test/core/simd/simd_const.wast:872
 assert_return(
   () => invoke($294, `f`, []),
   [
@@ -3280,10 +3286,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:869
+// ./test/core/simd/simd_const.wast:873
 let $295 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.000000000000280000000001p-1022 +0x1.000000000000280000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:870
+// ./test/core/simd/simd_const.wast:874
 assert_return(
   () => invoke($295, `f`, []),
   [
@@ -3294,10 +3300,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:871
+// ./test/core/simd/simd_const.wast:875
 let $296 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.000000000000280000000001p-1022 -0x1.000000000000280000000001p-1022)))`);
 
-// ./test/core/simd/simd_const.wast:872
+// ./test/core/simd/simd_const.wast:876
 assert_return(
   () => invoke($296, `f`, []),
   [
@@ -3308,10 +3314,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:875
+// ./test/core/simd/simd_const.wast:879
 let $297 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.fffffffffffff4p1023 +0x1.fffffffffffff4p1023)))`);
 
-// ./test/core/simd/simd_const.wast:876
+// ./test/core/simd/simd_const.wast:880
 assert_return(
   () => invoke($297, `f`, []),
   [
@@ -3322,10 +3328,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:877
+// ./test/core/simd/simd_const.wast:881
 let $298 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.fffffffffffff4p1023 -0x1.fffffffffffff4p1023)))`);
 
-// ./test/core/simd/simd_const.wast:878
+// ./test/core/simd/simd_const.wast:882
 assert_return(
   () => invoke($298, `f`, []),
   [
@@ -3336,10 +3342,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:879
+// ./test/core/simd/simd_const.wast:883
 let $299 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 +0x1.fffffffffffff7ffffffp1023 +0x1.fffffffffffff7ffffffp1023)))`);
 
-// ./test/core/simd/simd_const.wast:880
+// ./test/core/simd/simd_const.wast:884
 assert_return(
   () => invoke($299, `f`, []),
   [
@@ -3350,10 +3356,10 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:881
+// ./test/core/simd/simd_const.wast:885
 let $300 = instantiate(`(module (func (export "f") (result v128) (v128.const f64x2 -0x1.fffffffffffff7ffffffp1023 -0x1.fffffffffffff7ffffffp1023)))`);
 
-// ./test/core/simd/simd_const.wast:882
+// ./test/core/simd/simd_const.wast:886
 assert_return(
   () => invoke($300, `f`, []),
   [
@@ -3364,7 +3370,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:886
+// ./test/core/simd/simd_const.wast:890
 let $301 = instantiate(`(module (memory 1)
   (func (export "as-br-retval") (result v128)
     (block (result v128) (br 0 (v128.const i32x4 0x03020100 0x07060504 0x0b0a0908 0x0f0e0d0c)))
@@ -3450,70 +3456,70 @@ let $301 = instantiate(`(module (memory 1)
   )
 )`);
 
-// ./test/core/simd/simd_const.wast:971
+// ./test/core/simd/simd_const.wast:975
 assert_return(
   () => invoke($301, `as-br-retval`, []),
   [i32x4([0x3020100, 0x7060504, 0xb0a0908, 0xf0e0d0c])],
 );
 
-// ./test/core/simd/simd_const.wast:972
+// ./test/core/simd/simd_const.wast:976
 assert_return(() => invoke($301, `as-br_if-retval`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:973
+// ./test/core/simd/simd_const.wast:977
 assert_return(() => invoke($301, `as-return-retval`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:974
+// ./test/core/simd/simd_const.wast:978
 assert_return(() => invoke($301, `as-if-then-retval`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:975
+// ./test/core/simd/simd_const.wast:979
 assert_return(() => invoke($301, `as-if-else-retval`, []), [i32x4([0x3, 0x2, 0x1, 0x0])]);
 
-// ./test/core/simd/simd_const.wast:976
+// ./test/core/simd/simd_const.wast:980
 assert_return(() => invoke($301, `as-call-param`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:977
+// ./test/core/simd/simd_const.wast:981
 assert_return(() => invoke($301, `as-call_indirect-param`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:978
+// ./test/core/simd/simd_const.wast:982
 assert_return(() => invoke($301, `as-block-retval`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:979
+// ./test/core/simd/simd_const.wast:983
 assert_return(() => invoke($301, `as-loop-retval`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:980
+// ./test/core/simd/simd_const.wast:984
 assert_return(() => invoke($301, `as-drop-operand`, []), []);
 
-// ./test/core/simd/simd_const.wast:982
+// ./test/core/simd/simd_const.wast:986
 assert_return(() => invoke($301, `as-br-retval2`, []), [i64x2([0x302010007060504n, 0xb0a09080f0e0d0cn])]);
 
-// ./test/core/simd/simd_const.wast:983
+// ./test/core/simd/simd_const.wast:987
 assert_return(() => invoke($301, `as-br_if-retval2`, []), [i64x2([0x0n, 0x1n])]);
 
-// ./test/core/simd/simd_const.wast:984
+// ./test/core/simd/simd_const.wast:988
 assert_return(() => invoke($301, `as-return-retval2`, []), [i64x2([0x0n, 0x1n])]);
 
-// ./test/core/simd/simd_const.wast:985
+// ./test/core/simd/simd_const.wast:989
 assert_return(() => invoke($301, `as-if-then-retval2`, []), [i64x2([0x0n, 0x1n])]);
 
-// ./test/core/simd/simd_const.wast:986
+// ./test/core/simd/simd_const.wast:990
 assert_return(() => invoke($301, `as-if-else-retval2`, []), [i64x2([0x1n, 0x0n])]);
 
-// ./test/core/simd/simd_const.wast:987
+// ./test/core/simd/simd_const.wast:991
 assert_return(() => invoke($301, `as-call-param2`, []), [i64x2([0x0n, 0x1n])]);
 
-// ./test/core/simd/simd_const.wast:988
+// ./test/core/simd/simd_const.wast:992
 assert_return(() => invoke($301, `as-call_indirect-param2`, []), [i64x2([0x0n, 0x1n])]);
 
-// ./test/core/simd/simd_const.wast:989
+// ./test/core/simd/simd_const.wast:993
 assert_return(() => invoke($301, `as-block-retval2`, []), [i64x2([0x0n, 0x1n])]);
 
-// ./test/core/simd/simd_const.wast:990
+// ./test/core/simd/simd_const.wast:994
 assert_return(() => invoke($301, `as-loop-retval2`, []), [i64x2([0x0n, 0x1n])]);
 
-// ./test/core/simd/simd_const.wast:991
+// ./test/core/simd/simd_const.wast:995
 assert_return(() => invoke($301, `as-drop-operand2`, []), []);
 
-// ./test/core/simd/simd_const.wast:995
+// ./test/core/simd/simd_const.wast:999
 let $302 = instantiate(`(module (memory 1)
   (func (export "as-local.set/get-value_0_0") (param \$0 v128) (result v128)
     (local v128 v128 v128 v128)
@@ -3542,28 +3548,28 @@ let $302 = instantiate(`(module (memory 1)
   )
 )`);
 
-// ./test/core/simd/simd_const.wast:1023
+// ./test/core/simd/simd_const.wast:1027
 assert_return(
   () => invoke($302, `as-local.set/get-value_0_0`, [i32x4([0x0, 0x0, 0x0, 0x0])]),
   [i32x4([0x0, 0x0, 0x0, 0x0])],
 );
 
-// ./test/core/simd/simd_const.wast:1024
+// ./test/core/simd/simd_const.wast:1028
 assert_return(
   () => invoke($302, `as-local.set/get-value_0_1`, [i32x4([0x1, 0x1, 0x1, 0x1])]),
   [i32x4([0x1, 0x1, 0x1, 0x1])],
 );
 
-// ./test/core/simd/simd_const.wast:1025
+// ./test/core/simd/simd_const.wast:1029
 assert_return(
   () => invoke($302, `as-local.set/get-value_3_0`, [i32x4([0x2, 0x2, 0x2, 0x2])]),
   [i32x4([0x2, 0x2, 0x2, 0x2])],
 );
 
-// ./test/core/simd/simd_const.wast:1026
+// ./test/core/simd/simd_const.wast:1030
 assert_return(() => invoke($302, `as-local.tee-value`, []), [i32x4([0x0, 0x1, 0x2, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:1031
+// ./test/core/simd/simd_const.wast:1035
 let $303 = instantiate(`(module (memory 1)
   (global \$g0 (mut v128) (v128.const i32x4 0 1 2 3))
   (global \$g1 (mut v128) (v128.const i32x4 4 5 6 7))
@@ -3597,7 +3603,7 @@ let $303 = instantiate(`(module (memory 1)
   )
 )`);
 
-// ./test/core/simd/simd_const.wast:1064
+// ./test/core/simd/simd_const.wast:1068
 assert_return(
   () => invoke($303, `as-global.set_value_\$g0_\$g1_\$g2_\$g3`, [
     i32x4([0x1, 0x1, 0x1, 0x1]),
@@ -3608,19 +3614,19 @@ assert_return(
   [],
 );
 
-// ./test/core/simd/simd_const.wast:1068
+// ./test/core/simd/simd_const.wast:1072
 assert_return(() => invoke($303, `global.get_g0`, []), [i32x4([0x1, 0x1, 0x1, 0x1])]);
 
-// ./test/core/simd/simd_const.wast:1069
+// ./test/core/simd/simd_const.wast:1073
 assert_return(() => invoke($303, `global.get_g1`, []), [i32x4([0x2, 0x2, 0x2, 0x2])]);
 
-// ./test/core/simd/simd_const.wast:1070
+// ./test/core/simd/simd_const.wast:1074
 assert_return(() => invoke($303, `global.get_g2`, []), [i32x4([0x3, 0x3, 0x3, 0x3])]);
 
-// ./test/core/simd/simd_const.wast:1071
+// ./test/core/simd/simd_const.wast:1075
 assert_return(() => invoke($303, `global.get_g3`, []), [i32x4([0x4, 0x4, 0x4, 0x4])]);
 
-// ./test/core/simd/simd_const.wast:1076
+// ./test/core/simd/simd_const.wast:1080
 let $304 = instantiate(`(module
   (func (export "i32x4.test") (result v128) (return (v128.const i32x4 0x0bAdD00D 0x0bAdD00D 0x0bAdD00D 0x0bAdD00D)))
   (func (export "i32x4.smax") (result v128) (return (v128.const i32x4 0x7fffffff 0x7fffffff 0x7fffffff 0x7fffffff)))
@@ -3649,211 +3655,211 @@ let $304 = instantiate(`(module
   (func (export "i64x2-hex-sep2") (result v128) (v128.const i64x2 0x1_a_A_0_f_1_a_A_0_f 0x1_a_A_0_f_1_a_A_0_f))
 )`);
 
-// ./test/core/simd/simd_const.wast:1104
+// ./test/core/simd/simd_const.wast:1108
 assert_return(() => invoke($304, `i32x4.test`, []), [i32x4([0xbadd00d, 0xbadd00d, 0xbadd00d, 0xbadd00d])]);
 
-// ./test/core/simd/simd_const.wast:1105
+// ./test/core/simd/simd_const.wast:1109
 assert_return(
   () => invoke($304, `i32x4.smax`, []),
   [i32x4([0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff])],
 );
 
-// ./test/core/simd/simd_const.wast:1106
+// ./test/core/simd/simd_const.wast:1110
 assert_return(
   () => invoke($304, `i32x4.neg_smax`, []),
   [i32x4([0x80000001, 0x80000001, 0x80000001, 0x80000001])],
 );
 
-// ./test/core/simd/simd_const.wast:1107
+// ./test/core/simd/simd_const.wast:1111
 assert_return(
   () => invoke($304, `i32x4.inc_smin`, []),
   [i32x4([0x80000001, 0x80000001, 0x80000001, 0x80000001])],
 );
 
-// ./test/core/simd/simd_const.wast:1108
+// ./test/core/simd/simd_const.wast:1112
 assert_return(() => invoke($304, `i32x4.neg_zero`, []), [i32x4([0x0, 0x0, 0x0, 0x0])]);
 
-// ./test/core/simd/simd_const.wast:1109
+// ./test/core/simd/simd_const.wast:1113
 assert_return(() => invoke($304, `i32x4.not_octal`, []), [i32x4([0xa, 0xa, 0xa, 0xa])]);
 
-// ./test/core/simd/simd_const.wast:1110
+// ./test/core/simd/simd_const.wast:1114
 assert_return(() => invoke($304, `i32x4.plus_sign`, []), [i32x4([0x2a, 0x2a, 0x2a, 0x2a])]);
 
-// ./test/core/simd/simd_const.wast:1112
+// ./test/core/simd/simd_const.wast:1116
 assert_return(() => invoke($304, `i32x4-dec-sep1`, []), [i32x4([0xf4240, 0xf4240, 0xf4240, 0xf4240])]);
 
-// ./test/core/simd/simd_const.wast:1113
+// ./test/core/simd/simd_const.wast:1117
 assert_return(() => invoke($304, `i32x4-dec-sep2`, []), [i32x4([0x3e8, 0x3e8, 0x3e8, 0x3e8])]);
 
-// ./test/core/simd/simd_const.wast:1114
+// ./test/core/simd/simd_const.wast:1118
 assert_return(
   () => invoke($304, `i32x4-hex-sep1`, []),
   [i32x4([0xa0f0099, 0xa0f0099, 0xa0f0099, 0xa0f0099])],
 );
 
-// ./test/core/simd/simd_const.wast:1115
+// ./test/core/simd/simd_const.wast:1119
 assert_return(() => invoke($304, `i32x4-hex-sep2`, []), [i32x4([0x1aa0f, 0x1aa0f, 0x1aa0f, 0x1aa0f])]);
 
-// ./test/core/simd/simd_const.wast:1117
+// ./test/core/simd/simd_const.wast:1121
 assert_return(() => invoke($304, `i64x2.test`, []), [i64x2([0xbadd00d0badd00dn, 0xbadd00d0badd00dn])]);
 
-// ./test/core/simd/simd_const.wast:1118
+// ./test/core/simd/simd_const.wast:1122
 assert_return(() => invoke($304, `i64x2.smax`, []), [i64x2([0x7fffffffffffffffn, 0x7fffffffffffffffn])]);
 
-// ./test/core/simd/simd_const.wast:1119
+// ./test/core/simd/simd_const.wast:1123
 assert_return(
   () => invoke($304, `i64x2.neg_smax`, []),
   [i64x2([0x8000000000000001n, 0x8000000000000001n])],
 );
 
-// ./test/core/simd/simd_const.wast:1120
+// ./test/core/simd/simd_const.wast:1124
 assert_return(
   () => invoke($304, `i64x2.inc_smin`, []),
   [i64x2([0x8000000000000001n, 0x8000000000000001n])],
 );
 
-// ./test/core/simd/simd_const.wast:1121
+// ./test/core/simd/simd_const.wast:1125
 assert_return(() => invoke($304, `i64x2.neg_zero`, []), [i64x2([0x0n, 0x0n])]);
 
-// ./test/core/simd/simd_const.wast:1122
+// ./test/core/simd/simd_const.wast:1126
 assert_return(() => invoke($304, `i64x2.not_octal`, []), [i64x2([0x271an, 0x271an])]);
 
-// ./test/core/simd/simd_const.wast:1123
+// ./test/core/simd/simd_const.wast:1127
 assert_return(() => invoke($304, `i64x2.plus_sign`, []), [i64x2([0x2an, 0x2an])]);
 
-// ./test/core/simd/simd_const.wast:1125
+// ./test/core/simd/simd_const.wast:1129
 assert_return(() => invoke($304, `i64x2-dec-sep1`, []), [i64x2([0x9184e72a000n, 0x9184e72a000n])]);
 
-// ./test/core/simd/simd_const.wast:1126
+// ./test/core/simd/simd_const.wast:1130
 assert_return(() => invoke($304, `i64x2-dec-sep2`, []), [i64x2([0x989680n, 0x989680n])]);
 
-// ./test/core/simd/simd_const.wast:1127
+// ./test/core/simd/simd_const.wast:1131
 assert_return(() => invoke($304, `i64x2-hex-sep1`, []), [i64x2([0xa0f00990a0f0099n, 0xa0f00990a0f0099n])]);
 
-// ./test/core/simd/simd_const.wast:1128
+// ./test/core/simd/simd_const.wast:1132
 assert_return(() => invoke($304, `i64x2-hex-sep2`, []), [i64x2([0x1aa0f1aa0fn, 0x1aa0f1aa0fn])]);
 
-// ./test/core/simd/simd_const.wast:1130
+// ./test/core/simd/simd_const.wast:1134
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 _100 _100 _100 _100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1134
+// ./test/core/simd/simd_const.wast:1138
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 +_100 +_100 +_100 +_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1138
+// ./test/core/simd/simd_const.wast:1142
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 -_100 -_100 -_100 -_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1142
+// ./test/core/simd/simd_const.wast:1146
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 99_ 99_ 99_ 99_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1146
+// ./test/core/simd/simd_const.wast:1150
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 1__000 1__000 1__000 1__000)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1150
+// ./test/core/simd/simd_const.wast:1154
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 _0x100 _0x100 _0x100 _0x100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1154
+// ./test/core/simd/simd_const.wast:1158
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 0_x100 0_x100 0_x100 0_x100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1158
+// ./test/core/simd/simd_const.wast:1162
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 0x_100 0x_100 0x_100 0x_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1162
+// ./test/core/simd/simd_const.wast:1166
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 0x00_ 0x00_ 0x00_ 0x00_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1166
+// ./test/core/simd/simd_const.wast:1170
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i32x4 0xff__ffff 0xff__ffff 0xff__ffff 0xff__ffff)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1171
+// ./test/core/simd/simd_const.wast:1175
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 _100_100 _100_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1175
+// ./test/core/simd/simd_const.wast:1179
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 +_100_100 +_100_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1179
+// ./test/core/simd/simd_const.wast:1183
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 -_100_100 -_100_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1183
+// ./test/core/simd/simd_const.wast:1187
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 99_99_ 99_99_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1187
+// ./test/core/simd/simd_const.wast:1191
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 1__000_000 1__000_000)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1191
+// ./test/core/simd/simd_const.wast:1195
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 _0x100000 _0x100000)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1195
+// ./test/core/simd/simd_const.wast:1199
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 0_x100000 0_x100000)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1199
+// ./test/core/simd/simd_const.wast:1203
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 0x_100000 0x_100000)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1203
+// ./test/core/simd/simd_const.wast:1207
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 0x00_ 0x00_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1207
+// ./test/core/simd/simd_const.wast:1211
 assert_malformed(
   () => instantiate(`(global v128 (v128.const i64x2 0xff__ffff_ffff_ffff 0xff__ffff_ffff_ffff)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1214
+// ./test/core/simd/simd_const.wast:1218
 let $305 = instantiate(`(module
   (func (export "f32-dec-sep1") (result v128) (v128.const f32x4 1_000_000 1_000_000 1_000_000 1_000_000))
   (func (export "f32-dec-sep2") (result v128) (v128.const f32x4 1_0_0_0 1_0_0_0 1_0_0_0 1_0_0_0))
@@ -3877,7 +3883,7 @@ let $305 = instantiate(`(module
   (func (export "f64-hex-sep5") (result v128) (v128.const f64x2 0x2a_f00a.1f_3_eep2_3 0x2a_f00a.1f_3_eep2_3))
 )`);
 
-// ./test/core/simd/simd_const.wast:1237
+// ./test/core/simd/simd_const.wast:1241
 assert_return(
   () => invoke($305, `f32-dec-sep1`, []),
   [
@@ -3890,7 +3896,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1238
+// ./test/core/simd/simd_const.wast:1242
 assert_return(
   () => invoke($305, `f32-dec-sep2`, []),
   [
@@ -3903,7 +3909,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1239
+// ./test/core/simd/simd_const.wast:1243
 assert_return(
   () => invoke($305, `f32-dec-sep3`, []),
   [
@@ -3916,7 +3922,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1240
+// ./test/core/simd/simd_const.wast:1244
 assert_return(
   () => invoke($305, `f32-dec-sep4`, []),
   [
@@ -3929,7 +3935,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1241
+// ./test/core/simd/simd_const.wast:1245
 assert_return(
   () => invoke($305, `f32-dec-sep5`, []),
   [
@@ -3942,7 +3948,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1242
+// ./test/core/simd/simd_const.wast:1246
 assert_return(
   () => invoke($305, `f32-hex-sep1`, []),
   [
@@ -3955,7 +3961,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1243
+// ./test/core/simd/simd_const.wast:1247
 assert_return(
   () => invoke($305, `f32-hex-sep2`, []),
   [
@@ -3968,7 +3974,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1244
+// ./test/core/simd/simd_const.wast:1248
 assert_return(
   () => invoke($305, `f32-hex-sep3`, []),
   [
@@ -3981,7 +3987,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1245
+// ./test/core/simd/simd_const.wast:1249
 assert_return(
   () => invoke($305, `f32-hex-sep4`, []),
   [
@@ -3994,7 +4000,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1246
+// ./test/core/simd/simd_const.wast:1250
 assert_return(
   () => invoke($305, `f32-hex-sep5`, []),
   [
@@ -4007,25 +4013,25 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1247
+// ./test/core/simd/simd_const.wast:1251
 assert_return(
   () => invoke($305, `f64-dec-sep1`, []),
   [new F64x2Pattern(value("f64", 1000000), value("f64", 1000000))],
 );
 
-// ./test/core/simd/simd_const.wast:1248
+// ./test/core/simd/simd_const.wast:1252
 assert_return(
   () => invoke($305, `f64-dec-sep2`, []),
   [new F64x2Pattern(value("f64", 1000), value("f64", 1000))],
 );
 
-// ./test/core/simd/simd_const.wast:1249
+// ./test/core/simd/simd_const.wast:1253
 assert_return(
   () => invoke($305, `f64-dec-sep3`, []),
   [new F64x2Pattern(value("f64", 1003.141592), value("f64", 1003.141592))],
 );
 
-// ./test/core/simd/simd_const.wast:1250
+// ./test/core/simd/simd_const.wast:1254
 assert_return(
   () => invoke($305, `f64-dec-sep4`, []),
   [
@@ -4033,7 +4039,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1251
+// ./test/core/simd/simd_const.wast:1255
 assert_return(
   () => invoke($305, `f64-dec-sep5`, []),
   [
@@ -4044,19 +4050,19 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1252
+// ./test/core/simd/simd_const.wast:1256
 assert_return(
   () => invoke($305, `f64-hex-sep1`, []),
   [new F64x2Pattern(value("f64", 168755353), value("f64", 168755353))],
 );
 
-// ./test/core/simd/simd_const.wast:1253
+// ./test/core/simd/simd_const.wast:1257
 assert_return(
   () => invoke($305, `f64-hex-sep2`, []),
   [new F64x2Pattern(value("f64", 109071), value("f64", 109071))],
 );
 
-// ./test/core/simd/simd_const.wast:1254
+// ./test/core/simd/simd_const.wast:1258
 assert_return(
   () => invoke($305, `f64-hex-sep3`, []),
   [
@@ -4067,475 +4073,475 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1255
+// ./test/core/simd/simd_const.wast:1259
 assert_return(
   () => invoke($305, `f64-hex-sep4`, []),
   [new F64x2Pattern(value("f64", 1966080), value("f64", 1966080))],
 );
 
-// ./test/core/simd/simd_const.wast:1256
+// ./test/core/simd/simd_const.wast:1260
 assert_return(
   () => invoke($305, `f64-hex-sep5`, []),
   [new F64x2Pattern(value("f64", 23605225168752), value("f64", 23605225168752))],
 );
 
-// ./test/core/simd/simd_const.wast:1258
+// ./test/core/simd/simd_const.wast:1262
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 _100 _100 _100 _100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1262
+// ./test/core/simd/simd_const.wast:1266
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 +_100 +_100 +_100 +_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1266
+// ./test/core/simd/simd_const.wast:1270
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 -_100 -_100 -_100 -_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1270
+// ./test/core/simd/simd_const.wast:1274
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 99_ 99_ 99_ 99_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1274
+// ./test/core/simd/simd_const.wast:1278
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1__000 1__000 1__000 1__000)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1278
+// ./test/core/simd/simd_const.wast:1282
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 _1.0 _1.0 _1.0 _1.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1282
+// ./test/core/simd/simd_const.wast:1286
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1.0_ 1.0_ 1.0_ 1.0_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1286
+// ./test/core/simd/simd_const.wast:1290
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1_.0 1_.0 1_.0 1_.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1290
+// ./test/core/simd/simd_const.wast:1294
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1._0 1._0 1._0 1._0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1294
+// ./test/core/simd/simd_const.wast:1298
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 _1e1 _1e1 _1e1 _1e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1298
+// ./test/core/simd/simd_const.wast:1302
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1e1_ 1e1_ 1e1_ 1e1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1302
+// ./test/core/simd/simd_const.wast:1306
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1_e1 1_e1 1_e1 1_e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1306
+// ./test/core/simd/simd_const.wast:1310
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1e_1 1e_1 1e_1 1e_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1310
+// ./test/core/simd/simd_const.wast:1314
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 _1.0e1 _1.0e1 _1.0e1 _1.0e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1314
+// ./test/core/simd/simd_const.wast:1318
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1.0e1_ 1.0e1_ 1.0e1_ 1.0e1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1318
+// ./test/core/simd/simd_const.wast:1322
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1.0_e1 1.0_e1 1.0_e1 1.0_e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1322
+// ./test/core/simd/simd_const.wast:1326
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1.0e_1 1.0e_1 1.0e_1 1.0e_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1326
+// ./test/core/simd/simd_const.wast:1330
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1.0e+_1 1.0e+_1 1.0e+_1 1.0e+_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1330
+// ./test/core/simd/simd_const.wast:1334
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 1.0e_+1 1.0e_+1 1.0e_+1 1.0e_+1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1334
+// ./test/core/simd/simd_const.wast:1338
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 _0x100 _0x100 _0x100 _0x100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1338
+// ./test/core/simd/simd_const.wast:1342
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0_x100 0_x100 0_x100 0_x100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1342
+// ./test/core/simd/simd_const.wast:1346
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x_100 0x_100 0x_100 0x_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1346
+// ./test/core/simd/simd_const.wast:1350
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x00_ 0x00_ 0x00_ 0x00_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1350
+// ./test/core/simd/simd_const.wast:1354
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0xff__ffff 0xff__ffff 0xff__ffff 0xff__ffff)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1354
+// ./test/core/simd/simd_const.wast:1358
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x_1.0 0x_1.0 0x_1.0 0x_1.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1358
+// ./test/core/simd/simd_const.wast:1362
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1.0_ 0x1.0_ 0x1.0_ 0x1.0_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1362
+// ./test/core/simd/simd_const.wast:1366
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1_.0 0x1_.0 0x1_.0 0x1_.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1366
+// ./test/core/simd/simd_const.wast:1370
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1._0 0x1._0 0x1._0 0x1._0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1370
+// ./test/core/simd/simd_const.wast:1374
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x_1p1 0x_1p1 0x_1p1 0x_1p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1374
+// ./test/core/simd/simd_const.wast:1378
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1p1_ 0x1p1_ 0x1p1_ 0x1p1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1378
+// ./test/core/simd/simd_const.wast:1382
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1_p1 0x1_p1 0x1_p1 0x1_p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1382
+// ./test/core/simd/simd_const.wast:1386
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1p_1 0x1p_1 0x1p_1 0x1p_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1386
+// ./test/core/simd/simd_const.wast:1390
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x_1.0p1 0x_1.0p1 0x_1.0p1 0x_1.0p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1390
+// ./test/core/simd/simd_const.wast:1394
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1.0p1_ 0x1.0p1_ 0x1.0p1_ 0x1.0p1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1394
+// ./test/core/simd/simd_const.wast:1398
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1.0_p1 0x1.0_p1 0x1.0_p1 0x1.0_p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1398
+// ./test/core/simd/simd_const.wast:1402
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1.0p_1 0x1.0p_1 0x1.0p_1 0x1.0p_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1402
+// ./test/core/simd/simd_const.wast:1406
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1.0p+_1 0x1.0p+_1 0x1.0p+_1 0x1.0p+_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1406
+// ./test/core/simd/simd_const.wast:1410
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f32x4 0x1.0p_+1 0x1.0p_+1 0x1.0p_+1 0x1.0p_+1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1411
+// ./test/core/simd/simd_const.wast:1415
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 _100 _100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1415
+// ./test/core/simd/simd_const.wast:1419
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 +_100 +_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1419
+// ./test/core/simd/simd_const.wast:1423
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 -_100 -_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1423
+// ./test/core/simd/simd_const.wast:1427
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 99_ 99_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1427
+// ./test/core/simd/simd_const.wast:1431
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1__000 1__000)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1431
+// ./test/core/simd/simd_const.wast:1435
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 _1.0 _1.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1435
+// ./test/core/simd/simd_const.wast:1439
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1.0_ 1.0_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1439
+// ./test/core/simd/simd_const.wast:1443
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1_.0 1_.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1443
+// ./test/core/simd/simd_const.wast:1447
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1._0 1._0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1447
+// ./test/core/simd/simd_const.wast:1451
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 _1e1 _1e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1451
+// ./test/core/simd/simd_const.wast:1455
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1e1_ 1e1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1455
+// ./test/core/simd/simd_const.wast:1459
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1_e1 1_e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1459
+// ./test/core/simd/simd_const.wast:1463
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1e_1 1e_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1463
+// ./test/core/simd/simd_const.wast:1467
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 _1.0e1 _1.0e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1467
+// ./test/core/simd/simd_const.wast:1471
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1.0e1_ 1.0e1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1471
+// ./test/core/simd/simd_const.wast:1475
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1.0_e1 1.0_e1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1475
+// ./test/core/simd/simd_const.wast:1479
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1.0e_1 1.0e_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1479
+// ./test/core/simd/simd_const.wast:1483
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1.0e+_1 1.0e+_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1483
+// ./test/core/simd/simd_const.wast:1487
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 1.0e_+1 1.0e_+1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1487
+// ./test/core/simd/simd_const.wast:1491
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 _0x100 _0x100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1491
+// ./test/core/simd/simd_const.wast:1495
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0_x100 0_x100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1495
+// ./test/core/simd/simd_const.wast:1499
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x_100 0x_100)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1499
+// ./test/core/simd/simd_const.wast:1503
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x00_ 0x00_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1503
+// ./test/core/simd/simd_const.wast:1507
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0xff__ffff 0xff__ffff)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1507
+// ./test/core/simd/simd_const.wast:1511
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x_1.0 0x_1.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1511
+// ./test/core/simd/simd_const.wast:1515
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1.0_ 0x1.0_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1515
+// ./test/core/simd/simd_const.wast:1519
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1_.0 0x1_.0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1519
+// ./test/core/simd/simd_const.wast:1523
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1._0 0x1._0)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1523
+// ./test/core/simd/simd_const.wast:1527
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x_1p1 0x_1p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1527
+// ./test/core/simd/simd_const.wast:1531
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1p1_ 0x1p1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1531
+// ./test/core/simd/simd_const.wast:1535
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1_p1 0x1_p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1535
+// ./test/core/simd/simd_const.wast:1539
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1p_1 0x1p_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1539
+// ./test/core/simd/simd_const.wast:1543
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x_1.0p1 0x_1.0p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1543
+// ./test/core/simd/simd_const.wast:1547
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1.0p1_ 0x1.0p1_)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1547
+// ./test/core/simd/simd_const.wast:1551
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1.0_p1 0x1.0_p1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1551
+// ./test/core/simd/simd_const.wast:1555
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1.0p_1 0x1.0p_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1555
+// ./test/core/simd/simd_const.wast:1559
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1.0p+_1 0x1.0p+_1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1559
+// ./test/core/simd/simd_const.wast:1563
 assert_malformed(
   () => instantiate(`(global v128 (v128.const f64x2 0x1.0p_+1 0x1.0p_+1)) `),
   `unknown operator`,
 );
 
-// ./test/core/simd/simd_const.wast:1566
+// ./test/core/simd/simd_const.wast:1570
 let $306 = instantiate(`(module binary
   "\\00asm" "\\01\\00\\00\\00"
   "\\01\\05\\01"                                ;; type   section
@@ -4552,7 +4558,7 @@ let $306 = instantiate(`(module binary
   "\\0b"                                      ;; end
 )`);
 
-// ./test/core/simd/simd_const.wast:1581
+// ./test/core/simd/simd_const.wast:1585
 assert_return(
   () => invoke($306, `parse_i8x16`, []),
   [
@@ -4560,7 +4566,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1583
+// ./test/core/simd/simd_const.wast:1587
 let $307 = instantiate(`(module binary
   "\\00asm" "\\01\\00\\00\\00"
   "\\01\\05\\01"                                ;; type   section
@@ -4577,13 +4583,13 @@ let $307 = instantiate(`(module binary
   "\\0b"                                      ;; end
 )`);
 
-// ./test/core/simd/simd_const.wast:1598
+// ./test/core/simd/simd_const.wast:1602
 assert_return(
   () => invoke($307, `parse_i16x8`, []),
   [i16x8([0x0, 0x0, 0x8000, 0x8000, 0xffff, 0xffff, 0xffff, 0xffff])],
 );
 
-// ./test/core/simd/simd_const.wast:1600
+// ./test/core/simd/simd_const.wast:1604
 let $308 = instantiate(`(module binary
   "\\00asm" "\\01\\00\\00\\00"
   "\\01\\05\\01"                                ;; type   section
@@ -4600,13 +4606,13 @@ let $308 = instantiate(`(module binary
   "\\0b"                                      ;; end
 )`);
 
-// ./test/core/simd/simd_const.wast:1615
+// ./test/core/simd/simd_const.wast:1619
 assert_return(
   () => invoke($308, `parse_i32x4`, []),
   [i32x4([0xffffffd1, 0xffffffd1, 0xffffffd1, 0xffffffd1])],
 );
 
-// ./test/core/simd/simd_const.wast:1617
+// ./test/core/simd/simd_const.wast:1621
 let $309 = instantiate(`(module binary
   "\\00asm" "\\01\\00\\00\\00"
   "\\01\\05\\01"                                ;; type   section
@@ -4621,10 +4627,10 @@ let $309 = instantiate(`(module binary
   "\\0b"                                      ;; end
 )`);
 
-// ./test/core/simd/simd_const.wast:1630
+// ./test/core/simd/simd_const.wast:1634
 assert_return(() => invoke($309, `parse_i64x2`, []), [i64x2([0x7fffffffffffffffn, 0x7fffffffffffffffn])]);
 
-// ./test/core/simd/simd_const.wast:1634
+// ./test/core/simd/simd_const.wast:1638
 let $310 = instantiate(`(module binary
   "\\00asm" "\\01\\00\\00\\00"
   "\\01\\05\\01"                                ;; type   section
@@ -4641,7 +4647,7 @@ let $310 = instantiate(`(module binary
   "\\0b"                                      ;; end
 )`);
 
-// ./test/core/simd/simd_const.wast:1649
+// ./test/core/simd/simd_const.wast:1653
 assert_return(
   () => invoke($310, `parse_f32x4`, []),
   [
@@ -4654,7 +4660,7 @@ assert_return(
   ],
 );
 
-// ./test/core/simd/simd_const.wast:1651
+// ./test/core/simd/simd_const.wast:1655
 let $311 = instantiate(`(module binary
   "\\00asm" "\\01\\00\\00\\00"
   "\\01\\05\\01"                                ;; type   section
@@ -4669,7 +4675,7 @@ let $311 = instantiate(`(module binary
   "\\0b"                                      ;; end
 )`);
 
-// ./test/core/simd/simd_const.wast:1664
+// ./test/core/simd/simd_const.wast:1668
 assert_return(
   () => invoke($311, `parse_f64x2`, []),
   [

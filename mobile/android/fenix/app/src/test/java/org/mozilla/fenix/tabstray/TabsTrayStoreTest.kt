@@ -5,12 +5,16 @@
 package org.mozilla.fenix.tabstray
 
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mozilla.fenix.tabstray.data.TabsTrayItem
+import org.mozilla.fenix.tabstray.redux.action.TabsTrayAction
+import org.mozilla.fenix.tabstray.redux.state.Page
+import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
+import org.mozilla.fenix.tabstray.redux.store.TabsTrayStore
+import kotlin.test.assertIs
 
 class TabsTrayStoreTest {
 
@@ -20,20 +24,16 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.EnterSelectMode)
 
-        store.waitUntilIdle()
-
         assertTrue(store.state.mode.selectedTabs.isEmpty())
-        assertTrue(store.state.mode is TabsTrayState.Mode.Select)
+        assertIs<TabsTrayState.Mode.Select>(store.state.mode)
 
-        store.dispatch(TabsTrayAction.AddSelectTab(createTab(url = "url")))
+        store.dispatch(TabsTrayAction.AddSelectTab(TabsTrayItem.Tab(tab = createTab(url = "url"))))
 
         store.dispatch(TabsTrayAction.ExitSelectMode)
         store.dispatch(TabsTrayAction.EnterSelectMode)
 
-        store.waitUntilIdle()
-
         assertTrue(store.state.mode.selectedTabs.isEmpty())
-        assertTrue(store.state.mode is TabsTrayState.Mode.Select)
+        assertIs<TabsTrayState.Mode.Select>(store.state.mode)
     }
 
     @Test
@@ -42,24 +42,18 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.EnterSelectMode)
 
-        store.waitUntilIdle()
-
-        assertTrue(store.state.mode is TabsTrayState.Mode.Select)
+        assertIs<TabsTrayState.Mode.Select>(store.state.mode)
 
         store.dispatch(TabsTrayAction.ExitSelectMode)
 
-        store.waitUntilIdle()
-
-        assertTrue(store.state.mode is TabsTrayState.Mode.Normal)
+        assertIs<TabsTrayState.Mode.Normal>(store.state.mode)
     }
 
     @Test
     fun `WHEN adding a tab to selection THEN it is added to the selectedTabs`() {
         val store = TabsTrayStore()
 
-        store.dispatch(TabsTrayAction.AddSelectTab(createTab(url = "url", id = "tab1")))
-
-        store.waitUntilIdle()
+        store.dispatch(TabsTrayAction.AddSelectTab(TabsTrayItem.Tab(tab = createTab(url = "url", id = "tab1"))))
 
         assertEquals("tab1", store.state.mode.selectedTabs.take(1).first().id)
     }
@@ -67,18 +61,14 @@ class TabsTrayStoreTest {
     @Test
     fun `WHEN removing a tab THEN it is removed from the selectedTabs`() {
         val store = TabsTrayStore()
-        val tabForRemoval = createTab(url = "url", id = "tab1")
+        val tabForRemoval = TabsTrayItem.Tab(tab = createTab(url = "url", id = "tab1"))
 
         store.dispatch(TabsTrayAction.AddSelectTab(tabForRemoval))
-        store.dispatch(TabsTrayAction.AddSelectTab(createTab(url = "url", id = "tab2")))
-
-        store.waitUntilIdle()
+        store.dispatch(TabsTrayAction.AddSelectTab(TabsTrayItem.Tab(tab = createTab(url = "url", id = "tab2"))))
 
         assertEquals(2, store.state.mode.selectedTabs.size)
 
         store.dispatch(TabsTrayAction.RemoveSelectTab(tabForRemoval))
-
-        store.waitUntilIdle()
 
         assertEquals(1, store.state.mode.selectedTabs.size)
         assertEquals("tab2", store.state.mode.selectedTabs.take(1).first().id)
@@ -99,44 +89,61 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.PageSelected(Page.SyncedTabs))
 
-        store.waitUntilIdle()
-
         assertEquals(Page.SyncedTabs, store.state.selectedPage)
     }
 
     @Test
     fun `WHEN position is converted to page THEN page is correct`() {
-        assert(Page.positionToPage(0) == Page.PrivateTabs)
-        assert(Page.positionToPage(1) == Page.NormalTabs)
-        assert(Page.positionToPage(2) == Page.SyncedTabs)
-        assert(Page.positionToPage(3) == Page.SyncedTabs)
-        assert(Page.positionToPage(-1) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = 0) == Page.PrivateTabs)
+        assert(Page.positionToPage(position = 1) == Page.NormalTabs)
+        assert(Page.positionToPage(position = 2) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = -1) == Page.SyncedTabs)
+    }
+
+    @Test
+    fun `WHEN Page is converted to an index THEN the index is correct`() {
+        assert(Page.pageToPosition(page = Page.PrivateTabs) == 0)
+        assert(Page.pageToPosition(page = Page.NormalTabs) == 1)
+        assert(Page.pageToPosition(page = Page.SyncedTabs) == 2)
+    }
+
+    @Test
+    fun `WHEN position is converted to page and tab groups should be shown THEN page is correct`() {
+        assert(Page.positionToPage(position = 0, shouldShowTabGroupsPage = true) == Page.PrivateTabs)
+        assert(Page.positionToPage(position = 1, shouldShowTabGroupsPage = true) == Page.NormalTabs)
+        assert(Page.positionToPage(position = 2, shouldShowTabGroupsPage = true) == Page.TabGroups)
+        assert(Page.positionToPage(position = 3, shouldShowTabGroupsPage = true) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = -1, shouldShowTabGroupsPage = true) == Page.SyncedTabs)
+    }
+
+    @Test
+    fun `WHEN Page is converted to an index and tab groups should be shown THEN the index is correct`() {
+        assert(Page.pageToPosition(page = Page.PrivateTabs, shouldShowTabGroupsPage = true) == 0)
+        assert(Page.pageToPosition(page = Page.NormalTabs, shouldShowTabGroupsPage = true) == 1)
+        assert(Page.pageToPosition(page = Page.TabGroups, shouldShowTabGroupsPage = true) == 2)
+        assert(Page.pageToPosition(page = Page.SyncedTabs, shouldShowTabGroupsPage = true) == 3)
     }
 
     @Test
     fun `WHEN sync now action is triggered THEN update the sync now boolean`() {
         val store = TabsTrayStore()
 
-        assertFalse(store.state.syncing)
+        assertFalse(store.state.sync.isSyncing)
 
         store.dispatch(TabsTrayAction.SyncNow)
 
-        store.waitUntilIdle()
-
-        assertTrue(store.state.syncing)
+        assertTrue(store.state.sync.isSyncing)
     }
 
     @Test
     fun `WHEN sync is complete THEN the syncing boolean is updated`() {
-        val store = TabsTrayStore(initialState = TabsTrayState(syncing = true))
+        val store = TabsTrayStore(initialState = TabsTrayState(sync = TabsTrayState.SyncState(isSyncing = true)))
 
-        assertTrue(store.state.syncing)
+        assertTrue(store.state.sync.isSyncing)
 
         store.dispatch(TabsTrayAction.SyncCompleted)
 
-        store.waitUntilIdle()
-
-        assertFalse(store.state.syncing)
+        assertFalse(store.state.sync.isSyncing)
     }
 
     @Test
@@ -146,19 +153,21 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.UpdateSelectedTabId(tabId = expected))
 
-        store.waitUntilIdle()
-
         assertEquals(expected, store.state.selectedTabId)
     }
 
     @Test
     fun `WHEN UpdateInactiveExpanded is dispatched THEN update inactiveTabsExpanded`() {
-        val tabsTrayStore = TabsTrayStore(initialState = TabsTrayState(inactiveTabsExpanded = false))
+        val tabsTrayStore = TabsTrayStore(
+            initialState = TabsTrayState(
+                inactiveTabs = TabsTrayState.InactiveTabsState(isExpanded = false),
+            ),
+        )
 
-        assertFalse(tabsTrayStore.state.inactiveTabsExpanded)
+        assertFalse(tabsTrayStore.state.inactiveTabs.isExpanded)
 
-        tabsTrayStore.dispatch(TabsTrayAction.UpdateInactiveExpanded(true)).joinBlocking()
+        tabsTrayStore.dispatch(TabsTrayAction.UpdateInactiveExpanded(true))
 
-        assertTrue(tabsTrayStore.state.inactiveTabsExpanded)
+        assertTrue(tabsTrayStore.state.inactiveTabs.isExpanded)
     }
 }

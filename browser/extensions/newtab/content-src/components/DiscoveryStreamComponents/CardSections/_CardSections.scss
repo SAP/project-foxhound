@@ -1,107 +1,76 @@
-// Bug 1964453: Some styles here may appear duplicative — due to @includes and media queries, certain rules are intentionally overwritten rather than relying on cascade behavior.
+// Bug 1964453: Some styles here may appear duplicative — due to @includes, @container and media queries, certain rules are intentionally overwritten rather than relying on cascade behavior.
 
 @mixin section-card-small {
   grid-row: span 1;
   grid-column: span 1;
   padding: var(--space-large);
 
-  &.refined-cards.ds-card.sections-card-ui {
-    box-shadow: var(--box-shadow-card);
+  &.ds-card.sections-card-ui {
+    padding: unset;
+    box-shadow: var(--card-box-shadow);
 
     &:hover {
-      box-shadow: var(--box-shadow-card-hover);
+      box-shadow: var(--card-box-shadow-hover);
+    }
+
+    &:not(.placeholder) .img-wrapper>.ds-image.img>img {
+      border-radius: var(--border-radius-medium);
     }
   }
 
-  &.refined-cards {
-    .ds-card-link {
-      padding: var(--space-small);
+  .meta {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    align-self: flex-start;
+    min-height: 125px;
+
+    .info-wrap {
       flex-grow: 0;
-    }
+      max-width: 150px;
+      margin-block-start: var(--space-xsmall);
 
-    .img-wrapper {
-      width: 110px;
-      height: 117px;
-    }
-
-    .meta {
-      padding: 0;
-      min-height: 117px;
-
-      .info-wrap {
-        flex-grow: 1
-      }
-
-      .sections-card-footer {
-        max-width: 114px;
-        min-height: unset;
-        position: initial;
-        margin-block-start: auto;
-
-        .source {
-          word-break: normal;
-          width: 114px;
-        }
+      .title {
+        font-size: var(--font-size-small);
+        margin-block: 0;
+        -webkit-line-clamp: 4;
       }
     }
 
-    .card-stp-button-hover-background {
-      background: transparent;
-    }
-
-    .card-stp-button-position-wrapper {
-      // context menu should match the padding for the parent
-      inset-inline-end: var(--space-small);
-      inset-block-end: var(--space-small);
-    }
-
-    .context-menu-position-container .context-menu-button {
-      height: 32px;
-      width: 32px;
-    }
-
-    .card-stp-thumbs-buttons-wrapper {
-      .card-stp-thumbs-buttons {
-        gap: var(--space-small);
-      }
-    }
-
-
-    &:hover,
-    &:active,
-    &:focus-visible,
-    &.active {
-      .card-stp-thumbs-buttons-wrapper {
-        visibility: visible;
-      }
-
-      .meta {
-        .source-wrapper .source {
-          display: none;
-        }
-      }
+    .sections-card-footer {
+      margin-block-start: auto;
+      margin-block-end: var(--space-small);
+      max-width: 150px;
+      min-width: auto;
+      min-height: unset;
+      position: initial;
     }
   }
 
   &.ds-card.sections-card-ui {
-    padding: unset;
+    .card-stp-button-hover-background .card-stp-button-position-wrapper {
+      inset-inline-end: var(--space-xsmall);
+    }
   }
 
-  .card-stp-thumbs-buttons-wrapper {
-    visibility: hidden;
+  .context-menu-position-container .context-menu-button {
+    height: 32px;
+    width: 32px;
   }
 
   .ds-card-link {
     display: flex;
     flex-direction: row;
+    flex-grow: 0;
     position: relative;
     align-items: center;
     gap: var(--space-medium);
-    padding: var(--space-large);
+    padding: var(--space-xsmall) var(--space-small);
   }
 
   .img-wrapper {
-    width: 100px;
+    width: 110px;
+    height: 117px;
     flex-shrink: 0;
     flex-grow: 0;
     aspect-ratio: 5/6;
@@ -109,47 +78,21 @@
     .ds-image.img {
       width: 100%;
       height: 100%;
-      padding-top: 0;
+      padding-block-start: 0;
       min-width: 100%;
     }
 
     .ds-image.img img {
       width: 100%;
       height: 100%;
-      border-radius: var(--border-radius-medium) var(--border-radius-medium);
+      border-radius: var(--border-radius-medium);
       object-fit: cover;
     }
   }
 
-  &:not(.placeholder) {
-    .img-wrapper > .ds-image.img > img {
-      width: 100%;
-      border-radius: var(--border-radius-medium) var(--border-radius-medium);
-    }
-  }
-
-  .meta {
-    padding: 0;
-    align-self: flex-start;
-    min-height: 125px;
-
-    .info-wrap .title {
-      font-size: var(--font-size-small);
-      margin-block: 0;
-      -webkit-line-clamp: 4;
-    }
-
-    .sections-card-footer {
-      margin-block-start: var(--space-xxsmall);
-    }
-  }
-
   .card-stp-button-hover-background {
+    background: transparent;
     padding-block-start: unset;
-  }
-
-  .card-stp-button-position-wrapper {
-    inset-inline-end: var(--space-small);
   }
 
 }
@@ -162,111 +105,18 @@
   align-items: initial;
   gap: initial;
 
-  &.refined-cards.ds-card.sections-card-ui {
+  &.ds-card.sections-card-ui {
     height: unset;
-    box-shadow: var(--box-shadow-card);
+    box-shadow: var(--card-box-shadow);
 
     &:hover {
-      box-shadow: var(--box-shadow-card-hover);
+      box-shadow: var(--card-box-shadow-hover);
     }
-  }
-
-  .card-stp-thumbs-buttons-wrapper {
-    visibility: visible;
-  }
-
-  &.refined-cards {
-    .ds-card-link {
-      padding: unset;
-      flex-grow: 1;
-    }
-
-    .img-wrapper {
-      width: 100%;
-      height: 160px;
-    }
-
-    &.ds-spoc-rectangle {
-      .img-wrapper {
-        height: 250px;
-      }
-    }
-
-    .meta {
-      padding: var(--space-large) var(--space-large) var(--space-small);
-      min-height: unset;
-
-      .info-wrap {
-        flex-grow: initial;
-      }
-
-      .sections-card-footer {
-        max-width: 225px;
-        inset-inline-end: initial;
-        inset-block-end: initial;
-        min-height: 28px;
-
-        .source-wrapper {
-          max-width: 175px;
-        }
-      }
-
-      &:has(.story-footer .story-sponsored-label) {
-        .sections-card-footer {
-          display: none;
-        }
-
-        .story-footer {
-          margin-block: auto 0;
-
-        }
-      }
-    }
-
-    .context-menu-position-container .context-menu-button {
-      height: 32px;
-      width: 32px;
-    }
-
-    .card-stp-button-position-wrapper {
-      // context menu should match the padding for the parent
-      inset-inline-end: var(--space-large);
-      inset-block-end: var(--space-small);
-    }
-
-    .card-stp-button-hover-background {
-      background: transparent; }
-
-    &:hover,
-    &:active,
-    &:focus-visible,
-    &.active {
-      .meta {
-        .source-wrapper .source {
-          display: block;
-        }
-      }
-    }
-
-  }
-
-  .card-stp-button-position-wrapper {
-    inset-inline-end: var(--space-small);
-  }
-
-  .card-stp-thumbs-buttons-wrapper {
-    display: block;
-  }
-
-  .ds-card-link {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    padding: 0;
   }
 
   .img-wrapper {
     width: 100%;
+    height: 160px;
     position: relative;
     // reset values inherited from small card mixin
     flex-grow: 0;
@@ -274,18 +124,21 @@
     aspect-ratio: initial;
   }
 
-  &:not(.placeholder) {
-    .img-wrapper > .ds-image.img > img {
-      border-radius: var(--border-radius-large) var(--border-radius-large) 0 0;
+  &.ds-spoc-rectangle {
+    .img-wrapper {
+      height: 250px;
     }
   }
 
   .meta {
-    padding: var(--space-medium) var(--space-large);
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-large) var(--space-large) var(--space-small);
+    min-height: unset;
 
     .info-wrap {
       flex-grow: initial;
-      // flex-grow: 1;/
+      max-width: unset;
 
       .title {
         -webkit-line-clamp: 3;
@@ -300,7 +153,64 @@
     }
 
     .sections-card-footer {
-      margin-top: auto;
+      margin-block-start: auto;
+      margin-block-end: unset;
+      inset-inline-end: initial;
+      min-height: 28px;
+      padding-inline-end: var(--space-xxlarge);
+
+      .source-wrapper {
+        max-width: none;
+      }
+    }
+
+    &:has(.story-footer .story-sponsored-label) {
+      .sections-card-footer {
+        display: none;
+      }
+
+      .story-footer {
+        margin-block: auto 0;
+      }
+    }
+  }
+
+  .context-menu-position-container .context-menu-button {
+    height: 32px;
+    width: 32px;
+  }
+
+  &.ds-card.sections-card-ui {
+    .card-stp-button-hover-background .card-stp-button-position-wrapper {
+      inset-inline-end: var(--space-small);
+    }
+  }
+
+  .card-stp-button-hover-background {
+    background: transparent;
+  }
+
+  &:hover,
+  &:active,
+  &:focus-within,
+  &.active {
+    .meta {
+      .source-wrapper .source {
+        display: block;
+      }
+    }
+  }
+
+  .ds-card-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+  }
+
+  &:not(.placeholder, .ds-spoc-rectangle) {
+    .img-wrapper>.ds-image.img>img {
+      border-radius: var(--border-radius-large) var(--border-radius-large) 0 0;
     }
   }
 }
@@ -309,8 +219,8 @@
   grid-row: span 2;
   grid-column: span 2;
 
-  &.refined-cards.ds-card.sections-card-ui {
-    box-shadow: var(--box-shadow-card);
+  &.ds-card.sections-card-ui {
+    box-shadow: var(--card-box-shadow);
 
     @media ($break-point-layout-variant <=width < $break-point-widest),
       (min-width: $break-point-sections-variant) {
@@ -352,20 +262,19 @@
     }
 
     &:hover {
-      box-shadow: var(--box-shadow-card-hover);
+      box-shadow: var(--card-box-shadow-hover);
     }
   }
 
   &.ds-card.sections-card-ui {
-    @media ($break-point-layout-variant <=width < $break-point-widest),
-      (min-width: $break-point-sections-variant) {
+    @media (min-width: $break-point-layout-variant) {
       align-content: flex-start;
       justify-content: center;
 
       .ds-card-link {
         flex-direction: row;
-        gap: var(--space-xlarge);
-        padding: var(--space-xxlarge);
+        gap: var(--space-large);
+        padding: var(--space-large);
         flex-grow: 0;
       }
 
@@ -391,7 +300,7 @@
         .title {
           -webkit-line-clamp: 3;
           font-size: var(--font-size-large);
-          font-weight: var(--font-weight-bold);
+          font-weight: var(--font-weight-heading);
           margin-block: 0 var(--space-small);
         }
 
@@ -401,16 +310,25 @@
         }
 
         .sections-card-footer {
-          margin-top: auto;
+          max-width: 380px;
+          margin-block-start: auto;
+          margin-block-end: var(--space-xxsmall);
+          display: flex;
+          align-items: center;
         }
       }
 
       .card-stp-button-hover-background {
         background: transparent;
         inset-inline-start: 0;
+
+        .card-stp-button-position-wrapper {
+          inset-block-end: var(--space-large);
+        }
       }
     }
   }
+
 }
 
 .has-sections-grid .ds-outer-wrapper-breakpoint-override {
@@ -441,7 +359,7 @@
     width: auto;
 
     .ds-card {
-      // card should take up availible space in grid
+      // card should take up available space in grid
       width: 100%;
       height: 100%;
     }
@@ -471,7 +389,7 @@
       width: auto;
 
       .body-wrapper {
-        width: 989px;
+        width: 975px;
       }
     }
 
@@ -481,7 +399,7 @@
       .body-wrapper {
         display: flex;
         flex-direction: column;
-        width: 1311px;
+        width: 1290px;
       }
 
       .ds-highlights .card-outer {
@@ -507,12 +425,13 @@
       justify-content: space-between;
       align-items: center;
       margin-block: var(--space-small) var(--space-medium);
+
     }
 
     .section-title {
       @include wallpaper-contrast-fix;
 
-      font-weight: var(--font-weight-bold);
+      font-weight: var(--font-weight-heading);
       font-size: var(--font-size-xlarge);
       color: var(--newtab-contextual-text-primary-color);
       margin-block: 0;
@@ -528,6 +447,13 @@
       color: var(--newtab-contextual-text-primary-color);
       margin-block: var(--space-xsmall) 0;
       font-size: var(--font-size-root);
+    }
+
+    // @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+    .nova-enabled & {
+      display: grid;
+      grid-template-columns: subgrid;
+      grid-column: 1 / -1;
     }
   }
 
@@ -573,142 +499,395 @@
   }
 }
 
+// @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+.nova-enabled .ds-section-wrapper .ds-section .section-heading {
+  grid-column: 1 / -1;
+
+  .section-title {
+    font-size: var(--font-size-heading-large);
+
+    @include at-content-cols(12) {
+      font-size: var(--font-size-heading-xlarge);
+    }
+  }
+}
+
 .ds-section-grid.ds-card-grid {
   grid-gap: var(--space-large);
   grid-template-columns: repeat(1, 300px);
 
-  @media (min-width: $break-point-medium) {
-    @for $i from 0 through 16 {
-      .col-1-position-#{$i} {
-        order: $i;
+  .ds-image {
+    &.image-2,
+    &.image-3,
+    &.image-4 {
+      display: none;
+    }
+
+    &.image-1 {
+      display: block;
+    }
+  }
+
+  @media (max-width: $break-point-layout-variant) {
+    &:not(.nova-enabled *) {
+      @for $i from 0 through 16 {
+        .col-1-position-#{$i} {
+          order: $i;
+        }
       }
-    }
 
-    .col-1-small {
-      @include section-card-small;
-    }
-
-    .col-1-medium {
-      @include section-card-medium;
-    }
-
-    .col-1-large {
-      @include section-card-large;
-    }
-
-    .col-1-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
+      .col-1-small {
+        @include section-card-small;
       }
-    }
 
-    .col-1-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
+      .col-1-medium {
+        @include section-card-medium;
+      }
+
+      .col-1-large {
+        @include section-card-large;
+      }
+
+      .col-1-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-1-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
       }
     }
   }
 
-  @media (min-width: $break-point-layout-variant) {
-    grid-template-columns: repeat(2, 300px);
+  @media ($break-point-layout-variant <= width < $break-point-widest) {
+    &:not(.nova-enabled *) {
+      grid-template-columns: repeat(2, 300px);
 
-    @for $i from 0 through 16 {
-      .col-2-position-#{$i} {
-        order: $i;
+      @for $i from 0 through 16 {
+        .col-2-position-#{$i} {
+          order: $i;
+        }
+      }
+
+      .col-2-small {
+        @include section-card-small;
+      }
+
+      .col-2-medium {
+        @include section-card-medium;
+      }
+
+      .col-2-large {
+        @include section-card-large;
+      }
+
+      .col-2-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-2-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
+      }
+
+      .ds-image {
+        &.image-1,
+        &.image-3,
+        &.image-4 {
+          display: none;
+        }
+
+        &.image-2 {
+          display: block;
+        }
       }
     }
+  }
 
-    .col-2-small {
-      @include section-card-small;
-    }
+  @media ($break-point-layout-variant <= width < $break-point-widest) {
+    &:not(.nova-enabled *) {
+      .col-2-small {
+        .meta .info-wrap {
+          max-width: 150px;
+        }
 
-    .col-2-medium {
-      @include section-card-medium;
-    }
-
-    .col-2-large {
-      @include section-card-large;
-    }
-
-    .col-2-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
+        .meta .sections-card-footer {
+          max-width: 150px;
+          min-width: unset;
+        }
       }
     }
+  }
 
-    .col-2-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
+  @media ($break-point-widest <= width < $break-point-sections-variant) {
+    &:not(.nova-enabled *) {
+      grid-template-columns: repeat(3, 300px);
+      gap: var(--space-large);
+
+      @for $i from 0 through 16 {
+        .col-3-position-#{$i} {
+          order: $i;
+        }
+      }
+
+      .col-3-small {
+        @include section-card-small;
+      }
+
+      .col-3-medium {
+        @include section-card-medium;
+      }
+
+      .col-3-large {
+        @include section-card-large;
+      }
+
+      .col-3-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-3-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
+      }
+
+      .ds-image {
+        &.image-1,
+        &.image-2,
+        &.image-4 {
+          display: none;
+        }
+
+        &.image-3 {
+          display: block;
+        }
       }
     }
   }
 
   @media (min-width: $break-point-widest) {
-    grid-template-columns: repeat(3, 300px);
-    gap: var(--space-large);
-
-    @for $i from 0 through 16 {
-      .col-3-position-#{$i} {
-        order: $i;
+    &:not(.nova-enabled *) {
+      .col-3-small {
+        .meta .info-wrap {
+          max-width: 150px;
+        }
       }
-    }
 
-    .col-3-small {
-      @include section-card-small;
-    }
-
-    .col-3-medium {
-      @include section-card-medium;
-    }
-
-    .col-3-large {
-      @include section-card-large;
-    }
-
-    .col-3-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
-      }
-    }
-
-    .col-3-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
+      .col-3-medium {
+        .meta .info-wrap {
+          max-width: unset;
+        }
       }
     }
   }
 
   @media (min-width: $break-point-sections-variant) {
-    grid-template-columns: repeat(4, 300px);
+    &:not(.nova-enabled *) {
+      grid-template-columns: repeat(4, 300px);
 
-    @for $i from 0 through 16 {
-      .col-4-position-#{$i} {
-        order: $i;
+      @for $i from 0 through 16 {
+        .col-4-position-#{$i} {
+          order: $i;
+        }
+      }
+
+      .col-4-small {
+        @include section-card-small;
+      }
+
+      .col-4-medium {
+        @include section-card-medium;
+      }
+
+      .col-4-large {
+        @include section-card-large;
+      }
+
+      .col-4-show-excerpt {
+        .meta .info-wrap .excerpt {
+          display: block;
+        }
+      }
+
+      .col-4-hide-excerpt {
+        .meta .info-wrap .excerpt {
+          display: none;
+        }
+      }
+
+      .ds-image {
+        &.image-1,
+        &.image-2,
+        &.image-3 {
+          display: none;
+        }
+
+        &.image-4 {
+          display: block;
+        }
+      }
+    }
+  }
+
+  @media (min-width: $break-point-sections-variant) {
+    &:not(.nova-enabled *) {
+      .col-4-small {
+        .meta .info-wrap {
+          max-width: 150px;
+        }
+
+        .meta .sections-card-footer {
+          max-width: 150px;
+          min-width: unset;
+        }
+      }
+    }
+  }
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+  .nova-enabled & {
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    row-gap: var(--space-medium);
+    margin-block-end: var(--space-xlarge);
+
+    // Exclusive column-count ranges so that cards with multiple col-N-* classes
+    // (assigned by JS for all breakpoints simultaneously) only activate one set of
+    // mixin styles at a time, avoiding specificity conflicts between mixins.
+    @include at-content-cols-range(0, 8) {
+      --sections-col-count: 1;
+
+      @for $i from 0 through 16 {
+        .col-1-position-#{$i} { order: $i; }
+      }
+
+      .col-1-small {
+        @include section-card-small;
+      }
+
+      .col-1-medium {
+        @include section-card-medium;
+      }
+
+      .col-1-large {
+        @include section-card-medium;
+      }
+
+      .col-1-small,
+      .col-1-medium,
+      .col-1-large {
+        grid-column: span 1;
       }
     }
 
-    .col-4-small {
-      @include section-card-small;
-    }
+    @include at-content-cols-range(8, 12) {
+      --sections-col-count: 2;
 
-    .col-4-medium {
-      @include section-card-medium;
-    }
-
-    .col-4-large {
-      @include section-card-large;
-    }
-
-    .col-4-show-excerpt {
-      .meta .info-wrap .excerpt {
-        display: block;
+      @for $i from 0 through 16 {
+        .col-2-position-#{$i} { order: $i; }
       }
+
+      .col-2-small {
+        @include section-card-small;
+      }
+
+      .col-2-medium {
+        @include section-card-medium;
+      }
+
+      .col-2-large {
+        @include section-card-large;
+      }
+
+      .col-2-small,
+      .col-2-medium {
+        grid-column: span 1;
+      }
+
+      .col-2-large {
+        grid-column: span 2;
+      }
+
+      .ds-image.image-1, .ds-image.image-3, .ds-image.image-4 { display: none; }
+      .ds-image.image-2 { display: block; }
     }
 
-    .col-4-hide-excerpt {
-      .meta .info-wrap .excerpt {
-        display: none;
+    @include at-content-cols-range(12, 16) {
+      --sections-col-count: 3;
+
+      @for $i from 0 through 16 {
+        .col-3-position-#{$i} { order: $i; }
       }
+
+      .col-3-small {
+        @include section-card-small;
+      }
+
+      .col-3-medium {
+        @include section-card-medium;
+      }
+
+      .col-3-large {
+        @include section-card-large;
+      }
+
+      .col-3-small,
+      .col-3-medium {
+        grid-column: span 1;
+      }
+
+      .col-3-large {
+        grid-column: span 2;
+      }
+
+      .ds-image.image-1, .ds-image.image-2, .ds-image.image-4 { display: none; }
+      .ds-image.image-3 { display: block; }
     }
+
+    @include at-content-cols(16) {
+      --sections-col-count: 4;
+
+      @for $i from 0 through 16 {
+        .col-4-position-#{$i} { order: $i; }
+      }
+
+      .col-4-small {
+        @include section-card-small;
+      }
+
+      .col-4-medium {
+        @include section-card-medium;
+      }
+
+      .col-4-large {
+        @include section-card-large;
+      }
+
+      .col-4-small,
+      .col-4-medium {
+        grid-column: span 1;
+      }
+
+      .col-4-large {
+        grid-column: span 2;
+      }
+
+      .ds-image.image-1, .ds-image.image-2, .ds-image.image-3 { display: none; }
+      .ds-image.image-4 { display: block; }
+    }
+  }
+
+  // @nova-cleanup(remove-conditional): Remove .nova-enabled wrapper, make default
+  .nova-enabled .ds-section:last-child & {
+    margin-block-end: 0;
   }
 }

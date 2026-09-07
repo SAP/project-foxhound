@@ -11,15 +11,15 @@ add_task(async function () {
   await addTab(TEST_URI);
   const { inspector, view } = await openRuleView();
 
-  await simpleCustomOverride(inspector, view);
   await importantCustomOverride(inspector, view);
   await disableCustomOverride(inspector, view);
+  await simpleCustomOverride(inspector, view);
 });
 
 async function simpleCustomOverride(inspector, view) {
   await selectNode("#testidSimple", inspector);
 
-  const idRule = getRuleViewRuleEditor(view, 1).rule;
+  const idRule = getRuleViewRuleEditorAt(view, 1).rule;
   const idRuleProp = idRule.textProps[0];
 
   is(
@@ -29,7 +29,7 @@ async function simpleCustomOverride(inspector, view) {
   );
   ok(!idRuleProp.overridden, "ID prop should not be overridden.");
 
-  const classRule = getRuleViewRuleEditor(view, 2).rule;
+  const classRule = getRuleViewRuleEditorAt(view, 2).rule;
   const classRuleProp = classRule.textProps[0];
 
   is(
@@ -63,11 +63,11 @@ async function simpleCustomOverride(inspector, view) {
 async function importantCustomOverride(inspector, view) {
   await selectNode("#testidImportant", inspector);
 
-  const idRule = getRuleViewRuleEditor(view, 1).rule;
+  const idRule = getRuleViewRuleEditorAt(view, 1).rule;
   const idRuleProp = idRule.textProps[0];
   ok(idRuleProp.overridden, "Not-important rule should be overridden.");
 
-  const classRule = getRuleViewRuleEditor(view, 2).rule;
+  const classRule = getRuleViewRuleEditorAt(view, 2).rule;
   const classRuleProp = classRule.textProps[0];
   ok(!classRuleProp.overridden, "Important rule should not be overridden.");
 }
@@ -75,12 +75,12 @@ async function importantCustomOverride(inspector, view) {
 async function disableCustomOverride(inspector, view) {
   await selectNode("#testidDisable", inspector);
 
-  const idRule = getRuleViewRuleEditor(view, 1).rule;
+  const idRule = getRuleViewRuleEditorAt(view, 1).rule;
   const idRuleProp = idRule.textProps[0];
 
   await togglePropStatus(view, idRuleProp);
 
-  const classRule = getRuleViewRuleEditor(view, 2).rule;
+  const classRule = getRuleViewRuleEditorAt(view, 2).rule;
   const classRuleProp = classRule.textProps[0];
   ok(
     !classRuleProp.overridden,

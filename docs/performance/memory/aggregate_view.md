@@ -14,9 +14,9 @@ The Aggregate view looks something like this:
 It presents a breakdown of the heap\'s contents, as a table. There are
 three main ways to group the data:
 
--   Type
--   Call Stack
--   Inverted Call Stack
+- Type
+- Call Stack
+- Inverted Call Stack
 
 You can switch between them using the dropdown menu labeled \"Group
 by:\" located at the top of the panel:
@@ -34,31 +34,31 @@ This is the default view, which looks something like this:
 
 It groups the things on the heap into types, including:
 
--   **JavaScript objects:** such as `Function` or `Array`
--   **DOM elements:** such as `HTMLSpanElement` or `Window`
--   **Strings:** listed as `"strings"`
--   **JavaScript sources:** listed as \"`JSScript"`
--   **Internal objects:** such as \"`js::Shape`\". These are prefixed
-    with `"js::"`.
+- **JavaScript objects:** such as `Function` or `Array`
+- **DOM elements:** such as `HTMLSpanElement` or `Window`
+- **Strings:** listed as `"strings"`
+- **JavaScript sources:** listed as \"`JSScript"`
+- **Internal objects:** such as \"`js::Shape`\". These are prefixed
+  with `"js::"`.
 
 Each type gets a row in the table, and rows are ordered by the amount of
 memory occupied by objects of that type. For example, in the screenshot
 above you can see that JavaScript `Object`s account for most memory,
 followed by strings.
 
--   The \"Total Count\" column shows you the number of objects of each
-    category that are currently allocated.
--   The \"Total Bytes\" column shows you the number of bytes occupied by
-    objects in each category, and that number as a percentage of the
-    whole heap size for that tab.
+- The \"Total Count\" column shows you the number of objects of each
+  category that are currently allocated.
+- The \"Total Bytes\" column shows you the number of bytes occupied by
+  objects in each category, and that number as a percentage of the
+  whole heap size for that tab.
 
 The screenshots in this section are taken from a snapshot of the
 [monster example page](monster_example.md).
 
 For example, in the screenshot above, you can see that:
 
--   there are four `Array` objects
--   that account for 15% of the total heap.
+- there are four `Array` objects
+- that account for 15% of the total heap.
 
 Next to the type\'s name, there\'s an icon that contains three stars
 arranged in a triangle:
@@ -88,7 +88,6 @@ for that item:
 
 <iframe width="595" height="325" src="https://www.youtube.com/embed/uLjzrvx_VCg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
 
-
 ## Call Stack
 
 The Call Stack shows you exactly where in your code you are making heap
@@ -105,9 +104,9 @@ ordered by the size of the allocations they made:
 \
 The first entry says that:
 
--   4,832,592 bytes, comprising 93% of the total heap usage, were
-    allocated in a function at line 35 of \"alloc.js\", **or in
-    functions called by that function**
+- 4,832,592 bytes, comprising 93% of the total heap usage, were
+  allocated in a function at line 35 of \"alloc.js\", **or in
+  functions called by that function**
 
 We can use the disclosure triangle to drill down the call tree, to find
 the exact place your code made those allocations.
@@ -120,13 +119,13 @@ runs a script that creates a large number of DOM nodes (200
 
 Let\'s get an allocation trace:
 
-1.  open the Memory tool
-2.  check \"Record call stacks\"
-3.  load
-    <https://mdn.github.io/performance-scenarios/dom-allocs/alloc.html>
-4.  take a snapshot
-5.  select \"View/Aggregate\"
-6.  select \"Group by/Call Stack\"
+1. open the Memory tool
+2. check \"Record call stacks\"
+3. load
+   <https://mdn.github.io/performance-scenarios/dom-allocs/alloc.html>
+4. take a snapshot
+5. select \"View/Aggregate\"
+6. select \"Group by/Call Stack\"
 
 <iframe width="595" height="325" src="https://www.youtube.com/embed/DyLulu9eoKY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
 
@@ -158,7 +157,6 @@ to that line in the debugger:
 
 <iframe width="595" height="325" src="https://www.youtube.com/embed/zlnJcr1IFyY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
 
-
 ## Inverted Call Stack
 
 The Call Stack view is top-down: it shows allocations that happen at
@@ -189,10 +187,10 @@ JavaScript.
 
 For example:
 
--   any scripts the page loads occupy heap space
--   sometimes an object is allocated when there is no JavaScript on the
-    stack. For example, DOM Event objects are allocated
-    before the JavaScript is run and event handlers are called.
+- any scripts the page loads occupy heap space
+- sometimes an object is allocated when there is no JavaScript on the
+  stack. For example, DOM Event objects are allocated
+  before the JavaScript is run and event handlers are called.
 
 Many real-world pages will have a much higher \"(no stack available)\"
 share than 7%.

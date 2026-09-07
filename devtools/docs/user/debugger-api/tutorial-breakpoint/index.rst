@@ -8,8 +8,6 @@ Tutorial: Set a breakpoint
 
 This page shows how you can try out the :doc:`Debugger API <../index>` yourself using Firefox’s Scratchpad. We use ``Debugger`` to set a breakpoint in a function, and then evaluate an expression whenever it is hit.
 
-This tutorial was tested against Firefox 58 Beta and Nightly. It does not work in Firefox 57.
-
 1. Since the ``Debugger`` API is only available to privileged JavaScript code, you’ll need to use the Browser Content Toolbox to try it out. To do this, open the Firefox developer tools, click on the options gear at the upper right of the toolbox, and make sure that both “Enable browser chrome and add-on debugging toolboxes” and “Enable remote debugging” are checked. These are located at the bottom right of the options panel; you may need to scroll to see them. Once they’re checked, you can close the developer tools.
 
 |br|

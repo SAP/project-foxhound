@@ -1,9 +1,11 @@
 .report-content-form {
   width: 500px;
-  height: 230px;
+  height: 270px;
   box-shadow: var(--box-shadow-level-4);
   border-radius: var(--border-radius-medium);
-  border: 1px solid var(--newtab-border-color);
+  border: 1px solid var(--border-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--newtab-background-color-secondary);
 
   form {
     height: 100%;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 et tw=78: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,7 +55,7 @@ class MediaTrackList : public DOMEventTargetHelper {
   // For the case of src of HTMLMediaElement is non-MediaStream, leave the
   // aAudioTrack as default(nullptr).
   static already_AddRefed<AudioTrack> CreateAudioTrack(
-      nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
+      nsIGlobalObject* aRelevantGlobal, const nsAString& aId,
       const nsAString& aKind, const nsAString& aLabel,
       const nsAString& aLanguage, bool aEnabled,
       AudioStreamTrack* aAudioTrack = nullptr);
@@ -65,7 +63,7 @@ class MediaTrackList : public DOMEventTargetHelper {
   // For the case of src of HTMLMediaElement is non-MediaStream, leave the
   // aVideoTrack as default(nullptr).
   static already_AddRefed<VideoTrack> CreateVideoTrack(
-      nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
+      nsIGlobalObject* aRelevantGlobal, const nsAString& aId,
       const nsAString& aKind, const nsAString& aLabel,
       const nsAString& aLanguage, VideoStreamTrack* aVideoTrack = nullptr);
 

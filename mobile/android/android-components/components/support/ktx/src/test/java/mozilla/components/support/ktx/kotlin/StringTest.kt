@@ -6,11 +6,11 @@ package mozilla.components.support.ktx.kotlin
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
+import mozilla.components.support.ktx.helpers.ShadowInetAddresses
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -20,11 +20,13 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.util.Calendar
 import java.util.Calendar.MILLISECOND
+import kotlin.test.assertNotNull
 
 const val PUNYCODE = "xn--kpry57d"
 const val IDN = "台灣"
 
 @RunWith(AndroidJUnit4::class)
+@Config(shadows = [ShadowInetAddresses::class])
 class StringTest {
 
     private val publicSuffixList = PublicSuffixList(testContext)
@@ -159,6 +161,41 @@ class StringTest {
         val urlTest = "notarealurl"
         val new = urlTest.tryGetHostFromUrl()
         assertEquals(new, "notarealurl")
+    }
+
+    @Test
+    fun `Extract host from a complete Url`() {
+        val urlTest = "https://www.mozilla.com:1080/docs/resource1.html"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "www.mozilla.com")
+    }
+
+    @Test
+    fun `Extract host from a Url without www`() {
+        val urlTest = "http://mozinlla.org/someoteher/domainthing/with/?=skdfjk"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "mozinlla.org")
+    }
+
+    @Test
+    fun `Extract host from a Url with new line character`() {
+        val urlTest = "\nhttp://mozi\nlla.org:1080/docs/resource1.html\n"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "mozilla.org")
+    }
+
+    @Test
+    fun `Extract host from a malformed Url returns trimmed input`() {
+        val urlTest = "  notarealurl  "
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "notarealurl")
+    }
+
+    @Test
+    fun `Extract host from IPv4 Url`() {
+        val urlTest = "http://192.168.0.1/some/path"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "192.168.0.1")
     }
 
     @Test
@@ -495,7 +532,7 @@ class StringTest {
 
     // BEGIN test cases borrowed from desktop (shortUrl is used for Top Sites on new tab)
     // Test cases are modified, as we show the eTLD
-    // (https://searchfox.org/mozilla-central/source/toolkit/modules/tests/xpcshell/test_NewTabUtils.js)
+    // (https://searchfox.org/firefox-main/source/toolkit/modules/tests/xpcshell/test_NewTabUtils.js)
     @Test
     fun `should return a blank string if url is blank`() {
         "" shortenedShouldBecome ""

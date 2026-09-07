@@ -69,6 +69,8 @@ webext-perms-optional-perms-deny =
 
 webext-perms-host-description-all-urls = Access your data for all websites
 
+webext-perms-host-description-file-urls = Access local files on your computer
+
 # Variables:
 #   $domain (String): will be replaced by the DNS domain for which a webextension is requesting access (e.g., mozilla.org)
 webext-perms-host-description-wildcard = Access your data for sites in the { $domain } domain
@@ -132,6 +134,7 @@ webext-perms-optional-text-with-data-collection-only = { $extension } requests a
 
 webext-site-perms-header-with-gated-perms-midi = This add-on gives { $hostname } access to your MIDI devices.
 webext-site-perms-header-with-gated-perms-midi-sysex = This add-on gives { $hostname } access to your MIDI devices (with SysEx support).
+webext-site-perms-header-with-gated-perms-serial = This add-on gives { $hostname } access to your serial devices.
 
 ##
 
@@ -142,6 +145,13 @@ webext-site-perms-description-gated-perms-midi =
     These are usually plug-in devices like audio synthesizers, but might also be built into your computer.
 
     Websites are normally not allowed to access MIDI devices. Improper usage could cause damage or compromise security.
+
+webext-site-perms-description-gated-perms-webserial =
+    These are devices like microcontrollers, 3D printers, and other devices that connect via USB, serial ports, or Bluetooth.
+
+    You will be able to choose which devices the website can access.
+
+    Websites are normally not allowed to access serial devices. Improper usage could cause damage or compromise security.
 
 ## Headers used in the webextension permissions dialog.
 ## Note: This string will be used as raw markup. Avoid characters like <, >, &
@@ -156,6 +166,7 @@ webext-site-perms-header-unsigned-with-perms = Add { $extension }? This extensio
 
 webext-site-perms-midi = Access MIDI devices
 webext-site-perms-midi-sysex = Access MIDI devices with SysEx support
+webext-site-perms-serial = Access serial devices
 
 ## Colorway theme migration
 

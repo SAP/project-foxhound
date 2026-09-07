@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <optional>
 
-#include "api/array_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/echo_canceller3_config.h"
 #include "api/environment/environment_factory.h"
@@ -25,7 +24,7 @@ namespace {
 using SampleRate = ::webrtc::AudioProcessing::NativeRate;
 
 void PrepareAudioBuffer(int sample_rate_hz,
-                        test::FuzzDataHelper* fuzz_data,
+                        FuzzDataHelper* fuzz_data,
                         AudioBuffer* buffer) {
   float* const* channels = buffer->channels_f();
   for (size_t i = 0; i < buffer->num_channels(); ++i) {
@@ -41,12 +40,10 @@ void PrepareAudioBuffer(int sample_rate_hz,
 
 }  // namespace
 
-void FuzzOneInput(const uint8_t* data, size_t size) {
-  if (size > 200000) {
+void FuzzOneInput(FuzzDataHelper fuzz_data) {
+  if (fuzz_data.size() > 200'000) {
     return;
   }
-
-  test::FuzzDataHelper fuzz_data(rtc::ArrayView<const uint8_t>(data, size));
 
   constexpr int kSampleRates[] = {16000, 32000, 48000};
   const int sample_rate_hz =
@@ -59,8 +56,10 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
       1 + fuzz_data.ReadOrDefaultValue<uint8_t>(0) % (kMaxNumChannels - 1);
 
   EchoCanceller3 aec3(CreateEnvironment(), EchoCanceller3Config(),
-                      /*multichannel_config=*/std::nullopt, sample_rate_hz,
-                      num_render_channels, num_capture_channels);
+                      /*multichannel_config=*/std::nullopt,
+                      /*neural_residual_echo_estimator=*/nullptr,
+                      sample_rate_hz, num_render_channels,
+                      num_capture_channels);
 
   AudioBuffer capture_audio(sample_rate_hz, num_capture_channels,
                             sample_rate_hz, num_capture_channels,

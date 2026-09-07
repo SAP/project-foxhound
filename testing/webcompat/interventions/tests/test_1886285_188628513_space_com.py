@@ -1,21 +1,15 @@
 import pytest
 
 URL = "https://www.space.com/"
-
-
-@pytest.mark.skip_platforms("android")
-@pytest.mark.need_visible_scrollbars
-@pytest.mark.asyncio
-@pytest.mark.with_interventions
-async def test_enabled(client):
-    await client.navigate(URL, wait="none")
-    client.test_future_plc_trending_scrollbar(shouldFail=False)
+HERO_CSS = "#skywatching"
+FUTURE_PLC_TRENDING_LIST_CSS = ".trending__list"
 
 
 @pytest.mark.skip_platforms("android")
 @pytest.mark.need_visible_scrollbars
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
-async def test_disabled(client):
+async def test_regression(client):
     await client.navigate(URL, wait="none")
-    client.test_future_plc_trending_scrollbar(shouldFail=True)
+    client.await_css(HERO_CSS, is_displayed=True)
+    assert not client.find_css(FUTURE_PLC_TRENDING_LIST_CSS, is_displayed=True)

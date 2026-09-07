@@ -1,0 +1,15 @@
+{
+  "label": "dingtalk.com",
+  "bugs": {
+    "1894308": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.dingtalk.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

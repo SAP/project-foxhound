@@ -9,7 +9,7 @@ const TESTCASE_URI_CSS = TEST_BASE_HTTP + "simple.css";
 
 add_task(async function () {
   const htmlFile = await copy(TESTCASE_URI_HTML, "simple.html");
-  await copy(TESTCASE_URI_CSS, "simple.css");
+  const cssFile = await copy(TESTCASE_URI_CSS, "simple.css");
   const uri = Services.io.newFileURI(htmlFile);
   const filePath = uri.resolve("");
 
@@ -17,6 +17,12 @@ add_task(async function () {
 
   const editor = ui.editors[0];
   await editor.getSourceEditor();
+
+  is(
+    editor.savedFile,
+    null,
+    "savedFile should not be pre-populated from the source file"
+  );
 
   info("Editing the style sheet.");
   let dirty = editor.sourceEditor.once("dirty-change");
@@ -31,11 +37,13 @@ add_task(async function () {
     "Star icon is present in the corresponding summary."
   );
 
-  info("Saving the changes.");
+  info(
+    "Saving the changes with an explicit file (simulating a user-chosen save location)."
+  );
   dirty = editor.sourceEditor.once("dirty-change");
 
-  editor.saveToFile(null, function (file) {
-    ok(file, "file should get saved directly when using a file:// URI");
+  editor.saveToFile(cssFile, function (file) {
+    ok(file, "file should get saved when explicitly passing a file");
   });
 
   await dirty;
@@ -44,6 +52,12 @@ add_task(async function () {
   ok(
     !editor.summary.classList.contains("unsaved"),
     "Star icon is not present in the corresponding summary."
+  );
+
+  is(
+    editor.savedFile?.path,
+    cssFile.path,
+    "savedFile should now be set on the editor"
   );
 });
 

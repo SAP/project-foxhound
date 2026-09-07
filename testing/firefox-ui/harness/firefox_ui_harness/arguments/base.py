@@ -12,6 +12,6 @@ class FirefoxUIBaseArguments:
 
 class FirefoxUIArguments(BaseMarionetteArguments):
     def __init__(self, **kwargs):
-        super(FirefoxUIArguments, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         self.register_argument_container(FirefoxUIBaseArguments())

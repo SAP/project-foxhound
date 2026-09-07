@@ -89,21 +89,6 @@ impl<'a> Module<'a> {
         EncodeOptions::default().encode_module(self)
     }
 
-    pub(crate) fn validate(&self, parser: Parser<'_>) -> Result<()> {
-        let mut starts = 0;
-        if let ModuleKind::Text(fields) = &self.kind {
-            for item in fields.iter() {
-                if let ModuleField::Start(_) = item {
-                    starts += 1;
-                }
-            }
-        }
-        if starts > 1 {
-            return Err(parser.error("multiple start sections found"));
-        }
-        Ok(())
-    }
-
     pub(crate) fn parse_without_module_keyword(
         module_keyword_span: Span,
         parser: Parser<'a>,
@@ -145,7 +130,7 @@ impl<'a> Parse<'a> for Module<'a> {
 pub enum ModuleField<'a> {
     Type(Type<'a>),
     Rec(Rec<'a>),
-    Import(Import<'a>),
+    Import(Imports<'a>),
     Func(Func<'a>),
     Table(Table<'a>),
     Memory(Memory<'a>),

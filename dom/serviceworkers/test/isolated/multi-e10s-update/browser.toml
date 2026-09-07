@@ -5,4 +5,6 @@ support-files = [
 ]
 
 ["browser_multie10s_update.js"]
-skip-if = ["true"] # bug 1429794 is to re-enable
+skip-if = [
+  "true", # bug 1429794 is to re-enable
+]

@@ -32,7 +32,7 @@ add_task(async function() {
       let vertical = attr == "left" || attr == "right";
       let scrollbar = kids[vertical ? 1 : 0];
       is(scrollbar.tagName, "scrollbar", "Should find scrollbar");
-      is(scrollbar.getAttribute("orient"), vertical ? "vertical" : "horizontal", "Should be the right scrollbar");
+      is(scrollbar.hasAttribute("vertical"), vertical, "Should be the right scrollbar");
       let scrollbarRect = scrollbar.getBoundingClientRect();
       let diff = scrollbarRect[attr] - rect[attr];
       is(diff, 0, `Scrollbar should be at ${attr}: ${scrollbarRect[attr]} vs. ${rect[attr]}`);

@@ -1117,6 +1117,85 @@ fn precache_create() -> Arc<PrecacheOuput> {
     Arc::new(PrecacheOuput::default())
 }
 
+fn f16_to_f32(h: u16) -> f32 {
+    // IEEE 754 binary16 → binary32. Exact for all normal f16 values.
+    // Subnormals are flushed to zero, which is fine for image data.
+    let h = h as u32;
+    let sign = (h & 0x8000) << 16;
+    let exp5 = (h >> 10) & 0x1F;
+    let frac = h & 0x03FF;
+    match exp5 {
+        0 => f32::from_bits(sign),
+        31 => f32::from_bits(sign | 0x7F80_0000 | (frac << 13)),
+        e => f32::from_bits(sign | ((e + 127 - 15) << 23) | (frac << 13)),
+    }
+}
+
+fn sample_input_gamma_f32(table: &[f32; 256], v: f32) -> f32 {
+    let scaled = (v * 255.0).clamp(0.0, 255.0);
+    let lo = scaled as usize;
+    let hi = (lo + 1).min(255);
+    let frac = scaled - lo as f32;
+    table[lo] + frac * (table[hi] - table[lo])
+}
+
+/// Apply color management to `length` RGBA pixels stored as f16 (values in [0, 1]),
+/// writing u8 RGBA to `dest`. Alpha is passed through with clamping only.
+/// Handles both precache and non-precache output paths.
+pub(crate) unsafe fn transform_data_rgba_f16_to_rgba_u8(
+    transform: &qcms_transform,
+    src: *const u16,
+    dest: *mut u8,
+    length: usize,
+) {
+    let src = std::slice::from_raw_parts(src, length * 4);
+    let dst = std::slice::from_raw_parts_mut(dest, length * 4);
+
+    if let (Some(input_r), Some(input_g), Some(input_b)) = (
+        transform.input_gamma_table_r.as_ref(),
+        transform.input_gamma_table_g.as_ref(),
+        transform.input_gamma_table_b.as_ref(),
+    ) {
+        let mat = &transform.matrix;
+        for (px_in, px_out) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+            let lin_r = sample_input_gamma_f32(input_r, f16_to_f32(px_in[0]));
+            let lin_g = sample_input_gamma_f32(input_g, f16_to_f32(px_in[1]));
+            let lin_b = sample_input_gamma_f32(input_b, f16_to_f32(px_in[2]));
+            let alpha = f16_to_f32(px_in[3]).clamp(0.0, 1.0);
+
+            let out_r = clamp_float(mat[0][0] * lin_r + mat[1][0] * lin_g + mat[2][0] * lin_b);
+            let out_g = clamp_float(mat[0][1] * lin_r + mat[1][1] * lin_g + mat[2][1] * lin_b);
+            let out_b = clamp_float(mat[0][2] * lin_r + mat[1][2] * lin_g + mat[2][2] * lin_b);
+
+            if let Some(precache) = transform.precache_output.as_deref() {
+                px_out[0] = precache.lut_r[(out_r * PRECACHE_OUTPUT_MAX as f32) as usize];
+                px_out[1] = precache.lut_g[(out_g * PRECACHE_OUTPUT_MAX as f32) as usize];
+                px_out[2] = precache.lut_b[(out_b * PRECACHE_OUTPUT_MAX as f32) as usize];
+            } else if let (Some(lut_r), Some(lut_g), Some(lut_b)) = (
+                transform.output_gamma_lut_r.as_ref(),
+                transform.output_gamma_lut_g.as_ref(),
+                transform.output_gamma_lut_b.as_ref(),
+            ) {
+                px_out[0] = clamp_u8(lut_interp_linear(out_r as f64, lut_r) * 255.0);
+                px_out[1] = clamp_u8(lut_interp_linear(out_g as f64, lut_g) * 255.0);
+                px_out[2] = clamp_u8(lut_interp_linear(out_b as f64, lut_b) * 255.0);
+            } else {
+                px_out[0] = (out_r * 255.0 + 0.5) as u8;
+                px_out[1] = (out_g * 255.0 + 0.5) as u8;
+                px_out[2] = (out_b * 255.0 + 0.5) as u8;
+            }
+            px_out[3] = (alpha * 255.0 + 0.5) as u8;
+        }
+    } else {
+        // Non-matrix (A2B/CLut) profile: convert f16 to u8, then apply the
+        // full qcms pipeline which handles all profile types.
+        for (s, d) in src.iter().zip(dst.iter_mut()) {
+            *d = (f16_to_f32(*s).clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        }
+        transform.transform_fn.expect("non-null transform_fn")(transform, dest, dest, length);
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn qcms_transform_release(t: *mut qcms_transform) {
     drop(Box::from_raw(t));

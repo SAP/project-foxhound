@@ -16,7 +16,7 @@ function waitOptionsBrowserInserted() {
     async function listener(eventName, browser) {
       // wait for a webextension XUL browser element that is owned by the
       // "about:addons" page.
-      if (browser.ownerGlobal.top.location.href == "about:addons") {
+      if (browser.documentGlobal.top.location.href == "about:addons") {
         ExtensionParent.apiManager.off("extension-browser-inserted", listener);
         resolve(browser);
       }
@@ -25,9 +25,12 @@ function waitOptionsBrowserInserted() {
   });
 }
 
-add_task(async function enableHtmlViews() {
+add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
-    set: [["extensions.htmlaboutaddons.inline-options.enabled", true]],
+    set: [
+      ["extensions.htmlaboutaddons.inline-options.enabled", true],
+      ["widget.macos.allow-native-select", false],
+    ],
   });
 });
 
@@ -473,6 +476,7 @@ add_task(async function testReloadExtension() {
 
 async function testSelectPosition(optionsBrowser, zoom) {
   let popupShownPromise = BrowserTestUtils.waitForSelectPopupShown(window);
+  await SimpleTest.promiseFocus(optionsBrowser);
   await BrowserTestUtils.synthesizeMouseAtCenter("select", {}, optionsBrowser);
   let popup = await popupShownPromise;
   let popupLeft = popup.shadowRoot.querySelector(

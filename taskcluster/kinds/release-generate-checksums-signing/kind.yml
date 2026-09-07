@@ -12,6 +12,9 @@ transforms:
     - gecko_taskgraph.transforms.release_generate_checksums_signing
     - gecko_taskgraph.transforms.task
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     release-generate-checksums-signing:
         from-deps: {}

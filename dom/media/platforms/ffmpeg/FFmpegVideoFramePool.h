@@ -1,16 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FFmpegVideoFramePool_h__
-#define __FFmpegVideoFramePool_h__
+#ifndef FFmpegVideoFramePool_h_
+#define FFmpegVideoFramePool_h_
 
 #include "FFmpegLibWrapper.h"
 #include "FFmpegLibs.h"
 #include "FFmpegLog.h"
-
 #include "mozilla/layers/DMABUFSurfaceImage.h"
 #include "mozilla/widget/DMABufDevice.h"
 #include "mozilla/widget/DMABufSurface.h"
@@ -82,6 +79,12 @@ class VideoFrameSurface<LIBAV_VER> {
   void SetTransferFunction(mozilla::gfx::TransferFunction aTransferFunction) {
     mSurface->GetAsDMABufSurfaceYUV()->SetTransferFunction(aTransferFunction);
   }
+  void SetWPChromaLocation(uint32_t aWPChromaLocation) {
+    mSurface->GetAsDMABufSurfaceYUV()->SetWPChromaLocation(aWPChromaLocation);
+  }
+  void SetVulkanCopySlotIndex(int32_t aSlotIndex) {
+    mVulkanCopySlotIndex = aSlotIndex;
+  }
 
   RefPtr<DMABufSurfaceYUV> GetDMABufSurface() {
     return mSurface->GetAsDMABufSurfaceYUV();
@@ -100,7 +103,7 @@ class VideoFrameSurface<LIBAV_VER> {
  protected:
   // Lock VAAPI related data
   void LockVAAPIData(AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
-                     FFmpegLibWrapper* aLib);
+                     const FFmpegLibWrapper* aLib);
   // Release VAAPI related data, DMABufSurface can be reused
   // for another frame.
   void ReleaseVAAPIData(bool aForFrameRecycle = true);
@@ -121,6 +124,7 @@ class VideoFrameSurface<LIBAV_VER> {
   AVBufferRef* mHWAVBuffer;
   VASurfaceID mFFMPEGSurfaceID;
   bool mHoldByFFmpeg;
+  int32_t mVulkanCopySlotIndex = -1;
 };
 
 // VideoFramePool class is thread-safe.
@@ -133,16 +137,17 @@ class VideoFramePool<LIBAV_VER> {
   RefPtr<VideoFrameSurface<LIBAV_VER>> GetVideoFrameSurface(
       VADRMPRIMESurfaceDescriptor& aVaDesc, int aWidth, int aHeight,
       AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
-      FFmpegLibWrapper* aLib);
+      const FFmpegLibWrapper* aLib);
   RefPtr<VideoFrameSurface<LIBAV_VER>> GetVideoFrameSurface(
       AVDRMFrameDescriptor& aDesc, int aWidth, int aHeight,
       AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
-      FFmpegLibWrapper* aLib);
+      const FFmpegLibWrapper* aLib);
   RefPtr<VideoFrameSurface<LIBAV_VER>> GetVideoFrameSurface(
       const layers::PlanarYCbCrData& aData, AVCodecContext* aAVCodecContext);
 
   void ReleaseUnusedVAAPIFrames();
   void FlushFFmpegFrames();
+  bool IsVulkanFrameSlotInUseByRenderer(int32_t aSlotIndex);
 
  private:
   RefPtr<VideoFrameSurface<LIBAV_VER>> GetTargetVideoFrameSurfaceLocked(
@@ -171,4 +176,4 @@ class VideoFramePool<LIBAV_VER> {
 
 }  // namespace mozilla
 
-#endif  // __FFmpegVideoFramePool_h__
+#endif  // FFmpegVideoFramePool_h_

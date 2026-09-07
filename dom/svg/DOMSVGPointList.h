@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,13 @@
 #ifndef DOM_SVG_DOMSVGPOINTLIST_H_
 #define DOM_SVG_DOMSVGPOINTLIST_H_
 
+#include "SVGPointList.h"  // IWYU pragma: keep
 #include "mozAutoDocUpdate.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/RefPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
 #include "nsTArray.h"
-#include "SVGPointList.h"  // IWYU pragma: keep
-#include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
 
 // {61812ad1-c078-4cd1-87e6-bc1c1b8d7284}
 #define MOZILLA_DOMSVGPOINTLIST_IID \
@@ -41,15 +39,13 @@ class MOZ_RAII AutoChangePointListNotifier {
     MOZ_ASSERT(mValue, "Expecting non-null value");
     if (mValue->IsInList()) {
       mUpdateBatch.emplace(mValue->Element()->GetComposedDoc(), true);
-      mEmptyOrOldValue =
-          mValue->Element()->WillChangePointList(mUpdateBatch.ref());
+      mValue->Element()->WillChangePointList(mUpdateBatch.ref());
     }
   }
 
   ~AutoChangePointListNotifier() {
     if (mValue->IsInList()) {
-      mValue->Element()->DidChangePointList(mEmptyOrOldValue,
-                                            mUpdateBatch.ref());
+      mValue->Element()->DidChangePointList(mUpdateBatch.ref());
       if (mValue->AttrIsAnimating()) {
         mValue->Element()->AnimationNeedsResample();
       }
@@ -59,7 +55,6 @@ class MOZ_RAII AutoChangePointListNotifier {
  private:
   Maybe<mozAutoDocUpdate> mUpdateBatch;
   T* const mValue;
-  nsAttrValue mEmptyOrOldValue;
 };
 
 /**
@@ -94,7 +89,7 @@ class DOMSVGPointList final : public nsISupports, public nsWrapperCache {
 
  public:
   NS_INLINE_DECL_STATIC_IID(MOZILLA_DOMSVGPOINTLIST_IID)
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGPointList)
 
   JSObject* WrapObject(JSContext* cx,

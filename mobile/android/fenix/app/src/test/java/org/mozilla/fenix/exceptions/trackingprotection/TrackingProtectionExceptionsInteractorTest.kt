@@ -6,7 +6,6 @@ package org.mozilla.fenix.exceptions.trackingprotection
 
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TrackingProtectionState
@@ -17,16 +16,14 @@ import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionException
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionExceptionStorage
 import mozilla.components.feature.session.TrackingProtectionUseCases
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.BrowserDirection
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.settings.SupportUtils
 import org.robolectric.RobolectricTestRunner
 
@@ -35,7 +32,6 @@ class TrackingProtectionExceptionsInteractorTest {
 
     private lateinit var interactor: TrackingProtectionExceptionsInteractor
 
-    private val activity: HomeActivity = mockk(relaxed = true)
     private val engine: Engine = mockk(relaxed = true)
 
     private val results: List<TrackingProtectionException> = emptyList()
@@ -54,6 +50,7 @@ class TrackingProtectionExceptionsInteractorTest {
         CaptureActionsMiddleware<ExceptionsFragmentState, ExceptionsFragmentAction>()
     private val exceptionsStore = ExceptionsFragmentStore(middlewares = listOf(capture))
     private val trackingProtectionUseCases = TrackingProtectionUseCases(store, engine)
+    private var openedSupportUrl: String? = null
     private val trackingStorage: TrackingProtectionExceptionStorage =
         object : TrackingProtectionExceptionStorage {
             override fun fetchAll(onResult: (List<TrackingProtectionException>) -> Unit) {
@@ -82,9 +79,11 @@ class TrackingProtectionExceptionsInteractorTest {
     @Before
     fun setup() {
         interactor = DefaultTrackingProtectionExceptionsInteractor(
-            activity = activity,
             exceptionsStore = exceptionsStore,
             trackingProtectionUseCases = trackingProtectionUseCases,
+            openLearnMorePage = { url ->
+                openedSupportUrl = url
+            },
         )
 
         every { engine.trackingProtectionExceptionStore } returns trackingStorage
@@ -101,13 +100,7 @@ class TrackingProtectionExceptionsInteractorTest {
         val supportUrl = SupportUtils.getGenericSumoURLForTopic(
             SupportUtils.SumoTopic.TRACKING_PROTECTION,
         )
-        verify {
-            activity.openToBrowserAndLoad(
-                searchTermOrURL = supportUrl,
-                newTab = true,
-                from = BrowserDirection.FromTrackingProtectionExceptions,
-            )
-        }
+        assertEquals(supportUrl, openedSupportUrl)
     }
 
     @Test
@@ -116,8 +109,6 @@ class TrackingProtectionExceptionsInteractorTest {
 
         assertTrue(removedAll)
         assertTrue(fetchedAll)
-
-        exceptionsStore.waitUntilIdle()
 
         capture.assertLastAction(ExceptionsFragmentAction.Change::class) {
             assertEquals(results, it.list)
@@ -130,9 +121,6 @@ class TrackingProtectionExceptionsInteractorTest {
 
         assertTrue(fetchedAll)
 
-        exceptionsStore.waitUntilIdle()
-        store.waitUntilIdle()
-
         capture.assertLastAction(ExceptionsFragmentAction.Change::class) {
             assertEquals(results, it.list)
         }
@@ -142,5 +130,10 @@ class TrackingProtectionExceptionsInteractorTest {
 
         val tab2 = store.state.findTab("tab2")!!
         assertTrue(tab2.trackingProtection.ignoredOnTrackingProtection)
+    }
+
+    @After
+    fun teardown() {
+        openedSupportUrl = null
     }
 }

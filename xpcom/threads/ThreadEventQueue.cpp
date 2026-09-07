@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,7 @@
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/EventQueue.h"
 
-#include "LeakRefPtr.h"
+#include "MaybeLeakRefPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsITargetShutdownTask.h"
 #include "nsIThreadInternal.h"
@@ -25,9 +23,9 @@ class ThreadEventQueue::NestedSink : public ThreadTargetSink {
   NestedSink(EventQueue* aQueue, ThreadEventQueue* aOwner)
       : mQueue(aQueue), mOwner(aOwner) {}
 
-  bool PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
+  bool PutEvent(RefPtr<nsIRunnable>& aEvent,
                 EventQueuePriority aPriority) final {
-    return mOwner->PutEventInternal(std::move(aEvent), aPriority, this);
+    return mOwner->PutEventInternal(aEvent, aPriority, this);
   }
 
   void Disconnect(const MutexAutoLock& aProofOfLock) final { mQueue = nullptr; }
@@ -68,17 +66,17 @@ ThreadEventQueue::ThreadEventQueue(UniquePtr<EventQueue> aQueue,
 
 ThreadEventQueue::~ThreadEventQueue() { MOZ_ASSERT(mNestedQueues.IsEmpty()); }
 
-bool ThreadEventQueue::PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
+bool ThreadEventQueue::PutEvent(RefPtr<nsIRunnable>& aEvent,
                                 EventQueuePriority aPriority) {
-  return PutEventInternal(std::move(aEvent), aPriority, nullptr);
+  return PutEventInternal(aEvent, aPriority, nullptr);
 }
 
-bool ThreadEventQueue::PutEventInternal(already_AddRefed<nsIRunnable>&& aEvent,
+bool ThreadEventQueue::PutEventInternal(RefPtr<nsIRunnable>& aEvent,
                                         EventQueuePriority aPriority,
                                         NestedSink* aSink) {
-  // We want to leak the reference when we fail to dispatch it, so that
-  // we won't release the event in a wrong thread.
-  LeakRefPtr<nsIRunnable> event(std::move(aEvent));
+  // NOTE: We leave the nsIRunnable's reference with our caller until we've
+  // successfully dispatched it, so that our caller can handle leaking the event
+  // on error if required.
   nsCOMPtr<nsIThreadObserver> obs;
 
   {
@@ -86,8 +84,8 @@ bool ThreadEventQueue::PutEventInternal(already_AddRefed<nsIRunnable>&& aEvent,
     // Do this outside the lock, so runnables implemented in JS can QI
     // (and possibly GC) outside of the lock.
     if (mIsMainThread) {
-      auto* e = event.get();  // can't do_QueryInterface on LeakRefPtr.
-      if (nsCOMPtr<nsIRunnablePriority> runnablePrio = do_QueryInterface(e)) {
+      if (nsCOMPtr<nsIRunnablePriority> runnablePrio =
+              do_QueryInterface(aEvent)) {
         uint32_t prio = nsIRunnablePriority::PRIORITY_NORMAL;
         runnablePrio->GetPriority(&prio);
         if (prio == nsIRunnablePriority::PRIORITY_CONTROL) {
@@ -121,9 +119,9 @@ bool ThreadEventQueue::PutEventInternal(already_AddRefed<nsIRunnable>&& aEvent,
         return false;
       }
 
-      aSink->mQueue->PutEvent(event.take(), aPriority, lock);
+      aSink->mQueue->PutEvent(aEvent.forget(), aPriority, lock);
     } else {
-      mBaseQueue->PutEvent(event.take(), aPriority, lock);
+      mBaseQueue->PutEvent(aEvent.forget(), aPriority, lock);
     }
 
     mEventsAvailable.Notify();
@@ -203,8 +201,8 @@ bool ThreadEventQueue::ShutdownIfNoPendingEvents() {
 already_AddRefed<nsISerialEventTarget> ThreadEventQueue::PushEventQueue() {
   auto queue = MakeUnique<EventQueue>();
   RefPtr<NestedSink> sink = new NestedSink(queue.get(), this);
-  RefPtr<ThreadEventTarget> eventTarget =
-      new ThreadEventTarget(sink, NS_IsMainThread(), false);
+  RefPtr eventTarget =
+      MakeRefPtr<ThreadEventTarget>(sink, NS_IsMainThread(), false);
 
   MutexAutoLock lock(mLock);
 
@@ -286,9 +284,7 @@ nsresult ThreadEventQueue::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
   if (mEventsAreDoomed || mShutdownTasksRun) {
     return NS_ERROR_UNEXPECTED;
   }
-  MOZ_ASSERT(!mShutdownTasks.Contains(aTask));
-  mShutdownTasks.AppendElement(aTask);
-  return NS_OK;
+  return mShutdownTasks.AddTask(aTask);
 }
 
 nsresult ThreadEventQueue::UnregisterShutdownTask(
@@ -298,18 +294,17 @@ nsresult ThreadEventQueue::UnregisterShutdownTask(
   if (mEventsAreDoomed || mShutdownTasksRun) {
     return NS_ERROR_UNEXPECTED;
   }
-  return mShutdownTasks.RemoveElement(aTask) ? NS_OK : NS_ERROR_UNEXPECTED;
+  return mShutdownTasks.RemoveTask(aTask);
 }
 
 void ThreadEventQueue::RunShutdownTasks() {
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> shutdownTasks;
+  TargetShutdownTaskSet::TasksArray shutdownTasks;
   {
     MutexAutoLock lock(mLock);
-    shutdownTasks = std::move(mShutdownTasks);
-    mShutdownTasks.Clear();
+    shutdownTasks = mShutdownTasks.Extract();
     mShutdownTasksRun = true;
   }
-  for (auto& task : shutdownTasks) {
+  for (const auto& task : shutdownTasks) {
     task->TargetShutdown();
   }
 }

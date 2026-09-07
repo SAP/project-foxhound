@@ -1,0 +1,13 @@
+<html>
+<script>
+  window.ok = parent.ok;
+
+  var u = new SpeechSynthesisUtterance("hi");
+  u.addEventListener("end", function() {
+    ok(true, "Speech in new page completed: previous speech was cancelled on navigation.");
+    parent.onDone();
+  });
+  speechSynthesis.speak(u);
+</script>
+<body></body>
+</html>

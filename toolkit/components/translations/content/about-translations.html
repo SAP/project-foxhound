@@ -1,0 +1,227 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; object-src 'none'"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="viewport" content="width=device-width" />
+    <title data-l10n-id="about-translations-title"></title>
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://global/content/translations/about-translations.css"
+    />
+    <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="toolkit/global/mozMessageBar.ftl" />
+    <link rel="localization" href="toolkit/global/mozSupportLink.ftl" />
+    <link rel="localization" href="toolkit/about/aboutTranslations.ftl" />
+    <script
+      type="module"
+      src="chrome://global/content/translations/about-translations.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-message-bar.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-select.mjs"
+    ></script>
+  </head>
+
+  <body>
+    <header id="about-translations-header">
+      <div id="about-translations-logo-and-h1">
+        <img
+          id="about-translations-logo"
+          src="chrome://branding/content/about-logo.svg"
+        />
+        <h1
+          id="about-translations-h1"
+          data-l10n-id="about-translations-title"
+        ></h1>
+      </div>
+      <div id="about-translations-description">
+        <span
+          id="about-translations-description-text"
+          data-l10n-id="about-translations-description"
+        ></span>
+        <a
+          id="about-translations-learn-more-link"
+          is="moz-support-link"
+          href="#"
+          support-page="website-translation"
+        ></a>
+      </div>
+
+      <moz-message-bar
+        id="about-translations-feature-blocked-info-message"
+        type="info"
+        role="alert"
+        hidden
+        data-l10n-id="about-translations-feature-blocked-info-message"
+        data-l10n-attrs="heading,message"
+      >
+        <moz-button
+          id="about-translations-feature-blocked-unblock-button"
+          data-l10n-id="about-translations-feature-blocked-unblock-button"
+          slot="actions"
+        ></moz-button>
+      </moz-message-bar>
+
+      <moz-message-bar
+        id="about-translations-unsupported-info-message"
+        type="info"
+        role="alert"
+        hidden
+        data-l10n-id="about-translations-unsupported-info-message-2"
+        data-l10n-attrs="heading,message"
+      ></moz-message-bar>
+
+      <moz-message-bar
+        id="about-translations-policy-disabled-info-message"
+        type="info"
+        role="alert"
+        hidden
+        data-l10n-id="about-translations-policy-disabled-info-message"
+        data-l10n-attrs="heading,message"
+      ></moz-message-bar>
+
+      <moz-message-bar
+        id="about-translations-language-load-error-message"
+        type="error"
+        role="alert"
+        hidden
+        data-l10n-id="about-translations-language-load-error-message-2"
+        data-l10n-attrs="heading,message"
+      >
+        <button
+          id="about-translations-language-load-error-button"
+          data-l10n-id="about-translations-language-load-error-button"
+          slot="actions"
+        ></button>
+      </moz-message-bar>
+    </header>
+
+    <section id="about-translations-main-user-interface" hidden>
+      <moz-select
+        id="about-translations-source-select"
+        class="about-translations-select"
+      >
+        <moz-option
+          id="about-translations-detect-language-label-option"
+          data-l10n-id="about-translations-detect-default-label"
+          value="detect"
+        ></moz-option>
+      </moz-select>
+
+      <moz-button
+        id="about-translations-swap-languages-button"
+        type="ghost icon"
+        data-l10n-id="about-translations-swap-languages"
+      >
+        <div id="about-translations-swap-languages-icon"></div>
+      </moz-button>
+
+      <moz-select
+        id="about-translations-target-select"
+        class="about-translations-select"
+      >
+        <moz-option
+          data-l10n-id="about-translations-select-label"
+          value=""
+        ></moz-option>
+      </moz-select>
+
+      <div id="about-translations-source-section">
+        <moz-message-bar
+          id="about-translations-detected-language-unsupported-message"
+          type="info"
+          role="alert"
+          class="about-translations-section-message"
+          hidden
+        >
+          <div
+            slot="message"
+            class="about-translations-section-message-content"
+          >
+            <div>
+              <strong
+                id="about-translations-detected-language-unsupported-heading"
+              ></strong>
+              <span
+                class="about-translations-section-message-subtext"
+                data-l10n-id="about-translations-detected-language-unsupported-subtext"
+              ></span>
+            </div>
+            <a
+              id="about-translations-detected-language-unsupported-learn-more-link"
+              is="moz-support-link"
+              class="about-translations-section-message-action"
+              support-page="website-translation"
+            ></a>
+          </div>
+        </moz-message-bar>
+        <textarea
+          id="about-translations-source-textarea"
+          class="about-translations-textarea"
+          data-l10n-id="about-translations-input-placeholder"
+          spellcheck="false"
+        ></textarea>
+        <moz-button
+          id="about-translations-clear-button"
+          type="ghost icon"
+          data-l10n-id="about-translations-clear-button"
+          tabindex="-1"
+          hidden
+        ></moz-button>
+      </div>
+      <div id="about-translations-empty-section"></div>
+      <div id="about-translations-target-section">
+        <moz-message-bar
+          id="about-translations-translation-error-message"
+          type="error"
+          role="alert"
+          hidden
+        >
+          <div slot="message">
+            <div>
+              <strong
+                data-l10n-id="about-translations-translation-error-heading"
+              ></strong>
+              <span
+                id="about-translations-translation-error-subtext"
+                data-l10n-id="about-translations-translation-error-subtext"
+              ></span>
+            </div>
+            <moz-button
+              id="about-translations-translation-error-button"
+              data-l10n-id="about-translations-translation-error-button"
+            ></moz-button>
+          </div>
+        </moz-message-bar>
+        <textarea
+          id="about-translations-target-textarea"
+          class="about-translations-textarea"
+          data-l10n-id="about-translations-output-placeholder"
+          readonly
+        ></textarea>
+        <moz-button
+          id="about-translations-copy-button"
+          type="ghost"
+          iconSrc="chrome://global/skin/icons/edit-copy.svg"
+          data-l10n-id="about-translations-copy-button-default"
+          data-l10n-attrs="label"
+        ></moz-button>
+      </div>
+    </section>
+  </body>
+</html>

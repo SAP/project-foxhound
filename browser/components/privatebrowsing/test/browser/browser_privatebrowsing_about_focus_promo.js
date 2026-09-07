@@ -5,8 +5,8 @@ const { ASRouter } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/ASRouter.sys.mjs"
 );
 
-const initialHomeRegion = Region._home;
-const intialCurrentRegion = Region._current;
+const initialHomeRegion = Region.home;
+const intialCurrentRegion = Region.current;
 const initialLocale = Services.locale.appLocaleAsBCP47;
 
 // Helper to run tests for specific regions

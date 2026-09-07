@@ -50,5 +50,5 @@ $ protoc -I=. --cpp_out="../protobuf/" safebrowsing.proto
 [1] https://chromium.googlesource.com/chromium/src.git/+/9c4485f1ce7cac7ae82f7a4ae36ccc663afe806c/components/safe_browsing_db/safebrowsing.proto
 [2] https://chromium.googlesource.com/chromium/src.git/+/master/components/safe_browsing_db/safebrowsing.proto
 [3] https://github.com/google/protobuf/releases/tag/v2.6.1
-[4] https://searchfox.org/mozilla-central/source/toolkit/components/protobuf/regenerate_cpp_files.sh
+[4] https://searchfox.org/firefox-main/source/toolkit/components/protobuf/regenerate_cpp_files.sh
 [5] https://github.com/googleapis/googleapis/blob/master/google/security/safebrowsing/v5/safebrowsing.proto

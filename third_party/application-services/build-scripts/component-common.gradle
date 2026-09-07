@@ -1,0 +1,168 @@
+// This script defines common setup logic for our components, such as depending
+// on the correct versions of android dependencies.
+// Absent some special need for customization, we expect each project under `/components`
+// to apply this script to their build process via:
+//
+// ```
+// apply from: "$rootDir/build-scripts/component-common.gradle"
+// ```
+
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
+    defaultConfig {
+        ndkVersion config.ndkVersion
+        minSdkVersion config.minSdkVersion
+        targetSdkVersion config.targetSdkVersion
+
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "LIBRARY_VERSION", "\"${config.componentsVersion}\"")
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            consumerProguardFiles "$appServicesRootDir/proguard-rules-consumer-jna.pro"
+        }
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+
+    lint {
+        lintConfig = file("${project.appServicesRootDir}/components/lint.xml")
+    }
+
+}
+
+kotlin {
+    jvmToolchain(rootProject.config.jvmTargetCompatibility)
+}
+
+dependencies {
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit4
+    testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.junit.vintage
+    testImplementation libs.mockito
+    testImplementation libs.robolectric
+
+    androidTestImplementation libs.androidx.test.espresso.core
+    androidTestImplementation libs.androidx.test.runner
+}
+
+// Shared logic for projects that depend on libmegazord
+//
+// This ensures that libmegazord will be in the library path so that it can be loaded.  It also adds
+// the transitive JNA dependency.
+ext.dependsOnTheMegazord = {
+    dependencies {
+        api project(":full-megazord")
+
+        // Add a JNA dependency, which is required by UniFFI.
+        implementation(libs.jna) {
+            artifact {
+                type = "aar"
+            }
+        }
+    }
+
+    // Configurations are a somewhat mysterious Gradle concept.  For our purposes, we can treat them
+    // sets of files produced by one component and consumed by another.
+    configurations {
+        megazordNative {
+            canBeConsumed = false
+        }
+    }
+
+    dependencies {
+        megazordNative project("path": ":full-megazord", "configuration": "megazordNative")
+        implementation project("path": ":full-megazord", "configuration": "libsForTests")
+    }
+
+    afterEvaluate {
+        android.libraryVariants.all { variant ->
+            def variantName = variant.name.capitalize();
+            def testTask = tasks["test${variantName}UnitTest"]
+        }
+    }
+}
+
+// Shared logic for projects that use UniFFI-generated bindings
+//
+// Make sure to also call dependsOnTheMegazord()
+ext.configureUniFFIBindgen = { crateName ->
+    // This will store the uniffi-bindgen generated files for our component
+    def uniffiOutDir = layout.buildDirectory.dir("generated/uniffi/")
+
+    android {
+        sourceSets.main.kotlin.srcDirs += uniffiOutDir
+    }
+
+    def generateUniffiBindings
+    // Call `uniffi-bindgen` to generate the Kotlin bindings
+    if (gradle.hasProperty("mozconfig")) {
+        // in moz-central we can use an `Exec` task because we can assume the bindgen tool has already been built.
+        generateUniffiBindings = tasks.register("generateUniffiBindings", Exec) {
+            def libraryPath = "${gradle.mozconfig.topobjdir}/dist/bin/libmegazord.so"
+            def bindgen = gradle.ext.mozconfig.substs.EMBEDDED_UNIFFI_BINDGEN
+
+            workingDir project.rootDir
+            commandLine bindgen
+            args 'generate', "--crate", crateName, '--language', 'kotlin', '--out-dir', uniffiOutDir.get(), '--no-format', libraryPath
+
+            outputs.dir uniffiOutDir
+            // Re-generate when the native megazord library is rebuilt
+            inputs.files libraryPath
+            // Re-generate if our uniffi-bindgen tooling changes.
+            inputs.files bindgen
+        }
+    } else {
+        // In app-services we can't use `Exec` because the megazord target isn't built yet, which we force via `doFirst`
+        generateUniffiBindings = tasks.register("generateUniffiBindings") {
+            def megazordNative = configurations.getByName("megazordNative")
+            doFirst {
+                def libraryPath = megazordNative.asFileTree.matching {
+                    include "${nativeRustTarget}/libmegazord.*"
+                }.singleFile
+
+                if (libraryPath == null) {
+                    throw new GradleException("libmegazord dynamic library path not found")
+                }
+                exec {
+                    workingDir project.rootDir
+                    commandLine '/usr/bin/env', 'cargo', 'uniffi-bindgen', 'generate', "--crate", crateName, '--language', 'kotlin', '--out-dir', uniffiOutDir.get(), '--no-format', libraryPath
+                }
+            }
+
+            outputs.dir uniffiOutDir
+            // Re-generate when the native megazord library is rebuilt
+            inputs.files megazordNative
+            // Re-generate if our uniffi-bindgen tooling changes.
+            inputs.dir "${project.appServicesRootDir}/tools/embedded-uniffi-bindgen/"
+        }
+    }
+
+    afterEvaluate {
+        def megazordNative = configurations.getByName("megazordNative")
+        android.libraryVariants.all { variant ->
+            def compileTask = tasks["compile${variant.name.capitalize()}Kotlin"]
+            compileTask.dependsOn(generateUniffiBindings)
+            if (!gradle.hasProperty("mozconfig")) {
+                variant.registerJavaGeneratingTask(generateUniffiBindings, megazordNative.singleFile)
+            }
+        }
+    }
+}

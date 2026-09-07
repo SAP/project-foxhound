@@ -16,7 +16,7 @@ To use one of those atoms Javascript modules will have to import
 
 [Selenium atoms]: https://github.com/SeleniumHQ/selenium/tree/master/javascript/webdriver/atoms
 [WebDriver specification]: https://w3c.github.io/webdriver/webdriver-spec.html
-[atom.sys.mjs]: https://searchfox.org/mozilla-central/source/remote/marionette/atom.sys.mjs
+[atom.sys.mjs]: https://searchfox.org/firefox-main/source/remote/marionette/atom.sys.mjs
 
 ## Update required Selenium atoms
 
@@ -66,21 +66,17 @@ code including dependencies for the atom wrapped into a single function.
 
 ### Update atom.sys.mjs
 
-To update the atoms for Marionette the `atoms.js` file has to be edited. For
-each atom to be updated the steps as laid out below have to be performed:
+To update the atoms for Marionette the `atom.sys.mjs` file has to be edited.
+For each atom to be updated the steps as laid out below have to be performed:
 
 1. Open the Javascript file of the exported atom. See above for
    its location.
 
-2. Add the related function name and `element` as parameters to the wrapper
-   function, which can be found at the very beginning of the file so that it
-   is equal to the parameters in `atom.sys.mjs`.
-
-3. Copy and paste the whole contents of the file into the left textarea on
+2. Copy and paste the whole contents of the file into the left textarea on
    <https://jsonformatter.org/json-stringify-online> to get a stringified
    version of all the required functions.
 
-4. Copy and paste the whole contents of the right textarea, and replace the
+3. Copy and paste the whole contents of the right textarea, and replace the
    existing code for the atom in `atom.sys.mjs`.
 
 ### Test the changes

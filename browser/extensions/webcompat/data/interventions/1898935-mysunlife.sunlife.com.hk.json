@@ -1,0 +1,15 @@
+{
+  "label": "mysunlife.sunlife.com.hk",
+  "bugs": {
+    "1898935": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://mysunlife.sunlife.com.hk/ClientAppWeb/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

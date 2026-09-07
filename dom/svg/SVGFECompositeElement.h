@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,7 @@
 #include "mozilla/dom/SVGFilters.h"
 
 nsresult NS_NewSVGFECompositeElement(
-    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 namespace mozilla::dom {
 
@@ -21,11 +19,11 @@ using SVGFECompositeElementBase = SVGFilterPrimitiveElement;
 class SVGFECompositeElement final : public SVGFECompositeElementBase {
   friend nsresult(::NS_NewSVGFECompositeElement(
       nsIContent** aResult,
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo));
 
  protected:
   explicit SVGFECompositeElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : SVGFECompositeElementBase(std::move(aNodeInfo)) {}
   JSObject* WrapNode(JSContext* aCx,
                      JS::Handle<JSObject*> aGivenProto) override;
@@ -61,6 +59,10 @@ class SVGFECompositeElement final : public SVGFECompositeElementBase {
   EnumAttributesInfo GetEnumInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
+  enum { RESULT, IN1, IN2 };
+  SVGAnimatedString mStringAttributes[3];
+  static StringInfo sStringInfo[3];
+
   enum { ATTR_K1, ATTR_K2, ATTR_K3, ATTR_K4 };
   SVGAnimatedNumber mNumberAttributes[4];
   static NumberInfo sNumberInfo[4];
@@ -69,10 +71,6 @@ class SVGFECompositeElement final : public SVGFECompositeElementBase {
   SVGAnimatedEnumeration mEnumAttributes[1];
   static SVGEnumMapping sOperatorMap[];
   static EnumInfo sEnumInfo[1];
-
-  enum { RESULT, IN1, IN2 };
-  SVGAnimatedString mStringAttributes[3];
-  static StringInfo sStringInfo[3];
 };
 
 }  // namespace mozilla::dom

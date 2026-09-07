@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -162,9 +160,6 @@ class MockGfxInfo final : public nsIGfxInfo {
   NS_IMETHOD GetUsingGPUProcess(bool* aOutValue) override {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
-  NS_IMETHOD GetUsingRemoteCanvas(bool* aOutValue) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
   NS_IMETHOD GetUsingAcceleratedCanvas(bool* aOutValue) override {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -177,9 +172,8 @@ class MockGfxInfo final : public nsIGfxInfo {
   NS_IMETHOD GetCodecSupportInfo(nsACString& aCodecSupportInfo) override {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
-  NS_IMETHOD GetD2DEnabled(bool* aD2DEnabled) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
+  NS_IMETHOD_(void)
+  SetCodecSupportInfo(const nsACString& aCodecSupportInfo) override {}
   NS_IMETHOD GetDWriteEnabled(bool* aDWriteEnabled) override {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -478,26 +472,6 @@ TEST_F(GfxConfigManager, WebRenderEnabledWithDisableHwCompositingNoWr) {
 TEST_F(GfxConfigManager, WebRenderDisabledWithDisableHwCompositingNoWr) {
   mDisableHwCompositingNoWr = true;
   mMockGfxInfo->mStatusWr = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-  ConfigureWebRender();
-
-  EXPECT_FALSE(mFeatures.mWr.IsEnabled());
-  EXPECT_FALSE(mFeatures.mWrCompositor.IsEnabled());
-  EXPECT_TRUE(mFeatures.mWrAngle.IsEnabled());
-  EXPECT_FALSE(mFeatures.mWrDComp.IsEnabled());
-  EXPECT_TRUE(mFeatures.mWrPartial.IsEnabled());
-  EXPECT_FALSE(mFeatures.mWrShaderCache.IsEnabled());
-  EXPECT_FALSE(mFeatures.mWrOptimizedShaders.IsEnabled());
-  EXPECT_TRUE(mFeatures.mWrScissoredCacheClears.IsEnabled());
-  EXPECT_FALSE(mFeatures.mHwCompositing.IsEnabled());
-  EXPECT_FALSE(mFeatures.mGPUProcess.IsEnabled());
-  EXPECT_TRUE(mFeatures.mD3D11HwAngle.IsEnabled());
-  EXPECT_TRUE(mFeatures.mGLNorm16Textures.IsEnabled());
-}
-
-TEST_F(GfxConfigManager, WebRenderDisabledWithAllowSoftwareGPUProcess) {
-  mDisableHwCompositingNoWr = true;
-  mMockGfxInfo->mStatusWr = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-  mGPUProcessAllowSoftware = true;
   ConfigureWebRender();
 
   EXPECT_FALSE(mFeatures.mWr.IsEnabled());

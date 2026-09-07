@@ -11,7 +11,7 @@ import { Credentials } from "resource://gre/modules/Credentials.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CryptoUtils: "resource://services-crypto/utils.sys.mjs",
+  CryptoUtils: "moz-src:///services/crypto/modules/utils.sys.mjs",
 });
 
 /**
@@ -146,52 +146,44 @@ export async function deriveHawkCredentials(tokenHex, context, size = 96) {
 // To keep the number of times we read this pref at a minimum, maintain the
 // preference in a stateful object that notices and updates itself when the
 // pref is changed.
-function Intl() {
+class HawkIntl {
   // We won't actually query the pref until the first time we need it
-  this._accepted = "";
-  this._everRead = false;
-  this.init();
-}
+  #accepted = "";
+  #everRead = false;
 
-Intl.prototype = {
-  init() {
+  constructor() {
     Services.prefs.addObserver("intl.accept_languages", this);
-  },
+  }
 
   uninit() {
     Services.prefs.removeObserver("intl.accept_languages", this);
-  },
+  }
 
   observe() {
     this.readPref();
-  },
+  }
 
   readPref() {
-    this._everRead = true;
+    this.#everRead = true;
     try {
-      this._accepted = Services.prefs.getComplexValue(
-        "intl.accept_languages",
-        Ci.nsIPrefLocalizedString
-      ).data;
+      this.#accepted = Services.locale.acceptLanguages;
     } catch (err) {
       let log = Log.repository.getLogger("Services.Common.RESTRequest");
-      log.error("Error reading intl.accept_languages pref", err);
+      log.error("Error reading Services.locale.acceptLanguages", err);
     }
-  },
+  }
 
   get accept_languages() {
-    if (!this._everRead) {
+    if (!this.#everRead) {
       this.readPref();
     }
-    return this._accepted;
-  },
-};
+    return this.#accepted;
+  }
+}
 
 // Singleton getter for Intl, creating an instance only when we first need it.
 var intl = null;
 function getIntl() {
-  if (!intl) {
-    intl = new Intl();
-  }
+  intl ??= new HawkIntl();
   return intl;
 }

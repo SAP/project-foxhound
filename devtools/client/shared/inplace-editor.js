@@ -36,6 +36,18 @@ loader.lazyRequireGetter(
   true
 );
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  getAutocompleteDataForColorFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-color-function.mjs",
+  getAutocompleteDataForAnchorFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-anchor-function.mjs",
+  getAutocompleteDataForAnchorSizeFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-anchor-size-function.mjs",
+  getAutocompleteDataForLinearGradientFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-linear-gradient-function.mjs",
+});
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const CONTENT_TYPES = {
   PLAIN_TEXT: 0,
@@ -77,16 +89,57 @@ const GRID_COL_PROPERTY_NAMES = [
   "grid-column-start",
   "grid-column-end",
 ];
+const ACCEPT_ANCHOR_PROPERTY_NAMES = new Set([
+  // position-anchor directly accepts anchor names
+  "position-anchor",
+  // inset properties that accept an anchor()/anchor-size() function as a value
+  "top",
+  "left",
+  "bottom",
+  "right",
+  "inset",
+  "inset-block-start",
+  "inset-block-end",
+  "inset-block",
+  "inset-inline-start",
+  "inset-inline-end",
+  "inset-inline",
+  // sizing properties that accept the use of anchor-size()
+  "width",
+  "height",
+  "min-width",
+  "min-height",
+  "max-width",
+  "max-height",
+  "block-size",
+  "inline-size",
+  "min-block-size",
+  "min-inline-size",
+  "max-block-size",
+  "max-inline-size",
+  // margin properties that accept the use of anchor-size()
+  "margin",
+  "margin-bottom",
+  "margin-left",
+  "margin-right",
+  "margin-top",
+  "margin-block",
+  "margin-block-end",
+  "margin-block-start",
+  "margin-inline",
+  "margin-inline-end",
+  "margin-inline-start",
+]);
 
 /**
  * Helper to check if the provided key matches one of the expected keys.
  * Keys will be prefixed with DOM_VK_ and should match a key in KeyCodes.
  *
- * @param {String} key
+ * @param {string} key
  *        the key to check (can be a keyCode).
- * @param {...String} keys
+ * @param {...string} keys
  *        list of possible keys allowed.
- * @return {Boolean} true if the key matches one of the keys.
+ * @return {boolean} true if the key matches one of the keys.
  */
 function isKeyIn(key, ...keys) {
   return keys.some(expectedKey => {
@@ -100,10 +153,10 @@ function isKeyIn(key, ...keys) {
  * Changes will be committed when the InlineEditor's input is blurred
  * or dropped when the user presses escape.
  *
- * @param {Object} options: Options for the editable field
+ * @param {object} options: Options for the editable field
  * @param {Element} options.element:
  *        (required) The span to be edited on focus.
- * @param {String} options.inputClass:
+ * @param {string} options.inputClass:
  *        An optional class to be added to the input.
  * @param {Function} options.canEdit:
  *        Will be called before creating the inplace editor.  Editor
@@ -125,7 +178,7 @@ function isKeyIn(key, ...keys) {
  *        This may be called with the return value of the options.done callback (if it is passed).
  * @param {Function} options.contextMenu:
  *        Called when the user triggers a contextmenu event on the input.
- * @param {Object} options.advanceChars:
+ * @param {object} options.advanceChars:
  *        This can be either a string or a function.
  *        If it is a string, then if any characters in it are typed,
  *        focus will advance to the next element.
@@ -134,53 +187,53 @@ function isKeyIn(key, ...keys) {
  *        and the insertion point.  If the function returns true,
  *        then the focus advance takes place.  If it returns false,
  *        then the character is inserted instead.
- * @param {Boolean} options.stopOnReturn:
+ * @param {boolean} options.stopOnReturn:
  *        If true, the return key will not advance the editor to the next
  *        focusable element. Note that Ctrl/Cmd+Enter will still advance the editor
- * @param {Boolean} options.stopOnTab:
+ * @param {boolean} options.stopOnTab:
  *        If true, the tab key will not advance the editor to the next
  *        focusable element.
- * @param {Boolean} options.stopOnShiftTab:
+ * @param {boolean} options.stopOnShiftTab:
  *        If true, shift tab will not advance the editor to the previous
  *        focusable element.
- * @param {String} options.trigger: The DOM event that should trigger editing,
+ * @param {string} options.trigger: The DOM event that should trigger editing,
  *        defaults to "click"
- * @param {Boolean} options.multiline: Should the editor be a multiline textarea?
+ * @param {boolean} options.multiline: Should the editor be a multiline textarea?
  *        defaults to false
  * @param {Function or options.Number} maxWidth:
  *        Should the editor wrap to remain below the provided max width. Only
  *        available if multiline is true. If a function is provided, it will be
  *        called when replacing the element by the inplace input.
- * @param {Boolean} options.trimOutput: Should the returned string be trimmed?
+ * @param {boolean} options.trimOutput: Should the returned string be trimmed?
  *        defaults to true
- * @param {Boolean} options.preserveTextStyles: If true, do not copy text-related styles
+ * @param {boolean} options.preserveTextStyles: If true, do not copy text-related styles
  *        from `element` to the new input.
  *        defaults to false
- * @param {Object} options.cssProperties: An instance of CSSProperties.
- * @param {Object} options.getCssVariables: A function that returns a Map containing
+ * @param {object} options.cssProperties: An instance of CSSProperties.
+ * @param {object} options.getCssVariables: A function that returns a Map containing
  *        all CSS variables. The Map key is the variable name, the value is the variable value
- * @param {Number} options.defaultIncrement: The value by which the input is incremented
+ * @param {number} options.defaultIncrement: The value by which the input is incremented
  *        or decremented by default (0.1 for properties like opacity and 1 by default)
  * @param {Function} options.getGridLineNames:
  *        Will be called before offering autocomplete sugestions, if the property is
  *        a member of GRID_PROPERTY_NAMES.
- * @param {Boolean} options.showSuggestCompletionOnEmpty:
+ * @param {boolean} options.showSuggestCompletionOnEmpty:
  *        If true, show the suggestions in case that the current text becomes empty.
  *        Defaults to false.
- * @param {Boolean} options.focusEditableFieldAfterApply
+ * @param {boolean} options.focusEditableFieldAfterApply
  *        If true, try to focus the next editable field after the input value is commited.
  *        When set to true, focusEditableFieldContainerSelector is mandatory.
  *        If no editable field can be found within the element retrieved with
  *        focusEditableFieldContainerSelector, the focus will be moved to the next focusable
  *        element (which won't be an editable field)
- * @param {String} options.focusEditableFieldContainerSelector
+ * @param {string} options.focusEditableFieldContainerSelector
  *        A CSS selector that will be used to retrieve the container element into which
  *        the next focused element should be in, when focusEditableFieldAfterApply
  *        is set to true. This allows to bail out if we can't find a suitable
  *        focusable field.
- * @param {String} options.inputAriaLabel
+ * @param {string} options.inputAriaLabel
  *        Optional aria-label attribute value that will be added to the input.
- * @param {String} options.inputAriaLabelledBy
+ * @param {string} options.inputAriaLabelledBy
  *        Optional aria-labelled-by attribute value that will be added to the input.
  */
 function editableField(options) {
@@ -198,7 +251,7 @@ exports.editableField = editableField;
  * clicks and sit in the editing tab order, and call
  * a callback when it is activated.
  *
- * @param {Object} options
+ * @param {object} options
  *    The options for this editor, including:
  *    {Element} element: The DOM element.
  *    {String} trigger: The DOM event that should trigger editing,
@@ -211,14 +264,16 @@ function editableItem(options, callback) {
   const trigger = options.trigger || "click";
   const element = options.element;
   element.addEventListener(trigger, function (evt) {
-    if (evt.target.nodeName !== "a") {
-      const win = this.ownerDocument.defaultView;
-      const selection = win.getSelection();
-      if (trigger != "click" || selection.isCollapsed) {
-        callback(element, evt);
-      }
-      evt.stopPropagation();
+    if (!isValidTargetForEditableItemCallback(evt.target)) {
+      return;
     }
+
+    const win = this.ownerDocument.defaultView;
+    const selection = win.getSelection();
+    if (trigger != "click" || selection.isCollapsed) {
+      callback(element, evt);
+    }
+    evt.stopPropagation();
   });
 
   // If focused by means other than a click, start editing by
@@ -226,7 +281,7 @@ function editableItem(options, callback) {
   element.addEventListener(
     "keypress",
     function (evt) {
-      if (evt.target.nodeName === "button") {
+      if (!isValidTargetForEditableItemCallback(evt.target)) {
         return;
       }
 
@@ -236,23 +291,6 @@ function editableItem(options, callback) {
     },
     true
   );
-
-  // Ugly workaround - the element is focused on mousedown but
-  // the editor is activated on click/mouseup.  This leads
-  // to an ugly flash of the focus ring before showing the editor.
-  // So hide the focus ring while the mouse is down.
-  element.addEventListener("mousedown", function (evt) {
-    if (evt.target.nodeName !== "a") {
-      const cleanup = function () {
-        element.style.removeProperty("outline-style");
-        element.removeEventListener("mouseup", cleanup);
-        element.removeEventListener("mouseout", cleanup);
-      };
-      element.style.setProperty("outline-style", "none");
-      element.addEventListener("mouseup", cleanup);
-      element.addEventListener("mouseout", cleanup);
-    }
-  });
 
   // Mark the element editable field for tab
   // navigation while editing.
@@ -272,6 +310,19 @@ function editableItem(options, callback) {
 }
 
 exports.editableItem = editableItem;
+
+/**
+ * Returns false if the passed event target should not trigger the callback passed
+ * to the editable item.
+ *
+ * @param {Element} eventTarget
+ * @returns {boolean}
+ */
+function isValidTargetForEditableItemCallback(eventTarget) {
+  const { nodeName } = eventTarget;
+  // If the event happened on a link or a button, we shouldn't trigger the callback
+  return nodeName !== "a" && nodeName !== "button";
+}
 
 /*
  * Various API consumers (especially tests) sometimes want to grab the
@@ -413,7 +464,7 @@ class InplaceEditor extends EventEmitter {
       options.start(this, event);
     }
 
-    this.#getGridNamesBeforeCompletion(options.getGridLineNames);
+    this.#populatePropertySpecificDataBeforeCompletion(options);
   }
   static CONTENT_TYPES = CONTENT_TYPES;
 
@@ -436,12 +487,12 @@ class InplaceEditor extends EventEmitter {
   /**
    * Create the input element.
    *
-   * @param {Object} options
-   * @param {String} options.inputAriaLabel
+   * @param {object} options
+   * @param {string} options.inputAriaLabel
    *        Optional aria-label attribute value that will be added to the input.
-   * @param {String} options.inputAriaLabelledBy
+   * @param {string} options.inputAriaLabelledBy
    *        Optional aria-labelledby attribute value that will be added to the input.
-   * @param {String} options.inputClass:
+   * @param {string} options.inputClass:
    *        Optional class to be added to the input.
    */
   #createInput(options = {}) {
@@ -613,9 +664,9 @@ class InplaceEditor extends EventEmitter {
   /**
    * Increment property values in rule view.
    *
-   * @param {Number} increment
+   * @param {number} increment
    *        The amount to increase/decrease the property value.
-   * @return {Boolean} true if value has been incremented.
+   * @return {boolean} true if value has been incremented.
    */
   #incrementValue(increment) {
     const value = this.input.value;
@@ -648,15 +699,15 @@ class InplaceEditor extends EventEmitter {
   /**
    * Increment the property value based on the property type.
    *
-   * @param {String} value
+   * @param {string} value
    *        Property value.
-   * @param {Number} increment
+   * @param {number} increment
    *        Amount to increase/decrease the property value.
-   * @param {Number} selStart
+   * @param {number} selStart
    *        Starting index of the value.
-   * @param {Number} selEnd
+   * @param {number} selEnd
    *        Ending index of the value.
-   * @return {Object} object with properties 'value', 'start', and 'end'.
+   * @return {object} object with properties 'value', 'start', and 'end'.
    */
   #incrementCSSValue(value, increment, selStart, selEnd) {
     const range = this.#parseCSSValue(value, selStart);
@@ -752,12 +803,12 @@ class InplaceEditor extends EventEmitter {
    * from a selection of default units corresponding to supported CSS value
    * dimensions (distance, angle, duration).
    *
-   * @param {String} beforeValue
+   * @param {string} beforeValue
    *        The string preceeding the number value in the current property
    *        value.
-   * @param {String} afterValue
+   * @param {string} afterValue
    *        The string following the number value in the current property value.
-   * @return {String} a valid unit that can be used for this number value or
+   * @return {string} a valid unit that can be used for this number value or
    *         empty string if no match could be found.
    */
   #findCompatibleUnit(beforeValue, afterValue) {
@@ -788,11 +839,11 @@ class InplaceEditor extends EventEmitter {
   /**
    * Parses the property value and type.
    *
-   * @param {String} value
+   * @param {string} value
    *        Property value.
-   * @param {Number} offset
+   * @param {number} offset
    *        Starting index of value.
-   * @return {Object} object with properties 'value', 'start', 'end', and
+   * @return {object} object with properties 'value', 'start', 'end', and
    *         'type'.
    */
   #parseCSSValue(value, offset) {
@@ -841,17 +892,17 @@ class InplaceEditor extends EventEmitter {
    * Increment the property value for types other than
    * number or hex, such as rgb, hsl, hwb, and file names.
    *
-   * @param {String} value
+   * @param {string} value
    *        Property value.
-   * @param {Number} increment
+   * @param {number} increment
    *        Amount to increment/decrement.
-   * @param {Number} offset
+   * @param {number} offset
    *        Starting index of the property value.
-   * @param {Number} offsetEnd
+   * @param {number} offsetEnd
    *        Ending index of the property value.
-   * @param {Object} info
+   * @param {object} info
    *        Object with details about the property value.
-   * @return {Object} object with properties 'value', 'start', and 'end'.
+   * @return {object} object with properties 'value', 'start', and 'end'.
    */
   #incrementGenericValue(value, increment, offset, offsetEnd, info) {
     // Try to find a number around the cursor to increment.
@@ -916,13 +967,13 @@ class InplaceEditor extends EventEmitter {
   /**
    * Increment the property value for numbers.
    *
-   * @param {String} rawValue
+   * @param {string} rawValue
    *        Raw value to increment.
-   * @param {Number} increment
+   * @param {number} increment
    *        Amount to increase/decrease the raw value.
-   * @param {Object} info
+   * @param {object} info
    *        Object with info about the property value.
-   * @return {String} the incremented value.
+   * @return {string} the incremented value.
    */
   #incrementRawValue(rawValue, increment, info) {
     const num = parseFloat(rawValue);
@@ -956,15 +1007,15 @@ class InplaceEditor extends EventEmitter {
   /**
    * Increment the property value for hex.
    *
-   * @param {String} value
+   * @param {string} value
    *        Property value.
-   * @param {Number} increment
+   * @param {number} increment
    *        Amount to increase/decrease the property value.
-   * @param {Number} offset
+   * @param {number} offset
    *        Starting index of the property value.
-   * @param {Number} offsetEnd
+   * @param {number} offsetEnd
    *        Ending index of the property value.
-   * @return {Object} object with properties 'value' and 'selection'.
+   * @return {object} object with properties 'value' and 'selection'.
    */
   #incHexColor(rawValue, increment, offset, offsetEnd) {
     // Return early if no part of the rawValue is selected.
@@ -1069,9 +1120,9 @@ class InplaceEditor extends EventEmitter {
   /**
    * Cycle through the autocompletion suggestions in the popup.
    *
-   * @param {Boolean} reverse
+   * @param {boolean} reverse
    *        true to select previous item from the popup.
-   * @param {Boolean} noSelect
+   * @param {boolean} noSelect
    *        true to not select the text after selecting the newly selectedItem
    *        from the popup.
    */
@@ -1168,19 +1219,31 @@ class InplaceEditor extends EventEmitter {
   };
 
   /**
-   * Before offering autocomplete, set this.gridLineNames as the line names
-   * of the current grid, if they exist.
+   * Before offering autocomplete, set properties that require asynchronous calls.
    *
-   * @param {Function} getGridLineNames
+   * @param {object} options
+   * @param {Function} options.getGridLineNames
    *        A function which gets the line names of the current grid.
+   * @param {Function} options.getCssAnchors
+   *        A function which gets the possible anchors for the selected element.
    */
-  async #getGridNamesBeforeCompletion(getGridLineNames) {
+  async #populatePropertySpecificDataBeforeCompletion({
+    getGridLineNames,
+    getCssAnchors,
+  }) {
     if (
       getGridLineNames &&
       this.property &&
       GRID_PROPERTY_NAMES.includes(this.property.name)
     ) {
       this.gridLineNames = await getGridLineNames();
+    }
+
+    if (
+      getCssAnchors &&
+      ACCEPT_ANCHOR_PROPERTY_NAMES.has(this.property?.name)
+    ) {
+      this.anchorNames = await getCssAnchors();
     }
 
     if (
@@ -1434,9 +1497,9 @@ class InplaceEditor extends EventEmitter {
   /**
    * Open the autocomplete popup, adding a custom click handler and classname.
    *
-   * @param {Number} offset
+   * @param {number} offset
    *        X-offset relative to the input starting edge.
-   * @param {Number} selectedIndex
+   * @param {number} selectedIndex
    *        The index of the item that should be selected. Use -1 to have no
    *        item selected.
    */
@@ -1576,7 +1639,7 @@ class InplaceEditor extends EventEmitter {
   /**
    * Handles displaying suggestions based on the current input.
    *
-   * @param {Boolean} autoInsert
+   * @param {boolean} autoInsert
    *        Pass true to automatically insert the most relevant suggestion.
    */
   #maybeSuggestCompletion(autoInsert) {
@@ -1659,6 +1722,21 @@ class InplaceEditor extends EventEmitter {
             }
           }
           if (
+            currentFunction &&
+            currentFunction.tokens.length &&
+            // If we have a whitespace or a comment, we don't want to put them in the
+            // list of tokens, but we can mark the last token as "complete".
+            // This way we can differentiate between an incomplete item that we should
+            // autocomplete (e.g. `color(f`)), and one for which we shouldn't (e.g. `color(from `))
+            (token.tokenType === "WhiteSpace" ||
+              token.tokenType === "Comment" ||
+              // We also want to have comma or delimiter marked as complete
+              token.tokenType === "Comma" ||
+              token.tokenType === "Delim")
+          ) {
+            currentFunction.tokens.at(-1).complete = true;
+          }
+          if (
             token.tokenType === "Function" ||
             token.tokenType === "ParenthesisBlock"
           ) {
@@ -1713,7 +1791,7 @@ class InplaceEditor extends EventEmitter {
           postLabelValues = [];
         } else if (functionValues) {
           list = functionValues.list;
-          postLabelValues = functionValues.postLabelValues;
+          postLabelValues = functionValues.postLabelValues || [];
         } else {
           list = this.#getCSSValuesForPropertyName(this.property.name);
           // Only show !important if:
@@ -1811,13 +1889,17 @@ class InplaceEditor extends EventEmitter {
         }
       }
 
-      // Sort items starting with [a-z0-9] first, to make sure vendor-prefixed
+      // Sort items starting with [a-z0-9] or -- first, to make sure vendor-prefixed
       // values and "!important" are suggested only after standard values.
+      const alphaNumOrDashedRegExp = /^(\w|--)/;
       finalList.sort((item1, item2) => {
         // Get the expected alphabetical comparison between the items.
         let comparison = item1.label.localeCompare(item2.label);
-        if (/^\w/.test(item1.label) != /^\w/.test(item2.label)) {
-          // One starts with [a-z0-9], one does not: flip the comparison.
+        if (
+          alphaNumOrDashedRegExp.test(item1.label) !=
+          alphaNumOrDashedRegExp.test(item2.label)
+        ) {
+          // One starts with [a-z0-9--], one does not: flip the comparison.
           comparison = -1 * comparison;
         }
         return comparison;
@@ -1872,14 +1954,16 @@ class InplaceEditor extends EventEmitter {
   /**
    * Returns the autocomplete data for the passed function.
    *
-   * @param {Object} functionStackEntry
+   * @param {object} functionStackEntry
    * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the
    *        function call
-   * @returns {Object|null} Return null if there's nothing specific to display for the function.
+   * @param {Array<InspectorCSSToken>} functionStackEntry.tokens: The tokens representing the
+   *        function parameters (i.e. what's inside the parenthesis)
+   * @returns {object | null} Return null if there's nothing specific to display for the function.
    *          Otherwise, return an object of the following shape:
-   *            - {Array<String>} list: The list of autocomplete items
-   *            - {Array<String>} postLabelValue: The list of autocomplete items
-   *              post labels (e.g. for variable names, their values).
+   *            - {Array<string>} list: The list of autocomplete items
+   *            - {Array<string>|undefined} postLabelValue: The list of autocomplete items
+   *              post labels (e.g. for variables, their values).
    */
   #getAutocompleteDataForFunction(functionStackEntry) {
     const functionName = functionStackEntry?.fnToken?.value;
@@ -1887,30 +1971,96 @@ class InplaceEditor extends EventEmitter {
       return null;
     }
 
-    let list = [];
-    let postLabelValues = [];
-
-    if (functionName === "var") {
-      // We only want to return variables for the first parameters of var(), not for its
-      // fallback. If we get more than one tokens, and given we don't get comments or
-      // whitespace, this means we're in the fallback value already.
-      if (functionStackEntry.tokens.length > 1) {
-        // In such case we'll use the default behavior
-        return null;
-      }
-      list = this.#getCSSVariableNames();
-      postLabelValues = list.map(varName => this.#getCSSVariableValue(varName));
-    } else if (functionName.includes("gradient")) {
-      // For gradient functions we want to display named colors and color functions,
-      // but only if the user didn't already entered a color token after the last comma.
-      list = this.#getCSSValuesForPropertyName("color");
+    if (functionName === "anchor") {
+      return lazy.getAutocompleteDataForAnchorFunction({
+        functionTokens: functionStackEntry.tokens,
+        anchorNames: this.anchorNames,
+      });
     }
 
-    // TODO: Handle other functions, e.g. color functions to autocomplete on relative
-    // color format (Bug 1898273), `color()` to suggest color space (Bug 1898277),
-    // `anchor()` to display existing anchor names (Bug 1903278)
+    if (functionName === "anchor-size") {
+      return lazy.getAutocompleteDataForAnchorSizeFunction({
+        functionTokens: functionStackEntry.tokens,
+        anchorNames: this.anchorNames,
+      });
+    }
 
+    if (functionName === "var") {
+      return this.#getAutocompleteDataForVarFunction(functionStackEntry);
+    }
+
+    if (functionName.includes("gradient")) {
+      return this.#getAutocompleteDataForGradientFunction(
+        functionName,
+        functionStackEntry
+      );
+    }
+
+    if (functionName === "color") {
+      return lazy.getAutocompleteDataForColorFunction({
+        functionTokens: functionStackEntry.tokens,
+        getCSSValuesForPropertyName:
+          this.#getCSSValuesForPropertyName.bind(this),
+      });
+    }
+
+    // For unhandled functions, return an empty list
+    return { list: [] };
+  }
+
+  /**
+   * Compute the autocomplete data for the passed var() function.
+   *
+   * @param {object} functionStackEntry
+   * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the
+   *        function call
+   * @returns {object} Returns an object of the following shape:
+   *            - {Array<string>} list: The list of autocomplete items
+   *            - {Array<string>} postLabelValue: The values of the variables
+   */
+  #getAutocompleteDataForVarFunction(functionStackEntry) {
+    // We only want to return variables for the first parameters of var(), not for its
+    // fallback. If we get more than one tokens, and given we don't get comments or
+    // whitespace, this means we're in the fallback value already.
+    if (functionStackEntry.tokens.length > 1) {
+      // In such case we'll use the default behavior
+      return null;
+    }
+    const list = this.#getCSSVariableNames();
+    const postLabelValues = list.map(varName =>
+      this.#getCSSVariableValue(varName)
+    );
     return { list, postLabelValues };
+  }
+
+  /**
+   * Compute the autocomplete data for the passed gradient function.
+   *
+   * @param {string} functionName: The gradient function we want the autocomplete items for
+   * @param {object} functionStackEntry
+   * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the function call
+   * @param {Array<InspectorCSSToken>} functionStackEntry.tokens: The tokens representing the
+   *        function parameters (i.e. what's inside the parenthesis)
+   * @returns {object} Returns an object of the following shape:
+   *            - {Array<string>} list: The list of autocomplete items
+   */
+  #getAutocompleteDataForGradientFunction(functionName, functionStackEntry) {
+    const { tokens } = functionStackEntry;
+    if (
+      functionName === "linear-gradient" ||
+      // repeating-linear-gradient() takes the same values as linear-gradient
+      functionName === "repeating-linear-gradient"
+    ) {
+      return lazy.getAutocompleteDataForLinearGradientFunction({
+        functionTokens: tokens,
+        getCSSValuesForPropertyName:
+          this.#getCSSValuesForPropertyName.bind(this),
+      });
+    }
+
+    // For the other gradient function, provide the list of colors
+    // Eventually we should also properly autocomplete them
+    return { list: this.#getCSSValuesForPropertyName("color") };
   }
 
   /**
@@ -1969,7 +2119,7 @@ class InplaceEditor extends EventEmitter {
   /**
    * Check if the current input is displaying more than one line of text.
    *
-   * @return {Boolean} true if the input has a single line of text
+   * @return {boolean} true if the input has a single line of text
    */
   #isSingleLine() {
     if (!this.multiline) {
@@ -1998,22 +2148,26 @@ class InplaceEditor extends EventEmitter {
    * the autocompletion. This method is overridden by tests in order to use
    * mocked suggestion lists.
    *
-   * @param {String} propertyName
+   * @param {string} propertyName
    * @return {Array} array of CSS property values (Strings)
    */
   #getCSSValuesForPropertyName(propertyName) {
-    const gridLineList = [];
+    const additionalItems = [];
     if (this.gridLineNames) {
       if (GRID_ROW_PROPERTY_NAMES.includes(this.property.name)) {
-        gridLineList.push(...this.gridLineNames.rows);
+        additionalItems.push(...this.gridLineNames.rows);
       }
       if (GRID_COL_PROPERTY_NAMES.includes(this.property.name)) {
-        gridLineList.push(...this.gridLineNames.cols);
+        additionalItems.push(...this.gridLineNames.cols);
       }
     }
+    if (this.property?.name === "position-anchor" && this.anchorNames) {
+      additionalItems.push(...this.anchorNames);
+    }
+
     // Must be alphabetically sorted before comparing the results with
     // the user input, otherwise we will lose some results.
-    return gridLineList
+    return additionalItems
       .concat(this.cssProperties.getValues(propertyName))
       .sort();
   }
@@ -2048,9 +2202,9 @@ class InplaceEditor extends EventEmitter {
   /**
    * Returns the variable's value for the given CSS variable name.
    *
-   * @param {String} varName
+   * @param {string} varName
    *        The variable name to retrieve the value of
-   * @return {String} the variable value to the given CSS variable name
+   * @return {string} the variable value to the given CSS variable name
    */
   #getCSSVariableValue(varName) {
     return this.#getCSSVariablesMap()?.get(varName);
@@ -2130,12 +2284,12 @@ function copyBoxModelStyles(from, to) {
  * Trigger a focus change similar to pressing tab/shift-tab.
  *
  * @param {Window} win: The window into which the focus should be moved
- * @param {Number} direction: See Services.focus.MOVEFOCUS_*
- * @param {Boolean} focusEditableField: Set to true to move the focus to the previous/next
+ * @param {number} direction: See Services.focus.MOVEFOCUS_*
+ * @param {boolean} focusEditableField: Set to true to move the focus to the previous/next
  *        editable field. If not set, the focus will be set on the next focusable element.
  *        The function might still put the focus on a non-editable field, if none is found
  *        within the element matching focusEditableFieldContainerSelector
- * @param {String} focusEditableFieldContainerSelector: A CSS selector the editabled element
+ * @param {string} focusEditableFieldContainerSelector: A CSS selector the editabled element
  *        we want to focus should be in. This is only used when focusEditableField is set
  *        to true.
  *        It's important to pass a boundary otherwise we might hit an infinite loop

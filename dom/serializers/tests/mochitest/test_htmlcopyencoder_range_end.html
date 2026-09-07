@@ -1,0 +1,233 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+-->
+<head>
+<title>Test on the html copy encoder for different range end</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1922000">Mozilla Bug 1922000</a>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<div id="container">
+  <div id="basic">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div id="end">Third</div>
+  </div>
+  <div id="nested">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div><div><div id="end">Third-1</div><div>Third-2</div><div>Third-3</div></div></div>
+  </div>
+  <div id="shadow">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div id="host"><template shadowrootmode="open"><div id="end">Third-1</div><div>Third-2</div></template></div>
+  </div>
+  <div id="slot">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div id="host">
+      <template shadowrootmode="open"><slot></slot></template>
+      <div><div id="end">Third-1</div><div>Third-2</div><div>Third-3</div></div>
+    </div>
+  </div>
+</div>
+<script>
+
+/* global describe, it, beforeEach */
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+
+function testSelectAndSerialize(aDescription, aGetRangeFun, aExpectedTextResult,
+                                aExpectedHTMLResult) {
+  it(aDescription, () => {
+    info("Setup selection");
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    const range = aGetRangeFun();
+    selection.addRange(range);
+
+    info("Initialize encoder for text/plain");
+    // Force LF line breaks; otherwise, on Windows we would get CRLF.
+    encoder.init(document, "text/plain", de.OutputLFLineBreak | de.AllowCrossShadowBoundary);
+    encoder.setSelection(selection);
+    is(encoder.encodeToString(), aExpectedTextResult, "check text/plain result");
+
+    info("Initialize encoder for text/html");
+    // Force LF line breaks; otherwise, on Windows we would get CRLF.
+    encoder.init(document, "text/html", de.OutputLFLineBreak | de.AllowCrossShadowBoundary);
+    encoder.setSelection(selection);
+
+    const htmlContext = { value: '' };
+    const htmlInfo = { value: '' };
+    is(encoder.encodeToStringWithContext(htmlContext, htmlInfo),
+       aExpectedHTMLResult, "check text/html result");
+  });
+}
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a element",
+  () => {
+    const div = document.querySelector("div#basic");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the beginning of the <div> with "Third" text node
+    const end = div.querySelector("#end");
+    range.setEnd(end, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div id=\"end\"></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a text node",
+  () => {
+    const div = document.querySelector("div#basic");
+    const range = document.createRange();
+    // Start at the beginning of the text node with "First" content
+    const start = div.querySelector("#start");
+    range.setStart(start.firstChild, 0);
+    // End at the beginning of the text node with "Third" content
+    const end = div.querySelector("#end");
+    range.setEnd(end.firstChild, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div id=\"end\"></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a element in nested div",
+  () => {
+    const div = document.querySelector("div#nested");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the beginning of the <div> with "Third-1" text node
+    const end = div.querySelector("#end");
+    range.setEnd(end, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div><div id=\"end\"></div></div></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a text node in nested div",
+  () => {
+    const div = document.querySelector("div#nested");
+    const range = document.createRange();
+    // Start at the beginning of the text node with "First" content
+    const start = div.querySelector("#start");
+    range.setStart(start.firstChild, 0);
+    // End at the beginning of the text node with "Third-1" content
+    const end = div.querySelector("#end");
+    range.setEnd(end.firstChild, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div><div id=\"end\"></div></div></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a element in shadow dom",
+  () => {
+    const div = document.querySelector("div#shadow");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    SpecialPowers.wrap(range).setStartAllowCrossShadowBoundary(start, 0);
+    // End at the the beginning of the <div> with "Third-1" text node
+    const host = div.querySelector("#host");
+    const end = host.shadowRoot.querySelector("#end");
+    SpecialPowers.wrap(range).setEndAllowCrossShadowBoundary(end, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div id=\"host\"><div id=\"end\"></div></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a text node in shadow dom",
+  () => {
+    const div = document.querySelector("div#shadow");
+    const range = document.createRange();
+    // Start at the beginning of the text node with "First" content
+    const start = div.querySelector("#start");
+    SpecialPowers.wrap(range).setStartAllowCrossShadowBoundary(start.firstChild, 0);
+    // End at the beginning of the text node with "Third-1" content
+    const host = div.querySelector("#host");
+    const end = host.shadowRoot.querySelector("#end");
+    SpecialPowers.wrap(range).setEndAllowCrossShadowBoundary(end.firstChild, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div id=\"host\"><div id=\"end\"></div></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a slotted element in shadow dom",
+  () => {
+    const div = document.querySelector("div#slot");
+    const range = document.createRange();
+    // Start at the beginning of <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the beginning of <div> with "Third-1" text content
+    const end = div.querySelector("#end");
+    range.setEnd(end, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div id=\"host\"><slot>\n" +
+    "      \n" +
+    "      <div><div id=\"end\"></div></div></slot></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end in the beginning of a text node in slotted element in shadow dom",
+  () => {
+    const div = document.querySelector("div#slot");
+    const range = document.createRange();
+    // Start at the beginning of <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the beginning of the text node with "Third-1" content
+    const end = div.querySelector("#end");
+    range.setEnd(end.firstChild, 0);
+    return range;
+  },
+  "First\nSecond\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div id=\"host\"><slot>\n" +
+    "      \n" +
+    "      <div><div id=\"end\"></div></div></slot></div>"
+);
+
+</script>
+</body>
+</html>

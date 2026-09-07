@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 et */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -491,7 +489,7 @@ export class ChromeProfileMigrator extends MigratorBase {
             };
 
             switch (row.getResultByName("scheme")) {
-              case AUTH_TYPE.SCHEME_HTML:
+              case AUTH_TYPE.SCHEME_HTML: {
                 let action_url = row.getResultByName("action_url");
                 if (!action_url) {
                   // If there is no action_url, store the wildcard "" value.
@@ -505,6 +503,7 @@ export class ChromeProfileMigrator extends MigratorBase {
                 }
                 loginInfo.formActionOrigin = action_uri.prePath;
                 break;
+              }
               case AUTH_TYPE.SCHEME_BASIC:
               case AUTH_TYPE.SCHEME_DIGEST:
                 // signon_realm format is URIrealm, so we need remove URI

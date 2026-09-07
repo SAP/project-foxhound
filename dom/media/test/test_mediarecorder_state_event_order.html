@@ -25,7 +25,7 @@ function startTest(test, token) {
 
   element.src = test.name;
   element.test = test;
-  element.stream = element.mozCaptureStream();
+  element.stream = element.captureStream?.() || element.mozCaptureStream();
 
   var mediaRecorder = new MediaRecorder(element.stream);
 

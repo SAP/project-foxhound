@@ -8,6 +8,7 @@ import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
@@ -72,9 +73,11 @@ class SearchUseCases(
             flags: EngineSession.LoadUrlFlags = EngineSession.LoadUrlFlags.none(),
             additionalHeaders: Map<String, String>? = null,
         ) {
-            val searchUrl = searchEngine?.let {
-                searchEngine.buildSearchUrl(searchTerms)
-            } ?: store.state.search.selectedOrDefaultSearchEngine?.buildSearchUrl(searchTerms)
+            val isTabPrivate = (sessionId ?: store.state.selectedTabId)?.let {
+                store.state.findTab(it)?.content?.private
+            } ?: false
+            val resolvedEngine = searchEngine ?: store.state.search.selectedOrDefaultSearchEngine(isTabPrivate)
+            val searchUrl = resolvedEngine?.buildSearchUrl(searchTerms)
 
             if (searchUrl == null) {
                 logger.warn("No default search engine available to perform search")
@@ -161,9 +164,8 @@ class SearchUseCases(
             flags: EngineSession.LoadUrlFlags = EngineSession.LoadUrlFlags.none(),
             additionalHeaders: Map<String, String>? = null,
         ) {
-            val searchUrl = searchEngine?.let {
-                searchEngine.buildSearchUrl(searchTerms)
-            } ?: store.state.search.selectedOrDefaultSearchEngine?.buildSearchUrl(searchTerms)
+            val resolvedEngine = searchEngine ?: store.state.search.selectedOrDefaultSearchEngine(isPrivate)
+            val searchUrl = resolvedEngine?.buildSearchUrl(searchTerms)
 
             if (searchUrl == null) {
                 logger.warn("No default search engine available to perform search")
@@ -282,6 +284,44 @@ class SearchUseCases(
     }
 
     /**
+     * Marks a search engine as the default for private browsing.
+     */
+    class SelectPrivateSearchEngineUseCase(
+        private val store: BrowserStore,
+    ) {
+        /**
+         * Marks the given [searchEngine] as "selected" by the user to be the default search engine
+         * to perform searches with in private browsing tab sessions.
+         */
+        operator fun invoke(searchEngine: SearchEngine) {
+            val name = if (searchEngine.type == SearchEngine.Type.BUNDLED) {
+                searchEngine.name
+            } else {
+                null
+            }
+
+            store.dispatch(
+                SearchAction.SelectPrivateSearchEngineAction(searchEngine.id, name),
+            )
+        }
+    }
+
+    /**
+     * Clears the private browsing search engine override, falling back to the normal default.
+     */
+    class ClearPrivateSearchEngineUseCase(
+        private val store: BrowserStore,
+    ) {
+        /**
+         * Clears the private browsing default [SearchEngine] and sets the private default search
+         * to be the same as the normal default search engine.
+         */
+        operator fun invoke() {
+            store.dispatch(SearchAction.ClearPrivateSearchEngineAction)
+        }
+    }
+
+    /**
      * Updates the list of unselected shortcuts, to be hidden from the quick search menus.
      */
     class UpdateDisabledSearchEngineIdsUseCase(private val store: BrowserStore) {
@@ -331,6 +371,14 @@ class SearchUseCases(
 
     val selectSearchEngine: SelectSearchEngineUseCase by lazy {
         SelectSearchEngineUseCase(store)
+    }
+
+    val selectPrivateSearchEngine: SelectPrivateSearchEngineUseCase by lazy {
+        SelectPrivateSearchEngineUseCase(store)
+    }
+
+    val clearPrivateSearchEngine: ClearPrivateSearchEngineUseCase by lazy {
+        ClearPrivateSearchEngineUseCase(store)
     }
 
     val updateDisabledSearchEngineIds: UpdateDisabledSearchEngineIdsUseCase by lazy {

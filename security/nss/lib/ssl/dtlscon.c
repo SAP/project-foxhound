@@ -942,13 +942,32 @@ dtls_TimerActive(sslSocket *ss, dtlsTimer *timer)
 {
     return timer->cb != NULL;
 }
+
 /* Start a timer for retransmission. */
 static SECStatus
 dtls_StartRetransmitTimer(sslSocket *ss)
 {
+    dtlsTimer *timer = ss->ssl3.hs.rtTimer;
+    PRUint32 timeout = DTLS_RETRANSMIT_INITIAL_MS;
+
+    if (dtls_TimerActive(ss, timer)) {
+        SSL_TRC(10, ("%d: SSL3[%d]: %s dtls timer %s is already active, restarting. New timeout is %d",
+                     SSL_GETPID(), ss->fd, SSL_ROLE(ss),
+                     timer->label, timeout));
+        // If a post-handshake message has already been sent (thus activating the
+        // timer) and a second one is queued, reset the timer so no message waits
+        // longer than the minimum delay. The first message is retransmitted a
+        // bit more aggressively than it otherwise would be, but this is
+        // unlikely to be a problem.
+        (void)dtls_RestartTimer(ss, timer);
+        ss->ssl3.hs.rtRetries = 0;
+        timer->timeout = timeout;
+        return SECSuccess;
+    }
+
     ss->ssl3.hs.rtRetries = 0;
-    return dtls_StartTimer(ss, ss->ssl3.hs.rtTimer,
-                           DTLS_RETRANSMIT_INITIAL_MS,
+    return dtls_StartTimer(ss, timer,
+                           timeout,
                            dtls_RetransmitTimerExpiredCb);
 }
 
@@ -1106,7 +1125,7 @@ dtls_HandleHelloVerifyRequest(sslSocket *ss, PRUint8 *b, PRUint32 length)
 {
     int errCode = SSL_ERROR_RX_MALFORMED_HELLO_VERIFY_REQUEST;
     SECStatus rv;
-    SSL3ProtocolVersion temp;
+    SSL3ProtocolVersion version;
     SSL3AlertDescription desc = illegal_parameter;
 
     SSL_TRC(3, ("%d: SSL3[%d]: handle hello_verify_request handshake",
@@ -1135,22 +1154,29 @@ dtls_HandleHelloVerifyRequest(sslSocket *ss, PRUint8 *b, PRUint32 length)
      * Therefore we do not do anything to enforce a match, just
      * read and check that this value is sane.
      */
-    rv = ssl_ClientReadVersion(ss, &b, &length, &temp);
+    rv = ssl_ClientReadVersion(ss, &b, &length, &version);
     if (rv != SECSuccess) {
         goto loser; /* alert has been sent */
     }
 
-    /* Read the cookie.
-     * IMPORTANT: The value of ss->ssl3.hs.cookie is only valid while the
-     * HelloVerifyRequest message remains valid. */
-    rv = ssl3_ConsumeHandshakeVariable(ss, &ss->ssl3.hs.cookie, 1, &b, &length);
+    /* Read the cookie. */
+    SECItem cookie;
+    rv = ssl3_ConsumeHandshakeVariable(ss, &cookie, 1, &b, &length);
     if (rv != SECSuccess) {
         goto loser; /* alert has been sent */
     }
-    if (ss->ssl3.hs.cookie.len > DTLS_COOKIE_BYTES) {
+    if (cookie.len > DTLS_COOKIE_BYTES) {
         desc = decode_error;
         goto alert_loser; /* malformed. */
     }
+    PORT_Assert(!ss->ssl3.hs.cookie.data && !ss->ssl3.hs.cookie.len);
+    SECITEM_FreeItem(&ss->ssl3.hs.cookie, PR_FALSE);
+    rv = SECITEM_CopyItem(NULL, &ss->ssl3.hs.cookie, &cookie);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+
+    ss->ssl3.hs.dtlsReceivedHVR = PR_TRUE;
 
     ssl_GetXmitBufLock(ss); /*******************************/
 
@@ -1158,6 +1184,8 @@ dtls_HandleHelloVerifyRequest(sslSocket *ss, PRUint8 *b, PRUint32 length)
     rv = ssl3_SendClientHello(ss, client_hello_retransmit);
 
     ssl_ReleaseXmitBufLock(ss); /*******************************/
+
+    SECITEM_FreeItem(&ss->ssl3.hs.cookie, PR_FALSE);
 
     if (rv == SECSuccess)
         return rv;

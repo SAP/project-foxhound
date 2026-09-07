@@ -1,3 +1,5 @@
+// |jit-test| skip-if: !wasmJSPromiseIntegrationEnabled()
+
 // JS promise integration API tests
 // Modified https://github.com/WebAssembly/js-promise-integration/tree/main/test/js-api/js-promise-integration
 
@@ -74,6 +76,11 @@ test(() => {
   }
   assert_throws(TypeError, () => WebAssembly.promising(asmModule()),
       /Argument 0 must be a WebAssembly exported function/);
+});
+
+test(() => {
+  let s = new WebAssembly.Suspending(() => {});
+  assert_true(Object.getPrototypeOf(s) === WebAssembly.Suspending.prototype);
 });
 
 test(() => {

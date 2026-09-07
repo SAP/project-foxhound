@@ -60,6 +60,7 @@ class Worker(Enum):
     BASELINE_PROFILE_DIR = "/builds/worker/workspace/baselineProfile"
     MACROBENCHMARK_DEST = "/builds/worker/artifacts/build/macrobenchmark.json"
     MACROBENCHMARK_DIR = "/builds/worker/artifacts/build/macrobenchmark"
+    MEMORY_LEAKS_DIR = "/builds/worker/artifacts/build/memory_leaks"
     ARTIFACTS_DIR = "/builds/worker/artifacts/build"
 
 
@@ -76,6 +77,7 @@ class ArtifactType(Enum):
         "artifacts/sdcard/Android/media/org.mozilla.fenix.benchmark/*benchmarkData.json"
     )
     MATRIX_IDS = "matrix_ids.json"
+    MEMORY_LEAKS = "artifacts/sdcard/Download/memory_leaks/*.txt"
 
 
 def load_matrix_ids_artifact(matrix_file_path):
@@ -138,15 +140,20 @@ def fetch_artifacts(root_gcs_path, device, artifact_pattern):
     gcs_path = f"gs://{root_gcs_path.rstrip('/')}/{device}*/{artifact_pattern}"
 
     try:
-        result = subprocess.check_output(["gsutil", "ls", gcs_path], text=True)
+        result = subprocess.check_output(
+            ["gsutil", "ls", gcs_path], text=True, stderr=subprocess.STDOUT
+        )
         return result.splitlines()
     except subprocess.CalledProcessError as e:
-        if "AccessDeniedException" in e.output:
+        output = e.output or ""
+        if "AccessDeniedException" in output:
             logging.error(f"Permission denied for GCS path: {gcs_path}")
-        elif "network error" in e.output.lower():
+        elif "network error" in output.lower():
             logging.error(f"Network error accessing GCS path: {gcs_path}")
+        elif "CommandException: One or more URLs matched no objects" in output:
+            logging.info(f"No files found in GCS at {gcs_path}")
         else:
-            logging.error(f"Failed to list files: {e.output}")
+            logging.error(f"Failed to list files at {gcs_path}: {output}")
         return []
     except Exception as e:
         logging.error(f"Error executing gsutil: {e}")
@@ -187,7 +194,10 @@ def gsutil_cp(artifact, dest):
     logging.info(f"Copying {artifact} to {dest}")
     try:
         result = subprocess.run(
-            ["gsutil", "cp", artifact, dest], capture_output=True, text=True
+            ["gsutil", "cp", artifact, dest],
+            check=False,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             if "AccessDeniedException" in result.stderr:
@@ -195,7 +205,7 @@ def gsutil_cp(artifact, dest):
             elif "network error" in result.stderr.lower():
                 logging.error(f"Network error accessing GCS path: {artifact}")
             else:
-                logging.error(f"Failed to list files: {result.stderr}")
+                logging.error(f"Failed to copy file {artifact}: {result.stderr}")
     except Exception as e:
         logging.error(f"Error executing gsutil: {e}")
 
@@ -254,6 +264,8 @@ def process_artifacts(artifact_type):
         return process_baseline_profile_artifacts(root_gcs_path, device_names)
     elif artifact_type == ArtifactType.MACROBENCHMARK:
         return process_macrobenchmark_artifact(root_gcs_path, device_names)
+    elif artifact_type == ArtifactType.MEMORY_LEAKS:
+        return process_memory_leaks_artifacts(root_gcs_path, device_names)
     else:
         return process_crash_artifacts(root_gcs_path, device_names)
 
@@ -313,6 +325,21 @@ def process_macrobenchmark_artifact(root_gcs_path, device_names):
         downloaded_files.append(dest_path)
 
 
+def process_memory_leaks_artifacts(root_gcs_path, device_names):
+    for device in device_names:
+        artifacts = fetch_artifacts(
+            root_gcs_path, device, ArtifactType.MEMORY_LEAKS.value
+        )
+        if not artifacts:
+            logging.info(f"No artifacts found for device: {device}")
+            continue
+        for artifact in artifacts:
+            base_name = os.path.basename(artifact)
+            dest_path = os.path.join(Worker.MEMORY_LEAKS_DIR.value, f"leak_{base_name}")
+
+            gsutil_cp(artifact, dest_path)
+
+
 def process_crash_artifacts(root_gcs_path, failed_device_names):
     crashes_reported = 0
     for device in failed_device_names:
@@ -350,8 +377,12 @@ def main():
         process_artifacts(ArtifactType.MACROBENCHMARK)
     elif artifact_type_arg == "crash_log":
         process_artifacts(ArtifactType.CRASH_LOG)
+    elif artifact_type_arg == "memory_leaks":
+        process_artifacts(ArtifactType.MEMORY_LEAKS)
     else:
-        logging.error("Invalid artifact type. Use 'baseline_profile' or 'crash_log'.")
+        logging.error(
+            "Invalid artifact type. Use one of 'baseline_profile', 'macrobenchmark', 'crash_log or 'memory_leaks."
+        )
         sys.exit(1)
 
 

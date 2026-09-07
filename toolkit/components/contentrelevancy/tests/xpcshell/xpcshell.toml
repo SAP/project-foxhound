@@ -3,16 +3,24 @@ head = "head.js"
 firefox-appdir = "browser"
 
 ["test_ContentRelevancyManager.js"]
-skip-if = ["os == 'android'"] # bug 1886601
+skip-if = [
+  "os == 'android'", # bug 1886601
+]
 lineno = "5"
 
 ["test_InputUtils.js"]
-skip-if = ["os == 'android'"] # bug 1886601
+skip-if = [
+  "os == 'android'", # bug 1886601
+]
 lineno = "9"
 
 ["test_InterestVectorBasedScoring.js"]
-skip-if = ["os == 'android'"] # bug 1886601
+skip-if = [
+  "os == 'android'", # bug 1886601
+]
 
 ["test_Telemetry.js"]
-skip-if = ["os == 'android'"] # bug 1886601
-run-sequentially = "concurrent runs would interfere with each other"
+skip-if = [
+  "os == 'android'", # bug 1886601
+]
+run-sequentially = ["true"] # concurrent runs would interfere with each other

@@ -12,26 +12,27 @@
 #  error "This file requires ARC support."
 #endif
 
-#include "device_info_objc.h"
-#include "rtc_video_capture_objc.h"
-#include "rtc_base/ref_counted_object.h"
 #include "api/scoped_refptr.h"
-#include "video_capture_avfoundation.h"
+#include "device_info_objc.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "rtc_base/ref_counted_object.h"
+#include "rtc_video_capture_objc.h"
+#include "video_capture_avfoundation.h"
 
 using namespace mozilla;
 using namespace webrtc;
 using namespace videocapturemodule;
 
-rtc::scoped_refptr<VideoCaptureModule> VideoCaptureImpl::Create(
-    const char* deviceUniqueIdUTF8) {
+webrtc::scoped_refptr<VideoCaptureModule> VideoCaptureImpl::Create(
+    Clock* _Nonnull clock, const char* _Null_unspecified deviceUniqueIdUTF8) {
   if (StaticPrefs::media_getusermedia_camera_macavf_enabled_AtStartup()) {
-    return VideoCaptureAvFoundation::Create(deviceUniqueIdUTF8);
+    return VideoCaptureAvFoundation::Create(clock, deviceUniqueIdUTF8);
   }
-  return VideoCaptureIos::Create(deviceUniqueIdUTF8);
+  return VideoCaptureIos::Create(clock, deviceUniqueIdUTF8);
 }
 
-VideoCaptureIos::VideoCaptureIos() : is_capturing_(false) {
+VideoCaptureIos::VideoCaptureIos(Clock* _Nonnull clock)
+    : VideoCaptureImpl(clock), is_capturing_(false) {
   capability_.width = kDefaultWidth;
   capability_.height = kDefaultHeight;
   capability_.maxFPS = kDefaultFrameRate;
@@ -45,14 +46,14 @@ VideoCaptureIos::~VideoCaptureIos() {
   }
 }
 
-rtc::scoped_refptr<VideoCaptureModule> VideoCaptureIos::Create(
-    const char* deviceUniqueIdUTF8) {
+webrtc::scoped_refptr<VideoCaptureModule> VideoCaptureIos::Create(
+    Clock* _Nonnull clock, const char* _Null_unspecified deviceUniqueIdUTF8) {
   if (!deviceUniqueIdUTF8[0]) {
     return NULL;
   }
 
-  rtc::scoped_refptr<VideoCaptureIos> capture_module(
-      new rtc::RefCountedObject<VideoCaptureIos>());
+  webrtc::scoped_refptr<VideoCaptureIos> capture_module(
+      new webrtc::RefCountedObject<VideoCaptureIos>(clock));
 
   const int32_t name_length = strlen(deviceUniqueIdUTF8);
   if (name_length >= kVideoCaptureUniqueNameLength) return nullptr;

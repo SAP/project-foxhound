@@ -4,6 +4,13 @@
 load(libdir + "asm.js");
 load(libdir + "asserts.js");
 
+var roundInstructions = [];
+
+// ARM64 doesn't call into the runtime for rounding instructions.
+if (!getBuildConfiguration("arm64-simulator")) {
+    roundInstructions.push('ceil', 'floor');
+}
+
 function checkSubSequence(got, expect)
 {
     var got_i = 0;
@@ -112,7 +119,7 @@ function testBuiltinD2D(name) {
         assertStackContainsSeq(stacks, ">,f,>,N,f,>,f,>,>");
     }
 }
-for (name of ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'ceil', 'floor', 'exp', 'log'])
+for (name of ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'exp', 'log', ...roundInstructions])
     testBuiltinD2D(name);
 
 function testBuiltinF2F(name) {
@@ -125,7 +132,7 @@ function testBuiltinF2F(name) {
         assertStackContainsSeq(stacks, ">,f,>,N,f,>,f,>,>");
     }
 }
-for (name of ['ceil', 'floor'])
+for (name of roundInstructions)
     testBuiltinF2F(name);
 
 function testBuiltinDD2D(name) {

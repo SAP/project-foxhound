@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_ipc_backgroundparentimpl_h__
-#define mozilla_ipc_backgroundparentimpl_h__
+#ifndef mozilla_ipc_backgroundparentimpl_h_
+#define mozilla_ipc_backgroundparentimpl_h_
 
 #include "mozilla/ipc/PBackgroundParent.h"
 
@@ -123,8 +121,9 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   mozilla::ipc::IPCResult RecvCreateWebTransportParent(
       const nsAString& aURL, nsIPrincipal* aPrincipal,
-      const mozilla::Maybe<IPCClientInfo>& aClientInfo, const bool& aDedicated,
-      const bool& aRequireUnreliable, const uint32_t& aCongestionControl,
+      const uint64_t& aBrowsingContextID, const IPCClientInfo& aClientInfo,
+      const bool& aDedicated, const bool& aRequireUnreliable,
+      const uint32_t& aCongestionControl,
       nsTArray<WebTransportHash>&& aServerCertHashes,
       Endpoint<PWebTransportParent>&& aParentEndpoint,
       CreateWebTransportParentResolver&& aResolver) override;
@@ -212,12 +211,11 @@ class BackgroundParentImpl : public PBackgroundParent {
       const dom::cache::Namespace& aNamespace,
       const PrincipalInfo& aPrincipalInfo) override;
 
-  PUDPSocketParent* AllocPUDPSocketParent(const Maybe<PrincipalInfo>& pInfo,
-                                          const nsACString& aFilter) override;
+  already_AddRefed<PUDPSocketParent> AllocPUDPSocketParent(
+      const Maybe<PrincipalInfo>& pInfo, const nsACString& aFilter) override;
   mozilla::ipc::IPCResult RecvPUDPSocketConstructor(
       PUDPSocketParent*, const Maybe<PrincipalInfo>& aPrincipalInfo,
       const nsACString& aFilter) override;
-  bool DeallocPUDPSocketParent(PUDPSocketParent*) override;
 
   PMessagePortParent* AllocPMessagePortParent(
       const nsID& aUUID, const nsID& aDestinationUUID,
@@ -281,6 +279,11 @@ class BackgroundParentImpl : public PBackgroundParent {
   mozilla::ipc::IPCResult RecvPClientManagerConstructor(
       PClientManagerParent* aActor) override;
 
+  mozilla::ipc::IPCResult RecvCreateBoundStorageKeyParent(
+      Endpoint<::mozilla::dom::cache::PBoundStorageKeyParent>&& aEndpoint,
+      const Namespace& aNamespace,
+      const PrincipalInfo& aPrincipalInfo) override;
+
   mozilla::ipc::IPCResult RecvCreateMIDIPort(
       Endpoint<PMIDIPortParent>&& aEndpoint, const MIDIPortInfo& aPortInfo,
       const bool& aSysexEnabled) override;
@@ -324,14 +327,6 @@ class BackgroundParentImpl : public PBackgroundParent {
       const IPCServiceWorkerRegistrationDescriptor& aDescriptor,
       const IPCClientInfo& aForClient) override;
 
-  PEndpointForReportParent* AllocPEndpointForReportParent(
-      const nsAString& aGroupName,
-      const PrincipalInfo& aPrincipalInfo) override;
-
-  mozilla::ipc::IPCResult RecvPEndpointForReportConstructor(
-      PEndpointForReportParent* actor, const nsAString& aGroupName,
-      const PrincipalInfo& aPrincipalInfo) override;
-
   mozilla::ipc::IPCResult RecvEnsureRDDProcessAndCreateBridge(
       EnsureRDDProcessAndCreateBridgeResolver&& aResolver) override;
 
@@ -342,13 +337,6 @@ class BackgroundParentImpl : public PBackgroundParent {
   mozilla::ipc::IPCResult RecvRequestCameraAccess(
       const bool& aAllowPermissionRequest,
       RequestCameraAccessResolver&& aResolver) override;
-
-  bool DeallocPEndpointForReportParent(
-      PEndpointForReportParent* aActor) override;
-
-  mozilla::ipc::IPCResult RecvRemoveEndpoint(
-      const nsAString& aGroupName, const nsACString& aEndpointURL,
-      const PrincipalInfo& aPrincipalInfo) override;
 
   mozilla::ipc::IPCResult RecvPLockManagerConstructor(
       PLockManagerParent* actor, mozilla::NotNull<nsIPrincipal*> aPrincipalInfo,
@@ -362,4 +350,4 @@ class BackgroundParentImpl : public PBackgroundParent {
 
 }  // namespace mozilla::ipc
 
-#endif  // mozilla_ipc_backgroundparentimpl_h__
+#endif  // mozilla_ipc_backgroundparentimpl_h_

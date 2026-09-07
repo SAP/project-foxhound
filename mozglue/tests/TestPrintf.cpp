@@ -1,4 +1,3 @@
-/* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -122,6 +121,7 @@ static void TestPrintfFormats() {
   MOZ_RELEASE_ASSERT(print_one("-1", "%d", -1));
   MOZ_RELEASE_ASSERT(print_one("23", "%u", 23u));
   MOZ_RELEASE_ASSERT(print_one("0x17", "0x%x", 23u));
+  MOZ_RELEASE_ASSERT(print_one("17", "%#x", 23u));
   MOZ_RELEASE_ASSERT(print_one("0xFF", "0x%X", 255u));
   MOZ_RELEASE_ASSERT(print_one("027", "0%o", 23u));
   MOZ_RELEASE_ASSERT(print_one("-1", "%hd", (short)-1));
@@ -151,7 +151,7 @@ static void TestPrintfFormats() {
   MOZ_RELEASE_ASSERT(print_one("hello", "%.*s", 5, "hello there"));
   MOZ_RELEASE_ASSERT(print_one("", "%.*s", 0, "hello there"));
   MOZ_RELEASE_ASSERT(print_one("%%", "%%%%"));
-  MOZ_RELEASE_ASSERT(print_one("0", "%p", (char*)0));
+  MOZ_RELEASE_ASSERT(print_one("0", "%p", (char*)nullptr));
   MOZ_RELEASE_ASSERT(print_one("h", "%c", 'h'));
   MOZ_RELEASE_ASSERT(print_one("1.500000", "%f", 1.5f));
   MOZ_RELEASE_ASSERT(print_one("1.5", "%g", 1.5));

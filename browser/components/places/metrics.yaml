@@ -63,9 +63,6 @@ library:
     type: timing_distribution
     description: >
       PLACES: Time to search the history library (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram PLACES_HISTORY_LIBRARY_SEARCH_TIME_MS.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1944631
@@ -74,7 +71,6 @@ library:
     notification_emails:
       - firefox-view-engineers@mozilla.com
     expires: never
-    telemetry_mirror: PLACES_HISTORY_LIBRARY_SEARCH_TIME_MS
 
   cumulative_history_searches:
     type: custom_distribution
@@ -229,9 +225,6 @@ bookmarks_toolbar:
     type: timing_distribution
     description: >
       Firefox: Time to initialize the bookmarks toolbar view (ms)
-
-      This metric was generated to correspond to the Legacy Telemetry
-      exponential histogram FX_BOOKMARKS_TOOLBAR_INIT_MS.
     time_unit: millisecond
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=723165
@@ -240,4 +233,3 @@ bookmarks_toolbar:
     notification_emails:
       - mak@mozilla.com
     expires: never
-    telemetry_mirror: FX_BOOKMARKS_TOOLBAR_INIT_MS

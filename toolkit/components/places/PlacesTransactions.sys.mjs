@@ -164,6 +164,10 @@ ChromeUtils.defineLazyGetter(lazy, "logger", function () {
   return PlacesUtils.getLogger({ prefix: "Transactions" });
 });
 
+/**
+ * Keeps track of the history of transactions, including their redo and undo
+ * points.
+ */
 class TransactionsHistoryArray extends Array {
   constructor() {
     super();
@@ -193,9 +197,8 @@ class TransactionsHistoryArray extends Array {
   /**
    * Proxify a transaction object for consumers.
    *
-   * @param rawTransaction
+   * @param {object} rawTransaction
    *        the raw transaction object.
-   * @returns the proxified transaction object.
    * @see getRawTransaction for retrieving the raw transaction.
    */
   proxifyTransaction(rawTransaction) {
@@ -214,10 +217,11 @@ class TransactionsHistoryArray extends Array {
   /**
    * Check if the given object is a the proxy object for some transaction.
    *
-   * @param aValue
-   *        any JS value.
-   * @returns true if aValue is the proxy object for some transaction, false
-   * otherwise.
+   * @param {object} value
+   *   Any JS value.
+   * @returns {boolean}
+   *   True if the value is the proxy object for some transaction, false
+   *   otherwise.
    */
   isProxifiedTransactionObject(value) {
     return this.proxifiedToRaw.has(value);
@@ -226,10 +230,11 @@ class TransactionsHistoryArray extends Array {
   /**
    * Get the raw transaction for the given proxy.
    *
-   * @param aProxy
-   *        the proxy object
-   * @returns the transaction proxified by aProxy; |undefined| is returned if
-   * aProxy is not a proxified transaction.
+   * @param {object} proxy
+   *   The proxy object
+   * @returns {object}
+   *   The transaction proxified by aProxy; |undefined| is returned if aProxy is
+   *   not a proxified transaction.
    */
   getRawTransaction(proxy) {
     return this.proxifiedToRaw.get(proxy);
@@ -239,13 +244,11 @@ class TransactionsHistoryArray extends Array {
    * Add a transaction either as a new entry, if forced or if there are no undo
    * entries, or to the top undo entry.
    *
-   * @param aProxifiedTransaction
-   *        the proxified transaction object to be added to the transaction
-   *        history.
-   * @param [optional] aForceNewEntry
-   *        Force a new entry for the transaction. Default: false.
-   *        If false, an entry will we created only if there's no undo entry
-   *        to extend.
+   * @param {object} proxifiedTransaction
+   *   The proxified transaction object to be added to the transaction history.
+   * @param {boolean} [forceNewEntry]
+   *   Force a new entry for the transaction. Default: false.
+   *   If false, an entry will we created only if there's no undo entry to extend.
    */
   add(proxifiedTransaction, forceNewEntry = false) {
     if (!this.isProxifiedTransactionObject(proxifiedTransaction)) {
@@ -266,7 +269,7 @@ class TransactionsHistoryArray extends Array {
    * Clear all undo entries.
    */
   clearUndoEntries() {
-    lazy.logger.debug("Clearing undo entries");
+    +lazy.logger.debug("Clearing undo entries");
     if (this.undoPosition < this.length) {
       this.splice(this.undoPosition);
     }
@@ -304,6 +307,9 @@ ChromeUtils.defineLazyGetter(
 export var PlacesTransactions = {
   /**
    * @see Batches in the module documentation.
+   *
+   * @param {object[]} transactionsToBatch
+   * @param {string} batchName
    */
   batch(transactionsToBatch, batchName) {
     if (!Array.isArray(transactionsToBatch) || !transactionsToBatch.length) {
@@ -352,9 +358,10 @@ export var PlacesTransactions = {
    * position in the transactions history in the reverse order, if any, and
    * adjusts the undo position.
    *
-   * @returns {Promise<void>}.  The promise always resolves.
-   * @note All undo manager operations are queued. This means that transactions
+   * Note: All undo manager operations are queued. This means that transactions
    * history may change by the time your request is fulfilled.
+   *
+   * @returns {Promise<void>}.  The promise always resolves.
    */
   undo() {
     lazy.logger.debug("undo() was invoked");
@@ -366,9 +373,10 @@ export var PlacesTransactions = {
    * position in the transactions history, if any, and adjusts the undo
    * position.
    *
-   * @returns {Promise<void>}.  The promise always resolves.
-   * @note All undo manager operations are queued. This means that transactions
+   * Note: All undo manager operations are queued. This means that transactions
    * history may change by the time your request is fulfilled.
+   *
+   * @returns {Promise<void>}.  The promise always resolves.
    */
   redo() {
     lazy.logger.debug("redo() was invoked");
@@ -379,6 +387,9 @@ export var PlacesTransactions = {
    * Asynchronously clear the undo, redo, or all entries from the transactions
    * history.
    *
+   * Note All undo manager operations are queued. This means that transactions
+   * history may change by the time your request is fulfilled.
+   *
    * @param {boolean} [undoEntries]
    *   Whether or not to clear undo entries. Default: true.
    * @param {boolean} [redoEntries]
@@ -386,8 +397,6 @@ export var PlacesTransactions = {
    *
    * @returns {Promise<void>}.  The promise always resolves.
    * @throws if both aUndoEntries and aRedoEntries are false.
-   * @note All undo manager operations are queued. This means that transactions
-   * history may change by the time your request is fulfilled.
    */
   clearTransactionsHistory(undoEntries = true, redoEntries = true) {
     lazy.logger.debug("clearTransactionsHistory() was invoked");
@@ -408,13 +417,14 @@ export var PlacesTransactions = {
    * Get the transaction history entry at a given index.  Each entry consists
    * of one or more transaction objects.
    *
-   * @param index
-   *        the index of the entry to retrieve.
-   * @returns an array of transaction objects in their undo order (that is,
-   * reversely to the order they were executed).
-   * @throw if aIndex is invalid (< 0 or >= length).
-   * @note the returned array is a clone of the history entry and is not
-   * kept in sync with the original entry if it changes.
+   * @param {number} index
+   *   The index of the entry to retrieve.
+   * @returns {object[]}
+   *   An array of transaction objects in their undo order (that is, reversely
+   *   to the order they were executed).
+   *   Note the returned array is a clone of the history entry and is not kept
+   *   in sync with the original entry if it changes.
+   * @throws if aIndex is invalid (< 0 or >= length).
    */
   entry(index) {
     if (!Number.isInteger(index) || index < 0 || index >= this.length) {
@@ -457,6 +467,8 @@ export var PlacesTransactions = {
  *
  * In other words: Enqueuer.enqueue(aFunc1); Enqueuer.enqueue(aFunc2) is roughly
  * the same as asyncFunc1.then(asyncFunc2).
+ *
+ * @param {string} name
  */
 function Enqueuer(name) {
   this._promise = Promise.resolve();
@@ -466,10 +478,11 @@ Enqueuer.prototype = {
   /**
    * Spawn a functions once all previous functions enqueued are done running.
    *
-   * @param   func
-   *          a function returning a promise.
-   * @returns  a promise that resolves once aFunc is done running. The promise
-   *          "mirrors" the promise returned by aFunc.
+   * @param {(() => Promise<void>)|(() => void)} func
+   *   A function returning a promise.
+   * @returns {Promise<void>}
+   *   A promise that resolves once func is done running. The promise "mirrors"
+   *   the promise returned by func.
    */
   enqueue(func) {
     lazy.logger.debug(`${this._name} enqueing`);
@@ -668,6 +681,9 @@ var TransactionsManager = {
  *     consumers.
  * (2) It keeps each transaction implementation to what is about, bypassing
  *     all this bureaucracy while still validating input appropriately.
+ *
+ * @param {string[]} [requiredProps]
+ * @param {string[]} [optionalProps]
  */
 function DefineTransaction(requiredProps = [], optionalProps = []) {
   for (let prop of [...requiredProps, ...optionalProps]) {
@@ -676,7 +692,10 @@ function DefineTransaction(requiredProps = [], optionalProps = []) {
     }
   }
 
-  /** @this {{ execute: Function }} */
+  /**
+   * @this {{ execute: Function }}
+   * @param {object} input
+   */
   let ctor = function (input) {
     // We want to support both syntaxes:
     // let t = new PlacesTransactions.NewBookmark(),
@@ -951,17 +970,17 @@ DefineTransaction.defineArrayInputProp("children", "child");
  * Creates items (all types) from a bookmarks tree representation, as defined
  * in PlacesUtils.promiseBookmarksTree.
  *
- * @param tree
- *        the bookmarks tree object.  You may pass either a bookmarks tree
- *        returned by promiseBookmarksTree, or a manually defined one.
- * @param [optional] restoring (default: false)
- *        Whether or not the items are restored.  Only in restore mode, are
- *        the guid, dateAdded and lastModified properties honored.
- * @note the id, root and charset properties of items in aBookmarksTree are
- *       always ignored.  The index property is ignored for all items but the
- *       root one.
- * @returns {Promise}
- * @resolves to the guid of the new item.
+ * @param {object} tree
+ *   The bookmarks tree object. You may pass either a bookmarks tree returned by
+ *   promiseBookmarksTree, or a manually defined one.
+ * @param {boolean} [restoring]
+ *   Whether or not the items are restored. Only in restore mode, are the guid,
+ *   dateAdded and lastModified properties honored.
+ *
+ *   Note: the id, root and charset properties of items in aBookmarksTree are
+ *   always ignored. The index property is ignored for all items but the root one.
+ * @returns {Promise<string>}
+ *   The guid of the new item.
  */
 // TODO: Replace most of this with insertTree.
 function createItemsFromBookmarksTree(tree, restoring = false) {
@@ -1032,13 +1051,12 @@ function createItemsFromBookmarksTree(tree, restoring = false) {
   return createItem(tree, tree.parentGuid, tree.index);
 }
 
-/** ***************************************************************************
+/**
  * The Standard Places Transactions.
  *
  * See the documentation at the top of this file. The valid values for input
  * are also documented there.
  */
-
 var PT = PlacesTransactions;
 
 /**

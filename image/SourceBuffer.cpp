@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +5,6 @@
 #include "SourceBuffer.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 #include "mozilla/Likely.h"
 #include "nsIInputStream.h"
@@ -109,6 +107,29 @@ SourceBufferIterator::State SourceBufferIterator::AdvanceOrScheduleResume(
                                                  aConsumer);
 }
 
+void SourceBufferIterator::MarkConsumed(size_t aConsumed) {
+  MOZ_ASSERT(mState == READY);
+  MOZ_ASSERT(aConsumed <= mData.mIterating.mNextReadLength);
+
+  if (mRemainderToRead != SIZE_MAX) [[unlikely]] {
+    MOZ_ASSERT(aConsumed <= mRemainderToRead);
+    mRemainderToRead -= aConsumed;
+  }
+
+  // Update the iterator to reflect partial consumption: advance mOffset by
+  // aConsumed, shrink mAvailableLength, and set mNextReadLength to the
+  // remaining bytes so Data()/Length() immediately expose the unconsumed
+  // portion. When all remaining bytes are eventually consumed and
+  // mNextReadLength reaches zero, the next AdvanceOrScheduleResume() will
+  // advance past zero bytes and fetch the next chunk.
+  mData.mIterating.mOffset += aConsumed;
+  mData.mIterating.mAvailableLength -= aConsumed;
+  mData.mIterating.mNextReadLength =
+      MOZ_LIKELY(mRemainderToRead == SIZE_MAX)
+          ? mData.mIterating.mAvailableLength
+          : std::min(mData.mIterating.mAvailableLength, mRemainderToRead);
+}
+
 bool SourceBufferIterator::RemainingBytesIsNoMoreThan(size_t aBytes) const {
   MOZ_ASSERT(mOwner);
   return mOwner->RemainingBytesIsNoMoreThan(*this, aBytes);
@@ -206,7 +227,11 @@ nsresult SourceBuffer::Compact() {
   if (capacity == MAX_CHUNK_CAPACITY) {
     size_t lastLength = mChunks.LastElement().Length();
     if (lastLength != capacity) {
-      mChunks.LastElement().SetCapacity(lastLength);
+      if (lastLength == 0) {
+        mChunks.RemoveLastElement();
+      } else {
+        mChunks.LastElement().SetCapacity(lastLength);
+      }
     }
     return NS_OK;
   }
@@ -345,8 +370,10 @@ nsresult SourceBuffer::ExpectLength(size_t aExpectedLength) {
 }
 
 nsresult SourceBuffer::Append(const char* aData, size_t aLength) {
+  if (aLength == 0) {
+    return NS_OK;
+  }
   MOZ_ASSERT(aData, "Should have a buffer");
-  MOZ_ASSERT(aLength > 0, "Writing a zero-sized chunk");
 
   size_t currentChunkCapacity = 0;
   size_t currentChunkLength = 0;
@@ -439,6 +466,18 @@ nsresult SourceBuffer::Append(const char* aData, size_t aLength) {
   }
 
   return NS_OK;
+}
+
+nsresult SourceBuffer::AdoptData(char* aData, size_t aLength,
+                                 void* (*aRealloc)(void*, size_t),
+                                 void (*aFree)(void*)) {
+  MOZ_ASSERT(aData, "Should have a buffer");
+  MOZ_ASSERT(aLength > 0, "Writing a zero-sized chunk");
+  if (!aData || aLength == 0) {
+    return NS_ERROR_INVALID_ARG;
+  }
+  MutexAutoLock lock(mMutex);
+  return AppendChunk(Some(Chunk(aData, aLength, aRealloc, aFree)));
 }
 
 static nsresult AppendToSourceBuffer(nsIInputStream*, void* aClosure,

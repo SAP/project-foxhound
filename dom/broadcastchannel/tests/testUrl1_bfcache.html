@@ -1,7 +1,7 @@
 <script>
-var bc = new BroadcastChannel("a");
+var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("a");
 onpageshow = function(e) {
-  var bc1 = new BroadcastChannel("testUrl1_bfcache");
+  var bc1 = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("testUrl1_bfcache");
   bc1.onmessage = function(event) {
     if (event.data == "close") {
       bc1.postMessage("closed");

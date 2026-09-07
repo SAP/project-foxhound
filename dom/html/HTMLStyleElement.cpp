@@ -1,27 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "mozilla/dom/HTMLStyleElement.h"
-#include "mozilla/dom/HTMLStyleElementBinding.h"
-#include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
+
+#include "mozilla/StyleSheet.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchPriority.h"
+#include "mozilla/dom/HTMLStyleElementBinding.h"
 #include "mozilla/dom/ReferrerInfo.h"
-#include "nsUnicharUtils.h"
-#include "nsThreadUtils.h"
 #include "nsContentUtils.h"
-#include "nsStubMutationObserver.h"
 #include "nsDOMTokenList.h"
+#include "nsGkAtoms.h"
+#include "nsStubMutationObserver.h"
+#include "nsStyleConsts.h"
+#include "nsThreadUtils.h"
+#include "nsUnicharUtils.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Style)
 
 namespace mozilla::dom {
 
 HTMLStyleElement::HTMLStyleElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   AddMutationObserver(this);
 }
@@ -92,7 +92,7 @@ void HTMLStyleElement::ContentWillBeRemoved(nsIContent* aChild,
 void HTMLStyleElement::ContentChanged(nsIContent* aContent) {
   mTriggeringPrincipal = nullptr;
   if (nsContentUtils::IsInSameAnonymousTree(this, aContent)) {
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr);
   }
 }
 
@@ -109,7 +109,7 @@ void HTMLStyleElement::UnbindFromTree(UnbindContext& aContext) {
 
   nsGenericHTMLElement::UnbindFromTree(aContext);
 
-  Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
+  (void)UpdateStyleSheetInternal(oldDoc, oldShadow);
 }
 
 bool HTMLStyleElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -134,7 +134,7 @@ void HTMLStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
         aName == nsGkAtoms::type) {
-      Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+      (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
     }
   }
 
@@ -157,7 +157,8 @@ void HTMLStyleElement::SetInnerHTMLTrusted(const nsAString& aInnerHTML,
 
 void HTMLStyleElement::SetTextContentInternal(const nsAString& aTextContent,
                                               nsIPrincipal* aScriptedPrincipal,
-                                              ErrorResult& aError) {
+                                              ErrorResult& aError,
+                                              MutationEffectOnScript) {
   // Per spec, if we're setting text content to an empty string and don't
   // already have any children, we should not trigger any mutation observers, or
   // re-parse the stylesheet.
@@ -175,7 +176,7 @@ void HTMLStyleElement::SetTextContentInternal(const nsAString& aTextContent,
   aError = nsContentUtils::SetNodeTextContent(this, aTextContent, true);
   if (updatesWereEnabled) {
     mTriggeringPrincipal = aScriptedPrincipal;
-    Unused << EnableUpdatesAndUpdateStyleSheet(nullptr);
+    (void)EnableUpdatesAndUpdateStyleSheet(nullptr);
   }
 }
 

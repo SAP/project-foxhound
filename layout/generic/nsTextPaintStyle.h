@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTextPaintStyle_h__
-#define nsTextPaintStyle_h__
+#ifndef nsTextPaintStyle_h_
+#define nsTextPaintStyle_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/ComputedStyle.h"
@@ -64,12 +62,23 @@ class MOZ_STACK_CLASS nsTextPaintStyle {
    */
   bool GetSelectionColors(nscolor* aForeColor, nscolor* aBackColor);
   void GetHighlightColors(nscolor* aForeColor, nscolor* aBackColor);
-  void GetTargetTextColors(nscolor* aForeColor, nscolor* aBackColor);
+  // Returns true if the author has specified a text color.
+  // Always sets a value into `aForeColor`.
+  bool GetTargetTextColor(nscolor* aForeColor);
+  // Returns true if the target text background is being displayed.
+  // Always sets a value into `aBackColor`.
+  bool GetTargetTextBackgroundColor(nscolor* aBackColor);
+  mozilla::Span<const StyleSimpleShadow> GetTargetTextShadow();
   // Computes colors for custom highlights.
   // Returns false if there are no rules associated with `aHighlightName`.
   bool GetCustomHighlightTextColor(nsAtom* aHighlightName, nscolor* aForeColor);
   bool GetCustomHighlightBackgroundColor(nsAtom* aHighlightName,
                                          nscolor* aBackColor);
+  mozilla::Span<const StyleSimpleShadow> GetCustomHighlightTextShadow(
+      nsAtom* aHighlightName);
+  RefPtr<ComputedStyle> GetComputedStyleForSelectionPseudo(
+      SelectionType aSelectionType, nsAtom* aHighlightName);
+
   void GetURLSecondaryColor(nscolor* aForeColor);
   void GetIMESelectionColors(SelectionStyleIndex aIndex, nscolor* aForeColor,
                              nscolor* aBackColor);
@@ -83,9 +92,7 @@ class MOZ_STACK_CLASS nsTextPaintStyle {
                                     nscolor* aLineColor, float* aRelativeSize,
                                     StyleTextDecorationStyle* aStyle);
 
-  // if this returns false, no text-shadow was specified for the selection
-  // and the *aShadow parameter was not modified.
-  bool GetSelectionShadow(mozilla::Span<const StyleSimpleShadow>* aShadows);
+  mozilla::Span<const StyleSimpleShadow> GetSelectionShadow();
 
   nsPresContext* PresContext() const { return mPresContext; }
 
@@ -111,18 +118,25 @@ class MOZ_STACK_CLASS nsTextPaintStyle {
   nscolor GetSystemFieldForegroundColor();
   nscolor GetSystemFieldBackgroundColor();
 
+  const ComputedStyle* GetSelectionPseudoStyle() const {
+    return mSelectionPseudoStyle;
+  }
+
  protected:
   nsTextFrame* mFrame;
   nsPresContext* mPresContext;
   bool mInitCommonColors;
   bool mInitSelectionColorsAndShadow;
   bool mResolveColors;
+  bool mInitTargetTextPseudoStyle;
+  mozilla::Maybe<bool> mTargetTextUseLightScheme;
 
   // Selection data
 
   nscolor mSelectionTextColor;
   nscolor mSelectionBGColor;
   RefPtr<ComputedStyle> mSelectionPseudoStyle;
+  RefPtr<ComputedStyle> mTargetTextPseudoStyle;
   nsTHashMap<RefPtr<nsAtom>, RefPtr<ComputedStyle>>
       mCustomHighlightPseudoStyles;
 
@@ -152,6 +166,8 @@ class MOZ_STACK_CLASS nsTextPaintStyle {
   // Color initializations
   void InitCommonColors();
   bool InitSelectionColorsAndShadow();
+  void InitTargetTextPseudoStyle();
+  bool TargetTextUseLightScheme();
 
   nsSelectionStyle* SelectionStyle(SelectionStyleIndex aIndex);
   nsSelectionStyle InitSelectionStyle(SelectionStyleIndex aIndex);
@@ -165,4 +181,4 @@ class MOZ_STACK_CLASS nsTextPaintStyle {
                                nscolor aBackColor);
 };
 
-#endif  // nsTextPaintStyle_h__
+#endif  // nsTextPaintStyle_h_

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +16,6 @@
 
 #include "ETWTools.h"
 #include "GeckoProfiler.h"
-#include "nsRFPService.h"
 #include "PerformanceEntry.h"
 #include "PerformanceMainThread.h"
 #include "PerformanceMark.h"
@@ -29,19 +26,21 @@
 #include "PerformanceWorker.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/MessagePortBinding.h"
-#include "mozilla/dom/PerformanceBinding.h"
-#include "mozilla/dom/PerformanceEntryEvent.h"
-#include "mozilla/dom/PerformanceNavigationBinding.h"
-#include "mozilla/dom/PerformanceObserverBinding.h"
-#include "mozilla/dom/PerformanceNavigationTiming.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Perfetto.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/MessagePortBinding.h"
+#include "mozilla/dom/PerformanceBinding.h"
+#include "mozilla/dom/PerformanceEntryEvent.h"
+#include "mozilla/dom/PerformanceNavigationBinding.h"
+#include "mozilla/dom/PerformanceNavigationTiming.h"
+#include "mozilla/dom/PerformanceObserverBinding.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "nsGlobalWindowInner.h"
+#include "nsRFPService.h"
 
 #define PERFLOG(msg, ...) printf_stderr(msg, ##__VA_ARGS__)
 
@@ -185,15 +184,15 @@ void Performance::GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
 
 void Performance::GetEntriesByType(
     const nsAString& aEntryType, nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
-  if (aEntryType.EqualsLiteral("resource")) {
+  RefPtr<nsAtom> entryType = NS_Atomize(aEntryType);
+  if (entryType == nsGkAtoms::resource) {
     aRetval = mResourceEntries.Clone();
     return;
   }
 
   aRetval.Clear();
 
-  if (aEntryType.EqualsLiteral("mark") || aEntryType.EqualsLiteral("measure")) {
-    RefPtr<nsAtom> entryType = NS_Atomize(aEntryType);
+  if (entryType == nsGkAtoms::mark || entryType == nsGkAtoms::measure) {
     for (PerformanceEntry* entry : mUserEntries) {
       if (entry->GetEntryType() == entryType) {
         aRetval.AppendElement(entry);
@@ -305,8 +304,12 @@ struct UserTimingMarker : public BaseMarkerType<UserTimingMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"name", MS::InputType::String, "User Marker Name", MS::Format::String,
-       MS::PayloadFlags::Searchable},
+      {
+          "name",
+          MS::InputType::String,
+          "User Marker Name",
+          MS::Format::String,
+      },
       {"entryType", MS::InputType::Boolean, "Entry Type"},
       {"startMark", MS::InputType::String, "Start Mark"},
       {"endMark", MS::InputType::String, "End Mark"}};
@@ -710,8 +713,8 @@ void Performance::MaybeEmitExternalProfilerMarker(
   uint64_t rawStart = startTimeStamp.RawClockMonotonicNanosecondsSinceBoot();
   uint64_t rawEnd = endTimeStamp.RawClockMonotonicNanosecondsSinceBoot();
 #elif XP_WIN
-  uint64_t rawStart = startTimeStamp.RawQueryPerformanceCounterValue().value();
-  uint64_t rawEnd = endTimeStamp.RawQueryPerformanceCounterValue().value();
+  uint64_t rawStart = startTimeStamp.RawQueryPerformanceCounterValue();
+  uint64_t rawEnd = endTimeStamp.RawQueryPerformanceCounterValue();
 #elif XP_MACOSX
   uint64_t rawStart = startTimeStamp.RawMachAbsoluteTimeNanoseconds();
   uint64_t rawEnd = endTimeStamp.RawMachAbsoluteTimeNanoseconds();
@@ -878,7 +881,7 @@ void Performance::ClearMeasures(const Optional<nsAString>& aName) {
 void Performance::LogEntry(PerformanceEntry* aEntry,
                            const nsACString& aOwner) const {
   PERFLOG("Performance Entry: %s|%s|%s|%f|%f|%" PRIu64 "\n",
-          aOwner.BeginReading(),
+          PromiseFlatCString(aOwner).get(),
           NS_ConvertUTF16toUTF8(aEntry->GetEntryType()->GetUTF16String()).get(),
           NS_ConvertUTF16toUTF8(aEntry->GetName()->GetUTF16String()).get(),
           aEntry->StartTime(), aEntry->Duration(),
@@ -917,7 +920,7 @@ void Performance::InsertUserEntry(PerformanceEntry* aEntry) {
  *
  * Buffer Full Event
  */
-void Performance::BufferEvent() {
+void Performance::ResourceTimingBufferFullEvent() {
   /*
    * While resource timing secondary buffer is not empty,
    * run the following substeps:
@@ -938,7 +941,7 @@ void Performance::BufferEvent() {
      * at the Performance object.
      */
     if (!CanAddResourceTimingEntry()) {
-      DispatchBufferFullEvent();
+      DispatchResourceTimingBufferFullEvent();
     }
 
     /*
@@ -1051,7 +1054,8 @@ void Performance::InsertResourceEntry(PerformanceEntry* aEntry) {
      * Queue a task to run fire a buffer full event.
      */
     NS_DispatchToCurrentThread(NewCancelableRunnableMethod(
-        "Performance::BufferEvent", this, &Performance::BufferEvent));
+        "Performance::ResourceTimingBufferFullEvent", this,
+        &Performance::ResourceTimingBufferFullEvent));
   }
   /*
    * Add new entry to the resource timing secondary buffer.
@@ -1119,7 +1123,7 @@ void Performance::RunNotificationObserversTask() {
   mPendingNotificationObserversTask = true;
   nsCOMPtr<nsIRunnable> task = new NotifyObserversTask(this);
   nsresult rv;
-  if (nsIGlobalObject* global = GetOwnerGlobal()) {
+  if (nsIGlobalObject* global = GetRelevantGlobal()) {
     rv = global->Dispatch(task.forget());
   } else {
     rv = NS_DispatchToCurrentThread(task.forget());
@@ -1134,7 +1138,7 @@ void Performance::QueueEntry(PerformanceEntry* aEntry) {
   if (!mObservers.IsEmpty()) {
     const auto [begin, end] = mObservers.NonObservingRange();
     std::copy_if(begin, end, MakeBackInserter(interestedObservers),
-                 [aEntry](PerformanceObserver* observer) {
+                 [&](PerformanceObserver* observer) {
                    return observer->ObservesTypeOfEntry(aEntry);
                  });
   }

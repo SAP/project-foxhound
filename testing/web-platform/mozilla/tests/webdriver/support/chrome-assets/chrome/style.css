@@ -1,0 +1,13 @@
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-box {
+  min-height: 500px;
+  min-width: 300px;
+}
+
+.input-moz-box-flex {
+  -moz-box-flex: 1;
+}

@@ -1,31 +1,29 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/VideoEncoder.h"
-#include "mozilla/dom/VideoEncoderBinding.h"
-#include "mozilla/dom/VideoColorSpaceBinding.h"
-#include "mozilla/dom/VideoColorSpace.h"
-#include "mozilla/dom/VideoFrame.h"
 
+#include "EncoderConfig.h"
 #include "EncoderTraits.h"
 #include "ImageContainer.h"
 #include "VideoUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/EncodedVideoChunk.h"
 #include "mozilla/dom/EncodedVideoChunkBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/VideoColorSpace.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
+#include "mozilla/dom/VideoEncoderBinding.h"
+#include "mozilla/dom/VideoFrame.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/dom/WebCodecsUtils.h"
+#include "nsIGlobalObject.h"
 #include "nsPrintfCString.h"
-#include "nsReadableUtils.h"
+#include "nsRFPService.h"
 
 extern mozilla::LazyLogModule gWebCodecsLog;
 
@@ -35,7 +33,7 @@ namespace mozilla::dom {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -156,7 +154,7 @@ nsCString VideoEncoderConfigInternal::ToString() const {
 }
 
 template <typename T>
-bool MaybeAreEqual(const Maybe<T>& aLHS, const Maybe<T> aRHS) {
+bool MaybeAreEqual(const Maybe<T>& aLHS, const Maybe<T>& aRHS) {
   if (aLHS.isSome() && aRHS.isSome()) {
     return aLHS.value() == aRHS.value();
   }
@@ -278,12 +276,11 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
   // For real-time usage, typically used in web conferencing, YUV420 is the most
   // common format and is set as the default. Otherwise, Gecko's preferred
   // format, BGRA, is assumed.
-  EncoderConfig::SampleFormat format;
+  EncoderConfig::SampleFormat format(usage == Usage::Realtime
+                                         ? dom::ImageBitmapFormat::YUV420P
+                                         : dom::ImageBitmapFormat::BGRA32);
   if (usage == Usage::Realtime) {
-    format.mPixelFormat = ImageBitmapFormat::YUV420P;
     format.mColorSpace.mRange.emplace(gfx::ColorRange::LIMITED);
-  } else {
-    format.mPixelFormat = ImageBitmapFormat::BGRA32;
   }
   return EncoderConfig(codecType, {mWidth, mHeight}, usage, format,
                        SaturatingCast<uint32_t>(mFramerate.refOr(0.f)), 0,
@@ -344,7 +341,8 @@ VideoEncoderConfigInternal::Diff(
 }
 
 // https://w3c.github.io/webcodecs/#check-configuration-support
-static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig) {
+static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig,
+                      nsIGlobalObject* aGlobal) {
   // TODO: Enable WebCodecs on Android (Bug 1840508)
   if (IsOnAndroid()) {
     return false;
@@ -356,12 +354,15 @@ static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig) {
     // Check if ScalabilityMode string is valid.
     if (!aConfig->mScalabilityMode->EqualsLiteral("L1T2") &&
         !aConfig->mScalabilityMode->EqualsLiteral("L1T3")) {
-      LOGE("Scalability mode %s not supported for codec: %s",
+      LOGE("Scalability mode {} not supported for codec: {}",
            NS_ConvertUTF16toUTF8(aConfig->mScalabilityMode.value()).get(),
            NS_ConvertUTF16toUTF8(aConfig->mCodec).get());
       return false;
     }
   }
+
+  ApplyResistFingerprintingIfNeeded(aConfig, aGlobal);
+
   return EncoderSupport::Supports(aConfig);
 }
 
@@ -408,7 +409,7 @@ static Result<Ok, nsresult> CloneConfiguration(
 /* static */
 bool VideoEncoderTraits::IsSupported(
     const VideoEncoderConfigInternal& aConfig) {
-  return CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(aConfig));
+  return CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(aConfig), nullptr);
 }
 
 // https://w3c.github.io/webcodecs/#valid-videoencoderconfig
@@ -420,7 +421,7 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if (!codec || codec->IsEmpty()) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: invalid codec string");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -428,7 +429,7 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if (aConfig.mWidth == 0 || aConfig.mHeight == 0) {
     aErrorMessage.AppendPrintf("Invalid VideoEncoderConfig: %s equal to 0",
                                aConfig.mWidth == 0 ? "width" : "height");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -436,14 +437,14 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if (aConfig.mDisplayWidth.WasPassed() && aConfig.mDisplayWidth.Value() == 0) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: displayWidth equal to 0");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
   if (aConfig.mDisplayHeight.WasPassed() &&
       aConfig.mDisplayHeight.Value() == 0) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: displayHeight equal to 0");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -451,7 +452,7 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   if ((aConfig.mBitrate.WasPassed() && aConfig.mBitrate.Value() == 0)) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: bitrate equal to 0");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -491,12 +492,12 @@ VideoEncoder::VideoEncoder(
                       std::move(aOutputCallback)) {
   MOZ_ASSERT(mErrorCallback);
   MOZ_ASSERT(mOutputCallback);
-  LOG("VideoEncoder %p ctor", this);
+  LOG("VideoEncoder {} ctor", fmt::ptr(this));
 }
 
 VideoEncoder::~VideoEncoder() {
-  LOG("VideoEncoder %p dtor", this);
-  Unused << ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+  LOG("VideoEncoder {} dtor", fmt::ptr(this));
+  (void)ResetInternal(NS_ERROR_DOM_ABORT_ERR);
 }
 
 JSObject* VideoEncoder::WrapObject(JSContext* aCx,
@@ -527,7 +528,7 @@ already_AddRefed<VideoEncoder> VideoEncoder::Constructor(
 already_AddRefed<Promise> VideoEncoder::IsConfigSupported(
     const GlobalObject& aGlobal, const VideoEncoderConfig& aConfig,
     ErrorResult& aRv) {
-  LOG("VideoEncoder::IsConfigSupported, config: %s",
+  LOG("VideoEncoder::IsConfigSupported, config: {}",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get());
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
@@ -555,14 +556,15 @@ already_AddRefed<Promise> VideoEncoder::IsConfigSupported(
   auto r = CloneConfiguration(config, aGlobal.Context(), aConfig);
   if (r.isErr()) {
     nsresult e = r.unwrapErr();
-    LOGE("Failed to clone VideoEncoderConfig. Error: 0x%08" PRIx32,
+    LOGE("Failed to clone VideoEncoderConfig. Error: 0x{:08x}",
          static_cast<uint32_t>(e));
     p->MaybeRejectWithTypeError("Failed to clone VideoEncoderConfig");
     aRv.Throw(e);
     return p.forget();
   }
 
-  bool canEncode = CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(config));
+  bool canEncode =
+      CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(config), global);
   VideoEncoderSupport s;
   s.mConfig.Construct(std::move(config));
   s.mSupported.Construct(canEncode);

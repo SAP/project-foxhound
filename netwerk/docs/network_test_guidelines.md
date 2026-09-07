@@ -4,24 +4,24 @@ This is a high level document to introduce the different test types that are use
 
 ## Necko Test Types
 
-We only introduce tests under [netwerk/test](https://searchfox.org/mozilla-central/source/netwerk/test) folder in this section.
+We only introduce tests under [netwerk/test](https://searchfox.org/firefox-main/source/netwerk/test) folder in this section.
 
 - [Chrome Tests](https://firefox-source-docs.mozilla.org/testing/chrome-tests/index.html)
   - We usually write chrome tests when the code to be tested needs a browser windows to load some particular resources.
-  - Path: [netwerk/test/browser](https://searchfox.org/mozilla-central/source/netwerk/test/browser)
+  - Path: [netwerk/test/browser](https://searchfox.org/firefox-main/source/netwerk/test/browser)
 - [Reftest](https://firefox-source-docs.mozilla.org/testing/webrender/index.html)
   - Rarely used in necko.
 - [Mochitest](https://firefox-source-docs.mozilla.org/testing/mochitest-plain/index.html)
   - Used when the code to be tested can be triggered by WebIDL. e.g., WebSocket and XMLHttpRequest.
-  - Path: [netwerk/test/mochitests](https://searchfox.org/mozilla-central/source/netwerk/test/mochitests)
+  - Path: [netwerk/test/mochitests](https://searchfox.org/firefox-main/source/netwerk/test/mochitests)
 - [XPCShell tests](https://firefox-source-docs.mozilla.org/testing/xpcshell/index.html#xpcshell-tests)
   - Mostly used in necko to test objects that can be accessed by JS. e.g., `nsIHttpChannel`.
-  - Path: [netwerk/test/unit](https://searchfox.org/mozilla-central/source/netwerk/test/unit)
+  - Path: [netwerk/test/unit](https://searchfox.org/firefox-main/source/netwerk/test/unit)
 - [GTest](https://firefox-source-docs.mozilla.org/gtest/index.html)
   - Useful when the code doesn't need a http server.
   - Useful when writing code regarding to parsing strings. e.g., [Parsing Server Timing Header](https://searchfox.org/mozilla-central/rev/0249c123e74640ed91edeabba00649ef4d929372/netwerk/test/gtest/TestServerTimingHeader.cpp)
 - [Performance tests](https://firefox-source-docs.mozilla.org/testing/perfdocs/index.html)
-  - Current tests in [netwerk/test/perf](https://searchfox.org/mozilla-central/source/netwerk/test/perf) are all for testing `HTTP/3` code.
+  - Current tests in [netwerk/test/perf](https://searchfox.org/firefox-main/source/netwerk/test/perf) are all for testing `HTTP/3` code.
 
 There are also [web-platform-tests](https://firefox-source-docs.mozilla.org/web-platform/index.html) that is related to necko. We don't usually write new `web-platform-tests`. However, we do have lots of `web-platform-tests` for XHR, Fetch, and WebSocket.
 
@@ -110,6 +110,9 @@ The most typical form of necko xpcsehll-test is creating an HTTP server and test
   This is what it looks like to create a simple HTTP server:
 
   ```js
+  const {
+    NodeHTTPServer,
+  } = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
   let server = new NodeHTTPServer();
   await server.start();
   registerCleanupFunction(async () => {
@@ -121,14 +124,22 @@ The most typical form of necko xpcsehll-test is creating an HTTP server and test
   });
   ```
 
-  We can also create a `HTTP/2` server easily by replacing `NodeHTTPServer` with `NodeHTTP2Server` and adding the server certification.
+  We can also create a `HTTP/2` server easily by replacing `NodeHTTPServer` with `NodeHTTP2Server`.
 
   ```js
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-  addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
+  // Normally HTTPS servers require us adding the certificate to the
+  // certDB, but that happens automatically in BaseNodeServer.installCert
+  // which is called from server.start.
+  // But the test does need to call do_get_profile(); for this to work.
+  const {
+    NodeHTTP2Server,
+  } = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
   let server = new NodeHTTP2Server();
+  await server.start();
+  // To serve a custom hostname, pass it as the second argument; a fresh
+  // leaf cert covering that hostname (signed by the existing test CA) is
+  // generated automatically. Pair this with `network.dns.localDomains`.
+  // await server.start(0, ["custom_domain.example"]);
   ```
 
 - Code at client side
@@ -154,6 +165,9 @@ The most typical form of necko xpcsehll-test is creating an HTTP server and test
   This is what it looks like to put everything together:
 
   ```js
+  const {
+    NodeHTTPServer,
+  } = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
   add_task(async function test_http() {
     let server = new NodeHTTPServer();
     await server.start();

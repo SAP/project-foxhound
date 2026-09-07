@@ -231,6 +231,12 @@ class Message extends Component {
       "https://bugzilla.mozilla.org/enter_bug.cgi?product=DevTools&component=Console";
     const timestampEl = this.renderTimestamp();
 
+    console.error(
+      "Unable to render a console message",
+      this.state.error,
+      this.state.error.stack
+    );
+
     return dom.div(
       {
         className: "message error message-did-catch",
@@ -256,7 +262,11 @@ class Message extends Component {
                 onClick: () =>
                   navigator.clipboard.writeText(
                     JSON.stringify(
-                      this.props.message,
+                      {
+                        message: this.props.message,
+                        error: this.state.error.message,
+                        stack: this.state.error.stack,
+                      },
                       function (key, value) {
                         if (key === "targetFront") {
                           return null;

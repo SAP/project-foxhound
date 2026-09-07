@@ -119,5 +119,4 @@ val tosPageUiData = OnboardingPageUiData(
     description = "tos body",
     primaryButtonLabel = "tos primary button text",
     secondaryButtonLabel = "tos secondary button text",
-    privacyCaption = null,
 )

@@ -1,5 +1,7 @@
-Telemetry
-=========
+.. _urlbar-telemetry:
+
+Address Bar Telemetry
+=====================
 
 This section describes existing telemetry probes measuring interaction with the
 Address Bar.
@@ -84,11 +86,11 @@ FX_URLBAR_ZERO_PREFIX_DWELL_TIME_MS
     Firefox 138
       Removed completely. (See bug 1938938)
 
-PLACES_FRECENCY_RECALC_CHUNK_TIME_MS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+places.frecency_recalc_chunk_time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   This records the time necessary to recalculate frecency of a chunk of pages,
-  as defined in the `PlacesFrecencyRecalculator <https://searchfox.org/mozilla-central/source/toolkit/components/places/PlacesFrecencyRecalculator.sys.mjs>`_ module.
+  as defined in the :searchfox:`PlacesFrecencyRecalculator <toolkit/components/places/PlacesFrecencyRecalculator.sys.mjs>` module.
 
 Scalars
 -------
@@ -285,6 +287,9 @@ urlbar.searchmode.*
   - ``bookmarkmenu``
     Used when the user selects the Search Bookmarks menu item in the Library
     menu.
+  - ``messaging_system``
+    Used when the user enters search mode through the messaging system.
+    This is added in Firefox 150, and it is only available in Glean.
   - ``handoff``
     Used when the user uses the search box on the new tab page and is handed off
     to the address bar. NOTE: This entry point was disabled from Firefox 88 to
@@ -380,6 +385,11 @@ urlbar.searchmode.*
 
       Added Glean equivalents of the probes as labeled counters.
 
+    Firefox 150
+      Added ``urlbar.searchmode.messaging_system``:
+        - This new probe is for accesses to search mode from the messaging system.
+          This is added in Firefox 150, and it is only available in Glean.
+
 
 urlbar.picked.*
 ~~~~~~~~~~~~~~~
@@ -419,6 +429,11 @@ urlbar.picked.*
     full URLs instead of "up to the next slash" partial URLs. For more
     information on this type of autofill, see this `adaptive history autofill
     document`_.
+  - ``history_autofill_fallback_origin``
+    The origin fallback result shown alongside an adaptive history URL autofill.
+    When adaptive autofill suggests a deep URL, the root origin is surfaced as a
+    second result to accommodate users who alternate between root and subpage
+    navigation.
   - ``autofill_origin``
     An autofilled origin_ from the user's history. Typically "origin" means a
     domain or host name like "mozilla.org". Technically it can also include a
@@ -636,7 +651,7 @@ places.*
   - ``pages_need_frecency_recalculation``
     Number of pages in need of a frecency recalculation. This number should
     remain small compared to the total number of pages in the database (see the
-    `PLACES_PAGES_COUNT` histogram). It can be used to valuate the frequency
+    ``places.pages_count`` Glean metric). It can be used to valuate the frequency
     and size of recalculations, for performance reasons.
 
 Search Engagement Telemetry

@@ -2,21 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WebrtcGmpVideoCodec.h"
 #include "GmpVideoCodec.h"
+
+#include "WebrtcGmpVideoCodec.h"
 
 namespace mozilla {
 
-WebrtcVideoEncoder* GmpVideoCodec::CreateEncoder(
+std::unique_ptr<WebrtcVideoEncoder> GmpVideoCodec::CreateEncoder(
     const webrtc::SdpVideoFormat& aFormat, std::string aPCHandle) {
-  return new WebrtcVideoEncoderProxy(
-      new WebrtcGmpVideoEncoder(aFormat, std::move(aPCHandle)));
+  return std::make_unique<WebrtcVideoEncoderProxy>(
+      MakeRefPtr<WebrtcGmpVideoEncoder>(aFormat, std::move(aPCHandle)));
 }
 
-WebrtcVideoDecoder* GmpVideoCodec::CreateDecoder(std::string aPCHandle,
-                                                 TrackingId aTrackingId) {
-  return new WebrtcVideoDecoderProxy(std::move(aPCHandle),
-                                     std::move(aTrackingId));
+std::unique_ptr<WebrtcVideoDecoder> GmpVideoCodec::CreateDecoder(
+    std::string aPCHandle, TrackingId aTrackingId) {
+  return std::make_unique<WebrtcVideoDecoderProxy>(std::move(aPCHandle),
+                                                   std::move(aTrackingId));
 }
 
 }  // namespace mozilla

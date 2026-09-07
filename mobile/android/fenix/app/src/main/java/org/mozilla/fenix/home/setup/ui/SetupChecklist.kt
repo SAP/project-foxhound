@@ -4,20 +4,17 @@
 
 package org.mozilla.fenix.home.setup.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,10 +26,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
-import mozilla.components.compose.base.button.PrimaryButton
-import mozilla.components.compose.base.theme.layout.AcornLayout
+import mozilla.components.compose.base.button.FilledButton
+import mozilla.components.compose.base.theme.layout.AcornElevation
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistState
@@ -41,9 +37,9 @@ import org.mozilla.fenix.components.appstate.setup.checklist.getSetupChecklistSu
 import org.mozilla.fenix.components.appstate.setup.checklist.getSetupChecklistTitle
 import org.mozilla.fenix.home.sessioncontrol.SetupChecklistInteractor
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
-private val elevation = AcornLayout.AcornElevation.xLarge
-private val shapeChecklist = RoundedCornerShape(size = AcornLayout.AcornCorner.large)
+private val elevation = AcornElevation.level4
 
 /**
  * The Setup checklist displayed on homepage that contains onboarding tasks.
@@ -55,8 +51,8 @@ private val shapeChecklist = RoundedCornerShape(size = AcornLayout.AcornCorner.l
 fun SetupChecklist(setupChecklistState: SetupChecklistState, interactor: SetupChecklistInteractor) {
     Card(
         modifier = Modifier.padding(16.dp),
-        shape = shapeChecklist,
-        colors = CardDefaults.cardColors(containerColor = FirefoxTheme.colors.layer1),
+        shape = MaterialTheme.shapes.small,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceBright),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
     ) {
         Column(
@@ -71,7 +67,7 @@ fun SetupChecklist(setupChecklistState: SetupChecklistState, interactor: SetupCh
             )
 
             if (setupChecklistState.progress.allTasksCompleted()) {
-                Divider()
+                HorizontalDivider()
 
                 RemoveChecklistButton(interactor)
             }
@@ -98,7 +94,6 @@ private fun Header(state: SetupChecklistState) {
                 allTasksCompleted = progress.allTasksCompleted(),
             ),
             style = FirefoxTheme.typography.headline7,
-            color = FirefoxTheme.colors.textPrimary,
             modifier = Modifier.semantics { heading() },
         )
 
@@ -111,7 +106,6 @@ private fun Header(state: SetupChecklistState) {
                 Text(
                     text = it,
                     style = FirefoxTheme.typography.body2,
-                    color = FirefoxTheme.colors.textPrimary,
                 )
             }
 
@@ -133,7 +127,7 @@ private fun RemoveChecklistButton(interactor: SetupChecklistInteractor) {
             horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PrimaryButton(
+            FilledButton(
                 text = stringResource(R.string.setup_checklist_button_remove),
                 modifier = Modifier.width(width = FirefoxTheme.layout.size.maxWidth.small),
                 onClick = { interactor.onRemoveChecklistButtonClicked() },
@@ -160,21 +154,21 @@ private fun createPreviewTasks() = listOf(
 private fun setAsDefaultTaskPreview() = ChecklistItem.Task(
     type = ChecklistItem.Task.Type.SET_AS_DEFAULT,
     title = R.string.setup_checklist_task_default_browser,
-    icon = R.drawable.mozac_ic_web_extension_default_icon,
+    icon = iconsR.drawable.mozac_ic_globe_24,
     isCompleted = false,
 )
 
 private fun webExtensionTaskPreview() = ChecklistItem.Task(
     type = ChecklistItem.Task.Type.EXPLORE_EXTENSION,
     title = R.string.setup_checklist_task_explore_extensions,
-    icon = R.drawable.mozac_ic_web_extension_default_icon,
+    icon = iconsR.drawable.mozac_ic_extension_fill_24,
     isCompleted = false,
 )
 
 private fun signInTaskPreview() = ChecklistItem.Task(
     type = ChecklistItem.Task.Type.SIGN_IN,
     title = R.string.setup_checklist_task_account_sync,
-    icon = R.drawable.mozac_ic_web_extension_default_icon,
+    icon = iconsR.drawable.mozac_ic_globe_24,
     isCompleted = true,
 )
 
@@ -190,13 +184,13 @@ private fun createPreviewGroups() = listOf(
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.SELECT_THEME,
                 title = R.string.setup_checklist_task_toolbar_selection,
-                icon = R.drawable.mozac_ic_web_extension_default_icon,
+                icon = iconsR.drawable.mozac_ic_globe_24,
                 isCompleted = false,
             ),
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.CHANGE_TOOLBAR_PLACEMENT,
                 title = R.string.setup_checklist_task_theme_selection,
-                icon = R.drawable.mozac_ic_web_extension_default_icon,
+                icon = iconsR.drawable.mozac_ic_globe_24,
                 isCompleted = false,
             ),
         ),
@@ -208,13 +202,13 @@ private fun createPreviewGroups() = listOf(
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
                 title = R.string.setup_checklist_task_search_widget_2,
-                icon = R.drawable.mozac_ic_web_extension_default_icon,
+                icon = iconsR.drawable.mozac_ic_globe_24,
                 isCompleted = false,
             ),
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.EXPLORE_EXTENSION,
                 title = R.string.setup_checklist_task_explore_extensions,
-                icon = R.drawable.mozac_ic_web_extension_default_icon,
+                icon = iconsR.drawable.mozac_ic_extension_fill_24,
                 isCompleted = false,
             ),
         ),
@@ -228,14 +222,7 @@ private fun SetupChecklistPreview(
     @PreviewParameter(SetupChecklistPreviewParameterProvider::class) initialState: SetupChecklistState,
 ) {
     FirefoxTheme {
-        Spacer(Modifier.height(16.dp))
-
-        Box(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer1)
-                .fillMaxHeight()
-                .padding(16.dp),
-        ) {
+        Surface {
             SetupChecklist(
                 setupChecklistState = initialState,
                 interactor = object : SetupChecklistInteractor {

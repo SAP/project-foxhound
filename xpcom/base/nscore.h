@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nscore_h___
-#define nscore_h___
+#ifndef nscore_h_
+#define nscore_h_
 
 /* Definitions of functions and operators that allocate memory. */
 #if !defined(NS_NO_XPCOM) && !defined(MOZ_NO_MOZALLOC)
@@ -15,11 +13,10 @@
 /**
  * Incorporate the integer data types which XPCOM uses.
  */
-#include <stddef.h>  // IWYU pragma: export
 #include <stdint.h>  // IWYU pragma: export
 
-#include "mozilla/HelperMacros.h"  // IWYU pragma: export
 #include "mozilla/RefCountType.h"
+#include "mozilla/SEH.h"
 
 /* Core XPCOM declarations. */
 
@@ -243,15 +240,4 @@ inline Result<Ok, E> ToResult(nsresult aValue);
 #  define XPCOM_GLUE_AVOID_NSPR
 #endif
 
-/*
- * SEH exception macros.
- */
-#ifdef HAVE_SEH_EXCEPTIONS
-#  define MOZ_SEH_TRY __try
-#  define MOZ_SEH_EXCEPT(expr) __except (expr)
-#else
-#  define MOZ_SEH_TRY if (true)
-#  define MOZ_SEH_EXCEPT(expr) else
-#endif
-
-#endif /* nscore_h___ */
+#endif /* nscore_h_ */

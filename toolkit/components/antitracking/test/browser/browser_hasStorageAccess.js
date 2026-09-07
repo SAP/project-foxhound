@@ -153,7 +153,7 @@ var testCases = [
     ],
   },
   {
-    behavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN, // 5
+    behavior: BEHAVIOR_PARTITION_FOREIGN, // 5
     hasStorageAccess: [
       true /* same-origin non-tracker */,
       false /* 3rd-party non-tracker */,

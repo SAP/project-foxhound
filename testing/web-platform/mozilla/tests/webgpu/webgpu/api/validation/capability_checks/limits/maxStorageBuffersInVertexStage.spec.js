@@ -24,10 +24,7 @@ const kExtraLimits = {
   maxBindGroups: 'adapterLimit'
 };
 
-export const { g, description } = makeLimitTestGroup(limit, {
-  // MAINTAINANCE_TODO: remove once this limit is required.
-  limitOptional: true
-});
+export const { g, description } = makeLimitTestGroup(limit);
 
 function createBindGroupLayout(
 device,

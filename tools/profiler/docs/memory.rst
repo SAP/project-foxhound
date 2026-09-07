@@ -10,8 +10,7 @@ enabling the "Native Allocations" checkbox. It is only available in Nightly, as 
 uses a technique of hooking into malloc that could be a little more risky to apply to
 the broader population of Firefox users.
 
-This implementation is located in: `tools/profiler/core/memory_hooks.cpp
-<https://searchfox.org/mozilla-central/source/tools/profiler/core/memory_hooks.cpp>`_
+This implementation is located in: :searchfox:`tools/profiler/core/memory_hooks.cpp`
 
 It works by hooking into all of the malloc calls. When the profiler is running, it
 performs a `Bernoulli trial`_ that will pass for a given probability of per-byte
@@ -37,10 +36,9 @@ memory is being allocated and deallocated during the profiling session.
 
 This information is then visualized in the `Firefox Profiler memory track`_.
 
-This feature uses the `Profiler Counters`_, which can be used to create other types
+This feature uses the :searchfox:`Profiler Counters <tools/profiler/public/ProfilerCounts.h>`, which can be used to create other types
 of cheap counting instrumentation.
 
 .. _Bernoulli trial: https://en.wikipedia.org/wiki/Bernoulli_trial
 .. _Firefox Profiler docs: https://profiler.firefox.com/docs/#/./memory-allocations
 .. _Firefox Profiler memory track: https://profiler.firefox.com/docs/#/./memory-allocations?id=memory-track
-.. _Profiler Counters: https://searchfox.org/mozilla-central/source/tools/profiler/public/ProfilerCounts.h

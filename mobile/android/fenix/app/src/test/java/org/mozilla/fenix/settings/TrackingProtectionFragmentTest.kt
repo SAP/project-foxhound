@@ -4,9 +4,14 @@
 
 package org.mozilla.fenix.settings
 
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.FragmentActivity
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.spyk
+import io.mockk.verify
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -67,5 +72,77 @@ class TrackingProtectionFragmentTest {
         assertEquals(customRedirectTrackersCheckBoxSettings, customRedirectTrackersCheckBox)
         assertEquals(customSuspectedFingerprinters, customSuspectedFingerprintersSetting)
         assertEquals(customSuspectedFingerprintersSelect, customSuspectedFingerprintersSelectSetting)
+    }
+
+    @Test
+    fun `GIVEN baseline exception checkbox is true WHEN user clicks on baseline checkbox THEN warning dialog shows`() {
+        val settings = Settings(testContext)
+        every { testContext.components.analytics } returns mockk(relaxed = true)
+        every { testContext.components.settings } returns settings
+        every { testContext.components.core } returns mockk(relaxed = true)
+
+        val settingsFragment = TrackingProtectionFragment()
+        val activity = Robolectric.buildActivity(FragmentActivity::class.java).create().get()
+        activity.supportFragmentManager.beginTransaction()
+            .add(settingsFragment, "settingsFragment")
+            .commitNow()
+
+        settings.strictAllowListBaselineTrackingProtection = true
+        val baselineCheckbox = settingsFragment.strictAllowListBaselineTrackingProtection
+
+        val result = baselineCheckbox.onPreferenceChangeListener?.onPreferenceChange(baselineCheckbox, false)
+
+        assertEquals(true, settingsFragment.alertDialog.isShowing)
+        assertEquals(false, result)
+        assertEquals(true, settings.strictAllowListBaselineTrackingProtection)
+        assertEquals(true, baselineCheckbox.isChecked)
+    }
+
+    @Test
+    fun `GIVEN baseline uncheck warning dialog is showing WHEN user clicks confirm THEN baseline and convenience are false`() {
+        val mockSettings = mockk<Settings>(relaxed = true)
+        every { testContext.components.analytics } returns mockk(relaxed = true)
+        every { testContext.components.settings } returns mockSettings
+        every { testContext.components.core } returns mockk(relaxed = true)
+
+        val settingsFragment = TrackingProtectionFragment()
+        val activity = Robolectric.buildActivity(FragmentActivity::class.java).create().get()
+
+        // Properly attach the fragment to initialize lateinit properties
+        activity.supportFragmentManager.beginTransaction()
+            .add(settingsFragment, "settingsFragment")
+            .commitNow()
+
+        val fragmentSpy = spyk(settingsFragment)
+        val dialog = mockk<AlertDialog>(relaxed = true)
+        every { fragmentSpy.updateTrackingProtectionPolicy() } just Runs
+
+        fragmentSpy.onDialogConfirm(true, dialog)
+
+        verify { mockSettings.strictAllowListBaselineTrackingProtection = false }
+    }
+
+    @Test
+    fun `GIVEN baseline uncheck warning dialog is showing WHEN user clicks cancel THEN baseline must be true and convenience does not change`() {
+        val mockSettings = mockk<Settings>(relaxed = true)
+        every { testContext.components.analytics } returns mockk(relaxed = true)
+        every { testContext.components.settings } returns mockSettings
+        every { testContext.components.core } returns mockk(relaxed = true)
+
+        val settingsFragment = TrackingProtectionFragment()
+        val activity = Robolectric.buildActivity(FragmentActivity::class.java).create().get()
+
+        // Properly attach the fragment to initialize lateinit properties
+        activity.supportFragmentManager.beginTransaction()
+            .add(settingsFragment, "settingsFragment")
+            .commitNow()
+
+        val fragmentSpy = spyk(settingsFragment)
+        val dialog = mockk<AlertDialog>(relaxed = true)
+        every { fragmentSpy.updateTrackingProtectionPolicy() } just Runs
+
+        fragmentSpy.onDialogCancel(true, dialog)
+
+        verify { mockSettings.strictAllowListBaselineTrackingProtection = true }
     }
 }

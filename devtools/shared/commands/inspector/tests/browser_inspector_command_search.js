@@ -72,11 +72,11 @@ add_task(async () => {
 /**
  * Does an inspector search to find the next node and assert the results
  *
- * @param {Object} commands
- * @param {Object} options
+ * @param {object} commands
+ * @param {object} options
  *            options.query - search query
  *            options.reverse - search in reverse
- * @param {Object} expected
+ * @param {object} expected
  *         Holds the expected values
  */
 async function searchAndAssert(commands, { query, reverse }, expected) {

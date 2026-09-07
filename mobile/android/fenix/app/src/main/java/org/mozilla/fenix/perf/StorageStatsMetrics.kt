@@ -7,8 +7,6 @@ package org.mozilla.fenix.perf
 import android.app.usage.StorageStats
 import android.app.usage.StorageStatsManager
 import android.content.Context
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
 import androidx.annotation.WorkerThread
@@ -26,7 +24,6 @@ import org.mozilla.fenix.GleanMetrics.StorageStats as Metrics
  * Unfortunately, this API is only available on API 26+ so the data will only be reported for those
  * platforms.
  */
-@RequiresApi(Build.VERSION_CODES.O) // StorageStatsManager
 object StorageStatsMetrics {
 
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage

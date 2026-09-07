@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,6 +29,18 @@ static PRStatus MockNetworkConnect(PRFileDesc* fd, const PRNetAddr* addr,
   netAddr.ToAddrPortString(addrPort);
   SOCKET_LOG(
       ("MockNetworkConnect %p connect to [%s]\n", secret, addrPort.get()));
+  if (FindBlockedTCPConnect(netAddr)) {
+    SOCKET_LOG(("MockNetworkConnect %p connect to [%s] blocked\n", secret,
+                addrPort.get()));
+    PR_SetError(PR_CONNECT_REFUSED_ERROR, 0);
+    return PR_FAILURE;
+  }
+  if (FindPausedTCPConnect(netAddr)) {
+    SOCKET_LOG(("MockNetworkConnect %p connect to [%s] paused\n", secret,
+                addrPort.get()));
+    PR_SetError(PR_IN_PROGRESS_ERROR, 0);
+    return PR_FAILURE;
+  }
   mozilla::net::NetAddr redirected;
   if (FindNetAddrOverride(netAddr, redirected)) {
     redirected.ToAddrPortString(addrPort);
@@ -107,6 +117,14 @@ static PRInt32 MockNetworkSendTo(PRFileDesc* fd, const void* buf,
   MockNetworkSecret* secret = reinterpret_cast<MockNetworkSecret*>(fd->secret);
   SOCKET_LOG(("MockNetworkSendTo %p", secret));
   mozilla::net::NetAddr netAddr(addr);
+  if (FindFailedUDPAddr(netAddr)) {
+    nsAutoCString addrPort;
+    netAddr.ToAddrPortString(addrPort);
+    SOCKET_LOG(
+        ("MockNetworkSendTo %p addr [%s] failed", secret, addrPort.get()));
+    PR_SetError(PR_CONNECT_REFUSED_ERROR, 0);
+    return -1;
+  }
   if (FindBlockedUDPAddr(netAddr)) {
     nsAutoCString addrPort;
     netAddr.ToAddrPortString(addrPort);

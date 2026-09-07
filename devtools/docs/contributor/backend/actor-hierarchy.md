@@ -10,6 +10,10 @@ They are organized in a hierarchy for easier lifecycle and memory management:
 once a parent is removed from the pool, its children are removed as well.
 (See [actor-registration.md](actor-registration.md) for more information about how to implement a new one)
 
+Two tests are highlighting the basics of DevTools backend:
+* [browser_document_rdp_basics.js](https://searchfox.org/firefox-main/source/devtools/server/tests/browser/browser_document_rdp_basics.js) is sending RDP packet manually (JSON objects),
+* [browser_document_devtools_basics.js](https://searchfox.org/firefox-main/source/devtools/server/tests/browser/browser_document_devtools_basics.js) is using Protocol.js Fronts.
+
 The overall hierarchy of actors looks like this:
 
 ```
@@ -130,6 +134,7 @@ RootActor (root.js)
 
        Returned by "listAddons" request.
 ```
+
 All these descriptor actors expose a `getTarget()` method which
 returns the target actor for the descriptor's debuggable context.
 
@@ -145,8 +150,9 @@ which is scoped to the debuggable context of the descriptor.
 
 This actor is about observing things.
 It will notify you about:
-* target actors via target-available-form and target-destroyed-form,
-* resources via resources-available-array, resources-updated-array and resources-destroyed-array.
+
+- target actors via target-available-form and target-destroyed-form,
+- resources via resources-available-array, resources-updated-array and resources-destroyed-array.
 
 ## Resources
 
@@ -160,18 +166,20 @@ These `ResourceWatcher` classes should implement a `watch()` method to start wat
 and a `destroy()` method to stop watching. One new instance will be instantiated each time we start watching for a given type.
 
 These classes can be instantiated in various ways:
-* just from the parent process if the resource can only be observed from there (ex: network events and some storages).
+
+- just from the parent process if the resource can only be observed from there (ex: network events and some storages).
   In such case, the watch method will receive a watcher actor as argument.
-* just from the target's thread, which can be a tab thread, or a worker thread.
+- just from the target's thread, which can be a tab thread, or a worker thread.
   In such case, the watch method will receive a target actor as argument.
 
 ## Target Actors
 
 Those are the actors exposed by the watcher actor `target-available-form` event , or, via descriptor's `getTarget()` methods.
 They are meant to track the lifetime of a very precise debuggable piece of the descriptor context:
-* One precise document instance, also called `WindowGlobal`,
-* One worker,
-* One parent or content process.
+
+- One precise document instance, also called `WindowGlobal`,
+- One worker,
+- One parent or content process.
 
 Its main purpose is to expose the target-scoped actor IDs, all contained in the target form.
 The target form is exposed by watcher actor `target-available-form` event (or via the now deprecated descriptor's `getTarget()` method).
@@ -182,33 +190,35 @@ For historical reasons, target actors also handle creating the ThreadActor, used
 to manage breakpoints in the debugger.
 
 The target-scoped actors expect to find the following properties on the target actor:
- - threadActor:
-   ThreadActor instance for the given target,
-   only defined once `attach` request is called, or on construction.
- - isRootActor: (historical name)
-   Always false, except on ParentProcessTargetActor.
-   Despite the attribute name, it is being used to accept all resources
-   (like chrome one) instead of limiting only to content resources.
- - makeDebugger:
-   Helper function used to create Debugger object for the target.
-   (See actors/utils/make-debugger.js for more info)
+
+- threadActor:
+  ThreadActor instance for the given target,
+  only defined once `attach` request is called, or on construction.
+- isRootActor: (historical name)
+  Always false, except on ParentProcessTargetActor.
+  Despite the attribute name, it is being used to accept all resources
+  (like chrome one) instead of limiting only to content resources.
+- makeDebugger:
+  Helper function used to create Debugger object for the target.
+  (See actors/utils/make-debugger.js for more info)
 
 In addition to this, the actors inheriting from WindowGlobalTargetActor,
 expose many other attributes and events:
- - window:
-   Reference to the window global object currently targeted.
-   It can change over time if we switch target to an iframe, so it
-   shouldn't be stored in a variable, but always retrieved from the actor.
- - windows:
-   List of all document globals including the main window object and all
-   iframes.
- - docShell:
-   Primary docShell reference for the targeted document.
- - docShells:
-   List of all docShells for the targeted document and all its iframes.
- - chromeEventHandler:
-   The chrome event handler for the current target. Allows to listen to events
-   that can be missing/cancelled on this document itself.
+
+- window:
+  Reference to the window global object currently targeted.
+  It can change over time if we switch target to an iframe, so it
+  shouldn't be stored in a variable, but always retrieved from the actor.
+- windows:
+  List of all document globals including the main window object and all
+  iframes.
+- docShell:
+  Primary docShell reference for the targeted document.
+- docShells:
+  List of all docShells for the targeted document and all its iframes.
+- chromeEventHandler:
+  The chrome event handler for the current target. Allows to listen to events
+  that can be missing/cancelled on this document itself.
 
 See WindowGlobalTargetActor documentation for more details.
 
@@ -233,5 +243,5 @@ instantiated just in time to service the request.
 The actor IDs of all these actors can be retrieve in the "form" of each target actor.
 The "form" is notified by the Watcher actor via `target-avaible-form` RDP packet.
 
-[actors-folder]: https://searchfox.org/mozilla-central/source/devtools/server/actors/
-[resources-folder]: https://searchfox.org/mozilla-central/source/devtools/server/actors/resources/
+[actors-folder]: https://searchfox.org/firefox-main/source/devtools/server/actors/
+[resources-folder]: https://searchfox.org/firefox-main/source/devtools/server/actors/resources/

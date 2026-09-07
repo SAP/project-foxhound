@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -24,6 +22,7 @@ IGNORE_PREFS = {
     "dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled",  # NOQA: E501; Uses the 'locked' attribute.
     "extensions.backgroundServiceWorker.enabled",  # NOQA: E501; Uses the 'locked' attribute.
     "general.smoothScroll",  # Uses the 'sticky` attribute.
+    "security.storage.encryption.sqlite.enabled",  # NOQA: E501; Uses the 'locked' attribute.
 }
 
 # A regular expression to match preference names and values from js preference
@@ -95,15 +94,13 @@ def check_against(path, pref_names):
 def check_value_for_pref(some_pref, some_value, path):
     errors = []
     if some_pref["value"] == some_value:
-        errors.append(
-            {
-                "path": path,
-                "message": some_pref["raw"],
-                "lineno": some_pref["line"],
-                "hint": "Remove the duplicate pref or add it to IGNORE_PREFS.",
-                "level": "error",
-            }
-        )
+        errors.append({
+            "path": path,
+            "message": some_pref["raw"],
+            "lineno": some_pref["line"],
+            "hint": "Remove the duplicate pref or add it to IGNORE_PREFS.",
+            "level": "error",
+        })
     return errors
 
 
@@ -115,14 +112,12 @@ def read_prefs(path):
         for lineno, line in enumerate(source, start=1):
             match = PATTERN.match(line)
             if match:
-                prefs.append(
-                    {
-                        "name": match.group("pref"),
-                        "value": evaluate_pref(match.group("val")),
-                        "line": lineno,
-                        "raw": line,
-                    }
-                )
+                prefs.append({
+                    "name": match.group("pref"),
+                    "value": evaluate_pref(match.group("val")),
+                    "line": lineno,
+                    "raw": line,
+                })
     return prefs
 
 

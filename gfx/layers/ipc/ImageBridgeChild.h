@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -115,7 +113,7 @@ class ImageBridgeChild final : public PImageBridgeChild,
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageBridgeChild, override);
 
-  TextureForwarder* GetTextureForwarder() override { return this; }
+  RefPtr<TextureForwarder> GetTextureForwarder() override { return this; }
   LayersIPCActor* GetLayersIPCActor() override { return this; }
 
   /**
@@ -169,13 +167,11 @@ class ImageBridgeChild final : public PImageBridgeChild,
   void SyncWithCompositor(
       const Maybe<uint64_t>& aWindowID = Nothing()) override;
 
-  PTextureChild* AllocPTextureChild(
+  already_AddRefed<PTextureChild> AllocPTextureChild(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor& aReadLock,
       const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
       const uint64_t& aSerial,
       const wr::MaybeExternalImageId& aExternalImageId);
-
-  bool DeallocPTextureChild(PTextureChild* actor);
 
   PMediaSystemResourceManagerChild* AllocPMediaSystemResourceManagerChild();
   bool DeallocPMediaSystemResourceManagerChild(
@@ -306,7 +302,7 @@ class ImageBridgeChild final : public PImageBridgeChild,
    */
   bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
 
-  PTextureChild* CreateTexture(
+  already_AddRefed<PTextureChild> CreateTexture(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
       LayersBackend aLayersBackend, TextureFlags aFlags,
       const dom::ContentParentId& aContentId, uint64_t aSerial,

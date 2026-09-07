@@ -3,4 +3,6 @@
 support-files = ["head.js"]
 
 ["test_render_perf.html"]
-skip-if = ["true"] # Bug 1306783
+skip-if = [
+  "true", # Bug 1306783
+]

@@ -9,6 +9,38 @@ newtab-page-title = Nova scheda
 newtab-settings-button =
     .title = Pirsunalizza a pàggina dâ scheda nova
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Novi schedi
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } riga
+           *[other] { $num } righi
+        }
+home-restore-defaults-srd =
+    .label = Riprìstina pridifinuti
+    .accesskey = R
+home-mode-choice-custom-srd =
+    .label = Nnirizzi pirsunalizzati…
+home-mode-choice-blank-srd =
+    .label = Pàggina vacanti
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Artìculi spunzurizzati
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Pàggini visitati
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Nzingalibbra
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Scarricamenti cchiù ricenti
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -25,7 +57,7 @@ newtab-search-box-handoff-input =
     .title = Riscedi cu { $engine } o metti nu nnirizzu
     .aria-label = Riscedi cu { $engine } o metti nu nnirizzu
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Junci muturi di risciduta
 newtab-topsites-edit-topsites-header = Cancia situ principali
@@ -53,9 +85,6 @@ newtab-topsites-add-button = Junci
 newtab-confirm-delete-history-p1 = Sì sicuru chi voi scancillari tutti i voti chi visitasti sta pàggina dâ crunuluggìa?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = St’azziuni nun si po sfari.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -87,9 +116,6 @@ newtab-menu-save-to-pocket = Sarba nne { -pocket-brand-name }
 newtab-menu-delete-pocket = Scancella di { -pocket-brand-name }
 newtab-menu-archive-pocket = Archivia nne { -pocket-brand-name }
 newtab-menu-show-privacy-info = I nostri patrucinatura e a to privatizza
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -186,69 +212,8 @@ newtab-pocket-more-recommendations = Cchiù suggirimenti
 newtab-pocket-cta-button = Pigghia { -pocket-brand-name }
 newtab-pocket-cta-text = Sarba l’artìculi chi ti piàcinu nne { -pocket-brand-name }, e stìmula a to mmagginazziuni cu litturi ntirissanti.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Ops! Quarchi cosa fallìu carricannu stu cuntinutu.
 newtab-error-fallback-refresh-link = Attualizza sta pàggina pi pruvari arrè.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

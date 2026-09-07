@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,6 +23,7 @@ class MessagePortIdentifier;
 class RemoteWorkerData;
 class SharedWorkerManager;
 class SharedWorkerParent;
+class ThreadsafeContentParentHandle;
 class UniqueMessagePortId;
 
 /**
@@ -50,8 +49,9 @@ class SharedWorkerService final {
                                 const MessagePortIdentifier& aPortIdentifier);
 
   void GetOrCreateWorkerManagerOnMainThread(
-      nsIEventTarget* aBackgroundEventTarget, SharedWorkerParent* aActor,
-      const RemoteWorkerData& aData, uint64_t aWindowID,
+      nsIEventTarget* aBackgroundEventTarget,
+      ThreadsafeContentParentHandle* aContentParentHandle,
+      SharedWorkerParent* aActor, RemoteWorkerData aData, uint64_t aWindowID,
       UniqueMessagePortId& aPortIdentifier);
 
   void RemoveWorkerManagerOnMainThread(SharedWorkerManager* aManager);

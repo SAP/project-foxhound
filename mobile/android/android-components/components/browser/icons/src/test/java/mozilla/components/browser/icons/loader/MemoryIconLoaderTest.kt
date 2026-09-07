@@ -8,8 +8,8 @@ import android.graphics.Bitmap
 import mozilla.components.browser.icons.IconRequest
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertIs
 
 class MemoryIconLoaderTest {
     @Test
@@ -31,12 +31,9 @@ class MemoryIconLoaderTest {
         )
 
         val result = loader.load(mock(), request, resource)
+        assertIs<IconLoader.Result.BitmapResult>(result)
 
-        assertTrue(result is IconLoader.Result.BitmapResult)
-
-        val bitmapResult = result as IconLoader.Result.BitmapResult
-
-        assertEquals(bitmap, bitmapResult.bitmap)
+        assertEquals(bitmap, result.bitmap)
     }
 
     @Test
@@ -57,6 +54,6 @@ class MemoryIconLoaderTest {
 
         val result = loader.load(mock(), request, resource)
 
-        assertTrue(result is IconLoader.Result.NoResult)
+        assertIs<IconLoader.Result.NoResult>(result)
     }
 }

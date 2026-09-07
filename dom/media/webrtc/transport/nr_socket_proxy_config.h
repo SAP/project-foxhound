@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nr_socket_proxy_config__
-#define nr_socket_proxy_config__
+#ifndef nr_socket_proxy_config_
+#define nr_socket_proxy_config_
 
 #include <memory>
 
@@ -38,4 +36,4 @@ class NrSocketProxyConfig {
 
 }  // namespace mozilla
 
-#endif  // nr_socket_proxy_config__
+#endif  // nr_socket_proxy_config_

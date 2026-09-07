@@ -10,7 +10,7 @@ page_cycles = 25
 page_timeout = 60000
 playback = "mitmproxy"
 playback_pageset_manifest = "mitm7-linux-firefox-{subtest}.manifest"
-playback_version = "11.0.0"
+playback_version = "12.2.1"
 type = "pageload"
 unit = "ms"
 use_live_sites = false
@@ -20,8 +20,7 @@ support_class = "browsertime_pageload.py"
 # Keep this list in alphabetical order
 
 [amazon]
-playback_pageset_manifest_backup = "mitm8-linux-firefox-amazon.manifest"
-playback_pageset_manifest = "mitm11-windows-firefox-amazon.manifest"
+playback_pageset_manifest = "mitm12-windows-firefox-amazon.manifest"
 benchmark_page = false
 test_url = "https://www.amazon.com/s?k=laptop&ref=nb_sb_noss_1"
 secondary_url = "https://www.amazon.com/Acer-A515-46-R14K-Quad-Core-Processor-Backlit/dp/B08VKNVDDR/ref=sr_1_3?dchild=1&keywords=laptop&qid=1627047187&sr=8-3"
@@ -32,25 +31,21 @@ test_url = "https://www.bing.com/search?q=barack+obama"
 
 [buzzfeed]
 playback_pageset_manifest = "mitm11-windows-firefox-buzzfeed.manifest"
-playback_pageset_manifest_backup = "mitm7-linux-firefox-buzzfeed.manifest"
 benchmark_page = false
 secondary_url = "https://www.buzzfeed.com/quizzes"
 test_url = "https://www.buzzfeed.com/"
 
 [cnn]
-playback_pageset_manifest_backup = "mitm8-linux-firefox-cnn.manifest"
-playback_pageset_manifest = "mitm11-windows-firefox-cnn.manifest"
+playback_pageset_manifest = "mitm12-darwin-firefox-cnn.manifest"
 secondary_url = "https://www.cnn.com/weather"
 test_url = "https://www.cnn.com/2021/03/22/weather/climate-change-warm-waters-lake-michigan/index.html"
 
 [ebay]
-playback_pageset_manifest_backup = "mitm8-linux-firefox-ebay.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-ebay.manifest"
 secondary_url = "https://www.ebay.com/deals"
 test_url = "https://www.ebay.com/"
 
 [espn]
-playback_pageset_manifest_backup = "mitm8-linux-firefox-espn.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-espn.manifest"
 benchmark_page = false
 test_url = "https://www.espn.com/nba/story/_/page/allstarweekend25788027/the-comparison-lebron-james-michael-jordan-their-own-words"
@@ -63,20 +58,17 @@ test_url = "https://expedia.com/Hotel-Search?destination=New+York%2C+New+York&la
 
 [facebook]
 # playback_version = "8.1.1"
-playback_pageset_manifest_backup = "mitm6-linux-firefox-facebook.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-facebook.manifest"
 secondary_url = "https://www.facebook.com/marketplace/?ref=bookmark"
 test_url = "https://www.facebook.com"
 
 [fandom]
 benchmark_page = false
-playback_pageset_manifest_backup = "mitm5-linux-firefox-fandom.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-fandom.manifest"
 test_url = "https://www.fandom.com/articles/fallout-76-will-live-and-die-on-the-creativity-of-its-playerbase"
 
 [google-docs]
-playback_pageset_manifest_backup = "mitm8-linux-firefox-google-docs.manifest"
-playback_pageset_manifest = "mitm11-windows-firefox-google-docs.manifest"
+playback_pageset_manifest = "mitm12-darwin-firefox-google-docs.manifest"
 page_complete_wait_time = 8000
 secondary_url = "https://docs.google.com/document/d/1vUnn0ePU-ynArE1OdxyEHXR2G0sl74ja_st_4OOzlgE/preview"
 test_url = "https://docs.google.com/document/d/1US-07msg12slQtI_xchzYxcKlTs6Fp7WqIc6W5GK5M8/edit?usp=sharing"
@@ -87,7 +79,8 @@ playback_pageset_manifest = "mitm5-linux-firefox-google-mail.manifest"
 test_url = "https://mail.google.com/"
 
 [google-search]
-playback_pageset_manifest_backup = "mitm8-linux-firefox-google-search.manifest"
+# Bug 1974848 - permafail with mitmproxy 12.x
+playback_version = "11.0.0"
 playback_pageset_manifest = "mitm11-windows-firefox-google-search.manifest"
 test_url = "https://www.google.com/search?hl=en&q=barack+obama&cad=h"
 
@@ -98,14 +91,12 @@ secondary_url = "https://docs.google.com/presentation/d/e/2PACX-1vRWwPQQFMDkSR4R
 test_url = "https://docs.google.com/presentation/d/1Ici0ceWwpFvmIb3EmKeWSq_vAQdmmdFcWqaiLqUkJng/edit?usp=sharing"
 
 [imdb]
-playback_pageset_manifest_backup = "mitm8-linux-firefox-imdb.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-imdb.manifest"
 test_url = "https://www.imdb.com/title/tt0084967/?ref_=nv_sr_2"
 secondary_url = "https://www.imdb.com/title/tt0084967/episodes/?ref_=tt_ov_epl"
 
 [imgur]
 benchmark_page = false
-playback_pageset_manifest_backup = "mitm8-linux-firefox-imgur.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-imgur.manifest"
 preferences = ['media.autoplay.default=5',
                'media.autoplay.ask-permission=true',
@@ -163,7 +154,6 @@ test_url = "https://pinterest.com/"
 
 [reddit]
 benchmark_page = false
-playback_pageset_manifest_backup = "mitm8-linux-firefox-reddit.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-reddit.manifest"
 secondary_url = "https://www.reddit.com/r/technology/"
 test_url = "https://www.reddit.com/r/technology/comments/9sqwyh/we_posed_as_100_senators_to_run_ads_on_facebook/"
@@ -193,12 +183,13 @@ playback_pageset_manifest = "mitm5-linux-firefox-twitter.manifest"
 test_url = "https://twitter.com/BarackObama"
 
 [wikia]
+# Bug 1974848 - permafail with mitmproxy 12.x
+playback_version = "11.0.0"
 benchmark_page = false
 secondary_url = "https://marvel.fandom.com/wiki/Celestials"
 test_url = "https://marvel.fandom.com/wiki/Black_Panther"
 
 [wikipedia]
-playback_pageset_manifest_backup = "mitm7-linux-firefox-wikipedia.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-wikipedia.manifest"
 secondary_url = "https://en.wikipedia.org/wiki/Joe_Biden"
 test_url = "https://en.wikipedia.org/wiki/Barack_Obama"
@@ -209,7 +200,6 @@ playback_pageset_manifest = "mitm5-linux-firefox-yahoo-mail.manifest"
 test_url = "https://mail.yahoo.com/"
 
 [youtube]
-playback_pageset_manifest_backup = "mitm7-linux-firefox-youtube.manifest"
 playback_pageset_manifest = "mitm11-windows-firefox-youtube.manifest"
 secondary_url = "https://www.youtube.com/watch?v=JrdEMERq8MA"
 test_url = "https://www.youtube.com"

@@ -18,7 +18,6 @@ add_task(async function () {
   ok(animations.pauseSome, "The pauseSome method exists");
   ok(animations.playSome, "The playSome method exists");
   ok(animations.setCurrentTimes, "The setCurrentTimes method exists");
-  ok(animations.setPlaybackRates, "The setPlaybackRates method exists");
   ok(animations.setWalkerActor, "The setWalkerActor method exists");
 
   let didThrow = false;

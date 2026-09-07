@@ -220,6 +220,29 @@ profiles.existing:
     expires: never
     send_in_pings: ['events', 'profiles']
     telemetry_mirror: Profiles_Existing_Name
+  shortcut:
+    type: event
+    description: Recorded when the user clicks the desktop shortcut toggle.
+    extra_keys:
+      value:
+        description: >
+          The `value` of the event. Mirrors to the Legacy Telemetry
+          event's `value` parameter. If the user changed the toggle to the
+          "on" position, the `value` will be `create`. If the user changed
+          the toggle to the "off" position, the `value` will be `delete`.
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997471
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997471
+    notification_emails:
+      - cmkm@mozilla.com
+      - dtownsend@mozilla.com
+      - jhirsch@mozilla.com
+      - nbaumgardner@mozilla.com
+    expires: never
+    send_in_pings: ['events', 'profiles']
+    telemetry_mirror: Profiles_Existing_Shortcut
   theme:
     type: event
     description: Recorded when the user selects a different theme.
@@ -445,3 +468,22 @@ profiles.selector_window:
     expires: never
     send_in_pings: ['events', 'profiles']
     telemetry_mirror: Profiles_SelectorWindow_ShowAtStartup
+
+profile.lock:
+  failed_lock_count:
+    type: quantity
+    unit: lock attempts
+    description: |
+      The number of failed profile lock attempts that occurred prior to
+      successfully locking the profile and starting the app.
+      Previously collected in the "main" ping's `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    expires: never
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - dtownsend@mozilla.com
+      - jhirsch@mozilla.com

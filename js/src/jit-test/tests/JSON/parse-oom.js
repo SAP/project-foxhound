@@ -1,4 +1,4 @@
-// |jit-test| --enable-json-parse-with-source; skip-if: !JSON.hasOwnProperty('isRawJSON')
+// |jit-test| skip-if: !JSON.hasOwnProperty('isRawJSON')
 
 oomTest(() => {
     JSON.parse('{"a": [1, {"b":2}, "7"], "c": 8}');

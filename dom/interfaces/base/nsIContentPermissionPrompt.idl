@@ -66,6 +66,11 @@ interface nsIContentPermissionRequest : nsISupports {
    */
   readonly attribute boolean isRequestDelegatedToUnsafeThirdParty;
 
+  /**
+   * If true, ignore SitePermissions that indicate that this request should be permitted.
+   */
+  readonly attribute boolean ignoreAllowSitePermission;
+
   /*
    * Get delegate principal of the permission request. This will return nullptr,
    * or request's principal or top level principal based on the delegate policy
@@ -74,6 +79,13 @@ interface nsIContentPermissionRequest : nsISupports {
    * @param aType the permission type to get
    */
   nsIPrincipal getDelegatePrincipal(in ACString aType);
+
+  /**
+   * Notify that the permission prompt has been shown to the user.
+   * This is called when the prompt UI is displayed, before the user
+   * makes a decision to allow or deny.
+   */
+  void notifyShown();
 
   /**
    * allow or cancel the request

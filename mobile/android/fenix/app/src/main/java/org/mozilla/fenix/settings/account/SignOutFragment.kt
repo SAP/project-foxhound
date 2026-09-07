@@ -20,6 +20,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentSignOutBinding
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
+import com.google.android.material.R as materialR
 
 class SignOutFragment : AppCompatDialogFragment() {
     private lateinit var accountManager: FxaAccountManager
@@ -35,8 +36,7 @@ class SignOutFragment : AppCompatDialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         BottomSheetDialog(requireContext(), this.theme).apply {
             setOnShowListener {
-                val bottomSheet =
-                    findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout
+                val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
                 val behavior = BottomSheetBehavior.from(bottomSheet)
                 behavior.state = BottomSheetBehavior.STATE_EXPANDED
             }

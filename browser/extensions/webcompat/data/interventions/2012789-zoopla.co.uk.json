@@ -1,0 +1,17 @@
+{
+  "label": "zoopla.co.uk",
+  "bugs": {
+    "2012789": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://www.zoopla.co.uk/for-sale/map/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "content_scripts": {
+        "js": ["define_TouchEvent.js"]
+      }
+    }
+  ]
+}

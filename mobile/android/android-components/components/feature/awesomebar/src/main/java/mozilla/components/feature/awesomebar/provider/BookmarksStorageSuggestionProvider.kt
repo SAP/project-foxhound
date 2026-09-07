@@ -86,6 +86,7 @@ class BookmarksStorageSuggestionProvider(
      */
     private suspend fun getBookmarksSuggestions(query: String) = bookmarksStorage
         .searchBookmarks(query, BOOKMARKS_SUGGESTION_LIMIT)
+        .getOrDefault(listOf())
         .filter { it.url != null }
         .distinctBy { it.url }
         .sortedBy { it.guid }
@@ -96,14 +97,16 @@ class BookmarksStorageSuggestionProvider(
      * @param query String to filter bookmarks' title or URL by.
      * @param filter Predicate to filter the URLs of the bookmarks that match the [query].
      */
-    private suspend fun getFilteredBookmarksSuggestions(query: String, filter: (Uri) -> Boolean) = bookmarksStorage
-        .searchBookmarks(query, BOOKMARKS_SUGGESTION_LIMIT * BOOKMARKS_RESULTS_TO_FILTER_SCALE_FACTOR)
-        .filter {
-            it.url?.toUri()?.let(filter) ?: true
-        }
-        .distinctBy { it.url }
-        .sortedBy { it.guid }
-        .take(BOOKMARKS_SUGGESTION_LIMIT)
+    private suspend fun getFilteredBookmarksSuggestions(query: String, filter: (Uri) -> Boolean) =
+        bookmarksStorage
+            .searchBookmarks(query, BOOKMARKS_SUGGESTION_LIMIT * BOOKMARKS_RESULTS_TO_FILTER_SCALE_FACTOR)
+            .getOrDefault(listOf())
+            .filter {
+                it.url?.toUri()?.let(filter) ?: true
+            }
+            .distinctBy { it.url }
+            .sortedBy { it.guid }
+            .take(BOOKMARKS_SUGGESTION_LIMIT)
 
     /**
      * Expects list of BookmarkNode to be specifically of bookmarks (e.g. nodes with a url).

@@ -106,12 +106,10 @@ MOZ_LOG_FILE=/tmp/driftcontrol.csv       \
         absAvgError = [abs(e) for e in avgError]
         slow_offset = [e / slowConvergenceSecs - slowHysteresis for e in absAvgError]
         fast_offset = [e / adjustmentInterval for e in absAvgError]
-        low_offset, high_offset = zip(
-            *[
-                (s, f) if e >= 0 else (-f, -s)
-                for (e, s, f) in zip(avgError, slow_offset, fast_offset)
-            ]
-        )
+        low_offset, high_offset = zip(*[
+            (s, f) if e >= 0 else (-f, -s)
+            for (e, s, f) in zip(avgError, slow_offset, fast_offset)
+        ])
 
         fig2 = figure(x_range=fig1.x_range)
         fig2.varea(

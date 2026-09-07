@@ -24,86 +24,39 @@
 
   <script type="application/javascript">
   <![CDATA[
-    ////////////////////////////////////////////////////////////////////////////
-    // Invokers
-
-    function loadURI(aURI)
-    {
-      this.invoke = function loadURI_invoke()
-      {
-        tabBrowser().loadURI(Services.io.newURI(aURI), {
-          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-        });
-      }
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_DOCUMENT_LOAD_COMPLETE, currentTabDocument)
-      ];
-
-      this.finalCheck = function loadURI_finalCheck()
-      {
-        testRelation(browserDocument(), RELATION_EMBEDS,
-                     getAccessible(currentTabDocument()));
-      }
-
-      this.getID = function loadURI_getID()
-      {
-        return "load uri " + aURI;
-      }
-    }
-
-    function addTab(aURI)
-    {
-      this.invoke = function addTab_invoke()
-      {
-        tabBrowser().addTab(aURI, {
-          referrerURI: null,
-          charset: null,
-          postData: null,
-          inBackground: false,
-          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-        });
-      }
-
-      this.eventSeq = [
-        new invokerChecker(EVENT_DOCUMENT_LOAD_COMPLETE, currentTabDocument)
-      ];
-
-      this.finalCheck = function loadURI_finalCheck()
-      {
-        testRelation(browserDocument(), RELATION_EMBEDS,
-                     getAccessible(currentTabDocument()));
-      }
-
-      this.getID = function addTab_getID()
-      {
-        return "load uri '" + aURI + "' in new tab";
-      }
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // Testing
-
-    //gA11yEventDumpToConsole = true; // debug
-
-    var gQueue = null;
-    function doTests()
-    {
+    async function doTests() {
       testRelation(browserDocument(), RELATION_EMBEDS,
                    getAccessible(currentTabDocument()));
 
       enableLogging("docload");
-      gQueue = new eventQueue();
 
-      gQueue.push(new loadURI("about:robots"));
-      gQueue.push(new addTab("about:mozilla"));
+      let loaded = waitForEvent(EVENT_DOCUMENT_LOAD_COMPLETE,
+                                e => e.DOMNode == currentTabDocument());
+      tabBrowser().loadURI(Services.io.newURI("about:robots"), {
+        triggeringPrincipal:
+          Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+      await loaded;
+      testRelation(browserDocument(), RELATION_EMBEDS,
+                   getAccessible(currentTabDocument()));
 
-      gQueue.onFinish = function()
-      {
-        disableLogging();
-        closeBrowserWindow();
-      }
-      gQueue.invoke();
+      loaded = waitForEvent(EVENT_DOCUMENT_LOAD_COMPLETE,
+                            e => e.DOMNode == currentTabDocument());
+      tabBrowser().addTab("about:mozilla", {
+        referrerURI: null,
+        charset: null,
+        postData: null,
+        inBackground: false,
+        triggeringPrincipal:
+          Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+      await loaded;
+      testRelation(browserDocument(), RELATION_EMBEDS,
+                   getAccessible(currentTabDocument()));
+
+      disableLogging();
+      closeBrowserWindow();
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

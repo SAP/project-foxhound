@@ -4,9 +4,14 @@
 
 let knownConfigs = new Map();
 
+/**
+ * Fetches and caches HPKE (Hybrid Public Key Encryption) configuration blobs
+ * from remote URLs.
+ */
 export class HPKEConfigManager {
   /**
    * Decodes a base64url-encoded key string.
+   *
    * @param {string} aBase64Key
    * @returns {Uint8Array}
    */
@@ -65,6 +70,9 @@ export class HPKEConfigManager {
   }
 }
 
+/**
+ * Parent-side JSProcessActor for `HPKEConfigManager`.
+ */
 export class HPKEConfigManagerParent extends JSProcessActorParent {
   receiveMessage(msg) {
     if (msg.name == "getconfig") {

@@ -4,41 +4,62 @@
 
 package org.mozilla.fenix.settings.datachoices
 
-import androidx.compose.foundation.background
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import kotlinx.coroutines.launch
+import mozilla.components.compose.base.LinkText
+import mozilla.components.compose.base.LinkTextState
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.lib.state.ext.observeAsComposableState
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.LinkText
-import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.compose.list.RadioButtonListItem
+import org.mozilla.fenix.compose.list.SwitchListItem
+import org.mozilla.fenix.compose.list.TextListItem
+import org.mozilla.fenix.compose.settings.SettingsSectionHeader
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.settings.settingssearch.PreferenceFileInformation
+import org.mozilla.fenix.settings.settingssearch.SettingsSearchItem
+import org.mozilla.fenix.settings.settingssearch.SettingsSearchProvider
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
+
+private enum class DataChoicesSectionKey {
+    TECHNICAL_DATA,
+    STUDIES,
+    USAGE_DATA,
+    CRASH_REPORTS,
+    CAMPAIGN_MEASUREMENT,
+}
 
 /**
  * Composable function that renders the Data Choices settings screen.
@@ -59,23 +80,28 @@ internal fun DataChoicesScreen(
     val onCrashOptionSelected: (CrashReportOption) -> Unit = { newValue ->
         store.dispatch(ChoiceAction.ReportOptionClicked(newValue))
     }
+    val onScrolledToItem = { store.dispatch(ChoiceAction.ScrolledToItem) }
     val onStudiesClick: () -> Unit = { store.dispatch(ChoiceAction.StudiesClicked) }
     val learnMoreTechnicalData: () -> Unit = { store.dispatch(LearnMore.TelemetryLearnMoreClicked) }
     val learnMoreDailyUsage: () -> Unit = { store.dispatch(LearnMore.UsagePingLearnMoreClicked) }
     val learnMoreCrashReport: () -> Unit = { store.dispatch(LearnMore.CrashLearnMoreClicked) }
     val learnMoreMarketingData: () -> Unit = { store.dispatch(LearnMore.MeasurementDataLearnMoreClicked) }
-    DataChoicesUi(
-        state = state,
-        onStudiesClick = onStudiesClick,
-        onTelemetryToggle = onTelemetryToggle,
-        onUsagePingToggle = onUsagePingToggle,
-        onMarketingDataToggled = onMarketingDataToggled,
-        onCrashOptionSelected = onCrashOptionSelected,
-        learnMoreTechnicalData = learnMoreTechnicalData,
-        learnMoreDailyUsage = learnMoreDailyUsage,
-        learnMoreCrashReport = learnMoreCrashReport,
-        learnMoreMarketingData = learnMoreMarketingData,
-    )
+
+    Surface {
+        DataChoicesUi(
+            state = state,
+            onStudiesClick = onStudiesClick,
+            onTelemetryToggle = onTelemetryToggle,
+            onUsagePingToggle = onUsagePingToggle,
+            onMeasurementDataToggled = onMarketingDataToggled,
+            onCrashOptionSelected = onCrashOptionSelected,
+            onScrolledToItem = onScrolledToItem,
+            learnMoreTechnicalData = learnMoreTechnicalData,
+            learnMoreDailyUsage = learnMoreDailyUsage,
+            learnMoreCrashReport = learnMoreCrashReport,
+            learnMoreMarketingData = learnMoreMarketingData,
+        )
+    }
 }
 
 @Suppress("LongParameterList")
@@ -85,75 +111,99 @@ internal fun DataChoicesUi(
     onStudiesClick: () -> Unit,
     onTelemetryToggle: () -> Unit,
     onUsagePingToggle: () -> Unit,
-    onMarketingDataToggled: () -> Unit,
+    onMeasurementDataToggled: () -> Unit,
     onCrashOptionSelected: (CrashReportOption) -> Unit,
+    onScrolledToItem: () -> Unit,
     learnMoreTechnicalData: () -> Unit,
     learnMoreDailyUsage: () -> Unit,
     learnMoreCrashReport: () -> Unit,
     learnMoreMarketingData: () -> Unit,
 ) {
-    Column(
+    val lazyListState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val items = buildDataChoicesItems(state)
+
+    LaunchedEffect(state.itemToScrollTo) {
+        if (!state.itemToScrollTo.isNullOrBlank()) {
+            val key = DataChoicesSectionKey.valueOf(state.itemToScrollTo)
+            val index = items.indexOf(key)
+            if (index != -1) {
+                coroutineScope.launch {
+                    lazyListState.animateScrollToItem(index)
+                    onScrolledToItem()
+                }
+            }
+        }
+    }
+
+    LazyColumn(
         modifier = Modifier
-            .fillMaxSize()
-            .background(FirefoxTheme.colors.layer1)
-            .verticalScroll(rememberScrollState())
-            .padding(top = 10.dp, bottom = 38.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .fillMaxSize(),
+        state = lazyListState,
     ) {
-        // Technical Data Section
-        TogglePreferenceSection(
-            categoryTitle = stringResource(R.string.technical_data_category),
-            preferenceTitle = stringResource(R.string.preference_usage_data_2),
-            preferenceSummary = stringResource(R.string.preferences_usage_data_description_1),
-            learnMoreText = stringResource(R.string.preference_usage_data_learn_more_2),
-            isToggled = state.telemetryEnabled,
-            onToggleChanged = onTelemetryToggle,
-            onLearnMoreClicked = learnMoreTechnicalData,
-        )
+        items(
+            items = items,
+            key = { it },
+        ) { section ->
+            when (section) {
+                DataChoicesSectionKey.TECHNICAL_DATA -> TogglePreferenceSection(
+                    categoryTitle = stringResource(R.string.technical_data_category),
+                    preferenceTitle = stringResource(R.string.preference_usage_data_2),
+                    preferenceSummary = stringResource(R.string.preferences_usage_data_description_1),
+                    learnMoreText = stringResource(R.string.preference_usage_data_learn_more_2),
+                    isToggled = state.telemetryEnabled,
+                    onToggleChanged = onTelemetryToggle,
+                    onLearnMoreClicked = learnMoreTechnicalData,
+                )
+                DataChoicesSectionKey.STUDIES -> StudiesSection(
+                    studiesEnabled = state.studiesEnabled,
+                    sectionEnabled = state.telemetryEnabled,
+                    onClick = onStudiesClick,
+                )
+                DataChoicesSectionKey.USAGE_DATA -> TogglePreferenceSection(
+                    categoryTitle = stringResource(R.string.usage_data_category),
+                    preferenceTitle = stringResource(R.string.preferences_daily_usage_ping_title),
+                    preferenceSummary = stringResource(R.string.preferences_daily_usage_ping_description),
+                    learnMoreText = stringResource(R.string.preferences_daily_usage_ping_learn_more),
+                    isToggled = state.usagePingEnabled,
+                    onToggleChanged = onUsagePingToggle,
+                    onLearnMoreClicked = learnMoreDailyUsage,
+                )
+                DataChoicesSectionKey.CRASH_REPORTS -> CrashReportsSection(
+                    learnMoreText = stringResource(R.string.preferences_crashes_learn_more),
+                    selectedOption = state.selectedCrashOption,
+                    onOptionSelected = onCrashOptionSelected,
+                    onLearnMoreClicked = learnMoreCrashReport,
+                )
+                DataChoicesSectionKey.CAMPAIGN_MEASUREMENT -> TogglePreferenceSection(
+                    categoryTitle = stringResource(R.string.preferences_marketing_data_title),
+                    preferenceTitle = stringResource(R.string.preferences_marketing_data_2),
+                    preferenceSummary = stringResource(R.string.preferences_marketing_data_description_4),
+                    learnMoreText = stringResource(R.string.preferences_marketing_data_learn_more),
+                    isToggled = state.measurementDataEnabled,
+                    onToggleChanged = onMeasurementDataToggled,
+                    onLearnMoreClicked = learnMoreMarketingData,
+                )
+            }
+            if (section != items.last()) {
+                HorizontalDivider(modifier = Modifier.padding(top = 16.dp, bottom = 24.dp))
+            }
+        }
+    }
+}
 
-        Divider()
-
-        StudiesSection(
-            studiesEnabled = state.studiesEnabled,
-            sectionEnabled = state.telemetryEnabled,
-            onClick = onStudiesClick,
-        )
-
-        Divider()
-
-        // Usage Data Section
-        TogglePreferenceSection(
-            categoryTitle = stringResource(R.string.usage_data_category),
-            preferenceTitle = stringResource(R.string.preferences_daily_usage_ping_title),
-            preferenceSummary = stringResource(R.string.preferences_daily_usage_ping_description),
-            learnMoreText = stringResource(R.string.preferences_daily_usage_ping_learn_more),
-            isToggled = state.usagePingEnabled,
-            onToggleChanged = onUsagePingToggle,
-            onLearnMoreClicked = learnMoreDailyUsage,
-        )
-
-        Divider()
-
-        // Crash reports section
-        CrashReportsSection(
-            learnMoreText = stringResource(R.string.preferences_crashes_learn_more),
-            selectedOption = state.selectedCrashOption,
-            onOptionSelected = onCrashOptionSelected,
-            onLearnMoreClicked = learnMoreCrashReport,
-        )
-
-        Divider()
-
-        // Campaign measurement Section
-        TogglePreferenceSection(
-            categoryTitle = stringResource(R.string.preferences_marketing_data_title),
-            preferenceTitle = stringResource(R.string.preferences_marketing_data_2),
-            preferenceSummary = stringResource(R.string.preferences_marketing_data_description_4),
-            learnMoreText = stringResource(R.string.preferences_marketing_data_learn_more),
-            isToggled = state.measurementDataEnabled,
-            onToggleChanged = onMarketingDataToggled,
-            onLearnMoreClicked = learnMoreMarketingData,
-        )
+@Composable
+private fun buildDataChoicesItems(state: DataChoicesState): List<DataChoicesSectionKey> {
+    return remember(state.showMeasurementDataSection) {
+        buildList {
+            add(DataChoicesSectionKey.TECHNICAL_DATA)
+            add(DataChoicesSectionKey.STUDIES)
+            add(DataChoicesSectionKey.USAGE_DATA)
+            add(DataChoicesSectionKey.CRASH_REPORTS)
+            if (state.showMeasurementDataSection) {
+                add(DataChoicesSectionKey.CAMPAIGN_MEASUREMENT)
+            }
+        }
     }
 }
 
@@ -171,23 +221,22 @@ private fun CrashReportsSection(
     selectedOption: CrashReportOption = CrashReportOption.Ask,
     onOptionSelected: (CrashReportOption) -> Unit,
     onLearnMoreClicked: () -> Unit,
-    ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxWidth(),
-    ) {
-        TitleText(
+) {
+    Column {
+        SettingsSectionHeader(
             text = stringResource(R.string.crash_reports_data_category),
-            modifier = Modifier
-                .padding(horizontal = 16.dp),
-            )
+            modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic200),
+        )
 
-        SectionBodyText(
-            stringResource(R.string.crash_reporting_description),
-            Modifier
-                .padding(horizontal = 16.dp),
-            )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = stringResource(R.string.crash_reporting_description),
+            modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic200),
+            style = FirefoxTheme.typography.body2,
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Column(
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -198,38 +247,20 @@ private fun CrashReportsSection(
                     selected = selectedOption == crashReportOption,
                     modifier = Modifier
                         .semantics {
-                            testTag = "data.collection.$crashReportOption.radio.button"
+                            testTag = "data.collection.$crashReportOption.option"
                             testTagsAsResourceId = true
                         },
                     maxLabelLines = 1,
-                    description = null,
                     maxDescriptionLines = 1,
                     onClick = { onOptionSelected(crashReportOption) },
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         LearnMoreLink(onLearnMoreClicked, learnMoreText)
     }
-}
-
-@Composable
-private fun TitleText(text: String, modifier: Modifier) {
-    Text(
-        text = text,
-        style = FirefoxTheme.typography.body2,
-        color = FirefoxTheme.colors.textAccent,
-        modifier = modifier,
-    )
-}
-
-@Composable
-private fun SectionBodyText(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text = text,
-        style = FirefoxTheme.typography.body2,
-        color = FirefoxTheme.colors.textSecondary,
-        modifier = modifier,
-    )
 }
 
 /**
@@ -255,59 +286,37 @@ private fun TogglePreferenceSection(
     onLearnMoreClicked: () -> Unit,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(FirefoxTheme.colors.layer1),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        TitleText(categoryTitle, Modifier.padding(horizontal = 16.dp))
+        SettingsSectionHeader(
+            text = categoryTitle,
+            modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic200),
+        )
 
-        // Section Body
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(
-                    onClick = { onToggleChanged() },
-                )
-                .padding(horizontal = 16.dp),
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f),
-            ) {
-                Text(
-                    text = preferenceTitle,
-                    color = FirefoxTheme.colors.textPrimary,
-                    style = FirefoxTheme.typography.subtitle1,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                SectionBodyText(preferenceSummary)
-            }
+        Spacer(modifier = Modifier.height(16.dp))
 
-            Switch(
-                checked = isToggled,
-                onCheckedChange = { onToggleChanged() },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = FirefoxTheme.colors.formOn,
-                    checkedTrackColor = FirefoxTheme.colors.formSurface,
-                    uncheckedThumbColor = FirefoxTheme.colors.formOff,
-                    uncheckedTrackColor = FirefoxTheme.colors.formSurface,
-                ),
-                modifier = Modifier
-                    .semantics {
-                        testTag = "data.collection.$preferenceTitle.toggle"
-                        testTagsAsResourceId = true
-                    },
-            )
-        }
+        SwitchListItem(
+            label = preferenceTitle,
+            checked = isToggled,
+            modifier = Modifier.semantics {
+                testTag = "data.collection.$preferenceTitle.toggle"
+                testTagsAsResourceId = true
+            },
+            maxLabelLines = Int.MAX_VALUE,
+            description = preferenceSummary,
+            maxDescriptionLines = Int.MAX_VALUE,
+            showSwitchAfter = true,
+            onClick = { onToggleChanged() },
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         LearnMoreLink(onLearnMoreClicked, learnMoreText)
     }
 }
 
 /**
- * Composable section that displays the user’s participation status in studies or experiments.
+ * Composable section that displays the user's participation status in studies or experiments.
  *
  * @param studiesEnabled Whether the user is currently enrolled in studies.
  *                       Affects the summary text shown in the section.
@@ -316,6 +325,7 @@ private fun TogglePreferenceSection(
  * @param onClick Callback invoked when the section is clicked (if enabled).
  */
 @Composable
+@Suppress("CognitiveComplexMethod")
 private fun StudiesSection(
     studiesEnabled: Boolean = true,
     sectionEnabled: Boolean = true,
@@ -323,36 +333,19 @@ private fun StudiesSection(
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(FirefoxTheme.colors.layer1),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        TitleText(
-            stringResource(R.string.studies_data_category),
-            Modifier.padding(horizontal = 16.dp),
+        SettingsSectionHeader(
+            text = stringResource(R.string.studies_data_category),
+            modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic200),
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (sectionEnabled) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(horizontal = 16.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.studies_title),
-                style = FirefoxTheme.typography.subtitle1,
-                color = if (sectionEnabled) { FirefoxTheme.colors.textPrimary } else {
-                    FirefoxTheme.colors.textDisabled
-                },
-            )
-            Text(
-                text = stringResource(if (studiesEnabled) R.string.studies_on else R.string.studies_off),
-                style = FirefoxTheme.typography.body2,
-                color = if (sectionEnabled) { FirefoxTheme.colors.textSecondary } else {
-                    FirefoxTheme.colors.textDisabled
-                },
-            )
-        }
+        TextListItem(
+            label = stringResource(R.string.studies_title_2),
+            description = stringResource(if (studiesEnabled) R.string.studies_on else R.string.studies_off),
+            enabled = sectionEnabled,
+            onClick = onClick,
+        )
     }
 }
 
@@ -371,36 +364,136 @@ private fun LearnMoreLink(onLearnMoreClicked: () -> Unit, learnMoreText: String)
             onLearnMoreClicked()
         },
     )
+
     Column(
         modifier = Modifier
             .clickable(onClick = { onLearnMoreClicked() })
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(top = 16.dp),
+            .padding(horizontal = FirefoxTheme.layout.space.dynamic200),
     ) {
         LinkText(
             text = learnMoreText,
             linkTextStates = listOf(learnMoreState),
-            style = FirefoxTheme.typography.subtitle1.copy(
-                color = FirefoxTheme.colors.textPrimary,
-                textDecoration = TextDecoration.Underline,
-            ),
-            linkTextColor = FirefoxTheme.colors.textPrimary,
             linkTextDecoration = TextDecoration.Underline,
-            textAlign = TextAlign.Center,
-            shouldApplyAccessibleSize = false,
         )
     }
 }
 
-@FlexibleWindowLightDarkPreview
+@FlexibleWindowPreview
 @Composable
-private fun DataChoicesPreview() {
-    FirefoxTheme {
+private fun DataChoicesPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         DataChoicesScreen(
             store = DataChoicesStore(
                 initialState = DataChoicesState(),
             ),
         )
     }
+}
+
+@Preview
+@Composable
+private fun DataChoicesTelemetryDisabledPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        DataChoicesScreen(
+            store = DataChoicesStore(
+                initialState = DataChoicesState(
+                    studiesEnabled = false,
+                    telemetryEnabled = false,
+                ),
+            ),
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun DataChoicesMarketingSectionDisabledPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        DataChoicesScreen(
+            store = DataChoicesStore(
+                initialState = DataChoicesState(
+                    studiesEnabled = false,
+                    telemetryEnabled = false,
+                    showMeasurementDataSection = false,
+                ),
+            ),
+        )
+    }
+}
+
+/**
+ * Provides [SettingsSearchItem]s for the Data Choices settings screen for use in settings search.
+ */
+object DataChoicesSearchProvider : SettingsSearchProvider {
+    private val preferenceFileInformation = PreferenceFileInformation.DataChoicesPreferences
+
+    override fun getSearchItems(context: Context): List<SettingsSearchItem> {
+        return buildList {
+            add(
+                buildSearchItem(
+                    context = context,
+                    titleRes = R.string.preference_usage_data_2,
+                    summaryRes = R.string.preferences_usage_data_description_1,
+                    key = DataChoicesSectionKey.TECHNICAL_DATA,
+                ),
+            )
+            add(
+                buildSearchItem(
+                    context = context,
+                    titleRes = R.string.studies_title_2,
+                    summaryRes = null,
+                    key = DataChoicesSectionKey.STUDIES,
+                ),
+            )
+            add(
+                buildSearchItem(
+                    context = context,
+                    titleRes = R.string.preferences_daily_usage_ping_title,
+                    summaryRes = R.string.preferences_daily_usage_ping_description,
+                    key = DataChoicesSectionKey.USAGE_DATA,
+                ),
+            )
+            add(
+                buildSearchItem(
+                    context = context,
+                    titleRes = R.string.crash_reports_data_category,
+                    summaryRes = R.string.crash_reporting_description,
+                    key = DataChoicesSectionKey.CRASH_REPORTS,
+                ),
+            )
+            if (context.components.settings.hasMadeMarketingTelemetrySelection) {
+                add(
+                    buildSearchItem(
+                        context = context,
+                        titleRes = R.string.preferences_marketing_data_2,
+                        summaryRes = R.string.preferences_marketing_data_description_4,
+                        key = DataChoicesSectionKey.CAMPAIGN_MEASUREMENT,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun buildSearchItem(
+        context: Context,
+        @StringRes titleRes: Int,
+        @StringRes summaryRes: Int?,
+        key: DataChoicesSectionKey,
+    ) = SettingsSearchItem(
+        title = context.getString(titleRes),
+        summary = when (summaryRes) {
+            null -> ""
+            else -> context.getString(summaryRes)
+        },
+        preferenceKey = key.name,
+        categoryHeader = context.getString(preferenceFileInformation.categoryHeaderResourceId),
+        preferenceFileInformation = preferenceFileInformation,
+    )
 }

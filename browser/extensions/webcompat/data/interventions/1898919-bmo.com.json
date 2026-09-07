@@ -1,0 +1,15 @@
+{
+  "label": "bmo.com",
+  "bugs": {
+    "1898919": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.bmo.com/main/personal/*/getting-started/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

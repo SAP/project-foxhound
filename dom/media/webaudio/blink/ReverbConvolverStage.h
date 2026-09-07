@@ -30,11 +30,10 @@
 #define ReverbConvolverStage_h
 
 #include "FFTConvolver.h"
-
-#include "nsTArray.h"
 #include "mozilla/FFTBlock.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
 
 namespace WebCore {
 

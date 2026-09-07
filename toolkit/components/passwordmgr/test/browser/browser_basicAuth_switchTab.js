@@ -4,6 +4,12 @@
 
 add_task(async function test_auth_switchtab() {
   let tab = BrowserTestUtils.addTab(gBrowser);
+  // initial about:blank won't be canceled by subsequent load. So ensure it is
+  // finished. Otherwise, locationchange notification from content can cancel
+  // the auth dialog opened in the parent
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   isnot(tab, gBrowser.selectedTab, "New tab shouldn't be selected");
 
   let authPromptShown = PromptTestUtils.waitForPrompt(tab.linkedBrowser, {

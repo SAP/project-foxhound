@@ -77,6 +77,11 @@ pub fn pass(root: &mut Root) -> Result<()> {
                 ffi_func_clone: int.ffi_func_clone.clone(),
                 ffi_func_free: int.ffi_func_free.clone(),
                 trait_interface_info: int.vtable.is_some().then(|| PointerTypeTraitInterfaceInfo {
+                    clone_fn: format!(
+                        "callback_clone_{}_{}",
+                        module_name.to_snake_case(),
+                        int.name.to_snake_case(),
+                    ),
                     free_fn: format!(
                         "callback_free_{}_{}",
                         module_name.to_snake_case(),

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,22 +5,22 @@
 #ifndef GMPTimerChild_h_
 #define GMPTimerChild_h_
 
-#include "mozilla/gmp/PGMPTimerChild.h"
-#include "mozilla/Monitor.h"
-#include "nsTHashMap.h"
-#include "nsHashKeys.h"
 #include "gmp-errors.h"
 #include "gmp-platform.h"
+#include "mozilla/Monitor.h"
+#include "mozilla/gmp/PGMPTimerChild.h"
+#include "nsHashKeys.h"
+#include "nsTHashMap.h"
 
 namespace mozilla::gmp {
 
 class GMPChild;
 
-class GMPTimerChild : public PGMPTimerChild {
+class GMPTimerChild final : public PGMPTimerChild {
   friend class PGMPTimerChild;
 
  public:
-  NS_INLINE_DECL_REFCOUNTING(GMPTimerChild)
+  NS_INLINE_DECL_REFCOUNTING(GMPTimerChild, final)
 
   explicit GMPTimerChild(GMPChild* aPlugin);
 

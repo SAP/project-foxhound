@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,7 @@ class SurfaceDescriptor;
 // Compositor related code path in this class. Furthermore, the RendererOGL runs
 // at RenderThead instead of Compositor thread. This class is also creating the
 // corresponding RenderXXXTextureHost used by RendererOGL at RenderThread.
-class WebRenderTextureHost : public TextureHost {
+class WebRenderTextureHost final : public TextureHost {
  public:
   WebRenderTextureHost(TextureFlags aFlags, TextureHost* aTexture,
                        const wr::ExternalImageId& aExternalImageId);
@@ -49,6 +47,9 @@ class WebRenderTextureHost : public TextureHost {
   gfx::ColorDepth GetColorDepth() const override;
   gfx::YUVColorSpace GetYUVColorSpace() const override;
   gfx::ColorRange GetColorRange() const override;
+  gfx::TransferFunction GetTransferFunction() const override;
+
+  bool NeedsYFlip() const override;
 
   gfx::IntSize GetSize() const override;
 
@@ -82,8 +83,6 @@ class WebRenderTextureHost : public TextureHost {
 
   wr::ExternalImageId GetExternalImageKey();
 
-  int32_t GetRGBStride();
-
   bool NeedsDeferredDeletion() const override;
 
   uint32_t NumSubTextures() override;
@@ -101,11 +100,7 @@ class WebRenderTextureHost : public TextureHost {
 
   bool SupportsExternalCompositing(WebRenderBackend aBackend) override;
 
-  void SetAcquireFence(UniqueFileHandle&& aFenceFd) override;
-
-  void SetReleaseFence(UniqueFileHandle&& aFenceFd) override;
-
-  UniqueFileHandle GetAndResetReleaseFence() override;
+  void SetReadFence(Fence* aReadFence) override;
 
   AndroidHardwareBuffer* GetAndroidHardwareBuffer() const override;
 

@@ -12,10 +12,12 @@
 #import <OCMock/OCMock.h>
 #import <XCTest/XCTest.h>
 
+#include "rtc_base/thread.h"
+#include "test/gtest.h"
+
 #include <vector>
 
 #include "rtc_base/event.h"
-#include "rtc_base/gunit.h"
 
 #import "components/audio/RTCAudioSession+Private.h"
 
@@ -25,8 +27,9 @@
 @interface RTC_OBJC_TYPE (RTCAudioSession)
 (UnitTesting)
 
-    @property(nonatomic, readonly) std::vector<
-        __weak id<RTC_OBJC_TYPE(RTCAudioSessionDelegate)> > delegates;
+    @property(nonatomic, readonly)
+        std::vector<__weak id<RTC_OBJC_TYPE(RTCAudioSessionDelegate)> >
+            delegates;
 
 - (instancetype)initWithAudioSession:(id)audioSession;
 
@@ -299,12 +302,12 @@
 
   RTC_OBJC_TYPE(RTCAudioSession) *audioSession = mockAudioSession;
 
-  std::unique_ptr<rtc::Thread> thread = rtc::Thread::Create();
+  std::unique_ptr<webrtc::Thread> thread = webrtc::Thread::Create();
   EXPECT_TRUE(thread);
   EXPECT_TRUE(thread->Start());
 
-  rtc::Event waitLock;
-  rtc::Event waitCleanup;
+  webrtc::Event waitLock;
+  webrtc::Event waitCleanup;
   constexpr webrtc::TimeDelta timeout = webrtc::TimeDelta::Seconds(5);
   thread->PostTask([audioSession, &waitLock, &waitCleanup, timeout] {
     [audioSession lockForConfiguration];

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #ifndef mozilla_dom_TCPSocketParent_h
 #define mozilla_dom_TCPSocketParent_h
 
+#include "js/TypeDecls.h"
 #include "mozilla/dom/TCPSocketBinding.h"
 #include "mozilla/net/PTCPSocketParent.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
-#include "js/TypeDecls.h"
+#include "nsCycleCollectionParticipant.h"
 
 #define TCPSOCKETPARENT_CID \
   {0x4e7246c6, 0xa8b3, 0x426d, {0x9c, 0x17, 0x76, 0xda, 0xb1, 0xe1, 0xe1, 0x4a}}

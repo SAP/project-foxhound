@@ -21,7 +21,7 @@ export var TelemetryArchive = {
    * Note that scanning the archived pings on disk is delayed on startup,
    * use promizeInitialized() to access this after scanning.
    *
-   * @return {Promise<sequence<Object>>}
+   * @return {Promise<sequence<object>>}
    *                    A list of the archived ping info in the form:
    *                    { id: <string>,
    *                      timestampCreated: <number>,
@@ -55,7 +55,8 @@ export var TelemetryArchive = {
 /**
  * Checks if pings can be archived. Some products (e.g. Thunderbird) might not want
  * to do that.
- * @return {Boolean} True if pings should be archived, false otherwise.
+ *
+ * @return {boolean} True if pings should be archived, false otherwise.
  */
 function shouldArchivePings() {
   return Services.prefs.getBoolPref(

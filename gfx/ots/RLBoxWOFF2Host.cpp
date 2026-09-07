@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,15 +29,17 @@ tainted_woff2<BrotliDecoderResult> RLBoxBrotliDecoderDecompressCallback(
 
   size_t encodedSize =
       aEncodedSize.unverified_safe_because("Any size within sandbox is ok.");
-  const uint8_t* encodedBuffer = reinterpret_cast<const uint8_t*>(
-      aEncodedBuffer.unverified_safe_pointer_because(
-          encodedSize, "Pointer fits within sandbox"));
+  const uint8_t* encodedBuffer =
+      rlbox::sandbox_reinterpret_cast<const uint8_t*>(aEncodedBuffer)
+          .unverified_safe_pointer_because(encodedSize,
+                                           "Pointer fits within sandbox");
 
   size_t decodedSize =
       (*aDecodedSize).unverified_safe_because("Any size within sandbox is ok.");
   uint8_t* decodedBuffer =
-      reinterpret_cast<uint8_t*>(aDecodedBuffer.unverified_safe_pointer_because(
-          decodedSize, "Pointer fits within sandbox"));
+      rlbox::sandbox_reinterpret_cast<uint8_t*>(aDecodedBuffer)
+          .unverified_safe_pointer_because(decodedSize,
+                                           "Pointer fits within sandbox");
 
   BrotliDecoderResult res = BrotliDecoderDecompress(
       encodedSize, encodedBuffer, &decodedSize, decodedBuffer);

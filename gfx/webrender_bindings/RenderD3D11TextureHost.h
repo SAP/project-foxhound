@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 #include "RenderTextureHostSWGL.h"
 
 struct ID3D11Texture2D;
+struct IDCompositionTexture;
 struct IDXGIKeyedMutex;
 
 namespace mozilla {
@@ -31,8 +30,12 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
       const Maybe<layers::GpuProcessTextureId>& aGpuProcessTextureId,
       const uint32_t aArrayIndex, const gfx::SurfaceFormat aFormat,
       const gfx::ColorSpace2 aColorSpace, const gfx::ColorRange aColorRange,
-      const gfx::IntSize aSize, const bool aHasKeyedMutex,
+      const gfx::TransferFunction aTransferFunction,
+      const Maybe<gfx::HDRMetadata>& aHDRMetadata, const gfx::IntSize aSize,
+      const bool aHasKeyedMutex,
       const Maybe<layers::CompositeProcessFencesHolderId>& aFencesHolderId);
+
+  static bool UseDCompositionTextureOverlay(gfx::SurfaceFormat aFormat);
 
   wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL) override;
   void Unlock() override;
@@ -50,6 +53,8 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
   ID3D11Texture2D* GetD3D11Texture2DWithGL();
   ID3D11Texture2D* GetD3D11Texture2D() { return mTexture; }
 
+  IDCompositionTexture* GetDCompositionTexture();
+
   // RenderTextureHostSWGL
   gfx::SurfaceFormat GetFormat() const override { return mFormat; }
   gfx::ColorDepth GetColorDepth() const override {
@@ -66,8 +71,13 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
                 PlaneInfo& aPlaneInfo) override;
   void UnmapPlanes() override;
   gfx::YUVRangedColorSpace GetYUVColorSpace() const override {
-    return ToYUVRangedColorSpace(ToYUVColorSpace(mColorSpace), mColorRange);
+    return ToYUVRangedColorSpace(ToYUVColorSpace(mColorSpace), mColorRange,
+                                 mTransferFunction);
   }
+  gfx::TransferFunction GetTransferFunction() const override {
+    return mTransferFunction;
+  }
+  const Maybe<gfx::HDRMetadata>& GetHDRMetadata() const { return mHDRMetadata; }
 
   bool EnsureD3D11Texture2D(ID3D11Device* aDevice);
   bool LockInternal();
@@ -106,6 +116,7 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
   RefPtr<ID3D11Texture2D> mTexture;
   const uint32_t mArrayIndex;
   RefPtr<IDXGIKeyedMutex> mKeyedMutex;
+  RefPtr<IDCompositionTexture> mDCompositionTexture;
 
   // Temporary state between MapPlane and UnmapPlanes.
   RefPtr<ID3D11DeviceContext> mDeviceContext;
@@ -125,6 +136,8 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
   const gfx::SurfaceFormat mFormat;
   const gfx::ColorSpace2 mColorSpace;
   const gfx::ColorRange mColorRange;
+  const gfx::TransferFunction mTransferFunction;
+  const Maybe<gfx::HDRMetadata> mHDRMetadata;
   const gfx::IntSize mSize;
   const bool mHasKeyedMutex;
   const Maybe<layers::CompositeProcessFencesHolderId> mFencesHolderId;
@@ -136,10 +149,11 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
 class RenderDXGIYCbCrTextureHost final : public RenderTextureHostSWGL {
  public:
   explicit RenderDXGIYCbCrTextureHost(
-      RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
+      const RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
       const gfx::YUVColorSpace aYUVColorSpace,
       const gfx::ColorDepth aColorDepth, const gfx::ColorRange aColorRange,
-      const gfx::IntSize aSizeY, const gfx::IntSize aSizeCbCr,
+      const gfx::TransferFunction aTransferFunction, const gfx::IntSize aSizeY,
+      const gfx::IntSize aSizeCbCr,
       const layers::CompositeProcessFencesHolderId aFencesHolderId);
 
   RenderDXGIYCbCrTextureHost* AsRenderDXGIYCbCrTextureHost() override {
@@ -167,8 +181,12 @@ class RenderDXGIYCbCrTextureHost final : public RenderTextureHostSWGL {
                 PlaneInfo& aPlaneInfo) override;
   void UnmapPlanes() override;
   gfx::YUVRangedColorSpace GetYUVColorSpace() const override {
-    return ToYUVRangedColorSpace(mYUVColorSpace, GetColorRange());
+    return ToYUVRangedColorSpace(mYUVColorSpace, GetColorRange(),
+                                 mTransferFunction);
   }
+  gfx::TransferFunction GetTransferFunction() const override {
+    return mTransferFunction;
+  };
 
   bool EnsureD3D11Texture2D(ID3D11Device* aDevice);
   bool LockInternal();
@@ -215,6 +233,7 @@ class RenderDXGIYCbCrTextureHost final : public RenderTextureHostSWGL {
   const gfx::YUVColorSpace mYUVColorSpace;
   const gfx::ColorDepth mColorDepth;
   const gfx::ColorRange mColorRange;
+  const gfx::TransferFunction mTransferFunction;
   const gfx::IntSize mSizeY;
   const gfx::IntSize mSizeCbCr;
   const layers::CompositeProcessFencesHolderId mFencesHolderId;

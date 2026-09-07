@@ -3,12 +3,6 @@
 
 "use strict";
 
-/* import-globals-from helper-telemetry.js */
-Services.scriptloader.loadSubScript(
-  CHROME_URL_ROOT + "helper-telemetry.js",
-  this
-);
-
 const REMOTE_RUNTIME_ID = "remote-runtime";
 const REMOTE_RUNTIME = "Remote Runtime";
 const REMOTE_DEVICE = "Remote Device";
@@ -39,9 +33,8 @@ add_task(async function () {
 
   mocks.emitUSBUpdate();
   await connectToRuntime(REMOTE_DEVICE, document);
-  const evts = readAboutDebuggingEvents().filter(
-    e => e.method === "runtime_connected"
-  );
+  const evts = Glean.devtoolsMain.runtimeConnectedAboutdebugging.testGetValue();
+  Services.fog.testResetFOG();
 
   is(
     evts.length,
@@ -54,7 +47,7 @@ add_task(async function () {
     runtime_name,
     runtime_os,
     runtime_version,
-  } = evts[0].extras;
+  } = evts[0].extra;
   is(connection_type, "usb", "Expected value for `connection_type` extra");
   is(device_name, REMOTE_DEVICE, "Expected value for `device_name` extra");
   is(runtime_name, REMOTE_RUNTIME, "Expected value for `runtime_name` extra");

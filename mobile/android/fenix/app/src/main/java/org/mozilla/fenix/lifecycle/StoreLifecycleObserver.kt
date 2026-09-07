@@ -19,6 +19,11 @@ class StoreLifecycleObserver(
     private val appStore: AppStore,
     private val browserStore: BrowserStore,
 ) : DefaultLifecycleObserver {
+    override fun onStart(owner: LifecycleOwner) {
+        super.onStart(owner)
+        appStore.dispatch(AppAction.AppLifecycleAction.StartAction)
+    }
+
     override fun onPause(owner: LifecycleOwner) {
         super.onPause(owner)
         appStore.dispatch(AppAction.AppLifecycleAction.PauseAction)

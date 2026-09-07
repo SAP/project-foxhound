@@ -1,10 +1,9 @@
-//* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Classifier_h__
-#define Classifier_h__
+#ifndef Classifier_h_
+#define Classifier_h_
 
 #include "Entries.h"
 #include "HashStore.h"
@@ -109,6 +108,8 @@ class Classifier {
                                            const nsACString& aTableName,
                                            const nsACString& aProvider,
                                            nsIFile** aPrivateStoreDirectory);
+
+  static bool IsRealTimeModeEnabled();
 
   // Swap in in-memory and on-disk database and remove all
   // update intermediaries.

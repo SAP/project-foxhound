@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,42 +12,39 @@
 #include <string>
 #include <vector>
 
-#include "sigslot.h"
-
 #include "logging.h"
-#include "ssl.h"
-
 #include "mozilla/DataMutex.h"
 #include "mozilla/Preferences.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
+#include "sigslot.h"
+#include "ssl.h"
 
-extern "C" {
+// clang-format off
 #include "r_types.h"
 #include "async_wait.h"
 #include "async_timer.h"
 #include "r_data.h"
 #include "util.h"
 #include "r_time.h"
-}
+// clang-format on
 
+#include "gtest_ringbuffer_dumper.h"
 #include "ice_ctx.h"
-#include "ice_peer_ctx.h"
 #include "ice_media_stream.h"
-
+#include "ice_peer_ctx.h"
+#include "mozilla/net/DNS.h"
+#include "nr_socket_prsock.h"
 #include "nricectx.h"
 #include "nricemediastream.h"
-#include "nriceresolverfake.h"
 #include "nriceresolver.h"
+#include "nriceresolverfake.h"
 #include "nrinterfaceprioritizer.h"
-#include "gtest_ringbuffer_dumper.h"
+#include "nsISocketFilter.h"
 #include "rlogconnector.h"
 #include "runnable_utils.h"
 #include "stunserver.h"
-#include "nr_socket_prsock.h"
 #include "test_nr_socket.h"
-#include "nsISocketFilter.h"
-#include "mozilla/net/DNS.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
@@ -459,21 +454,19 @@ class IceTestPeer : public sigslot::has_slots<> {
   }
 
   void SetStunServer(const std::string addr, uint16_t port,
-                     const char* transport = kNrIceTransportUdp) {
+                     IceTransport transport = IceTransport::Udp) {
     if (addr.empty()) {
       // Happens when MOZ_DISABLE_NONLOCAL_CONNECTIONS is set
       return;
     }
 
-    std::vector<NrIceStunServer> stun_servers;
-    UniquePtr<NrIceStunServer> server(
-        NrIceStunServer::Create(addr, port, transport));
-    stun_servers.push_back(*server);
-    SetStunServers(stun_servers);
+    nsTArray<ParsedIceServer> servers;
+    servers.AppendElement(MakeStunEntry(addr, port, transport));
+    SetIceServers(servers);
   }
 
-  void SetStunServers(const std::vector<NrIceStunServer>& servers) {
-    ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetStunServers(servers)));
+  void SetIceServers(const nsTArray<ParsedIceServer>& servers) {
+    ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetIceServers(servers, false)));
   }
 
   void UseTestStunServer() {
@@ -483,24 +476,15 @@ class IceTestPeer : public sigslot::has_slots<> {
 
   void SetTurnServer(const std::string addr, uint16_t port,
                      const std::string username, const std::string password,
-                     const char* transport) {
-    std::vector<unsigned char> password_vec(password.begin(), password.end());
-    SetTurnServer(addr, port, username, password_vec, transport);
+                     IceTransport transport) {
+    nsTArray<ParsedIceServer> servers;
+    servers.AppendElement(
+        MakeTurnEntry(addr, port, username, password, transport));
+    ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetIceServers(servers, false)));
   }
 
-  void SetTurnServer(const std::string addr, uint16_t port,
-                     const std::string username,
-                     const std::vector<unsigned char> password,
-                     const char* transport) {
-    std::vector<NrIceTurnServer> turn_servers;
-    UniquePtr<NrIceTurnServer> server(
-        NrIceTurnServer::Create(addr, port, username, password, transport));
-    turn_servers.push_back(*server);
-    ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetTurnServers(turn_servers)));
-  }
-
-  void SetTurnServers(const std::vector<NrIceTurnServer> servers) {
-    ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetTurnServers(servers)));
+  void SetTurnServers(const nsTArray<ParsedIceServer>& servers) {
+    ASSERT_TRUE(NS_SUCCEEDED(ice_ctx_->SetIceServers(servers, false)));
   }
 
   void SetFakeResolver(const std::string& ip, const std::string& fqdn) {
@@ -693,7 +677,7 @@ class IceTestPeer : public sigslot::has_slots<> {
   bool gathering_complete() {
     auto lock = mGatheringStates.Lock();
     for (const auto& [id, state] : lock.ref()) {
-      Unused << id;
+      (void)id;
       if (state != NrIceMediaStream::ICE_STREAM_GATHER_COMPLETE) {
         return false;
       }
@@ -1505,8 +1489,8 @@ class WebRtcIceGatherTest : public StunTest {
 
   void AddStunServerWithResponse(const std::string& fake_addr,
                                  uint16_t fake_port, const std::string& fqdn,
-                                 const std::string& proto,
-                                 std::vector<NrIceStunServer>* stun_servers) {
+                                 IceTransport transport,
+                                 nsTArray<ParsedIceServer>* stun_servers) {
     int family;
     if (fake_addr.find(':') != std::string::npos) {
       family = AF_INET6;
@@ -1516,12 +1500,12 @@ class WebRtcIceGatherTest : public StunTest {
 
     std::string stun_addr;
     uint16_t stun_port;
-    if (proto == kNrIceTransportUdp) {
+    if (transport == IceTransport::Udp) {
       TestStunServer::GetInstance(family)->SetResponseAddr(fake_addr,
                                                            fake_port);
       stun_addr = TestStunServer::GetInstance(family)->addr();
       stun_port = TestStunServer::GetInstance(family)->port();
-    } else if (proto == kNrIceTransportTcp) {
+    } else if (transport == IceTransport::Tcp) {
       TestStunTcpServer::GetInstance(family)->SetResponseAddr(fake_addr,
                                                               fake_port);
       stun_addr = TestStunTcpServer::GetInstance(family)->addr();
@@ -1535,30 +1519,27 @@ class WebRtcIceGatherTest : public StunTest {
       stun_addr = fqdn;
     }
 
-    stun_servers->push_back(
-        *NrIceStunServer::Create(stun_addr, stun_port, proto.c_str()));
-
-    if (family == AF_INET6 && !fqdn.empty()) {
-      stun_servers->back().SetUseIPv6IfFqdn();
-    }
+    stun_servers->AppendElement(MakeStunEntry(stun_addr, stun_port, transport));
   }
 
   void UseFakeStunUdpServerWithResponse(
       const std::string& fake_addr, uint16_t fake_port,
       const std::string& fqdn = std::string()) {
     EnsurePeer();
-    std::vector<NrIceStunServer> stun_servers;
-    AddStunServerWithResponse(fake_addr, fake_port, fqdn, "udp", &stun_servers);
-    peer_->SetStunServers(stun_servers);
+    nsTArray<ParsedIceServer> stun_servers;
+    AddStunServerWithResponse(fake_addr, fake_port, fqdn, IceTransport::Udp,
+                              &stun_servers);
+    peer_->SetIceServers(stun_servers);
   }
 
   void UseFakeStunTcpServerWithResponse(
       const std::string& fake_addr, uint16_t fake_port,
       const std::string& fqdn = std::string()) {
     EnsurePeer();
-    std::vector<NrIceStunServer> stun_servers;
-    AddStunServerWithResponse(fake_addr, fake_port, fqdn, "tcp", &stun_servers);
-    peer_->SetStunServers(stun_servers);
+    nsTArray<ParsedIceServer> stun_servers;
+    AddStunServerWithResponse(fake_addr, fake_port, fqdn, IceTransport::Tcp,
+                              &stun_servers);
+    peer_->SetIceServers(stun_servers);
   }
 
   void UseFakeStunUdpTcpServersWithResponse(const std::string& fake_udp_addr,
@@ -1566,15 +1547,15 @@ class WebRtcIceGatherTest : public StunTest {
                                             const std::string& fake_tcp_addr,
                                             uint16_t fake_tcp_port) {
     EnsurePeer();
-    std::vector<NrIceStunServer> stun_servers;
+    nsTArray<ParsedIceServer> stun_servers;
     AddStunServerWithResponse(fake_udp_addr, fake_udp_port,
                               "",  // no fqdn
-                              "udp", &stun_servers);
+                              IceTransport::Udp, &stun_servers);
     AddStunServerWithResponse(fake_tcp_addr, fake_tcp_port,
                               "",  // no fqdn
-                              "tcp", &stun_servers);
+                              IceTransport::Tcp, &stun_servers);
 
-    peer_->SetStunServers(stun_servers);
+    peer_->SetIceServers(stun_servers);
   }
 
   void UseTestStunServer() {
@@ -1650,13 +1631,10 @@ class WebRtcIceConnectTest : public StunTest {
   }
 
   void Init(bool setup_stun_servers = true,
-            NrIceCtx::Policy ice_policy = NrIceCtx::ICE_POLICY_ALL) {
+            NrIceCtx::Config config = NrIceCtx::Config()) {
     if (initted_) {
       return;
     }
-
-    NrIceCtx::Config config;
-    config.mPolicy = ice_policy;
 
     p1_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
     p2_ = MakeUnique<IceTestPeer>("P2", test_utils_, false, config);
@@ -1685,12 +1663,10 @@ class WebRtcIceConnectTest : public StunTest {
         InitTestStunServer();
         peer->UseTestStunServer();
       } else {
-        std::vector<NrIceStunServer> stun_servers;
-
-        stun_servers.push_back(*NrIceStunServer::Create(
-            stun_server_address_, kDefaultStunServerPort, kNrIceTransportUdp));
-
-        peer->SetStunServers(stun_servers);
+        nsTArray<ParsedIceServer> stun_servers;
+        stun_servers.AppendElement(MakeStunEntry(
+            stun_server_address_, kDefaultStunServerPort, IceTransport::Udp));
+        peer->SetIceServers(stun_servers);
       }
     }
   }
@@ -1775,12 +1751,12 @@ class WebRtcIceConnectTest : public StunTest {
 
   void SetTurnServer(const std::string addr, uint16_t port,
                      const std::string username, const std::string password,
-                     const char* transport = kNrIceTransportUdp) {
+                     IceTransport transport = IceTransport::Udp) {
     p1_->SetTurnServer(addr, port, username, password, transport);
     p2_->SetTurnServer(addr, port, username, password, transport);
   }
 
-  void SetTurnServers(const std::vector<NrIceTurnServer>& servers) {
+  void SetTurnServers(const nsTArray<ParsedIceServer>& servers) {
     p1_->SetTurnServers(servers);
     p2_->SetTurnServers(servers);
   }
@@ -2120,9 +2096,9 @@ TEST_F(WebRtcIceGatherTest, TestGatherFakeStunServerHostnameNoResolver) {
     return;
   }
 
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
-  NrIceCtx::InitializeGlobals(config);
+  NrIceCtx::GlobalConfig globalConfig;
+  globalConfig.mTcpEnabled = false;
+  NrIceCtx::InitializeGlobals(globalConfig);
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort);
   peer_->AddStream(1);
@@ -2141,7 +2117,7 @@ TEST_F(WebRtcIceGatherTest,
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort,
-                       kNrIceTransportTcp);
+                       IceTransport::Tcp);
   peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " TCP "));
@@ -2248,7 +2224,7 @@ TEST_F(WebRtcIceGatherTest, DISABLED_TestGatherDNSStunServerIpAddressTcp) {
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
   peer_->SetStunServer(stun_server_address_, kDefaultStunServerPort,
-                       kNrIceTransportTcp);
+                       IceTransport::Tcp);
   peer_->SetDNSResolver();
   peer_->AddStream(1);
   Gather();
@@ -2294,7 +2270,7 @@ TEST_F(WebRtcIceGatherTest, DISABLED_TestGatherDNSStunServerHostnameTcp) {
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort,
-                       kNrIceTransportTcp);
+                       IceTransport::Tcp);
   peer_->SetDNSResolver();
   peer_->AddStream(1);
   Gather();
@@ -2312,17 +2288,17 @@ TEST_F(WebRtcIceGatherTest,
     return;
   }
 
-  std::vector<NrIceStunServer> stun_servers;
+  nsTArray<ParsedIceServer> stun_servers;
 
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = true;
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
-  stun_servers.push_back(*NrIceStunServer::Create(
-      stun_server_hostname_, kDefaultStunServerPort, kNrIceTransportUdp));
-  stun_servers.push_back(*NrIceStunServer::Create(
-      stun_server_hostname_, kDefaultStunServerPort, kNrIceTransportTcp));
-  peer_->SetStunServers(stun_servers);
+  stun_servers.AppendElement(MakeStunEntry(
+      stun_server_hostname_, kDefaultStunServerPort, IceTransport::Udp));
+  stun_servers.AppendElement(MakeStunEntry(
+      stun_server_hostname_, kDefaultStunServerPort, IceTransport::Tcp));
+  peer_->SetIceServers(stun_servers);
   peer_->SetDNSResolver();
   peer_->AddStream(1);
   Gather();
@@ -2337,17 +2313,17 @@ TEST_F(WebRtcIceGatherTest,
     return;
   }
 
-  std::vector<NrIceStunServer> stun_servers;
+  nsTArray<ParsedIceServer> stun_servers;
 
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = true;
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
-  stun_servers.push_back(*NrIceStunServer::Create(
-      stun_server_address_, kDefaultStunServerPort, kNrIceTransportUdp));
-  stun_servers.push_back(*NrIceStunServer::Create(
-      stun_server_address_, kDefaultStunServerPort, kNrIceTransportTcp));
-  peer_->SetStunServers(stun_servers);
+  stun_servers.AppendElement(MakeStunEntry(
+      stun_server_address_, kDefaultStunServerPort, IceTransport::Udp));
+  stun_servers.AppendElement(MakeStunEntry(
+      stun_server_address_, kDefaultStunServerPort, IceTransport::Tcp));
+  peer_->SetIceServers(stun_servers);
   peer_->SetDNSResolver();
   peer_->AddStream(1);
   Gather();
@@ -2374,7 +2350,7 @@ TEST_F(WebRtcIceGatherTest, DISABLED_TestGatherDNSStunBogusHostnameTcp) {
   NrIceCtx::InitializeGlobals(config);
   EnsurePeer();
   peer_->SetStunServer(kBogusStunServerHostname, kDefaultStunServerPort,
-                       kNrIceTransportTcp);
+                       IceTransport::Tcp);
   peer_->SetDNSResolver();
   peer_->AddStream(1);
   Gather();
@@ -2400,7 +2376,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherTurn) {
   EnsurePeer();
   if (turn_server_.empty()) return;
   peer_->SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
-                       turn_password_, kNrIceTransportUdp);
+                       turn_password_, IceTransport::Udp);
   peer_->AddStream(1);
   Gather();
 }
@@ -2412,7 +2388,7 @@ TEST_F(WebRtcIceGatherTest, TestGatherTurnTcp) {
   EnsurePeer();
   if (turn_server_.empty()) return;
   peer_->SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
-                       turn_password_, kNrIceTransportTcp);
+                       turn_password_, IceTransport::Tcp);
   peer_->AddStream(1);
   Gather();
 }
@@ -2452,13 +2428,14 @@ TEST_F(WebRtcIceGatherTest, TestGatherVerifyNoLoopback) {
 }
 
 TEST_F(WebRtcIceGatherTest, TestGatherAllowLoopback) {
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
-  config.mAllowLoopback = true;
-  NrIceCtx::InitializeGlobals(config);
+  NrIceCtx::GlobalConfig globalConfig;
+  globalConfig.mTcpEnabled = false;
+  NrIceCtx::InitializeGlobals(globalConfig);
 
+  NrIceCtx::Config config;
+  config.mAllowLoopback = true;
   // Set up peer with loopback allowed.
-  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, NrIceCtx::Config());
+  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
   peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, "127.0.0.1"));
@@ -2976,7 +2953,7 @@ TEST_F(WebRtcIceConnectTest, DISABLED_TestConnectNoHost) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
+  Init(false, NrIceCtx::Config{.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST});
   AddStream(1);
   ASSERT_TRUE(Gather());
   SetExpectedTypes(NrIceCandidate::Type::ICE_SERVER_REFLEXIVE,
@@ -2986,11 +2963,13 @@ TEST_F(WebRtcIceConnectTest, DISABLED_TestConnectNoHost) {
 }
 
 TEST_F(WebRtcIceConnectTest, TestLoopbackOnlySortOf) {
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
+  NrIceCtx::GlobalConfig globalConfig;
+  globalConfig.mTcpEnabled = false;
+  NrIceCtx::InitializeGlobals(globalConfig);
+
+  NrIceCtx::Config config;
   config.mAllowLoopback = true;
-  NrIceCtx::InitializeGlobals(config);
-  Init(false);
+  Init(false, config);
   AddStream(1);
   SetCandidateFilter(IsLoopbackCandidate);
   ASSERT_TRUE(Gather());
@@ -3114,7 +3093,7 @@ TEST_F(WebRtcIceConnectTest, TestConnectNoNatNoHost) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
+  Init(false, NrIceCtx::Config{.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST});
   UseTestStunServer();
   // Because we are connecting from our host candidate to the
   // other side's apparent srflx (which is also their host)
@@ -3131,7 +3110,7 @@ TEST_F(WebRtcIceConnectTest, TestConnectFullConeNoHost) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseNat();
-  Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
+  Init(false, NrIceCtx::Config{.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST});
   UseTestStunServer();
   SetExpectedTypes(NrIceCandidate::Type::ICE_SERVER_REFLEXIVE,
                    NrIceCandidate::Type::ICE_SERVER_REFLEXIVE);
@@ -3254,15 +3233,13 @@ TEST_F(WebRtcIceConnectTest, TestGatherNatBlocksUDP) {
   NrIceCtx::InitializeGlobals(config);
   UseNat();
   BlockUdp();
-  std::vector<NrIceTurnServer> turn_servers;
-  std::vector<unsigned char> password_vec(turn_password_.begin(),
-                                          turn_password_.end());
-  turn_servers.push_back(
-      *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
-                               password_vec, kNrIceTransportTcp));
-  turn_servers.push_back(
-      *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
-                               password_vec, kNrIceTransportUdp));
+  nsTArray<ParsedIceServer> turn_servers;
+  turn_servers.AppendElement(MakeTurnEntry(turn_server_, kDefaultStunServerPort,
+                                           turn_user_, turn_password_,
+                                           IceTransport::Tcp));
+  turn_servers.AppendElement(MakeTurnEntry(turn_server_, kDefaultStunServerPort,
+                                           turn_user_, turn_password_,
+                                           IceTransport::Udp));
   SetTurnServers(turn_servers);
   AddStream(1);
   // We have to wait for the UDP-based stuff to time out.
@@ -3277,15 +3254,13 @@ TEST_F(WebRtcIceConnectTest, TestConnectNatBlocksUDP) {
   NrIceCtx::InitializeGlobals(config);
   UseNat();
   BlockUdp();
-  std::vector<NrIceTurnServer> turn_servers;
-  std::vector<unsigned char> password_vec(turn_password_.begin(),
-                                          turn_password_.end());
-  turn_servers.push_back(
-      *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
-                               password_vec, kNrIceTransportTcp));
-  turn_servers.push_back(
-      *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
-                               password_vec, kNrIceTransportUdp));
+  nsTArray<ParsedIceServer> turn_servers;
+  turn_servers.AppendElement(MakeTurnEntry(turn_server_, kDefaultStunServerPort,
+                                           turn_user_, turn_password_,
+                                           IceTransport::Tcp));
+  turn_servers.AppendElement(MakeTurnEntry(turn_server_, kDefaultStunServerPort,
+                                           turn_user_, turn_password_,
+                                           IceTransport::Udp));
   SetTurnServers(turn_servers);
   p1_->SetExpectedTypes(NrIceCandidate::Type::ICE_RELAYED,
                         NrIceCandidate::Type::ICE_RELAYED, kNrIceTransportTcp);
@@ -3900,7 +3875,7 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnTcp) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
-                turn_password_, kNrIceTransportTcp);
+                turn_password_, IceTransport::Tcp);
   AddStream(1);
   ASSERT_TRUE(Gather());
   Connect();
@@ -3929,7 +3904,7 @@ TEST_F(WebRtcIceConnectTest, TestConnectTurnTcpOnly) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
-                turn_password_, kNrIceTransportTcp);
+                turn_password_, IceTransport::Tcp);
   AddStream(1);
   ASSERT_TRUE(Gather());
   SetCandidateFilter(IsRelayCandidate);
@@ -3962,7 +3937,7 @@ TEST_F(WebRtcIceConnectTest, TestSendReceiveTurnTcpOnly) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   SetTurnServer(turn_server_, kDefaultStunServerPort, turn_user_,
-                turn_password_, kNrIceTransportTcp);
+                turn_password_, IceTransport::Tcp);
   AddStream(1);
   ASSERT_TRUE(Gather());
   SetCandidateFilter(IsRelayCandidate);
@@ -3978,15 +3953,13 @@ TEST_F(WebRtcIceConnectTest, TestSendReceiveTurnBothOnly) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  std::vector<NrIceTurnServer> turn_servers;
-  std::vector<unsigned char> password_vec(turn_password_.begin(),
-                                          turn_password_.end());
-  turn_servers.push_back(
-      *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
-                               password_vec, kNrIceTransportTcp));
-  turn_servers.push_back(
-      *NrIceTurnServer::Create(turn_server_, kDefaultStunServerPort, turn_user_,
-                               password_vec, kNrIceTransportUdp));
+  nsTArray<ParsedIceServer> turn_servers;
+  turn_servers.AppendElement(MakeTurnEntry(turn_server_, kDefaultStunServerPort,
+                                           turn_user_, turn_password_,
+                                           IceTransport::Tcp));
+  turn_servers.AppendElement(MakeTurnEntry(turn_server_, kDefaultStunServerPort,
+                                           turn_user_, turn_password_,
+                                           IceTransport::Udp));
   SetTurnServers(turn_servers);
   AddStream(1);
   ASSERT_TRUE(Gather());
@@ -4499,6 +4472,22 @@ TEST_F(WebRtcIcePacketFilterTest, TestRecvDataPacketWithAPendingAddress) {
   TestIncomingTcp(data, sizeof(data), true);
 
   ASSERT_EQ(0, nr_stun_message_destroy(&msg));
+}
+
+TEST_F(WebRtcIcePacketFilterTest, ZeroLengthIncoming) {
+  nr_stun_message* msg;
+  ASSERT_EQ(0, nr_stun_build_req_no_auth(nullptr, &msg));
+
+  msg->header.type = NR_STUN_MSG_BINDING_REQUEST;
+  ASSERT_EQ(0, nr_stun_encode_message(msg));
+  TestOutgoing(msg->buffer, msg->length, 123, 45, true);
+  TestOutgoingTcp(msg->buffer, msg->length, true);
+
+  ASSERT_EQ(0, nr_stun_message_destroy(&msg));
+
+  const unsigned char data[] = "";
+  TestIncoming(data, sizeof(data), 123, 45, true);
+  TestIncomingTcp(data, sizeof(data), true);
 }
 
 TEST(WebRtcIceInternalsTest, TestAddBogusAttribute)

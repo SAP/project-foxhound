@@ -10,7 +10,9 @@
 
 #include "modules/audio_processing/aec3/subtractor_output.h"
 
+#include <algorithm>
 #include <numeric>
+#include <span>
 
 namespace webrtc {
 
@@ -33,7 +35,7 @@ void SubtractorOutput::Reset() {
   y2 = 0.f;
 }
 
-void SubtractorOutput::ComputeMetrics(rtc::ArrayView<const float> y) {
+void SubtractorOutput::ComputeMetrics(std::span<const float> y) {
   const auto sum_of_squares = [](float a, float b) { return a + b * b; };
   y2 = std::accumulate(y.begin(), y.end(), 0.f, sum_of_squares);
   e2_refined =

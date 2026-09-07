@@ -28,7 +28,6 @@ function receiveMessage(event) {
 
 SpecialPowers.pushPrefEnv({set: [
   ["network.proxy.allow_hijacking_localhost", true],
-  ["network.proxy.testing_localhost_is_secure_when_hijacked", true],
 ]}).then(function() {
   const HOST = "http://localhost/tests/dom/security/test/csp/";
   var test_ws_self_frame = document.getElementById("test_ws_self_frame");

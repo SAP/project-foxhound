@@ -7,7 +7,6 @@
 Parses gettext po and pot files.
 """
 
-
 import re
 
 from .base import CAN_SKIP, Entity, BadEntity, Parser

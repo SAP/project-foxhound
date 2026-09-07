@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,12 +74,6 @@ class CCSliceMarker : public BaseMarkerType<CCSliceMarker> {
       "{marker.name} (idle={marker.data.idle})";
 
   static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Memory;
-
-  static void StreamJSONMarkerData(
-      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
-      bool aIsDuringIdle) {
-    StreamJSONMarkerDataImpl(aWriter, aIsDuringIdle);
-  }
 };
 }  // namespace geckoprofiler::markers
 
@@ -187,14 +179,17 @@ void mozilla::CycleCollectorStats::SendTelemetry(TimeDuration aCCNowDuration,
       .EnumGet(static_cast<glean::cycle_collector::SyncSkippableLabel>(
           mRanSyncForgetSkippable))
       .Add();
-  glean::cycle_collector::full.AccumulateRawDuration(aCCNowDuration);
-  glean::cycle_collector::max_pause.AccumulateRawDuration(mMaxSliceTime);
+  glean::cycle_collector::full.ProcessGet().AccumulateRawDuration(
+      aCCNowDuration);
+  glean::cycle_collector::max_pause.ProcessGet().AccumulateRawDuration(
+      mMaxSliceTime);
 
   if (!aPrevCCEnd.IsNull()) {
     TimeDuration timeBetween = TimeBetween(aPrevCCEnd, mBeginTime);
-    glean::cycle_collector::time_between.AccumulateRawDuration(timeBetween);
+    glean::cycle_collector::time_between.ProcessGet().AccumulateRawDuration(
+        timeBetween);
   }
 
-  glean::cycle_collector::forget_skippable_max.AccumulateRawDuration(
-      mMaxForgetSkippableTime);
+  glean::cycle_collector::forget_skippable_max.ProcessGet()
+      .AccumulateRawDuration(mMaxForgetSkippableTime);
 }

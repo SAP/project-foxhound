@@ -21,5 +21,4 @@ class ScreenshotContentFront extends FrontClassWithSpec(screenshotContentSpec) {
   }
 }
 
-exports.ScreenshotContentFront = ScreenshotContentFront;
 registerFront(ScreenshotContentFront);

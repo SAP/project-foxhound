@@ -5,17 +5,8 @@
 import generate from "@babel/generator";
 import * as t from "@babel/types";
 
-import { hasNode, replaceNode } from "./utils/ast";
+import { replaceNode } from "./utils/ast";
 import { isTopLevel } from "./utils/helpers";
-
-function hasTopLevelAwait(ast) {
-  const hasAwait = hasNode(
-    ast,
-    (node, ancestors) => t.isAwaitExpression(node) && isTopLevel(ancestors)
-  );
-
-  return hasAwait;
-}
 
 // translates new bindings `var a = 3` into `a = 3`.
 function translateDeclarationIntoAssignment(node) {
@@ -200,7 +191,8 @@ export default function mapTopLevelAwait(expression, ast) {
     return expression;
   }
 
-  if (!hasTopLevelAwait(ast)) {
+  // Does it have top-level-await?
+  if (!ast.program.extra.topLevelAwait) {
     return expression;
   }
 

@@ -60,7 +60,7 @@ add_task(async function () {
 
   await waitForAllNetworkUpdateEvents();
   // Page reload should auto-resume
-  await reloadBrowser();
+  await reloadSelectedTab();
   await waitForPauseButtonToChange(document, false);
   await performRequestAndWait(tab, monitor, SIMPLE_URL + "?id=3");
 
@@ -132,8 +132,8 @@ async function performRequestAndWait(tab, monitor, requestURL) {
  */
 async function performPausedRequest(tab, monitor, toolbox) {
   const { onResource: waitForEventWhenPaused } =
-    await toolbox.resourceCommand.waitForNextResource(
-      toolbox.resourceCommand.TYPES.NETWORK_EVENT,
+    await toolbox.commands.resourceCommand.waitForNextResource(
+      toolbox.commands.resourceCommand.TYPES.NETWORK_EVENT,
       {
         ignoreExistingResources: true,
       }

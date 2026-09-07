@@ -18,8 +18,6 @@ import mozilla.components.concept.menu.candidate.DecorativeTextMenuCandidate
 import mozilla.components.support.test.any
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,6 +27,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class MenuViewTest {
@@ -61,20 +60,8 @@ class MenuViewTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.M])
-    fun `setVisibleSide will be forwarded to scrollOnceToTheBottom on devices with Android M and below`() {
-        doNothing().`when`(menuView).scrollOnceToTheBottom(any())
-
-        menuView.setVisibleSide(Side.END)
-        val layoutManager = recyclerView.layoutManager as LinearLayoutManager
-
-        assertFalse(layoutManager.stackFromEnd)
-        verify(menuView).scrollOnceToTheBottom(any())
-    }
-
-    @Test
-    @Config(sdk = [Build.VERSION_CODES.N])
-    fun `setVisibleSide changes stackFromEnd on devices with Android N and above`() {
+    @Config(sdk = [Build.VERSION_CODES.O])
+    fun `setVisibleSide changes stackFromEnd`() {
         doNothing().`when`(menuView).scrollOnceToTheBottom(any())
 
         menuView.setVisibleSide(Side.END)

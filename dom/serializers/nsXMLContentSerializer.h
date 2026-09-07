@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,15 +8,15 @@
  * could be parsed into more or less the original DOM.
  */
 
-#ifndef nsXMLContentSerializer_h__
-#define nsXMLContentSerializer_h__
+#ifndef nsXMLContentSerializer_h_
+#define nsXMLContentSerializer_h_
 
 #include "mozilla/Attributes.h"
+#include "nsCOMPtr.h"
 #include "nsIContentSerializer.h"
 #include "nsISupportsUtils.h"
-#include "nsCOMPtr.h"
-#include "nsTArray.h"
 #include "nsString.h"
+#include "nsTArray.h"
 
 #define kIndentStr u"  "_ns
 #define kEndTag u"</"_ns
@@ -41,10 +39,11 @@ class nsXMLContentSerializer : public nsIContentSerializer {
                   bool aRewriteEncodingDeclaration,
                   bool* aNeedsPreformatScanning, nsAString& aOutput) override;
 
-  NS_IMETHOD AppendText(nsIContent* aText, int32_t aStartOffset,
+  NS_IMETHOD AppendText(mozilla::dom::Text* aText, int32_t aStartOffset,
                         int32_t aEndOffset) override;
 
-  NS_IMETHOD AppendCDATASection(nsIContent* aCDATASection, int32_t aStartOffset,
+  NS_IMETHOD AppendCDATASection(mozilla::dom::Text* aCDATASection,
+                                int32_t aStartOffset,
                                 int32_t aEndOffset) override;
 
   NS_IMETHOD AppendProcessingInstruction(
@@ -200,7 +199,7 @@ class nsXMLContentSerializer : public nsIContentSerializer {
    * retrieve the text content of the node and append it to the given string
    * It doesn't increment the column position
    */
-  nsresult AppendTextData(nsIContent* aNode, int32_t aStartOffset,
+  nsresult AppendTextData(mozilla::dom::Text* aText, int32_t aStartOffset,
                           int32_t aEndOffset, nsAString& aStr,
                           bool aTranslateEntities);
 

@@ -60,12 +60,28 @@ const PAGE2_CONTENT = `<!DOCTYPE html>
         //# sourceURL=webpack:///src/webpack-script.js
       </script>
       <script type="text/javascript">
+        console.log("webpack with domain script");
+        //# sourceURL=webpack://with-domain/webpack-with-domain-script.js
+      </script>
+      <script type="text/javascript">
+        console.log("webpack short URL script");
+        //# sourceURL=webpack:webpack-short-url-script.js
+      </script>
+      <script type="text/javascript">
         console.log("turbopack script");
         //# sourceURL=turbopack:///src/turbopack-script.js
       </script>
       <script type="text/javascript">
+        console.log("turbopack script 2");
+        //# sourceURL=turbopack://src2/turbopack-script-2.js
+      </script>
+      <script type="text/javascript">
         console.log("angular script");
         //# sourceURL=ng:///src/angular-script.js
+      </script>
+      <script type="text/javascript">
+        console.log("angular script 2");
+        //# sourceURL=ng://src2/angular-script-2.js
       </script>
       <script type="text/javascript">
         console.log("resource script");
@@ -77,8 +93,12 @@ const PAGE2_CONTENT = `<!DOCTYPE html>
 const ALL_PAGE2_SCRIPTS = [
   "script.js",
   "webpack-script.js",
+  "webpack-with-domain-script.js",
+  "webpack-short-url-script.js",
   "turbopack-script.js",
+  "turbopack-script-2.js",
   "angular-script.js",
+  "angular-script-2.js",
   "resource-script.js",
   "worker-script.js",
 ];
@@ -209,7 +229,11 @@ add_task(async function testProjectRoot() {
     {
       label: "Webpack",
       tooltip: `webpack:// on Main Thread`,
-      sources: ["webpack-script.js"],
+      sources: [
+        "webpack-script.js",
+        "webpack-with-domain-script.js",
+        "webpack-short-url-script.js",
+      ],
     },
     {
       label: "src",
@@ -223,9 +247,9 @@ add_task(async function testProjectRoot() {
 
   await selectAndCheckProjectRoots(dbg, [
     {
-      label: "turbopack://",
+      label: "Turbopack",
       tooltip: `turbopack:// on Main Thread`,
-      sources: ["turbopack-script.js"],
+      sources: ["turbopack-script.js", "turbopack-script-2.js"],
     },
     {
       label: "src",
@@ -241,7 +265,7 @@ add_task(async function testProjectRoot() {
     {
       label: "Angular",
       tooltip: `ng:// on Main Thread`,
-      sources: ["angular-script.js"],
+      sources: ["angular-script.js", "angular-script-2.js"],
     },
     {
       label: "src",
@@ -367,7 +391,7 @@ function assertRootLabelTooltip(dbg, text) {
   const rootHeader = dbg.win.document.querySelector(
     ".sources-clear-root-label"
   );
-  ok(rootHeader.title.includes(text));
+  Assert.stringContains(rootHeader.title, text);
 }
 
 async function clearProjectRoot(dbg) {

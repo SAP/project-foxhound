@@ -1,6 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
-
 "use strict";
 
 Services.scriptloader.loadSubScript(
@@ -832,6 +829,88 @@ add_task(async () => {
 
   // Make sure any navigation didn't happen.
   is(tab.linkedBrowser.currentURI.spec, URL_ROOT + "helper_swipe_gesture.html");
+
+  BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.gesture.swipe.left", "Browser:BackOrBackDuplicate"],
+      ["browser.gesture.swipe.right", "Browser:ForwardOrForwardDuplicate"],
+      ["widget.disable-swipe-tracker", false],
+      ["widget.swipe.velocity-twitch-tolerance", 0.0000001],
+      ["widget.swipe.success-velocity-contribution", 0.5],
+      ["apz.overscroll.enabled", true],
+    ],
+  });
+
+  const URL_ROOT = getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content/",
+    "http://mochi.test:8888/"
+  );
+  const pageURL = URL_ROOT + "helper_swipe_gesture_rotated_vertical.html";
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    pageURL,
+    true /* waitForLoad */
+  );
+
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, "about:mozilla");
+  await BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false /* includeSubFrames */,
+    "about:mozilla"
+  );
+
+  gBrowser.goBack();
+  await BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false /* includeSubFrames */,
+    pageURL
+  );
+
+  ok(
+    gBrowser.webNavigation.canGoForward,
+    "The tab should have forward history"
+  );
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    content.document.getElementById("container").getBoundingClientRect();
+    await content.wrappedJSObject.promiseApzFlushedRepaints();
+  });
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    content.wrappedJSObject.scrollEndPromise = new Promise(resolve => {
+      content.document
+        .getElementById("container")
+        ?.addEventListener("scrollend", resolve, { once: true });
+    });
+  });
+
+  await panRightToLeft(tab.linkedBrowser, 100, 100, 1);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    await content.wrappedJSObject.scrollEndPromise;
+  });
+
+  const currentURI = tab.linkedBrowser.currentURI.spec;
+  is(
+    currentURI,
+    pageURL,
+    "The horizontal pan should not trigger history navigation"
+  );
+  if (currentURI != pageURL) {
+    BrowserTestUtils.removeTab(tab);
+    await SpecialPowers.popPrefEnv();
+    return;
+  }
+
+  const scrollTop = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    return content.document.getElementById("container")?.scrollTop ?? -1;
+  });
+  Assert.greater(scrollTop, 0, "The rotated vertical scroller should scroll");
 
   BrowserTestUtils.removeTab(tab);
   await SpecialPowers.popPrefEnv();

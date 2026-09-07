@@ -34,14 +34,14 @@ function setup() {
   Services.prefs.setBoolPref("network.trr.skip-check-for-blocked-host", true);
 }
 
-setup();
 registerCleanupFunction(async () => {
   trr_clear_prefs();
   Services.prefs.clearUserPref("network.trr.skip-check-for-blocked-host");
 });
 
 let trrServer = null;
-add_task(async function start_trr_server() {
+add_setup(async function start_trr_server() {
+  setup();
   trrServer = new TRRServer();
   registerCleanupFunction(async () => {
     await trrServer.stop();
@@ -161,7 +161,7 @@ add_task(async function confirm_ok() {
   );
   await new TRRDNSListener("example.com", { expectedAnswer: "1.2.3.4" });
   equal(await trrServer.requestCount("example.com", "A"), 1);
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
 
   await registerNS(500);
   Services.prefs.setIntPref(
@@ -180,7 +180,7 @@ add_task(async function confirm_ok() {
     CONFIRM_TRYING_OK,
     "Confirmation should still be pending"
   );
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
 });
 
 add_task(async function confirm_timeout() {
@@ -235,7 +235,7 @@ add_task(async function multiple_failures() {
     CONFIRM_TRYING_OK,
     "Should be CONFIRM_TRYING_OK"
   );
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
   await registerNS(4000);
   let failures = trigger15Failures();
   await waitForConfirmationState(CONFIRM_TRYING_OK, 3000);
@@ -251,6 +251,14 @@ add_task(async function multiple_failures() {
 });
 
 add_task(async function test_connectivity_change() {
+  Services.prefs.setCharPref(
+    "network.trr.confirmationNS",
+    "confirm.example.com"
+  );
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${trrServer.port()}/dns-query`
+  );
   await registerNS(100);
   Services.prefs.setIntPref(
     "network.trr.mode",
@@ -266,7 +274,7 @@ add_task(async function test_connectivity_change() {
     CONFIRM_TRYING_OK,
     "Should be CONFIRM_TRYING_OK"
   );
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
   equal(
     await trrServer.requestCount("confirm.example.com", "NS"),
     confirmationCount + 1
@@ -315,7 +323,9 @@ add_task(async function test_connectivity_change() {
     CONFIRM_TRYING_OK,
     "Should be CONFIRM_TRYING_OK"
   );
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  // This confirmation runs right after the captive-portal-login tore the
+  // connection down, so it has to re-establish before the (delayed) NS reply.
+  await waitForConfirmationState(CONFIRM_OK, 3000);
   // two extra confirmation events should have been received by the server
   equal(
     await trrServer.requestCount("confirm.example.com", "NS"),
@@ -345,7 +355,7 @@ add_task(async function test_network_change() {
   // another NS req
   Services.obs.notifyObservers(null, "network:link-status-changed", "up");
   equal(Services.dns.currentTrrConfirmationState, CONFIRM_TRYING_OK);
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
   // two extra confirmation events should have been received by the server
   equal(
     await trrServer.requestCount("confirm.example.com", "NS"),
@@ -364,7 +374,7 @@ add_task(async function test_uri_pref_change() {
     `https://foo.example.com:${trrServer.port()}/dns-query?changed`
   );
   equal(Services.dns.currentTrrConfirmationState, CONFIRM_TRYING_OK);
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
   equal(
     await trrServer.requestCount("confirm.example.com", "NS"),
     confirmationCount + 1
@@ -382,7 +392,7 @@ add_task(async function test_autodetected_uri() {
   );
   // For setDetectedTrrURI to work we must pretend we are using the default.
   Services.prefs.clearUserPref("network.trr.uri");
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
   let confirmationCount = await trrServer.requestCount(
     "confirm.example.com",
     "NS"
@@ -391,7 +401,7 @@ add_task(async function test_autodetected_uri() {
     `https://foo.example.com:${trrServer.port()}/dns-query?changed2`
   );
   equal(Services.dns.currentTrrConfirmationState, CONFIRM_TRYING_OK);
-  await waitForConfirmationState(CONFIRM_OK, 1000);
+  await waitForConfirmationState(CONFIRM_OK, 3000);
   equal(
     await trrServer.requestCount("confirm.example.com", "NS"),
     confirmationCount + 1
@@ -399,4 +409,46 @@ add_task(async function test_autodetected_uri() {
 
   // reset the default URI
   defaultPrefBranch.setCharPref("network.trr.default_provider_uri", defaultURI);
+});
+
+add_task(async function confirm_start_in_failed_state() {
+  // Use a clean, reachable TRR config independent of the preceding tests.
+  Services.prefs.setIntPref(
+    "network.trr.mode",
+    Ci.nsIDNSService.MODE_NATIVEONLY
+  );
+  Services.prefs.setCharPref(
+    "network.trr.confirmationNS",
+    "confirm.example.com"
+  );
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${trrServer.port()}/dns-query`
+  );
+  await registerNS(0);
+  equal(Services.dns.currentTrrConfirmationState, CONFIRM_OFF);
+
+  Services.prefs.setBoolPref(
+    "network.trr.start-confirmation-in-failed-state",
+    true
+  );
+  Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRFIRST);
+  // With the pref set the confirmation context starts in CONFIRM_FAILED, so the
+  // pending confirmation is CONFIRM_TRYING_FAILED instead of the optimistic
+  // CONFIRM_TRYING_OK. While in this state TRRService::Enabled() returns false,
+  // so lookups fall back to native DNS instead of blocking on the TRR
+  // connection until the first confirmation succeeds.
+  equal(
+    Services.dns.currentTrrConfirmationState,
+    CONFIRM_TRYING_FAILED,
+    "Should be CONFIRM_TRYING_FAILED"
+  );
+
+  Services.prefs.clearUserPref(
+    "network.trr.start-confirmation-in-failed-state"
+  );
+  Services.prefs.setIntPref(
+    "network.trr.mode",
+    Ci.nsIDNSService.MODE_NATIVEONLY
+  );
 });

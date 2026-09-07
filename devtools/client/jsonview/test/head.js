@@ -23,10 +23,11 @@ registerCleanupFunction(() => {
 
 /**
  * Add a new test tab in the browser and load the given url.
- * @param {String} url
+ *
+ * @param {string} url
  *   The url to be loaded in the new tab.
  *
- * @param {Object} [optional]
+ * @param {object} [optional]
  *   An object with the following optional properties:
  *   - appReadyState: The readyState of the JSON Viewer app that you want to
  *     wait for. Its value can be one of:
@@ -50,7 +51,7 @@ async function addJsonViewTab(
 ) {
   info("Adding a new JSON tab with URL: '" + url + "'");
   const tabAdded = BrowserTestUtils.waitForNewTab(gBrowser, url);
-  const tabLoaded = addTab(url);
+  const tabLoaded = addTab(url, { waitForLoad: true });
 
   // The `tabAdded` promise resolves when the JSON Viewer starts loading.
   // This is usually what we want, however, it never resolves for unrecognized
@@ -60,8 +61,6 @@ async function addJsonViewTab(
   // Therefore, we race both promises.
   const tab = await Promise.race([tabAdded, tabLoaded]);
   const browser = tab.linkedBrowser;
-
-  const rootDir = getRootDirectory(gTestPath);
 
   // Catch RequireJS errors (usually timeouts)
   const error = tabLoaded.then(() =>
@@ -79,50 +78,53 @@ async function addJsonViewTab(
     })
   );
 
-  const data = { rootDir, appReadyState, docReadyState };
   await Promise.race([
     error,
     // eslint-disable-next-line no-shadow
-    ContentTask.spawn(browser, data, async function (data) {
-      // Check if there is a JSONView object.
-      const { JSONView } = content.wrappedJSObject;
-      if (!JSONView) {
-        throw new Error("The JSON Viewer did not load.");
-      }
+    SpecialPowers.spawn(
+      browser,
+      [{ appReadyState, docReadyState }],
+      async function (data) {
+        // Check if there is a JSONView object.
+        const { JSONView } = content.wrappedJSObject;
+        if (!JSONView) {
+          throw new Error("The JSON Viewer did not load.");
+        }
 
-      const docReadyStates = ["loading", "interactive", "complete"];
-      const docReadyIndex = docReadyStates.indexOf(data.docReadyState);
-      const appReadyStates = ["uninitialized", ...docReadyStates];
-      const appReadyIndex = appReadyStates.indexOf(data.appReadyState);
-      if (docReadyIndex < 0 || appReadyIndex < 0) {
-        throw new Error("Invalid app or doc readyState parameter.");
-      }
+        const docReadyStates = ["loading", "interactive", "complete"];
+        const docReadyIndex = docReadyStates.indexOf(data.docReadyState);
+        const appReadyStates = ["uninitialized", ...docReadyStates];
+        const appReadyIndex = appReadyStates.indexOf(data.appReadyState);
+        if (docReadyIndex < 0 || appReadyIndex < 0) {
+          throw new Error("Invalid app or doc readyState parameter.");
+        }
 
-      // Wait until the document readyState suffices.
-      const { document } = content;
-      while (docReadyStates.indexOf(document.readyState) < docReadyIndex) {
-        info(
-          `DocReadyState is "${document.readyState}". Await "${data.docReadyState}"`
-        );
-        await new Promise(resolve => {
-          document.addEventListener("readystatechange", resolve, {
-            once: true,
+        // Wait until the document readyState suffices.
+        const { document } = content;
+        while (docReadyStates.indexOf(document.readyState) < docReadyIndex) {
+          info(
+            `DocReadyState is "${document.readyState}". Await "${data.docReadyState}"`
+          );
+          await new Promise(resolve => {
+            document.addEventListener("readystatechange", resolve, {
+              once: true,
+            });
           });
-        });
-      }
+        }
 
-      // Wait until the app readyState suffices.
-      while (appReadyStates.indexOf(JSONView.readyState) < appReadyIndex) {
-        info(
-          `AppReadyState is "${JSONView.readyState}". Await "${data.appReadyState}"`
-        );
-        await new Promise(resolve => {
-          content.addEventListener("AppReadyStateChange", resolve, {
-            once: true,
+        // Wait until the app readyState suffices.
+        while (appReadyStates.indexOf(JSONView.readyState) < appReadyIndex) {
+          info(
+            `AppReadyState is "${JSONView.readyState}". Await "${data.appReadyState}"`
+          );
+          await new Promise(resolve => {
+            content.addEventListener("AppReadyStateChange", resolve, {
+              once: true,
+            });
           });
-        });
+        }
       }
-    }),
+    ),
   ]);
 
   return tab;
@@ -135,7 +137,7 @@ function clickJsonNode(selector) {
   info("Expanding node: '" + selector + "'");
 
   // eslint-disable-next-line no-shadow
-  return ContentTask.spawn(gBrowser.selectedBrowser, selector, selector => {
+  return SpecialPowers.spawn(gBrowser.selectedBrowser, [selector], selector => {
     content.document.querySelector(selector).click();
   });
 }
@@ -147,9 +149,9 @@ function selectJsonViewContentTab(name) {
   info("Selecting tab: '" + name + "'");
 
   // eslint-disable-next-line no-shadow
-  return ContentTask.spawn(gBrowser.selectedBrowser, name, async name => {
+  return SpecialPowers.spawn(gBrowser.selectedBrowser, [name], async name => {
     const tabsSelector = ".tabs-menu .tabs-menu-item";
-    const targetTabSelector = `${tabsSelector}.${CSS.escape(name)}`;
+    const targetTabSelector = `${tabsSelector}.${content.CSS.escape(name)}`;
     const targetTab = content.document.querySelector(targetTabSelector);
     const targetTabIndex = Array.prototype.indexOf.call(
       content.document.querySelectorAll(tabsSelector),
@@ -217,8 +219,9 @@ function getElementAttr(selector, attr) {
 
 /**
  * Return the text of a row given its index, e.g. `key: "value"`
- * @param {Number} rowIndex
- * @returns {Promise<String>}
+ *
+ * @param {number} rowIndex
+ * @returns {Promise<string>}
  */
 async function getRowText(rowIndex) {
   const key = await getElementText(

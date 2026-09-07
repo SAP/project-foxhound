@@ -19,19 +19,15 @@
           src="../events.js" />
 
   <script type="application/javascript">
-    //gA11yEventDumpID = "eventdump"; // debug stuff
-    //gA11yEventDumpToConsole = true; // debug stuff
-    
-    var winLowerThanVista = navigator.platform.indexOf("Win") == 0;
+
+    let winLowerThanVista = navigator.platform.indexOf("Win") == 0;
     if (winLowerThanVista) {
-      var version = Services.sysinfo.getProperty("version");
+      let version = Services.sysinfo.getProperty("version");
       version = parseFloat(version);
       winLowerThanVista = !(version >= 6.0);
     }
 
-    var gQueue = null;
-    function doTests()
-    {
+    async function doTests() {
       // bug 746183 - Whole file times out on OS X
       if (MAC || winLowerThanVista) {
         todo(false, "Reenable on mac after fixing bug 746183!");
@@ -40,28 +36,61 @@
       }
 
       // Test focus events.
-      gQueue = new eventQueue();
+      let focused = waitForEvent(EVENT_FOCUS, "button");
+      getNode("button").focus();
+      await focused;
 
-      gQueue.push(new synthFocus("button"));
-      gQueue.push(new synthContextMenu("button", [
-        new invokerChecker(EVENT_MENUPOPUP_START, "contextmenu"),
-        new invokerChecker("popupshown", "contextmenu"),
-      ]));
-      gQueue.push(new synthDownKey("button", new focusChecker("item1")));
-      gQueue.push(new synthEscapeKey("contextmenu", new focusChecker("button")));
+      let menuPopupStart = waitForEvent(EVENT_MENUPOPUP_START, "contextmenu");
+      let popupShown = new Promise(r =>
+        getNode("contextmenu").addEventListener("popupshown", r, { once: true })
+      );
+      synthesizeMouse(getNode("button"), 1, 1, {
+        button: 0,
+        type: "contextmenu",
+      });
+      await menuPopupStart;
+      await popupShown;
 
-      gQueue.push(new synthContextMenu("button",
-                                       new invokerChecker(EVENT_MENUPOPUP_START, "contextmenu")));
-      gQueue.push(new synthDownKey("contextmenu", new focusChecker("item1")));
-      gQueue.push(new synthDownKey("item1", new focusChecker("item2")));
-      gQueue.push(new synthRightKey("item2", new focusChecker("item2.1")));
+      focused = waitForEvent(EVENT_FOCUS, "item1");
+      synthesizeKey("VK_DOWN", {});
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "button");
+      synthesizeKey("VK_ESCAPE", {});
+      await focused;
+
+      menuPopupStart = waitForEvent(EVENT_MENUPOPUP_START, "contextmenu");
+      synthesizeMouse(getNode("button"), 1, 1, {
+        button: 0,
+        type: "contextmenu",
+      });
+      await menuPopupStart;
+
+      focused = waitForEvent(EVENT_FOCUS, "item1");
+      synthesizeKey("VK_DOWN", {});
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "item2");
+      synthesizeKey("VK_DOWN", {});
+      await focused;
+
+      focused = waitForEvent(EVENT_FOCUS, "item2.1");
+      synthesizeKey("VK_RIGHT", {});
+      await focused;
+
       if (WIN) {
         todo(false, "synthEscapeKey for item2.1 and item2 disabled due to bug 691580");
       } else {
-        gQueue.push(new synthEscapeKey("item2.1", new focusChecker("item2")));
-        gQueue.push(new synthEscapeKey("item2", new focusChecker("button")));
+        focused = waitForEvent(EVENT_FOCUS, "item2");
+        synthesizeKey("VK_ESCAPE", {});
+        await focused;
+
+        focused = waitForEvent(EVENT_FOCUS, "button");
+        synthesizeKey("VK_ESCAPE", {});
+        await focused;
       }
-      gQueue.invoke(); // Will call SimpleTest.finish();
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

@@ -36,6 +36,14 @@ class Sidebar extends PureComponent {
 
   render() {
     const navItems = [PAGE_TYPES.SERVICE_WORKERS, PAGE_TYPES.MANIFEST];
+    if (
+      Services.prefs.getBoolPref(
+        "devtools.application.sessionHistory.enabled",
+        false
+      )
+    ) {
+      navItems.push(PAGE_TYPES.SESSION_HISTORY);
+    }
 
     const isSelected = page => {
       return page === this.props.selectedPage;

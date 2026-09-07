@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,9 +17,7 @@ class LineBreakPolicy {
  public:
   // Creates the required low-level policy rules to evaluate a high-level
   // policy rule for complex line breaks.
-  static bool GenerateRules(const wchar_t* type_name,
-                            TargetPolicy::Semantics semantics,
-                            LowLevelPolicy* policy);
+  static bool GenerateRules(LowLevelPolicy* policy);
 
   // Processes a TargetServices::GetComplexLineBreaks() request from the target.
   static DWORD GetComplexLineBreaksProxyAction(EvalResult eval_result,

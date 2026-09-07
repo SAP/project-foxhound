@@ -100,11 +100,11 @@ The steps for collecting data are roughly as follows:
 #. When the timer fires it becomes unset and every document marked as having changes is inspected, and the changed data is collected.
 #. Then for each document, an increment is sent to update the session store in the parent with.
 
-These document tree fragments are managed in Gecko by a `PBrowser <https://searchfox.org/mozilla-central/source/dom/ipc/PBrowser.ipdl>`__ IPDL actor, which in turn is managed by the `PContent <https://searchfox.org/mozilla-central/source/dom/ipc/PContent.ipdl>`__ IPDL actor. These actors facilitate communication between the content processes containing documents and the parent process running the UI.
+These document tree fragments are managed in Gecko by a :searchfox:`PBrowser <dom/ipc/PBrowser.ipdl>` IPDL actor, which in turn is managed by the :searchfox:`PContent <dom/ipc/PContent.ipdl>` IPDL actor. These actors facilitate communication between the content processes containing documents and the parent process running the UI.
 
-To encapsulate the framework of session store data collection, the operations for incrementally transmitting data to put in the session store is handled by the `PSessionStore <https://searchfox.org/mozilla-central/source/toolkit/components/sessionstore/PSessionStore.ipdl>`__ IPDL actor, which is managed by the PBrowser IPDL actor.
+To encapsulate the framework of session store data collection, the operations for incrementally transmitting data to put in the session store is handled by the :searchfox:`PSessionStore <toolkit/components/sessionstore/PSessionStore.ipdl>` IPDL actor, which is managed by the PBrowser IPDL actor.
 
-The C++ class `SessionStoreChangeListener <https://searchfox.org/mozilla-central/source/toolkit/components/sessionstore/SessionStoreChangeListener.h>`__ registers event handlers that listen to changes in the document tree and manages the timer. The timer enables buffering changes to make sure that the cross-process communication is throttled as well as only collecting when a change has happened. The buffering period can be controlled by the pref ``browser.sessionstore.interval``. The class also keeps track of documents and collects data from them, as well as sending the collected data to the parent process using PSessionStore.
+The C++ class :searchfox:`SessionStoreChangeListener <toolkit/components/sessionstore/SessionStoreChangeListener.h>` registers event handlers that listen to changes in the document tree and manages the timer. The timer enables buffering changes to make sure that the cross-process communication is throttled as well as only collecting when a change has happened. The buffering period can be controlled by the pref ``browser.sessionstore.interval``. The class also keeps track of documents and collects data from them, as well as sending the collected data to the parent process using PSessionStore.
 
 ----------------------
 Incremental Collection
@@ -286,13 +286,13 @@ Collecting Data in the Parent Process
 Collecting Session Storage
 --------------------------
 
-Session Storage is accessed through the `BackgroundSessionStorageManager <https://searchfox.org/mozilla-central/source/dom/storage/SessionStorageManager.h>`__ and by calling ``BackgroundSessionStorageManager::GetData``.
+Session Storage is accessed through the :searchfox:`BackgroundSessionStorageManager <dom/storage/SessionStorageManager.h>` and by calling ``BackgroundSessionStorageManager::GetData``.
 
 --------------------------
 Collecting Session History
 --------------------------
 
-Session history is collected by calling the ``SessionHistory.collectFromParent`` function in the `Session History module <https://searchfox.org/mozilla-central/source/toolkit/modules/sessionstore/SessionHistory.sys.mjs>`__. This is the responsibility of the embedder to collect and is not pushed to the embedder.
+Session history is collected by calling the ``SessionHistory.collectFromParent`` function in the :searchfox:`Session History module <toolkit/modules/sessionstore/SessionHistory.sys.mjs>`. This is the responsibility of the embedder to collect and is not pushed to the embedder.
 
 .. _interacting-with-sessionstore:
 
@@ -300,7 +300,7 @@ Session history is collected by calling the ``SessionHistory.collectFromParent``
 Interacting With Session Store Collection
 =========================================
 
-To integrate with session store collection an embedder needs to implement the `nsISessionStoreFunctions <https://searchfox.org/mozilla-central/source/toolkit/components/sessionstore/nsISessionStoreFunctions.idl>`__ interface.
+To integrate with session store collection an embedder needs to implement the :searchfox:`nsISessionStoreFunctions <toolkit/components/sessionstore/nsISessionStoreFunctions.idl>` interface.
 
 .. code-block:: webidl
 
@@ -346,7 +346,7 @@ The actual format of the data stored is not relevant insofar that its use is bas
 Structure of data pushed by ``UpdateSessionStore``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-In `SessionStoreUtils.webidl <https://searchfox.org/mozilla-central/source/dom/chrome-webidl/SessionStoreUtils.webidl>`__ the structure of collected data is defined as:
+In :searchfox:`SessionStoreUtils.webidl <dom/chrome-webidl/SessionStoreUtils.webidl>` the structure of collected data is defined as:
 
 .. code-block:: webidl
 
@@ -427,7 +427,7 @@ The collected form data builds up a similar tree of data for the document tree a
     }
   }
 
-``FormData`` and ``File`` are the same data as their web exposed counterparts in `FormData.webidl <https://searchfox.org/mozilla-central/source/dom/webidl/FormData.webidl>`__ and `File.webidl <https://searchfox.org/mozilla-central/source/dom/webidl/File.webidl>`__.
+``FormData`` and ``File`` are the same data as their web exposed counterparts in :searchfox:`FormData.webidl <dom/webidl/FormData.webidl>` and :searchfox:`File.webidl <dom/webidl/File.webidl>`.
 
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Structure of data pushed by ``UpdateSessionStoreForStorage``

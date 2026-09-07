@@ -1,6 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
-
 const { E10SUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/E10SUtils.sys.mjs"
 );
@@ -10,6 +7,8 @@ var TEST_PREFERRED_REMOTE_TYPES = [
   E10SUtils.NOT_REMOTE,
   "fakeRemoteType",
 ];
+
+var TEST_USE_REMOTE_SUBFRAMES = [true, false];
 
 // These test cases give a nestedURL and a plainURL that should always load in
 // the same remote type. By making these tests comparisons, they should work
@@ -43,48 +42,47 @@ var TEST_CASES = [
     nestedURL: "view-source:about:robots",
     plainURL: "about:robots",
   },
-  {
-    nestedURL: "view-source:pcast:http://some.site",
-    plainURL: "http://some.site",
-  },
 ];
 
 function run_test() {
   for (let testCase of TEST_CASES) {
     for (let preferredRemoteType of TEST_PREFERRED_REMOTE_TYPES) {
-      let plainUri = Services.io.newURI(testCase.plainURL);
-      let plainRemoteType = E10SUtils.getRemoteTypeForURIObject(plainUri, {
-        multiProcess: true,
-        remoteSubFrames: false,
-        preferredRemoteType,
-      });
+      for (let useRemoteSubframes of TEST_USE_REMOTE_SUBFRAMES) {
+        let plainUri = Services.io.newURI(testCase.plainURL);
+        let plainRemoteType = ChromeUtils.predictRemoteTypeForURI(plainUri, {
+          useRemoteTabs: true,
+          useRemoteSubframes,
+          preferredRemoteType,
+        });
 
-      let nestedUri = Services.io.newURI(testCase.nestedURL);
-      let nestedRemoteType = E10SUtils.getRemoteTypeForURIObject(nestedUri, {
-        multiProcess: true,
-        remoteSubFrames: false,
-        preferredRemoteType,
-      });
+        let nestedUri = Services.io.newURI(testCase.nestedURL);
+        let nestedRemoteType = ChromeUtils.predictRemoteTypeForURI(nestedUri, {
+          useRemoteTabs: true,
+          useRemoteSubframes,
+          preferredRemoteType,
+        });
 
-      let nestedStr = nestedUri.scheme + ":";
-      do {
-        nestedUri = nestedUri.QueryInterface(Ci.nsINestedURI).innerURI;
-        if (nestedUri.scheme == "about") {
-          nestedStr += nestedUri.spec;
-          break;
-        }
+        let nestedStr = nestedUri.scheme + ":";
+        do {
+          nestedUri = nestedUri.QueryInterface(Ci.nsINestedURI).innerURI;
+          if (nestedUri.scheme == "about") {
+            nestedStr += nestedUri.spec;
+            break;
+          }
 
-        nestedStr += nestedUri.scheme + ":";
-      } while (nestedUri instanceof Ci.nsINestedURI);
+          nestedStr += nestedUri.scheme + ":";
+        } while (nestedUri instanceof Ci.nsINestedURI);
 
-      let plainStr =
-        plainUri.scheme == "about" ? plainUri.spec : plainUri.scheme + ":";
-      equal(
-        nestedRemoteType,
-        plainRemoteType,
-        `Check that ${nestedStr} loads in same remote type as ${plainStr}` +
-          ` with preferred remote type: ${preferredRemoteType}`
-      );
+        let plainStr =
+          plainUri.scheme == "about" ? plainUri.spec : plainUri.scheme + ":";
+        equal(
+          nestedRemoteType,
+          plainRemoteType,
+          `Check that ${nestedStr} loads in same remote type as ${plainStr}` +
+            ` with preferred remote type: ${preferredRemoteType}` +
+            ` and remote subframes: ${useRemoteSubframes}`
+        );
+      }
     }
   }
 }

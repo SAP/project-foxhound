@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,10 +9,7 @@
 // or the page size.  Page size isn't always known at compile time so some
 // values defined here may be determined at runtime.
 
-#include "mozilla/Assertions.h"
-#include "mozilla/HelperMacros.h"
 #include "mozilla/Literals.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include "Constants.h"
 // Chunk.h is required for sizeof(arena_chunk_t), but it's inconvenient that
@@ -41,37 +36,56 @@
 // depending on kernel configuration, so they are opted out by default.
 // Debug builds are opted out too, for test coverage.
 #ifndef MALLOC_RUNTIME_CONFIG
-#  if !defined(__ia64__) && !defined(__sparc__) && !defined(__mips__) &&       \
-      !defined(__aarch64__) && !defined(__powerpc__) && !defined(XP_MACOSX) && \
-      !defined(__loongarch__)
+#  if !defined(XP_MACOSX) && !defined(ANDROID) && !defined(__ia64__) &&     \
+      !defined(__sparc__) && !defined(__mips__) && !defined(__aarch64__) && \
+      !defined(__powerpc__) && !defined(__loongarch__)
 #    define MALLOC_STATIC_PAGESIZE 1
 #  endif
 #endif
 
 namespace mozilla {
 
+// mozjemalloc has two values for page size.
+//
+// gPageSize:     A logical page size used for mozjemalloc's own structures.
+// gRealPageSize  The actual page size used by the OS & Hardware.
+//
+// They can be different so that we can continue to use 4KB pages on systems
+// with a larger page size. (WIP see Bug 1980047).
+//
+// For now they are the same on all platforms, since a lower logical page
+// size creates a performance regression due to smaller runs and more
+// frequent run allocation.
+//
+// gPageSize is always less than or equal to gRealPageSize.
+//
 #ifdef MALLOC_STATIC_PAGESIZE
-// VM page size. It must divide the runtime CPU page size or the code
-// will abort.
 // Platform specific page size conditions copied from js/public/HeapAPI.h
 #  if defined(__powerpc64__)
-static const size_t gPageSize = 64_KiB;
+static const size_t gRealPageSize = 64_KiB;
 #  elif defined(__loongarch64)
-static const size_t gPageSize = 16_KiB;
+static const size_t gRealPageSize = 16_KiB;
 #  else
-static const size_t gPageSize = 4_KiB;
+static const size_t gRealPageSize = 4_KiB;
 #  endif
-static const size_t gRealPageSize = gPageSize;
+static const size_t gPageSize = gRealPageSize;
 #else
-
-// When MALLOC_OPTIONS contains one or several `P`s, the page size used
-// across the allocator is multiplied by 2 for each `P`, but we also keep
-// the real page size for code paths that need it. gPageSize is thus a
-// power of two greater or equal to gRealPageSize.
+// When MALLOC_OPTIONS contains one or several `P`s, gPageSize will be
+// doubled for each `P`.  Likewise each 'p' will halve gPageSize.
 extern size_t gRealPageSize;
 extern size_t gPageSize;
-
 #endif
+
+// Return the smallest pagesize multiple that is >= s.
+#define PAGE_CEILING(s) \
+  (((s) + mozilla::gPageSizeMask) & ~mozilla::gPageSizeMask)
+#define REAL_PAGE_CEILING(s) (((s) + gRealPageSizeMask) & ~gRealPageSizeMask)
+
+// Return the largest pagesize multiple that is <= s.
+#define REAL_PAGE_FLOOR(s) ((s) & ~gRealPageSizeMask)
+
+#define PAGES_PER_REAL_PAGE_CEILING(s) \
+  (((s) + gPagesPerRealPage - 1) & ~(gPagesPerRealPage - 1))
 
 #ifdef MALLOC_STATIC_PAGESIZE
 #  define GLOBAL(type, name, value) static const type name = value;
@@ -83,7 +97,7 @@ extern size_t gPageSize;
     MOZ_PASTE_PREFIX_AND_ARG_COUNT(GLOBAL_ASSERT_HELPER, __VA_ARGS__) \
     (__VA_ARGS__)
 #  define GLOBAL_CONSTEXPR constexpr
-#  include "Globals_inc.h"
+#  include "Globals.inc"
 #  undef GLOBAL_CONSTEXPR
 #  undef GLOBAL_ASSERT
 #  undef GLOBAL_ASSERT_HELPER1
@@ -94,7 +108,7 @@ extern size_t gPageSize;
 // We declare the globals here and initialise them in DefineGlobals()
 #  define GLOBAL(type, name, value) extern type name;
 #  define GLOBAL_ASSERT(...)
-#  include "Globals_inc.h"
+#  include "Globals.inc"
 #  undef GLOBAL_ASSERT
 #  undef GLOBAL
 
@@ -109,8 +123,7 @@ void DefineGlobals();
 #define CHUNK_CEILING(s) (((s) + kChunkSizeMask) & ~kChunkSizeMask)
 
 // Return the smallest cacheline multiple that is >= s.
-#define CACHELINE_CEILING(s) \
-  (((s) + (kCacheLineSize - 1)) & ~(kCacheLineSize - 1))
+#define CACHELINE_CEILING(s) (((s) + kCacheLineMask) & ~kCacheLineMask)
 
 // Return the smallest quantum multiple that is >= a.
 #define QUANTUM_CEILING(a) (((a) + (kQuantumMask)) & ~(kQuantumMask))
@@ -118,15 +131,11 @@ void DefineGlobals();
   (((a) + (kQuantumWideMask)) & ~(kQuantumWideMask))
 
 // Return the smallest sub page-size  that is >= a.
-#define SUBPAGE_CEILING(a) (RoundUpPow2(a))
-
-// Return the smallest pagesize multiple that is >= s.
-#define PAGE_CEILING(s) (((s) + gPageSizeMask) & ~gPageSizeMask)
+#define SUBPAGE_CEILING(a) (std::bit_ceil(a))
 
 // Number of all the small-allocated classes
-#define NUM_SMALL_CLASSES                                          \
-  (kNumTinyClasses + kNumQuantumClasses + kNumQuantumWideClasses + \
-   gNumSubPageClasses)
+#define NUM_SMALL_CLASSES \
+  (kNumQuantumClasses + kNumQuantumWideClasses + gNumSubPageClasses)
 
 // Return the chunk address for allocation address a.
 static inline arena_chunk_t* GetChunkForPtr(const void* aPtr) {

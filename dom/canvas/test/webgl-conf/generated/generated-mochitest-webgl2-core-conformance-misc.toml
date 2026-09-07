@@ -1,0 +1,78 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-core"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/conformance/misc/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_conformance__misc__bad-arguments-test.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance__misc__boolean-argument-conversion.html"]
+
+["test_2_conformance__misc__delayed-drawing.html"]
+
+["test_2_conformance__misc__error-reporting.html"]
+
+["test_2_conformance__misc__expando-loss.html"]
+
+["test_2_conformance__misc__functions-returning-strings.html"]
+
+["test_2_conformance__misc__hint.html"]
+
+["test_2_conformance__misc__invalid-passed-params.html"]
+
+["test_2_conformance__misc__is-object.html"]
+
+["test_2_conformance__misc__null-object-behaviour.html"]
+
+["test_2_conformance__misc__object-deletion-behaviour.html"]
+
+["test_2_conformance__misc__shader-precision-format.html"]
+
+["test_2_conformance__misc__type-conversion-test.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
+
+["test_2_conformance__misc__uninitialized-test.html"]
+fail-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && asan",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && opt",
+]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'aarch64' && debug",
+  "os == 'win' && os_version == '11.26100' && debug",
+  "os == 'win' && os_version == '11.26200' && debug",
+]
+
+["test_2_conformance__misc__webgl-specific-stencil-settings.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'",
+  "os == 'win' && os_version == '11.26200'",
+]
+
+["test_2_conformance__misc__webgl-specific.html"]

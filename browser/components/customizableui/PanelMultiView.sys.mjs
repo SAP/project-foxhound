@@ -4,7 +4,8 @@
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "gBundle", function () {
@@ -12,6 +13,180 @@ ChromeUtils.defineLazyGetter(lazy, "gBundle", function () {
     "chrome://browser/locale/browser.properties"
   );
 });
+
+var DocumentWalker = class {
+  /**
+   * Wrapper for inDeepTreeWalker.  Adds filtering to the traversal methods.
+   * See inDeepTreeWalker for more information about the methods.
+   *
+   * @param {DOMNode} node
+   * @param {Window} rootWin
+   * @param {object}
+   *    filter {Function}
+   *        A custom filter function Taking in a DOMNode and returning an Int. See
+   *        WalkerActor.nodeFilter for an example.
+   *    onlyWantElements {Boolean}
+   *        Pass false to have the walker return text and other nodes, not just elements.
+   *    showAnonymousContent {Boolean}
+   *        Pass true to let the walker return and traverse anonymous content.
+   *        When navigating host elements to which shadow DOM is attached, the light tree
+   *        will be visible only to a walker with showAnonymousContent=false. The shadow
+   *        tree will only be visible to a walker with showAnonymousContent=true.
+   */
+
+  #onlyWantElements = true;
+  #showAnonymousContent = false;
+  #walker = Cc["@mozilla.org/inspector/deep-tree-walker;1"].createInstance(
+    Ci.inIDeepTreeWalker
+  );
+
+  constructor(
+    node,
+    { filter, onlyWantElements = true, showAnonymousContent = true } = {}
+  ) {
+    if (
+      Cu.isDeadWrapper(node.documentGlobal) ||
+      !node.documentGlobal.location
+    ) {
+      throw new Error("Got an invalid root window in DocumentWalker");
+    }
+
+    this.#showAnonymousContent = showAnonymousContent;
+    this.#walker.showAnonymousContent = showAnonymousContent;
+    this.#walker.showSubDocuments = true;
+    this.#walker.showDocumentsAsNodes = true;
+    this.#walker.init(node);
+
+    this.filter = filter;
+    this.#onlyWantElements = onlyWantElements;
+  }
+
+  get currentNode() {
+    return this.#walker.currentNode;
+  }
+
+  set currentNode(val) {
+    this.#walker.currentNode = val ?? this.#walker.root;
+  }
+
+  parentNode() {
+    return this.#walker.parentNode();
+  }
+
+  get root() {
+    return this.#walker.root;
+  }
+
+  previousNode() {
+    return this.#previousGoodNodeInRoot();
+  }
+
+  nextNode() {
+    return this.#nextGoodNodeInRoot();
+  }
+
+  #getLastPreOrderDepthFirstNodeIn(node) {
+    let last = node;
+    while (last?.lastChild) {
+      last = last.lastChild;
+    }
+    return last;
+  }
+
+  previousSibling() {
+    let node = this.#walker.previousSibling();
+    while (node && this.isSkippedNode(node)) {
+      node = this.#walker.previousSibling();
+    }
+    return node;
+  }
+
+  #previousGoodNodeInRoot() {
+    let { currentNode } = this.#walker;
+    if (!currentNode) {
+      return null;
+    }
+
+    let previousNode;
+    do {
+      previousNode = this.#walker.previousNode();
+
+      // If we are now in a shadow DOM, we check if its host is acceptable.
+      // If so we skip the shadow DOM so that we don't end up double-focusing on
+      // host moz-buttons and their inner buttons.
+      const host = previousNode?.getRootNode()?.host;
+      if (host && !this.isSkippedNode(host)) {
+        this.#walker.currentNode = host;
+        return host;
+      }
+    } while (previousNode && this.isSkippedNode(previousNode));
+
+    return previousNode;
+  }
+
+  #nextGoodNodeInRoot() {
+    let { currentNode } = this.#walker;
+    if (!currentNode) {
+      return null;
+    }
+
+    // We don't want to double-focus on a web component and its inner nodes, just
+    // one or the other (otherwise we would pointlessly focus on a moz-button and
+    // its inner button for no reason). So if the currentNode is not meant to be
+    // skipped, meaning it was accepted for the tab-order, and it's a web
+    // component, then skip its shadowRoot.
+    if (
+      this.#showAnonymousContent &&
+      currentNode.shadowRoot &&
+      !this.isSkippedNode(currentNode)
+    ) {
+      // Temporarily disable descending into the shadow root
+      this.#walker.showAnonymousContent = false;
+    }
+
+    let nextNode = this.#walker.nextNode();
+
+    this.#walker.showAnonymousContent = this.#showAnonymousContent;
+
+    while (nextNode && this.isSkippedNode(nextNode)) {
+      nextNode = this.#walker.nextNode();
+    }
+
+    return nextNode;
+  }
+
+  firstChild() {
+    this.#walker.currentNode = this.#walker.root;
+
+    let node = this.#walker.currentNode;
+    if (!node || !this.isSkippedNode(node)) {
+      return node;
+    }
+
+    return this.#nextGoodNodeInRoot();
+  }
+
+  lastChild() {
+    // move walker to the last child in the root node.
+    this.#walker.currentNode = this.#getLastPreOrderDepthFirstNodeIn(
+      this.#walker.root
+    );
+
+    let node = this.#walker.currentNode;
+    if (!node || !this.isSkippedNode(node)) {
+      return node;
+    }
+
+    return this.#previousGoodNodeInRoot();
+  }
+
+  isSkippedNode(node) {
+    if (this.#onlyWantElements && node.nodeType != Node.ELEMENT_NODE) {
+      return true;
+    }
+    return this.filter(node) !== NodeFilter.FILTER_ACCEPT;
+  }
+};
 
 /**
  * Safety timeout after which asynchronous events will be canceled if any of the
@@ -81,7 +256,7 @@ var AssociatedToNode = class {
    * @returns {DOMWindow}
    */
   get window() {
-    return this.node.ownerGlobal;
+    return this.node.documentGlobal;
   }
 
   /**
@@ -637,7 +812,7 @@ export var PanelMultiView = class extends AssociatedToNode {
     let subviews = Array.from(this._viewStack.children);
     let viewCache = this.document.getElementById("appMenu-viewCache");
     for (let subview of subviews) {
-      viewCache.appendChild(subview);
+      viewCache.moveBefore(subview, null);
     }
   }
 
@@ -874,9 +1049,10 @@ export var PanelMultiView = class extends AssociatedToNode {
     // Panels could contain out-pf-process <browser> elements, that need to be
     // supported with a remote attribute on the panel in order to display properly.
     // See bug https://bugzilla.mozilla.org/show_bug.cgi?id=1365660
-    if (panelView.node.getAttribute("remote") == "true") {
-      this.#panel.setAttribute("remote", "true");
-    }
+    this.#panel.toggleAttribute(
+      "remote",
+      panelView.node.hasAttribute("remote")
+    );
 
     let canceled = await panelView.dispatchAsyncEvent("ViewShowing");
 
@@ -1312,6 +1488,16 @@ export var PanelView = class extends AssociatedToNode {
      * is active.
      */
     this.focusWhenActive = false;
+
+    this.window.addEventListener(
+      "unload",
+      () => {
+        // Make sure to null out any DocumentWalker instances to prevent leaks.
+        this.#_tabNavigableWalker = null;
+        this.#_arrowNavigableWalker = null;
+      },
+      { once: true }
+    );
   }
 
   /**
@@ -1575,6 +1761,13 @@ export var PanelView = class extends AssociatedToNode {
       if (node.disabled) {
         return NodeFilter.FILTER_REJECT;
       }
+      let visible = node.checkVisibility({
+        checkVisibilityCSS: true,
+        flush: false,
+      });
+      if (!visible) {
+        return NodeFilter.FILTER_REJECT;
+      }
       let bounds = this._getBoundsWithoutFlushing(node);
       if (bounds.width == 0 || bounds.height == 0) {
         return NodeFilter.FILTER_REJECT;
@@ -1593,17 +1786,23 @@ export var PanelView = class extends AssociatedToNode {
         localName == "toolbarbutton" ||
         localName == "checkbox" ||
         localName == "a" ||
+        localName == "moz-button" ||
+        localName == "moz-box-button" ||
         localName == "moz-toggle" ||
+        localName == "summary" ||
         node.classList.contains("text-link") ||
-        (!arrowKey && isNavigableWithTabOnly)
+        (!arrowKey && isNavigableWithTabOnly) ||
+        node.dataset?.capturesFocus === "true"
       ) {
         // Set the tabindex attribute to make sure the node is focusable.
-        // Don't do this for browser and iframe elements because this breaks
-        // tabbing behavior. They're already focusable anyway.
+        // Don't do this for browser, iframe and input elements because this
+        // breaks tabbing behavior. They're already focusable anyway.
         if (
           localName != "browser" &&
           localName != "iframe" &&
-          !node.hasAttribute("tabindex")
+          localName != "input" &&
+          !node.hasAttribute("tabindex") &&
+          node.dataset?.capturesFocus !== "true"
         ) {
           node.setAttribute("tabindex", "-1");
         }
@@ -1611,11 +1810,9 @@ export var PanelView = class extends AssociatedToNode {
       }
       return NodeFilter.FILTER_SKIP;
     };
-    return this.document.createTreeWalker(
-      this.node,
-      NodeFilter.SHOW_ELEMENT,
-      filter
-    );
+    return new DocumentWalker(this.node, {
+      filter,
+    });
   }
 
   /**
@@ -1725,6 +1922,28 @@ export var PanelView = class extends AssociatedToNode {
       ? this.#arrowNavigableWalker
       : this._tabNavigableWalker;
     let oldSel = this.selectedElement;
+
+    // It's possible that we have no selectedElement, but there is still
+    // an activeElement (if the user clicks on an input in a shadowRoot,
+    // for instance). We should start from the activeElement in that case,
+    // and take care to get the right activeElement if shadowRoots are
+    // involved (as we can allow focus to be on elements in shadowRoots).
+    if (!oldSel) {
+      oldSel = this.document.activeElement;
+      if (
+        oldSel &&
+        !(
+          this.node.compareDocumentPosition(oldSel) &
+          Node.DOCUMENT_POSITION_CONTAINED_BY
+        )
+      ) {
+        oldSel = null;
+      }
+      while (oldSel?.shadowRoot?.activeElement) {
+        oldSel = oldSel.shadowRoot.activeElement;
+      }
+    }
+
     let newSel;
     if (oldSel) {
       walker.currentNode = oldSel;
@@ -1779,10 +1998,20 @@ export var PanelView = class extends AssociatedToNode {
       focus = null;
     }
 
-    // Some panels contain embedded documents. We can't manage
-    // keyboard navigation within those.
-    if (focus && (focus.tagName == "browser" || focus.tagName == "iframe")) {
+    // Some panels contain embedded documents or need to capture focus events.
+    // We can't manage keyboard navigation within those.
+    if (
+      focus &&
+      (focus.tagName == "browser" ||
+        focus.tagName == "iframe" ||
+        focus.dataset?.capturesFocus === "true")
+    ) {
       return;
+    }
+
+    // Shadow roots may have inner focus
+    if (focus?.shadowRoot?.activeElement) {
+      focus = focus.shadowRoot.activeElement;
     }
 
     let stop = () => {
@@ -1876,7 +2105,13 @@ export var PanelView = class extends AssociatedToNode {
         // If the current button is _not_ one that points to a subview, pressing
         // the arrow key shouldn't do anything.
         let button = this.selectedElement;
-        if (!button || !button.classList.contains("subviewbutton-nav")) {
+        if (
+          !button ||
+          !(
+            button.classList.contains("subviewbutton-nav") ||
+            button.classList.contains("moz-button-subviewbutton-nav")
+          )
+        ) {
           break;
         }
       }
@@ -1901,14 +2136,29 @@ export var PanelView = class extends AssociatedToNode {
           shiftKey: event.shiftKey,
           metaKey: event.metaKey,
         };
-        let dispEvent = new event.target.ownerGlobal.MouseEvent(
+        // The a11y-checks want the target to be accessible. For moz-button the
+        // focus is really on the inner button which is accessible, but we check
+        // a11y against the event target (moz-button) which fails. Dispatch from
+        // the inner button element instead.
+        let target = button;
+        if (
+          button.localName == "moz-button" ||
+          button.localName == "moz-box-button"
+        ) {
+          target = button.buttonEl;
+          details.composed = true;
+        }
+        let dispEvent = new event.target.documentGlobal.MouseEvent(
           "mousedown",
           details
         );
-        button.dispatchEvent(dispEvent);
+        target.dispatchEvent(dispEvent);
         // This event will trigger a command event too.
-        dispEvent = new event.target.ownerGlobal.PointerEvent("click", details);
-        button.dispatchEvent(dispEvent);
+        dispEvent = new event.target.documentGlobal.PointerEvent(
+          "click",
+          details
+        );
+        target.dispatchEvent(dispEvent);
         this._doingKeyboardActivation = false;
         break;
       }

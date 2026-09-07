@@ -17,6 +17,7 @@ pub type stat64 = stat;
 pub type suseconds_t = c_long;
 pub type time_t = c_int;
 pub type wchar_t = c_int;
+pub type pthread_t = c_ulong;
 
 pub type fsblkcnt64_t = u64;
 pub type fsfilcnt64_t = u64;
@@ -31,14 +32,13 @@ s! {
         pub cuid: crate::uid_t,
         pub cgid: crate::gid_t,
         pub mode: c_ushort, // read / write
-        __pad1: c_ushort,
+        __pad1: Padding<c_ushort>,
         pub __seq: c_ushort,
-        __pad2: c_ushort,
-        __unused1: c_ulong,
-        __unused2: c_ulong,
+        __pad2: Padding<c_ushort>,
+        __unused1: Padding<c_ulong>,
+        __unused2: Padding<c_ulong>,
     }
 
-    #[cfg(not(target_os = "l4re"))]
     pub struct pthread_attr_t {
         __detachstate: c_int,
         __schedpolicy: c_int,
@@ -72,8 +72,8 @@ s! {
         pub shm_cpid: crate::pid_t,
         pub shm_lpid: crate::pid_t,
         pub shm_nattch: crate::shmatt_t,
-        __unused1: c_ulong,
-        __unused2: c_ulong,
+        __unused1: Padding<c_ulong>,
+        __unused2: Padding<c_ulong>,
     }
 
     pub struct msqid_ds {
@@ -141,9 +141,11 @@ s! {
         pub st_mtime_nsec: c_ulong,
         pub st_ctime: crate::time_t,
         pub st_ctime_nsec: c_ulong,
-        st_pad4: [c_long; 3],
+        st_pad4: Padding<[c_long; 3]>,
     }
 
+    // FIXME(1.0): This should not implement `PartialEq`
+    #[allow(unpredictable_function_pointer_comparisons)]
     pub struct sigaction {
         pub sa_handler: crate::sighandler_t,
         pub sa_flags: c_ulong,
@@ -198,7 +200,7 @@ s! {
         pub f_ffree: u64,
         pub f_favail: u64,
         pub f_fsid: c_ulong,
-        __f_unused: c_int,
+        __f_unused: Padding<c_int>,
         pub f_flag: c_ulong,
         pub f_namemax: c_ulong,
         __f_spare: [c_int; 6],
@@ -254,11 +256,11 @@ s! {
         pub gl_pathv: *mut *mut c_char,
         pub gl_offs: size_t,
         pub gl_flags: c_int,
-        __unused1: *mut c_void,
-        __unused2: *mut c_void,
-        __unused3: *mut c_void,
-        __unused4: *mut c_void,
-        __unused5: *mut c_void,
+        __unused1: Padding<*mut c_void>,
+        __unused2: Padding<*mut c_void>,
+        __unused3: Padding<*mut c_void>,
+        __unused4: Padding<*mut c_void>,
+        __unused5: Padding<*mut c_void>,
     }
 
     pub struct cpu_set_t {
@@ -291,7 +293,6 @@ s! {
 }
 
 s_no_extra_traits! {
-    #[allow(missing_debug_implementations)]
     pub struct dirent {
         pub d_ino: crate::ino64_t,
         pub d_off: off64_t,
@@ -342,14 +343,4 @@ pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 56;
 pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 8;
 pub const __SIZEOF_PTHREAD_BARRIER_T: usize = 32;
 pub const __SIZEOF_PTHREAD_BARRIERATTR_T: usize = 4;
-pub const PIDFD_NONBLOCK: c_int = 0o4000;
-
-cfg_if! {
-    if #[cfg(target_os = "l4re")] {
-        mod l4re;
-        pub use self::l4re::*;
-    } else {
-        mod other;
-        pub use other::*;
-    }
-}
+pub const PTHREAD_STACK_MIN: usize = 16384;

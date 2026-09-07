@@ -5,6 +5,7 @@
 import { Component } from "resource://devtools/client/shared/vendor/react.mjs";
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 import { createFactories } from "resource://devtools/client/shared/react-utils.mjs";
+import { button } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
 import JsonPanelClass from "resource://devtools/client/jsonview/components/JsonPanel.mjs";
 
@@ -53,6 +54,7 @@ class MainTabbedArea extends Component {
     };
 
     this.onTabChanged = this.onTabChanged.bind(this);
+    this.onProfileSize = this.onProfileSize.bind(this);
   }
 
   onTabChanged(index) {
@@ -62,12 +64,32 @@ class MainTabbedArea extends Component {
     window.dispatchEvent(new CustomEvent("TabChanged", { detail: { index } }));
   }
 
+  onProfileSize() {
+    this.props.actions.onProfileSize();
+  }
+
+  renderToolbarButton() {
+    if (!JSONView.sizeProfilerEnabled) {
+      return null;
+    }
+    const isValidJson = !(this.state.json instanceof Error);
+    return button({
+      className: "profiler-icon-button",
+      title: isValidJson
+        ? JSONView.Locale["jsonViewer.sizeProfilerButton"]
+        : JSONView.Locale["jsonViewer.sizeProfilerButtonDisabled"],
+      onClick: this.onProfileSize,
+      disabled: !isValidJson,
+    });
+  }
+
   render() {
     return Tabs(
       {
         activeTab: this.state.activeTab,
         onAfterChange: this.onTabChanged,
         tall: true,
+        renderToolbarButton: () => this.renderToolbarButton(),
       },
       TabPanel(
         {

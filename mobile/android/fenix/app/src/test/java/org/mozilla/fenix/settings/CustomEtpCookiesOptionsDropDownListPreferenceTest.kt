@@ -4,55 +4,74 @@
 
 package org.mozilla.fenix.settings
 
-import android.content.Context
 import androidx.preference.Preference
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.mockkStatic
+import androidx.preference.PreferenceManager
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class CustomEtpCookiesOptionsDropDownListPreferenceTest {
     @Test
-    fun `GIVEN total cookie protection is enabled WHEN using this preference THEN show the total cookie protection option`() {
-        val expectedEntries = arrayOf(
-            testContext.getString(R.string.preference_enhanced_tracking_protection_custom_cookies_5),
-        ) + defaultEntries
-        val expectedValues = arrayOf(testContext.getString(R.string.total_protection)) + defaultValues
+    fun `WHEN this preference is created THEN all options are present before filtering`() {
+        val preference = CustomEtpCookiesOptionsDropDownListPreference(testContext)
 
-        mockkStatic("org.mozilla.fenix.ext.ContextKt") {
-            every { any<Context>().settings() } returns mockk {
-                every { enabledTotalCookieProtection } returns true
-            }
-
-            val preference = CustomEtpCookiesOptionsDropDownListPreference(testContext)
-
-            assertArrayEquals(expectedEntries, preference.entries)
-            assertArrayEquals(expectedValues, preference.entryValues)
-            assertEquals(expectedValues[0], preference.getDefaultValue())
-        }
+        assertArrayEquals(allEntries, preference.entries)
+        assertArrayEquals(allValues, preference.entryValues)
+        assertEquals(allValues[0], preference.getDefaultValue())
     }
 
     @Test
-    fun `GIVEN total cookie protection is disabled WHEN using this preference THEN don't show the total cookie protection option`() {
-        mockkStatic("org.mozilla.fenix.ext.ContextKt") {
-            every { any<Context>().settings() } returns mockk {
-                every { enabledTotalCookieProtection } returns false
-            }
+    fun `GIVEN a non-legacy cookie mode is selected WHEN attached THEN legacy modes are hidden`() {
+        val preference = attachPreference(testContext.getString(R.string.total_protection))
 
-            val preference = CustomEtpCookiesOptionsDropDownListPreference(testContext)
+        val expectedValues = arrayOf(
+            testContext.getString(R.string.total_protection),
+            testContext.getString(R.string.third_party),
+            testContext.getString(R.string.all),
+        )
+        assertArrayEquals(expectedValues, preference.entryValues)
+    }
 
-            assertArrayEquals(defaultEntries, preference.entries)
-            assertArrayEquals(defaultValues, preference.entryValues)
-            assertEquals(defaultValues[0], preference.getDefaultValue())
-        }
+    @Test
+    fun `GIVEN social (mode 4) is selected WHEN attached THEN social is shown and unvisited is hidden`() {
+        val preference = attachPreference(testContext.getString(R.string.social))
+
+        val expectedValues = arrayOf(
+            testContext.getString(R.string.total_protection),
+            testContext.getString(R.string.social),
+            testContext.getString(R.string.third_party),
+            testContext.getString(R.string.all),
+        )
+        assertArrayEquals(expectedValues, preference.entryValues)
+    }
+
+    @Test
+    fun `GIVEN unvisited (mode 3) is selected WHEN attached THEN unvisited is shown and social is hidden`() {
+        val preference = attachPreference(testContext.getString(R.string.unvisited))
+
+        val expectedValues = arrayOf(
+            testContext.getString(R.string.total_protection),
+            testContext.getString(R.string.unvisited),
+            testContext.getString(R.string.third_party),
+            testContext.getString(R.string.all),
+        )
+        assertArrayEquals(expectedValues, preference.entryValues)
+    }
+
+    private fun attachPreference(value: String): CustomEtpCookiesOptionsDropDownListPreference {
+        val preference = CustomEtpCookiesOptionsDropDownListPreference(testContext)
+        preference.key = "test_cookie_behavior"
+        PreferenceManager.getDefaultSharedPreferences(testContext)
+            .edit().putString("test_cookie_behavior", value).apply()
+        PreferenceManager(testContext)
+            .createPreferenceScreen(testContext)
+            .addPreference(preference)
+        return preference
     }
 
     /**
@@ -66,8 +85,9 @@ class CustomEtpCookiesOptionsDropDownListPreferenceTest {
             }
     }
 
-    private val defaultEntries = with(testContext) {
+    private val allEntries = with(testContext) {
         arrayOf(
+            getString(R.string.preference_enhanced_tracking_protection_custom_cookies_5),
             getString(R.string.preference_enhanced_tracking_protection_custom_cookies_1),
             getString(R.string.preference_enhanced_tracking_protection_custom_cookies_2),
             getString(R.string.preference_enhanced_tracking_protection_custom_cookies_3),
@@ -75,8 +95,9 @@ class CustomEtpCookiesOptionsDropDownListPreferenceTest {
         )
     }
 
-    private val defaultValues = with(testContext) {
+    private val allValues = with(testContext) {
         arrayOf(
+            getString(R.string.total_protection),
             getString(R.string.social),
             getString(R.string.unvisited),
             getString(R.string.third_party),

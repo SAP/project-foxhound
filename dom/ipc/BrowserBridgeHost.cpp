@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/BrowserBridgeHost.h"
 
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Element.h"
 #include "nsFrameLoader.h"
 
@@ -34,41 +31,37 @@ BrowsingContext* BrowserBridgeHost::GetBrowsingContext() const {
   return mBridge->GetBrowsingContext();
 }
 
-nsILoadContext* BrowserBridgeHost::GetLoadContext() const {
-  return mBridge->GetLoadContext();
-}
-
-bool BrowserBridgeHost::CanRecv() const {
-  return mBridge && mBridge->CanRecv();
+bool BrowserBridgeHost::CanSend() const {
+  return mBridge && mBridge->CanSend();
 }
 
 void BrowserBridgeHost::LoadURL(nsDocShellLoadState* aLoadState) {
   MOZ_ASSERT(aLoadState);
-  Unused << mBridge->SendLoadURL(WrapNotNull(aLoadState));
+  (void)mBridge->SendLoadURL(WrapNotNull(aLoadState));
 }
 
 void BrowserBridgeHost::ResumeLoad(uint64_t aPendingSwitchId) {
-  Unused << mBridge->SendResumeLoad(aPendingSwitchId);
+  (void)mBridge->SendResumeLoad(aPendingSwitchId);
 }
 
 void BrowserBridgeHost::DestroyStart() {
   // We don't clear the bridge until BrowserBridgeChild::ActorDestroy is called,
   // which will end up calling DestroyComplete().
   if (mBridge) {
-    Unused << mBridge->SendBeginDestroy();
+    (void)mBridge->SendBeginDestroy();
   }
 }
 
 void BrowserBridgeHost::DestroyComplete() { mBridge = nullptr; }
 
 bool BrowserBridgeHost::Show(const OwnerShowInfo& aShowInfo) {
-  Unused << mBridge->SendShow(aShowInfo);
+  (void)mBridge->SendShow(aShowInfo);
   return true;
 }
 
 void BrowserBridgeHost::UpdateDimensions(const LayoutDeviceIntRect& aRect,
                                          const LayoutDeviceIntSize& aSize) {
-  Unused << mBridge->SendUpdateDimensions(aRect, aSize);
+  (void)mBridge->SendUpdateDimensions(aRect, aSize);
 }
 
 void BrowserBridgeHost::UpdateEffects(EffectsInfo aEffects) {
@@ -76,7 +69,7 @@ void BrowserBridgeHost::UpdateEffects(EffectsInfo aEffects) {
     return;
   }
   mEffectsInfo = aEffects;
-  Unused << mBridge->SendUpdateEffects(mEffectsInfo);
+  (void)mBridge->SendUpdateEffects(mEffectsInfo);
 }
 
 already_AddRefed<nsIWidget> BrowserBridgeHost::GetWidget() const {

@@ -42,7 +42,7 @@ directory once profiling is done.
 `samply`.
 
 ```
-samply import perf.data --breakpad-symbol-server https://symbols.mozilla.org/
+samply import perf.data --breakpad-symbol-server https://symbols.mozilla.org/try/
 ```
 
 And that’s it! This should open a browser with the profile data. Example:
@@ -50,8 +50,8 @@ And that’s it! This should open a browser with the profile data. Example:
 
 The `--breakpad-symbol-server` argument is needed when you profile official
 Firefox Release / Nightly builds, in order to get Firefox C++ / Rust symbols. If
-you’re profiling a build with your own Gecko, you need to tell samply about your
-object directory: `--symbol-dir gecko-android-objdir/dist/bin`
+you’re profiling a local build (non-artifact), you need to tell samply about your
+object directory, with `--symbol-dir gecko-android-objdir/dist/bin`
 
 ## Advanced Usage
 

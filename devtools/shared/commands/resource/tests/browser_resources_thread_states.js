@@ -59,7 +59,7 @@ async function checkBreakpointBeforeWatchResources() {
 
   info("Run the 'debugger' statement");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.runDebuggerStatement();
   });
 
@@ -135,7 +135,7 @@ async function checkBreakpointAfterWatchResources() {
 
   info("Run the 'debugger' statement");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.runDebuggerStatement();
   });
 
@@ -219,7 +219,7 @@ async function checkRealBreakpoint() {
 
   info("Run the test function where we set a breakpoint");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.testFunction();
   });
 
@@ -292,7 +292,7 @@ async function checkPauseOnException() {
   });
 
   info("Reload the page, in order to trigger exception on load");
-  const reloaded = reloadBrowser();
+  const reloaded = reloadSelectedTab();
 
   await waitFor(
     () => availableResources.length == 1,
@@ -365,7 +365,7 @@ async function checkSetBeforeWatch() {
 
   info("Run the test function where we set a breakpoint");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.testFunction();
   });
 
@@ -479,19 +479,11 @@ async function checkDebuggerStatementInIframes() {
   });
 
   const iframeTarget = threadState.targetFront;
-  if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
-    is(
-      iframeTarget.url,
-      REMOTE_IFRAME_URL,
-      "With fission/EFT, the pause is from the iframe's target"
-    );
-  } else {
-    is(
-      iframeTarget,
-      targetCommand.targetFront,
-      "Without fission/EFT, the pause is from the top level target"
-    );
-  }
+  is(
+    iframeTarget.url,
+    REMOTE_IFRAME_URL,
+    "The pause is from the iframe's target"
+  );
   const { threadFront } = iframeTarget;
 
   await threadFront.resume();
@@ -535,7 +527,7 @@ async function testMultiprocessThreadState() {
 
   info("Run the 'debugger' statement");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  const onResumed = ContentTask.spawn(tab.linkedBrowser, null, () => {
+  const onResumed = SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.runDebuggerStatement();
   });
 

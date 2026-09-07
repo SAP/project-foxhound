@@ -13,9 +13,10 @@
 // fuzzing efficiency.
 
 #include <cstddef>
-#include <cstdint>
+#include <span>
 
 #include "rtc_base/logging.h"
+#include "test/fuzzers/fuzz_data_helper.h"
 
 namespace {
 bool g_initialized = false;
@@ -26,7 +27,7 @@ void InitializeWebRtcFuzzDefaults() {
 // Remove default logging to prevent huge slowdowns.
 // TODO(pbos): Disable in Chromium: http://crbug.com/561667
 #if !defined(WEBRTC_CHROMIUM_BUILD)
-  rtc::LogMessage::LogToDebug(rtc::LS_NONE);
+  webrtc::LogMessage::LogToDebug(webrtc::LS_NONE);
 #endif  // !defined(WEBRTC_CHROMIUM_BUILD)
 
   g_initialized = true;
@@ -34,11 +35,12 @@ void InitializeWebRtcFuzzDefaults() {
 }  // namespace
 
 namespace webrtc {
-extern void FuzzOneInput(const uint8_t* data, size_t size);
+extern void FuzzOneInput(FuzzDataHelper fuzz_data);
 }  // namespace webrtc
 
 extern "C" int LLVMFuzzerTestOneInput(const unsigned char* data, size_t size) {
   InitializeWebRtcFuzzDefaults();
-  webrtc::FuzzOneInput(data, size);
+  webrtc::FuzzDataHelper fuzz_data(std::span(data, size));
+  webrtc::FuzzOneInput(fuzz_data);
   return 0;
 }

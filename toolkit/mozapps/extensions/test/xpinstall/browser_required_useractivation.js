@@ -141,7 +141,7 @@ add_task(async function testFailureOnJSWithoutUserActivation() {
   );
 });
 
-add_task(async function testFailureOnJSWithoutUserActivation() {
+add_task(async function testFailureOnFrameNavigationWithoutUserActivation() {
   await runTestCase(
     [XPI_URL],
     xpiURL => {
@@ -151,6 +151,24 @@ add_task(async function testFailureOnJSWithoutUserActivation() {
         document.body.innerHTML = "";
         document.body.appendChild(frame);
       `);
+    },
+    { expectInstall: false }
+  );
+});
+
+add_task(async function testFailureOnSystemNavigationWithoutUserActivation() {
+  await runTestCase(
+    [XPI_URL],
+    xpiURL => {
+      // We could do this.content.location = xpiURL, which would trigger a
+      // navigation with a system principal as triggering principal, but that
+      // is not very obvious. So we explicitly call the loadURI API here with
+      // the intended triggeringPrincipal:
+      let docShell = this.content.docShell.QueryInterface(Ci.nsIWebNavigation);
+      docShell.loadURI(Services.io.newURI(xpiURL), {
+        triggeringPrincipal:
+          Services.scriptSecurityManager.getSystemPrincipal(),
+      });
     },
     { expectInstall: false }
   );

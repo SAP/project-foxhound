@@ -1,21 +1,29 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 tags = "os_integration"
 
 ["test_TaskScheduler.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1713329
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1707753
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1713329
 ]
 
 ["test_TaskSchedulerMacOSImpl.js"]
-run-if = ["os == 'mac'"] # Test of macOS backend
+run-sequentially = ["true"] # almost perma fail in parallel
+run-if = [
+  "os == 'mac'", # Test of macOS backend
+]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1713329
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1707753
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1713329
 ]
 
 ["test_TaskSchedulerWinImpl.js"]
-run-if = ["os == 'win'"] # Test of Windows backend
+run-if = [
+  "os == 'win'", # Test of Windows backend
+]
 
 ["test_WinTaskSchedulerService.js"]
-run-if = ["os == 'win'"] # Test of Windows only service
+run-if = [
+  "os == 'win'", # Test of Windows only service
+]

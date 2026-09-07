@@ -1,23 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/HTMLSlotElement.h"
+
+#include "mozilla/AppShutdown.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/HTMLSlotElementBinding.h"
 #include "mozilla/dom/HTMLUnknownElement.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Text.h"
-#include "mozilla/AppShutdown.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 
 nsGenericHTMLElement* NS_NewHTMLSlotElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
     mozilla::dom::FromParser aFromParser) {
   RefPtr<mozilla::dom::NodeInfo> nodeInfo(std::move(aNodeInfo));
   auto* nim = nodeInfo->NodeInfoManager();
@@ -27,7 +26,7 @@ nsGenericHTMLElement* NS_NewHTMLSlotElement(
 namespace mozilla::dom {
 
 HTMLSlotElement::HTMLSlotElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
 HTMLSlotElement::~HTMLSlotElement() {
@@ -69,6 +68,11 @@ void HTMLSlotElement::UnbindFromTree(UnbindContext& aContext) {
   RefPtr<ShadowRoot> oldContainingShadow = GetContainingShadow();
 
   nsGenericHTMLElement::UnbindFromTree(aContext);
+
+  if (!HasValidDir() && oldContainingShadow) {
+    // Slot might've provided host directionality to dir=auto ancestors
+    ResetDirectionSetBySlotHost(this, aContext, oldContainingShadow);
+  }
 
   if (oldContainingShadow && !GetContainingShadow()) {
     oldContainingShadow->RemoveSlot(this);
@@ -112,7 +116,7 @@ static void FlattenAssignedNodes(HTMLSlotElement* aSlot,
     return;
   }
 
-  const nsTArray<RefPtr<nsINode>>& assignedNodes = aSlot->AssignedNodes();
+  const Span<const RefPtr<nsINode>> assignedNodes = aSlot->AssignedNodes();
 
   // If assignedNodes is empty, use children of slot as fallback content.
   if (assignedNodes.IsEmpty()) {
@@ -147,7 +151,7 @@ void HTMLSlotElement::AssignedNodes(const AssignedNodesOptions& aOptions,
     return FlattenAssignedNodes(this, aNodes);
   }
 
-  aNodes = mAssignedNodes.Clone();
+  aNodes.AppendElements(mAssignedNodes.AsSpan());
 }
 
 void HTMLSlotElement::AssignedElements(const AssignedNodesOptions& aOptions,
@@ -159,10 +163,6 @@ void HTMLSlotElement::AssignedElements(const AssignedNodesOptions& aOptions,
       aElements.AppendElement(assignedNode->AsElement());
     }
   }
-}
-
-const nsTArray<RefPtr<nsINode>>& HTMLSlotElement::AssignedNodes() const {
-  return mAssignedNodes;
 }
 
 const nsTArray<nsINode*>& HTMLSlotElement::ManuallyAssignedNodes() const {
@@ -231,7 +231,9 @@ void HTMLSlotElement::Assign(const Sequence<OwningElementOrText>& aNodes) {
     if (!mAssignedNodes.IsEmpty()) {
       changedSlots.EnsureInserted(this);
       if (root) {
-        root->InvalidateStyleAndLayoutOnSubtree(this);
+        // If not in a shadow tree, the flat tree is not really changing, so no
+        // need to invalidate layout. Same applies to other callers here.
+        ShadowRoot::InvalidateStyleAndLayoutOnSubtree(this);
       }
       ClearAssignedNodes();
     }
@@ -252,28 +254,26 @@ void HTMLSlotElement::Assign(const Sequence<OwningElementOrText>& aNodes) {
     // XXXsmaug Should we have a helper for
     //         https://infra.spec.whatwg.org/#ordered-set?
     if (content->GetManualSlotAssignment() != this) {
-      if (HTMLSlotElement* oldSlot = content->GetAssignedSlot()) {
-        if (changedSlots.EnsureInserted(oldSlot)) {
-          if (root) {
-            MOZ_ASSERT(oldSlot->GetContainingShadow() == root);
-            root->InvalidateStyleAndLayoutOnSubtree(oldSlot);
-          }
+      // Step 3.1: If content's manual slot assignment refers to a slot,
+      // then remove node from that slot's manually assigned nodes.
+      if (HTMLSlotElement* prevSlot = content->GetManualSlotAssignment()) {
+        ShadowRoot* prevSlotRoot = prevSlot->GetContainingShadow();
+        const bool wasAssigned = content->GetAssignedSlot() == prevSlot;
+        if (wasAssigned && prevSlotRoot &&
+            changedSlots.EnsureInserted(prevSlot)) {
+          ShadowRoot::InvalidateStyleAndLayoutOnSubtree(prevSlot);
         }
+        prevSlot->RemoveManuallyAssignedNode(*content);
       }
 
-      if (changedSlots.EnsureInserted(this)) {
-        if (root) {
-          root->InvalidateStyleAndLayoutOnSubtree(this);
-        }
-      }
-      // 3.1 (HTML Spec) If content's manual slot assignment refers to a slot,
-      // then remove node from that slot's manually assigned nodes. 3.2 (HTML
-      // Spec) Set content's manual slot assignment to this.
-      if (HTMLSlotElement* oldSlot = content->GetManualSlotAssignment()) {
-        oldSlot->RemoveManuallyAssignedNode(*content);
-      }
+      // Step 3.2: Set content's manual slot assignment to this.
       content->SetManualSlotAssignment(this);
+      // Step 3.3: Append content to nodesSet.
       mManuallyAssignedNodes.AppendElement(content);
+
+      if (changedSlots.EnsureInserted(this) && root) {
+        ShadowRoot::InvalidateStyleAndLayoutOnSubtree(this);
+      }
 
       if (root && host && content->GetParent() == host) {
         // Equivalent to 4.2.2.4.3 (DOM Spec) `Set slot's assigned nodes to
@@ -295,7 +295,11 @@ void HTMLSlotElement::Assign(const Sequence<OwningElementOrText>& aNodes) {
         }
       }
     }
-    MOZ_ASSERT(changedSlots.IsEmpty());
+  }
+  // Fire slotchange for any remaining slots that are in a different shadow
+  // tree (cross-root case). The spec doesn't define an ordering here.
+  for (const auto& slot : changedSlots) {
+    slot->EnqueueSlotChangeEvent();
   }
 }
 
@@ -318,7 +322,7 @@ void HTMLSlotElement::AppendAssignedNode(nsIContent& aNode) {
 void HTMLSlotElement::RecalculateHasSlottedState() {
   bool hasSlotted = false;
   // Find the first node that makes this a slotted element.
-  for (const RefPtr<nsINode>& assignedNode : mAssignedNodes) {
+  for (const RefPtr<nsINode>& assignedNode : mAssignedNodes.AsSpan()) {
     if (auto* slot = HTMLSlotElement::FromNode(assignedNode)) {
       if (slot->IsInShadowTree() &&
           !slot->State().HasState(ElementState::HAS_SLOTTED)) {
@@ -348,14 +352,20 @@ void HTMLSlotElement::RemoveAssignedNode(nsIContent& aNode) {
 
   RecalculateHasSlottedState();
   SlotAssignedNodeRemoved(this, aNode);
+  if (StaticPrefs::dom_headingoffset_enabled()) {
+    aNode.AsContent()->UpdateHeadingElementsOffsetChange();
+  }
 }
 
 void HTMLSlotElement::ClearAssignedNodes() {
-  for (RefPtr<nsINode>& node : mAssignedNodes) {
+  for (RefPtr<nsINode>& node : mAssignedNodes.AsSpan()) {
     MOZ_ASSERT(!node->AsContent()->GetAssignedSlot() ||
                    node->AsContent()->GetAssignedSlot() == this,
                "How exactly?");
     node->AsContent()->SetAssignedSlot(nullptr);
+    if (StaticPrefs::dom_headingoffset_enabled()) {
+      node->AsContent()->UpdateHeadingElementsOffsetChange();
+    }
   }
 
   mAssignedNodes.Clear();
@@ -389,7 +399,12 @@ void HTMLSlotElement::FireSlotChangeEvent() {
 
 void HTMLSlotElement::RemoveManuallyAssignedNode(nsIContent& aNode) {
   mManuallyAssignedNodes.RemoveElement(&aNode);
-  RemoveAssignedNode(aNode);
+  if (aNode.GetManualSlotAssignment() == this) {
+    aNode.SetManualSlotAssignment(nullptr);
+  }
+  if (aNode.GetAssignedSlot() == this) {
+    RemoveAssignedNode(aNode);
+  }
 }
 
 JSObject* HTMLSlotElement::WrapNode(JSContext* aCx,

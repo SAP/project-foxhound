@@ -1,0 +1,54 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>DRM powerEfficient via decoder check</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="application/javascript" src="manifest.js"></script>
+  <script type="application/javascript" src="mediacapabilities_drm_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script type="application/javascript">
+
+// Verify that software-DRM (ClearKey) decodingInfo returns a boolean
+// powerEfficient derived from the underlying video decoder, and that RFP
+// forces powerEfficient=false regardless of the decoder's capability.
+
+const kClearKey = "org.w3.clearkey";
+
+const kVideoConfig = {
+  contentType: 'video/webm; codecs="vp09.00.10.08"',
+  width: 1280,
+  height: 720,
+  bitrate: 3000,
+  framerate: 30,
+};
+
+add_task(async function testClearKeySoftwareDecode() {
+  const result = await createEMEDecodingInfo({
+    keySystem: kClearKey,
+    robustness: "",
+    videoConfig: kVideoConfig,
+    resistFingerprinting: false,
+  });
+  is(result.supported, true, "ClearKey VP9 should be supported");
+  is(typeof result.powerEfficient, "boolean",
+     "powerEfficient should be a boolean for software DRM");
+});
+
+add_task(async function testClearKeyRFP() {
+  const result = await createEMEDecodingInfo({
+    keySystem: kClearKey,
+    robustness: "",
+    videoConfig: kVideoConfig,
+    resistFingerprinting: true,
+  });
+  is(result.supported, true,
+     "ClearKey should still be supported under RFP (software DRM)");
+  is(result.powerEfficient, false,
+     "powerEfficient must be false under RFP for software DRM");
+});
+</script>
+</body>
+</html>

@@ -46,7 +46,7 @@ add_task(async function testIgnoreMinifiedSourceForPrettySource() {
   await waitForSelectedSource(dbg, "pretty.js");
 
   info("Pretty print the source");
-  await prettyPrint(dbg);
+  await togglePrettyPrint(dbg);
 
   fileResults = await doProjectSearch(dbg, "stuff", 2);
 
@@ -122,6 +122,35 @@ add_task(async function testBlackBoxedSources() {
     fileResults.length,
     1,
     "One result was found as pretty.js is no longer blackboxed"
+  );
+});
+
+add_task(async function testStyleSheetSources() {
+  if (
+    !Services.prefs.getBoolPref(
+      "devtools.debugger.features.stylesheets-in-debugger"
+    )
+  ) {
+    return;
+  }
+  const dbg = await initDebugger("doc-react.html", "style.css");
+
+  await openProjectSearch(dbg);
+
+  const fileResults = await doProjectSearch(dbg, "background-color", 1);
+  is(fileResults.length, 1, "One result was found in style.css");
+
+  info("Click the single result found to open style.css");
+  await clickElement(dbg, "fileMatch");
+  await waitForSelectedSource(dbg, "style.css");
+
+  is(countTabs(dbg), 1, "There is one tab opened");
+
+  const tab = findElement(dbg, "activeTab");
+  is(
+    tab.textContent,
+    "style.css",
+    "The style sheet source (style.css) is opened"
   );
 });
 

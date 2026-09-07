@@ -49,7 +49,7 @@ function waitForTransferComplete() {
  */
 add_task(async function () {
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
 
   // Create the folder the video will be saved into.
   let destDir = createTemporarySaveDirectory();
@@ -75,7 +75,10 @@ add_task(async function () {
   gBrowser.selectedTab = tab;
   let browser = tab.linkedBrowser;
   info("Loading video tab");
-  await promiseTabLoadEvent(tab, VIDEO_URL);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: VIDEO_URL,
+  });
   info("Video tab loaded.");
 
   let context = document.getElementById("contentAreaContextMenu");

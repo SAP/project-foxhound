@@ -32,22 +32,18 @@ add_task(async function test() {
 
   BrowserTestUtils.addTab(gBrowser, "about:blank");
 
-  SearchUIUtils.loadSearchFromContext(
+  SearchUIUtils.loadSearchFromContext({
     window,
-    "mozilla",
-    false,
-    Services.scriptSecurityManager.getSystemPrincipal(),
-    undefined,
-    new PointerEvent("click")
-  );
-  SearchUIUtils.loadSearchFromContext(
+    searchText: "mozilla",
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    event: new PointerEvent("click"),
+  });
+  SearchUIUtils.loadSearchFromContext({
     window,
-    "firefox",
-    false,
-    Services.scriptSecurityManager.getSystemPrincipal(),
-    undefined,
-    new PointerEvent("click")
-  );
+    searchText: "firefox",
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    event: new PointerEvent("click"),
+  });
 
   // Wait for all the tabs to open.
   await tabsLoadedDeferred.promise;

@@ -41,7 +41,7 @@ add_task(async function testValidAttrCodes() {
       msixCampaignIdStub.callsFake(async () => decodeURIComponent(currentCode));
     } else if (AppConstants.platform === "macosx") {
       const { MacAttribution } = ChromeUtils.importESModule(
-        "resource:///modules/MacAttribution.sys.mjs"
+        "moz-src:///browser/components/attribution/MacAttribution.sys.mjs"
       );
 
       await MacAttribution.setAttributionString(currentCode);
@@ -89,7 +89,7 @@ add_task(async function testInvalidAttrCodes() {
       msixCampaignIdStub.callsFake(async () => decodeURIComponent(currentCode));
     } else if (AppConstants.platform === "macosx") {
       const { MacAttribution } = ChromeUtils.importESModule(
-        "resource:///modules/MacAttribution.sys.mjs"
+        "moz-src:///browser/components/attribution/MacAttribution.sys.mjs"
       );
 
       await MacAttribution.setAttributionString(currentCode);

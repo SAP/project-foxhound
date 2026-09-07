@@ -6,10 +6,11 @@ import os
 import os.path
 import sys
 import re
-import json
 import shutil
 from optparse import OptionParser
 from xml.dom.minidom import parse
+
+from mozfile import json
 
 if sys.version < '2.6':
    print 'Wrong Python Version !!!: Need >= 2.6'

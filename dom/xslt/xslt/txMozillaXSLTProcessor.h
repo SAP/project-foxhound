@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +5,14 @@
 #ifndef TRANSFRMX_TXMOZILLAXSLTPROCESSOR_H
 #define TRANSFRMX_TXMOZILLAXSLTPROCESSOR_H
 
-#include "nsStubMutationObserver.h"
-#include "nsIDocumentTransformer.h"
-#include "txExpandedNameMap.h"
-#include "txNamespaceMap.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/XSLTProcessorBinding.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIDocumentTransformer.h"
+#include "nsStubMutationObserver.h"
+#include "nsWrapperCache.h"
+#include "txExpandedNameMap.h"
+#include "txNamespaceMap.h"
 
 class nsINode;
 class nsIURI;

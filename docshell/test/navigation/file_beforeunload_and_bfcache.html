@@ -2,7 +2,7 @@
   <head>
     <script>
     onpageshow = function(pageShowEvent) {
-      var bc = new BroadcastChannel("beforeunload_and_bfcache");
+      var bc = SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel("beforeunload_and_bfcache");
       bc.onmessage = function(event) {
         if (event.data == "nextpage") {
           bc.close();

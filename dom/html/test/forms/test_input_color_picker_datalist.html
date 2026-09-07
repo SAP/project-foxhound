@@ -14,9 +14,10 @@ function runTest() {
   MockColorPicker.init(window);
 
   MockColorPicker.showCallback = (picker) => {
-    is(picker.defaultColors.length, 2);
+    is(picker.defaultColors.length, 3);
     is(picker.defaultColors[0], "#112233");
-    is(picker.defaultColors[1], "#00ffaa");
+    is(picker.defaultColors[1], "#000000");
+    is(picker.defaultColors[2], "#00ffaa");
 
     MockColorPicker.cleanup();
     SimpleTest.finish();
@@ -33,7 +34,7 @@ SimpleTest.waitForFocus(runTest);
 <input type="color" list="color-list">
 <datalist id="color-list">
   <option value="#112233"></option>
-  <option value="black"></option> <!-- invalid -->
+  <option value="black"></option>
   <option value="#000000" disabled></option>
   <option value="#00FFAA"></option>
   <option></option>

@@ -64,6 +64,7 @@ add_heuristic_tests(
             { fieldName: "tel-local-suffix", reason: "update-heuristic" },
             { fieldName: "tel-extension", reason: "update-heuristic" },
             { fieldName: "email" },
+            { fieldName: "tel" },
           ],
         },
       ],

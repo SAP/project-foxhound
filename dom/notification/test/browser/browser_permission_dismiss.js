@@ -15,9 +15,9 @@ const TEST_URL =
 /**
  * Clicks the specified web-notifications prompt button.
  *
- * @param {Number} aButtonIndex Number indicating which button to click.
+ * @param {number} aButtonIndex Number indicating which button to click.
  *                              See the constants in this file.
- * @note modified from toolkit/components/passwordmgr/test/browser/head.js
+ * Note: modified from toolkit/components/passwordmgr/test/browser/head.js
  */
 function clickDoorhangerButton(aButtonIndex, browser) {
   let popup = PopupNotifications.getNotification("web-notifications", browser);
@@ -28,13 +28,13 @@ function clickDoorhangerButton(aButtonIndex, browser) {
 
   if (aButtonIndex == PROMPT_ALLOW_BUTTON) {
     ok(true, "Triggering main action (allow the permission)");
-    notification.button.doCommand();
+    notification.button.click();
   } else if (aButtonIndex == PROMPT_NEVER_BUTTON) {
     ok(true, "Triggering secondary action (deny the permission permanently)");
     notification.menupopup.querySelector("menuitem").doCommand();
   } else {
     ok(true, "Triggering secondary action (deny the permission temporarily)");
-    notification.secondaryButton.doCommand();
+    notification.secondaryButton.click();
   }
 }
 
@@ -44,7 +44,7 @@ function clickDoorhangerButton(aButtonIndex, browser) {
  * and verifies that the expected permission is set.
  *
  * @param {Function} task Task function to run to interact with the prompt.
- * @param {String} permission Expected permission value.
+ * @param {string} permission Expected permission value.
  * @return {Promise} resolving when the task function is done and the tab
  *                   closes.
  */

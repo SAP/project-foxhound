@@ -10,8 +10,18 @@
 
 #include "pc/transceiver_list.h"
 
+#include <cstddef>
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "absl/strings/string_view.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_sender_interface.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
+#include "pc/rtp_transceiver.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -39,13 +49,14 @@ void TransceiverStableState::SetRemoteStreamIds(
 }
 
 void TransceiverStableState::SetInitSendEncodings(
-    const std::vector<RtpEncodingParameters>& encodings) {
-  init_send_encodings_ = encodings;
+    std::vector<RtpEncodingParameters> encodings) {
+  init_send_encodings_ = std::move(encodings);
 }
 
 std::vector<RtpTransceiver*> TransceiverList::ListInternal() const {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   std::vector<RtpTransceiver*> internals;
+  internals.reserve(transceivers_.size());
   for (auto transceiver : transceivers_) {
     internals.push_back(transceiver->internal());
   }
@@ -53,7 +64,7 @@ std::vector<RtpTransceiver*> TransceiverList::ListInternal() const {
 }
 
 RtpTransceiverProxyRefPtr TransceiverList::FindBySender(
-    rtc::scoped_refptr<RtpSenderInterface> sender) const {
+    scoped_refptr<RtpSenderInterface> sender) const {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   for (auto transceiver : transceivers_) {
     if (transceiver->sender() == sender) {
@@ -64,7 +75,7 @@ RtpTransceiverProxyRefPtr TransceiverList::FindBySender(
 }
 
 RtpTransceiverProxyRefPtr TransceiverList::FindByMid(
-    const std::string& mid) const {
+    absl::string_view mid) const {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   for (auto transceiver : transceivers_) {
     if (transceiver->mid() == mid) {

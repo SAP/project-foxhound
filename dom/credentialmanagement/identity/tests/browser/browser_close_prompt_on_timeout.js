@@ -45,7 +45,7 @@ add_task(async function test_close_prompt_on_timeout() {
     "popupshown"
   );
 
-  let request = ContentTask.spawn(tab.linkedBrowser, null, requestCredential);
+  let request = SpecialPowers.spawn(tab.linkedBrowser, [], requestCredential);
 
   await popupShown;
   await request;

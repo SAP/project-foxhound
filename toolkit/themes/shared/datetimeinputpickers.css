@@ -32,6 +32,7 @@
   --weekend-font-color: -moz-activehyperlinktext;
 
   --disabled-background-color: ButtonShadow;
+  --disabled-opacity: 0.5;
 
   /* TODO: these need to be in sync (ish) with DateTimePickerPanel.sys.mjs */
   font-size: 10px;
@@ -45,6 +46,7 @@
   --day-period-spacing-width: 1rem;
   --date-picker-item-height: 2.4rem;
   --date-picker-item-width: 3.3rem;
+  --outline-width: 0.2rem;
 
   /* We need to hide the scroll bar but maintain its scrolling
      capability, so using |overflow: hidden| is not an option. */
@@ -74,6 +76,10 @@
     --navigation-arrow-fill-opacity-hover: 0.8;
     --navigation-arrow-fill-opacity-active: 1;
   }
+}
+
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -111,13 +117,12 @@ button:where(:hover.active) {
 }
 
 button:focus-visible {
-  outline: 0.2rem solid SelectedItem;
-  outline-offset: 0.2rem;
+  outline: var(--outline-width) solid SelectedItem;
+  outline-offset: var(--outline-width);
 }
 
 #date-picker {
-  /* Add some padding so outlines would not overflow our viewport. */
-  padding: 0.4rem;
+  flex-grow: 1;
 }
 
 .month-year-nav {
@@ -204,7 +209,7 @@ button.month-year.active {
 
 .month-year-view > .spinner-container {
   width: 5.5rem;
-  margin: 2rem 0.5rem;
+  margin: 3rem 0.5rem;
 }
 
 .order-month-year > #spinner-month,
@@ -217,7 +222,7 @@ button.month-year.active {
   order: 2;
 }
 
-.calendar-container > table:not([hidden]) {
+.calendar-container > table {
   display: flex;
   flex-direction: column;
   border-spacing: inherit;
@@ -266,7 +271,7 @@ button.month-year.active {
   background-color: var(--today-background);
   color: var(--today-color);
   border-color: transparent;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .days-view > tr > td.today:hover {
@@ -302,7 +307,7 @@ button.month-year.active {
 }
 
 #time-picker,
-.month-year-view:not([hidden]) {
+.month-year-view {
   display: flex;
   justify-content: center;
 }
@@ -310,19 +315,20 @@ button.month-year.active {
 .spinner-container {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   width: var(--spinner-width);
 }
 
 .spinner-container > button {
   height: var(--spinner-button-height);
-}
 
-.spinner-container > button.up {
-  background-image: url("chrome://global/skin/icons/arrow-up.svg");
-}
+  &.prev {
+    background-image: url("chrome://global/skin/icons/arrow-up.svg");
+  }
 
-.spinner-container > button.down {
-  background-image: url("chrome://global/skin/icons/arrow-down.svg");
+  &.next {
+    background-image: url("chrome://global/skin/icons/arrow-down.svg");
+  }
 }
 
 .spinner-container.hide-buttons > button {
@@ -360,10 +366,14 @@ button.month-year.active {
   border-radius: var(--border-radius);
   user-select: none;
   scroll-snap-align: start;
-}
 
-.spinner-container > .spinner > div.disabled {
-  visibility: hidden;
+  &.disabled {
+    opacity: var(--disabled-opacity);
+  }
+
+  &.hidden {
+    visibility: hidden;
+  }
 }
 
 /* Used only in <input type="time"> */
@@ -379,4 +389,17 @@ button.month-year.active {
 
 .spacer {
   width: var(--day-period-spacing-width);
+}
+
+#datetime-picker {
+  display: flex;
+  gap: 1em;
+  justify-content: center;
+  /* Add some padding so outlines would not overflow our viewport. */
+  padding: calc(var(--outline-width) * 2);
+}
+
+#date-picker,
+#time-picker {
+  min-width: 0;
 }

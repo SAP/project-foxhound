@@ -1,4 +1,5 @@
 grizzly-framework==0.19.0
 PyYAML==6.0.2
 xvfbwrapper==0.2.9
+cffi==2.0.0
 -r ../../../build/psutil_requirements.txt

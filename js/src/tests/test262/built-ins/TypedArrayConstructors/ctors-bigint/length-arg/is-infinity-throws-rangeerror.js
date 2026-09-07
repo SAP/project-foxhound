@@ -16,7 +16,7 @@ info: |
   6. If SameValueZero(numberLength, elementLength) is false, throw a RangeError
   exception.
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, TypedArray]
 ---*/
 
@@ -24,6 +24,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(RangeError, function() {
     new TA(Infinity);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

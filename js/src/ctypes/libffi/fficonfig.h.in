@@ -3,19 +3,14 @@
 /* Define if building universal (internal helper macro) */
 #undef AC_APPLE_UNIVERSAL_BUILD
 
-/* Define to one of `_getb67', `GETB67', `getb67' for Cray-2 and Cray-YMP
-   systems. This function is required for `alloca.c' support on those systems.
-   */
-#undef CRAY_STACKSEG_END
-
-/* Define to 1 if using `alloca.c'. */
-#undef C_ALLOCA
-
 /* Define to the flags needed for the .section .eh_frame directive. */
 #undef EH_FRAME_FLAGS
 
 /* Define this if you want extra debugging. */
 #undef FFI_DEBUG
+
+/* Define this if you want statically defined trampolines */
+#undef FFI_EXEC_STATIC_TRAMP
 
 /* Cannot use PROT_EXEC on this target, so, we revert to alternative means */
 #undef FFI_EXEC_TRAMPOLINE_TABLE
@@ -31,9 +26,6 @@
 
 /* Define this if you do not want support for aggregate types. */
 #undef FFI_NO_STRUCTS
-
-/* Define to 1 if you have `alloca', as a function or macro. */
-#undef HAVE_ALLOCA
 
 /* Define to 1 if you have <alloca.h> and it should be used (not on Ultrix).
    */
@@ -67,23 +59,26 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define if your compiler supports __int128. */
+#undef HAVE_INT128
+
 /* Define if you have the long double type and it is bigger than a double */
 #undef HAVE_LONG_DOUBLE
 
 /* Define if you support more than one size of the long double type */
 #undef HAVE_LONG_DOUBLE_VARIANT
 
+/* Define if your compiler supports pointer authentication. */
+#undef HAVE_ARM64E_PTRAUTH
+
+/* Define to 1 if you have the `memfd_create' function. */
+#undef HAVE_MEMFD_CREATE
+
 /* Define to 1 if you have the `memcpy' function. */
 #undef HAVE_MEMCPY
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
-
-/* Define to 1 if you have the `mkostemp' function. */
-#undef HAVE_MKOSTEMP
-
-/* Define to 1 if you have the `mmap' function. */
-#undef HAVE_MMAP
 
 /* Define if mmap with MAP_ANON(YMOUS) works. */
 #undef HAVE_MMAP_ANON
@@ -109,8 +104,8 @@
 /* Define to 1 if you have the <string.h> header file. */
 #undef HAVE_STRING_H
 
-/* Define to 1 if you have the <sys/mman.h> header file. */
-#undef HAVE_SYS_MMAN_H
+/* Define to 1 if you have the <sys/memfd.h> header file. */
+#undef HAVE_SYS_MEMFD_H
 
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #undef HAVE_SYS_STAT_H
@@ -156,14 +151,6 @@
 
 /* The size of `size_t', as computed by sizeof. */
 #undef SIZEOF_SIZE_T
-
-/* If using the C implementation of alloca, define if you know the
-   direction of stack growth for your system; otherwise it will be
-   automatically deduced at runtime.
-	STACK_DIRECTION > 0 => grows toward higher addresses
-	STACK_DIRECTION < 0 => grows toward lower addresses
-	STACK_DIRECTION = 0 => direction of growth unknown */
-#undef STACK_DIRECTION
 
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS

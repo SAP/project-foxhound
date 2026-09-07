@@ -1,0 +1,12 @@
+[package]
+name = "harfbuzz_glue"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+license = "Unicode-3.0" # code is copypaste from ICU4X sample code
+
+[dependencies]
+harfbuzz = { version = "0.6.0", default-features = false }
+harfbuzz-traits = { version = "0.6.0" }
+icu_normalizer = { version = "2.1.1", default-features = false, features = ["compiled_data", "harfbuzz_traits"] }
+icu_properties = { version = "2.1.2", default-features = false, features = ["compiled_data", "harfbuzz_traits"] }

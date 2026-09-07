@@ -17,10 +17,10 @@ class ProfilerTracingListener {
   /**
    * Stop the record and return the gecko profiler data.
    *
-   * @param {Object} nativeTrace
+   * @param {object} nativeTrace
    *         If we're using native tracing, this contains a table of what the
    *         native tracer has collected.
-   * @return {Object}
+   * @return {object}
    *         The Gecko profile object.
    */
   async stop(nativeTrace) {
@@ -56,9 +56,9 @@ class ProfilerTracingListener {
    * in case it stops by itself, instead of being stopped when the Actor's stopTracing
    * method is called by the user.
    *
-   * @param {Boolean} enabled
+   * @param {boolean} enabled
    *        True if the tracer starts tracing, false it it stops.
-   * @return {Boolean}
+   * @return {boolean}
    *         Return true, if the JavaScriptTracer should log a message to stdout.
    */
   onTracingToggled(enabled) {
@@ -90,21 +90,21 @@ class ProfilerTracingListener {
   /**
    * Called by JavaScriptTracer class when a new mutation happened on any DOM Element.
    *
-   * @param {Object} options
-   * @param {Number} options.depth
+   * @param {object} options
+   * @param {number} options.depth
    *        Represents the depth of the frame in the call stack.
-   * @param {String} options.prefix
+   * @param {string} options.prefix
    *        A string to be displayed as a prefix of any logged frame.
    * @param {nsIStackFrame} options.caller
    *        The JS Callsite which caused this mutation.
-   * @param {String} options.type
+   * @param {string} options.type
    *        Type of DOM Mutation:
    *        - "add": Node being added,
    *        - "attributes": Node whose attributes changed,
    *        - "remove": Node being removed,
    * @param {DOMNode} options.element
    *        The DOM Node related to the current mutation.
-   * @return {Boolean}
+   * @return {boolean}
    *         Return true, if the JavaScriptTracer should log a message to stdout.
    */
   onTracingDOMMutation({ depth, prefix, type, caller, element }) {

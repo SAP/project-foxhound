@@ -5,63 +5,15 @@
 const TEST_URI =
   "data:text/html;charset=UTF-8," +
   "<h1>browser_inspector_sidebarstate.js</h1>";
-const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
-
-const TELEMETRY_DATA = [
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "tool_timer",
-    object: "layoutview",
-    value: null,
-    extra: {
-      time_open: "",
-    },
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "tool_timer",
-    object: "fontinspector",
-    value: null,
-    extra: {
-      time_open: "",
-    },
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "tool_timer",
-    object: "compatibilityview",
-    value: null,
-    extra: {
-      time_open: "",
-    },
-  },
-  {
-    timestamp: null,
-    category: "devtools.main",
-    method: "tool_timer",
-    object: "computedview",
-    value: null,
-    extra: {
-      time_open: "",
-    },
-  },
-];
 
 add_task(async function () {
   // Let's reset the counts.
-  Services.telemetry.clearEvents();
-
-  // Ensure no events have been logged
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  ok(!snapshot.parent, "No events have been logged for the main process");
+  Services.fog.testResetFOG();
 
   let { inspector, toolbox } = await openInspectorForURL(TEST_URI);
 
   info("Selecting font inspector.");
-  inspector.sidebar.select("fontinspector");
+  await inspector.sidebar.select("fontinspector");
 
   is(
     inspector.sidebar.getCurrentTabID(),
@@ -73,7 +25,7 @@ add_task(async function () {
   const onCompatibilityViewInitialized = inspector.once(
     "compatibilityview-initialized"
   );
-  inspector.sidebar.select("compatibilityview");
+  await inspector.sidebar.select("compatibilityview");
   await onCompatibilityViewInitialized;
 
   is(
@@ -83,7 +35,7 @@ add_task(async function () {
   );
 
   info("Selecting computed view.");
-  inspector.sidebar.select("computedview");
+  await inspector.sidebar.select("computedview");
 
   is(
     inspector.sidebar.getCurrentTabID(),
@@ -112,21 +64,12 @@ add_task(async function () {
 });
 
 function checkTelemetryResults() {
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  const events = snapshot.parent.filter(
-    event => event[1] === "devtools.main" && event[2] === "tool_timer"
-  );
-
-  for (const i in TELEMETRY_DATA) {
-    const [timestamp, category, method, object, value, extra] = events[i];
-    const expected = TELEMETRY_DATA[i];
-
-    // ignore timestamp
-    Assert.greater(timestamp, 0, "timestamp is greater than 0");
-    Assert.greater(Number(extra.time_open), 0, "time_open is greater than 0");
-    is(category, expected.category, "category is correct");
-    is(method, expected.method, "method is correct");
-    is(object, expected.object, "object is correct");
-    is(value, expected.value, "value is correct");
-  }
+  const events = [
+    Glean.devtoolsMain.toolTimerLayoutview.testGetValue(),
+    Glean.devtoolsMain.toolTimerFontinspector.testGetValue(),
+    Glean.devtoolsMain.toolTimerCompatibilityview.testGetValue(),
+    Glean.devtoolsMain.toolTimerComputedview.testGetValue(),
+  ].flat();
+  Assert.equal(4, events.length);
+  events.forEach(ev => Assert.greater(Number(ev.extra.time_open), 0));
 }

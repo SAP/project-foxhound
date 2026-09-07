@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/AutoUtils.h"
 
-#include "mozilla/Unused.h"
 #include "mozilla/dom/InternalHeaders.h"
 #include "mozilla/dom/InternalRequest.h"
 #include "mozilla/dom/cache/CacheParent.h"
 #include "mozilla/dom/cache/CacheStreamControlParent.h"
+#include "mozilla/dom/cache/PBoundStorageKeyParent.h"
 #include "mozilla/dom/cache/ReadStream.h"
 #include "mozilla/dom/cache/SavedTypes.h"
 #include "mozilla/dom/cache/StreamList.h"
@@ -21,7 +19,6 @@
 #include "nsHttp.h"
 
 using mozilla::Maybe;
-using mozilla::Unused;
 using mozilla::dom::cache::CacheReadStream;
 using mozilla::ipc::PBackgroundParent;
 
@@ -183,7 +180,7 @@ bool MatchInPutList(const InternalRequest& aRequest,
     const CacheResponse& cachedResponse = aPutList[i].response();
 
     nsAutoCString url;
-    aRequest.GetURL(url);
+    MOZ_ALWAYS_SUCCEEDS(aRequest.GetURLWithoutFragment()->GetSpec(url));
 
     nsAutoCString requestUrl(cachedRequest.urlWithoutQuery());
     requestUrl.Append(cachedRequest.urlQuery());
@@ -302,14 +299,13 @@ const CacheOpArgs& AutoChildOpArgs::SendAsOpArgs() {
 
 // --------------------------------------------
 
-AutoParentOpResult::AutoParentOpResult(
-    mozilla::ipc::PBackgroundParent* aManager, const CacheOpResult& aOpResult,
-    uint32_t aEntryCount)
+AutoParentOpResult::AutoParentOpResult(const WeakRefParentType& aManager,
+                                       const CacheOpResult& aOpResult,
+                                       uint32_t aEntryCount)
     : mManager(aManager),
       mOpResult(aOpResult),
       mStreamControl(nullptr),
       mSent(false) {
-  MOZ_DIAGNOSTIC_ASSERT(mManager);
   MOZ_RELEASE_ASSERT(aEntryCount != 0);
   if (mOpResult.type() == CacheOpResult::TCacheMatchAllResult) {
     CacheMatchAllResult& result = mOpResult.get_CacheMatchAllResult();
@@ -352,8 +348,24 @@ void AutoParentOpResult::Add(CacheId aOpenedCacheId,
                              SafeRefPtr<Manager> aManager) {
   MOZ_DIAGNOSTIC_ASSERT(mOpResult.type() == CacheOpResult::TStorageOpenResult);
   MOZ_DIAGNOSTIC_ASSERT(!mOpResult.get_StorageOpenResult().actor());
-  mOpResult.get_StorageOpenResult().actor() = mManager->SendPCacheConstructor(
-      new CacheParent(std::move(aManager), aOpenedCacheId));
+
+  PCacheParent* cacheParent = nullptr;
+  if (mManager.is<pPBoundStorageKeyParent>()) {
+    auto* manager = mManager.as<pPBoundStorageKeyParent>();
+    MOZ_ASSERT(manager);
+
+    cacheParent = manager->SendPCacheConstructor(
+        new CacheParent(mManager, std::move(aManager), aOpenedCacheId));
+  } else {
+    MOZ_ASSERT(mManager.is<pPBackgroundParent>());
+    auto* manager = mManager.as<pPBackgroundParent>();
+    MOZ_ASSERT(manager);
+
+    cacheParent = manager->SendPCacheConstructor(
+        new CacheParent(mManager, std::move(aManager), aOpenedCacheId));
+  }
+
+  mOpResult.get_StorageOpenResult().actor() = cacheParent;
 }
 
 void AutoParentOpResult::Add(const SavedResponse& aSavedResponse,
@@ -447,10 +459,22 @@ void AutoParentOpResult::SerializeReadStream(const nsID& aId,
 
   nsCOMPtr<nsIInputStream> stream = aStreamList.Extract(aId);
 
+  CacheStreamControlParent* cacheStreamControlParent = nullptr;
   if (!mStreamControl) {
-    mStreamControl = static_cast<CacheStreamControlParent*>(
-        mManager->SendPCacheStreamControlConstructor(
-            new CacheStreamControlParent()));
+    if (mManager.is<pPBoundStorageKeyParent>()) {
+      auto* manager = mManager.as<pPBoundStorageKeyParent>();
+      cacheStreamControlParent = static_cast<CacheStreamControlParent*>(
+          manager->SendPCacheStreamControlConstructor(
+              new CacheStreamControlParent()));
+    } else {
+      MOZ_ASSERT(mManager.is<pPBackgroundParent>());
+
+      auto* manager = mManager.as<pPBackgroundParent>();
+      cacheStreamControlParent = static_cast<CacheStreamControlParent*>(
+          manager->SendPCacheStreamControlConstructor(
+              new CacheStreamControlParent()));
+    }
+    mStreamControl = cacheStreamControlParent;
 
     // If this failed, then the child process is gone.  Warn and allow actor
     // cleanup to proceed as normal.

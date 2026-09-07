@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,24 +8,25 @@
 
  */
 
-#include "nsIContent.h"
-#include "nsFocusManager.h"
-#include "nsIControllers.h"
+#include "nsXULCommandDispatcher.h"
+
+#include "mozilla/BasicEvents.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/Document.h"
-#include "nsPresContext.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ElementBinding.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsFocusManager.h"
+#include "nsIContent.h"
+#include "nsIControllers.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsXULCommandDispatcher.h"
-#include "mozilla/Logging.h"
-#include "nsContentUtils.h"
+#include "nsPresContext.h"
 #include "nsReadableUtils.h"
-#include "nsCRT.h"
-#include "nsError.h"
-#include "mozilla/BasicEvents.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ElementBinding.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;

@@ -25,6 +25,19 @@ A 'substitution' is a list of full string to match and its replacement
 TRANSFORMS = [
     # channel-prefs.js
     {
+        # This is an expected difference when updating a production nightly
+        # build to a nightly build from `try`.
+        "files": [
+            "defaults/pref/channel-prefs.js",
+        ],
+        "channel_prefix": ["nightly-try"],
+        "side": "source",
+        "substitution": [
+            'pref("app.update.channel", "nightly");\n',
+            'pref("app.update.channel", "nightly-try");\n',
+        ],
+    },
+    {
         # preprocessor comments, eg //@line 6 "/builds/worker/workspace/...
         # this can be removed once each channel has a watershed above 59.0b2 (from bug 1431342)
         "files": [

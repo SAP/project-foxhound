@@ -56,7 +56,7 @@ class HistoryMetadataGroupFragmentStoreTest {
         assertEquals(0, store.state.items.size)
 
         val items = listOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem)
-        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items)).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items))
 
         assertEquals(items, store.state.items)
     }
@@ -65,17 +65,17 @@ class HistoryMetadataGroupFragmentStoreTest {
     fun `Test selecting and deselecting an item in HistoryMetadataGroupFragmentStore`() = runTest {
         val items = listOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items)).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items))
 
         assertFalse(store.state.items[0].selected)
         assertFalse(store.state.items[1].selected)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.Select(mozillaHistoryMetadataItem)).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.Select(mozillaHistoryMetadataItem))
 
         assertTrue(store.state.items[0].selected)
         assertFalse(store.state.items[1].selected)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.Deselect(store.state.items[0])).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.Deselect(store.state.items[0]))
 
         assertFalse(store.state.items[0].selected)
         assertFalse(store.state.items[1].selected)
@@ -85,9 +85,9 @@ class HistoryMetadataGroupFragmentStoreTest {
     fun `Test deselecting all items in HistoryMetadataGroupFragmentStore`() = runTest {
         val items = listOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items)).join()
-        store.dispatch(HistoryMetadataGroupFragmentAction.Select(mozillaHistoryMetadataItem)).join()
-        store.dispatch(HistoryMetadataGroupFragmentAction.DeselectAll).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items))
+        store.dispatch(HistoryMetadataGroupFragmentAction.Select(mozillaHistoryMetadataItem))
+        store.dispatch(HistoryMetadataGroupFragmentAction.DeselectAll)
 
         assertFalse(store.state.items[0].selected)
         assertFalse(store.state.items[1].selected)
@@ -97,8 +97,8 @@ class HistoryMetadataGroupFragmentStoreTest {
     fun `Test deleting an item in HistoryMetadataGroupFragmentStore`() = runTest {
         val items = listOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items)).join()
-        store.dispatch(HistoryMetadataGroupFragmentAction.Delete(mozillaHistoryMetadataItem)).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items))
+        store.dispatch(HistoryMetadataGroupFragmentAction.Delete(mozillaHistoryMetadataItem))
 
         assertEquals(1, store.state.items.size)
         assertEquals(firefoxHistoryMetadataItem, store.state.items.first())
@@ -108,27 +108,27 @@ class HistoryMetadataGroupFragmentStoreTest {
     fun `Test deleting all items in HistoryMetadataGroupFragmentStore`() = runTest {
         val items = listOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items)).join()
-        store.dispatch(HistoryMetadataGroupFragmentAction.DeleteAll).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.UpdateHistoryItems(items))
+        store.dispatch(HistoryMetadataGroupFragmentAction.DeleteAll)
 
         assertEquals(0, store.state.items.size)
     }
 
     @Test
     fun `Test changing the empty state of HistoryMetadataGroupFragmentStore`() = runTest {
-        store.dispatch(HistoryMetadataGroupFragmentAction.ChangeEmptyState(false)).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.ChangeEmptyState(false))
         assertFalse(store.state.isEmpty)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.ChangeEmptyState(true)).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.ChangeEmptyState(true))
         assertTrue(store.state.isEmpty)
     }
 
     @Test
     fun `Test updating pending deletion items in HistoryMetadataGroupFragmentStore`() = runTest {
-        store.dispatch(HistoryMetadataGroupFragmentAction.UpdatePendingDeletionItems(setOf(pendingDeletionItem))).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.UpdatePendingDeletionItems(setOf(pendingDeletionItem)))
         assertEquals(setOf(pendingDeletionItem), store.state.pendingDeletionItems)
 
-        store.dispatch(HistoryMetadataGroupFragmentAction.UpdatePendingDeletionItems(setOf())).join()
+        store.dispatch(HistoryMetadataGroupFragmentAction.UpdatePendingDeletionItems(setOf()))
         assertEquals(emptySet<PendingDeletionHistory>(), store.state.pendingDeletionItems)
     }
 }

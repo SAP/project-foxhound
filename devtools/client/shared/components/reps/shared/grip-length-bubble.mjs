@@ -5,8 +5,8 @@
 /* eslint no-shadow: ["error", { "allow": ["length"] }] */
 
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
-import { wrapRender } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
+import { wrapRender } from "../reps/rep-utils.mjs";
+import { MODE } from "../reps/constants.mjs";
 import * as dom from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
 const { span } = dom;

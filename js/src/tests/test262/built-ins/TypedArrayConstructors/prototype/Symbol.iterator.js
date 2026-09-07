@@ -10,6 +10,6 @@ features: [Symbol.iterator, TypedArray]
 
 testWithTypedArrayConstructors(function(TA) {
   assert.sameValue(TA.prototype.hasOwnProperty(Symbol.iterator), false);
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

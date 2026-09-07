@@ -4,14 +4,10 @@
 "use strict";
 
 const URL = "data:text/html;charset=utf8,browser_toolbox_telemetry_enter.js";
-const ALL_CHANNELS = Ci.nsITelemetry.DATASET_ALL_CHANNELS;
 const DATA = [
   {
-    timestamp: null,
     category: "devtools.main",
-    method: "enter",
-    object: "inspector",
-    value: null,
+    name: "enter_inspector",
     extra: {
       host: "bottom",
       width: "1300",
@@ -21,11 +17,8 @@ const DATA = [
     },
   },
   {
-    timestamp: null,
     category: "devtools.main",
-    method: "enter",
-    object: "jsdebugger",
-    value: null,
+    name: "enter_jsdebugger",
     extra: {
       host: "bottom",
       width: "1300",
@@ -35,11 +28,8 @@ const DATA = [
     },
   },
   {
-    timestamp: null,
     category: "devtools.main",
-    method: "enter",
-    object: "styleeditor",
-    value: null,
+    name: "enter_styleeditor",
     extra: {
       host: "bottom",
       width: "1300",
@@ -49,11 +39,8 @@ const DATA = [
     },
   },
   {
-    timestamp: null,
     category: "devtools.main",
-    method: "enter",
-    object: "netmonitor",
-    value: null,
+    name: "enter_netmonitor",
     extra: {
       host: "bottom",
       width: "1300",
@@ -63,11 +50,8 @@ const DATA = [
     },
   },
   {
-    timestamp: null,
     category: "devtools.main",
-    method: "enter",
-    object: "storage",
-    value: null,
+    name: "enter_storage",
     extra: {
       host: "bottom",
       width: "1300",
@@ -77,11 +61,8 @@ const DATA = [
     },
   },
   {
-    timestamp: null,
     category: "devtools.main",
-    method: "enter",
-    object: "netmonitor",
-    value: null,
+    name: "enter_netmonitor",
     extra: {
       host: "bottom",
       width: "1300",
@@ -94,11 +75,7 @@ const DATA = [
 
 add_task(async function () {
   // Let's reset the counts.
-  Services.telemetry.clearEvents();
-
-  // Ensure no events have been logged
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  ok(!snapshot.parent, "No events have been logged for the main process");
+  Services.fog.testResetFOG();
 
   const tab = await addTab(URL);
 
@@ -121,32 +98,29 @@ add_task(async function () {
   await gDevTools.showToolboxForTab(tab, { toolId: "storage" });
   await gDevTools.showToolboxForTab(tab, { toolId: "netmonitor" });
 
-  await checkResults();
+  checkResults();
 });
 
-async function checkResults() {
-  const snapshot = Services.telemetry.snapshotEvents(ALL_CHANNELS, true);
-  const events = snapshot.parent.filter(
-    event =>
-      event[1] === "devtools.main" && event[2] === "enter" && event[4] === null
-  );
+function checkResults() {
+  const events = [
+    Glean.devtoolsMain.enterInspector.testGetValue(),
+    Glean.devtoolsMain.enterJsdebugger.testGetValue(),
+    Glean.devtoolsMain.enterStyleeditor.testGetValue(),
+    Glean.devtoolsMain.enterStorage.testGetValue(),
+    Glean.devtoolsMain.enterNetmonitor.testGetValue(),
+  ]
+    .flat()
+    .sort((a, b) => a.timestamp - b.timestamp);
 
-  for (const i in DATA) {
-    const [timestamp, category, method, object, value, extra] = events[i];
-    const expected = DATA[i];
-
-    // ignore timestamp
-    Assert.greater(timestamp, 0, "timestamp is greater than 0");
-    is(category, expected.category, "category is correct");
-    is(method, expected.method, "method is correct");
-    is(object, expected.object, "object is correct");
-    is(value, expected.value, "value is correct");
+  for (const [datum, ev] of Iterator.zip([DATA, events], { mode: "strict" })) {
+    is(datum.category, ev.category, "category is correct");
+    is(datum.name, ev.name, "name is correct");
 
     // extras
-    is(extra.host, expected.extra.host, "host is correct");
-    Assert.greater(Number(extra.width), 0, "width is greater than 0");
-    is(extra.start_state, expected.extra.start_state, "start_state is correct");
-    is(extra.panel_name, expected.extra.panel_name, "panel_name is correct");
-    is(extra.cold, expected.extra.cold, "cold is correct");
+    is(datum.extra.host, ev.extra.host, "host is correct");
+    Assert.greater(Number(ev.extra.width), 0, "width is greater than 0");
+    is(datum.extra.start_state, ev.extra.start_state, "start_state is correct");
+    is(datum.extra.panel_name, ev.extra.panel_name, "panel_name is correct");
+    is(datum.extra.cold, ev.extra.cold, "cold is correct");
   }
 }

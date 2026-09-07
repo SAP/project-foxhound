@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,12 +8,12 @@
 #ifndef SkContourMeasure_DEFINED
 #define SkContourMeasure_DEFINED
 
+#include "include/core/SkPathTypes.h" // IWYU pragma: keep
 #include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSpan.h"
-#include "include/private/base/SkAPI.h"
-#include "include/private/base/SkAssert.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkTDArray.h"
 
 #include <cstddef>
@@ -21,7 +21,7 @@
 
 class SkMatrix;
 class SkPath;
-enum class SkPathVerb;
+class SkPathBuilder;
 
 class SK_API SkContourMeasure : public SkRefCnt {
 public:
@@ -48,13 +48,13 @@ public:
     [[nodiscard]] bool getMatrix(SkScalar distance, SkMatrix* matrix,
                                  MatrixFlags flags = kGetPosAndTan_MatrixFlag) const;
 
-    /** Given a start and stop distance, return in dst the intervening segment(s).
+    /** Given a start and stop distance, append to dst the intervening segment(s).
      If the segment is zero-length, return false, else return true.
      startD and stopD are pinned to legal values (0..getLength()). If startD > stopD
      then return false (and leave dst untouched).
      Begin the segment with a moveTo if startWithMoveTo is true
      */
-    [[nodiscard]] bool getSegment(SkScalar startD, SkScalar stopD, SkPath* dst,
+    [[nodiscard]] bool getSegment(SkScalar startD, SkScalar stopD, SkPathBuilder* dst,
                                   bool startWithMoveTo) const;
 
     /** Return true if the contour is closed()

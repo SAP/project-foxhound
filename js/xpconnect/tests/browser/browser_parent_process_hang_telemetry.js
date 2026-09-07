@@ -31,29 +31,24 @@ add_task(async function test_browser_hang() {
   let duration = (Date.now() - now) / 1000;
   info("Looped " + i + " iterations.");
 
-  let events;
-  await TestUtils.waitForCondition(() => {
-    events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_ALL_CHANNELS,
-      false
-    );
-    return events.parent?.some(e => e[1] == "slow_script_warning");
+  let event;
+  await TestUtils.waitForCondition(async () => {
+    await Services.fog.testFlushAllChildren();
+    const events = Glean.slowScriptWarning.shownBrowser.testGetValue() ?? [];
+    event = events[0];
+    return !!event;
   }, "Should find an event after doing this.").catch(e => ok(false, e));
-  events = events.parent || [];
-  let event = events.find(e => e[1] == "slow_script_warning");
   ok(event, "Should have registered an event.");
   if (event) {
-    is(event[3], "browser", "Should register as browser hang.");
-    let args = event[5];
-    is(args.uri_type, "browser", "Should register browser uri type.");
+    is(event.extra.uri_type, "browser", "Should register browser uri type.");
     Assert.greater(
       duration + 1,
-      parseFloat(args.hang_duration),
+      parseFloat(event.extra.hang_duration),
       "hang duration should not exaggerate."
     );
     Assert.less(
       duration - 1,
-      parseFloat(args.hang_duration),
+      parseFloat(event.extra.hang_duration),
       "hang duration should not undersell."
     );
   }

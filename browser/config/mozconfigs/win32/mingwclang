@@ -34,6 +34,7 @@ ac_add_options --disable-geckodriver # Bug 1489320
 ac_add_options --disable-update-agent # Bug 1561797
 ac_add_options --disable-default-browser-agent # Relies on toast notifications which don't build on mingw.
 ac_add_options --disable-notification-server # Toast notifications don't build on mingw.
+ac_add_options --disable-zucchini # Bug 1975960: SEH unavailable in mingwclang on win32
 
 # Find our toolchain
 HOST_CC="$MOZ_FETCHES_DIR/clang/bin/clang"
@@ -48,7 +49,7 @@ CXXFLAGS="$CXXFLAGS -include _mingw.h"
 
 # We want to make sure we use binutils and other binaries in the tooltool
 # package.
-mk_add_options "export PATH=$MOZ_FETCHES_DIR/clang/bin:$MOZ_FETCHES_DIR/upx/bin:$MOZ_FETCHES_DIR/fxc2/bin:$MOZ_FETCHES_DIR/binutils/bin:$PATH"
+mk_add_options "export PATH=$MOZ_FETCHES_DIR/clang/bin:$MOZ_FETCHES_DIR/fxc2/bin:$MOZ_FETCHES_DIR/binutils/bin:$PATH"
 
 # Do not include the visual studio related mozconfigs of course
 

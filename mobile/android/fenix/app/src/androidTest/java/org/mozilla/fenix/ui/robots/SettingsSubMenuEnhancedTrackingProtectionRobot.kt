@@ -5,6 +5,7 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.Espresso.pressBack
@@ -270,7 +271,7 @@ class SettingsSubMenuEnhancedTrackingProtectionRobot {
     }
 
     class Transition {
-        fun goBackToHomeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+        fun goBackToHomeScreen(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             // To settings
             Log.i(TAG, "goBackToHomeScreen: Trying to click the navigate up toolbar button")
             goBackButton().click()
@@ -280,8 +281,8 @@ class SettingsSubMenuEnhancedTrackingProtectionRobot {
             pressBack()
             Log.i(TAG, "goBackToHomeScreen: Performed press back action")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
         fun goBack(interact: SettingsRobot.() -> Unit): SettingsRobot.Transition {

@@ -2,16 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import privileged from "../environments/privileged.mjs";
+import xpcshell from "../environments/xpcshell.mjs";
+import sdlPlugin from "@microsoft/eslint-plugin-sdl";
+
 // Parent config file for all xpcshell files.
 
 export default {
-  env: {
-    "mozilla/privileged": true,
-    "mozilla/xpcshell": true,
+  languageOptions: {
+    globals: {
+      ...privileged.globals,
+      ...xpcshell.globals,
+    },
   },
 
   name: "mozilla/xpcshell-test",
-  plugins: ["mozilla", "@microsoft/sdl"],
+
+  plugins: {
+    "@microsoft/sdl": sdlPlugin,
+  },
 
   rules: {
     // Turn off no-insecure-url as it is not considered necessary for xpcshell

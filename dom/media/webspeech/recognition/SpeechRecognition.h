@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,27 +5,24 @@
 #ifndef mozilla_dom_SpeechRecognition_h
 #define mozilla_dom_SpeechRecognition_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/DOMEventTargetHelper.h"
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsWrapperCache.h"
-#include "nsTArray.h"
-#include "js/TypeDecls.h"
-#include "nsProxyRelease.h"
-#include "DOMMediaStream.h"
-#include "nsITimer.h"
-#include "MediaTrackGraph.h"
 #include "AudioSegment.h"
-#include "mozilla/WeakPtr.h"
-
+#include "DOMMediaStream.h"
+#include "MediaTrackGraph.h"
 #include "SpeechGrammarList.h"
 #include "SpeechRecognitionResultList.h"
-#include "nsISpeechRecognitionService.h"
 #include "endpointer.h"
-
+#include "js/TypeDecls.h"
+#include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/SpeechRecognitionError.h"
+#include "nsCOMPtr.h"
+#include "nsISpeechRecognitionService.h"
+#include "nsITimer.h"
+#include "nsProxyRelease.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 
@@ -48,7 +43,7 @@ class SpeechTrackListener;
 
 LogModule* GetSpeechRecognitionLog();
 #define SR_LOG(...) \
-  MOZ_LOG(GetSpeechRecognitionLog(), mozilla::LogLevel::Debug, (__VA_ARGS__))
+  MOZ_LOG_FMT(GetSpeechRecognitionLog(), mozilla::LogLevel::Debug, __VA_ARGS__)
 
 class SpeechRecognition final : public DOMEventTargetHelper,
                                 public nsIObserver,

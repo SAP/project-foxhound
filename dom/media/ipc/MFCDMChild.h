@@ -6,6 +6,7 @@
 #define DOM_MEDIA_IPC_MFCDMCHILD_H_
 
 #include <unordered_map>
+
 #include "mozilla/Atomics.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/PMFCDMChild.h"
@@ -20,7 +21,7 @@ class WMFCDMProxyCallback;
  */
 class MFCDMChild final : public PMFCDMChild {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFCDMChild);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFCDMChild, final);
 
   explicit MFCDMChild(const nsAString& aKeySystem);
 
@@ -73,23 +74,18 @@ class MFCDMChild final : public PMFCDMChild {
       const MFCDMKeyStatusChange& aKeyStatuses);
   mozilla::ipc::IPCResult RecvOnSessionKeyExpiration(
       const MFCDMKeyExpiration& aExpiration);
+  mozilla::ipc::IPCResult RecvOnSessionClosed(
+      const MFCDMSessionClosedResult& aResult);
 
   uint64_t Id() const { return mId; }
   const nsString& KeySystem() const { return mKeySystem; }
 
-  void IPDLActorDestroyed() {
-    AssertOnManagerThread();
-    mIPDLSelfRef = nullptr;
-    if (!mShutdown) {
-      // Remote crashed!
-      mState = NS_ERROR_NOT_AVAILABLE;
-    }
-  }
+  void ActorDestroy(ActorDestroyReason aWhy) override;
 
   void EnsureRemote();
   void Shutdown();
 
-  nsISerialEventTarget* ManagerThread() { return mManagerThread; }
+  nsISerialEventTarget* ManagerThread() const { return mManagerThread; }
   void AssertOnManagerThread() const {
     MOZ_ASSERT(mManagerThread->IsOnCurrentThread());
   }
@@ -101,8 +97,7 @@ class MFCDMChild final : public PMFCDMChild {
 
   const nsString mKeySystem;
 
-  const RefPtr<nsISerialEventTarget> mManagerThread;
-  RefPtr<MFCDMChild> mIPDLSelfRef;
+  const nsCOMPtr<nsISerialEventTarget> mManagerThread;
 
   using RemotePromise = GenericNonExclusivePromise;
   RefPtr<RemotePromise> mRemotePromise;

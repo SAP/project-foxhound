@@ -1,15 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __D3D11TextureWrapper_h__
-#define __D3D11TextureWrapper_h__
+#ifndef D3D11TextureWrapper_h_
+#define D3D11TextureWrapper_h_
 
 #include <functional>
 
-#include "mozilla/UniquePtr.h"
+#include "mozilla/gfx/Types.h"
 
 struct AVFrame;
 struct AVBufferRef;
@@ -26,8 +24,10 @@ struct FFmpegLibWrapper;
 // which can help avoid significant playback stutter.
 class D3D11TextureWrapper final {
  public:
-  D3D11TextureWrapper(AVFrame* aAVFrame, FFmpegLibWrapper* aLib,
-                      ID3D11Texture2D* aTexture, unsigned int aArrayIdx,
+  D3D11TextureWrapper(AVFrame* aAVFrame, const FFmpegLibWrapper* aLib,
+                      ID3D11Texture2D* aTexture,
+                      const gfx::SurfaceFormat aFormat,
+                      const unsigned int aArrayIdx,
                       std::function<void()>&& aReleaseMethod);
   D3D11TextureWrapper(D3D11TextureWrapper&& aWrapper) = delete;
   D3D11TextureWrapper(const D3D11TextureWrapper&& aWrapper) = delete;
@@ -35,16 +35,17 @@ class D3D11TextureWrapper final {
   ~D3D11TextureWrapper();
 
   ID3D11Texture2D* GetTexture() const { return mTexture; }
-  unsigned int GetArrayIdx() const { return mArrayIdx; }
 
- private:
-  FFmpegLibWrapper* mLib;
-  ID3D11Texture2D* mTexture;
-  AVBufferRef* mHWAVBuffer;
+  const gfx::SurfaceFormat mFormat;
   const unsigned int mArrayIdx;
   const std::function<void()> mReleaseMethod;
+
+ private:
+  const FFmpegLibWrapper* mLib;
+  ID3D11Texture2D* mTexture;
+  AVBufferRef* mHWAVBuffer;
 };
 
 }  // namespace mozilla
 
-#endif  // __D3D11TextureWrapper_h__
+#endif  // D3D11TextureWrapper_h_

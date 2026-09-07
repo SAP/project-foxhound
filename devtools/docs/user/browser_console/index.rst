@@ -12,7 +12,7 @@ Similarly, you can execute JavaScript expressions using the Browser Console. But
 
 .. container:: block_quote
 
-  NB: The Browser Console command line (to execute JavaScript expressions) is disabled by default. To enable it set the ``devtools.chrome.enabled`` preference to ``true`` in about:config, or set the "Enable browser `chrome <https://developer.mozilla.org/en-US/docs/Glossary/Chrome>`_ and add-on debugging toolboxes" (Firefox 40 and later) option in the :doc:`developer tool settings <../settings/index>`.
+  NB: The Browser Console command line (to execute JavaScript expressions) is disabled by default. To enable it set the ``devtools.chrome.enabled`` preference to ``true`` in about:config, or set the "Enable browser `chrome <https://developer.mozilla.org/en-US/docs/Glossary/Chrome>`_ and add-on debugging toolboxes" option in the :doc:`developer tool settings <../settings/index>`.
 
 
 Opening the Browser Console
@@ -45,7 +45,7 @@ You can see that the Browser Console looks and behaves very much like the :doc:`
 - at the bottom, a :doc:`command line interpreter <../web_console/the_command_line_interpreter/index>` enables you to evaluate JavaScript expressions.
 
 
-Beginning with Firefox 68, the Browser Console allows you to show or hide messages from the content process (i.e. the messages from scripts in all the opened pages) by setting or clearing the checkbox labeled **Show Content Messages**. The following image shows the browser console focused on the same page as above after clicking on the **Show Content Messages** checkbox.
+The Browser Console allows you to show or hide messages from the content process (i.e. the messages from scripts in all the opened pages) by setting or clearing the checkbox labeled **Show Content Messages**. The following image shows the browser console focused on the same page as above after clicking on the **Show Content Messages** checkbox.
 
 .. image:: browser_console_68_02.png
 

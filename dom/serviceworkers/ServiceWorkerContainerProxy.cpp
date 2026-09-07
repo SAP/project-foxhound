@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerContainerProxy.h"
 
+#include "mozilla/SchedulerGroup.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ServiceWorkerContainerParent.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/ScopeExit.h"
 
 namespace mozilla::dom {
 
@@ -42,7 +40,8 @@ void ServiceWorkerContainerProxy::RevokeActor(
 
 RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerContainerProxy::Register(
     const ClientInfo& aClientInfo, const nsACString& aScopeURL,
-    const nsACString& aScriptURL, ServiceWorkerUpdateViaCache aUpdateViaCache) {
+    const WorkerType& aType, const nsACString& aScriptURL,
+    ServiceWorkerUpdateViaCache aUpdateViaCache) {
   AssertIsOnBackgroundThread();
 
   RefPtr<ServiceWorkerRegistrationPromise::Private> promise =
@@ -50,7 +49,7 @@ RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerContainerProxy::Register(
 
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
       __func__,
-      [aClientInfo, aScopeURL = nsCString(aScopeURL),
+      [aClientInfo, aScopeURL = nsCString(aScopeURL), aType,
        aScriptURL = nsCString(aScriptURL), aUpdateViaCache, promise]() mutable {
         auto scopeExit = MakeScopeExit(
             [&] { promise->Reject(NS_ERROR_DOM_INVALID_STATE_ERR, __func__); });
@@ -58,7 +57,8 @@ RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerContainerProxy::Register(
         RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
         NS_ENSURE_TRUE_VOID(swm);
 
-        swm->Register(aClientInfo, aScopeURL, aScriptURL, aUpdateViaCache)
+        swm->Register(aClientInfo, aScopeURL, aType, aScriptURL,
+                      aUpdateViaCache)
             ->ChainTo(promise.forget(), __func__);
 
         scopeExit.release();

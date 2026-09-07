@@ -1,0 +1,51 @@
+This surfaces the memory page count for the maximum policy size as a constant,
+so that we can rely on it in our code. It also changes it to 22 to allow for
+uesrs that need large numbers of GPU process font rules.
+
+diff --git a/sandbox/win/src/sandbox_policy.h b/sandbox/win/src/sandbox_policy.h
+index 4d9d8f270890..bffab2fae890 100644
+--- a/sandbox/win/src/sandbox_policy.h
++++ b/sandbox/win/src/sandbox_policy.h
+@@ -10,16 +10,19 @@
+ 
+ #include "base/containers/span.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "sandbox/win/src/sandbox_types.h"
+ #include "sandbox/win/src/security_level.h"
+ 
+ namespace sandbox {
+ 
++// Number of memory pages to allow for the policy storage.
++constexpr size_t kPolMemPageCount = 22;
++
+ class AppContainer;
+ 
+ // Desktop used to launch child, controls GetDesktop().
+ enum class Desktop {
+   // Child is launched without changing the desktop.
+   kDefault,
+   // Child is launched using the alternate desktop.
+   kAlternateDesktop,
+diff --git a/sandbox/win/src/sandbox_policy_base.cc b/sandbox/win/src/sandbox_policy_base.cc
+index 2559133d772b..3395e9cadc07 100644
+--- a/sandbox/win/src/sandbox_policy_base.cc
++++ b/sandbox/win/src/sandbox_policy_base.cc
+@@ -44,17 +44,17 @@
+ 
+ namespace sandbox {
+ namespace {
+ 
+ // The standard windows size for one memory page.
+ constexpr size_t kOneMemPage = 4096;
+ // The IPC and Policy shared memory sizes.
+ constexpr size_t kIPCMemSize = kOneMemPage * 2;
+-constexpr size_t kPolMemSize = kOneMemPage * 6;
++constexpr size_t kPolMemSize = kOneMemPage * kPolMemPageCount;
+ 
+ // Offset of pShimData in ntdll!_PEB.
+ #if defined(_WIN64)
+ // This is the same on x64 and arm64.
+ constexpr ptrdiff_t kShimDataOffset = 0x2d8;
+ #else
+ constexpr ptrdiff_t kShimDataOffset = 0x1e8;
+ #endif

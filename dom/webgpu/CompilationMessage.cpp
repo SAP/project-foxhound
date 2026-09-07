@@ -1,9 +1,9 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompilationMessage.h"
+
 #include "CompilationInfo.h"
 #include "mozilla/dom/WebGPUBinding.h"
 
@@ -24,5 +24,7 @@ CompilationMessage::CompilationMessage(Device* const aParent,
       mOffset(aOffset),
       mLength(aLength),
       mMessage(std::move(aMessage)) {}
+
+CompilationMessage::~CompilationMessage() = default;
 
 }  // namespace mozilla::webgpu

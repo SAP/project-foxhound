@@ -1,0 +1,407 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>WebExtension Use of WebAuthn</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+"use strict";
+
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["security.webauth.webauthn_enable_softtoken", true],
+      ["security.webauth.webauthn_enable_usbtoken", false],
+    ],
+  });
+
+  let id = await SpecialPowers.spawnChrome([], () => {
+    let webauthnService = Cc["@mozilla.org/webauthn/service;1"]
+      .getService(Ci.nsIWebAuthnService);
+    return webauthnService.addVirtualAuthenticator(
+      "ctap2_1", "internal", true, true, true, true
+    );
+  });
+
+  SimpleTest.registerCleanupFunction(async () => {
+    await SpecialPowers.spawnChrome([id], id => {
+      let webauthnService = Cc["@mozilla.org/webauthn/service;1"]
+        .getService(Ci.nsIWebAuthnService);
+      webauthnService.removeVirtualAuthenticator(id);
+    });
+  });
+});
+
+function loadTestExtension(testScript) {
+  return ExtensionTestUtils.loadExtension({
+    manifest: {
+      host_permissions: ["https://www.example.com/*"],
+      permissions: ["scripting", "tabs"],
+      browser_specific_settings: {
+        gecko: { id: "@webauthn-test" },
+      },
+    },
+    files: {
+      "test.html": `<!DOCTYPE html>
+        <meta charset="utf-8">
+        <script src="test.js"><\/script>`,
+      "test.js": testScript,
+    },
+  });
+}
+
+add_task(async function test_webauthn_allowed_rpid() {
+  let extension = loadTestExtension(allowed_rpid_script);
+
+  await extension.startup();
+
+  let tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    `moz-extension://${extension.uuid}/test.html`
+  );
+
+  await extension.awaitMessage("registration-done");
+  await extension.awaitMessage("authentication-done");
+  await extension.awaitMessage("web-assertion-done");
+
+  await AppTestDelegate.removeTab(window, tab);
+  await extension.unload();
+});
+
+add_task(async function test_webauthn_default_rpid() {
+  let extension = loadTestExtension(default_rpid_script);
+
+  await extension.startup();
+
+  let tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    `moz-extension://${extension.uuid}/test.html`
+  );
+
+  await extension.awaitMessage("done");
+
+  await AppTestDelegate.removeTab(window, tab);
+  await extension.unload();
+});
+
+add_task(async function test_webauthn_extension_origin_rpid() {
+  let extension = loadTestExtension(extension_origin_rpid_script);
+
+  await extension.startup();
+
+  let tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    `moz-extension://${extension.uuid}/test.html`
+  );
+
+  await extension.awaitMessage("done");
+
+  await AppTestDelegate.removeTab(window, tab);
+  await extension.unload();
+});
+
+add_task(async function test_webauthn_forbidden_rpid() {
+  let extension = loadTestExtension(forbidden_rpid_script);
+
+  await extension.startup();
+
+  let tab = await AppTestDelegate.openNewForegroundTab(
+    window,
+    `moz-extension://${extension.uuid}/test.html`
+  );
+
+  await extension.awaitMessage("create-done");
+  await extension.awaitMessage("assertion-done");
+
+  await AppTestDelegate.removeTab(window, tab);
+  await extension.unload();
+});
+
+async function allowed_rpid_script() {
+  function parseClientData(cred) {
+    return JSON.parse(
+      new TextDecoder("utf-8").decode(cred.response.clientDataJSON)
+    );
+  }
+
+  async function getExpectedOrigin(extensionId) {
+    let encoder = new TextEncoder();
+    let data = encoder.encode(extensionId);
+    let hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    let hashHex = new Uint8Array(hashBuffer).toHex();
+    let hashEncoded = hashHex.replace(/[0-9a-f]/g, c => {
+      return "abcdefghijklmnop"["0123456789abcdef".indexOf(c)];
+    });
+    return `moz-extension://${hashEncoded}`;
+  }
+
+  let expectedOrigin = await getExpectedOrigin(browser.runtime.id);
+  let storedCredential = null;
+
+  try {
+    let challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    // www.example.com matches the extension's host permissions.
+    let cred = await navigator.credentials.create({
+      publicKey: {
+        rp: { id: "www.example.com", name: "Test" },
+        user: {
+          id: new Uint8Array(32),
+          name: "User",
+          displayName: "User",
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        challenge,
+      },
+    });
+
+    browser.test.assertTrue(cred !== null, "credential created");
+
+    let clientData = parseClientData(cred);
+    browser.test.assertEq(
+      expectedOrigin,
+      clientData.origin,
+      "correct origin in clientDataJSON for create"
+    );
+
+    storedCredential = cred;
+  } catch (err) {
+    browser.test.fail(`Registration failed: ${err.name}: ${err.message}`);
+  }
+  browser.test.sendMessage("registration-done");
+
+  try {
+    if (!storedCredential) {
+      browser.test.fail("No credential stored");
+      browser.test.sendMessage("authentication-done");
+      return;
+    }
+
+    let challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    let assertion = await navigator.credentials.get({
+      publicKey: {
+        rpId: "www.example.com",
+        // Ensure that we use exactly the credential that we created above.
+        allowCredentials: [{ type: "public-key", id: storedCredential.rawId }],
+        challenge,
+      },
+    });
+
+    browser.test.assertTrue(assertion !== null, "assertion succeeded");
+
+    let clientData = parseClientData(assertion);
+    browser.test.assertEq(
+      expectedOrigin,
+      clientData.origin,
+      "correct origin in clientDataJSON for get"
+    );
+  } catch (err) {
+    browser.test.fail(`Authentication failed: ${err.name}: ${err.message}`);
+  }
+  browser.test.sendMessage("authentication-done");
+
+  // Verify the credential can also be asserted from a regular web page.
+  try {
+    let tabReady = new Promise(resolve => {
+      browser.tabs.onUpdated.addListener(async (id, { status }) => {
+        if (id === tab.id && status === "complete") {
+          resolve();
+        }
+      });
+    });
+    const tab = await browser.tabs.create({ url: "https://www.example.com/" });
+    await tabReady;
+
+    let credentialIdArray = Array.from(new Uint8Array(storedCredential.rawId));
+    let [{ result }] = await browser.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: async credentialIdArray => {
+        let challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        let assertion = await navigator.credentials.get({
+          publicKey: {
+            rpId: "www.example.com",
+            allowCredentials: [{ type: "public-key", id: new Uint8Array(credentialIdArray) }],
+            challenge,
+          },
+        });
+        let clientData = JSON.parse(new TextDecoder().decode(assertion.response.clientDataJSON));
+        return { origin: clientData.origin };
+      },
+      args: [credentialIdArray],
+    });
+    await browser.tabs.remove(tab.id);
+
+    browser.test.assertEq(
+      "https://www.example.com",
+      result.origin,
+      "origin in clientDataJSON for web assertion is the web origin"
+    );
+  } catch (err) {
+    browser.test.fail(`Web assertion failed: ${err.name}: ${err.message}`);
+  }
+  browser.test.sendMessage("web-assertion-done");
+}
+
+async function default_rpid_script() {
+  let challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+
+  // Without rp.id, the default RP ID is the extension's effective domain
+  // (the moz-extension UUID), which is not a valid RP ID.
+  await browser.test.assertRejects(
+    navigator.credentials.create({
+      publicKey: {
+        rp: { name: "Test" },
+        user: {
+          id: new Uint8Array(32),
+          name: "User",
+          displayName: "User",
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        challenge,
+      },
+    }),
+    /The operation is insecure/,
+    "create() without rp.id throws SecurityError"
+  );
+  browser.test.sendMessage("done");
+}
+
+async function extension_origin_rpid_script() {
+  async function getExpectedOrigin(extensionId) {
+    let encoder = new TextEncoder();
+    let data = encoder.encode(extensionId);
+    let hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    let hashHex = new Uint8Array(hashBuffer).toHex();
+    let hashEncoded = hashHex.replace(/[0-9a-f]/g, c => {
+      return "abcdefghijklmnop"["0123456789abcdef".indexOf(c)];
+    });
+    return `moz-extension://${hashEncoded}`;
+  }
+
+  let expectedOrigin = await getExpectedOrigin(browser.runtime.id);
+
+  let challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+
+  // The extension's origin is not a valid RP ID.
+  await browser.test.assertRejects(
+    navigator.credentials.create({
+      publicKey: {
+        rp: { id: expectedOrigin, name: "Test" },
+        user: {
+          id: new Uint8Array(32),
+          name: "User",
+          displayName: "User",
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        challenge,
+      },
+    }),
+    /The operation is insecure/,
+    "create() with extension origin as rpId throws SecurityError"
+  );
+
+  crypto.getRandomValues(challenge);
+
+  await browser.test.assertRejects(
+    navigator.credentials.get({
+      publicKey: {
+        rpId: expectedOrigin,
+        allowCredentials: [],
+        challenge,
+      },
+    }),
+    /The operation is insecure/,
+    "get() with extension origin as rpId throws SecurityError"
+  );
+
+  // The hash portion of the extension's origin (without the scheme) is also not a valid RP ID.
+  let extensionHash = expectedOrigin.replace("moz-extension://", "");
+
+  crypto.getRandomValues(challenge);
+
+  await browser.test.assertRejects(
+    navigator.credentials.create({
+      publicKey: {
+        rp: { id: extensionHash, name: "Test" },
+        user: {
+          id: new Uint8Array(32),
+          name: "User",
+          displayName: "User",
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        challenge,
+      },
+    }),
+    /The operation is insecure/,
+    "create() with extension hash as rpId throws SecurityError"
+  );
+
+  crypto.getRandomValues(challenge);
+
+  await browser.test.assertRejects(
+    navigator.credentials.get({
+      publicKey: {
+        rpId: extensionHash,
+        allowCredentials: [],
+        challenge,
+      },
+    }),
+    /The operation is insecure/,
+    "get() with extension hash as rpId throws SecurityError"
+  );
+
+  browser.test.sendMessage("done");
+}
+
+async function forbidden_rpid_script() {
+  let challenge = new Uint8Array(32);
+  crypto.getRandomValues(challenge);
+
+  // forbidden.example.com does not match the extension's host permissions.
+  await browser.test.assertRejects(
+    navigator.credentials.create({
+      publicKey: {
+        rp: { id: "forbidden.example.com", name: "Test" },
+        user: {
+          id: new Uint8Array(32),
+          name: "User",
+          displayName: "User",
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        challenge,
+      },
+    }),
+    /The operation is insecure/,
+    "create() with forbidden rpId throws SecurityError"
+  );
+  browser.test.sendMessage("create-done");
+
+  crypto.getRandomValues(challenge);
+
+  // forbidden.example.com does not match the extension's host permissions.
+  await browser.test.assertRejects(
+    navigator.credentials.get({
+      publicKey: {
+        rpId: "forbidden.example.com",
+        allowCredentials: [{ type: "public-key", id: crypto.getRandomValues(new Uint8Array(32)) }],
+        challenge,
+      },
+    }),
+    /The operation is insecure/,
+    "get() with forbidden rpId throws SecurityError"
+  );
+  browser.test.sendMessage("assertion-done");
+}
+</script>
+</body>
+</html>

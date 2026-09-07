@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/UniquePtr.h"
 #include "RemoteSpellCheckEngineChild.h"
 
 namespace mozilla {
@@ -14,7 +13,17 @@ RemoteSpellcheckEngineChild::RemoteSpellcheckEngineChild(
 RemoteSpellcheckEngineChild::~RemoteSpellcheckEngineChild() {
   // null out the owner's SpellcheckEngineChild to prevent state corruption
   // during shutdown
-  mOwner->DeleteRemoteEngine();
+  if (mOwner) {
+    mOwner->DeleteRemoteEngine();
+  }
+}
+
+void RemoteSpellcheckEngineChild::Destroy() {
+  if (mOwner) {
+    mOwner->DeleteRemoteEngine();
+    mOwner = nullptr;
+  }
+  (void)RemoteSpellcheckEngineChild::Send__delete__(this);
 }
 
 RefPtr<GenericPromise> RemoteSpellcheckEngineChild::SetCurrentDictionaries(

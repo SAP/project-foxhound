@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,13 @@
 #ifndef mozilla_dom_DOMJSClass_h
 #define mozilla_dom_DOMJSClass_h
 
-#include "jsapi.h"
-#include "jsfriendapi.h"
 #include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot
 #include "js/Wrapper.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/OriginTrials.h"
-#include "mozilla/Likely.h"
-
 #include "mozilla/dom/PrototypeList.h"  // auto-generated
 #include "mozilla/dom/WebIDLPrefs.h"    // auto-generated
 
@@ -111,9 +107,8 @@ static const uint32_t ServiceWorkerGlobalScope = 1u << 3;
 static const uint32_t WorkerDebuggerGlobalScope = 1u << 4;
 static const uint32_t AudioWorkletGlobalScope = 1u << 5;
 static const uint32_t PaintWorkletGlobalScope = 1u << 6;
-static const uint32_t ShadowRealmGlobalScope = 1u << 7;
 
-static constexpr uint32_t kCount = 8;
+static constexpr uint32_t kCount = 7;
 }  // namespace GlobalNames
 
 struct PrefableDisablers {
@@ -168,7 +163,7 @@ template <typename T>
 struct Prefable {
   inline bool isEnabled(JSContext* cx, JS::Handle<JSObject*> obj) const {
     MOZ_ASSERT(!js::IsWrapper(obj));
-    if (MOZ_LIKELY(!disablers)) {
+    if (!disablers) [[likely]] {
       return true;
     }
     return disablers->isEnabled(cx, obj);
@@ -225,7 +220,7 @@ struct PropertyInfo {
 
   static int Compare(const PropertyInfo& aInfo1, const PropertyInfo& aInfo2) {
     // IdToIndexComparator needs to be updated if the order here is changed!
-    if (MOZ_UNLIKELY(aInfo1.mIdBits == aInfo2.mIdBits)) {
+    if (aInfo1.mIdBits == aInfo2.mIdBits) [[unlikely]] {
       MOZ_ASSERT((aInfo1.type == eMethod || aInfo1.type == eStaticMethod) &&
                  (aInfo2.type == eMethod || aInfo2.type == eStaticMethod));
 
@@ -483,9 +478,6 @@ inline bool IsInterfacePrototype(DOMObjectType type) {
   return type == eInterfacePrototype || type == eGlobalInterfacePrototype;
 }
 
-typedef JSObject* (*AssociatedGlobalGetter)(JSContext* aCx,
-                                            JS::Handle<JSObject*> aObj);
-
 typedef JSObject* (*ProtoGetter)(JSContext* aCx);
 
 /**
@@ -535,10 +527,6 @@ struct DOMJSClass {
 
   const NativePropertyHooks* mNativeHooks;
 
-  // A callback to find the associated global for our C++ object.  Note that
-  // this is used in cases when that global is _changing_, so it will not match
-  // the global of the JSObject* passed in to this function!
-  AssociatedGlobalGetter mGetAssociatedGlobal;
   ProtoHandleGetter mGetProto;
 
   // This stores the CC participant for the native, null if this class does not
@@ -591,13 +579,13 @@ struct DOMIfaceAndProtoJSClass {
 
 class ProtoAndIfaceCache;
 
-inline bool DOMGlobalHasProtoAndIFaceCache(JSObject* global) {
+inline bool DOMGlobalHasProtoAndIFaceCache(const JSObject* global) {
   MOZ_DIAGNOSTIC_ASSERT(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL);
   // This can be undefined if we GC while creating the global
   return !JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).isUndefined();
 }
 
-inline bool HasProtoAndIfaceCache(JSObject* global) {
+inline bool HasProtoAndIfaceCache(const JSObject* global) {
   if (!(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL)) {
     return false;
   }

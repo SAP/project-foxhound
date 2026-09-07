@@ -9,7 +9,7 @@ use automation to mimic user behavior.
 The integration test suite for Firefox Client Telemetry runs on CI `tier 1 <https://wiki.mozilla.org/Sheriffing/Job_Visibility_Policy>`_
 with treeherder symbol `tt(c)`
 and is checked in to version control at mozilla-central under
-`toolkit/components/telemetry/tests/marionette/tests/client <https://searchfox.org/mozilla-central/source/toolkit/components/telemetry/tests/marionette/tests/client/>`_.
+:searchfox:`toolkit/components/telemetry/tests/marionette/tests/client <toolkit/components/telemetry/tests/marionette/tests/client/>`.
 
 Test Main Tab Scalars
 ---------------------

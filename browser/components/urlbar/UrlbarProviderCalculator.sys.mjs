@@ -7,14 +7,13 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "l10n", () => {
@@ -25,7 +24,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ClipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 // This pref is relative to the `browser.urlbar` branch.
@@ -47,6 +46,18 @@ const VIEW_TEMPLATE = {
           name: "icon",
           tag: "img",
           attributes: { class: "urlbarView-favicon" },
+        },
+        {
+          name: "tail150",
+          tag: "img",
+          attributes: {
+            class: "urlbarView-dynamic-calculator-tail150",
+            role: "button",
+            "aria-hidden": "true",
+            "keyboard-inaccessible": "true",
+            "data-command": "tail150",
+            src: "chrome://branding/content/icon48.png",
+          },
         },
         {
           name: "input",
@@ -75,21 +86,10 @@ const FULL_NUMBER_MIN_THRESHOLD = 10 ** -5;
  * A provider that returns a suggested url to the user based on what
  * they have currently typed so they can navigate directly.
  */
-class ProviderCalculator extends UrlbarProvider {
-  constructor() {
-    super();
-    lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
-    lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
-  }
-
-  /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return DYNAMIC_RESULT_TYPE;
-  }
+export class UrlbarProviderCalculator extends UrlbarProvider {
+  // Caching the sapName is safe because each supported SAP has its own instance
+  // of this provider.
+  #sapName;
 
   /**
    * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
@@ -114,14 +114,14 @@ class ProviderCalculator extends UrlbarProvider {
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
+    this.#sapName = queryContext.sapName;
     try {
       // Calculator will throw when given an invalid expression, therefore
       // addCallback will never be called.
@@ -130,18 +130,22 @@ class ProviderCalculator extends UrlbarProvider {
         return;
       }
       let value = Calculator.evaluatePostfix(postfix);
-      const result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.DYNAMIC,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+      const result = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        suggestedIndex: 1,
+        payload: {
           value,
           input: queryContext.searchString,
           dynamicType: DYNAMIC_RESULT_TYPE,
-        }
-      );
-      result.suggestedIndex = 1;
+        },
+      });
       addCallback(this, result);
     } catch (e) {}
+  }
+
+  getViewTemplate(_result) {
+    return VIEW_TEMPLATE;
   }
 
   getViewUpdate(result) {
@@ -165,10 +169,20 @@ class ProviderCalculator extends UrlbarProvider {
       action: {
         l10n: { id: "urlbar-result-action-copy-to-clipboard" },
       },
+      tail150: {
+        style: {
+          display: value === "150" && this.#sapName === "urlbar" ? "" : "none",
+        },
+      },
     };
   }
 
   onEngagement(queryContext, controller, details) {
+    if (details.selType === "tail150") {
+      controller.input.view.startTail150();
+      return;
+    }
+
     const { result } = details;
     const input = this.getViewUpdate(result).input;
     let localizedResult;
@@ -223,7 +237,7 @@ class BaseCalculator {
     if (["-", "+"].includes(val)) {
       return 2;
     }
-    if (["*", "/"].includes(val)) {
+    if (["*", "/", "÷", "×"].includes(val)) {
       return 3;
     }
     if ("^" === val) {
@@ -234,7 +248,7 @@ class BaseCalculator {
   }
 
   isLeftAssociative(val) {
-    if (["-", "+", "*", "/"].includes(val)) {
+    if (["-", "+", "*", "/", "÷", "×"].includes(val)) {
       return true;
     }
     if ("^" === val) {
@@ -293,9 +307,11 @@ class BaseCalculator {
 
   evaluate = {
     "*": (a, b) => a * b,
+    "×": (a, b) => a * b,
     "+": (a, b) => a + b,
     "-": (a, b) => a - b,
     "/": (a, b) => a / b,
+    "÷": (a, b) => a / b,
     "^": (a, b) => a ** b,
   };
 
@@ -309,7 +325,7 @@ class BaseCalculator {
         let op2 = stack.pop();
         let op1 = stack.pop();
         let result = this.evaluate[token](op1, op2);
-        if (token == "/" && op2 == 0) {
+        if ((token == "/" || token == "÷") && op2 == 0) {
           return UNDEFINED_VALUE;
         }
         if (isNaN(result) || !isFinite(result)) {
@@ -541,5 +557,3 @@ Calculator.addNumberSystem({
     return num;
   },
 });
-
-export var UrlbarProviderCalculator = new ProviderCalculator();

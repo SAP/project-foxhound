@@ -2,11 +2,50 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+:host([hidden]) {
+  display: none !important;
+}
+
 :host {
+  --button-alignment: center;
+  --button-badge-background-color: var(--color-accent-attention);
+  --button-badge-size: 6px;
+
   display: inline-block;
   height: fit-content;
   width: fit-content;
-  --button-alignment: center;
+}
+
+:host([type="split"]) {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--space-xxsmall);
+
+  button {
+    min-width: fit-content;
+  }
+
+  #main-button {
+    padding-inline-end: 0;
+  }
+
+  #chevron-button {
+    padding-inline-start: 0;
+  }
+
+  .button-background {
+    height: 100%;
+  }
+
+  #main-button .button-background {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  #chevron-button .button-background {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
 }
 
 button {
@@ -20,21 +59,16 @@ button {
    * UA styles */
   color: inherit;
   width: 100%;
+  height: 100%;
 
   &:focus-visible {
     outline: none;
   }
 
-  padding-inline-start: var(--button-outer-padding-inline-start, var(--button-outer-padding-inline));
-  padding-inline-end: var(--button-outer-padding-inline-end, var(--button-outer-padding-inline));
-  padding-block-start: var(--button-outer-padding-block-start, var(--button-outer-padding-block));
-  padding-block-end: var(--button-outer-padding-block-end, var(--button-outer-padding-block));
-}
-
-@media not ((prefers-contrast) or (forced-colors)) {
-  button.badged::after {
-    background-color: var(--button-attention-dot-color, var(--attention-dot-color));
-  }
+  padding-inline-start: var(--button-outer-padding-inline-start, var(--button-outer-padding-inline, 0));
+  padding-inline-end: var(--button-outer-padding-inline-end, var(--button-outer-padding-inline, 0));
+  padding-block-start: var(--button-outer-padding-block-start, var(--button-outer-padding-block, 0));
+  padding-block-end: var(--button-outer-padding-block-end, var(--button-outer-padding-block, 0));
 }
 
 .button-background {
@@ -62,12 +96,21 @@ button {
   &.badged::after {
     content: "";
     position: absolute;
-    height: 6px;
-    width: 6px;
+    /* The size of the dot is in between dimension token sizes. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    height: var(--button-badge-size);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    width: var(--button-badge-size);
     inset-block-start: var(--space-xxsmall);
     inset-inline-end: var(--space-xxsmall);
-    background-color: var(--attention-dot-color);
+    background-color: var(--button-badge-background-color);
     border-radius: var(--border-radius-circle);
+  }
+
+  @media not ((prefers-contrast) or (forced-colors)) {
+    &.badged::after {
+      background-color: var(--button-attention-dot-color, var(--button-badge-background-color));
+    }
   }
 
   button:hover > & {
@@ -80,6 +123,12 @@ button {
     background-color: var(--button-background-color-active);
     border-color: var(--button-border-color-active);
     color: var(--button-text-color-active);
+  }
+
+  button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+    background-color: var(--button-background-color-selected);
+    border-color: var(--button-border-color-selected);
+    color: var(--button-text-color-selected);
   }
 
   button:disabled > & {
@@ -111,6 +160,12 @@ button {
       color: var(--button-text-color-primary-active);
     }
 
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-primary-selected);
+      border-color: var(--button-border-color-primary-selected);
+      color: var(--button-text-color-primary-selected);
+    }
+
     button:disabled > & {
       background-color: var(--button-background-color-primary-disabled);
       border-color: var(--button-border-color-primary-disabled);
@@ -133,6 +188,12 @@ button {
       background-color: var(--button-background-color-destructive-active);
       border-color: var(--button-border-color-destructive-active);
       color: var(--button-text-color-destructive-active);
+    }
+
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-destructive-selected);
+      border-color: var(--button-border-color-destructive-selected);
+      color: var(--button-text-color-destructive-selected);
     }
 
     button:disabled > & {
@@ -159,10 +220,91 @@ button {
       color: var(--button-text-color-ghost-active);
     }
 
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-ghost-selected);
+      border-color: var(--button-border-color-ghost-selected);
+      color: var(--button-text-color-ghost-selected);
+    }
+
     button:disabled > & {
       background-color: var(--button-background-color-ghost-disabled);
       border-color: var(--button-border-color-ghost-disabled);
       color: var(--button-text-color-ghost-disabled);
+    }
+  }
+
+  &[type~="toolbar"] {
+    --button-outer-padding-block: 4px;
+    --button-outer-padding-inline: var(--toolbarbutton-padding-outer);
+    --button-size-icon: var(--tab-min-height, var(--button-min-height));
+    --focus-outline-offset: -2px;
+
+    background-color: var(--button-background-color-toolbar);
+    border-color: var(--button-border-color-toolbar);
+    color: var(--button-text-color-toolbar);
+
+    button:hover > & {
+      background-color: var(--button-background-color-toolbar-hover);
+      border-color: var(--button-border-color-toolbar-hover);
+      color: var(--button-text-color-toolbar-hover);
+    }
+
+    button:hover:active:not(:disabled) > & {
+      background-color: var(--button-background-color-toolbar-active);
+      border-color: var(--button-border-color-toolbar-active);
+      color: var(--button-text-color-toolbar-active);
+    }
+
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-toolbar-selected);
+      border-color: var(--button-border-color-toolbar-selected);
+      color: var(--button-text-color-toolbar-selected);
+    }
+
+    button:disabled > & {
+      background-color: var(--button-background-color-toolbar-disabled);
+      border-color: var(--button-border-color-toolbar-disabled);
+      color: var(--button-text-color-toolbar-disabled);
+    }
+  }
+
+  &[type~="menuitem"] {
+    --button-font-weight: normal;
+    --button-alignment: inline-start;
+    --button-padding: var(--panel-menuitem-padding);
+    --button-border-radius: var(--panel-menuitem-border-radius);
+    --focus-outline-offset: -2px;
+
+    background-color: var(--button-background-color-menu);
+    border-color: var(--button-border-color-menu);
+    color: var(--button-text-color-menu);
+    /* We want the button to span the width of the content area. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    width: -moz-available;
+    margin: var(--panel-menuitem-margin);
+
+    button:hover > & {
+      background-color: var(--button-background-color-menu-hover);
+      border-color: var(--button-border-color-menu-hover);
+      color: var(--button-text-color-menu-hover);
+    }
+
+    button:hover:active:not(:disabled) > & {
+      background-color: var(--button-background-color-menu-active);
+      border-color: var(--button-border-color-menu-active);
+      color: var(--button-text-color-menu-active);
+    }
+
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-menu-selected);
+      border-color: var(--button-border-color-menu-selected);
+      color: var(--button-text-color-menu-selected);
+    }
+
+    button:disabled > & {
+      background-color: var(--button-background-color-menu-disabled);
+      border-color: var(--button-border-color-menu-disabled);
+      color: var(--button-text-color-menu-disabled);
     }
   }
 
@@ -171,7 +313,7 @@ button {
   }
 
   &[type~="icon"]:not(.labelled) {
-    background-size: var(--icon-size-default);
+    background-size: var(--icon-size);
     background-position: center;
     background-repeat: no-repeat;
   }
@@ -196,8 +338,9 @@ button {
   }
 
   img {
-    width: var(--icon-size-default);
-    height: var(--icon-size-default);
+    content: var(--button-icon-content);
+    width: var(--icon-size);
+    height: var(--icon-size);
     pointer-events: none;
   }
 }

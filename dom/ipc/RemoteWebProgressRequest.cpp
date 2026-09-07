@@ -267,4 +267,16 @@ RemoteWebProgressRequest::GetThirdPartyClassificationFlags(
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+RemoteWebProgressRequest::GetParentProcessChannelHandle(
+    ParentProcessChannelHandle** aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+RemoteWebProgressRequest::SetParentProcessChannelHandle(
+    ParentProcessChannelHandle* aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 }  // namespace mozilla::dom

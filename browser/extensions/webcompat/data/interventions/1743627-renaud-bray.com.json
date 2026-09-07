@@ -1,0 +1,15 @@
+{
+  "label": "renaud-bray.com",
+  "bugs": {
+    "1743627": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://*.renaud-bray.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["add_Version_segment"]
+    }
+  ]
+}

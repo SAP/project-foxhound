@@ -33,7 +33,7 @@ add_setup(async function () {
   await UrlClassifierTestUtils.addTestTrackers();
 
   let TrackingProtection =
-    gBrowser.ownerGlobal.gProtectionsHandler.blockers.TrackingProtection;
+    gBrowser.documentGlobal.gProtectionsHandler.blockers.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the browser window");
   ok(!TrackingProtection.enabled, "TP is not enabled");
 
@@ -50,15 +50,25 @@ add_task(async function testShieldHistogram() {
   // Reset these to make counting easier
   getShieldHistogram().clear();
 
-  await promiseTabLoadEvent(tab, BENIGN_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: BENIGN_PAGE,
+  });
   is(getShieldCounts()[0], 1, "Page loads without tracking");
 
-  await promiseTabLoadEvent(tab, TRACKING_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: TRACKING_PAGE,
+  });
   is(getShieldCounts()[0], 2, "Adds one more page load");
   is(getShieldCounts()[2], 1, "Counts one instance of the shield being shown");
 
   info("Disable TP for the page (which reloads the page)");
-  let tabReloadPromise = promiseTabLoadEvent(tab);
+  let reloadURI = tab.linkedBrowser.currentURI.spec;
+  let tabReloadPromise = BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: reloadURI,
+  });
   gProtectionsHandler.disableForCurrentPage();
   await tabReloadPromise;
   is(getShieldCounts()[0], 3, "Adds one more page load");
@@ -69,7 +79,11 @@ add_task(async function testShieldHistogram() {
   );
 
   info("Re-enable TP for the page (which reloads the page)");
-  tabReloadPromise = promiseTabLoadEvent(tab);
+  reloadURI = tab.linkedBrowser.currentURI.spec;
+  tabReloadPromise = BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: reloadURI,
+  });
   gProtectionsHandler.enableForCurrentPage();
   await tabReloadPromise;
   is(getShieldCounts()[0], 4, "Adds one more page load");

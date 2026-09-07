@@ -21,7 +21,7 @@ export class LinksCache {
    *
    * @param {object} linkObject Object containing the link property
    * @param {string} linkProperty Name of property on object to access
-   * @param {array} properties Optional properties list to migrate to new links.
+   * @param {Array} properties Optional properties list to migrate to new links.
    * @param {function} shouldRefresh Optional callback receiving the old and new
    *                                 options to refresh even when not expired.
    */

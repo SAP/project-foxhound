@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "RemoteMediaManagerChild.h"
 
+#include "EMEDecoderModule.h"
 #include "ErrorList.h"
 #include "MP4Decoder.h"
 #include "PDMFactory.h"
@@ -12,24 +11,26 @@
 #include "PlatformDecoderModule.h"
 #include "PlatformEncoderModule.h"
 #include "RemoteAudioDecoder.h"
+#include "RemoteCDMProxy.h"
 #include "RemoteMediaDataDecoder.h"
-#include "RemoteMediaDataEncoderChild.h"
+#include "RemoteMediaDataEncoder.h"
 #include "RemoteVideoDecoder.h"
 #include "VideoUtils.h"
 #include "mozilla/DataMutex.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/RemoteDecodeUtils.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/dom/ContentChild.h"  // for launching RDD w/ ContentChild
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
-#include "mozilla/layers/ISurfaceAllocator.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/UtilityMediaServiceChild.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/StaticPrefs_media.h"
-#include "mozilla/StaticPtr.h"
+#include "mozilla/layers/ISurfaceAllocator.h"
+#include "mozilla/layers/ImageDataSerializer.h"
 #include "nsContentUtils.h"
 #include "nsIObserver.h"
 #include "nsPrintfCString.h"
@@ -45,7 +46,9 @@
 namespace mozilla {
 
 #define LOG(msg, ...) \
-  MOZ_LOG(gRemoteDecodeLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gRemoteDecodeLog, LogLevel::Debug, msg, ##__VA_ARGS__)
+#define LOGE(msg, ...) \
+  MOZ_LOG_FMT(gRemoteDecodeLog, LogLevel::Error, msg, ##__VA_ARGS__)
 
 using namespace layers;
 using namespace gfx;
@@ -63,7 +66,7 @@ static EnumeratedArray<RemoteMediaIn, StaticRefPtr<GenericNonExclusivePromise>,
 // Only modified on the main-thread, read on any thread. While it could be read
 // on the main thread directly, for clarity we force access via the DataMutex
 // wrapper.
-MOZ_RUNINIT static StaticDataMutex<StaticRefPtr<nsIThread>>
+constinit static StaticDataMutex<StaticRefPtr<nsIThread>>
     sRemoteMediaManagerChildThread("sRemoteMediaManagerChildThread");
 
 // Only accessed from sRemoteMediaManagerChildThread
@@ -121,7 +124,7 @@ void RemoteMediaManagerChild::Init() {
                   ipc::BackgroundChild::GetOrCreateForCurrentThread();
               NS_WARNING_ASSERTION(bgActor,
                                    "Failed to start Background channel");
-              Unused << bgActor;
+              (void)bgActor;
             }));
 
     NS_ENSURE_SUCCESS_VOID(rv);
@@ -229,9 +232,9 @@ RemoteMediaManagerChild* RemoteMediaManagerChild::GetSingleton(
 }
 
 /* static */
-nsISerialEventTarget* RemoteMediaManagerChild::GetManagerThread() {
+nsCOMPtr<nsISerialEventTarget> RemoteMediaManagerChild::GetManagerThread() {
   auto remoteDecoderManagerThread = sRemoteMediaManagerChildThread.Lock();
-  return *remoteDecoderManagerThread;
+  return nsCOMPtr<nsISerialEventTarget>(*remoteDecoderManagerThread);
 }
 
 /* static */
@@ -342,32 +345,31 @@ RemoteMediaManagerChild::CreateAudioDecoder(const CreateDecoderParams& aParams,
     launchPromise = LaunchUtilityProcessIfNeeded(aLocation);
   } else if (aLocation == RemoteMediaIn::UtilityProcess_MFMediaEngineCDM) {
     launchPromise = LaunchUtilityProcessIfNeeded(aLocation);
+  } else if (StaticPrefs::media_allow_audio_non_utility() || aParams.mCDM) {
+    launchPromise = LaunchRDDProcessIfNeeded();
   } else {
-    if (StaticPrefs::media_allow_audio_non_utility()) {
-      launchPromise = LaunchRDDProcessIfNeeded();
-    } else {
-      return PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
-          MediaResult(
-              NS_ERROR_DOM_MEDIA_DENIED_IN_NON_UTILITY,
-              nsPrintfCString("%s is not allowed to perform audio decoding",
-                              RemoteMediaInToStr(aLocation))
-                  .get()),
-          __func__);
-    }
+    return PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
+        MediaResult(
+            NS_ERROR_DOM_MEDIA_DENIED_IN_NON_UTILITY,
+            nsPrintfCString("%s is not allowed to perform audio decoding",
+                            RemoteMediaInToStr(aLocation))
+                .get()),
+        __func__);
   }
-  LOG("Create audio decoder in %s", RemoteMediaInToStr(aLocation));
+  LOG("Create audio decoder in {}", RemoteMediaInToStr(aLocation));
 
   return launchPromise->Then(
       managerThread, __func__,
-      [params = CreateDecoderParamsForAsync(aParams), aLocation](bool) {
+      [params = CreateDecoderParamsForAsync(aParams), aLocation](bool) mutable {
         auto child = MakeRefPtr<RemoteAudioDecoderChild>(aLocation);
-        MediaResult result = child->InitIPDL(
-            params.AudioConfig(), params.mOptions, params.mMediaEngineId);
+        MediaResult result =
+            child->InitIPDL(params.AudioConfig(), params.mOptions,
+                            params.mMediaEngineId, params.mCDM);
         if (NS_FAILED(result)) {
           return PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
               result, __func__);
         }
-        return Construct(std::move(child), aLocation);
+        return Construct(std::move(child), std::move(params), aLocation);
       },
       [aLocation](nsresult aResult) {
         return PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
@@ -428,23 +430,23 @@ RemoteMediaManagerChild::CreateVideoDecoder(const CreateDecoderParams& aParams,
   } else {
     p = LaunchRDDProcessIfNeeded();
   }
-  LOG("Create video decoder in %s", RemoteMediaInToStr(aLocation));
+  LOG("Create video decoder in {}", RemoteMediaInToStr(aLocation));
 
   return p->Then(
       managerThread, __func__,
-      [aLocation, params = CreateDecoderParamsForAsync(aParams)](bool) {
+      [aLocation, params = CreateDecoderParamsForAsync(aParams)](bool) mutable {
         auto child = MakeRefPtr<RemoteVideoDecoderChild>(aLocation);
         MediaResult result = child->InitIPDL(
             params.VideoConfig(), params.mRate.mValue, params.mOptions,
             params.mKnowsCompositor
                 ? Some(params.mKnowsCompositor->GetTextureFactoryIdentifier())
                 : Nothing(),
-            params.mMediaEngineId, params.mTrackingId);
+            params.mMediaEngineId, params.mTrackingId, params.mCDM);
         if (NS_FAILED(result)) {
           return PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
               result, __func__);
         }
-        return Construct(std::move(child), aLocation);
+        return Construct(std::move(child), std::move(params), aLocation);
       },
       [](nsresult aResult) {
         return PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
@@ -453,8 +455,42 @@ RemoteMediaManagerChild::CreateVideoDecoder(const CreateDecoderParams& aParams,
 }
 
 /* static */
+RefPtr<RemoteCDMProxy> RemoteMediaManagerChild::CreateCDM(
+    RemoteMediaIn aLocation, dom::MediaKeys* aKeys, const nsAString& aKeySystem,
+    bool aDistinctiveIdentifierRequired, bool aPersistentStateRequired) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (NS_WARN_IF(aLocation != RemoteMediaIn::RddProcess)) {
+    MOZ_ASSERT_UNREACHABLE("Cannot use CDM outside RDD process");
+    return nullptr;
+  }
+
+  if (!StaticPrefs::media_ffvpx_hw_enabled()) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsISerialEventTarget> managerThread = GetManagerThread();
+  if (!managerThread) {
+    // We got shutdown.
+    return nullptr;
+  }
+
+  if (!GetTrackSupport(aLocation).contains(TrackSupport::DecodeVideo)) {
+    return nullptr;
+  }
+
+  RefPtr<GenericNonExclusivePromise> p = LaunchRDDProcessIfNeeded();
+  LOG("Create CDM in {}", RemoteMediaInToStr(aLocation));
+
+  return MakeRefPtr<RemoteCDMProxy>(
+      std::move(managerThread), std::move(p), aLocation, aKeys, aKeySystem,
+      aDistinctiveIdentifierRequired, aPersistentStateRequired);
+}
+
+/* static */
 RefPtr<PlatformDecoderModule::CreateDecoderPromise>
 RemoteMediaManagerChild::Construct(RefPtr<RemoteDecoderChild>&& aChild,
+                                   CreateDecoderParamsForAsync&& aParams,
                                    RemoteMediaIn aLocation) {
   nsCOMPtr<nsISerialEventTarget> managerThread = GetManagerThread();
   if (!managerThread) {
@@ -467,12 +503,26 @@ RemoteMediaManagerChild::Construct(RefPtr<RemoteDecoderChild>&& aChild,
   RefPtr<PlatformDecoderModule::CreateDecoderPromise> p =
       aChild->SendConstruct()->Then(
           managerThread, __func__,
-          [child = std::move(aChild)](MediaResult aResult) {
+          [child = std::move(aChild),
+           params = std::move(aParams)](MediaResult aResult) {
             if (NS_FAILED(aResult)) {
               // We will never get to use this remote decoder, tear it down.
               child->DestroyIPDL();
               return PlatformDecoderModule::CreateDecoderPromise::
                   CreateAndReject(aResult, __func__);
+            }
+            if (params.mCDM) {
+              if (auto* cdm = params.mCDM->AsRemoteCDMProxy()) {
+                return PlatformDecoderModule::CreateDecoderPromise::
+                    CreateAndResolve(
+                        MakeRefPtr<EMEMediaDataDecoderProxy>(
+                            params,
+                            MakeAndAddRef<RemoteMediaDataDecoder>(child), cdm),
+                        __func__);
+              }
+              return PlatformDecoderModule::CreateDecoderPromise::
+                  CreateAndReject(
+                      NS_ERROR_DOM_MEDIA_CDM_PROXY_NOT_SUPPORTED_ERR, __func__);
             }
             return PlatformDecoderModule::CreateDecoderPromise::
                 CreateAndResolve(MakeRefPtr<RemoteMediaDataDecoder>(child),
@@ -529,12 +579,8 @@ EncodeSupportSet RemoteMediaManagerChild::Supports(RemoteMediaIn aLocation,
 
     // Assume the format is supported to prevent false negative, if the remote
     // process supports that specific track type.
-    const bool isVideo =
-        aCodec > CodecType::_BeginVideo_ && aCodec < CodecType::_EndVideo_;
-    const bool isAudio =
-        aCodec > CodecType::_BeginAudio_ && aCodec < CodecType::_EndAudio_;
     const auto trackSupport = GetTrackSupport(aLocation);
-    if (isVideo) {
+    if (IsVideo(aCodec)) {
       // Special condition for HEVC, which can only be supported in specific
       // process. As HEVC support is still a experimental feature, we don't want
       // to report support for it arbitrarily.
@@ -550,7 +596,7 @@ EncodeSupportSet RemoteMediaManagerChild::Supports(RemoteMediaIn aLocation,
       return supported ? EncodeSupportSet{EncodeSupport::SoftwareEncode}
                        : EncodeSupportSet{};
     }
-    if (isAudio) {
+    if (IsAudio(aCodec)) {
       return trackSupport.contains(TrackSupport::EncodeAudio)
                  ? EncodeSupportSet{EncodeSupport::SoftwareEncode}
                  : EncodeSupportSet{};
@@ -566,8 +612,7 @@ EncodeSupportSet RemoteMediaManagerChild::Supports(RemoteMediaIn aLocation,
 
 /* static */ RefPtr<PlatformEncoderModule::CreateEncoderPromise>
 RemoteMediaManagerChild::InitializeEncoder(
-    RefPtr<RemoteMediaDataEncoderChild>&& aEncoder,
-    const EncoderConfig& aConfig) {
+    RefPtr<RemoteMediaDataEncoder>&& aEncoder, const EncoderConfig& aConfig) {
   RemoteMediaIn location = aEncoder->GetLocation();
 
   TrackSupport required;
@@ -593,6 +638,13 @@ RemoteMediaManagerChild::InitializeEncoder(
         __func__);
   }
 
+  auto managerThread = aEncoder->GetManagerThread();
+  if (!managerThread) {
+    return PlatformEncoderModule::CreateEncoderPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_CANCELED, "Thread shutdown"_ns),
+        __func__);
+  }
+
   MOZ_ASSERT(location != RemoteMediaIn::Unspecified);
 
   RefPtr<GenericNonExclusivePromise> p;
@@ -608,17 +660,16 @@ RemoteMediaManagerChild::InitializeEncoder(
     p = GenericNonExclusivePromise::CreateAndReject(
         NS_ERROR_DOM_MEDIA_DENIED_IN_NON_UTILITY, __func__);
   }
-  LOG("Creating %s encoder type %d in %s",
+  LOG("Creating {} encoder type {} in {}",
       aConfig.IsAudio() ? "audio" : "video", static_cast<int>(aConfig.mCodec),
       RemoteMediaInToStr(location));
 
-  auto* managerThread = aEncoder->GetManagerThread();
   return p->Then(
       managerThread, __func__,
       [encoder = std::move(aEncoder), aConfig](bool) {
         auto* manager = GetSingleton(encoder->GetLocation());
         if (!manager) {
-          LOG("Create encoder in %s failed, shutdown",
+          LOG("Create encoder in {} failed, shutdown",
               RemoteMediaInToStr(encoder->GetLocation()));
           // We got shutdown.
           return PlatformEncoderModule::CreateEncoderPromise::CreateAndReject(
@@ -626,8 +677,9 @@ RemoteMediaManagerChild::InitializeEncoder(
                           "Remote manager not available"),
               __func__);
         }
-        if (!manager->SendPRemoteEncoderConstructor(encoder, aConfig)) {
-          LOG("Create encoder in %s failed, send failed",
+        if (!manager->SendPRemoteEncoderConstructor(encoder->GetChild(),
+                                                    aConfig)) {
+          LOG("Create encoder in {} failed, send failed",
               RemoteMediaInToStr(encoder->GetLocation()));
           return PlatformEncoderModule::CreateEncoderPromise::CreateAndReject(
               MediaResult(NS_ERROR_NOT_AVAILABLE,
@@ -637,7 +689,7 @@ RemoteMediaManagerChild::InitializeEncoder(
         return encoder->Construct();
       },
       [location](nsresult aResult) {
-        LOG("Create encoder in %s failed, cannot start process",
+        LOG("Create encoder in {} failed, cannot start process",
             RemoteMediaInToStr(location));
         return PlatformEncoderModule::CreateEncoderPromise::CreateAndReject(
             MediaResult(aResult, "Couldn't start encode process"), __func__);
@@ -847,8 +899,14 @@ TrackSupportSet RemoteMediaManagerChild::GetTrackSupport(
       if (StaticPrefs::media_use_remote_encoder_video()) {
         s += TrackSupport::EncodeVideo;
       }
-      // Only use RDD for audio coding if we don't have the utility process.
-      if (!StaticPrefs::media_utility_process_enabled()) {
+#ifndef ANDROID
+      // Only use RDD for audio coding if we don't have the utility process. If
+      // we have a CDM (which we can't determine here) on Android, then we want
+      // to perform both the video and audio decoding in the RDD so that they
+      // can share the CDM instance.
+      if (!StaticPrefs::media_utility_process_enabled())
+#endif
+      {
         s += TrackSupport::DecodeAudio;
         if (StaticPrefs::media_use_remote_encoder_audio()) {
           s += TrackSupport::EncodeAudio;
@@ -880,56 +938,6 @@ TrackSupportSet RemoteMediaManagerChild::GetTrackSupport(
       break;
   }
   return s;
-}
-
-PRemoteDecoderChild* RemoteMediaManagerChild::AllocPRemoteDecoderChild(
-    const RemoteDecoderInfoIPDL& /* not used */,
-    const CreateDecoderParams::OptionSet& aOptions,
-    const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
-    const Maybe<uint64_t>& aMediaEngineId,
-    const Maybe<TrackingId>& aTrackingId) {
-  // RemoteDecoderModule is responsible for creating RemoteDecoderChild
-  // classes.
-  MOZ_ASSERT(false,
-             "RemoteMediaManagerChild cannot create "
-             "RemoteDecoderChild classes");
-  return nullptr;
-}
-
-bool RemoteMediaManagerChild::DeallocPRemoteDecoderChild(
-    PRemoteDecoderChild* actor) {
-  RemoteDecoderChild* child = static_cast<RemoteDecoderChild*>(actor);
-  child->IPDLActorDestroyed();
-  return true;
-}
-
-PMFMediaEngineChild* RemoteMediaManagerChild::AllocPMFMediaEngineChild() {
-  MOZ_ASSERT_UNREACHABLE(
-      "RemoteMediaManagerChild cannot create MFMediaEngineChild classes");
-  return nullptr;
-}
-
-bool RemoteMediaManagerChild::DeallocPMFMediaEngineChild(
-    PMFMediaEngineChild* actor) {
-#ifdef MOZ_WMF_MEDIA_ENGINE
-  MFMediaEngineChild* child = static_cast<MFMediaEngineChild*>(actor);
-  child->IPDLActorDestroyed();
-#endif
-  return true;
-}
-
-PMFCDMChild* RemoteMediaManagerChild::AllocPMFCDMChild(const nsAString&) {
-  MOZ_ASSERT_UNREACHABLE(
-      "RemoteMediaManagerChild cannot create PMFContentDecryptionModuleChild "
-      "classes");
-  return nullptr;
-}
-
-bool RemoteMediaManagerChild::DeallocPMFCDMChild(PMFCDMChild* actor) {
-#ifdef MOZ_WMF_CDM
-  static_cast<MFCDMChild*>(actor)->IPDLActorDestroyed();
-#endif
-  return true;
 }
 
 RemoteMediaManagerChild::RemoteMediaManagerChild(RemoteMediaIn aLocation)
@@ -1006,6 +1014,35 @@ bool RemoteMediaManagerChild::DeallocShmem(mozilla::ipc::Shmem& aShmem) {
   return PRemoteMediaManagerChild::DeallocShmem(aShmem);
 }
 
+static already_AddRefed<gfx::DataSourceSurface> GetSurfaceForDescriptor(
+    const SurfaceDescriptor& aDescriptor) {
+  const auto& sdb = aDescriptor.get_SurfaceDescriptorBuffer();
+  const auto& shmem = sdb.data().get_Shmem();
+  const auto& rgb = sdb.desc().get_RGBDescriptor();
+  const auto stride = ImageDataSerializer::GetRGBStride(rgb);
+  if (stride.isNothing()) {
+    LOGE("Invalid stride for buffer");
+    return nullptr;
+  }
+  const auto requiredSize =
+      ImageDataSerializer::ComputeRGBBufferSize(rgb.size(), rgb.format());
+  if (requiredSize.isNothing() || shmem.Size<uint8_t>() < *requiredSize) {
+    LOGE("Shmem too small for required buffer size");
+    return nullptr;
+  }
+
+  return gfx::Factory::CreateWrappingDataSourceSurface(
+      shmem.get<uint8_t>(), *stride, rgb.size(), rgb.format());
+}
+
+static void DestroySurfaceDescriptor(ipc::IShmemAllocator* aAllocator,
+                                     SurfaceDescriptor* aSurface) {
+  MOZ_ASSERT(aSurface);
+  const SurfaceDescriptorBuffer& desc = aSurface->get_SurfaceDescriptorBuffer();
+  aAllocator->DeallocShmem(desc.data().get_Shmem());
+  *aSurface = SurfaceDescriptor();
+}
+
 struct SurfaceDescriptorUserData {
   SurfaceDescriptorUserData(RemoteMediaManagerChild* aAllocator,
                             SurfaceDescriptor& aSD)
@@ -1041,14 +1078,20 @@ already_AddRefed<SourceSurface> RemoteMediaManagerChild::Readback(
       });
   SyncRunnable::DispatchToThread(managerThread, task);
 
-  if (!IsSurfaceDescriptorValid(sd)) {
+  if (sd.type() != SurfaceDescriptor::TSurfaceDescriptorBuffer) {
+    LOGE("Unexpected SurfaceDescriptor type in Readback");
+    return nullptr;
+  }
+  auto& sdb = sd.get_SurfaceDescriptorBuffer();
+  if (sdb.data().type() != MemoryOrShmem::TShmem) {
+    LOGE("Unexpected SurfaceDescriptorBuffer data type in Readback");
     return nullptr;
   }
 
   RefPtr<DataSourceSurface> source = GetSurfaceForDescriptor(sd);
   if (!source) {
     DestroySurfaceDescriptor(this, &sd);
-    NS_WARNING("Failed to map SurfaceDescriptor in Readback");
+    LOGE("Failed to map SurfaceDescriptor in Readback");
     return nullptr;
   }
 
@@ -1089,6 +1132,21 @@ void RemoteMediaManagerChild::DeallocateSurfaceDescriptor(
           ref->SendDeallocateSurfaceDescriptorGPUVideo(sd);
         }
       })));
+}
+
+void RemoteMediaManagerChild::OnSetCurrent(
+    const SurfaceDescriptorGPUVideo& aSD) {
+  nsCOMPtr<nsISerialEventTarget> managerThread = GetManagerThread();
+  if (!managerThread) {
+    return;
+  }
+  MOZ_ALWAYS_SUCCEEDS(managerThread->Dispatch(
+      NS_NewRunnableFunction("RemoteMediaManagerChild::OnSetCurrent",
+                             [ref = RefPtr{this}, sd = aSD]() {
+                               if (ref->CanSend()) {
+                                 ref->SendOnSetCurrent(sd);
+                               }
+                             })));
 }
 
 /* static */ void RemoteMediaManagerChild::HandleRejectionError(
@@ -1153,5 +1211,6 @@ void RemoteMediaManagerChild::SetSupported(
 }
 
 #undef LOG
+#undef LOGE
 
 }  // namespace mozilla

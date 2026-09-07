@@ -20,7 +20,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "mimeService",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 
 function readFile(file) {
@@ -39,12 +39,13 @@ function readFile(file) {
  *
  * @param {nsIHttpChannel} channel
  *        The request to replace content for.
- * @param {String} path
+ * @param {string} path
  *        The absolute path to the local file to read content from.
  */
 function overrideChannelWithFilePath(channel, path) {
   // For JS it isn't important, but for HTML we ought to set the right content type on the data URI.
-  let mimeType = "";
+  // Always consider folders as being html documents.
+  let mimeType = channel.URI.spec.endsWith("/") ? "text/html" : "";
   try {
     // getTypeFromURI will throw if there is no extension at the end of the URI
     mimeType = lazy.mimeService.getTypeFromURI(channel.URI);

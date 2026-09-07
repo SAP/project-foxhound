@@ -1,4 +1,4 @@
-// |reftest| skip error:SyntaxError module -- source-phase-imports is not supported
+// |reftest| shell-option(--enable-source-phase-imports) skip-if(!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('source-phase-imports'))||!xulRuntime.shell) error:SyntaxError module -- source-phase-imports is not enabled unconditionally, requires shell-options
 // This file was procedurally generated from the following sources:
 // - src/assignment-target-type/importcall-source.case
 // - src/assignment-target-type/invalid/direct.template

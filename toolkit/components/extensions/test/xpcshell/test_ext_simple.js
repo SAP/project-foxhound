@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 AddonTestUtils.init(this);
@@ -10,6 +8,10 @@ AddonTestUtils.createAppInfo(
   "1",
   "43"
 );
+
+add_setup(async () => {
+  await AddonTestUtils.promiseStartupManager();
+});
 
 add_task(async function test_simple() {
   let extensionData = {
@@ -26,25 +28,22 @@ add_task(async function test_simple() {
   await extension.unload();
 });
 
-add_task(async function test_manifest_V3_disabled() {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", false);
+add_task(async function test_manifest_unsupported_version() {
   let extensionData = {
     manifest: {
-      manifest_version: 3,
+      manifest_version: 1,
     },
   };
 
   let extension = ExtensionTestUtils.loadExtension(extensionData);
   await Assert.rejects(
     extension.startup(),
-    /Unsupported manifest version: 3/,
-    "manifest V3 cannot be loaded"
+    /Property "manifest_version" is unsupported in Manifest Version 1/,
+    "manifest version 1 is rejected"
   );
-  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
 });
 
 add_task(async function test_manifest_V3_enabled() {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   let extensionData = {
     manifest: {
       manifest_version: 3,
@@ -55,7 +54,6 @@ add_task(async function test_manifest_V3_enabled() {
   await extension.startup();
   equal(extension.extension.manifest.manifest_version, 3, "manifest V3 loads");
   await extension.unload();
-  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
 });
 
 add_task(async function test_background() {
@@ -120,8 +118,6 @@ add_task(async function test_extensionTypes() {
 });
 
 add_task(async function test_policy_temporarilyInstalled() {
-  await AddonTestUtils.promiseStartupManager();
-
   let extensionData = {
     manifest: {
       manifest_version: 2,
@@ -150,7 +146,6 @@ add_task(async function test_policy_temporarilyInstalled() {
 });
 
 add_task(async function test_manifest_allowInsecureRequests() {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   let extensionData = {
     allowInsecureRequests: true,
     manifest: {
@@ -166,11 +161,9 @@ add_task(async function test_manifest_allowInsecureRequests() {
     "insecure allowed"
   );
   await extension.unload();
-  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
 });
 
 add_task(async function test_manifest_allowInsecureRequests_throws() {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   let extensionData = {
     allowInsecureRequests: true,
     manifest: {
@@ -186,23 +179,40 @@ add_task(async function test_manifest_allowInsecureRequests_throws() {
     /allowInsecureRequests cannot be used with manifest.content_security_policy/,
     "allowInsecureRequests with content_security_policy cannot be loaded"
   );
-  Services.prefs.clearUserPref("extensions.manifestV3.enabled");
 });
 
 add_task(async function test_gecko_android_key_in_applications() {
-  const extensionData = {
+  const xpiFile = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
       manifest_version: 2,
       applications: {
         gecko_android: {},
       },
     },
-  };
-  const extension = ExtensionTestUtils.loadExtension(extensionData);
-
-  await Assert.rejects(
-    extension.startup(),
-    /applications: Property "gecko_android" is unsupported by Firefox/,
-    "expected applications.gecko_android to be invalid"
+  });
+  ExtensionTestUtils.failOnSchemaWarnings(false);
+  let { messages } = await promiseConsoleOutput(async () => {
+    const { AddonManager } = ChromeUtils.importESModule(
+      "resource://gre/modules/AddonManager.sys.mjs"
+    );
+    await Assert.rejects(
+      AddonManager.installTemporaryAddon(xpiFile),
+      /Extension is invalid/,
+      "Install failed with privileged permission"
+    );
+  });
+  ExtensionTestUtils.failOnSchemaWarnings(true);
+  AddonTestUtils.checkMessages(
+    messages,
+    {
+      expected: [
+        {
+          message:
+            /applications: Property "gecko_android" is unsupported by Firefox/,
+        },
+      ],
+    },
+    true
   );
+  xpiFile.remove(true);
 });

@@ -1,5 +1,5 @@
 /*
-* Copyright 2019 Google Inc.
+* Copyright 2019 Google LLC
 *
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
@@ -16,6 +16,6 @@ class SkPath;
 // Return the resolved clipstack as a single path.
 // Note: uses SkPathOps as part of its implementation.
 //
-void SkClipStack_AsPath(const SkClipStack& cs, SkPath* path);
+SkPath SkClipStack_AsPath(const SkClipStack&);
 
 #endif

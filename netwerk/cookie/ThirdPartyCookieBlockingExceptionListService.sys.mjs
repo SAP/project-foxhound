@@ -12,6 +12,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const COLLECTION_NAME = "third-party-cookie-blocking-exempt-urls";
 const PREF_NAME = "network.cookie.cookieBehavior.optInPartitioning.skip_list";
 
+/**
+ * Manages the list of (first-party site, third-party site) pairs that are
+ * exempt from third-party cookie blocking, sourced from both Remote Settings
+ * and a user pref.
+ */
 export class ThirdPartyCookieBlockingExceptionListService {
   classId = Components.ID("{1ee0cc18-c968-4105-a895-bdea08e187eb}");
   QueryInterface = ChromeUtils.generateQI([
@@ -178,6 +183,10 @@ export class ThirdPartyCookieBlockingExceptionListService {
   }
 }
 
+/**
+ * Represents a single third-party cookie blocking exception as a
+ * (first-party site, third-party site) pair.
+ */
 export class ThirdPartyCookieExceptionEntry {
   classId = Components.ID("{8200e12c-416c-42eb-8af5-db9745d2e527}");
   QueryInterface = ChromeUtils.generateQI([

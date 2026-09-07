@@ -11,16 +11,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
-import androidx.annotation.RequiresApi
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
-import androidx.core.os.bundleOf
 import mozilla.components.concept.sync.Device
 import mozilla.components.concept.sync.TabData
+import mozilla.components.concept.sync.TabPrivacy
 import mozilla.components.support.base.ids.SharedIdsHelper
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.HomeActivity
@@ -44,17 +42,15 @@ class NotificationManager(private val context: Context) {
     init {
         // Create the notification channels we are going to use, but only on API 26+ because the NotificationChannel
         // class is new and not in the support library.
-        if (SDK_INT >= Build.VERSION_CODES.O) {
-            createNotificationChannel(
-                RECEIVE_TABS_CHANNEL_ID,
-                // Pick 'high' because this is a user-triggered action that is expected to be part of a continuity flow.
-                // That is, user is expected to be waiting for this notification on their device; make it obvious.
-                NotificationManager.IMPORTANCE_HIGH,
-                // Name and description are shown in the 'app notifications' settings for the app.
-                context.getString(R.string.fxa_received_tab_channel_name),
-                context.getString(R.string.fxa_received_tab_channel_description),
-            )
-        }
+        createNotificationChannel(
+            RECEIVE_TABS_CHANNEL_ID,
+            // Pick 'high' because this is a user-triggered action that is expected to be part of a continuity flow.
+            // That is, user is expected to be waiting for this notification on their device; make it obvious.
+            NotificationManager.IMPORTANCE_HIGH,
+            // Name and description are shown in the 'app notifications' settings for the app.
+            context.getString(R.string.fxa_received_tab_channel_name),
+            context.getString(R.string.fxa_received_tab_channel_description),
+        )
     }
 
     private val logger = Logger("NotificationManager")
@@ -71,23 +67,16 @@ class NotificationManager(private val context: Context) {
             return
         }
         val notificationManagerCompat = NotificationManagerCompat.from(context)
-        val (notificationId, totalCount) = if (SDK_INT >= Build.VERSION_CODES.M) {
-            // On Android M (released in 2015) and later, we can retrieve
-            // the last notification from `allNotifications`. If one exists,
-            // we'll update its contents in-place with the new total number of
-            // closed tabs.
-            val notificationId = SharedIdsHelper.getIdForTag(context, TABS_CLOSED_NOTIFICATION_TAG)
-            val lastNotification = notificationManagerCompat.activeNotifications.find {
-                it.tag == TABS_CLOSED_TAG && it.id == notificationId
-            }
-            val lastTotalCount = lastNotification?.notification?.extras?.getInt(TOTAL_TABS_CLOSED_EXTRA) ?: 0
-            Pair(notificationId, lastTotalCount + count)
-        } else {
-            // Pre-M doesn't have `activeNotifications`, so we'll show
-            // a new notification for each call to `showSyncedTabsClosed`.
-            val notificationId = SharedIdsHelper.getNextIdForTag(context, TABS_CLOSED_NOTIFICATION_TAG)
-            Pair(notificationId, count)
+
+        // we can retrieve the last notification from `allNotifications`.
+        // If one exists, we'll update its contents in-place
+        // with the new total number of closed tabs.
+        val notificationIdFromTag = SharedIdsHelper.getIdForTag(context, TABS_CLOSED_NOTIFICATION_TAG)
+        val lastNotification = notificationManagerCompat.activeNotifications.find {
+            it.tag == TABS_CLOSED_TAG && it.id == notificationIdFromTag
         }
+        val lastTotalCount = lastNotification?.notification?.extras?.getInt(TOTAL_TABS_CLOSED_EXTRA) ?: 0
+        val (notificationId, totalCount) = Pair(notificationIdFromTag, lastTotalCount + count)
 
         val notification = NotificationCompat.Builder(context, RECEIVE_TABS_CHANNEL_ID).apply {
             val title = context.resources.getString(
@@ -107,21 +96,18 @@ class NotificationManager(private val context: Context) {
                 context,
                 0,
                 intent,
-                IntentUtils.defaultIntentPendingFlags or PendingIntent.FLAG_UPDATE_CURRENT,
+                IntentUtils.DEFAULT_PENDING_INTENT_FLAGS or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             setContentIntent(pendingIntent)
 
-            val extras = bundleOf(TOTAL_TABS_CLOSED_EXTRA to totalCount)
-            addExtras(extras)
+            addExtras(Bundle().apply { putInt(TOTAL_TABS_CLOSED_EXTRA, totalCount) })
 
             setSmallIcon(R.drawable.ic_status_logo)
             setWhen(System.currentTimeMillis())
             setAutoCancel(true)
             setDefaults(Notification.DEFAULT_VIBRATE or Notification.DEFAULT_SOUND)
 
-            if (SDK_INT >= Build.VERSION_CODES.M) {
-                setCategory(Notification.CATEGORY_STATUS)
-            }
+            setCategory(Notification.CATEGORY_STATUS)
         }.build()
 
         notificationManagerCompat.notify(TABS_CLOSED_TAG, notificationId, notification)
@@ -144,13 +130,14 @@ class NotificationManager(private val context: Context) {
         val filteredTabs = tabs.filter { isValidTabSchema(it) }
         logger.debug("${filteredTabs.size} tab(s) after filtering for unsupported schemes")
         filteredTabs.forEach { tab ->
-            val showReceivedTabsIntentFlags = IntentUtils.defaultIntentPendingFlags or PendingIntent.FLAG_ONE_SHOT
+            val showReceivedTabsIntentFlags = IntentUtils.DEFAULT_PENDING_INTENT_FLAGS or PendingIntent.FLAG_ONE_SHOT
             val intent = Intent(context, IntentReceiverActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
                 data = tab.url.toUri()
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             intent.putExtra(RECEIVE_TABS_TAG, true)
+            intent.putExtra(HomeActivity.PRIVATE_BROWSING_MODE, tab.privacy == TabPrivacy.Private)
             val pendingIntent: PendingIntent =
                 PendingIntent.getActivity(context, 0, intent, showReceivedTabsIntentFlags)
 
@@ -166,9 +153,7 @@ class NotificationManager(private val context: Context) {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_VIBRATE or Notification.DEFAULT_SOUND)
 
-            if (SDK_INT >= Build.VERSION_CODES.M) {
-                builder.setCategory(Notification.CATEGORY_REMINDER)
-            }
+            builder.setCategory(Notification.CATEGORY_REMINDER)
 
             val notification = builder.build()
 
@@ -182,7 +167,6 @@ class NotificationManager(private val context: Context) {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
     private fun createNotificationChannel(
         channelId: String,
         importance: Int,

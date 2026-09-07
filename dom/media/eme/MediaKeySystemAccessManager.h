@@ -6,8 +6,8 @@
 #define DOM_MEDIA_MEDIAKEYSYSTEMACCESSMANAGER_H_
 
 #include "DecoderDoctorDiagnostics.h"
-#include "mozilla/dom/MediaKeySystemAccess.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/MediaKeySystemAccess.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIObserver.h"
 #include "nsISupportsImpl.h"
@@ -103,7 +103,7 @@ class MediaKeySystemAccessManager final : public nsIObserver, public nsINamed {
  public:
   explicit MediaKeySystemAccessManager(nsPIDOMWindowInner* aWindow);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(MediaKeySystemAccessManager,
                                            nsIObserver)
   NS_DECL_NSIOBSERVER

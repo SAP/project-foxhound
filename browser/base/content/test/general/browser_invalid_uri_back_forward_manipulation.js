@@ -13,7 +13,7 @@ add_task(async function checkBackFromInvalidURI() {
     "about:robots",
     true
   );
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, async function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     // Mark the first entry as having been interacted with.
     content.document.notifyUserGestureActivation();
   });

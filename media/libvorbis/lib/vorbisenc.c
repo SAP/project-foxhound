@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 
 #include "vorbis/codec.h"
 #include "vorbis/vorbisenc.h"
@@ -254,7 +255,7 @@ static void vorbis_encode_global_psych_setup(vorbis_info *vi,double s,
 static void vorbis_encode_global_stereo(vorbis_info *vi,
                                         const highlevel_encode_setup *const hi,
                                         const adj_stereo *p){
-  float s=hi->stereo_point_setting;
+  double s=hi->stereo_point_setting;
   int i,is=s;
   double ds=s-is;
   codec_setup_info *ci=vi->codec_setup;
@@ -658,7 +659,8 @@ static const void *get_setup_template(long ch,long srate,
           float low=map[j];
           float high=map[j+1];
           float del=(req-low)/(high-low);
-          *base_setting=j+del;
+          if(del>1-FLT_EPSILON)del=1-FLT_EPSILON;
+          *base_setting=j+(double)del;
         }
 
         return(setup_list[i]);

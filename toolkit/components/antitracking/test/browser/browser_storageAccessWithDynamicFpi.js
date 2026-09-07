@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "peuService",
   "@mozilla.org/partitioning/exception-list-service;1",
-  "nsIPartitioningExceptionListService"
+  Ci.nsIPartitioningExceptionListService
 );
 
 const TEST_REDIRECT_TOP_PAGE =
@@ -42,11 +41,11 @@ add_setup(async function () {
     set: [
       [
         "network.cookie.cookieBehavior",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
       [
         "network.cookie.cookieBehavior.pbmode",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
       ["privacy.restrict3rdpartystorage.heuristic.redirect", false],
       ["privacy.trackingprotection.enabled", false],
@@ -88,8 +87,8 @@ function executeContentScript(browser, callback, options = {}) {
             once: true,
           });
 
-          content.document.body.appendChild(ifr);
           ifr.src = obj.page;
+          content.document.body.appendChild(ifr);
         } else {
           // first-party
           let runnableStr = `(() => {return (${obj.callback});})();`;

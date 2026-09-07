@@ -1,0 +1,134 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>WebNavigation documentId test with private browsing mode</title>
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script type="text/javascript" src="head.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+
+<script type="text/javascript">
+"use strict";
+
+add_task(async function test_webNavigation_requires_private_browsing_access() {
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["webNavigation", "tabs", "<all_urls>"],
+      browser_specific_settings: { gecko: { id: "ext@no_pbm_access" } },
+    },
+    background() {
+      browser.webNavigation.onCompleted.addListener(
+        details => {
+          // The other extension opens file_webNavigation_manualSubframe.html
+          // which embeds file_webNavigation_manualSubframe_page1.html. We
+          // should not see events for these in private windows.
+          browser.test.fail(
+            `Unexpected webNavigation event: ${JSON.stringify(details)}`
+          );
+        },
+        { url: [{ urlContains: "file_webNavigation_manualSubframe" }] }
+      );
+      browser.runtime.onMessageExternal.addListener(async testCases => {
+        browser.test.assertTrue(testCases.length, "Got test cases");
+        for (const { detailsForGetFrame, description } of testCases) {
+          try {
+            browser.test.assertDeepEq(
+              null,
+              await browser.webNavigation.getFrame(detailsForGetFrame),
+              `Should not have access to private frames - ${description}`
+            );
+          } catch (e) {
+            browser.test.fail(`Unexpected error: ${e} (${description})`);
+          }
+        }
+        return "checks_done";
+      });
+    },
+
+  });
+  await extension.startup();
+
+  let privateExtension = ExtensionTestUtils.loadExtension({
+    incognitoOverride: "spanning",
+    manifest: { permissions: ["webNavigation", "tabs", "<all_urls>"] },
+    async background() {
+      let loadedPromise = new Promise(resolve => {
+        browser.webNavigation.onCompleted.addListener(
+          details => {
+            resolve(details);
+          },
+          { url: [{ urlContains: "file_webNavigation_manualSubframe_page1" }] }
+        );
+      });
+      let { id: windowId, tabs } = await browser.windows.create({
+        incognito: true,
+        url: "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_webNavigation_manualSubframe.html",
+      });
+      const tabId = tabs[0].id;
+      const eventDetails = await loadedPromise;
+
+      const allFrames = await browser.webNavigation.getAllFrames({ tabId });
+      const mainFrame = allFrames.find(f => f.frameId === 0);
+      const subFrame = allFrames.find(f => f.parentFrameId === 0);
+      browser.test.assertEq(
+        eventDetails.parentDocumentId,
+        mainFrame.documentId,
+        "Got event within main frame"
+      );
+      browser.test.assertEq(
+        eventDetails.documentId,
+        subFrame.documentId,
+        "Got event for sub frame"
+      );
+
+      browser.test.assertDeepEq(
+        mainFrame,
+        await browser.webNavigation.getFrame({ documentId: mainFrame.documentId }),
+        "getFrame() on main frame in private window returns result"
+      );
+      browser.test.assertDeepEq(
+        subFrame,
+        await browser.webNavigation.getFrame({ documentId: subFrame.documentId }),
+        "getFrame() on sub frame in private window returns result"
+      );
+      const testCases = [
+        {
+          detailsForGetFrame: { documentId: mainFrame.documentId },
+          description: "main frame's documentId",
+        },
+        {
+          detailsForGetFrame: { documentId: subFrame.documentId },
+          description: "sub frame's documentId",
+        },
+        {
+          detailsForGetFrame: { documentId: mainFrame.documentId, tabId },
+          description: "main frame's documentId + tabId",
+        },
+        {
+          detailsForGetFrame: { documentId: subFrame.documentId, tabId },
+          description: "sub frame's documentId + tabId",
+        },
+      ];
+      browser.test.assertEq(
+        "checks_done",
+        await browser.runtime.sendMessage("ext@no_pbm_access", testCases),
+        "Ran checks in extension without private browsing access"
+      );
+
+      await browser.windows.remove(windowId);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await privateExtension.startup();
+  await privateExtension.awaitMessage("done");
+  await privateExtension.unload();
+
+  await extension.unload();
+});
+
+</script>
+</body>
+</html>

@@ -68,11 +68,11 @@ add_task(async function actualTest() {
   Assert.ok(threw); // adding non-number threw
   Assert.equal(null, TelemetryTimestamps.get().baz); // no baz was added
 
-  // Test that the data gets added to the telemetry ping properly
+  // Test that none of these custom timestamps make it into simpleMeasurements.
   let simpleMeasurements = getSimpleMeasurementsFromTelemetryController();
   Assert.notEqual(simpleMeasurements, null); // got simple measurements from ping data
-  Assert.greater(simpleMeasurements.foo, 1); // foo was included
-  Assert.greater(simpleMeasurements.bar, 1); // bar was included
+  Assert.equal(undefined, simpleMeasurements.foo); // foo was not included
+  Assert.equal(undefined, simpleMeasurements.bar); // bar was not included
   Assert.equal(undefined, simpleMeasurements.baz); // baz wasn't included since it wasn't added
 
   await TelemetryController.testShutdown();

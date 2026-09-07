@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=574663
 <pre id="test">
 <script>
 
-/** Test for Bug 574663 **/
+/** Test for Bug 574663 */
 
 // SimpleTest's paint_listener does not work on other windows, so we inline
 // a smaller version here.
@@ -104,7 +104,6 @@ function runTest() {
     SimpleTest.waitForFocus(function() {
       /* eslint-disable no-shadow */
       let chromeScript = SpecialPowers.loadChromeScript(_ => {
-        /* eslint-env mozilla/chrome-script */
         let win = Services.wm.getMostRecentWindow("navigator:browser");
         win.requestAnimationFrame(() => {
           win.gBrowser.selectedBrowser.removeAttribute("blank");

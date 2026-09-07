@@ -140,7 +140,6 @@ add_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         fields: [
           {
             fieldName: "address-line1",
@@ -179,7 +178,6 @@ add_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         fields: [
           {
             fieldName: "address-line1",
@@ -218,7 +216,6 @@ add_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         fields: [{ fieldName: "postal-code", reason: "autocomplete" }],
       },
     ],
@@ -252,7 +249,6 @@ add_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         fields: [
           { fieldName: "postal-code", reason: "autocomplete" },
           { fieldName: "address-line1", reason: "autocomplete" },
@@ -310,14 +306,12 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         fields: [
           { fieldName: "country", addressType: "shipping" },
           { fieldName: "given-name", addressType: "shipping" },
         ],
       },
       {
-        invalid: true,
         fields: [
           { fieldName: "country", addressType: "billing" },
           { fieldName: "country", addressType: "billing" },
@@ -338,14 +332,12 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         fields: [
           { fieldName: "country", addressType: "shipping" },
           { fieldName: "given-name", addressType: "shipping" },
         ],
       },
       {
-        invalid: true,
         fields: [
           { fieldName: "country", addressType: "billing" },
           { fieldName: "country", addressType: "billing" },
@@ -366,14 +358,12 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         fields: [
           { fieldName: "postal-code", addressType: "shipping" },
           { fieldName: "tel", addressType: "shipping" },
         ],
       },
       {
-        invalid: true,
         fields: [
           { fieldName: "postal-code", addressType: "billing" },
           { fieldName: "postal-code", addressType: "billing" },
@@ -394,14 +384,12 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         fields: [
           { fieldName: "postal-code", addressType: "shipping" },
           { fieldName: "tel", addressType: "shipping" },
         ],
       },
       {
-        invalid: true,
         fields: [
           { fieldName: "postal-code", addressType: "billing" },
           { fieldName: "postal-code", addressType: "billing" },
@@ -492,7 +480,6 @@ add_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         default: {
           reason: "regex-heuristic",
         },
@@ -507,7 +494,6 @@ add_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         default: {
           reason: "regex-heuristic",
         },
@@ -576,7 +562,6 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         default: {
           reason: "autocomplete",
         },
@@ -597,7 +582,6 @@ add_heuristic_tests([
       `,
     expectedResult: [
       {
-        invalid: true,
         default: {
           reason: "autocomplete",
           addressType: "shipping",
@@ -605,7 +589,6 @@ add_heuristic_tests([
         fields: [{ fieldName: "email" }],
       },
       {
-        invalid: true,
         default: {
           reason: "autocomplete",
         },

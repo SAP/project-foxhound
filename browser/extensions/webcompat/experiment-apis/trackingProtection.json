@@ -78,11 +78,21 @@
             "type": "string"
           },
           {
-            "name": "patterns",
-            "description": "Array of match patterns",
+            "name": "matchEntries",
+            "description": "Array of match entries with URL patterns and request types",
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "object",
+              "properties": {
+                "patterns": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "types": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
             }
           },
           {

@@ -7,34 +7,29 @@ package mozilla.components.lib.crash.service
 import android.content.ComponentName
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.crash.Crash
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.fail
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.Robolectric
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertNotNull
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class SendCrashTelemetryServiceTest {
     private var service: SendCrashTelemetryService? = null
     private val intent = Intent("org.mozilla.gecko.ACTION_CRASHED")
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val scope = coroutinesTestRule.scope
 
     @Before
     fun setUp() {
@@ -63,7 +58,7 @@ class SendCrashTelemetryServiceTest {
     }
 
     @Test
-    fun `Send crash telemetry will forward same crash to crash telemetry service`() {
+    fun `Send crash telemetry will forward same crash to crash telemetry service`() = runTest {
         var caughtCrash: Crash.NativeCodeCrash? = null
         val crashReporter = spy(
             CrashReporter(
@@ -71,6 +66,10 @@ class SendCrashTelemetryServiceTest {
                 shouldPrompt = CrashReporter.Prompt.NEVER,
                 telemetryServices = listOf(
                     object : CrashTelemetryService {
+                        override fun setTelemetryEnabled(enabled: Boolean) {
+                            fail("Didn't expect telemetry disable")
+                        }
+
                         override fun record(crash: Crash.UncaughtExceptionCrash) {
                             fail("Didn't expect uncaught exception crash")
                         }
@@ -84,7 +83,8 @@ class SendCrashTelemetryServiceTest {
                         }
                     },
                 ),
-                scope = scope,
+                mainDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+                scope = this,
             ),
         ).install(testContext)
         val originalCrash = Crash.NativeCodeCrash(
@@ -115,12 +115,12 @@ class SendCrashTelemetryServiceTest {
         originalCrash.fillIn(intent)
 
         service?.onStartCommand(intent, 0, 0)
+        testScheduler.advanceUntilIdle()
 
         verify(crashReporter).submitCrashTelemetry(eq(originalCrash), any())
         assertNotNull(caughtCrash)
 
-        val nativeCrash = caughtCrash
-            ?: throw AssertionError("Expected NativeCodeCrash instance")
+        val nativeCrash: Crash.NativeCodeCrash = caughtCrash
 
         assertEquals(123, nativeCrash.timestamp)
         assertEquals(false, nativeCrash.isFatal)

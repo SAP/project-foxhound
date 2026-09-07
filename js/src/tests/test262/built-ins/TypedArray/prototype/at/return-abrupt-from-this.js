@@ -37,6 +37,6 @@ testWithTypedArrayConstructors(TA => {
   assert.throws(TypeError, () => {
     TA.prototype.at.call(null);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

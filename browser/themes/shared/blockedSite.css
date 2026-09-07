@@ -6,16 +6,15 @@
 
 @media not (prefers-contrast) {
   :root {
-    --in-content-page-background: #a4000f;
-    --in-content-page-color: white;
-    --in-content-text-color: white;
-    --in-content-primary-button-text-color: black;
-    --in-content-button-background: transparent;
-    --in-content-button-background-hover: #5a0002;
-    --in-content-button-background-active: #3e0200;
-    --in-content-primary-button-background: white;
-    --in-content-primary-button-background-hover: rgba(255, 255, 255, 0.8);
-    --in-content-primary-button-background-active: rgba(255, 255, 255, 0.7);
+    --background-color-canvas: #a4000f;
+    --text-color: white;
+    --button-text-color-primary: black;
+    --button-background-color: transparent;
+    --button-background-color-hover: #5a0002;
+    --button-background-color-active: #3e0200;
+    --button-background-color-primary: white;
+    --button-background-color-primary-hover: rgba(255, 255, 255, 0.8);
+    --button-background-color-primary-active: rgba(255, 255, 255, 0.7);
   }
 }
 
@@ -67,5 +66,5 @@ a:not(:link) {
 }
 
 .sitename {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }

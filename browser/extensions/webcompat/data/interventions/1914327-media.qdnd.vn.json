@@ -1,0 +1,15 @@
+{
+  "label": "media.qdnd.vn",
+  "bugs": {
+    "1914327": {
+      "issue": "broken-videos",
+      "matches": ["*://media.qdnd.vn/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

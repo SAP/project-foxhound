@@ -1,0 +1,99 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Test line breaks for plaintext serializer</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1650720">Mozilla Bug 1650720</a>
+<p id="display"></p>
+<div id="content" style="display: none">
+</div>
+<pre id="preformatted"></pre>
+<div id="container"></div>
+<script>
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const platformLineBreak = navigator.platform.indexOf("Win") == 0 ? "\r\n" : "\n";
+// XXX: I'm not sure if the line break compression behavior entirely makes sense,
+// but this is what we have for now.
+const TESTS = [
+  {innerHTMLs: [`<pre>First <div>Second </div></pre><h3>Third</h3>`,
+                `<pre>First <div>Second </div></pre>\n<h3>Third</h3>`,
+                `<pre>First <div>Second </div></pre>\n\n<h3>Third</h3>`,
+                `<pre>First <div>Second </div></pre>\n\n\n<h3>Third</h3>`,
+                `<pre>First <div>Second </div></pre>\n\n\n\n<h3>Third</h3>`,
+                `<pre>First <div>Second </div>\n</pre><h3>Third</h3>`,
+                `<pre>First <div>Second </div>\n</pre>\n<h3>Third</h3>`,
+                `<pre>First <div>Second </div>\n</pre>\n\n<h3>Third</h3>`,
+                `<pre>First <div>Second </div>\n</pre>\n\n\n<h3>Third</h3>`,
+                `<pre>First <div>Second </div>\n</pre>\n\n\n\n<h3>Third</h3>`,
+                `<pre>First \n<div>Second </div></pre><h3>Third</h3>`],
+   expectedResult: `First ${platformLineBreak}Second ${platformLineBreak}${platformLineBreak}Third`},
+  {innerHTMLs: [`<pre>First <pre>Second </pre></pre>Third`,
+                `<pre>First <pre>Second </pre></pre>\nThird`,
+                `<pre>First <pre>Second </pre></pre>\n\nThird`,
+                `<pre>First <pre>Second </pre></pre>\n\n\nThird`,
+                `<pre>First <pre>Second </pre></pre>\n\n\n\nThird`,
+                `<pre>First \n<pre>Second </pre></pre>Third`,
+                `<pre>First \n<pre>Second </pre></pre>\nThird`,
+                // XXX: Not sure below two cases should have another line break
+                // before the "Second". However, <pre> might have some special
+                // rules against normal elements with white-space:pre.
+                `<pre>First \n\n<pre>Second </pre></pre>Third`,
+                `<pre>First \n\n<pre>Second </pre></pre>\nThird`],
+   expectedResult: `First ${platformLineBreak}${platformLineBreak}Second ${platformLineBreak}${platformLineBreak}Third`},
+  {innerHTMLs: [`<pre>First </pre><pre>Second</pre>`,
+                `<pre>First </pre>\n<pre>Second</pre>`,
+                `<pre>First </pre>\n\n<pre>Second</pre>`,
+                `<pre>First </pre>\n\n\n<pre>Second</pre>`,
+                `<pre>First </pre>\n\n\n\n<pre>Second</pre>`,
+                `<pre>First \n</pre><pre>Second</pre>`,
+                `<pre>First \n</pre>\n<pre>Second</pre>`,
+                `<pre>First \n</pre>\n\n<pre>Second</pre>`,
+                `<pre>First \n</pre>\n\n\n<pre>Second</pre>`,
+                `<pre>First \n</pre>\n\n\n\n<pre>Second</pre>`,
+                // XXX: Not sure below five cases should have another line break
+                // before the "Second". However, <pre> might have some special
+                // rules against normal elements with white-space:pre.
+                `<pre>First \n\n</pre><pre>Second</pre>`,
+                `<pre>First \n\n</pre>\n<pre>Second</pre>`,
+                `<pre>First \n\n</pre>\n\n<pre>Second</pre>`,
+                `<pre>First \n\n</pre>\n\n\n<pre>Second</pre>`,
+                `<pre>First \n\n</pre>\n\n\n\n<pre>Second</pre>`],
+   expectedResult: `First ${platformLineBreak}${platformLineBreak}Second`},
+];
+
+function selectAndEncode(aElement, aEncoderFlags = 0) {
+  // Select the element.
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.selectAllChildren(aElement);
+
+  const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+  encoder.init(document, "text/plain", de.OutputSelectionOnly | aEncoderFlags);
+  encoder.setSelection(selection);
+  return encoder.encodeToString();
+}
+
+TESTS.forEach((test) => {
+  test.innerHTMLs.forEach((innerHTML) => {
+    add_task(async function test_line_break_compress() {
+      info(`Testing ${JSON.stringify(innerHTML)}`);
+
+      const div = document.getElementById("container");
+      div.innerHTML = innerHTML;
+
+      is(selectAndEncode(div), test.expectedResult,
+         `Encoded data for ${JSON.stringify(innerHTML)}`);
+      is(selectAndEncode(div, de.OutputForPlainTextClipboardCopy), test.expectedResult,
+         `Encoded data for ${JSON.stringify(innerHTML)}`);
+    });
+  });
+});
+
+</script>
+</body>
+</html>

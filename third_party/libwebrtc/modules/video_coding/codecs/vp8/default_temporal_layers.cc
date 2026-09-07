@@ -9,17 +9,27 @@
 
 #include "modules/video_coding/codecs/vp8/default_temporal_layers.h"
 
-#include <stdlib.h>
-
 #include <algorithm>
 #include <array>
+#include <bitset>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <memory>
 #include <set>
 #include <utility>
 #include <vector>
 
+#include "api/transport/rtp/dependency_descriptor.h"
+#include "api/video/video_codec_constants.h"
+#include "api/video_codecs/video_encoder.h"
+#include "api/video_codecs/vp8_frame_buffer_controller.h"
+#include "api/video_codecs/vp8_frame_config.h"
+#include "api/video_codecs/vp8_temporal_layers.h"
+#include "common_video/generic_frame_descriptor/generic_frame_info.h"
+#include "modules/video_coding/codecs/interface/common_constants.h"
+#include "modules/video_coding/codecs/vp8/include/temporal_layers_checker.h"
 #include "modules/video_coding/include/video_codec_interface.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
@@ -46,9 +56,9 @@ constexpr BufferFlags kUpdate = BufferFlags::kUpdate;
 constexpr BufferFlags kReferenceAndUpdate = BufferFlags::kReferenceAndUpdate;
 constexpr FreezeEntropy kFreezeEntropy = FreezeEntropy::kFreezeEntropy;
 
-static constexpr uint8_t kUninitializedPatternIndex =
+constexpr uint8_t kUninitializedPatternIndex =
     std::numeric_limits<uint8_t>::max();
-static constexpr std::array<Vp8BufferReference, 3> kAllBuffers = {
+constexpr std::array<Vp8BufferReference, 3> kAllBuffers = {
     {Vp8BufferReference::kLast, Vp8BufferReference::kGolden,
      Vp8BufferReference::kAltref}};
 
@@ -112,8 +122,6 @@ size_t BufferToIndex(Vp8BufferReference buffer) {
 }
 
 }  // namespace
-
-constexpr size_t DefaultTemporalLayers::kNumReferenceBuffers;
 
 std::vector<DefaultTemporalLayers::DependencyInfo>
 DefaultTemporalLayers::GetDependencyInfo(size_t num_layers) {
@@ -534,7 +542,7 @@ void DefaultTemporalLayers::OnEncodeDone(size_t stream_index,
     if (!is_keyframe &&
         frame_config.References(static_cast<Vp8FrameConfig::Buffer>(i))) {
       RTC_DCHECK_LT(vp8_info.referencedBuffersCount,
-                    arraysize(CodecSpecificInfoVP8::referencedBuffers));
+                    std::size(vp8_info.referencedBuffers));
       references = true;
       vp8_info.referencedBuffers[vp8_info.referencedBuffersCount++] = i;
     }
@@ -542,7 +550,7 @@ void DefaultTemporalLayers::OnEncodeDone(size_t stream_index,
     if (is_keyframe ||
         frame_config.Updates(static_cast<Vp8FrameConfig::Buffer>(i))) {
       RTC_DCHECK_LT(vp8_info.updatedBuffersCount,
-                    arraysize(CodecSpecificInfoVP8::updatedBuffers));
+                    std::size(vp8_info.updatedBuffers));
       updates = true;
       vp8_info.updatedBuffers[vp8_info.updatedBuffersCount++] = i;
     }

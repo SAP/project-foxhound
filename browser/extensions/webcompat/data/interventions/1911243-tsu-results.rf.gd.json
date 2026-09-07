@@ -1,0 +1,18 @@
+{
+  "label": "tsu-results.rf.gd",
+  "bugs": {
+    "1911243": {
+      "issue": "broken-layout",
+      "matches": ["*://tsu-results.rf.gd/tsu_results/*"]
+    }
+  },
+  "css": {
+    "fix-table-headers": "@-moz-document url-prefix() { .sortable th { text-align: unset; transform: skew(-45deg) rotate(-180deg) matrix(1.3, 0.6, 0.2, 1, -69, 10); vertical-align: unset; } .sortable td { text-align: unset; } }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["fix-table-headers"]
+    }
+  ]
+}

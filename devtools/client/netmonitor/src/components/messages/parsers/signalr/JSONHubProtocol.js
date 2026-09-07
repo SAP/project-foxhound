@@ -17,7 +17,8 @@ const IHubProtocol = require("resource://devtools/client/netmonitor/src/componen
 const TextMessageFormat = require("resource://devtools/client/netmonitor/src/components/messages/parsers/signalr/TextMessageFormat.js");
 /** Implements the JSON Hub Protocol. */
 class JsonHubProtocol {
-  /** Creates an array of {@link @microsoft/signalr.HubMessage} objects from the specified serialized representation.
+  /**
+   * Creates an array of {@link @microsoft/signalr.HubMessage} objects from the specified serialized representation.
    *
    * @param {string} input A string containing the serialized representation.
    */
@@ -67,7 +68,8 @@ class JsonHubProtocol {
     }
     return hubMessages;
   }
-  /** Writes the specified {@link @microsoft/signalr.HubMessage} to a string and returns it.
+  /**
+   * Writes the specified {@link @microsoft/signalr.HubMessage} to a string and returns it.
    *
    * @param {HubMessage} message The message to write.
    * @returns {string} A string containing the serialized representation of the message.

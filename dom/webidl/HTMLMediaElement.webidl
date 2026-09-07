@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -51,6 +50,8 @@ interface HTMLMediaElement : HTMLElement {
   [Throws]
   undefined fastSeek(double time);
   readonly attribute unrestricted double duration;
+  [Func="IsChromeOrUAWidget"]
+  undefined updateCueDisplay();
   [ChromeOnly]
   readonly attribute boolean isEncrypted;
   // TODO: Bug 847376 - readonly attribute any startDate;
@@ -115,17 +116,6 @@ partial interface HTMLMediaElement {
   attribute MediaStream? srcObject;
 
   attribute boolean preservesPitch;
-
-  // NB: for internal use with the video controls:
-  [Func="IsChromeOrUAWidget"] attribute boolean mozAllowCasting;
-  [Func="IsChromeOrUAWidget"] attribute boolean mozIsCasting;
-
-  // Mozilla extension: stream capture
-  [Throws]
-  MediaStream mozCaptureStream();
-  [Throws]
-  MediaStream mozCaptureStreamUntilEnded();
-  readonly attribute boolean mozAudioCaptured;
 
   // Mozilla extension: return embedded metadata from the stream as a
   // JSObject with key:value pairs for each tag. This can be used by
@@ -282,4 +272,17 @@ partial interface HTMLMediaElement {
 partial interface HTMLMediaElement {
   [Pref="media.allowed-to-play.enabled"]
   readonly attribute boolean allowedToPlay;
+};
+
+// https://w3c.github.io/mediacapture-fromelement/#html-media-element-media-capture-extensions
+partial interface HTMLMediaElement {
+  [Throws, Pref="media.captureStream.enabled"]
+  MediaStream captureStream();
+
+  // Non-spec compliant stream capture APIs. They will be deprecated.
+  [Throws]
+  MediaStream mozCaptureStream();
+  [Throws]
+  MediaStream mozCaptureStreamUntilEnded();
+  readonly attribute boolean mozAudioCaptured;
 };

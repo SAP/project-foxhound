@@ -14,6 +14,42 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = i-Personalize
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Mga bagong tab
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } hilera
+           *[other] { $num } hilera
+        }
+home-restore-defaults-srd =
+    .label = Ibalik sa dating ayos
+    .accesskey = I
+home-mode-choice-custom-srd =
+    .label = Custom URLs...
+home-mode-choice-blank-srd =
+    .label = Blangkong Pahina
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Mga Na-sponsor na Kwento
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Mga Binisitang Pahina
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Mga Bookmark
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Mga Download Kamakailan
+home-prefs-recent-activity-header-srd =
+    .label = Kamakailang aktibidad
+home-prefs-recent-activity-select =
+    .aria-label = Kamakailang aktibidad
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -32,7 +68,7 @@ newtab-search-box-input =
     .placeholder = Hanapin sa web
     .aria-label = Hanapin sa web
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Magdagdag ng Search Engine
 newtab-topsites-add-shortcut-header = Bagong Shortcut
@@ -101,9 +137,6 @@ newtab-menu-save-to-pocket = I-save sa { -pocket-brand-name }
 newtab-menu-delete-pocket = I-delete sa { -pocket-brand-name }
 newtab-menu-archive-pocket = I-archive sa { -pocket-brand-name }
 newtab-menu-show-privacy-info = Ang aming mga suki at iyong privacy
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -216,12 +249,6 @@ newtab-pocket-cta-button = Kunin ang { -pocket-brand-name }
 newtab-pocket-cta-text = I-save sa { -pocket-brand-name } ang mga kwentong iyong nagustuhan, at palawigin ang iyong pagiisip sa mga nakabibighaning babasahin.
 newtab-pocket-save = I-save
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -232,9 +259,21 @@ newtab-error-fallback-refresh-link = I-refresh ang pahina para masubukan uli.
 
 newtab-custom-shortcuts-title = Mga shortcut
 newtab-custom-shortcuts-subtitle = Mga site na nai-save o binibisita mo
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = Mga shortcut
     .description = Mga site na nai-save o binibisita mo
+newtab-custom-shortcuts-nova =
+    .label = Mga shortcut
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label =
+        { $num ->
+            [one] { $num } row
+           *[other] { $num } rows
+        }
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector =
@@ -249,60 +288,5 @@ newtab-custom-pocket-sponsored = Mga naka-sponsor na kwento
 newtab-custom-pocket-show-recent-saves = Ipakita ang mga na-save kamakailan
 newtab-custom-recent-title = Kamakailang aktibidad
 newtab-custom-recent-subtitle = Isang pagpipilian ng mga kamakailang site at nilalaman
-newtab-custom-recent-toggle =
-    .label = Kamakailang aktibidad
-    .description = Isang pagpipilian ng mga kamakailang site at nilalaman
 newtab-custom-close-button = Isara
 newtab-custom-settings = Mamahala ng higit pang mga setting
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

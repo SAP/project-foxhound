@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -296,6 +294,30 @@ void empty_va(va_list* va, ...) {
   va_start(*va, va);
   va_end(*va);
 }
+
+struct LogMarker : public BaseMarkerType<LogMarker> {
+  static constexpr const char* Name = "Log";
+  static constexpr const char* TableLabel =
+      "[{marker.data.level}] {marker.name}: {marker.data.message}";
+  static constexpr const char* ColorField = "color";
+  using MS = MarkerSchema;
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable};
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"level", MS::InputType::CString, "Level", MS::Format::UniqueString},
+      {"message", MS::InputType::CString, "Message", MS::Format::String},
+      {"color", MS::InputType::CString, nullptr, MS::Format::String,
+       MS::PayloadFlags::Hidden},
+  };
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   const ProfilerString8View& aLevel,
+                                   const ProfilerString8View& aText,
+                                   const ProfilerString8View& aColor) {
+    aWriter.UniqueStringProperty("level", aLevel);
+    aWriter.StringProperty("message", aText);
+    aWriter.StringProperty("color", aColor);
+  }
+};
 }  // namespace
 
 class LogModuleManager {
@@ -315,6 +337,7 @@ class LogModuleManager {
         mSetFromEnv(false),
         mAddTimestamp(false),
         mCaptureProfilerStack(false),
+        mLogJSStack(false),
         mIsRaw(false),
         mIsSync(false),
         mRotate(0),
@@ -358,7 +381,8 @@ class LogModuleManager {
     bool addTimestamp = false;
     bool isSync = false;
     bool isRaw = false;
-    bool captureStacks = false;
+    bool captureProfilerStacks = false;
+    bool logJSStacks = false;
     int32_t rotate = 0;
     int32_t maxSize = 0;
     bool prependHeader = false;
@@ -385,8 +409,8 @@ class LogModuleManager {
     NSPRLogModulesParser(
         modules,
         [this, &shouldAppend, &addTimestamp, &isSync, &isRaw, &rotate, &maxSize,
-         &prependHeader, &captureStacks](const char* aName, LogLevel aLevel,
-                                         int32_t aValue) mutable {
+         &prependHeader, &captureProfilerStacks, &logJSStacks](
+            const char* aName, LogLevel aLevel, int32_t aValue) mutable {
           if (strcmp(aName, "append") == 0) {
             shouldAppend = true;
           } else if (strcmp(aName, "timestamp") == 0) {
@@ -402,7 +426,9 @@ class LogModuleManager {
           } else if (strcmp(aName, "prependheader") == 0) {
             prependHeader = true;
           } else if (strcmp(aName, "profilerstacks") == 0) {
-            captureStacks = true;
+            captureProfilerStacks = true;
+          } else if (strcmp(aName, "jsstacks") == 0) {
+            logJSStacks = true;
           } else {
             this->CreateOrGetModule(aName)->SetLevel(aLevel);
           }
@@ -413,7 +439,8 @@ class LogModuleManager {
     mIsSync = isSync;
     mIsRaw = isRaw;
     mRotate = rotate;
-    mCaptureProfilerStack = captureStacks;
+    mCaptureProfilerStack = captureProfilerStacks;
+    mLogJSStack = logJSStacks;
 
     if (rotate > 0 && shouldAppend) {
       NS_WARNING("MOZ_LOG: when you rotate the log, you cannot use append!");
@@ -520,6 +547,8 @@ class LogModuleManager {
 
   void SetIsSync(bool aIsSync) { mIsSync = aIsSync; }
 
+  bool GetLogJSStacks() { return mLogJSStack; }
+
   void SetCaptureStacks(bool aCaptureStacks) {
     mCaptureProfilerStack = aCaptureStacks;
   }
@@ -600,7 +629,7 @@ class LogModuleManager {
     charsWritten = size;
 
     // We may have maxed out, allocate a buffer and re-format
-    if (charsWritten > kBuffSize) {
+    if (charsWritten >= kBuffSize) {
       allocatedBuff = MakeUnique<char[]>(charsWritten + 1);  // + final \0
       auto [out, size] =
           fmt::vformat_to_n(allocatedBuff.get(), charsWritten, aFmt, aArgs);
@@ -649,37 +678,50 @@ class LogModuleManager {
                    size_t aLogMessageSize) {
     long pid = static_cast<long>(base::GetCurrentProcId());
     if (profiler_thread_is_being_profiled_for_markers()) {
-      struct LogMarker {
-        static constexpr Span<const char> MarkerTypeName() {
-          return MakeStringSpan("Log");
+      const char* color = [aLevel]() -> const char* {
+        switch (aLevel) {
+          case LogLevel::Error:
+            return "red";
+          case LogLevel::Warning:
+            return "orange";
+          case LogLevel::Info:
+            return "green";
+          case LogLevel::Debug:
+            return "blue";
+          case LogLevel::Verbose:
+          case LogLevel::Disabled:
+            return "grey";
         }
-        static void StreamJSONMarkerData(
-            baseprofiler::SpliceableJSONWriter& aWriter,
-            const ProfilerString8View& aModule,
-            const ProfilerString8View& aText) {
-          aWriter.StringProperty("module", aModule);
-          aWriter.StringProperty("name", aText);
+        MOZ_CRASH("Unexpected log level");
+      }();
+
+      const char* levelStr = [aLevel]() -> const char* {
+        switch (aLevel) {
+          case LogLevel::Error:
+            return "Error";
+          case LogLevel::Warning:
+            return "Warning";
+          case LogLevel::Info:
+            return "Info";
+          case LogLevel::Debug:
+            return "Debug";
+          case LogLevel::Verbose:
+            return "Verbose";
+          case LogLevel::Disabled:
+            return "Disabled";
         }
-        static MarkerSchema MarkerTypeDisplay() {
-          using MS = MarkerSchema;
-          MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-          schema.SetTableLabel("({marker.data.module}) {marker.data.name}");
-          schema.AddKeyLabelFormatSearchable("module", "Module",
-                                             MS::Format::String,
-                                             MS::Searchable::Searchable);
-          schema.AddKeyLabelFormatSearchable("name", "Name", MS::Format::String,
-                                             MS::Searchable::Searchable);
-          return schema;
-        }
-      };
+        MOZ_CRASH("Unexpected log level");
+      }();
 
       profiler_add_marker(
-          "LogMessages", geckoprofiler::category::OTHER,
+          ProfilerString8View::WrapNullTerminatedString(aName),
+          geckoprofiler::category::LOGS,
           {aStart ? MarkerTiming::IntervalUntilNowFrom(*aStart)
                   : MarkerTiming::InstantNow(),
            MarkerStack::MaybeCapture(mCaptureProfilerStack)},
-          LogMarker{}, ProfilerString8View::WrapNullTerminatedString(aName),
-          ProfilerString8View::WrapNullTerminatedString(aLogMessage));
+          LogMarker{}, ProfilerString8View::WrapNullTerminatedString(levelStr),
+          ProfilerString8View::WrapNullTerminatedString(aLogMessage),
+          ProfilerString8View::WrapNullTerminatedString(color));
     }
 
     // Determine if a newline needs to be appended to the message.
@@ -842,6 +884,7 @@ class LogModuleManager {
   bool mSetFromEnv;
   Atomic<bool, Relaxed> mAddTimestamp;
   Atomic<bool, Relaxed> mCaptureProfilerStack;
+  Atomic<bool, Relaxed> mLogJSStack;
   Atomic<bool, Relaxed> mIsRaw;
   Atomic<bool, Relaxed> mIsSync;
   int32_t mRotate;
@@ -878,6 +921,8 @@ void LogModule::SetIsSync(bool aIsSync) {
 void LogModule::SetCaptureStacks(bool aCaptureStacks) {
   sLogModuleManager->SetCaptureStacks(aCaptureStacks);
 }
+
+bool LogModule::GetLogJSStacks() { return sLogModuleManager->GetLogJSStacks(); }
 
 // This function is defined in gecko_logger/src/lib.rs
 // We mirror the level in rust code so we don't get forwarded all of the

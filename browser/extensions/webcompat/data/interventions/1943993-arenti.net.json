@@ -1,0 +1,15 @@
+{
+  "label": "arenti.net",
+  "bugs": {
+    "1943993": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.arenti.net/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

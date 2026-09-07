@@ -18,9 +18,8 @@ class TopSitesUseCases(topSitesStorage: TopSitesStorage) {
          * @param title The title string.
          * @param url The URL string.
          */
-        operator fun invoke(title: String, url: String, isDefault: Boolean = false) {
+        suspend operator fun invoke(title: String, url: String, isDefault: Boolean = false) =
             storage.addTopSite(title, url, isDefault)
-        }
     }
 
     /**
@@ -32,9 +31,7 @@ class TopSitesUseCases(topSitesStorage: TopSitesStorage) {
          *
          * @param topSite The top site.
          */
-        operator fun invoke(topSite: TopSite) {
-            storage.removeTopSite(topSite)
-        }
+        suspend operator fun invoke(topSite: TopSite) = storage.removeTopSite(topSite)
     }
 
     /**
@@ -48,9 +45,8 @@ class TopSitesUseCases(topSitesStorage: TopSitesStorage) {
          * @param title The new title for the top site.
          * @param url The new url for the top site.
          */
-        operator fun invoke(topSite: TopSite, title: String, url: String) {
+        suspend operator fun invoke(topSite: TopSite, title: String, url: String) =
             storage.updateTopSite(topSite, title, url)
-        }
     }
 
     val addPinnedSites: AddPinnedSiteUseCase by lazy {

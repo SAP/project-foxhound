@@ -13,6 +13,9 @@ transforms:
 kind-dependencies:
     - beetmover-source
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     release-source-checksums-signing:
         shipping-phase: promote

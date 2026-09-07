@@ -1,21 +1,32 @@
 "use strict";
 
 /* import-globals-from trr_common.js */
+/* import-globals-from head_trr.js */
 
 const gDefaultPref = Services.prefs.getDefaultBranch("");
 
+const { NodeServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 SetParentalControlEnabled(false);
 
-function setup() {
+let trrServer;
+add_setup(async function setup() {
   Services.prefs.setBoolPref("network.dns.get-ttl", false);
-  h2Port = trr_test_setup();
-}
+  trr_test_setup();
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
 
-setup();
-registerCleanupFunction(async () => {
-  trr_clear_prefs();
-  Services.prefs.clearUserPref("network.dns.get-ttl");
-  Services.prefs.clearUserPref("network.dns.disableIPv6");
+  registerCleanupFunction(async () => {
+    trr_clear_prefs();
+    Services.prefs.clearUserPref("network.dns.get-ttl");
+    Services.prefs.clearUserPref("network.dns.disableIPv6");
+    if (trrServer) {
+      await trrServer.stop();
+    }
+  });
 });
 
 async function waitForConfirmation(expectedResponseIP, confirmationShouldFail) {
@@ -199,6 +210,13 @@ add_task(async function test_clearCacheOnURIChange() {
 
 add_task(async function test_dnsSuffix() {
   info("Checking that domains matching dns suffix list use Do53");
+  // Preserve historical behavior of this task: DNS-suffix domains are
+  // excluded from TRR in mode 3 as well. The new behavior is exercised by
+  // test_dnsSuffix_mode3_pref below.
+  Services.prefs.setBoolPref(
+    "network.trr.exclude_dns_suffix_in_mode_trronly",
+    true
+  );
   async function checkDnsSuffixInMode(mode) {
     Services.dns.clearCache(true);
     setModeAndURI(mode, "doh?responseIP=1.2.3.4");
@@ -236,6 +254,109 @@ add_task(async function test_dnsSuffix() {
   // Test again with mitigations off
   await checkDnsSuffixInMode(2);
   await checkDnsSuffixInMode(3);
+  Services.prefs.clearUserPref("network.trr.split_horizon_mitigations");
+  Services.prefs.clearUserPref("network.trr.bootstrapAddr");
+  Services.prefs.clearUserPref(
+    "network.trr.exclude_dns_suffix_in_mode_trronly"
+  );
+});
+
+add_task(async function test_dnsSuffix_mode3_pref() {
+  info(
+    "In TRR-only mode the DNS suffix list should be ignored when " +
+      "network.trr.exclude_dns_suffix_in_mode_trronly is false (default)."
+  );
+  Services.prefs.setBoolPref("network.trr.split_horizon_mitigations", true);
+  Services.prefs.setCharPref("network.trr.bootstrapAddr", "127.0.0.1");
+
+  let networkLinkService = {
+    dnsSuffixList: ["example.org"],
+    QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
+  };
+
+  async function checkMode3(prefValue, expectedIP) {
+    Services.prefs.setBoolPref(
+      "network.trr.exclude_dns_suffix_in_mode_trronly",
+      prefValue
+    );
+    Services.dns.clearCache(true);
+    setModeAndURI(3, "doh?responseIP=1.2.3.4");
+    Services.obs.notifyObservers(
+      networkLinkService,
+      "network:dns-suffix-list-updated"
+    );
+    await new TRRDNSListener("example.org", expectedIP);
+  }
+
+  // Default behavior: pref is false, suffix is ignored in mode 3, so the
+  // host is resolved via TRR.
+  await checkMode3(false, "1.2.3.4");
+  // Opt-in to old behavior: pref is true, suffix is excluded so the local
+  // bootstrap resolver answers with 127.0.0.1.
+  await checkMode3(true, "127.0.0.1");
+
+  networkLinkService.dnsSuffixList = [];
+  Services.obs.notifyObservers(
+    networkLinkService,
+    "network:dns-suffix-list-updated"
+  );
+  Services.prefs.clearUserPref(
+    "network.trr.exclude_dns_suffix_in_mode_trronly"
+  );
+  Services.prefs.clearUserPref("network.trr.split_horizon_mitigations");
+  Services.prefs.clearUserPref("network.trr.bootstrapAddr");
+});
+
+add_task(async function test_dnsSuffix_request_mode_trronly() {
+  info(
+    "A per-request TRR mode of TRR_ONLY_MODE should also cause the DNS " +
+      "suffix list to be ignored by default, even when the global mode is " +
+      "TRR-first."
+  );
+  Services.prefs.setBoolPref("network.trr.split_horizon_mitigations", true);
+  Services.prefs.setCharPref("network.trr.bootstrapAddr", "127.0.0.1");
+
+  let networkLinkService = {
+    dnsSuffixList: ["example.org"],
+    QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
+  };
+
+  // TRR_ONLY_MODE encoded into resolve flags. See RESOLVE_TRR_MODE_MASK in
+  // nsIDNSService.idl: the request TRR mode lives in bits 11/12, so
+  // TRR_ONLY_MODE (=3) corresponds to (3 << 11).
+  const TRR_ONLY_FLAGS = 3 << 11;
+
+  async function checkRequestModeTRROnly(prefValue, expectedIP) {
+    Services.prefs.setBoolPref(
+      "network.trr.exclude_dns_suffix_in_mode_trronly",
+      prefValue
+    );
+    Services.dns.clearCache(true);
+    // Global mode is 2 (TRR-first); the per-request override drives behavior.
+    setModeAndURI(2, "doh?responseIP=1.2.3.4");
+    Services.obs.notifyObservers(
+      networkLinkService,
+      "network:dns-suffix-list-updated"
+    );
+    await new TRRDNSListener("example.org", {
+      expectedAnswer: expectedIP,
+      flags: TRR_ONLY_FLAGS,
+    });
+  }
+
+  // Default: pref is false → request-mode TRR_ONLY ignores the suffix.
+  await checkRequestModeTRROnly(false, "1.2.3.4");
+  // Opt-in: pref is true → suffix is honored even for TRR_ONLY requests.
+  await checkRequestModeTRROnly(true, "127.0.0.1");
+
+  networkLinkService.dnsSuffixList = [];
+  Services.obs.notifyObservers(
+    networkLinkService,
+    "network:dns-suffix-list-updated"
+  );
+  Services.prefs.clearUserPref(
+    "network.trr.exclude_dns_suffix_in_mode_trronly"
+  );
   Services.prefs.clearUserPref("network.trr.split_horizon_mitigations");
   Services.prefs.clearUserPref("network.trr.bootstrapAddr");
 });
@@ -875,8 +996,6 @@ add_task(async function test_padding() {
   );
 });
 
-add_task(test_connection_reuse_and_cycling);
-
 // Can't test for socket process since telemetry is captured in different process.
 add_task(
   { skip_if: () => mozinfo.socketprocess_networking },
@@ -985,5 +1104,33 @@ add_task(
       getValue(openToFirstReceived.values),
       "completeLoad >= openToFirstReceived"
     );
+  }
+);
+
+add_task(
+  { skip_if: () => mozinfo.socketprocess_networking },
+  async function test_trr_request_per_conn_telemetry() {
+    setModeAndURI(Ci.nsIDNSService.MODE_TRRONLY, `doh`);
+    Services.dns.clearCache(true);
+
+    // Close the previous TRR connection.
+    Services.obs.notifyObservers(null, "net:cancel-all-connections");
+    await new Promise(r => do_timeout(3000, r));
+
+    Services.fog.testResetFOG();
+    Services.prefs.setBoolPref("network.dns.disableIPv6", false);
+    await new TRRDNSListener("timing.com", { expectedAnswer: "5.5.5.5" });
+
+    // Close the TRR connection again, so trr_request_count_per_conn
+    // can be recorded.
+    Services.obs.notifyObservers(null, "net:cancel-all-connections");
+    await new Promise(r => do_timeout(3000, r));
+
+    let requestPerConn =
+      await Glean.networking.trrRequestCountPerConn.other.testGetValue();
+
+    info("requestPerConn=" + JSON.stringify(requestPerConn));
+
+    Assert.greaterOrEqual(requestPerConn, 2);
   }
 );

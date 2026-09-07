@@ -34,10 +34,19 @@ impl CodePointSetData {
     /// ✨ *Enabled with the `compiled_data` Cargo feature.*
     ///
     /// [📚 Help choosing a constructor](icu_provider::constructors)
-    #[allow(clippy::new_ret_no_self)]
+    #[expect(clippy::new_ret_no_self)]
     #[cfg(feature = "compiled_data")]
     pub const fn new<P: BinaryProperty>() -> CodePointSetDataBorrowed<'static> {
         CodePointSetDataBorrowed::new::<P>()
+    }
+
+    #[cfg(feature = "serde")]
+    #[doc = icu_provider::gen_buffer_unstable_docs!(BUFFER, Self::new)]
+    pub fn try_new_with_buffer_provider<P: BinaryProperty>(
+        provider: &(impl BufferProvider + ?Sized),
+    ) -> Result<CodePointSetData, DataError> {
+        use icu_provider::buf::AsDeserializingBufferProvider;
+        Self::try_new_unstable::<P>(&provider.as_deserializing())
     }
 
     #[doc = icu_provider::gen_buffer_unstable_docs!(UNSTABLE, Self::new)]

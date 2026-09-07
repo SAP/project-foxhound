@@ -29,7 +29,7 @@ add_task(async function test_spinner_month_keyboard_arrows() {
     `data:text/html, <input type="date" value="${inputValue}">`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
 
   info("Testing general keyboard navigation");
@@ -341,7 +341,7 @@ add_task(async function test_spinner_year_keyboard_arrows() {
     `data:text/html, <input type="date" value="${inputValue}">`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
 
   info("Testing general keyboard navigation");

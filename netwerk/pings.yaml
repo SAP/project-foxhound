@@ -1,0 +1,62 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+---
+$schema: moz://mozilla.org/schemas/glean/pings/2-0-0
+
+local-network-access:
+  description: |
+    A ping representing Local Network Access (LNA) connection attempts and
+    permission prompt interactions. This ping does not include client_id for
+    privacy. Only collected in early Beta and Nightly builds.
+  include_client_id: false
+  metadata:
+    include_info_sections: false
+    uploader_capabilities:
+      - ohttp
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1989916
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1989916#c5
+  notification_emails:
+    - smayya@mozilla.com
+
+url-classifier-harmful-addon:
+  description: |
+    A ping representing Harmful Add-on network requests. This ping does not
+    include client_id for privacy.
+  include_client_id: false
+  metadata:
+    include_info_sections: false
+    uploader_capabilities:
+      - ohttp
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1986320
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2008545
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1986320
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2008545
+  notification_emails:
+    - amarchesini@mozilla.com
+    - addons-dev-internal@mozilla.com
+
+content-decoding-error:
+  description: |
+    Reported when a content decoding error occurs. Includes the top-level
+    site (ETLD+1) and error type. Sent via OHTTP for privacy.
+  reasons:
+    error: |
+      A content decoding error was encountered.
+  include_client_id: false
+  send_if_empty: false
+  metadata:
+    include_info_sections: false
+    uploader_capabilities:
+      - ohttp
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2016228
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=2016228
+  notification_emails:
+    - necko@mozilla.com

@@ -1,7 +1,12 @@
-/* -*- mode: js; indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
+});
 
 export var SelectionUtils = {
   /**
@@ -81,12 +86,13 @@ export var SelectionUtils = {
       // Have some text, let's figure out if it looks like a URL that isn't
       // actually a link.
       linkText = selectionStr.trim();
-      if (/^(?:https?|ftp):/i.test(linkText)) {
-        try {
-          url = Services.io.newURI(linkText);
-        } catch (ex) {}
-      } else if (/^(?:[a-z\d-]+\.)+[a-z]+$/i.test(linkText)) {
-        // Check if this could be a valid url, just missing the protocol.
+
+      if (
+        lazy.UrlUtils.looksLikeUrl(linkText, {
+          requirePath: false,
+          validateOrigin: true,
+        })
+      ) {
         // Now let's see if this is an intentional link selection. Our guess is
         // based on whether the selection begins/ends with whitespace or is
         // preceded/followed by a non-word character.
@@ -138,7 +144,13 @@ export var SelectionUtils = {
       selectionStr = this.trimSelection(selectionStr, aCharLen);
     }
 
-    if (url && !url.host) {
+    // This try catch is necessary since in rare cases, we think some text is a
+    // link, but the host is actually invalid so we fail in nsIURI.host
+    try {
+      if (url && !url.host) {
+        url = null;
+      }
+    } catch (ex) {
       url = null;
     }
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,14 +54,14 @@ void TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
   // just like to hear "testing."
   if (!mHyperText->IsEditable()) {
     // Fire text change event for removal.
-    RefPtr<AccEvent> textRemoveEvent =
-        new AccTextChangeEvent(mHyperText, mTextOffset, aOldText, false);
+    auto textRemoveEvent = MakeRefPtr<AccTextChangeEvent>(
+        mHyperText, mTextOffset, aOldText, false);
     mDocument->FireDelayedEvent(textRemoveEvent);
 
     // Fire text change event for insertion if there's text to insert.
     if (!aNewText.IsEmpty()) {
-      RefPtr<AccEvent> textInsertEvent =
-          new AccTextChangeEvent(mHyperText, mTextOffset, aNewText, true);
+      auto textInsertEvent = MakeRefPtr<AccTextChangeEvent>(
+          mHyperText, mTextOffset, aNewText, true);
       mDocument->FireDelayedEvent(textInsertEvent);
     }
 
@@ -99,15 +98,15 @@ void TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
       strLen2 > kMaxStrLen) {
     if (strLen1 > 0) {
       // Fire text change event for removal.
-      RefPtr<AccEvent> textRemoveEvent =
-          new AccTextChangeEvent(mHyperText, mTextOffset, str1, false);
+      auto textRemoveEvent =
+          MakeRefPtr<AccTextChangeEvent>(mHyperText, mTextOffset, str1, false);
       mDocument->FireDelayedEvent(textRemoveEvent);
     }
 
     if (strLen2 > 0) {
       // Fire text change event for insertion.
-      RefPtr<AccEvent> textInsertEvent =
-          new AccTextChangeEvent(mHyperText, mTextOffset, str2, true);
+      auto textInsertEvent =
+          MakeRefPtr<AccTextChangeEvent>(mHyperText, mTextOffset, str2, true);
       mDocument->FireDelayedEvent(textInsertEvent);
     }
 

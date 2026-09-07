@@ -15,30 +15,37 @@ interface nsIParentChannel;
  * See also nsIChildChannel and nsIParentChannel.
  */
 
-[scriptable, uuid (efa36ea2-5b07-46fc-9534-a5acb8b77b72)]
+[scriptable, uuid (1f2c5e0a-9b3d-4d8e-8c4a-6d7e0b1a2c3d)]
 interface nsIRedirectChannelRegistrar : nsISupports
 {
   /**
    * Register the redirect target channel. The passed id needs to be a
    * unique ID for that channel (see `nsContentUtils::GenerateLoadIdentifier`).
+   * aContentParentId identifies the content process the redirect is destined
+   * for (0 for the parent process); linkChannels will only pair the channel
+   * with a parent actor coming from that same process.
    *
    * Primarily used in ParentChannelListener::AsyncOnChannelRedirect to get
    * a channel id sent to the HttpChannelChild being redirected.
    */
-  void registerChannel(in nsIChannel channel, in uint64_t id);
+  void registerChannel(in nsIChannel channel, in uint64_t id,
+                       in uint64_t aContentParentId);
 
   /**
-   * First, search for the channel registered under the id.  If found return
-   * it.  Then, register under the same id the parent side of IPC protocol
-   * to let it be later grabbed back by the originator of the redirect and
-   * notifications from the real channel could be forwarded to this parent
-   * channel.
+   * First, search for the channel registered under the id.  If found, and the
+   * registered channel is owned by aContentParentId, return it. Then, register
+   * under the same id the parent side of IPC protocol to let it be later
+   * grabbed back by the originator of the redirect and notifications from the
+   * real channel could be forwarded to this parent channel. Fails with
+   * NS_ERROR_NOT_AVAILABLE if no channel is registered under the id for the
+   * given content process.
    *
    * Primarily used in parent side of an IPC protocol implementation
    * in reaction to nsIChildChannel.connectParent(id) called from the child
-   * process.
+   * process. aContentParentId is the process that made that request.
    */
-  nsIChannel linkChannels(in uint64_t id, in nsIParentChannel channel);
+  nsIChannel linkChannels(in uint64_t id, in uint64_t aContentParentId,
+                          in nsIParentChannel channel);
 
   /**
    * Returns back the channel previously registered under the ID with

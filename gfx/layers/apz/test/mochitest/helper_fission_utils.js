@@ -40,18 +40,12 @@ async function hitTestOOPIF(point, iframeElement) {
 
   // Now do the hit-test
   dump(`Hit-testing point (${point.x}, ${point.y}) in fission context\n`);
-  utils.sendMouseEvent(
+  SpecialPowers.wrap(window).synthesizeMouseEvent(
     "MozMouseHittest",
     point.x,
     point.y,
-    0,
-    0,
-    0,
-    true,
-    0,
-    0,
-    true,
-    false /* aIsWidgetEventSynthesized */
+    {},
+    { ignoreRootScrollFrame: true }
   );
 
   await hittestPromise;

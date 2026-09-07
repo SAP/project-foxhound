@@ -9,8 +9,33 @@
 
 // skcms_public.h contains the entire public API for skcms.
 
-#ifndef SKCMS_API
-    #define SKCMS_API
+// Modeled after the FOX example in https://gcc.gnu.org/wiki/Visibility
+#if !defined(SKCMS_API)
+    // Client has opted in to building skcms as part of a DLL/shared object file.
+    #if defined(SKCMS_DLL)
+        // If on Windows (MSVC or Clang pretending to be MSVC)
+        #if defined(_MSC_VER)
+            // Client needs to set this when compiling the skcms files (but *not* when compiling
+            // other files which use the headers). In GN, this is handled with non-public configs.
+            // With Bazel, this can be implemented with local_defines.
+            #if defined(SKCMS_IMPLEMENTATION)
+                // If SKCMS is being built as a standalone DLL, it must be explicitly exported
+                // https://learn.microsoft.com/en-us/cpp/cpp/dllexport-dllimport?view=msvc-170
+                #define SKCMS_API __declspec(dllexport)
+            #else
+                // If a client is compiling and using the skcms header, this is an optimization
+                // to skip some indirection when resolving the function call.
+                // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-6.0/aa271769(v=vs.60)
+                #define SKCMS_API __declspec(dllimport)
+            #endif
+        #else
+            // On non-Windows platforms, we make sure the symbols are visible outside the
+            // shared object file.
+            #define SKCMS_API __attribute__((visibility("default")))
+        #endif
+    #else
+        #define SKCMS_API
+    #endif
 #endif
 
 #include <stdbool.h>
@@ -57,6 +82,8 @@ typedef enum skcms_TFType {
     skcms_TFType_PQish,
     skcms_TFType_HLGish,
     skcms_TFType_HLGinvish,
+    skcms_TFType_PQ,
+    skcms_TFType_HLG,
 } skcms_TFType;
 
 // Identify which kind of transfer function is encoded in an skcms_TransferFunction
@@ -86,21 +113,48 @@ static inline bool skcms_TransferFunction_makeHLGish(skcms_TransferFunction* fn,
     return skcms_TransferFunction_makeScaledHLGish(fn, 1.0f, R,G, a,b,c);
 }
 
-// PQ mapping encoded [0,1] to linear [0,1].
-static inline bool skcms_TransferFunction_makePQ(skcms_TransferFunction* tf) {
-    return skcms_TransferFunction_makePQish(tf, -107/128.0f,         1.0f,   32/2523.0f
-                                              , 2413/128.0f, -2392/128.0f, 8192/1305.0f);
-}
-// HLG mapping encoded [0,1] to linear [0,12].
-static inline bool skcms_TransferFunction_makeHLG(skcms_TransferFunction* tf) {
-    return skcms_TransferFunction_makeHLGish(tf, 2.0f, 2.0f
-                                               , 1/0.17883277f, 0.28466892f, 0.55991073f);
-}
+// The PQ transfer function. The function skcms_TransferFunction_eval will always evaluate to the
+// unit PQ EOTF, which maps [0, 1] to [0, 1], regardless of the other parameters.
+// This is stored differently from PQish transfer functions. In particular:
+//   - the constant -5 is stored in g
+//   - the hdr_reference_white_luminance parameter is stored in a
+//   - all other parameters are set to 0
+// When this is used as an SkColorSpace, the transformation to XYZD50 will be as follows:
+//   1. Apply the unit PQ EOTF to each channel
+//   2. Multiply by 10,000 nits
+//   3. Divide by hdr_reference_white_luminance nits (default is 203)
+//   4. Transform primaries to XYZD50
+SKCMS_API void skcms_TransferFunction_makePQ(
+    skcms_TransferFunction*,
+    float hdr_reference_white_luminance);
+
+// The HLG transfer function. The function skcms_TransferFunction_eval will always evaluate to the
+// HLG inverse OETF, which maps [0, 1] to [0, 1], regardless of the other parameters.
+// This is stored differently from PQish transfer functions. In particular:
+//   - the constant -6 is stored in g
+//   - the hdr_reference_white_luminance parameter is stored in a
+//   - the peak_white_luminance parameter is stored in b
+//   - the system_gamma parameter is stored in c
+//   - all other parameters are set to 0
+// When this is used as an SkColorSpace, the transformation to XYZD50 will be as follows:
+//   1. Apply the HLG inverse OETF to each channel
+//   2. Transform primaries to Rec2020
+//   3. Apply the channel-mixing HLG OOTF using system_gamma (default is 1.2)
+//   4. Multiply by peak_luminance nits (default is 1,000)
+//   5. Divide by hdr_reference_white nits (default is 203)
+//   6. Transform primaries to XYZD50
+SKCMS_API void skcms_TransferFunction_makeHLG(
+    skcms_TransferFunction*,
+    float hdr_reference_white_luminance,
+    float peak_luminance,
+    float system_gamma);
 
 // Is this an ordinary sRGB-ish transfer function, or one of the HDR forms we support?
 SKCMS_API bool skcms_TransferFunction_isSRGBish(const skcms_TransferFunction*);
 SKCMS_API bool skcms_TransferFunction_isPQish  (const skcms_TransferFunction*);
 SKCMS_API bool skcms_TransferFunction_isHLGish (const skcms_TransferFunction*);
+SKCMS_API bool skcms_TransferFunction_isPQ     (const skcms_TransferFunction*);
+SKCMS_API bool skcms_TransferFunction_isHLG    (const skcms_TransferFunction*);
 
 // Unified representation of 'curv' or 'para' tag data, or a 1D table from 'mft1' or 'mft2'
 typedef union skcms_Curve {
@@ -242,6 +296,8 @@ SKCMS_API bool skcms_TRCs_AreApproximateInverse(const skcms_ICCProfile* profile,
 // Parse an ICC profile and return true if possible, otherwise return false.
 // Selects an A2B profile (if present) according to priority list (each entry 0-2).
 // The buffer is not copied; it must remain valid as long as the skcms_ICCProfile will be used.
+// The parse will fail if there is not enough padding (typically 1-2 bytes) past the end of the
+// profile for internally optimized read calls.
 SKCMS_API bool skcms_ParseWithA2BPriority(const void*, size_t,
                                           const int priority[], int priorities,
                                           skcms_ICCProfile*);
@@ -269,7 +325,7 @@ SKCMS_API bool skcms_GetWTPT(const skcms_ICCProfile*, float xyz[3]);
 SKCMS_API int skcms_GetInputChannelCount(const skcms_ICCProfile*);
 
 // These are common ICC signature values
-enum {
+typedef enum skcms_Signature {
     // common data_color_space values
     skcms_Signature_CMYK = 0x434D594B,
     skcms_Signature_Gray = 0x47524159,
@@ -300,7 +356,7 @@ enum {
     skcms_Signature_13CLR  = 0x44434C52,
     skcms_Signature_14CLR  = 0x45434C52,
     skcms_Signature_15CLR  = 0x46434C52,
-};
+} skcms_Signature;
 
 typedef enum skcms_PixelFormat {
     skcms_PixelFormat_A_8,

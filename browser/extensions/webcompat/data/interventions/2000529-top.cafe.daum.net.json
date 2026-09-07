@@ -1,0 +1,15 @@
+{
+  "label": "top.cafe.daum.net",
+  "bugs": {
+    "2000529": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://top.cafe.daum.net/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

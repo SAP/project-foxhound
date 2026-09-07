@@ -2,150 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SelectableProfileService } from "resource:///modules/profiles/SelectableProfileService.sys.mjs";
+import {
+  SelectableProfileService,
+  PROFILE_THEMES_MAP,
+} from "resource:///modules/profiles/SelectableProfileService.sys.mjs";
+import { ProfileAge } from "resource://gre/modules/ProfileAge.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
-// Bug 1922374: Move themes to remote settings
-const PROFILE_THEMES_MAP = new Map([
-  [
-    "firefox-compact-light@mozilla.org",
-    {
-      dataL10nId: "profiles-light-theme",
-      colors: {
-        chromeColor: "#F0F0F4",
-        toolbarColor: "#F9F9FB",
-        contentColor: "#FFFFFF",
-      },
-      isDark: false,
-      useInAutomation: true,
-    },
-  ],
-  [
-    "{b90acfd0-f0fc-4add-9195-f6306d25cdfa}",
-    {
-      dataL10nId: "profiles-marigold-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381985/marigold-1.9.xpi",
-      colors: {
-        chromeColor: "#F1CA52",
-        toolbarColor: "#FBDF8C",
-        contentColor: "#FEF7E0",
-      },
-      isDark: false,
-    },
-  ],
-  [
-    "{388d9fae-8a28-4f9f-9aad-fb9e84e4f3c3}",
-    {
-      dataL10nId: "profiles-lichen-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381979/lichen_soft-1.3.xpi",
-      colors: {
-        chromeColor: "#D2E4DA",
-        toolbarColor: "#E9F2EC",
-        contentColor: "#F5F9F7",
-      },
-      isDark: false,
-    },
-  ],
-  [
-    "{3ac3b0d7-f017-40e1-b142-a26f794e7015}",
-    {
-      dataL10nId: "profiles-magnolia-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381978/magnolia-1.1.xpi",
-      colors: {
-        chromeColor: "#FB5B9E",
-        toolbarColor: "#F986B6",
-        contentColor: "#FBE0ED",
-      },
-      isDark: false,
-    },
-  ],
-  [
-    "{ba48d251-0732-45c2-9f2f-39c68e82d047}",
-    {
-      dataL10nId: "profiles-lavender-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381983/lavender_soft-1.2.xpi",
-      colors: {
-        chromeColor: "#CDC1EA",
-        toolbarColor: "#EBE4FA",
-        contentColor: "#F4F0FD",
-      },
-      isDark: false,
-    },
-  ],
-  [
-    "firefox-compact-dark@mozilla.org",
-    {
-      dataL10nId: "profiles-dark-theme",
-      colors: {
-        chromeColor: "#1C1B22",
-        toolbarColor: "#2B2A33",
-        contentColor: "#42414D",
-      },
-      isDark: true,
-      useInAutomation: true,
-    },
-  ],
-  [
-    "{750fa518-b61f-4068-9974-330dcf45442f}",
-    {
-      dataL10nId: "profiles-ocean-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381977/ocean_dark-1.1.xpi",
-      colors: {
-        chromeColor: "#080D33",
-        toolbarColor: "#050D5B",
-        contentColor: "#000511",
-      },
-      isDark: true,
-    },
-  ],
-  [
-    "{25b5a343-4238-4bae-b1f9-93a33f258167}",
-    {
-      dataL10nId: "profiles-terracotta-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381976/terracotta_dark-1.1.xpi",
-      colors: {
-        chromeColor: "#591305",
-        toolbarColor: "#98240B",
-        contentColor: "#060100",
-      },
-      isDark: true,
-    },
-  ],
-  [
-    "{f9261f02-c03c-4352-92ee-78dd8b41ca98}",
-    {
-      dataL10nId: "profiles-moss-theme-2",
-      downloadURL:
-        "https://addons.mozilla.org/firefox/downloads/file/4381975/moss_dark-1.1.xpi",
-      colors: {
-        chromeColor: "#405948",
-        toolbarColor: "#5B7B65",
-        contentColor: "#323433",
-      },
-      isDark: true,
-    },
-  ],
-  [
-    "default-theme@mozilla.org",
-    {
-      dataL10nId: "profiles-system-theme",
-      colors: {
-        chromeColor: "#1C1B22",
-        toolbarColor: "#2B2A33",
-        contentColor: "#42414D",
-      },
-    },
-  ],
-]);
-
 ChromeUtils.defineESModuleGetters(lazy, {
+  ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
+  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
@@ -154,6 +22,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
 });
 
+/**
+ * Actor implementation for the profile about pages.
+ */
 export class ProfilesParent extends JSWindowActorParent {
   get tab() {
     const gBrowser = this.browsingContext.topChromeWindow.gBrowser;
@@ -161,32 +32,20 @@ export class ProfilesParent extends JSWindowActorParent {
     return tab;
   }
 
-  actorCreated() {
-    let favicon = this.tab.iconImage;
-    favicon.classList.add("profiles-tab");
-  }
-
-  didDestroy() {
-    const gBrowser = this.browsingContext.topChromeWindow?.gBrowser;
-    if (!gBrowser) {
-      // If gBrowser doesn't exist, then we've closed the tab so we can just return
-      return;
-    }
-    let favicon = this.tab.iconImage;
-    favicon.classList.remove("profiles-tab");
-  }
-
-  async #getProfileContent() {
-    // Make sure SelectableProfileService is initialized
+  async #getProfileContent(isDark) {
     await SelectableProfileService.init();
     let currentProfile = SelectableProfileService.currentProfile;
+    let profileAge = await ProfileAge();
     let profiles = await SelectableProfileService.getAllProfiles();
-    let themes = await this.getSafeForContentThemes();
+    let themes = await this.getSafeForContentThemes(isDark);
     return {
       currentProfile: await currentProfile.toContentSafeObject(),
-      profiles: await Promise.all(profiles.map(p => p.toContentSafeObject())),
-      themes,
       isInAutomation: Cu.isInAutomation,
+      hasDesktopShortcut: currentProfile.hasDesktopShortcut(),
+      platform: AppConstants.platform,
+      profiles: await Promise.all(profiles.map(p => p.toContentSafeObject())),
+      profileCreated: await profileAge.created,
+      themes,
     };
   }
 
@@ -213,6 +72,10 @@ export class ProfilesParent extends JSWindowActorParent {
           return null;
         }
 
+        // Since this profile will be deleted, let's make sure to update any prefs
+        // that depended on its existence
+        await lazy.BackupService.maybeRemoveFromEnabledListPref();
+
         try {
           await SelectableProfileService.deleteCurrentProfile();
 
@@ -236,11 +99,18 @@ export class ProfilesParent extends JSWindowActorParent {
       }
       case "Profiles:GetNewProfileContent": {
         Glean.profilesNew.displayed.record();
-        return this.#getProfileContent();
+        let isDark = gBrowser.selectedBrowser.documentGlobal.matchMedia(
+          "(-moz-system-dark-theme)"
+        ).matches;
+        return this.#getProfileContent(isDark);
       }
       case "Profiles:GetEditProfileContent": {
         Glean.profilesExisting.displayed.record();
-        return this.#getProfileContent();
+        await lazy.BackupService.init().postRecoveryComplete;
+        let isDark = gBrowser.selectedBrowser.documentGlobal.matchMedia(
+          "(-moz-system-dark-theme)"
+        ).matches;
+        return this.#getProfileContent(isDark);
       }
       case "Profiles:MoreThemes": {
         if (message.data.source === "about:editprofile") {
@@ -278,6 +148,20 @@ export class ProfilesParent extends JSWindowActorParent {
         let profileObj = message.data;
         SelectableProfileService.currentProfile.name = profileObj.name;
         break;
+      }
+      case "Profiles:SetDesktopShortcut": {
+        let profile = SelectableProfileService.currentProfile;
+        let { shouldEnable } = message.data;
+        if (shouldEnable) {
+          await profile.ensureDesktopShortcut();
+          Glean.profilesExisting.shortcut.record({ value: "create" });
+        } else {
+          await profile.removeDesktopShortcut();
+          Glean.profilesExisting.shortcut.record({ value: "delete" });
+        }
+        return {
+          hasDesktopShortcut: profile.hasDesktopShortcut(),
+        };
       }
       case "Profiles:GetDeleteProfileContent": {
         // Make sure SelectableProfileService is initialized
@@ -360,7 +244,7 @@ export class ProfilesParent extends JSWindowActorParent {
         // The enable theme promise resolves after the
         // "lightweight-theme-styling-update" observer so we know the profile
         // theme is up to date at this point.
-        return SelectableProfileService.currentProfile.theme;
+        return SelectableProfileService.currentProfile.toContentSafeObject();
       }
       case "Profiles:CloseProfileTab": {
         if (source === "about:editprofile") {
@@ -374,6 +258,16 @@ export class ProfilesParent extends JSWindowActorParent {
           gBrowser.addTrustedTab("about:newtab");
         }
         gBrowser.removeTab(this.tab);
+        // Send a trigger to ASRouter on new profile creation
+        if (source === "about:newprofile") {
+          await lazy.ASRouter.waitForInitialized;
+          const browser = gBrowser.selectedBrowser;
+          await lazy.ASRouter.sendTriggerMessage({
+            browser,
+            id: "selectableProfileCreated",
+          });
+        }
+
         break;
       }
     }
@@ -381,29 +275,24 @@ export class ProfilesParent extends JSWindowActorParent {
   }
 
   async enableTheme(themeId, telemetryInfo) {
-    let theme = await lazy.AddonManager.getAddonByID(themeId);
-    if (!theme) {
-      let themeUrl = PROFILE_THEMES_MAP.get(themeId).downloadURL;
-      let themeInstall = await lazy.AddonManager.getInstallForURL(themeUrl, {
-        telemetryInfo,
-      });
-      await themeInstall.install();
-      theme = await lazy.AddonManager.getAddonByID(themeId);
-    }
-
-    await theme.enable();
+    await SelectableProfileService.enableTheme(themeId, telemetryInfo);
   }
 
-  async getSafeForContentThemes() {
+  async getSafeForContentThemes(isDark) {
+    let lightDark = isDark ? "dark" : "light";
     let themes = [];
     for (let [themeId, themeObj] of PROFILE_THEMES_MAP) {
+      if (Object.hasOwn(themeObj, "isDark") && themeObj.isDark !== isDark) {
+        continue;
+      }
+
       let theme = await lazy.AddonManager.getAddonByID(themeId);
       themes.push({
         id: themeId,
         dataL10nId: themeObj.dataL10nId,
+        dataL10nTitle: themeObj.dataL10nTitle,
         isActive: theme?.isActive ?? false,
-        ...themeObj.colors,
-        isDark: themeObj.isDark,
+        ...themeObj.colors[lightDark],
         useInAutomation: themeObj?.useInAutomation,
       });
     }
@@ -416,6 +305,7 @@ export class ProfilesParent extends JSWindowActorParent {
       let safeCurrentTheme = {
         id: currentTheme.id,
         name: currentTheme.name,
+        dataL10nTitle: "profiles-custom-theme-title",
         isActive: currentTheme.isActive,
         chromeColor: SelectableProfileService.currentProfile.theme.themeBg,
         toolbarColor: SelectableProfileService.currentProfile.theme.themeFg,

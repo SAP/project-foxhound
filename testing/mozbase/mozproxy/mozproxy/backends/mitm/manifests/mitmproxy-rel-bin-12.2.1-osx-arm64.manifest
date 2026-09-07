@@ -1,0 +1,10 @@
+[
+  {
+    "filename": "mitmproxy-12.2.1-macos-arm64.tar.gz",
+    "size": 54643269,
+    "algorithm": "sha512",
+    "digest": "24d6a86b066f762e861c1800e9550be021be0f92c76e63a5d11db263792eddfb5dab2debbd4a0c71b0716c97a5fbdbe1a178d50086da93f52bf31f3041a5605f",
+    "unpack": true,
+    "visibility": "public"
+  }
+]

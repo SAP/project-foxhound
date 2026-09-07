@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/NavigatorLogin.h"
+
 #include "mozilla/Components.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/dom/CredentialsContainer.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/NavigatorLogin.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/net/SFVService.h"
 #include "mozilla/dom/WebIdentityHandler.h"
+#include "mozilla/net/SFV.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsIPermissionManager.h"
@@ -112,26 +111,8 @@ nsresult NavigatorLogin::SetLoginStatus(nsIPrincipal* aPrincipal,
 // static
 nsresult NavigatorLogin::ParseLoginStatusHeader(const nsACString& aStatus,
                                                 LoginStatus& aResult) {
-  nsCOMPtr<nsISFVService> sfv = net::GetSFVService();
-  nsCOMPtr<nsISFVItem> item;
-  nsresult rv = sfv->ParseItem(aStatus, getter_AddRefs(item));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsISFVBareItem> value;
-  rv = item->GetValue(getter_AddRefs(value));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsISFVToken> token = do_QueryInterface(value);
-  if (!token) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
   nsAutoCString parsedStatus;
-  rv = token->GetValue(parsedStatus);
+  nsresult rv = net::SFV::ParseItem<net::SFV::Token>(aStatus, parsedStatus);
   if (NS_FAILED(rv)) {
     return rv;
   }

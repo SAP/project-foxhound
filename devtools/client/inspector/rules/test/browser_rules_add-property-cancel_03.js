@@ -23,7 +23,7 @@ add_task(async function () {
   // Add a property to the element's style declaration, add some text,
   // then press escape.
 
-  const elementRuleEditor = getRuleViewRuleEditor(view, 1);
+  const elementRuleEditor = getRuleViewRuleEditorAt(view, 1);
   const editor = await focusNewRuleViewProperty(elementRuleEditor);
 
   is(

@@ -110,16 +110,25 @@ add_task(async function () {
   let transient = {};
   TrackedObjects.track(transient);
 
-  is(TrackedObjects.getAllNodeIds().length, 2, "The two objects are reported");
+  is(
+    TrackedObjects.getStillAllocatedObjects().length,
+    2,
+    "The two objects are reported"
+  );
 
   info("Free the transient object");
   transient = null;
   Cu.forceGC();
 
   is(
-    TrackedObjects.getAllNodeIds().length,
+    TrackedObjects.getStillAllocatedObjects().length,
     1,
     "We now only have the leaked object"
+  );
+  is(
+    TrackedObjects.getStillAllocatedObjects()[0].weakRef.get(),
+    leaked,
+    "The still allocated objects is the leaked one"
   );
   TrackedObjects.clear();
 });

@@ -10,17 +10,15 @@ const {
   Property,
 } = require("resource://devtools/client/dom/content/reducers/grips.js");
 
-// Implementation
-function GripProvider(grips, dispatch) {
-  this.grips = grips;
-  this.dispatch = dispatch;
-}
-
 /**
  * This object provides data for the tree displayed in the tooltip
  * content.
  */
-GripProvider.prototype = {
+class GripProvider {
+  constructor(grips, dispatch) {
+    this.grips = grips;
+    this.dispatch = dispatch;
+  }
   /**
    * Fetches properties from the backend. These properties might be
    * displayed as child objects in e.g. a tree UI widget.
@@ -43,7 +41,7 @@ GripProvider.prototype = {
     }
 
     return props;
-  },
+  }
 
   hasChildren(object) {
     if (object instanceof Property) {
@@ -71,7 +69,7 @@ GripProvider.prototype = {
     }
 
     return null;
-  },
+  }
 
   getValue(object) {
     if (object instanceof Property) {
@@ -82,21 +80,21 @@ GripProvider.prototype = {
     }
 
     return object;
-  },
+  }
 
   getLabel(object) {
     return object instanceof Property ? object.name : null;
-  },
+  }
 
   getKey(object) {
     return object instanceof Property ? object.key : null;
-  },
+  }
 
   getType(object) {
     const grip = object?.getGrip ? object.getGrip() : object;
     return grip.class ? grip.class : "";
-  },
-};
+  }
+}
 
 // Exports from this module
 exports.GripProvider = GripProvider;

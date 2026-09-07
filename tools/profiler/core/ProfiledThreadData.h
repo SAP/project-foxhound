@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,6 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/ProfileJSONWriter.h"
 #include "mozilla/ProfilerThreadRegistrationInfo.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
@@ -77,7 +74,9 @@ class ProfiledThreadData final {
       const ProfileBuffer& aBuffer, JSContext* aCx,
       mozilla::FailureLatch& aFailureLatch,
       ProfilerCodeAddressService* aService,
-      mozilla::ProgressLogger aProgressLogger);
+      mozilla::ProgressLogger aProgressLogger,
+      const nsTHashMap<SourceId, IndexIntoSourceTable>* aSourceIdToIndexMap =
+          nullptr);
 
   void StreamJSON(const ProfileBuffer& aBuffer, JSContext* aCx,
                   SpliceableJSONWriter& aWriter, const nsACString& aProcessName,
@@ -154,6 +153,7 @@ struct ThreadStreamingContext {
   JSContext* mJSContext;
   SpliceableChunkedJSONWriter mSamplesDataWriter;
   SpliceableChunkedJSONWriter mMarkersDataWriter;
+  SpliceableChunkedJSONWriter mShapesDataWriter;
   mozilla::NotNull<mozilla::UniquePtr<UniqueStacks>> mUniqueStacks;
 
   // These are updated when writing samples, and reused for "same-sample"s.
@@ -165,7 +165,9 @@ struct ThreadStreamingContext {
                          const ProfileBuffer& aBuffer, JSContext* aCx,
                          mozilla::FailureLatch& aFailureLatch,
                          ProfilerCodeAddressService* aService,
-                         mozilla::ProgressLogger aProgressLogger);
+                         mozilla::ProgressLogger aProgressLogger,
+                         const nsTHashMap<SourceId, IndexIntoSourceTable>*
+                             aSourceIdToIndexMap = nullptr);
 
   void FinalizeWriter();
 };
@@ -183,10 +185,12 @@ class ProcessStreamingContext final : public mozilla::FailureLatch {
 
   // Add the streaming context corresponding to each profiled thread. This
   // should be called exactly the number of times specified in the constructor.
-  void AddThreadStreamingContext(ProfiledThreadData& aProfiledThreadData,
-                                 const ProfileBuffer& aBuffer, JSContext* aCx,
-                                 ProfilerCodeAddressService* aService,
-                                 mozilla::ProgressLogger aProgressLogger);
+  void AddThreadStreamingContext(
+      ProfiledThreadData& aProfiledThreadData, const ProfileBuffer& aBuffer,
+      JSContext* aCx, ProfilerCodeAddressService* aService,
+      mozilla::ProgressLogger aProgressLogger,
+      const nsTHashMap<SourceId, IndexIntoSourceTable>* aSourceIdToIndexMap =
+          nullptr);
 
   // Retrieve the ThreadStreamingContext for a given thread id.
   // Returns null if that thread id doesn't correspond to any profiled thread.

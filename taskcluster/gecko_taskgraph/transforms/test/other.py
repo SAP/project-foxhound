@@ -5,7 +5,9 @@
 import copy
 import hashlib
 import re
+from typing import Literal, Optional
 
+import msgspec
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util import json
@@ -13,17 +15,13 @@ from taskgraph.util.attributes import keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
 from taskgraph.util.readonlydict import ReadOnlyDict
 from taskgraph.util.schema import Schema, resolve_keyed_by
-from taskgraph.util.taskcluster import (
-    get_artifact_path,
-    get_artifact_url,
-    get_index_url,
-)
+from taskgraph.util.taskcluster import get_artifact_path
 from taskgraph.util.templates import merge
-from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
 from gecko_taskgraph.util.perftest import is_external_browser
 from gecko_taskgraph.util.platforms import platform_family
+from gecko_taskgraph.util.taskcluster import get_index_url
 
 transforms = TransformSequence()
 
@@ -112,11 +110,6 @@ def setup_talos(config, tasks):
         )
         extra_options.append("--use-talos-json")
 
-        # win7 needs to test skip
-        if task["build-platform"].startswith("win32"):
-            extra_options.append("--add-option")
-            extra_options.append("--setpref,gfx.direct2d.disabled=true")
-
         if config.params.get("project", None):
             extra_options.append("--project=%s" % config.params["project"])
 
@@ -189,8 +182,7 @@ def set_treeherder_machine_platform(config, tasks):
         "macosx1400-64-shippable/opt": "osx-1400-shippable/opt",
         "macosx1500-64/opt": "osx-1500/opt",
         "macosx1500-64-shippable/opt": "osx-1500-shippable/opt",
-        "win64-asan/opt": "windows11-64-24h2/asan",
-        "win64-aarch64/opt": "windows11-aarch64/opt",
+        "win64-asan/opt": "windows11-64-25h2/asan",
     }
     for task in tasks:
         # For most desktop platforms, the above table is not used for "regular"
@@ -203,44 +195,12 @@ def set_treeherder_machine_platform(config, tasks):
         if "android" in task["test-platform"] and "pgo/opt" in task["test-platform"]:
             platform_new = task["test-platform"].replace("-pgo/opt", "/pgo")
             task["treeherder-machine-platform"] = platform_new
-        elif "android-em-7.0-x86_64-qr" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"].replace(
-                ".", "-"
-            )
-        elif "android-em-7.0-x86_64-shippable-qr" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"].replace(
-                ".", "-"
-            )
-        elif "android-em-7.0-x86_64-lite-qr" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"].replace(
-                ".", "-"
-            )
-        elif "android-em-7.0-x86_64-shippable-lite-qr" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"].replace(
-                ".", "-"
-            )
-        elif "android-em-7.0-x86-qr" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"].replace(
-                ".", "-"
-            )
+        elif "android-em-" in task["test-platform"]:
+            task["treeherder-machine-platform"] = task["test-platform"]
         elif "android-hw" in task["test-platform"]:
             task["treeherder-machine-platform"] = task["test-platform"]
-        elif "android-em-7.0-x86_64" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"].replace(
-                ".", "-"
-            )
-        elif "android-em-7.0-x86" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"].replace(
-                ".", "-"
-            )
-        # Bug 1602863 - must separately define linux64/asan and linux1804-64/asan
-        # otherwise causes an exception during taskgraph generation about
-        # duplicate treeherder platform/symbol.
-        elif "linux64-asan/opt" in task["test-platform"]:
-            task["treeherder-machine-platform"] = "linux64/asan"
-        elif "linux1804-asan/opt" in task["test-platform"]:
-            task["treeherder-machine-platform"] = "linux1804-64/asan"
-        elif "-qr" in task["test-platform"]:
+
+        if "-qr" in task["test-platform"]:
             task["treeherder-machine-platform"] = task["test-platform"]
         else:
             task["treeherder-machine-platform"] = translation.get(
@@ -273,6 +233,7 @@ def handle_keyed_by(config, tasks):
         "docker-image",
         "max-run-time",
         "chunks",
+        "default-chunks",
         "suite",
         "run-on-projects",
         "os-groups",
@@ -346,8 +307,8 @@ def set_target(config, tasks):
                 )
                 task["mozharness"]["installer-url"] = installer_url
             else:
-                task["mozharness"]["installer-url"] = get_artifact_url(
-                    f'<{target["upstream-task"]}>', target["name"]
+                task["mozharness"]["installer-url"] = (
+                    f"<{target['upstream-task']}/{target['name']}>"
                 )
         else:
             task["mozharness"]["build-artifact-name"] = get_artifact_path(task, target)
@@ -385,12 +346,12 @@ def setup_browsertime(config, tasks):
                 ],
                 "macosx1400.*": [
                     "browsertime",
-                    "macosx64-aarch64-geckodriver",
+                    "macosx64-geckodriver",
                     "macosx64-aarch64-node",
                 ],
                 "macosx1500.*": [
                     "browsertime",
-                    "macosx64-aarch64-geckodriver",
+                    "macosx64-geckodriver",
                     "macosx64-aarch64-node",
                 ],
                 "windows.*aarch64.*": [
@@ -398,7 +359,6 @@ def setup_browsertime(config, tasks):
                     "win32-geckodriver",
                     "win32-node",
                 ],
-                "windows.*-32.*": ["browsertime", "win32-geckodriver", "win32-node"],
                 "windows.*-64.*": ["browsertime", "win64-geckodriver", "win64-node"],
             },
         }
@@ -415,7 +375,6 @@ def setup_browsertime(config, tasks):
                 "macosx1400.*": ["mac64-ffmpeg-7.1"],
                 "macosx1500.*": ["mac64-ffmpeg-7.1"],
                 "windows.*aarch64.*": ["win64-ffmpeg-7.1"],
-                "windows.*-32.*": ["win64-ffmpeg-7.1"],
                 "windows.*-64.*": ["win64-ffmpeg-7.1"],
             },
         }
@@ -493,12 +452,10 @@ def setup_browsertime(config, tasks):
             evaluate_keyed_by(fs, "fetches.fetch", task)
         )
 
-        extra_options.extend(
-            (
-                "--browsertime-browsertimejs",
-                "$MOZ_FETCHES_DIR/browsertime/node_modules/browsertime/bin/browsertime.js",
-            )
-        )  # noqa: E501
+        extra_options.extend((
+            "--browsertime-browsertimejs",
+            "$MOZ_FETCHES_DIR/browsertime/node_modules/browsertime/bin/browsertime.js",
+        ))  # noqa: E501
 
         eos = {
             "by-test-platform": {
@@ -594,6 +551,8 @@ def enable_code_coverage(config, tasks):
     """Enable code coverage for the ccov build-platforms"""
     for task in tasks:
         if "ccov" in task["build-platform"]:
+            task.setdefault("attributes", {})["ccov"] = True
+
             # Do not run tests on fuzzing builds
             if "fuzzing" in task["build-platform"]:
                 task["run-on-projects"] = []
@@ -645,20 +604,6 @@ def enable_code_coverage(config, tasks):
 
             task["fetches"]["build"].append({"artifact": "target.mozinfo.json"})
 
-            if "talos" in task["test-name"]:
-                task["max-run-time"] = 7200
-                if "linux" in task["build-platform"]:
-                    task["docker-image"] = {"in-tree": "ubuntu1804-test"}
-                task["mozharness"]["extra-options"].append("--add-option")
-                task["mozharness"]["extra-options"].append("--cycles,1")
-                task["mozharness"]["extra-options"].append("--add-option")
-                task["mozharness"]["extra-options"].append("--tppagecycles,1")
-                task["mozharness"]["extra-options"].append("--add-option")
-                task["mozharness"]["extra-options"].append("--no-upload-results")
-                task["mozharness"]["extra-options"].append("--add-option")
-                task["mozharness"]["extra-options"].append("--tptimeout,15000")
-            if "raptor" in task["test-name"]:
-                task["max-run-time"] = 1800
         yield task
 
 
@@ -713,15 +658,6 @@ def handle_tier(config, tasks):
                 "linux64-qr/opt",
                 "linux64-qr/debug",
                 "linux64-shippable-qr/opt",
-                "linux1804-64/opt",
-                "linux1804-64/debug",
-                "linux1804-64-shippable/opt",
-                "linux1804-64-devedition/opt",
-                "linux1804-64-qr/opt",
-                "linux1804-64-qr/debug",
-                "linux1804-64-shippable-qr/opt",
-                "linux1804-64-asan-qr/opt",
-                "linux1804-64-tsan-qr/opt",
                 "linux2204-64-wayland/debug",
                 "linux2204-64-wayland/opt",
                 "linux2204-64-wayland-shippable/opt",
@@ -731,29 +667,18 @@ def handle_tier(config, tasks):
                 "linux2404-64-devedition/opt",
                 "linux2404-64-asan/opt",
                 "linux2404-64-tsan/opt",
-                "windows10-64/debug",
-                "windows10-64/opt",
-                "windows10-64-shippable/opt",
-                "windows10-64-devedition/opt",
-                "windows10-64-qr/opt",
-                "windows10-64-qr/debug",
-                "windows10-64-shippable-qr/opt",
-                "windows10-64-devedition-qr/opt",
-                "windows10-64-2004-qr/opt",
-                "windows10-64-2004-qr/debug",
-                "windows10-64-2004-shippable-qr/opt",
-                "windows10-64-2004-devedition-qr/opt",
-                "windows10-64-2004-asan-qr/opt",
-                "windows11-32-24h2/debug",
-                "windows11-32-24h2/opt",
-                "windows11-32-24h2-shippable/opt",
+                "windows11-32-25h2/debug",
+                "windows11-32-25h2/opt",
+                "windows11-32-25h2-shippable/opt",
                 "windows11-64-24h2-hw-ref/opt",
                 "windows11-64-24h2-hw-ref-shippable/opt",
                 "windows11-64-24h2/opt",
-                "windows11-64-24h2/debug",
                 "windows11-64-24h2-shippable/opt",
-                "windows11-64-24h2-devedition/opt",
-                "windows11-64-24h2-asan/opt",
+                "windows11-64-25h2/opt",
+                "windows11-64-25h2/debug",
+                "windows11-64-25h2-shippable/opt",
+                "windows11-64-25h2-devedition/opt",
+                "windows11-64-25h2-asan/opt",
                 "macosx1015-64/opt",
                 "macosx1015-64/debug",
                 "macosx1015-64-shippable/opt",
@@ -766,30 +691,35 @@ def handle_tier(config, tasks):
                 "macosx1470-64/debug",
                 "macosx1470-64-shippable/opt",
                 "macosx1470-64-devedition/opt",
-                "macosx1400-64-shippable-qr/opt",
-                "macosx1400-64-qr/debug",
-                "macosx1500-64-shippable/opt",
-                "macosx1500-64/debug",
-                "android-em-7.0-x86_64-shippable/opt",
-                "android-em-7.0-x86_64-shippable-lite/opt",
-                "android-em-7.0-x86_64/debug",
-                "android-em-7.0-x86_64/debug-isolated-process",
-                "android-em-7.0-x86_64/opt",
-                "android-em-7.0-x86_64-lite/opt",
-                "android-em-7.0-x86-shippable/opt",
-                "android-em-7.0-x86-shippable-lite/opt",
-                "android-em-7.0-x86_64-shippable-qr/opt",
-                "android-em-7.0-x86_64-qr/debug",
-                "android-em-7.0-x86_64-qr/debug-isolated-process",
-                "android-em-7.0-x86_64-qr/opt",
-                "android-em-7.0-x86_64-shippable-lite-qr/opt",
-                "android-em-7.0-x86_64-lite-qr/debug",
-                "android-em-7.0-x86_64-lite-qr/opt",
+                "macosx1500-aarch64/opt",
+                "macosx1500-aarch64/debug",
+                "macosx1500-aarch64-shippable/opt",
+                "macosx1500-aarch64-devedition/opt",
+                "android-em-14-x86_64-shippable/opt",
+                "android-em-14-x86_64/opt",
+                "android-em-14-x86_64-shippable-lite/opt",
+                "android-em-14-x86_64-lite/opt",
+                "android-em-14-x86_64/debug",
+                "android-em-14-x86_64/debug-isolated-process",
+                "android-em-14-x86-shippable/opt",
+                "android-em-14-x86/opt",
             ]:
                 task["tier"] = 1
             else:
                 task["tier"] = 2
 
+        yield task
+
+
+@transforms.add
+def apply_artifact_build_settings(config, tasks):
+    """Artifact build tests are tier 2. On Linux and Windows they run on
+    all mozilla-central pushes; on other platforms they are try-only."""
+    for task in tasks:
+        if "-artifact/" in task["test-platform"]:
+            task["tier"] = 2
+            if not task["test-platform"].startswith(("linux", "windows")):
+                task["run-on-projects"] = []
         yield task
 
 
@@ -812,6 +742,33 @@ def apply_raptor_tier_optimization(config, tasks):
 
         if task["attributes"].get("unittest_variant"):
             task["tier"] = max(task["tier"], 2)
+        yield task
+
+
+@transforms.add
+def apply_bug2043540_optimization(config, tasks):
+    """Bug 2043540 - reduce mochitest-browser-chrome cadence on macosx1015-64
+    (Catalina) to relieve the backed-up 10.15 ESR pool.
+
+    Applied as a transform (rather than YAML `optimization:`) because the test
+    schema declares `optimization` and `schedules-component` as mutually
+    exclusive; mochitest-browser-chrome has schedules-component set. The
+    transform runs after schema validation, so setting task["optimization"]
+    here is safe.
+
+    skip-unless-backstop preserves coverage on m-c, beta, release, and ESR
+    branches (params["backstop"] is True for non-integration projects) and
+    only skips on regular autoland pushes (~95% of Catalina mbc cycles).
+    Applied to both opt and debug builds; the standalone debug variants
+    already carry skip-unless-backstop, so re-applying it is idempotent.
+    """
+    for task in tasks:
+        test_platform = task.get("test-platform", "")
+        if (
+            task.get("test-name") == "mochitest-browser-chrome"
+            and "macosx1015-64" in test_platform
+        ):
+            task["optimization"] = {"test-backstop": None}
         yield task
 
 
@@ -853,40 +810,53 @@ def ensure_spi_disabled_on_all_but_spi(config, tasks):
         yield task
 
 
-test_setting_description_schema = Schema(
-    {
-        Required("_hash"): str,
-        "platform": {
-            Required("arch"): Any("32", "64", "aarch64", "arm7", "x86", "x86_64"),
-            Required("os"): {
-                Required("name"): Any("android", "linux", "macosx", "windows"),
-                Required("version"): str,
-                Optional("build"): str,
-            },
-            Optional("device"): str,
-            Optional("display"): "wayland",
-            Optional("machine"): "hw-ref",
-        },
-        "build": {
-            Required("type"): Any("opt", "debug", "debug-isolated-process"),
-            Any(
-                "asan",
-                "ccov",
-                "clang-trunk",
-                "devedition",
-                "lite",
-                "mingwclang",
-                "nightlyasrelease",
-                "shippable",
-                "tsan",
-            ): bool,
-        },
-        "runtime": {Any(*list(TEST_VARIANTS.keys()) + ["1proc"]): bool},
-    },
-    check=False,
-)
-"""Schema test settings must conform to. Validated by
-:py:func:`~test.test_mozilla_central.test_test_setting`"""
+class PlatformOSSchema(Schema, kw_only=True):
+    """Platform OS configuration schema."""
+
+    name: Literal["android", "linux", "macosx", "windows"]
+    version: str
+    build: Optional[str] = None
+
+
+class PlatformSchema(Schema, kw_only=True):
+    """Platform configuration schema."""
+
+    arch: Literal["32", "64", "aarch64", "arm7", "x86", "x86_64"]
+    os: PlatformOSSchema
+    device: Optional[str] = None
+    display: Optional[Literal["wayland"]] = None
+    machine: Optional[Literal["hw-ref"]] = None
+
+
+class BuildSchema(Schema, kw_only=True, forbid_unknown_fields=False):
+    """Build configuration schema."""
+
+    type: Literal["opt", "debug", "debug-isolated-process"]
+    asan: Optional[bool] = None
+    ccov: Optional[bool] = None
+    clang_trunk: Optional[bool] = None
+    devedition: Optional[bool] = None
+    lite: Optional[bool] = None
+    mingwclang: Optional[bool] = None
+    nightlyasrelease: Optional[bool] = None
+    shippable: Optional[bool] = None
+    tsan: Optional[bool] = None
+
+
+class TestSettingDescriptionSchema(Schema, kw_only=True, forbid_unknown_fields=False):
+    """Schema test settings must conform to. Validated by
+    :py:func:`~test.test_mozilla_central.test_test_setting`"""
+
+    _hash: str = msgspec.field(name="_hash")
+    platform: PlatformSchema
+    build: BuildSchema
+    runtime: dict[str, bool]
+
+    def __post_init__(self):
+        valid_keys = set(TEST_VARIANTS.keys()) | {"1proc"}
+        invalid = set(self.runtime.keys()) - valid_keys
+        if invalid:
+            raise ValueError(f"Invalid runtime keys: {invalid}")
 
 
 @transforms.add
@@ -977,7 +947,7 @@ def set_test_setting(config, tasks):
 
         else:
             arch = parts.pop(0)
-            if parts and (parts[0].isdigit() or parts[0] in ["24h2"]):
+            if parts and (parts[0].isdigit() or parts[0] in ["24h2", "25h2"]):
                 os_build = parts.pop(0)
 
             if parts and parts[0] == "hw-ref":
@@ -1126,6 +1096,62 @@ def set_profile(config, tasks):
 
 
 @transforms.add
+def add_gecko_profile_symbolication_deps(config, tasks):
+    """Add symbolication dependencies when profiling raptor, talos, or mochitest tests"""
+
+    try_task_config = config.params.get("try_task_config", {})
+    gecko_profile_from_try = try_task_config.get("gecko-profile", False)
+    startup_profile = try_task_config.get("env", {}).get("MOZ_PROFILER_STARTUP") == "1"
+
+    for task in tasks:
+        extra_options = task.get("mozharness", {}).get("extra-options", [])
+        has_gecko_profile_option = any(
+            "--gecko-profile" in option for option in extra_options
+        )
+        gecko_profile = gecko_profile_from_try or has_gecko_profile_option
+
+        if (gecko_profile and task["suite"] in ["talos", "raptor"]) or (
+            startup_profile and "mochitest" in task["suite"]
+        ):
+            fetches = task.setdefault("fetches", {})
+            fetch_toolchains = fetches.setdefault("toolchain", [])
+
+            if "profiler-node-tools" not in fetch_toolchains:
+                fetch_toolchains.append("profiler-node-tools")
+
+            test_platform = task["test-platform"]
+
+            if "macosx" in test_platform and "aarch64" in test_platform:
+                samply_toolchain = "macosx64-aarch64-samply"
+            elif "macosx" in test_platform:
+                samply_toolchain = "macosx64-samply"
+            elif "win" in test_platform:
+                samply_toolchain = "win64-samply"
+            else:
+                samply_toolchain = "linux64-samply"
+
+            if samply_toolchain not in fetch_toolchains:
+                fetch_toolchains.append(samply_toolchain)
+
+            # Add node as a dependency for talos and mochitest tasks if needed.
+            # node is used to run profiler-edit, our profile symbolication tool
+            if task["suite"] == "talos" or "mochitest" in task["suite"]:
+                if "macosx" in test_platform and "aarch64" in test_platform:
+                    node_toolchain = "macosx64-aarch64-node"
+                elif "macosx" in test_platform:
+                    node_toolchain = "macosx64-node"
+                elif "win" in test_platform:
+                    node_toolchain = "win64-node"
+                else:
+                    node_toolchain = "linux64-node"
+
+                if node_toolchain not in fetch_toolchains:
+                    fetch_toolchains.append(node_toolchain)
+
+        yield task
+
+
+@transforms.add
 def set_tag(config, tasks):
     """Set test for a specific tag."""
     tag = None
@@ -1185,5 +1211,22 @@ def enable_parallel_marking_in_tsan_tests(config, tasks):
                 extra_options.append(
                     "--setpref=javascript.options.mem.gc_parallel_marking=true"
                 )
+
+        yield task
+
+
+@transforms.add
+def set_webgpu_ignore_blocklist(config, tasks):
+    """
+    Ignore the WebGPU blocklist on Linux because CI's Mesa is old
+
+    See <https://bugzilla.mozilla.org/show_bug.cgi?id=1985348>
+    """
+    for task in tasks:
+        if "web-platform-tests-webgpu" in task["test-name"] and task[
+            "test-platform"
+        ].startswith("linux"):
+            extra_options = task["mozharness"].setdefault("extra-options", [])
+            extra_options.append("--setpref=gfx.webgpu.ignore-blocklist=true")
 
         yield task

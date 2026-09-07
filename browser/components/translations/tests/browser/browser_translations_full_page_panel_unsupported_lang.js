@@ -9,11 +9,7 @@
 add_task(async function test_unsupported_lang() {
   const { cleanup } = await loadTestPage({
     page: SPANISH_PAGE_URL,
-    languagePairs: [
-      // Do not include Spanish.
-      { fromLang: "fr", toLang: "en" },
-      { fromLang: "en", toLang: "fr" },
-    ],
+    languagePairs: LANGUAGE_PAIRS_WITHOUT_SPANISH,
   });
 
   await FullPageTranslationsTestUtils.openPanel({

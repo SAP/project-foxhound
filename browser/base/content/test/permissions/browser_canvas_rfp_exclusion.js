@@ -47,6 +47,7 @@ function initTab(performReadbackTest) {
 function disableResistFingerprinting() {
   return SpecialPowers.pushPrefEnv({
     set: [
+      ["privacy.baselineFingerprintingProtection", false],
       ["privacy.resistFingerprinting", false],
       ["privacy.resistFingerprinting.pbmode", false],
     ],
@@ -54,27 +55,16 @@ function disableResistFingerprinting() {
 }
 
 function enableResistFingerprinting(RfpNonPbmExclusion, RfpDomainExclusion) {
-  if (RfpNonPbmExclusion && RfpDomainExclusion) {
-    return SpecialPowers.pushPrefEnv({
-      set: [
-        ["privacy.resistFingerprinting.pbmode", true],
-        ["privacy.resistFingerprinting.exemptedDomains", "example.com"],
-      ],
-    });
-  } else if (RfpNonPbmExclusion) {
-    return SpecialPowers.pushPrefEnv({
-      set: [["privacy.resistFingerprinting.pbmode", true]],
-    });
-  } else if (RfpDomainExclusion) {
-    return SpecialPowers.pushPrefEnv({
-      set: [
-        ["privacy.resistFingerprinting", true],
-        ["privacy.resistFingerprinting.exemptedDomains", "example.com"],
-      ],
-    });
-  }
   return SpecialPowers.pushPrefEnv({
-    set: [["privacy.resistFingerprinting", true]],
+    set: [
+      ["privacy.baselineFingerprintingProtection", false],
+      ["privacy.resistFingerprinting", !RfpNonPbmExclusion],
+      ["privacy.resistFingerprinting.pbmode", RfpNonPbmExclusion],
+      [
+        "privacy.resistFingerprinting.exemptedDomains",
+        RfpDomainExclusion ? "example.com" : "",
+      ],
+    ],
   });
 }
 

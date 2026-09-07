@@ -7,6 +7,7 @@
 
 /**
  * Test for computed timing path on summary graph using given test data.
+ *
  * @param {Array} testData
  */
 // eslint-disable-next-line no-unused-vars

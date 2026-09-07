@@ -1,0 +1,18 @@
+{
+  "label": "m.tailieu.vn",
+  "bugs": {
+    "1579159": {
+      "issue": "page-fails-to-load",
+      "matches": ["*://m.tailieu.vn/*", "*://m.elib.vn/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["disable_PDFJS_workers.js"]
+      }
+    }
+  ]
+}

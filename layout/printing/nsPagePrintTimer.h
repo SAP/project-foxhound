@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsPagePrintTimer_h___
-#define nsPagePrintTimer_h___
+#ifndef nsPagePrintTimer_h_
+#define nsPagePrintTimer_h_
 
 // Timer Includes
-#include "mozilla/Attributes.h"
 #include "mozilla/OwningNonNull.h"
 #include "nsIDocumentViewerPrint.h"
 #include "nsITimer.h"
@@ -80,4 +77,4 @@ class nsPagePrintTimer final : public mozilla::Runnable,
       ;
 };
 
-#endif /* nsPagePrintTimer_h___ */
+#endif /* nsPagePrintTimer_h_ */

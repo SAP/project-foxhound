@@ -1,0 +1,112 @@
+.. _mozilla_projects_nss_nss_3_125_release_notes:
+
+NSS 3.125 release notes
+=======================
+
+`Introduction <#introduction>`__
+--------------------------------
+
+.. container::
+
+   Network Security Services (NSS) 3.125 was released on *11 June 2026*.
+
+`Distribution Information <#distribution_information>`__
+--------------------------------------------------------
+
+.. container::
+
+   The HG tag is NSS_3_125_RTM. NSS 3.125 requires NSPR 4.38.2 or newer.
+
+   NSS 3.125 source distributions are available on ftp.mozilla.org for secure HTTPS download:
+
+   -  Source tarballs:
+      https://ftp.mozilla.org/pub/mozilla.org/security/nss/releases/NSS_3_125_RTM/src/
+
+   Other releases are available :ref:`mozilla_projects_nss_releases`.
+
+.. _changes_in_nss_3.125:
+
+`Changes in NSS 3.125 <#changes_in_nss_3.125>`__
+------------------------------------------------------------------
+
+.. container::
+
+   - Bug 2031345 - Set nssckbi version to 2.88.
+   - Bug 2032612 - Add Cybertrust Japan SecureSign Root CA16.
+   - Bug 2031314 - Remove Email Trust bit from TrustAsia Global Root CA G3 and G4.
+   - Bug 2032223 - Remove Entrust Root Certification Authority.
+   - Bug 2031105 - Remove SecureSign Root CA12.
+   - Bug 1867436 - Initialize ssl3.hs.echOuterExtensions in ssl_NewSocket.
+   - Bug 2046220 - replace references to nss-dev/nss with mozilla/nss.
+   - Bug 2023208 - limit recursion depth in CMS decoder.
+   - Bug 2027353 - clamp input.len to testString size in pk11_mergeSecretKey.
+   - Bug 2030561 - NULL pointer dereference in CERT_MergeExtensions.
+   - Bug 2028954 - CERT_DecodeAVAValue — Integer Overflow in Output Buffer Sizing.
+   - Bug 2032110 - fix two integer overflows on LLP64 systems.
+   - Bug 2045688 - Modify an assertion in ssl3_ClientSendAppProtoXtn.
+   - Bug 2044917 - Import RSA-PSS PKCS#8 private keys.
+   - Bug 2035521 - Add EC Derive fuzz target.
+   - Bug 2035522 - Update fuzz/config/tstclnt_arguments.py.
+   - Bug 2030915 - Add DSAU fuzz target.
+   - Bug 2031320 - Update ASN1 mutators for fuzzing.
+   - Bug 2031319 - Update TLS mutators for fuzzing.
+   - Bug 2031325 - Update TLS certs for fuzzing.
+   - Bug 2031322 - Update TLS config for fuzzing.
+   - Bug 2035502 - Extend QuickDER fuzz target.
+   - Bug 2035501 - Extend PKCS12 fuzz target.
+   - Bug 2035499 - Extend PKCS8 fuzz target.
+   - Bug 2031792 - Extend certDN fuzz target.
+   - Bug 2031790 - Update ASN1 fuzz target.
+   - Bug 2031323 - Extend PKCS7 fuzz target.
+   - Bug 2029433 - Bounds-check wrap index in PK11_GetWrapKey to match PK11_SetWrapKey.
+   - Bug 2029407 - Adding a guard against integer overflow in AESKeyWrap_EncryptKWP.
+   - Bug 2027376 - Add an integer overflow guard in UpdateBase64Decoder.
+   - Bug 2032552 - Void out the fd.release in reconfig tests.
+   - Bug 2029922 - make sftk_FindAttribute return a copy.
+   - Bug 1652123 - Converted nss parameter schema from voluptuous to msgspec.
+   - Bug 311577 - drop slot monitor in PK11_ResetToken before calling PK11_InitToken.
+   - Bug 2042949 - adjust the code to use nspr from github.
+   - Bug 1885900 - avoid deadlock when PK11_IsLoggedIn is called from PK11_DoPassword.
+   - Bug 2044134 - test pk11auth.c functions with a non-threadsafe module.
+   - Bug 311577 - PK11_InitPin sets slot->lastLoginCheck without holding the slot monitor.
+   - Bug 2027349 - reject empty nickname in PK11_TraverseCertsForNicknameInSlot.
+   - Bug 2027346 - validate encoded EC params length and tag in SECKEY_ECParamsToKeySize/BasePointOrderLen.
+   - Bug 2027373 - guard space subtraction in ssl_CallCustomExtensionSenders.
+   - Bug 2027371 - rewrite labelLen bound in tls13_HkdfExpandLabelGeneral to avoid unsigned overflow.
+   - Bug 2027362 - bound usageCount in PK11_UnwrapPrivKey to keyTemplate capacity.
+   - Bug 2027364 - Set tail pointer to null in static slot lists when deallocating.
+   - Bug 2030102 - avoid leaving a dangling ss->sec.ci.sid on allocation failure.
+   - Bug 2043887 - guard against integer overflow in CERT_Hexify.
+   - Bug 2029453 - Reject empty SECItem inputs in sftk_IsSafePrime before indexing data[len-1].
+   - Bug 2029757 - NUL-terminate within filename field in jar_listtar to bound the filename scan.
+   - Bug 2029748 - Widen CERT_FormatName length accumulator from unsigned to size_t.
+   - Bug 2029796 - Bound IKE PRF nonce lengths to prevent CK_ULONG to unsigned int truncation.
+   - Bug 2029797 - Drop companion arrays on length mismatch in NSS_CMSArray_Sort instead of asserting.
+   - Bug 2029798 - Operate on a NUL-terminated copy in jar_parse_any to keep manifest scans bounded.
+   - Bug 2029778 - Reject MD2 contexts with unusedBuffer > MD2_BUFSIZE in Update and End.
+   - Bug 2029791 - Reserve NUL terminator for CKA_NSS_URL in nssCKObject_GetAttributes.
+   - Bug 2029807 - Guard padding read against empty output in SEC_PKCS7DecryptContents.
+   - Bug 2029901 - Guard against keySize overflow in IKE PRF/PRF+ output sizing.
+   - Bug 2030109 - Allocate values array when overwriting an empty CMS attribute.
+   - Bug 2030559 - Validate CKA_TOKEN attribute size in nssCKFWObject_SetAttribute.
+   - Bug 2030563 - Validate CKA_CERTIFICATE_TYPE ulValueLen in nss_cert_type_from_ck_attrib.
+   - Bug 2030566 - Handle zero-length input in PrepareBitStringForEncoding.
+   - Bug 2030571 - Length-check raw_manifest before PORT_Strncasecmp prefix dispatch in JAR_parse_manifest.
+   - Bug 2031902 - Reject CKA_NSS_MODULE_SPEC values that aren't NUL-terminated within ulValueLen.
+   - Bug 2031903 - Reject negative PR_Read returns in JAR_digest_file and jar_create_pk7.
+   - Bug 2041240 - Update Bogo tests to 3fff7111b0eca817466e121059cb4e8b67ade35b.
+   - Bug 2043243 - doc: import NSS:TryServer wiki page in the tree.
+   - Bug 2033664 - improve PK11 URI tests.
+   - Bug 2037205 - avoid nested attributeLock acquisition in sftk_CopyObject.
+   - Bug 2038536 - doc: fix a typo in "Community — Network Security Services (NSS)".
+   - Bug 2037205 - acquire RWLock before key copies in ssl_SetSelfEncryptKeyPair.
+   - Bug 2027325 - Reject empty nickname in PK11_TraverseCertsForNicknameInSlot.
+   - Bug 1767921 - require non-null session pointer in sftk_GetContext.
+   - Bug 1767921 - set session->lastOpWasFIPS while holding session reference.
+   - Bug 1767921 - atomically claim object removal in sftk_DeleteObject.
+   - Bug 1767921 - atomically swap session search in NSC_FindObjects*.
+   - Bug 1767921 - atomically install session contexts in C_*Init.
+   - Bug 1767921 - hold session reference for context lifetime in C_*Update.
+   - Bug 1767921 - align softoken session lock with head-bucket hash.
+   - Bug 1767921 - restore reference counting for SFTKSession.
+

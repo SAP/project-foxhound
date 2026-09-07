@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,15 +21,6 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-
-#ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/layers/TextureHostOGL.h"
-#endif
-
-#ifdef XP_WIN
-#  include "mozilla/layers/FenceD3D11.h"
-#  include "mozilla/layers/TextureD3D11.h"
-#endif
 
 namespace mozilla {
 namespace layers {
@@ -68,6 +57,8 @@ AsyncImagePipelineManager::AsyncImagePipelineManager(
           gfx::gfxVars::UseWebRenderDCompVideoHwOverlayWin()),
       mUseWebRenderDCompVideoSwOverlayWin(
           gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin()),
+      mUseWebRenderDCompositionTextureOverlayWin(
+          gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin()),
 #endif
       mRenderSubmittedUpdatesLock("SubmittedUpdatesLock"),
       mLastCompletedFrameId(0) {
@@ -233,9 +224,7 @@ Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
   MOZ_ASSERT(aKeys.IsEmpty());
   MOZ_ASSERT(aPipeline);
 
-  TextureHost* previousTexture = aPipeline->mCurrentTexture.get();
-
-  if (aTexture == previousTexture) {
+  if (aTexture == aPipeline->mCurrentTexture.get()) {
     // The texture has not changed, just reuse previous ImageKeys.
     aKeys = aPipeline->mKeys.Clone();
     return Nothing();
@@ -253,6 +242,8 @@ Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
     return Nothing();
   }
 
+  RefPtr<TextureHost> previousTexture =
+      std::move(aPipeline->mCurrentTexture.get());
   aPipeline->mCurrentTexture = aTexture;
 
   WebRenderTextureHost* wrTexture = aTexture->AsWebRenderTextureHost();
@@ -354,7 +345,13 @@ AsyncImagePipelineManager::UpdateWithoutExternalImage(
   }
 
   gfx::IntSize size = dSurf->GetSize();
-  wr::ImageDescriptor descriptor(size, map.mStride, dSurf->GetFormat());
+  auto format = wr::SurfaceFormatToImageFormat(dSurf->GetFormat());
+  if (NS_WARN_IF(!format)) {
+    dSurf->Unmap();
+    return Nothing();
+  }
+  wr::ImageDescriptor descriptor(size, map.mStride, *format,
+                                 wr::ToOpacityType(dSurf->GetFormat()));
 
   // Costly copy right here...
   wr::Vec<uint8_t> bytes;
@@ -379,20 +376,24 @@ void AsyncImagePipelineManager::ApplyAsyncImagesOfImageBridge(
   }
 
 #ifdef XP_WIN
-  // UseWebRenderDCompVideoHwOverlayWin() and
-  // UseWebRenderDCompVideoSwOverlayWin() could be changed from true to false,
-  // when DCompVideoOverlay task is failed. In this case, DisplayItems need to
-  // be re-pushed to WebRender for disabling video overlay.
+  // UseWebRenderDCompVideoHwOverlayWin(), UseWebRenderDCompVideoSwOverlayWin()
+  // and gfxVars::UseWebRenderDCompositionTextureOverlayWin() could be changed
+  // from true to false, when overlay task is failed. In this case, DisplayItems
+  // need to be re-pushed to WebRender for disabling video overlay.
   bool isChanged = (mUseWebRenderDCompVideoHwOverlayWin !=
                     gfx::gfxVars::UseWebRenderDCompVideoHwOverlayWin()) ||
                    (mUseWebRenderDCompVideoSwOverlayWin !=
-                    gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin());
+                    gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin()) ||
+                   (mUseWebRenderDCompositionTextureOverlayWin !=
+                    gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin());
 
   if (isChanged) {
     mUseWebRenderDCompVideoHwOverlayWin =
         gfx::gfxVars::UseWebRenderDCompVideoHwOverlayWin();
     mUseWebRenderDCompVideoSwOverlayWin =
         gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin();
+    mUseWebRenderDCompositionTextureOverlayWin =
+        gfx::gfxVars::UseWebRenderDCompositionTextureOverlayWin();
   }
 #endif
 
@@ -465,10 +466,6 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
       float(aPipeline->mCurrentTexture->GetSize().width),
       float(aPipeline->mCurrentTexture->GetSize().height)};
   computedTransform.rotation = aPipeline->mRotation;
-  // We don't have a frame / per-frame key here, but we can use the pipeline id
-  // and the key kind to create a unique stable key.
-  computedTransform.key = wr::SpatialKey(
-      aPipelineId.mNamespace, aPipelineId.mHandle, wr::SpatialKeyKind::APZ);
   params.computed_transform = &computedTransform;
 
   Maybe<wr::WrSpatialId> referenceFrameId =
@@ -521,7 +518,7 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
   wr::BuiltDisplayList dl;
   aPipeline->mDLBuilder.End(dl);
   aSceneBuilderTxn.SetDisplayList(aEpoch, aPipelineId, dl.dl_desc, dl.dl_items,
-                                  dl.dl_cache, dl.dl_spatial_tree);
+                                  dl.dl_spatial_tree);
 }
 
 void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
@@ -613,7 +610,7 @@ void AsyncImagePipelineManager::SetEmptyDisplayList(
 
   wr::BuiltDisplayList dl;
   builder.End(dl);
-  txn.SetDisplayList(epoch, aPipelineId, dl.dl_desc, dl.dl_items, dl.dl_cache,
+  txn.SetDisplayList(epoch, aPipelineId, dl.dl_desc, dl.dl_items,
                      dl.dl_spatial_tree);
 }
 
@@ -711,7 +708,7 @@ void AsyncImagePipelineManager::ProcessPipelineUpdates() {
     auto& holder = update.second;
     const auto& info = holder.mInfo->Raw();
 
-    mReleaseFence = std::move(holder.mFence);
+    mReadFence = std::move(holder.mFence);
 
     for (auto& epoch : info.epochs) {
       ProcessPipelineRendered(epoch.pipeline_id, epoch.epoch, update.first);
@@ -734,21 +731,19 @@ void AsyncImagePipelineManager::ProcessPipelineRendered(
         holder->mTextureHostsUntilRenderSubmitted.begin(),
         holder->mTextureHostsUntilRenderSubmitted.end(),
         [&aEpoch](const auto& entry) { return aEpoch <= entry.mEpoch; });
-#ifdef MOZ_WIDGET_ANDROID
-    // Set release fence if TextureHost owns AndroidHardwareBuffer.
+
+    // Set read fence if TextureHost owns AndroidHardwareBuffer.
     // The TextureHost handled by mTextureHostsUntilRenderSubmitted instead of
     // mTextureHostsUntilRenderCompleted, since android fence could be used
     // to wait until its end of usage by GPU.
     for (auto it = holder->mTextureHostsUntilRenderSubmitted.begin();
          it != firstSubmittedHostToKeep; ++it) {
       const auto& entry = it;
-      if (entry->mTexture->GetAndroidHardwareBuffer() && mReleaseFence &&
-          mReleaseFence->AsFenceFileHandle()) {
-        entry->mTexture->SetReleaseFence(
-            mReleaseFence->AsFenceFileHandle()->DuplicateFileHandle());
+      if (entry->mTexture->GetAndroidHardwareBuffer() && mReadFence) {
+        entry->mTexture->SetReadFence(mReadFence);
       }
     }
-#endif
+
     holder->mTextureHostsUntilRenderSubmitted.erase(
         holder->mTextureHostsUntilRenderSubmitted.begin(),
         firstSubmittedHostToKeep);
@@ -762,16 +757,14 @@ void AsyncImagePipelineManager::ProcessPipelineRendered(
         holder->mTextureHostsUntilRenderCompleted.end(),
         [&aEpoch](const auto& entry) { return aEpoch <= entry->mEpoch; });
 
-#ifdef XP_WIN
     for (auto it = holder->mTextureHostsUntilRenderCompleted.begin();
          it != firstCompletedHostToKeep; ++it) {
       const auto& entry = *it;
-      auto* host = entry->mTexture->AsDXGIYCbCrTextureHostD3D11();
-      if (host && mReleaseFence && mReleaseFence->AsFenceD3D11()) {
-        host->SetReadFence(mReleaseFence->AsFenceD3D11());
+      auto* texture = entry->mTexture.get();
+      if (texture && mReadFence) {
+        texture->SetReadFence(mReadFence);
       }
     }
-#endif
 
     if (firstCompletedHostToKeep !=
         holder->mTextureHostsUntilRenderCompleted.begin()) {

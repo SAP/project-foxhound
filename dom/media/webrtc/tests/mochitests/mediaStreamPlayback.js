@@ -28,7 +28,7 @@ MediaStreamPlayback.prototype = {
    * Starts media element with a media stream, runs it until a canplaythrough
    * and timeupdate event fires, and calls stop() on all its tracks.
    *
-   * @param {Boolean} isResume specifies if this media element is being resumed
+   * @param {boolean} isResume specifies if this media element is being resumed
    *                           from a previous run
    */
   playMedia(isResume) {
@@ -64,7 +64,7 @@ MediaStreamPlayback.prototype = {
    * Starts media with a media stream, runs it until a canplaythrough and
    * timeupdate event fires, and detaches from the element without stopping media.
    *
-   * @param {Boolean} isResume specifies if this media element is being resumed
+   * @param {boolean} isResume specifies if this media element is being resumed
    *                           from a previous run
    */
   playMediaWithoutStoppingTracks(isResume) {
@@ -75,7 +75,7 @@ MediaStreamPlayback.prototype = {
   /**
    * Starts the media with the associated stream.
    *
-   * @param {Boolean} isResume specifies if the media element playback
+   * @param {boolean} isResume specifies if the media element playback
    *                           is being resumed from a previous run
    */
   startMedia(isResume) {

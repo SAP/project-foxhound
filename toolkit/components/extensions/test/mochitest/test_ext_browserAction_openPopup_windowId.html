@@ -29,7 +29,7 @@ let extensionData = {
   useAddonManager: "geckoview-only",
 };
 
-add_task(async function setup() {
+add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
     "set": [
       ["extensions.openPopupWithoutUserGesture.enabled", true],
@@ -37,105 +37,102 @@ add_task(async function setup() {
   });
 });
 
-async function testWithWindowState(state) {
-  const background = async function(state) {
-    const originalWindow = await browser.windows.getCurrent();
-
-    let newWindowPromise;
-    const tabLoadedPromise = new Promise(resolve => {
-      browser.tabs.onUpdated.addListener(async (id, { status }, tab) => {
-        if (tab.windowId === (await newWindowPromise).id && status === "complete") {
-          resolve();
-        }
-      });
-    });
-
-    newWindowPromise = browser.windows.create({ url: "tab.html" });
-
-    browser.test.onMessage.addListener(async (msg) => {
-      if (msg === "close-window") {
-        await browser.windows.remove((await newWindowPromise).id);
-        browser.test.sendMessage("window-closed");
-      }
-    });
-
-    tabLoadedPromise.then(async () => {
-      const windowId = (await newWindowPromise).id;
-
-      switch (state) {
-        case "inactive":
-          const focusChangePromise = new Promise(resolve => {
-            browser.windows.onFocusChanged.addListener((focusedWindowId) => {
-              if (focusedWindowId === originalWindow.id) {
-                resolve();
-              }
-            })
-          });
-          await browser.windows.update(originalWindow.id, { focused: true });
-          await focusChangePromise;
-          break;
-        case "minimized":
-          await browser.windows.update(windowId, { state: "minimized" });
-          break;
-        default:
-          throw new Error(`Invalid state: ${state}`);
-      }
-
-      await browser.browserAction.openPopup({ windowId });
-    });
-  };
-
+// Test that browserAction.openPopup({windowId}) works with the current window,
+// but rejects for (non-focused) background windows.
+add_task(async function test_browserAction_openPopup_window_inactive() {
   let extension = ExtensionTestUtils.loadExtension({
     ...extensionData,
 
-    background: `(${background})(${JSON.stringify(state)})`,
+    background: async function() {
+      const readyToOpenPopup = Promise.withResolvers();
+      const popupSeenAndClosed = Promise.withResolvers();
+      browser.test.onMessage.addListener(msg => {
+        if (msg === "readyToOpenPopup") {
+          readyToOpenPopup.resolve();
+        } else if (msg === "popupSeenAndClosed") {
+          popupSeenAndClosed.resolve();
+        } else {
+          browser.test.fail(`Unexpected message: ${msg}`);
+        }
+      });
+      const [tab] = await browser.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
 
+      // Ensure that awaitExtensionPanel listener is set up before openPopup().
+      await readyToOpenPopup.promise;
+      browser.test.log("openPopup() should accept windowId for current window");
+      await browser.browserAction.openPopup({ windowId: tab.windowId });
+      browser.test.sendMessage("awaitPopupSeenAndClosed");
+      await popupSeenAndClosed.promise;
+
+      // Open a new window, which puts the current window in the background.
+      let foregroundWindowOrTab;
+      if (browser.windows) {
+        foregroundWindowOrTab = await browser.windows.create({});
+      } else {
+        // Android does not support browser.windows (bug 1817772).
+        // Open a tab instead, which results in a new windowId because each tab
+        // is currently tied to one window.
+        foregroundWindowOrTab = await browser.tabs.create({});
+      }
+
+      await browser.test.assertRejects(
+        browser.browserAction.openPopup({ windowId: tab.windowId }),
+        "Cannot show popup for an inactive window, only for the currently focused window.",
+        "openPopup() should be rejected for a background window"
+      );
+
+      if (browser.windows) {
+        await browser.windows.remove(foregroundWindowOrTab.id);
+      } else {
+        await browser.tabs.remove(foregroundWindowOrTab.id);
+      }
+      browser.test.sendMessage("done");
+    },
     files: {
-      "tab.html": "<!DOCTYPE html>",
-      "popup.html": `<!DOCTYPE html><meta charset="utf-8"><script src="popup.js"><\/script>`,
-      "popup.js"() {
-        // Small timeout to ensure the popup doesn't immediately close, which can
-        // happen when focus moves between windows
-        // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-        setTimeout(async () => {
-          let windows = await browser.windows.getAll();
-          let highestWindowIdIsFocused = Math.max(...windows.map((w) => w.id))
-            === windows.find((w) => w.focused).id;
-
-          browser.test.assertEq(true, highestWindowIdIsFocused, "new window is focused");
-
-          await browser.test.sendMessage("popup-open");
-
-          // Bug 1800100: Window leaks if not explicitly closed
-          window.close();
-        }, 1000);
-      },
+      "popup.html": `<!DOCTYPE html><meta charset="utf-8">Popup here`,
     },
   });
 
   await extension.startup();
-  await extension.awaitMessage("popup-open");
-  await extension.sendMessage("close-window");
-  await extension.awaitMessage("window-closed");
+  let popupSeenAndClosedPromise = AppTestDelegate.awaitExtensionPanel(window, extension);
+  extension.sendMessage("readyToOpenPopup");
+  await extension.awaitMessage("awaitPopupSeenAndClosed");
+  await popupSeenAndClosedPromise;
+  info("popup opened, closing now");
+  await AppTestDelegate.closeBrowserAction(window, extension);
+  extension.sendMessage("popupSeenAndClosed");
+  await extension.awaitMessage("done");
   await extension.unload();
-}
-
-add_task(async function test_browserAction_openPopup_window_inactive() {
-  if (AppConstants.platform == "linux") {
-    // TODO bug 1798334: Currently unreliable on linux
-    todo(false, "Unreliable on linux");
-    return;
-  }
-  await testWithWindowState("inactive");
 });
 
 add_task(async function test_browserAction_openPopup_window_minimized() {
-  if (AppConstants.platform == "linux") {
-    // TODO bug 1798334: Currently unreliable on linux
-    todo(false, "Unreliable on linux");
+  if (AppConstants.platform == "android") {
+    // Android does not support the windows concept, let alone minimized ones.
+    info("Skipped because minimized windows do not exist on Android");
     return;
   }
-  await testWithWindowState("minimized");
+  let extension = ExtensionTestUtils.loadExtension({
+    ...extensionData,
+
+    background: async function() {
+      const win = await browser.windows.create({});
+      await browser.windows.update(win.id, { state: "minimized" });
+      await browser.test.assertRejects(
+        browser.browserAction.openPopup({ windowId: win.id }),
+        "Cannot show popup for an inactive window, only for the currently focused window.",
+        "openPopup() should be rejected for a minimized window"
+      );
+      await browser.windows.remove(win.id);
+      browser.test.sendMessage("done");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("done");
+  await extension.unload();
 });
 
 add_task(async function test_browserAction_openPopup_invalid_window() {

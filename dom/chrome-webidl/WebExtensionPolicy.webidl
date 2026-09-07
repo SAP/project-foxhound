@@ -44,6 +44,12 @@ interface WebExtensionPolicy {
   readonly attribute DOMString name;
 
   /**
+   * The extension's version string.
+   */
+  [Constant]
+  readonly attribute DOMString version;
+
+  /**
    * The add-on's internal type as determined by parsing the manifest.json file.
    */
   [Constant]
@@ -102,6 +108,27 @@ interface WebExtensionPolicy {
   attribute MatchPatternSet allowedOrigins;
 
   /**
+   * Whether access to the file scheme is allowed, independently of whether
+   * the extension's host permissions permit it.
+   * If false, file access is never allowed. If true, file access may be
+   * allowed if allowedOrigins contains `<all_urls>` or a `file:`-permission.
+   * The value may change at runtime through changes to permissions.
+   */
+  [Pure]
+  readonly attribute boolean fileSchemeAllowed;
+
+  /**
+   * An ordered list of guards matching URLs this extension can't access.
+   */
+  [Cached, Frozen, Pure]
+  attribute sequence<ExtensionGuardSet> guardSets;
+
+  /**
+   * Returns the source of the first matching guard or null if none.
+   */
+  ExtensionGuardSource? checkGuarded(URI uri);
+
+  /**
    * The set of content scripts active for this extension.
    */
   [Cached, Frozen, Pure]
@@ -124,6 +151,12 @@ interface WebExtensionPolicy {
    */
   [Cached, Pure]
   attribute boolean ignoreQuarantine;
+
+  /**
+   * True if this extension has recommended state.
+   */
+  [Cached, Pure]
+  readonly attribute boolean hasRecommendedState;
 
   /**
    * True if both e10s and webextensions.remote are enabled.  This must be
@@ -318,11 +351,15 @@ dictionary WebExtensionInit {
 
   DOMString name = "";
 
+  DOMString version = "";
+
   DOMString type = "";
 
   boolean isPrivileged = false;
 
   boolean ignoreQuarantine = false;
+
+  boolean hasRecommendedState = false;
 
   boolean temporarilyInstalled = false;
 

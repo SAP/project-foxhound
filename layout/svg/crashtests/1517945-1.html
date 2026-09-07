@@ -1,0 +1,26 @@
+<html class="reftest-wait">
+<script>
+	function crash()
+	{
+		var svg_path = document.getElementById("path_in_svg").id;
+		svg_var.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", "#" + svg_path  ); 
+		document.documentElement.removeAttribute("class");
+	}
+</script>
+
+
+<marquee>
+
+	<svg viewbox="1 1 1 1">
+		<tref>	
+			<text xml:space="preserve">
+			<textPath id="svg_var">
+			<set onbegin="crash()"/>			
+		</tref>
+		
+		<path id="path_in_svg"></path>	
+	</svg>
+	
+	<span>Reload Tab</span>
+
+</marquee>

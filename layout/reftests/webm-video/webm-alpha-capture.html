@@ -11,7 +11,7 @@ async function runTest() {
   v.preload = "auto";
   v.src = "webm-alpha.webm";
   await new Promise(r => v.onloadeddata = r);
-  vout.srcObject = v.mozCaptureStream();
+  vout.srcObject = v.captureStream?.() || v.mozCaptureStream();
   v.play();
   await new Promise(r => vout.onloadeddata = r);
   document.documentElement.removeAttribute("class");

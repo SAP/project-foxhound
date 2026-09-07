@@ -1,0 +1,15 @@
+{
+  "label": "smartgpseco.com",
+  "bugs": {
+    "1898939": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.smartgpseco.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function test() {
-  /** Test for Bug 339445 **/
+  /** Test for Bug 339445 */
 
   let testURL =
     "http://mochi.test:8888/browser/" +
@@ -24,7 +24,7 @@ add_task(async function test() {
   let tab2 = gBrowser.duplicateTab(tab);
   await promiseTabRestored(tab2);
 
-  await ContentTask.spawn(tab2.linkedBrowser, null, function () {
+  await SpecialPowers.spawn(tab2.linkedBrowser, [], function () {
     let doc2 = content.document;
     is(
       doc2.getElementById("storageTestItem").textContent,

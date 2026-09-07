@@ -1,0 +1,15 @@
+{
+  "label": "playblackdesert.com",
+  "bugs": {
+    "1913759": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://eu-trade.naeu.playblackdesert.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

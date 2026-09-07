@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -15,12 +14,12 @@ typedef sequence<ClipboardItem> ClipboardItems;
 [SecureContext,
  Exposed=Window]
 interface Clipboard : EventTarget {
-  [Pref="dom.events.asyncClipboard.clipboardItem", NewObject, NeedsSubjectPrincipal]
+  [NewObject, NeedsSubjectPrincipal]
   Promise<ClipboardItems> read();
-  [Func="Clipboard::ReadTextEnabled", NewObject, NeedsSubjectPrincipal]
+  [NewObject, NeedsSubjectPrincipal]
   Promise<DOMString> readText();
 
-  [Pref="dom.events.asyncClipboard.clipboardItem", NewObject, NeedsSubjectPrincipal]
+  [NewObject, NeedsSubjectPrincipal]
   Promise<undefined> write(ClipboardItems data);
 
   [NewObject, NeedsSubjectPrincipal]
@@ -31,7 +30,7 @@ typedef (DOMString or Blob) ClipboardItemDataType;
 typedef Promise<ClipboardItemDataType> ClipboardItemData;
 // callback ClipboardItemDelayedCallback = ClipboardItemData ();
 
-[SecureContext, Exposed=Window, Pref="dom.events.asyncClipboard.clipboardItem"]
+[SecureContext, Exposed=Window]
 interface ClipboardItem {
   [Throws]
   constructor(record<DOMString, ClipboardItemData> items,

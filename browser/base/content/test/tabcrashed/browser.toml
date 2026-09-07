@@ -1,5 +1,7 @@
 [DEFAULT]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 support-files = [
   "head.js",
   "file_contains_emptyiframe.html",
@@ -15,7 +17,9 @@ tags = "os_integration"
 https_first_disabled = true
 
 ["browser_noPermanentKey.js"]
-skip-if = ["true"] # Bug 1383315
+skip-if = [
+  "true", # Bug 1383315
+]
 
 ["browser_printpreview_crash.js"]
 https_first_disabled = true

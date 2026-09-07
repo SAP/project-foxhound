@@ -10,7 +10,9 @@
 
 #include "modules/desktop_capture/full_screen_application_handler.h"
 
-#include "rtc_base/logging.h"
+#include <cstdint>
+
+#include "modules/desktop_capture/desktop_capturer.h"
 
 namespace webrtc {
 
@@ -21,6 +23,11 @@ FullScreenApplicationHandler::FullScreenApplicationHandler(
 DesktopCapturer::SourceId FullScreenApplicationHandler::FindFullScreenWindow(
     const DesktopCapturer::SourceList&,
     int64_t) const {
+  return 0;
+}
+
+DesktopCapturer::SourceId FullScreenApplicationHandler::FindEditorWindow(
+    const DesktopCapturer::SourceList&) const {
   return 0;
 }
 

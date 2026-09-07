@@ -33,7 +33,7 @@ add_task(async function test_open_bookmark_from_library() {
   Assert.equal(bmLibrary.title, bm.title, "Found bookmark in the right pane");
 
   gLibrary.ContentTree.view.selectNode(bmLibrary);
-  synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
+  await synthesizeClickOnSelectedTreeCell(gLibrary.ContentTree.view, {
     clickCount: 2,
   });
 

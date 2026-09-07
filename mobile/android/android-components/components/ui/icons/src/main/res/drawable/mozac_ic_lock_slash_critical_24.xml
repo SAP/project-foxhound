@@ -1,0 +1,23 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:pathData="M12,4.068C10.749,4.068 9.673,4.787 9.13,5.826L7.846,4.542C8.744,3.202 10.27,2.318 12,2.318C14.757,2.318 17,4.561 17,7.318V11.318C18.379,11.318 19.5,12.439 19.5,13.818V16.195L17.75,14.445V13.818C17.75,13.405 17.414,13.068 17,13.068H16.372L14.622,11.318H15.25V7.318C15.25,5.526 13.792,4.068 12,4.068Z"
+      android:fillColor="@color/mozac_ui_lock_slash_bg_fill_critical"
+      tools:ignore="VectorRaster" />
+  <path
+      android:pathData="M17.75,19.818V16.566L19.5,18.316V19.818C19.5,21.197 18.379,22.318 17,22.318H7C5.622,22.318 4.5,21.197 4.5,19.818V13.818C4.5,12.439 5.622,11.318 7,11.318V7.318C7,6.863 7.081,6.431 7.195,6.012L8.75,7.567V11.318H12.501L14.251,13.068H7C6.586,13.068 6.25,13.405 6.25,13.818V19.818C6.25,20.231 6.586,20.568 7,20.568H17C17.414,20.568 17.75,20.231 17.75,19.818Z"
+      android:fillColor="@color/mozac_ui_lock_slash_bg_fill_critical"
+      tools:ignore="VectorRaster" />
+  <path
+      android:pathData="M3.988,2.818L22.25,21.08L21.012,22.318L2.75,4.056L3.988,2.818Z"
+      android:fillColor="@color/mozac_ui_lock_slash_fill_critical"
+      android:fillType="evenOdd"
+      tools:ignore="VectorRaster" />
+</vector>

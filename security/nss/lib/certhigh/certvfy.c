@@ -157,6 +157,17 @@ checkKeyParams(const SECAlgorithmID *sigAlgorithm, const SECKEYPublicKey *key)
             }
 
             return SECSuccess;
+        case SEC_OID_ML_DSA_44:
+        case SEC_OID_ML_DSA_65:
+        case SEC_OID_ML_DSA_87:
+            if (key->keyType != mldsaKey) {
+                PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
+                return SECFailure;
+            }
+            if (key->u.mldsa.paramSet != sigAlg) {
+                PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
+                return SECFailure;
+            }
         default:
             return SECSuccess;
     }
@@ -736,7 +747,7 @@ cert_VerifyCertChainOld(CERTCertDBHandle *handle, CERTCertificate *cert,
                 certsList = tmpCertsList;
             }
             for (i = 0; i < subjectNameListLen; i++) {
-                certsList[namesCount + i] = subjectCert;
+                certsList[namesCount + i] = CERT_DupCertificate(subjectCert);
             }
             namesCount += subjectNameListLen;
             namesList = cert_CombineNamesLists(namesList, subjectNameList);
@@ -993,6 +1004,11 @@ loser:
     rv = SECFailure;
 done:
     if (certsList != NULL) {
+        for (int i = 0; i < namesCount; i++) {
+            if (certsList[i]) {
+                CERT_DestroyCertificate(certsList[i]);
+            }
+        }
         PORT_Free(certsList);
     }
     if (issuerCert) {
@@ -2147,6 +2163,7 @@ CERT_GetCertChainFromCert(CERTCertificate *cert, PRTime time, SECCertUsage usage
 
     chain = CERT_NewCertList();
     if (NULL == chain) {
+        CERT_DestroyCertificate(cert);
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         return NULL;
     }
@@ -2154,6 +2171,7 @@ CERT_GetCertChainFromCert(CERTCertificate *cert, PRTime time, SECCertUsage usage
     while (cert != NULL && ++count <= CERT_MAX_CERT_CHAIN) {
         if (SECSuccess != CERT_AddCertToListTail(chain, cert)) {
             /* return partial chain */
+            CERT_DestroyCertificate(cert);
             PORT_SetError(SEC_ERROR_NO_MEMORY);
             return chain;
         }
@@ -2167,6 +2185,7 @@ CERT_GetCertChainFromCert(CERTCertificate *cert, PRTime time, SECCertUsage usage
     }
 
     /* return partial chain */
+    CERT_DestroyCertificate(cert);
     PORT_SetError(SEC_ERROR_UNKNOWN_ISSUER);
     return chain;
 }

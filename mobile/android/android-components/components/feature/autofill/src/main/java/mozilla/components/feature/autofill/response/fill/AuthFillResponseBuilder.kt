@@ -18,7 +18,6 @@ import android.service.autofill.Presentations
 import android.view.autofill.AutofillId
 import android.widget.RemoteViews
 import android.widget.inline.InlinePresentationSpec
-import androidx.annotation.RequiresApi
 import mozilla.components.feature.autofill.AutofillConfiguration
 import mozilla.components.feature.autofill.R
 import mozilla.components.feature.autofill.response.dataset.createInlinePresentation
@@ -32,7 +31,6 @@ internal data class AuthFillResponseBuilder(
 ) : FillResponseBuilder {
 
     @SuppressLint("NewApi")
-    @RequiresApi(Build.VERSION_CODES.O)
     override fun build(
         context: Context,
         configuration: AutofillConfiguration,
@@ -99,7 +97,6 @@ internal data class AuthFillResponseBuilder(
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 internal fun FillResponse.Builder.setAuthentication(
     ids: Array<AutofillId>,
     authentication: IntentSender,

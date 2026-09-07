@@ -113,7 +113,7 @@ export class Store {
    *                            to feeds when they're created.
    * @param {Action} uninitAction An optional action for when feeds uninit.
    */
-  async init(feedFactories, initAction, uninitAction) {
+  init(feedFactories, initAction, uninitAction) {
     this._feedFactories = feedFactories;
     this._initAction = initAction;
     this._uninitAction = uninitAction;
@@ -143,8 +143,6 @@ export class Store {
   /**
    * uninit -  Uninitalizes each feed, clears them, and destroys the message
    *           manager channel.
-   *
-   * @return {type}  description
    */
   uninit() {
     if (this._uninitAction) {

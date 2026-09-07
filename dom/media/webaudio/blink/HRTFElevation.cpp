@@ -29,10 +29,10 @@
 #include "HRTFElevation.h"
 
 #include <speex/speex_resampler.h>
-#include "mozilla/PodOperations.h"
-#include "AudioSampleFormat.h"
 
+#include "AudioSampleFormat.h"
 #include "IRC_Composite_C_R0195-incl.cpp"
+#include "mozilla/PodOperations.h"
 
 using namespace mozilla;
 
@@ -106,7 +106,7 @@ nsReturnRef<HRTFKernel> HRTFElevation::calculateKernelForAzimuthElevation(
   int azimuthIndex = azimuth / azimuthSpacing;
   MOZ_ASSERT(azimuthIndex * azimuthSpacing == azimuth);
 
-  const int16_t(&impulse_response_data)[ResponseFrameSize] =
+  const int16_t (&impulse_response_data)[ResponseFrameSize] =
       irc_composite_c_r0195[elevationIndex].azimuths[azimuthIndex];
 
   float response[ResponseFrameSize];

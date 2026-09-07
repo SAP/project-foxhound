@@ -1,0 +1,88 @@
+Limit dependencies in foundation_util.mm
+
+This fixes macOS builds when using --disable-optimize.
+
+---
+ base/mac/foundation_util.mm | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/base/mac/foundation_util.mm b/base/mac/foundation_util.mm
+index 95d587724e69..f44c601a25f9 100644
+--- a/base/mac/foundation_util.mm
++++ b/base/mac/foundation_util.mm
+@@ -38,6 +38,7 @@
+ 
+ namespace base::mac {
+ 
++#if !defined(MOZ_ZUCCHINI)
+ namespace {
+ 
+ bool g_cached_am_i_bundled_called = false;
+@@ -119,6 +120,7 @@ OSType CreatorCodeForApplication() {
+ 
+   return CreatorCodeForCFBundleRef(bundle);
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool GetSearchPathDirectory(NSSearchPathDirectory directory,
+                             NSSearchPathDomainMask domain_mask,
+@@ -141,6 +143,7 @@ bool GetUserDirectory(NSSearchPathDirectory directory, FilePath* result) {
+   return GetSearchPathDirectory(directory, NSUserDomainMask, result);
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ FilePath GetUserLibraryPath() {
+   FilePath user_library_path;
+   if (!GetUserDirectory(NSLibraryDirectory, &user_library_path)) {
+@@ -281,6 +284,7 @@ FilePath GetInnermostAppBundlePath(const FilePath& exec_name) {
+ #endif
+ 
+ #undef TYPE_NAME_FOR_CF_TYPE_DEFN
++#endif // !defined(MOZ_ZUCCHINI)
+ 
+ static const char* base_bundle_id;
+ 
+@@ -303,6 +307,7 @@ void SetBaseBundleID(const char* new_base_bundle_id) {
+   }
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ #define CF_CAST_DEFN(TypeCF) \
+ template<> TypeCF##Ref \
+ CFCast<TypeCF##Ref>(const CFTypeRef& cf_val) { \
+@@ -371,6 +376,7 @@ void SetBaseBundleID(const char* new_base_bundle_id) {
+     return nil;
+   return @(path.value().c_str());  // @() does UTF8 conversion.
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ FilePath NSStringToFilePath(NSString* str) {
+   if (!str.length) {
+@@ -379,6 +385,7 @@ FilePath NSStringToFilePath(NSString* str) {
+   return FilePath(str.fileSystemRepresentation);
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ FilePath NSURLToFilePath(NSURL* url) {
+   if (!url.fileURL) {
+     return FilePath();
+@@ -417,9 +424,11 @@ bool CFRangeToNSRange(CFRange range, NSRange* range_out) {
+   }
+   return false;
+ }
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ }  // namespace base::mac
+ 
++#if !defined(MOZ_ZUCCHINI)
+ std::ostream& operator<<(std::ostream& o, const CFStringRef string) {
+   return o << base::SysCFStringRefToUTF8(string);
+ }
+@@ -470,3 +479,4 @@ bool CFRangeToNSRange(CFRange range, NSRange* range_out) {
+   return o << NSStringFromSize(size);
+ }
+ #endif
++#endif  // !defined(MOZ_ZUCCHINI)
+-- 
+2.39.5 (Apple Git-154)
+

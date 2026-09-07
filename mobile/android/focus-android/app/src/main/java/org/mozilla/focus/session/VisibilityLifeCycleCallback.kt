@@ -6,21 +6,19 @@ package org.mozilla.focus.session
 
 import android.app.Activity
 import android.app.ActivityManager
-import android.app.Application.ActivityLifecycleCallbacks
 import android.content.ComponentCallbacks2
 import android.content.Context
-import android.content.res.Configuration
 import android.os.Bundle
 import org.mozilla.focus.FocusApplication
 import org.mozilla.focus.appreview.AppReviewUtils
+import org.mozilla.focus.telemetry.startuptelemetry.DefaultActivityLifecycleCallbacks
 
 /**
  * This ActivityLifecycleCallbacks implementations tracks if there is at least one activity in the
  * STARTED state (meaning some part of our application is visible).
  * Based on this information the current task can be removed if the app is not visible.
  */
-@Suppress("TooManyFunctions", "EmptyFunctionBlock")
-class VisibilityLifeCycleCallback(private val context: Context) : ActivityLifecycleCallbacks, ComponentCallbacks2 {
+class VisibilityLifeCycleCallback(private val context: Context) : DefaultActivityLifecycleCallbacks {
     /**
      * Activities are not stopped/started in an ordered way. So we are using
      */
@@ -43,26 +41,17 @@ class VisibilityLifeCycleCallback(private val context: Context) : ActivityLifecy
         activitiesInStartedState--
     }
 
-    override fun onActivityResumed(activity: Activity) {}
-    override fun onActivityPaused(activity: Activity) {}
     override fun onActivityCreated(activity: Activity, bundle: Bundle?) {
         if (appInForeground) return
         appInForeground = true
         AppReviewUtils.addAppOpenings(context)
     }
 
-    override fun onActivitySaveInstanceState(activity: Activity, bundle: Bundle) {}
-    override fun onActivityDestroyed(activity: Activity) {}
     override fun onTrimMemory(level: Int) {
         if (level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             appInForeground = false
         }
     }
-
-    override fun onConfigurationChanged(newConfig: Configuration) {}
-
-    @Suppress("OVERRIDE_DEPRECATION")
-    override fun onLowMemory() {}
 
     companion object {
         /**
@@ -75,6 +64,13 @@ class VisibilityLifeCycleCallback(private val context: Context) : ActivityLifecy
                 ?.finishAndRemoveTaskIfInBackground()
         }
 
+        /**
+         * Checks if the application is currently in the background.
+         * The application is considered in the background if there are no activities in the started state.
+         *
+         * @param context The context used to access the application and its VisibilityLifeCycleCallback.
+         * @return True if the application is in the background, false otherwise.
+         */
         fun isInBackground(context: Context): Boolean {
             return (context.applicationContext as FocusApplication)
                 .visibilityLifeCycleCallback?.activitiesInStartedState == 0

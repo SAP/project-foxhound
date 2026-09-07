@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -35,8 +33,8 @@ option(
 
 @dependable
 def min_android_version():
-    # Sync with android_sdk_version
-    return "21"
+    # Sync with android_sdk_version.min_sdk_version
+    return "26"
 
 
 option(
@@ -130,7 +128,7 @@ set_config("ANDROID_NDK_MINOR_VERSION", ndk_version.minor)
 
 
 @imports(_from="os.path", _import="isdir")
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def host_dir(host, base_dir):
     dir_format = "%s/%s-%s"
     host_kernel = "windows" if host.kernel == "WINNT" else host.kernel.lower()
@@ -187,7 +185,7 @@ def android_sysroot(target, android_toolchain):
 @imports(_from="os", _import="listdir")
 @imports(_from="os.path", _import="isdir")
 @imports(_from="os.path", _import="isfile")
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def android_lldb_server(target, host, ndk, lldb):
     if not ndk:
         return
@@ -264,7 +262,7 @@ set_config("STLPORT_LIBS", stlport_libs)
 
 
 @depends(android_sysroot, android_toolchain)
-def extra_toolchain_flags(android_sysroot, toolchain_dir):
+def android_toolchain_flags(android_sysroot, toolchain_dir):
     if not android_sysroot:
         return []
     flags = [
@@ -274,8 +272,8 @@ def extra_toolchain_flags(android_sysroot, toolchain_dir):
     return flags
 
 
-@depends(extra_toolchain_flags)
-def android_flags(extra_toolchain_flags):
+@depends(android_toolchain_flags)
+def android_flags(android_toolchain_flags):
     wead_symbols_defines = [
         "-D__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__",
     ]
@@ -283,18 +281,18 @@ def android_flags(extra_toolchain_flags):
         "-Werror=unguarded-availability",
     ]
     return namespace(
-        cflags=extra_toolchain_flags
+        cflags=android_toolchain_flags
         + [
             "-fno-short-enums",
         ]
         + weak_symbols_flags,
-        cxxflags=extra_toolchain_flags
+        cxxflags=android_toolchain_flags
         + [
             "-fno-short-enums",
         ]
         + weak_symbols_flags,
-        ldflags=extra_toolchain_flags,
-        asflags=extra_toolchain_flags
+        ldflags=android_toolchain_flags,
+        asflags=android_toolchain_flags
         + [
             "-DANDROID",
         ]
@@ -330,7 +328,7 @@ def android_system_headers(host, ndk):
 set_config("ANDROID_SYSTEM_HEADERS", android_system_headers)
 
 
-@depends(extra_toolchain_flags)
+@depends(android_toolchain_flags)
 def bindgen_cflags_android(toolchain_flags):
     return toolchain_flags
 

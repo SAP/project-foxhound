@@ -1,0 +1,53 @@
+{
+  "color": {
+    "@base": {
+      "value": {
+        "forcedColors": "LinkText",
+        "brand": {
+          "default": "{color.accent.primary.@base}"
+        },
+        "nativeTheme": "LinkText",
+        "platform": {
+          "light": "{color.blue.60}",
+          "dark": "{color.cyan.30}"
+        }
+      }
+    },
+    "hover": {
+      "value": {
+        "forcedColors": "LinkText",
+        "brand": {
+          "default": "{color.accent.primary.hover}"
+        },
+        "platform": {
+          "default": "color-mix(in srgb, black 10%, {link.color.@base})"
+        }
+      }
+    },
+    "active": {
+      "value": {
+        "forcedColors": "ActiveText",
+        "brand": {
+          "default": "{color.accent.primary.active}"
+        },
+        "platform": {
+          "default": "color-mix(in srgb, black 20%, {link.color.@base})"
+        }
+      }
+    },
+    "visited": {
+      "value": {
+        "forcedColors": "VisitedText",
+        "default": "{link.color.@base}"
+      }
+    }
+  },
+  "focus": {
+    "outline": {
+      "offset": {
+        "comment": "Not using --force-outline-offset for links because that's intended for\nelements with a background, and we only want a slight offset here while\nnot overlapping adjacent text",
+        "value": "1px"
+      }
+    }
+  }
+}

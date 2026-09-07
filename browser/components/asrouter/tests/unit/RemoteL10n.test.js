@@ -81,9 +81,11 @@ describe("RemoteL10n", () => {
         "branding/brand.ftl",
         "browser/defaultBrowserNotification.ftl",
         "browser/newtab/asrouter.ftl",
+        "browser/policy-messages.ftl",
+        "browser/profiles.ftl",
         "browser/termsofuse.ftl",
+        "preview/aiWindow.ftl",
         "toolkit/branding/brandings.ftl",
-        "preview/termsOfUse.ftl",
       ]);
       assert.isFalse(args[1]);
       assert.calledOnce(l10nRegInstance.hasSource);
@@ -104,9 +106,11 @@ describe("RemoteL10n", () => {
         "branding/brand.ftl",
         "browser/defaultBrowserNotification.ftl",
         "browser/newtab/asrouter.ftl",
+        "browser/policy-messages.ftl",
+        "browser/profiles.ftl",
         "browser/termsofuse.ftl",
+        "preview/aiWindow.ftl",
         "toolkit/branding/brandings.ftl",
-        "preview/termsOfUse.ftl",
       ]);
       assert.isFalse(args[1]);
       assert.calledOnce(l10nRegInstance.hasSource);
@@ -132,6 +136,19 @@ describe("RemoteL10n", () => {
       instance.createElement(doc, "span", { content: { string_id: "foo" } });
 
       assert.calledOnce(doc.createElement);
+    });
+    it("should call createElement and setString if string_id is defined and args are included", () => {
+      instance.createElement(doc, "span", {
+        content: { string_id: "foo" },
+        attributes: { favoriteColor: "blue" },
+      });
+
+      assert.calledOnce(doc.createElement);
+      assert.calledOnce(setStringStub);
+      assert.calledWithExactly(setStringStub, elem, {
+        content: { string_id: "foo" },
+        attributes: { favoriteColor: "blue" },
+      });
     });
     it("should call createElementNS if string_id is not present", () => {
       instance.createElement(doc, "span", { content: "foo" });

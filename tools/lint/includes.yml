@@ -1,0 +1,18 @@
+---
+includes:
+  description: >
+    "Ensure we only include MFBT headers we actually use"
+  extensions: ['c', 'cc', 'cpp', 'cxx', 'h', 'hpp', 'm', 'mm']
+  include: ['.']
+  exclude:
+    - js/src/tests/style/BadIncludesOrder-inl.h
+    - config/msvc-stl-wrapper.template.h
+    - widget/cocoa/nsMenuItemIconX.mm
+    # This is a test file, should be untouched
+    - js/src/devtools/rootAnalysis/t/exceptions/source.cpp
+    # This file includes things that it doesn't use itself, but that
+    # ServoStyleConsts.h needs.
+    - layout/style/ServoStyleConstsForwards.h
+  type: external
+  payload: includes:lint
+  support-files: ['tools/lint/includes/**']

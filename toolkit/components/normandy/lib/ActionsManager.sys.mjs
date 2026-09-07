@@ -22,7 +22,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://normandy/actions/PreferenceRolloutAction.sys.mjs",
   ShowHeartbeatAction:
     "resource://normandy/actions/ShowHeartbeatAction.sys.mjs",
-  Uptake: "resource://normandy/lib/Uptake.sys.mjs",
 });
 
 const log = LogManager.getLogger("recipe-runner");
@@ -79,7 +78,6 @@ export class ActionsManager {
         `Could not execute recipe ${recipe.name}:`,
         `Action ${recipe.action} is either missing or invalid.`
       );
-      await lazy.Uptake.reportRecipe(recipe, lazy.Uptake.RECIPE_INVALID_ACTION);
     }
   }
 

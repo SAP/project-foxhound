@@ -50,7 +50,7 @@ add_task(async function test_update_autofill_name_field() {
   is(creditCards[0]["cc-name"], "User 1", "cc-name field is updated");
   is(
     creditCards[0]["cc-number"],
-    "************1111",
+    "••••••••••••1111",
     "Verify the card number field"
   );
   await removeAllRecords();
@@ -104,7 +104,7 @@ add_task(async function test_update_autofill_exp_date_field() {
   is(creditCards[0]["cc-exp-year"], 2019, "cc-exp-year field is updated");
   is(
     creditCards[0]["cc-number"],
-    "************1111",
+    "••••••••••••1111",
     "Verify the card number field"
   );
   await removeAllRecords();

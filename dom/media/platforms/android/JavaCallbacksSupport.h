@@ -5,8 +5,8 @@
 #ifndef JavaCallbacksSupport_h_
 #define JavaCallbacksSupport_h_
 
-#include "MediaResult.h"
 #include "MediaCodec.h"
+#include "MediaResult.h"
 #include "mozilla/java/CodecProxyNatives.h"
 #include "mozilla/java/SampleBufferWrappers.h"
 #include "mozilla/java/SampleWrappers.h"

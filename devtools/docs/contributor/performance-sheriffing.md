@@ -1,6 +1,7 @@
 # DevTools performance sheriffing
 
 On a weekly basis, we should review:
+
 - [DevTools performance alerts from PerfHerder](https://treeherder.mozilla.org/perfherder/alerts?status=0&framework=12&hideDwnToInv=1&page=1)
 - [DevTools performance dashboard](https://firefox-dev.tools/performance-dashboard/)
 
@@ -29,6 +30,7 @@ The list of DevTools performance tests is documented on the [DevTools Performanc
 The untriaged DevTools alerts are listed at [https://treeherder.mozilla.org/perfherder/alerts?status=0&framework=12&hideDwnToInv=1&page=1](https://treeherder.mozilla.org/perfherder/alerts?status=0&framework=12&hideDwnToInv=1&page=1). The goal of the weekly sheriffing task will be to triage all those alerts.
 
 Triaging an alert doesn't mean solving the performance issue but simply acknowledging the alert and either:
+
 - filing a bug
 - or marking as won't fix
 - or mark as improvement
@@ -52,6 +54,7 @@ We also usually avoid paying too much attention to the "close" tests, which meas
 ![DevTools alert regroup](devtools-alert-regroup.png)
 
 I suggest to then try to regroup alerts which are likely to be caused by the same change. You can identify those by several criteria:
+
 - the datetime of the alerts should be close (for instance same day, just a few hours apart)
 - the area of the alerts should be similar (for instance only debugger tests are impacted, only memory tests are impacted)
 - the different alerts are about different platforms

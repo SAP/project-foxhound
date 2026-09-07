@@ -57,7 +57,7 @@ fn exponential_range(min: u64, max: u64, bucket_count: usize) -> Vec<u64> {
 ///
 /// Buckets are pre-computed at instantiation with an exponential distribution from `min` to `max`
 /// and `bucket_count` buckets.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, MallocSizeOf)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, MallocSizeOf)]
 pub struct PrecomputedExponential {
     // Don't serialize the (potentially large) array of ranges, instead compute them on first
     // access.
@@ -68,11 +68,19 @@ pub struct PrecomputedExponential {
     pub(crate) bucket_count: usize,
 }
 
+impl PartialEq for PrecomputedExponential {
+    fn eq(&self, other: &Self) -> bool {
+        // `bucket_ranges` are computed on-demand based on `min`, `max` and `bucket_count`,
+        // so we don't need to compare it (and thus forcing it to be computed)
+        self.min == other.min && self.max == other.max && self.bucket_count == other.bucket_count
+    }
+}
+
 impl Bucketing for PrecomputedExponential {
     /// Get the bucket for the sample.
     ///
     /// This uses a binary search to locate the index `i` of the bucket such that:
-    /// bucket[i] <= sample < bucket[i+1]
+    /// `bucket[i] <= sample < bucket[i+1]`
     fn sample_to_bucket_minimum(&self, sample: u64) -> u64 {
         let limit = match self.ranges().binary_search(&sample) {
             // Found an exact match to fit it in

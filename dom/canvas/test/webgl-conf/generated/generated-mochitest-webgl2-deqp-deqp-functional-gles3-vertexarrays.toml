@@ -1,0 +1,76 @@
+# This is a GENERATED FILE. Do not edit it directly.
+# Regenerated it by using `python generate-wrappers-and-manifest.py`.
+# Mark failing (fail-if) and crashing (skip-if) tests in mochitest-errata.toml.
+
+[DEFAULT]
+subsuite = "webgl2-deqp"
+prefs = [
+  # Bug 1799213
+  "media.seamless-looping-video=false",
+  # Bug 2021606
+  "privacy.baselineFingerprintingProtection=false",
+]
+
+support-files = [
+  "../*.css",
+  "../*.html",
+  "../checkout/closure-library/**",
+  "../checkout/deqp/**",
+  "../checkout/js/**",
+  "../checkout/resources/**",
+]
+
+
+["test_2_deqp__functional__gles3__vertexarrays__multiple_attributes.count.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__multiple_attributes.output.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__multiple_attributes.storage.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__multiple_attributes.stride.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.first.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.normalize.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.offset.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.byte.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.float.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.half.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.int.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.int_2_10_10_10.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.short.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.unsigned_byte.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.unsigned_int.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.unsigned_int_2_10_10_10.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.output_type.unsigned_short.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.stride.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.dynamic_copy.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.dynamic_draw.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.dynamic_read.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.static_copy.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.static_draw.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.static_read.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.stream_copy.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.stream_draw.html"]
+
+["test_2_deqp__functional__gles3__vertexarrays__single_attribute.usage.stream_read.html"]

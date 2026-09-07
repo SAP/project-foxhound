@@ -81,9 +81,9 @@ async function testClearing(
     }
 
     // Open the identity popup.
-    let { gIdentityHandler } = gBrowser.ownerGlobal;
+    let { gIdentityHandler } = gBrowser.documentGlobal;
     let promisePanelOpen = BrowserTestUtils.waitForEvent(
-      gBrowser.ownerGlobal,
+      gBrowser.documentGlobal,
       "popupshown",
       true,
       event => event.target == gIdentityHandler._identityPopup

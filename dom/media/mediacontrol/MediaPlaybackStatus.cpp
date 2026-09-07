@@ -4,19 +4,20 @@
 
 #include "MediaPlaybackStatus.h"
 
+#include "AudioSessionRecord.h"
 #include "MediaControlUtils.h"
 
 namespace mozilla::dom {
 
 #undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("MediaPlaybackStatus=%p, " msg, this, ##__VA_ARGS__))
+#define LOG(msg, ...)                            \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, \
+              "MediaPlaybackStatus={}, " msg, fmt::ptr(this), ##__VA_ARGS__)
 
 void MediaPlaybackStatus::UpdateMediaPlaybackState(uint64_t aContextId,
                                                    MediaPlaybackState aState) {
-  LOG("Update playback state '%s' for context %" PRIu64,
-      EnumValueToString(aState), aContextId);
+  LOG("Update playback state '{}' for context {}", EnumValueToString(aState),
+      aContextId);
   MOZ_ASSERT(NS_IsMainThread());
 
   ContextMediaInfo& info = GetNotNullContextInfo(aContextId);
@@ -31,44 +32,61 @@ void MediaPlaybackStatus::UpdateMediaPlaybackState(uint64_t aContextId,
     info.DecreasePlayingMediaNum();
   }
 
-  // The context still has controlled media, we should keep its alive.
-  if (info.IsAnyMediaBeingControlled()) {
-    return;
-  }
-  MOZ_ASSERT(!info.IsPlaying());
-  MOZ_ASSERT(!info.IsAudible());
+  LOG("UpdateMediaPlaybackState for context {} (controlled {} audible {})",
+      aContextId, info.ControlledMediaNum(), info.AudibleSourceCount());
   // DO NOT access `info` after this line.
-  DestroyContextInfo(aContextId);
+  MaybeDestroyContextInfo(aContextId, info);
 }
 
 void MediaPlaybackStatus::DestroyContextInfo(uint64_t aContextId) {
   MOZ_ASSERT(NS_IsMainThread());
-  LOG("Remove context %" PRIu64, aContextId);
+  LOG("Remove context {}", aContextId);
   mContextInfoMap.Remove(aContextId);
-  // If the removed context is owning the audio focus, we would find another
-  // context to take the audio focus if it's possible.
-  if (IsContextOwningAudioFocus(aContextId)) {
-    ChooseNewContextToOwnAudioFocus();
+  // If the removed context was the active audible controllable context,
+  // re-derive it from the remaining contexts (or clear it if none qualify).
+  if (IsActiveAudibleControllableContext(aContextId)) {
+    ChooseNewActiveAudibleControllableContext();
   }
 }
 
-void MediaPlaybackStatus::UpdateMediaAudibleState(uint64_t aContextId,
-                                                  MediaAudibleState aState) {
-  LOG("Update audible state '%s' for context %" PRIu64,
-      EnumValueToString(aState), aContextId);
+void MediaPlaybackStatus::MaybeDestroyContextInfo(
+    uint64_t aContextId, const ContextMediaInfo& aInfo) {
+  // A context entry is kept while it still has any of: controlled media,
+  // playing media, or an audible source. Once all three are empty the
+  // entry has no remaining purpose and is destroyed.
+  if (aInfo.IsAnyMediaBeingControlled() || aInfo.IsPlaying() ||
+      aInfo.IsAudible()) {
+    return;
+  }
+  DestroyContextInfo(aContextId);
+}
+
+bool MediaPlaybackStatus::UpdateMediaAudibleState(
+    uint64_t aContextId, MediaAudibleState aState, ControlType aControlType,
+    AudioSessionType aSessionType) {
+  LOG("Update audible state '{}' for context {}", EnumValueToString(aState),
+      aContextId);
   MOZ_ASSERT(NS_IsMainThread());
   ContextMediaInfo& info = GetNotNullContextInfo(aContextId);
+  const Maybe<uint64_t> oldActiveContextId =
+      mActiveAudibleControllableContextId;
+
   if (aState == MediaAudibleState::eAudible) {
-    info.IncreaseAudibleMediaNum();
+    info.AddAudibleSource(aControlType, aSessionType);
   } else {
     MOZ_ASSERT(aState == MediaAudibleState::eInaudible);
-    info.DecreaseAudibleMediaNum();
+    info.RemoveAudibleSource(aControlType, aSessionType);
   }
-  if (ShouldRequestAudioFocusForInfo(info)) {
-    SetOwningAudioFocusContextId(Some(aContextId));
-  } else if (ShouldAbandonAudioFocusForInfo(info)) {
-    ChooseNewContextToOwnAudioFocus();
+
+  if (ShouldClaimActiveAudibleControllableContextForInfo(info, aControlType)) {
+    SetActiveAudibleControllableContextId(Some(aContextId));
+  } else if (ShouldHandOffActiveAudibleControllableContextForInfo(
+                 info, aControlType)) {
+    ChooseNewActiveAudibleControllableContext();
   }
+
+  MaybeDestroyContextInfo(aContextId, info);
+  return oldActiveContextId != mActiveAudibleControllableContextId;
 }
 
 void MediaPlaybackStatus::UpdateGuessedPositionState(
@@ -76,13 +94,13 @@ void MediaPlaybackStatus::UpdateGuessedPositionState(
     const Maybe<PositionState>& aState) {
   MOZ_ASSERT(NS_IsMainThread());
   if (aState) {
-    LOG("Update guessed position state for context %" PRIu64
-        " element %s (duration=%f, playbackRate=%f, position=%f)",
+    LOG("Update guessed position state for context {} element {} (duration={}, "
+        "playbackRate={}, position={})",
         aContextId, aElementId.ToString().get(), aState->mDuration,
         aState->mPlaybackRate, aState->mLastReportedPlaybackPosition);
   } else {
-    LOG("Clear guessed position state for context %" PRIu64 " element %s",
-        aContextId, aElementId.ToString().get());
+    LOG("Clear guessed position state for context {} element {}", aContextId,
+        aElementId.ToString().get());
   }
   ContextMediaInfo& info = GetNotNullContextInfo(aContextId);
   info.UpdateGuessedPositionState(aElementId, aState);
@@ -102,6 +120,18 @@ bool MediaPlaybackStatus::IsAudible() const {
                      [](const auto& info) { return info->IsAudible(); });
 }
 
+bool MediaPlaybackStatus::IsBcAudible(uint64_t aBcId) const {
+  MOZ_ASSERT(NS_IsMainThread());
+  auto entry = mContextInfoMap.Lookup(aBcId);
+  return entry && entry.Data()->IsAudible();
+}
+
+const nsTArray<AudibleSource>* MediaPlaybackStatus::GetAudibleSourcesForTesting(
+    uint64_t aBcId) const {
+  auto entry = mContextInfoMap.Lookup(aBcId);
+  return entry ? &entry.Data()->AudibleSourcesForTesting() : nullptr;
+}
+
 bool MediaPlaybackStatus::IsAnyMediaBeingControlled() const {
   MOZ_ASSERT(NS_IsMainThread());
   return std::any_of(
@@ -113,7 +143,7 @@ Maybe<PositionState> MediaPlaybackStatus::GuessedMediaPositionState(
     Maybe<uint64_t> aPreferredContextId) const {
   auto contextId = aPreferredContextId;
   if (!contextId) {
-    contextId = mOwningAudioFocusContextId;
+    contextId = mActiveAudibleControllableContextId;
   }
 
   // either the preferred or focused context
@@ -122,7 +152,7 @@ Maybe<PositionState> MediaPlaybackStatus::GuessedMediaPositionState(
     if (!entry) {
       return Nothing();
     }
-    LOG("Using guessed position state from preferred/focused BC %" PRId64,
+    LOG("Using guessed position state from preferred/focused BC {}",
         *contextId);
     return entry.Data()->GuessedPositionState();
   }
@@ -131,7 +161,7 @@ Maybe<PositionState> MediaPlaybackStatus::GuessedMediaPositionState(
   for (const auto& context : mContextInfoMap.Values()) {
     auto state = context->GuessedPositionState();
     if (state) {
-      LOG("Using guessed position state from BC %" PRId64, context->Id());
+      LOG("Using guessed position state from BC {}", context->Id());
       return state;
     }
   }
@@ -144,51 +174,75 @@ MediaPlaybackStatus::GetNotNullContextInfo(uint64_t aContextId) {
   return *mContextInfoMap.GetOrInsertNew(aContextId, aContextId);
 }
 
-Maybe<uint64_t> MediaPlaybackStatus::GetAudioFocusOwnerContextId() const {
-  return mOwningAudioFocusContextId;
+Maybe<uint64_t> MediaPlaybackStatus::GetActiveAudibleControllableContextId()
+    const {
+  return mActiveAudibleControllableContextId;
 }
 
-void MediaPlaybackStatus::ChooseNewContextToOwnAudioFocus() {
+void MediaPlaybackStatus::ChooseNewActiveAudibleControllableContext() {
+  // Walk every context, picking one with at least one CONTROLLABLE audible
+  // source. Uncontrollable-only BCs do not qualify. If no candidate is
+  // found, clear the active audible controllable context.
   for (const auto& info : mContextInfoMap.Values()) {
-    if (info->IsAudible()) {
-      SetOwningAudioFocusContextId(Some(info->Id()));
+    if (info->HasAudibleSourceOfControlType(ControlType::eControllable)) {
+      SetActiveAudibleControllableContextId(Some(info->Id()));
       return;
     }
   }
-  // No context is audible, so no one should the own audio focus.
-  SetOwningAudioFocusContextId(Nothing());
+  SetActiveAudibleControllableContextId(Nothing());
 }
 
-void MediaPlaybackStatus::SetOwningAudioFocusContextId(
+void MediaPlaybackStatus::SetActiveAudibleControllableContextId(
     Maybe<uint64_t>&& aContextId) {
-  if (mOwningAudioFocusContextId == aContextId) {
+  if (mActiveAudibleControllableContextId == aContextId) {
     return;
   }
-  mOwningAudioFocusContextId = aContextId;
+  mActiveAudibleControllableContextId = std::move(aContextId);
 }
 
-bool MediaPlaybackStatus::ShouldRequestAudioFocusForInfo(
-    const ContextMediaInfo& aInfo) const {
-  return aInfo.IsAudible() && !IsContextOwningAudioFocus(aInfo.Id());
+bool MediaPlaybackStatus::ShouldClaimActiveAudibleControllableContextForInfo(
+    const ContextMediaInfo& aInfo, ControlType aControlType) const {
+  // Only a controllable update can become the active audible controllable
+  // context; uncontrollable sources contribute to per-tab audibility but
+  // never qualify.
+  return aControlType == ControlType::eControllable &&
+         aInfo.HasAudibleSourceOfControlType(ControlType::eControllable) &&
+         !IsActiveAudibleControllableContext(aInfo.Id());
 }
 
-bool MediaPlaybackStatus::ShouldAbandonAudioFocusForInfo(
-    const ContextMediaInfo& aInfo) const {
-  // The owner becomes inaudible and there is other context still playing, so we
-  // should switch the audio focus to the audible context.
-  return !aInfo.IsAudible() && IsContextOwningAudioFocus(aInfo.Id()) &&
-         IsAudible();
+bool MediaPlaybackStatus::ShouldHandOffActiveAudibleControllableContextForInfo(
+    const ContextMediaInfo& aInfo, ControlType aControlType) const {
+  // The current active audible controllable context has lost its last
+  // controllable audible source, but another context still has one — hand
+  // off to that context. If there is no other candidate the current value
+  // stays sticky so a subsequent default-action handler still has a target.
+  // Only triggered by controllable transitions; uncontrollable updates
+  // never hand off.
+  return aControlType == ControlType::eControllable &&
+         !aInfo.HasAudibleSourceOfControlType(ControlType::eControllable) &&
+         IsActiveAudibleControllableContext(aInfo.Id()) &&
+         HasAnyControllableAudibleSource();
 }
 
-bool MediaPlaybackStatus::IsContextOwningAudioFocus(uint64_t aContextId) const {
-  return mOwningAudioFocusContextId ? *mOwningAudioFocusContextId == aContextId
-                                    : false;
+bool MediaPlaybackStatus::HasAnyControllableAudibleSource() const {
+  return std::any_of(
+      mContextInfoMap.Values().cbegin(), mContextInfoMap.Values().cend(),
+      [](const auto& info) {
+        return info->HasAudibleSourceOfControlType(ControlType::eControllable);
+      });
+}
+
+bool MediaPlaybackStatus::IsActiveAudibleControllableContext(
+    uint64_t aContextId) const {
+  return mActiveAudibleControllableContextId
+             ? *mActiveAudibleControllableContextId == aContextId
+             : false;
 }
 
 Maybe<PositionState>
 MediaPlaybackStatus::ContextMediaInfo::GuessedPositionState() const {
   if (mGuessedPositionStateMap.Count() != 1) {
-    LOG("Count is %d", mGuessedPositionStateMap.Count());
+    LOG("Count is {}", mGuessedPositionStateMap.Count());
     return Nothing();
   }
   return Some(mGuessedPositionStateMap.begin()->GetData());
@@ -201,6 +255,61 @@ void MediaPlaybackStatus::ContextMediaInfo::UpdateGuessedPositionState(
   } else {
     mGuessedPositionStateMap.Remove(aElementId);
   }
+}
+
+void MediaPlaybackStatus::ContextMediaInfo::AddAudibleSource(
+    ControlType aControlType, AudioSessionType aSessionType) {
+  mAudibleSources.AppendElement(AudibleSource{aControlType, aSessionType});
+}
+
+void MediaPlaybackStatus::ContextMediaInfo::RemoveAudibleSource(
+    ControlType aControlType, AudioSessionType aSessionType) {
+  for (size_t i = 0; i < mAudibleSources.Length(); ++i) {
+    const AudibleSource& src = mAudibleSources[i];
+    if (src.mControlType == aControlType && src.mSessionType == aSessionType) {
+      mAudibleSources.RemoveElementAt(i);
+      return;
+    }
+  }
+}
+
+bool MediaPlaybackStatus::ContextMediaInfo::HasAudibleSourceOfControlType(
+    ControlType aControlType) const {
+  for (const AudibleSource& src : mAudibleSources) {
+    if (src.mControlType == aControlType) {
+      return true;
+    }
+  }
+  return false;
+}
+
+AudioSessionType
+MediaPlaybackStatus::ContextMediaInfo::PriorityTypeFromAudibleSources() const {
+  // Spec: https://w3c.github.io/audio-session/#compute-the-audio-session-type
+  // Pick the highest-priority type that has an audible source. The
+  // AudioSessionType enum is ordered so that the integer value is the
+  // priority rank.
+  Maybe<AudioSessionType> winner;
+  for (const AudibleSource& src : mAudibleSources) {
+    if (!winner || AudioSessionTypePriorityRank(src.mSessionType) >
+                       AudioSessionTypePriorityRank(*winner)) {
+      winner = Some(src.mSessionType);
+    }
+  }
+  const AudioSessionType result = winner.valueOr(DefaultAudioSessionType());
+  LOG("PriorityTypeFromAudibleSources for context {} -> {}", mContextId,
+      GetEnumString(result).get());
+  return result;
+}
+
+AudioSessionType MediaPlaybackStatus::EffectiveTypeForBc(uint64_t aBcId) const {
+  MOZ_ASSERT(NS_IsMainThread());
+  auto entry = mContextInfoMap.Lookup(aBcId);
+  if (!entry) {
+    LOG("[warning] EffectiveTypeForBc no entry for context {}", aBcId);
+    return DefaultAudioSessionType();
+  }
+  return entry.Data()->PriorityTypeFromAudibleSources();
 }
 
 }  // namespace mozilla::dom

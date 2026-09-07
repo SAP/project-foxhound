@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,6 +5,7 @@
 #include "nsPrinterBase.h"
 #include "nsPaperMargin.h"
 #include <utility>
+#include "nsServiceManagerUtils.h"
 #include "nsPaper.h"
 #include "nsIPrintSettings.h"
 #include "nsPrintSettingsService.h"
@@ -205,8 +205,9 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsPrinterBase)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsPrinterBase)
 
-nsPrinterBase::nsPrinterBase(const CommonPaperInfoArray* aPaperInfoArray)
-    : mCommonPaperInfo(aPaperInfoArray) {
+nsPrinterBase::nsPrinterBase(const CommonPaperInfoArray* aPaperInfoArray,
+                             bool aSortAfterLocal)
+    : mCommonPaperInfo(aPaperInfoArray), mSortAfterLocal(aSortAfterLocal) {
   MOZ_DIAGNOSTIC_ASSERT(aPaperInfoArray, "Localized paper info was null");
 }
 nsPrinterBase::~nsPrinterBase() = default;

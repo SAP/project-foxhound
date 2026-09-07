@@ -1,0 +1,138 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+div {
+  display: flex;
+  flex: 1;
+}
+
+input {
+  width: 100%;
+  opacity: 0;
+  margin-inline-start: var(--space-xxsmall);
+
+  &:invalid {
+    outline-color: var(--border-color-error);
+  }
+
+  &:dir(ltr) {
+    padding-inline-end: calc(var(--space-small) + var(--icon-size-small));
+  }
+  &:dir(rtl) {
+    padding-inline-start: calc(var(--space-small) + var(--icon-size-small));
+  }
+}
+
+input:focus,
+input:invalid {
+  opacity: 1;
+
+  + #reset {
+    opacity: 1;
+    pointer-events: initial;
+  }
+
+  + #reset + #emphasized-url {
+    opacity: 0;
+  }
+}
+
+#favicon {
+  width: var(--icon-size-small);
+  height: var(--icon-size-small);
+  pointer-events: none;
+  align-self: center;
+}
+
+:host > div:not(.has-favicon) #favicon {
+  display: none;
+}
+
+:host > div.has-favicon #emphasized-url {
+  margin-inline-start: calc(var(--icon-size-small) + var(--space-small));
+}
+
+/* position the hidden URL input under the emphasized URL so it receives clicks */
+:host > div {
+  position: relative;
+
+  #emphasized-url {
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    width: -moz-available;
+    height: 100%;
+  }
+}
+
+#emphasized-url {
+  align-items: center;
+}
+
+#emphasized-url-text {
+  direction: ltr;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: -moz-available;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  align-content: center;
+
+  > span {
+    color: var(--text-color-deemphasized);
+  }
+}
+
+#reset {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  width: var(--icon-size-medium);
+  cursor: pointer;
+  height: 100%;
+  background: url("chrome://global/skin/icons/undo.svg") no-repeat center;
+  background-size: 12px;
+  fill: currentColor;
+  -moz-context-properties: fill;
+  align-self: center;
+  &:dir(ltr) {
+    right: 0;
+    background-position: top 50% right 8px;
+  }
+  &:dir(rtl) {
+    left: var(--icon-size-medium);
+    background-position: top 50% left 4px;
+  }
+}
+
+#edit {
+  pointer-events: none;
+  width: var(--icon-size-small);
+  height: var(--icon-size-small);
+  margin-inline-start: var(--space-small);
+  background: url("chrome://global/skin/icons/edit.svg");
+  fill: currentColor;
+  -moz-context-properties: fill;
+  align-self: center;
+}
+
+.invalid-message {
+  display: none;
+  background-image: url("chrome://global/skin/icons/error.svg");
+  background-position: left center;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--icon-color-critical);
+  margin-block-start: var(--space-xsmall);
+  padding-inline-start: calc(var(--icon-size-small) + var(--space-small));
+
+  &:-moz-locale-dir(rtl) {
+    background-position-x: right;
+  }
+}
+
+div:has(> input:invalid) + .invalid-message {
+  display: block;
+}

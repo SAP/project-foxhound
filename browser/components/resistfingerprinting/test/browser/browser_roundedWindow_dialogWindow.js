@@ -4,24 +4,12 @@
  */
 
 async function test_dialog_window() {
-  let diagWin;
-
-  await new Promise(resolve => {
-    // Open a dialog window which is not rounded size.
-    diagWin = window.openDialog(
-      "about:blank",
-      null,
-      "innerWidth=250,innerHeight=350"
-    );
-
-    diagWin.addEventListener(
-      "load",
-      function () {
-        resolve();
-      },
-      { once: true }
-    );
-  });
+  // Open a dialog window which is not rounded size.
+  let diagWin = window.openDialog(
+    "about:blank",
+    null,
+    "innerWidth=250,innerHeight=350"
+  );
 
   is(diagWin.innerWidth, 250, "The dialog window doesn't have a rounded size.");
   is(

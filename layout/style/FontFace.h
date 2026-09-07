@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 
 #include "gfxUserFontSet.h"
 #include "mozilla/GlobalTeardownObserver.h"
-#include "mozilla/ServoStyleConsts.h"
 #include "mozilla/dom/FontFaceBinding.h"
 #include "nsWrapperCache.h"
 
@@ -30,10 +27,12 @@ class FontFaceSet;
 class FontFaceSetImpl;
 class Promise;
 class UTF8StringOrArrayBufferOrArrayBufferView;
-}  // namespace dom
-}  // namespace mozilla
 
-namespace mozilla::dom {
+enum class FontFaceLoadedRejectReason : uint8_t { Syntax, Network };
+struct FontFaceLoadedRejection {
+  const FontFaceLoadedRejectReason mReason;
+  nsCString mMessage;
+};
 
 class FontFace final : public GlobalTeardownObserver, public nsWrapperCache {
   friend class mozilla::PostTraversalTask;
@@ -44,7 +43,7 @@ class FontFace final : public GlobalTeardownObserver, public nsWrapperCache {
 
   void DisconnectFromOwner() final;
 
-  nsIGlobalObject* GetParentObject() const { return GetOwnerGlobal(); }
+  nsIGlobalObject* GetParentObject() const { return GetRelevantGlobal(); }
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
   static already_AddRefed<FontFace> CreateForRule(
@@ -92,7 +91,8 @@ class FontFace final : public GlobalTeardownObserver, public nsWrapperCache {
 
   void Destroy();
   void MaybeResolve();
-  void MaybeReject(nsresult aResult);
+
+  void MaybeReject(FontFaceLoadedRejectReason, nsCString&& aRejectMessage);
 
  private:
   explicit FontFace(nsIGlobalObject* aParent);
@@ -115,9 +115,10 @@ class FontFace final : public GlobalTeardownObserver, public nsWrapperCache {
   RefPtr<Promise> mLoaded;
 
   // Saves the rejection code for mLoaded if mLoaded hasn't been created yet.
-  nsresult mLoadedRejection;
+  UniquePtr<FontFaceLoadedRejection> mLoadedRejection;
 };
 
-}  // namespace mozilla::dom
+}  // namespace dom
+}  // namespace mozilla
 
 #endif  // !defined(mozilla_dom_FontFace_h)

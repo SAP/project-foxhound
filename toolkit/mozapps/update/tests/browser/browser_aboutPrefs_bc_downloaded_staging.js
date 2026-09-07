@@ -36,7 +36,7 @@ add_task(async function aboutPrefs_backgroundCheck_downloaded_staged() {
         tab.linkedBrowser,
         [],
         () => {
-          return content.gAppUpdater.selectedPanel.id;
+          return content.Preferences.getSetting("updateState").value;
         }
       );
 

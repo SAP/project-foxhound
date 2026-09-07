@@ -21,24 +21,32 @@ struct AbsoluteSeek {
   double mSeekTime;
   bool mFastSeek;
 };
-struct SeekDetails {
+struct MediaControlActionParams {
   Maybe<AbsoluteSeek> mAbsolute;
   Maybe<double> mRelativeSeekOffset;
+  Maybe<double> mVolume;
 
-  SeekDetails() = default;
-  SeekDetails(double aSeekTime, bool aFastSeek)
+  MediaControlActionParams() = default;
+  MediaControlActionParams(double aSeekTime, bool aFastSeek)
       : mAbsolute(Some(AbsoluteSeek{aSeekTime, aFastSeek})) {}
-  explicit SeekDetails(double aRelativeSeekOffset)
+  explicit MediaControlActionParams(double aRelativeSeekOffset)
       : mRelativeSeekOffset(Some(aRelativeSeekOffset)) {}
+
+  static MediaControlActionParams FromVolume(double aVolume) {
+    MediaControlActionParams params;
+    params.mVolume = Some(aVolume);
+    return params;
+  }
 };
 
 struct MediaControlAction {
   MediaControlAction() = default;
   explicit MediaControlAction(MediaControlKey aKey) : mKey(Some(aKey)) {}
-  MediaControlAction(MediaControlKey aKey, const SeekDetails& aDetails)
-      : mKey(Some(aKey)), mDetails(Some(aDetails)) {}
+  MediaControlAction(MediaControlKey aKey,
+                     const MediaControlActionParams& aParams)
+      : mKey(Some(aKey)), mParams(aParams) {}
   Maybe<MediaControlKey> mKey;
-  Maybe<SeekDetails> mDetails;
+  MediaControlActionParams mParams;
 };
 
 /**

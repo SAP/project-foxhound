@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,8 @@
 #ifndef mozilla_dom_SharedMessageBody_h
 #define mozilla_dom_SharedMessageBody_h
 
-#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
 
 namespace mozilla {
 
@@ -30,54 +28,6 @@ class SharedMessageBody final {
       StructuredCloneHolder::TransferringSupport aSupportsTransferring,
       const Maybe<nsID>& aAgentClusterId);
 
-  // Note that the populated MessageData borrows the underlying
-  // JSStructuredCloneData from the SharedMessageBody, so the caller is
-  // required to ensure that the MessageData instances are destroyed prior to
-  // the SharedMessageBody instances.
-  static void FromSharedToMessageChild(
-      mozilla::ipc::PBackgroundChild* aBackgroundManager,
-      SharedMessageBody* aData, MessageData& aMessage);
-  static void FromSharedToMessagesChild(
-      mozilla::ipc::PBackgroundChild* aBackgroundManager,
-      const nsTArray<RefPtr<SharedMessageBody>>& aData,
-      nsTArray<MessageData>& aArray);
-
-  // Const MessageData.
-  static already_AddRefed<SharedMessageBody> FromMessageToSharedChild(
-      MessageData& aMessage,
-      StructuredCloneHolder::TransferringSupport aSupportsTransferring =
-          StructuredCloneHolder::TransferringSupported);
-  // Non-const MessageData.
-  static already_AddRefed<SharedMessageBody> FromMessageToSharedChild(
-      const MessageData& aMessage,
-      StructuredCloneHolder::TransferringSupport aSupportsTransferring =
-          StructuredCloneHolder::TransferringSupported);
-  // Array of MessageData objects
-  static bool FromMessagesToSharedChild(
-      nsTArray<MessageData>& aArray,
-      FallibleTArray<RefPtr<SharedMessageBody>>& aData,
-      StructuredCloneHolder::TransferringSupport aSupportsTransferring =
-          StructuredCloneHolder::TransferringSupported);
-
-  // Note that the populated MessageData borrows the underlying
-  // JSStructuredCloneData from the SharedMessageBody, so the caller is
-  // required to ensure that the MessageData instances are destroyed prior to
-  // the SharedMessageBody instances.
-  static bool FromSharedToMessagesParent(
-      mozilla::ipc::PBackgroundParent* aManager,
-      const nsTArray<RefPtr<SharedMessageBody>>& aData,
-      nsTArray<MessageData>& aArray);
-
-  static already_AddRefed<SharedMessageBody> FromMessageToSharedParent(
-      MessageData& aMessage,
-      StructuredCloneHolder::TransferringSupport aSupportsTransferring =
-          StructuredCloneHolder::TransferringSupported);
-  static bool FromMessagesToSharedParent(
-      nsTArray<MessageData>& aArray,
-      FallibleTArray<RefPtr<SharedMessageBody>>& aData,
-      StructuredCloneHolder::TransferringSupport aSupportsTransferring =
-          StructuredCloneHolder::TransferringSupported);
-
   enum ReadMethod {
     StealRefMessageBody,
     KeepRefMessageBody,
@@ -94,10 +44,14 @@ class SharedMessageBody final {
   bool TakeTransferredPortsAsSequence(
       Sequence<OwningNonNull<mozilla::dom::MessagePort>>& aPorts);
 
- private:
-  ~SharedMessageBody() = default;
+  const Maybe<nsID>& GetRefDataId() const { return mRefDataId; }
 
-  UniquePtr<ipc::StructuredCloneData> mCloneData;
+ private:
+  friend struct IPC::ParamTraits<mozilla::dom::SharedMessageBody*>;
+
+  ~SharedMessageBody();
+
+  RefPtr<ipc::StructuredCloneData> mCloneData;
 
   RefPtr<RefMessageBody> mRefData;
   Maybe<nsID> mRefDataId;
@@ -108,5 +62,16 @@ class SharedMessageBody final {
 
 }  // namespace dom
 }  // namespace mozilla
+
+namespace IPC {
+
+template <>
+struct ParamTraits<mozilla::dom::SharedMessageBody*> {
+  using paramType = mozilla::dom::SharedMessageBody;
+  static void Write(MessageWriter* aWriter, paramType* aParam);
+  static bool Read(MessageReader* aReader, RefPtr<paramType>* aResult);
+};
+
+}  // namespace IPC
 
 #endif  // mozilla_dom_SharedMessageBody_h

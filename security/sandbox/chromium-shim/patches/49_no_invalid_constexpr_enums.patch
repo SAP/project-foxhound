@@ -1,0 +1,50 @@
+Remove the constexpr invalid enums, since they are not accepted by clang-20.
+
+diff --git a/sandbox/win/src/nt_internals.h b/sandbox/win/src/nt_internals.h
+index 485215fc82c5..ed63f04a8003 100644
+--- a/sandbox/win/src/nt_internals.h
++++ b/sandbox/win/src/nt_internals.h
+@@ -37,20 +37,17 @@ typedef NTSTATUS(WINAPI* NtOpenFileFunction)(OUT PHANDLE FileHandle,
+                                              OUT PIO_STATUS_BLOCK IoStatusBlock,
+                                              IN ULONG ShareAccess,
+                                              IN ULONG OpenOptions);
+ 
+ typedef NTSTATUS(WINAPI* NtCloseFunction)(IN HANDLE Handle);
+ 
+ #if !defined(__MINGW32__)
+ // Uses undocumented value not in FILE_INFORMATION_CLASS.
+-#pragma clang diagnostic push
+-#pragma clang diagnostic ignored "-Wenum-constexpr-conversion"
+-constexpr auto FileRenameInformation = static_cast<FILE_INFORMATION_CLASS>(10);
+-#pragma clang diagnostic push
++const auto FileRenameInformation = static_cast<FILE_INFORMATION_CLASS>(10);
+ 
+ typedef struct _FILE_RENAME_INFORMATION {
+   BOOLEAN ReplaceIfExists;
+   HANDLE RootDirectory;
+   ULONG FileNameLength;
+   WCHAR FileName[1];
+ } FILE_RENAME_INFORMATION, *PFILE_RENAME_INFORMATION;
+ #endif
+@@ -173,20 +170,17 @@ typedef NTSTATUS(WINAPI* NtOpenSectionFunction)(
+ 
+ typedef NTSTATUS(WINAPI* NtSetInformationThreadFunction)(
+     IN HANDLE ThreadHandle,
+     IN THREADINFOCLASS ThreadInformationClass,
+     IN PVOID ThreadInformation,
+     IN ULONG ThreadInformationLength);
+ 
+ // Partial definition only for values not in PROCESS_INFO_CLASS.
+-#pragma clang diagnostic push
+-#pragma clang diagnostic ignored "-Wenum-constexpr-conversion"
+-constexpr auto ProcessHandleTable = static_cast<PROCESSINFOCLASS>(58);
+-#pragma clang diagnostic pop
++const auto ProcessHandleTable = static_cast<PROCESSINFOCLASS>(58);
+ 
+ // Partial definition only adding fields not in winternl.h, from
+ // https://msdn.microsoft.com/en-us/library/windows/desktop/aa813706(v=vs.85).aspx
+ typedef struct _NT_PEB {
+   BYTE InheritedAddressSpace;
+   BYTE ReadImageFileExecOptions;
+   BYTE BeingDebugged;
+   BYTE SpareBool;

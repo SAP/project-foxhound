@@ -1,15 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* constants used in the style struct data provided by ComputedStyle */
 
-#ifndef nsStyleConsts_h___
-#define nsStyleConsts_h___
-
-#include <inttypes.h>
+#ifndef nsStyleConsts_h_
+#define nsStyleConsts_h_
 
 #include "X11UndefineNone.h"
 #include "gfxFontConstants.h"
@@ -55,7 +51,7 @@ enum class StyleBoxPack : uint8_t {
 };
 
 // box-sizing
-enum class StyleBoxSizing : uint8_t { Content, Border };
+enum class StyleBoxSizing : uint8_t { ContentBox, BorderBox };
 
 // box-shadow
 enum class StyleBoxShadowType : uint8_t {
@@ -78,22 +74,20 @@ enum class StyleGeometryBox : uint8_t {
   ContentBox,  // Used by everything, except transform-box.
   PaddingBox,  // Used by everything, except transform-box.
   BorderBox,
-  MarginBox,  // XXX Bug 1260094 comment 9.
-              // Although margin-box is required by mask-origin and mask-clip,
-              // we do not implement that due to lack of support in other
-              // browsers. clip-path reference-box only.
-  FillBox,    // Used by everything, except shape-box.
-  StrokeBox,  // mask-clip, mask-origin and clip-path reference-box only.
-  ViewBox,    // Used by everything, except shape-box.
-  NoClip,     // mask-clip only.
-  Text,       // background-clip only.
-  NoBox,      // Depending on which kind of element this style value applied on,
-              // the default value of a reference-box can be different.
-              // For an HTML element, the default value of reference-box is
-              // border-box; for an SVG element, the default value is fill-box.
-              // Since we can not determine the default value at parsing time,
-              // set it as NoBox so that we make a decision later.
-              // clip-path reference-box only.
+  MarginBox,   // clip-path reference-box only.
+  FillBox,     // Used by everything, except shape-box.
+  StrokeBox,   // mask-clip, mask-origin and clip-path reference-box only.
+  ViewBox,     // Used by everything, except shape-box.
+  NoClip,      // mask-clip only.
+  Text,        // background-clip only.
+  BorderArea,  // The area painted by the border. background-clip only.
+  NoBox,  // Depending on which kind of element this style value applied on,
+          // the default value of a reference-box can be different.
+          // For an HTML element, the default value of reference-box is
+          // border-box; for an SVG element, the default value is fill-box.
+          // Since we can not determine the default value at parsing time,
+          // set it as NoBox so that we make a decision later.
+          // clip-path reference-box only.
   MozAlmostPadding = 127  // A magic value that we use for our "pretend that
                           // background-clip is 'padding' when we have a solid
                           // border" optimization.  This isn't actually equal
@@ -242,6 +236,9 @@ enum class StyleMathVariant : uint8_t {
 // See nsStyleFont::mMathStyle
 enum class StyleMathStyle : uint8_t { Compact = 0, Normal = 1 };
 
+// See nsStyleFont::mMathShift
+enum class StyleMathShift : uint8_t { Compact = 0, Normal = 1 };
+
 enum class FrameBorderProperty : uint8_t { Yes, No, One, Zero };
 
 enum class ScrollingAttribute : uint8_t {
@@ -382,7 +379,7 @@ enum class StyleTextOrientation : uint8_t {
 
 // Whether flexbox visibility: collapse items use legacy -moz-box behavior or
 // not.
-enum class StyleMozBoxCollapse : uint8_t {
+enum class StyleBoxCollapse : uint8_t {
   Flex,
   Legacy,
 };
@@ -428,19 +425,6 @@ enum class StyleImeMode : uint8_t {
 enum class StyleWindowShadow : uint8_t {
   Auto,
   None,
-};
-
-// dominant-baseline
-enum class StyleDominantBaseline : uint8_t {
-  Auto,
-  Ideographic,
-  Alphabetic,
-  Hanging,
-  Mathematical,
-  Central,
-  Middle,
-  TextAfterEdge,
-  TextBeforeEdge,
 };
 
 // mask-type
@@ -533,4 +517,4 @@ enum class StyleScrollBehavior : uint8_t {
 
 }  // namespace mozilla
 
-#endif /* nsStyleConsts_h___ */
+#endif /* nsStyleConsts_h_ */

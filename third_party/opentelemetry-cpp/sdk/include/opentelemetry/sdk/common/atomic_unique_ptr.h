@@ -22,8 +22,13 @@ class AtomicUniquePtr
 {
 public:
   AtomicUniquePtr() noexcept {}
+  AtomicUniquePtr(const AtomicUniquePtr &)            = delete;
+  AtomicUniquePtr(AtomicUniquePtr &&)                 = delete;
+  AtomicUniquePtr &operator=(const AtomicUniquePtr &) = delete;
+  AtomicUniquePtr &operator=(AtomicUniquePtr &&)      = delete;
 
-  explicit AtomicUniquePtr(std::unique_ptr<T> &&other) noexcept : ptr_(other.release()) {}
+  explicit AtomicUniquePtr(std::unique_ptr<T> &&other) noexcept : ptr_(std::move(other).release())
+  {}
 
   ~AtomicUniquePtr() noexcept { Reset(); }
 
@@ -61,7 +66,7 @@ public:
 
   /**
    * Atomically swap the pointer with another.
-   * @param ptr the pointer to swap with
+   * @param other The pointer to swap with
    */
   void Swap(std::unique_ptr<T> &other) noexcept { other.reset(ptr_.exchange(other.release())); }
 

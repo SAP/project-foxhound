@@ -1,0 +1,21 @@
+{
+  "label": "meet.google.com legacy group calls (exploratory)",
+  "bugs": {
+    "1896424": {
+      "issue": "broken-meetings",
+      "matches": ["https://meet.google.com/calling/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": [],
+      "only_channels": ["nightly"],
+      "not_platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"],
+      "content_scripts": {
+        "all_frames": true,
+        "js": ["bug1913599-shim-createencodedstreams.js"]
+      }
+    }
+  ]
+}

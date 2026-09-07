@@ -49,7 +49,7 @@ add_task(async function () {
   EventUtils.sendString("greeting");
 
   // Wait till there are 2048 resources rendered in the results.
-  await waitForDOMIfNeeded(document, "#response-panel tr.treeRow", 2048);
+  await waitForDOM(document, "#response-panel tr.treeRow", 2048);
 
   is(firstRow.classList.contains("opened"), true, "the node remains open");
 

@@ -1,17 +1,15 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebBrowserPersistRemoteDocument.h"
+
 #include "WebBrowserPersistDocumentParent.h"
 #include "WebBrowserPersistResourcesParent.h"
 #include "WebBrowserPersistSerializeParent.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
-
 #include "nsDebug.h"
 #include "nsIPrincipal.h"
 #include "nsISHEntry.h"
@@ -37,7 +35,7 @@ WebBrowserPersistRemoteDocument ::WebBrowserPersistRemoteDocument(
 
 WebBrowserPersistRemoteDocument::~WebBrowserPersistRemoteDocument() {
   if (mActor) {
-    Unused << WebBrowserPersistDocumentParent::Send__delete__(mActor);
+    (void)WebBrowserPersistDocumentParent::Send__delete__(mActor);
     // That will call mActor->ActorDestroy, which calls this->ActorDestroy
     // (whether or not the IPC send succeeds).
   }
@@ -49,6 +47,15 @@ void WebBrowserPersistRemoteDocument::ActorDestroy(void) { mActor = nullptr; }
 NS_IMETHODIMP
 WebBrowserPersistRemoteDocument::GetIsClosed(bool* aIsClosed) {
   *aIsClosed = !mActor;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebBrowserPersistRemoteDocument::Close() {
+  if (mActor) {
+    (void)WebBrowserPersistDocumentParent::Send__delete__(mActor);
+    // ActorDestroy sets mActor = nullptr.
+  }
   return NS_OK;
 }
 
@@ -194,14 +201,6 @@ WebBrowserPersistRemoteDocument::WriteContent(
              subActor, map, requestedContentType, aEncoderFlags, aWrapColumn)
              ? NS_OK
              : NS_ERROR_FAILURE;
-}
-
-// Forcing WebBrowserPersistRemoteDocument to implement GetHistory is the
-// easiest way to ensure that we can call GetHistory in
-// WebBrowserPersistDocumentChild::Start
-already_AddRefed<nsISHEntry> WebBrowserPersistRemoteDocument::GetHistory() {
-  MOZ_CRASH("We should not call GetHistory on WebBrowserPersistRemoteDocument");
-  return nullptr;
 }
 
 }  // namespace mozilla

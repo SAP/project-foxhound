@@ -6,9 +6,6 @@
 
 const ReactDOM = require("resource://devtools/client/shared/vendor/react-dom.mjs");
 const {
-  FILTER_TAGS,
-} = require("resource://devtools/client/netmonitor/src/constants.js");
-const {
   Component,
   createFactory,
 } = require("resource://devtools/client/shared/vendor/react.mjs");
@@ -20,9 +17,6 @@ const {
 const { Chart } = require("resource://devtools/client/shared/widgets/Chart.js");
 const { PluralForm } = require("resource://devtools/shared/plural-form.js");
 const Actions = require("resource://devtools/client/netmonitor/src/actions/index.js");
-const {
-  Filters,
-} = require("resource://devtools/client/netmonitor/src/utils/filter-predicates.js");
 const {
   getSizeWithDecimals,
   getTimeWithDecimals,
@@ -36,6 +30,9 @@ const {
 const {
   fetchNetworkUpdatePacket,
 } = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
+const {
+  getStatisticsData,
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 
 // Components
 const MDNLink = createFactory(
@@ -64,6 +61,7 @@ class StatisticsPanel extends Component {
       enableRequestFilterTypeOnly: PropTypes.func.isRequired,
       hasLoad: PropTypes.bool,
       requests: PropTypes.array,
+      statisticsData: PropTypes.object,
     };
   }
 
@@ -71,14 +69,12 @@ class StatisticsPanel extends Component {
     super(props);
 
     this.state = {
-      isVerticalSpliter: MediaQueryList.matches,
+      isVerticalSplitter: MediaQueryList.matches,
     };
 
     this.createMDNLink = this.createMDNLink.bind(this);
     this.unmountMDNLinkContainers = this.unmountMDNLinkContainers.bind(this);
     this.createChart = this.createChart.bind(this);
-    this.sanitizeChartDataSource = this.sanitizeChartDataSource.bind(this);
-    this.responseIsFresh = this.responseIsFresh.bind(this);
     this.onLayoutChange = this.onLayoutChange.bind(this);
   }
 
@@ -111,34 +107,22 @@ class StatisticsPanel extends Component {
   componentDidUpdate() {
     MediaQueryList.addListener(this.onLayoutChange);
 
-    const { hasLoad, requests } = this.props;
+    const { hasLoad, requests, statisticsData } = this.props;
 
     // Display statistics about all requests for which we received enough data,
     // as soon as the page is considered to be loaded
     const ready = requests.length && hasLoad;
 
-    // Ignore requests which are missing data expected by this component:
-    // - pending/incomplete requests
-    // - blocked/errored requests
-    const validRequests = requests.filter(
-      req =>
-        req.contentSize !== undefined &&
-        req.mimeType &&
-        req.responseHeaders &&
-        req.status !== undefined &&
-        req.totalTime !== undefined
-    );
-
     this.createChart({
       id: "primedCacheChart",
       title: CHARTS_CACHE_ENABLED,
-      data: ready ? this.sanitizeChartDataSource(validRequests, false) : null,
+      data: ready ? statisticsData.primedCacheData : null,
     });
 
     this.createChart({
       id: "emptyCacheChart",
       title: CHARTS_CACHE_DISABLED,
-      data: ready ? this.sanitizeChartDataSource(validRequests, true) : null,
+      data: ready ? statisticsData.emptyCacheData : null,
     });
 
     this.createMDNLink("primedCacheChart", getPerformanceAnalysisURL());
@@ -249,136 +233,22 @@ class StatisticsPanel extends Component {
 
     const container = this.refs[id];
 
-    // Nuke all existing charts of the specified type.
-    while (container.hasChildNodes()) {
-      container.firstChild.remove();
-    }
-
-    container.appendChild(chart.node);
-  }
-
-  sanitizeChartDataSource(requests, emptyCache) {
-    const data = FILTER_TAGS.map(type => ({
-      cached: 0,
-      count: 0,
-      label: type,
-      size: 0,
-      transferredSize: 0,
-      time: 0,
-      nonBlockingTime: 0,
-    }));
-
-    for (const request of requests) {
-      let type;
-
-      if (Filters.html(request)) {
-        // "html"
-        type = 0;
-      } else if (Filters.css(request)) {
-        // "css"
-        type = 1;
-      } else if (Filters.js(request)) {
-        // "js"
-        type = 2;
-      } else if (Filters.fonts(request)) {
-        // "fonts"
-        type = 4;
-      } else if (Filters.images(request)) {
-        // "images"
-        type = 5;
-      } else if (Filters.media(request)) {
-        // "media"
-        type = 6;
-      } else if (Filters.ws(request)) {
-        // "ws"
-        type = 7;
-      } else if (Filters.xhr(request)) {
-        // Verify XHR last, to categorize other mime types in their own blobs.
-        // "xhr"
-        type = 3;
-      } else {
-        // "other"
-        type = 8;
-      }
-
-      if (emptyCache || !this.responseIsFresh(request)) {
-        data[type].time += request.totalTime || 0;
-        data[type].size += request.contentSize || 0;
-        data[type].transferredSize += request.transferredSize || 0;
-        // Short term fix to avoid a netmonitor panel breakage.
-        // Todo: Refactor the Statistics panel to handle updates properly (Bug 1976819)
-        if (request.eventTimings) {
-          const nonBlockingTime =
-            request.eventTimings.totalTime -
-            request.eventTimings.timings.blocked;
-          data[type].nonBlockingTime += nonBlockingTime || 0;
-        } else {
-          data[type].nonBlockingTime = 0;
-        }
-      } else {
-        data[type].cached++;
-      }
-      data[type].count++;
-    }
-
-    return data.filter(e => e.count > 0);
-  }
-
-  /**
-   * Checks if the "Expiration Calculations" defined in section 13.2.4 of the
-   * "HTTP/1.1: Caching in HTTP" spec holds true for a collection of headers.
-   *
-   * @param object
-   *        An object containing the { responseHeaders, status } properties.
-   * @return boolean
-   *         True if the response is fresh and loaded from cache.
-   */
-  responseIsFresh({ responseHeaders, status }) {
-    // Check for a "304 Not Modified" status and response headers availability.
-    if (status != 304 || !responseHeaders) {
-      return false;
-    }
-
-    const list = responseHeaders.headers;
-    const cacheControl = list.find(
-      e => e.name.toLowerCase() === "cache-control"
-    );
-    const expires = list.find(e => e.name.toLowerCase() === "expires");
-
-    // Check the "Cache-Control" header for a maximum age value.
-    if (cacheControl) {
-      const maxAgeMatch =
-        cacheControl.value.match(/s-maxage\s*=\s*(\d+)/) ||
-        cacheControl.value.match(/max-age\s*=\s*(\d+)/);
-
-      if (maxAgeMatch && maxAgeMatch.pop() > 0) {
-        return true;
-      }
-    }
-
-    // Check the "Expires" header for a valid date.
-    if (expires && Date.parse(expires.value)) {
-      return true;
-    }
-
-    return false;
+    // Update the charts of the specified type.
+    container.replaceChildren(chart.node);
   }
 
   onLayoutChange() {
     this.setState({
-      isVerticalSpliter: MediaQueryList.matches,
+      isVerticalSplitter: MediaQueryList.matches,
     });
   }
 
   render() {
     const { closeStatistics } = this.props;
-    const splitterClassName = ["splitter"];
 
-    if (this.state.isVerticalSpliter) {
-      splitterClassName.push("devtools-side-splitter");
-    } else {
-      splitterClassName.push("devtools-horizontal-splitter");
-    }
+    const directionSplitter = this.state.isVerticalSplitter
+      ? "devtools-side-splitter"
+      : "devtools-horizontal-splitter";
 
     return div(
       { className: "statistics-panel" },
@@ -397,7 +267,7 @@ class StatisticsPanel extends Component {
           ref: "primedCacheChart",
           className: "charts primed-cache-chart",
         }),
-        div({ className: splitterClassName.join(" ") }),
+        div({ className: ["splitter", directionSplitter].join(" ") }),
         div({ ref: "emptyCacheChart", className: "charts empty-cache-chart" })
       )
     );
@@ -410,6 +280,7 @@ module.exports = connect(
     // DOCUMENT_EVENT's dom-complete, which is equivalent to page `load` event.
     hasLoad: state.timingMarkers.firstDocumentLoadTimestamp != -1,
     requests: [...state.requests.requests],
+    statisticsData: getStatisticsData(state),
   }),
   (dispatch, props) => ({
     closeStatistics: () =>

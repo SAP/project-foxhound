@@ -14,6 +14,38 @@ newtab-personalize-icon-label =
 newtab-personalize-dialog-label =
     .aria-label = Moslashtirish
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = Yangi varaqlar
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } qator
+           *[other] { $num } qator
+        }
+home-restore-defaults-srd =
+    .label = Asliga tiklash
+    .accesskey = t
+home-mode-choice-custom-srd =
+    .label = Boshqa URL manzillar
+home-mode-choice-blank-srd =
+    .label = Bo‘sh sahifa
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = Homiylik maqolalari
+home-prefs-highlights-option-visited-pages-srd =
+    .label = Kirilgan sahifalar
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Xatcho‘plar
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = Oxirgi yuklanmalar
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -39,7 +71,7 @@ newtab-search-box-input =
     .placeholder = Internetdan qidirish
     .aria-label = Internetdan izlash
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Qidiruv tizimini qoʻshish
 newtab-topsites-add-shortcut-header = Yangi tugmalar birikmasi
@@ -108,9 +140,6 @@ newtab-menu-save-to-pocket = { -pocket-brand-name } xizmatiga saqlash
 newtab-menu-delete-pocket = { -pocket-brand-name } xizmatidan oʻchirish
 newtab-menu-archive-pocket = { -pocket-brand-name } xizmatiga arxivlash
 newtab-menu-show-privacy-info = Bizning homiylarimiz va sizning maxfiyligingiz
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -223,12 +252,6 @@ newtab-pocket-learn-more = Batafsil
 newtab-pocket-cta-button = { -pocket-brand-name }ni yuklab olish
 newtab-pocket-cta-text = Sizga yoqqan maqolalarni { -pocket-brand-name } xizmatiga saqlab qoʻying va maroqli oʻqib, tafakkuringizni rivojlantiring
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -241,52 +264,6 @@ newtab-custom-settings = Boshqa sozlamalarni boshqarish
 
 ## New Tab Wallpapers
 
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-
+newtab-wallpaper-title = Fon rasmlari
+newtab-wallpaper-toggle-title =
+    .label = Fon rasmlari

@@ -31,8 +31,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-const buildID = Services.appinfo.appBuildID;
-
 /**
  * Adds the crash reports with submission buttons and links
  * to the unsubmitted and submitted crash report lists.
@@ -60,7 +58,13 @@ function populateReportLists() {
     dateStyle: "short",
   });
   reports.forEach(report =>
-    addReportRow(report.pending, report.id, report.date, dateFormatter)
+    addReportRow(
+      report.pending,
+      report.ignored,
+      report.id,
+      report.date,
+      dateFormatter
+    )
   );
   showAppropriateSections();
 }
@@ -70,12 +74,13 @@ function populateReportLists() {
  * or viewing link to the unsubmitted or submitted report list
  * based on isPending.
  *
- * @param {Boolean} isPending     whether the crash is up for submission
- * @param {String}  id            the unique id of the crash report
+ * @param {boolean} isPending     whether the crash is up for submission
+ * @param {boolean} isIgnored     whether the crash has been ignored by the user
+ * @param {string}  id            the unique id of the crash report
  * @param {Date}    date          either the date of crash or date of submission
- * @param {Object}  dateFormatter formatter for presenting dates to users
+ * @param {object}  dateFormatter formatter for presenting dates to users
  */
-function addReportRow(isPending, id, date, dateFormatter) {
+function addReportRow(isPending, isIgnored, id, date, dateFormatter) {
   const rowTemplate = document.getElementById("crashReportRow");
   const row = document
     .importNode(rowTemplate.content, true)
@@ -87,6 +92,9 @@ function addReportRow(isPending, id, date, dateFormatter) {
   cells[1].appendChild(document.createTextNode(dateFormatter.format(date)));
 
   if (isPending) {
+    if (isIgnored) {
+      row.classList.add("ignored");
+    }
     const buttonTemplate = document.getElementById("crashSubmitButton");
     const button = document
       .importNode(buttonTemplate.content, true)
@@ -137,11 +145,11 @@ function showAppropriateSections() {
  * of submitted crash reports. On failure, changes the provided button to display
  * a red error message.
  *
- * @param {String}              reportId      the unique id of the crash report
+ * @param {string}              reportId      the unique id of the crash report
  * @param {HTMLTableRowElement} row           the table row of the crash report
  * @param {HTMLButtonElement}   button        the button pressed to start the submission
  * @param {HTMLSpanElement}     buttonText    the text inside the pressed button
- * @param {Object}              dateFormatter formatter for presenting dates to users
+ * @param {object}              dateFormatter formatter for presenting dates to users
  */
 function submitPendingReport(reportId, row, button, buttonText, dateFormatter) {
   button.classList.add("submitting");
@@ -155,7 +163,13 @@ function submitPendingReport(reportId, row, button, buttonText, dateFormatter) {
         const report = CrashReports.getReports().filter(
           report => report.id === remoteCrashID
         );
-        addReportRow(false, remoteCrashID, report.date, dateFormatter);
+        addReportRow(
+          false,
+          report.ignored,
+          remoteCrashID,
+          report.date,
+          dateFormatter
+        );
         showAppropriateSections();
         dispatchCustomEvent("CrashSubmitSucceeded");
       },
@@ -176,7 +190,7 @@ function submitPendingReport(reportId, row, button, buttonText, dateFormatter) {
 }
 
 /**
- * Deletes unsubmitted and old crash reports from the user's device.
+ * Deletes unsubmitted crash reports from the user's device.
  * Then, hides the list of unsubmitted crash reports.
  */
 async function clearUnsubmittedReports() {
@@ -189,7 +203,6 @@ async function clearUnsubmittedReports() {
   }
 
   await enqueueCleanup(() => cleanupFolder(CrashReports.pendingDir.path));
-  await enqueueCleanup(clearOldReports);
   document.getElementById("reportListUnsubmitted").classList.add("hidden");
 }
 
@@ -210,7 +223,7 @@ async function submitAllUnsubmittedReports() {
 }
 
 /**
- * Deletes submitted and old crash reports from the user's device.
+ * Deletes submitted crash reports from the user's device.
  * Then, hides the list of submitted crash reports.
  */
 async function clearSubmittedReports() {
@@ -228,34 +241,15 @@ async function clearSubmittedReports() {
       async entry => entry.name.startsWith("bp-") && entry.name.endsWith(".txt")
     )
   );
-  await enqueueCleanup(clearOldReports);
   document.getElementById("reportListSubmitted").classList.add("hidden");
   document.getElementById("noSubmittedReports").classList.remove("hidden");
-}
-
-/**
- * Deletes old crash reports from the user's device.
- */
-async function clearOldReports() {
-  const oneYearAgo = Date.now() - 31586000000;
-  await cleanupFolder(CrashReports.reportsDir.path, async entry => {
-    if (
-      !entry.name.startsWith("InstallTime") ||
-      entry.name == "InstallTime" + buildID
-    ) {
-      return false;
-    }
-
-    const stat = await IOUtils.stat(entry.path);
-    return stat.lastModified < oneYearAgo;
-  });
 }
 
 /**
  * Deletes files from the user's device at the specified path
  * that match the provided filter.
  *
- * @param {String}   path   the directory location to delete form
+ * @param {string}   path   the directory location to delete form
  * @param {Function} filter function taking in a file entry and
  *                          returning whether to delete the file
  */
@@ -270,9 +264,10 @@ async function cleanupFolder(path, filter) {
   try {
     children = await IOUtils.getChildren(path);
   } catch (e) {
-    if (DOMException.isInstance(e) || e.name !== "NotFoundError") {
+    if (!DOMException.isInstance(e) || e.name !== "NotFoundError") {
       throw e;
     }
+    return;
   }
 
   for (const childPath of children) {
@@ -285,7 +280,7 @@ async function cleanupFolder(path, filter) {
 /**
  * Dispatches an event with the specified name.
  *
- * @param {String} name the name of the event
+ * @param {string} name the name of the event
  */
 function dispatchCustomEvent(name) {
   document.dispatchEvent(

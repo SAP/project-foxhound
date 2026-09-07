@@ -43,12 +43,12 @@ async function _initResourceCommandFromCommands(
  *
  * @param {Tab} tab
  *        The browser frontend's tab to connect to.
- * @param {Object} options
- * @param {Boolean} options.listenForWorkers
- * @return {Object} object
+ * @param {object} options
+ * @param {boolean} options.listenForWorkers
+ * @return {object} object
  * @return {ResourceCommand} object.resourceCommand
  *         The underlying resource command interface.
- * @return {Object} object.commands
+ * @return {object} object.commands
  *         The commands object defined by modules from devtools/shared/commands.
  * @return {DevToolsClient} object.client
  *         The underlying client instance.
@@ -63,10 +63,10 @@ async function initResourceCommand(tab, options) {
 /**
  * Instantiate a multi-process ResourceCommand, watching all type of targets.
  *
- * @return {Object} object
+ * @return {object} object
  * @return {ResourceCommand} object.resourceCommand
  *         The underlying resource command interface.
- * @return {Object} object.commands
+ * @return {object} object.commands
  *         The commands object defined by modules from devtools/shared/commands.
  * @return {DevToolsClient} object.client
  *         The underlying client instance.
@@ -139,7 +139,7 @@ async function triggerNetworkRequests(browser, commands) {
 /**
  * Get the stylesheet text for a given stylesheet resource.
  *
- * @param {Object} styleSheetResource
+ * @param {object} styleSheetResource
  * @returns Promise<String>
  */
 async function getStyleSheetResourceText(styleSheetResource) {

@@ -606,15 +606,20 @@ SEC_PKCS7DecryptContents(PLArenaPool *poolp,
     rv = PK11_CipherOp((PK11Context *)cx, dest->data, (int *)(&dest->len),
                        (int)(src->len + 64), src->data, (int)src->len);
     PK11_DestroyContext((PK11Context *)cx, PR_TRUE);
+    /* PK11_CipherOp may leave dest->len at 0; bail out before the padding
+     * check so dest->len - 1 does not underflow. */
+    if (rv != SECSuccess) {
+        goto loser;
+    }
 
     bs = PK11_GetBlockSize(cryptoMechType, c_param);
     if (bs) {
-        /* check for proper badding in block algorithms.  this assumes
-         * RC2 cbc or a DES cbc variant.  and the padding is thus defined
-         */
-        if (((int)dest->data[dest->len - 1] <= bs) &&
-            ((int)dest->data[dest->len - 1] > 0)) {
-            dest->len -= (int)dest->data[dest->len - 1];
+        /* Check for proper PKCS#7 padding: the last byte gives the number of
+         * pad bytes, which must be in [1, bs]. */
+        unsigned int pad = dest->data[dest->len - 1];
+        if ((dest->len >= (unsigned int)bs) &&
+            pad >= 1 && pad <= (unsigned int)bs) {
+            dest->len -= pad;
         } else {
             rv = SECFailure;
             /* set an error ? */

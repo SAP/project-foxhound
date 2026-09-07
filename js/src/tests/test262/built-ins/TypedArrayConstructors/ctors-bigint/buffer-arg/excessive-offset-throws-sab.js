@@ -19,7 +19,7 @@ info: |
     b. Let newByteLength be bufferByteLength - offset.
     c. If newByteLength < 0, throw a RangeError exception.
   ...
-includes: [testBigIntTypedArray.js]
+includes: [testTypedArray.js]
 features: [BigInt, SharedArrayBuffer, TypedArray]
 ---*/
 
@@ -34,6 +34,6 @@ testWithBigIntTypedArrayConstructors(function(TA) {
   assert.throws(RangeError, function() {
     new TA(buffer, bpe * 2, undefined);
   });
-});
+}, null, ["passthrough"]);
 
 reportCompare(0, 0);

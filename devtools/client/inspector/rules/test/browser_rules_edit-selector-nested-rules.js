@@ -51,12 +51,8 @@ async function runTest(uri) {
   );
 
   info(`Modify "&.foo" selector into "&.bar"`);
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
-  const editor = await focusEditableField(view, ruleEditor.selectorText);
-  const onRuleViewChanged = view.once("ruleview-changed");
-  editor.input.value = "&.bar";
-  EventUtils.synthesizeKey("KEY_Enter");
-  await onRuleViewChanged;
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
+  await editSelectorForRuleEditor(view, ruleEditor, "&.bar");
 
   is(
     await getComputedStyleProperty("h1", null, "color"),

@@ -32,13 +32,12 @@ add_task(async function test_add_bookmark_from_private_window() {
     events => events.some(({ url }) => url === TEST_URL)
   );
   let bookmarkStar = win.BookmarkingUI.star;
-  bookmarkStar.click();
+  EventUtils.synthesizeMouseAtCenter(bookmarkStar, {}, win);
   await shownPromise;
 
   // Check if the bookmark star changes its state after click.
-  Assert.equal(
-    bookmarkStar.getAttribute("starred"),
-    "true",
+  Assert.ok(
+    bookmarkStar.hasAttribute("starred"),
     "Bookmark star changed its state correctly."
   );
 

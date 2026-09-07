@@ -5,13 +5,15 @@
 package org.mozilla.samples.toolbar.compose
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import mozilla.components.compose.browser.toolbar.BrowserDisplayToolbar
 import mozilla.components.compose.browser.toolbar.BrowserEditToolbar
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import mozilla.components.lib.state.ext.observeAsComposableState
-import mozilla.components.lib.state.ext.observeAsState
 
 /**
  * A customizable toolbar for browsers.
@@ -24,18 +26,17 @@ import mozilla.components.lib.state.ext.observeAsState
  * @param onTextCommit Invoked when the user has finished editing the URL and wants
  * to commit the entered text.
  */
-@Suppress("MagicNumber")
 @Composable
 fun BrowserToolbar(
     store: BrowserToolbarStore,
-    onTextEdit: (String) -> Unit,
+    onTextEdit: (BrowserToolbarQuery) -> Unit,
     onTextCommit: (String) -> Unit,
     url: String = "",
 ) {
-    val uiState by store.observeAsState(initialValue = store.state) { it }
+    val uiState by store.stateFlow.collectAsState()
     val progressBarConfig = store.observeAsComposableState { it.displayState.progressBarConfig }.value
 
-    val input = when (val editText = uiState.editState.query) {
+    val input = when (val editText = uiState.editState.query.current) {
         "" -> url
         else -> editText
     }
@@ -43,17 +44,19 @@ fun BrowserToolbar(
     if (uiState.isEditMode()) {
         BrowserEditToolbar(
             query = input,
+            gravity = ToolbarGravity.Top,
             editActionsStart = uiState.editState.editActionsStart,
             editActionsEnd = uiState.editState.editActionsEnd,
             hint = stringResource(uiState.editState.hint),
             onUrlCommitted = { text -> onTextCommit(text) },
-            onUrlEdit = { text -> onTextEdit(text) },
+            onUrlEdit = { query -> onTextEdit(query) },
             onInteraction = { store.dispatch(it) },
         )
     } else {
         BrowserDisplayToolbar(
             pageOrigin = uiState.displayState.pageOrigin,
             progressBarConfig = progressBarConfig,
+            gravity = ToolbarGravity.Top,
             browserActionsStart = uiState.displayState.browserActionsStart,
             pageActionsStart = uiState.displayState.pageActionsStart,
             pageActionsEnd = uiState.displayState.pageActionsEnd,

@@ -1,5 +1,11 @@
 "use strict";
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
+});
+
 add_task(async function test_fill_creditCard_with_failed_decryption() {
   if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
     todo(
@@ -9,11 +15,7 @@ add_task(async function test_fill_creditCard_with_failed_decryption() {
     return;
   }
 
-  // This was copied from another test but according to data folks
-  // it is optional.
-  // await Services.fog.testFlushAllChildren();
   Services.fog.testResetFOG();
-  Services.telemetry.clearEvents();
 
   await setStorage(TEST_CREDIT_CARD_2);
 
@@ -47,7 +49,7 @@ add_task(async function test_fill_creditCard_with_failed_decryption() {
       );
 
       info("Synthesizing click on credit card");
-      await EventUtils.synthesizeMouseAtCenter(ccItem, {});
+      EventUtils.synthesizeMouseAtCenter(ccItem, {});
       info("Awaiting three events");
       await Promise.all([
         osKeyStoreLoginShown.then(() =>
@@ -73,7 +75,7 @@ add_task(async function test_fill_creditCard_with_failed_decryption() {
   await Services.fog.testFlushAllChildren();
   let testEvents = Glean.creditcard.osKeystoreDecrypt.testGetValue();
   is(testEvents.length, 1, "Event was recorded");
-  is(testEvents[0].extra.trigger, "autofill", "Trigger was correct");
+  is(testEvents[0].extra.trigger, "formautofill_cc", "Trigger was correct");
   is(
     testEvents[0].extra.isDecryptSuccess,
     "false",

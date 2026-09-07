@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,6 @@
 #include "nsCOMPtr.h"
 #include "nsCSSRendering.h"
 #include "nsContainerFrame.h"
-#include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsPresContext.h"
 #include "nsStyleConsts.h"
@@ -86,9 +84,7 @@ void nsTableColFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsTableColFrame");
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   aDesiredSize.ClearSize();
-  const nsStyleVisibility* colVis = StyleVisibility();
-  bool collapseCol = StyleVisibility::Collapse == colVis->mVisible;
-  if (collapseCol) {
+  if (StyleVisibility()->mVisible == StyleVisibility::Collapse) {
     GetTableFrame()->SetNeedToCollapse(true);
   }
 }

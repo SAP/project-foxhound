@@ -15,28 +15,27 @@ kind-dependencies:
     - toolchain
 
 not-for-build-platforms:
-    # Address Sanitizer builds don't have symbols to upload.
-    - linux64-asan-reporter-shippable/opt
-    - win64-asan-reporter-shippable/opt
     - linux-geckodriver/opt
     - linux64-geckodriver/opt
     - linux64-aarch64-geckodriver/opt
     - macosx64-geckodriver/opt
-    - macosx64-aarch64-geckodriver/opt
     - win32-geckodriver/opt
     - win64-geckodriver/opt
     - win64-aarch64-geckodriver/opt
+
+task-defaults:
+    run-on-repo-type: [hg]
 
 tasks:
     upload-symbols:
         description: Upload Symbols
         from-deps:
             group-by: platform
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         use-python: default
         worker:
             docker-image: {in-tree: "debian12-base"}
-            max-run-time: 1800
+            max-run-time: 2700
             env:
                 # {level} gets replaced in the upload_symbols transform
                 SYMBOL_SECRET: "project/releng/gecko/build/level-{level}/gecko-symbol-upload"

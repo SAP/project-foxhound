@@ -313,13 +313,13 @@ This tests the login manager in a secure setting using https. A similar test fil
     synthesizeKey("KEY_ArrowDown");
     synthesizeKey("KEY_ArrowDown");
     synthesizeKey("KEY_ArrowDown");
-    const numLoginsBeforeDeletion = await LoginManager.countLogins(location.origin, "https://autocomplete:8888", null);
+    const numLoginsBeforeDeletion = await LoginManager.countLoginsAsync(location.origin, "https://autocomplete:8888", null);
     is(numLoginsBeforeDeletion, 3, "Correct number of logins before trying to delete one using an autocomplete form");
     // Pressing the delete key shouldn't remove a login.
     synthesizeKey("KEY_Delete", {shiftKey: true});
     is(form.uname.value, "", "username is empty");
     is(form.pword.value, "", "password is empty");
-    const numLoginsAfterAttemptedDeletion = await LoginManager.countLogins(location.origin, "https://autocomplete:8888", null);
+    const numLoginsAfterAttemptedDeletion = await LoginManager.countLoginsAsync(location.origin, "https://autocomplete:8888", null);
     is(numLoginsAfterAttemptedDeletion, 3, "Correct number of logins after trying to delete one using an autocomplete form");
     synthesizeKey("KEY_Enter");
     await untilAutocompletePopupClosed();

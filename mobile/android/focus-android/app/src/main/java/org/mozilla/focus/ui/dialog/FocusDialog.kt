@@ -6,74 +6,94 @@ package org.mozilla.focus.ui.dialog
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.material.AlertDialog
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
-import androidx.compose.material.TextButton
-import androidx.compose.material.TextField
-import androidx.compose.material.TextFieldDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.tooling.preview.Preview
 import org.mozilla.focus.ui.theme.FocusTheme
 import org.mozilla.focus.ui.theme.focusColors
 import org.mozilla.focus.ui.theme.focusTypography
 
 /**
- * Reusable composable for an alert dialog.
+ * Reusable composable for an alert dialog using [DialogButtonConfig] for buttons.
  *
- * @param dialogTitle (mandatory) text displayed as the dialog title.
- * @param dialogTextComposable (optional) A composable displayed as dialog text
- * @param dialogText (optional) A text displayed as dialog text when [dialogTextComposable] is null.
- * @param onConfirmRequest (event) Action to perform on dialog confirm action.
- * @param onDismissRequest (event) Action to perform on dialog dismissal.
- * @param isConfirmButtonEnabled (optional) whether the confirm [DialogTextButton] is enabled. Default value is true.
- * @param isDismissButtonEnabled (optional) whether the confirm [DialogTextButton] is enabled. Default value is true.
- * @param isConfirmButtonVisible (optional) whether the confirm [DialogTextButton] is visible. Default value is true.
- * @param isDismissButtonVisible (optional)whether the confirm [DialogTextButton] is visible. Default value is true.
- *
+ * @param dialogTitle Text displayed as the dialog title.
+ * @param dialogTextComposable Optional composable for the dialog's main content area.
+ * @param dialogText Text displayed in the dialog's main content area if [dialogTextComposable] is null.
+ * @param onDismissRequest Action to perform when the dialog is dismissed
+ *                         (e.g., by tapping outside or pressing the back button).
+ * @param confirmButtonConfig Optional configuration for the confirm button. If null, the button is not shown.
+ * @param dismissButtonConfig Optional configuration for the dismiss button. If null, the button is not shown.
+ * @param dialogContainerColor Background color for the dialog. Defaults to `focusColors.secondary`.
+ * @param dialogShape Shape for the dialog. Defaults to `MaterialTheme.shapes.extraSmall`.
  */
-@Suppress("LongParameterList")
 @Composable
 fun FocusDialog(
     dialogTitle: String,
     dialogTextComposable: @Composable (() -> Unit)? = null,
     dialogText: String = "",
-    onConfirmRequest: () -> Unit,
     onDismissRequest: () -> Unit,
-    confirmButtonText: String = "null",
-    dismissButtonText: String = "null",
-    isConfirmButtonEnabled: Boolean = true,
-    isDismissButtonEnabled: Boolean = true,
-    isConfirmButtonVisible: Boolean = true,
-    isDismissButtonVisible: Boolean = true,
+    confirmButtonConfig: DialogButtonConfig? = null,
+    dismissButtonConfig: DialogButtonConfig? = null,
+    dialogContainerColor: Color = focusColors.secondary,
+    dialogShape: Shape = MaterialTheme.shapes.extraSmall,
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = { DialogTitle(text = dialogTitle) },
-        text = dialogTextComposable ?: { DialogText(text = dialogText) },
+        text = dialogTextComposable ?: {
+            if (dialogText.isNotEmpty()) {
+                DialogText(text = dialogText)
+            }
+        },
         confirmButton = {
-            if (isConfirmButtonVisible) {
-                DialogTextButton(
-                    text = confirmButtonText,
-                    onClick = onConfirmRequest,
-                    enabled = isConfirmButtonEnabled,
-                )
+            confirmButtonConfig?.let { config ->
+                if (config.visible) {
+                    DialogTextButton(
+                        text = config.text,
+                        onClick = config.onClick,
+                        enabled = config.enabled,
+                    )
+                }
             }
         },
         dismissButton = {
-            if (isDismissButtonVisible) {
-                DialogTextButton(
-                    text = dismissButtonText,
-                    onClick = onDismissRequest,
-                    enabled = isDismissButtonEnabled,
-                )
+            dismissButtonConfig?.let { config ->
+                if (config.visible) {
+                    DialogTextButton(
+                        text = config.text,
+                        onClick = config.onClick,
+                        enabled = config.enabled,
+                    )
+                }
             }
         },
-        backgroundColor = focusColors.secondary,
-        shape = MaterialTheme.shapes.medium,
+        containerColor = dialogContainerColor,
+        shape = dialogShape,
     )
 }
+
+/**
+ * Data class representing the configuration for a dialog button.
+ *
+ * @property text The text to be displayed on the button.
+ * @property onClick The lambda function to be executed when the button is clicked.
+ * @property enabled A boolean indicating whether the button is enabled or not. Defaults to `true`.
+ * @property visible A boolean indicating whether the button is visible or not. Defaults to `true`.
+ */
+data class DialogButtonConfig(
+    val text: String,
+    val onClick: () -> Unit,
+    val enabled: Boolean = true,
+    val visible: Boolean = true,
+)
 
 /**
  * Reusable composable for a dialog title.
@@ -121,7 +141,7 @@ fun DialogTextButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.extraSmall,
     ) {
         Text(
             modifier = modifier,
@@ -131,7 +151,7 @@ fun DialogTextButton(
                 focusColors.dialogActiveControls.copy(alpha = 0.5f)
             },
             text = text,
-            style = MaterialTheme.typography.button,
+            style = MaterialTheme.typography.labelLarge,
         )
     }
 }
@@ -153,15 +173,18 @@ fun DialogInputField(
         placeholder = placeholder,
         onValueChange = onValueChange,
         textStyle = focusTypography.dialogInput,
-        colors = TextFieldDefaults.textFieldColors(
-            backgroundColor = focusColors.secondary,
-            textColor = focusColors.onSecondary,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = focusColors.secondary,
+            unfocusedContainerColor = focusColors.secondary,
+            disabledContainerColor = focusColors.secondary,
+            focusedTextColor = focusColors.onSecondary,
+            unfocusedTextColor = focusColors.onSecondary,
             cursorColor = focusColors.onPrimary,
             focusedIndicatorColor = focusColors.dialogActiveControls,
             unfocusedIndicatorColor = focusColors.dialogActiveControls,
         ),
         singleLine = true,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.extraSmall,
     )
 }
 
@@ -172,7 +195,7 @@ fun DialogInputField(
     uiMode = Configuration.UI_MODE_NIGHT_MASK,
 )
 @Composable
-fun DialogTitlePreviewDark() {
+private fun DialogTitlePreviewDark() {
     FocusTheme {
         FocusDialogSample()
     }
@@ -185,25 +208,26 @@ fun DialogTitlePreviewDark() {
     uiMode = Configuration.UI_MODE_NIGHT_NO,
 )
 @Composable
-fun DialogTitlePreviewLight() {
+private fun DialogTitlePreviewLight() {
     FocusTheme {
         FocusDialogSample()
     }
 }
 
 @Composable
-fun FocusDialogSample() {
+private fun FocusDialogSample() {
     FocusDialog(
         dialogTitle = "Sample dialog",
-        dialogTextComposable = null,
-        dialogText = "Sample dialog text",
-        onConfirmRequest = { },
-        onDismissRequest = { },
-        confirmButtonText = "OK",
-        dismissButtonText = "CANCEL",
-        isConfirmButtonEnabled = true,
-        isDismissButtonEnabled = true,
-        isConfirmButtonVisible = true,
-        isDismissButtonVisible = true,
+        dialogText = "Sample dialog text using DialogButtonConfig.",
+        onDismissRequest = { /* Preview: Dialog dismissed (e.g. tap outside) */ },
+        confirmButtonConfig = DialogButtonConfig(
+            text = "CONFIRM",
+            onClick = { /* Preview: Confirm clicked */ },
+        ),
+        dismissButtonConfig = DialogButtonConfig(
+            text = "CANCEL",
+            onClick = { /* Preview: Cancel clicked */ },
+            enabled = true,
+        ),
     )
 }

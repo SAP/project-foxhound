@@ -255,7 +255,7 @@ async function runTestcase({ formOrigin, savedLogins, expectedItems }) {
   await Services.logins.addLogins(savedLogins);
 
   // Create the logins menuitems fragment.
-  let { fragment, document } = createLoginsFragment(
+  let { fragment, document } = await createLoginsFragment(
     formOrigin,
     DOCUMENT_CONTENT
   );
@@ -279,13 +279,13 @@ async function runTestcase({ formOrigin, savedLogins, expectedItems }) {
     "All items correctly cleared."
   );
 
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 }
 
 /**
  * Create a fragment with a menuitem for each login.
  */
-function createLoginsFragment(url, content) {
+async function createLoginsFragment(url, content) {
   const CHROME_URL = "chrome://mock-chrome/content/";
 
   // Create a mock document.
@@ -302,13 +302,14 @@ function createLoginsFragment(url, content) {
   };
 
   let formOrigin = LoginHelper.getLoginOrigin(url);
+  let fragment = await LoginManagerContextMenu.addLoginsToMenu(
+    null,
+    browser,
+    formOrigin
+  );
   return {
     document,
-    fragment: LoginManagerContextMenu.addLoginsToMenu(
-      null,
-      browser,
-      formOrigin
-    ),
+    fragment,
   };
 }
 

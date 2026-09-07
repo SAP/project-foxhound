@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +5,19 @@
 #include "WMFCDMProxy.h"
 
 #include "MediaData.h"
-#include "mozilla/dom/MediaKeysBinding.h"
-#include "mozilla/dom/MediaKeySession.h"
-#include "mozilla/dom/MediaKeySystemAccessBinding.h"
+#include "WMFCDMImpl.h"
+#include "WMFCDMProxyCallback.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/WMFCDMProxyCallback.h"
 #include "mozilla/WindowsVersion.h"
-#include "WMFCDMImpl.h"
-#include "WMFCDMProxyCallback.h"
+#include "mozilla/dom/MediaKeySession.h"
+#include "mozilla/dom/MediaKeySystemAccessBinding.h"
+#include "mozilla/dom/MediaKeysBinding.h"
 
 namespace mozilla {
 
 #define LOG(msg, ...) \
-  EME_LOG("WMFCDMProxy[%p]@%s: " msg, this, __func__, ##__VA_ARGS__)
+  EME_LOG("WMFCDMProxy[{}]@{}: " msg, fmt::ptr(this), __func__, ##__VA_ARGS__)
 
 #define RETURN_IF_SHUTDOWN()       \
   do {                             \
@@ -29,27 +27,27 @@ namespace mozilla {
     }                              \
   } while (false)
 
-#define PERFORM_ON_CDM(operation, promiseId, ...)                             \
-  do {                                                                        \
-    mCDM->operation(promiseId, __VA_ARGS__)                                   \
-        ->Then(                                                               \
-            mMainThread, __func__,                                            \
-            [self = RefPtr{this}, this, promiseId]() {                        \
-              RETURN_IF_SHUTDOWN();                                           \
-              if (mKeys.IsNull()) {                                           \
-                EME_LOG("WMFCDMProxy(this=%p, pid=%" PRIu32                   \
-                        ") : abort the " #operation " due to empty key",      \
-                        this, promiseId);                                     \
-                return;                                                       \
-              }                                                               \
-              ResolvePromise(promiseId);                                      \
-            },                                                                \
-            [self = RefPtr{this}, this, promiseId]() {                        \
-              RETURN_IF_SHUTDOWN();                                           \
-              RejectPromiseWithStateError(                                    \
-                  promiseId, nsLiteralCString("WMFCDMProxy::" #operation ": " \
-                                              "failed to " #operation));      \
-            });                                                               \
+#define PERFORM_ON_CDM(operation, promiseId, ...)                              \
+  do {                                                                         \
+    mCDM->operation(promiseId, __VA_ARGS__)                                    \
+        ->Then(                                                                \
+            mMainThread, __func__,                                             \
+            [self = RefPtr{this}, this, promiseId]() {                         \
+              RETURN_IF_SHUTDOWN();                                            \
+              if (mKeys.IsNull()) {                                            \
+                EME_LOG("WMFCDMProxy(this={}, pid={}) : abort the " #operation \
+                        " due to empty key",                                   \
+                        fmt::ptr(this), promiseId);                            \
+                return;                                                        \
+              }                                                                \
+              ResolvePromise(promiseId);                                       \
+            },                                                                 \
+            [self = RefPtr{this}, this, promiseId]() {                         \
+              RETURN_IF_SHUTDOWN();                                            \
+              RejectPromiseWithStateError(                                     \
+                  promiseId, nsLiteralCString("WMFCDMProxy::" #operation ": "  \
+                                              "failed to " #operation));       \
+            });                                                                \
   } while (false)
 
 WMFCDMProxy::WMFCDMProxy(dom::MediaKeys* aKeys, const nsAString& aKeySystem,
@@ -103,10 +101,12 @@ void WMFCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
   mCDM->Init(params)->Then(
       mMainThread, __func__,
       [self = RefPtr{this}, this, aPromiseId](const bool) {
+        RETURN_IF_SHUTDOWN();
         MOZ_ASSERT(mCDM->Id() > 0);
         mKeys->OnCDMCreated(aPromiseId, mCDM->Id());
       },
       [self = RefPtr{this}, this, aPromiseId](const nsresult rv) {
+        RETURN_IF_SHUTDOWN();
         RejectPromiseWithStateError(
             aPromiseId,
             nsLiteralCString("WMFCDMProxy::Init: WMFCDM init error"));
@@ -120,14 +120,14 @@ WMFCDMProxy::GenerateMFCDMMediaCapabilities(
   CopyableTArray<MFCDMMediaCapability> outCapabilites;
   for (const auto& capabilities : aCapabilities) {
     if (!forcedRobustness) {
-      EME_LOG("WMFCDMProxy::Init %p, robustness=%s", this,
+      EME_LOG("WMFCDMProxy::Init {}, robustness={}", fmt::ptr(this),
               NS_ConvertUTF16toUTF8(capabilities.mRobustness).get());
       outCapabilites.AppendElement(MFCDMMediaCapability{
           capabilities.mContentType,
           {StringToCryptoScheme(capabilities.mEncryptionScheme)},
           capabilities.mRobustness});
     } else {
-      EME_LOG("WMFCDMProxy::Init %p, force to robustness=%s", this,
+      EME_LOG("WMFCDMProxy::Init {}, force to robustness={}", fmt::ptr(this),
               NS_ConvertUTF16toUTF8(*forcedRobustness).get());
       outCapabilites.AppendElement(MFCDMMediaCapability{
           capabilities.mContentType,
@@ -141,7 +141,8 @@ WMFCDMProxy::GenerateMFCDMMediaCapabilities(
 void WMFCDMProxy::ResolvePromise(PromiseId aId) {
   auto resolve = [self = RefPtr{this}, this, aId]() {
     RETURN_IF_SHUTDOWN();
-    EME_LOG("WMFCDMProxy::ResolvePromise(this=%p, pid=%" PRIu32 ")", this, aId);
+    EME_LOG("WMFCDMProxy::ResolvePromise(this={}, pid={})", fmt::ptr(this),
+            aId);
     if (!mKeys.IsNull()) {
       mKeys->ResolvePromise(aId);
     } else {
@@ -161,9 +162,9 @@ void WMFCDMProxy::ResolvePromiseWithKeyStatus(
     const PromiseId& aId, const dom::MediaKeyStatus& aStatus) {
   auto resolve = [self = RefPtr{this}, this, aId, aStatus]() {
     RETURN_IF_SHUTDOWN();
-    EME_LOG("WMFCDMProxy::ResolvePromiseWithKeyStatus(this=%p, pid=%" PRIu32
-            ", status=%s)",
-            this, aId, dom::GetEnumString(aStatus).get());
+    EME_LOG(
+        "WMFCDMProxy::ResolvePromiseWithKeyStatus(this={}, pid={}, status={})",
+        fmt::ptr(this), aId, dom::GetEnumString(aStatus).get());
     if (!mKeys.IsNull()) {
       mKeys->ResolvePromiseWithKeyStatus(aId, aStatus);
     } else {
@@ -192,10 +193,10 @@ void WMFCDMProxy::RejectPromise(PromiseId aId, ErrorResult&& aException,
         NS_DISPATCH_NORMAL);
     return;
   }
-  EME_LOG("WMFCDMProxy::RejectPromise(this=%p, pid=%" PRIu32
-          ", code=0x%x, "
-          "reason='%s')",
-          this, aId, aException.ErrorCodeAsInt(), aReason.get());
+  EME_LOG(
+      "WMFCDMProxy::RejectPromise(this={}, pid={}, code=0x{:x}, "
+      "reason='{}')",
+      fmt::ptr(this), aId, aException.ErrorCodeAsInt(), aReason.get());
   if (!mKeys.IsNull()) {
     mKeys->RejectPromise(aId, std::move(aException), aReason);
   } else {
@@ -226,16 +227,16 @@ void WMFCDMProxy::RejectPromiseWithStateError(PromiseId aId,
 }
 
 void WMFCDMProxy::CreateSession(uint32_t aCreateSessionToken,
-                                MediaKeySessionType aSessionType,
+                                dom::MediaKeySessionType aSessionType,
                                 PromiseId aPromiseId,
                                 const nsAString& aInitDataType,
                                 nsTArray<uint8_t>& aInitData) {
   MOZ_ASSERT(NS_IsMainThread());
   RETURN_IF_SHUTDOWN();
   const auto sessionType = ConvertToKeySystemConfigSessionType(aSessionType);
-  EME_LOG("WMFCDMProxy::CreateSession(this=%p, pid=%" PRIu32
-          "), sessionType=%s",
-          this, aPromiseId, KeySystemConfig::EnumValueToString(sessionType));
+  EME_LOG("WMFCDMProxy::CreateSession(this={}, pid={}), sessionType={}",
+          fmt::ptr(this), aPromiseId,
+          KeySystemConfig::EnumValueToString(sessionType));
   mCDM->CreateSession(aPromiseId, sessionType, aInitDataType, aInitData)
       ->Then(
           mMainThread, __func__,
@@ -243,10 +244,11 @@ void WMFCDMProxy::CreateSession(uint32_t aCreateSessionToken,
            aPromiseId](nsString sessionID) {
             RETURN_IF_SHUTDOWN();
             if (mKeys.IsNull()) {
-              EME_LOG("WMFCDMProxy(this=%p, pid=%" PRIu32
-                      ") : abort the create session due to "
-                      "empty key",
-                      this, aPromiseId);
+              EME_LOG(
+                  "WMFCDMProxy(this={}, pid={}) : abort the create session due "
+                  "to "
+                  "empty key",
+                  fmt::ptr(this), aPromiseId);
               return;
             }
             if (RefPtr<dom::MediaKeySession> session =
@@ -270,10 +272,11 @@ void WMFCDMProxy::LoadSession(PromiseId aPromiseId,
   MOZ_ASSERT(NS_IsMainThread());
   RETURN_IF_SHUTDOWN();
   const auto sessionType = ConvertToKeySystemConfigSessionType(aSessionType);
-  EME_LOG("WMFCDMProxy::LoadSession(this=%p, pid=%" PRIu32
-          "), sessionType=%s, sessionId=%s",
-          this, aPromiseId, KeySystemConfig::EnumValueToString(sessionType),
-          NS_ConvertUTF16toUTF8(aSessionId).get());
+  EME_LOG(
+      "WMFCDMProxy::LoadSession(this={}, pid={}), sessionType={}, sessionId={}",
+      fmt::ptr(this), aPromiseId,
+      KeySystemConfig::EnumValueToString(sessionType),
+      NS_ConvertUTF16toUTF8(aSessionId).get());
   PERFORM_ON_CDM(LoadSession, aPromiseId, sessionType, aSessionId);
 }
 
@@ -282,10 +285,11 @@ void WMFCDMProxy::UpdateSession(const nsAString& aSessionId,
                                 nsTArray<uint8_t>& aResponse) {
   MOZ_ASSERT(NS_IsMainThread());
   RETURN_IF_SHUTDOWN();
-  EME_LOG("WMFCDMProxy::UpdateSession(this=%p, pid=%" PRIu32
-          "), sessionId=%s, responseLen=%zu",
-          this, aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get(),
-          aResponse.Length());
+  EME_LOG(
+      "WMFCDMProxy::UpdateSession(this={}, pid={}), sessionId={}, "
+      "responseLen={}",
+      fmt::ptr(this), aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get(),
+      aResponse.Length());
   PERFORM_ON_CDM(UpdateSession, aPromiseId, aSessionId, aResponse);
 }
 
@@ -293,8 +297,8 @@ void WMFCDMProxy::CloseSession(const nsAString& aSessionId,
                                PromiseId aPromiseId) {
   MOZ_ASSERT(NS_IsMainThread());
   RETURN_IF_SHUTDOWN();
-  EME_LOG("WMFCDMProxy::CloseSession(this=%p, pid=%" PRIu32 "), sessionId=%s",
-          this, aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get());
+  EME_LOG("WMFCDMProxy::CloseSession(this={}, pid={}), sessionId={}",
+          fmt::ptr(this), aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get());
   PERFORM_ON_CDM(CloseSession, aPromiseId, aSessionId);
 }
 
@@ -302,8 +306,8 @@ void WMFCDMProxy::RemoveSession(const nsAString& aSessionId,
                                 PromiseId aPromiseId) {
   MOZ_ASSERT(NS_IsMainThread());
   RETURN_IF_SHUTDOWN();
-  EME_LOG("WMFCDMProxy::RemoveSession(this=%p, pid=%" PRIu32 "), sessionId=%s",
-          this, aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get());
+  EME_LOG("WMFCDMProxy::RemoveSession(this={}, pid={}), sessionId={}",
+          fmt::ptr(this), aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get());
   PERFORM_ON_CDM(RemoveSession, aPromiseId, aSessionId);
 }
 
@@ -315,6 +319,14 @@ void WMFCDMProxy::Shutdown() {
     mProxyCallback = nullptr;
   }
   mIsShutdown = true;
+  mKeys.Clear();
+}
+
+void WMFCDMProxy::Terminated() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!mKeys.IsNull()) {
+    mKeys->Terminated();
+  }
 }
 
 void WMFCDMProxy::OnSessionMessage(const nsAString& aSessionId,
@@ -326,7 +338,7 @@ void WMFCDMProxy::OnSessionMessage(const nsAString& aSessionId,
     return;
   }
   if (RefPtr<dom::MediaKeySession> session = mKeys->GetSession(aSessionId)) {
-    LOG("Notify key message for session Id=%s",
+    LOG("Notify key message for session Id={}",
         NS_ConvertUTF16toUTF8(aSessionId).get());
     session->DispatchKeyMessage(aMessageType, aMessage);
   }
@@ -339,7 +351,7 @@ void WMFCDMProxy::OnKeyStatusesChange(const nsAString& aSessionId) {
     return;
   }
   if (RefPtr<dom::MediaKeySession> session = mKeys->GetSession(aSessionId)) {
-    LOG("Notify key statuses for session Id=%s",
+    LOG("Notify key statuses for session Id={}",
         NS_ConvertUTF16toUTF8(aSessionId).get());
     session->DispatchKeyStatusesChange();
   }
@@ -353,9 +365,23 @@ void WMFCDMProxy::OnExpirationChange(const nsAString& aSessionId,
     return;
   }
   if (RefPtr<dom::MediaKeySession> session = mKeys->GetSession(aSessionId)) {
-    LOG("Notify expiration for session Id=%s",
+    LOG("Notify expiration for session Id={}",
         NS_ConvertUTF16toUTF8(aSessionId).get());
     session->SetExpiration(static_cast<double>(aExpiryTime));
+  }
+}
+
+void WMFCDMProxy::OnSessionClosed(const nsAString& aSessionId,
+                                  dom::MediaKeySessionClosedReason aReason) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  if (mKeys.IsNull()) {
+    return;
+  }
+  if (RefPtr<dom::MediaKeySession> session = mKeys->GetSession(aSessionId)) {
+    LOG("Notify closed for session Id={}",
+        NS_ConvertUTF16toUTF8(aSessionId).get());
+    session->OnClosed(aReason);
   }
 }
 
@@ -363,7 +389,7 @@ void WMFCDMProxy::SetServerCertificate(PromiseId aPromiseId,
                                        nsTArray<uint8_t>& aCert) {
   MOZ_ASSERT(NS_IsMainThread());
   RETURN_IF_SHUTDOWN();
-  EME_LOG("WMFCDMProxy::SetServerCertificate(this=%p, pid=%" PRIu32 ")", this,
+  EME_LOG("WMFCDMProxy::SetServerCertificate(this={}, pid={})", fmt::ptr(this),
           aPromiseId);
   mCDM->SetServerCertificate(aPromiseId, aCert)
       ->Then(
@@ -384,9 +410,9 @@ void WMFCDMProxy::GetStatusForPolicy(PromiseId aPromiseId,
                                      const dom::HDCPVersion& aMinHdcpVersion) {
   MOZ_ASSERT(NS_IsMainThread());
   RETURN_IF_SHUTDOWN();
-  EME_LOG("WMFCDMProxy::GetStatusForPolicy(this=%p, pid=%" PRIu32
-          ", minHDCP=%s)",
-          this, aPromiseId, dom::GetEnumString(aMinHdcpVersion).get());
+  EME_LOG("WMFCDMProxy::GetStatusForPolicy(this={}, pid={}, minHDCP={})",
+          fmt::ptr(this), aPromiseId,
+          dom::GetEnumString(aMinHdcpVersion).get());
   mCDM->GetStatusForPolicy(aPromiseId, aMinHdcpVersion)
       ->Then(
           mMainThread, __func__,

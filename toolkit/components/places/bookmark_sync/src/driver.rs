@@ -3,18 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::{
-    fmt::Write,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
 use dogear::{AbortSignal, Guid, ProblemCounts, StructureCounts, TelemetryEvent};
-use log::{Level, LevelFilter, Log, Metadata, Record};
 use moz_task::{Task, TaskRunnable, ThreadPtrHandle};
 use nserror::nsresult;
-use nsstring::{nsACString, nsCString, nsString};
+use nsstring::{nsACString, nsCString};
 use storage_variant::HashPropertyBag;
-use xpcom::interfaces::{mozIServicesLogSink, mozISyncedBookmarksMirrorProgressListener};
+use xpcom::interfaces::mozISyncedBookmarksMirrorProgressListener;
 
 extern "C" {
     fn NS_GeneratePlacesGUID(guid: *mut nsACString) -> nsresult;
@@ -59,17 +57,15 @@ impl AbortSignal for AbortController {
 
 /// The merger driver, created and used on the storage thread.
 pub struct Driver {
-    log: Logger,
     progress: Option<ThreadPtrHandle<mozISyncedBookmarksMirrorProgressListener>>,
 }
 
 impl Driver {
     #[inline]
     pub fn new(
-        log: Logger,
         progress: Option<ThreadPtrHandle<mozISyncedBookmarksMirrorProgressListener>>,
     ) -> Driver {
-        Driver { log, progress }
+        Driver { progress }
     }
 }
 
@@ -78,16 +74,6 @@ impl dogear::Driver for Driver {
         generate_guid()
             .map_err(|_| dogear::ErrorKind::InvalidGuid(invalid_guid.clone()).into())
             .and_then(|s| Guid::from_utf8(s.as_ref()))
-    }
-
-    #[inline]
-    fn max_log_level(&self) -> LevelFilter {
-        self.log.max_level
-    }
-
-    #[inline]
-    fn logger(&self) -> &dyn Log {
-        &self.log
     }
 
     fn record_telemetry_event(&self, event: TelemetryEvent) {
@@ -102,84 +88,6 @@ impl dogear::Driver for Driver {
             )
             .and_then(|r| TaskRunnable::dispatch(r, progress.owning_thread()));
         }
-    }
-}
-
-pub struct Logger {
-    pub max_level: LevelFilter,
-    logger: Option<ThreadPtrHandle<mozIServicesLogSink>>,
-}
-
-impl Logger {
-    #[inline]
-    pub fn new(
-        max_level: LevelFilter,
-        logger: Option<ThreadPtrHandle<mozIServicesLogSink>>,
-    ) -> Logger {
-        Logger { max_level, logger }
-    }
-}
-
-impl Log for Logger {
-    #[inline]
-    fn enabled(&self, meta: &Metadata) -> bool {
-        self.logger.is_some() && meta.level() <= self.max_level
-    }
-
-    fn log(&self, record: &Record) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
-        if let Some(logger) = &self.logger {
-            let mut message = nsString::new();
-            match write!(message, "{}", record.args()) {
-                Ok(_) => {
-                    let task = LogTask {
-                        logger: logger.clone(),
-                        level: record.metadata().level(),
-                        message,
-                    };
-                    let _ = TaskRunnable::new("bookmark_sync::Logger::log", Box::new(task))
-                        .and_then(|r| TaskRunnable::dispatch(r, logger.owning_thread()));
-                }
-                Err(_) => {}
-            }
-        }
-    }
-
-    fn flush(&self) {}
-}
-
-/// Logs a message to the mirror logger. This task is created on the async
-/// thread, and dispatched to the main thread.
-struct LogTask {
-    logger: ThreadPtrHandle<mozIServicesLogSink>,
-    level: Level,
-    message: nsString,
-}
-
-impl Task for LogTask {
-    fn run(&self) {
-        let logger = self.logger.get().unwrap();
-        match self.level {
-            Level::Error => unsafe {
-                logger.Error(&*self.message);
-            },
-            Level::Warn => unsafe {
-                logger.Warn(&*self.message);
-            },
-            Level::Debug => unsafe {
-                logger.Debug(&*self.message);
-            },
-            Level::Trace => unsafe {
-                logger.Trace(&*self.message);
-            },
-            _ => {}
-        }
-    }
-
-    fn done(&self) -> Result<(), nsresult> {
-        Ok(())
     }
 }
 

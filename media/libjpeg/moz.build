@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -7,110 +5,61 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Graphics: ImageLib")
 
-# Not technically necessary, but set for consistency with the 12/16-bit ones.
-DEFINES['BITS_IN_JSAMPLE'] = 8
-
-# libjpeg-turbo 3 requires rebuilding some files multiple times in order to
-# pick up 12-bit and 16-bit support. Failure to do so results in missing
-# symbols during linking.
-#
-# Since we can't build the same files multiple times with different
-# BITS_IN_JSAMPLE values defined, we instead create separate moz.build files
-# for each configuration. The files must be kept in sync with JPEG12_SOURCES
-# and JPEG16_SOURCES from the upstream CMakeLists.txt.
 DIRS += [
-    "jpeg12",
-    "jpeg16",
+    "src/wrapper",
 ]
 
 EXPORTS += [
     'jconfig.h',
-    'jerror.h',
-    'jinclude.h',
-    'jmorecfg.h',
-    'jpegint.h',
-    'jpeglib.h',
+    'src/jerror.h',
+    'src/jinclude.h',
+    'src/jmorecfg.h',
+    'src/jpegint.h',
+    'src/jpeglib.h',
+]
+
+LOCAL_INCLUDES += [
+    '/media/libjpeg',
+    '/media/libjpeg/src',
 ]
 
 SOURCES += [
-    'jcomapi.c',
-    'jdapimin.c',
-    'jdapistd.c',
-    'jdatadst.c',
-    'jdatasrc.c',
-    'jdcoefct.c',
-    'jdcolor.c',
-    'jddctmgr.c',
-    'jddiffct.c',
-    'jdhuff.c',
-    'jdicc.c',
-    'jdinput.c',
-    'jdlhuff.c',
-    'jdlossls.c',
-    'jdmainct.c',
-    'jdmarker.c',
-    'jdmaster.c',
-    'jdmerge.c',
-    'jdphuff.c',
-    'jdpostct.c',
-    'jdsample.c',
-    'jdtrans.c',
-    'jerror.c',
-    'jfdctflt.c',
-    'jfdctfst.c',
-    'jfdctint.c',
-    'jidctflt.c',
-    'jidctfst.c',
-    'jidctint.c',
-    'jidctred.c',
-    'jmemmgr.c',
-    'jmemnobs.c',
-    'jpeg_nbits.c',
-    'jquant1.c',
-    'jquant2.c',
-    'jutils.c',
+    'src/jcomapi.c',
+    'src/jdapimin.c',
+    'src/jdatadst.c',
+    'src/jdatasrc.c',
+    'src/jdhuff.c',
+    'src/jdicc.c',
+    'src/jdinput.c',
+    'src/jdlhuff.c',
+    'src/jdmarker.c',
+    'src/jdmaster.c',
+    'src/jdphuff.c',
+    'src/jdtrans.c',
+    'src/jerror.c',
+    'src/jfdctflt.c',
+    'src/jmemmgr.c',
+    'src/jmemnobs.c',
+    'src/jpeg_nbits.c',
 ]
 
 # These files enable support for writing JPEGs
 SOURCES += [
-    'jcapimin.c',
-    'jcapistd.c',
-    'jccoefct.c',
-    'jccolor.c',
-    'jcdctmgr.c',
-    'jcdiffct.c',
-    'jchuff.c',
-    'jcicc.c',
-    'jcinit.c',
-    'jclhuff.c',
-    'jclossls.c',
-    'jcmainct.c',
-    'jcmarker.c',
-    'jcmaster.c',
-    'jcparam.c',
-    'jcphuff.c',
-    'jcprepct.c',
-    'jcsample.c',
-    'jctrans.c',
+    'src/jcapimin.c',
+    'src/jchuff.c',
+    'src/jcicc.c',
+    'src/jcinit.c',
+    'src/jclhuff.c',
+    'src/jcmarker.c',
+    'src/jcmaster.c',
+    'src/jcparam.c',
+    'src/jcphuff.c',
+    'src/jctrans.c',
 ]
 
-if CONFIG['LIBJPEG_TURBO_HAVE_VLD1_S16_X3']:
-    DEFINES['HAVE_VLD1_S16_X3'] = True
-
-if CONFIG['LIBJPEG_TURBO_HAVE_VLD1_U16_X2']:
-    DEFINES['HAVE_VLD1_U16_X2'] = True
-
-if CONFIG['LIBJPEG_TURBO_HAVE_VLD1Q_U8_X4']:
-    DEFINES['HAVE_VLD1Q_U8_X4'] = True
-
-if CONFIG['LIBJPEG_TURBO_NEON_INTRINSICS']:
-    DEFINES['NEON_INTRINSICS'] = True
-
-if CONFIG['LIBJPEG_TURBO_USE_NASM']:
-    USE_NASM = True
+include('/media/libjpeg/libjpeg-config.mozbuild')
 
 if CONFIG['LIBJPEG_TURBO_SIMD_FLAGS']:
-    DEFINES['MOZ_WITH_SIMD'] = 1
     if CONFIG['TARGET_CPU'] == 'arm':
         LOCAL_INCLUDES += [
             '/media/libjpeg/simd/arm',
@@ -299,7 +248,6 @@ if CONFIG['LIBJPEG_TURBO_SIMD_FLAGS']:
             'simd/i386/jsimdcpu.asm',
         ]
 elif CONFIG['TARGET_CPU'].startswith('ppc'):
-    DEFINES['MOZ_WITH_SIMD'] = 1
     # PowerPC has no assembly files, but still needs its own headers.
     LOCAL_INCLUDES += ['/media/libjpeg/simd/powerpc']
 
@@ -326,16 +274,6 @@ elif CONFIG['TARGET_CPU'].startswith('ppc'):
     ]
     for srcfile in ppc_vmx_sources:
         SOURCES[srcfile].flags += CONFIG['PPC_VMX_FLAGS']
-
-ASFLAGS += CONFIG['LIBJPEG_TURBO_SIMD_FLAGS']
-
-# Make sure the x86 & x86-64 ASM files can see the necessary includes.
-if CONFIG['TARGET_CPU'] == 'x86':
-    ASFLAGS += ['-I%s/media/libjpeg/simd/nasm/' % TOPSRCDIR]
-    ASFLAGS += ['-I%s/media/libjpeg/simd/i386/' % TOPSRCDIR]
-if CONFIG['TARGET_CPU'] == 'x86_64':
-    ASFLAGS += ['-I%s/media/libjpeg/simd/nasm/' % TOPSRCDIR]
-    ASFLAGS += ['-I%s/media/libjpeg/simd/x86_64/' % TOPSRCDIR]
 
 # We allow warnings for third-party code that can be updated from upstream.
 AllowCompilerWarnings()

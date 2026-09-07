@@ -8,34 +8,76 @@ Bug 1889932 p1: Set process ACL to the delayed integrity level in LowerToken. r=
 
 This allows us to maintain the same access to our process when the integrity
 level on our access token is dropped.
+This uses a lower level function for setting the label instead if the chromium
+wrappers, so that processes that haven't loaded ntmarta.dll don't need to.
 
 Differential Revision: https://phabricator.services.mozilla.com/D206784
 
-diff --git a/sandbox/win/src/restricted_token_utils.cc b/sandbox/win/src/restricted_token_utils.cc
---- a/sandbox/win/src/restricted_token_utils.cc
-+++ b/sandbox/win/src/restricted_token_utils.cc
-@@ -302,16 +302,24 @@ DWORD SetTokenIntegrityLevel(HANDLE toke
- DWORD SetProcessIntegrityLevel(IntegrityLevel integrity_level) {
-   // We don't check for an invalid level here because we'll just let it
-   // fail on the SetTokenIntegrityLevel call later on.
-   if (integrity_level == INTEGRITY_LEVEL_LAST) {
-     // No mandatory level specified, we don't change it.
-     return ERROR_SUCCESS;
+diff --git a/sandbox/win/src/target_services.cc b/sandbox/win/src/target_services.cc
+--- a/sandbox/win/src/target_services.cc
++++ b/sandbox/win/src/target_services.cc
+@@ -126,16 +126,39 @@ bool SetProcessIntegrityLevel(IntegrityLevel integrity_level) {
+       base::win::AccessToken::FromCurrentProcess(/*impersonation=*/false,
+                                                  TOKEN_ADJUST_DEFAULT);
+   if (!token) {
+     return false;
    }
- 
-+  // Set integrity level for our process ACL, so we retain access to it.
-+  // We ignore failures because this is not a security measure, but some
-+  // functionality may fail later in the process.
-+  DWORD rv =
-+      SetObjectIntegrityLabel(::GetCurrentProcess(), SE_KERNEL_OBJECT, L"",
-+                              GetIntegrityLevelString(integrity_level));
-+  DCHECK(rv == ERROR_SUCCESS);
+   return token->SetIntegrityLevel(*rid);
+ }
+
++void SetProcessAclIntegrityLevel(IntegrityLevel integrity_level) {
++  absl::optional<DWORD> rid = GetIntegrityLevelRid(integrity_level);
++  if (!rid) {
++    // No mandatory level specified, we don't change it.
++    return;
++  }
 +
-   HANDLE token_handle;
-   if (!::OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_DEFAULT,
-                           &token_handle))
-     return ::GetLastError();
- 
-   base::win::ScopedHandle token(token_handle);
- 
-   return SetTokenIntegrityLevel(token.Get(), integrity_level);
++  // Set the integrity level for our process ACL, so we retain access to it.
++  // We ignore failures in non-debug because this is not a security measure,
++  // but some functionality may fail later in the process.
++  base::win::SecurityDescriptor sdWrapper;
++  if (!sdWrapper.SetMandatoryLabel(*rid, 0, 0)) {
++    DCHECK(false);
++    return;
++  }
++
++  SECURITY_DESCRIPTOR sd;
++  sdWrapper.ToAbsolute(sd);
++  BOOL success = ::SetKernelObjectSecurity(::GetCurrentProcess(),
++                                           LABEL_SECURITY_INFORMATION, &sd);
++  DCHECK(success);
++}
++
+ // Used as storage for g_target_services, because other allocation facilities
+ // are not available early. We can't use a regular function static because on
+ // VS2015, because the CRT tries to acquire a lock to guard initialization, but
+ // this code runs before the CRT is initialized.
+ char g_target_services_memory[sizeof(TargetServicesBase)];
+ TargetServicesBase* g_target_services = nullptr;
+
+ }  // namespace
+@@ -171,21 +194,23 @@ void TargetServicesBase::LowerToken() {
+   if (ERROR_SUCCESS != ::RegDisablePredefinedCache())
+     ::TerminateProcess(::GetCurrentProcess(), SBOX_FATAL_CACHEDISABLE);
+   if (!WarmupWindowsLocales())
+     ::TerminateProcess(::GetCurrentProcess(), SBOX_FATAL_WARMUP);
+   bool is_csrss_connected = true;
+   if (!CloseOpenHandles(&is_csrss_connected))
+     ::TerminateProcess(::GetCurrentProcess(), SBOX_FATAL_CLOSEHANDLES);
+   process_state_.SetCsrssConnected(is_csrss_connected);
+-  // Enabling mitigations must happen last otherwise handle closing breaks
++  // Enabling mitigations must happen after the above measures otherwise handle
++  // closing breaks.
+   if (g_shared_delayed_mitigations &&
+       !LockDownSecurityMitigations(g_shared_delayed_mitigations)) {
+     ::TerminateProcess(::GetCurrentProcess(), SBOX_FATAL_MITIGATION);
+   }
++  SetProcessAclIntegrityLevel(g_shared_delayed_integrity_level);
+ }
+
+ ProcessState* TargetServicesBase::GetState() {
+   return &process_state_;
+ }
+
+ TargetServicesBase* TargetServicesBase::GetInstance() {
+   // Leak on purpose TargetServicesBase.

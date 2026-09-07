@@ -60,8 +60,9 @@ def WebIDLTest(parser, harness):
         iface.identifier.QName(), "::TestConsts", "Interface has the right QName"
     )
     harness.check(iface.identifier.name, "TestConsts", "Interface has the right name")
+    expected_count = len(expected)
     harness.check(
-        len(iface.members), len(expected), "Expect %s members" % len(expected)
+        len(iface.members), expected_count, f"Expect {expected_count} members"
     )
 
     for const, (QName, name, type, value) in zip(iface.members, expected):

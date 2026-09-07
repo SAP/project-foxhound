@@ -10,6 +10,8 @@ const FINAL_URL =
 
 /**
  * One-time observer callback.
+ *
+ * @param {string} name
  */
 function promiseObserve(name) {
   return new Promise(resolve => {

@@ -42,6 +42,7 @@ LIB_TO_LICENSES_DICT = {
     ],
     'boringssl': ['third_party/boringssl/src/LICENSE'],
     'crc32c': ['third_party/crc32c/src/LICENSE'],
+    'compiler-rt': ['third_party/compiler-rt/src/LICENSE.TXT'],
     'cpu_features': ['third_party/cpu_features/src/LICENSE'],
     'dav1d': ['third_party/dav1d/LICENSE'],
     'errorprone': [
@@ -69,7 +70,6 @@ LIB_TO_LICENSES_DICT = {
     'webrtc': ['LICENSE'],
     'zlib': ['third_party/zlib/LICENSE'],
     'base64': ['rtc_base/third_party/base64/LICENSE'],
-    'sigslot': ['rtc_base/third_party/sigslot/LICENSE'],
     'portaudio': ['modules/third_party/portaudio/LICENSE'],
     'fft': ['modules/third_party/fft/LICENSE'],
     'g711': ['modules/third_party/g711/LICENSE'],
@@ -195,7 +195,12 @@ class LicenseBuilder:
         return output_json
 
     def _get_third_party_libraries(self, buildfile_dir, target):
-        output = json.loads(LicenseBuilder._run_gn(buildfile_dir, target))
+        license_json = LicenseBuilder._run_gn(buildfile_dir, target)
+        try:
+            output = json.loads(license_json)
+        except:
+            logging.error("unable to parse license_json = '%s'", license_json)
+            raise
         libraries = set()
         for described_target in list(output.values()):
             third_party_libs = (self._parse_library(dep)

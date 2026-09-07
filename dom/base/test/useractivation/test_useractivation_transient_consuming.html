@@ -14,6 +14,7 @@
 SimpleTest.requestFlakyTimeout("Timeouts are needed to test transient user_activation");
 
 let timeout = SpecialPowers.getIntPref("dom.user_activation.transient.timeout") + 1000;
+let [iframe0, iframe1] = document.querySelectorAll("iframe");
 
 function waitForEvent(aTarget, aEvent, aCallback) {
   return new Promise((aResolve) => {

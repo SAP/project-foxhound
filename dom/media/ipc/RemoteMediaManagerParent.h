@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,12 +48,17 @@ class RemoteMediaManagerParent final : public PRemoteMediaManagerParent,
   void DeallocateSurfaceDescriptor(
       const SurfaceDescriptorGPUVideo& aSD) override;
 
+  void OnSetCurrent(const SurfaceDescriptorGPUVideo& aSD) override {
+    MOZ_ASSERT_UNREACHABLE("Not usable from the parent");
+  }
+
   static bool StartupThreads();
   static void ShutdownThreads();
 
   static void ShutdownVideoBridge();
 
   bool OnManagerThread();
+  static void Dispatch(already_AddRefed<nsIRunnable> aRunnable);
 
   // Can be called from manager thread only
   PDMFactory& EnsurePDMFactory();
@@ -63,26 +66,28 @@ class RemoteMediaManagerParent final : public PRemoteMediaManagerParent,
   const dom::ContentParentId& GetContentId() const { return mContentId; }
 
  protected:
-  PRemoteDecoderParent* AllocPRemoteDecoderParent(
+  already_AddRefed<PRemoteDecoderParent> AllocPRemoteDecoderParent(
       const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
       const CreateDecoderParams::OptionSet& aOptions,
       const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
       const Maybe<uint64_t>& aMediaEngineId,
-      const Maybe<TrackingId>& aTrackingId);
-  bool DeallocPRemoteDecoderParent(PRemoteDecoderParent* actor);
+      const Maybe<TrackingId>& aTrackingId, PRemoteCDMParent* aCDM);
 
   already_AddRefed<PRemoteEncoderParent> AllocPRemoteEncoderParent(
       const EncoderConfig& aConfig);
 
-  PMFMediaEngineParent* AllocPMFMediaEngineParent();
-  bool DeallocPMFMediaEngineParent(PMFMediaEngineParent* actor);
+  already_AddRefed<PMFMediaEngineParent> AllocPMFMediaEngineParent();
 
-  PMFCDMParent* AllocPMFCDMParent(const nsAString& aKeySystem);
-  bool DeallocPMFCDMParent(PMFCDMParent* actor);
+  already_AddRefed<PMFCDMParent> AllocPMFCDMParent(const nsAString& aKeySystem);
+
+  already_AddRefed<PRemoteCDMParent> AllocPRemoteCDMParent(
+      const nsAString& aKeySystem);
 
   mozilla::ipc::IPCResult RecvReadback(const SurfaceDescriptorGPUVideo& aSD,
                                        SurfaceDescriptor* aResult);
   mozilla::ipc::IPCResult RecvDeallocateSurfaceDescriptorGPUVideo(
+      const SurfaceDescriptorGPUVideo& aSD);
+  mozilla::ipc::IPCResult RecvOnSetCurrent(
       const SurfaceDescriptorGPUVideo& aSD);
 
   void ActorDestroy(mozilla::ipc::IProtocol::ActorDestroyReason) override;

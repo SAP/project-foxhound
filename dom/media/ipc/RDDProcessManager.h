@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef _include_dom_media_ipc_RDDProcessManager_h_
 #define _include_dom_media_ipc_RDDProcessManager_h_
 #include "mozilla/MozPromise.h"
+#include "mozilla/PRDDChild.h"
 #include "mozilla/PRemoteMediaManagerChild.h"
 #include "mozilla/RDDProcessHost.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/ipc/TaskFactory.h"
-#include "mozilla/PRDDChild.h"
 #include "nsIObserver.h"
 
 namespace mozilla {
@@ -74,9 +72,8 @@ class RDDProcessManager final : public RDDProcessHost::Listener {
   RefPtr<PRDDChild::TestTriggerMetricsPromise> TestTriggerMetrics();
 
  private:
-  bool IsRDDProcessLaunching();
-  bool IsRDDProcessDestroyed() const;
-  bool CreateVideoBridge();
+  bool IsRDDProcessLaunching() const;
+  bool IsRDDProcessAlive() const;
 
   // Called from our xpcom-shutdown observer.
   void OnXPCOMShutdown();

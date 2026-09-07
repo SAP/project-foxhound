@@ -4,13 +4,14 @@
 
 "use strict";
 
-/* globals AboutCompatBroker, AVAILABLE_SHIMS,
-           CUSTOM_FUNCTIONS, Interventions, Shims */
+/* globals AboutCompatBroker, AVAILABLE_SHIMS, CUSTOM_FUNCTIONS,
+           listenForRemoteSettingsUpdates,
+           Interventions, Shims */
 
 var interventions, shims;
 
-const AVAILABLE_INTERVENTIONS =
-#include data/interventions.json
+// Note that this variable is expanded during build-time. See bz2019069 for details.
+const AVAILABLE_INTERVENTIONS = {};
 
 try {
   interventions = new Interventions(AVAILABLE_INTERVENTIONS, CUSTOM_FUNCTIONS);
@@ -36,3 +37,5 @@ try {
 } catch (e) {
   console.error("about:compat broker failed to start", e);
 }
+
+listenForRemoteSettingsUpdates(interventions, shims);

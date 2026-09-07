@@ -1,0 +1,15 @@
+{
+  "label": "portal.circle.ms",
+  "bugs": {
+    "1865007": {
+      "issue": "desktop-layout-not-mobile",
+      "matches": ["*://*.circle.ms/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

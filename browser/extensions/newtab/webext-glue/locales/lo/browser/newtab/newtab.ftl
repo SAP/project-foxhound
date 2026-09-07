@@ -16,6 +16,46 @@ newtab-personalize-dialog-label =
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-new-tabs =
+    .label = ແທັບໃຫມ່
+
+## Firefox Home content
+
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label = { $num } ແຖວ
+home-restore-defaults-srd =
+    .label = ກູ້ຄືນຄ່າເລີ່ມຕົ້ນ
+    .accesskey = ກ
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (ຄ່າເລີ່ມຕົ້ນ)
+home-mode-choice-custom-srd =
+    .label = URLs ທີ່ກຳນົດເອງ…
+home-mode-choice-blank-srd =
+    .label = ຫນ້າເປົ່າ
+home-prefs-shortcuts-header-srd =
+    .label = ທາງລັດ
+home-prefs-shortcuts-select =
+    .aria-label = ທາງລັດ
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = ທາງລັດສະປອນເຊີ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = ເລື່ອງລາວທີ່ໄດ້ຮັບການສະຫນັບສະຫນູນ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = ຫນ້າທີ່ເຂົ້າໄປເບິ່ງແລ້ວ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ບຸກມາກ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ການດາວໂຫລດລ່າສຸດ
+home-prefs-recent-activity-header-srd =
+    .label = ກິດ​ຈະ​ກໍາ​ທີ່​ຜ່ານ​ມາ
+home-prefs-recent-activity-select =
+    .aria-label = ກິດ​ຈະ​ກໍາ​ທີ່​ຜ່ານ​ມາ
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -41,7 +81,7 @@ newtab-search-box-input =
     .placeholder = ຄົ້ນຫາເວັບໄຊທ
     .aria-label = ຄົ້ນຫາເວັບໄຊທ
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = ເພີ່ມ Search Engine
 newtab-topsites-add-shortcut-header = ທາງລັດໃໝ່
@@ -104,9 +144,6 @@ newtab-menu-save-to-pocket = ບັນທືກໄປທີ່ { -pocket-brand-n
 newtab-menu-delete-pocket = ລຶບອອກຈາກ { -pocket-brand-name }
 newtab-menu-archive-pocket = ເກັບຖາວອນໃນ { -pocket-brand-name }
 newtab-menu-show-privacy-info = ຜູ້ສະຫນັບສະຫນູນຂອງພວກເຮົາ & ຄວາມເປັນສ່ວນຕົວຂອງທ່ານ
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -228,9 +265,6 @@ newtab-pocket-pocket-firefox-family = { -pocket-brand-name } ແມ່ນສ່�
 newtab-pocket-save = ບັນທຶກ
 newtab-pocket-saved = ບັນທຶກແລ້ວ
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
 ## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
 
 newtab-pocket-onboarding-discover = ຄົ້ນພົບສິ່ງທີ່ດີທີ່ສຸດຂອງເວັບ
@@ -246,9 +280,17 @@ newtab-error-fallback-refresh-link = ຟື້ນຟູໜ້າເພື່ອ�
 
 newtab-custom-shortcuts-title = ທາງລັດ
 newtab-custom-shortcuts-subtitle = ເວັບໄຊທທີ່ທ່ານໄດ້ບັນທຶກໄວ້ ຫລື ເຂົ້າໄປເບິງມາ
+#  (developer note): @nova-cleanup(remove-string): Remove old string once Nova lands. The newtab-custom-shortcuts-nova string will take over
 newtab-custom-shortcuts-toggle =
     .label = ທາງລັດ
     .description = ເວັບໄຊທທີ່ທ່ານໄດ້ບັນທຶກໄວ້ ຫລື ເຂົ້າໄປເບິງມາ
+newtab-custom-shortcuts-nova =
+    .label = ທາງລັດ
+# Variables
+#   $num (number) - Number of rows to display
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
+newtab-custom-row-selector2 =
+    .label = { $num } ແຖວ
 # Variables
 #   $num (number) - Number of rows to display
 newtab-custom-row-selector = { $num } ແຖວ
@@ -259,60 +301,5 @@ newtab-custom-pocket-sponsored = ເລື່ອງລາວທີ່ໄດ້�
 newtab-custom-pocket-show-recent-saves = ສະແດງບັນທຶກຫຼ້າສຸດ
 newtab-custom-recent-title = ກິດ​ຈະ​ກໍາ​ທີ່​ຜ່ານ​ມາ
 newtab-custom-recent-subtitle = ການເລືອກເວັບໄຊ ແລະເນື້ອຫາຫຼ້າສຸດ
-newtab-custom-recent-toggle =
-    .label = ກິດ​ຈະ​ກໍາ​ທີ່​ຜ່ານ​ມາ
-    .description = ການເລືອກເວັບໄຊ ແລະເນື້ອຫາຫຼ້າສຸດ
 newtab-custom-close-button = ປິດ
 newtab-custom-settings = ຈັດການການຕັ້ງຄ່າເພີ່ມເຕີມ
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

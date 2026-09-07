@@ -113,7 +113,7 @@ struct ClientNavigateArgs
 
 struct ClientPostMessageArgs
 {
-  ClonedMessageData clonedData;
+  StructuredCloneData clonedData;
   // See PostMessageSource for why this can only be a ServiceWorker.
   IPCServiceWorkerDescriptor serviceWorker;
 };

@@ -7,8 +7,10 @@ support-files = [
 ["browser_Telemetry_timestamp_test.js"]
 
 ["browser_bug511456.js"]
-skip-if = ["os == 'linux' && bits == 64 && os_version == '18.04'"] # Bug 1334729, Bug 1546252;  Bug 1582549
 
 ["browser_bug537449.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_crash_detection.js"]

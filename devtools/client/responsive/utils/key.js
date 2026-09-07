@@ -10,11 +10,11 @@ const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
  * Helper to check if the provided key matches one of the expected keys.
  * Keys will be prefixed with DOM_VK_ and should match a key in KeyCodes.
  *
- * @param {String} key
+ * @param {string} key
  *        the key to check (can be a keyCode).
- * @param {...String} keys
+ * @param {...string} keys
  *        list of possible keys allowed.
- * @return {Boolean} true if the key matches one of the keys.
+ * @return {boolean} true if the key matches one of the keys.
  */
 function isKeyIn(key, ...keys) {
   return keys.some(expectedKey => {

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AudioContext iframe</title>
+</head>
+<body>
+<script>
+const ac = new AudioContext();
+const osc = ac.createOscillator();
+const gain = ac.createGain();
+gain.gain.value = 0.05;
+osc.connect(gain);
+gain.connect(ac.destination);
+osc.start();
+
+window.getAudioContextState = () => ac.state;
+window.waitForAudioContextState = expected =>
+  new Promise(resolve => {
+    if (ac.state === expected) {
+      resolve(ac.state);
+      return;
+    }
+    ac.addEventListener("statechange", function listener() {
+      if (ac.state === expected) {
+        ac.removeEventListener("statechange", listener);
+        resolve(ac.state);
+      }
+    });
+  });
+</script>
+</body>
+</html>

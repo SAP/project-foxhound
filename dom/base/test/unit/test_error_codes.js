@@ -4,6 +4,10 @@
  */
 
 var prefs = Services.prefs;
+prefs.setBoolPref(
+  "network.proxy.testing_localhost_is_secure_when_hijacked",
+  false
+);
 
 function asyncXHR(expectedStatus, nextTestFunc) {
   var xhr = new XMLHttpRequest();
@@ -52,5 +56,8 @@ function run_test_pt2() {
 }
 
 function end_test() {
+  prefs.clearUserPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked"
+  );
   do_test_finished();
 }

@@ -1,0 +1,74 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  --chat-assistant-loader-size: var(--size-item-small);
+  --chat-assistant-loader-light-pink: color-mix(in srgb, var(--color-blue-40) 38.74%, var(--color-purple-10) 61.26%);
+  --chat-assistant-loader-dark-pink: var(--color-purple-60);
+  --chat-assistant-loader-nl-purple: var(--color-violet-40);
+  --chat-assistant-loader-nl-pink: var(--color-pink-40);
+  --chat-assistant-loader-nl-orange: var(--color-orange-30);
+}
+
+.chat-assistant-loader {
+  display: flex;
+  gap: calc(var(--space-xxsmall) + var(--space-xsmall));
+}
+
+.chat-assistant-loader__spinner,
+.chat-assistant-loader__nl-icon {
+  background-size: var(--chat-assistant-loader-size);
+  height: var(--chat-assistant-loader-size);
+  width: var(--chat-assistant-loader-size);
+}
+
+.chat-assistant-loader__spinner {
+  animation: 0.9s spinLoader infinite linear;
+  background-image: url("chrome://browser/content/aiwindow/assets/loader.svg");
+  will-change: transform;
+}
+
+@keyframes spinLoader {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.chat-assistant-loader__nl-icon {
+  background-image: url("chrome://browser/skin/smart-window.svg");
+}
+
+.chat-assistant-loader__text,
+.chat-assistant-loader__nl-text {
+  background-clip: text;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  color: transparent;
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.chat-assistant-loader__text {
+  background-image: linear-gradient(90deg, var(--chat-assistant-loader-light-pink) 14.17%, var(--chat-assistant-loader-dark-pink) 91.21%);
+}
+
+.chat-assistant-loader__nl-text {
+  background-image: linear-gradient(
+    95deg,
+    var(--chat-assistant-loader-nl-purple) 1.22%,
+    var(--chat-assistant-loader-nl-pink) 85.48%,
+    var(--chat-assistant-loader-nl-orange) 99.68%
+  );
+}
+
+@media (forced-colors: active) {
+  .chat-assistant-loader__text,
+  .chat-assistant-loader__nl-text {
+    color: var(--link-color);
+    background-image: none;
+    background-clip: unset;
+  }
+}

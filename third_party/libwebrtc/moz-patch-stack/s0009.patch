@@ -1,0 +1,82 @@
+From: Jan Beich <jbeich@FreeBSD.org>
+Date: Fri, 12 Oct 2018 12:56:00 -0400
+Subject: Bug 1376873 - Unbreak WebRTC 64 build on BSDs. r=dminor f=gaston
+
+Also includes:
+Bug 1554949 - Fix WebRTC build failure with newer linux kernel. r=dminor
+
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a636ecdcb91afb1c5d436bbcbd87da4f10f7df78
+---
+ modules/video_capture/linux/device_info_v4l2.cc | 8 +++++++-
+ rtc_base/byte_order.h                           | 2 ++
+ rtc_base/cpu_info.cc                            | 2 +-
+ rtc_base/physical_socket_server.cc              | 2 +-
+ 4 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/modules/video_capture/linux/device_info_v4l2.cc b/modules/video_capture/linux/device_info_v4l2.cc
+index 2ddda9c289..2c4a9a365a 100644
+--- a/modules/video_capture/linux/device_info_v4l2.cc
++++ b/modules/video_capture/linux/device_info_v4l2.cc
+@@ -11,7 +11,13 @@
+ #include "modules/video_capture/linux/device_info_v4l2.h"
+ 
+ #include <fcntl.h>
++#if defined(__NetBSD__) || defined(__OpenBSD__) // WEBRTC_BSD
++#include <sys/videoio.h>
++#elif defined(__sun)
++#include <sys/videodev2.h>
++#else
+ #include <linux/videodev2.h>
++#endif
+ #include <sys/ioctl.h>
+ #include <unistd.h>
+ 
+@@ -209,8 +215,8 @@ DeviceInfoV4l2::DeviceInfoV4l2() : DeviceInfoImpl()
+     {
+         _inotifyEventThread->Start();
+     }
+-}
+ #endif
++}
+ 
+ int32_t DeviceInfoV4l2::Init() {
+   return 0;
+diff --git a/rtc_base/byte_order.h b/rtc_base/byte_order.h
+index bf44c450e6..d5696aa6ae 100644
+--- a/rtc_base/byte_order.h
++++ b/rtc_base/byte_order.h
+@@ -84,6 +84,8 @@
+ #error WEBRTC_ARCH_BIG_ENDIAN or WEBRTC_ARCH_LITTLE_ENDIAN must be defined.
+ #endif  // defined(WEBRTC_ARCH_LITTLE_ENDIAN)
+ 
++#elif defined(WEBRTC_BSD) && !defined(__OpenBSD__)
++#include <sys/endian.h>
+ #elif defined(WEBRTC_POSIX)
+ #include <endian.h>
+ #else
+diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
+index f79edd3bea..0c6a76fcad 100644
+--- a/rtc_base/cpu_info.cc
++++ b/rtc_base/cpu_info.cc
+@@ -54,7 +54,7 @@ uint32_t DetectNumberOfCoresHelper() {
+   SYSTEM_INFO si;
+   GetNativeSystemInfo(&si);
+   number_of_cores = static_cast<int>(si.dwNumberOfProcessors);
+-#elif defined(WEBRTC_LINUX) || defined(WEBRTC_ANDROID)
++#elif defined(WEBRTC_LINUX) || defined(WEBRTC_ANDROID) || defined(WEBRTC_BSD)
+   number_of_cores = static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN));
+   if (number_of_cores <= 0) {
+     RTC_LOG(LS_ERROR) << "Failed to get number of cores";
+diff --git a/rtc_base/physical_socket_server.cc b/rtc_base/physical_socket_server.cc
+index 9d9927e85b..2f4e7fe55c 100644
+--- a/rtc_base/physical_socket_server.cc
++++ b/rtc_base/physical_socket_server.cc
+@@ -756,7 +756,7 @@ int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
+       *slevel = IPPROTO_IP;
+       *sopt = IP_DONTFRAGMENT;
+       break;
+-#elif defined(WEBRTC_MAC) || defined(BSD)
++#elif defined(WEBRTC_MAC) || defined(WEBRTC_BSD)
+       RTC_LOG(LS_WARNING) << "Socket::OPT_DONTFRAGMENT not supported.";
+       return -1;
+ #elif defined(WEBRTC_POSIX)

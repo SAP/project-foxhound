@@ -20,4 +20,4 @@ assertEq(typeof config, "object");
 
 for (const [key, value] of Object.entries(config)) {
   assertEq(getBuildConfiguration(key), value);
-}
+} 

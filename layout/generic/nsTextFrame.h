@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTextFrame_h__
-#define nsTextFrame_h__
+#ifndef nsTextFrame_h_
+#define nsTextFrame_h_
 
 #include "JustificationUtils.h"
 #include "gfxSkipChars.h"
@@ -25,26 +23,86 @@
 
 struct SelectionDetails;
 class nsBlockFrame;
-class nsTextFragment;
 class nsTextPaintStyle;
+class nsLineLayout;
 
 namespace mozilla {
 class SVGContextPaint;
 class SVGTextFrame;
 class nsDisplayTextGeometry;
 class nsDisplayText;
+namespace dom {
+class CharacterDataBuffer;
+}
+
+/**
+ * Helper for CSS text-autospace, used by nsTextFrame::PropertyProvider.
+ */
+class MOZ_STACK_CLASS TextAutospace final {
+ public:
+  enum class CharClass : uint8_t {
+    Other,
+    CombiningMark,
+    Ideograph,
+    NonIdeographicLetter,
+    NonIdeographicNumeral,
+  };
+
+  enum class Boundary : uint8_t {
+    IdeographAlpha,
+    IdeographNumeric,
+  };
+  using BoundarySet = EnumSet<Boundary>;
+
+  // Returns true if inter-script spacing may be added at boundaries.
+  static bool Enabled(const StyleTextAutospace& aStyleTextAutospace,
+                      const nsTextFrame* aFrame);
+
+  TextAutospace(const StyleTextAutospace& aStyleTextAutospace,
+                nscoord aSpacing);
+
+  nscoord InterScriptSpacing() const { return mInterScriptSpacing; }
+
+  // Return true if inter-script spacing should be applied between aPrevClass
+  // and aCurrClass.
+  bool ShouldApplySpacing(CharClass aPrevClass, CharClass aCurrClass) const;
+
+  // Returns true when non-ideographic letters/numerals should not participate
+  // in autospace boundaries for aFrame.
+  static bool ShouldSuppressLetterNumeralSpacing(const nsIFrame* aFrame);
+
+  // Return true if aChar is an ideograph.
+  // https://drafts.csswg.org/css-text-4/#ideographs
+  static bool IsIdeograph(char32_t aChar);
+
+  // Get character class for aChar.
+  // https://drafts.csswg.org/css-text-4/#text-spacing-classes
+  static CharClass GetCharClass(char32_t aChar);
+
+ private:
+  BoundarySet InitBoundarySet(
+      const StyleTextAutospace& aStyleTextAutospace) const;
+
+  // Enabled boundaries. When non-empty, insert spacing at these class
+  // boundaries (e.g. ideograph-alpha, ideograph-numeric).
+  BoundarySet mBoundarySet;
+
+  // Inter-script spacing amount to add at boundaries.
+  nscoord mInterScriptSpacing{};
+};
+
 }  // namespace mozilla
 
 class nsTextFrame : public nsIFrame {
-  typedef mozilla::LayoutDeviceRect LayoutDeviceRect;
-  typedef mozilla::SelectionTypeMask SelectionTypeMask;
-  typedef mozilla::SelectionType SelectionType;
-  typedef mozilla::TextRangeStyle TextRangeStyle;
-  typedef mozilla::gfx::DrawTarget DrawTarget;
-  typedef mozilla::gfx::Point Point;
-  typedef mozilla::gfx::Rect Rect;
-  typedef mozilla::gfx::Size Size;
-  typedef gfxTextRun::Range Range;
+  using DrawTarget = mozilla::gfx::DrawTarget;
+  using LayoutDeviceRect = mozilla::LayoutDeviceRect;
+  using Point = mozilla::gfx::Point;
+  using Range = gfxTextRun::Range;
+  using Rect = mozilla::gfx::Rect;
+  using SelectionType = mozilla::SelectionType;
+  using SelectionTypeMask = mozilla::SelectionTypeMask;
+  using Size = mozilla::gfx::Size;
+  using TextRangeStyle = mozilla::TextRangeStyle;
 
  public:
   enum TextRunType : uint8_t;
@@ -53,12 +111,13 @@ class nsTextFrame : public nsIFrame {
   /**
    * An implementation of gfxTextRun::PropertyProvider that computes spacing and
    * hyphenation based on CSS properties for a text frame.
+   *
+   * nsTextFrame normally creates a PropertyProvider as a temporary object on
+   * on the stack, but this is not marked MOZ_STACK_CLASS because SVGTextFrame
+   * wants to cache an instance across multiple calls using the same textframe.
    */
-  class MOZ_STACK_CLASS PropertyProvider final
-      : public gfxTextRun::PropertyProvider {
-    typedef gfxTextRun::Range Range;
-    typedef gfxTextRun::HyphenType HyphenType;
-    typedef mozilla::gfx::DrawTarget DrawTarget;
+  class PropertyProvider final : public gfxTextRun::PropertyProvider {
+    using HyphenType = gfxTextRun::HyphenType;
 
    public:
     /**
@@ -71,9 +130,9 @@ class nsTextFrame : public nsIFrame {
      * cannot be called, nor can GetOriginalLength().
      */
     PropertyProvider(gfxTextRun* aTextRun, const nsStyleText* aTextStyle,
-                     const nsTextFragment* aFrag, nsTextFrame* aFrame,
-                     const gfxSkipCharsIterator& aStart, int32_t aLength,
-                     nsIFrame* aLineContainer,
+                     const mozilla::dom::CharacterDataBuffer& aBuffer,
+                     nsTextFrame* aFrame, const gfxSkipCharsIterator& aStart,
+                     int32_t aLength, nsIFrame* aLineContainer,
                      nscoord aOffsetFromBlockOriginForTabs,
                      nsTextFrame::TextRunType aWhichTextRun,
                      bool aAtStartOfLine);
@@ -100,7 +159,7 @@ class nsTextFrame : public nsIFrame {
 
     void InitializeForMeasure();
 
-    void GetSpacing(Range aRange, Spacing* aSpacing) const final;
+    bool GetSpacing(Range aRange, Spacing* aSpacing) const final;
     gfxFloat GetHyphenWidth() const final;
     void GetHyphenationBreaks(Range aRange,
                               HyphenType* aBreakBefore) const final;
@@ -115,7 +174,7 @@ class nsTextFrame : public nsIFrame {
       return mTextRun->GetAppUnitsPerDevUnit();
     }
 
-    void GetSpacingInternal(Range aRange, Spacing* aSpacing,
+    bool GetSpacingInternal(Range aRange, Spacing* aSpacing,
                             bool aIgnoreTabs) const;
 
     /**
@@ -136,7 +195,9 @@ class nsTextFrame : public nsIFrame {
       NS_ASSERTION(mLength != INT32_MAX, "Length not known");
       return mLength;
     }
-    const nsTextFragment* GetFragment() const { return mFrag; }
+    const mozilla::dom::CharacterDataBuffer& GetCharacterDataBuffer() const {
+      return mCharacterDataBuffer;
+    }
 
     gfxFontGroup* GetFontGroup() const {
       if (!mFontGroup) {
@@ -164,32 +225,54 @@ class nsTextFrame : public nsIFrame {
       mStartOfLineOffset = aPosition.GetSkippedOffset();
     }
 
+    bool HasSpacing() const {
+      return mLetterSpacing || mWordSpacing || mTextAutospace;
+    }
+
    protected:
     void SetupJustificationSpacing(bool aPostReflow);
 
     void InitFontGroupAndFontMetrics() const;
 
+    // Initialize TextAutospace, if inter-script spacing applies.
+    void InitTextAutospace();
+
     const RefPtr<gfxTextRun> mTextRun;
     mutable gfxFontGroup* mFontGroup;
     mutable RefPtr<nsFontMetrics> mFontMetrics;
     const nsStyleText* mTextStyle;
-    const nsTextFragment* mFrag;
+    const mozilla::dom::CharacterDataBuffer& mCharacterDataBuffer;
     const nsIFrame* mLineContainer;
     nsTextFrame* mFrame;
-    gfxSkipCharsIterator mStart;  // Offset in original and transformed string
+
+    // Offset in original and transformed string
+    gfxSkipCharsIterator mStart;
+
     const gfxSkipCharsIterator mTempIterator;
 
     // Either null, or pointing to the frame's TabWidthProperty.
     mutable nsTextFrame::TabWidthStore* mTabWidths;
+
     // How far we've done tab-width calculation; this is ONLY valid when
     // mTabWidths is nullptr (otherwise rely on mTabWidths->mLimit instead).
     // It's a DOM offset relative to the current frame's offset.
     mutable uint32_t mTabWidthsAnalyzedLimit;
 
-    int32_t mLength;                  // DOM string length, may be INT32_MAX
-    const gfxFloat mWordSpacing;      // space for each whitespace char
-    const gfxFloat mLetterSpacing;    // space for each letter
-    mutable gfxFloat mMinTabAdvance;  // min advance for <tab> char
+    // DOM string length, may be INT32_MAX
+    int32_t mLength;
+
+    // space for each whitespace char
+    const nscoord mWordSpacing;
+
+    // space for each letter
+    const nscoord mLetterSpacing;
+
+    // If TextAutospace exists, inter-script spacing applies.
+    Maybe<mozilla::TextAutospace> mTextAutospace;
+
+    // min advance for <tab> char
+    mutable gfxFloat mMinTabAdvance;
+
     mutable gfxFloat mHyphenWidth;
     mutable gfxFloat mOffsetFromBlockOriginForTabs;
 
@@ -300,8 +383,8 @@ class nsTextFrame : public nsIFrame {
   // Returns this text frame's content's text fragment.
   //
   // Assertions in Init() ensure we only ever get a Text node as content.
-  const nsTextFragment* TextFragment() const {
-    return &mContent->AsText()->TextFragment();
+  const mozilla::dom::CharacterDataBuffer& CharacterDataBuffer() const {
+    return mContent->AsText()->DataBuffer();
   }
 
   /**
@@ -403,7 +486,7 @@ class nsTextFrame : public nsIFrame {
   void AddInlinePrefISize(const mozilla::IntrinsicSizeInput& aInput,
                           InlinePrefISizeData* aData) override;
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -605,24 +688,24 @@ class nsTextFrame : public nsIFrame {
   // Return false if the text was not painted and we should continue with
   // the fast path.
   bool PaintTextWithSelection(const PaintTextSelectionParams& aParams,
-                              const ClipEdges& aClipEdges);
+                              const ClipEdges& aClipEdges,
+                              const SelectionDetails& aDetails);
   // helper: paint text with foreground and background colors determined
   // by selection(s). Also computes a mask of all selection types applying to
   // our text, returned in aAllSelectionTypeMask.
   // Return false if the text was not painted and we should continue with
   // the fast path.
-  bool PaintTextWithSelectionColors(
-      const PaintTextSelectionParams& aParams,
-      const mozilla::UniquePtr<SelectionDetails>& aDetails,
-      SelectionTypeMask* aAllSelectionTypeMask, const ClipEdges& aClipEdges);
+  bool PaintTextWithSelectionColors(const PaintTextSelectionParams& aParams,
+                                    const SelectionDetails& aDetails,
+                                    SelectionTypeMask* aAllSelectionTypeMask,
+                                    const ClipEdges& aClipEdges);
   // helper: paint text decorations for text selected by aSelectionType
-  void PaintTextSelectionDecorations(
-      const PaintTextSelectionParams& aParams,
-      const mozilla::UniquePtr<SelectionDetails>& aDetails,
-      SelectionType aSelectionType);
+  void PaintTextSelectionDecorations(const PaintTextSelectionParams& aParams,
+                                     const SelectionDetails& aDetails,
+                                     SelectionType aSelectionType);
 
   SelectionTypeMask ResolveSelections(
-      const PaintTextSelectionParams& aParams, const SelectionDetails* aDetails,
+      const PaintTextSelectionParams& aParams, const SelectionDetails& aDetails,
       nsTArray<PriorityOrderedSelectionsForRange>& aResult,
       SelectionType aSelectionType, bool* aAnyBackgrounds = nullptr) const;
 
@@ -731,7 +814,7 @@ class nsTextFrame : public nsIFrame {
     NoTrimBefore = 1 << 2
   };
   TrimmedOffsets GetTrimmedOffsets(
-      const nsTextFragment* aFrag,
+      const mozilla::dom::CharacterDataBuffer& aBuffer,
       TrimmedOffsetFlags aFlags = TrimmedOffsetFlags::Default) const;
 
   // Similar to Reflow(), but for use from nsLineLayout
@@ -780,6 +863,10 @@ class nsTextFrame : public nsIFrame {
   void SetTrimmableWS(gfxTextRun::TrimmableWS aTrimmableWS);
   gfxTextRun::TrimmableWS GetTrimmableWS() const;
   void ClearTrimmableWS();
+
+  // Return ShapedTextFlags::TEXT_ENABLE_SPACING if spacing is needed due to
+  // letter-spacing, word-spacing, etc.
+  mozilla::gfx::ShapedTextFlags GetSpacingFlags() const;
 
  protected:
   virtual ~nsTextFrame();
@@ -898,19 +985,8 @@ class nsTextFrame : public nsIFrame {
 
     LineDecoration(const LineDecoration& aOther) = default;
 
-    bool operator==(const LineDecoration& aOther) const {
-      return mFrame == aOther.mFrame && mStyle == aOther.mStyle &&
-             mColor == aOther.mColor &&
-             mBaselineOffset == aOther.mBaselineOffset &&
-             mTextUnderlinePosition == aOther.mTextUnderlinePosition &&
-             mTextUnderlineOffset == aOther.mTextUnderlineOffset &&
-             mTextDecorationThickness == aOther.mTextDecorationThickness &&
-             mAllowInkSkipping == aOther.mAllowInkSkipping;
-    }
-
-    bool operator!=(const LineDecoration& aOther) const {
-      return !(*this == aOther);
-    }
+    bool operator==(const LineDecoration& aOther) const = default;
+    bool operator!=(const LineDecoration& aOther) const = default;
   };
   struct TextDecorations {
     AutoTArray<LineDecoration, 1> mOverlines, mUnderlines, mStrikes;
@@ -923,13 +999,8 @@ class nsTextFrame : public nsIFrame {
     bool HasUnderline() const { return !mUnderlines.IsEmpty(); }
     bool HasOverline() const { return !mOverlines.IsEmpty(); }
     bool HasStrikeout() const { return !mStrikes.IsEmpty(); }
-    bool operator==(const TextDecorations& aOther) const {
-      return mOverlines == aOther.mOverlines &&
-             mUnderlines == aOther.mUnderlines && mStrikes == aOther.mStrikes;
-    }
-    bool operator!=(const TextDecorations& aOther) const {
-      return !(*this == aOther);
-    }
+    bool operator==(const TextDecorations& aOther) const = default;
+    bool operator!=(const TextDecorations& aOther) const = default;
   };
   enum TextDecorationColorResolution { eResolvedColors, eUnresolvedColors };
   void GetTextDecorations(nsPresContext* aPresContext,
@@ -952,25 +1023,27 @@ class nsTextFrame : public nsIFrame {
   bool CombineSelectionUnderlineRect(nsPresContext* aPresContext,
                                      nsRect& aRect);
 
-  // This sets *aShadows to the appropriate shadows, if any, for the given
+  // Returns the appropriate shadows, if any, for the given
   // type of selection.
-  // If text-shadow was not specified, *aShadows is left untouched.
+  // Returns an empty span if text-shadow was not specified..
   // Note that the returned shadow(s) will only be valid as long as the
   // textPaintStyle remains in scope.
-  void GetSelectionTextShadow(
+  mozilla::Span<const mozilla::StyleSimpleShadow> GetSelectionTextShadow(
       SelectionType aSelectionType, nsTextPaintStyle& aTextPaintStyle,
-      mozilla::Span<const mozilla::StyleSimpleShadow>* aShadows);
+      nsAtom* aHighlightName = nullptr);
 
   /**
    * Utility methods to paint selection.
    */
   void DrawSelectionDecorations(
       gfxContext* aContext, const LayoutDeviceRect& aDirtyRect,
-      mozilla::SelectionType aSelectionType, nsTextPaintStyle& aTextPaintStyle,
-      const TextRangeStyle& aRangeStyle, const Point& aPt,
-      gfxFloat aICoordInFrame, gfxFloat aWidth, gfxFloat aAscent,
-      const gfxFont::Metrics& aFontMetrics, DrawPathCallbacks* aCallbacks,
-      bool aVertical, mozilla::StyleTextDecorationLine aDecoration);
+      mozilla::SelectionType aSelectionType, nsAtom* aHighlightName,
+      nsTextPaintStyle& aTextPaintStyle, const TextRangeStyle& aRangeStyle,
+      const Point& aPt, gfxFloat aICoordInFrame, gfxFloat aWidth,
+      gfxFloat aAscent, const gfxFont::Metrics& aFontMetrics,
+      DrawPathCallbacks* aCallbacks, bool aVertical,
+      mozilla::StyleTextDecorationLine aDecoration, const Range& aGlyphRange,
+      PropertyProvider* aProvider);
 
   void PaintDecorationLine(const PaintDecorationLineParams& aParams);
   /**
@@ -982,20 +1055,31 @@ class nsTextFrame : public nsIFrame {
    */
   gfxFloat ComputeDescentLimitForSelectionUnderline(
       nsPresContext* aPresContext, const gfxFont::Metrics& aFontMetrics);
+
+  struct SelectionColors {
+    nscolor mForeground = NS_RGBA(0, 0, 0, 0);
+    nscolor mBackground = NS_RGBA(0, 0, 0, 0);
+    // True if there is a visible background.
+    bool mHasBackground = false;
+    // True if this selection overrides the text foreground color.
+    // For highlights and ::target-text, this is true only if the color is
+    // explicitly specified by the author.
+    bool mOverridesForeground = false;
+    // True if this selection has any visual effect to paint.
+    bool mHasPaintImpact = false;
+    bool HasAnyColorImpact() const {
+      return mHasBackground || mOverridesForeground;
+    }
+    bool HasAnyPaintImpact() const { return mHasPaintImpact; }
+  };
+
   /**
    * This function encapsulates all knowledge of how selections affect
    * foreground and background colors.
-   * @param aForeground the foreground color to use
-   * @param aBackground the background color to use, or RGBA(0,0,0,0) if no
-   *                    background should be painted
-   * @return            true if the selection affects colors, false otherwise
    */
-  static bool GetSelectionTextColors(SelectionType aSelectionType,
-                                     nsAtom* aHighlightName,
-                                     nsTextPaintStyle& aTextPaintStyle,
-                                     const TextRangeStyle& aRangeStyle,
-                                     nscolor* aForeground,
-                                     nscolor* aBackground);
+  static SelectionColors GetSelectionTextColors(
+      SelectionType aSelectionType, nsAtom* aHighlightName,
+      nsTextPaintStyle& aTextPaintStyle, const TextRangeStyle& aRangeStyle);
   /**
    * ComputeSelectionUnderlineHeight() computes selection underline height of
    * the specified selection type from the font metrics.
@@ -1020,7 +1104,7 @@ class nsTextFrame : public nsIFrame {
    * ranges.
    */
   static SelectionTypeMask CreateSelectionRangeList(
-      const SelectionDetails* aDetails, SelectionType aSelectionType,
+      const SelectionDetails& aDetails, SelectionType aSelectionType,
       const PaintTextSelectionParams& aParams,
       nsTArray<SelectionRange>& aSelectionRanges, bool* aAnyBackgrounds);
 
@@ -1054,7 +1138,8 @@ class nsTextFrame : public nsIFrame {
   ContentOffsets GetCharacterOffsetAtFramePointInternal(
       const nsPoint& aPoint, bool aForInsertionPoint);
 
-  static float GetTextCombineScaleFactor(nsTextFrame* aFrame);
+  float GetTextCombineScale() const;
+  std::pair<nscoord, float> GetTextCombineOffsetAndScale() const;
 
   void ClearFrameOffsetCache();
 
@@ -1097,7 +1182,7 @@ class nsTextFrame : public nsIFrame {
     const uint32_t mEndOffset;
     const TextOffsetType mOffsetType;
     const TrailingWhitespace mTrimTrailingWhitespace;
-    const nsTextFragment* const mTextFrag;
+    const mozilla::dom::CharacterDataBuffer& mCharacterDataBuffer;
     // Mutable state, updated as we loop over the continuations.
     nsBlockFrame* mLineContainer = nullptr;
     uint32_t mOffsetInRenderedString = 0;

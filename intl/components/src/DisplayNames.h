@@ -4,7 +4,6 @@
 #ifndef intl_components_DisplayNames_h_
 #define intl_components_DisplayNames_h_
 
-#include <string>
 #include <string_view>
 #include "unicode/udat.h"
 #include "unicode/udatpg.h"
@@ -848,7 +847,29 @@ class DisplayNames final {
   Result<Ok, DisplayNamesError> GetDayPeriod(
       B& aBuffer, DayPeriod aDayPeriod, Span<const char> aCalendar,
       Fallback aFallback = Fallback::None) {
-    UDateFormatSymbolType symbolType = UDAT_AM_PMS;
+    UDateFormatSymbolType symbolType;
+    switch (mOptions.style) {
+      case DisplayNames::Style::Long:
+#ifndef U_HIDE_DRAFT_API
+        symbolType = UDAT_AM_PMS_WIDE;
+#else
+        symbolType = UDAT_AM_PMS;
+#endif
+        break;
+
+      case DisplayNames::Style::Abbreviated:
+      case DisplayNames::Style::Short:
+        symbolType = UDAT_AM_PMS;
+        break;
+
+      case DisplayNames::Style::Narrow:
+#ifndef U_HIDE_DRAFT_API
+        symbolType = UDAT_AM_PMS_NARROW;
+#else
+        symbolType = UDAT_AM_PMS;
+#endif
+        break;
+    }
 
     static constexpr int32_t indices[] = {UCAL_AM, UCAL_PM};
 

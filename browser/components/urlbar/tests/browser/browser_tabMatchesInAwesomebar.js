@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim:set ts=2 sw=2 sts=2 et:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,6 +11,10 @@
 
 requestLongerTimeout(2);
 
+const { UrlbarProviderOpenTabs } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs"
+);
+
 const TEST_URL_BASES = [
   `${TEST_BASE_URL}dummy_page.html#tabmatch`,
   `${TEST_BASE_URL}moz.png#tabmatch`,
@@ -21,6 +23,13 @@ const TEST_URL_BASES = [
 const RESTRICT_TOKEN_OPENPAGE = "%";
 
 var gTabCounter = 0;
+
+add_setup(async function () {
+  // Ensure the open tabs memory table is initialized before tabs are opened
+  // in the test, so registerOpenTab immediately populates moz_openpages_temp.
+  await PlacesUtils.promiseLargeCacheDBConnection();
+  await UrlbarProviderOpenTabs.promiseDBPopulated;
+});
 
 add_task(async function step_1() {
   info("Running step 1");
@@ -86,7 +95,7 @@ add_task(async function step_4() {
 
 add_task(async function step_5() {
   info("Running step 5 - remove tab immediately");
-  let tab = BrowserTestUtils.addTab(gBrowser, "about:logo");
+  let tab = BrowserTestUtils.addTab(gBrowser, "about:mozilla");
   BrowserTestUtils.removeTab(tab);
   await ensure_opentabs_match_db();
 });
@@ -213,9 +222,7 @@ async function checkAutocompleteResults(expected) {
     delete expected[url];
   }
 
-  await UrlbarTestUtils.promisePopupClose(window, () =>
-    EventUtils.synthesizeKey("KEY_Escape")
-  );
+  await UrlbarTestUtils.promisePopupClose(window);
 
   // Make sure there is no reported open page that is not open.
   for (let entry in expected) {

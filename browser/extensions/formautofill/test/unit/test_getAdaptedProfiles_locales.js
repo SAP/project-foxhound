@@ -258,6 +258,7 @@ for (let localeTests of TESTCASES) {
 
       handler.focusedInput = form.elements[0];
       let adaptedRecords = handler.getAdaptedProfiles(testcase.profileData);
+      adaptedRecords.forEach(record => delete record._original);
       Assert.deepEqual(adaptedRecords, testcase.expectedResult);
 
       if (testcase.expectedOptionElements) {

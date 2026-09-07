@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,6 @@
 #include <stdio.h>               // for FILE
 #include "gfxRect.h"             // for gfxRect
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"  // for override
 #include "mozilla/RefPtr.h"      // for RefPtr, RefCounted, etc
 // #include "mozilla/gfx/MatrixFwd.h"  // for Matrix4x4
 #include "mozilla/gfx/Polygon.h"  // for Polygon

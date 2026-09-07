@@ -1,0 +1,476 @@
+<!-- Any copyright is dedicated to the Public Domain.
+     http://creativecommons.org/publicdomain/zero/1.0/ -->
+
+<!doctype html>
+
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Network Monitor Testing Page for priority</title>
+    <style type="text/css">
+      header { margin: 1em 2.5em; }
+      h1 { font-size: 2.2em; text-align: center; }
+      h2 { font-size: 1.7em; }
+      h3 { font-size: 1.27em; }
+      article { margin: 2.5rem }
+      table { border: 1px solid #ccc; }
+      td { padding: 0.5em 1em; }
+      tr:nth-child(odd) td { background-color: #eee; }
+      p { font-size: 1.2em; line-height: 1.2; margin: 1.2em 0; }
+      img { background-color: #eee; display: block; margin: 0 auto; }
+    </style>
+  </head>
+
+  <body>
+    <div style="text-align: right; font-size: 0.8rem">Based on the Firefox source code from 2026-03-11</div>
+    <header>
+      <h1>HAR image &amp; text test</h1>
+      <p><em>This is a test page for priorities of requests. It needs to be reasonably long.</em></p>
+    </header>
+    <article>
+      <h2>This first image is <em>above-the-fold</em> and should <strong>not</strong> have a Low priority</h2>
+      <img src="" width="600" height="600" id="first_image" alt="First image">
+    </article>
+    <article>
+      <h2>Testing Priorities</h2>
+      <p>
+        This page is designed to test the final priorities of images in a web
+        page. There are 4 image requests to show how the browser heuristics
+        affect their priorities in different parts of the page. If the
+        heuristics change then this test may need to be revisted. This page uses
+        a long amount of text to trigger a Low priority for the images
+        <em>below-the-fold</em>. The third image has had it's priority boosted
+        by using the <code>fetchpriority</code> attribute.
+      </p>
+      <table>
+        <thead>
+          <tr><th colspan="3">Expected results</th></tr>
+          <tr><th>URI</th><th>Priority</th><th>Reason</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>test-image.png?1</td>
+            <td>not Low</td>
+            <td>Above the fold</td>
+          </tr>
+          <tr>
+            <td>test-image.png?2</td>
+            <td>Low</td>
+            <td>Below the fold</td>
+          </tr>
+          <tr>
+            <td>test-image.png?3</td>
+            <td>not Low</td>
+            <td>Boosted due to fetchpriority</td>
+          </tr>
+          <tr>
+            <td>test-image.png?4</td>
+            <td>Low</td>
+            <td>Below the fold</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>Initial Priority</h3>
+      <p>
+        To render a webpage the browser has to request all the resources
+        needed, but in general it can't do that all at once. It could take up
+        all the bandwidth &amp; CPU and still not be enough, especially now days
+        of the multi-megabyte pages. Instead, only a few requests and responses
+        are in transit at anytime. So, the browser needs to order those
+        requests so it can start showing the page as soon as possible. The
+        order the resource requests are in the HTML is also a factor.
+      <p>
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Priority</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Beacon</td>
+            <td>Lowest</td>
+          </tr>
+          <tr>
+            <td>Font</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td>Image</td>
+            <td>Low</td>
+          </tr>
+          <tr>
+            <td>JavaScript</td>
+            <td>Normal</td>
+          </tr>
+          <tr>
+            <td>OCSP Request</td>
+            <td>Highest</td>
+          </tr>
+          <tr>
+            <td>Stylesheet</td>
+            <td>Normal</td>
+          </tr>
+        </tbody>
+      </table>
+    </article>
+    <article>
+      <h2>MEANINGLESS Text Below to shift images <em>below-the-fold</em></h2>
+      <p>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam
+        aliquam nisi magna, a hendrerit ipsum interdum eget. Duis at risus
+        orci. Nunc blandit feugiat bibendum. Pellentesque et elit sed justo
+        pellentesque aliquam a vitae ex. Nam malesuada vitae odio nec sagittis.
+        Nunc magna nibh, ultricies id risus ut, varius vulputate nisl. Nulla
+        pellentesque pharetra odio, quis varius purus fermentum vel.
+      </p>
+      <p>
+        Sed ac enim ligula. Integer pharetra venenatis felis, sed ultricies
+        mauris fringilla et. Aliquam aliquet auctor justo, nec aliquet tellus
+        ullamcorper id. Phasellus quam mi, imperdiet at lectus vel, tincidunt
+        sollicitudin lorem. Maecenas lectus nisl, dictum at dapibus eget,
+        tempus vel leo. Aenean eleifend, lorem et sodales suscipit, est ipsum
+        pellentesque neque, sit amet maximus nibh massa non ligula. Curabitur
+        posuere, sem sit amet accumsan rhoncus, magna ex bibendum dolor, nec
+        sodales mi eros quis ante. Maecenas suscipit a leo non ornare. Duis
+        lacus mi, mattis quis gravida a, vestibulum ac lacus. Sed ornare
+        libero quis felis scelerisque bibendum.
+      </p>
+      <p>
+        Sed scelerisque, ex vitae placerat maximus, sapien nisi viverra sem,
+        et elementum est ligula at sem. Fusce porttitor, arcu laoreet pharetra
+        viverra, ex turpis rhoncus diam, eu fermentum enim sapien eget nulla.
+        Integer eu tincidunt leo. Vestibulum fringilla dictum tincidunt. Proin
+        dictum interdum metus sit amet tincidunt. Suspendisse tincidunt risus
+        vulputate libero laoreet dictum. Ut blandit placerat enim, sit amet
+        semper nunc laoreet vehicula. Aliquam vulputate, tellus vitae ultrices
+        bibendum, neque mauris tincidunt lorem, a hendrerit ipsum ante a purus.
+        Pellentesque imperdiet eros et diam porta, eu varius leo rhoncus.
+        Vestibulum tincidunt mi quam, ac luctus mi finibus eget. Proin maximus
+        venenatis nulla id cursus. Sed vel ex hendrerit lacus tristique
+        pharetra. Cras dictum lorem sapien, vel hendrerit lorem faucibus id.
+        Sed ornare rhoncus mauris id dignissim.
+      </p>
+      <p>
+        Vivamus euismod libero accumsan, aliquam mi blandit, hendrerit eros.
+        Sed purus nunc, tincidunt sit amet pellentesque in, sodales ut lectus.
+        Quisque sed tempus massa. Curabitur eu dolor dolor. Aenean lobortis,
+        augue et ultricies accumsan, turpis nibh imperdiet nibh, ut condimentum
+        urna purus at ex. Donec bibendum nisl nec massa ultrices placerat. Nulla
+        at mi vitae magna laoreet dictum sit amet sit amet mi. Aenean interdum
+        tellus sit amet turpis scelerisque, a laoreet arcu volutpat. Fusce
+        aliquam mi et dolor cursus, sed aliquet massa tempor. Nullam placerat
+        velit a dolor tincidunt maximus. Etiam sit amet semper turpis. Donec
+        lacus est, scelerisque non purus a, elementum facilisis sapien.
+        Suspendisse non sagittis libero. Vivamus accumsan elementum ligula sit
+        amet pretium. Morbi justo justo, congue a ultrices eget, tristique quis
+        velit. Vivamus ut neque erat.
+      </p>
+      <p>
+        Sed venenatis ullamcorper ante a pretium. Cras hendrerit egestas
+        aliquam. Nulla ultricies ex diam, in interdum nisl gravida a. Nunc
+        facilisis imperdiet eros, at maximus ante. In vel nisi a odio
+        pellentesque lacinia non non est. Pellentesque tempor at est ut gravida.
+        Vestibulum condimentum metus non sapien tristique luctus. Praesent
+        hendrerit eros sit amet ligula placerat, sed ornare ante porttitor.
+        Nulla facilisi. Quisque viverra ipsum ut elit vehicula, nec ullamcorper
+        elit scelerisque. Nullam pharetra tellus enim. Ut a leo et diam pulvinar
+        hendrerit nec nec est. Mauris cursus quis ligula ut porttitor. Mauris
+        elementum arcu ac turpis congue tempus.
+      </p>
+      <p>
+        Aenean ut facilisis odio. Vestibulum at lectus ex. Sed varius pharetra
+        erat dapibus suscipit. Phasellus egestas lectus vel eros finibus, et
+        interdum diam feugiat. Nam ipsum justo, egestas sed feugiat in, feugiat
+        sed tellus. Curabitur porta, nisl vel posuere laoreet, tellus magna
+        molestie ligula, id molestie quam magna et neque. Nam finibus sed lorem
+        lobortis lobortis. Suspendisse vel odio sem. In ultrices, quam sed
+        porta ultrices, neque purus gravida sapien, vehicula tincidunt tellus
+        sem in velit. Integer rhoncus sit amet sapien in sagittis. Morbi
+        fringilla nisi non purus mollis vestibulum. Pellentesque eu dolor
+        maximus, cursus risus eget, pellentesque elit. Duis vitae elit
+        scelerisque, tempor enim a, fermentum est.
+      </p>
+      <p>
+        In hac habitasse platea dictumst. Aenean ultrices lectus eu magna
+        ornare dapibus. Duis tincidunt commodo risus vitae hendrerit.
+        Vestibulum finibus eros ex, ut hendrerit velit scelerisque et.
+        Curabitur eget mi cursus, ullamcorper ante at, tempor lectus. Aenean
+        fermentum erat malesuada, maximus magna in, aliquet augue. Aenean vel
+        tortor sed nisl venenatis luctus. Vivamus id consectetur velit.
+      </p>
+      <p>
+        Quisque consectetur rhoncus elit at accumsan. Duis rhoncus, nisl eu
+        varius malesuada, dui mi tristique odio, ut varius ante sapien ut
+        turpis. Orci varius natoque penatibus et magnis dis parturient montes,
+        nascetur ridiculus mus. Nulla id enim et odio luctus fringilla. Orci
+        varius natoque penatibus et magnis dis parturient montes, nascetur
+        ridiculus mus. Ut volutpat sem lacus, ac sodales mauris condimentum non.
+        Ut ultricies nisi sit amet elit blandit, ut rhoncus libero molestie.
+        Maecenas auctor porta venenatis. Mauris feugiat diam massa, nec cursus
+        lorem lacinia vel. Curabitur lorem sapien, dictum et pellentesque
+        dignissim, iaculis nec quam.
+      </p>
+      <p>
+        Duis dapibus maximus eros et lacinia. Aliquam tincidunt ullamcorper
+        dolor, ut dictum dui pulvinar ac. Nullam scelerisque lacus ac neque
+        interdum, id ultricies mi ornare. Pellentesque nec orci elementum
+        turpis molestie sagittis sit amet eget velit. Fusce commodo a justo
+        fermentum facilisis. Nulla neque leo, condimentum in mi quis, tempor
+        rutrum ipsum. Donec ut feugiat magna, in lobortis est. Maecenas ut mi
+        non nisi bibendum fermentum. In hac habitasse platea dictumst. Nam
+        viverra lectus ligula, sed feugiat sem accumsan vitae. Suspendisse
+        porttitor pretium nunc vitae blandit. Pellentesque condimentum dui non
+        dui venenatis pretium. Vivamus aliquam eleifend tortor, eu placerat
+        mauris luctus sed.
+      </p>
+      <p>
+        Fusce elementum, lorem vitae egestas gravida, mauris augue tincidunt
+        enim, vitae pulvinar sapien ante mattis justo. Proin tincidunt dolor
+        purus, quis posuere arcu consectetur in. Ut consequat est non tincidunt
+        tincidunt. Sed eu quam vel dui imperdiet venenatis. Donec ac elementum
+        est, non ultrices odio. Curabitur fermentum eu mauris at bibendum.
+        In interdum mollis ultricies. Proin tortor felis, gravida hendrerit
+        blandit ut, porta eget urna. Aenean semper arcu id nulla vehicula,
+        commodo semper tortor faucibus. In vitae varius nibh. Nam lacinia eu dui
+        ut fermentum. Phasellus dictum, arcu vitae facilisis fringilla, nulla
+        sem sollicitudin diam, quis tristique lorem mi sit amet arcu. Sed
+        posuere, massa nec commodo semper, purus tortor tincidunt nunc, sit amet
+        mattis leo nunc quis tellus.
+      </p>
+      <p>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam
+        aliquam nisi magna, a hendrerit ipsum interdum eget. Duis at risus
+        orci. Nunc blandit feugiat bibendum. Pellentesque et elit sed justo
+        pellentesque aliquam a vitae ex. Nam malesuada vitae odio nec sagittis.
+        Nunc magna nibh, ultricies id risus ut, varius vulputate nisl. Nulla
+        pellentesque pharetra odio, quis varius purus fermentum vel.
+      </p>
+      <p>
+        Sed ac enim ligula. Integer pharetra venenatis felis, sed ultricies
+        mauris fringilla et. Aliquam aliquet auctor justo, nec aliquet tellus
+        ullamcorper id. Phasellus quam mi, imperdiet at lectus vel, tincidunt
+        sollicitudin lorem. Maecenas lectus nisl, dictum at dapibus eget,
+        tempus vel leo. Aenean eleifend, lorem et sodales suscipit, est ipsum
+        pellentesque neque, sit amet maximus nibh massa non ligula. Curabitur
+        posuere, sem sit amet accumsan rhoncus, magna ex bibendum dolor, nec
+        sodales mi eros quis ante. Maecenas suscipit a leo non ornare. Duis
+        lacus mi, mattis quis gravida a, vestibulum ac lacus. Sed ornare
+        libero quis felis scelerisque bibendum.
+      </p>
+      <p>
+        Sed scelerisque, ex vitae placerat maximus, sapien nisi viverra sem,
+        et elementum est ligula at sem. Fusce porttitor, arcu laoreet pharetra
+        viverra, ex turpis rhoncus diam, eu fermentum enim sapien eget nulla.
+        Integer eu tincidunt leo. Vestibulum fringilla dictum tincidunt. Proin
+        dictum interdum metus sit amet tincidunt. Suspendisse tincidunt risus
+        vulputate libero laoreet dictum. Ut blandit placerat enim, sit amet
+        semper nunc laoreet vehicula. Aliquam vulputate, tellus vitae ultrices
+        bibendum, neque mauris tincidunt lorem, a hendrerit ipsum ante a purus.
+        Pellentesque imperdiet eros et diam porta, eu varius leo rhoncus.
+        Vestibulum tincidunt mi quam, ac luctus mi finibus eget. Proin maximus
+        venenatis nulla id cursus. Sed vel ex hendrerit lacus tristique
+        pharetra. Cras dictum lorem sapien, vel hendrerit lorem faucibus id.
+        Sed ornare rhoncus mauris id dignissim.
+      </p>
+      <p>
+        Vivamus euismod libero accumsan, aliquam mi blandit, hendrerit eros.
+        Sed purus nunc, tincidunt sit amet pellentesque in, sodales ut lectus.
+        Quisque sed tempus massa. Curabitur eu dolor dolor. Aenean lobortis,
+        augue et ultricies accumsan, turpis nibh imperdiet nibh, ut condimentum
+        urna purus at ex. Donec bibendum nisl nec massa ultrices placerat. Nulla
+        at mi vitae magna laoreet dictum sit amet sit amet mi. Aenean interdum
+        tellus sit amet turpis scelerisque, a laoreet arcu volutpat. Fusce
+        aliquam mi et dolor cursus, sed aliquet massa tempor. Nullam placerat
+        velit a dolor tincidunt maximus. Etiam sit amet semper turpis. Donec
+        lacus est, scelerisque non purus a, elementum facilisis sapien.
+        Suspendisse non sagittis libero. Vivamus accumsan elementum ligula sit
+        amet pretium. Morbi justo justo, congue a ultrices eget, tristique quis
+        velit. Vivamus ut neque erat.
+      </p>
+      <p>
+        Sed venenatis ullamcorper ante a pretium. Cras hendrerit egestas
+        aliquam. Nulla ultricies ex diam, in interdum nisl gravida a. Nunc
+        facilisis imperdiet eros, at maximus ante. In vel nisi a odio
+        pellentesque lacinia non non est. Pellentesque tempor at est ut gravida.
+        Vestibulum condimentum metus non sapien tristique luctus. Praesent
+        hendrerit eros sit amet ligula placerat, sed ornare ante porttitor.
+        Nulla facilisi. Quisque viverra ipsum ut elit vehicula, nec ullamcorper
+        elit scelerisque. Nullam pharetra tellus enim. Ut a leo et diam pulvinar
+        hendrerit nec nec est. Mauris cursus quis ligula ut porttitor. Mauris
+        elementum arcu ac turpis congue tempus.
+      </p>
+      <p>
+        Sed scelerisque, ex vitae placerat maximus, sapien nisi viverra sem,
+        et elementum est ligula at sem. Fusce porttitor, arcu laoreet pharetra
+        viverra, ex turpis rhoncus diam, eu fermentum enim sapien eget nulla.
+        Integer eu tincidunt leo. Vestibulum fringilla dictum tincidunt. Proin
+        dictum interdum metus sit amet tincidunt. Suspendisse tincidunt risus
+        vulputate libero laoreet dictum. Ut blandit placerat enim, sit amet
+        semper nunc laoreet vehicula. Aliquam vulputate, tellus vitae ultrices
+        bibendum, neque mauris tincidunt lorem, a hendrerit ipsum ante a purus.
+        Pellentesque imperdiet eros et diam porta, eu varius leo rhoncus.
+        Vestibulum tincidunt mi quam, ac luctus mi finibus eget. Proin maximus
+        venenatis nulla id cursus. Sed vel ex hendrerit lacus tristique
+        pharetra. Cras dictum lorem sapien, vel hendrerit lorem faucibus id.
+        Sed ornare rhoncus mauris id dignissim.
+      </p>
+      <p>
+        Vivamus euismod libero accumsan, aliquam mi blandit, hendrerit eros.
+        Sed purus nunc, tincidunt sit amet pellentesque in, sodales ut lectus.
+        Quisque sed tempus massa. Curabitur eu dolor dolor. Aenean lobortis,
+        augue et ultricies accumsan, turpis nibh imperdiet nibh, ut condimentum
+        urna purus at ex. Donec bibendum nisl nec massa ultrices placerat. Nulla
+        at mi vitae magna laoreet dictum sit amet sit amet mi. Aenean interdum
+        tellus sit amet turpis scelerisque, a laoreet arcu volutpat. Fusce
+        aliquam mi et dolor cursus, sed aliquet massa tempor. Nullam placerat
+        velit a dolor tincidunt maximus. Etiam sit amet semper turpis. Donec
+        lacus est, scelerisque non purus a, elementum facilisis sapien.
+        Suspendisse non sagittis libero. Vivamus accumsan elementum ligula sit
+        amet pretium. Morbi justo justo, congue a ultrices eget, tristique quis
+        velit. Vivamus ut neque erat.
+      </p>
+      <p>
+        Sed venenatis ullamcorper ante a pretium. Cras hendrerit egestas
+        aliquam. Nulla ultricies ex diam, in interdum nisl gravida a. Nunc
+        facilisis imperdiet eros, at maximus ante. In vel nisi a odio
+        pellentesque lacinia non non est. Pellentesque tempor at est ut gravida.
+        Vestibulum condimentum metus non sapien tristique luctus. Praesent
+        hendrerit eros sit amet ligula placerat, sed ornare ante porttitor.
+        Nulla facilisi. Quisque viverra ipsum ut elit vehicula, nec ullamcorper
+        elit scelerisque. Nullam pharetra tellus enim. Ut a leo et diam pulvinar
+        hendrerit nec nec est. Mauris cursus quis ligula ut porttitor. Mauris
+        elementum arcu ac turpis congue tempus.
+      </p>
+      <p>
+        Sed ac enim ligula. Integer pharetra venenatis felis, sed ultricies
+        mauris fringilla et. Aliquam aliquet auctor justo, nec aliquet tellus
+        ullamcorper id. Phasellus quam mi, imperdiet at lectus vel, tincidunt
+        sollicitudin lorem. Maecenas lectus nisl, dictum at dapibus eget,
+        tempus vel leo. Aenean eleifend, lorem et sodales suscipit, est ipsum
+        pellentesque neque, sit amet maximus nibh massa non ligula. Curabitur
+        posuere, sem sit amet accumsan rhoncus, magna ex bibendum dolor, nec
+        sodales mi eros quis ante. Maecenas suscipit a leo non ornare. Duis
+        lacus mi, mattis quis gravida a, vestibulum ac lacus. Sed ornare
+        libero quis felis scelerisque bibendum.
+      </p>
+      <p>
+        Sed scelerisque, ex vitae placerat maximus, sapien nisi viverra sem,
+        et elementum est ligula at sem. Fusce porttitor, arcu laoreet pharetra
+        viverra, ex turpis rhoncus diam, eu fermentum enim sapien eget nulla.
+        Integer eu tincidunt leo. Vestibulum fringilla dictum tincidunt. Proin
+        dictum interdum metus sit amet tincidunt. Suspendisse tincidunt risus
+        vulputate libero laoreet dictum. Ut blandit placerat enim, sit amet
+        semper nunc laoreet vehicula. Aliquam vulputate, tellus vitae ultrices
+        bibendum, neque mauris tincidunt lorem, a hendrerit ipsum ante a purus.
+        Pellentesque imperdiet eros et diam porta, eu varius leo rhoncus.
+        Vestibulum tincidunt mi quam, ac luctus mi finibus eget. Proin maximus
+        venenatis nulla id cursus. Sed vel ex hendrerit lacus tristique
+        pharetra. Cras dictum lorem sapien, vel hendrerit lorem faucibus id.
+        Sed ornare rhoncus mauris id dignissim.
+      </p>
+      <p>
+        Vivamus euismod libero accumsan, aliquam mi blandit, hendrerit eros.
+        Sed purus nunc, tincidunt sit amet pellentesque in, sodales ut lectus.
+        Quisque sed tempus massa. Curabitur eu dolor dolor. Aenean lobortis,
+        augue et ultricies accumsan, turpis nibh imperdiet nibh, ut condimentum
+        urna purus at ex. Donec bibendum nisl nec massa ultrices placerat. Nulla
+        at mi vitae magna laoreet dictum sit amet sit amet mi. Aenean interdum
+        tellus sit amet turpis scelerisque, a laoreet arcu volutpat. Fusce
+        aliquam mi et dolor cursus, sed aliquet massa tempor. Nullam placerat
+        velit a dolor tincidunt maximus. Etiam sit amet semper turpis. Donec
+        lacus est, scelerisque non purus a, elementum facilisis sapien.
+        Suspendisse non sagittis libero. Vivamus accumsan elementum ligula sit
+        amet pretium. Morbi justo justo, congue a ultrices eget, tristique quis
+        velit. Vivamus ut neque erat.
+      </p>
+      <p>
+        Sed venenatis ullamcorper ante a pretium. Cras hendrerit egestas
+        aliquam. Nulla ultricies ex diam, in interdum nisl gravida a. Nunc
+        facilisis imperdiet eros, at maximus ante. In vel nisi a odio
+        pellentesque lacinia non non est. Pellentesque tempor at est ut gravida.
+        Vestibulum condimentum metus non sapien tristique luctus. Praesent
+        hendrerit eros sit amet ligula placerat, sed ornare ante porttitor.
+        Nulla facilisi. Quisque viverra ipsum ut elit vehicula, nec ullamcorper
+        elit scelerisque. Nullam pharetra tellus enim. Ut a leo et diam pulvinar
+        hendrerit nec nec est. Mauris cursus quis ligula ut porttitor. Mauris
+        elementum arcu ac turpis congue tempus.
+      </p>
+      <p>
+        Aenean ut facilisis odio. Vestibulum at lectus ex. Sed varius pharetra
+        erat dapibus suscipit. Phasellus egestas lectus vel eros finibus, et
+        interdum diam feugiat. Nam ipsum justo, egestas sed feugiat in, feugiat
+        sed tellus. Curabitur porta, nisl vel posuere laoreet, tellus magna
+        molestie ligula, id molestie quam magna et neque. Nam finibus sed lorem
+        lobortis lobortis. Suspendisse vel odio sem. In ultrices, quam sed
+        porta ultrices, neque purus gravida sapien, vehicula tincidunt tellus
+        sem in velit. Integer rhoncus sit amet sapien in sagittis. Morbi
+        fringilla nisi non purus mollis vestibulum. Pellentesque eu dolor
+        maximus, cursus risus eget, pellentesque elit. Duis vitae elit
+        scelerisque, tempor enim a, fermentum est.
+      </p>
+      <p>
+        Sed venenatis ullamcorper ante a pretium. Cras hendrerit egestas
+        aliquam. Nulla ultricies ex diam, in interdum nisl gravida a. Nunc
+        facilisis imperdiet eros, at maximus ante. In vel nisi a odio
+        pellentesque lacinia non non est. Pellentesque tempor at est ut gravida.
+        Vestibulum condimentum metus non sapien tristique luctus. Praesent
+        hendrerit eros sit amet ligula placerat, sed ornare ante porttitor.
+        Nulla facilisi. Quisque viverra ipsum ut elit vehicula, nec ullamcorper
+        elit scelerisque. Nullam pharetra tellus enim. Ut a leo et diam pulvinar
+        hendrerit nec nec est. Mauris cursus quis ligula ut porttitor. Mauris
+        elementum arcu ac turpis congue tempus.
+      </p>
+      <p>
+        Quisque consectetur rhoncus elit at accumsan. Duis rhoncus, nisl eu
+        varius malesuada, dui mi tristique odio, ut varius ante sapien ut
+        turpis. Orci varius natoque penatibus et magnis dis parturient montes,
+        nascetur ridiculus mus. Nulla id enim et odio luctus fringilla. Orci
+        varius natoque penatibus et magnis dis parturient montes, nascetur
+        ridiculus mus. Ut volutpat sem lacus, ac sodales mauris condimentum non.
+        Ut ultricies nisi sit amet elit blandit, ut rhoncus libero molestie.
+        Maecenas auctor porta venenatis. Mauris feugiat diam massa, nec cursus
+        lorem lacinia vel. Curabitur lorem sapien, dictum et pellentesque
+        dignissim, iaculis nec quam.
+      </p>
+      <p>
+        Duis dapibus maximus eros et lacinia. Aliquam tincidunt ullamcorper
+        dolor, ut dictum dui pulvinar ac. Nullam scelerisque lacus ac neque
+        interdum, id ultricies mi ornare. Pellentesque nec orci elementum
+        turpis molestie sagittis sit amet eget velit. Fusce commodo a justo
+        fermentum facilisis. Nulla neque leo, condimentum in mi quis, tempor
+        rutrum ipsum. Donec ut feugiat magna, in lobortis est. Maecenas ut mi
+        non nisi bibendum fermentum. In hac habitasse platea dictumst. Nam
+        viverra lectus ligula, sed feugiat sem accumsan vitae. Suspendisse
+        porttitor pretium nunc vitae blandit. Pellentesque condimentum dui non
+        dui venenatis pretium. Vivamus aliquam eleifend tortor, eu placerat
+        mauris luctus sed.
+      </p>
+    </article>
+    <article>
+      <h2>This image is <em>below-the-fold</em> and should have a Low priority</h2>
+      <p>
+        <img src="/browser/devtools/client/webconsole/test/browser/test-image.png?2" width="64" height="64">
+      </p>
+      <h2>This image should have it's priority boosted</h2>
+      <p>
+        <img fetchpriority="high" src="/browser/devtools/client/webconsole/test/browser/test-image.png?3" width="64" height="64">
+      </p>
+      <h2>The below image should not be affected by the previous image boost</h2>
+      <p>
+        <img src="/browser/devtools/client/webconsole/test/browser/test-image.png?4" width="64" height="64">
+      </p>
+    </article>
+    <script defer type="text/javascript">
+      "use strict";
+      /* Defer setting up the first image a little bit so it will have time to be boosted */
+      const first = document.getElementById('first_image');
+      first.src = "/browser/devtools/client/inspector/test/highlighter/img_browser_inspector_highlighter-eyedropper-image.png?1";
+    </script>
+  </body>
+
+</html>

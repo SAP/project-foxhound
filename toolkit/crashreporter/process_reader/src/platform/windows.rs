@@ -98,12 +98,10 @@ impl ProcessReader {
 
             module_num = required_buffer_size as usize / size_of::<HMODULE>();
 
-            if res == 0 {
-                if required_buffer_size > buffer_size {
-                    module_array = Vec::<HMODULE>::with_capacity(module_num);
-                } else {
-                    return Err(ProcessReaderError::EnumProcessModulesError);
-                }
+            if required_buffer_size > buffer_size {
+                module_array = Vec::<HMODULE>::with_capacity(module_num);
+            } else if res == 0 {
+                return Err(ProcessReaderError::EnumProcessModulesError);
             } else {
                 break;
             }

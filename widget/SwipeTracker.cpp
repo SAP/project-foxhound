@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,15 +38,17 @@ SwipeTracker::SwipeTracker(nsIWidget& aWidget,
                            const PanGestureInput& aSwipeStartEvent,
                            uint32_t aAllowedDirections,
                            uint32_t aSwipeDirection)
-    : mWidget(aWidget),
-      mRefreshDriver(GetRefreshDriver(mWidget)),
+    : mWidget(do_GetWeakReference(&aWidget)),
+      mRefreshDriver(GetRefreshDriver(aWidget)),
       mAxis(0.0, 0.0, 0.0, kSpringForce, 1.0),
       mEventPosition(RoundedToInt(ViewAs<LayoutDevicePixel>(
           aSwipeStartEvent.mPanStartPoint,
           PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent))),
       mLastEventTimeStamp(aSwipeStartEvent.mTimeStamp),
       mAllowedDirections(aAllowedDirections),
-      mSwipeDirection(aSwipeDirection) {
+      mSwipeDirection(aSwipeDirection) {}
+
+void SwipeTracker::StartTracking(const PanGestureInput& aSwipeStartEvent) {
   SendSwipeEvent(eSwipeGestureStart, 0, 0.0, aSwipeStartEvent.mTimeStamp);
   ProcessEvent(aSwipeStartEvent, /* aProcessingFirstEvent = */ true);
 }
@@ -96,6 +96,8 @@ bool SwipeTracker::ComputeSwipeSuccess() const {
 
 nsEventStatus SwipeTracker::ProcessEvent(
     const PanGestureInput& aEvent, bool aProcessingFirstEvent /* = false */) {
+  RefPtr<SwipeTracker> selfPin(this);
+
   // If the fingers have already been lifted or the swipe direction is where
   // navigation is impossible, don't process this event for swiping.
   if (!mEventsAreControllingSwipe || !SwipingInAllowedDirection()) {
@@ -109,12 +111,16 @@ nsEventStatus SwipeTracker::ProcessEvent(
                                         : nsEventStatus_eConsumeNoDefault;
   }
 
+  nsCOMPtr<nsIWidget> widget = do_QueryReferent(mWidget);
+  if (!widget) {
+    return nsEventStatus_eIgnore;
+  }
   mDeltaTypeIsPage = aEvent.mDeltaType == PanGestureInput::PANDELTA_PAGE;
   double delta = [&]() -> double {
     if (mDeltaTypeIsPage) {
       return -aEvent.mPanDisplacement.x / StaticPrefs::widget_swipe_page_size();
     }
-    return -aEvent.mPanDisplacement.x / mWidget.GetDefaultScaleInternal() /
+    return -aEvent.mPanDisplacement.x / widget->GetDefaultScaleInternal() /
            StaticPrefs::widget_swipe_pixel_size();
   }();
 
@@ -185,6 +191,8 @@ void SwipeTracker::StartAnimating(double aStartValue, double aTargetValue) {
 }
 
 void SwipeTracker::WillRefresh(TimeStamp aTime) {
+  RefPtr<SwipeTracker> selfPin(this);
+
   // FIXME(emilio): shouldn't we be using `aTime`?
   TimeStamp now = TimeStamp::Now();
   mAxis.Simulate(now - mLastAnimationFrameTime);
@@ -214,7 +222,11 @@ void SwipeTracker::CancelSwipe(const TimeStamp& aTimeStamp) {
 
 void SwipeTracker::SwipeFinished(const TimeStamp& aTimeStamp) {
   SendSwipeEvent(eSwipeGestureEnd, 0, 0.0, aTimeStamp);
-  mWidget.SwipeFinished();
+  nsCOMPtr<nsIWidget> widget = do_QueryReferent(mWidget);
+  if (!widget) {
+    return;
+  }
+  widget->SwipeFinished();
 }
 
 void SwipeTracker::UnregisterFromRefreshDriver() {
@@ -238,14 +250,18 @@ void SwipeTracker::UnregisterFromRefreshDriver() {
   return geckoEvent;
 }
 
-bool SwipeTracker::SendSwipeEvent(EventMessage aMsg, uint32_t aDirection,
+void SwipeTracker::SendSwipeEvent(EventMessage aMsg, uint32_t aDirection,
                                   double aDelta, const TimeStamp& aTimeStamp) {
+  nsCOMPtr<nsIWidget> widget = do_QueryReferent(mWidget);
+  if (!widget) {
+    return;
+  }
   WidgetSimpleGestureEvent geckoEvent =
-      CreateSwipeGestureEvent(aMsg, &mWidget, mEventPosition, aTimeStamp);
+      CreateSwipeGestureEvent(aMsg, widget, mEventPosition, aTimeStamp);
   geckoEvent.mDirection = aDirection;
   geckoEvent.mDelta = aDelta;
   geckoEvent.mAllowedDirections = mAllowedDirections;
-  return mWidget.DispatchWindowEvent(geckoEvent);
+  widget->DispatchWindowEvent(geckoEvent);
 }
 
 // static

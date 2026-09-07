@@ -1,6 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+const { TestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TestUtils.sys.mjs"
+);
+
 /**
  * Tests that preferences are properly set by distribution.ini
  */
@@ -121,75 +125,26 @@ add_task(async function () {
   );
 
   Assert.equal(
-    defaultBranch.getComplexValue(
-      "distribution.test.locale",
-      Ci.nsIPrefLocalizedString
-    ).data,
+    defaultBranch.getStringPref("distribution.test.locale"),
     "en-US"
   );
+  Assert.equal(defaultBranch.getStringPref("distribution.test.language"), "en");
+  Assert.deepEqual(Services.locale.requestedLocales, ["en-US"]);
+});
+
+add_task(async function test_localizable_prefs_update_on_locale_change() {
+  let defaultBranch = Services.prefs.getDefaultBranch(null);
+  let originalLocales = Services.locale.requestedLocales;
+
+  let localeChanged = TestUtils.topicObserved("intl:requested-locales-changed");
+  Services.locale.requestedLocales = ["de-DE"];
+  await localeChanged;
+
   Assert.equal(
-    defaultBranch.getComplexValue(
-      "distribution.test.language.en",
-      Ci.nsIPrefLocalizedString
-    ).data,
-    "en"
+    defaultBranch.getStringPref("distribution.test.locale"),
+    "de-DE"
   );
-  Assert.equal(
-    defaultBranch.getComplexValue(
-      "distribution.test.locale.en-US",
-      Ci.nsIPrefLocalizedString
-    ).data,
-    "en-US"
-  );
-  Assert.throws(
-    () =>
-      defaultBranch.getComplexValue(
-        "distribution.test.language.de",
-        Ci.nsIPrefLocalizedString
-      ),
-    /NS_ERROR_UNEXPECTED/
-  );
-  // This value was never set because of the empty language specific pref
-  Assert.throws(
-    () =>
-      defaultBranch.getComplexValue(
-        "distribution.test.language.reset",
-        Ci.nsIPrefLocalizedString
-      ),
-    /NS_ERROR_UNEXPECTED/
-  );
-  // This value was never set because of the empty locale specific pref
-  Assert.throws(
-    () =>
-      defaultBranch.getComplexValue(
-        "distribution.test.locale.reset",
-        Ci.nsIPrefLocalizedString
-      ),
-    /NS_ERROR_UNEXPECTED/
-  );
-  // This value was overridden by a locale specific setting
-  Assert.equal(
-    defaultBranch.getComplexValue(
-      "distribution.test.locale.set",
-      Ci.nsIPrefLocalizedString
-    ).data,
-    "Locale Set"
-  );
-  // This value was overridden by a language specific setting
-  Assert.equal(
-    defaultBranch.getComplexValue(
-      "distribution.test.language.set",
-      Ci.nsIPrefLocalizedString
-    ).data,
-    "Language Set"
-  );
-  // Language should not override locale
-  Assert.notEqual(
-    defaultBranch.getComplexValue(
-      "distribution.test.locale.set",
-      Ci.nsIPrefLocalizedString
-    ).data,
-    "Language Set"
-  );
-  Assert.equal(defaultBranch.getCharPref("intl.locale.requested"), "en-US");
+  Assert.equal(defaultBranch.getStringPref("distribution.test.language"), "de");
+
+  Services.locale.requestedLocales = originalLocales;
 });

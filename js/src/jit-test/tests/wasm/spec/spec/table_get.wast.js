@@ -19,7 +19,6 @@
 let $0 = instantiate(`(module
   (table \$t2 2 externref)
   (table \$t3 3 funcref)
-  (table \$t64 i64 3 funcref)
   (elem (table \$t3) (i32.const 1) func \$dummy)
   (func \$dummy)
 
@@ -34,49 +33,42 @@ let $0 = instantiate(`(module
   (func \$f3 (export "get-funcref") (param \$i i32) (result funcref)
     (table.get \$t3 (local.get \$i))
   )
-  (func \$f4 (export "get-funcref-t64") (param \$i i64) (result funcref)
-    (table.get \$t64 (local.get \$i))
-  )
-
   (func (export "is_null-funcref") (param \$i i32) (result i32)
     (ref.is_null (call \$f3 (local.get \$i)))
   )
 )`);
 
-// ./test/core/table_get.wast:28
+// ./test/core/table_get.wast:23
 invoke($0, `init`, [externref(1)]);
 
-// ./test/core/table_get.wast:30
+// ./test/core/table_get.wast:25
 assert_return(() => invoke($0, `get-externref`, [0]), [value('externref', null)]);
 
-// ./test/core/table_get.wast:31
+// ./test/core/table_get.wast:26
 assert_return(() => invoke($0, `get-externref`, [1]), [new ExternRefResult(1)]);
 
-// ./test/core/table_get.wast:33
+// ./test/core/table_get.wast:28
 assert_return(() => invoke($0, `get-funcref`, [0]), [value('anyfunc', null)]);
 
-// ./test/core/table_get.wast:34
-assert_return(() => invoke($0, `get-funcref-t64`, [0n]), [value('anyfunc', null)]);
-
-// ./test/core/table_get.wast:35
+// ./test/core/table_get.wast:29
 assert_return(() => invoke($0, `is_null-funcref`, [1]), [value("i32", 0)]);
 
-// ./test/core/table_get.wast:36
+// ./test/core/table_get.wast:30
 assert_return(() => invoke($0, `is_null-funcref`, [2]), [value("i32", 0)]);
 
-// ./test/core/table_get.wast:38
+// ./test/core/table_get.wast:32
 assert_trap(() => invoke($0, `get-externref`, [2]), `out of bounds table access`);
 
-// ./test/core/table_get.wast:39
+// ./test/core/table_get.wast:33
 assert_trap(() => invoke($0, `get-funcref`, [3]), `out of bounds table access`);
 
-// ./test/core/table_get.wast:40
+// ./test/core/table_get.wast:34
 assert_trap(() => invoke($0, `get-externref`, [-1]), `out of bounds table access`);
 
-// ./test/core/table_get.wast:41
+// ./test/core/table_get.wast:35
 assert_trap(() => invoke($0, `get-funcref`, [-1]), `out of bounds table access`);
 
-// ./test/core/table_get.wast:46
+// ./test/core/table_get.wast:40
 assert_invalid(
   () => instantiate(`(module
     (table \$t 10 externref)
@@ -87,7 +79,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/table_get.wast:55
+// ./test/core/table_get.wast:49
 assert_invalid(
   () => instantiate(`(module
     (table \$t 10 externref)
@@ -98,7 +90,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/table_get.wast:65
+// ./test/core/table_get.wast:59
 assert_invalid(
   () => instantiate(`(module
     (table \$t 10 externref)
@@ -109,7 +101,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/table_get.wast:74
+// ./test/core/table_get.wast:68
 assert_invalid(
   () => instantiate(`(module
     (table \$t 10 externref)
@@ -120,7 +112,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/table_get.wast:84
+// ./test/core/table_get.wast:78
 assert_invalid(
   () => instantiate(`(module
     (table \$t1 1 funcref)

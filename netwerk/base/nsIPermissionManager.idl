@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -75,6 +74,7 @@ interface nsIPermissionManager : nsISupports
   const uint32_t EXPIRE_SESSION = 1;
   const uint32_t EXPIRE_TIME = 2;
   const uint32_t EXPIRE_POLICY = 3;
+  const uint32_t EXPIRE_SESSION_TAB = 4;
 
 
   /**
@@ -286,10 +286,135 @@ interface nsIPermissionManager : nsISupports
    * @param typeExceptions   Types to skip in search.
    */
   void removePermissionsWithAttributes(in AString patternAsJSON, in Array<ACString> typeInclusions, in Array<ACString> typeExceptions);
+
+  /**
+   * Update the last interaction time for a given principal's origin.
+   * Used to track site activity for permission expiration.
+   *
+   * @param principal The principal representing the site the user interacted with.
+   */
+  void updateLastInteractionForPrincipal(in nsIPrincipal principal);
+
+  /**
+   * Remove interaction records from the moz_origin_interactions table
+   * that no longer have corresponding permissions.
+   *
+   * Orphaned interaction records are automatically cleaned up on
+   * idle-daily, so this method only needs to be called when cleanup
+   * must happen immediately (e.g. data clearing via nsIClearDataService)
+   * to ensure tracking data is removed before returning to the caller.
+   *
+   * Not needed after bulk removal methods (removeAll, removeByType, etc.)
+   * which handle cleanup internally.
+   */
+  [implicit_jscontext]
+  Promise removeOrphanedInteractionRecords();
+
+  /**
+   * Test-only method. Flush all pending background-thread writes and resolve
+   * the returned promise once complete. This does not modify any data.
+   */
+  [implicit_jscontext]
+  Promise testFlushPendingWrites();
+
+  /**
+   * Add a permission scoped to a specific browser (tab).
+   * For DENY_ACTION, the permission is keyed by site (baseDomain).
+   * For all other actions, keyed by origin.
+   * expireTimeMS is milliseconds from now until expiry (not absolute timestamp).
+   */
+  void addFromPrincipalForBrowser(
+      in nsIPrincipal principal,
+      in ACString type,
+      in uint32_t permission,
+      in uint64_t browserId,
+      [optional] in int64_t expireTimeMS);
+
+  /**
+   * Remove a browser-scoped permission for the given principal, type, and
+   * browser. Tries both origin-scoped and site-scoped keys.
+   *
+   * @param principal   The principal for the permission.
+   * @param type        The permission type string.
+   * @param browserId   The id of the browser (tab).
+   */
+  void removeFromPrincipalForBrowser(
+      in nsIPrincipal principal,
+      in ACString type,
+      in uint64_t browserId);
+
+  /**
+   * Remove all browser-scoped permissions for a given browser (tab).
+   *
+   * @param browserId   The id of the browser (tab).
+   */
+  void removeAllForBrowser(
+      in uint64_t browserId);
+
+  /**
+   * Remove all browser-scoped permissions with the given action for a browser.
+   *
+   * @param browserId   The id of the browser (tab).
+   * @param permission  The action (e.g. DENY_ACTION) to filter by.
+   */
+  void removeByActionForBrowser(
+      in uint64_t browserId,
+      in uint32_t permission);
+
+  /**
+   * Test for a browser-scoped permission. Returns the permission action
+   * (e.g. ALLOW_ACTION, DENY_ACTION) or UNKNOWN_ACTION if not set.
+   * Origin-scoped permissions are checked before site-scoped ones.
+   *
+   * @param principal   The principal to test.
+   * @param type        The permission type string.
+   * @param browserId   The id of the browser (tab).
+   */
+  uint32_t testForBrowser(
+      in nsIPrincipal principal,
+      in ACString type,
+      in uint64_t browserId);
+
+  /**
+   * Get a browser-scoped permission as an nsIPermission object.
+   * Returns null if not set. Origin-scoped permissions are checked before
+   * site-scoped ones.
+   *
+   * @param principal   The principal to look up.
+   * @param type        The permission type string.
+   * @param browserId   The id of the browser (tab).
+   */
+  nsIPermission getForBrowser(
+      in nsIPrincipal principal,
+      in ACString type,
+      in uint64_t browserId);
+
+  /**
+   * Get all browser-scoped permissions for a given principal and browser,
+   * returned as an array of nsIPermission objects.
+   *
+   * @param principal   The principal to match.
+   * @param browserId   The id of the browser (tab).
+   */
+  Array<nsIPermission> getAllForBrowser(
+      in nsIPrincipal principal,
+      in uint64_t browserId);
+
+  /**
+   * Copy all browser-scoped permissions from one browser to another.
+   * Used during tab-swapping operations.
+   *
+   * @param srcBrowserId   The source BrowserId to copy from.
+   * @param destBrowserId  The destination BrowserId to copy to.
+   */
+  void copyBrowserPermissions(
+      in uint64_t srcBrowserId,
+      in uint64_t destBrowserId);
 };
 
 %{ C++
 #define NS_PERMISSIONMANAGER_CONTRACTID "@mozilla.org/permissionmanager;1"
 
 #define PERM_CHANGE_NOTIFICATION "perm-changed"
+#define BROWSER_PERM_CHANGE_NOTIFICATION "browser-perm-changed"
 %}

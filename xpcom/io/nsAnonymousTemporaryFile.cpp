@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +12,6 @@
 #ifdef XP_WIN
 #  include "nsIObserver.h"
 #  include "nsIObserverService.h"
-#  include "mozilla/ResultExtensions.h"
 #  include "mozilla/Services.h"
 #  include "nsIUserIdleService.h"
 #  include "nsISimpleEnumerator.h"
@@ -164,8 +161,8 @@ class nsAnonTempFileRemover final : public nsIObserver, public nsINamed {
     // idle observer too early, it will be registered before the fake idle
     // service is installed when running in xpcshell, and this interferes with
     // the fake idle service, causing xpcshell-test failures.
-    MOZ_TRY_VAR(mTimer, NS_NewTimerWithObserver(this, SCHEDULE_TIMEOUT_MS,
-                                                nsITimer::TYPE_ONE_SHOT));
+    mTimer = MOZ_TRY(NS_NewTimerWithObserver(this, SCHEDULE_TIMEOUT_MS,
+                                             nsITimer::TYPE_ONE_SHOT));
 
     // Register shutdown observer so we can cancel the timer if we shutdown
     // before the timer runs.
@@ -257,7 +254,7 @@ nsresult CreateAnonTempFileRemover() {
   if (!XRE_IsParentProcess()) {
     return NS_OK;
   }
-  RefPtr<nsAnonTempFileRemover> tempRemover = new nsAnonTempFileRemover();
+  RefPtr tempRemover = MakeRefPtr<nsAnonTempFileRemover>();
   return tempRemover->Init();
 }
 

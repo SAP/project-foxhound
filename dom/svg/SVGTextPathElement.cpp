@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGTextPathElement.h"
+
+#include "SVGElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGTextContentElementBinding.h"
 #include "mozilla/dom/SVGTextPathElementBinding.h"
-#include "SVGElement.h"
-#include "nsGkAtoms.h"
 #include "nsError.h"
+#include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(TextPath)
 
@@ -29,10 +28,10 @@ JSObject* SVGTextPathElement::WrapNode(JSContext* aCx,
 SVGElement::LengthInfo SVGTextPathElement::sLengthInfo[2] = {
     // from SVGTextContentElement:
     {nsGkAtoms::textLength, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::XY},
+     SVGLength::Axis::XY},
     // from SVGTextPathElement:
     {nsGkAtoms::startOffset, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X}};
+     SVGLength::Axis::X}};
 
 SVGEnumMapping SVGTextPathElement::sMethodMap[] = {
     {nsGkAtoms::align, TEXTPATH_METHODTYPE_ALIGN},
@@ -65,7 +64,7 @@ SVGElement::StringInfo SVGTextPathElement::sStringInfo[2] = {
 // Implementation
 
 SVGTextPathElement::SVGTextPathElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : SVGTextPathElementBase(std::move(aNodeInfo)) {}
 
 void SVGTextPathElement::HrefAsString(nsAString& aHref) {
@@ -82,7 +81,8 @@ void SVGTextPathElement::HrefAsString(nsAString& aHref) {
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGTextPathElement)
 
 already_AddRefed<DOMSVGAnimatedString> SVGTextPathElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }

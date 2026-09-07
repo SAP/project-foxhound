@@ -23,9 +23,9 @@ add_setup(async function () {
 });
 
 add_task(async function test_resultDomain() {
-  await Services.search.init();
+  await SearchService.init();
 
-  let engine = Services.search.getEngineById("appDefault");
+  let engine = SearchService.getEngineById("appDefault");
 
   Assert.equal(engine.searchUrlDomain, "www.example.com");
 });

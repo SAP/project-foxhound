@@ -1,0 +1,200 @@
+From ecbbd7f0e5d4be987d417716d6b7baec8579cd34 Mon Sep 17 00:00:00 2001
+From: Jonathan Kew <jkew@mozilla.com>
+Date: Wed, 22 Apr 2026 13:00:22 -0700
+Subject: [PATCH 08/29] Look up FreeType variation APIs at runtime
+
+---
+ src/cairo-ft-font.c | 117 +++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 94 insertions(+), 23 deletions(-)
+
+diff --git a/src/cairo-ft-font.c b/src/cairo-ft-font.c
+index b86fe4fb8..2b104c97a 100644
+--- a/src/cairo-ft-font.c
++++ b/src/cairo-ft-font.c
+@@ -74,6 +74,7 @@
+ #elif !defined(access)
+ #define access(p, m) 0
+ #endif
++#include <dlfcn.h>
+ 
+ /*  FreeType version older than 2.11 does not have the FT_RENDER_MODE_SDF enum value in FT_Render_Mode */
+ #if FREETYPE_MAJOR > 2 || (FREETYPE_MAJOR == 2 && FREETYPE_MINOR >= 11)
+@@ -132,6 +133,16 @@ extern void mozilla_UnlockFTLibrary(FT_Library aLibrary);
+        ? mozilla_UnlockSharedFTFace((unscaled)->face_context) \
+        : (void)CAIRO_MUTEX_UNLOCK((unscaled)->mutex))
+ 
++/**
++ * Function types for FreeType symbols we'll look up at runtime, rather than
++ * relying on build-time checks for availability.
++ */
++typedef FT_Error (*GetVarFunc) (FT_Face, FT_MM_Var**);
++typedef FT_Error (*DoneVarFunc) (FT_Library, FT_MM_Var*);
++typedef FT_Error (*GetVarDesignCoordsFunc) (FT_Face, FT_UInt, FT_Fixed*);
++typedef FT_Error (*SetVarDesignCoordsFunc) (FT_Face, FT_UInt, FT_Fixed*);
++typedef FT_Error (*GetVarBlendCoordsFunc) (FT_Face, FT_UInt, FT_Fixed*);
++
+ /**
+  * SECTION:cairo-ft
+  * @Title: FreeType Fonts
+@@ -493,11 +504,30 @@ _cairo_ft_unscaled_font_init (cairo_ft_unscaled_font_t *unscaled,
+ 
+         unscaled->have_color = FT_HAS_COLOR (face) != 0;
+         unscaled->have_color_set = TRUE;
+-	if (FT_Get_MM_Var (face, &ft_mm_var) == 0) {
+-	    unscaled->variations = _cairo_calloc_ab (ft_mm_var->num_axis, sizeof (FT_Fixed));
+-	    if (unscaled->variations)
+-		FT_Get_Var_Design_Coordinates (face, ft_mm_var->num_axis, unscaled->variations);
+-	    FT_Done_MM_Var (face->glyph->library, ft_mm_var);
++
++        static GetVarFunc getVar;
++        static DoneVarFunc doneVar;
++        static GetVarDesignCoordsFunc getVarDesignCoords;
++
++        static int firstTime = 1;
++        if (firstTime) {
++            getVar = (GetVarFunc) dlsym (RTLD_DEFAULT, "FT_Get_MM_Var");
++            doneVar = (DoneVarFunc) dlsym (RTLD_DEFAULT, "FT_Done_MM_Var");
++            getVarDesignCoords = (GetVarDesignCoordsFunc) dlsym (RTLD_DEFAULT, "FT_Get_Var_Design_Coordinates");
++            firstTime = 0;
++        }
++
++        if (getVar && getVarDesignCoords) {
++	    if (0 == (*getVar) (face, &ft_mm_var))
++	    {
++		unscaled->variations = _cairo_calloc_ab (ft_mm_var->num_axis, sizeof (FT_Fixed));
++		if (unscaled->variations)
++		    (*getVarDesignCoords) (face, ft_mm_var->num_axis, unscaled->variations);
++		if (doneVar)
++		    (*doneVar) (face->glyph->library, ft_mm_var);
++		else
++		    free (ft_mm_var);
++	    }
+ 	}
+     } else {
+ 	char *filename_copy;
+@@ -2335,7 +2365,24 @@ cairo_ft_apply_variations (FT_Face                 face,
+     FT_Error ret;
+     unsigned int instance_id = scaled_font->unscaled->id >> 16;
+ 
+-    ret = FT_Get_MM_Var (face, &ft_mm_var);
++    static GetVarFunc getVar;
++    static DoneVarFunc doneVar;
++    static GetVarDesignCoordsFunc getVarDesignCoords;
++    static SetVarDesignCoordsFunc setVarDesignCoords;
++
++    static int firstTime = 1;
++    if (firstTime) {
++        getVar = (GetVarFunc) dlsym (RTLD_DEFAULT, "FT_Get_MM_Var");
++        doneVar = (DoneVarFunc) dlsym (RTLD_DEFAULT, "FT_Done_MM_Var");
++        getVarDesignCoords = (GetVarDesignCoordsFunc) dlsym (RTLD_DEFAULT, "FT_Get_Var_Design_Coordinates");
++        setVarDesignCoords = (SetVarDesignCoordsFunc) dlsym (RTLD_DEFAULT, "FT_Set_Var_Design_Coordinates");
++        firstTime = 0;
++    }
++
++    if (!getVar || !setVarDesignCoords)
++        return;
++
++    ret = (*getVar) (face, &ft_mm_var);
+     if (ret == 0) {
+         FT_Fixed *current_coords;
+         FT_Fixed *coords;
+@@ -2400,21 +2447,28 @@ skip:
+         }
+ 
+         current_coords = malloc (sizeof (FT_Fixed) * ft_mm_var->num_axis);
+-        ret = FT_Get_Var_Design_Coordinates (face, ft_mm_var->num_axis, current_coords);
+-        if (ret == 0) {
+-            for (i = 0; i < ft_mm_var->num_axis; i++) {
+-              if (coords[i] != current_coords[i])
+-                break;
++
++        if (getVarDesignCoords) {
++            ret = (*getVarDesignCoords) (face, ft_mm_var->num_axis, current_coords);
++            if (ret == 0) {
++                for (i = 0; i < ft_mm_var->num_axis; i++) {
++                    if (coords[i] != current_coords[i])
++                        break;
++                }
++                if (i == ft_mm_var->num_axis)
++                    goto done;
+             }
+-            if (i == ft_mm_var->num_axis)
+-              goto done;
+         }
+ 
+-        FT_Set_Var_Design_Coordinates (face, ft_mm_var->num_axis, coords);
++        (*setVarDesignCoords) (face, ft_mm_var->num_axis, coords);
+ done:
+         free (coords);
+         free (current_coords);
+-        FT_Done_MM_Var (face->glyph->library, ft_mm_var);
++
++        if (doneVar)
++            (*doneVar) (face->glyph->library, ft_mm_var);
++        else
++            free (ft_mm_var);
+     }
+ }
+ 
+@@ -3636,6 +3690,18 @@ _cairo_ft_is_synthetic (void	        *abstract_font,
+     FT_Face face;
+     FT_Error error;
+ 
++    static GetVarFunc getVar;
++    static DoneVarFunc doneVar;
++    static GetVarBlendCoordsFunc getVarBlendCoords;
++
++    static int firstTime = 1;
++    if (firstTime) {
++        getVar = (GetVarFunc) dlsym (RTLD_DEFAULT, "FT_Get_MM_Var");
++        doneVar = (DoneVarFunc) dlsym (RTLD_DEFAULT, "FT_Done_MM_Var");
++        getVarBlendCoords = (GetVarBlendCoordsFunc) dlsym (RTLD_DEFAULT, "FT_Get_Var_Blend_Coordinates");
++        firstTime = 0;
++    }
++
+     if (scaled_font->ft_options.synth_flags != 0) {
+ 	*is_synthetic = TRUE;
+ 	return status;
+@@ -3656,7 +3722,7 @@ _cairo_ft_is_synthetic (void	        *abstract_font,
+ 	 * are the same as the font tables */
+ 	*is_synthetic = TRUE;
+ 
+-	error = FT_Get_MM_Var (face, &mm_var);
++	error = getVar ? (*getVar) (face, &mm_var) : -1;
+ 	if (error) {
+ 	    status = _cairo_error (_cairo_ft_to_cairo_error (error));
+ 	    goto cleanup;
+@@ -3673,18 +3739,23 @@ _cairo_ft_is_synthetic (void	        *abstract_font,
+ 	 * coordinates. In this case the current outlines match the
+ 	 * font tables.
+ 	 */
+-	FT_Get_Var_Blend_Coordinates (face, num_axis, coords);
+-	*is_synthetic = FALSE;
+-	for (i = 0; i < num_axis; i++) {
+-	    if (coords[i]) {
+-		*is_synthetic = TRUE;
+-		break;
++	if (getVarBlendCoords) {
++	    (*getVarBlendCoords) (face, num_axis, coords);
++	    *is_synthetic = FALSE;
++	    for (i = 0; i < num_axis; i++) {
++		if (coords[i]) {
++		    *is_synthetic = TRUE;
++		    break;
++		}
+ 	    }
+ 	}
+ 
+       cleanup:
+ 	free (coords);
+-	FT_Done_MM_Var (face->glyph->library, mm_var);
++	if (doneVar)
++            (*doneVar) (face->glyph->library, mm_var);
++        else
++	    free (mm_var);
+     }
+ 
+     _cairo_ft_unscaled_font_unlock_face (unscaled);
+-- 
+2.53.0
+

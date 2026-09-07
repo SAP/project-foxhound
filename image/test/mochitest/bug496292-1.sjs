@@ -6,10 +6,19 @@ function handleRequest(request, response) {
   file.append("test");
   file.append("mochitest");
 
-  if (
-    request.getHeader("Accept") ==
-    "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5"
-  ) {
+  // The expected Accept header depends on the pref image.jxl.enabled, but we
+  // can't read the up-to-date value of the pref here: on Android this .sjs
+  // runs in a host-side xpcshell that is a separate process (and a much older
+  // build that is only updated manually) than the device GeckoView under test,
+  // so its Services.prefs doesn't reflect the device's runtime pref state. The
+  // test passes the pref value via the query string instead.
+  let expected = "image/avif,";
+  if (request.queryString == "jxl=1") {
+    expected += "image/jxl,";
+  }
+  expected += "image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5";
+
+  if (request.getHeader("Accept") == expected) {
     file.append("blue.png");
   } else {
     file.append("red.png");

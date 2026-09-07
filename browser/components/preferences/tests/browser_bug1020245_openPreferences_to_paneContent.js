@@ -2,6 +2,14 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Test opening to the differerent panes and subcategories in Preferences
+
+// Under SRD the default fallback pane is paneSync, and the privacy subcategory
+// route resolves to panePermissionsData instead of panePrivacy.
+const kDefaultPane = SRD_PREF_VALUE ? "paneSync" : "paneGeneral";
+const kDefaultHash = SRD_PREF_VALUE ? "#sync" : "#general";
+const kPrivacyPane = SRD_PREF_VALUE ? "panePermissionsData" : "panePrivacy";
+const kPrivacyHash = SRD_PREF_VALUE ? "#permissionsData" : "#privacy";
+
 add_task(async function () {
   let prefs = await openPreferencesViaOpenPreferencesAPI("panePrivacy");
   is(prefs.selectedPane, "panePrivacy", "Privacy pane was selected");
@@ -14,49 +22,56 @@ add_task(async function () {
   prefs = await openPreferencesViaOpenPreferencesAPI("nonexistant-category");
   is(
     prefs.selectedPane,
-    "paneGeneral",
-    "General pane is selected by default when a nonexistant-category is requested"
+    kDefaultPane,
+    "Default pane is selected when a nonexistant-category is requested"
   );
   prefs = await openPreferencesViaHash("nonexistant-category");
   is(
     prefs.selectedPane,
-    "paneGeneral",
-    "General pane is selected when hash is a nonexistant-category"
+    kDefaultPane,
+    "Default pane is selected when hash is a nonexistant-category"
   );
   prefs = await openPreferencesViaHash();
-  is(prefs.selectedPane, "paneGeneral", "General pane is selected by default");
+  is(prefs.selectedPane, kDefaultPane, "Default pane is selected by default");
   prefs = await openPreferencesViaOpenPreferencesAPI("privacy-reports", {
     leaveOpen: true,
   });
-  is(prefs.selectedPane, "panePrivacy", "Privacy pane is selected by default");
+  is(prefs.selectedPane, kPrivacyPane, "Privacy pane is selected by default");
   let doc = gBrowser.contentDocument;
   is(
     doc.location.hash,
-    "#privacy",
+    kPrivacyHash,
     "The subcategory should be removed from the URI"
   );
-  await TestUtils.waitForCondition(
-    () => doc.querySelector(".spotlight"),
-    "Wait for the reports section is spotlighted."
-  );
-  is(
-    doc.querySelector(".spotlight").getAttribute("data-subcategory"),
-    "reports",
-    "The reports section is spotlighted."
-  );
+  if (SRD_PREF_VALUE) {
+    await TestUtils.waitForCondition(
+      () => doc.querySelector("[data-subcategory~='reports']"),
+      "Wait for the reports section to render."
+    );
+  } else {
+    await TestUtils.waitForCondition(
+      () => doc.querySelector(".spotlight"),
+      "Wait for the reports section is spotlighted."
+    );
+    is(
+      doc.querySelector(".spotlight").getAttribute("data-subcategory"),
+      "reports",
+      "The reports section is spotlighted."
+    );
+  }
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
 // Test opening Preferences with subcategory on an existing Preferences tab. See bug 1358475.
 add_task(async function () {
-  let prefs = await openPreferencesViaOpenPreferencesAPI("general", {
+  let prefs = await openPreferencesViaOpenPreferencesAPI(kDefaultPane, {
     leaveOpen: true,
   });
-  is(prefs.selectedPane, "paneGeneral", "General pane is selected by default");
+  is(prefs.selectedPane, kDefaultPane, "Default pane is selected by default");
   let doc = gBrowser.contentDocument;
   is(
     doc.location.hash,
-    "#general",
+    kDefaultHash,
     "The subcategory should be removed from the URI"
   );
   // The reasons that here just call the `openPreferences` API without the helping function are
@@ -64,22 +79,29 @@ add_task(async function () {
   //   - the goal is to test on the existing tab and
   //   - using `openPreferencesViaOpenPreferencesAPI` would introduce more handling of additional about:blank and unneccessary event
   await openPreferences("privacy-reports");
-  let selectedPane = gBrowser.contentWindow.history.state;
-  is(selectedPane, "panePrivacy", "Privacy pane should be selected");
+  let selectedPane = gBrowser.contentWindow.gLastCategory?.category;
+  is(selectedPane, kPrivacyPane, "Privacy pane should be selected");
   is(
     doc.location.hash,
-    "#privacy",
+    kPrivacyHash,
     "The subcategory should be removed from the URI"
   );
-  await TestUtils.waitForCondition(
-    () => doc.querySelector(".spotlight"),
-    "Wait for the reports section is spotlighted."
-  );
-  is(
-    doc.querySelector(".spotlight").getAttribute("data-subcategory"),
-    "reports",
-    "The reports section is spotlighted."
-  );
+  if (SRD_PREF_VALUE) {
+    await TestUtils.waitForCondition(
+      () => doc.querySelector("[data-subcategory~='reports']"),
+      "Wait for the reports section to render."
+    );
+  } else {
+    await TestUtils.waitForCondition(
+      () => doc.querySelector(".spotlight"),
+      "Wait for the reports section is spotlighted."
+    );
+    is(
+      doc.querySelector(".spotlight").getAttribute("data-subcategory"),
+      "reports",
+      "The reports section is spotlighted."
+    );
+  }
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -149,7 +171,7 @@ function openPreferencesViaHash(aPane) {
           "load",
           async function () {
             let win = gBrowser.contentWindow;
-            let selectedPane = win.history.state;
+            let selectedPane = win.gLastCategory?.category;
             await finalPrefPaneLoaded;
             gBrowser.removeCurrentTab();
             resolve({ selectedPane });

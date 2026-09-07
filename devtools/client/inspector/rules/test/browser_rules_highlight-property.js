@@ -23,6 +23,8 @@ const TEST_URI = `
 `;
 
 add_task(async function () {
+  // enable prefers-reduced-motion so the scroll happens instantly
+  await pushPref("ui.prefersReducedMotion", 1);
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
@@ -36,8 +38,8 @@ add_task(async function () {
     ({ name }) => name === "border-left-width"
   );
 
-  let onHighlightProperty = view.once("scrolled-to-element");
-  let isHighlighted = view.highlightProperty("border-left-width");
+  let onHighlightProperty = view.once("element-highlighted");
+  let isHighlighted = await view.highlightProperty("border-left-width");
   await onHighlightProperty;
 
   ok(isHighlighted, "border-left-property is highlighted.");
@@ -50,8 +52,8 @@ add_task(async function () {
   const fontSize = rules[2].textProps[1].editor;
 
   info("Wait for the view to scroll to the property.");
-  onHighlightProperty = view.once("scrolled-to-element");
-  isHighlighted = view.highlightProperty("font-size");
+  onHighlightProperty = view.once("element-highlighted");
+  isHighlighted = await view.highlightProperty("font-size");
   await onHighlightProperty;
 
   ok(isHighlighted, "font-size property is highlighted.");
@@ -61,8 +63,8 @@ add_task(async function () {
   const color = rules[0].textProps[1].editor;
 
   info("Wait for the view to scroll to the property.");
-  onHighlightProperty = view.once("scrolled-to-element");
-  isHighlighted = view.highlightProperty("color");
+  onHighlightProperty = view.once("element-highlighted");
+  isHighlighted = await view.highlightProperty("color");
   await onHighlightProperty;
 
   ok(isHighlighted, "color property is highlighted.");
@@ -72,7 +74,7 @@ add_task(async function () {
   const marginTop = rules[2].textProps[3].editor;
 
   info("Wait for the view to scroll to the property.");
-  onHighlightProperty = view.once("scrolled-to-element");
+  onHighlightProperty = view.once("element-highlighted");
   isHighlighted = view.highlightProperty("margin-top");
   await onHighlightProperty;
 

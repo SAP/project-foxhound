@@ -7,6 +7,7 @@ import os
 
 from mach.decorators import Command, CommandArgument, CommandArgumentGroup
 from mozbuild.base import BinaryNotFoundException
+from mozdebug import prepend_debugger_args
 
 
 @Command(
@@ -85,37 +86,9 @@ def run(command_context, binary, params, debug, debugger, debugger_args):
         if "INSIDE_EMACS" in os.environ:
             command_context.log_manager.terminal_handler.setLevel(logging.WARNING)
 
-        import mozdebug
-
-        if not debugger:
-            # No debugger name was provided. Look for the default ones on
-            # current OS.
-            debugger = mozdebug.get_default_debugger_name(
-                mozdebug.DebuggerSearch.KeepLooking
-            )
-
-        if debugger:
-            debuggerInfo = mozdebug.get_debugger_info(debugger, debugger_args)
-            if not debuggerInfo:
-                print("Could not find a suitable debugger in your PATH.")
-                return 1
-
-        # Parameters come from the CLI. We need to convert them before
-        # their use.
-        if debugger_args:
-            from mozbuild import shellutil
-
-            try:
-                debugger_args = shellutil.split(debugger_args)
-            except shellutil.MetaCharacterException as e:
-                print(
-                    "The --debugger-args you passed require a real shell to parse them."
-                )
-                print("(We can't handle the %r character.)" % e.char)
-                return 1
-
-        # Prepend the debugger args.
-        args = [debuggerInfo.path] + debuggerInfo.args + args
+        args = prepend_debugger_args(args, debugger, debugger_args)
+        if not args:
+            return 1
 
     return command_context.run_process(
         args=args, ensure_exit_code=False, pass_thru=True

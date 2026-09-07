@@ -16,6 +16,7 @@ You can delete local storage and session storage entries using the context menu:
 
 .. image:: delete_storage_menu.png
   :class: border
+  :alt: Screenshot of the Storage Inspector where the context menu is displayed on top of a local storage item whose key is "sampleList". The context menu has the following entries: "Add Item", "Delete sampleList" and "Delete All"
 
 
 You can also delete local and session storage entries by selecting an item and pressing the :kbd:`Delete` or :kbd:`Backspace` key.

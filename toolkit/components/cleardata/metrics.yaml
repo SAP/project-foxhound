@@ -1,0 +1,45 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - "Firefox :: Private Browsing"
+
+private_browsing.cleanup:
+  duration:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Wall-clock time from clearPrivateBrowsingData() call start to callback
+      invocation.
+      This currently does not keep track of regular PBM teardown (last PBM window exited).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018747
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018747
+    notification_emails:
+      - emz@mozilla.com
+    data_sensitivity:
+      - technical
+    expires: 160
+
+  error_rate:
+    type: rate
+    description: >
+      Rate of clearPrivateBrowsingData() calls that reported at least one
+      observer failure. Denominator is incremented on every call; numerator
+      is incremented when hadFailures is true or the promise rejects.
+      This currently does not keep track of regular PBM teardown (last PBM window exited).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018747
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018747
+    notification_emails:
+      - emz@mozilla.com
+    data_sensitivity:
+      - technical
+    expires: 160

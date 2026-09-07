@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   OpenInTabsUtils:
     "moz-src:///browser/components/tabbrowser/OpenInTabsUtils.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 export var ToolbarDropHandler = {
@@ -76,13 +76,13 @@ export var ToolbarDropHandler = {
         return;
       }
 
-      const win = aEvent.target.ownerGlobal;
+      const win = aEvent.target.documentGlobal;
       win.setTimeout(this._openHomeDialog, 0, urls.join("|"), win);
     }
   },
 
   async onDropNewTabButtonObserver(aEvent) {
-    const win = aEvent.target.ownerGlobal;
+    const win = aEvent.target.documentGlobal;
     let links = Services.droppedLinkHandler.dropLinks(aEvent);
     if (
       links.length >=
@@ -118,7 +118,7 @@ export var ToolbarDropHandler = {
   },
 
   async onDropNewWindowButtonObserver(aEvent) {
-    const win = aEvent.target.ownerGlobal;
+    const win = aEvent.target.documentGlobal;
     let links = Services.droppedLinkHandler.dropLinks(aEvent);
     if (
       links.length >=

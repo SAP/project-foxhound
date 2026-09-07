@@ -97,7 +97,7 @@ pub fn parse_function(s: &str) -> (&str, Vec<&str>, &str) {
             p.o = p.itr.next();
         }
 
-        args.push(&s[p.start .. end]);
+        args.push(&s[p.start .. end].trim());
 
         p.skip_whitespace();
 

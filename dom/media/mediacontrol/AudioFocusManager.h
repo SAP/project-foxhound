@@ -5,9 +5,9 @@
 #ifndef DOM_MEDIA_MEDIACONTROL_AUDIOFOCUSMANAGER_H_
 #define DOM_MEDIA_MEDIACONTROL_AUDIOFOCUSMANAGER_H_
 
+#include "VideoUtils.h"
 #include "base/basictypes.h"
 #include "nsTArray.h"
-#include "VideoUtils.h"
 
 namespace mozilla::dom {
 

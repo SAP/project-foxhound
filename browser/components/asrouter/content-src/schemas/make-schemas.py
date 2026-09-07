@@ -63,6 +63,9 @@ SCHEMAS = [
         schema_id="chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json",
         schema_path=Path("MessagingExperiment.schema.json"),
         message_types={
+            "ActionOnlyMessage": (
+                SCHEMA_DIR / "OnboardingMessage" / "ActionOnlyMessage.schema.json"
+            ),
             "BookmarksBarButton": (
                 SCHEMA_DIR / "OnboardingMessage" / "BookmarksBarButton.schema.json"
             ),
@@ -81,6 +84,9 @@ SCHEMAS = [
             ),
             "NewtabMessage": (
                 SCHEMA_DIR / "OnboardingMessage" / "NewtabMessage.schema.json"
+            ),
+            "SmartWindowNewtabPromo": (
+                SCHEMA_DIR / "OnboardingMessage" / "SmartWindowNewtabPromo.schema.json"
             ),
             "Spotlight": SCHEMA_DIR / "OnboardingMessage" / "Spotlight.schema.json",
             "ToastNotification": (
@@ -262,13 +268,11 @@ def bundle_schema(schema_def: SchemaDefinition):
 
         # patch_schema mutates the given schema, so we read a new copy in for
         # each bundle operation.
-        defs.update(
-            {
-                name: dfn
-                for name, dfn in common_schema["$defs"].items()
-                if dfn_filter(name)
-            }
-        )
+        defs.update({
+            name: dfn
+            for name, dfn in common_schema["$defs"].items()
+            if dfn_filter(name)
+        })
 
     # Ensure all bundled schemas have an $id so that $refs inside the
     # bundled schema work correctly (i.e, they will reference the subschema

@@ -1,17 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/AnimationEffect.h"
-#include "mozilla/dom/AnimationEffectBinding.h"
 
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/KeyframeEffect.h"
-#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/dom/Animation.h"
+#include "mozilla/dom/AnimationEffectBinding.h"
+#include "mozilla/dom/CSSUnitValue.h"
+#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/dom/MutationObservers.h"
+#include "mozilla/dom/ScrollTimeline.h"  // For PROGRESS_TIMELINE_DURATION_MILLISEC
 #include "nsDOMMutationObserver.h"
 
 namespace mozilla::dom {
@@ -45,9 +45,26 @@ nsISupports* AnimationEffect::GetParentObject() const {
   return ToSupports(mDocument);
 }
 
-// https://drafts.csswg.org/web-animations/#current
+// https://drafts.csswg.org/web-animations-1/#current
 bool AnimationEffect::IsCurrent() const {
-  if (!mAnimation || mAnimation->PlayState() == AnimationPlayState::Finished) {
+  if (!mAnimation) {
+    return false;
+  }
+
+  // An animation effect is current if it is associated with an animation not
+  // in the idle play state with a non-null associated timeline that is not
+  // monotonically increasing.
+  // https://drafts.csswg.org/web-animations-1/#current (fourth bullet)
+  const AnimationTimeline* timeline = mAnimation->GetTimeline();
+  if (timeline && timeline->IsInactiveTimeline()) {
+    return false;
+  }
+  if (timeline && !timeline->IsMonotonicallyIncreasing() &&
+      mAnimation->PlayState() != AnimationPlayState::Idle) {
+    return true;
+  }
+
+  if (mAnimation->PlayState() == AnimationPlayState::Finished) {
     return false;
   }
 
@@ -56,14 +73,18 @@ bool AnimationEffect::IsCurrent() const {
     return true;
   }
 
-  return (mAnimation->PlaybackRate() > 0 &&
+  return (mAnimation->PlaybackRateInternal() > 0 &&
           computedTiming.mPhase == ComputedTiming::AnimationPhase::Before) ||
-         (mAnimation->PlaybackRate() < 0 &&
+         (mAnimation->PlaybackRateInternal() < 0 &&
           computedTiming.mPhase == ComputedTiming::AnimationPhase::After);
 }
 
 // https://drafts.csswg.org/web-animations/#in-effect
 bool AnimationEffect::IsInEffect() const {
+  const auto* timeline = mAnimation ? mAnimation->GetTimeline() : nullptr;
+  if (timeline && timeline->IsInactiveTimeline()) {
+    return false;
+  }
   ComputedTiming computedTiming = GetComputedTiming();
   return !computedTiming.mProgress.IsNull();
 }
@@ -73,7 +94,7 @@ void AnimationEffect::SetSpecifiedTiming(TimingParams&& aTiming) {
     return;
   }
 
-  mTiming = aTiming;
+  mTiming = std::move(aTiming);
 
   UpdateNormalizedTiming();
 
@@ -262,14 +283,18 @@ ComputedTiming AnimationEffect::GetComputedTimingAt(
     progress = fn->At(progress, result.mBeforeFlag);
   }
 
-  MOZ_ASSERT(std::isfinite(progress), "Progress value should be finite");
+  if (!std::isfinite(progress)) {
+    return result;
+  }
+
   result.mProgress.SetValue(progress);
   return result;
 }
 
 ComputedTiming AnimationEffect::GetComputedTiming(
     const TimingParams* aTiming, EndpointBehavior aEndpointBehavior) const {
-  const double playbackRate = mAnimation ? mAnimation->PlaybackRate() : 1;
+  const double playbackRate =
+      mAnimation ? mAnimation->PlaybackRateInternal() : 1;
   const auto progressTimelinePosition =
       mAnimation ? mAnimation->AtProgressTimelineBoundary()
                  : Animation::ProgressTimelinePosition::NotBoundary;
@@ -301,27 +326,56 @@ void AnimationEffect::GetTiming(EffectTiming& aRetVal) const {
   GetEffectTimingDictionary(SpecifiedTiming(), aRetVal);
 }
 
+// https://drafts.csswg.org/web-animations-1/#dom-animationeffect-getcomputedtiming
+// https://drafts.csswg.org/web-animations-2/#dom-animationeffect-getcomputedtiming
 void AnimationEffect::GetComputedTimingAsDict(
     ComputedEffectTiming& aRetVal) const {
   // Specified timing
   GetEffectTimingDictionary(SpecifiedTiming(), aRetVal);
 
-  // Computed timing
-  double playbackRate = mAnimation ? mAnimation->PlaybackRate() : 1;
+  // Computed timing. For progress-based timelines, use the normalized timing
+  // so duration/endTime reflect the timeline's progress range (100%).
+  double playbackRate = mAnimation ? mAnimation->PlaybackRateInternal() : 1;
   const Nullable<TimeDuration> currentTime = GetLocalTime();
   const auto progressTimelinePosition =
       mAnimation ? mAnimation->AtProgressTimelineBoundary()
                  : Animation::ProgressTimelinePosition::NotBoundary;
   ComputedTiming computedTiming = GetComputedTimingAt(
-      currentTime, SpecifiedTiming(), playbackRate, progressTimelinePosition);
+      currentTime, NormalizedTiming(), playbackRate, progressTimelinePosition);
 
-  aRetVal.mDuration.SetAsUnrestrictedDouble() =
-      computedTiming.mDuration.ToMilliseconds();
+  const bool hasProgressTimeline =
+      mAnimation && mAnimation->AcceptsPercentageBasedTime();
+  // Needed to construct CSSUnitValues.
+  auto* progressGlobal =
+      hasProgressTimeline ? mAnimation->GetParentObject() : nullptr;
+
+  if (progressGlobal) {
+    aRetVal.mDuration.SetAsCSSNumericValue() = MakeRefPtr<CSSUnitValue>(
+        progressGlobal,
+        computedTiming.mDuration.ToMilliseconds() /
+            static_cast<double>(PROGRESS_TIMELINE_DURATION_MILLISEC) * 100.0,
+        "percent"_ns);
+  } else {
+    aRetVal.mDuration.SetAsUnrestrictedDouble() =
+        computedTiming.mDuration.ToMilliseconds();
+  }
+  // TODO: for "auto", 'fill' should depend on whether we are a keyframe effect.
   aRetVal.mFill = computedTiming.mFill;
-  aRetVal.mActiveDuration = computedTiming.mActiveDuration.ToMilliseconds();
-  aRetVal.mEndTime = computedTiming.mEndTime.ToMilliseconds();
-  aRetVal.mLocalTime =
-      AnimationUtils::TimeDurationToDouble(currentTime, mRTPCallerType);
+  AnimationUtils::DoubleToCSSNumberish(
+      computedTiming.mActiveDuration.ToMilliseconds(), hasProgressTimeline,
+      progressGlobal, aRetVal.mActiveDuration.Construct());
+  AnimationUtils::DoubleToCSSNumberish(computedTiming.mEndTime.ToMilliseconds(),
+                                       hasProgressTimeline, progressGlobal,
+                                       aRetVal.mEndTime.Construct());
+  Nullable<OwningCSSNumberish>& localTime = aRetVal.mLocalTime.Construct();
+  if (currentTime.IsNull()) {
+    localTime.SetNull();
+  } else {
+    AnimationUtils::DoubleToCSSNumberish(
+        AnimationUtils::TimeDurationToDouble(currentTime, mRTPCallerType)
+            .Value(),
+        hasProgressTimeline, progressGlobal, localTime.SetValue());
+  }
   aRetVal.mProgress = computedTiming.mProgress;
 
   if (!aRetVal.mProgress.IsNull()) {
@@ -346,17 +400,29 @@ void AnimationEffect::UpdateTiming(const OptionalEffectTiming& aTiming,
   SetSpecifiedTiming(std::move(timing));
 }
 
+// FIXME: We currently update the normalized timing eagerly, and this may cause
+// unnecessary calculation. The alternative way is to update it lazily and only
+// when needed. In order words, we could set a flag, and update the normalized
+// timing only when we need to use the normalized timing.
 void AnimationEffect::UpdateNormalizedTiming() {
   mNormalizedTiming.reset();
 
-  if (!mAnimation || !mAnimation->UsingScrollTimeline()) {
+  if (!mAnimation) {
     return;
   }
 
-  // Since `mAnimation` has a scroll timeline, we can be sure `GetTimeline()`
-  // and `TimelineDuration()` will not return null.
-  mNormalizedTiming.emplace(
-      mTiming.Normalize(mAnimation->GetTimeline()->TimelineDuration().Value()));
+  const auto* timeline = mAnimation->GetTimeline();
+  // Skip time-based timeline. Only scroll timeline and view timeline update the
+  // normalized timing.
+  if (!timeline || timeline->IsMonotonicallyIncreasing()) {
+    return;
+  }
+
+  const Nullable<TimeDuration>& timelineDuration =
+      timeline->TimelineDuration(mAnimation->GetTimelineRange());
+  MOZ_ASSERT(!timelineDuration.IsNull(),
+             "We always have a timeline duration even for 0 duration");
+  mNormalizedTiming.emplace(mTiming.Normalize(timelineDuration.Value()));
 }
 
 Nullable<TimeDuration> AnimationEffect::GetLocalTime() const {

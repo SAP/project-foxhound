@@ -37,10 +37,10 @@ add_task(async function test_getLabel_withOSKeyStore() {
 
   const ccNumber = "4111111111111111";
   const encryptedNumber = await OSKeyStore.encrypt(ccNumber);
-  const decryptedNumber = await OSKeyStore.decrypt(encryptedNumber);
+  const decryptedNumber = await OSKeyStore.decrypt(encryptedNumber, "testing");
   is(decryptedNumber, ccNumber, "Decrypted CC number should match original");
 
   const name = "Foxkeh";
   const label = CreditCard.getLabel({ name: "Foxkeh", number: ccNumber });
-  is(label, `**** 1111, ${name}`, "Label matches");
+  is(label, `•••• 1111, ${name}`, "Label matches");
 });

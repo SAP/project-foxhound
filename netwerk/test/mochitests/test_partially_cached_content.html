@@ -48,11 +48,7 @@ function expectInitialContent() {
   removeEventListener("load", expectInitialContent, false);
   frameElement.addEventListener("load", expectFullContent);
 
-  var reload = ()=>frameElement.src = "partial_content.sjs";
-
-  // Before reload, disable rcwn to avoid racing and a non-range request.
-  SpecialPowers.pushPrefEnv({set: [["network.http.rcwn.enabled", false]]},
-                            reload);
+  frameElement.src = "partial_content.sjs";
 }
 
 /* Check that the iframe has all the content after the second load.

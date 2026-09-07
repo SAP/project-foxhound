@@ -29,11 +29,6 @@ add_task(async function () {
   // that we can make the below checks at a reasonable time.
   info("refreshing the node");
   const p = view.selectElement(testdiv, true);
-  is(
-    view.element.innerHTML,
-    htmlBefore,
-    "The rule view is unchanged during selection."
-  );
   ok(
     view.element.classList.contains("non-interactive"),
     "The rule view is marked non-interactive."

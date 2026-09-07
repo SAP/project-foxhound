@@ -9,8 +9,6 @@
 <body>
   <script type="application/javascript">
 
-
-
   /**
    * - main page opens testUrl1
    * - testUrl1 ---"onpageshow"---> to main page
@@ -91,7 +89,7 @@
       var msg = msgEvent.data;
       var command = msg.command;
       if (command == "onpageshow") {
-        info("Page1Shown: " + msg.location);
+        info("Page2Shown: " + msg.location);
         var workerMessage = { type: "page2" };
         bc2.postMessage({command: "startWorker", workerMessage});
       } else if (command == "workerMessage") {
@@ -114,27 +112,7 @@
 
   }
 
-  if (isXOrigin) {
-    // Bug 1746646: Make mochitests work with TCP enabled (cookieBehavior = 5)
-    // Acquire storage access permission here so that the BroadcastChannel used to
-    // communicate with the opened windows works in xorigin tests. Otherwise,
-    // the iframe containing this page is isolated from first-party storage access,
-    // which isolates BroadcastChannel communication.
-    SpecialPowers.wrap(document).notifyUserGestureActivation();
-    SpecialPowers.pushPrefEnv({
-      set: [["privacy.partition.always_partition_third_party_non_cookie_storage", false]],
-    }).then(() => {
-      SpecialPowers.pushPermissions([{'type': 'storageAccessAPI', 'allow': 1, 'context': document}], () =>{
-        SpecialPowers.wrap(document).requestStorageAccess().then(() => {
-          runTest();
-        }).then(() => {
-          SpecialPowers.removePermission("3rdPartyStorage^http://mochi.test:8888", "http://mochi.xorigin-test:8888");
-        });
-      });
-    });
-  } else {
-    runTest();
-  }
+  runTest();
 
   SimpleTest.waitForExplicitFinish();
   SimpleTest.requestFlakyTimeout("untriaged");

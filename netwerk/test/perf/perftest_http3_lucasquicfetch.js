@@ -1,7 +1,6 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-/* eslint-env node */
 
 /*
 Ensure the `--firefox.preference=network.http.http3.enable:true` is
@@ -12,7 +11,7 @@ async function getNumLoaded(commands) {
   return commands.js.run(`
     let sum = 0;
     document.querySelectorAll("#imgContainer img").forEach(e => {
-      sum += e.complete & e.naturalHeight != 0;
+      sum += (e.complete && e.naturalHeight != 0) ? 1 : 0;
     });
     return sum;
   `);
@@ -71,8 +70,8 @@ async function test(context, commands) {
   let cycles = 5;
 
   if (
-    (typeof context.options.browsertime !== "undefined") &
-    (typeof context.options.browsertime.cycles !== "undefined")
+    typeof context.options.browsertime !== "undefined" &&
+    typeof context.options.browsertime.cycles !== "undefined"
   ) {
     cycles = context.options.browsertime.cycles;
   }

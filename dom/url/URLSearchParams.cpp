@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,24 +7,21 @@
 
 #include "mozilla/dom/URLSearchParams.h"
 
-// XXX encoding_rs.h is not self-contained, this order is required
+// clang-format off
 #include "mozilla/Encoding.h"
 #include "encoding_rs.h"
+// clang-format on
 
 #include <new>
-#include <type_traits>
 #include <utility>
+
 #include "js/StructuredClone.h"
 #include "mozilla/ArrayIterator.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/URLSearchParamsBinding.h"
-#include "mozilla/fallible.h"
 #include "nsDOMString.h"
 #include "nsError.h"
 #include "nsIGlobalObject.h"

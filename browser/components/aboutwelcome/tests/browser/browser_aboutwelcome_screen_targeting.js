@@ -1,5 +1,24 @@
 "use strict";
 
+const { ASRouterScreenUtils } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/ASRouterScreenUtils.sys.mjs"
+);
+
+const { ASRouterTargeting } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/ASRouterTargeting.sys.mjs"
+);
+
+const { OnboardingMessageProvider } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/OnboardingMessageProvider.sys.mjs"
+);
+
+function makeSplashScreen() {
+  const message = OnboardingMessageProvider.getPreonboardingMessages().find(
+    m => m.id === "NEW_USER_TOU_ONBOARDING"
+  );
+  return message.screens.find(s => s.id === "TOU_ONBOARDING_LOADING");
+}
+
 const TEST_DEFAULT_CONTENT = [
   {
     id: "AW_STEP1",
@@ -50,6 +69,12 @@ const TEST_DEFAULT_CONTENT = [
 ];
 
 const TEST_DEFAULT_JSON = JSON.stringify(TEST_DEFAULT_CONTENT);
+
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.backup.restore.enabled", false]],
+  });
+});
 
 add_task(async function second_screen_filtered_by_targeting() {
   const sandbox = sinon.createSandbox();
@@ -190,39 +215,97 @@ add_task(
   }
 );
 
-/**
- * Test MR template easy setup content - Browser is pinned and
- * set as default
- */
-add_task(async function test_aboutwelcome_mr_template_easy_setup_only_import() {
+add_task(
+  async function test_splash_screen_removed_when_experiments_gate_disabled() {
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.aboutwelcome.experimentsGate.enabled", false]],
+    });
+
+    const result = await ASRouterScreenUtils.evaluateTargetingAndRemoveScreens([
+      makeSplashScreen(),
+    ]);
+    Assert.equal(
+      result.length,
+      0,
+      "Splash screen removed when experimentsGate.enabled is false"
+    );
+
+    await SpecialPowers.popPrefEnv();
+  }
+);
+
+add_task(
+  async function test_splash_screen_kept_when_experiments_gate_enabled() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["browser.aboutwelcome.experimentsGate.enabled", true],
+        ["browser.aboutwelcome.experimentsGate.skipSplashIfLoaded", false],
+      ],
+    });
+
+    const result = await ASRouterScreenUtils.evaluateTargetingAndRemoveScreens([
+      makeSplashScreen(),
+    ]);
+    Assert.equal(
+      result.length,
+      1,
+      "Splash screen kept when experimentsGate.enabled is true"
+    );
+
+    await SpecialPowers.popPrefEnv();
+  }
+);
+
+add_task(
+  async function test_splash_screen_removed_when_nimbus_already_loaded() {
+    const sandbox = sinon.createSandbox();
+    sandbox
+      .stub(ASRouterTargeting.Environment, "experimentsLoaded")
+      .get(() => true);
+
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["browser.aboutwelcome.experimentsGate.enabled", true],
+        ["browser.aboutwelcome.experimentsGate.skipSplashIfLoaded", true],
+      ],
+    });
+
+    const result = await ASRouterScreenUtils.evaluateTargetingAndRemoveScreens([
+      makeSplashScreen(),
+    ]);
+    Assert.equal(
+      result.length,
+      0,
+      "Splash screen removed when skipSplashIfLoaded is true and Nimbus is already loaded"
+    );
+
+    sandbox.restore();
+    await SpecialPowers.popPrefEnv();
+  }
+);
+
+add_task(async function test_splash_screen_kept_when_nimbus_not_yet_loaded() {
   const sandbox = sinon.createSandbox();
-  await pushPrefs(
-    ["browser.shell.checkDefaultBrowser", true],
-    ["messaging-system-action.showEmbeddedImport", false]
-  );
-  sandbox.stub(ShellService, "doesAppNeedPin").returns(false);
-  sandbox.stub(ShellService, "doesAppNeedStartMenuPin").returns(false);
-  sandbox.stub(ShellService, "isDefaultBrowser").returns(true);
+  sandbox
+    .stub(ASRouterTargeting.Environment, "experimentsLoaded")
+    .get(() => false);
 
-  await clearHistoryAndBookmarks();
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.aboutwelcome.experimentsGate.enabled", true],
+      ["browser.aboutwelcome.experimentsGate.skipSplashIfLoaded", true],
+    ],
+  });
 
-  const { browser, cleanup } = await openMRAboutWelcome();
-
-  //should render easy setup - only import
-  await test_screen_content(
-    browser,
-    "doesn't render any combination of pin and default",
-    //Expected selectors:
-    ["main.AW_EASY_SETUP_ONLY_IMPORT"],
-    //Unexpected selectors:
-    [
-      "main.AW_EASY_SETUP_NEEDS_PIN",
-      "main.AW_EASY_SETUP_NEEDS_DEFAULT_AND_PIN",
-      "main.AW_EASY_SETUP_NEEDS_DEFAULT",
-    ]
+  const result = await ASRouterScreenUtils.evaluateTargetingAndRemoveScreens([
+    makeSplashScreen(),
+  ]);
+  Assert.equal(
+    result.length,
+    1,
+    "Splash screen kept when skipSplashIfLoaded is true but Nimbus has not loaded yet"
   );
 
-  await cleanup();
-  await popPrefs();
   sandbox.restore();
+  await SpecialPowers.popPrefEnv();
 });

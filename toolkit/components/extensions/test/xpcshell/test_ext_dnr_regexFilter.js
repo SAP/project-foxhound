@@ -11,7 +11,6 @@
 // The quota on regexFilter is verified in test_ext_dnr_regexFilter_limits.js.
 
 add_setup(() => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.feedback", true);
 });

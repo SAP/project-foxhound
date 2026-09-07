@@ -14,6 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   getWebDriverSessionById:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
   RootMessageHandler:
     "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs",
@@ -141,7 +142,7 @@ class SessionModule extends RootBiDiModule {
 
       for (const navigable of subscriptionNavigables) {
         topLevelTraversableContextIds.add(
-          lazy.TabManager.getIdForBrowsingContext(navigable)
+          lazy.NavigableManager.getIdForBrowsingContext(navigable)
         );
       }
     } else if (inputUserContextIds.size !== 0) {
@@ -162,7 +163,7 @@ class SessionModule extends RootBiDiModule {
         userContextIds.add(internalId);
       }
     } else {
-      for (const tab of lazy.TabManager.tabs) {
+      for (const tab of lazy.TabManager.allTabs) {
         subscriptionNavigables.add(tab);
       }
     }
@@ -274,7 +275,8 @@ class SessionModule extends RootBiDiModule {
         id: userContextId,
       };
     } else {
-      const traversable = lazy.TabManager.getBrowsingContextById(traversableId);
+      const traversable =
+        lazy.NavigableManager.getBrowsingContextById(traversableId);
 
       if (traversable === null) {
         return null;
@@ -320,7 +322,7 @@ class SessionModule extends RootBiDiModule {
       const { topLevelTraversableIds } = subscription;
 
       if (this.#isSubscriptionGlobal(subscription)) {
-        for (const traversable of lazy.TabManager.tabs) {
+        for (const traversable of lazy.TabManager.allTabs) {
           result.add(traversable);
         }
 
@@ -408,7 +410,7 @@ class SessionModule extends RootBiDiModule {
           }
 
           const traversableId =
-            lazy.TabManager.getIdForBrowsingContext(navigable);
+            lazy.NavigableManager.getIdForBrowsingContext(navigable);
           listeners.push(
             this.#createListenerToSubscribe({
               eventName,
@@ -479,7 +481,7 @@ class SessionModule extends RootBiDiModule {
 
       for (const traversableId of item.topLevelTraversableIds) {
         const traversable =
-          lazy.TabManager.getBrowsingContextById(traversableId);
+          lazy.NavigableManager.getBrowsingContextById(traversableId);
 
         // Do nothing if traversable doesn't exist anymore or
         // there is already a subscription to the associated user context.
@@ -504,7 +506,9 @@ class SessionModule extends RootBiDiModule {
 
   #getListenersToUnsubscribeFromTraversable(eventName, traversableId) {
     // Do nothing if traversable is already closed or still has another subscription.
-    const traversable = lazy.TabManager.getBrowsingContextById(traversableId);
+    const traversable =
+      lazy.NavigableManager.getBrowsingContextById(traversableId);
+
     if (
       traversable === null ||
       this.#hasSubscriptionByAssociatedUserContext(eventName, traversable) ||
@@ -549,34 +553,6 @@ class SessionModule extends RootBiDiModule {
   }
 
   /**
-   * Retrieves a navigable based on its id.
-   *
-   * @see https://w3c.github.io/webdriver-bidi/#get-a-navigable
-   *
-   * @param {number} navigableId
-   *     Id of the navigable.
-   *
-   * @returns {BrowsingContext=}
-   *     The navigable or null if <var>navigableId</var> is null.
-   * @throws {NoSuchFrameError}
-   *     If the navigable cannot be found.
-   */
-  #getNavigable(navigableId) {
-    if (navigableId === null) {
-      return null;
-    }
-
-    const navigable = lazy.TabManager.getBrowsingContextById(navigableId);
-    if (!navigable) {
-      throw new lazy.error.NoSuchFrameError(
-        `Browsing context with id ${navigableId} not found`
-      );
-    }
-
-    return navigable;
-  }
-
-  /**
    * Get a list of navigables by provided ids.
    *
    * @see https://w3c.github.io/webdriver-bidi/#get-navigables-by-ids
@@ -591,7 +567,8 @@ class SessionModule extends RootBiDiModule {
     const result = new Set();
 
     for (const navigableId of navigableIds) {
-      const navigable = lazy.TabManager.getBrowsingContextById(navigableId);
+      const navigable =
+        lazy.NavigableManager.getBrowsingContextById(navigableId);
 
       if (navigable !== null) {
         result.add(navigable);
@@ -635,7 +612,7 @@ class SessionModule extends RootBiDiModule {
 
       for (const navigable of topLevelTraversable) {
         topLevelTraversableContextIds.add(
-          lazy.TabManager.getIdForBrowsingContext(navigable)
+          lazy.NavigableManager.getIdForBrowsingContext(navigable)
         );
       }
     }
@@ -681,7 +658,7 @@ class SessionModule extends RootBiDiModule {
     const result = new Set();
 
     for (const navigableId of navigableIds) {
-      result.add(this.#getNavigable(navigableId));
+      result.add(this._getNavigable(navigableId));
     }
 
     return result;
@@ -782,7 +759,7 @@ class SessionModule extends RootBiDiModule {
 
       for (const traversableId of topLevelTraversableIds) {
         const traversable =
-          lazy.TabManager.getBrowsingContextById(traversableId);
+          lazy.NavigableManager.getBrowsingContextById(traversableId);
 
         if (traversable === null) {
           continue;

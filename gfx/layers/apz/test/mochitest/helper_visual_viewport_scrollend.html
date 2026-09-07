@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="apz_test_utils.js"></script>
+  <script src="apz_test_native_event_utils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+</head>
+<body>
+<style>
+  #large {
+    height: 200vh;
+    width: 200vw;
+    background: linear-gradient(red, yellow);
+  }
+</style>
+<div id="large"></div>
+<script type="application/javascript">
+async function test() {
+  var initial_resolution = await getResolution();
+
+  // Pinch zoom into the center of the Visual Viewport so it's smaller than
+  // the layout viewport, and there's space for the Visual Viewport to scroll
+  // down without scrolling the window
+  let transformEndPromise = promiseTransformEnd();
+
+  await pinchZoomInWithTouch(300, 300);
+
+  await transformEndPromise;
+  await promiseApzFlushedRepaints();
+
+  let final_resolution = await getResolution();
+  ok(final_resolution > initial_resolution, "The final resolution (" + final_resolution + ") is greater after zooming in");
+  info("final_resolution = " + final_resolution);
+
+  ok(window.visualViewport.scale > 1, "page should be zoomed in.");
+
+  const preScrollVisualViewportOffsetTop = window.visualViewport.offsetTop;
+  const preScrollWindowScrollOffset = window.scrollY;
+  info("scrollY after pinch = " + window.scrollY);
+  info("offsetTop after pinch = " + window.visualViewport.offsetTop);
+
+  let visualViewportScrollEndCounter = new EventCounter(window.visualViewport, "scrollend");
+
+  transformEndPromise = promiseTransformEnd();
+
+  // Touch drag a small distance so the Visual Viewport position changes, but
+  // the Layout Viewport's position does not change
+  await promiseNativeTouchDrag(document.documentElement, 300, 300, 0, 5);
+
+  await transformEndPromise;
+  await promiseApzFlushedRepaints();
+
+  info("scrollY after drag = " + window.scrollY);
+  info("offsetTop after drag = " + window.visualViewport.offsetTop);
+
+  ok(window.scrollY == preScrollWindowScrollOffset, "the window should not scroll");
+  ok(window.visualViewport.offsetTop < preScrollVisualViewportOffsetTop, "visualViewport should be scrolled");
+
+  visualViewportScrollEndCounter.unregister();
+  is(visualViewportScrollEndCounter.count, 1, "a visualViewport.scrollend event should have fired");
+}
+
+if (getPlatform() == "windows") {
+  ok(true, "Skipping test because synthesized touch events do not work on windows (bug 1495580)")
+  subtestDone();
+} else {
+  waitUntilApzStable()
+  .then(test)
+  .then(subtestDone, subtestFailed);
+}
+</script>
+</html>

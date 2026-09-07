@@ -11,6 +11,7 @@ import androidx.core.view.OnApplyWindowInsetsListener
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import kotlinx.coroutines.flow.Flow
 import mozilla.components.concept.engine.selection.SelectionActionDelegate
 
 /**
@@ -78,6 +79,16 @@ interface EngineView {
      * true if can and false otherwise.
      */
     fun canClearSelection(): Boolean = false
+
+    /**
+     * Running flow of the current scroll position in pixels.
+     */
+    val verticalScrollPosition: Flow<Float>
+
+    /**
+     * Running flow of scroll deltas in pixels.
+     */
+    val verticalScrollDelta: Flow<Float>
 
     /**
      * Check if [EngineView] can be scrolled vertically up.

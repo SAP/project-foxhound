@@ -64,10 +64,10 @@ export const BookmarksPolicies = {
   BOOKMARK_GUID_PREFIX: "PolB-",
   FOLDER_GUID_PREFIX: "PolF-",
 
-  /*
+  /**
    * Process the bookmarks specified by the policy engine.
    *
-   * @param param
+   * @param {object[]} param
    *        This will be an array of bookmarks objects, as
    *        described on the top of this file.
    */
@@ -88,13 +88,13 @@ export const BookmarksPolicies = {
   },
 };
 
-/*
+/**
  * This function calculates the differences between the existing bookmarks
  * that are managed by the policy engine (which are known through a guid
  * prefix) and the specified bookmarks in the policy file.
  * They can differ if the policy file has changed.
  *
- * @param specifiedBookmarks
+ * @param {object[]} specifiedBookmarks
  *        This will be an array of bookmarks objects, as
  *        described on the top of this file.
  */

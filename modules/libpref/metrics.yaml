@@ -57,6 +57,20 @@ preferences:
     expires: never
     telemetry_mirror: PREFERENCES_PREFS_FILE_WAS_INVALID
 
+  prefs_file_first_parse_error:
+    type: string
+    description: >
+      The first error message encountered when parsing a prefs file.
+    bugs:
+      - https://bugzil.la/2004387
+    data_reviews:
+      - https://bugzil.la/2004387
+    notification_emails:
+      - gstoll@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+
   user_prefs:
     type: object
     lifetime: application

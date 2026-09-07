@@ -310,7 +310,7 @@
     --radio-border-color:ButtonText;
     --radio-checked-border-color:ButtonText;
 
-    --button-secondary-bg-color:HighlightText;
+    --button-secondary-bg-color:ButtonFace;
     --button-secondary-fg-color:ButtonText;
     --button-secondary-border-color:ButtonText;
     --button-secondary-active-bg-color:HighlightText;
@@ -323,7 +323,7 @@
     --button-secondary-disabled-border-color:GrayText;
 
     --button-primary-bg-color:ButtonText;
-    --button-primary-fg-color:HighlightText;
+    --button-primary-fg-color:ButtonFace;
     --button-primary-border-color:ButtonText;
     --button-primary-active-bg-color:SelectedItem;
     --button-primary-active-fg-color:HighlightText;
@@ -336,7 +336,7 @@
     --button-primary-disabled-border-color:GrayText;
     --button-disabled-opacity:1;
 
-    --input-text-bg-color:HighlightText;
+    --input-text-bg-color:Field;
     --input-text-fg-color:FieldText;
   }
 
@@ -603,12 +603,16 @@
 }
 
 .textLayer{
+  color-scheme:only light;
+
   position:absolute;
   text-align:initial;
   inset:0;
   overflow:clip;
   opacity:1;
   line-height:1;
+  letter-spacing:normal;
+  word-spacing:normal;
   text-size-adjust:none;
   forced-color-adjust:none;
   transform-origin:0 0;
@@ -625,11 +629,26 @@
     white-space:pre;
     cursor:text;
     transform-origin:0% 0%;
+    user-select:text;
   }
+  --min-font-size:1;
+  --text-scale-factor:calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv:calc(1 / var(--min-font-size));
 
   > :not(.markedContent),
   .markedContent span:not(.markedContent){
     z-index:1;
+
+    --font-height:0;
+    font-size:calc(var(--text-scale-factor) * var(--font-height));
+
+    --scale-x:1;
+    --rotate:0deg;
+    transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  }
+
+  .markedContent{
+    display:contents;
   }
 
   span[role="img"]{
@@ -677,11 +696,20 @@
     &.selected{
       background-color:var(--highlight-selected-bg-color);
       backdrop-filter:var(--highlight-selected-backdrop-filter);
+      scroll-margin-top:50px;
     }
   }
 
   ::selection{
-    background:color-mix(in srgb, AccentColor, transparent 75%);
+    background:color-mix(in srgb, AccentColor, transparent 50%);
+    color:transparent;
+  }
+
+  &.selectionRendering{
+    ::selection{
+      background:transparent;
+      color:transparent;
+    }
   }
 
   .endOfContent{
@@ -698,10 +726,22 @@
   }
 }
 
+.textLayerImages{
+  position:absolute;
+  inset:0;
+  user-select:none;
+
+  canvas{
+    position:absolute;
+    transform-origin:0% 0%;
+  }
+}
+
 .annotationLayer{
   color-scheme:only light;
 
   --annotation-unfocused-field-background:url("data:image/svg+xml;charset=UTF-8,<svg width='1px' height='1px' xmlns='http://www.w3.org/2000/svg'><rect width='100%' height='100%' style='fill:rgba(0, 54, 255, 0.13);'/></svg>");
+  --annotation-unfocused-field-filter:url("data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='pdfjsFillableField' x='0%' y='0%' width='100%' height='100%' color-interpolation-filters='sRGB'><feFlood flood-color='rgb(0,54,255)' flood-opacity='0.13' result='f'/><feComposite in='f' in2='SourceGraphic' operator='over'/></filter></svg>#pdfjsFillableField");
   --input-focus-border-color:Highlight;
   --input-focus-outline:1px solid Canvas;
   --input-unfocused-border-color:transparent;
@@ -822,6 +862,13 @@
       overflow:hidden;
     }
   }
+  .hasOwnCanvas:not(.sandboxModified) :is(input, textarea){
+    display:none;
+  }
+
+  .hasOwnCanvas.sandboxModified canvas.annotationContent{
+    display:none;
+  }
 
   .textLayer.selecting ~ & section{
     pointer-events:none;
@@ -882,10 +929,6 @@
     padding:0;
   }
 
-  .buttonWidgetAnnotation.radioButton input{
-    border-radius:50%;
-  }
-
   .textWidgetAnnotation textarea{
     resize:none;
   }
@@ -933,50 +976,71 @@
     outline:var(--input-focus-outline);
   }
 
-  .buttonWidgetAnnotation.checkBox input:checked::before,
-  .buttonWidgetAnnotation.checkBox input:checked::after,
-  .buttonWidgetAnnotation.radioButton input:checked::before{
-    background-color:CanvasText;
-    content:"";
-    display:block;
-    position:absolute;
-  }
+  .buttonWidgetAnnotation:is(.checkBox, .radioButton){
+    [data-canvas-name]{
+      filter:var(--annotation-unfocused-field-filter);
+    }
 
-  .buttonWidgetAnnotation.checkBox input:checked::before,
-  .buttonWidgetAnnotation.checkBox input:checked::after{
-    height:80%;
-    left:45%;
-    width:1px;
-  }
+    &:focus-within [data-canvas-name]{
+      filter:none;
+    }
 
-  .buttonWidgetAnnotation.checkBox input:checked::before{
-    transform:rotate(45deg);
-  }
+    [data-canvas-name="checked"]{
+      &:has(~ input:checked){
+        display:block;
+      }
 
-  .buttonWidgetAnnotation.checkBox input:checked::after{
-    transform:rotate(-45deg);
-  }
+      &:has(~ input:not(:checked)){
+        display:none;
+      }
+    }
 
-  .buttonWidgetAnnotation.radioButton input:checked::before{
-    border-radius:50%;
-    height:50%;
-    left:25%;
-    top:25%;
-    width:50%;
+    [data-canvas-name="unchecked"]{
+      &:has(~ input:checked){
+        display:none;
+      }
+
+      &:has(~ input:not(:checked)){
+        display:block;
+      }
+    }
   }
 
   .textWidgetAnnotation input.comb{
+    --comb-width:0px;
+    --comb-letter-spacing:calc(var(--comb-width) - 1ch);
+
     font-family:monospace;
-    padding-left:2px;
-    padding-right:0;
+    letter-spacing:var(--comb-letter-spacing);
+    overflow-x:hidden;
+    padding:0;
+    text-indent:calc(
+      var(--comb-offset, 0) * var(--comb-width) + var(--comb-letter-spacing) / 2
+    );
   }
 
   .textWidgetAnnotation input.comb:focus{
-    width:103%;
+    background-image:repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--comb-width) - 1px),
+      var(--input-focus-border-color) calc(var(--comb-width) - 1px)
+        var(--comb-width)
+    );
   }
 
   .buttonWidgetAnnotation:is(.checkBox, .radioButton) input{
     appearance:none;
+  }
+
+  .buttonWidgetAnnotation:is(.checkBox, .radioButton):has(
+      [data-canvas-name="checked"]
+    )
+    input:checked,
+  .buttonWidgetAnnotation:is(.checkBox, .radioButton):has(
+      [data-canvas-name="unchecked"]
+    )
+    input:not(:checked){
+    background-image:none;
   }
 
   .fileAttachmentAnnotation .popupTriggerArea{
@@ -1411,6 +1475,9 @@
   --loading-icon-delay:400ms;
   --focus-ring-color:light-dark(#0060df, #0df);
   --focus-ring-outline:2px solid var(--focus-ring-color);
+  --new-badge-bg:light-dark(#070, #37b847);
+  --new-badge-color:light-dark(#fff, #15141a);
+  --new-badge-border-color:light-dark(#fbfbfe / 40%, #15141a / 40%);
 
   @media screen and (forced-colors: active){
     --pdfViewer-padding-bottom:9px;
@@ -1418,7 +1485,26 @@
     --page-border:1px solid CanvasText;
     --spreadHorizontalWrapped-margin-LR:3.5px;
     --focus-ring-color:CanvasText;
+    --new-badge-bg:AccentColor;
+    --new-badge-color:ButtonFace;
+    --new-badge-border-color:CanvasText;
   }
+}
+
+.newBadge{
+  background-color:var(--new-badge-bg);
+  color:var(--new-badge-color);
+  border-radius:4px;
+  border:1px solid var(--new-badge-border-color);
+  padding-inline:4px;
+  margin-inline:4px;
+  font:menu;
+  font-size:12px;
+  font-style:normal;
+  font-weight:400;
+  line-height:normal;
+  flex:0 0 fit-content;
+  user-select:none;
 }
 
 [data-main-rotation="90"]{
@@ -1429,16 +1515,6 @@
 }
 [data-main-rotation="270"]{
   transform:rotate(270deg) translateX(-100%);
-}
-
-#hiddenCopyElement,
-.hiddenCanvasElement{
-  position:absolute;
-  top:0;
-  left:0;
-  width:0;
-  height:0;
-  display:none;
 }
 
 .pdfViewer{
@@ -1475,6 +1551,10 @@
 
       .structTree{
         contain:strict;
+      }
+
+      &.detailView{
+        image-rendering:pixelated;
       }
     }
   }
@@ -1571,12 +1651,6 @@
 }
 
 :root{
-  --dir-factor:1;
-  --scale-select-width:140px;
-
-  --toolbar-icon-opacity:1;
-  --doorhanger-icon-opacity:0.9;
-
   --main-color:light-dark(rgb(12 12 13), rgb(249 249 250));
   --body-bg-color:light-dark(rgb(212 212 215), rgb(42 42 46));
   --scrollbar-color:light-dark(auto, rgb(121 121 123));
@@ -1599,10 +1673,6 @@
   --toolbar-border-width:1px;
 
   --toolbarButton-download-icon:url(images/gv-toolbarButton-download.svg);
-}
-
-:root:dir(rtl){
-  --dir-factor:-1;
 }
 
 @media screen and (forced-colors: active){

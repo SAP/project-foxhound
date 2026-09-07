@@ -1,0 +1,67 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include SerialTypes;
+
+[RefCounted] using class mozilla::ipc::DataPipeReceiver from "mozilla/ipc/DataPipe.h";
+[RefCounted] using class mozilla::ipc::DataPipeSender from "mozilla/ipc/DataPipe.h";
+
+namespace mozilla {
+namespace dom {
+
+// Toplevel actor for serial port I/O. The parent side is bound to the
+// SerialPlatformService IO thread so operations run directly without
+// additional dispatching. Data flows through DataPipes; pipe endpoints are
+// attached lazily via AttachReadPipe/AttachWritePipe when the JS-visible
+// readable/writable streams are first accessed.
+[ChildProc=anydom]
+async protocol PSerialPort {
+parent:
+  async Open(IPCSerialOptions options) returns (nsresult result);
+
+  async Close() returns (nsresult result);
+
+  async SetSignals(IPCSerialOutputSignals signals) returns (nsresult result);
+
+  async GetSignals() returns (nsresult result, IPCSerialInputSignals signals);
+
+  // Drain transmit buffers.
+  // Resolves after the write DataPipe has been closed, and all data
+  // written to that pipe has been transmitted to the device.
+  async Drain() returns (nsresult result);
+
+  // Flush (discard) buffers.
+  // When receive is true, discards receive buffers, and closes the read
+  // DataPipe (readable.cancel()); otherwise discards transmit buffers,
+  // and closes the write pipe (writable.abort()). 
+  async Flush(bool receive) returns (nsresult result);
+
+  // Attach a new DataPipeSender for the read direction. The parent starts
+  // a read pump that writes device data into this pipe; the child holds
+  // the corresponding DataPipeReceiver backing its ReadableStream.
+  async AttachReadPipe(nullable DataPipeSender readPipeSender);
+
+  // Attach a new DataPipeReceiver for the write direction. The parent
+  // starts a write pump that reads from this pipe and writes to the
+  // device; the child holds the corresponding DataPipeSender backing
+  // its WritableStream.
+  async AttachWritePipe(nullable DataPipeReceiver writePipeReceiver);
+
+  // Notify parent of sharing state change
+  async UpdateSharingState(bool connected);
+
+  // Clone the parent-side handle into a new PSerialPort actor, allowing
+  // a worker thread to bind its own child endpoint to the same port.
+  async Clone(Endpoint<PSerialPortParent> aEndpoint);
+
+  async __delete__();
+
+child:
+  // Device physical connection state changes.
+  async Connected();
+  async Disconnected();
+};
+
+}  // namespace dom
+}  // namespace mozilla

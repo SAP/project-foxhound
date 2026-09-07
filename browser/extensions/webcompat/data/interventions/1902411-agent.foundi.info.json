@@ -1,0 +1,15 @@
+{
+  "label": "agent.foundi.info",
+  "bugs": {
+    "1902411": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://agent.foundi.info/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+    }
+  ]
+}

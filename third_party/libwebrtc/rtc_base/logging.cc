@@ -10,15 +10,35 @@
 
 #include "rtc_base/logging.h"
 
-#include <string.h>
+#include <algorithm>
+#include <cinttypes>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "absl/base/no_destructor.h"
+#include "absl/strings/string_view.h"
+#include "api/task_queue/task_queue_base.h"
+#include "api/units/timestamp.h"
+#include "modules/audio_processing/logging/apm_data_dumper.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/platform_thread_types.h"
+#include "rtc_base/string_encode.h"
+#include "rtc_base/string_utils.h"
+#include "rtc_base/strings/string_builder.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
+#include "rtc_base/time_utils.h"
 
 #if RTC_LOG_ENABLED()
 
 #if defined(WEBRTC_WIN)
 #include <windows.h>
-#if _MSC_VER < 1900
-#define snprintf _snprintf
-#endif
 #undef ERROR  // wingdi.h
 #endif
 
@@ -32,27 +52,6 @@
 // See android/system/core/liblog/logd_write.c
 static const int kMaxLogLineSize = 1024 - 60;
 #endif  // WEBRTC_MAC && !defined(WEBRTC_IOS) || WEBRTC_ANDROID
-
-#include <inttypes.h>
-#include <stdio.h>
-#include <time.h>
-
-#include <algorithm>
-#include <cstdarg>
-#include <vector>
-
-#include "absl/base/attributes.h"
-#include "absl/strings/string_view.h"
-#include "api/units/timestamp.h"
-#include "modules/audio_processing/logging/apm_data_dumper.h"
-#include "rtc_base/checks.h"
-#include "rtc_base/platform_thread_types.h"
-#include "rtc_base/string_encode.h"
-#include "rtc_base/string_utils.h"
-#include "rtc_base/strings/string_builder.h"
-#include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/thread_annotations.h"
-#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -102,10 +101,53 @@ Mutex& GetLoggingLock() {
   return mutex;
 }
 
+// Internal helper to manage config state.
+// NOTE: The return value is non-const only while transitioning away from and
+// deprecating legacy global methods that allow modifying the logging config
+// after initialization. Once those methods are removed, this should return a
+// const reference again to ensure lockless read-only access.
+LoggingConfig& GetOrInitConfig(LoggingConfig* init_config,
+                               bool& config_applied) {
+  static absl::NoDestructor<LoggingConfig> config([&]() {
+    config_applied = true;
+    if (init_config != nullptr) {
+      return std::move(*init_config);
+    }
+    return LoggingConfig();  // Default configuration
+  }());
+  return *config;
+}
+
 }  // namespace
 
+LoggingConfig::LoggingConfig() = default;
+LoggingConfig::LoggingConfig(LoggingConfig&&) = default;
+LoggingConfig& LoggingConfig::operator=(LoggingConfig&&) = default;
+LoggingConfig::~LoggingConfig() = default;
+
+bool InitializeLogging(LoggingConfig config) {
+  bool config_applied = false;
+  GetOrInitConfig(&config, config_applied);
+  if (config_applied) {
+    MutexLock lock(&GetLoggingLock());
+    LogMessage::SetLogQueueNames(config.log_queue_name());
+    LogMessage::LogTimestamps(config.log_timestamp());
+    LogMessage::SetLogToStderr(config.log_to_stderr());
+    g_dbg_sev = config.debug_severity();
+    LogMessage::UpdateMinLogSeverity();
+  }
+  return config_applied;
+}
+
+const LoggingConfig& GetLoggingConfig() {
+  bool dummy;
+  return GetOrInitConfig(nullptr, dummy);
+}
+
+LogLineRef::LogLineRef() = default;
+
 std::string LogLineRef::DefaultLogLine() const {
-  StringBuilder log_output;
+  StringBuilder log_output(GetLoggingConfig().log_prefix());
   if (timestamp_ != Timestamp::MinusInfinity()) {
     // TODO(kwiberg): Switch to absl::StrFormat, if binary size is ok.
     char timestamp[50];  // Maximum string length of an int64_t is 20.
@@ -115,8 +157,19 @@ std::string LogLineRef::DefaultLogLine() const {
     RTC_DCHECK_LT(len, sizeof(timestamp));
     log_output << timestamp;
   }
+  // Print thread information if requested. Depending on the settings and
+  // available information, this will print:
+  //   [<thread_id>]
+  //   [<queue_or_thread_name>]
+  //   [<thread_id>:<queue_or_thread_name>]
   if (thread_id_.has_value()) {
-    log_output << "[" << *thread_id_ << "] ";
+    log_output << "[" << *thread_id_;
+    if (!queue_name_.empty()) {
+      log_output << ":" << queue_name_.substr(0, 10);
+    }
+    log_output << "] ";
+  } else if (!queue_name_.empty()) {
+    log_output << "[" << queue_name_.substr(0, 10) << "] ";
   }
   if (!filename_.empty()) {
 #if defined(WEBRTC_ANDROID)
@@ -139,13 +192,12 @@ bool LogMessage::log_to_stderr_ = false;
 // Note: we explicitly do not clean this up, because of the uncertain ordering
 // of destructors at program exit.  Let the person who sets the stream trigger
 // cleanup by setting to null, or let it leak (safe at program exit).
-ABSL_CONST_INIT LogSink* LogMessage::streams_ RTC_GUARDED_BY(GetLoggingLock()) =
+constinit LogSink* LogMessage::streams_ RTC_GUARDED_BY(GetLoggingLock()) =
     nullptr;
-ABSL_CONST_INIT std::atomic<bool> LogMessage::streams_empty_ = {true};
 
 // Boolean options default to false.
-ABSL_CONST_INIT bool LogMessage::log_thread_ = false;
-ABSL_CONST_INIT bool LogMessage::log_timestamp_ = false;
+constinit bool LogMessage::log_timestamp_ = false;
+constinit bool LogMessage::log_queue_name_ = false;
 
 LogMessage::LogMessage(const char* file, int line, LoggingSeverity sev)
     : LogMessage(file, line, sev, ERRCTX_NONE, 0) {}
@@ -156,6 +208,7 @@ LogMessage::LogMessage(const char* file,
                        LogErrorContext err_ctx,
                        int err) {
   log_line_.set_severity(sev);
+  const LoggingConfig& config = GetLoggingConfig();
   if (log_timestamp_) {
     int64_t log_start_time = LogStartTime();
     // Use SystemTimeMillis so that even if tests use fake clocks, the timestamp
@@ -167,8 +220,14 @@ LogMessage::LogMessage(const char* file,
     log_line_.set_timestamp(Timestamp::Millis(time));
   }
 
-  if (log_thread_) {
-    log_line_.set_thread_id(rtc::CurrentThreadId());
+  if (config.log_thread()) {
+    log_line_.set_thread_id(CurrentThreadId());
+  }
+
+  if (log_queue_name_) {
+    if (TaskQueueBase* tq = TaskQueueBase::Current(); tq != nullptr) {
+      log_line_.set_queue_name(tq->queue_name());
+    }
   }
 
   if (file != nullptr) {
@@ -180,8 +239,7 @@ LogMessage::LogMessage(const char* file,
   }
 
   if (err_ctx != ERRCTX_NONE) {
-    char tmp_buf[1024];
-    SimpleStringBuilder tmp(tmp_buf);
+    StringBuilder tmp;
     tmp.AppendFormat("[0x%08X]", err);
     switch (err_ctx) {
       case ERRCTX_ERRNO:
@@ -227,8 +285,16 @@ LogMessage::~LogMessage() {
 
   log_line_.set_message(print_stream_.Release());
 
-  if (log_line_.severity() >= g_dbg_sev) {
+  const LoggingConfig& config = GetLoggingConfig();
+
+  if (log_line_.severity() >= config.debug_severity()) {
     OutputToDebug(log_line_);
+  }
+
+  for (const auto& sink : config.sinks()) {
+    if (log_line_.severity() >= sink->min_severity_) {
+      sink->OnLogMessage(log_line_);
+    }
   }
 
   MutexLock lock(&GetLoggingLock());
@@ -266,8 +332,16 @@ uint32_t LogMessage::WallClockStartTime() {
   return g_start_wallclock;
 }
 
-void LogMessage::LogThreads(bool on) {
-  log_thread_ = on;
+bool LogMessage::LogThreads(bool enabled) {
+  bool dummy;
+  LoggingConfig& config = GetOrInitConfig(nullptr, dummy);
+  bool prev = config.log_thread();
+  config.set_log_thread(enabled);
+  return prev;
+}
+
+bool LogMessage::SetLogQueueNames(bool enabled) {
+  return std::exchange(log_queue_name_, enabled);
 }
 
 void LogMessage::LogTimestamps(bool on) {
@@ -275,8 +349,8 @@ void LogMessage::LogTimestamps(bool on) {
 }
 
 void LogMessage::LogToDebug(LoggingSeverity min_sev) {
-  MutexLock lock(&GetLoggingLock());
   g_dbg_sev = min_sev;
+  MutexLock lock(&GetLoggingLock());
   UpdateMinLogSeverity();
 }
 
@@ -300,7 +374,6 @@ void LogMessage::AddLogToStream(LogSink* stream, LoggingSeverity min_sev) {
   stream->min_severity_ = min_sev;
   stream->next_ = streams_;
   streams_ = stream;
-  streams_empty_.store(false, std::memory_order_relaxed);
   UpdateMinLogSeverity();
 }
 
@@ -313,7 +386,6 @@ void LogMessage::RemoveLogToStream(LogSink* stream) {
       break;
     }
   }
-  streams_empty_.store(streams_ == nullptr, std::memory_order_relaxed);
   UpdateMinLogSeverity();
 }
 
@@ -322,7 +394,7 @@ void LogMessage::ConfigureLogging(absl::string_view params) {
   LoggingSeverity debug_level = GetLogToDebug();
 
   std::vector<std::string> tokens;
-  rtc::tokenize(params, ' ', &tokens);
+  tokenize(params, ' ', &tokens);
 
   for (const std::string& token : tokens) {
     if (token.empty())
@@ -332,7 +404,8 @@ void LogMessage::ConfigureLogging(absl::string_view params) {
     if (token == "tstamp") {
       LogTimestamps();
     } else if (token == "thread") {
-      LogThreads();
+      bool dummy;
+      GetOrInitConfig(nullptr, dummy).set_log_thread(true);
 
       // Logging levels
     } else if (token == "verbose") {
@@ -369,6 +442,11 @@ void LogMessage::ConfigureLogging(absl::string_view params) {
 void LogMessage::UpdateMinLogSeverity()
     RTC_EXCLUSIVE_LOCKS_REQUIRED(GetLoggingLock()) {
   LoggingSeverity min_sev = g_dbg_sev;
+  const LoggingConfig& config = GetLoggingConfig();
+  min_sev = std::min(min_sev, config.min_severity());
+  for (const auto& sink : config.sinks()) {
+    min_sev = std::min(min_sev, sink->min_severity_);
+  }
   for (LogSink* entry = streams_; entry != nullptr; entry = entry->next_) {
     min_sev = std::min(min_sev, entry->min_severity_);
   }
@@ -396,7 +474,9 @@ void LogMessage::OutputToDebug(const LogLineRef& log_line) {
 #if defined(WEBRTC_WIN)
   // Always log to the debugger.
   // Perhaps stderr should be controlled by a preference, as on Mac?
+#if RTC_DLOG_IS_ON
   OutputDebugStringA(msg_str.c_str());
+#endif
   if (log_to_stderr) {
     // This handles dynamically allocated consoles, too.
     if (HANDLE error_handle = ::GetStdHandle(STD_ERROR_HANDLE)) {
@@ -458,14 +538,8 @@ void LogMessage::OutputToDebug(const LogLineRef& log_line) {
   }
 }
 
-// static
 bool LogMessage::IsNoop(LoggingSeverity severity) {
-  // Added MutexLock to fix tsan warnings on accessing g_dbg_sev. (mjf)
-  // See https://bugs.chromium.org/p/chromium/issues/detail?id=1228729
-  webrtc::MutexLock lock(&GetLoggingLock());
-  if (severity >= g_dbg_sev || severity >= g_min_sev)
-    return false;
-  return streams_empty_.load(std::memory_order_relaxed);
+  return severity < g_min_sev;
 }
 
 void LogMessage::FinishPrintStream() {
@@ -484,7 +558,8 @@ void Log(const LogArgType* fmt, ...) {
   const char* tag = nullptr;
   switch (*fmt) {
     case LogArgType::kLogMetadata: {
-      meta = {va_arg(args, LogMetadata), ERRCTX_NONE, 0};
+      meta = {
+          .meta = va_arg(args, LogMetadata), .err_ctx = ERRCTX_NONE, .err = 0};
       break;
     }
     case LogArgType::kLogMetadataErr: {
@@ -535,9 +610,6 @@ void Log(const LogArgType* fmt, ...) {
       case LogArgType::kDouble:
         log_message.stream() << va_arg(args, double);
         break;
-      case LogArgType::kLongDouble:
-        log_message.stream() << va_arg(args, long double);
-        break;
       case LogArgType::kCharP: {
         const char* s = va_arg(args, const char*);
         log_message.stream() << (s ? s : "(null)");
@@ -550,8 +622,8 @@ void Log(const LogArgType* fmt, ...) {
         log_message.stream() << *va_arg(args, const absl::string_view*);
         break;
       case LogArgType::kVoidP:
-        log_message.stream() << rtc::ToHex(
-            reinterpret_cast<uintptr_t>(va_arg(args, const void*)));
+        log_message.stream()
+            << ToHex(reinterpret_cast<uintptr_t>(va_arg(args, const void*)));
         break;
       default:
         RTC_DCHECK_NOTREACHED();
@@ -565,7 +637,14 @@ void Log(const LogArgType* fmt, ...) {
 
 }  // namespace webrtc_logging_impl
 }  // namespace webrtc
-#endif
+#else   // RTC_LOG_ENABLED()
+namespace webrtc {
+const LoggingConfig& GetLoggingConfig() {
+  static const absl::NoDestructor<LoggingConfig> config;
+  return *config;
+}
+}  // namespace webrtc
+#endif  // RTC_LOG_ENABLED()
 
 namespace webrtc {
 // Default implementation, override is recomended.
@@ -605,4 +684,5 @@ void LogSink::OnLogMessage(absl::string_view msg,
 void LogSink::OnLogMessage(absl::string_view msg) {
   OnLogMessage(std::string(msg));
 }
+
 }  // namespace webrtc

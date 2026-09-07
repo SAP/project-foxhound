@@ -3,9 +3,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIInputMap.h"
+
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/MIDIInputMapBinding.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/dom/BindingUtils.h"
 
 namespace mozilla::dom {
 

@@ -59,11 +59,11 @@ class FlexItemSizingProperties extends PureComponent {
    * The rendered value will end with 'px' (unless the dimension is 0 in which case the
    * unit will be omitted)
    *
-   * @param  {Number} value
+   * @param  {number} value
    *         The number to be rounded
-   * @param  {Boolean} prependPlusSign
+   * @param  {boolean} prependPlusSign
    *         If set to true, the + sign will be printed before a positive value
-   * @return {Object}
+   * @return {object}
    *         The React component representing this rounded size
    */
   renderSize(value, prependPlusSign) {
@@ -86,11 +86,11 @@ class FlexItemSizingProperties extends PureComponent {
   /**
    * Render an authored CSS property.
    *
-   * @param  {String} name
+   * @param  {string} name
    *         The name for this CSS property
-   * @param  {String} value
+   * @param  {string} value
    *         The property value
-   * @return {Object}
+   * @return {object}
    *         The React component representing this CSS property
    */
   renderCssProperty(name, value) {
@@ -103,7 +103,7 @@ class FlexItemSizingProperties extends PureComponent {
    *
    * @param  {Array} sentences
    *         The list of sentences as Strings
-   * @return {Object}
+   * @return {object}
    *         The React component representing these sentences
    */
   renderReasons(sentences) {

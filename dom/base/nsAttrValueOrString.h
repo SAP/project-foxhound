@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,11 +14,11 @@
  * be used on the stack.
  */
 
-#ifndef nsAttrValueOrString_h___
-#define nsAttrValueOrString_h___
+#ifndef nsAttrValueOrString_h_
+#define nsAttrValueOrString_h_
 
-#include "nsString.h"
 #include "nsAttrValue.h"
+#include "nsString.h"
 
 class MOZ_STACK_CLASS nsAttrValueOrString {
  public:
@@ -82,4 +80,4 @@ class MOZ_STACK_CLASS nsAttrValueOrString {
   mutable nsCheapString mCheapString;
 };
 
-#endif  // nsAttrValueOrString_h___
+#endif  // nsAttrValueOrString_h_

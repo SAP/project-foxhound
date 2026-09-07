@@ -10,12 +10,15 @@
 
 #include "modules/desktop_capture/desktop_frame_generator.h"
 
-#include <stdint.h>
-#include <string.h>
-
+#include <cstdint>
+#include <cstring>
 #include <memory>
 
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/desktop_region.h"
 #include "modules/desktop_capture/rgba_color.h"
+#include "modules/desktop_capture/shared_memory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/random.h"
 #include "rtc_base/time_utils.h"
@@ -67,6 +70,8 @@ void PaintRect(DesktopFrame* frame, DesktopRect rect, RgbaColor rgba_color) {
                 "kBytesPerPixel should be 4.");
   RTC_DCHECK_GE(frame->size().width(), rect.right());
   RTC_DCHECK_GE(frame->size().height(), rect.bottom());
+  // TODO(bugs.webrtc.org/436974448): Support other pixel formats.
+  RTC_CHECK_EQ(FOURCC_ARGB, frame->pixel_format());
   uint32_t color = rgba_color.ToUInt32();
   uint8_t* row = frame->GetFrameDataAtPos(rect.top_left());
   for (int i = 0; i < rect.height(); i++) {
@@ -113,8 +118,9 @@ std::unique_ptr<DesktopFrame> PainterDesktopFrameGenerator::GetNextFrame(
   }
 
   std::unique_ptr<DesktopFrame> frame = std::unique_ptr<DesktopFrame>(
-      factory ? SharedMemoryDesktopFrame::Create(size_, factory).release()
-              : new BasicDesktopFrame(size_));
+      factory ? SharedMemoryDesktopFrame::Create(size_, FOURCC_ARGB, factory)
+                    .release()
+              : new BasicDesktopFrame(size_, FOURCC_ARGB));
   if (painter_) {
     DesktopRegion updated_region;
     if (!painter_->Paint(frame.get(), &updated_region)) {

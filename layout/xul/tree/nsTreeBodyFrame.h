@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -277,15 +275,15 @@ class nsTreeBodyFrame final : public mozilla::SimpleXULLeafFrame,
                          nsFontMetrics& aFontMetrics, nsRect& aTextRect);
 
   // A helper used when hit testing.
-  nsCSSAnonBoxPseudoStaticAtom* GetItemWithinCellAt(nscoord aX,
-                                                    const nsRect& aCellRect,
-                                                    int32_t aRowIndex,
-                                                    nsTreeColumn* aColumn);
+  mozilla::PseudoStyleType GetItemWithinCellAt(nscoord aX,
+                                               const nsRect& aCellRect,
+                                               int32_t aRowIndex,
+                                               nsTreeColumn* aColumn);
 
   // An internal hit test.  aX and aY are expected to be in twips in the
   // coordinate system of this frame.
   void GetCellAt(nscoord aX, nscoord aY, int32_t* aRow, nsTreeColumn** aCol,
-                 nsCSSAnonBoxPseudoStaticAtom** aChildElt);
+                 mozilla::PseudoStyleType* aChildElt);
 
   // Retrieve the area for the twisty for a cell.
   void GetTwistyRect(int32_t aRowIndex, nsTreeColumn* aColumn,
@@ -325,7 +323,7 @@ class nsTreeBodyFrame final : public mozilla::SimpleXULLeafFrame,
   // Looks up a ComputedStyle in the style cache.  On a cache miss we resolve
   // the pseudo-styles passed in and place them into the cache.
   ComputedStyle* GetPseudoComputedStyle(
-      nsCSSAnonBoxPseudoStaticAtom* aPseudoElement);
+      mozilla::PseudoStyleType aPseudoElement);
 
   // Retrieves the scrollbars and scrollview relevant to this treebody. We
   // traverse the frame tree under our base element, in frame order, looking
@@ -397,7 +395,7 @@ class nsTreeBodyFrame final : public mozilla::SimpleXULLeafFrame,
   // the timer fires and aType is type of timer - one shot or repeating.
   nsresult CreateTimer(const mozilla::LookAndFeel::IntID aID,
                        nsTimerCallbackFunc aFunc, int32_t aType,
-                       nsITimer** aTimer, const char* aName);
+                       nsITimer** aTimer, const nsACString& aName);
 
   static void OpenCallback(nsITimer* aTimer, void* aClosure);
 

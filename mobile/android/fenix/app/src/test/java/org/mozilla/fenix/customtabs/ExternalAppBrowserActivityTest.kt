@@ -8,7 +8,9 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.navigation.NavController
 import io.mockk.Called
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
@@ -20,7 +22,6 @@ import mozilla.components.feature.intent.ext.putSessionId
 import mozilla.components.support.utils.toSafeIntent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,6 +35,7 @@ import org.mozilla.fenix.ext.getIntentSource
 import org.mozilla.fenix.ext.getNavDirections
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class ExternalAppBrowserActivityTest {
@@ -63,7 +65,7 @@ class ExternalAppBrowserActivityTest {
         val settings: Settings = mockk()
         every { settings.shouldReturnToBrowser } returns true
         every { activity.components.settings.shouldReturnToBrowser } returns true
-        every { activity.openToBrowser(any(), any()) } returns Unit
+        every { activity.openToBrowser(any(), any()) } just Runs
 
         activity.browsingModeManager = browsingModeManager
         activity.navigateToBrowserOnColdStart()
@@ -76,7 +78,7 @@ class ExternalAppBrowserActivityTest {
         val activity = spyk(ExternalAppBrowserActivity())
         val navHostController: NavController = mockk()
 
-        activity.navigateToHome(navHostController, false)
+        activity.navigateToHome(navHostController)
         verify { navHostController wasNot Called }
     }
 
@@ -99,6 +101,8 @@ class ExternalAppBrowserActivityTest {
                     every { bundle.getString(any()) } returns ""
                     every { intent.extras } returns bundle
                     every { intent.getBooleanExtra(any(), any()) } returns false
+                    every { intent.dataString } returns null
+
                     return intent
                 }
             },
@@ -123,6 +127,8 @@ class ExternalAppBrowserActivityTest {
                     every { bundle.getString(any()) } returns ""
                     every { intent.getBooleanExtra(any(), any()) } returns true
                     every { intent.extras } returns bundle
+                    every { intent.dataString } returns null
+
                     return intent
                 }
             },
@@ -151,6 +157,8 @@ class ExternalAppBrowserActivityTest {
                     every { bundle.getString(any()) } returns ""
                     every { intent.getBooleanExtra(any(), any()) } returns false
                     every { intent.extras } returns bundle
+                    every { intent.dataString } returns null
+
                     return intent
                 }
             },

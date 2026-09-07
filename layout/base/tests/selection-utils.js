@@ -1,5 +1,3 @@
-// -*- Mode: Javascript; tab-width: 2; indent-tabs-mode: nil; js-indent-level: 2 -*-
-// vim: set ts=2 sw=2 et tw=78:
 function clearSelection(w) {
   var sel = (w ? w : window).getSelection();
   sel.removeAllRanges();

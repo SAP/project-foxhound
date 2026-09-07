@@ -11,7 +11,7 @@ import("//chromium/build/config/mips.gni")
 import("//chromium/build/config/ozone.gni")
 import("//chromium/build/config/sanitizers/sanitizers.gni")
 import("//chromium/build/config/sysroot.gni")
-import("//libwebrtc/build_overrides/build.gni")
+import("//build_overrides/build.gni")
 
 if (!build_with_chromium && is_component_build) {
   print("The Gn argument `is_component_build` is currently " +
@@ -79,19 +79,6 @@ declare_args() {
   # annotated symbols.
   rtc_enable_objc_symbol_export = rtc_enable_symbol_export
 
-  # Setting this to true will define WEBRTC_EXCLUDE_FIELD_TRIAL_DEFAULT which
-  # will tell the pre-processor to remove the default definition of symbols
-  # needed to use field_trial. In that case a new implementation needs to be
-  # provided.
-  if (build_with_chromium) {
-    # When WebRTC is built as part of Chromium it should exclude the default
-    # implementation of field_trial unless it is building for NACL or
-    # Chromecast.
-    rtc_exclude_field_trial_default = !is_nacl && !is_castos && !is_cast_android
-  } else {
-    rtc_exclude_field_trial_default = false
-  }
-
   # Setting this to true will define WEBRTC_EXCLUDE_METRICS_DEFAULT which
   # will tell the pre-processor to remove the default definition of symbols
   # needed to use metrics. In that case a new implementation needs to be
@@ -126,10 +113,6 @@ declare_args() {
   # Used to specify an external OpenSSL include path when not compiling the
   # library that comes with WebRTC (i.e. rtc_build_ssl == 0).
   rtc_ssl_root = ""
-
-  # Enable when an external authentication mechanism is used for performing
-  # packet authentication for RTP packets instead of libsrtp.
-  rtc_enable_external_auth = build_with_chromium
 
   # Selects whether debug dumps for the audio processing module
   # should be generated.
@@ -167,11 +150,8 @@ declare_args() {
   # See http://clang.llvm.org/docs/SanitizerCoverage.html .
   rtc_sanitize_coverage = ""
 
-  # Selects fixed-point code where possible.
-  rtc_prefer_fixed_point = false
-  if (target_cpu == "arm" || target_cpu == "arm64") {
-    rtc_prefer_fixed_point = true
-  }
+  # When set to true, Plan B will be deprecated.
+  deprecate_plan_b = true
 
   # Determines whether NEON code will be built.
   rtc_build_with_neon =
@@ -336,6 +316,12 @@ declare_args() {
 
   # Set this to true to disable webrtc metrics.
   rtc_disable_metrics = false
+
+  # Enables an experimental rust version of base64 for building and testing.
+  rtc_rusty_base64 = false
+
+  # Enables PSNR calculation for video getStats.
+  rtc_video_psnr = true
 }
 
 declare_args() {
@@ -491,6 +477,9 @@ all_poison_types = [
 
   # Software video codecs (VP8 and VP9 through libvpx).
   "software_video_codecs",
+
+  # Residual echo estimator based that runs inferences using the tflite library.
+  "default_neural_residual_echo_estimator",
 ]
 
 absl_include_config = "//libwebrtc/third_party/abseil-cpp:absl_include_config"
@@ -539,7 +528,7 @@ template("rtc_test") {
       use_default_launcher = false
       android_manifest = webrtc_root + "test/android/AndroidManifest.xml"
       use_raw_android_executable = false
-      min_sdk_version = 21
+      min_sdk_version = 23
       target_sdk_version = 24
       deps += [
         "//chromium/build/android/gtest_apk:native_test_instrumentation_test_runner_java",
@@ -549,6 +538,11 @@ template("rtc_test") {
         webrtc_root + "test:native_test_support",
         "//third_party/jni_zero:jni_zero_java",
       ]
+    }
+
+    # TODO: bugs.webrtc.org/467294026 - Support iOS too.
+    if (!defined(invoker.is_xctest) || !invoker.is_xctest) {
+      deps += [ webrtc_root + "test:test_main" ]
     }
 
     # Build //test:google_test_runner_objc when the test is not a real XCTest.
@@ -600,6 +594,12 @@ template("rtc_source_set") {
     forward_variables_from(invoker, [ "visibility" ])
     if (!defined(visibility)) {
       visibility = webrtc_default_visibility
+    }
+
+    if (defined(invoker.sources)) {
+      nonheader_sources = filter_include(invoker.sources, [ "*.cc" ])
+      assert(nonheader_sources == [],
+             "rtc_source_set shall not contain cc files")
     }
 
     # What's your poison?
@@ -852,6 +852,7 @@ template("rtc_library") {
   } else {
     target_type = "static_library"
   }
+
   target(target_type, target_name) {
     forward_variables_from(invoker,
                            "*",
@@ -1142,24 +1143,60 @@ if (is_mac || is_ios) {
     forward_variables_from(invoker, [ "output_name" ])
     this_target_name = target_name
     umbrella_header_path =
-        "$target_gen_dir/$output_name.framework/WebRTC/$output_name.h"
+        "$target_gen_dir/$output_name.framework/Headers/$output_name.h"
     modulemap_path = "$target_gen_dir/Modules/module.modulemap"
-    privacy_manifest_path = "$target_gen_dir/$target_name/PrivacyInfo.xcprivacy"
+    privacy_manifest_path =
+        "$target_gen_dir/$this_target_name/PrivacyInfo.xcprivacy"
+
+    action("umbrella_header_$this_target_name") {
+      script = "//tools_webrtc/ios/generate_umbrella_header.py"
+      sources = invoker.sources
+      outputs = [ umbrella_header_path ]
+      args = [
+               "--out",
+               rebase_path(umbrella_header_path, root_build_dir),
+               "--sources",
+             ] + rebase_path(sources, root_build_dir)
+    }
 
     action_foreach("create_bracket_include_headers_$target_name") {
       script = "//tools_webrtc/apple/copy_framework_header.py"
-      sources = invoker.sources
+      if (is_mac) {
+        sources = invoker.sources
+      } else {
+        sources = invoker.public_headers
+      }
       output_name = invoker.output_name
       outputs = [
-        "$target_gen_dir/$output_name.framework/WebRTC/{{source_file_part}}",
+        "$target_gen_dir/$output_name.framework/Headers/{{source_file_part}}",
       ]
       args = [
         "--input",
         "{{source}}",
         "--output",
         rebase_path(target_gen_dir, root_build_dir) +
-            "/$output_name.framework/WebRTC/{{source_file_part}}",
+            "/$output_name.framework/Headers/{{source_file_part}}",
       ]
+    }
+
+    action("create_privacy_manifest_$this_target_name") {
+      script = "//tools_webrtc/apple/generate_privacy_manifest.py"
+      args = [
+        "--output",
+        rebase_path(privacy_manifest_path),
+      ]
+      outputs = [ privacy_manifest_path ]
+    }
+
+    bundle_data("privacy_manifest_bundle_data_$this_target_name") {
+      deps = [ ":create_privacy_manifest_$this_target_name" ]
+      sources = get_target_outputs(":create_privacy_manifest_$this_target_name")
+      if (is_mac || target_environment == "catalyst") {
+        privacy_manifest_out_path = "Versions/A/Resources/PrivacyInfo.xcprivacy"
+      } else {
+        privacy_manifest_out_path = "PrivacyInfo.xcprivacy"
+      }
+      outputs = [ "{{bundle_contents_dir}}/$privacy_manifest_out_path" ]
     }
 
     if (is_mac) {
@@ -1168,71 +1205,90 @@ if (is_mac || is_ios) {
         if (defined(invoker.configs)) {
           configs += invoker.configs
         }
-
         framework_version = "A"
         framework_contents = [
           "Headers",
           "Modules",
           "Resources",
         ]
-
         ldflags = [
           "-all_load",
           "-install_name",
           "@rpath/$output_name.framework/$output_name",
         ]
 
+        # This is the fix. The mac framework now has a direct dependency on
+        # the creation of the privacy manifest, just like the iOS version.
         deps += [
-          ":copy_framework_headers_$this_target_name",
           ":copy_modulemap_$this_target_name",
-          ":copy_privacy_manifest_$this_target_name",
           ":copy_umbrella_header_$this_target_name",
           ":create_bracket_include_headers_$this_target_name",
+          ":create_privacy_manifest_$this_target_name",
           ":modulemap_$this_target_name",
-          ":umbrella_header_$this_target_name",
+          ":privacy_manifest_bundle_data_$this_target_name",
         ]
       }
     }
     if (is_ios) {
       ios_framework_bundle(target_name) {
-        forward_variables_from(invoker,
-                               "*",
-                               [
-                                 "configs",
-                                 "public_headers",
-                               ])
+        if (defined(invoker.testonly)) {
+          testonly = invoker.testonly
+        }
+        if (defined(invoker.visibility)) {
+          visibility = invoker.visibility
+        }
+        if (defined(invoker.sources)) {
+          sources = invoker.sources
+        }
+        if (defined(invoker.deps)) {
+          deps = invoker.deps
+        }
+        if (defined(invoker.defines)) {
+          defines = invoker.defines
+        }
+        if (defined(invoker.include_dirs)) {
+          include_dirs = invoker.include_dirs
+        }
+        if (defined(invoker.public_configs)) {
+          public_configs = invoker.public_configs
+        }
+        if (defined(invoker.all_dependent_configs)) {
+          all_dependent_configs = invoker.all_dependent_configs
+        }
+        if (defined(invoker.ldflags)) {
+          ldflags = invoker.ldflags
+        }
+        if (defined(invoker.libs)) {
+          libs = invoker.libs
+        }
+        if (defined(invoker.frameworks)) {
+          frameworks = invoker.frameworks
+        }
+        if (defined(invoker.info_plist)) {
+          info_plist = invoker.info_plist
+        }
         if (defined(invoker.configs)) {
           configs += invoker.configs
         }
+
         public_headers = get_target_outputs(
                 ":create_bracket_include_headers_$this_target_name")
+        public_headers +=
+            get_target_outputs(":umbrella_header_$this_target_name")
 
         deps += [
-          ":copy_privacy_manifest_$this_target_name",
-          ":copy_umbrella_header_$this_target_name",
           ":create_bracket_include_headers_$this_target_name",
+          ":create_privacy_manifest_$this_target_name",
+          ":umbrella_header_$this_target_name",
         ]
+
+        if (defined(invoker.bundle_deps)) {
+          bundle_deps = invoker.bundle_deps
+        } else {
+          bundle_deps = []
+        }
+        bundle_deps += [ ":privacy_manifest_bundle_data_$this_target_name" ]
       }
-    }
-
-    if (is_mac || target_environment == "catalyst") {
-      # Catalyst frameworks use the same layout as regular Mac frameworks.
-      headers_dir = "Versions/A/Headers"
-
-      # The path to the privacy manifest file differs between Mac and iOS.
-      # https://developer.apple.com/documentation/bundleresources/privacy_manifest_files/adding_a_privacy_manifest_to_your_app_or_third-party_sdk
-      privacy_manifest_out_path = "Versions/A/Resources/PrivacyInfo.xcprivacy"
-    } else {
-      headers_dir = "Headers"
-      privacy_manifest_out_path = "PrivacyInfo.xcprivacy"
-    }
-
-    bundle_data("copy_framework_headers_$this_target_name") {
-      sources = get_target_outputs(
-              ":create_bracket_include_headers_$this_target_name")
-
-      outputs = [ "{{bundle_contents_dir}}/Headers/{{source_file_part}}" ]
-      deps = [ ":create_bracket_include_headers_$this_target_name" ]
     }
 
     action("modulemap_$this_target_name") {
@@ -1252,46 +1308,15 @@ if (is_mac || is_ios) {
       deps = [ ":modulemap_$this_target_name" ]
     }
 
-    action("umbrella_header_$this_target_name") {
-      sources = get_target_outputs(
-              ":create_bracket_include_headers_$this_target_name")
-
-      script = "//tools_webrtc/ios/generate_umbrella_header.py"
-
-      outputs = [ umbrella_header_path ]
-      args = [
-               "--out",
-               rebase_path(umbrella_header_path, root_build_dir),
-               "--sources",
-             ] + sources
-      deps = [ ":create_bracket_include_headers_$this_target_name" ]
-    }
-
-    copy("copy_umbrella_header_$target_name") {
-      sources = [ umbrella_header_path ]
-      outputs =
-          [ "$root_out_dir/$output_name.framework/$headers_dir/$output_name.h" ]
-
-      deps = [ ":umbrella_header_$target_name" ]
-    }
-
-    action("create_privacy_manifest_$target_name") {
-      script = "//tools_webrtc/apple/generate_privacy_manifest.py"
-
-      args = [
-        "--output",
-        rebase_path(privacy_manifest_path),
-      ]
-
-      outputs = [ privacy_manifest_path ]
-    }
-
-    copy("copy_privacy_manifest_$target_name") {
-      sources = [ privacy_manifest_path ]
-      outputs =
-          [ "$root_out_dir/$output_name.framework/$privacy_manifest_out_path" ]
-
-      deps = [ ":create_privacy_manifest_$target_name" ]
+    if (is_mac) {
+      headers_dir = "Versions/A/Headers"
+      copy("copy_umbrella_header_$this_target_name") {
+        sources = [ umbrella_header_path ]
+        outputs = [
+          "$root_out_dir/$output_name.framework/$headers_dir/$output_name.h",
+        ]
+        deps = [ ":umbrella_header_$this_target_name" ]
+      }
     }
   }
 }
@@ -1342,5 +1367,144 @@ if (is_android && !build_with_mozilla) {
                              ])
       deps += [ "//third_party/jni_zero:jni_zero_java" ]
     }
+  }
+}
+
+# Defines a unit test target.
+#
+# This template generates:
+# 1. A static library containing the test sources.
+# 2. An executable to run the test locally.
+# 3. A verification step to ensure the test is included in at least one
+#    `rtc_test_suite` (when not building with Chromium).
+#
+# Arguments:
+#   sources: List of source files.
+#   deps: List of dependencies.
+#   data_deps: List of data dependencies.
+#   ... (other standard rtc_library arguments)
+template("rtc_cc_test") {
+  _lib_target_name = "${target_name}"
+
+  rtc_library(_lib_target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "configs",
+                             "public_configs",
+                             "suppressed_configs",
+                             "deps",
+                             "visibility",
+                           ])
+    testonly = true
+
+    if (defined(invoker.deps)) {
+      deps = invoker.deps
+    } else {
+      deps = []
+    }
+
+    # Adds a metadata key "rtc_cc_test" with a value of this test. This is used
+    # to confirm this test is included in a test suite.
+    metadata = {
+      rtc_cc_test = [
+        {
+          label = get_label_info(":$_lib_target_name", "label_no_toolchain")
+          type = "rtc_cc_test"
+        },
+      ]
+    }
+  }
+
+  _path_from_webrtc_root = rebase_path(".", webrtc_root)
+  if (_path_from_webrtc_root == ".") {
+    _binary_name = "${target_name}_bin"
+  } else {
+    _binary_name = string_replace(_path_from_webrtc_root, "/", "_") + "_" +
+                   target_name + "_bin"
+  }
+  rtc_test("${target_name}_bin") {
+    testonly = true
+
+    # Output into the target's directory.
+    output_name = _binary_name
+    deps = [ ":${_lib_target_name}" ]
+    if (defined(invoker.data_deps)) {
+      data_deps = invoker.data_deps
+    }
+  }
+}
+
+# Defines a test suite that aggregates multiple unit tests.
+#
+# This template is used to create "mega-targets" for CI/CQ. It collects
+# dependencies (which should be rtc_cc_test targets) and verifies that
+# they are reachable. The `tests_in_suites.json` file is generated by
+# walking the dependency graph starting from these suites.
+#
+# Arguments:
+#   tests: List of rtc_cc_test targets to include in this suite.
+#   deps: Additional dependencies (e.g. groups of tests).
+template("rtc_test_suite") {
+  _suite_name = target_name
+
+  # This checks that all of the tests strings listed are an rtc_cc_test by
+  # extracting their "rtc_cc_test" metadata into a file. This uses a simple
+  # set comparison in //tools_webrtc/verify_test_suite_metadata.py.
+  assert(defined(invoker.tests))
+
+  _metadata_map = []
+  _metadata_check_deps = []
+  foreach(t, invoker.tests) {
+    _test_label = get_label_info(t, "label_no_toolchain")
+    _safe_label = string_replace(_test_label, "//", "")
+    _safe_label = string_replace(_safe_label, "/", "_")
+    _safe_label = string_replace(_safe_label, ":", "_")
+    _output_file = "$target_gen_dir/${_suite_name}_${_safe_label}_metadata.json"
+    _check_target = "${_suite_name}_${_safe_label}_check"
+
+    generated_file(_check_target) {
+      testonly = true
+      outputs = [ _output_file ]
+      data_keys = [ "rtc_cc_test" ]
+      output_conversion = "json"
+      deps = [ t ]
+    }
+    _metadata_check_deps += [ ":${_check_target}" ]
+    _metadata_map += [
+      {
+        label = _test_label
+        output = rebase_path(_output_file, root_build_dir)
+      },
+    ]
+  }
+
+  write_file("$target_gen_dir/${_suite_name}_metadata_map.json",
+             _metadata_map,
+             "json")
+
+  action("${_suite_name}_verify_metadata") {
+    testonly = true
+    script = "//tools_webrtc/verify_test_suite_metadata.py"
+    inputs = [ "$target_gen_dir/${_suite_name}_metadata_map.json" ]
+    outputs = [ "$target_gen_dir/${_suite_name}_metadata.stamp" ]
+    args = [
+      rebase_path(inputs[0], root_build_dir),
+      rebase_path(outputs[0], root_build_dir),
+    ]
+    deps = _metadata_check_deps
+  }
+
+  rtc_test(_suite_name) {
+    forward_variables_from(invoker, "*", [ "tests" ])
+
+    if (!defined(deps)) {
+      deps = []
+    }
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+    deps += invoker.tests
+    deps += [ ":${_suite_name}_verify_metadata" ]
   }
 }

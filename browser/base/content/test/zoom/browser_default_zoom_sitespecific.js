@@ -32,16 +32,16 @@ add_task(async function test_disabled_ss_multi() {
   zoomLevel = ZoomManager.getZoomForBrowser(tabBrowser1);
   is(zoomLevel, 1, "tab 1 zoom has been set to 100%");
 
-  // 67% global zoom
-  await FullZoomHelper.changeDefaultZoom(67);
+  // 70% global zoom
+  await FullZoomHelper.changeDefaultZoom(70);
   let defaultZoom = await FullZoomHelper.getGlobalValue();
-  is(defaultZoom, 0.67, "Global zoom is at 67%");
+  is(defaultZoom, 0.7, "Global zoom is at 70%");
 
   await TestUtils.waitForCondition(
-    () => ZoomManager.getZoomForBrowser(tabBrowser1) == 0.67
+    () => ZoomManager.getZoomForBrowser(tabBrowser1) == 0.7
   );
   zoomLevel = ZoomManager.getZoomForBrowser(tabBrowser1);
-  is(zoomLevel, 0.67, "tab 1 zoom has been set to 67%");
+  is(zoomLevel, 0.7, "tab 1 zoom has been set to 70%");
 
   await FullZoom.enlarge();
 
@@ -59,7 +59,7 @@ add_task(async function test_disabled_ss_multi() {
   await isLoaded;
 
   zoomLevel = ZoomManager.getZoomForBrowser(tabBrowser3);
-  is(zoomLevel, 0.67, "tab 3 zoom has been set to 67%");
+  is(zoomLevel, 0.7, "tab 3 zoom has been set to 70%");
 
   await FullZoomHelper.removeTabAndWaitForLocationChange();
   await FullZoomHelper.removeTabAndWaitForLocationChange();
@@ -97,12 +97,12 @@ add_task(async function test_disabled_ss_custom() {
   await FullZoom.enlarge();
 
   zoomLevel = ZoomManager.getZoomForBrowser(tabBrowser1);
-  is(zoomLevel, 1.7, "tab 1 zoom has been set to 170%");
+  is(zoomLevel, 1.6, "tab 1 zoom has been set to 160%");
 
   await BrowserTestUtils.reloadTab(tab1);
 
   zoomLevel = ZoomManager.getZoomForBrowser(tabBrowser1);
-  is(zoomLevel, 1.7, "tab 1 zoom remains 170%");
+  is(zoomLevel, 1.6, "tab 1 zoom remains 160%");
 
   await FullZoomHelper.removeTabAndWaitForLocationChange();
 });

@@ -16,15 +16,20 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "api/environment/environment.h"
+#include "api/units/data_rate.h"
 #include "modules/include/module_fec_types.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/forward_error_correction.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "modules/rtp_rtcp/source/video_fec_generator.h"
 #include "rtc_base/bitrate_tracker.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -37,7 +42,7 @@ class UlpfecGenerator : public VideoFecGenerator {
   UlpfecGenerator(const Environment& env,
                   int red_payload_type,
                   int ulpfec_payload_type);
-  ~UlpfecGenerator();
+  ~UlpfecGenerator() override;
 
   FecType GetFecType() const override {
     return VideoFecGenerator::FecType::kUlpFec;

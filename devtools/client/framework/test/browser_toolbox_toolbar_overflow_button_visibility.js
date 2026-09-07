@@ -45,11 +45,11 @@ add_task(async function () {
   });
 
   // Once, make all toolbox button to be invisible.
-  setToolboxButtonsVisibility(checkButtons, false);
+  await setToolboxButtonsVisibility(toolbox, checkButtons, false);
   // Get count of shown devtools tab elements.
   const initialTabCount = toolbox.doc.querySelectorAll(".devtools-tab").length;
   // Make all toolbox button to be visible.
-  setToolboxButtonsVisibility(checkButtons, true);
+  await setToolboxButtonsVisibility(toolbox, checkButtons, true);
   Assert.less(
     toolbox.doc.querySelectorAll(".devtools-tab").length,
     initialTabCount,
@@ -59,7 +59,7 @@ add_task(async function () {
   info(
     "Test the count of shown devtools tab after making all buttons to be invisible"
   );
-  setToolboxButtonsVisibility(checkButtons, false);
+  await setToolboxButtonsVisibility(toolbox, checkButtons, false);
   is(
     toolbox.doc.querySelectorAll(".devtools-tab").length,
     initialTabCount,
@@ -67,12 +67,21 @@ add_task(async function () {
   );
 });
 
-function setToolboxButtonsVisibility(checkButtons, doVisible) {
+async function setToolboxButtonsVisibility(toolbox, checkButtons, doVisible) {
   for (const checkButton of checkButtons) {
     if (checkButton.checked === doVisible) {
       continue;
     }
 
+    const onTracerPrefApplied = toolbox.once("new-configuration-applied");
+
     checkButton.click();
+
+    // Toggling the devtools.command-button-jstracer.enabled preference
+    // will trigger the update of thread configuration from the toolbox module
+    // and we need to wait for its completion to avoid pending request at end of test
+    if (checkButton.id == "command-button-jstracer") {
+      await onTracerPrefApplied;
+    }
   }
 }

@@ -7,7 +7,7 @@ package org.mozilla.fenix.downloads.listscreen.middleware
 import mozilla.components.browser.state.state.content.DownloadState
 
 class FakeFileItemDescriptionProvider : FileItemDescriptionProvider {
-    override fun getDescription(
+    override suspend fun getDescription(
         downloadState: DownloadState,
     ): String = when (downloadState.status) {
         DownloadState.Status.CANCELLED -> "Cancelled"

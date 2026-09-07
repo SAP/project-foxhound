@@ -1,0 +1,15 @@
+{
+  "label": "store.sony.jp",
+  "bugs": {
+    "1982626": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://*.store.sony.jp/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome_with_FxQuantum"]
+    }
+  ]
+}

@@ -5,6 +5,7 @@
 mod constant_evaluator;
 mod emitter;
 pub mod index;
+mod keyword_set;
 mod layouter;
 mod namer;
 mod overloads;
@@ -17,13 +18,18 @@ pub use constant_evaluator::{
 };
 pub use emitter::Emitter;
 pub use index::{BoundsCheckPolicies, BoundsCheckPolicy, IndexableLength, IndexableLengthError};
+pub use keyword_set::{CaseInsensitiveKeywordSet, KeywordSet};
 pub use layouter::{Alignment, LayoutError, LayoutErrorInner, Layouter, TypeLayout};
-pub use namer::{EntryPointIndex, NameKey, Namer};
+pub use namer::{EntryPointIndex, ExternalTextureNameKey, NameKey, Namer};
 pub use overloads::{Conclusion, MissingSpecialType, OverloadSet, Rule};
 pub use terminator::ensure_block_returns;
 use thiserror::Error;
-pub use type_methods::min_max_float_representable_by;
+pub use type_methods::{
+    concrete_int_scalars, min_max_float_representable_by, vector_size_str, vector_sizes,
+};
 pub use typifier::{compare_types, ResolveContext, ResolveError, TypeResolution};
+
+use crate::non_max_u32::NonMaxU32;
 
 impl From<super::StorageFormat> for super::Scalar {
     fn from(format: super::StorageFormat) -> Self {
@@ -84,6 +90,8 @@ pub enum HashableLiteral {
     F64(u64),
     F32(u32),
     F16(u16),
+    U16(u16),
+    I16(i16),
     U32(u32),
     I32(i32),
     U64(u64),
@@ -99,6 +107,8 @@ impl From<crate::Literal> for HashableLiteral {
             crate::Literal::F64(v) => Self::F64(v.to_bits()),
             crate::Literal::F32(v) => Self::F32(v.to_bits()),
             crate::Literal::F16(v) => Self::F16(v.to_bits()),
+            crate::Literal::U16(v) => Self::U16(v),
+            crate::Literal::I16(v) => Self::I16(v),
             crate::Literal::U32(v) => Self::U32(v),
             crate::Literal::I32(v) => Self::I32(v),
             crate::Literal::U64(v) => Self::U64(v),
@@ -115,6 +125,11 @@ impl crate::Literal {
         match (value, scalar.kind, scalar.width) {
             (value, crate::ScalarKind::Float, 8) => Some(Self::F64(value as _)),
             (value, crate::ScalarKind::Float, 4) => Some(Self::F32(value as _)),
+            (value, crate::ScalarKind::Float, 2) => {
+                Some(Self::F16(half::f16::from_f32_const(value as _)))
+            }
+            (value, crate::ScalarKind::Uint, 2) => Some(Self::U16(value as _)),
+            (value, crate::ScalarKind::Sint, 2) => Some(Self::I16(value as _)),
             (value, crate::ScalarKind::Uint, 4) => Some(Self::U32(value as _)),
             (value, crate::ScalarKind::Sint, 4) => Some(Self::I32(value as _)),
             (value, crate::ScalarKind::Uint, 8) => Some(Self::U64(value as _)),
@@ -135,11 +150,24 @@ impl crate::Literal {
         Self::new(1, scalar)
     }
 
+    pub const fn minus_one(scalar: crate::Scalar) -> Option<Self> {
+        match (scalar.kind, scalar.width) {
+            (crate::ScalarKind::Float, 8) => Some(Self::F64(-1.0)),
+            (crate::ScalarKind::Float, 4) => Some(Self::F32(-1.0)),
+            (crate::ScalarKind::Float, 2) => Some(Self::F16(half::f16::from_f32_const(-1.0))),
+            (crate::ScalarKind::Sint, 8) => Some(Self::I64(-1)),
+            (crate::ScalarKind::Sint, 4) => Some(Self::I32(-1)),
+            (crate::ScalarKind::Sint, 2) => Some(Self::I16(-1)),
+            (crate::ScalarKind::AbstractInt, 8) => Some(Self::AbstractInt(-1)),
+            _ => None,
+        }
+    }
+
     pub const fn width(&self) -> crate::Bytes {
         match *self {
             Self::F64(_) | Self::I64(_) | Self::U64(_) => 8,
             Self::F32(_) | Self::U32(_) | Self::I32(_) => 4,
-            Self::F16(_) => 2,
+            Self::F16(_) | Self::U16(_) | Self::I16(_) => 2,
             Self::Bool(_) => crate::BOOL_WIDTH,
             Self::AbstractInt(_) | Self::AbstractFloat(_) => crate::ABSTRACT_WIDTH,
         }
@@ -149,6 +177,8 @@ impl crate::Literal {
             Self::F64(_) => crate::Scalar::F64,
             Self::F32(_) => crate::Scalar::F32,
             Self::F16(_) => crate::Scalar::F16,
+            Self::U16(_) => crate::Scalar::U16,
+            Self::I16(_) => crate::Scalar::I16,
             Self::U32(_) => crate::Scalar::U32,
             Self::I32(_) => crate::Scalar::I32,
             Self::U64(_) => crate::Scalar::U64,
@@ -166,6 +196,31 @@ impl crate::Literal {
     }
 }
 
+impl TryFrom<crate::Literal> for u32 {
+    type Error = ConstValueError;
+
+    fn try_from(value: crate::Literal) -> Result<Self, Self::Error> {
+        match value {
+            crate::Literal::U16(value) => Ok(value as u32),
+            crate::Literal::I16(value) => value.try_into().map_err(|_| ConstValueError::Negative),
+            crate::Literal::U32(value) => Ok(value),
+            crate::Literal::I32(value) => value.try_into().map_err(|_| ConstValueError::Negative),
+            _ => Err(ConstValueError::InvalidType),
+        }
+    }
+}
+
+impl TryFrom<crate::Literal> for bool {
+    type Error = ConstValueError;
+
+    fn try_from(value: crate::Literal) -> Result<Self, Self::Error> {
+        match value {
+            crate::Literal::Bool(value) => Ok(value),
+            _ => Err(ConstValueError::InvalidType),
+        }
+    }
+}
+
 impl super::AddressSpace {
     pub fn access(self) -> crate::StorageAccess {
         use crate::StorageAccess as Sa;
@@ -176,7 +231,13 @@ impl super::AddressSpace {
             crate::AddressSpace::Uniform => Sa::LOAD,
             crate::AddressSpace::Storage { access } => access,
             crate::AddressSpace::Handle => Sa::LOAD,
-            crate::AddressSpace::PushConstant => Sa::LOAD,
+            crate::AddressSpace::Immediate => Sa::LOAD,
+            // TaskPayload isn't always writable, but this is checked for elsewhere,
+            // when not using multiple payloads and matching the entry payload is checked.
+            crate::AddressSpace::TaskPayload => Sa::LOAD | Sa::STORE,
+            crate::AddressSpace::RayPayload | crate::AddressSpace::IncomingRayPayload => {
+                Sa::LOAD | Sa::STORE
+            }
         }
     }
 }
@@ -383,6 +444,7 @@ impl super::ImageClass {
         match self {
             crate::ImageClass::Sampled { multi, .. } | crate::ImageClass::Depth { multi } => multi,
             crate::ImageClass::Storage { .. } => false,
+            crate::ImageClass::External => false,
         }
     }
 
@@ -390,6 +452,7 @@ impl super::ImageClass {
         match self {
             crate::ImageClass::Sampled { multi, .. } | crate::ImageClass::Depth { multi } => !multi,
             crate::ImageClass::Storage { .. } => false,
+            crate::ImageClass::External => false,
         }
     }
 
@@ -414,9 +477,16 @@ impl crate::Module {
 }
 
 #[derive(Debug)]
-pub(super) enum U32EvalError {
+pub enum ConstValueError {
     NonConst,
     Negative,
+    InvalidType,
+}
+
+impl From<core::convert::Infallible> for ConstValueError {
+    fn from(_: core::convert::Infallible) -> Self {
+        unreachable!()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -428,56 +498,44 @@ pub struct GlobalCtx<'a> {
 }
 
 impl GlobalCtx<'_> {
-    /// Try to evaluate the expression in `self.global_expressions` using its `handle` and return it as a `u32`.
-    #[allow(dead_code)]
-    pub(super) fn eval_expr_to_u32(
+    /// Try to evaluate the expression in `self.global_expressions` using its `handle`
+    /// and return it as a `T: TryFrom<ir::Literal>`.
+    ///
+    /// This currently only evaluates scalar expressions. If adding support for vectors,
+    /// consider changing `valid::expression::validate_constant_shift_amounts` to use that
+    /// support.
+    #[cfg_attr(
+        not(any(
+            feature = "glsl-in",
+            feature = "spv-in",
+            feature = "wgsl-in",
+            glsl_out,
+            hlsl_out,
+            msl_out,
+            wgsl_out
+        )),
+        allow(dead_code)
+    )]
+    pub(super) fn get_const_val<T, E>(
         &self,
         handle: crate::Handle<crate::Expression>,
-    ) -> Result<u32, U32EvalError> {
-        self.eval_expr_to_u32_from(handle, self.global_expressions)
+    ) -> Result<T, ConstValueError>
+    where
+        T: TryFrom<crate::Literal, Error = E>,
+        E: Into<ConstValueError>,
+    {
+        self.get_const_val_from(handle, self.global_expressions)
     }
 
-    /// Try to evaluate the expression in the `arena` using its `handle` and return it as a `u32`.
-    pub(super) fn eval_expr_to_u32_from(
+    pub(super) fn get_const_val_from<T, E>(
         &self,
         handle: crate::Handle<crate::Expression>,
         arena: &crate::Arena<crate::Expression>,
-    ) -> Result<u32, U32EvalError> {
-        match self.eval_expr_to_literal_from(handle, arena) {
-            Some(crate::Literal::U32(value)) => Ok(value),
-            Some(crate::Literal::I32(value)) => {
-                value.try_into().map_err(|_| U32EvalError::Negative)
-            }
-            _ => Err(U32EvalError::NonConst),
-        }
-    }
-
-    /// Try to evaluate the expression in the `arena` using its `handle` and return it as a `bool`.
-    #[allow(dead_code)]
-    pub(super) fn eval_expr_to_bool_from(
-        &self,
-        handle: crate::Handle<crate::Expression>,
-        arena: &crate::Arena<crate::Expression>,
-    ) -> Option<bool> {
-        match self.eval_expr_to_literal_from(handle, arena) {
-            Some(crate::Literal::Bool(value)) => Some(value),
-            _ => None,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn eval_expr_to_literal(
-        &self,
-        handle: crate::Handle<crate::Expression>,
-    ) -> Option<crate::Literal> {
-        self.eval_expr_to_literal_from(handle, self.global_expressions)
-    }
-
-    pub(super) fn eval_expr_to_literal_from(
-        &self,
-        handle: crate::Handle<crate::Expression>,
-        arena: &crate::Arena<crate::Expression>,
-    ) -> Option<crate::Literal> {
+    ) -> Result<T, ConstValueError>
+    where
+        T: TryFrom<crate::Literal, Error = E>,
+        E: Into<ConstValueError>,
+    {
         fn get(
             gctx: GlobalCtx,
             handle: crate::Handle<crate::Expression>,
@@ -492,11 +550,15 @@ impl GlobalCtx<'_> {
                 _ => None,
             }
         }
-        match arena[handle] {
+        let value = match arena[handle] {
             crate::Expression::Constant(c) => {
                 get(*self, self.constants[c].init, self.global_expressions)
             }
             _ => get(*self, handle, arena),
+        };
+        match value {
+            Some(v) => v.try_into().map_err(Into::into),
+            None => Err(ConstValueError::NonConst),
         }
     }
 
@@ -530,9 +592,11 @@ impl crate::ArraySize {
                 let Some(expr) = gctx.overrides[handle].init else {
                     return Err(ResolveArraySizeError::NonConstArrayLength);
                 };
-                let length = gctx.eval_expr_to_u32(expr).map_err(|err| match err {
-                    U32EvalError::NonConst => ResolveArraySizeError::NonConstArrayLength,
-                    U32EvalError::Negative => ResolveArraySizeError::ExpectedPositiveArrayLength,
+                let length = gctx.get_const_val(expr).map_err(|err| match err {
+                    ConstValueError::NonConst => ResolveArraySizeError::NonConstArrayLength,
+                    ConstValueError::Negative | ConstValueError::InvalidType => {
+                        ResolveArraySizeError::ExpectedPositiveArrayLength
+                    }
                 })?;
 
                 if length == 0 {
@@ -624,6 +688,24 @@ pub fn flatten_compose<'arenas>(
         .take(size)
 }
 
+impl super::ShaderStage {
+    pub const fn compute_like(self) -> bool {
+        match self {
+            Self::Vertex | Self::Fragment => false,
+            Self::Compute | Self::Task | Self::Mesh => true,
+            Self::RayGeneration | Self::AnyHit | Self::ClosestHit | Self::Miss => false,
+        }
+    }
+
+    /// Mesh or task shader
+    pub const fn mesh_like(self) -> bool {
+        match self {
+            Self::Task | Self::Mesh => true,
+            _ => false,
+        }
+    }
+}
+
 #[test]
 fn test_matrix_size() {
     let module = crate::Module::default();
@@ -636,4 +718,310 @@ fn test_matrix_size() {
         .size(module.to_ctx()),
         48,
     );
+}
+
+impl crate::Module {
+    /// Extracts mesh shader info from a mesh output global variable. Used in frontends
+    /// and by validators. This only validates the output variable itself, and not the
+    /// vertex and primitive output types.
+    ///
+    /// The output contains the extracted mesh stage info, with overrides unset,
+    /// and then the overrides separately. This is because the overrides should be
+    /// treated as expressions elsewhere, but that requires mutably modifying the
+    /// module and the expressions should only be created at parse time, not validation
+    /// time.
+    #[allow(clippy::type_complexity)]
+    pub fn analyze_mesh_shader_info(
+        &self,
+        gv: crate::Handle<crate::GlobalVariable>,
+    ) -> (
+        crate::MeshStageInfo,
+        [Option<crate::Handle<crate::Override>>; 2],
+        Option<crate::WithSpan<crate::valid::EntryPointError>>,
+    ) {
+        use crate::span::AddSpan;
+        use crate::valid::EntryPointError;
+        #[derive(Default)]
+        struct OutError {
+            pub inner: Option<EntryPointError>,
+        }
+        impl OutError {
+            pub fn set(&mut self, err: EntryPointError) {
+                if self.inner.is_none() {
+                    self.inner = Some(err);
+                }
+            }
+        }
+
+        // Used to temporarily initialize stuff
+        let null_type = crate::Handle::new(NonMaxU32::new(0).unwrap());
+        let mut output = crate::MeshStageInfo {
+            topology: crate::MeshOutputTopology::Triangles,
+            max_vertices: 0,
+            max_vertices_override: None,
+            max_primitives: 0,
+            max_primitives_override: None,
+            vertex_output_type: null_type,
+            primitive_output_type: null_type,
+            output_variable: gv,
+        };
+        // Stores the error to output, if any.
+        let mut error = OutError::default();
+        let r#type = &self.types[self.global_variables[gv].ty].inner;
+
+        let mut topology = output.topology;
+        // Max, max override, type
+        let mut vertex_info = (0, None, null_type);
+        let mut primitive_info = (0, None, null_type);
+
+        match r#type {
+            &crate::TypeInner::Struct { ref members, .. } => {
+                let mut builtins = crate::FastHashSet::default();
+                for member in members {
+                    match member.binding {
+                        Some(crate::Binding::BuiltIn(crate::BuiltIn::VertexCount)) => {
+                            // Must have type u32
+                            if self.types[member.ty].inner.scalar() != Some(crate::Scalar::U32) {
+                                error.set(EntryPointError::BadMeshOutputVariableField);
+                            }
+                            // Each builtin should only occur once
+                            if builtins.contains(&crate::BuiltIn::VertexCount) {
+                                error.set(EntryPointError::BadMeshOutputVariableType);
+                            }
+                            builtins.insert(crate::BuiltIn::VertexCount);
+                        }
+                        Some(crate::Binding::BuiltIn(crate::BuiltIn::PrimitiveCount)) => {
+                            // Must have type u32
+                            if self.types[member.ty].inner.scalar() != Some(crate::Scalar::U32) {
+                                error.set(EntryPointError::BadMeshOutputVariableField);
+                            }
+                            // Each builtin should only occur once
+                            if builtins.contains(&crate::BuiltIn::PrimitiveCount) {
+                                error.set(EntryPointError::BadMeshOutputVariableType);
+                            }
+                            builtins.insert(crate::BuiltIn::PrimitiveCount);
+                        }
+                        Some(crate::Binding::BuiltIn(
+                            crate::BuiltIn::Vertices | crate::BuiltIn::Primitives,
+                        )) => {
+                            let ty = &self.types[member.ty].inner;
+                            // Analyze the array type to determine size and vertex/primitive type
+                            let (a, b, c) = match ty {
+                                &crate::TypeInner::Array { base, size, .. } => {
+                                    let ty = base;
+                                    let (max, max_override) = match size {
+                                        crate::ArraySize::Constant(a) => (a.get(), None),
+                                        crate::ArraySize::Pending(o) => (0, Some(o)),
+                                        crate::ArraySize::Dynamic => {
+                                            error.set(EntryPointError::BadMeshOutputVariableField);
+                                            (0, None)
+                                        }
+                                    };
+                                    (max, max_override, ty)
+                                }
+                                _ => {
+                                    error.set(EntryPointError::BadMeshOutputVariableField);
+                                    (0, None, null_type)
+                                }
+                            };
+                            if matches!(
+                                member.binding,
+                                Some(crate::Binding::BuiltIn(crate::BuiltIn::Primitives))
+                            ) {
+                                // Primitives require special analysis to determine topology
+                                primitive_info = (a, b, c);
+                                match self.types[c].inner {
+                                    crate::TypeInner::Struct { ref members, .. } => {
+                                        for member in members {
+                                            match member.binding {
+                                                Some(crate::Binding::BuiltIn(
+                                                    crate::BuiltIn::PointIndex,
+                                                )) => {
+                                                    topology = crate::MeshOutputTopology::Points;
+                                                }
+                                                Some(crate::Binding::BuiltIn(
+                                                    crate::BuiltIn::LineIndices,
+                                                )) => {
+                                                    topology = crate::MeshOutputTopology::Lines;
+                                                }
+                                                Some(crate::Binding::BuiltIn(
+                                                    crate::BuiltIn::TriangleIndices,
+                                                )) => {
+                                                    topology = crate::MeshOutputTopology::Triangles;
+                                                }
+                                                _ => (),
+                                            }
+                                        }
+                                    }
+                                    _ => (),
+                                }
+                                // Each builtin should only occur once
+                                if builtins.contains(&crate::BuiltIn::Primitives) {
+                                    error.set(EntryPointError::BadMeshOutputVariableType);
+                                }
+                                builtins.insert(crate::BuiltIn::Primitives);
+                            } else {
+                                vertex_info = (a, b, c);
+                                // Each builtin should only occur once
+                                if builtins.contains(&crate::BuiltIn::Vertices) {
+                                    error.set(EntryPointError::BadMeshOutputVariableType);
+                                }
+                                builtins.insert(crate::BuiltIn::Vertices);
+                            }
+                        }
+                        _ => error.set(EntryPointError::BadMeshOutputVariableType),
+                    }
+                }
+                output = crate::MeshStageInfo {
+                    topology,
+                    max_vertices: vertex_info.0,
+                    max_vertices_override: None,
+                    vertex_output_type: vertex_info.2,
+                    max_primitives: primitive_info.0,
+                    max_primitives_override: None,
+                    primitive_output_type: primitive_info.2,
+                    ..output
+                }
+            }
+            _ => error.set(EntryPointError::BadMeshOutputVariableType),
+        }
+        (
+            output,
+            [vertex_info.1, primitive_info.1],
+            error
+                .inner
+                .map(|a| a.with_span_handle(self.global_variables[gv].ty, &self.types)),
+        )
+    }
+
+    pub fn uses_mesh_shaders(&self) -> bool {
+        let binding_uses_mesh = |b: &crate::Binding| {
+            matches!(
+                b,
+                crate::Binding::BuiltIn(
+                    crate::BuiltIn::MeshTaskSize
+                        | crate::BuiltIn::CullPrimitive
+                        | crate::BuiltIn::PointIndex
+                        | crate::BuiltIn::LineIndices
+                        | crate::BuiltIn::TriangleIndices
+                        | crate::BuiltIn::VertexCount
+                        | crate::BuiltIn::Vertices
+                        | crate::BuiltIn::PrimitiveCount
+                        | crate::BuiltIn::Primitives,
+                ) | crate::Binding::Location {
+                    per_primitive: true,
+                    ..
+                }
+            )
+        };
+        for (_, ty) in self.types.iter() {
+            match ty.inner {
+                crate::TypeInner::Struct { ref members, .. } => {
+                    for binding in members.iter().filter_map(|m| m.binding.as_ref()) {
+                        if binding_uses_mesh(binding) {
+                            return true;
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+        for ep in &self.entry_points {
+            if matches!(
+                ep.stage,
+                crate::ShaderStage::Mesh | crate::ShaderStage::Task
+            ) {
+                return true;
+            }
+            for binding in ep
+                .function
+                .arguments
+                .iter()
+                .filter_map(|arg| arg.binding.as_ref())
+                .chain(
+                    ep.function
+                        .result
+                        .iter()
+                        .filter_map(|res| res.binding.as_ref()),
+                )
+            {
+                if binding_uses_mesh(binding) {
+                    return true;
+                }
+            }
+        }
+        if self
+            .global_variables
+            .iter()
+            .any(|gv| gv.1.space == crate::AddressSpace::TaskPayload)
+        {
+            return true;
+        }
+        false
+    }
+
+    pub fn uses_ray_tracing(&self, ep_index: Option<usize>) -> RayTracingUses {
+        let mut uses = RayTracingUses::default();
+        // Whether this uses ray tracing (unknown whether the usage is pipelines or ray queries).
+        let mut uses_ray_tracing = self.special_types.ray_desc.is_some();
+
+        uses.queries |= self.special_types.ray_intersection.is_some();
+
+        for (_, &crate::Type { ref inner, .. }) in self.types.iter() {
+            // Backends do not know whether these have vertex return - that is done by us
+            match *inner {
+                crate::TypeInner::AccelerationStructure { .. } => {
+                    uses_ray_tracing = true;
+                }
+                crate::TypeInner::RayQuery { .. } => uses.queries = true,
+                _ => {}
+            }
+        }
+
+        for (index, ep) in self.entry_points.iter().enumerate() {
+            if ep_index.is_some() && ep_index != Some(index) {
+                continue;
+            }
+
+            // if we have a ray tracing pipeline shader we are definitely using
+            // pipelines, otherwise, if we have a ray tracing type, we might
+            // be using it in the shader (which would require ray queries),
+            // so we should use queries.
+            if matches!(
+                ep.stage,
+                crate::ShaderStage::RayGeneration
+                    | crate::ShaderStage::AnyHit
+                    | crate::ShaderStage::ClosestHit
+                    | crate::ShaderStage::Miss
+            ) {
+                uses.pipelines = true;
+            } else {
+                uses.queries |= uses_ray_tracing;
+            }
+        }
+
+        uses
+    }
+}
+
+#[derive(Default, Copy, Clone)]
+pub struct RayTracingUses {
+    pub pipelines: bool,
+    pub queries: bool,
+}
+
+impl crate::MeshOutputTopology {
+    pub const fn to_builtin(self) -> crate::BuiltIn {
+        match self {
+            Self::Points => crate::BuiltIn::PointIndex,
+            Self::Lines => crate::BuiltIn::LineIndices,
+            Self::Triangles => crate::BuiltIn::TriangleIndices,
+        }
+    }
+}
+
+impl crate::AddressSpace {
+    pub const fn is_workgroup_like(self) -> bool {
+        matches!(self, Self::WorkGroup | Self::TaskPayload)
+    }
 }

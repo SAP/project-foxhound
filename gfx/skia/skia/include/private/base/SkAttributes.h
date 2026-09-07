@@ -93,4 +93,10 @@
 #  define SK_TRIVIAL_ABI
 #endif
 
+#if defined(__clang__)
+  #define SK_REINITIALIZES [[clang::reinitializes]]
+#else
+  #define SK_REINITIALIZES
+#endif
+
 #endif

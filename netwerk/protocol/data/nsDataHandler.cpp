@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 #include "nsNetCID.h"
 #include "nsError.h"
 #include "nsIOService.h"
-#include "DataChannelChild.h"
 #include "nsNetUtil.h"
 #include "nsSimpleURI.h"
 #include "nsUnicharUtils.h"
@@ -66,12 +64,16 @@ nsDataHandler::GetScheme(nsACString& result) {
 
   // use DefaultURI to check for validity when we have possible hostnames
   // since nsSimpleURI doesn't know about hostnames
-  auto pos = aSpec.Find("data:/");
+  auto pos = aSpec.Find("data:");
   if (pos != kNotFound) {
-    rv = NS_MutateURI(new mozilla::net::DefaultURI::Mutator())
-             .SetSpec(aSpec)
-             .Finalize(uri);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsDependentCSubstring rest(aSpec, pos + sizeof("data:") - 1, -1);
+    if (StringBeginsWith(rest, "//"_ns)) {
+      nsCOMPtr<nsIURI> uriWithHost;
+      rv = NS_MutateURI(new mozilla::net::DefaultURI::Mutator())
+               .SetSpec(aSpec)
+               .Finalize(uriWithHost);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
   }
 
   uri.forget(result);
@@ -82,12 +84,7 @@ NS_IMETHODIMP
 nsDataHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
                           nsIChannel** result) {
   NS_ENSURE_ARG_POINTER(uri);
-  RefPtr<nsDataChannel> channel;
-  if (XRE_IsParentProcess()) {
-    channel = new nsDataChannel(uri);
-  } else {
-    channel = new mozilla::net::DataChannelChild(uri);
-  }
+  RefPtr<nsDataChannel> channel = new nsDataChannel(uri);
 
   // set the loadInfo on the new channel
   nsresult rv = channel->SetLoadInfo(aLoadInfo);

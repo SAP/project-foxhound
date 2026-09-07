@@ -241,7 +241,7 @@ add_task(async function test_undo_last_action() {
     "Tab group exists on the tab strip after restore"
   );
 
-  gBrowser.removeAllTabsBut(gBrowser.tabs[0]);
+  gBrowser.removeAllTabsBut(gBrowser.tabs[0], { animate: false });
 });
 
 add_task(async function test_forget_closed_window() {
@@ -299,7 +299,7 @@ add_task(async function test_reopen_last_tab_if_no_closed_actions() {
  * the last session if one exists.
  */
 add_task(async function test_reopen_last_session_if_no_closed_actions() {
-  gBrowser.removeAllTabsBut(gBrowser.tabs[0]);
+  gBrowser.removeAllTabsBut(gBrowser.tabs[0], { animate: false });
   await TabStateFlusher.flushWindow(window);
 
   forgetClosedTabs(window);
@@ -348,5 +348,5 @@ add_task(async function test_reopen_last_session_if_no_closed_actions() {
   SessionWindowUI.restoreLastClosedTabOrWindowOrSession(window);
   await sessionRestored;
   Assert.equal(gBrowser.tabs.length, 4, "Got the expected number of tabs");
-  gBrowser.removeAllTabsBut(gBrowser.tabs[0]);
+  gBrowser.removeAllTabsBut(gBrowser.tabs[0], { animate: false });
 });

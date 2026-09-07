@@ -6,8 +6,8 @@ package mozilla.components.support.images.decoder
 
 import mozilla.components.support.images.DesiredSize
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class OnDeviceAndroidImageDecoderTest {
     @Test
@@ -24,7 +24,7 @@ class OnDeviceAndroidImageDecoderTest {
             ),
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
         assertEquals(16, bitmap.width)
         assertEquals(16, bitmap.height)
     }
@@ -43,7 +43,7 @@ class OnDeviceAndroidImageDecoderTest {
             ),
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
         // 250 / 3 = 83
         assertEquals(83, bitmap.width)
         assertEquals(83, bitmap.height)
@@ -63,7 +63,7 @@ class OnDeviceAndroidImageDecoderTest {
             ),
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
         assertEquals(67, bitmap.width)
         assertEquals(67, bitmap.height)
     }
@@ -82,7 +82,7 @@ class OnDeviceAndroidImageDecoderTest {
             ),
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
         assertEquals(100, bitmap.width)
         assertEquals(100, bitmap.height)
     }
@@ -101,7 +101,7 @@ class OnDeviceAndroidImageDecoderTest {
             ),
         )
 
-        assertNotNull(bitmap!!)
+        assertNotNull(bitmap)
         // 192 / 3 = 64
         assertEquals(64, bitmap.width)
         assertEquals(64, bitmap.height)

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "sdnAccessible.h"
 
 #include "ISimpleDOM_i.c"
+#include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/RemoteAccessible.h"
 #include "mozilla/dom/Element.h"
 
@@ -151,7 +150,8 @@ sdnAccessible::get_innerHTML(BSTR __RPC_FAR* aInnerHTML) {
 
   nsAutoString innerHTML;
   if (RemoteAccessible* remoteAcc = acc->AsRemote()) {
-    if (RequestDomainsIfInactive(CacheDomain::InnerHTML)) {
+    if (remoteAcc->Document()->RequestDomainsIfInactive(
+            CacheDomain::InnerHTML)) {
       return S_FALSE;
     }
     if (!remoteAcc->mCachedFields) {

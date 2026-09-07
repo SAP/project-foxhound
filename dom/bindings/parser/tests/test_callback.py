@@ -22,7 +22,7 @@ def WebIDLTest(parser, harness):
         iface.identifier.QName(), "::TestCallback", "Interface has the right QName"
     )
     harness.check(iface.identifier.name, "TestCallback", "Interface has the right name")
-    harness.check(len(iface.members), 1, "Expect %s members" % 1)
+    harness.check(len(iface.members), 1, "Expect 1 member")
 
     attr = iface.members[0]
     harness.ok(isinstance(attr, WebIDL.IDLAttribute), "Should be an IDLAttribute")

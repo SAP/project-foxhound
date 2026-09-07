@@ -52,15 +52,10 @@ add_task(async function () {
     const inspector = gToolbox.getPanel("inspector");
 
     info("Select the rule view");
-    const onSidebarSelect = inspector.sidebar.once("select");
-    inspector.sidebar.select("ruleview");
-    await onSidebarSelect;
+    await inspector.sidebar.select("ruleview");
 
     info("Select a DIV element in the test page");
-    await selectNodeInFrames(
-      ['browser[remote="true"][test-tab]', "div"],
-      inspector
-    );
+    await selectNodeInFrames(["browser[remote][test-tab]", "div"], inspector);
 
     info("Retrieve the sourceLabel for the rule at index 1");
     const ruleView = inspector.getPanel("ruleview").view;

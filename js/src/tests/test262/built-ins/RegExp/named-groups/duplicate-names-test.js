@@ -1,4 +1,3 @@
-// |reftest| shell-option(--enable-regexp-duplicate-named-groups) skip-if(!xulRuntime.shell) -- requires shell-options
 // Copyright 2022 Igalia S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

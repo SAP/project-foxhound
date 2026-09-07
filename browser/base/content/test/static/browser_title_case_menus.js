@@ -92,8 +92,8 @@ function checkMenuItems(menupopup) {
 /**
  * Given a string, checks that the string is in Title Case.
  *
- * @param {String} string The string to check.
- * @param {String} elementID The ID of the element associated with the string.
+ * @param {string} string The string to check.
+ * @param {string} elementID The ID of the element associated with the string.
  *        This is included in the assertion message.
  */
 function checkTitleCase(string, elementID) {

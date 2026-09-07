@@ -13,7 +13,7 @@ add_task(async function test_notification_dot_indicator() {
   clearHistory();
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     await navigateToViewAndWait(document, "opentabs");
     // load page that opens prompt when page is hidden
     let openedTab = await BrowserTestUtils.openNewForegroundTab(
@@ -39,10 +39,12 @@ add_task(async function test_notification_dot_indicator() {
     await tabChangeRaised;
     await openTabs.updateComplete;
 
-    await TestUtils.waitForCondition(() =>
-      Array.from(openTabs.viewCards[0].tabList.rowEls).some(rowEl => {
-        return rowEl.indicators.includes("attention");
-      })
+    await TestUtils.waitForCondition(
+      () =>
+        Array.from(openTabs.viewCards[0].tabList.rowEls).some(rowEl => {
+          return rowEl.indicators.includes("attention");
+        }),
+      "Waiting for a tab row in the first view card to have the attention indicator"
     );
 
     info("The newly opened tab has a notification dot.");
@@ -59,7 +61,7 @@ add_task(async function test_container_indicator() {
   clearHistory();
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
 
     // Load a page in a container tab
     let userContextId = 1;
@@ -139,8 +141,9 @@ add_task(async function test_sound_playing_muted_indicator() {
 
     let openTabs = document.querySelector("view-opentabs[name=opentabs]");
 
-    await TestUtils.waitForCondition(() =>
-      soundTab.hasAttribute("soundplaying")
+    await TestUtils.waitForCondition(
+      () => soundTab.hasAttribute("soundplaying"),
+      "Waiting for the sound tab to have the soundplaying attribute"
     );
     await tabChangeRaised;
     await openTabs.updateComplete;
@@ -150,11 +153,13 @@ add_task(async function test_sound_playing_muted_indicator() {
     );
 
     let soundPlayingTabElem;
-    await TestUtils.waitForCondition(() =>
-      Array.from(openTabs.viewCards[0].tabList.rowEls).some(rowEl => {
-        soundPlayingTabElem = rowEl;
-        return rowEl.indicators.includes("soundplaying");
-      })
+    await TestUtils.waitForCondition(
+      () =>
+        Array.from(openTabs.viewCards[0].tabList.rowEls).some(rowEl => {
+          soundPlayingTabElem = rowEl;
+          return rowEl.indicators.includes("soundplaying");
+        }),
+      "Tab row in the first view card to have the soundplaying indicator"
     );
 
     ok(
@@ -181,8 +186,9 @@ add_task(async function test_sound_playing_muted_indicator() {
     await tabChangeRaised;
     await openTabs.updateComplete;
 
-    await TestUtils.waitForCondition(() =>
-      soundPlayingTabElem.indicators.includes("muted")
+    await TestUtils.waitForCondition(
+      () => soundPlayingTabElem.indicators.includes("muted"),
+      "Waiting for the sound playing tab to have the muted indicator"
     );
 
     ok(
@@ -194,8 +200,9 @@ add_task(async function test_sound_playing_muted_indicator() {
     soundTab.toggleMuteAudio();
     await tabChangeRaised;
     await openTabs.updateComplete;
-    await TestUtils.waitForCondition(() =>
-      soundPlayingTabElem.indicators.includes("soundplaying")
+    await TestUtils.waitForCondition(
+      () => soundPlayingTabElem.indicators.includes("soundplaying"),
+      "Waiting for the muted tab to have the soundplaying indicator again"
     );
 
     ok(
@@ -206,8 +213,9 @@ add_task(async function test_sound_playing_muted_indicator() {
     soundTab.toggleMuteAudio();
     await tabChangeRaised;
     await openTabs.updateComplete;
-    await TestUtils.waitForCondition(() =>
-      soundPlayingTabElem.indicators.includes("muted")
+    await TestUtils.waitForCondition(
+      () => soundPlayingTabElem.indicators.includes("muted"),
+      "Waiting for the sound playing tab to have the muted indicator"
     );
 
     ok(
@@ -227,7 +235,8 @@ add_task(async function test_bookmark_indicator() {
     const openTabs = document.querySelector("view-opentabs[name=opentabs]");
     setSortOption(openTabs, "recency");
     let rowEl = await TestUtils.waitForCondition(
-      () => openTabs.viewCards[0]?.tabList.rowEls[0]
+      () => openTabs.viewCards[0]?.tabList.rowEls[0],
+      "The first row element in the first view card tab list to be available"
     );
 
     info("Bookmark a tab while Firefox View is active.");

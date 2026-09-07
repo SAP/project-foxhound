@@ -20,7 +20,7 @@ const HIDE_TIMEOUT_MS = Services.prefs.getIntPref(
 class ViewportSizeOnResizeHighlighter extends ViewportSizeHighlighter {
   constructor(highlighterEnv, parent) {
     super(highlighterEnv, parent, {
-      prefix: "viewport-size-on-resize-highlighter-",
+      extraCls: "viewport-size-on-resize-highlighter",
       hideTimeout: HIDE_TIMEOUT_MS,
       waitForDocumentToLoad: false,
     });

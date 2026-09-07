@@ -22,7 +22,6 @@ add_setup(async function () {
 
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["network.cookie.cookieBehavior.trackerCookieBlocking", false],
       ["dom.storage_access.max_concurrent_auto_grants", 2],
       ["dom.storage_access.auto_grants.exclude_third_party_trackers", true],
     ],

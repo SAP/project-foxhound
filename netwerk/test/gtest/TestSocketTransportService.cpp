@@ -4,6 +4,7 @@
 #include "nsISocketTransport.h"
 #include "nsString.h"
 #include "nsComponentManagerUtils.h"
+#include "../../base/nsSocketTransport2.h"
 #include "../../base/nsSocketTransportService2.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
@@ -158,6 +159,16 @@ TEST(TestSocketTransportService, StatusValues)
   static_assert(
       static_cast<nsresult>(nsISocketTransport::STATUS_TLS_HANDSHAKE_ENDED) ==
       NS_NET_STATUS_TLS_HANDSHAKE_ENDED);
+}
+
+// PR_END_OF_FILE_ERROR, PR_CONNECT_RESET_ERROR, and PR_CONNECT_ABORTED_ERROR
+// should all map to NS_ERROR_NET_RESET so that HTTP transactions automatically
+// retry on unexpected connection drops.
+TEST(TestSocketTransportService, ErrorAccordingToNSPR)
+{
+  EXPECT_EQ(ErrorAccordingToNSPR(PR_END_OF_FILE_ERROR), NS_ERROR_NET_RESET);
+  EXPECT_EQ(ErrorAccordingToNSPR(PR_CONNECT_RESET_ERROR), NS_ERROR_NET_RESET);
+  EXPECT_EQ(ErrorAccordingToNSPR(PR_CONNECT_ABORTED_ERROR), NS_ERROR_NET_RESET);
 }
 
 }  // namespace net

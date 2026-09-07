@@ -8,32 +8,35 @@
  * Set of actors that expose the Web Animations API to devtools protocol
  * clients.
  *
- * The |Animations| actor is the main entry point. It is used to discover
- * animation players on given nodes.
- * There should only be one instance per devtools server.
+ * The |AnimationsActor| actor is the main entry point. It is used to discover
+ * animations on given nodes.
+ * There should only be one instance per target.
  *
- * The |AnimationPlayer| actor provides attributes and methods to inspect an
+ * The |AnimationActor| actor provides attributes and methods to inspect an
  * animation as well as pause/resume/seek it.
  *
- * The Web Animation spec implementation is ongoing in Gecko, and so this set
- * of actors should evolve when the implementation progresses.
  *
  * References:
- * - WebAnimation spec:
- *   http://drafts.csswg.org/web-animations/
- * - WebAnimation WebIDL files:
- *   /dom/webidl/Animation*.webidl
+ * - WebAnimation spec: https://www.w3.org/TR/web-animations-1/
+ * - WebAnimation WebIDL files: /dom/webidl/Animation*.webidl
  */
 
 const { Actor } = require("resource://devtools/shared/protocol.js");
 const {
-  animationPlayerSpec,
+  animationSpec,
   animationsSpec,
 } = require("resource://devtools/shared/specs/animation.js");
 
 const {
   ANIMATION_TYPE_FOR_LONGHANDS,
 } = require("resource://devtools/server/actors/animation-type-longhand.js");
+
+loader.lazyRequireGetter(
+  this,
+  "getNodeDisplayName",
+  "resource://devtools/server/actors/inspector/utils.js",
+  true
+);
 
 // Types of animations.
 const ANIMATION_TYPES = {
@@ -62,37 +65,52 @@ function getAnimationTypeForLonghand(property) {
 exports.getAnimationTypeForLonghand = getAnimationTypeForLonghand;
 
 /**
- * The AnimationPlayerActor provides information about a given animation: its
+ * Return the value of the animationsPlayBackRateMultiplier browsing context flag into
+ * which the passed animation lives.
+ *
+ * @param {Animation} animation
+ */
+function getAnimationBrowsingContextPlayBackRateMultiplier(animation) {
+  return animation.effect.target.documentGlobal.browsingContext
+    .animationsPlayBackRateMultiplier;
+}
+
+/**
+ * The AnimationActor provides information about a given animation: its
  * startTime, currentTime, current state, etc.
  *
- * Since the state of a player changes as the animation progresses it is often
+ * Since the state of an animation changes as it progresses, it is often
  * useful to call getCurrentState at regular intervals to get the current state.
  *
  * This actor also allows playing, pausing and seeking the animation.
  */
-class AnimationPlayerActor extends Actor {
+class AnimationActor extends Actor {
   /**
-   * @param {AnimationsActor} The main AnimationsActor instance
-   * @param {AnimationPlayer} The player object returned by getAnimationPlayers
-   * @param {Number} Time which animation created
+   * @param {AnimationsActor} animationsActor: The main AnimationsActor instance
+   * @param {Animation} animation: The animation instance returned by getAnimations
+   * @param {number} createdTime: The time at which the animation was created
    */
-  constructor(animationsActor, player, createdTime) {
-    super(animationsActor.conn, animationPlayerSpec);
+  constructor(animationsActor, animation, createdTime) {
+    super(animationsActor.conn, animationSpec);
 
     this.onAnimationMutation = this.onAnimationMutation.bind(this);
 
+    this.animationsActor = animationsActor;
     this.walker = animationsActor.walker;
-    this.player = player;
+    this.animation = animation;
+    // getting the node might need to traverse the DOM, let's only do this once, when
+    // the Actor gets created
+    this.node = this.getNode();
 
     // Listen to animation mutations on the node to alert the front when the
     // current animation changes.
-    // If the node is a pseudo-element, then we listen on its parent with
-    // subtree:true (there's no risk of getting too many notifications in
-    // onAnimationMutation since we filter out events that aren't for the
-    // current animation).
     this.observer = new this.window.MutationObserver(this.onAnimationMutation);
     if (this.isPseudoElement) {
-      this.observer.observe(this.node.parentElement, {
+      // If the node is a pseudo-element, then we listen on its binding element (which is
+      // this.animation.effect.target here), with `subtree:true` (there's no risk of getting
+      // too many notifications in onAnimationTargetMutation since we filter out events
+      // that aren't for the current animation).
+      this.observer.observe(this.animation.effect.target, {
         animations: true,
         subtree: true,
       });
@@ -101,7 +119,7 @@ class AnimationPlayerActor extends Actor {
     }
 
     this.createdTime = createdTime;
-    this.currentTimeAtCreated = player.currentTime;
+    this.currentTimeAtCreated = animation.currentTime;
   }
 
   destroy() {
@@ -110,33 +128,21 @@ class AnimationPlayerActor extends Actor {
     if (this.observer && !Cu.isDeadWrapper(this.observer)) {
       this.observer.disconnect();
     }
-    this.player = this.observer = this.walker = null;
+    this.animation = this.observer = this.walker = this.animationsActor = null;
 
     super.destroy();
   }
 
   get isPseudoElement() {
-    return !!this.player.effect.pseudoElement;
+    return !!this.animation.effect.pseudoElement;
   }
 
-  get pseudoElemenName() {
+  getNode() {
     if (!this.isPseudoElement) {
-      return null;
+      return this.animation.effect.target;
     }
 
-    return `_moz_generated_content_${this.player.effect.pseudoElement.replace(
-      /^::/,
-      ""
-    )}`;
-  }
-
-  get node() {
-    if (!this.isPseudoElement) {
-      return this.player.effect.target;
-    }
-
-    const pseudoElementName = this.pseudoElemenName;
-    const originatingElem = this.player.effect.target;
+    const originatingElem = this.animation.effect.target;
     const treeWalker = this.walker.getDocumentWalker(originatingElem);
 
     // When the animated node is a pseudo-element, we need to walk the children
@@ -144,21 +150,28 @@ class AnimationPlayerActor extends Actor {
     for (
       let next = treeWalker.firstChild();
       next;
-      next = treeWalker.nextSibling()
+      // Use `nextNode` (and not `nextSibling`) as we might need to traverse the whole
+      // children tree to find nested elements (e.g. `::view-transition-group(root)`).
+      next = treeWalker.nextNode()
     ) {
-      if (next.nodeName === pseudoElementName) {
+      if (!next.implementedPseudoElement) {
+        continue;
+      }
+
+      if (this.animation.effect.pseudoElement === getNodeDisplayName(next)) {
         return next;
       }
     }
 
     console.warn(
-      `Pseudo element ${this.player.effect.pseudoElement} is not found`
+      `Pseudo element ${this.animation.effect.pseudoElement} is not found`
     );
-    return originatingElem;
+
+    return null;
   }
 
   get document() {
-    return this.node.ownerDocument;
+    return this.animation.effect.target.ownerDocument;
   }
 
   get window() {
@@ -184,20 +197,20 @@ class AnimationPlayerActor extends Actor {
     return data;
   }
 
-  isCssAnimation(player = this.player) {
-    return player instanceof this.window.CSSAnimation;
+  isCssAnimation(animation = this.animation) {
+    return this.window.CSSAnimation.isInstance(animation);
   }
 
-  isCssTransition(player = this.player) {
-    return player instanceof this.window.CSSTransition;
+  isCssTransition(animation = this.animation) {
+    return this.window.CSSTransition.isInstance(animation);
   }
 
-  isScriptAnimation(player = this.player) {
+  isScriptAnimation(animation = this.animation) {
     return (
-      player instanceof this.window.Animation &&
+      this.window.Animation.isInstance(animation) &&
       !(
-        player instanceof this.window.CSSAnimation ||
-        player instanceof this.window.CSSTransition
+        this.window.CSSAnimation.isInstance(animation) ||
+        this.window.CSSTransition.isInstance(animation)
       )
     );
   }
@@ -218,109 +231,114 @@ class AnimationPlayerActor extends Actor {
    * Get the name of this animation. This can be either the animation.id
    * property if it was set, or the keyframe rule name or the transition
    * property.
-   * @return {String}
+   *
+   * @return {string}
    */
   getName() {
-    if (this.player.id) {
-      return this.player.id;
+    if (this.animation.id) {
+      return this.animation.id;
     } else if (this.isCssAnimation()) {
-      return this.player.animationName;
+      return this.animation.animationName;
     } else if (this.isCssTransition()) {
-      return this.player.transitionProperty;
+      return this.animation.transitionProperty;
     }
 
     return "";
   }
 
   /**
-   * Get the animation duration from this player, in milliseconds.
-   * @return {Number}
+   * Get the animation duration from this animation, in milliseconds.
+   *
+   * @return {number}
    */
   getDuration() {
-    return this.player.effect.getComputedTiming().duration;
+    return this.animation.effect.getComputedTiming().duration;
   }
 
   /**
-   * Get the animation delay from this player, in milliseconds.
-   * @return {Number}
+   * Get the animation delay from this animation, in milliseconds.
+   *
+   * @return {number}
    */
   getDelay() {
-    return this.player.effect.getComputedTiming().delay;
+    return this.animation.effect.getComputedTiming().delay;
   }
 
   /**
-   * Get the animation endDelay from this player, in milliseconds.
-   * @return {Number}
+   * Get the animation endDelay from this animation, in milliseconds.
+   *
+   * @return {number}
    */
   getEndDelay() {
-    return this.player.effect.getComputedTiming().endDelay;
+    return this.animation.effect.getComputedTiming().endDelay;
   }
 
   /**
-   * Get the animation iteration count for this player. That is, how many times
+   * Get the animation iteration count for this animation. That is, how many times
    * is the animation scheduled to run.
-   * @return {Number} The number of iterations, or null if the animation repeats
+   *
+   * @return {number} The number of iterations, or null if the animation repeats
    * infinitely.
    */
   getIterationCount() {
-    const iterations = this.player.effect.getComputedTiming().iterations;
+    const iterations = this.animation.effect.getComputedTiming().iterations;
     return iterations === Infinity ? null : iterations;
   }
 
   /**
-   * Get the animation iterationStart from this player, in ratio.
+   * Get the animation iterationStart from this animation, in ratio.
    * That is offset of starting position of the animation.
-   * @return {Number}
+   *
+   * @return {number}
    */
   getIterationStart() {
-    return this.player.effect.getComputedTiming().iterationStart;
+    return this.animation.effect.getComputedTiming().iterationStart;
   }
 
   /**
-   * Get the animation easing from this player.
-   * @return {String}
+   * Get the animation easing from this animation.
+   *
+   * @return {string}
    */
   getEasing() {
-    return this.player.effect.getComputedTiming().easing;
+    return this.animation.effect.getComputedTiming().easing;
   }
 
   /**
-   * Get the animation fill mode from this player.
-   * @return {String}
+   * Get the animation fill mode from this animation.
+   *
+   * @return {string}
    */
   getFill() {
-    return this.player.effect.getComputedTiming().fill;
+    return this.animation.effect.getComputedTiming().fill;
   }
 
   /**
-   * Get the animation direction from this player.
-   * @return {String}
+   * Get the animation direction from this animation.
+   *
+   * @return {string}
    */
   getDirection() {
-    return this.player.effect.getComputedTiming().direction;
+    return this.animation.effect.getComputedTiming().direction;
   }
 
   /**
    * Get animation-timing-function from animated element if CSS Animations.
-   * @return {String}
+   *
+   * @return {string}
    */
   getAnimationTimingFunction() {
     if (!this.isCssAnimation()) {
       return null;
     }
 
-    let pseudo = null;
-    let target = this.player.effect.target;
-    if (target.type) {
-      // Animated element is a pseudo element.
-      pseudo = target.type;
-      target = target.element;
-    }
-    return this.window.getComputedStyle(target, pseudo).animationTimingFunction;
+    const { target, pseudoElement } = this.animation.effect;
+    return this.window.getComputedStyle(target, pseudoElement)
+      .animationTimingFunction;
   }
 
   getPropertiesCompositorStatus() {
-    const properties = this.player.effect.getProperties();
+    const properties = this.animation.effect.getProperties();
     return properties.map(prop => {
       return {
         property: prop.property,
@@ -332,20 +350,28 @@ class AnimationPlayerActor extends Actor {
 
   /**
    * Return the current start of the Animation.
-   * @return {Object}
+   *
+   * @return {object}
    */
   getState() {
     const compositorStatus = this.getPropertiesCompositorStatus();
+
     // Note that if you add a new property to the state object, make sure you
-    // add the corresponding property in the AnimationPlayerFront' initialState
+    // add the corresponding property in the AnimationFront' initialState
     // getter.
     return {
-      type: this.getType(),
+      // Don't include the type if the animation was removed (e.g. it isn't handled by the
+      // AnimationsActor anymore). The client filters out animations without type as a
+      // result of its calls to AnimationFront#refreshState.
+      type: this.animationRemoved ? null : this.getType(),
       // startTime is null whenever the animation is paused or waiting to start.
-      startTime: this.player.startTime,
-      currentTime: this.player.currentTime,
-      playState: this.player.playState,
-      playbackRate: this.player.playbackRate,
+      startTime: this.animation.startTime,
+      currentTime: this.animation.currentTime,
+      playState: this.animation.playState,
+      playbackRate: this.animation.playbackRate,
+      playBackRateMultiplier: getAnimationBrowsingContextPlayBackRateMultiplier(
+        this.animation
+      ),
       name: this.getName(),
       duration: this.getDuration(),
       delay: this.getDelay(),
@@ -363,9 +389,9 @@ class AnimationPlayerActor extends Actor {
       ),
       propertyState: compositorStatus,
       // The document timeline's currentTime is being sent along too. This is
-      // not strictly related to the node's animationPlayer, but is useful to
+      // not strictly related to the node's animation, but is useful to
       // know the current time of the animation with respect to the document's.
-      documentCurrentTime: this.node.ownerDocument.timeline.currentTime,
+      documentCurrentTime: this.document.timeline.currentTime,
       // The time which this animation created.
       createdTime: this.createdTime,
       // The time which an animation's current time when this animation has created.
@@ -375,13 +401,14 @@ class AnimationPlayerActor extends Actor {
   }
 
   /**
-   * Get the current state of the AnimationPlayer (currentTime, playState, ...).
+   * Get the current state of the Animation (currentTime, playState, ...).
    * Note that the initial state is returned as the form of this actor when it
    * is initialized.
    * This protocol method only returns a trimed down version of this state in
    * case some properties haven't changed since last time (since the front can
    * reconstruct those). If you want the full state, use the getState method.
-   * @return {Object}
+   *
+   * @return {object}
    */
   getCurrentState() {
     const newState = this.getState();
@@ -413,7 +440,7 @@ class AnimationPlayerActor extends Actor {
    * the the front.
    */
   onAnimationMutation(mutations) {
-    const isCurrentAnimation = animation => animation === this.player;
+    const isCurrentAnimation = animation => animation === this.animation;
     const hasCurrentAnimation = animations =>
       animations.some(isCurrentAnimation);
     let hasChanged = false;
@@ -442,7 +469,8 @@ class AnimationPlayerActor extends Actor {
           newState.fill !== oldState.fill ||
           newState.animationTimingFunction !==
             oldState.animationTimingFunction ||
-          newState.playbackRate !== oldState.playbackRate;
+          newState.playbackRate !== oldState.playbackRate ||
+          newState.playBackRateMultiplier !== oldState.playBackRateMultiplier;
         break;
       }
     }
@@ -452,15 +480,27 @@ class AnimationPlayerActor extends Actor {
     }
   }
 
+  onAnimationRemoved() {
+    this.animationRemoved = true;
+  }
+
   /**
-   * Get data about the animated properties of this animation player.
+   * Get data about the animated properties of this animation animation.
+   *
    * @return {Array} Returns a list of animated properties.
    * Each property contains a list of values, their offsets and distances.
    */
   getProperties() {
-    const properties = this.player.effect.getProperties().map(property => {
+    const properties = this.animation.effect.getProperties().map(property => {
       return { name: property.property, values: property.values };
     });
+
+    // If the node isn't connected, the call to DOMWindowUtils.getUnanimatedComputedStyle
+    // below would throw. So early return from here, we'll miss the distance but that
+    // seems fine.
+    if (!this.node?.isConnected) {
+      return properties;
+    }
 
     const DOMWindowUtils = this.window.windowUtils;
 
@@ -474,16 +514,10 @@ class AnimationPlayerActor extends Actor {
           return;
         }
         if (!underlyingValue) {
-          let pseudo = null;
-          let target = this.player.effect.target;
-          if (target.type) {
-            // This target is a pseudo element.
-            pseudo = target.type;
-            target = target.element;
-          }
+          const { target, pseudoElement } = this.animation.effect;
           const value = DOMWindowUtils.getUnanimatedComputedStyle(
             target,
-            pseudo,
+            pseudoElement,
             property.name,
             DOMWindowUtils.FLUSH_NONE
           );
@@ -552,8 +586,9 @@ class AnimationPlayerActor extends Actor {
 
   /**
    * Get the animation types for a given list of CSS property names.
+   *
    * @param {Array} propertyNames - CSS property names (e.g. background-color)
-   * @return {Object} Returns animation types (e.g. {"background-color": "rgb(0, 0, 0)"}.
+   * @return {object} Returns animation types (e.g. {"background-color": "rgb(0, 0, 0)"}.
    */
   getAnimationTypes(propertyNames) {
     const animationTypes = {};
@@ -565,11 +600,12 @@ class AnimationPlayerActor extends Actor {
 
   /**
    * Returns the distance of between value1, value2.
-   * @param {Object} target - dom element
-   * @param {String} propertyName - e.g. transform
-   * @param {String} value1 - e.g. translate(0px)
-   * @param {String} value2 - e.g. translate(10px)
-   * @param {Object} DOMWindowUtils
+   *
+   * @param {object} target - dom element
+   * @param {string} propertyName - e.g. transform
+   * @param {string} value1 - e.g. translate(0px)
+   * @param {string} value2 - e.g. translate(10px)
+   * @param {object} DOMWindowUtils
    * @param {float} distance
    */
   getDistance(target, propertyName, value1, value2, DOMWindowUtils) {
@@ -592,10 +628,10 @@ class AnimationPlayerActor extends Actor {
   }
 }
 
-exports.AnimationPlayerActor = AnimationPlayerActor;
+exports.AnimationActor = AnimationActor;
 
 /**
- * The Animations actor lists animation players for a given node.
+ * The Animations actor lists animations for a given node.
  */
 exports.AnimationsActor = class AnimationsActor extends Actor {
   constructor(conn, targetActor) {
@@ -616,16 +652,17 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
     this.targetActor.off("will-navigate", this.onWillNavigate);
     this.targetActor.off("navigate", this.onNavigate);
 
-    this.stopAnimationPlayerUpdates();
+    this.stopAnimationsUpdates();
     this.targetActor = this.observer = this.actors = this.walker = null;
   }
 
   /**
    * Clients can optionally call this with a reference to their WalkerActor.
-   * If they do, then AnimationPlayerActor's forms are going to also include
+   * If they do, then AnimationActor's forms are going to also include
    * NodeActor IDs when the corresponding NodeActors do exist.
    * This, in turns, is helpful for clients to avoid having to go back once more
    * to the server to get a NodeActor for a particular animation.
+   *
    * @param {WalkerActor} walker
    */
   setWalkerActor(walker) {
@@ -633,17 +670,27 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
   }
 
   /**
-   * Retrieve the list of AnimationPlayerActor actors for currently running
+   * Retrieve the list of AnimationActor actors for currently running
    * animations on a node and its descendants.
    * Note that calling this method a second time will destroy all previously
-   * retrieved AnimationPlayerActors. Indeed, the lifecycle of these actors
+   * retrieved AnimationActors. Indeed, the lifecycle of these actors
    * is managed here on the server and tied to getAnimationPlayersForNode
    * being called.
+   *
    * @param {NodeActor} nodeActor The NodeActor as defined in
    * /devtools/server/actors/inspector
    */
   getAnimationPlayersForNode(nodeActor) {
-    const animations = nodeActor.rawNode.getAnimations({ subtree: true });
+    let { rawNode } = nodeActor;
+
+    // If the selected node is a ::view-transition child, we want to show all the view-transition
+    // animations so the user can't play only "parts" of the transition.
+    const viewTransitionNode = this.#closestViewTransitionNode(rawNode);
+    if (viewTransitionNode) {
+      rawNode = viewTransitionNode;
+    }
+
+    const animations = rawNode.getAnimations({ subtree: true });
 
     // Destroy previously stored actors
     if (this.actors) {
@@ -656,20 +703,20 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
 
     for (const animation of animations) {
       const createdTime = this.getCreatedTime(animation);
-      const actor = new AnimationPlayerActor(this, animation, createdTime);
+      const actor = new AnimationActor(this, animation, createdTime);
       this.actors.push(actor);
     }
 
-    // When a front requests the list of players for a node, start listening
+    // When a front requests the list of animations for a node, start listening
     // for animation mutations on this node to send updates to the front, until
     // either getAnimationPlayersForNode is called again or
-    // stopAnimationPlayerUpdates is called.
-    this.stopAnimationPlayerUpdates();
-    // ownerGlobal doesn't exist in content privileged windows.
-    // eslint-disable-next-line mozilla/use-ownerGlobal
-    const win = nodeActor.rawNode.ownerDocument.defaultView;
+    // stopAnimationsUpdates is called.
+    this.stopAnimationsUpdates();
+    // documentGlobal doesn't exist in content privileged windows.
+    // eslint-disable-next-line mozilla/use-documentGlobal
+    const win = rawNode.ownerDocument.defaultView;
     this.observer = new win.MutationObserver(this.onAnimationMutation);
-    this.observer.observe(nodeActor.rawNode, {
+    this.observer.observe(rawNode, {
       animations: true,
       subtree: true,
     });
@@ -677,50 +724,79 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
     return this.actors;
   }
 
+  /**
+   * Returns the passed node closest ::view-transition node if it exists, null otherwise
+   *
+   * @param {Element} rawNode
+   * @returns {Element|null}
+   */
+  #closestViewTransitionNode(rawNode) {
+    const { implementedPseudoElement } = rawNode;
+    if (
+      !implementedPseudoElement ||
+      !implementedPseudoElement?.startsWith("::view-transition")
+    ) {
+      return null;
+    }
+    // Look up for the root ::view-transition node
+    while (
+      rawNode &&
+      rawNode.implementedPseudoElement &&
+      rawNode.implementedPseudoElement !== "::view-transition"
+    ) {
+      rawNode = rawNode.parentElement;
+    }
+
+    return rawNode;
+  }
+
   onAnimationMutation(mutations) {
     const eventData = [];
     const readyPromises = [];
 
     for (const { addedAnimations, removedAnimations } of mutations) {
-      for (const player of removedAnimations) {
+      for (const animation of removedAnimations) {
         // Note that animations are reported as removed either when they are
         // actually removed from the node (e.g. css class removed) or when they
         // are finished and don't have forwards animation-fill-mode.
         // In the latter case, we don't send an event, because the corresponding
         // animation can still be seeked/resumed, so we want the client to keep
-        // its reference to the AnimationPlayerActor.
-        if (player.playState !== "idle") {
+        // its reference to the AnimationActor.
+        if (animation.playState !== "idle") {
           continue;
         }
 
-        const index = this.actors.findIndex(a => a.player === player);
+        const index = this.actors.findIndex(a => a.animation === animation);
         if (index !== -1) {
           eventData.push({
             type: "removed",
             player: this.actors[index],
           });
+          this.actors[index].onAnimationRemoved();
           this.actors.splice(index, 1);
         }
       }
 
-      for (const player of addedAnimations) {
-        // If the added player already exists, it means we previously filtered
+      for (const animation of addedAnimations) {
+        // If the added animation already exists, it means we previously filtered
         // it out when it was reported as removed. So filter it out here too.
-        if (this.actors.find(a => a.player === player)) {
+        if (this.actors.find(a => a.animation === animation)) {
           continue;
         }
 
-        // If the added player has the same name and target node as a player we
+        // If the added animation has the same name and target node as a animation we
         // already have, it means it's a transition that's re-starting. So send
         // a "removed" event for the one we already have.
         const index = this.actors.findIndex(a => {
-          const isSameType = a.player.constructor === player.constructor;
+          const isSameType = a.animation.constructor === animation.constructor;
           const isSameName =
             (a.isCssAnimation() &&
-              a.player.animationName === player.animationName) ||
+              a.animation.animationName === animation.animationName) ||
             (a.isCssTransition() &&
-              a.player.transitionProperty === player.transitionProperty);
-          const isSameNode = a.player.effect.target === player.effect.target;
+              a.animation.transitionProperty === animation.transitionProperty);
+          const isSameNode =
+            a.animation.effect.target === animation.effect.target &&
+            a.animation.effect.pseudoElement === animation.effect.pseudoElement;
 
           return isSameType && isSameNode && isSameName;
         });
@@ -729,17 +805,18 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
             type: "removed",
             player: this.actors[index],
           });
+          this.actors[index].onAnimationRemoved();
           this.actors.splice(index, 1);
         }
 
-        const createdTime = this.getCreatedTime(player);
-        const actor = new AnimationPlayerActor(this, player, createdTime);
+        const createdTime = this.getCreatedTime(animation);
+        const actor = new AnimationActor(this, animation, createdTime);
         this.actors.push(actor);
         eventData.push({
           type: "added",
           player: actor,
         });
-        readyPromises.push(player.ready);
+        readyPromises.push(animation.ready);
       }
     }
 
@@ -757,7 +834,7 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
    * node, the actor starts sending animation mutations for this node. If the
    * client doesn't want this to happen anymore, it should call this method.
    */
-  stopAnimationPlayerUpdates() {
+  stopAnimationsUpdates() {
     if (this.observer && !Cu.isDeadWrapper(this.observer)) {
       this.observer.disconnect();
     }
@@ -765,7 +842,7 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
 
   onWillNavigate({ isTopLevel }) {
     if (isTopLevel) {
-      this.stopAnimationPlayerUpdates();
+      this.stopAnimationsUpdates();
     }
   }
 
@@ -778,103 +855,126 @@ exports.AnimationsActor = class AnimationsActor extends Actor {
   /**
    * Pause given animations.
    *
-   * @param {Array} actors A list of AnimationPlayerActor.
+   * @param {Array} actors A list of AnimationActor.
    */
   pauseSome(actors) {
-    for (const { player } of actors) {
-      this.pauseSync(player);
+    const handledActors = [];
+    for (const actor of actors) {
+      // The client could call this with actors that we no longer handle, as it might
+      // not have received the mutations event yet for removed animations.
+      // In such case, ignore the actor, as pausing the animation again might trigger a
+      // new mutation, which would cause problems here and on the client.
+      if (!this.actors.includes(actor)) {
+        continue;
+      }
+      this.pauseSync(actor.animation);
+      handledActors.push(actor);
     }
 
-    return this.waitForNextFrame(actors);
+    return this.waitForNextFrame(handledActors);
   }
 
   /**
    * Play given animations.
    *
-   * @param {Array} actors A list of AnimationPlayerActor.
+   * @param {Array} actors A list of AnimationActor.
    */
   playSome(actors) {
-    for (const { player } of actors) {
-      this.playSync(player);
+    const handledActors = [];
+    for (const actor of actors) {
+      // The client could call this with actors that we no longer handle, as it might
+      // not have received the mutations event yet for removed animations.
+      // In such case, ignore the actor, as playing the animation again might trigger a
+      // new mutation, which would cause problems here and on the client.
+      if (!this.actors.includes(actor)) {
+        continue;
+      }
+      this.playSync(actor.animation);
+      handledActors.push(actor);
     }
 
-    return this.waitForNextFrame(actors);
+    return this.waitForNextFrame(handledActors);
   }
 
   /**
    * Set the current time of several animations at the same time.
-   * @param {Array} players A list of AnimationPlayerActor.
-   * @param {Number} time The new currentTime.
-   * @param {Boolean} shouldPause Should the players be paused too.
+   *
+   * @param {Array} actors A list of AnimationActor.
+   * @param {number} time The new currentTime.
+   * @param {boolean} shouldPause Should the animations be paused too.
    */
-  setCurrentTimes(players, time, shouldPause) {
-    for (const actor of players) {
-      const player = actor.player;
+  setCurrentTimes(actors, time, shouldPause) {
+    const handledActors = [];
+    for (const actor of actors) {
+      // The client could call this with actors that we no longer handle, as it might
+      // not have received the mutations event yet for removed animations.
+      // In such case, ignore the actor, as setting the time might trigger a
+      // new mutation, which would cause problems here and on the client.
+      if (!this.actors.includes(actor)) {
+        continue;
+      }
+      const animation = actor.animation;
 
       if (shouldPause) {
-        player.startTime = null;
+        animation.startTime = null;
       }
 
       const currentTime =
-        player.playbackRate > 0
+        animation.playbackRate > 0
           ? time - actor.createdTime
           : actor.createdTime - time;
-      player.currentTime = currentTime * Math.abs(player.playbackRate);
+      const multiplier =
+        animation.playbackRate *
+        getAnimationBrowsingContextPlayBackRateMultiplier(animation);
+      animation.currentTime = currentTime * Math.abs(multiplier);
+      handledActors.push(actor);
     }
 
-    return this.waitForNextFrame(players);
+    return this.waitForNextFrame(handledActors);
   }
 
   /**
-   * Set the playback rate of several animations at the same time.
-   * @param {Array} actors A list of AnimationPlayerActor.
-   * @param {Number} rate The new rate.
-   */
-  setPlaybackRates(players, rate) {
-    return Promise.all(
-      players.map(({ player }) => {
-        player.updatePlaybackRate(rate);
-        return player.ready;
-      })
-    );
-  }
-
-  /**
-   * Pause given player synchronously.
+   * Pause given animation synchronously.
    *
-   * @param {Object} player
+   * @param {Animation} animation
    */
-  pauseSync(player) {
-    player.startTime = null;
+  pauseSync(animation) {
+    animation.startTime = null;
   }
 
   /**
-   * Play given player synchronously.
+   * Play given animation synchronously.
    *
-   * @param {Object} player
+   * @param {Animation} animation
    */
-  playSync(player) {
-    if (!player.playbackRate) {
+  playSync(animation) {
+    if (!animation.playbackRate) {
       // We can not play with playbackRate zero.
       return;
     }
 
     // Play animation in a synchronous fashion by setting the start time directly.
-    const currentTime = player.currentTime || 0;
-    player.startTime =
-      player.timeline.currentTime - currentTime / player.playbackRate;
+    const currentTime = animation.currentTime || 0;
+    const multiplier =
+      animation.playbackRate *
+      getAnimationBrowsingContextPlayBackRateMultiplier(animation);
+    animation.startTime =
+      animation.timeline.currentTime - currentTime / multiplier;
   }
 
   /**
    * Return created fime of given animaiton.
    *
-   * @param {Object} animation
+   * @param {object} animation
    */
   getCreatedTime(animation) {
+    const multiplier =
+      animation.playbackRate *
+      getAnimationBrowsingContextPlayBackRateMultiplier(animation);
+
     return (
       animation.startTime ||
-      animation.timeline.currentTime -
-        animation.currentTime / animation.playbackRate
+      animation.timeline.currentTime - animation.currentTime / multiplier
     );
   }
 

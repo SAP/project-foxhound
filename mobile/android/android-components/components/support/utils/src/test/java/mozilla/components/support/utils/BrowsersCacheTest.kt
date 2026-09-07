@@ -12,11 +12,11 @@ import android.content.pm.ResolveInfo
 import androidx.core.net.toUri
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Ignore
 import org.junit.Test
 import org.robolectric.Shadows.shadowOf
+import kotlin.test.assertNotNull
 
 @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1794926")
 class BrowsersCacheTest {

@@ -19,6 +19,9 @@ export LC_ALL=C.UTF-8
 export LANG=C.UTF-8
 export SNAP_ARCH=amd64
 export SNAPCRAFT_BUILD_INFO=1
+# Used to discern this Docker build, done by Mozilla, from the 'normal',
+# production snap build.
+export MOZ_SNAP_BUILD=1
 
 export PATH=$PATH:$HOME/.local/bin/
 unset MOZ_AUTOMATION
@@ -26,6 +29,8 @@ unset MOZ_AUTOMATION
 MOZCONFIG=mozconfig.in
 
 USE_SNAP_FROM_STORE_OR_MC=${USE_SNAP_FROM_STORE_OR_MC:-0}
+
+sudo mkdir -p /run/user/1000 && sudo chown 1000:1000 /run/user/1000
 
 TRY=0
 if [ "${BRANCH}" = "try" ]; then
@@ -112,7 +117,7 @@ if [ "${USE_SNAP_FROM_STORE_OR_MC}" = "0" ]; then
   # Get the value and overwrite the snap's content.
   MAX_CPUS=$(nproc)
   sed -ri "s|\\\$CRAFT_PARALLEL_BUILD_COUNT|${MAX_CPUS}|g" snapcraft.yaml
-  grep "make -j" snapcraft.yaml
+  grep "MACH build .*-j${MAX_CPUS}" snapcraft.yaml
 
   SNAPCRAFT_BUILD_ENVIRONMENT_MEMORY="${MAX_MEMORY_GB}G" \
     snapcraft --destructive-mode --verbosity verbose --build-for "${ARCH}"

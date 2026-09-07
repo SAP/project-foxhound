@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __JumpListBuilder_h__
-#define __JumpListBuilder_h__
+#ifndef JumpListBuilder_h_
+#define JumpListBuilder_h_
 
 #include "nsIJumpListBuilder.h"
 
@@ -99,4 +98,4 @@ class JumpListBuilder : public nsIJumpListBuilder, public nsIObserver {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif /* __JumpListBuilder_h__ */
+#endif /* JumpListBuilder_h_ */

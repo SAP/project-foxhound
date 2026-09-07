@@ -70,7 +70,7 @@ async function checkConflictWithContentPageMenu(tab) {
 
   info("Check that the toolbox context menu is closed when pressing ESCAPE");
   const onContextMenuHidden = toolbox.once("menu-close");
-  if (Services.prefs.getBoolPref("widget.macos.native-context-menus", false)) {
+  if (textboxContextMenu.isNativeMenu) {
     info("Using hidePopup semantics because of macOS native context menus.");
     textboxContextMenu.hidePopup();
   } else {

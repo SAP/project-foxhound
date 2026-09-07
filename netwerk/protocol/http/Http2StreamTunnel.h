@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,7 +35,6 @@ class Http2StreamTunnel : public Http2StreamBase, public nsISocketTransport {
 
   nsHttpConnectionInfo* ConnectionInfo() override { return mConnectionInfo; }
 
-  void SetRequestDone() { mSendClosed = true; }
   nsresult Condition() override { return mCondition; }
   void CloseStream(nsresult reason) override;
   void DisableSpdy() override {
@@ -90,7 +87,6 @@ class OutputStreamTunnel : public nsIAsyncOutputStream {
   explicit OutputStreamTunnel(Http2StreamTunnel* aStream);
 
   nsresult OnSocketReady(nsresult condition);
-  void MaybeSetRequestDone(nsIOutputStreamCallback* aCallback);
 
  private:
   virtual ~OutputStreamTunnel();

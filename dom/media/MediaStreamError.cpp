@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaStreamError.h"
+
 #include "mozilla/dom/MediaStreamErrorBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "nsContentUtils.h"
@@ -14,7 +13,10 @@ namespace mozilla {
 BaseMediaMgrError::BaseMediaMgrError(Name aName, const nsACString& aMessage,
                                      const nsAString& aConstraint)
     : mMessage(aMessage), mConstraint(aConstraint), mName(aName) {
-#define MAP_MEDIAERR(name, msg) {Name::name, #name, msg}
+#define MAP_MEDIAERR(name, msg) \
+  {                             \
+    Name::name, #name, msg      \
+  }
 
   static struct {
     Name mName;
@@ -28,7 +30,7 @@ BaseMediaMgrError::BaseMediaMgrError(Name aName, const nsACString& aMessage,
                    "or the platform in the current context."),
       MAP_MEDIAERR(NotFoundError, "The object can not be found here."),
       MAP_MEDIAERR(NotReadableError, "The I/O read operation failed."),
-      MAP_MEDIAERR(OverconstrainedError, "Constraints could be not satisfied."),
+      MAP_MEDIAERR(OverconstrainedError, "Constraints could not be satisfied."),
       MAP_MEDIAERR(SecurityError, "The operation is insecure."),
       MAP_MEDIAERR(TypeError, ""),
   };

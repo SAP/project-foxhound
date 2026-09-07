@@ -20,12 +20,10 @@ class StoreTest {
         )
 
         store.dispatch(TestAction.IncrementAction)
-        store.waitUntilIdle()
         assertEquals(24, store.state.counter)
 
         store.dispatch(TestAction.DecrementAction)
         store.dispatch(TestAction.DecrementAction)
-        store.waitUntilIdle()
         assertEquals(22, store.state.counter)
     }
 }

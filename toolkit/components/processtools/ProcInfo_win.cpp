@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ProcInfo.h"
+
+#include "mozilla/CpuInfo.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/SSE.h"
 #include "gfxWindowsPlatform.h"
@@ -32,28 +32,20 @@ static uint64_t ToNanoSeconds(const FILETIME& aFileTime) {
   return usec.QuadPart * 100;
 }
 
-int GetCpuFrequencyMHz() {
-  static const int frequency = []() {
-    // Get the nominal CPU frequency.
-    HKEY key;
-    static const WCHAR keyName[] =
-        L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0";
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  if (!aResult) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
-    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, keyName, 0, KEY_QUERY_VALUE, &key) ==
-        ERROR_SUCCESS) {
-      DWORD data, len;
-      len = sizeof(data);
+  PROCESS_MEMORY_COUNTERS_EX pmc;
+  if (!GetProcessMemoryInfo(GetCurrentProcess(),
+                            reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&pmc),
+                            sizeof(pmc))) {
+    return NS_ERROR_FAILURE;
+  }
 
-      if (RegQueryValueEx(key, L"~Mhz", 0, 0, reinterpret_cast<LPBYTE>(&data),
-                          &len) == ERROR_SUCCESS) {
-        return static_cast<int>(data);
-      }
-    }
-
-    return 0;
-  }();
-
-  return frequency;
+  *aResult = static_cast<uint64_t>(pmc.PrivateUsage);
+  return NS_OK;
 }
 
 int GetCycleTimeFrequencyMHz() {

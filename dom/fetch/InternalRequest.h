@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +5,20 @@
 #ifndef mozilla_dom_InternalRequest_h
 #define mozilla_dom_InternalRequest_h
 
-#include "mozilla/dom/HeadersBinding.h"
-#include "mozilla/dom/InternalResponse.h"
-#include "mozilla/dom/InternalHeaders.h"
-#include "mozilla/dom/RequestBinding.h"
-#include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/LoadTainting.h"
 #include "mozilla/UniquePtr.h"
-
+#include "mozilla/dom/HeadersBinding.h"
+#include "mozilla/dom/InternalHeaders.h"
+#include "mozilla/dom/InternalResponse.h"
+#include "mozilla/dom/RequestBinding.h"
+#include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsIChannelEventSink.h"
+#include "nsICookieJarSettings.h"
 #include "nsIInputStream.h"
 #include "nsISupportsImpl.h"
 #include "nsISupportsPriority.h"
-#include "mozilla/net/NeckoChannelParams.h"
+#include "nsIURIMutator.h"
 #ifdef DEBUG
 #  include "nsIURLParser.h"
 #  include "nsNetCID.h"
@@ -51,7 +50,8 @@ namespace dom {
  * "frame"           | TYPE_INTERNAL_FRAME
  * "iframe"          | TYPE_SUBDOCUMENT, TYPE_INTERNAL_IFRAME
  * "image"           | TYPE_INTERNAL_IMAGE, TYPE_INTERNAL_IMAGE_PRELOAD,
- *                   | TYPE_IMAGE, TYPE_INTERNAL_IMAGE_FAVICON, TYPE_IMAGESET
+ *                   | TYPE_IMAGE, TYPE_INTERNAL_IMAGE_FAVICON, TYPE_IMAGESET,
+ *                   | TYPE_INTERNAL_IMAGE_NOTIFICATION
  * "json"            | TYPE_JSON, TYPE_INTERNAL_JSON_PRELOAD
  * "manifest"        | TYPE_WEB_MANIFEST
  * "object"          | TYPE_INTERNAL_OBJECT, TYPE_OBJECT
@@ -71,6 +71,7 @@ namespace dom {
  * "style"           | TYPE_INTERNAL_STYLESHEET,
  *                   | TYPE_INTERNAL_STYLESHEET_PRELOAD,
  *                   | TYPE_STYLESHEET
+ * "text"            | TYPE_TEXT, TYPE_INTERNAL_TEXT_PRELOAD
  * "track"           | TYPE_INTERNAL_TRACK
  * "video"           | TYPE_INTERNAL_VIDEO
  * "worker"          | TYPE_INTERNAL_WORKER, TYPE_INTERNAL_WORKER_STATIC_MODULE
@@ -88,7 +89,7 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
  public:
   MOZ_DECLARE_REFCOUNTED_TYPENAME(InternalRequest)
-  InternalRequest(const nsACString& aURL, const nsACString& aFragment);
+  InternalRequest(NotNull<nsIURI*> aURL, const nsACString& aFragment);
 
   explicit InternalRequest(const IPCInternalRequest& aIPCRequest);
 
@@ -107,18 +108,20 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
            mMethod.LowerCaseEqualsASCII("head");
   }
   // GetURL should get the request's current url with fragment. A request has
-  // an associated current url. It is a pointer to the last fetch URL in
-  // request's url list.
-  void GetURL(nsACString& aURL) const {
-    aURL.Assign(GetURLWithoutFragment());
+  // an associated current url. It is based on the last fetch URL in request's
+  // url list.
+  already_AddRefed<nsIURI> GetURL() const {
     if (GetFragment().IsEmpty()) {
-      return;
+      return do_AddRef(GetURLWithoutFragment().get());
     }
-    aURL.AppendLiteral("#");
-    aURL.Append(GetFragment());
+
+    nsCOMPtr<nsIURI> url;
+    MOZ_ALWAYS_SUCCEEDS(NS_GetURIWithNewRef(
+        GetURLWithoutFragment(), "#"_ns + GetFragment(), getter_AddRefs(url)));
+    return url.forget();
   }
 
-  const nsCString& GetURLWithoutFragment() const {
+  NotNull<nsIURI*> GetURLWithoutFragment() const {
     MOZ_RELEASE_ASSERT(!mURLList.IsEmpty(),
                        "Internal Request's urlList should not be empty.");
 
@@ -127,7 +130,7 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   // A safe guard for ensuring that request's URL is only allowed to be set in a
   // sw internal redirect.
-  void SetURLForInternalRedirect(const uint32_t aFlag, const nsACString& aURL,
+  void SetURLForInternalRedirect(const uint32_t aFlag, NotNull<nsIURI*> aURL,
                                  const nsACString& aFragment) {
     // Only check in debug build to prevent it from being used unexpectedly.
     MOZ_ASSERT(aFlag & nsIChannelEventSink::REDIRECT_INTERNAL);
@@ -140,17 +143,20 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   // pass the fragment as the second argument into it.
   // If a fragment is present in the URL it must be stripped and passed in
   // separately.
-  void AddURL(const nsACString& aURL, const nsACString& aFragment) {
-    MOZ_ASSERT(!aURL.IsEmpty());
-    MOZ_ASSERT(!aURL.Contains('#'));
+  void AddURL(NotNull<nsIURI*> aURL, const nsACString& aFragment) {
+#ifdef DEBUG
+    bool hasRef = false;
+    MOZ_ALWAYS_SUCCEEDS(aURL->GetHasRef(&hasRef));
+    MOZ_ASSERT(!hasRef);
+#endif
 
     mURLList.AppendElement(aURL);
 
     mFragment.Assign(aFragment);
   }
   // Get the URL list without their fragments.
-  void GetURLListWithoutFragment(nsTArray<nsCString>& aURLList) {
-    aURLList.Assign(mURLList);
+  const nsTArray<NotNull<RefPtr<nsIURI>>>& GetURLListWithoutFragment() const {
+    return mURLList;
   }
   void GetReferrer(nsACString& aReferrer) const { aReferrer.Assign(mReferrer); }
 
@@ -195,6 +201,14 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   void SetReferrerPolicy(ReferrerPolicy aReferrerPolicy) {
     mReferrerPolicy = aReferrerPolicy;
+  }
+
+  void SetAssociatedBrowsingContextID(uint64_t aAssociatedBrowsingContextID) {
+    mAssociatedBrowsingContextID = aAssociatedBrowsingContextID;
+  }
+
+  uint64_t AssociatedBrowsingContextID() const {
+    return mAssociatedBrowsingContextID;
   }
 
   ReferrerPolicy GetEnvironmentReferrerPolicy() const {
@@ -275,6 +289,14 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   bool GetNeverTaint() { return mNeverTaint; }
 
+  void SetCookieJarSettings(nsICookieJarSettings* aCookieJarSettings) {
+    mCookieJarSettings = aCookieJarSettings;
+  }
+
+  nsICookieJarSettings* GetCookieJarSettings() const {
+    return mCookieJarSettings;
+  }
+
   const nsCString& GetFragment() const { return mFragment; }
 
   nsContentPolicyType ContentPolicyType() const { return mContentPolicyType; }
@@ -322,11 +344,9 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   int64_t BodyLength() const { return mBodyLength; }
 
-  void SetBodyBlobURISpec(nsACString& aBlobURISpec) {
-    mBodyBlobURISpec = aBlobURISpec;
-  }
+  void SetBodyBlobImpl(BlobImpl* aBlobImpl) { mBodyBlobImpl = aBlobImpl; }
 
-  const nsACString& BodyBlobURISpec() const { return mBodyBlobURISpec; }
+  BlobImpl* BodyBlobImpl() const { return mBodyBlobImpl; }
 
   void SetBodyLocalPath(nsAString& aLocalPath) { mBodyLocalPath = aLocalPath; }
 
@@ -427,6 +447,8 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   // destination.
   static RequestDestination MapContentPolicyTypeToRequestDestination(
       nsContentPolicyType aContentPolicyType);
+  static RequestDestination MapContentPolicyTypeToRequestDestination(
+      ExtContentPolicyType aContentPolicyType);
 
  private:
   static bool IsNavigationContentPolicy(nsContentPolicyType aContentPolicyType);
@@ -434,10 +456,13 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   static bool IsWorkerContentPolicy(nsContentPolicyType aContentPolicyType);
 
   // It should only be called while there is a service-worker-internal-redirect.
-  void SetURL(const nsACString& aURL, const nsACString& aFragment) {
-    MOZ_ASSERT(!aURL.IsEmpty());
-    MOZ_ASSERT(!aURL.Contains('#'));
-    MOZ_ASSERT(mURLList.Length() > 0);
+  void SetURL(NotNull<nsIURI*> aURL, const nsACString& aFragment) {
+    MOZ_ASSERT(!mURLList.IsEmpty());
+#ifdef DEBUG
+    bool hasRef = false;
+    MOZ_ALWAYS_SUCCEEDS(aURL->GetHasRef(&hasRef));
+    MOZ_ASSERT(!hasRef);
+#endif
 
     mURLList.LastElement() = aURL;
     mFragment.Assign(aFragment);
@@ -445,14 +470,15 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   nsCString mMethod;
   // mURLList: a list of one or more fetch URLs
-  nsTArray<nsCString> mURLList;
+  nsTArray<NotNull<RefPtr<nsIURI>>> mURLList;
   RefPtr<InternalHeaders> mHeaders;
-  nsCString mBodyBlobURISpec;
+  RefPtr<BlobImpl> mBodyBlobImpl;
   nsString mBodyLocalPath;
   nsCOMPtr<nsIInputStream> mBodyStream;
 
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipalOverride;
   bool mNeverTaint = false;
+  nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
   int64_t mBodyLength{InternalResponse::UNKNOWN_BODY_SIZE};
 
   nsCString mPreferredAlternativeDataType;
@@ -466,6 +492,11 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   // URL: an URL
   nsCString mReferrer;
   ReferrerPolicy mReferrerPolicy;
+
+  // Used to track this fetch request in scenarions where determining load
+  // context is tricky like for Reporting API. There we provide this explicitly
+  // so devtools can track us accordingly.
+  uint64_t mAssociatedBrowsingContextID{0};
 
   // This will be used for request created from Window or Worker contexts
   // In case there's no Referrer Policy in Request, this will be passed to

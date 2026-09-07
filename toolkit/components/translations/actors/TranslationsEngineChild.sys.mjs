@@ -22,6 +22,30 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 /**
+ * Decompresses a blob of zstd-compressed data.
+ *
+ * The Translations models are hosted and served from Remote Settings in zstd format.
+ * They need to be decompressed before they can be loaded into the WASM memory.
+ *
+ * @param {Blob} blob
+ * @param {boolean} isMocked - Whether the TranslationsEngine payload is mocked for testing.
+ * @returns {ArrayBuffer}
+ */
+async function decompressFromZstdBlob(blob, isMocked) {
+  if (isMocked) {
+    return new ArrayBuffer();
+  }
+
+  /* global DecompressionStream */
+  const decompressionStream = new DecompressionStream("zstd");
+  const buffer = await new Response(
+    blob.stream().pipeThrough(decompressionStream)
+  ).arrayBuffer();
+
+  return buffer;
+}
+
+/**
  * The engine child is responsible for exposing privileged code to the un-privileged
  * space the engine runs in.
  */
@@ -159,14 +183,48 @@ export class TranslationsEngineChild extends JSProcessActorChild {
    *
    * @returns {Promise<TranslationsEnginePayload> | undefined}
    */
-  TE_requestEnginePayload(languagePair) {
+  async TE_requestEnginePayload(languagePair) {
     if (this.#isDestroyed) {
       return undefined;
     }
 
-    return this.sendQuery("TranslationsEngine:RequestEnginePayload", {
-      languagePair,
+    /** @type {TranslationsEnginePayload} */
+    const payload = await this.sendQuery(
+      "TranslationsEngine:RequestEnginePayload",
+      {
+        languagePair,
+      }
+    );
+
+    const wasmPromise = decompressFromZstdBlob(
+      payload.bergamotWasmBlob,
+      payload.isMocked
+    ).then(buffer => {
+      payload.bergamotWasmArrayBuffer = buffer;
+      payload.bergamotWasmBlob = null;
     });
+
+    payload.translationModelPayloads = await Promise.all(
+      payload.translationModelPayloads.map(async modelPayload => {
+        const entries = Object.values(modelPayload.languageModelFiles);
+
+        await Promise.all(
+          entries.map(async entry => {
+            entry.buffer = await decompressFromZstdBlob(
+              entry.blob,
+              payload.isMocked
+            );
+            entry.blob = null;
+          })
+        );
+
+        return modelPayload;
+      })
+    );
+
+    await wasmPromise;
+
+    return payload;
   }
 
   /**

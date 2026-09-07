@@ -1,0 +1,162 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+-->
+<head>
+<title>Test on the html copy encoder for details selection</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1994763">Mozilla Bug 1994763</a>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<div id="container">
+  <details id="basic" open>
+    <summary>Basic</summary>First<br>Second<br>Third<br>
+  </details>
+  <details id="nested" open>
+    <summary>Outer</summary>Before<br>
+    <details open>
+      <summary>Inner</summary>First<br>Second<br>Third
+    </details>
+    <br>After<br>
+  </details>
+  <details id="nested-shadow" open>
+    <summary>Outer</summary>
+    <br>Before<br>
+    <div>
+      <template shadowrootmode="open">
+        <br>InnerBefore<br>
+        <slot></slot>
+        <br>InnerAfter<br>
+      </template>
+      <details open>
+        <summary>Inner</summary>First<br>Second<br>Third
+      </details>
+    </div>
+    <br>After<br>
+  </details>
+</div>
+<script>
+
+/* global describe, it, beforeEach */
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+
+function testSelectDetailsAndSerialize(aDescription, aSetupSelection, aExpectedTextResult,
+                                       aExpectedHTMLResult) {
+  it(aDescription, () => {
+    info("Setup selection");
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    aSetupSelection(selection);
+
+    info("Initialize encoder for text/plain");
+    // Force LF line breaks; otherwise, on Windows we would get CRLF.
+    encoder.init(document, "text/plain", de.OutputLFLineBreak | de.AllowCrossShadowBoundary);
+    encoder.setSelection(selection);
+    is(encoder.encodeToString(), aExpectedTextResult, "check text/plain result");
+
+    info("Initialize encoder for text/html");
+    // Force LF line breaks; otherwise, on Windows we would get CRLF.
+    encoder.init(document, "text/html", de.OutputLFLineBreak | de.AllowCrossShadowBoundary);
+    encoder.setSelection(selection);
+
+    const htmlContext = { value: '' };
+    const htmlInfo = { value: '' };
+    is(encoder.encodeToStringWithContext(htmlContext, htmlInfo),
+       aExpectedHTMLResult, "check text/html result");
+  });
+}
+
+testSelectDetailsAndSerialize(
+  "Test selecting summary content",
+  (aSelection) => {
+    const details = document.querySelector("details#basic");
+    const range = document.createRange();
+    range.selectNodeContents(details.firstElementChild);
+    aSelection.addRange(range);
+  },
+  "Basic",
+  "Basic"
+);
+
+testSelectDetailsAndSerialize(
+  "Test selecting partial details content",
+  (aSelection) => {
+    const details = document.querySelector("details#basic");
+    const range = document.createRange();
+    // Start at the beginning of "Second"
+    range.setStart(details.childNodes[4], 0);
+    // End at the end of "Third"
+    range.setEnd(details.childNodes[6], 5);
+    aSelection.addRange(range);
+  },
+  "Second\nThird",
+  "Second<br>Third"
+);
+
+testSelectDetailsAndSerialize(
+  "Test selecting whole details content",
+  (aSelection) => {
+    const details = document.querySelector("details#basic");
+    const range = document.createRange();
+    // Start at the beginning of <summary>
+    range.setStart(details.childNodes[1], 0);
+    // End at the end of "Third"
+    range.setEnd(details.childNodes[6], 5);
+    aSelection.addRange(range);
+  },
+  "Basic\nFirst\nSecond\nThird",
+  "<summary>Basic</summary>First<br>Second<br>Third"
+);
+
+testSelectDetailsAndSerialize(
+  "Test selecting nested details content",
+  (aSelection) => {
+    const details = document.querySelector("details#nested");
+    const range = document.createRange();
+    // Start at the beginning of "Before"
+    range.setStart(details.childNodes[2], 0);
+    // End at the end of "After"
+    range.setEnd(details.childNodes[8], 5);
+    aSelection.addRange(range);
+  },
+  "Before\nInner\nFirst\nSecond\nThird\n\nAfter",
+  "Before<br>\n" +
+    "    <details open=\"\">\n" +
+    "      <summary>Inner</summary>First<br>Second<br>Third\n" +
+    "    </details>\n" +
+    "    <br>After"
+);
+
+testSelectDetailsAndSerialize(
+  "Test selecting nested-shadow details content",
+  (aSelection) => {
+    const details = document.querySelector("details#nested-shadow");
+    const range = document.createRange();
+    // Start at the beginning of "Before"
+    range.setStart(details.childNodes[4], 0);
+    // End at the end of "After"
+    range.setEnd(details.childNodes[10], 5);
+    aSelection.addRange(range);
+  },
+  "Before\n\nInnerBefore\nInner\nFirst\nSecond\nThird\n\nInnerAfter\n\nAfter",
+  "Before<br>\n" +
+    "    <div>\n" +
+    "        <br>InnerBefore<br>\n" +
+    "        <slot>\n      \n" +
+    "      <details open=\"\">\n" +
+    "        <summary>Inner</summary>First<br>Second<br>Third\n" +
+    "      </details>\n" +
+    "    </slot>\n" +
+    "        <br>InnerAfter<br>\n" +
+    "      </div>\n" +
+    "    <br>After"
+);
+
+</script>
+</body>
+</html>

@@ -132,6 +132,12 @@ export const prefs = new PrefsHelper("devtools", {
 // Hardcode the fallback value to that of CodeMirror.defaults.cursorBlinkRate.
 prefs.cursorBlinkRate = Services.prefs.getIntPref("ui.caretBlinkTime", 530);
 
+// Pref which decides whether updates to the stylesheet use transitions
+prefs.styleSheetTransitions = Services.prefs.getBoolPref(
+  "devtools.styleeditor.transitions",
+  true
+);
+
 export const features = new PrefsHelper("devtools.debugger.features", {
   wasm: ["Bool", "wasm"],
   outline: ["Bool", "outline"],
@@ -143,6 +149,7 @@ export const features = new PrefsHelper("devtools.debugger.features", {
   inlinePreview: ["Bool", "inline-preview"],
   windowlessServiceWorkers: ["Bool", "windowless-service-workers"],
   javascriptTracing: ["Bool", "javascript-tracing"],
+  stylesheetsInDebugger: ["Bool", "stylesheets-in-debugger"],
 });
 
 // Import the asyncStore already spawned by the TargetMixin class
@@ -156,7 +163,7 @@ export function resetSchemaVersion() {
 export function verifyPrefSchema() {
   if (prefs.debuggerPrefsSchemaVersion < prefsSchemaVersion) {
     asyncStore.pendingBreakpoints = {};
-    asyncStore.tabs = [];
+    asyncStore.openedURLs = [];
     asyncStore.xhrBreakpoints = [];
     asyncStore.eventListenerBreakpoints = undefined;
     asyncStore.blackboxedRanges = {};

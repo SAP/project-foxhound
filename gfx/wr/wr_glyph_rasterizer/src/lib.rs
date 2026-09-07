@@ -9,7 +9,8 @@
 //! ## Usage
 //!
 
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "windows"))]
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
+
 mod gamma_lut;
 mod rasterizer;
 mod telemetry;

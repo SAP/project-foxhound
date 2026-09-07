@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -17,6 +17,9 @@ const values = [
   Temporal.PlainTime.from("15:19:45"),
   Temporal.PlainYearMonth.from("2022-04"),
   Temporal.ZonedDateTime.from("2022-04-12T15:19:45[UTC]"),
+  Temporal.Now.plainDateTimeISO(),
+  Temporal.Now.plainDateISO(),
+  Temporal.Now.plainTimeISO(),
 ];
 
 for (const value of values) {

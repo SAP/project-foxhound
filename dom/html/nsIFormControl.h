@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsIFormControl_h___
-#define nsIFormControl_h___
+#ifndef nsIFormControl_h_
+#define nsIFormControl_h_
 
 #include "mozilla/EventForwards.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -111,10 +109,16 @@ class nsIFormControl : public nsISupports {
   virtual mozilla::dom::HTMLFieldSetElement* GetFieldSet() = 0;
 
   /**
+   * Get the form for this form control, retargeted to the appropriate scope.
+   * @return the form
+   */
+  virtual mozilla::dom::Element* GetFormForBindings() const = 0;
+
+  /**
    * Get the form for this form control.
    * @return the form
    */
-  virtual mozilla::dom::HTMLFormElement* GetForm() const = 0;
+  virtual mozilla::dom::HTMLFormElement* GetFormInternal() const = 0;
 
   /**
    * Set the form for this form control.
@@ -147,7 +151,7 @@ class nsIFormControl : public nsISupports {
    * Reset this form control (as it should be when the user clicks the Reset
    * button)
    */
-  NS_IMETHOD Reset() = 0;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD Reset() = 0;
 
   /**
    * Tells the form control to submit its names and values to the form data
@@ -285,13 +289,14 @@ bool nsIFormControl::IsConceptButton() const {
 }
 
 bool nsIFormControl::IsButtonControl() const {
-  return IsConceptButton() && (!GetForm() || !IsSubmitControl());
+  return IsConceptButton() && (!GetFormInternal() || !IsSubmitControl());
 }
 
 bool nsIFormControl::AllowDraggableChildren() const {
   auto type = ControlType();
   return type == FormControlType::Object || type == FormControlType::Fieldset ||
-         type == FormControlType::Output;
+         type == FormControlType::Output ||
+         type == FormControlType::FormAssociatedCustomElement;
 }
 
-#endif /* nsIFormControl_h___ */
+#endif /* nsIFormControl_h_ */

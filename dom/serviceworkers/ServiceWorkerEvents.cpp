@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "ServiceWorkerManager.h"
 #include "js/Conversions.h"
 #include "js/Exception.h"  // JS::ExceptionStack, JS::StealPendingExceptionStack
+#include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/ErrorResult.h"
@@ -32,6 +31,7 @@
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "mozilla/glean/DomPushMetrics.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
@@ -64,7 +64,7 @@ void AsyncLog(nsIInterceptedChannel* aInterceptedChannel,
   if (reporter) {
     reporter->AddConsoleReport(nsIScriptError::errorFlag,
                                "Service Worker Interception"_ns,
-                               nsContentUtils::eDOM_PROPERTIES,
+                               PropertiesFile::DOM_PROPERTIES,
                                aRespondWithScriptSpec, aRespondWithLineNumber,
                                aRespondWithColumnNumber, aMessageName, aParams);
   }
@@ -364,14 +364,12 @@ class StartResponse final : public Runnable {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(aLoadInfo);
     nsresult rv;
-    nsCOMPtr<nsIURI> uri;
-    nsCString url = mInternalResponse->GetUnfilteredURL();
-    if (url.IsEmpty()) {
+    nsCOMPtr<nsIURI> uri = mInternalResponse->GetUnfilteredURL();
+    if (!uri) {
       // Synthetic response. The buck stops at the worker script.
-      url = mScriptSpec;
+      rv = NS_NewURI(getter_AddRefs(uri), mScriptSpec);
+      NS_ENSURE_SUCCESS(rv, false);
     }
-    rv = NS_NewURI(getter_AddRefs(uri), url);
-    NS_ENSURE_SUCCESS(rv, false);
     int16_t decision = nsIContentPolicy::ACCEPT;
     rv = NS_CheckContentLoadPolicy(uri, aLoadInfo, &decision);
     NS_ENSURE_SUCCESS(rv, false);
@@ -653,7 +651,7 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
   // responses always have a URL does not break.
   if (NS_WARN_IF((response->Type() == ResponseType::Opaque ||
                   response->Type() == ResponseType::Cors) &&
-                 ir->GetUnfilteredURL().IsEmpty())) {
+                 !ir->GetUnfilteredURL())) {
     MOZ_DIAGNOSTIC_CRASH("Cors or opaque Response without a URL");
     return;
   }
@@ -663,7 +661,8 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
     // XXXtt: Will have a pref to enable the quirk response in bug 1419684.
     // The variadic template provided by StringArrayAppender requires exactly
     // an nsString.
-    NS_ConvertUTF8toUTF16 responseURL(ir->GetUnfilteredURL());
+    NS_ConvertUTF8toUTF16 responseURL(
+        ir->GetUnfilteredURL()->GetSpecOrDefault());
     autoCancel.SetCancelMessage("CorsResponseForSameOriginRequest"_ns,
                                 mRequestURL, responseURL);
     return;
@@ -674,19 +673,21 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
   // false. We propagate all the URLs if the response.redirected is true.
   nsCString responseURL;
   if (mRequestMode != RequestMode::Navigate) {
-    responseURL = ir->GetUnfilteredURL();
-
     // Similar to how we apply the request fragment to redirects automatically
     // we also want to apply it automatically when propagating the response
     // URL from a service worker interception.  Currently response.url strips
     // the fragment, so this will never conflict with an existing fragment
     // on the response.  In the future we will have to check for a response
     // fragment and avoid overriding in that case.
-    if (!mRequestFragment.IsEmpty() && !responseURL.IsEmpty()) {
-      MOZ_ASSERT(!responseURL.Contains('#'));
-      responseURL.Append("#"_ns);
-      responseURL.Append(mRequestFragment);
+    nsCOMPtr<nsIURI> responseURI;
+    if (mRequestFragment.IsEmpty()) {
+      responseURI = ir->GetUnfilteredURL();
+    } else {
+      MOZ_ALWAYS_SUCCEEDS(NS_GetURIWithNewRef(ir->GetUnfilteredURL(),
+                                              "#"_ns + mRequestFragment,
+                                              getter_AddRefs(responseURI)));
     }
+    MOZ_ALWAYS_SUCCEEDS(responseURI->GetSpec(responseURL));
   }
 
   UniquePtr<RespondWithClosure> closure(new RespondWithClosure(
@@ -762,8 +763,7 @@ void FetchEvent::RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv) {
   auto location = JSCallingLocation::Get(aCx);
   SafeRefPtr<InternalRequest> ir = mRequest->GetInternalRequest();
 
-  nsAutoCString requestURL;
-  ir->GetURL(requestURL);
+  nsCOMPtr<nsIURI> requestURL = ir->GetURL();
 
   StopImmediatePropagation();
   mWaitToRespond = true;
@@ -771,7 +771,8 @@ void FetchEvent::RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv) {
   if (mChannel) {
     RefPtr<RespondWithHandler> handler = new RespondWithHandler(
         mChannel, mRegistration, mRequest->Mode(), ir->IsClientRequest(),
-        mRequest->Redirect(), mScriptSpec, NS_ConvertUTF8toUTF16(requestURL),
+        mRequest->Redirect(), mScriptSpec,
+        NS_ConvertUTF8toUTF16(requestURL->GetSpecOrDefault()),
         ir->GetFragment(), location.FileName(), location.mLine,
         location.mColumn);
 
@@ -810,12 +811,11 @@ void FetchEvent::ReportCanceled() {
   MOZ_ASSERT(mPreventDefaultLocation);
 
   SafeRefPtr<InternalRequest> ir = mRequest->GetInternalRequest();
-  nsAutoCString url;
-  ir->GetURL(url);
+  nsCOMPtr<nsIURI> url = ir->GetURL();
 
   // The variadic template provided by StringArrayAppender requires exactly
   // an nsString.
-  NS_ConvertUTF8toUTF16 requestURL(url);
+  NS_ConvertUTF8toUTF16 requestURL(url->GetSpecOrDefault());
   // nsString requestURL;
   // CopyUTF8toUTF16(url, requestURL);
 
@@ -1022,13 +1022,18 @@ nsresult ExtractBytesFromData(
 }
 }  // namespace
 
-PushMessageData::PushMessageData(nsIGlobalObject* aOwner,
+PushMessageData::PushMessageData(nsIGlobalObject* aGlobal,
                                  nsTArray<uint8_t>&& aBytes)
-    : mOwner(aOwner), mBytes(std::move(aBytes)) {}
+    : mGlobal(aGlobal), mBytes(std::move(aBytes)) {
+  AutoJSAPI jsapi;
+  if (jsapi.Init(mGlobal)) {
+    SetUseCounterIfDeclarative(jsapi.cx());
+  }
+}
 
 PushMessageData::~PushMessageData() = default;
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PushMessageData, mOwner)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PushMessageData, mGlobal)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(PushMessageData)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(PushMessageData)
@@ -1073,7 +1078,7 @@ already_AddRefed<mozilla::dom::Blob> PushMessageData::Blob(ErrorResult& aRv) {
   uint8_t* data = GetContentsCopy();
   if (data) {
     RefPtr<mozilla::dom::Blob> blob =
-        BodyUtil::ConsumeBlob(mOwner, u""_ns, mBytes.Length(), data, aRv);
+        BodyUtil::ConsumeBlob(mGlobal, u""_ns, mBytes.Length(), data, aRv);
     if (blob) {
       return blob.forget();
     }
@@ -1117,6 +1122,55 @@ uint8_t* PushMessageData::GetContentsCopy() {
   return reinterpret_cast<uint8_t*>(data);
 }
 
+// This partially implements the parsing algorithm for a simple detection:
+// https://w3c.github.io/push-api/#declarative-push-message
+void PushMessageData::SetUseCounterIfDeclarative(JSContext* aCx) {
+  // NOTE(krosylight): This could be in the parent process but:
+  // 1. The desktop and Android implementations use different modules for push.
+  //    The common path starts with PushNotifier which is not a great place for
+  //    this use counter either.
+  //    We'll need to reconsider this as we don't want to ping content processes
+  //    at all for non-mutable DWP messages when we add the support.
+  // 2. The decode would happen twice; this way it happens once with the cache.
+
+  // Step 1: Let message be the result of parsing JSON bytes to an Infra value
+  // given bytes. If that throws an exception, then return failure.
+  // Step 2: If message is not a map, then return failure.
+  JS::Rooted<JS::Value> message(aCx);
+  IgnoredErrorResult rv;
+  Json(aCx, &message, rv);
+  if (rv.Failed() || !message.isObject()) {
+    return;
+  }
+
+  // Step 3: If message["web_push"] does not exist or is not 8030, then return
+  // failure.
+  JS::Rooted<JSObject*> messageObject(aCx, message.toObjectOrNull());
+  JS::Rooted<JS::Value> property(aCx);
+  if (!JS_GetProperty(aCx, messageObject, "web_push", &property)) {
+    rv.StealExceptionFromJSContext(aCx);
+    return;
+  }
+  if (!property.isNumber() || property.toNumber() != 8030) {
+    return;
+  }
+
+  glean::web_push::declarative.Add();
+
+  // Step 30: If message["mutable"] exists and message["mutable"] is a boolean,
+  // then set mutable to message["mutable"].
+  // (But we just detect whether it's true or not for now)
+  if (!JS_GetProperty(aCx, messageObject, "mutable", &property)) {
+    rv.StealExceptionFromJSContext(aCx);
+    return;
+  }
+  if (!property.isBoolean() || !property.toBoolean()) {
+    return;
+  }
+
+  glean::web_push::declarative_mutable.Add();
+}
+
 PushEvent::PushEvent(EventTarget* aOwner) : ExtendableEvent(aOwner) {}
 
 already_AddRefed<PushEvent> PushEvent::Constructor(
@@ -1134,7 +1188,8 @@ already_AddRefed<PushEvent> PushEvent::Constructor(
       aRv.Throw(rv);
       return nullptr;
     }
-    e->mData = new PushMessageData(aOwner->GetOwnerGlobal(), std::move(bytes));
+    e->mData =
+        new PushMessageData(aOwner->GetRelevantGlobal(), std::move(bytes));
   }
   return e.forget();
 }

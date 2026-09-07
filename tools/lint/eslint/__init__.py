@@ -1,5 +1,3 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -11,7 +9,7 @@ import subprocess
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "eslint"))
-from mozbuild.nodeutil import find_node_executable
+from mozbuild.nodeutil import check_node_executables_valid, find_node_executable
 from mozlint import result
 
 from eslint import prettier_utils, setup_helper
@@ -36,7 +34,7 @@ and try again.
 def setup(root, **lintargs):
     setup_helper.set_project_root(root)
 
-    if not setup_helper.check_node_executables_valid():
+    if not check_node_executables_valid():
         return 1
 
     return setup_helper.eslint_maybe_setup()
@@ -69,12 +67,27 @@ def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs)
     if not lintargs.get("formatonly", False):
         exclude_args = []
         for path in config.get("exclude", []):
-            exclude_args.extend(
-                ["--ignore-pattern", os.path.relpath(path, lintargs["root"])]
-            )
+            exclude_args.extend([
+                "--ignore-pattern",
+                os.path.relpath(path, lintargs["root"]),
+            ])
 
         for rule in rules:
             extra_args.extend(["--rule", rule])
+
+        i = 0
+        extra_args_len = len(extra_args)
+        while i < extra_args_len:
+            if extra_args[i] == "--rule":
+                i += 1
+                # ESLint requires that we specify any plugins. These are typically
+                # named by the prefix before the first `/`. There are some cases where
+                # this doesn't work, but ESLint also can't handle those cases with
+                # the `--plugin` argument anyway.
+                if i < extra_args_len and "/" in extra_args[i]:
+                    extra_args.extend(["--plugin", extra_args[i].split("/", 1)[0]])
+
+            i += 1
 
         # First run ESLint
         cmd_args = (
@@ -109,6 +122,13 @@ def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs)
         if any(a.startswith("--ignore-path") for a in extra_args)
         else ["--ignore-path=.prettierignore", "--ignore-path=.prettierignore-css"]
     )
+
+    # Don't pass the configuration, plugin or rule information to Prettier,
+    # as it doesn't understand those arguments.
+    def bypass(arg):
+        bypass_list = ["--config", "--plugin", "--rule"]
+        return any(not arg.startswith(flag) for flag in bypass_list)
+
     cmd_args = (
         [
             binary,
@@ -118,9 +138,18 @@ def lint(paths, config, binary=None, fix=None, rules=[], setup=None, **lintargs)
             "--list-different",
             "--no-error-on-unmatched-pattern",
         ]
-        # Don't pass the configuration to Prettier as well, as it doesn't understand
-        # the ESLint configuration.
-        + list(filter(lambda x: not x.startswith("--config"), extra_args))
+        # Don't pass the configuration, plugin or rule information to Prettier,
+        # as it doesn't understand those arguments.
+        + list(
+            filter(
+                lambda x: (
+                    not x.startswith("--config")
+                    and not x.startswith("--plugin")
+                    and not x.startswith("--rule")
+                ),
+                [arg for arg in extra_args if bypass(arg)],
+            )
+        )
         # Prettier does not support exclude arguments.
         # + exclude_args
         + ignore_args
@@ -188,15 +217,13 @@ def run(cmd_args, config):
             fixed = fixed + 1
 
         for err in errors:
-            err.update(
-                {
-                    "hint": err.get("fix"),
-                    "level": "error" if err["severity"] == 2 else "warning",
-                    "lineno": err.get("line") or 0,
-                    "path": obj["filePath"],
-                    "rule": err.get("ruleId"),
-                }
-            )
+            err.update({
+                "hint": err.get("fix"),
+                "level": "error" if err["severity"] == 2 else "warning",
+                "lineno": err.get("line") or 0,
+                "path": obj["filePath"],
+                "rule": err.get("ruleId"),
+            })
             results.append(result.from_config(config, **err))
 
     return {"results": results, "fixed": fixed}

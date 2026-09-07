@@ -23,18 +23,16 @@ async function checkItemsAreDisabled(url) {
       let reportMenu = document.getElementById(
         "menu_HelpPopup_reportPhishingtoolmenu"
       );
-      is(
-        reportMenu.getAttribute("disabled"),
-        "true",
+      ok(
+        reportMenu.disabled,
         "The `Report Deceptive Site` item should be disabled"
       );
 
       let errorMenu = document.getElementById(
         "menu_HelpPopup_reportPhishingErrortoolmenu"
       );
-      is(
-        errorMenu.getAttribute("disabled"),
-        "true",
+      ok(
+        errorMenu.disabled,
         "The `This isn’t a deceptive site` item should be disabled"
       );
     }
@@ -52,9 +50,8 @@ add_task(async function test_policy_feedback_commands() {
   buildHelpMenu();
 
   let feedbackPageMenu = document.getElementById("feedbackPage");
-  is(
-    feedbackPageMenu.getAttribute("disabled"),
-    "true",
+  ok(
+    feedbackPageMenu.disabled,
     "The `Submit Feedback...` item should be disabled"
   );
 

@@ -54,6 +54,7 @@
   "scripts": {
     "bundle": "npm-run-all bundle:*",
     "bundle:admin": "webpack-cli --config webpack.asrouter-admin.config.js",
+    "bundle:multistage": "webpack-cli --config webpack.asrouter-newtab-multistage.config.js",
     "bundle:css": "sass content-src:content --no-source-map",
     "watchmc": "npm-run-all --parallel watchmc:*",
     "watchmc:bundle": "npm run bundle:admin -- --env development -w",

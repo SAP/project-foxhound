@@ -8,6 +8,7 @@ add_setup(async function () {
     set: [
       ["browser.contextual-password-manager.enabled", true],
       ["signon.rememberSignons", true],
+      ["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""],
     ],
   });
   LoginTestUtils.clearData();
@@ -67,4 +68,7 @@ add_task(async function test_delete_login_success() {
 
   const numPasswords = megalist.querySelectorAll("password-card").length;
   is(numPasswords, 2, "One login was successfully deleted.");
+
+  info("Closing the sidebar");
+  SidebarController.hide();
 });

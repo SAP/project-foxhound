@@ -2,16 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use libc::{c_float, size_t};
-use std::ptr;
-use std::slice;
+use libc::c_float;
 
 use nserror::{nsresult, NS_ERROR_INVALID_ARG, NS_OK};
 use rsdparsa::attribute_type::*;
 use rsdparsa::SdpSession;
+use thin_vec::ThinVec;
 
 use network::{RustAddress, RustExplicitlyTypedAddress};
-use types::StringView;
+use types::{RustSpan, StringView};
 
 #[no_mangle]
 pub unsafe extern "C" fn num_attributes(session: *const SdpSession) -> u32 {
@@ -33,23 +32,10 @@ pub unsafe extern "C" fn get_attribute_ptr(
     }
 }
 
-fn count_attribute(attributes: &[SdpAttribute], search: SdpAttributeType) -> usize {
-    let mut count = 0;
-    for attribute in (*attributes).iter() {
-        if SdpAttributeType::from(attribute) == search {
-            count += 1;
-        }
-    }
-    count
-}
-
 fn argsearch(attributes: &[SdpAttribute], attribute_type: SdpAttributeType) -> Option<usize> {
-    for (i, attribute) in (*attributes).iter().enumerate() {
-        if SdpAttributeType::from(attribute) == attribute_type {
-            return Some(i);
-        }
-    }
-    None
+    attributes
+        .iter()
+        .position(|attribute| SdpAttributeType::from(attribute) == attribute_type)
 }
 
 pub unsafe fn has_attribute(
@@ -66,9 +52,16 @@ fn get_attribute(
     argsearch(attributes, attribute_type).map(|i| &attributes[i])
 }
 
+fn string_views(strings: &[String]) -> ThinVec<StringView> {
+    strings
+        .iter()
+        .map(|s| StringView::from(s.as_str()))
+        .collect()
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub enum RustSdpAttributeDtlsMessageType {
+pub enum RustSdpAttributeDtlsMessageRole {
     Client,
     Server,
 }
@@ -76,7 +69,7 @@ pub enum RustSdpAttributeDtlsMessageType {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct RustSdpAttributeDtlsMessage {
-    pub role: u8,
+    pub role: RustSdpAttributeDtlsMessageRole,
     pub value: StringView,
 }
 
@@ -84,11 +77,11 @@ impl<'a> From<&'a SdpAttributeDtlsMessage> for RustSdpAttributeDtlsMessage {
     fn from(other: &SdpAttributeDtlsMessage) -> Self {
         match other {
             &SdpAttributeDtlsMessage::Client(ref x) => RustSdpAttributeDtlsMessage {
-                role: RustSdpAttributeDtlsMessageType::Client as u8,
+                role: RustSdpAttributeDtlsMessageRole::Client,
                 value: StringView::from(x.as_str()),
             },
             &SdpAttributeDtlsMessage::Server(ref x) => RustSdpAttributeDtlsMessage {
-                role: RustSdpAttributeDtlsMessageType::Server as u8,
+                role: RustSdpAttributeDtlsMessageRole::Server,
                 value: StringView::from(x.as_str()),
             },
         }
@@ -97,11 +90,12 @@ impl<'a> From<&'a SdpAttributeDtlsMessage> for RustSdpAttributeDtlsMessage {
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_dtls_message(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut RustSdpAttributeDtlsMessage,
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut RustSdpAttributeDtlsMessage,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::DtlsMessage);
-    if let Some(&SdpAttribute::DtlsMessage(ref dtls_message)) = attr {
+    if let Some(&SdpAttribute::DtlsMessage(ref dtls_message)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::DtlsMessage)
+    {
         *ret = RustSdpAttributeDtlsMessage::from(dtls_message);
         return NS_OK;
     }
@@ -110,11 +104,12 @@ pub unsafe extern "C" fn sdp_get_dtls_message(
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_iceufrag(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut StringView,
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut StringView,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::IceUfrag);
-    if let Some(&SdpAttribute::IceUfrag(ref string)) = attr {
+    if let Some(&SdpAttribute::IceUfrag(ref string)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::IceUfrag)
+    {
         *ret = StringView::from(string.as_str());
         return NS_OK;
     }
@@ -123,11 +118,12 @@ pub unsafe extern "C" fn sdp_get_iceufrag(
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_icepwd(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut StringView,
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut StringView,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::IcePwd);
-    if let Some(&SdpAttribute::IcePwd(ref string)) = attr {
+    if let Some(&SdpAttribute::IcePwd(ref string)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::IcePwd)
+    {
         *ret = StringView::from(string.as_str());
         return NS_OK;
     }
@@ -136,11 +132,12 @@ pub unsafe extern "C" fn sdp_get_icepwd(
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_identity(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut StringView,
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut StringView,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::Identity);
-    if let Some(&SdpAttribute::Identity(ref string)) = attr {
+    if let Some(&SdpAttribute::Identity(ref string)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::Identity)
+    {
         *ret = StringView::from(string.as_str());
         return NS_OK;
     }
@@ -149,12 +146,13 @@ pub unsafe extern "C" fn sdp_get_identity(
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_iceoptions(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut *const Vec<String>,
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<StringView>,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::IceOptions);
-    if let Some(&SdpAttribute::IceOptions(ref options)) = attr {
-        *ret = options;
+    if let Some(&SdpAttribute::IceOptions(ref options)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::IceOptions)
+    {
+        ret.extend(options.iter().map(|x| StringView::from(x.as_str())));
         return NS_OK;
     }
     NS_ERROR_INVALID_ARG
@@ -162,11 +160,12 @@ pub unsafe extern "C" fn sdp_get_iceoptions(
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_maxptime(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut u64,
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut u64,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::MaxPtime);
-    if let Some(&SdpAttribute::MaxPtime(ref max_ptime)) = attr {
+    if let Some(&SdpAttribute::MaxPtime(ref max_ptime)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::MaxPtime)
+    {
         *ret = *max_ptime;
         return NS_OK;
     }
@@ -176,42 +175,51 @@ pub unsafe extern "C" fn sdp_get_maxptime(
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct RustSdpAttributeFingerprint {
-    hash_algorithm: u16,
-    fingerprint: *const Vec<u8>,
+    hash_algorithm: RustSdpAttributeFingerprintHashAlgorithm,
+    fingerprint: RustSpan<u8>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub enum RustSdpAttributeFingerprintHashAlgorithm {
+    Sha1,
+    Sha224,
+    Sha256,
+    Sha384,
+    Sha512,
+}
+
+impl From<SdpAttributeFingerprintHashType> for RustSdpAttributeFingerprintHashAlgorithm {
+    fn from(other: SdpAttributeFingerprintHashType) -> Self {
+        match other {
+            SdpAttributeFingerprintHashType::Sha1 => Self::Sha1,
+            SdpAttributeFingerprintHashType::Sha224 => Self::Sha224,
+            SdpAttributeFingerprintHashType::Sha256 => Self::Sha256,
+            SdpAttributeFingerprintHashType::Sha384 => Self::Sha384,
+            SdpAttributeFingerprintHashType::Sha512 => Self::Sha512,
+        }
+    }
 }
 
 impl<'a> From<&'a SdpAttributeFingerprint> for RustSdpAttributeFingerprint {
     fn from(other: &SdpAttributeFingerprint) -> Self {
         RustSdpAttributeFingerprint {
-            hash_algorithm: other.hash_algorithm as u16,
-            fingerprint: &other.fingerprint,
+            hash_algorithm: other.hash_algorithm.into(),
+            fingerprint: RustSpan::from_slice(other.fingerprint.as_slice()),
         }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_fingerprint_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Fingerprint)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_fingerprints(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_fingerprints: *mut RustSdpAttributeFingerprint,
+pub extern "C" fn sdp_get_fingerprints(
+    attributes: &Vec<SdpAttribute>,
+    ret_fingerprints: &mut ThinVec<RustSdpAttributeFingerprint>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Fingerprint(ref data) = *x {
-                Some(RustSdpAttributeFingerprint::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let fingerprints = slice::from_raw_parts_mut(ret_fingerprints, ret_size);
-    fingerprints.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Fingerprint(ref data) = *attribute {
+            ret_fingerprints.push(RustSdpAttributeFingerprint::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -236,11 +244,12 @@ impl<'a> From<&'a SdpAttributeSetup> for RustSdpAttributeSetup {
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_setup(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut RustSdpAttributeSetup,
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut RustSdpAttributeSetup,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::Setup);
-    if let Some(&SdpAttribute::Setup(ref setup)) = attr {
+    if let Some(&SdpAttribute::Setup(ref setup)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::Setup)
+    {
         *ret = RustSdpAttributeSetup::from(setup);
         return NS_OK;
     }
@@ -266,28 +275,15 @@ impl<'a> From<&'a SdpAttributeSsrc> for RustSdpAttributeSsrc {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_ssrc_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Ssrc)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_ssrcs(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_ssrcs: *mut RustSdpAttributeSsrc,
+pub extern "C" fn sdp_get_ssrcs(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeSsrc>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Ssrc(ref data) = *x {
-                Some(RustSdpAttributeSsrc::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let ssrcs = slice::from_raw_parts_mut(ret_ssrcs, ret_size);
-    ssrcs.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Ssrc(ref data) = *attribute {
+            ret.push(RustSdpAttributeSsrc::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -319,38 +315,24 @@ impl<'a> From<&'a SdpSsrcGroupSemantic> for RustSdpSsrcGroupSemantic {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpSsrcGroup {
     pub semantic: RustSdpSsrcGroupSemantic,
-    pub ssrcs: *const Vec<SdpAttributeSsrc>,
+    pub ssrcs: ThinVec<u32>,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_ssrc_group_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::SsrcGroup)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_ssrc_groups(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_ssrc_groups: *mut RustSdpSsrcGroup,
+pub extern "C" fn sdp_get_ssrc_groups(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpSsrcGroup>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::SsrcGroup(ref semantic, ref ssrcs) = *x {
-                Some(RustSdpSsrcGroup {
-                    semantic: RustSdpSsrcGroupSemantic::from(semantic),
-                    ssrcs: ssrcs,
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    let ssrc_groups = slice::from_raw_parts_mut(ret_ssrc_groups, ret_size);
-    ssrc_groups.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::SsrcGroup(ref semantic, ref ssrcs) = *attribute {
+            ret.push(RustSdpSsrcGroup {
+                semantic: RustSdpSsrcGroupSemantic::from(semantic),
+                ssrcs: ssrcs.iter().map(|ssrc| ssrc.id).collect(),
+            });
+        }
+    }
 }
 
 #[repr(C)]
@@ -374,28 +356,15 @@ impl<'a> From<&'a SdpAttributeRtpmap> for RustSdpAttributeRtpmap {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_rtpmap_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Rtpmap)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_rtpmaps(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_rtpmaps: *mut RustSdpAttributeRtpmap,
+pub extern "C" fn sdp_get_rtpmaps(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeRtpmap>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Rtpmap(ref data) = *x {
-                Some(RustSdpAttributeRtpmap::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let rtpmaps = slice::from_raw_parts_mut(ret_rtpmaps, ret_size);
-    rtpmaps.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Rtpmap(ref data) = *attribute {
+            ret.push(RustSdpAttributeRtpmap::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -418,7 +387,6 @@ pub struct RustAv1FmtpParameters {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeFmtpParameters {
     // H264
     pub packetization_mode: u32,
@@ -455,10 +423,10 @@ pub struct RustSdpAttributeFmtpParameters {
     pub rtx: RustRtxFmtpParameters,
 
     // Red
-    pub encodings: *const Vec<u8>,
+    pub encodings: RustSpan<u8>,
 
     // Unknown
-    pub unknown_tokens: *const Vec<String>,
+    pub unknown_tokens: ThinVec<StringView>,
 }
 
 impl<'a> From<&'a SdpAttributeFmtpParameters> for RustSdpAttributeFmtpParameters {
@@ -507,23 +475,17 @@ impl<'a> From<&'a SdpAttributeFmtpParameters> for RustSdpAttributeFmtpParameters
             dtmf_tones: StringView::from(other.dtmf_tones.as_str()),
             av1,
             rtx,
-            encodings: &other.encodings,
-            unknown_tokens: &other.unknown_tokens,
+            encodings: RustSpan::from_slice(other.encodings.as_slice()),
+            unknown_tokens: string_views(&other.unknown_tokens),
         }
     }
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeFmtp {
     pub payload_type: u8,
     pub codec_name: StringView,
     pub parameters: RustSdpAttributeFmtpParameters,
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_fmtp_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Fmtp)
 }
 
 fn find_payload_type(attributes: &[SdpAttribute], payload_type: u8) -> Option<&SdpAttributeRtpmap> {
@@ -544,40 +506,26 @@ fn find_payload_type(attributes: &[SdpAttribute], payload_type: u8) -> Option<&S
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_fmtp(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_fmtp: *mut RustSdpAttributeFmtp,
-) -> size_t {
-    let fmtps = (*attributes).iter().filter_map(|x| {
-        if let SdpAttribute::Fmtp(ref data) = *x {
-            Some(data)
-        } else {
-            None
-        }
-    });
-    let mut rust_fmtps = Vec::new();
-    for fmtp in fmtps {
-        if let Some(rtpmap) = find_payload_type((*attributes).as_slice(), fmtp.payload_type) {
-            rust_fmtps.push(RustSdpAttributeFmtp {
-                payload_type: fmtp.payload_type as u8,
-                codec_name: StringView::from(rtpmap.codec_name.as_str()),
-                parameters: RustSdpAttributeFmtpParameters::from(&fmtp.parameters),
-            });
+pub extern "C" fn sdp_get_fmtp(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeFmtp>,
+) {
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Fmtp(ref fmtp) = *attribute {
+            if let Some(rtpmap) = find_payload_type(attributes.as_slice(), fmtp.payload_type) {
+                ret.push(RustSdpAttributeFmtp {
+                    payload_type: fmtp.payload_type as u8,
+                    codec_name: StringView::from(rtpmap.codec_name.as_str()),
+                    parameters: RustSdpAttributeFmtpParameters::from(&fmtp.parameters),
+                });
+            }
         }
     }
-    let fmtps = if ret_size <= rust_fmtps.len() {
-        slice::from_raw_parts_mut(ret_fmtp, ret_size)
-    } else {
-        slice::from_raw_parts_mut(ret_fmtp, rust_fmtps.len())
-    };
-    fmtps.copy_from_slice(rust_fmtps.as_slice());
-    fmtps.len()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_ptime(attributes: *const Vec<SdpAttribute>) -> i64 {
-    for attribute in (*attributes).iter() {
+pub unsafe extern "C" fn sdp_get_ptime(attributes: &Vec<SdpAttribute>) -> i64 {
+    for attribute in attributes.iter() {
         if let SdpAttribute::Ptime(time) = *attribute {
             return time as i64;
         }
@@ -586,8 +534,8 @@ pub unsafe extern "C" fn sdp_get_ptime(attributes: *const Vec<SdpAttribute>) -> 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_max_msg_size(attributes: *const Vec<SdpAttribute>) -> i64 {
-    for attribute in (*attributes).iter() {
+pub unsafe extern "C" fn sdp_get_max_msg_size(attributes: &Vec<SdpAttribute>) -> i64 {
+    for attribute in attributes.iter() {
         if let SdpAttribute::MaxMessageSize(max_msg_size) = *attribute {
             return max_msg_size as i64;
         }
@@ -596,8 +544,8 @@ pub unsafe extern "C" fn sdp_get_max_msg_size(attributes: *const Vec<SdpAttribut
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_sctp_port(attributes: *const Vec<SdpAttribute>) -> i64 {
-    for attribute in (*attributes).iter() {
+pub unsafe extern "C" fn sdp_get_sctp_port(attributes: &Vec<SdpAttribute>) -> i64 {
+    for attribute in attributes.iter() {
         if let SdpAttribute::SctpPort(port) = *attribute {
             return port as i64;
         }
@@ -617,9 +565,7 @@ pub struct RustSdpAttributeFlags {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_attribute_flags(
-    attributes: *const Vec<SdpAttribute>,
-) -> RustSdpAttributeFlags {
+pub extern "C" fn sdp_get_attribute_flags(attributes: &Vec<SdpAttribute>) -> RustSdpAttributeFlags {
     let mut ret = RustSdpAttributeFlags {
         ice_lite: false,
         rtcp_mux: false,
@@ -628,30 +574,23 @@ pub unsafe extern "C" fn sdp_get_attribute_flags(
         end_of_candidates: false,
         extmap_allow_mixed: false,
     };
-    for attribute in (*attributes).iter() {
-        if let SdpAttribute::IceLite = *attribute {
-            ret.ice_lite = true;
-        } else if let SdpAttribute::RtcpMux = *attribute {
-            ret.rtcp_mux = true;
-        } else if let SdpAttribute::RtcpRsize = *attribute {
-            ret.rtcp_rsize = true;
-        } else if let SdpAttribute::BundleOnly = *attribute {
-            ret.bundle_only = true;
-        } else if let SdpAttribute::EndOfCandidates = *attribute {
-            ret.end_of_candidates = true;
-        } else if let SdpAttribute::ExtmapAllowMixed = *attribute {
-            ret.extmap_allow_mixed = true;
+    for attribute in attributes.iter() {
+        match *attribute {
+            SdpAttribute::IceLite => ret.ice_lite = true,
+            SdpAttribute::RtcpMux => ret.rtcp_mux = true,
+            SdpAttribute::RtcpRsize => ret.rtcp_rsize = true,
+            SdpAttribute::BundleOnly => ret.bundle_only = true,
+            SdpAttribute::EndOfCandidates => ret.end_of_candidates = true,
+            SdpAttribute::ExtmapAllowMixed => ret.extmap_allow_mixed = true,
+            _ => (),
         }
     }
     ret
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_mid(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut StringView,
-) -> nsresult {
-    for attribute in (*attributes).iter() {
+pub extern "C" fn sdp_get_mid(attributes: &Vec<SdpAttribute>, ret: &mut StringView) -> nsresult {
+    for attribute in attributes.iter() {
         if let SdpAttribute::Mid(ref data) = *attribute {
             *ret = StringView::from(data.as_str());
             return NS_OK;
@@ -677,72 +616,42 @@ impl<'a> From<&'a SdpAttributeMsid> for RustSdpAttributeMsid {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_msid_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Msid)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_msids(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_msids: *mut RustSdpAttributeMsid,
+pub extern "C" fn sdp_get_msids(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeMsid>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Msid(ref data) = *x {
-                Some(RustSdpAttributeMsid::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let msids = slice::from_raw_parts_mut(ret_msids, ret_size);
-    msids.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Msid(ref data) = *attribute {
+            ret.push(RustSdpAttributeMsid::from(data));
+        }
+    }
 }
 
-// TODO: Finish msid attributes once parsing is changed upstream.
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeMsidSemantic {
     pub semantic: StringView,
-    pub msids: *const Vec<String>,
+    pub msids: ThinVec<StringView>,
 }
 
 impl<'a> From<&'a SdpAttributeMsidSemantic> for RustSdpAttributeMsidSemantic {
     fn from(other: &SdpAttributeMsidSemantic) -> Self {
         RustSdpAttributeMsidSemantic {
             semantic: StringView::from(other.semantic.as_str()),
-            msids: &other.msids,
+            msids: string_views(&other.msids),
         }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_msid_semantic_count(
-    attributes: *const Vec<SdpAttribute>,
-) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::MsidSemantic)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_msid_semantics(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_msid_semantics: *mut RustSdpAttributeMsidSemantic,
+pub extern "C" fn sdp_get_msid_semantics(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeMsidSemantic>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::MsidSemantic(ref data) = *x {
-                Some(RustSdpAttributeMsidSemantic::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let msid_semantics = slice::from_raw_parts_mut(ret_msid_semantics, ret_size);
-    msid_semantics.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::MsidSemantic(ref data) = *attribute {
+            ret.push(RustSdpAttributeMsidSemantic::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -784,44 +693,30 @@ impl<'a> From<&'a SdpAttributeGroupSemantic> for RustSdpAttributeGroupSemantic {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeGroup {
     pub semantic: RustSdpAttributeGroupSemantic,
-    pub tags: *const Vec<String>,
+    pub tags: ThinVec<StringView>,
 }
 
 impl<'a> From<&'a SdpAttributeGroup> for RustSdpAttributeGroup {
     fn from(other: &SdpAttributeGroup) -> Self {
         RustSdpAttributeGroup {
             semantic: RustSdpAttributeGroupSemantic::from(&other.semantics),
-            tags: &other.tags,
+            tags: string_views(&other.tags),
         }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_group_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Group)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_groups(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_groups: *mut RustSdpAttributeGroup,
+pub extern "C" fn sdp_get_groups(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeGroup>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Group(ref data) = *x {
-                Some(RustSdpAttributeGroup::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let groups = slice::from_raw_parts_mut(ret_groups, ret_size);
-    groups.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Group(ref data) = *attribute {
+            ret.push(RustSdpAttributeGroup::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -849,12 +744,13 @@ impl<'a> From<&'a SdpAttributeRtcp> for RustSdpAttributeRtcp {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_rtcp(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut RustSdpAttributeRtcp,
+pub extern "C" fn sdp_get_rtcp(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut RustSdpAttributeRtcp,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::Rtcp);
-    if let Some(&SdpAttribute::Rtcp(ref data)) = attr {
+    if let Some(&SdpAttribute::Rtcp(ref data)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::Rtcp)
+    {
         *ret = RustSdpAttributeRtcp::from(data);
         return NS_OK;
     }
@@ -885,32 +781,18 @@ impl<'a> From<&'a SdpAttributeRtcpFb> for RustSdpAttributeRtcpFb {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_rtcpfb_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Rtcpfb)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_rtcpfbs(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_rtcpfbs: *mut RustSdpAttributeRtcpFb,
+pub extern "C" fn sdp_get_rtcpfbs(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeRtcpFb>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Rtcpfb(ref data) = *x {
-                Some(RustSdpAttributeRtcpFb::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let rtcpfbs = slice::from_raw_parts_mut(ret_rtcpfbs, ret_size);
-    rtcpfbs.clone_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Rtcpfb(ref data) = *attribute {
+            ret.push(RustSdpAttributeRtcpFb::from(data));
+        }
+    }
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeImageAttrXyRange {
     // range
     pub min: u32,
@@ -918,7 +800,7 @@ pub struct RustSdpAttributeImageAttrXyRange {
     pub step: u32,
 
     // discrete values
-    pub discrete_values: *const Vec<u32>,
+    pub discrete_values: RustSpan<u32>,
 }
 
 impl<'a> From<&'a SdpAttributeImageAttrXyRange> for RustSdpAttributeImageAttrXyRange {
@@ -929,7 +811,7 @@ impl<'a> From<&'a SdpAttributeImageAttrXyRange> for RustSdpAttributeImageAttrXyR
                     min,
                     max,
                     step: step.unwrap_or(1),
-                    discrete_values: ptr::null(),
+                    discrete_values: RustSpan::empty(),
                 }
             }
             &SdpAttributeImageAttrXyRange::DiscreteValues(ref discrete_values) => {
@@ -937,7 +819,7 @@ impl<'a> From<&'a SdpAttributeImageAttrXyRange> for RustSdpAttributeImageAttrXyR
                     min: 0,
                     max: 1,
                     step: 1,
-                    discrete_values,
+                    discrete_values: RustSpan::from_slice(discrete_values.as_slice()),
                 }
             }
         }
@@ -945,14 +827,13 @@ impl<'a> From<&'a SdpAttributeImageAttrXyRange> for RustSdpAttributeImageAttrXyR
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeImageAttrSRange {
     // range
     pub min: c_float,
     pub max: c_float,
 
     // discrete values
-    pub discrete_values: *const Vec<c_float>,
+    pub discrete_values: RustSpan<c_float>,
 }
 
 impl<'a> From<&'a SdpAttributeImageAttrSRange> for RustSdpAttributeImageAttrSRange {
@@ -961,13 +842,13 @@ impl<'a> From<&'a SdpAttributeImageAttrSRange> for RustSdpAttributeImageAttrSRan
             &SdpAttributeImageAttrSRange::Range(min, max) => RustSdpAttributeImageAttrSRange {
                 min,
                 max,
-                discrete_values: ptr::null(),
+                discrete_values: RustSpan::empty(),
             },
             &SdpAttributeImageAttrSRange::DiscreteValues(ref discrete_values) => {
                 RustSdpAttributeImageAttrSRange {
                     min: 0.0,
                     max: 1.0,
-                    discrete_values,
+                    discrete_values: RustSpan::from_slice(discrete_values.as_slice()),
                 }
             }
         }
@@ -991,7 +872,6 @@ impl<'a> From<&'a SdpAttributeImageAttrPRange> for RustSdpAttributeImageAttrPRan
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeImageAttrSet {
     pub x: RustSdpAttributeImageAttrXyRange,
     pub y: RustSdpAttributeImageAttrXyRange,
@@ -1014,18 +894,16 @@ impl<'a> From<&'a SdpAttributeImageAttrSet> for RustSdpAttributeImageAttrSet {
             has_sar: other.sar.is_some(),
             sar: match other.sar {
                 Some(ref x) => RustSdpAttributeImageAttrSRange::from(x),
-                // This is just any valid value accepted by rust,
-                // it might as well by uninitilized
-                None => RustSdpAttributeImageAttrSRange::from(
-                    &SdpAttributeImageAttrSRange::DiscreteValues(vec![]),
-                ),
+                None => RustSdpAttributeImageAttrSRange {
+                    min: 0.0,
+                    max: 1.0,
+                    discrete_values: RustSpan::empty(),
+                },
             },
 
             has_par: other.par.is_some(),
             par: match other.par {
                 Some(ref x) => RustSdpAttributeImageAttrPRange::from(x),
-                // This is just any valid value accepted by rust,
-                // it might as well by uninitilized
                 None => RustSdpAttributeImageAttrPRange { min: 0.0, max: 1.0 },
             },
 
@@ -1035,47 +913,30 @@ impl<'a> From<&'a SdpAttributeImageAttrSet> for RustSdpAttributeImageAttrSet {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeImageAttrSetList {
-    pub sets: *const Vec<SdpAttributeImageAttrSet>,
+    pub is_wildcard: bool,
+    pub sets: ThinVec<RustSdpAttributeImageAttrSet>,
 }
 
 impl<'a> From<&'a SdpAttributeImageAttrSetList> for RustSdpAttributeImageAttrSetList {
     fn from(other: &SdpAttributeImageAttrSetList) -> Self {
         match other {
-            &SdpAttributeImageAttrSetList::Wildcard => {
-                RustSdpAttributeImageAttrSetList { sets: ptr::null() }
-            }
-            &SdpAttributeImageAttrSetList::Sets(ref sets) => {
-                RustSdpAttributeImageAttrSetList { sets: sets }
-            }
+            &SdpAttributeImageAttrSetList::Wildcard => RustSdpAttributeImageAttrSetList {
+                is_wildcard: true,
+                sets: ThinVec::new(),
+            },
+            &SdpAttributeImageAttrSetList::Sets(ref sets) => RustSdpAttributeImageAttrSetList {
+                is_wildcard: false,
+                sets: sets
+                    .iter()
+                    .map(RustSdpAttributeImageAttrSet::from)
+                    .collect(),
+            },
         }
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn sdp_imageattr_get_set_count(
-    sets: *const Vec<SdpAttributeImageAttrSet>,
-) -> size_t {
-    (*sets).len()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_imageattr_get_sets(
-    sets: *const Vec<SdpAttributeImageAttrSet>,
-    ret_size: size_t,
-    ret: *mut RustSdpAttributeImageAttrSet,
-) {
-    let rust_sets: Vec<_> = (*sets)
-        .iter()
-        .map(RustSdpAttributeImageAttrSet::from)
-        .collect();
-    let sets = slice::from_raw_parts_mut(ret, ret_size);
-    sets.clone_from_slice(rust_sets.as_slice());
-}
-
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeImageAttr {
     pub pt: u32,
     pub send: RustSdpAttributeImageAttrSetList,
@@ -1096,28 +957,15 @@ impl<'a> From<&'a SdpAttributeImageAttr> for RustSdpAttributeImageAttr {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_imageattr_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::ImageAttr)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_imageattrs(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_attrs: *mut RustSdpAttributeImageAttr,
+pub extern "C" fn sdp_get_imageattrs(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeImageAttr>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::ImageAttr(ref data) = *x {
-                Some(RustSdpAttributeImageAttr::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let imageattrs = slice::from_raw_parts_mut(ret_attrs, ret_size);
-    imageattrs.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::ImageAttr(ref data) = *attribute {
+            ret.push(RustSdpAttributeImageAttr::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -1137,28 +985,15 @@ impl<'a> From<&'a SdpAttributeSctpmap> for RustSdpAttributeSctpmap {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_sctpmap_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Sctpmap)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_sctpmaps(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_sctpmaps: *mut RustSdpAttributeSctpmap,
+pub extern "C" fn sdp_get_sctpmaps(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeSctpmap>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Sctpmap(ref data) = *x {
-                Some(RustSdpAttributeSctpmap::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let sctpmaps = slice::from_raw_parts_mut(ret_sctpmaps, ret_size);
-    sctpmaps.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Sctpmap(ref data) = *attribute {
+            ret.push(RustSdpAttributeSctpmap::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -1178,81 +1013,53 @@ impl<'a> From<&'a SdpAttributeSimulcastId> for RustSdpAttributeSimulcastId {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeSimulcastVersion {
-    pub ids: *const Vec<SdpAttributeSimulcastId>,
+    pub ids: ThinVec<RustSdpAttributeSimulcastId>,
 }
 
 impl<'a> From<&'a SdpAttributeSimulcastVersion> for RustSdpAttributeSimulcastVersion {
     fn from(other: &SdpAttributeSimulcastVersion) -> Self {
-        RustSdpAttributeSimulcastVersion { ids: &other.ids }
+        RustSdpAttributeSimulcastVersion {
+            ids: other
+                .ids
+                .iter()
+                .map(RustSdpAttributeSimulcastId::from)
+                .collect(),
+        }
     }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_simulcast_get_ids_count(
-    ids: *const Vec<SdpAttributeSimulcastId>,
-) -> size_t {
-    (*ids).len()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_simulcast_get_ids(
-    ids: *const Vec<SdpAttributeSimulcastId>,
-    ret_size: size_t,
-    ret: *mut RustSdpAttributeSimulcastId,
-) {
-    let rust_ids: Vec<_> = (*ids)
-        .iter()
-        .map(RustSdpAttributeSimulcastId::from)
-        .collect();
-    let ids = slice::from_raw_parts_mut(ret, ret_size);
-    ids.clone_from_slice(rust_ids.as_slice());
 }
 
 #[repr(C)]
 pub struct RustSdpAttributeSimulcast {
-    pub send: *const Vec<SdpAttributeSimulcastVersion>,
-    pub receive: *const Vec<SdpAttributeSimulcastVersion>,
+    pub send: ThinVec<RustSdpAttributeSimulcastVersion>,
+    pub receive: ThinVec<RustSdpAttributeSimulcastVersion>,
 }
 
 impl<'a> From<&'a SdpAttributeSimulcast> for RustSdpAttributeSimulcast {
     fn from(other: &SdpAttributeSimulcast) -> Self {
         RustSdpAttributeSimulcast {
-            send: &other.send,
-            receive: &other.receive,
+            send: other
+                .send
+                .iter()
+                .map(RustSdpAttributeSimulcastVersion::from)
+                .collect(),
+            receive: other
+                .receive
+                .iter()
+                .map(RustSdpAttributeSimulcastVersion::from)
+                .collect(),
         }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_simulcast_get_version_count(
-    version_list: *const Vec<SdpAttributeSimulcastVersion>,
-) -> size_t {
-    (*version_list).len()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_simulcast_get_versions(
-    version_list: *const Vec<SdpAttributeSimulcastVersion>,
-    ret_size: size_t,
-    ret: *mut RustSdpAttributeSimulcastVersion,
-) {
-    let rust_versions_list: Vec<_> = (*version_list)
-        .iter()
-        .map(RustSdpAttributeSimulcastVersion::from)
-        .collect();
-    let versions = slice::from_raw_parts_mut(ret, ret_size);
-    versions.clone_from_slice(rust_versions_list.as_slice())
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_simulcast(
-    attributes: *const Vec<SdpAttribute>,
-    ret: *mut RustSdpAttributeSimulcast,
+pub extern "C" fn sdp_get_simulcast(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut RustSdpAttributeSimulcast,
 ) -> nsresult {
-    let attr = get_attribute((*attributes).as_slice(), SdpAttributeType::Simulcast);
-    if let Some(&SdpAttribute::Simulcast(ref data)) = attr {
+    if let Some(&SdpAttribute::Simulcast(ref data)) =
+        get_attribute(attributes.as_slice(), SdpAttributeType::Simulcast)
+    {
         *ret = RustSdpAttributeSimulcast::from(data);
         return NS_OK;
     }
@@ -1282,21 +1089,13 @@ impl<'a> From<&'a Option<SdpAttributeDirection>> for RustDirection {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_direction(attributes: *const Vec<SdpAttribute>) -> RustDirection {
-    for attribute in (*attributes).iter() {
+pub extern "C" fn sdp_get_direction(attributes: &Vec<SdpAttribute>) -> RustDirection {
+    for attribute in attributes.iter() {
         match *attribute {
-            SdpAttribute::Recvonly => {
-                return RustDirection::Recvonly;
-            }
-            SdpAttribute::Sendonly => {
-                return RustDirection::Sendonly;
-            }
-            SdpAttribute::Sendrecv => {
-                return RustDirection::Sendrecv;
-            }
-            SdpAttribute::Inactive => {
-                return RustDirection::Inactive;
-            }
+            SdpAttribute::Recvonly => return RustDirection::Recvonly,
+            SdpAttribute::Sendonly => return RustDirection::Sendonly,
+            SdpAttribute::Sendrecv => return RustDirection::Sendrecv,
+            SdpAttribute::Inactive => return RustDirection::Inactive,
             _ => (),
         }
     }
@@ -1304,6 +1103,7 @@ pub unsafe extern "C" fn sdp_get_direction(attributes: *const Vec<SdpAttribute>)
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct RustSdpAttributeRemoteCandidate {
     pub component: u32,
     pub address: RustAddress,
@@ -1321,59 +1121,30 @@ impl<'a> From<&'a SdpAttributeRemoteCandidate> for RustSdpAttributeRemoteCandida
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_remote_candidate_count(
-    attributes: *const Vec<SdpAttribute>,
-) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::RemoteCandidate)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_remote_candidates(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_candidates: *mut RustSdpAttributeRemoteCandidate,
+pub extern "C" fn sdp_get_remote_candidates(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeRemoteCandidate>,
 ) {
-    let attrs = (*attributes).iter().filter_map(|x| {
-        if let SdpAttribute::RemoteCandidate(ref data) = *x {
-            Some(RustSdpAttributeRemoteCandidate::from(data))
-        } else {
-            None
+    for attribute in attributes.iter() {
+        if let SdpAttribute::RemoteCandidate(ref data) = *attribute {
+            ret.push(RustSdpAttributeRemoteCandidate::from(data));
         }
-    });
-    let candidates = slice::from_raw_parts_mut(ret_candidates, ret_size);
-    for (source, destination) in attrs.zip(candidates) {
-        *destination = source
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_candidate_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Candidate)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_candidates(
-    attributes: *const Vec<SdpAttribute>,
-    _ret_size: size_t,
-    ret: *mut *const Vec<String>,
+pub extern "C" fn sdp_get_candidates(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<nsstring::nsCString>,
 ) {
-    let attr_strings: Vec<String> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Candidate(ref attr) = *x {
-                // The serialized attribute starts with "candidate:...", this needs to be removed
-                Some(attr.to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    *ret = Box::into_raw(Box::from(attr_strings));
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Candidate(ref attr) = *attribute {
+            ret.push(nsstring::nsCString::from(attr.to_string()));
+        }
+    }
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeRidParameters {
     pub max_width: u32,
     pub max_height: u32,
@@ -1381,7 +1152,7 @@ pub struct RustSdpAttributeRidParameters {
     pub max_fs: u32,
     pub max_br: u32,
     pub max_pps: u32,
-    pub unknown: *const Vec<String>,
+    pub unknown: ThinVec<StringView>,
 }
 
 impl<'a> From<&'a SdpAttributeRidParameters> for RustSdpAttributeRidParameters {
@@ -1393,20 +1164,18 @@ impl<'a> From<&'a SdpAttributeRidParameters> for RustSdpAttributeRidParameters {
             max_fs: other.max_fs,
             max_br: other.max_br,
             max_pps: other.max_pps,
-
-            unknown: &other.unknown,
+            unknown: string_views(&other.unknown),
         }
     }
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct RustSdpAttributeRid {
     pub id: StringView,
     pub direction: u32,
-    pub formats: *const Vec<u16>,
+    pub formats: RustSpan<u16>,
     pub params: RustSdpAttributeRidParameters,
-    pub depends: *const Vec<String>,
+    pub depends: ThinVec<StringView>,
 }
 
 impl<'a> From<&'a SdpAttributeRid> for RustSdpAttributeRid {
@@ -1414,36 +1183,23 @@ impl<'a> From<&'a SdpAttributeRid> for RustSdpAttributeRid {
         RustSdpAttributeRid {
             id: StringView::from(other.id.as_str()),
             direction: other.direction.clone() as u32,
-            formats: &other.formats,
+            formats: RustSpan::from_slice(other.formats.as_slice()),
             params: RustSdpAttributeRidParameters::from(&other.params),
-            depends: &other.depends,
+            depends: string_views(&other.depends),
         }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_rid_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Rid)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_rids(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_rids: *mut RustSdpAttributeRid,
+pub extern "C" fn sdp_get_rids(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeRid>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Rid(ref data) = *x {
-                Some(RustSdpAttributeRid::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let rids = slice::from_raw_parts_mut(ret_rids, ret_size);
-    rids.clone_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Rid(ref data) = *attribute {
+            ret.push(RustSdpAttributeRid::from(data));
+        }
+    }
 }
 
 #[repr(C)]
@@ -1474,26 +1230,13 @@ impl<'a> From<&'a SdpAttributeExtmap> for RustSdpAttributeExtmap {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_extmap_count(attributes: *const Vec<SdpAttribute>) -> size_t {
-    count_attribute((*attributes).as_slice(), SdpAttributeType::Extmap)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn sdp_get_extmaps(
-    attributes: *const Vec<SdpAttribute>,
-    ret_size: size_t,
-    ret_rids: *mut RustSdpAttributeExtmap,
+pub extern "C" fn sdp_get_extmaps(
+    attributes: &Vec<SdpAttribute>,
+    ret: &mut ThinVec<RustSdpAttributeExtmap>,
 ) {
-    let attrs: Vec<_> = (*attributes)
-        .iter()
-        .filter_map(|x| {
-            if let SdpAttribute::Extmap(ref data) = *x {
-                Some(RustSdpAttributeExtmap::from(data))
-            } else {
-                None
-            }
-        })
-        .collect();
-    let extmaps = slice::from_raw_parts_mut(ret_rids, ret_size);
-    extmaps.copy_from_slice(attrs.as_slice());
+    for attribute in attributes.iter() {
+        if let SdpAttribute::Extmap(ref data) = *attribute {
+            ret.push(RustSdpAttributeExtmap::from(data));
+        }
+    }
 }

@@ -4,48 +4,62 @@
 
 package mozilla.components.feature.downloads
 
+import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.DownloadAction
+import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
+import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.mockito.Mockito.verify
 
 class DownloadUseCasesTest {
 
+    private val captureMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
+
     @Test
     fun consumeDownloadUseCase() {
-        val store: BrowserStore = mock()
-        val useCases = DownloadsUseCases(store)
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val useCases = DownloadsUseCases(store, mock())
 
         useCases.consumeDownload("tabId", "downloadId")
-        verify(store).dispatch(ContentAction.ConsumeDownloadAction("tabId", "downloadId"))
+
+        captureMiddleware.assertFirstAction(ContentAction.ConsumeDownloadAction::class) { action ->
+            assertEquals("tabId", action.sessionId)
+            assertEquals("downloadId", action.downloadId)
+        }
     }
 
     @Test
     fun restoreDownloadsUseCase() {
-        val store: BrowserStore = mock()
-        val useCases = DownloadsUseCases(store)
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val useCases = DownloadsUseCases(store, mock())
 
         useCases.restoreDownloads()
-        verify(store).dispatch(DownloadAction.RestoreDownloadsStateAction)
+
+        captureMiddleware.findFirstAction(DownloadAction.RestoreDownloadsStateAction::class)
     }
 
     @Test
     fun removeDownloadUseCase() {
-        val store: BrowserStore = mock()
-        val useCases = DownloadsUseCases(store)
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val useCases = DownloadsUseCases(store, mock())
 
         useCases.removeDownload("downloadId")
-        verify(store).dispatch(DownloadAction.RemoveDownloadAction("downloadId"))
+
+        captureMiddleware.assertFirstAction(DownloadAction.RemoveDownloadAction::class) { action ->
+            assertEquals("downloadId", action.downloadId)
+        }
     }
 
     @Test
     fun removeAllDownloadsUseCase() {
-        val store: BrowserStore = mock()
-        val useCases = DownloadsUseCases(store)
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val useCases = DownloadsUseCases(store, mock())
 
         useCases.removeAllDownloads()
-        verify(store).dispatch(DownloadAction.RemoveAllDownloadsAction)
+
+        captureMiddleware.findFirstAction(DownloadAction.RemoveAllDownloadsAction::class)
     }
 }

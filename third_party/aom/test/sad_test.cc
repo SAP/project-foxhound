@@ -26,41 +26,41 @@
 #include "aom_mem/aom_mem.h"
 #include "aom_ports/mem.h"
 
-typedef unsigned int (*SadMxNFunc)(const uint8_t *src_ptr, int src_stride,
-                                   const uint8_t *ref_ptr, int ref_stride);
-typedef std::tuple<int, int, SadMxNFunc, int> SadMxNParam;
+using SadMxNFunc = unsigned int (*)(const uint8_t *src_ptr, int src_stride,
+                                    const uint8_t *ref_ptr, int ref_stride);
+using SadMxNParam = std::tuple<int, int, SadMxNFunc, int>;
 
-typedef unsigned int (*SadSkipMxNFunc)(const uint8_t *src_ptr, int src_stride,
-                                       const uint8_t *ref_ptr, int ref_stride);
-typedef std::tuple<int, int, SadSkipMxNFunc, int> SadSkipMxNParam;
+using SadSkipMxNFunc = unsigned int (*)(const uint8_t *src_ptr, int src_stride,
+                                        const uint8_t *ref_ptr, int ref_stride);
+using SadSkipMxNParam = std::tuple<int, int, SadSkipMxNFunc, int>;
 
-typedef uint32_t (*SadMxNAvgFunc)(const uint8_t *src_ptr, int src_stride,
-                                  const uint8_t *ref_ptr, int ref_stride,
-                                  const uint8_t *second_pred);
-typedef std::tuple<int, int, SadMxNAvgFunc, int> SadMxNAvgParam;
+using SadMxNAvgFunc = uint32_t (*)(const uint8_t *src_ptr, int src_stride,
+                                   const uint8_t *ref_ptr, int ref_stride,
+                                   const uint8_t *second_pred);
+using SadMxNAvgParam = std::tuple<int, int, SadMxNAvgFunc, int>;
 
-typedef unsigned int (*DistWtdSadMxhFunc)(const uint8_t *src_ptr,
-                                          int src_stride,
-                                          const uint8_t *ref_ptr,
-                                          int ref_stride, int width,
-                                          int height);
-typedef std::tuple<int, int, DistWtdSadMxhFunc, int> DistWtdSadMxhParam;
+using DistWtdSadMxhFunc = unsigned int (*)(const uint8_t *src_ptr,
+                                           int src_stride,
+                                           const uint8_t *ref_ptr,
+                                           int ref_stride, int width,
+                                           int height);
+using DistWtdSadMxhParam = std::tuple<int, int, DistWtdSadMxhFunc, int>;
 
-typedef void (*SadMxNx4Func)(const uint8_t *src_ptr, int src_stride,
-                             const uint8_t *const ref_ptr[], int ref_stride,
-                             uint32_t *sad_array);
-typedef std::tuple<int, int, SadMxNx4Func, int> SadMxNx4Param;
+using SadMxNx4Func = void (*)(const uint8_t *src_ptr, int src_stride,
+                              const uint8_t *const ref_ptr[], int ref_stride,
+                              uint32_t *sad_array);
+using SadMxNx4Param = std::tuple<int, int, SadMxNx4Func, int>;
 
-typedef void (*SadSkipMxNx4Func)(const uint8_t *src_ptr, int src_stride,
+using SadSkipMxNx4Func = void (*)(const uint8_t *src_ptr, int src_stride,
+                                  const uint8_t *const ref_ptr[],
+                                  int ref_stride, uint32_t *sad_array);
+using SadSkipMxNx4Param = std::tuple<int, int, SadSkipMxNx4Func, int>;
+
+using SadMxNx4AvgFunc = void (*)(const uint8_t *src_ptr, int src_stride,
                                  const uint8_t *const ref_ptr[], int ref_stride,
+                                 const uint8_t *second_pred,
                                  uint32_t *sad_array);
-typedef std::tuple<int, int, SadSkipMxNx4Func, int> SadSkipMxNx4Param;
-
-typedef void (*SadMxNx4AvgFunc)(const uint8_t *src_ptr, int src_stride,
-                                const uint8_t *const ref_ptr[], int ref_stride,
-                                const uint8_t *second_pred,
-                                uint32_t *sad_array);
-typedef std::tuple<int, int, SadMxNx4AvgFunc, int> SadMxNx4AvgParam;
+using SadMxNx4AvgParam = std::tuple<int, int, SadMxNx4AvgFunc, int>;
 
 using libaom_test::ACMRandom;
 
@@ -139,16 +139,12 @@ class SADTestBase : public ::testing::Test {
       source_data_ = source_data8_;
       reference_data_ = reference_data8_;
       second_pred_ = second_pred8_;
-      comp_pred_ = comp_pred8_;
-      comp_pred_test_ = comp_pred8_test_;
     } else {
       use_high_bit_depth_ = true;
       bit_depth_ = static_cast<aom_bit_depth_t>(bd_);
       source_data_ = CONVERT_TO_BYTEPTR(source_data16_);
       reference_data_ = CONVERT_TO_BYTEPTR(reference_data16_);
       second_pred_ = CONVERT_TO_BYTEPTR(second_pred16_);
-      comp_pred_ = CONVERT_TO_BYTEPTR(comp_pred16_);
-      comp_pred_test_ = CONVERT_TO_BYTEPTR(comp_pred16_test_);
     }
     mask_ = (1 << bit_depth_) - 1;
     source_stride_ = (width_ + 31) & ~31;
@@ -336,10 +332,8 @@ class SADTestBase : public ::testing::Test {
   static uint16_t *reference_data16_;
   static uint16_t *second_pred16_;
   int reference_stride_;
-  static uint8_t *comp_pred_;
   static uint8_t *comp_pred8_;
   static uint16_t *comp_pred16_;
-  static uint8_t *comp_pred_test_;
   static uint8_t *comp_pred8_test_;
   static uint16_t *comp_pred16_test_;
   DIST_WTD_COMP_PARAMS jcp_param_;
@@ -529,8 +523,6 @@ class SADavgTest : public ::testing::WithParamInterface<SadMxNAvgParam>,
 uint8_t *SADTestBase::source_data_ = nullptr;
 uint8_t *SADTestBase::reference_data_ = nullptr;
 uint8_t *SADTestBase::second_pred_ = nullptr;
-uint8_t *SADTestBase::comp_pred_ = nullptr;
-uint8_t *SADTestBase::comp_pred_test_ = nullptr;
 uint8_t *SADTestBase::source_data8_ = nullptr;
 uint8_t *SADTestBase::reference_data8_ = nullptr;
 uint8_t *SADTestBase::second_pred8_ = nullptr;

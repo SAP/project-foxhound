@@ -4,11 +4,11 @@
 
 package mozilla.components.feature.downloads
 
-import mozilla.components.feature.downloads.fake.FakeDateTimeProvider
+import mozilla.components.support.utils.FakeDateTimeProvider
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.test.assertNotNull
 
 class DownloadEstimatorTest {
 

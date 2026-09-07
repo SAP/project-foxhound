@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,7 @@ interface Principal;
 interface URI;
 interface nsIDocShell;
 interface RemoteTab;
+interface MozChannel;
 interface nsIDOMProcessParent;
 interface nsIRFPTargetSetIDL;
 
@@ -87,14 +87,20 @@ interface WindowGlobalParent : WindowContext {
 
   readonly attribute long osPid;
 
+  // The remote type of `this.domProcess`.
+  readonly attribute UTF8String? remoteType;
+
   // A WindowGlobalParent is the root in its process if it has no parent, or its
   // embedder is in a different process.
   readonly attribute boolean isProcessRoot;
 
-  // Is the document loaded in this WindowGlobalParent the initial document
-  // implicitly created while "creating a new browsing context".
-  // https://html.spec.whatwg.org/multipage/browsers.html#creating-a-new-browsing-context
+  // True if the document loaded in this WindowGlobalParent has the
+  // isInitialDocument flag set.
   readonly attribute boolean isInitialDocument;
+
+  // True if the document loaded in this WindowGlobalParent has the
+  // isUncommittedInitialDocument flag set.
+  readonly attribute boolean isUncommittedInitialDocument;
 
   readonly attribute FrameLoader? rootFrameLoader; // Embedded (browser) only
 
@@ -123,6 +129,15 @@ interface WindowGlobalParent : WindowContext {
   readonly attribute DOMString documentTitle;
   readonly attribute nsICookieJarSettings? cookieJarSettings;
 
+  // The bare nsIChannel instances which were created in the parent process by
+  // DocumentLoadListener to load this document.
+  //
+  // NOTE: These will not reflect content-process-only changes to the channel,
+  // such as the PDF.js & JSON stream converters, initial about:blank, and
+  // javascript: URI documents.
+  readonly attribute MozChannel? documentChannel;
+  readonly attribute MozChannel? failedChannel;
+
   // True if the the currently loaded document is in fullscreen.
   attribute boolean fullscreen;
 
@@ -139,6 +154,13 @@ interface WindowGlobalParent : WindowContext {
   readonly attribute nsIDOMProcessParent? domProcess;
 
   static WindowGlobalParent? getByInnerWindowId(unsigned long long innerWindowId);
+
+  // Flush each live top-level WindowGlobalParent's in-memory ContentBlockingLog
+  // to the tracking database. Used by TrackingDBService to force ingestion of
+  // pending events from long-lived tabs before a read query. Applies the same
+  // gates as the existing on-destruction flush (out-of-process, non-private,
+  // top-level content).
+  static undefined flushAllContentBlockingLogs();
 
   /**
    * Get or create the JSWindowActor with the given name.
@@ -177,6 +199,8 @@ interface WindowGlobalParent : WindowContext {
   // has active peer connections.  If this is called for a non-top-level
   // context, it always returns false.
   boolean hasActivePeerConnections();
+
+  undefined updateFullscreenKeyboardLockStatus(FullscreenKeyboardLock status);
 };
 
 [Exposed=Window, ChromeOnly]

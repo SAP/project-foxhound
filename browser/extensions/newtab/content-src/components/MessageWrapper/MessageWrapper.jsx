@@ -11,7 +11,13 @@ import { useIntersectionObserver } from "../../lib/utils";
 // If a feature is triggered outside of this flow (e.g., the Mobile Download QR Promo),
 // it should emit New Tab-specific Glean events independently.
 
-function MessageWrapper({ children, dispatch, hiddenOverride, onDismiss }) {
+function MessageWrapper({
+  children,
+  dispatch,
+  hiddenOverride,
+  onDismiss,
+  wrapperClassName,
+}) {
   const message = useSelector(state => state.Messages);
   const [isIntersecting, setIsIntersecting] = useState(false);
   const [tabIsVisible, setTabIsVisible] = useState(
@@ -125,7 +131,11 @@ function MessageWrapper({ children, dispatch, hiddenOverride, onDismiss }) {
       ref={el => {
         ref.current = [el];
       }}
-      className="message-wrapper"
+      className={
+        wrapperClassName
+          ? `message-wrapper ${wrapperClassName}`
+          : "message-wrapper"
+      }
     >
       {React.cloneElement(children, {
         isIntersecting,
@@ -133,6 +143,7 @@ function MessageWrapper({ children, dispatch, hiddenOverride, onDismiss }) {
         handleClick,
         handleBlock,
         handleClose,
+        dispatch,
       })}
     </div>
   );

@@ -1,6 +1,6 @@
 # The Example Shared Rust Component
 
-If you want to  get started with shared Rust Component development, check out the [Example component](https://github.com/mozilla/application-services/tree/main/components/example).
+If you want to get started with shared Rust Component development, check out the [Example component](https://github.com/mozilla/application-services/tree/main/components/example).
 It implements a basic TODO app as a way to show common patterns in component development and useful support crates that you can use.
 Feel free to copy and paste code from there as the starting point for your component.
 

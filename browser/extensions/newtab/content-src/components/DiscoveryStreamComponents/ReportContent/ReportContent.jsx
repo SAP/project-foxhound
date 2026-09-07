@@ -186,6 +186,7 @@ export const ReportContent = spocs => {
               id="report-group"
               data-l10n-id="newtab-report-ads-why-reporting"
               className="report-ads-options"
+              headingLevel="3"
             >
               <moz-radio
                 data-l10n-id="newtab-report-ads-reason-not-interested"
@@ -209,6 +210,7 @@ export const ReportContent = spocs => {
               id="report-group"
               data-l10n-id="newtab-report-content-why-reporting-this"
               className="report-content-options"
+              headingLevel="3"
             >
               <moz-radio
                 data-l10n-id="newtab-report-content-wrong-category"
@@ -226,6 +228,19 @@ export const ReportContent = spocs => {
                 data-l10n-id="newtab-report-content-spam-misleading"
                 value="spam_or_misleading"
               ></moz-radio>
+              <moz-radio
+                data-l10n-id="newtab-report-content-requires-payment-subscription"
+                value="requires_payment_or_subscription"
+              >
+                <a
+                  slot="support-link"
+                  is="moz-support-link"
+                  support-page="recommendations-firefox-new-tab#w_what-is-a-paywall"
+                  data-l10n-id="newtab-report-content-requires-payment-subscription-learn-more"
+                  rel="noreferrer"
+                  target="_blank"
+                ></a>
+              </moz-radio>
             </moz-radio-group>
           </>
         )}

@@ -1,0 +1,56 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title></title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<script>
+
+// Bug 1924775 - ESLint doesn't yet know about `ImageDecoder`.
+/* globals ImageDecoder:false */
+
+add_task(async function test() {
+  const imgResponse = await fetch("multiple.ico");
+  const data = await imgResponse.bytes();
+
+  let decoder = new ImageDecoder({
+    data,
+    type: "image/x-icon",
+  });
+  await decoder.tracks.ready;
+
+  is(typeof decoder.tracks[0].getSizes, "undefined", "getSizes should be hidden from normal content");
+  let sizes = SpecialPowers.wrap(decoder.tracks[0]).getSizes();
+  is(sizes.length, 3, "Should have 3 sizes");
+
+  let expected = [[16, {r: 205, g: 8, b: 59}], [32, {r: 88, g: 205,  b: 103 }], [512, {r:100, g: 205, b: 224}]];
+  for (let i = 0; i < expected.length; i++) {
+    const [size, color] = expected[i];
+
+    is(sizes[i].width, size, "width matches");
+    is(sizes[i].height, size, "height matches");
+
+    let decoder = new ImageDecoder({
+      data,
+      type: "image/x-icon",
+      desiredWidth: size,
+      desiredHeight: size,
+    });
+
+    let { image } = await decoder.decode({ completeFramesOnly: true } );
+
+    let offscreen = new OffscreenCanvas(size, size);
+    let ctx = offscreen.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+
+    let imageData = ctx.getImageData(0, 0, 1, 1);
+    is(imageData.data[0], color.r, `${size}x${size} red`);
+    is(imageData.data[1], color.g, `${size}x${size} green`);
+    is(imageData.data[2], color.b, `${size}x${size} bluee`);
+  }
+});
+</script>
+</body>
+</html>

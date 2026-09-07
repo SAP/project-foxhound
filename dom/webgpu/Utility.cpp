@@ -1,13 +1,14 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Utility.h"
+
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebGPUBinding.h"
-#include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
 
 namespace mozilla::webgpu {
 
@@ -603,8 +604,21 @@ ffi::WGPUDepthStencilState ConvertDepthStencilState(
     const dom::GPUDepthStencilState& aDesc) {
   ffi::WGPUDepthStencilState desc = {};
   desc.format = ConvertTextureFormat(aDesc.mFormat);
-  desc.depth_write_enabled = aDesc.mDepthWriteEnabled;
-  desc.depth_compare = ConvertCompareFunction(aDesc.mDepthCompare);
+  if (aDesc.mDepthWriteEnabled.WasPassed()) {
+    desc.depth_write_enabled.tag = ffi::WGPUFfiOption_bool_Some_bool;
+    desc.depth_write_enabled.some = aDesc.mDepthWriteEnabled.Value();
+  } else {
+    desc.depth_write_enabled.tag = ffi::WGPUFfiOption_bool_None_bool;
+  }
+  if (aDesc.mDepthCompare.WasPassed()) {
+    desc.depth_compare.tag =
+        ffi::WGPUFfiOption_CompareFunction_Some_CompareFunction;
+    desc.depth_compare.some =
+        ConvertCompareFunction(aDesc.mDepthCompare.Value());
+  } else {
+    desc.depth_compare.tag =
+        ffi::WGPUFfiOption_CompareFunction_None_CompareFunction;
+  }
   desc.stencil.front = ConvertStencilFaceState(aDesc.mStencilFront);
   desc.stencil.back = ConvertStencilFaceState(aDesc.mStencilBack);
   desc.stencil.read_mask = aDesc.mStencilReadMask;
@@ -613,6 +627,26 @@ ffi::WGPUDepthStencilState ConvertDepthStencilState(
   desc.bias.slope_scale = aDesc.mDepthBiasSlopeScale;
   desc.bias.clamp = aDesc.mDepthBiasClamp;
   return desc;
+}
+
+ffi::WGPUPredefinedColorSpace ConvertPredefinedColorSpace(
+    const dom::PredefinedColorSpace& aColorSpace) {
+  ffi::WGPUPredefinedColorSpace result = ffi::WGPUPredefinedColorSpace_Sentinel;
+  switch (aColorSpace) {
+    case dom::PredefinedColorSpace::Srgb:
+      result = ffi::WGPUPredefinedColorSpace_Srgb;
+      break;
+    case dom::PredefinedColorSpace::Display_p3:
+      result = ffi::WGPUPredefinedColorSpace_DisplayP3;
+      break;
+  }
+
+  // Clang will check for us that the switch above is exhaustive,
+  // but not if we add a 'default' case. So, check this here.
+  MOZ_RELEASE_ASSERT(result != ffi::WGPUPredefinedColorSpace_Sentinel,
+                     "unexpected predefined color space enum");
+
+  return result;
 }
 
 // Extract a list of dynamic offsets from a larger JS-supplied buffer.
@@ -647,5 +681,18 @@ mozilla::Maybe<mozilla::Buffer<uint32_t>> GetDynamicOffsetsFromArray(
 
   return dynamicOffsets;
 }
+
+namespace ffi {
+
+// Validate that the texture format `aFormat` is a valid value for the WebIDL
+// `GPUTextureFormat` type (i.e., that it is not a wgpu extension).
+extern "C" bool wgpu_texture_format_is_valid_for_webidl(
+    const nsCString* aFormat) {
+  Maybe<dom::GPUTextureFormat> format =
+      mozilla::dom::StringToEnum<dom::GPUTextureFormat>(*aFormat);
+  return format.isSome();
+}
+
+}  // namespace ffi
 
 }  // namespace mozilla::webgpu

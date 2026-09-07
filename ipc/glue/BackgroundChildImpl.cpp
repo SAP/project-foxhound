@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,6 @@
 #include "mozilla/dom/PBackgroundSDBConnectionChild.h"
 #include "mozilla/dom/CookieStoreChild.h"
 #include "mozilla/dom/PFileSystemRequestChild.h"
-#include "mozilla/dom/EndpointForReportChild.h"
 #include "mozilla/dom/PVsync.h"
 #include "mozilla/dom/TemporaryIPCBlobChild.h"
 #include "mozilla/dom/cache/ActorUtils.h"
@@ -285,18 +282,6 @@ bool BackgroundChildImpl::DeallocPFileCreatorChild(PFileCreatorChild* aActor) {
   return true;
 }
 
-PUDPSocketChild* BackgroundChildImpl::AllocPUDPSocketChild(
-    const Maybe<PrincipalInfo>& aPrincipalInfo, const nsACString& aFilter) {
-  MOZ_CRASH("AllocPUDPSocket should not be called");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPUDPSocketChild(PUDPSocketChild* child) {
-  UDPSocketChild* p = static_cast<UDPSocketChild*>(child);
-  p->ReleaseIPDLReference();
-  return true;
-}
-
 // -----------------------------------------------------------------------------
 // BroadcastChannel API
 // -----------------------------------------------------------------------------
@@ -422,18 +407,6 @@ BackgroundChildImpl::AllocPServiceWorkerRegistrationChild(
     const IPCServiceWorkerRegistrationDescriptor&) {
   MOZ_CRASH("Shouldn't be called.");
   return {};
-}
-
-dom::PEndpointForReportChild* BackgroundChildImpl::AllocPEndpointForReportChild(
-    const nsAString& aGroupName, const PrincipalInfo& aPrincipalInfo) {
-  return new dom::EndpointForReportChild();
-}
-
-bool BackgroundChildImpl::DeallocPEndpointForReportChild(
-    PEndpointForReportChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete static_cast<dom::EndpointForReportChild*>(aActor);
-  return true;
 }
 
 }  // namespace mozilla::ipc

@@ -9,17 +9,17 @@
  */
 
 #include <immintrin.h>
-#include <math.h>
 
-#include "api/array_view.h"
+#include <cmath>
+#include <span>
+
 #include "modules/audio_processing/aec3/vector_math.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
-namespace aec3 {
 
 // Elementwise square root.
-void VectorMath::SqrtAVX2(rtc::ArrayView<float> x) {
+void VectorMath::SqrtAVX2(std::span<float> x) {
   const int x_size = static_cast<int>(x.size());
   const int vector_limit = x_size >> 3;
 
@@ -36,9 +36,9 @@ void VectorMath::SqrtAVX2(rtc::ArrayView<float> x) {
 }
 
 // Elementwise vector multiplication z = x * y.
-void VectorMath::MultiplyAVX2(rtc::ArrayView<const float> x,
-                              rtc::ArrayView<const float> y,
-                              rtc::ArrayView<float> z) {
+void VectorMath::MultiplyAVX2(std::span<const float> x,
+                              std::span<const float> y,
+                              std::span<float> z) {
   RTC_DCHECK_EQ(z.size(), x.size());
   RTC_DCHECK_EQ(z.size(), y.size());
   const int x_size = static_cast<int>(x.size());
@@ -58,8 +58,7 @@ void VectorMath::MultiplyAVX2(rtc::ArrayView<const float> x,
 }
 
 // Elementwise vector accumulation z += x.
-void VectorMath::AccumulateAVX2(rtc::ArrayView<const float> x,
-                                rtc::ArrayView<float> z) {
+void VectorMath::AccumulateAVX2(std::span<const float> x, std::span<float> z) {
   RTC_DCHECK_EQ(z.size(), x.size());
   const int x_size = static_cast<int>(x.size());
   const int vector_limit = x_size >> 3;
@@ -77,5 +76,4 @@ void VectorMath::AccumulateAVX2(rtc::ArrayView<const float> x,
   }
 }
 
-}  // namespace aec3
 }  // namespace webrtc

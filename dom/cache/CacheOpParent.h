@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #ifndef mozilla_dom_cache_CacheOpParent_h
 #define mozilla_dom_cache_CacheOpParent_h
 
+#include "mozilla/InitializedOnce.h"
 #include "mozilla/dom/cache/Manager.h"
 #include "mozilla/dom/cache/PCacheOpParent.h"
 #include "mozilla/dom/cache/PrincipalVerifier.h"
@@ -25,10 +24,9 @@ class CacheOpParent final : public PCacheOpParent,
   using Manager::Listener::OnOpComplete;
 
  public:
-  CacheOpParent(mozilla::ipc::PBackgroundParent* aIpcManager, CacheId aCacheId,
-                const CacheOpArgs& aOpArgs);
-  CacheOpParent(mozilla::ipc::PBackgroundParent* aIpcManager,
-                Namespace aNamespace, const CacheOpArgs& aOpArgs);
+  CacheOpParent(const WeakRefParentType& aIpcManager,
+                const CacheOpArgs& aOpArgs, CacheId aCacheId = INVALID_CACHE_ID,
+                Namespace aNamespace = INVALID_NAMESPACE);
 
   void Execute(const SafeRefPtr<ManagerId>& aManagerId);
 
@@ -60,7 +58,8 @@ class CacheOpParent final : public PCacheOpParent,
   void ProcessCrossOriginResourcePolicyHeader(
       ErrorResult& aRv, const nsTArray<SavedResponse>& aResponses);
 
-  mozilla::ipc::PBackgroundParent* mIpcManager;
+  mozilla::LazyInitializedOnceEarlyDestructible<const WeakRefParentType>
+      mIpcManager;
   const CacheId mCacheId;
   const Namespace mNamespace;
   const CacheOpArgs mOpArgs;

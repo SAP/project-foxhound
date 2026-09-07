@@ -11,13 +11,14 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import org.mozilla.fenix.R
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.showToolbar
 
 /**
  * A [Fragment] that allows user to set the default search engine.
  */
-class DefaultSearchEngineFragment : PreferenceFragmentCompat() {
+class DefaultSearchEngineFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.default_search_engine_preferences, rootKey)

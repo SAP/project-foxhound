@@ -5,30 +5,38 @@
 package org.mozilla.fenix.settings.advanced
 
 import android.app.Activity
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkObject
-import io.mockk.mockkStatic
 import io.mockk.spyk
 import io.mockk.verify
 import io.mockk.verifyAll
+import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.SearchAction
+import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.locale.LocaleManager
 import mozilla.components.support.locale.LocaleUseCases
+import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import java.util.Locale
 
+@RunWith(AndroidJUnit4::class)
 class LocaleSettingsControllerTest {
 
-    private val activity = mockk<Activity>(relaxed = true)
+    val activity: Activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+
     private val localeSettingsStore: LocaleSettingsStore = mockk(relaxed = true)
-    private val browserStore: BrowserStore = mockk(relaxed = true)
+    private val captureActionsMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
+
+    private val browserStore = BrowserStore(middleware = listOf(captureActionsMiddleware))
     private val localeUseCases: LocaleUseCases = mockk(relaxed = true)
-    private val mockState = LocaleSettingsState(mockk(), mockk(), mockk())
+    private val mockState = LocaleSettingsState(emptyList(), emptyList(), mockk())
 
     private lateinit var controller: DefaultLocaleSettingsController
 
@@ -43,28 +51,24 @@ class LocaleSettingsControllerTest {
             ),
         )
 
-        mockkObject(LocaleManager)
-        mockkStatic("org.mozilla.fenix.settings.advanced.LocaleManagerExtensionKt")
+        every { localeUseCases.notifyLocaleChanged(any()) } just Runs
     }
 
     @Test
     fun `don't set locale if same locale is chosen`() {
         val selectedLocale = Locale.Builder().setLanguage("en").setRegion("UK").build()
         every { localeSettingsStore.state } returns mockState.copy(selectedLocale = selectedLocale)
-        every { LocaleManager.getCurrentLocale(activity) } returns mockk()
+
+        LocaleManager.setNewLocale(activity, locale = selectedLocale)
 
         controller.handleLocaleSelected(selectedLocale)
 
         verifyAll(inverse = true) {
             localeSettingsStore.dispatch(LocaleSettingsAction.Select(selectedLocale))
             browserStore.dispatch(SearchAction.RefreshSearchEnginesAction)
-            LocaleManager.setNewLocale(activity, locale = selectedLocale)
-            activity.recreate()
-        }
-        with(controller) {
-            verify(inverse = true) {
-                LocaleManager.updateBaseConfiguration(activity, selectedLocale)
-            }
+            controller.updateLocale(selectedLocale)
+            controller.recreateActivity()
+            controller.updateBaseConfiguration(activity, selectedLocale)
         }
     }
 
@@ -72,100 +76,62 @@ class LocaleSettingsControllerTest {
     fun `set a new locale from the list if other locale is chosen`() {
         val selectedLocale = Locale.Builder().setLanguage("en").setRegion("UK").build()
         val otherLocale: Locale = mockk()
-        every { localeUseCases.notifyLocaleChanged } returns mockk()
         every { localeSettingsStore.state } returns mockState.copy(selectedLocale = otherLocale)
-        every { LocaleManager.setNewLocale(activity, localeUseCases, selectedLocale) } returns activity
-        with(controller) {
-            every { LocaleManager.updateBaseConfiguration(activity, selectedLocale) } just Runs
-        }
 
         controller.handleLocaleSelected(selectedLocale)
 
         verify { localeSettingsStore.dispatch(LocaleSettingsAction.Select(selectedLocale)) }
-        verify { browserStore.dispatch(SearchAction.RefreshSearchEnginesAction) }
-        verify { LocaleManager.setNewLocale(activity, localeUseCases, selectedLocale) }
-        verify { activity.recreate() }
-        verify {
-            @Suppress("DEPRECATION")
-            activity.overridePendingTransition(0, 0)
-        }
-
-        with(controller) {
-            verify { LocaleManager.updateBaseConfiguration(activity, selectedLocale) }
-        }
+        captureActionsMiddleware.findFirstAction(SearchAction.RefreshSearchEnginesAction::class)
+        controller.updateLocale(selectedLocale)
+        controller.recreateActivity()
+        verify { controller.updateBaseConfiguration(activity, selectedLocale) }
     }
 
     @Test
     fun `set a new locale from the list if default locale is not selected`() {
         val selectedLocale = Locale.Builder().setLanguage("en").setRegion("UK").build()
-        every { localeUseCases.notifyLocaleChanged } returns mockk()
         every { localeSettingsStore.state } returns mockState.copy(selectedLocale = selectedLocale)
-        every { LocaleManager.getCurrentLocale(activity) } returns null
-        every { LocaleManager.setNewLocale(activity, localeUseCases, selectedLocale) } returns activity
 
-        with(controller) {
-            every { LocaleManager.updateBaseConfiguration(activity, selectedLocale) } just Runs
-        }
+        LocaleManager.setNewLocale(activity, locale = null)
 
         controller.handleLocaleSelected(selectedLocale)
 
         verify { localeSettingsStore.dispatch(LocaleSettingsAction.Select(selectedLocale)) }
-        verify { browserStore.dispatch(SearchAction.RefreshSearchEnginesAction) }
-        verify { LocaleManager.setNewLocale(activity, localeUseCases, selectedLocale) }
-        verify { activity.recreate() }
-        verify {
-            @Suppress("DEPRECATION")
-            activity.overridePendingTransition(0, 0)
-        }
-
-        with(controller) {
-            verify { LocaleManager.updateBaseConfiguration(activity, selectedLocale) }
-        }
+        captureActionsMiddleware.findFirstAction(SearchAction.RefreshSearchEnginesAction::class)
+        verify { controller.updateLocale(selectedLocale) }
+        verify { controller.recreateActivity() }
+        verify { controller.updateBaseConfiguration(activity, selectedLocale) }
     }
 
     @Test
     fun `don't set default locale if default locale is already chosen`() {
         val selectedLocale = Locale.Builder().setLanguage("en").setRegion("UK").build()
         every { localeSettingsStore.state } returns mockState.copy(localeList = listOf(selectedLocale))
-        every { LocaleManager.getCurrentLocale(activity) } returns null
+        LocaleManager.setNewLocale(activity, locale = null)
 
         controller.handleDefaultLocaleSelected()
 
         verifyAll(inverse = true) {
             localeSettingsStore.dispatch(LocaleSettingsAction.Select(selectedLocale))
-            browserStore.dispatch(SearchAction.RefreshSearchEnginesAction)
-            LocaleManager.resetToSystemDefault(activity, localeUseCases)
-            activity.recreate()
-            with(controller) {
-                LocaleManager.updateBaseConfiguration(activity, selectedLocale)
-            }
+            controller.resetToSystemDefault()
+            controller.recreateActivity()
+            controller.updateBaseConfiguration(activity, selectedLocale)
         }
+        captureActionsMiddleware.assertNotDispatched(SearchAction.RefreshSearchEnginesAction::class)
     }
 
     @Test
     fun `set the default locale as the new locale`() {
         val selectedLocale = Locale.Builder().setLanguage("en").setRegion("UK").build()
-        every { localeUseCases.notifyLocaleChanged } returns mockk()
         every { localeSettingsStore.state } returns mockState.copy(localeList = listOf(selectedLocale))
-        every { LocaleManager.resetToSystemDefault(activity, localeUseCases) } just Runs
-        with(controller) {
-            every { LocaleManager.updateBaseConfiguration(activity, selectedLocale) } just Runs
-        }
 
         controller.handleDefaultLocaleSelected()
 
         verify { localeSettingsStore.dispatch(LocaleSettingsAction.Select(selectedLocale)) }
-        verify { browserStore.dispatch(SearchAction.RefreshSearchEnginesAction) }
-        verify { LocaleManager.resetToSystemDefault(activity, localeUseCases) }
-        verify { activity.recreate() }
-        verify {
-            @Suppress("DEPRECATION")
-            activity.overridePendingTransition(0, 0)
-        }
-
-        with(controller) {
-            verify { LocaleManager.updateBaseConfiguration(activity, selectedLocale) }
-        }
+        captureActionsMiddleware.findFirstAction(SearchAction.RefreshSearchEnginesAction::class)
+        verify { controller.resetToSystemDefault() }
+        verify { controller.recreateActivity() }
+        verify { controller.updateBaseConfiguration(activity, selectedLocale) }
     }
 
     @Test

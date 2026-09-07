@@ -1,16 +1,27 @@
-# The following condition is trying to capture "CI jobs that can't use
-# webgpu". Using WebGPU in CI requires that it is enabled in the build, not
-# disabled by preference, and that a GPU is present on the CI host.
+# Skip the WebGPU reftests if:
+# - Linux (`gtkWidget`) release_or_beta, because WebGPU is not supported yet.
+# - No GPU process (`nogpu`), unless Linux, because WebGPU is disabled
+#   on Mac/Windows when there is no GPU process.
+# - Software rendering (`swgl`). It is possible to use WebGPU with a
+#   software renderer, but not all such CI configs were working when
+#   tested.
+# - Android, because WebGPU is not supported yet
+# - Anything that's not 64-bit x86 or ARM (32-bit builds or any unusual
+#   architecture)
 #
 # Since this condition applies to all tests in this file, and taskcluster will
 # drop suites that have no enabled tests, it is important that this condition
 # not erroneously skip these tests when evaluated under taskcluster's more
 # limited view of the configuration.
-#defaults skip-if(swgl||Android||win_no_dxc)
+defaults skip-if((gtkWidget&&release_or_beta)||(nogpu&&!gtkWidget)||swgl||Android||(!x86_64&&!aarch64))
 
-# TODO: enable these tests after figuring out a proper skip condition
+# `testing/profiles/reftest/user.js` sets `gfx.webgpu.ignore-blocklist`
+# so that the tests will run even on old Mesa versions in CI (see
+# <https://bugzilla.mozilla.org/show_bug.cgi?id=1985348>). Setting the pref
+# here does not work because reftest per-test prefs are set too late to affect
+# graphics initialization. 
 
-skip fuzzy(0-255,0-800) == draw.html draw-ref.html
-skip fuzzy(0-255,0-800) == draw-storage-compute.html draw.html
-skip fuzzy(0-255,0-800) == draw-storage.html draw.html
-skip fuzzy(0-255,0-800) == draw-storage-bundle.html draw.html
+fuzzy(0-255,0-800) == draw.html draw-ref.html
+fuzzy(0-255,0-800) == draw-storage-compute.html draw.html
+fuzzy(0-255,0-800) == draw-storage.html draw.html
+fuzzy(0-255,0-800) == draw-storage-bundle.html draw.html

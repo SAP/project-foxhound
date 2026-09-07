@@ -1,4 +1,5 @@
 # Push
+
 <div class="note">
 <div class="admonition-title">Note</div>
 This document describes how Firefox implements the Web Push standard internally, and is intended for developers working directly on Push. If you are looking for how to consume push, please refer to the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Push_API" target="_blank">following MDN document</a>
@@ -6,9 +7,11 @@ This document describes how Firefox implements the Web Push standard internally,
 </div>
 
 ## High level push architecture
+
 The following sequence diagram describes the high level push architecture as observed by web application. The diagram describes the interactions between a Web application's client code running in the browser, Firefox, [Autopush](https://autopush.readthedocs.io/en/latest/) (Firefox's push server that delivers push notifications) and a third party server that sends the push notifications to Autopush
 
 The dotted lines are done by the consumer of push.
+
 ```{mermaid}
 sequenceDiagram
 	participant TP as Web Application JS
@@ -43,7 +46,7 @@ sequenceDiagram
 
 ### Flow diagram for source code
 
-The source code for push is available under [`dom/push`](https://searchfox.org/mozilla-central/source/dom/push) in mozilla-central.
+The source code for push is available under [`dom/push`](https://searchfox.org/firefox-main/source/dom/push) in mozilla-central.
 
 The following flow diagram describes how different modules interact with each other to provide the push API to consumers.
 
@@ -73,6 +76,7 @@ flowchart TD
 ```
 
 ### The Push Web Socket
+
 Push in Firefox Desktop communicates with Autopush using a web socket connection.
 
 The web socket connection is created as the browser initializes and is managed by the following state diagram.
@@ -100,9 +104,10 @@ Once the Push web socket is on the `Ready` state, it is ready to send new subscr
 
 Push uses an observer pattern to notify observers of any incoming push notifications. See the [high level architecture](#high-level-push-architecture) section.
 
-
 ### Push Storage
+
 Push uses IndexedDB to store subscriptions for the following reasons:
+
 1. In case the consumer attempts to re-subscribe, storage is used as a cache to serve the URL and the public key
 1. In order to persist the private key, so that it can be used to decrypt any incoming push notifications
 
@@ -131,13 +136,13 @@ See also:
 
 The source code for push is available under the following paths in mozilla-central:
 
-* [`dom/push/`](https://searchfox.org/mozilla-central/source/dom/push/)
+* [`dom/push/`](https://searchfox.org/firefox-main/source/dom/push/)
 * [`mobile/shared/components/geckoview/GeckoViewPush.sys.mjs`](mobile/shared/components/geckoview/GeckoViewPush.sys.mjs)
-* [`mobile/android/geckoview/src/main/java/org/mozilla/geckoview/WebPush*.java`](https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/)
+* [`mobile/android/geckoview/src/main/java/org/mozilla/geckoview/WebPush*.java`](https://searchfox.org/firefox-main/source/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/)
 * Under `mobile/android/android-components/components`:
-	* [`feature/push/src/main/java/mozilla/components/feature/push/`](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/feature/push/src/main/java/mozilla/components/feature/push/)
-	* [`browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/webpush/`](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/webpush/)
-	* [`concept/engine/src/main/java/mozilla/components/concept/engine/webpush`](https://searchfox.org/mozilla-central/source/mobile/android/android-components/components/concept/engine/src/main/java/mozilla/components/concept/engine/webpush/)
+  * [`feature/push/src/main/java/mozilla/components/feature/push/`](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/feature/push/src/main/java/mozilla/components/feature/push/)
+  * [`browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/webpush/`](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/browser/engine-gecko/src/main/java/mozilla/components/browser/engine/gecko/webpush/)
+  * [`concept/engine/src/main/java/mozilla/components/concept/engine/webpush`](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/concept/engine/src/main/java/mozilla/components/concept/engine/webpush/)
 * [Rust Push Component](https://github.com/mozilla/application-services/tree/main/components/push)
 
 The following flow diagram describes how different modules interact with each other to provide the push API to consumers.

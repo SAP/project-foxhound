@@ -19,6 +19,7 @@ from gecko_taskgraph.util.partners import (
     generate_attribution_code,
     get_ftp_platform,
     get_partner_config_by_kind,
+    locales_per_build_platform,
 )
 
 log = logging.getLogger(__name__)
@@ -52,7 +53,9 @@ def add_command_arguments(config, tasks):
                 if platform not in task_platforms:
                     continue
 
-                for locale in partner_config["locales"]:
+                for locale in locales_per_build_platform(
+                    platform, partner_config["locales"]
+                ):
                     attributed_build_config = _get_attributed_build_configuration(
                         task, partner_config, platform, locale
                     )
@@ -68,13 +71,11 @@ def add_command_arguments(config, tasks):
 
                     fetches[upstream_label].add(attributed_build_config["fetch_config"])
 
-                    attributions.append(
-                        {
-                            "input": attributed_build_config["input_path"],
-                            "output": attributed_build_config["output_path"],
-                            "attribution": attribution_code,
-                        }
-                    )
+                    attributions.append({
+                        "input": attributed_build_config["input_path"],
+                        "output": attributed_build_config["output_path"],
+                        "attribution": attribution_code,
+                    })
                     release_artifacts.append(
                         attributed_build_config["release_artifact"]
                     )

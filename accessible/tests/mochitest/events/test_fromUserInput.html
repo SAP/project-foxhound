@@ -16,73 +16,74 @@
 
   <script type="application/javascript">
 
-    /**
-     * Remove text data from HTML input.
-     */
-    function removeTextFromInput(aID, aStart, aEnd, aText, aFromUser) {
-      this.DOMNode = getNode(aID);
+    const kNotFromUserInput = false;
+    const kFromUserInput = true;
 
-      this.eventSeq = [
-        new textChangeChecker(aID, aStart, aEnd, aText, false, aFromUser),
-      ];
-
-      this.invoke = function removeTextFromInput_invoke() {
-        this.DOMNode.focus();
-        this.DOMNode.setSelectionRange(aStart, aEnd);
-
-        synthesizeKey("KEY_Delete");
-      };
-
-      this.getID = function removeTextFromInput_getID() {
-        return "Remove text from " + aStart + " to " + aEnd + " for " +
-          prettyName(aID);
-      };
-    }
-
-    /**
-     * Remove text data from text node.
-     */
-    function removeTextFromContentEditable(aID, aStart, aEnd, aText, aFromUser) {
-      this.DOMNode = getNode(aID);
-
-      this.eventSeq = [
-        new textChangeChecker(aID, aStart, aEnd, aText, false, aFromUser),
-      ];
-
-      this.invoke = function removeTextFromContentEditable_invoke() {
-        this.DOMNode.focus();
-        this.textNode = getNode(aID).firstChild;
-        var selection = window.getSelection();
-        var range = document.createRange();
-        range.setStart(this.textNode, aStart);
-        range.setEnd(this.textNode, aEnd);
-        selection.addRange(range);
-
-        synthesizeKey("KEY_Delete");
-      };
-
-      this.getID = function removeTextFromContentEditable_getID() {
-        return "Remove text from " + aStart + " to " + aEnd + " for " +
-          prettyName(aID);
-      };
+    function checkTextChangeEvent(
+      evt,
+      aID,
+      aStart,
+      aEnd,
+      aText,
+      aIsInserted,
+      aFromUser
+    ) {
+      let tcEvent = evt.QueryInterface(nsIAccessibleTextChangeEvent);
+      let modifiedTextLen = aEnd == -1 ? aText.length : aEnd - aStart;
+      is(tcEvent.start, aStart, "Wrong start offset for " + prettyName(aID));
+      is(
+        tcEvent.length,
+        modifiedTextLen,
+        "Wrong length for " + prettyName(aID)
+      );
+      let changeInfo = aIsInserted ? "inserted" : "removed";
+      is(
+        tcEvent.isInserted,
+        aIsInserted,
+        "Text was " + changeInfo + " for " + prettyName(aID)
+      );
+      is(
+        tcEvent.modifiedText,
+        aText,
+        "Wrong " + changeInfo + " text for " + prettyName(aID)
+      );
+      if (typeof aFromUser != "undefined") {
+        is(
+          tcEvent.isFromUserInput,
+          aFromUser,
+          "wrong value of isFromUserInput() for " + prettyName(aID)
+        );
+      }
     }
 
     // //////////////////////////////////////////////////////////////////////////
     // Do tests
-    // gA11yEventDumpID = "eventdump"; // debug stuff
 
-    var gQueue = null;
-
-    function doTests() {
-      gQueue = new eventQueue();
-
+    async function doTests() {
       // Focused editable text node
-      gQueue.push(new removeTextFromContentEditable("div", 0, 3, "hel", true));
+      let divNode = getNode("div");
+      let p = waitForEvent(EVENT_TEXT_REMOVED, "div");
+      divNode.focus();
+      let textNode = divNode.firstChild;
+      let selection = window.getSelection();
+      let range = document.createRange();
+      range.setStart(textNode, 0);
+      range.setEnd(textNode, 3);
+      selection.addRange(range);
+      synthesizeKey("KEY_Delete");
+      let evt = await p;
+      checkTextChangeEvent(evt, "div", 0, 3, "hel", false, kFromUserInput);
 
       // Focused editable HTML input
-      gQueue.push(new removeTextFromInput("input", 1, 2, "n", true));
+      let inputNode = getNode("input");
+      p = waitForEvent(EVENT_TEXT_REMOVED, "input");
+      inputNode.focus();
+      inputNode.setSelectionRange(1, 2);
+      synthesizeKey("KEY_Delete");
+      evt = await p;
+      checkTextChangeEvent(evt, "input", 1, 2, "n", false, kFromUserInput);
 
-      gQueue.invoke(); // Will call SimpleTest.finish()
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

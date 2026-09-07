@@ -75,7 +75,10 @@ add_task(async () => {
   );
 
   // Collect restyling markers in 5 frames.
-  const restyleCount = await observeStylingInTargetWindow(panel.ownerGlobal, 5);
+  const restyleCount = await observeStylingInTargetWindow(
+    panel.documentGlobal,
+    5
+  );
 
   // On non WebRender we observe two restyling markers because we get the second
   // jank report from the compositor thread before a new pre-rendered result,

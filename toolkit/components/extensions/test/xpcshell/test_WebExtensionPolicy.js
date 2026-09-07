@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 const { newURI } = Services.io;
@@ -617,4 +615,177 @@ add_task(async function test_WebExtensionPolicy_static_themes_resources() {
   );
 
   staticThemePolicy.active = false;
+});
+
+add_task(async function test_guardSets() {
+  const id = "applied-policies@test";
+  const uuid = "deadbeef-0000-0000-0000-000000000001";
+  const baseURL = "file:///ext/";
+
+  let policy = new WebExtensionPolicy({
+    id,
+    mozExtensionHostname: uuid,
+    baseURL,
+    localizeCallback(str) {
+      return str;
+    },
+    allowedOrigins: new MatchPatternSet([]),
+  });
+  policy.active = true;
+
+  // Initially empty.
+  deepEqual(policy.guardSets, [], "guardSets starts empty");
+  strictEqual(
+    policy.checkGuarded(newURI("https://example.com/")),
+    null,
+    "checkGuarded returns null when no guards set"
+  );
+
+  // Set guards.
+  const globalGuard = new ExtensionGuardSet({
+    deny: ["https://*.example.com/*"],
+    source: "enterprise-global",
+  });
+  const perExtGuard = new ExtensionGuardSet({
+    deny: ["https://*.example.org/*", "http://internal/"],
+    source: "enterprise-per-extension",
+  });
+  policy.guardSets = [globalGuard, perExtGuard];
+
+  const roundTripped = policy.guardSets;
+  equal(roundTripped.length, 2, "guardSets round-trips with correct length");
+  equal(
+    roundTripped[0].source,
+    "enterprise-global",
+    "first guard source round-trips"
+  );
+  equal(
+    roundTripped[1].source,
+    "enterprise-per-extension",
+    "second guard source round-trips"
+  );
+
+  // checkGuarded returns source of first matching guard.
+  strictEqual(
+    policy.checkGuarded(newURI("https://example.com/page")),
+    "enterprise-global",
+    "Returns source of first matching guard"
+  );
+  strictEqual(
+    policy.checkGuarded(newURI("https://other.example.org/page")),
+    "enterprise-per-extension",
+    "Returns source of second matching guard"
+  );
+  strictEqual(
+    policy.checkGuarded(newURI("http://internal/")),
+    "enterprise-per-extension",
+    "Returns source for internal URL"
+  );
+  strictEqual(
+    policy.checkGuarded(newURI("https://unrelated.example/")),
+    null,
+    "Returns null when no guard matches"
+  );
+
+  // First match wins when guards overlap.
+  const overlappingGuard = new ExtensionGuardSet({
+    deny: ["https://*.example.com/*"],
+    source: "enterprise-per-extension",
+  });
+  policy.guardSets = [globalGuard, overlappingGuard];
+  strictEqual(
+    policy.checkGuarded(newURI("https://example.com/page")),
+    "enterprise-global",
+    "First matching guard wins"
+  );
+
+  // except overrides deny.
+  const guardWithExcept = new ExtensionGuardSet({
+    deny: ["https://*.example.com/*"],
+    except: ["https://allowed.example.com/*"],
+    source: "enterprise-global",
+  });
+  policy.guardSets = [guardWithExcept];
+  strictEqual(
+    policy.checkGuarded(newURI("https://blocked.example.com/")),
+    "enterprise-global",
+    "Returns source for URL in deny but not in except"
+  );
+  strictEqual(
+    policy.checkGuarded(newURI("https://allowed.example.com/")),
+    null,
+    "Returns null for URL covered by except"
+  );
+
+  // Clearing the list.
+  policy.guardSets = [];
+  strictEqual(
+    policy.checkGuarded(newURI("https://example.com/page")),
+    null,
+    "Returns null after clearing guardSets"
+  );
+
+  policy.active = false;
+});
+
+add_task(async function test_canAccessURI_with_guardSets() {
+  const policy = new WebExtensionPolicy({
+    id: "guard-test@bar.baz",
+    mozExtensionHostname: "guard-test-uuid",
+    baseURL: "file:///guard-test/",
+    localizeCallback(str) {
+      return str;
+    },
+    allowedOrigins: new MatchPatternSet([
+      "https://*.example.com/*",
+      "https://*.example.org/*",
+    ]),
+    permissions: [],
+    webAccessibleResources: [],
+  });
+  policy.active = true;
+
+  ok(
+    policy.canAccessURI(newURI("https://example.com/page")),
+    "canAccessURI returns true before any guardSets"
+  );
+
+  const guard = new ExtensionGuardSet({
+    deny: ["https://*.example.com/*"],
+    source: "enterprise-global",
+  });
+  policy.guardSets = [guard];
+
+  ok(
+    !policy.canAccessURI(newURI("https://example.com/page")),
+    "canAccessURI returns false when URI is denied by a guard"
+  );
+  ok(
+    policy.canAccessURI(newURI("https://other.example.org/page")),
+    "canAccessURI returns true for URI not covered by the guard"
+  );
+
+  const guardWithExcept = new ExtensionGuardSet({
+    deny: ["https://*.example.com/*"],
+    except: ["https://other.example.com/*"],
+    source: "enterprise-global",
+  });
+  policy.guardSets = [guardWithExcept];
+
+  ok(
+    !policy.canAccessURI(newURI("https://example.com/page")),
+    "canAccessURI returns false for domain in deny but not in except"
+  );
+  ok(
+    policy.canAccessURI(newURI("https://other.example.com/page")),
+    "canAccessURI returns true for domain covered by except"
+  );
+
+  policy.guardSets = [];
+  ok(
+    policy.canAccessURI(newURI("https://example.com/page")),
+    "canAccessURI returns true again after clearing guardSets"
+  );
+
+  policy.active = false;
 });

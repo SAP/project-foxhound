@@ -1,0 +1,80 @@
+# Vendoring configuration for application-services as used by Desktop builds.
+#
+# To update to latest nightly version, use:
+#   `./mach vendor third_party/application-services/moz.yaml`
+#
+# To update to a specific git revision, use this command:
+#   `./mach vendor third_party/application-services/moz.yaml -r <app-svc-git-revision>`
+#
+# After vendoring, you must still vendor rust to bring in transitive dependencies:
+#   `./mach vendor rust`
+#
+# Next you must ensure your app-svc environment is setup with NSS variables defined:
+#   `pushd ../application-services; libs/verify-desktop-environment.sh; popd`
+#
+# And finally, you must regenerated UniFFI JS bindings for desktop builds:
+#   `./mach uniffi generate`
+
+schema: 1
+
+bugzilla:
+  product: "Application Services"
+  component: "General"
+
+origin:
+  name: "application-services"
+  description: "A collection of Rust Components for Firefox"
+  url: "https://github.com/mozilla/application-services"
+
+  license:
+    - "MPL-2.0"
+    - "ISC"
+  license-file: "LICENSE"
+
+  # Automatically managed by vendor process
+  release: 06c391e81c367d1059d601c812f379875d7ef0a3 (2026-05-13T00:07:27Z).
+  revision: 06c391e81c367d1059d601c812f379875d7ef0a3
+
+vendoring:
+  # Canonical repository is on GitHub
+  url: https://github.com/mozilla/application-services
+  source-hosting: github
+  # While we are vendoring from the external repository use the 'third_party'
+  # folder. When application-services eventually moves entirely in tree we will
+  # stop vendoring and it will live in a new home (with history import).
+  # We now vendor most of application-services - enough to experiment with
+  # building it in tree, grabbing everything we know we will need in that future.
+  # We do however exclude things we know will not survive the transtion.
+  vendor-directory: third_party/application-services
+  exclude:
+    - Cargo.lock
+    - Cargo.toml
+    - CHANGELOG.md
+    - CODE_OF_CONDUCT.md
+    - README.md
+    - COPYRIGHT
+    - version.txt
+    - clippy.toml
+    - gradlew
+    - gradlew.bat
+    - build.gradle
+    - gradle.properties
+    - proguard-rules-consumer-jna.pro
+    - install-nimbus-cli.sh
+    - rust-toolchain.toml
+    - .cargo/**
+    - .circleci/**
+    - .github/**
+    - .vscode/**
+    - gradle/**
+    - docs/shared/**
+    # need a story for these generated deps - bug 1963617
+    - DEPENDENCIES.md
+    - megazords/full/android/dependency-licenses.xml
+    - megazords/full/DEPENDENCIES.md
+    - megazords/ios-rust/DEPENDENCIES.md
+    - megazords/ios-rust/focus/DEPENDENCIES.md
+    # don't need anything from taskcluster.
+    - taskcluster/**
+    # hacks which only make sense in app-services.
+    - monorepo-hacks/**

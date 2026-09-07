@@ -1,20 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_serviceworkerop_h__
-#define mozilla_dom_serviceworkerop_h__
+#ifndef mozilla_dom_serviceworkerop_h_
+#define mozilla_dom_serviceworkerop_h_
 
 #include <functional>
 
-#include "mozilla/dom/ServiceWorkerOpPromise.h"
-#include "nsISupportsImpl.h"
-
 #include "ServiceWorkerEvents.h"
 #include "ServiceWorkerOpPromise.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
@@ -22,7 +16,9 @@
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerOp.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
+#include "mozilla/dom/ServiceWorkerOpPromise.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
 
@@ -202,4 +198,4 @@ class FetchEventOp final : public ExtendableEventOp,
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_serviceworkerop_h__
+#endif  // mozilla_dom_serviceworkerop_h_

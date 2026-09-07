@@ -29,11 +29,11 @@ add_task(async function injectJSON() {
 
 add_task(function losslessDecode() {
   let url = "https://example.com/\u30a2\u30a4\u30a6\u30a8\u30aa";
-  const result = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-    UrlbarUtils.RESULT_SOURCE.TABS,
-    { url }
-  );
+  const result = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    source: UrlbarUtils.RESULT_SOURCE.TABS,
+    payload: { url },
+  });
   gURLBar.setValueFromResult({ result });
   // Since this is directly setting textValue, it is expected to be trimmed.
   Assert.equal(

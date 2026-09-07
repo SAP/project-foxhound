@@ -5,6 +5,7 @@
 
 // We are carefully controlling the sequence of GC events.
 gczeal(0);
+gcparam("concurrentMarkingEnabled", 0);
 
 // If a command-line parameter is given, use it as a substring restriction on
 // the tests to run.
@@ -28,11 +29,18 @@ function reportMarks(prefix = "") {
   return markstr;
 }
 
-function startGCMarking() {
+function startGCMarking(untilQueuePos) {
   startgc(100000);
   while (gcstate() === "Prepare" || gcstate() === "MarkRoots") {
     gcslice(100000);
   }
+  // If running with --no-threads, the GC might decide to suspend early if
+  // scanning the ephemeron table takes too long. Wait until all of the queue
+  // entries that the test expects have been processed.
+  while (currentgc().queuePos < untilQueuePos) {
+    gcslice(1000);
+  }
+
 }
 
 function purgeKey() {
@@ -54,7 +62,7 @@ function purgeKey() {
 
   vals.key = vals.val = null;
 
-  startGCMarking();
+  startGCMarking(2);
   // getMarks() returns map/key/value
   assertEq(getMarks().join("/"), "black/unmarked/unmarked",
            "marked the map black");
@@ -94,7 +102,7 @@ function removeKey() {
   enqueueMark(m);
   enqueueMark("yield");
 
-  startGCMarking();
+  startGCMarking(2);
   reportMarks("first: ");
   var marks = getMarks();
   assertEq(marks[0], "black", "map is black");
@@ -112,7 +120,7 @@ function removeKey() {
   // Do it again, but this time, remove all other roots.
   m.set(vals.key, vals.val);
   vals.key = vals.val = null;
-  startGCMarking();
+  startGCMarking(2);
   marks = getMarks();
   assertEq(marks[0], "black", "map is black");
   assertEq(marks[1], "unmarked", "key not marked yet");
@@ -314,7 +322,7 @@ function grayMarkingMapFirst() {
   };
 
   print("Starting incremental GC");
-  startGCMarking();
+  startGCMarking(2);
   // Checkpoint 1, after marking map
   showmarks();
   var marks = getMarks();
@@ -406,7 +414,7 @@ function grayMarkingMapLast() {
   };
 
   print("Starting incremental GC");
-  startGCMarking();
+  startGCMarking(3);
   // Checkpoint 1, after marking key
   showmarks();
   var marks = labeledMarks();
@@ -471,7 +479,7 @@ function grayMapKey() {
 
   vals.key = vals.val = null;
 
-  startGCMarking();
+  startGCMarking(4);
   assertEq(getMarks().join("/"), "gray/unmarked/unmarked",
            "marked the map gray");
 
@@ -503,10 +511,14 @@ function grayKeyMap() {
   enqueueMark(vals.key);
   enqueueMark("yield");
 
-  // Wait until we are gray marking.
+  // Wait until we are gray marking, then mark the map gray.
   enqueueMark("set-color-gray");
   enqueueMark(vals.m);
+  enqueueMark("yield");
+
+  // The map marking will be deferred, so force it through.
   enqueueMark("unset-color");
+  enqueueMark("trace-deferred");
   enqueueMark("yield");
 
   enqueueMark("set-color-black");
@@ -523,7 +535,8 @@ function grayKeyMap() {
   // created additional zones.
   schedulezone(vals);
 
-  startGCMarking();
+  startGCMarking(2);
+
   // getMarks() returns map/key/value
   reportMarks("1: ");
   assertEq(getMarks().join("/"), "unmarked/black/unmarked",
@@ -538,11 +551,16 @@ function grayKeyMap() {
 
   gcslice(100000);
   reportMarks("3: ");
+  assertEq(getMarks().join("/"), "gray/black/unmarked",
+           "marked the map object gray, deferred the map tracing");
+
+  gcslice(100000);
+  reportMarks("4: ");
   assertEq(getMarks().join("/"), "gray/black/gray",
-           "marked the map gray, which marked the value when map scanned");
+           "deferred gray marking of map marked the value");
 
   finishgc(); // Finish the GC
-  reportMarks("4: ");
+  reportMarks("5: ");
   assertEq(getMarks().join("/"), "black/black/black",
            "further marked the map black, so value should also be blackened");
 
@@ -604,7 +622,7 @@ function blackDuringGray() {
   };
 
   print("Starting incremental GC");
-  startGCMarking();
+  startGCMarking(2);
   // Checkpoint 1, after marking delegate black
   showmarks();
   var marks = getMarks();
@@ -666,7 +684,7 @@ function blackDuringGrayImplicit() {
   };
 
   print("Starting incremental GC");
-  startGCMarking();
+  startGCMarking(3);
   // Checkpoint 1, after marking map gray
   showmarks();
   var marks = getMarks();
@@ -689,5 +707,115 @@ function blackDuringGrayImplicit() {
   g.eval("grayRoot().length = 0");
 }
 
-if (this.enqueueMark)
+if (this.enqueueMark) {
   runtest(blackDuringGrayImplicit);
+}
+
+// Test that a WeakMap is correctly moved from grayDeferredMaps to
+// blackDeferredMaps when it is upgraded from gray to black before the gray
+// deferred list is drained.
+function grayDeferredUpgradeToBlack() {
+  const vals = {
+    m: new WeakMap(),
+    key: Object.create(null),
+    val: Object.create(null),
+  };
+  vals.m.set(vals.key, vals.val);
+
+  addMarkObservers([vals.m, vals.key, vals.val]);
+
+  enqueueMark(vals.key);
+  enqueueMark("yield");
+
+  // Mark the map gray. It is deferred onto grayDeferredMaps, not yet traced.
+  enqueueMark("set-color-gray");
+  enqueueMark(vals.m);
+
+  // Upgrade the map to black WITHOUT draining grayDeferredMaps first. The map
+  // is still on grayDeferredMaps when this trace fires. Move it from
+  // grayDeferredMaps to blackDeferredMaps.
+  enqueueMark("set-color-black");
+  enqueueMark(vals.m);
+  enqueueMark("unset-color");
+
+  vals.m = null;
+  vals.key = vals.val = null;
+  schedulezone(vals);
+  startGCMarking(2);
+
+  reportMarks("1: ");
+  assertEq(getMarks().join("/"), "unmarked/black/unmarked", "marked key black");
+
+  gcslice(100000);
+  reportMarks("2: ");
+
+  finishgc();
+  reportMarks("3: ");
+  assertEq(getMarks().join("/"), "black/black/black",
+           "map and val both black: map was black-deferred so entries traced black");
+
+  clearMarkQueue();
+  clearMarkObservers();
+}
+
+if (this.enqueueMark) {
+  runtest(grayDeferredUpgradeToBlack);
+}
+
+// Test that when the first WeakMap in grayDeferredMaps is upgraded to black,
+// the remaining maps in grayDeferredMaps are still processed correctly
+function grayDeferredFirstElementUpgrade() {
+  const vals = {
+    m1: new WeakMap(),
+    m2: new WeakMap(),
+    key1: Object.create(null),
+    val1: Object.create(null),
+    key2: Object.create(null),
+    val2: Object.create(null),
+  };
+  vals.m1.set(vals.key1, vals.val1);
+  vals.m2.set(vals.key2, vals.val2);
+
+  addMarkObservers([vals.m1, vals.val1, vals.m2, vals.val2]);
+
+  enqueueMark(vals.key1);
+  enqueueMark(vals.key2);
+  enqueueMark("yield");
+
+  // Mark both maps gray. Enqueue m1 first so it becomes grayDeferredMaps.first_.
+  enqueueMark("set-color-gray");
+  enqueueMark(vals.m1);
+  enqueueMark(vals.m2);
+
+  // Upgrade m1 to black while it is still grayDeferredMaps.first_. Check that
+  // grayDeferredMaps.first_ is updated to m2 when removing m1, leaving m2
+  // correctly on grayDeferredMaps.
+  enqueueMark("set-color-black");
+  enqueueMark(vals.m1);
+  enqueueMark("unset-color");
+
+  vals.m1 = vals.m2 = null;
+  vals.key1 = vals.val1 = null;
+  vals.key2 = vals.val2 = null;
+  schedulezone(vals);
+  startGCMarking(2);
+
+  reportMarks("1: ");
+  assertEq(getMarks().join("/"), "unmarked/unmarked/unmarked/unmarked",
+           "nothing marked yet");
+
+  gcslice(100000);
+  reportMarks("2: ");
+
+  finishgc();
+  reportMarks("3: ");
+  assertEq(getMarks().join("/"), "black/black/gray/gray",
+           "m1+val1 black (black-deferred), m2+val2 gray (gray-deferred)");
+
+  clearMarkQueue();
+  clearMarkObservers();
+}
+
+if (this.enqueueMark) {
+  runtest(grayDeferredFirstElementUpgrade);
+}

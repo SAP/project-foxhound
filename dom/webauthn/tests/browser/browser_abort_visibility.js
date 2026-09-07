@@ -38,7 +38,7 @@ async function waitForStatus(tab, expected) {
   /* eslint-disable no-shadow */
   await SpecialPowers.spawn(
     tab.linkedBrowser,
-    [[expected]],
+    [expected],
     async function (expected) {
       return ContentTaskUtils.waitForCondition(() => {
         info(

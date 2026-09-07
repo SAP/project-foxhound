@@ -558,3 +558,75 @@ add_task(async function test_3rdpartystorage_permissions() {
     );
   });
 });
+
+add_task(async function test_clear_site_permissions_preserves_defaults() {
+  Services.perms.removeAll();
+
+  // Set up a defaults file with a builtin permission.
+  let file = do_get_tempdir();
+  file.append("test_default_permissions");
+
+  let ostream = Cc["@mozilla.org/network/file-output-stream;1"].createInstance(
+    Ci.nsIFileOutputStream
+  );
+  ostream.init(file, -1, 0o666, 0);
+  let conv = Cc["@mozilla.org/intl/converter-output-stream;1"].createInstance(
+    Ci.nsIConverterOutputStream
+  );
+  conv.init(ostream, "UTF-8");
+  conv.writeString("host\tuitour\t1\texample.org\n");
+  ostream.close();
+
+  Services.prefs.setCharPref(
+    "permissions.manager.defaultsUrl",
+    "file://" + file.path
+  );
+  Services.obs.notifyObservers(null, "testonly-reload-permissions-from-disk");
+
+  const uri = Services.io.newURI("https://example.org");
+  const principal = Services.scriptSecurityManager.createContentPrincipal(
+    uri,
+    {}
+  );
+
+  // Verify the default permission is present.
+  Assert.equal(
+    Services.perms.testPermissionFromPrincipal(principal, "uitour"),
+    Services.perms.ALLOW_ACTION
+  );
+
+  // Add a user-granted permission on the same origin.
+  Services.perms.addFromPrincipal(
+    principal,
+    "geo",
+    Services.perms.ALLOW_ACTION
+  );
+
+  // Clear site permissions via the clear data service.
+  await new Promise(aResolve => {
+    Services.clearData.deleteData(
+      Ci.nsIClearDataService.CLEAR_SITE_PERMISSIONS,
+      value => {
+        Assert.equal(value, 0);
+        aResolve();
+      }
+    );
+  });
+
+  // The default (builtin) permission should survive.
+  Assert.equal(
+    Services.perms.testPermissionFromPrincipal(principal, "uitour"),
+    Services.perms.ALLOW_ACTION,
+    "Default permission should not be removed by clearing site permissions"
+  );
+
+  // The user-granted permission should be removed.
+  Assert.equal(
+    Services.perms.getPermissionObject(principal, "geo", true),
+    null,
+    "User-granted permission should be removed by clearing site permissions"
+  );
+
+  file.remove(false);
+  Services.perms.removeAll();
+});

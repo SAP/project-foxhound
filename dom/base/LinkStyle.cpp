@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,27 +10,27 @@
 
 #include "mozilla/dom/LinkStyle.h"
 
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "mozilla/dom/HTMLLinkElement.h"
 #include "mozilla/dom/HTMLStyleElement.h"
+#include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/dom/SVGStyleElement.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/dom/SRILogHelper.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "nsIContent.h"
-#include "mozilla/dom/Document.h"
-#include "nsUnicharUtils.h"
 #include "nsCRT.h"
-#include "nsXPCOMCIDInternal.h"
-#include "nsUnicharInputStream.h"
 #include "nsContentUtils.h"
-#include "nsStyleUtil.h"
+#include "nsIContent.h"
 #include "nsQueryObject.h"
+#include "nsStyleUtil.h"
+#include "nsUnicharInputStream.h"
+#include "nsUnicharUtils.h"
+#include "nsXPCOMCIDInternal.h"
 
 namespace mozilla::dom {
 
@@ -149,6 +147,8 @@ static uint32_t ToLinkMask(const nsAString& aLink) {
     mask = LinkStyle::ePRELOAD;
   } else if (aLink.EqualsLiteral("modulepreload")) {
     mask = LinkStyle::eMODULE_PRELOAD;
+  } else if (aLink.EqualsLiteral("compression-dictionary")) {
+    mask = LinkStyle::eCOMPRESSION_DICTIONARY;
   }
 
   return mask;
@@ -259,8 +259,7 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
 
   // Loader could be null during unlink, see bug 1425866.
   // ... No need to update if updating is disabled, as well.
-  if (!doc || !doc->CSSLoader() || !doc->CSSLoader()->GetEnabled() ||
-      !mUpdatesEnabled) {
+  if (!doc || !doc->EnsureCSSLoader().GetEnabled() || !mUpdatesEnabled) {
     return Update{};
   }
 
@@ -274,7 +273,7 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
   Maybe<SheetInfo> info = GetStyleSheetInfo();
   if (aForceUpdate == ForceUpdate::No && mStyleSheet && info &&
       !info->mIsInline && info->mURI) {
-    if (nsIURI* oldURI = mStyleSheet->GetSheetURI()) {
+    if (nsIURI* oldURI = mStyleSheet->GetOriginalURI()) {
       bool equal;
       nsresult rv = oldURI->Equals(info->mURI, &equal);
       if (NS_SUCCEEDED(rv) && equal) {
@@ -329,7 +328,7 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
     }
 
     // Parse the style sheet.
-    return doc->CSSLoader()->LoadInlineStyle(*info, text, aObserver);
+    return doc->EnsureCSSLoader().LoadInlineStyle(*info, text, aObserver);
   }
   if (thisContent.IsElement()) {
     nsAutoString integrity;
@@ -340,7 +339,7 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
                NS_ConvertUTF16toUTF8(integrity).get()));
     }
   }
-  auto resultOrError = doc->CSSLoader()->LoadStyleLink(*info, aObserver);
+  auto resultOrError = doc->EnsureCSSLoader().LoadStyleLink(*info, aObserver);
   if (resultOrError.isErr()) {
     // Don't propagate LoadStyleLink() errors further than this, since some
     // consumers (e.g. nsXMLContentSink) will completely abort on innocuous
@@ -388,7 +387,7 @@ void LinkStyle::MaybeFinishCopyStyleSheet(Document* aDocument) {
   }
   RefPtr<StyleSheet> sheet = mStyleSheet->Clone(nullptr, root);
   SetStyleSheet(sheet.get());
-  aDocument->CSSLoader()->InsertSheetInTree(*sheet);
+  aDocument->EnsureCSSLoader().InsertSheetInTree(*sheet);
 }
 
 }  // namespace mozilla::dom

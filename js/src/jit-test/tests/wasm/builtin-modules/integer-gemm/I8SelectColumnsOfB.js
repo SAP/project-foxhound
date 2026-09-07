@@ -14,27 +14,27 @@ function testInvalidSize() {
 
   // row: 0
   invalidSize = 0;
-  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, invalidSize, VALID.cols, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, invalidSize, VALID.cols, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // row: Not an integral multiple of ROWS_B_MULTIPLIER
   invalidSize = ROWS_B_MULTIPLIER + 1;
-  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, invalidSize, VALID.cols, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, invalidSize, VALID.cols, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // col: 0
   invalidSize = 0;
-  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, invalidSize, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, invalidSize, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // col: Not an integral multiple of COLUMNS_B_MULTIPLIER
   invalidSize = COLUMNS_B_MULTIPLIER + 1;
-  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, invalidSize, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, invalidSize, VALID.colIndexList, VALID.sizeColIndexList, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // sizeColIndexList: 0
   invalidSize = 0;
-  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, VALID.colIndexList, invalidSize, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, VALID.colIndexList, invalidSize, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 
   // sizeColIndexList: Not an integral multiple of SELECTED_COLUMNS_B_MULTIPLIER
   invalidSize = SELECTED_COLUMNS_B_MULTIPLIER + 1;
-  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, VALID.colIndexList, invalidSize, VALID.output), WebAssembly.RuntimeError, /unreachable/);
+  assertErrorMessage(() => int8_select_columns_of_b(VALID.input, VALID.rows, VALID.cols, VALID.colIndexList, invalidSize, VALID.output), WebAssembly.RuntimeError, /index out of bounds/);
 }
 
 function testInvalidAlignment() {

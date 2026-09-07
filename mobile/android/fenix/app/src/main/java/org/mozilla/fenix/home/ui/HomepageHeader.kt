@@ -4,48 +4,52 @@
 
 package org.mozilla.fenix.home.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
-import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_WORDMARK_LOGO
-import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_WORDMARK_TEXT
 import org.mozilla.fenix.home.ui.HomepageTestTag.PRIVATE_BROWSING_HOMEPAGE_BUTTON
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Header for the homepage.
  */
 @Composable
 fun HomepageHeader(
+    wordmarkTextColor: Color?,
+    privateBrowsingButtonColor: Color,
     browsingMode: BrowsingMode,
+    isSportsWidgetEnabled: Boolean,
     browsingModeChanged: (BrowsingMode) -> Unit,
+    onLogoClicked: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -54,64 +58,38 @@ fun HomepageHeader(
             .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 32.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WordmarkLogo()
+        WordmarkLogo(
+            isSportsWidgetEnabled = isSportsWidgetEnabled,
+            onLogoClicked = onLogoClicked,
+        )
 
-        WordmarkText()
+        WordmarkText(wordmarkTextColor)
 
         Spacer(modifier = Modifier.weight(1f))
 
         PrivateBrowsingButton(
+            color = privateBrowsingButtonColor,
             browsingMode = browsingMode,
             browsingModeChanged = browsingModeChanged,
         )
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-private fun WordmarkLogo() {
-    Image(
-        modifier = Modifier
-            .height(40.dp)
-            .semantics {
-                testTagsAsResourceId = true
-                testTag = HOMEPAGE_WORDMARK_LOGO
-            }
-            .padding(end = 10.dp),
-        painter = painterResource(getAttr(R.attr.fenixWordmarkLogo)),
-        contentDescription = null,
-    )
-}
-
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-private fun WordmarkText() {
-    Image(
-        modifier = Modifier
-            .semantics {
-                testTagsAsResourceId = true
-                testTag = HOMEPAGE_WORDMARK_TEXT
-            }
-            .height(dimensionResource(R.dimen.wordmark_text_height)),
-        painter = painterResource(getAttr(R.attr.fenixWordmarkText)),
-        contentDescription = stringResource(R.string.app_name),
-    )
-}
-
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun PrivateBrowsingButton(
+    color: Color,
     browsingMode: BrowsingMode,
     browsingModeChanged: (BrowsingMode) -> Unit,
 ) {
     IconToggleButton(
         modifier = Modifier
             .background(
-                color = colorResource(getAttr(R.attr.mozac_ic_private_mode_circle_fill_background_color)),
+                color = colorResource(getAttr(iconsR.attr.mozac_ic_private_mode_circle_fill_background_color)),
                 shape = CircleShape,
             )
             .size(40.dp)
             .semantics {
+                role = Role.Switch
                 testTagsAsResourceId = true
                 testTag = PRIVATE_BROWSING_HOMEPAGE_BUTTON
             },
@@ -121,15 +99,15 @@ private fun PrivateBrowsingButton(
         },
     ) {
         Icon(
-            tint = colorResource(getAttr(R.attr.mozac_ic_private_mode_circle_fill_icon_color)),
-            painter = painterResource(R.drawable.mozac_ic_private_mode_24),
+            tint = color,
+            painter = painterResource(iconsR.drawable.mozac_ic_private_mode_fill_24),
             contentDescription = stringResource(R.string.content_description_private_browsing),
         )
     }
 }
 
 @Composable
-private fun getAttr(resId: Int): Int {
+internal fun getAttr(resId: Int): Int {
     val typedArray = LocalContext.current.obtainStyledAttributes(intArrayOf(resId))
     val newResId = typedArray.getResourceId(0, 0)
     typedArray.recycle()
@@ -137,27 +115,24 @@ private fun getAttr(resId: Int): Int {
     return newResId
 }
 
-@Composable
-@PreviewLightDark
-private fun HomepageHeaderPreview() {
-    FirefoxTheme {
-        Row(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
-            HomepageHeader(
-                browsingMode = BrowsingMode.Normal,
-                browsingModeChanged = {},
-            )
-        }
-    }
-}
-
-@Composable
 @Preview
-private fun PrivateHomepageHeaderPreview() {
-    FirefoxTheme(theme = Theme.Private) {
-        Row(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
+@Composable
+private fun HomepageHeaderPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        Surface {
             HomepageHeader(
-                browsingMode = BrowsingMode.Private,
+                wordmarkTextColor = null,
+                privateBrowsingButtonColor = colorResource(
+                    getAttr(
+                        iconsR.attr.mozac_ic_private_mode_circle_fill_icon_color,
+                    ),
+                ),
+                browsingMode = BrowsingMode.Normal,
+                isSportsWidgetEnabled = true,
                 browsingModeChanged = {},
+                onLogoClicked = {},
             )
         }
     }

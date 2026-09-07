@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!-- Ref: what the broken rendering looks like (inner child invisible, bug 1781159) -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body { background: red; margin: 0; }
+.filtered {
+    position: absolute;
+    left: 50px;
+    top: 50px;
+    width: 150px;
+    height: 150px;
+    background: white;
+    filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.9));
+}
+</style>
+</head>
+<body>
+    <div class="filtered"></div>
+</body>
+</html>

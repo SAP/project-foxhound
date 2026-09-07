@@ -9,6 +9,13 @@ newtab-page-title = Ak' ika'ye'
 newtab-settings-button =
     .title = B'an tuch ak' xaj u'uje' tu k'uchb'al tetze'
 
+## Firefox Home content
+
+home-mode-choice-custom-srd =
+    .label = Eetz chitu' URLs…
+home-prefs-highlights-options-bookmarks-srd =
+    .label = Aq'ol texhlal
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -16,7 +23,7 @@ newtab-search-box-search-button =
     .title = Chuka
     .aria-label = Chuka
 
-## Top Sites - General form dialog.
+## Clear text button for the URL and image URL input fields in the Top Sites form.
 
 newtab-topsites-add-search-engine-header = Aq'ku' uma'l chukb'al tetz
 newtab-topsites-edit-topsites-header = B'an tuch u atimb'ale'  ve nim atje'.
@@ -44,9 +51,6 @@ newtab-topsites-add-button = Aq'o'ke'
 newtab-confirm-delete-history-p1 = Yol chit see uva' tuk asojsa el jununil unq'a vee' tu u'uje' vaa' tu vee' chukeltu ve't'e?
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Ye' la uch iq'ab'isal u aq'one' vaa.
-
-## Top Sites - Sponsored label
-
 
 ## Context Menu - Action Tooltips.
 
@@ -78,9 +82,6 @@ newtab-menu-save-to-pocket = kolkan tu{ -pocket-brand-name }
 newtab-menu-delete-pocket = Sojsa tetz{ -pocket-brand-name }
 newtab-menu-archive-pocket = Kol  u aq'one' tu{ -pocket-brand-name }
 newtab-menu-show-privacy-info = Unq'a xa'ole'  ve ni aq'on kulochb'al as tuk  va tiichajile'
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -178,69 +179,8 @@ newtab-pocket-learn-more = Ootzi ka'te
 newtab-pocket-cta-button = La k'ul u { -pocket-brand-name }
 newtab-pocket-cta-text = Kol unq'a vee' chukeltu ve't tu { -pocket-brand-name } as aq' chit te va txumb'ale' ti' asik'let unq'a vee' achveb'al chitu'.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = La kuy kupaav, at uma'l kam ye' kat el vitoj tul uva' ni'k teq'o ku'tzan u aq'one'.
 newtab-error-fallback-refresh-link = B'an tuch u u'uje' as la q'aavisa unpajte.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

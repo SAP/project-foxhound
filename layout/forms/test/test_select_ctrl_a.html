@@ -1,0 +1,125 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=805218
+-->
+<head>
+<meta charset="utf-8">
+<title>Test for Bug 805218</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<script type="application/javascript">
+  SimpleTest.waitForExplicitFinish();
+
+  function selectedStates(select) {
+    return [...select.options].map(o => o.selected);
+  }
+
+  function test() {
+    SimpleTest.waitForFocus(function() {
+      // Test 1: Ctrl/Cmd+A selects all options in a multiple select.
+      {
+        let select = document.getElementById("multiple");
+        select.focus();
+        synthesizeKey("a", {accelKey: true});
+        is(selectedStates(select).toString(),
+           [true, true, true, true].toString(),
+           "All options should be selected after Ctrl/Cmd+A in a multiple select");
+      }
+
+      // Test 2: Ctrl/Cmd+A skips disabled options.
+      {
+        let select = document.getElementById("multiple-with-disabled");
+        select.focus();
+        synthesizeKey("a", {accelKey: true});
+        is(selectedStates(select).toString(),
+           [true, false, true, true].toString(),
+           "All non-disabled options should be selected, disabled should remain unselected");
+      }
+
+      // Test 3: Ctrl/Cmd+A does not affect a single select listbox.
+      {
+        let select = document.getElementById("single-list");
+        select.focus();
+        let before = selectedStates(select).toString();
+        synthesizeKey("a", {accelKey: true});
+        is(selectedStates(select).toString(), before,
+           "Ctrl/Cmd+A should not change selection in a single select listbox");
+      }
+
+      // Test 4: Ctrl/Cmd+A fires input and change events.
+      {
+        let select = document.getElementById("multiple-events");
+        select.focus();
+        // Deselect all first.
+        for (let opt of select.options) {
+          opt.selected = false;
+        }
+        let inputFired = false;
+        let changeFired = false;
+        select.addEventListener("input", () => { inputFired = true; }, {once: true});
+        select.addEventListener("change", () => { changeFired = true; }, {once: true});
+        synthesizeKey("a", {accelKey: true});
+        ok(inputFired, "input event should fire on Ctrl/Cmd+A");
+        ok(changeFired, "change event should fire on Ctrl/Cmd+A");
+      }
+
+      // Test 5: Ctrl/Cmd+A does not fire events if all are already selected.
+      {
+        let select = document.getElementById("multiple-all-selected");
+        select.focus();
+        let inputFired = false;
+        let changeFired = false;
+        select.addEventListener("input", () => { inputFired = true; }, {once: true});
+        select.addEventListener("change", () => { changeFired = true; }, {once: true});
+        synthesizeKey("a", {accelKey: true});
+        ok(!inputFired, "input event should not fire if all options already selected");
+        ok(!changeFired, "change event should not fire if all options already selected");
+      }
+
+      SimpleTest.finish();
+    });
+  }
+</script>
+</head>
+<body onload="test();">
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=805218">Mozilla Bug 805218</a>
+<div>
+  <select id="multiple" multiple size="4">
+    <option>0</option>
+    <option selected>1</option>
+    <option>2</option>
+    <option>3</option>
+  </select>
+
+  <select id="multiple-with-disabled" multiple size="4">
+    <option>0</option>
+    <option disabled>1</option>
+    <option>2</option>
+    <option>3</option>
+  </select>
+
+  <select id="single-list" size="3">
+    <option>0</option>
+    <option selected>1</option>
+    <option>2</option>
+    <option>3</option>
+  </select>
+
+  <select id="multiple-events" multiple size="4">
+    <option>0</option>
+    <option>1</option>
+    <option>2</option>
+    <option>3</option>
+  </select>
+
+  <select id="multiple-all-selected" multiple size="4">
+    <option selected>0</option>
+    <option selected>1</option>
+    <option selected>2</option>
+    <option selected>3</option>
+  </select>
+</div>
+</body>
+</html>

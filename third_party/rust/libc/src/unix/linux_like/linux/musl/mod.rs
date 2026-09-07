@@ -3,6 +3,9 @@ use crate::prelude::*;
 
 pub type pthread_t = *mut c_void;
 pub type clock_t = c_long;
+#[cfg(musl32_time64)]
+pub type time_t = i64;
+#[cfg(not(musl32_time64))]
 #[cfg_attr(
     not(feature = "rustc-dep-of-std"),
     deprecated(
@@ -13,6 +16,18 @@ pub type clock_t = c_long;
     )
 )]
 pub type time_t = c_long;
+#[cfg(musl32_time64)]
+pub type suseconds_t = i64;
+#[cfg(not(musl32_time64))]
+#[cfg_attr(
+    not(feature = "rustc-dep-of-std"),
+    deprecated(
+        since = "0.2.80",
+        note = "This type is changed to 64-bit in musl 1.2.0, \
+                we'll follow that change in the future release. \
+                See #1848 for more info."
+    )
+)]
 pub type suseconds_t = c_long;
 pub type ino_t = u64;
 pub type off_t = i64;
@@ -63,36 +78,29 @@ impl siginfo_t {
     }
 }
 
-// Internal, for casts to access union fields
-#[repr(C)]
-struct sifields_sigchld {
-    si_pid: crate::pid_t,
-    si_uid: crate::uid_t,
-    si_status: c_int,
-    si_utime: c_long,
-    si_stime: c_long,
-}
-impl Copy for sifields_sigchld {}
-impl Clone for sifields_sigchld {
-    fn clone(&self) -> sifields_sigchld {
-        *self
+s_no_extra_traits! {
+    // Internal, for casts to access union fields
+    struct sifields_sigchld {
+        si_pid: crate::pid_t,
+        si_uid: crate::uid_t,
+        si_status: c_int,
+        si_utime: c_long,
+        si_stime: c_long,
     }
-}
 
-// Internal, for casts to access union fields
-#[repr(C)]
-union sifields {
-    _align_pointer: *mut c_void,
-    sigchld: sifields_sigchld,
-}
+    // Internal, for casts to access union fields
+    union sifields {
+        _align_pointer: *mut c_void,
+        sigchld: sifields_sigchld,
+    }
 
-// Internal, for casts to access union fields. Note that some variants
-// of sifields start with a pointer, which makes the alignment of
-// sifields vary on 32-bit and 64-bit architectures.
-#[repr(C)]
-struct siginfo_f {
-    _siginfo_base: [c_int; 3],
-    sifields: sifields,
+    // Internal, for casts to access union fields. Note that some variants
+    // of sifields start with a pointer, which makes the alignment of
+    // sifields vary on 32-bit and 64-bit architectures.
+    struct siginfo_f {
+        _siginfo_base: [c_int; 3],
+        sifields: sifields,
+    }
 }
 
 impl siginfo_t {
@@ -136,12 +144,22 @@ s! {
         pub aio_offset: off_t,
         __next: *mut c_void,
         __prev: *mut c_void,
-        #[cfg(target_pointer_width = "32")]
-        __dummy4: [c_char; 24],
-        #[cfg(target_pointer_width = "64")]
-        __dummy4: [c_char; 16],
+        __dummy4: [c_char; 32 - 2 * size_of::<*const ()>()],
     }
 
+    #[repr(align(8))]
+    pub struct fanotify_event_metadata {
+        pub event_len: c_uint,
+        pub vers: c_uchar,
+        pub reserved: c_uchar,
+        pub metadata_len: c_ushort,
+        pub mask: c_ulonglong,
+        pub fd: c_int,
+        pub pid: c_int,
+    }
+
+    // FIXME(1.0): This should not implement `PartialEq`
+    #[allow(unpredictable_function_pointer_comparisons)]
     pub struct sigaction {
         pub sa_sigaction: crate::sighandler_t,
         pub sa_mask: crate::sigset_t,
@@ -155,10 +173,10 @@ s! {
     // FIXME(union): C implementation uses unions
     pub struct siginfo_t {
         pub si_signo: c_int,
-        #[cfg(not(target_arch = "mips"))]
+        #[cfg(not(any(target_arch = "mips", target_arch = "mips64")))]
         pub si_errno: c_int,
         pub si_code: c_int,
-        #[cfg(target_arch = "mips")]
+        #[cfg(any(target_arch = "mips", target_arch = "mips64"))]
         pub si_errno: c_int,
         #[doc(hidden)]
         #[deprecated(
@@ -182,12 +200,12 @@ s! {
         #[cfg(target_endian = "little")]
         pub f_fsid: c_ulong,
         #[cfg(target_pointer_width = "32")]
-        __pad: c_int,
+        __pad: Padding<c_int>,
         #[cfg(target_endian = "big")]
         pub f_fsid: c_ulong,
         pub f_flag: c_ulong,
         pub f_namemax: c_ulong,
-        __f_reserved: [c_int; 6],
+        __f_reserved: Padding<[c_int; 6]>,
     }
 
     pub struct statvfs64 {
@@ -202,14 +220,16 @@ s! {
         #[cfg(target_endian = "little")]
         pub f_fsid: c_ulong,
         #[cfg(target_pointer_width = "32")]
-        __pad: c_int,
+        __pad: Padding<c_int>,
         #[cfg(target_endian = "big")]
         pub f_fsid: c_ulong,
         pub f_flag: c_ulong,
         pub f_namemax: c_ulong,
-        __f_reserved: [c_int; 6],
+        __f_reserved: Padding<[c_int; 6]>,
     }
 
+    // PowerPC implementations are special, see the subfolders
+    #[cfg(not(any(target_arch = "powerpc", target_arch = "powerpc64")))]
     pub struct termios {
         pub c_iflag: crate::tcflag_t,
         pub c_oflag: crate::tcflag_t,
@@ -240,9 +260,9 @@ s! {
     pub struct regex_t {
         __re_nsub: size_t,
         __opaque: *mut c_void,
-        __padding: [*mut c_void; 4usize],
+        __padding: Padding<[*mut c_void; 4usize]>,
         __nsub2: size_t,
-        __padding2: c_char,
+        __padding2: Padding<c_char>,
     }
 
     pub struct rtentry {
@@ -323,16 +343,11 @@ s! {
         pub tcpi_probes: u8,
         pub tcpi_backoff: u8,
         pub tcpi_options: u8,
-        /*
-         * FIXME(musl): enable on all targets once musl headers are more up to date
-         */
         /// This contains the bitfields `tcpi_snd_wscale` and `tcpi_rcv_wscale`.
         /// Each is 4 bits.
-        #[cfg(target_arch = "loongarch64")]
         pub tcpi_snd_rcv_wscale: u8,
         /// This contains the bitfields `tcpi_delivery_rate_app_limited` (1 bit) and
         /// `tcpi_fastopen_client_fail` (2 bits).
-        #[cfg(target_arch = "loongarch64")]
         pub tcpi_delivery_fastopen_bitfields: u8,
         pub tcpi_rto: u32,
         pub tcpi_ato: u32,
@@ -378,15 +393,12 @@ s! {
         pub tcpi_bytes_retrans: u64,
         pub tcpi_dsack_dups: u32,
         pub tcpi_reord_seen: u32,
-        // FIXME(musl): enable on all targets once CI musl is updated
-        #[cfg(target_arch = "loongarch64")]
         pub tcpi_rcv_ooopack: u32,
-        #[cfg(target_arch = "loongarch64")]
         pub tcpi_snd_wnd: u32,
     }
 
-    // MIPS implementation is special (see mips arch folders)
-    #[cfg(not(target_arch = "mips"))]
+    // MIPS/s390x implementation is special (see arch folders)
+    #[cfg(not(any(target_arch = "mips", target_arch = "mips64", target_arch = "s390x")))]
     pub struct statfs {
         pub f_type: c_ulong,
         pub f_bsize: c_ulong,
@@ -402,8 +414,8 @@ s! {
         pub f_spare: [c_ulong; 4],
     }
 
-    // MIPS implementation is special (see mips arch folders)
-    #[cfg(not(target_arch = "mips"))]
+    // MIPS/s390x implementation is special (see arch folders)
+    #[cfg(not(any(target_arch = "mips", target_arch = "mips64", target_arch = "s390x")))]
     pub struct statfs64 {
         pub f_type: c_ulong,
         pub f_bsize: c_ulong,
@@ -418,9 +430,7 @@ s! {
         pub f_flags: c_ulong,
         pub f_spare: [c_ulong; 4],
     }
-}
 
-s_no_extra_traits! {
     pub struct sysinfo {
         pub uptime: c_ulong,
         pub loads: [c_ulong; 3],
@@ -438,16 +448,9 @@ s_no_extra_traits! {
         pub __reserved: [c_char; 256],
     }
 
-    // FIXME(musl): musl added paddings and adjusted
-    // layout in 1.2.0 but our CI is still 1.1.24.
-    // So, I'm leaving some fields as cfg for now.
-    // ref. https://github.com/bminor/musl/commit/
-    // 1e7f0fcd7ff2096904fd93a2ee6d12a2392be392
-    //
-    // OpenHarmony uses the musl 1.2 layout.
     pub struct utmpx {
         pub ut_type: c_short,
-        __ut_pad1: c_short,
+        __ut_pad1: Padding<c_short>,
         pub ut_pid: crate::pid_t,
         pub ut_line: [c_char; 32],
         pub ut_id: [c_char; 4],
@@ -455,166 +458,28 @@ s_no_extra_traits! {
         pub ut_host: [c_char; 256],
         pub ut_exit: __exit_status,
 
-        #[cfg(target_env = "musl")]
-        #[cfg(not(target_arch = "loongarch64"))]
+        #[cfg(not(musl_v1_2_3))]
+        #[deprecated(
+            since = "0.2.173",
+            note = "The ABI of this field has changed from c_long to c_int with padding, \
+                we'll follow that change in the future release. See #4443 for more info."
+        )]
         pub ut_session: c_long,
 
-        #[cfg(target_env = "musl")]
-        #[cfg(target_arch = "loongarch64")]
-        pub ut_session: c_int,
-
-        #[cfg(target_env = "musl")]
-        #[cfg(target_arch = "loongarch64")]
-        __ut_pad2: c_int,
-
-        #[cfg(target_env = "ohos")]
-        #[cfg(target_endian = "little")]
-        pub ut_session: c_int,
-        #[cfg(target_env = "ohos")]
-        #[cfg(target_endian = "little")]
-        __ut_pad2: c_int,
-
-        #[cfg(target_env = "ohos")]
+        #[cfg(musl_v1_2_3)]
         #[cfg(not(target_endian = "little"))]
-        __ut_pad2: c_int,
-        #[cfg(target_env = "ohos")]
-        #[cfg(not(target_endian = "little"))]
+        __ut_pad2: Padding<c_int>,
+
+        #[cfg(musl_v1_2_3)]
         pub ut_session: c_int,
+
+        #[cfg(musl_v1_2_3)]
+        #[cfg(target_endian = "little")]
+        __ut_pad2: Padding<c_int>,
 
         pub ut_tv: crate::timeval,
         pub ut_addr_v6: [c_uint; 4],
-        __unused: [c_char; 20],
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "extra_traits")] {
-        impl PartialEq for sysinfo {
-            fn eq(&self, other: &sysinfo) -> bool {
-                self.uptime == other.uptime
-                    && self.loads == other.loads
-                    && self.totalram == other.totalram
-                    && self.freeram == other.freeram
-                    && self.sharedram == other.sharedram
-                    && self.bufferram == other.bufferram
-                    && self.totalswap == other.totalswap
-                    && self.freeswap == other.freeswap
-                    && self.procs == other.procs
-                    && self.pad == other.pad
-                    && self.totalhigh == other.totalhigh
-                    && self.freehigh == other.freehigh
-                    && self.mem_unit == other.mem_unit
-                    && self
-                        .__reserved
-                        .iter()
-                        .zip(other.__reserved.iter())
-                        .all(|(a, b)| a == b)
-            }
-        }
-
-        impl Eq for sysinfo {}
-
-        impl fmt::Debug for sysinfo {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("sysinfo")
-                    .field("uptime", &self.uptime)
-                    .field("loads", &self.loads)
-                    .field("totalram", &self.totalram)
-                    .field("freeram", &self.freeram)
-                    .field("sharedram", &self.sharedram)
-                    .field("bufferram", &self.bufferram)
-                    .field("totalswap", &self.totalswap)
-                    .field("freeswap", &self.freeswap)
-                    .field("procs", &self.procs)
-                    .field("pad", &self.pad)
-                    .field("totalhigh", &self.totalhigh)
-                    .field("freehigh", &self.freehigh)
-                    .field("mem_unit", &self.mem_unit)
-                    // FIXME(debug): .field("__reserved", &self.__reserved)
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for sysinfo {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.uptime.hash(state);
-                self.loads.hash(state);
-                self.totalram.hash(state);
-                self.freeram.hash(state);
-                self.sharedram.hash(state);
-                self.bufferram.hash(state);
-                self.totalswap.hash(state);
-                self.freeswap.hash(state);
-                self.procs.hash(state);
-                self.pad.hash(state);
-                self.totalhigh.hash(state);
-                self.freehigh.hash(state);
-                self.mem_unit.hash(state);
-                self.__reserved.hash(state);
-            }
-        }
-
-        impl PartialEq for utmpx {
-            fn eq(&self, other: &utmpx) -> bool {
-                self.ut_type == other.ut_type
-                    //&& self.__ut_pad1 == other.__ut_pad1
-                    && self.ut_pid == other.ut_pid
-                    && self.ut_line == other.ut_line
-                    && self.ut_id == other.ut_id
-                    && self.ut_user == other.ut_user
-                    && self
-                        .ut_host
-                        .iter()
-                        .zip(other.ut_host.iter())
-                        .all(|(a,b)| a == b)
-                    && self.ut_exit == other.ut_exit
-                    && self.ut_session == other.ut_session
-                    //&& self.__ut_pad2 == other.__ut_pad2
-                    && self.ut_tv == other.ut_tv
-                    && self.ut_addr_v6 == other.ut_addr_v6
-                    && self.__unused == other.__unused
-            }
-        }
-
-        impl Eq for utmpx {}
-
-        impl fmt::Debug for utmpx {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.debug_struct("utmpx")
-                    .field("ut_type", &self.ut_type)
-                    //.field("__ut_pad1", &self.__ut_pad1)
-                    .field("ut_pid", &self.ut_pid)
-                    .field("ut_line", &self.ut_line)
-                    .field("ut_id", &self.ut_id)
-                    .field("ut_user", &self.ut_user)
-                    //FIXME(debug): .field("ut_host", &self.ut_host)
-                    .field("ut_exit", &self.ut_exit)
-                    .field("ut_session", &self.ut_session)
-                    //.field("__ut_pad2", &self.__ut_pad2)
-                    .field("ut_tv", &self.ut_tv)
-                    .field("ut_addr_v6", &self.ut_addr_v6)
-                    .field("__unused", &self.__unused)
-                    .finish()
-            }
-        }
-
-        impl hash::Hash for utmpx {
-            fn hash<H: hash::Hasher>(&self, state: &mut H) {
-                self.ut_type.hash(state);
-                //self.__ut_pad1.hash(state);
-                self.ut_pid.hash(state);
-                self.ut_line.hash(state);
-                self.ut_id.hash(state);
-                self.ut_user.hash(state);
-                self.ut_host.hash(state);
-                self.ut_exit.hash(state);
-                self.ut_session.hash(state);
-                //self.__ut_pad2.hash(state);
-                self.ut_tv.hash(state);
-                self.ut_addr_v6.hash(state);
-                self.__unused.hash(state);
-            }
-        }
+        __unused: Padding<[c_char; 20]>,
     }
 }
 
@@ -654,11 +519,14 @@ pub const INIT_PROCESS: c_short = 5;
 pub const LOGIN_PROCESS: c_short = 6;
 pub const USER_PROCESS: c_short = 7;
 pub const DEAD_PROCESS: c_short = 8;
-// musl does not define ACCOUNTING
+pub const ACCOUNTING: c_short = 9;
 
 pub const SFD_CLOEXEC: c_int = 0x080000;
 
+#[cfg(not(any(target_arch = "powerpc", target_arch = "powerpc64")))]
 pub const NCCS: usize = 32;
+#[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
+pub const NCCS: usize = 19;
 
 pub const O_TRUNC: c_int = 512;
 pub const O_NOATIME: c_int = 0o1000000;
@@ -709,8 +577,6 @@ pub const O_NDELAY: c_int = O_NONBLOCK;
 pub const NI_MAXHOST: crate::socklen_t = 255;
 pub const PTHREAD_STACK_MIN: size_t = 2048;
 
-pub const POSIX_MADV_DONTNEED: c_int = 4;
-
 pub const MAP_ANONYMOUS: c_int = MAP_ANON;
 
 pub const SOCK_SEQPACKET: c_int = 5;
@@ -729,10 +595,8 @@ pub const __SIZEOF_PTHREAD_MUTEXATTR_T: usize = 4;
 pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 8;
 pub const __SIZEOF_PTHREAD_BARRIERATTR_T: usize = 4;
 
-#[cfg(not(target_arch = "loongarch64"))]
-pub const CPU_SETSIZE: c_int = 128;
-#[cfg(target_arch = "loongarch64")]
-pub const CPU_SETSIZE: c_int = 1024;
+// Value was changed in 1.2.4
+pub const CPU_SETSIZE: c_int = if cfg!(musl_v1_2_3) { 1024 } else { 128 };
 
 pub const PTRACE_TRACEME: c_int = 0;
 pub const PTRACE_PEEKTEXT: c_int = 1;
@@ -766,12 +630,6 @@ pub const PTRACE_PEEKSIGINFO: c_int = 0x4209;
 pub const PTRACE_GETSIGMASK: c_uint = 0x420a;
 pub const PTRACE_SETSIGMASK: c_uint = 0x420b;
 
-pub const RWF_HIPRI: c_int = 0x00000001;
-pub const RWF_DSYNC: c_int = 0x00000002;
-pub const RWF_SYNC: c_int = 0x00000004;
-pub const RWF_NOWAIT: c_int = 0x00000008;
-pub const RWF_APPEND: c_int = 0x00000010;
-
 pub const AF_IB: c_int = 27;
 pub const AF_MPLS: c_int = 28;
 pub const AF_NFC: c_int = 39;
@@ -786,8 +644,6 @@ pub const PF_XDP: c_int = AF_XDP;
 pub const EFD_NONBLOCK: c_int = crate::O_NONBLOCK;
 
 pub const SFD_NONBLOCK: c_int = crate::O_NONBLOCK;
-
-pub const PIDFD_NONBLOCK: c_uint = O_NONBLOCK as c_uint;
 
 pub const TCSANOW: c_int = 0;
 pub const TCSADRAIN: c_int = 1;
@@ -886,6 +742,10 @@ pub const _CS_V7_ENV: c_int = 1149;
 
 pub const CLONE_NEWTIME: c_int = 0x80;
 
+pub const UT_HOSTSIZE: usize = 256;
+pub const UT_LINESIZE: usize = 32;
+pub const UT_NAMESIZE: usize = 32;
+
 cfg_if! {
     if #[cfg(target_arch = "s390x")] {
         pub const POSIX_FADV_DONTNEED: c_int = 6;
@@ -897,20 +757,6 @@ cfg_if! {
 }
 
 extern "C" {
-    pub fn sendmmsg(
-        sockfd: c_int,
-        msgvec: *mut crate::mmsghdr,
-        vlen: c_uint,
-        flags: c_uint,
-    ) -> c_int;
-    pub fn recvmmsg(
-        sockfd: c_int,
-        msgvec: *mut crate::mmsghdr,
-        vlen: c_uint,
-        flags: c_uint,
-        timeout: *mut crate::timespec,
-    ) -> c_int;
-
     pub fn getrlimit(resource: c_int, rlim: *mut crate::rlimit) -> c_int;
     pub fn setrlimit(resource: c_int, rlim: *const crate::rlimit) -> c_int;
     pub fn prlimit(
@@ -919,6 +765,7 @@ extern "C" {
         new_limit: *const crate::rlimit,
         old_limit: *mut crate::rlimit,
     ) -> c_int;
+    #[cfg_attr(musl32_time64, link_name = "__gettimeofday_time64")]
     pub fn gettimeofday(tp: *mut crate::timeval, tz: *mut c_void) -> c_int;
     pub fn ptrace(request: c_int, ...) -> c_long;
     pub fn getpriority(which: c_int, who: crate::id_t) -> c_int;
@@ -954,7 +801,9 @@ extern "C" {
     // Added in `musl` 1.2.2
     pub fn reallocarray(ptr: *mut c_void, nmemb: size_t, size: size_t) -> *mut c_void;
 
+    #[cfg_attr(musl32_time64, link_name = "__adjtimex_time64")]
     pub fn adjtimex(buf: *mut crate::timex) -> c_int;
+    #[cfg_attr(musl32_time64, link_name = "__clock_adjtime64")]
     pub fn clock_adjtime(clk_id: crate::clockid_t, buf: *mut crate::timex) -> c_int;
 
     pub fn ctermid(s: *mut c_char) -> *mut c_char;
@@ -971,6 +820,9 @@ extern "C" {
     pub fn dirname(path: *mut c_char) -> *mut c_char;
     pub fn basename(path: *mut c_char) -> *mut c_char;
 
+    // Added in `musl` 1.1.20
+    pub fn getrandom(buf: *mut c_void, buflen: size_t, flags: c_uint) -> ssize_t;
+
     // Added in `musl` 1.1.24
     pub fn posix_spawn_file_actions_addchdir_np(
         actions: *mut crate::posix_spawn_file_actions_t,
@@ -982,12 +834,51 @@ extern "C" {
         fd: c_int,
     ) -> c_int;
 
+    #[deprecated(
+        since = "0.2.172",
+        note = "musl provides `utmp` as stubs and an alternative should be preferred; see https://wiki.musl-libc.org/faq.html"
+    )]
     pub fn getutxent() -> *mut utmpx;
+    #[deprecated(
+        since = "0.2.172",
+        note = "musl provides `utmp` as stubs and an alternative should be preferred; see https://wiki.musl-libc.org/faq.html"
+    )]
     pub fn getutxid(ut: *const utmpx) -> *mut utmpx;
+    #[deprecated(
+        since = "0.2.172",
+        note = "musl provides `utmp` as stubs and an alternative should be preferred; see https://wiki.musl-libc.org/faq.html"
+    )]
     pub fn getutxline(ut: *const utmpx) -> *mut utmpx;
+    #[deprecated(
+        since = "0.2.172",
+        note = "musl provides `utmp` as stubs and an alternative should be preferred; see https://wiki.musl-libc.org/faq.html"
+    )]
     pub fn pututxline(ut: *const utmpx) -> *mut utmpx;
+    #[deprecated(
+        since = "0.2.172",
+        note = "musl provides `utmp` as stubs and an alternative should be preferred; see https://wiki.musl-libc.org/faq.html"
+    )]
     pub fn setutxent();
+    #[deprecated(
+        since = "0.2.172",
+        note = "musl provides `utmp` as stubs and an alternative should be preferred; see https://wiki.musl-libc.org/faq.html"
+    )]
     pub fn endutxent();
+    #[deprecated(
+        since = "0.2.172",
+        note = "musl provides `utmp` as stubs and an alternative should be preferred; see https://wiki.musl-libc.org/faq.html"
+    )]
+    pub fn utmpxname(file: *const c_char) -> c_int;
+    pub fn pthread_tryjoin_np(thread: crate::pthread_t, retval: *mut *mut c_void) -> c_int;
+    #[cfg_attr(
+        all(musl32_time64, target_pointer_width = "32"),
+        link_name = "__pthread_timedjoin_np_time64"
+    )]
+    pub fn pthread_timedjoin_np(
+        thread: crate::pthread_t,
+        retval: *mut *mut c_void,
+        abstime: *const crate::timespec,
+    ) -> c_int;
 }
 
 // Alias <foo> to <foo>64 to mimic glibc's LFS64 support

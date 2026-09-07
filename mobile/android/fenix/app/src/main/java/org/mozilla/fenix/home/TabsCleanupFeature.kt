@@ -5,8 +5,8 @@
 package org.mozilla.fenix.home
 
 import android.content.Context
-import android.view.View
 import androidx.annotation.VisibleForTesting
+import androidx.compose.material3.SnackbarHostState
 import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
 import mozilla.components.browser.state.selector.findTab
@@ -18,11 +18,15 @@ import mozilla.components.support.base.feature.LifecycleAwareFeature
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.ext.actualInactiveTabs
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.tabClosedUndoMessage
+import org.mozilla.fenix.ext.tabsClosedUndoMessage
 import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_NORMAL_TABS
 import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_PRIVATE_TABS
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.allowUndo
+import org.mozilla.fenix.utils.getUndoDelay
 
 /**
  * Delegate to handle tab removal and undo actions in the homepage.
@@ -35,7 +39,7 @@ import org.mozilla.fenix.utils.allowUndo
  * @param tabsUseCases The [TabsUseCases] instance to perform tab actions.
  * @param fenixBrowserUseCases [FenixBrowserUseCases] used for adding new homepage tabs.
  * @param settings [Settings] used to check the application shared preferences.
- * @param snackBarParentView The [View] to find a parent from for displaying the snackbar.
+ * @param snackbarHostState The [SnackbarHostState] used to display snackbars.
  * @param viewLifecycleScope The [CoroutineScope] to use for launching coroutines.
  */
 @Suppress("LongParameterList")
@@ -48,7 +52,7 @@ class TabsCleanupFeature(
     private val tabsUseCases: TabsUseCases,
     private val fenixBrowserUseCases: FenixBrowserUseCases,
     private val settings: Settings,
-    private val snackBarParentView: View,
+    private val snackbarHostState: SnackbarHostState,
     private val viewLifecycleScope: CoroutineScope,
 ) : LifecycleAwareFeature {
 
@@ -69,17 +73,37 @@ class TabsCleanupFeature(
 
     override fun stop() = Unit
 
+    /**
+     * Shows an undo snackbar after removing one or more tabs.
+     *
+     * @param message The message to display in the snackbar.
+     * @param onCancel The action to perform when the user clicks the "Undo" button.
+     */
+    @VisibleForTesting
+    internal fun showUndoSnackbar(message: String, onCancel: () -> Unit) {
+        viewLifecycleScope.allowUndo(
+            snackbarHostState = snackbarHostState,
+            message = message,
+            undoActionTitle = context.getString(R.string.snackbar_deleted_undo),
+            onCancel = onCancel,
+            operation = {},
+            undoDelay = context.components.settings.getUndoDelay(),
+        )
+    }
+
     private fun removeAllTabsAndShowSnackbar(sessionCode: String) {
-        if (sessionCode == ALL_PRIVATE_TABS) {
+        val isPrivate = sessionCode == ALL_PRIVATE_TABS
+
+        val tabsCount = if (isPrivate) {
+            browserStore.state.privateTabs.size
+        } else {
+            browserStore.state.normalTabs.size
+        }
+
+        if (isPrivate) {
             tabsUseCases.removePrivateTabs()
         } else {
             tabsUseCases.removeNormalTabs()
-        }
-
-        val snackbarMessage = if (sessionCode == ALL_PRIVATE_TABS) {
-            context.getString(R.string.snackbar_private_data_deleted)
-        } else {
-            context.getString(R.string.snackbar_tabs_closed)
         }
 
         var tabId: String? = null
@@ -92,14 +116,13 @@ class TabsCleanupFeature(
             )
         }
 
-        viewLifecycleScope.allowUndo(
-            view = snackBarParentView,
-            message = snackbarMessage,
-            undoActionTitle = context.getString(R.string.snackbar_deleted_undo),
+        showUndoSnackbar(
+            message = context.tabsClosedUndoMessage(
+                count = tabsCount,
+            ),
             onCancel = {
                 onUndoAllTabsRemoved(tabId)
             },
-            operation = {},
         )
     }
 
@@ -129,7 +152,9 @@ class TabsCleanupFeature(
             browserStore.state.normalTabs.size > 1
         }
 
-        tabsUseCases.removeTab(sessionId)
+        val inactiveTabs = browserStore.state.actualInactiveTabs(settings = settings)
+
+        tabsUseCases.removeTab(tabId = sessionId, excludedTabIds = inactiveTabs.map { it.id }.toSet())
 
         var tabId = ""
         if (settings.enableHomepageAsNewTab && !hasTabsRemaining) {
@@ -141,14 +166,11 @@ class TabsCleanupFeature(
             )
         }
 
-        viewLifecycleScope.allowUndo(
-            view = snackBarParentView,
+        showUndoSnackbar(
             message = context.tabClosedUndoMessage(tab.content.private),
-            undoActionTitle = context.getString(R.string.snackbar_deleted_undo),
             onCancel = {
                 onUndoTabRemoved(tabId)
             },
-            operation = {},
         )
     }
 

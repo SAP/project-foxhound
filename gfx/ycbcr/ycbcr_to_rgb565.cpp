@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -280,6 +279,17 @@ static void ScaleYCbCr444ToRGB565_Nearest_Row_C(
   }
 }
 
+static bool IsScaleYCbCrToRGB565BoundsValid(int source_x0, int source_y0,
+                                            int source_width,
+                                            int source_height) {
+  return source_x0 > (INT_MIN >> 16) && source_x0 < (INT_MAX >> 16) &&
+         source_x0 + source_width > (INT_MIN >> 16) &&
+         source_x0 + source_width < (INT_MAX >> 16) &&
+         source_y0 > (INT_MIN >> 16) && source_y0 < (INT_MAX >> 16) &&
+         source_y0 + source_height > (INT_MIN >> 16) &&
+         source_y0 + source_height < (INT_MAX >> 16);
+}
+
 void ScaleYCbCrToRGB565(const uint8_t *y_buf,
                                  const uint8_t *u_buf,
                                  const uint8_t *v_buf,
@@ -313,16 +323,10 @@ void ScaleYCbCrToRGB565(const uint8_t *y_buf,
   if (width <= 0 || height <= 0)
     return;
   /*These bounds are required to avoid 16.16 fixed-point overflow.*/
-  NS_ASSERTION(source_x0 > (INT_MIN>>16) && source_x0 < (INT_MAX>>16),
-    "ScaleYCbCrToRGB565 source X offset out of bounds.");
-  NS_ASSERTION(source_x0+source_width > (INT_MIN>>16)
-            && source_x0+source_width < (INT_MAX>>16),
-    "ScaleYCbCrToRGB565 source width out of bounds.");
-  NS_ASSERTION(source_y0 > (INT_MIN>>16) && source_y0 < (INT_MAX>>16),
-    "ScaleYCbCrToRGB565 source Y offset out of bounds.");
-  NS_ASSERTION(source_y0+source_height > (INT_MIN>>16)
-            && source_y0+source_height < (INT_MAX>>16),
-    "ScaleYCbCrToRGB565 source height out of bounds.");
+  if (!IsScaleYCbCrToRGB565BoundsValid(source_x0, source_y0, source_width,
+                                       source_height)) {
+    return;
+  }
   /*We require the same stride for Y' and Cb and Cr for 4:4:4 content.*/
   NS_ASSERTION(yuv_type != YV24 || y_pitch == uv_pitch,
     "ScaleYCbCrToRGB565 luma stride differs from chroma for 4:4:4 content.");
@@ -548,6 +552,10 @@ bool IsScaleYCbCrToRGB565Fast(int source_x0,
   // Very fast.
   if (width <= 0 || height <= 0)
     return true;
+  if (!IsScaleYCbCrToRGB565BoundsValid(source_x0, source_y0, source_width,
+                                       source_height)) {
+    return false;
+  }
 #  if defined(MOZILLA_MAY_SUPPORT_NEON)
   if (filter != FILTER_NONE) {
     int source_dx_q16;

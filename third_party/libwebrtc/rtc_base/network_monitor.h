@@ -36,7 +36,7 @@ enum class NetworkPreference {
   NOT_PREFERRED = -1,
 };
 
-const char* NetworkPreferenceToString(NetworkPreference preference);
+absl::string_view NetworkPreferenceToString(NetworkPreference preference);
 
 // This interface is set onto a socket server,
 // where only the ip address is known at the time of binding.
@@ -77,7 +77,7 @@ class NetworkMonitorInterface {
     AdapterType adapter_type;
 
     // Is ADAPTER_TYPE_UNKNOWN unless adapter_type == ADAPTER_TYPE_VPN.
-    AdapterType underlying_type_for_vpn = webrtc::ADAPTER_TYPE_UNKNOWN;
+    AdapterType underlying_type_for_vpn = ADAPTER_TYPE_UNKNOWN;
 
     // The OS/firmware specific preference of this interface.
     NetworkPreference network_preference = NetworkPreference::NEUTRAL;
@@ -92,6 +92,9 @@ class NetworkMonitorInterface {
     // cards, where attempting to use all interfaces returned from getifaddrs
     // caused the connection to be dropped.
     bool available = true;
+
+    // Is this network using network slicing.
+    NetworkSlice slice = NetworkSlice::NO_SLICE;
   };
 
   NetworkMonitorInterface();
@@ -135,14 +138,5 @@ class NetworkMonitorInterface {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::NetworkBinderInterface;
-using ::webrtc::NetworkBindingResult;
-using ::webrtc::NetworkMonitorInterface;
-using ::webrtc::NetworkPreference;
-using ::webrtc::NetworkPreferenceToString;
-}  // namespace rtc
 
 #endif  // RTC_BASE_NETWORK_MONITOR_H_

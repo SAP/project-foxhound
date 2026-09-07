@@ -1,14 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageConversion.h"
-
-#include "skia/include/core/SkBitmap.h"
-#include "skia/include/core/SkColorSpace.h"
-#include "skia/include/core/SkImage.h"
-#include "skia/include/core/SkImageInfo.h"
 
 #include "ImageContainer.h"
 #include "YCbCrUtils.h"
@@ -17,12 +11,15 @@
 #include "libyuv/scale_argb.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Result.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "nsThreadUtils.h"
+#include "skia/include/core/SkBitmap.h"
+#include "skia/include/core/SkColorSpace.h"
+#include "skia/include/core/SkImage.h"
+#include "skia/include/core/SkImageInfo.h"
 
 using mozilla::ImageFormat;
 using mozilla::dom::ImageBitmapFormat;

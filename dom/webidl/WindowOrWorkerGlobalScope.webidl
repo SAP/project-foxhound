@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -87,4 +86,11 @@ partial interface mixin WindowOrWorkerGlobalScope {
 partial interface mixin WindowOrWorkerGlobalScope {
   [Pref="dom.security.trusted_types.enabled"]
   readonly attribute TrustedTypePolicyFactory trustedTypes;
+};
+
+partial interface mixin WindowOrWorkerGlobalScope {
+  // A testing function to check if the given target is active in the current context.
+  // See valid targets at toolkit/components/resistfingerprinting/RFPTargets.inc
+  [Throws, Pref="privacy.fingerprintingProtection.testing"]
+  boolean isRFPTargetActive(DOMString aTargetName);
 };

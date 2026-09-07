@@ -1,19 +1,32 @@
-$search-height: 48px;
+$search-height: var(--size-item-xlarge);
 $search-height-new: 52px;
 $search-icon-size: 24px;
 $search-icon-padding: 16px;
 $search-icon-width: 2 * $search-icon-padding + $search-icon-size - 4px; // 52px
-$search-button-width: 48px;
+$search-button-width: var(--size-item-xlarge);
 $glyph-forward: url('chrome://browser/skin/forward.svg');
 
 .search-wrapper {
-  padding: 0 0 var(--space-xxlarge);
+  // Compact layout defaults formerly under .thumbs-ui-compact
+  padding: 0;
+  margin-block: var(--space-xxlarge);
+  margin-block-start: 0;
 
+  .logo-and-wordmark {
+    margin-block-end: var(--space-xxlarge);
+  }
 
-  // Edge case for users who have pocket stories turned off
-  .no-recommended-stories & {
-    // Bug 1967304 - Large number (40px)
-    padding-block-end: calc(var(--space-large) + var(--space-xlarge));
+  .logo-and-wordmark-wrapper {
+    margin-block-end: 0;
+  }
+
+  @media (height <=700px) {
+    padding: 0;
+    margin-block-start: 0;
+  }
+
+  @media (height > 700px) {
+    padding: 0;
   }
 
   // Edge case for users who have only search enabled
@@ -25,7 +38,7 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
   .search-inner-wrapper {
     cursor: default;
     display: flex;
-    min-height: $search-height-new;
+    height: $search-height-new;
     margin: 0 auto;
     position: relative;
     width: 304px;
@@ -41,117 +54,16 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
     @media (min-width: $break-point-widest) {
       width: 720px;
     }
-
-    // Bug 1966715: Offset padding of the submit button so the reset button is visible
-    &.no-handoff {
-      input {
-        // Bug 1967304 - calc ($var)
-        padding-inline-end: calc($search-button-width + var(--space-medium)); // stylelint-disable-line declaration-property-value-disallowed-list
-      }
-    }
-
   }
 
-  .search-inner-wrapper:has(.trending-searches-pill-wrapper) {
-    display: flex;
-    flex-direction: column;
-
-    .search-handoff-button {
-      height: 52px;
-    }
-
-    &.no-handoff {
-      #newtab-search-text,
-      .search-button {
-        height: 52px;
-      }
-    }
-  }
-
-  .search-handoff-button,
-  input {
-    background: var(--newtab-background-color-secondary) var(--newtab-search-icon) $search-icon-padding center no-repeat;
-    background-size: $search-icon-size;
-    // Bug 1967304 - $variable
-    padding-inline-start: $search-icon-width; // stylelint-disable-line declaration-property-value-disallowed-list
-    padding-inline-end: var(--space-small);
-    padding-block: 0;
-    width: 100%;
-    box-shadow: $shadow-card;
-    border: 1px solid transparent;
-    border-radius: var(--border-radius-medium);
-    color: var(--newtab-text-primary-color);
-    -moz-context-properties: fill;
-    fill: var(--newtab-text-secondary-color);
-
-    &:dir(rtl) {
-      background-position-x: right $search-icon-padding;
-    }
-  }
-
-  .search-inner-wrapper:active input,
-  input:focus {
-    border: 1px solid var(--newtab-primary-action-background);
-    outline: 0;
-    box-shadow: $shadow-focus;
-  }
-
-  .search-button {
-    background: $glyph-forward no-repeat center center;
-    background-size: 16px 16px;
-    border: 0;
-    border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
-    -moz-context-properties: fill;
-    fill: var(--newtab-text-secondary-color);
-    height: 100%;
-    inset-inline-end: 0;
-    position: absolute;
-    width: $search-button-width;
-
-    &:focus,
-    &:hover {
-      background-color: var(--newtab-element-hover-color);
-      cursor: pointer;
-    }
-
-    &:focus {
-      outline: 0;
-      box-shadow: $shadow-focus;
-      border: 1px solid var(--newtab-primary-action-background);
-      border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
-    }
-
-    &:active {
-      background-color: var(--newtab-element-hover-color);
-    }
-
-    &:dir(rtl) {
-      transform: scaleX(-1);
-    }
-  }
-
-  &.fake-focus:not(.search.disabled) {
-    .search-handoff-button {
-      border: 1px solid var(--newtab-primary-action-background);
-      box-shadow: $shadow-focus;
-    }
-  }
-
-  .search-handoff-button {
-    padding-inline-end: var(--space-large);
-    color: var(--newtab-text-primary-color);
-    fill: var(--newtab-text-secondary-color);
-    -moz-context-properties: fill;
-
-    .fake-caret {
-      inset-block-start: var(--space-large);
-      // Bug 1967304 - $variable
-      inset-inline-start: $search-icon-width; // stylelint-disable-line declaration-property-value-disallowed-list
-
-      &:dir(rtl) {
-        background-position-x: right $search-icon-padding;
-      }
-    }
+  content-search-handoff-ui {
+    --content-search-handoff-ui-background-color: var(--newtab-background-color-secondary);
+    --content-search-handoff-ui-color: var(--newtab-text-primary-color);
+    --content-search-handoff-ui-fill: var(--newtab-text-secondary-color);
+    --content-search-handoff-ui-caret-color: var(--newtab-text-primary-color);
+    --content-search-handoff-ui-fakefocus-border-color: var(--newtab-primary-action-background);
+    --content-search-handoff-ui-fakefocus-box-shadow-inner: var(--newtab-primary-action-background-dimmed);
+    --content-search-handoff-ui-fakefocus-box-shadow-outer: transparent;
   }
 
   &.visible-logo {
@@ -160,13 +72,6 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
         fill: var(--newtab-wordmark-color);
       }
     }
-  }
-}
-
-.shortcuts-refresh.has-recommended-stories {
-  .outer-wrapper:not(.fixed-search) .search-wrapper {
-    margin-block-end: var(--space-xlarge);
-    padding: 0;
   }
 }
 
@@ -286,99 +191,87 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
   }
 }
 
-@media (height <= 700px) {
+// @nova-cleanup(remove-conditional): Remove this selector; make search-wrapper subgrid layout and search-inner-wrapper width styles the default, and remove the classic media-query widths in .search-wrapper .search-inner-wrapper.
+.nova-enabled {
   .search-wrapper {
-    padding: 0 0 var(--space-xxlarge);
-  }
-}
-
-.search-handoff-button {
-  background: var(--newtab-background-color-secondary) var(--newtab-search-icon) $search-icon-padding center no-repeat;
-  background-size: $search-icon-size;
-  border: solid 1px transparent;
-  border-radius: var(--border-radius-small);
-  box-shadow: $shadow-secondary, 0 0 0 1px $black-15;
-  cursor: text;
-  font-size: inherit;
-  padding: 0;
-  // Bug 1967304 - Large number (48px)
-  padding-inline: calc(var(--space-xlarge) * 2);
-  opacity: 1;
-  width: 100%;
-
-  &:dir(rtl) {
-    background-position-x: right $search-icon-padding;
+    container-type: normal;
+    display: grid;
+    grid-template-columns: subgrid;
   }
 
-  .fake-focus:not(.search-disabled) & {
-    border: $input-border-active;
-    box-shadow: var(--newtab-textbox-focus-boxshadow);
+  .search-inner-wrapper {
+    grid-column: 1 / -1;
+    margin-inline: auto;
+    width: calc(4 * var(--col-width) + 3 * var(--space-medium));
 
-    .fake-caret {
-      display: block;
+    @include at-content-cols(6) {
+      width: calc(6 * var(--col-width) + 5 * var(--space-medium));
+    }
+
+    @include at-content-cols(10) {
+      width: calc(10 * var(--col-width) + 9 * var(--space-medium));
     }
   }
 
-  .search-disabled & {
-    opacity: 0.5;
-    box-shadow: none;
+  // Sentinel observed by IntersectionObserver in Base.jsx — when it
+  // leaves the viewport the search-wrapper is stuck at the top.
+  .sticky-search-sentinel {
+    grid-column: 1 / -1;
+    block-size: 1px;
+    // Compensate for the 1px sentinel so it doesn't shift search-wrapper. We
+    // use a negative margin to do that, so that it's technically laid out,
+    // and can trigger an IntersectionObserver, but doesn't actually take space.
+    // stylelint-disable-next-line declaration-property-value-disallowed-list
+    margin-block-end: -1px;
+    visibility: hidden;
+    pointer-events: none;
   }
 
-  .fake-editable:focus {
-    outline: none;
-    caret-color: transparent;
-  }
-
-  .fake-editable {
-    color: transparent;
-    height: 100%;
-    opacity: 0;
-    position: absolute;
-    inset: 0;
-  }
-
-  .fake-textbox {
-    opacity: 0.54;
-    text-align: start;
-    -webkit-line-clamp: 1;
-    overflow: hidden;
-  }
-
-  .fake-caret {
-    /* To replicate the default caret blink rate of 567ms (https://searchfox.org/mozilla-central/source/widget/cocoa/nsLookAndFeel.mm#397):
-     - Multiply the blink time by 2 to cover both the visible and hidden states.
-     - Use steps(2, start) to divide the animation into 2 phases:
-       1. First 567ms (Step 1) → Caret is visible
-       2. Next 567ms (Step 2) → Caret is hidden
-    This gives a sharp ON/OFF effect instead of a smooth transition. */
-
-    animation: caret-animation var(--caret-blink-time, 1134ms) steps(2, start) var(--caret-blink-count, infinite);
-    background: var(--newtab-text-primary-color);
-    display: none;
-    // Bug 1967304 - Large number (48px)
-    inset-inline-start:calc(var(--space-xlarge) * 2);
-    height: 17px;
-    position: absolute;
-    inset-block-start: var(--space-large);
-    width: 1px;
-
-    @keyframes caret-animation {
-      to {
-        visibility: hidden;
-      }
+  @media (height > 700px) {
+    .search-wrapper {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 3;
+      // Reserved always (not just when stuck) so the input's viewport-relative
+      // Y is identical pre- and post-sticky, eliminating the snap at activation.
+      padding-block: var(--space-xlarge);
     }
   }
 }
 
 @media (height > 700px) {
-  body:not(.inline-onboarding) .fixed-search {
+  // Full-bleed backdrop drawn via pseudo-element on .nova-outer-wrapper
+  // (which has no containment) so position: fixed anchors to the viewport.
+  // Mounting the pseudo on .search-wrapper instead doesn't work because
+  // .content and .container set container-type: inline-size, which makes
+  // them the containing block for fixed-positioned descendants — the
+  // backdrop would then track the wrapper's off-center position in narrow
+  // viewports instead of spanning the full viewport width.
+  .nova-outer-wrapper.stuck-search::before {
+    content: '';
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline: 0;
+    block-size: calc(#{$search-height-new} + 2 * var(--space-xlarge));
+    background-color: var(--newtab-overlay-color);
+    border-block-end: var(--border-width) solid var(--border-color);
+    // Above .weather (z-index 1) and any other absolutely-positioned page
+    // chrome, below the sticky search-wrapper (z-index 3) so the input
+    // still paints on top, and below .personalizeButtonWrapper (z-index 5).
+    z-index: 2;
+    pointer-events: none;
+  }
+}
+
+@media (height > 700px) {
+  .activity-stream .fixed-search {
     .search-wrapper {
       $search-height: $search-height-new;
       $search-icon-size: 24px;
       $search-icon-padding: 16px;
       $search-header-bar-height: 95px;
 
-      border-bottom: solid 1px var(--newtab-border-color);
+      border-block-end: solid 1px var(--border-color);
       padding: var(--space-xlarge) 0;
       background-color: var(--newtab-overlay-color);
       min-height: $search-header-bar-height;
@@ -387,121 +280,16 @@ $glyph-forward: url('chrome://browser/skin/forward.svg');
       inset-block-start: 0;
       width: 100%;
       z-index: 3;
+      display: flex;
+      align-items: center;
 
       .search-inner-wrapper {
         min-height: $search-height;
-      }
-
-      input {
-        background-position-x: $search-icon-padding;
-        background-size: $search-icon-size;
-
-        &:dir(rtl) {
-          background-position-x: right $search-icon-padding;
-        }
-      }
-
-      .search-handoff-button .fake-caret {
-        inset-block-start: var(--space-large);
       }
 
       .logo-and-wordmark {
         display: none;
       }
     }
-
-    .search-handoff-button {
-      background-position-x: var(--space-large);
-      background-size: $search-icon-size;
-
-      &:dir(rtl) {
-        background-position-x: right var(--space-large);
-      }
-
-      .fake-caret {
-        inset-block-start: var(--space-small);
-      }
-    }
-  }
-}
-
-@at-root {
-
-  // Adjust the style of the contentSearchUI-generated table
-  .contentSearchSuggestionTable {
-    border: 0;
-    box-shadow: $context-menu-shadow;
-    transform: translateY($textbox-shadow-size);
-    background-color: var(--newtab-background-color);
-
-    .contentSearchHeader {
-      color: var(--newtab-text-secondary-color);
-      background-color: var(--newtab-background-color-secondary);
-    }
-
-    .contentSearchHeader,
-    .contentSearchSettingsButton {
-      border-color: var(--newtab-border-color);
-    }
-
-    .contentSearchSuggestionsList {
-      color: var(--newtab-text-primary-color);
-      border: 0;
-    }
-
-    .contentSearchOneOffsTable {
-      border-top: solid 1px var(--newtab-border-color);
-      background-color: var(--newtab-background-color);
-    }
-
-    .contentSearchSearchWithHeaderSearchText {
-      color: var(--newtab-text-primary-color);
-    }
-
-    .contentSearchSuggestionRow {
-      &.selected {
-        background: var(--newtab-element-hover-color);
-        color: var(--newtab-text-primary-color);
-
-        &:active {
-          background: var(--newtab-element-active-color);
-        }
-
-        .historyIcon {
-          fill: var(--newtab-text-secondary-color);
-        }
-      }
-    }
-
-    .contentSearchOneOffItem {
-      // Make the border slightly shorter by offsetting from the top and bottom
-      $border-offset: 18%;
-
-      background-image: none;
-      border-image: linear-gradient(transparent $border-offset, var(--newtab-border-color) $border-offset, var(--newtab-border-color) 100% - $border-offset, transparent 100% - $border-offset) 1;
-      border-inline-end: 1px solid;
-      position: relative;
-
-      &.selected {
-        background: var(--newtab-element-hover-color);
-      }
-
-      &:active {
-        background: var(--newtab-element-active-color);
-      }
-    }
-
-    .contentSearchSettingsButton {
-      &:hover {
-        background: var(--newtab-element-hover-color);
-        color: var(--newtab-text-primary-color);
-      }
-    }
-  }
-
-  .contentSearchHeaderRow > td > img,
-  .contentSearchSuggestionRow > td > .historyIcon {
-    margin-inline-start: var(--space-small);
-    margin-inline-end: var(--space-large);
   }
 }

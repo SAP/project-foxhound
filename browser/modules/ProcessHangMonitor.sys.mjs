@@ -1,4 +1,3 @@
-/* -*- mode: js; indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,9 +67,9 @@ export var ProcessHangMonitor = {
    * Collection of hang reports that haven't expired or been dismissed
    * by the user. These are nsIHangReports. They are mapped to objects
    * containing:
-   * - notificationTime: when (Cu.now()) we first showed a notification
+   * - notificationTime: when (ChromeUtils.now()) we first showed a notification
    * - waitCount: how often the user asked to wait for the script to finish
-   * - lastReportFromChild: when (Cu.now()) we last got hang info from the
+   * - lastReportFromChild: when (ChromeUtils.now()) we last got hang info from the
    *   child.
    */
   _activeReports: new Map(),
@@ -271,7 +270,7 @@ export var ProcessHangMonitor = {
     let maybeStopHang = report => {
       let hungBrowserWindow = null;
       try {
-        hungBrowserWindow = report.scriptBrowser.ownerGlobal;
+        hungBrowserWindow = report.scriptBrowser.documentGlobal;
       } catch (e) {
         // Ignore failures to get the script browser - we'll be
         // conservative, and assume that if we cannot access the
@@ -373,7 +372,7 @@ export var ProcessHangMonitor = {
       }
       let uptime = 0;
       if (info.notificationTime) {
-        uptime = Cu.now() - info.notificationTime;
+        uptime = ChromeUtils.now() - info.notificationTime;
       }
       uptime = "" + uptime;
       // We combine the duration of the hang in the content process with the
@@ -383,7 +382,7 @@ export var ProcessHangMonitor = {
       // there is no cross-process monotonically increasing timestamp we can
       // use. :-(
       let hangDuration =
-        report.hangDuration + Cu.now() - info.lastReportFromChild;
+        report.hangDuration + ChromeUtils.now() - info.lastReportFromChild;
       Glean.slowScriptWarning.shownContent.record({
         end_reason: endReason,
         hang_duration: hangDuration,
@@ -454,7 +453,7 @@ export var ProcessHangMonitor = {
     if (report) {
       let info = this._activeReports.get(report);
       if (info && !info.notificationTime) {
-        info.notificationTime = Cu.now();
+        info.notificationTime = ChromeUtils.now();
       }
       this.showNotification(win, report);
     } else {
@@ -510,7 +509,9 @@ export var ProcessHangMonitor = {
         ]);
       } else {
         let tab =
-          scriptBrowser?.ownerGlobal.gBrowser?.getTabForBrowser(scriptBrowser);
+          scriptBrowser?.documentGlobal.gBrowser?.getTabForBrowser(
+            scriptBrowser
+          );
         if (!tab) {
           notificationTag = "nonspecific_tab";
           message = bundle.getFormattedString(
@@ -614,7 +615,7 @@ export var ProcessHangMonitor = {
   },
 
   handleEvent(event) {
-    let win = event.target.ownerGlobal;
+    let win = event.target.documentGlobal;
 
     // If a new tab is selected or if a tab changes remoteness, then
     // we may need to show or hide a hang notification.
@@ -639,7 +640,7 @@ export var ProcessHangMonitor = {
    * before, show a notification for it in all open XUL windows.
    */
   reportHang(report) {
-    let now = Cu.now();
+    let now = ChromeUtils.now();
     if (this._shuttingDown) {
       this.stopHang(report, "shutdown-in-progress", {
         lastReportFromChild: now,

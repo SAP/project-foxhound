@@ -13,8 +13,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
-#include "api/array_view.h"
 #include "api/crypto/frame_encryptor_interface.h"
 #include "api/media_types.h"
 #include "test/gmock.h"
@@ -25,17 +25,17 @@ class MockFrameEncryptor : public FrameEncryptorInterface {
  public:
   MOCK_METHOD(int,
               Encrypt,
-              (webrtc::MediaType,
+              (MediaType,
                uint32_t,
-               rtc::ArrayView<const uint8_t>,
-               rtc::ArrayView<const uint8_t>,
-               rtc::ArrayView<uint8_t>,
+               std::span<const uint8_t>,
+               std::span<const uint8_t>,
+               std::span<uint8_t>,
                size_t*),
               (override));
 
   MOCK_METHOD(size_t,
               GetMaxCiphertextByteSize,
-              (webrtc::MediaType media_type, size_t frame_size),
+              (MediaType media_type, size_t frame_size),
               (override));
 };
 

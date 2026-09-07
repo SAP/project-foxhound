@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,13 @@
 // NB: This code may be used from non-XPCOM code, in particular, the
 // standalone updater executable.
 
-#ifndef nsVersionComparator_h__
-#define nsVersionComparator_h__
+#ifndef nsVersionComparator_h_
+#define nsVersionComparator_h_
 
-#include "mozilla/Char16.h"
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #if defined(XP_WIN) && !defined(UPDATER_NO_STRING_GLUE_STL)
-#  include <wchar.h>
 #  include "nsString.h"
 #endif
 
@@ -109,4 +105,4 @@ struct Version {
 
 }  // namespace mozilla
 
-#endif  // nsVersionComparator_h__
+#endif  // nsVersionComparator_h_

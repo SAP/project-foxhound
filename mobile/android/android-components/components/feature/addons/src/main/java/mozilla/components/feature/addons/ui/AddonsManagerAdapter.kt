@@ -283,7 +283,6 @@ class AddonsManagerAdapter(
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    @Suppress("LongMethod")
     internal fun bindAddon(
         holder: AddonViewHolder,
         addon: Addon,
@@ -354,7 +353,6 @@ class AddonsManagerAdapter(
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    @Suppress("ComplexMethod")
     internal fun createListWithSections(addons: List<Addon>, excludedAddonIDs: List<String> = emptyList()): List<Any> {
         val itemsWithSections = ArrayList<Any>()
         val installedAddons = ArrayList<Addon>()
@@ -411,10 +409,15 @@ class AddonsManagerAdapter(
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal data class Section(@param:StringRes val title: Int, val visibleDivider: Boolean = true)
+    internal data class Section(
+        @param:StringRes val title: Int,
+        val visibleDivider: Boolean = true,
+    )
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal data class NotYetSupportedSection(@param:StringRes val title: Int)
+    internal data class NotYetSupportedSection(
+        @param:StringRes val title: Int,
+    )
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal object FooterSection
@@ -573,9 +576,9 @@ class AddonsManagerAdapter(
                         // Soft-blocked add-ons can be re-enabled. That's why we check whether the add-on is enabled
                         // first.
                         if (addon.isEnabled()) {
-                            R.string.mozac_feature_addons_status_softblocked_re_enabled
+                            R.string.mozac_feature_addons_status_softblocked_re_enabled_2
                         } else {
-                            R.string.mozac_feature_addons_status_softblocked_1
+                            R.string.mozac_feature_addons_status_softblocked_2
                         },
                     )
                 // This learn more link should be underlined.

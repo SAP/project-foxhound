@@ -1,0 +1,18 @@
+{
+  "label": "portal.adtpulse.com",
+  "bugs": {
+    "2005520": {
+      "issue": "unsupported-warning",
+      "matches": ["*://portal.adtpulse.com/*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": "#unsupported_warning_row { display: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

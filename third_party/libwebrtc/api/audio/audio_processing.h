@@ -11,33 +11,24 @@
 #ifndef API_AUDIO_AUDIO_PROCESSING_H_
 #define API_AUDIO_AUDIO_PROCESSING_H_
 
-// MSVC++ requires this to be set before any other includes to get M_PI.
-#ifndef _USE_MATH_DEFINES
-#define _USE_MATH_DEFINES
-#endif
-
-#include <math.h>
-#include <stddef.h>  // size_t
-#include <stdio.h>   // FILE
-#include <string.h>
-
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
-#include <utility>
 
 #include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/audio/audio_processing_statistics.h"
 #include "api/audio/echo_control.h"
 #include "api/environment/environment.h"
 #include "api/ref_count.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_base.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/system/rtc_export.h"
 
@@ -89,7 +80,6 @@ class EchoDetector;
 //
 // AudioProcessing::Config config;
 // config.echo_canceller.enabled = true;
-// config.echo_canceller.mobile_mode = false;
 //
 // config.gain_controller1.enabled = true;
 // config.gain_controller1.mode =
@@ -149,20 +139,23 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
       // Ways to downmix a multi-channel track to mono.
       enum class DownmixMethod {
         kAverageChannels,  // Average across channels.
-        kUseFirstChannel   // Use the first channel.
+        kUseFirstChannel,  // Use the first channel.
+        kAdaptive          // Adaptively choose how to downmix.
       };
 
       // Maximum allowed processing rate used internally. May only be set to
       // 32000 or 48000 and any differing values will be treated as 48000.
-      int maximum_internal_processing_rate = 48000;
+      int maximum_internal_processing_rate = 32000;
       // Allow multi-channel processing of render audio.
-      bool multi_channel_render = false;
+      bool multi_channel_render = true;
       // Allow multi-channel processing of capture audio when AEC3 is active
-      // or a custom AEC is injected..
-      bool multi_channel_capture = false;
+      // or a custom AEC is injected.
+      bool multi_channel_capture = true;
       // Indicates how to downmix multi-channel capture audio to mono (when
       // needed).
       DownmixMethod capture_downmix_method = DownmixMethod::kAverageChannels;
+      DownmixMethod capture_downmix_method_stereo_aec =
+          DownmixMethod::kAverageChannels;
     } pipeline;
 
     // Enabled the pre-amplifier. It amplifies the capture signal
@@ -205,10 +198,8 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
 
     struct EchoCanceller {
       bool enabled = false;
-      bool mobile_mode = false;
       bool export_linear_aec_output = false;
-      // Enforce the highpass filter to be on (has no effect for the mobile
-      // mode).
+      // Enforce the highpass filter to be on.
       bool enforce_high_pass_filtering = true;
     } echo_canceller;
 
@@ -402,8 +393,8 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
 
     // Play-out audio device properties.
     struct PlayoutAudioDeviceInfo {
-      int id;          // Identifies the audio device.
-      int max_volume;  // Maximum play-out volume.
+      int id = 0;          // Identifies the audio device.
+      int max_volume = 0;  // Maximum play-out volume.
     };
 
     RuntimeSetting() : type_(Type::kNotSpecified), value_(0.0f) {}
@@ -591,7 +582,7 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
   // representation of the input is returned. Returns true/false to indicate
   // whether an output returned.
   virtual bool GetLinearAecOutput(
-      rtc::ArrayView<std::array<float, 160>> linear_output) const = 0;
+      std::span<std::array<float, 160>> linear_output) const = 0;
 
   // This must be called prior to ProcessStream() if and only if adaptive analog
   // gain control is enabled, to pass the current analog level from the audio
@@ -624,7 +615,7 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
   // with this chunk of audio.
   virtual void set_stream_key_pressed(bool key_pressed) = 0;
 
-  // Creates and attaches an webrtc::AecDump for recording debugging
+  // Creates and attaches an AecDump for recording debugging
   // information.
   // The `worker_queue` may not be null and must outlive the created
   // AecDump instance. |max_log_size_bytes == -1| means the log size
@@ -633,17 +624,17 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
   // return value of true indicates that the file has been
   // sucessfully opened, while a value of false indicates that
   // opening the file failed.
-  virtual bool CreateAndAttachAecDump(
-      absl::string_view file_name,
-      int64_t max_log_size_bytes,
-      absl::Nonnull<TaskQueueBase*> worker_queue) = 0;
-  virtual bool CreateAndAttachAecDump(
-      absl::Nonnull<FILE*> handle,
-      int64_t max_log_size_bytes,
-      absl::Nonnull<TaskQueueBase*> worker_queue) = 0;
+  virtual bool CreateAndAttachAecDump(absl::string_view file_name,
+                                      int64_t max_log_size_bytes,
+                                      TaskQueueBase* absl_nonnull
+                                          worker_queue) = 0;
+  virtual bool CreateAndAttachAecDump(FILE* absl_nonnull handle,
+                                      int64_t max_log_size_bytes,
+                                      TaskQueueBase* absl_nonnull
+                                          worker_queue) = 0;
 
   // TODO(webrtc:5298) Deprecated variant.
-  // Attaches provided webrtc::AecDump for recording debugging
+  // Attaches provided AecDump for recording debugging
   // information. Log file and maximum file size logic is supposed to
   // be handled by implementing instance of AecDump. Calling this
   // method when another AecDump is attached resets the active AecDump
@@ -692,22 +683,16 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
   };
 
   // Native rates supported by the integer interfaces.
-  enum NativeRate {
+  enum NativeRate : int {
     kSampleRate8kHz = 8000,
     kSampleRate16kHz = 16000,
     kSampleRate32kHz = 32000,
     kSampleRate48kHz = 48000
   };
 
-  // TODO(kwiberg): We currently need to support a compiler (Visual C++) that
-  // complains if we don't explicitly state the size of the array here. Remove
-  // the size when that's no longer the case.
-  static constexpr int kNativeSampleRatesHz[4] = {
+  static constexpr std::array kNativeSampleRatesHz = {
       kSampleRate8kHz, kSampleRate16kHz, kSampleRate32kHz, kSampleRate48kHz};
-  static constexpr size_t kNumNativeSampleRates =
-      arraysize(kNativeSampleRatesHz);
-  static constexpr int kMaxNativeSampleRateHz =
-      kNativeSampleRatesHz[kNumNativeSampleRates - 1];
+  static constexpr int kMaxNativeSampleRateHz = kNativeSampleRatesHz.back();
 
   // APM processes audio in chunks of about 10 ms. See GetFrameSize() for
   // details.
@@ -738,7 +723,7 @@ class AudioProcessingBuilderInterface {
  public:
   virtual ~AudioProcessingBuilderInterface() = default;
 
-  virtual absl::Nullable<scoped_refptr<AudioProcessing>> Build(
+  virtual absl_nullable scoped_refptr<AudioProcessing> Build(
       const Environment& env) = 0;
 };
 
@@ -747,9 +732,9 @@ class AudioProcessingBuilderInterface {
 // nullptr `audio_processing` is not supported as in some scenarios that imply
 // no audio processing, while in others - default builtin audio processing.
 // Callers should be explicit which of these two behaviors they want.
-absl::Nonnull<std::unique_ptr<AudioProcessingBuilderInterface>>
+absl_nonnull std::unique_ptr<AudioProcessingBuilderInterface>
 CustomAudioProcessing(
-    absl::Nonnull<scoped_refptr<AudioProcessing>> audio_processing);
+    absl_nonnull scoped_refptr<AudioProcessing> audio_processing);
 
 // Experimental interface for a custom analysis submodule.
 class CustomAudioAnalyzer {
@@ -879,11 +864,10 @@ class EchoDetector : public RefCountInterface {
                           int num_render_channels) = 0;
 
   // Analysis (not changing) of the first channel of the render signal.
-  virtual void AnalyzeRenderAudio(rtc::ArrayView<const float> render_audio) = 0;
+  virtual void AnalyzeRenderAudio(std::span<const float> render_audio) = 0;
 
   // Analysis (not changing) of the capture signal.
-  virtual void AnalyzeCaptureAudio(
-      rtc::ArrayView<const float> capture_audio) = 0;
+  virtual void AnalyzeCaptureAudio(std::span<const float> capture_audio) = 0;
 
   struct Metrics {
     std::optional<double> echo_likelihood;

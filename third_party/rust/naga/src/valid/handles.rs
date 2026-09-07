@@ -160,6 +160,7 @@ impl super::Validator {
                 binding: _,
                 ty,
                 init,
+                memory_decorations: _,
             } = global_variable;
             validate_type(ty)?;
             if let Some(init_expr) = init {
@@ -231,6 +232,21 @@ impl super::Validator {
             if let Some(sizes) = entry_point.workgroup_size_overrides {
                 for size in sizes.iter().filter_map(|x| *x) {
                     validate_const_expr(size)?;
+                }
+            }
+            if let Some(task_payload) = entry_point.task_payload {
+                Self::validate_global_variable_handle(task_payload, global_variables)?;
+            }
+            if let Some(ref mesh_info) = entry_point.mesh_info {
+                Self::validate_global_variable_handle(mesh_info.output_variable, global_variables)?;
+                validate_type(mesh_info.vertex_output_type)?;
+                validate_type(mesh_info.primitive_output_type)?;
+                for ov in mesh_info
+                    .max_vertices_override
+                    .iter()
+                    .chain(mesh_info.max_primitives_override.iter())
+                {
+                    validate_const_expr(*ov)?;
                 }
             }
         }
@@ -379,6 +395,7 @@ impl super::Validator {
             crate::TypeInner::Scalar { .. }
             | crate::TypeInner::Vector { .. }
             | crate::TypeInner::Matrix { .. }
+            | crate::TypeInner::CooperativeMatrix { .. }
             | crate::TypeInner::ValuePointer { .. }
             | crate::TypeInner::Atomic { .. }
             | crate::TypeInner::Image { .. }
@@ -647,6 +664,12 @@ impl super::Validator {
             } => {
                 handle.check_dep(query)?;
             }
+            crate::Expression::CooperativeLoad { ref data, .. } => {
+                handle.check_dep(data.pointer)?.check_dep(data.stride)?;
+            }
+            crate::Expression::CooperativeMultiplyAdd { a, b, c } => {
+                handle.check_dep(a)?.check_dep(b)?.check_dep(c)?;
+            }
         }
         Ok(())
     }
@@ -835,6 +858,24 @@ impl super::Validator {
                 validate_expr(result)?;
                 Ok(())
             }
+            crate::Statement::CooperativeStore { target, ref data } => {
+                validate_expr(target)?;
+                validate_expr(data.pointer)?;
+                validate_expr(data.stride)?;
+                Ok(())
+            }
+            crate::Statement::RayPipelineFunction(fun) => match fun {
+                crate::RayPipelineFunction::TraceRay {
+                    acceleration_structure,
+                    descriptor,
+                    payload,
+                } => {
+                    validate_expr(acceleration_structure)?;
+                    validate_expr(descriptor)?;
+                    validate_expr(payload)?;
+                    Ok(())
+                }
+            },
             crate::Statement::Break
             | crate::Statement::Continue
             | crate::Statement::Kill

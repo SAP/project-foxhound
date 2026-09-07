@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Services.h"
@@ -149,7 +146,7 @@ Result<Ok, LaunchError> ForkServiceChild::SendForkNewSubprocess(
     WriteParam(&writer, aOptions.fork_flags);
     WriteParam(&writer, std::move(aOptions.sandbox_chroot_server));
 #endif
-    WriteIPDLParam(&writer, nullptr, std::move(execChild));
+    WriteParam(&writer, std::move(execChild));
     if (!mTcver->Send(msg)) {
       MOZ_LOG(gForkServiceLog, LogLevel::Verbose,
               ("the pipe to the fork server is closed or having errors"));
@@ -189,7 +186,7 @@ Result<Ok, LaunchError> ForkServiceChild::SendForkNewSubprocess(
   }
   IPC::MessageReader reader(*reply);
 
-  if (!ReadIPDLParam(&reader, nullptr, aPid)) {
+  if (!ReadParam(&reader, aPid)) {
     MOZ_CRASH("Error deserializing 'pid_t'");
   }
   reader.EndRead();
@@ -259,9 +256,7 @@ NS_IMPL_ISUPPORTS(ForkServerLauncher, nsIObserver)
 bool ForkServerLauncher::sHaveStartedClient = false;
 StaticRefPtr<ForkServerLauncher> ForkServerLauncher::sSingleton;
 
-ForkServerLauncher::ForkServerLauncher() {}
-
-ForkServerLauncher::~ForkServerLauncher() {}
+ForkServerLauncher::ForkServerLauncher() = default;
 
 already_AddRefed<ForkServerLauncher> ForkServerLauncher::Create() {
   if (sSingleton == nullptr) {

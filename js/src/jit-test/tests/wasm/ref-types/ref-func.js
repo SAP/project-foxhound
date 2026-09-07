@@ -112,9 +112,9 @@ assertErrorMessage(() => validFuncRefText('(start $referenced)', 'externref'), W
 // rejected.
 
 assertErrorMessage(() => new WebAssembly.Module(
-    moduleWithSections([generalElemSection([{ flag: PassiveElemExpr,
-                                              typeCode: I32Code,
-                                              elems: [] }])])),
+    moduleWithSections([elemSection([{ mode: "passive",
+                                       elemType: [I32Code],
+                                       exprs: [] }])])),
                    WebAssembly.CompileError,
                    /bad type/);
 

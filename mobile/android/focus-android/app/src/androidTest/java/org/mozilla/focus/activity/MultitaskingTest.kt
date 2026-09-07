@@ -6,7 +6,6 @@ package org.mozilla.focus.activity
 import androidx.test.internal.runner.junit4.AndroidJUnit4ClassRunner
 import androidx.test.platform.app.InstrumentationRegistry
 import mozilla.components.browser.state.selector.privateTabs
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -18,30 +17,33 @@ import org.mozilla.focus.activity.robots.browserScreen
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.ext.components
 import org.mozilla.focus.helpers.FeatureSettingsHelper
+import org.mozilla.focus.helpers.FocusTestRule
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
-import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.RetryTestRule
-import org.mozilla.focus.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
 import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
 import org.mozilla.focus.helpers.TestHelper.clickSnackBarActionButton
 import org.mozilla.focus.helpers.TestHelper.getStringResource
 import org.mozilla.focus.helpers.TestHelper.openAppFromExternalLink
 import org.mozilla.focus.helpers.TestHelper.verifySnackBarText
-import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 
 /**
  * Open multiple sessions and verify that the trash icon changes to a tabs counter
  */
 @RunWith(AndroidJUnit4ClassRunner::class)
-class MultitaskingTest : TestSetup() {
-    private lateinit var webServer: MockWebServer
+class MultitaskingTest {
     private val store = InstrumentationRegistry.getInstrumentation()
         .targetContext
         .applicationContext
         .components
         .store
     private val featureSettingsHelper = FeatureSettingsHelper()
+
+    @get:Rule(order = 0)
+    val focusTestRule: FocusTestRule = FocusTestRule()
+
+    private val webServerRule get() = focusTestRule.mockWebServerRule
 
     @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
@@ -52,30 +54,24 @@ class MultitaskingTest : TestSetup() {
 
     @Before
     @Throws(Exception::class)
-    override fun setUp() {
-        super.setUp()
+    fun setUp() {
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
-        webServer = MockWebServer().apply {
-            dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
-            start()
-        }
     }
 
     @After
     @Throws(Exception::class)
     fun tearDown() {
-        webServer.shutdown()
         featureSettingsHelper.resetAllFeatureFlags()
     }
 
     @SmokeTest
     @Test
     fun testVisitingMultipleSites() {
-        val tab1 = getGenericTabAsset(webServer, 1)
-        val tab2 = getGenericTabAsset(webServer, 2)
-        val tab3 = getGenericTabAsset(webServer, 3)
+        val tab1 = webServerRule.server.getGenericTabAsset(1)
+        val tab2 = webServerRule.server.getGenericTabAsset(2)
+        val tab3 = webServerRule.server.getGenericTabAsset(3)
         val eraseBrowsingSnackBarText = getStringResource(R.string.feedback_erase2)
-        val customTabPage = getGenericAsset(webServer)
+        val customTabPage = webServerRule.server.genericAsset
 
         // Load website: Erase button visible, Tabs button not
         searchScreen {
@@ -95,7 +91,7 @@ class MultitaskingTest : TestSetup() {
         browserScreen {
             verifyNumberOfTabsOpened(4)
         }.openTabsTray {
-            verifyTabsOrder(tab1.title, tab3.title, tab2.title, customTabPage.title)
+            verifyTabsOrder("Add new tab", tab1.title, tab3.title, tab2.title, customTabPage.title)
         }.selectTab(tab1.title) {
             verifyPageContent("Tab 1")
         }.clearBrowsingData {
@@ -107,9 +103,9 @@ class MultitaskingTest : TestSetup() {
     @SmokeTest
     @Test
     fun closeTabButtonTest() {
-        val tab1 = getGenericTabAsset(webServer, 1)
-        val tab2 = getGenericTabAsset(webServer, 2)
-        val tab3 = getGenericTabAsset(webServer, 3)
+        val tab1 = webServerRule.server.getGenericTabAsset(1)
+        val tab2 = webServerRule.server.getGenericTabAsset(2)
+        val tab3 = webServerRule.server.getGenericTabAsset(3)
 
         searchScreen {
         }.loadPage(tab1.url) {
@@ -120,11 +116,14 @@ class MultitaskingTest : TestSetup() {
             openLinkInNewTab()
             verifyNumberOfTabsOpened(3)
         }.openTabsTray {
-            verifyTabsOrder(tab1.title, tab3.title, tab2.title)
+            verifyTabsOrder("Add new tab", tab1.title, tab3.title, tab2.title)
         }.closeTab(tab1.title) {
         }.openTabsTray {
-            verifyTabsOrder(tab3.title, tab2.title)
+            verifyTabsOrder("Add new tab", tab3.title, tab2.title)
         }.closeTab(tab3.title) {
+        }.openTabsTray {
+            verifyTabsOrder("Add new tab", tab2.title)
+        }.closeTab(tab2.title) {
             verifyTabsCounterNotShown()
         }
     }
@@ -132,8 +131,8 @@ class MultitaskingTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyTabsTrayListTest() {
-        val tab1 = getGenericTabAsset(webServer, 1)
-        val tab2 = getGenericTabAsset(webServer, 2)
+        val tab1 = webServerRule.server.getGenericTabAsset(1)
+        val tab2 = webServerRule.server.getGenericTabAsset(2)
 
         searchScreen {
         }.loadPage(tab1.url) {
@@ -144,6 +143,35 @@ class MultitaskingTest : TestSetup() {
         }.openTabsTray {
             verifyCloseTabButton(tab1.title)
             verifyCloseTabButton(tab2.title)
+        }
+    }
+
+    @SmokeTest
+    @Test
+    fun verifyTheTabsTrayAddNewTabButtonTest() {
+        val tab1 = webServerRule.server.getGenericTabAsset(1)
+        val tab2 = webServerRule.server.getGenericTabAsset(2)
+        val tab3 = webServerRule.server.getGenericTabAsset(3)
+
+        searchScreen {
+        }.loadPage(tab1.url) {
+        }.openTabsTray {
+            verifyTheAddNewTabButtonIsDisplayed()
+            verifyTabsOrder("Add new tab", tab1.title)
+            verifyTheCloseOtherTabsButtonIsDisplayed()
+        }.clickTheAddNewTabButton {
+        }
+
+        searchScreen {
+        }.loadPage(tab2.url) {
+            verifyNumberOfTabsOpened(2)
+        }.openTabsTray {
+        }.clickTheAddNewTabButton {
+        }
+
+        searchScreen {
+        }.loadPage(tab3.url) {
+            verifyNumberOfTabsOpened(3)
         }
     }
 }

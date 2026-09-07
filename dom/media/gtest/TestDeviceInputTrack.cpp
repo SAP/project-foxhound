@@ -1,19 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#include "DeviceInputTrack.h"
-
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
-
 #include "AudioGenerator.h"
+#include "DeviceInputTrack.h"
 #include "MediaTrackGraphImpl.h"
 #include "MockCubeb.h"
-#include "mozilla/gtest/WaitFor.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/gtest/WaitFor.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla;
@@ -57,7 +53,7 @@ class MockGraphImpl : public MediaTrackGraphImpl {
 
     MOCK_METHOD0(Start, void());
     MOCK_METHOD0(Shutdown, void());
-    MOCK_METHOD0(IterationDuration, uint32_t());
+    MOCK_METHOD0(IterationDuration, TimeDuration());
     MOCK_METHOD0(EnsureNextIteration, void());
     MOCK_CONST_METHOD0(OnThread, bool());
     MOCK_CONST_METHOD0(ThreadRunning, bool());
@@ -176,10 +172,7 @@ TEST_F(TestDeviceInputTrack, DeviceInputConsumerTrack) {
   EXPECT_TRUE(track2->ConnectedToNonNativeDevice());
 
   track2->Destroy();
-  mGraph->RemoveTrackGraphThread(track2);
-
   track1->Destroy();
-  mGraph->RemoveTrackGraphThread(track1);
 }
 
 TEST_F(TestDeviceInputTrack, NativeInputTrackData) {
@@ -236,9 +229,8 @@ TEST_F(TestDeviceInputTrack, NativeInputTrackData) {
     EXPECT_EQ(chunk.mPrincipalHandle, testPrincipal);
   }
 
-  // Tear down: Destroy the NativeInputTrack and remove it from mGraph.
+  // Tear down: Destroy the NativeInputTrack.
   track->Destroy();
-  mGraph->RemoveTrackGraphThread(track);
 }
 
 class MockEventListener : public AudioInputSource::EventListener {
@@ -306,12 +298,12 @@ TEST_F(TestDeviceInputTrack, StartAndStop) {
     EXPECT_EQ(track->DevicePreference(), AudioInputType::Voice);
 
     // Wait for stream callbacks.
-    Unused << WaitFor(stream->FramesProcessedEvent());
+    (void)WaitFor(stream->FramesProcessedEvent());
 
     DispatchFunction([&] { track->StopAudio(); });
 
     // Wait for stream destroy.
-    Unused << WaitFor(cubeb->StreamDestroyEvent());
+    (void)WaitFor(cubeb->StreamDestroyEvent());
 
     // No input channels and device preference after stop.
     EXPECT_EQ(track->NumberOfChannels(), 0U);
@@ -344,17 +336,16 @@ TEST_F(TestDeviceInputTrack, StartAndStop) {
     EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(rate));
 
     // Wait for stream callbacks.
-    Unused << WaitFor(stream->FramesProcessedEvent());
+    (void)WaitFor(stream->FramesProcessedEvent());
 
     DispatchFunction([&] { track->StopAudio(); });
 
     // Wait for stream destroy.
-    Unused << WaitFor(cubeb->StreamDestroyEvent());
+    (void)WaitFor(cubeb->StreamDestroyEvent());
   }
 
-  // Tear down: Destroy the NativeInputTrack and remove it from mGraph.
+  // Tear down: Destroy the NativeInputTrack.
   track->Destroy();
-  mGraph->RemoveTrackGraphThread(track);
 }
 
 TEST_F(TestDeviceInputTrack, NonNativeInputTrackData) {
@@ -420,7 +411,7 @@ TEST_F(TestDeviceInputTrack, NonNativeInputTrackData) {
   EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(rate));
 
   // Check audio data.
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
   track->ProcessInput(current, next, flags);
   {
     AudioSegment data;
@@ -439,7 +430,7 @@ TEST_F(TestDeviceInputTrack, NonNativeInputTrackData) {
   ASSERT_NE(current, next);  // Make sure we have data produced in ProcessInput.
 
   DispatchFunction([&] { track->StopAudio(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
   track->ProcessInput(current, next, flags);
   {
@@ -448,9 +439,8 @@ TEST_F(TestDeviceInputTrack, NonNativeInputTrackData) {
     EXPECT_TRUE(data.IsNull());
   }
 
-  // Tear down: Destroy the NonNativeInputTrack and remove it from mGraph.
+  // Tear down: Destroy the NonNativeInputTrack.
   track->Destroy();
-  mGraph->RemoveTrackGraphThread(track);
 }
 
 TEST_F(TestDeviceInputTrack, NonNativeDeviceChangedCallback) {
@@ -496,7 +486,7 @@ TEST_F(TestDeviceInputTrack, NonNativeDeviceChangedCallback) {
   EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(rate));
 
   // Make sure the stream is running.
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   // Fire a device-changed callback.
   DispatchFunction([&] { stream->ForceDeviceChanged(); });
@@ -504,11 +494,10 @@ TEST_F(TestDeviceInputTrack, NonNativeDeviceChangedCallback) {
 
   // Stop and destroy the stream.
   DispatchFunction([&] { track->StopAudio(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
-  // Tear down: Destroy the NonNativeInputTrack and remove it from mGraph.
+  // Tear down: Destroy the NonNativeInputTrack.
   track->Destroy();
-  mGraph->RemoveTrackGraphThread(track);
 }
 
 TEST_F(TestDeviceInputTrack, NonNativeErrorCallback) {
@@ -556,7 +545,7 @@ TEST_F(TestDeviceInputTrack, NonNativeErrorCallback) {
   EXPECT_EQ(stream->SampleRate(), static_cast<uint32_t>(rate));
 
   // Make sure the stream is running.
-  Unused << WaitFor(stream->FramesProcessedEvent());
+  (void)WaitFor(stream->FramesProcessedEvent());
 
   // Force an error in the MockCubeb.
   DispatchFunction([&] { stream->ForceError(); });
@@ -564,9 +553,8 @@ TEST_F(TestDeviceInputTrack, NonNativeErrorCallback) {
 
   // Stop and destroy the stream.
   DispatchFunction([&] { track->StopAudio(); });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 
-  // Tear down: Destroy the NonNativeInputTrack and remove it from mGraph.
+  // Tear down: Destroy the NonNativeInputTrack.
   track->Destroy();
-  mGraph->RemoveTrackGraphThread(track);
 }

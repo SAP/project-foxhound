@@ -10,15 +10,16 @@
 
 #include "modules/audio_mixer/frame_combiner.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <numeric>
-#include <optional>
+#include <span>
 #include <string>
-#include <type_traits>
 #include <vector>
 
-#include "api/array_view.h"
+#include "api/audio/audio_frame.h"
+#include "api/audio/channel_layout.h"
 #include "api/rtp_packet_info.h"
 #include "api/rtp_packet_infos.h"
 #include "api/units/timestamp.h"
@@ -82,7 +83,7 @@ void SetUpFrames(int sample_rate_hz, int number_of_channels) {
   frame2.packet_infos_ = RtpPacketInfos({packet_info2, packet_info3});
 
   for (auto* frame : {&frame1, &frame2}) {
-    frame->UpdateFrame(0, nullptr, rtc::CheckedDivExact(sample_rate_hz, 100),
+    frame->UpdateFrame(0, nullptr, CheckedDivExact(sample_rate_hz, 100),
                        sample_rate_hz, AudioFrame::kNormalSpeech,
                        AudioFrame::kVadActive, number_of_channels);
   }
@@ -144,16 +145,12 @@ TEST(FrameCombiner, ContainsAllRtpPacketInfos) {
 TEST(FrameCombinerDeathTest, BuildCrashesWithManyChannels) {
   FrameCombiner combiner(true);
   for (const int rate : {8000, 18000, 34000, 48000}) {
-    for (const int number_of_channels : {10, 20, 21}) {
+    for (const int number_of_channels : {10, 15, 17}) {
       if (static_cast<size_t>(rate / 100 * number_of_channels) >
           AudioFrame::kMaxDataSizeSamples) {
         continue;
       }
       const std::vector<AudioFrame*> all_frames = {&frame1, &frame2};
-      // With an unsupported channel count, this will crash in
-      // `AudioFrame::UpdateFrame`.
-      EXPECT_DEATH(SetUpFrames(rate, number_of_channels), "");
-
       const int number_of_frames = 2;
       SCOPED_TRACE(
           ProduceDebugText(rate, number_of_channels, number_of_frames));
@@ -161,8 +158,11 @@ TEST(FrameCombinerDeathTest, BuildCrashesWithManyChannels) {
           all_frames.begin(), all_frames.begin() + number_of_frames);
       AudioFrame audio_frame_for_mixing;
       EXPECT_DEATH(
-          combiner.Combine(frames_to_combine, number_of_channels, rate,
-                           frames_to_combine.size(), &audio_frame_for_mixing),
+          {
+            SetUpFrames(rate, number_of_channels);
+            combiner.Combine(frames_to_combine, number_of_channels, rate,
+                             frames_to_combine.size(), &audio_frame_for_mixing);
+          },
           "");
     }
   }
@@ -282,9 +282,30 @@ TEST(FrameCombiner, CombiningOneFrameShouldNotChangeFrame) {
 TEST(FrameCombiner, GainCurveIsSmoothForAlternatingNumberOfStreams) {
   // Rates are divisible by 2000 when limiter is active.
   std::vector<FrameCombinerConfig> configs = {
-      {false, 30100, 2, 50.f},  {false, 16500, 1, 3200.f},
-      {true, 8000, 1, 3200.f},  {true, 16000, 1, 50.f},
-      {true, 18000, 8, 3200.f}, {true, 10000, 2, 50.f},
+      {.use_limiter = false,
+       .sample_rate_hz = 30100,
+       .number_of_channels = 2,
+       .wave_frequency = 50.f},
+      {.use_limiter = false,
+       .sample_rate_hz = 16500,
+       .number_of_channels = 1,
+       .wave_frequency = 3200.f},
+      {.use_limiter = true,
+       .sample_rate_hz = 8000,
+       .number_of_channels = 1,
+       .wave_frequency = 3200.f},
+      {.use_limiter = true,
+       .sample_rate_hz = 16000,
+       .number_of_channels = 1,
+       .wave_frequency = 50.f},
+      {.use_limiter = true,
+       .sample_rate_hz = 18000,
+       .number_of_channels = 8,
+       .wave_frequency = 3200.f},
+      {.use_limiter = true,
+       .sample_rate_hz = 10000,
+       .number_of_channels = 2,
+       .wave_frequency = 50.f},
   };
 
   for (const auto& config : configs) {
@@ -319,9 +340,9 @@ TEST(FrameCombiner, GainCurveIsSmoothForAlternatingNumberOfStreams) {
                        config.sample_rate_hz, number_of_streams,
                        &audio_frame_for_mixing);
       cumulative_change += change_calculator.CalculateGainChange(
-          rtc::ArrayView<const int16_t>(frame1.data(), number_of_samples),
-          rtc::ArrayView<const int16_t>(audio_frame_for_mixing.data(),
-                                        number_of_samples));
+          std::span<const int16_t>(frame1.data(), number_of_samples),
+          std::span<const int16_t>(audio_frame_for_mixing.data(),
+                                   number_of_samples));
     }
 
     // Check that the gain doesn't vary too much.

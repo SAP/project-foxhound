@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "api/environment/environment.h"
+#include "api/video/resolution.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
@@ -32,15 +33,14 @@
 namespace webrtc {
 namespace {
 
-using Factory =
-    VideoEncoderFactoryTemplate<webrtc::LibvpxVp8EncoderTemplateAdapter,
+using Factory = VideoEncoderFactoryTemplate<LibvpxVp8EncoderTemplateAdapter,
 #if defined(WEBRTC_USE_H264)
-                                webrtc::OpenH264EncoderTemplateAdapter,
+                                            OpenH264EncoderTemplateAdapter,
 #endif
 #if defined(RTC_USE_LIBAOM_AV1_ENCODER)
-                                webrtc::LibaomAv1EncoderTemplateAdapter,
+                                            LibaomAv1EncoderTemplateAdapter,
 #endif
-                                webrtc::LibvpxVp9EncoderTemplateAdapter>;
+                                            LibvpxVp9EncoderTemplateAdapter>;
 }  // namespace
 
 std::vector<SdpVideoFormat> InternalEncoderFactory::GetSupportedFormats()
@@ -58,11 +58,13 @@ std::unique_ptr<VideoEncoder> InternalEncoderFactory::Create(
 
 VideoEncoderFactory::CodecSupport InternalEncoderFactory::QueryCodecSupport(
     const SdpVideoFormat& format,
-    std::optional<std::string> scalability_mode) const {
+    std::optional<std::string> scalability_mode,
+    std::optional<Resolution> resolution) const {
   auto original_format =
       FuzzyMatchSdpVideoFormat(Factory().GetSupportedFormats(), format);
   return original_format
-             ? Factory().QueryCodecSupport(*original_format, scalability_mode)
+             ? Factory().QueryCodecSupport(*original_format, scalability_mode,
+                                           resolution)
              : VideoEncoderFactory::CodecSupport{.is_supported = false};
 }
 

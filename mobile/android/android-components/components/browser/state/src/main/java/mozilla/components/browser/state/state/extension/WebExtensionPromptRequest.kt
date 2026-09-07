@@ -4,6 +4,7 @@
 
 package mozilla.components.browser.state.state.extension
 
+import mozilla.components.concept.engine.webextension.InstallationMethod
 import mozilla.components.concept.engine.webextension.PermissionPromptResponse
 import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.concept.engine.webextension.WebExtensionInstallException
@@ -14,6 +15,21 @@ import mozilla.components.concept.engine.webextension.WebExtensionInstallExcepti
  * @param extension The [WebExtension] that requested the dialog to be shown.
  */
 sealed class WebExtensionPromptRequest {
+    /**
+     * Installing a specific addon from a specific [url] is requested
+     *
+     * @property url The url from where to download the addon to install.
+     * @property name Optional name of the addon.
+     * @property iconUrl Optional url of the icon of the addon to install.
+     * @property installationMethod What feature triggered installing the addon.
+     * Defaults to [InstallationMethod.MANAGER].
+     */
+    data class InstallationRequested(
+        val url: String,
+        val name: String?,
+        val iconUrl: String?,
+        val installationMethod: InstallationMethod = InstallationMethod.MANAGER,
+    ) : WebExtensionPromptRequest()
 
     /**
      * Value type that represents a request for showing a native dialog from a [WebExtension] before

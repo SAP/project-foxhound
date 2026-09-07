@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -603,13 +601,10 @@ TextEventDispatcher* IMContextWrapper::GetTextEventDispatcher() {
 
 NS_IMETHODIMP_(IMENotificationRequests)
 IMContextWrapper::GetIMENotificationRequests() {
-  IMENotificationRequests::Notifications notifications =
-      IMENotificationRequests::NOTIFY_NOTHING;
   // If it's not enabled, we don't need position change notification.
-  if (IsEnabled()) {
-    notifications |= IMENotificationRequests::NOTIFY_POSITION_CHANGE;
-  }
-  return IMENotificationRequests(notifications);
+  return IsEnabled()
+             ? IMENotificationRequests{IMENotificationRequest::PositionChange}
+             : IMENotificationRequests{};
 }
 
 void IMContextWrapper::OnDestroyWindow(nsWindow* aWindow) {
@@ -1110,6 +1105,7 @@ void IMContextWrapper::OnFocusChangeInGecko(bool aFocus) {
   // We shouldn't carry over the removed string to another editor.
   mSelectedStringRemovedByComposition.Truncate();
   mContentSelection.reset();
+  mPendingSetSurrounding = false;
 
   if (aFocus) {
     if (mSetInputPurposeAndInputHints) {
@@ -1606,6 +1602,20 @@ void IMContextWrapper::OnSelectionChange(
       ResetIME();
     }
   }
+
+  if (mPendingSetSurrounding) {
+    MOZ_LOG(gIMELog, LogLevel::Debug,
+            ("0x%p   OnSelectionChange(), retrying "
+             "OnRetrieveSurroundingNative()",
+             this));
+    if (GtkIMContext* currentContext = GetCurrentContext()) {
+      AutoRestore<bool> restore(mRetrieveSurroundingSignalReceived);
+      OnRetrieveSurroundingNative(currentContext);
+    }
+    // Even if OnRetrieveSurroundingNative is failed, don't retry it due to
+    // unexpected.
+    mPendingSetSurrounding = false;
+  }
 }
 
 /* static */
@@ -1801,6 +1811,8 @@ gboolean IMContextWrapper::OnRetrieveSurroundingNative(GtkIMContext* aContext) {
            "current context=0x%p",
            this, aContext, GetCurrentContext()));
 
+  mPendingSetSurrounding = false;
+
   // See bug 472635, we should do nothing if IM context doesn't match.
   if (GetCurrentContext() != aContext) {
     MOZ_LOG(gIMELog, LogLevel::Error,
@@ -1813,6 +1825,10 @@ gboolean IMContextWrapper::OnRetrieveSurroundingNative(GtkIMContext* aContext) {
   nsAutoString uniStr;
   uint32_t cursorPos;
   if (NS_FAILED(GetCurrentParagraph(uniStr, cursorPos))) {
+    // In this situation, content process doesn't notify parent of text changes,
+    // so selection cache in parent is still old data. After receiving the
+    // notification from child, we should retry to set surrounding text.
+    mPendingSetSurrounding = true;
     return FALSE;
   }
 
@@ -1943,9 +1959,7 @@ void IMContextWrapper::OnCommitCompositionNative(GtkIMContext* aContext,
 
     // If committing string is exactly same as a character which is
     // produced by the key, eKeyDown and eKeyPress event should be
-    // dispatched by the caller of OnKeyEvent() normally.  Note that
-    // mMaybeInDeadKeySequence will be set to false by OnKeyEvent()
-    // since we set mFallbackToKeyEvent to true here.
+    // dispatched by the caller of OnKeyEvent() normally.
     if (!strcmp(commitString, keyval_utf8)) {
       MOZ_LOG(gIMELog, LogLevel::Info,
               ("0x%p   OnCommitCompositionNative(), "
@@ -1957,63 +1971,39 @@ void IMContextWrapper::OnCommitCompositionNative(GtkIMContext* aContext,
 
     // If we're in a dead key sequence, commit string is a character in
     // the BMP and mProcessingKeyEvent produces some characters but it's
-    // not same as committing string, we should dispatch an eKeyPress
-    // event from here.
-    WidgetKeyboardEvent keyDownEvent(true, eKeyDown, mLastFocusedWindow);
-    KeymapWrapper::InitKeyEvent(keyDownEvent, mProcessingKeyEvent, false);
-    if (mMaybeInDeadKeySequence && utf16CommitString.Length() == 1 &&
-        keyDownEvent.mKeyNameIndex == KEY_NAME_INDEX_USE_STRING) {
-      mKeyboardEventWasDispatched = true;
-      // Anyway, we're not in dead key sequence anymore.
-      mMaybeInDeadKeySequence = false;
+    // not same as committing string, we should dispatch key events.
+    if (mMaybeInDeadKeySequence && utf16CommitString.Length() == 1) {
+      WidgetKeyboardEvent keyEvent(true, eKeyDown, mLastFocusedWindow);
+      KeymapWrapper::InitKeyEvent(keyEvent, mProcessingKeyEvent, false);
+      if (keyEvent.mKeyNameIndex == KEY_NAME_INDEX_USE_STRING) {
+        mMaybeInDeadKeySequence = false;
+        keyEvent.mKeyValue = utf16CommitString;
+        if (DispatchKeyEventsForCommittedCharacter(keyEvent, false)) {
+          return;
+        }
+      }
+    }
+  }
 
-      RefPtr<TextEventDispatcher> dispatcher = GetTextEventDispatcher();
-      nsresult rv = dispatcher->BeginNativeInputTransaction();
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        MOZ_LOG(gIMELog, LogLevel::Error,
-                ("0x%p   OnCommitCompositionNative(), FAILED, "
-                 "due to BeginNativeInputTransaction() failure",
-                 this));
-        return;
-      }
-
-      // First, dispatch eKeyDown event.
-      keyDownEvent.mKeyValue = utf16CommitString;
-      nsEventStatus status = nsEventStatus_eIgnore;
-      bool dispatched = dispatcher->DispatchKeyboardEvent(
-          eKeyDown, keyDownEvent, status, mProcessingKeyEvent);
-      if (!dispatched || status == nsEventStatus_eConsumeNoDefault) {
-        mKeyboardEventWasConsumed = true;
-        MOZ_LOG(gIMELog, LogLevel::Info,
-                ("0x%p   OnCommitCompositionNative(), "
-                 "doesn't dispatch eKeyPress event because the preceding "
-                 "eKeyDown event was not dispatched or was consumed",
-                 this));
-        return;
-      }
-      if (mLastFocusedWindow != keyDownEvent.mWidget ||
-          mLastFocusedWindow->Destroyed()) {
-        MOZ_LOG(gIMELog, LogLevel::Warning,
-                ("0x%p   OnCommitCompositionNative(), Warning, "
-                 "stop dispatching eKeyPress event because the preceding "
-                 "eKeyDown event caused changing focused widget or "
-                 "destroyed",
-                 this));
-        return;
-      }
+  // Wayland text-input protocol without GDK key event (bug 2010538).
+  // When we receive a simple character commit without a key event, dispatch
+  // synthesized keydown/keypress/keyup events.
+  if (!IsComposingOn(aContext) && mIsKeySnooped && !mProcessingKeyEvent &&
+      utf16CommitString.Length() == 1 && aContext == GetCurrentContext()) {
+    WidgetKeyboardEvent keyEvent(true, eKeyDown, mLastFocusedWindow);
+    KeymapWrapper::InitKeyEventFromCommitString(keyEvent, utf16CommitString);
+    if (keyEvent.mKeyCode) {
       MOZ_LOG(gIMELog, LogLevel::Info,
               ("0x%p   OnCommitCompositionNative(), "
-               "dispatched eKeyDown event for the committed character",
-               this));
+               "dispatching synthesized key events for Wayland text-input "
+               "character='%c' (keyCode=0x%02X)",
+               this, static_cast<char>(utf16CommitString.CharAt(0)),
+               keyEvent.mKeyCode));
 
-      // Next, dispatch eKeyPress event.
-      dispatcher->MaybeDispatchKeypressEvents(keyDownEvent, status,
-                                              mProcessingKeyEvent);
-      MOZ_LOG(gIMELog, LogLevel::Info,
-              ("0x%p   OnCommitCompositionNative(), "
-               "dispatched eKeyPress event for the committed character",
-               this));
-      return;
+      // Dispatch keydown/keypress/keyup (keyup needed since no GDK event)
+      if (DispatchKeyEventsForCommittedCharacter(keyEvent, true)) {
+        return;
+      }
     }
   }
 
@@ -2042,6 +2032,51 @@ void IMContextWrapper::GetCompositionString(GtkIMContext* aContext,
 
   pango_attr_list_unref(feedback_list);
   g_free(preedit_string);
+}
+
+bool IMContextWrapper::DispatchKeyEventsForCommittedCharacter(
+    WidgetKeyboardEvent& aKeyEvent, bool aDispatchKeyUp) {
+  MOZ_ASSERT(aKeyEvent.mMessage == eKeyDown);
+
+  mKeyboardEventWasDispatched = true;
+
+  // Dispatch eKeyDown event
+  bool isCancelled = false;
+  if (!KeymapWrapper::DispatchKeyDownOrKeyUpEvent(mLastFocusedWindow, aKeyEvent,
+                                                  &isCancelled) ||
+      isCancelled) {
+    mKeyboardEventWasConsumed = isCancelled;
+    return true;
+  }
+  // Check if focus changed or window was destroyed during keydown dispatch
+  if (mLastFocusedWindow != aKeyEvent.mWidget ||
+      mLastFocusedWindow->IsDestroyed()) {
+    return true;
+  }
+
+  // Dispatch eKeyPress event
+  RefPtr<TextEventDispatcher> dispatcher = GetTextEventDispatcher();
+  nsresult rv = dispatcher->BeginNativeInputTransaction();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return true;
+  }
+  nsEventStatus status = nsEventStatus_eIgnore;
+  dispatcher->MaybeDispatchKeypressEvents(aKeyEvent, status, nullptr);
+  // Check if focus changed or window was destroyed during keypress dispatch
+  if (mLastFocusedWindow != aKeyEvent.mWidget ||
+      mLastFocusedWindow->IsDestroyed()) {
+    return true;
+  }
+
+  // Dispatch eKeyUp event if requested (needed for Wayland text-input
+  // since there's no GDK key release event)
+  if (aDispatchKeyUp) {
+    aKeyEvent.mMessage = eKeyUp;
+    KeymapWrapper::DispatchKeyDownOrKeyUpEvent(mLastFocusedWindow, aKeyEvent,
+                                               &isCancelled);
+  }
+
+  return true;
 }
 
 bool IMContextWrapper::MaybeDispatchKeyEventAsProcessedByIME(
@@ -2553,11 +2588,10 @@ bool IMContextWrapper::DispatchCompositionCommitEvent(
   if (!dispatcher) {
     MOZ_ASSERT(aCommitString);
     MOZ_ASSERT(!aCommitString->IsEmpty());
-    nsEventStatus status = nsEventStatus_eIgnore;
     WidgetContentCommandEvent insertTextEvent(true, eContentCommandInsertText,
                                               lastFocusedWindow);
     insertTextEvent.mString.emplace(*aCommitString);
-    lastFocusedWindow->DispatchEvent(&insertTextEvent, status);
+    lastFocusedWindow->DispatchEvent(&insertTextEvent);
 
     if (!insertTextEvent.mSucceeded) {
       MOZ_LOG(gIMELog, LogLevel::Error,
@@ -2599,7 +2633,7 @@ already_AddRefed<TextRangeArray> IMContextWrapper::CreateTextRangeArray(
            this, aContext, NS_ConvertUTF16toUTF8(aCompositionString).get(),
            aCompositionString.Length()));
 
-  RefPtr<TextRangeArray> textRangeArray = new TextRangeArray();
+  auto textRangeArray = MakeRefPtr<TextRangeArray>();
 
   gchar* preedit_string;
   gint cursor_pos_in_chars;
@@ -2986,8 +3020,7 @@ void IMContextWrapper::SetCursorPosition(GtkIMContext* aContext) {
           mCompositionTargetRange.mOffset, 1);
     }
   }
-  nsEventStatus status;
-  mLastFocusedWindow->DispatchEvent(&queryCaretOrTextRectEvent, status);
+  mLastFocusedWindow->DispatchEvent(&queryCaretOrTextRectEvent);
   if (queryCaretOrTextRectEvent.Failed()) {
     MOZ_LOG(gIMELog, LogLevel::Error,
             ("0x%p   SetCursorPosition(), FAILED, %s was failed", this,
@@ -2996,7 +3029,7 @@ void IMContextWrapper::SetCursorPosition(GtkIMContext* aContext) {
   }
 
   nsWindow* rootWindow =
-      static_cast<nsWindow*>(mLastFocusedWindow->GetTopLevelWidget());
+      nsWindow::FromWidget(mLastFocusedWindow->GetTopLevelWidget());
 
   // Get the position of the rootWindow in screen.
   LayoutDeviceIntPoint root = rootWindow->WidgetToScreenOffset();
@@ -3008,8 +3041,9 @@ void IMContextWrapper::SetCursorPosition(GtkIMContext* aContext) {
   LayoutDeviceIntRect rect =
       queryCaretOrTextRectEvent.mReply->mRect + root - owner;
   rect.width = 0;
-  GdkRectangle area = rootWindow->DevicePixelsToGdkRectRoundOut(rect);
+  rootWindow->SetTextInputArea(rect);
 
+  GdkRectangle area = rootWindow->DevicePixelsToGdkRectRoundOut(rect);
   gtk_im_context_set_cursor_location(aContext, &area);
 }
 
@@ -3026,8 +3060,6 @@ nsresult IMContextWrapper::GetCurrentParagraph(nsAString& aText,
              this));
     return NS_ERROR_NULL_POINTER;
   }
-
-  nsEventStatus status;
 
   uint32_t selOffset = mCompositionStart;
   uint32_t selLength = mSelectedStringRemovedByComposition.Length();
@@ -3074,7 +3106,7 @@ nsresult IMContextWrapper::GetCurrentParagraph(nsAString& aText,
   WidgetQueryContentEvent queryTextContentEvent(true, eQueryTextContent,
                                                 mLastFocusedWindow);
   queryTextContentEvent.InitForQueryTextContent(0, UINT32_MAX);
-  mLastFocusedWindow->DispatchEvent(&queryTextContentEvent, status);
+  mLastFocusedWindow->DispatchEvent(&queryTextContentEvent);
   if (NS_WARN_IF(queryTextContentEvent.Failed())) {
     return NS_ERROR_FAILURE;
   }
@@ -3141,8 +3173,6 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
   }
 
   RefPtr<nsWindow> lastFocusedWindow(mLastFocusedWindow);
-  nsEventStatus status;
-
   // First, we should cancel current composition because editor cannot
   // handle changing selection and deleting text.
   uint32_t selOffset;
@@ -3177,7 +3207,7 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
   WidgetQueryContentEvent queryTextContentEvent(true, eQueryTextContent,
                                                 mLastFocusedWindow);
   queryTextContentEvent.InitForQueryTextContent(0, UINT32_MAX);
-  mLastFocusedWindow->DispatchEvent(&queryTextContentEvent, status);
+  mLastFocusedWindow->DispatchEvent(&queryTextContentEvent);
   if (NS_WARN_IF(queryTextContentEvent.Failed())) {
     return NS_ERROR_FAILURE;
   }
@@ -3231,7 +3261,7 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
 
   selectionEvent.mReversed = false;
   selectionEvent.mExpandToClusterBoundary = false;
-  lastFocusedWindow->DispatchEvent(&selectionEvent, status);
+  lastFocusedWindow->DispatchEvent(&selectionEvent);
 
   if (!selectionEvent.mSucceeded || lastFocusedWindow != mLastFocusedWindow ||
       lastFocusedWindow->Destroyed()) {
@@ -3255,7 +3285,7 @@ nsresult IMContextWrapper::DeleteText(GtkIMContext* aContext, int32_t aOffset,
   // Delete the selection
   WidgetContentCommandEvent contentCommandEvent(true, eContentCommandDelete,
                                                 mLastFocusedWindow);
-  mLastFocusedWindow->DispatchEvent(&contentCommandEvent, status);
+  mLastFocusedWindow->DispatchEvent(&contentCommandEvent);
 
   if (!contentCommandEvent.mSucceeded ||
       lastFocusedWindow != mLastFocusedWindow ||
@@ -3318,10 +3348,9 @@ bool IMContextWrapper::EnsureToCacheContentSelection(
     return false;
   }
 
-  nsEventStatus status;
   WidgetQueryContentEvent querySelectedTextEvent(true, eQuerySelectedText,
                                                  dispatcherWindow);
-  dispatcherWindow->DispatchEvent(&querySelectedTextEvent, status);
+  dispatcherWindow->DispatchEvent(&querySelectedTextEvent);
   if (NS_WARN_IF(querySelectedTextEvent.Failed())) {
     MOZ_LOG(gIMELog, LogLevel::Error,
             ("0x%p EnsureToCacheContentSelection(), FAILED, due to "

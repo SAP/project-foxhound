@@ -9,33 +9,35 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
-import androidx.appcompat.content.res.AppCompatResources
-import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.doOnNextLayout
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import kotlinx.coroutines.launch
+import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.selector.getNormalOrPrivateTabs
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.browser.thumbnails.loader.ThumbnailLoader
-import mozilla.components.compose.base.Divider
-import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.toolbar.BrowserToolbar
+import mozilla.components.compose.browser.toolbar.NavigationBar
+import mozilla.components.compose.browser.toolbar.concept.Action
+import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton
 import mozilla.components.compose.browser.toolbar.concept.Action.ActionButtonRes
 import mozilla.components.compose.browser.toolbar.concept.Action.TabCounterAction
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageOriginUpdated
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
-import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
-import mozilla.components.compose.browser.toolbar.store.DisplayState
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity
 import mozilla.components.concept.base.images.ImageLoadRequest
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.support.ktx.android.view.toScope
 import mozilla.components.support.ktx.kotlin.applyRegistrableDomainSpan
 import mozilla.components.support.ktx.kotlin.isContentUrl
@@ -44,9 +46,15 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.databinding.TabPreviewBinding
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.theme.ThemeManager
+import org.mozilla.fenix.ext.isTallWindow
+import org.mozilla.fenix.ext.isWideWindow
+import org.mozilla.fenix.home.toolbar.BrowserSimpleToolbar
+import org.mozilla.fenix.search.BrowserToolbarSearchMiddleware
+import org.mozilla.fenix.settings.ShortcutType
+import org.mozilla.fenix.theme.FirefoxTheme
 import kotlin.math.min
+import mozilla.components.browser.toolbar.R as toolbarR
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * A 'dummy' view of a tab used by [ToolbarGestureHandler] to support switching tabs by swiping the address bar.
@@ -58,13 +66,181 @@ class TabPreview @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyle: Int = 0,
 ) : CoordinatorLayout(context, attrs, defStyle) {
-
     private val binding = TabPreviewBinding.inflate(LayoutInflater.from(context), this)
     private val thumbnailLoader = ThumbnailLoader(context.components.core.thumbnailStorage)
 
     private lateinit var mockToolbarView: View
     private val browserToolbarStore: BrowserToolbarStore by lazy(LazyThreadSafetyMode.NONE) {
-        buildComposableToolbarStore()
+        BrowserToolbarStore()
+    }
+
+    private enum class ToolbarAction {
+        NewTab,
+        Back,
+        Forward,
+        RefreshOrStop,
+        Menu,
+        TabCounter,
+        SiteInfo,
+        Bookmark,
+        EditBookmark,
+        Share,
+        Translate,
+        Homepage,
+    }
+
+    private data class ToolbarActionConfig(
+        val action: ToolbarAction,
+        val isVisible: () -> Boolean = { true },
+    )
+
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
+    private fun buildAction(
+        toolbarAction: ToolbarAction,
+        tab: TabSessionState?,
+    ): Action {
+        val tabsCount = currentOpenedTabsCount
+        val isPrivateMode = context.components.appStore.state.mode.isPrivate
+
+        return when (toolbarAction) {
+            ToolbarAction.NewTab -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_plus_24,
+                contentDescription = if (isPrivateMode) {
+                    R.string.home_screen_shortcut_open_new_private_tab_2
+                } else {
+                    R.string.home_screen_shortcut_open_new_tab_2
+                },
+                onClick = object : BrowserToolbarEvent {},
+            )
+
+            ToolbarAction.Back -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_back_24,
+                contentDescription = R.string.browser_menu_back,
+                state = if (tab?.content?.canGoBack == true) {
+                    ActionButton.State.DEFAULT
+                } else {
+                    ActionButton.State.DISABLED
+                },
+                onClick = object : BrowserToolbarEvent {},
+            )
+
+            ToolbarAction.Forward -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_forward_24,
+                contentDescription = R.string.browser_menu_forward,
+                state = if (tab?.content?.canGoForward == true) {
+                    ActionButton.State.DEFAULT
+                } else {
+                    ActionButton.State.DISABLED
+                },
+                onClick = object : BrowserToolbarEvent {},
+            )
+
+            ToolbarAction.RefreshOrStop -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_arrow_clockwise_24,
+                contentDescription = R.string.browser_menu_refresh,
+                onClick = object : BrowserToolbarEvent {},
+            )
+
+            ToolbarAction.Menu -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_ellipsis_vertical_24,
+                contentDescription = R.string.content_description_menu,
+                highlighted = context.components.appStore.state.supportedMenuNotifications.isNotEmpty(),
+                onClick = object : BrowserToolbarEvent {},
+            )
+
+            ToolbarAction.TabCounter -> {
+                TabCounterAction(
+                    count = tabsCount,
+                    contentDescription = "",
+                    showPrivacyMask = isPrivateMode,
+                    onClick = object : BrowserToolbarEvent {},
+                )
+            }
+
+            ToolbarAction.Bookmark -> {
+                ActionButtonRes(
+                    drawableResId = iconsR.drawable.mozac_ic_bookmark_24,
+                    contentDescription = R.string.browser_menu_bookmark_this_page_2,
+                    onClick = object : BrowserToolbarEvent {},
+                )
+            }
+
+            ToolbarAction.EditBookmark -> {
+                ActionButtonRes(
+                    drawableResId = iconsR.drawable.mozac_ic_bookmark_fill_24,
+                    contentDescription = R.string.browser_menu_edit_bookmark,
+                    onClick = object : BrowserToolbarEvent {},
+                    state = ActionButton.State.ACTIVE,
+                )
+            }
+
+            ToolbarAction.Share -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_share_android_24,
+                contentDescription = R.string.browser_menu_share,
+                onClick = object : BrowserToolbarEvent {},
+            )
+
+            ToolbarAction.SiteInfo -> {
+                val highlight = (
+                        tab?.content?.permissionHighlights?.permissionsChanged == true
+                        ) || (
+                        tab?.trackingProtection?.ignoredOnTrackingProtection == true
+                        )
+
+                if (tab?.content?.url?.isContentUrl() == true) {
+                    ActionButtonRes(
+                        drawableResId = iconsR.drawable.mozac_ic_page_portrait_24,
+                        contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
+                        highlighted = highlight,
+                        onClick = object : BrowserToolbarEvent {},
+                    )
+                } else if (
+                    tab?.content?.securityInfo?.isSecure == true &&
+                    tab.trackingProtection.enabled &&
+                    !tab.trackingProtection.ignoredOnTrackingProtection
+                ) {
+                    ActionButtonRes(
+                        drawableResId = iconsR.drawable.mozac_ic_shield_checkmark_24,
+                        contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
+                        highlighted = highlight,
+                        onClick = object : BrowserToolbarEvent {},
+                    )
+                } else {
+                    ActionButtonRes(
+                        drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+                        contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
+                        highlighted = highlight,
+                        onClick = object : BrowserToolbarEvent {},
+                    )
+                }
+            }
+
+            ToolbarAction.Translate -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_translate_24,
+                contentDescription = R.string.browser_toolbar_translate,
+                state = if (tab?.translationsState?.isTranslated == true) {
+                    ActionButton.State.ACTIVE
+                } else {
+                    ActionButton.State.DEFAULT
+                },
+                onClick = object : BrowserToolbarEvent {},
+            )
+
+            ToolbarAction.Homepage -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_home_24,
+                contentDescription = R.string.browser_menu_homepage,
+                onClick = object : BrowserToolbarEvent {},
+            )
+        }
+    }
+    private fun buildSearchEngineSelector(selectedSearchEngine: SearchEngine?): List<Action> {
+        return listOfNotNull(
+            BrowserToolbarSearchMiddleware.buildSearchSelector(
+                selectedSearchEngine = selectedSearchEngine,
+                searchEngineShortcuts = emptyList(),
+                resources = context.resources,
+            ),
+        )
     }
 
     init {
@@ -75,7 +251,7 @@ class TabPreview @JvmOverloads constructor(
     private fun initializeView() {
         bindToolbar()
 
-        val isToolbarAtTop = context.settings().toolbarPosition == ToolbarPosition.TOP
+        val isToolbarAtTop = context.components.settings.toolbarPosition == ToolbarPosition.TOP
         if (isToolbarAtTop) {
             mockToolbarView.updateLayoutParams<LayoutParams> {
                 gravity = Gravity.TOP
@@ -86,16 +262,22 @@ class TabPreview @JvmOverloads constructor(
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
 
-        updateToolbar(
-            new = {},
-            old = { binding.tabButton.setCount(currentOpenedTabsCount) },
-        )
+        binding.previewThumbnail.translationY =
+            if (context.components.settings.toolbarPosition == ToolbarPosition.TOP) {
+                mockToolbarView.height.toFloat()
+            } else {
+                0f
+            }
+    }
 
-        binding.previewThumbnail.translationY = if (context.settings().toolbarPosition == ToolbarPosition.TOP) {
-            mockToolbarView.height.toFloat()
-        } else {
-            0f
+    private fun ToolbarPosition.toGravity(): ToolbarGravity =
+        when (this) {
+            ToolbarPosition.TOP -> ToolbarGravity.Top
+            ToolbarPosition.BOTTOM -> ToolbarGravity.Bottom
         }
+
+    private fun BrowserToolbarStore.dispatchAll(vararg actions: BrowserToolbarAction) {
+        actions.forEach { browserToolbarStore.dispatch(it) }
     }
 
     /**
@@ -103,31 +285,87 @@ class TabPreview @JvmOverloads constructor(
      */
     fun loadDestinationPreview(destination: TabSessionState) {
         doOnNextLayout {
-            val previewThumbnail = binding.previewThumbnail
-            val thumbnailSize = min(previewThumbnail.height, previewThumbnail.width)
+            val thumbnail = binding.previewThumbnail
+            val size = min(thumbnail.height, thumbnail.width)
+
             thumbnailLoader.loadIntoView(
-                previewThumbnail,
-                ImageLoadRequest(destination.id, thumbnailSize, destination.content.private),
+                thumbnail,
+                ImageLoadRequest(destination.id, size, destination.content.private),
             )
 
-            updateToolbar(
-                new = {
-                    toScope().launch {
-                        browserToolbarStore.dispatch(
-                            PageOriginUpdated(
-                                buildComposableToolbarPageOrigin(destination),
-                            ),
-                        )
-                        browserToolbarStore.dispatch(
-                            BrowserDisplayToolbarAction.PageActionsStartUpdated(
-                                buildComposableToolbarPageStartActions(destination),
-                            ),
-                        )
-                    }
-                },
-                old = {},
-            )
+            toScope().launch {
+                val prefs = context.components.settings
+                val url = destination.content.url
+                val isHome = url == ABOUT_HOME_URL
+                val topToolbar = prefs.toolbarPosition == ToolbarPosition.TOP
+                val homeSearchEnabled = prefs.enableHomepageSearchBar
+
+                browserToolbarStore.dispatch(
+                    BrowserToolbarAction.ToolbarGravityUpdated(prefs.toolbarPosition.toGravity()),
+                )
+
+                when {
+                    isHome && topToolbar && homeSearchEnabled ->
+                        dispatchHomeSearchBarActions(destination)
+                    isHome ->
+                        dispatchHomeActions(destination)
+                    else ->
+                        dispatchWebPageActions(destination)
+                }
+
+                bindToolbar()
+            }
         }
+    }
+
+    private suspend fun dispatchHomeSearchBarActions(destination: TabSessionState) {
+        browserToolbarStore.dispatchAll(
+            BrowserDisplayToolbarAction.NavigationActionsUpdated(
+                buildNavigationActions(destination),
+            ),
+        )
+    }
+
+    private suspend fun dispatchHomeActions(destination: TabSessionState) {
+        val selectedEngine = context.components.core.store.state.search.selectedOrDefaultSearchEngine
+
+        browserToolbarStore.dispatchAll(
+            BrowserDisplayToolbarAction.PageActionsStartUpdated(
+                buildSearchEngineSelector(selectedEngine),
+            ),
+            BrowserDisplayToolbarAction.BrowserActionsEndUpdated(
+                buildComposableToolbarBrowserEndActions(destination),
+            ),
+            PageOriginUpdated(
+                buildComposableToolbarPageOrigin(destination),
+            ),
+            BrowserDisplayToolbarAction.NavigationActionsUpdated(
+                buildNavigationActions(destination),
+            ),
+        )
+    }
+
+    private suspend fun dispatchWebPageActions(destination: TabSessionState) {
+        browserToolbarStore.dispatchAll(
+            BrowserDisplayToolbarAction.BrowserActionsStartUpdated(
+                buildComposableToolbarBrowserStartActions(destination),
+            ),
+            BrowserDisplayToolbarAction.BrowserActionsEndUpdated(
+                buildComposableToolbarBrowserEndActions(destination),
+            ),
+            BrowserDisplayToolbarAction.PageActionsStartUpdated(
+                buildComposableToolbarPageStartActions(destination),
+            ),
+            BrowserDisplayToolbarAction.PageActionsEndUpdated(
+                buildComposableToolbarPageEndActions(destination),
+            ),
+            BrowserDisplayToolbarAction.NavigationActionsUpdated(
+                buildNavigationActions(destination),
+            ),
+            PageOriginUpdated(
+                buildComposableToolbarPageOrigin(destination),
+            ),
+        )
     }
 
     private val currentOpenedTabsCount: Int
@@ -139,121 +377,170 @@ class TabPreview @JvmOverloads constructor(
         }
 
     private fun bindToolbar() {
-        mockToolbarView = updateToolbar(
-            new = { buildComposableToolbar() },
-            old = { buildToolbarView() },
-        )
+        buildBottomComposableToolbar()
+        mockToolbarView = buildTopComposableToolbar()
     }
 
-    private fun buildToolbarView(): View {
-        // Change view properties to avoid confusing the UI tests
-        binding.tabButton.findViewById<View>(R.id.counter_box)?.id = NO_ID
-        binding.tabButton.findViewById<View>(R.id.counter_text)?.id = NO_ID
+     private fun buildTopComposableToolbar(): ComposeView {
+         return binding.composableTopToolbar.apply {
+             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
 
-        binding.fakeToolbar.isVisible = true
-        binding.fakeToolbar.background = AppCompatResources.getDrawable(
-            context,
-            ThemeManager.resolveAttribute(R.attr.bottomBarBackgroundTop, context),
-        )
+             setContent {
+                     FirefoxTheme {
+                         Column {
+                             if (context.components.settings.enableHomepageSearchBar &&
+                                 context.components.settings.toolbarPosition == ToolbarPosition.TOP
+                             ) {
+                                 BrowserSimpleToolbar(
+                                     store = browserToolbarStore,
+                                     appStore = context.components.appStore,
+                                 )
+                             } else if (context.components.settings.toolbarPosition == ToolbarPosition.TOP) {
+                                 BrowserToolbar(
+                                     store = browserToolbarStore,
+                                 )
+                             }
+                         }
+                     }
+                 }.apply {
+                     isVisible = true
+                 }
+             }
+     }
 
-        return binding.fakeToolbar
-    }
+     @Suppress("CognitiveComplexMethod")
+     private fun buildBottomComposableToolbar(): ComposeView {
+         return binding.composableBottomToolbar.apply {
+             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
 
-    private fun buildComposableToolbar(): ComposeView {
-        return binding.composableToolbar.apply {
-            setContent {
-                AcornTheme {
-                    // Ensure the divider is shown together with the toolbar
-                    Box {
-                        BrowserToolbar(
-                            store = browserToolbarStore,
-                        )
+             setContent {
+                 FirefoxTheme {
+                     Column {
+                         if (context.components.settings.toolbarPosition == ToolbarPosition.BOTTOM) {
+                             BrowserToolbar(
+                                 store = browserToolbarStore,
+                             )
+                         }
 
-                        Divider(
-                            modifier = Modifier.align(
-                                when (context.settings().shouldUseBottomToolbar) {
-                                    true -> Alignment.TopCenter
-                                    false -> Alignment.BottomCenter
-                                },
-                            ),
-                        )
-                    }
-                }
+                         if (browserToolbarStore.state.displayState.navigationActions.isNotEmpty()) {
+                             NavigationBar(
+                                 actions = browserToolbarStore.state.displayState.navigationActions,
+                                 toolbarGravity =
+                                     when (context.components.settings.shouldUseBottomToolbar) {
+                                         true -> ToolbarGravity.Bottom
+                                         false -> ToolbarGravity.Top
+                                     },
+                                 onInteraction = { },
+                             )
+                         }
+                     }
+                 }
             }.apply {
                 isVisible = true
             }
         }
     }
 
-    private fun buildComposableToolbarStore(): BrowserToolbarStore {
-        val tabsCount = currentOpenedTabsCount
-        val isPrivateMode = context.components.appStore.state.mode.isPrivate
-
-        val tabsCounterDescription = if (isPrivateMode) {
-            context.getString(R.string.mozac_tab_counter_private)
-        } else {
-            context.getString(R.string.mozac_tab_counter_open_tab_tray)
+    private fun buildComposableToolbarPageStartActions(tab: TabSessionState?): List<Action> {
+        return listOf(
+            ToolbarActionConfig(ToolbarAction.SiteInfo),
+        ).filter { config ->
+            config.isVisible()
+        }.map { config ->
+            buildAction(config.action, tab)
         }
-
-        return BrowserToolbarStore(
-            BrowserToolbarState(
-                displayState = DisplayState(
-                    browserActionsStart = listOf(
-                        ActionButtonRes(
-                            drawableResId = R.drawable.mozac_ic_home_24,
-                            contentDescription = R.string.browser_toolbar_home,
-                            onClick = object : BrowserToolbarEvent {},
-                        ),
-                    ),
-                    browserActionsEnd = listOf(
-                        TabCounterAction(
-                            count = tabsCount,
-                            contentDescription = tabsCounterDescription,
-                            showPrivacyMask = isPrivateMode,
-                            onClick = object : BrowserToolbarEvent {},
-                        ),
-                        ActionButtonRes(
-                            drawableResId = R.drawable.mozac_ic_ellipsis_vertical_24,
-                            contentDescription = R.string.content_description_menu,
-                            onClick = object : BrowserToolbarEvent {},
-                        ),
-                    ),
-                ),
-            ),
-        )
     }
 
-    private fun buildComposableToolbarPageStartActions(tab: TabSessionState) = buildList {
-        if (tab.content.url.isContentUrl() == true) {
-            add(
-                ActionButtonRes(
-                    drawableResId = R.drawable.mozac_ic_page_portrait_24,
-                    contentDescription = R.string.mozac_browser_toolbar_content_description_site_info,
-                    onClick = object : BrowserToolbarEvent {},
-                ),
-            )
-        } else if (tab.content.securityInfo.secure == true) {
-            add(
-                ActionButtonRes(
-                    drawableResId = R.drawable.mozac_ic_shield_checkmark_24,
-                    contentDescription = R.string.mozac_browser_toolbar_content_description_site_info,
-                    onClick = object : BrowserToolbarEvent {},
-                ),
-            )
-        } else {
-            add(
-                ActionButtonRes(
-                    drawableResId = R.drawable.mozac_ic_shield_slash_24,
-                    contentDescription = R.string.mozac_browser_toolbar_content_description_site_info,
-                    onClick = object : BrowserToolbarEvent {},
-                ),
-            )
+    private fun buildComposableToolbarPageEndActions(tab: TabSessionState?): List<Action> {
+        val settings = context.components.settings
+        val isWideScreen = context.isWideWindow()
+        val tabStripEnabled = settings.isTabStripEnabled
+        val shareShortcutEnabled = ShortcutType.fromValue(settings.toolbarSimpleShortcutKey) == ShortcutType.SHARE
+
+        return listOf(
+            ToolbarActionConfig(ToolbarAction.Share) {
+                isWideScreen && !tabStripEnabled && !shareShortcutEnabled
+            },
+        ).filter { config ->
+            config.isVisible()
+        }.map { config ->
+            buildAction(config.action, tab)
+        }
+    }
+
+    private fun buildComposableToolbarBrowserStartActions(tab: TabSessionState?): List<Action> {
+        val isWideScreen = context.isWideWindow()
+
+        return listOf(
+            ToolbarActionConfig(ToolbarAction.Back) { isWideScreen },
+            ToolbarActionConfig(ToolbarAction.Forward) { isWideScreen },
+            ToolbarActionConfig(ToolbarAction.RefreshOrStop) { isWideScreen },
+        ).filter { config ->
+            config.isVisible()
+        }.map { config ->
+            buildAction(config.action, tab)
+        }
+    }
+
+    private suspend fun buildComposableToolbarBrowserEndActions(tab: TabSessionState?): List<Action> {
+        val settings = context.components.settings
+        val isWideWindow = context.isWideWindow()
+        val isTallWindow = context.isTallWindow()
+        val shouldUseExpandedToolbar = settings.shouldUseExpandedToolbar
+
+        val primarySlotAction = ShortcutType.fromValue(settings.toolbarSimpleShortcutKey)?.toToolbarAction(tab)
+
+        return listOfNotNull(
+            primarySlotAction?.let {
+                ToolbarActionConfig(primarySlotAction) {
+                    (!shouldUseExpandedToolbar || !isTallWindow || isWideWindow) &&
+                        tab?.content?.url != ABOUT_HOME_URL
+                }
+            },
+            ToolbarActionConfig(ToolbarAction.TabCounter) {
+                !shouldUseExpandedToolbar || !isTallWindow || isWideWindow
+            },
+            ToolbarActionConfig(ToolbarAction.Menu) {
+                !shouldUseExpandedToolbar || !isTallWindow || isWideWindow
+            },
+        ).filter { config ->
+            config.isVisible()
+        }.map { config ->
+            buildAction(config.action, tab)
+        }
+    }
+
+    private suspend fun buildNavigationActions(tab: TabSessionState): List<Action> {
+        val settings = context.components.settings
+        val isWideWindow = context.isWideWindow()
+        val isTallWindow = context.isTallWindow()
+        val shouldUseExpandedToolbar = settings.shouldUseExpandedToolbar
+
+        val primarySlotAction = ShortcutType.fromValue(settings.toolbarExpandedShortcutKey)
+            ?.toToolbarAction(tab) ?: getBookmarkAction(tab)
+
+        return listOf(
+            ToolbarActionConfig(primarySlotAction) { shouldUseExpandedToolbar && isTallWindow && !isWideWindow },
+            ToolbarActionConfig(ToolbarAction.Share) { shouldUseExpandedToolbar && isTallWindow && !isWideWindow },
+            ToolbarActionConfig(ToolbarAction.NewTab) { shouldUseExpandedToolbar && isTallWindow && !isWideWindow },
+            ToolbarActionConfig(ToolbarAction.TabCounter) { shouldUseExpandedToolbar && isTallWindow && !isWideWindow },
+            ToolbarActionConfig(ToolbarAction.Menu) { shouldUseExpandedToolbar && isTallWindow && !isWideWindow },
+        ).filter { config ->
+            config.isVisible()
+        }.map { config ->
+            buildAction(config.action, tab)
         }
     }
 
     private suspend fun buildComposableToolbarPageOrigin(tab: TabSessionState): PageOrigin {
-        val url = tab.content.url.applyRegistrableDomainSpan(context.components.publicSuffixList)
-        val displayUrl = URLStringUtils.toDisplayUrl(url)
+        val url = tab.content.url
+
+        val displayUrl = if (url == ABOUT_HOME_URL) {
+            ""
+        } else {
+            val spannedUrl = url.applyRegistrableDomainSpan(context.components.publicSuffixList)
+            URLStringUtils.toDisplayUrl(spannedUrl)
+        }
 
         return PageOrigin(
             hint = R.string.search_hint,
@@ -263,15 +550,24 @@ class TabPreview @JvmOverloads constructor(
         )
     }
 
-    /**
-     * Pass in the desired configuration for both the `new` composable toolbar and the `old` toolbar View
-     * with this method then deciding what to use depending on the actual toolbar currently is use.
-     */
-    private inline fun <T> updateToolbar(
-        new: () -> T,
-        old: () -> T,
-    ): T = when (context.settings().shouldUseComposableToolbar) {
-        true -> new()
-        false -> old()
+    private suspend fun getBookmarkAction(tab: TabSessionState?): ToolbarAction {
+        val isBookmarked = tab?.content?.url?.let { url ->
+            context.components.core.bookmarksStorage
+                .getBookmarksWithUrl(url)
+                .getOrDefault(emptyList())
+                .isNotEmpty()
+        } ?: return ToolbarAction.Bookmark
+
+        return if (isBookmarked) ToolbarAction.EditBookmark else ToolbarAction.Bookmark
+    }
+
+    private suspend fun ShortcutType.toToolbarAction(tab: TabSessionState?) = when (this) {
+        ShortcutType.NEW_TAB -> ToolbarAction.NewTab
+        ShortcutType.SHARE -> ToolbarAction.Share
+        ShortcutType.BOOKMARK -> getBookmarkAction(tab)
+        ShortcutType.TRANSLATE -> ToolbarAction.Translate
+        ShortcutType.HOMEPAGE -> ToolbarAction.Homepage
+        ShortcutType.BACK -> ToolbarAction.Back
+        ShortcutType.NONE -> null
     }
 }

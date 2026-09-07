@@ -42,7 +42,7 @@ export class ComponentPerfTimer extends React.Component {
   /**
    * Call the given callback after the upcoming frame paints.
    *
-   * @note Both setTimeout and requestAnimationFrame are throttled when the page
+   * Note: Both setTimeout and requestAnimationFrame are throttled when the page
    * is hidden, so this callback may get called up to a second or so after the
    * requestAnimationFrame "paint" for hidden tabs.
    *

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function test() {
-  /** Test for Bug 615394 - Session Restore should notify when it is beginning and ending a restore **/
+  /** Test for Bug 615394 - Session Restore should notify when it is beginning and ending a restore */
   waitForExplicitFinish();
 
   let newState = {

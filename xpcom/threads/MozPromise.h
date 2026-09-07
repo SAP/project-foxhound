@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -406,7 +404,7 @@ class MozPromise : public MozPromiseBase {
           CopyableTArray<ResolveValueType>(), __func__);
     }
 
-    RefPtr<AllPromiseHolder> holder = new AllPromiseHolder(aPromises.Length());
+    RefPtr holder = MakeRefPtr<AllPromiseHolder>(aPromises.Length());
     RefPtr<AllPromiseType> promise = holder->Promise();
     for (size_t i = 0; i < aPromises.Length(); ++i) {
       aPromises[i]->Then(
@@ -429,8 +427,7 @@ class MozPromise : public MozPromiseBase {
           CopyableTArray<ResolveOrRejectValue>(), __func__);
     }
 
-    RefPtr<AllSettledPromiseHolder> holder =
-        new AllSettledPromiseHolder(aPromises.Length());
+    RefPtr holder = MakeRefPtr<AllSettledPromiseHolder>(aPromises.Length());
     RefPtr<AllSettledPromiseType> promise = holder->Promise();
     for (size_t i = 0; i < aPromises.Length(); ++i) {
       aPromises[i]->Then(aProcessingTarget, __func__,
@@ -476,6 +473,23 @@ class MozPromise : public MozPromiseBase {
             mPromise(aPromise) {
         MOZ_DIAGNOSTIC_ASSERT(!mPromise->IsPending());
       }
+
+#ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
+      // nsINamed
+      NS_IMETHOD GetName(nsACString& aName) override {
+        nsresult rv = PrioritizableCancelableRunnable::GetName(aName);
+        if (NS_FAILED(rv)) {
+          return rv;
+        }
+
+        if (mPromise) {
+          aName.Append(" ");
+          aName.Append(mPromise->mCreationSite);
+        };
+
+        return NS_OK;
+      }
+#endif
 
       ~ResolveOrRejectRunnable() {
         if (mThenValue) {
@@ -1314,7 +1328,7 @@ class MozPromise : public MozPromiseBase {
 #endif
   };
 
-  StaticString mCreationSite;  // For logging
+  StaticString mCreationSite;  // For logging and profiling
   Mutex mMutex MOZ_UNANNOTATED;
   ResolveOrRejectValue mValue;
   bool mUseSynchronousTaskDispatch = false;

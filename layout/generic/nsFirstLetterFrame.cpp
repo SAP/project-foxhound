@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,6 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsFrameManager.h"
-#include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
@@ -70,7 +67,7 @@ void nsFirstLetterFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     // that represents everything *except* the first letter, so just create
     // a ComputedStyle that inherits from our style parent, with no extra rules.
     nsIFrame* styleParent =
-        CorrectStyleParentFrame(aParent, PseudoStyleType::firstLetter);
+        CorrectStyleParentFrame(aParent, PseudoStyleType::FirstLetter);
     ComputedStyle* parentComputedStyle = styleParent->Style();
     newSC = PresContext()->StyleSet()->ResolveStyleForFirstLetterContinuation(
         parentComputedStyle);
@@ -131,17 +128,17 @@ nscoord nsFirstLetterFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
 
 /* virtual */
 nsIFrame::SizeComputationResult nsFirstLetterFrame::ComputeSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   if (GetPrevInFlow()) {
     // We're wrapping the text *after* the first letter, so behave like an
     // inline frame.
     return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),
             AspectRatioUsage::None};
   }
-  return nsContainerFrame::ComputeSize(aRenderingContext, aWM, aCBSize,
+  return nsContainerFrame::ComputeSize(aSizingInput, aWM, aCBSize,
                                        aAvailableISize, aMargin, aBorderPadding,
                                        aSizeOverrides, aFlags);
 }
@@ -281,7 +278,7 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
     bool pushedFrame;
 
     ll->SetInFirstLetter(Style()->GetPseudoType() ==
-                         PseudoStyleType::firstLetter);
+                         PseudoStyleType::FirstLetter);
     ll->BeginSpan(this, &aReflowInput, bp.IStart(wm), availSize.ISize(wm),
                   &mBaseline);
     ll->ReflowFrame(kid, aReflowStatus, &kidMetrics, pushedFrame);
@@ -437,11 +434,6 @@ void nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext) {
                                     prevInFlow->StealOverflowFrames());
     if (overflowFrames) {
       NS_ASSERTION(mFrames.IsEmpty(), "bad overflow list");
-
-      // When pushing and pulling frames we need to check for whether any
-      // views need to be reparented.
-      nsContainerFrame::ReparentFrameViewList(*overflowFrames, prevInFlow,
-                                              this);
       mFrames.InsertFrames(this, nullptr, std::move(*overflowFrames));
     }
   }
@@ -465,7 +457,7 @@ void nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext) {
       if (prevInFlow) {
         // This is for the rest of the content not in the first-letter.
         nsIFrame* styleParent =
-            CorrectStyleParentFrame(GetParent(), PseudoStyleType::firstLetter);
+            CorrectStyleParentFrame(GetParent(), PseudoStyleType::FirstLetter);
         parentSC = styleParent->Style();
       } else {
         // And this for the first-letter style.

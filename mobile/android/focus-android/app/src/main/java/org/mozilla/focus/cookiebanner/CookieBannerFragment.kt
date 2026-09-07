@@ -13,6 +13,9 @@ import org.mozilla.focus.ext.settings
 import org.mozilla.focus.ext.showToolbar
 import org.mozilla.focus.settings.BaseSettingsFragment
 
+/**
+ * Settings fragment for cookie banner handling.
+ */
 class CookieBannerFragment : BaseSettingsFragment() {
     private lateinit var rejectAllCookies: CookieBannerRejectAllPreference
 

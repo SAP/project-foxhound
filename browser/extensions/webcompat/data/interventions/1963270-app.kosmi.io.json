@@ -1,0 +1,28 @@
+{
+  "label": "app.kosmi.io",
+  "bugs": {
+    "1963270": {
+      "issue": "blocked-content",
+      "matches": ["*://app.kosmi.io/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "max_version": 148,
+      "content_scripts": {
+        "js": ["unprefix-mozCaptureStream.js"]
+      }
+    },
+    {
+      "platforms": ["all"],
+      "min_version": 149,
+      "pref_check": {
+        "media.captureStream.enabled": false
+      },
+      "content_scripts": {
+        "js": ["unprefix-mozCaptureStream.js"]
+      }
+    }
+  ]
+}

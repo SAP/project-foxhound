@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 Services.scriptloader.loadSubScript(
@@ -37,7 +35,14 @@ function bookmarkContextMenuExtension() {
   });
 }
 
-add_task(async function test_bookmark_sidebar_contextmenu() {
+add_task(async function test_bookmark_sidebar_contextmenu_legacy() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["sidebar.revamp", false],
+      ["sidebar.updatedBookmarks.enabled", false],
+    ],
+  });
+
   await withSidebarTree("bookmarks", async tree => {
     let extension = bookmarkContextMenuExtension();
     await extension.startup();
@@ -80,6 +85,78 @@ add_task(async function test_bookmark_sidebar_contextmenu() {
     }
     await extension.unload();
   });
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_bookmark_sidebar_contextmenu() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["sidebar.revamp", true],
+      ["sidebar.updatedBookmarks.enabled", true],
+    ],
+  });
+
+  await SidebarController.show("viewBookmarksSidebar");
+  const { contentDocument, contentWindow } = SidebarController.browser;
+  const component = contentDocument.querySelector("sidebar-bookmarks");
+  await component.updateComplete;
+
+  const tabList = component.bookmarkList;
+  const getFolderForGuid = targetGuid => {
+    // Empty folders render as <div class="bookmark-folder-label">
+    // Non-empty ones render as <details><summary>
+    const el = [
+      ...tabList.shadowRoot.querySelectorAll("details, .bookmark-folder-label"),
+    ].find(({ guid }) => guid === targetGuid);
+    return el?.localName === "details" ? el.querySelector("summary") : el;
+  };
+  const rootFolderGuids = [
+    PlacesUtils.bookmarks.toolbarGuid,
+    PlacesUtils.bookmarks.menuGuid,
+    PlacesUtils.bookmarks.unfiledGuid,
+  ];
+  await BrowserTestUtils.waitForMutationCondition(
+    tabList.shadowRoot,
+    { childList: true, subtree: true },
+    () => rootFolderGuids.every(getFolderForGuid)
+  );
+
+  const extension = bookmarkContextMenuExtension();
+  await extension.startup();
+  const context_entry_label = await extension.awaitMessage("created");
+
+  for (const guid of rootFolderGuids) {
+    info(`Testing context menu for root folder "${guid}"`);
+    const folderEl = getFolderForGuid(guid);
+    ok(folderEl, `Folder element for ${guid} is rendered.`);
+
+    const shown = BrowserTestUtils.waitForEvent(
+      SidebarController.currentContextMenu,
+      "popupshown"
+    );
+    EventUtils.synthesizeMouseAtCenter(
+      folderEl,
+      { type: "contextmenu", button: 2 },
+      contentWindow
+    );
+    await shown;
+
+    const menuItem =
+      SidebarController.currentContextMenu.getElementsByAttribute(
+        "label",
+        context_entry_label
+      )[0];
+    ok(menuItem, `Extension menu item is present for ${guid}.`);
+    closeChromeContextMenu("sidebar-bookmarks-context-menu", menuItem);
+
+    const actualBookmarkID = await extension.awaitMessage("clicked");
+    Assert.equal(actualBookmarkID, guid, "bookmarkIDs match");
+  }
+
+  await extension.unload();
+  SidebarController.hide();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function test_bookmark_library_contextmenu() {

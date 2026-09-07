@@ -26,7 +26,7 @@ public class WindowUtils {
    *
    * <p>This only works on Android Q and above. On older versions calling this will result in no-op.
    */
-  public static void setupPersistentInsets(Window window) {
+  public static void setupPersistentInsets(Window window, final boolean isBrowser) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       WindowCompat.setDecorFitsSystemWindows(window, false);
 
@@ -49,7 +49,7 @@ public class WindowUtils {
                 persistentInsets.left,
                 persistentInsets.top,
                 persistentInsets.right,
-                persistentInsets.bottom);
+                isBrowser && EdgeToEdgeUtils.isEdgeToEdgeEnabled() ? 0 : persistentInsets.bottom);
 
             // Pass window insets further to allow below listeners also know when there is a change.
             return windowInsets;

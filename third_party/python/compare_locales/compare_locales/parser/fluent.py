@@ -105,7 +105,22 @@ class FluentEntity(Entity):
     def equals(self, other):
         return self.entry.equals(other.entry, ignored_fields=self.ignored_fields)
 
-    # In Fluent we treat entries as a whole.  FluentChecker reports errors at
+    def id_position(self):
+        # Skip the leading comment: a Fluent message's span starts at the
+        # comment, but the identifier line is the meaningful reference for
+        # linter warnings.
+        return self.ctx.linecol(self.key_span[0])
+
+    def line_offset(self):
+        # 0 (single line) for messages whose value fits on the ID line. For
+        # messages spanning several lines (multi-line value and/or attributes)
+        # extend the range to the last line of the entity, so the warning is
+        # associated with all parts of the message.
+        end_lineno, _ = self.position(-1)
+        id_lineno, _ = self.id_position()
+        return end_lineno - id_lineno
+
+    # In Fluent we treat entries as a whole. FluentChecker reports errors at
     # offsets calculated from the beginning of the entry.
     def value_position(self, offset=None):
         if offset is None:

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -82,7 +80,7 @@ Time Time::LocalMidnight() const {
 
 // static
 bool Time::FromString(const wchar_t* time_string, Time* parsed_time) {
-  DCHECK((time_string != NULL) && (parsed_time != NULL));
+  DCHECK((time_string != nullptr) && (parsed_time != nullptr));
   std::string ascii_time_string = SysWideToUTF8(time_string);
   if (ascii_time_string.length() == 0) return false;
   PRTime result_time = 0;

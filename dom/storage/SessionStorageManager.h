@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,15 +6,14 @@
 #define mozilla_dom_SessionStorageManager_h
 
 #include "StorageObserver.h"
-
+#include "ipc/EnumSerializer.h"
 #include "mozilla/dom/FlippedOnce.h"
-#include "nsIDOMStorageManager.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundParent.h"
 #include "nsClassHashtable.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
-
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/PBackgroundParent.h"
+#include "nsIDOMStorageManager.h"
 
 class nsIPrincipal;
 class nsITimer;
@@ -44,6 +41,16 @@ bool RecvLoadSessionStorageData(
 
 bool RecvClearStoragesForOrigin(const nsACString& aOriginAttrs,
                                 const nsACString& aOriginKey);
+
+// DomainMatchingMode is used to allow ClearStorages to mimic one of
+// the LSNG behaviours - exact domain match.
+// When ClearStorages is invoked with EXACT_MATCH, it clears only the
+// data for a given domain, and would not affect any subdomains.
+// Currently EXACT_MATCH is only passed when browser:purge-sessionStorage event
+// is triggered. By default, ClearStorages is called with PREFIX_MATCH, which
+// clears data for a given domain and all the subdomains. This ensures that the
+// behaviour of other events that call ClearStorages remain unchanged.
+enum class DomainMatchingMode { PREFIX_MATCH, EXACT_MATCH };
 
 class BrowsingContext;
 class ContentParent;
@@ -92,8 +99,9 @@ class SessionStorageManagerBase {
     FlippedOnce<false> mLoaded;
   };
 
-  void ClearStoragesInternal(const OriginAttributesPattern& aPattern,
-                             const nsACString& aOriginScope);
+  void ClearStoragesInternal(
+      const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+      DomainMatchingMode aMode = DomainMatchingMode::PREFIX_MATCH);
 
   void ClearStoragesForOriginInternal(const nsACString& aOriginAttrs,
                                       const nsACString& aOriginKey);
@@ -155,8 +163,9 @@ class SessionStorageManager final : public SessionStorageManagerBase,
                                         SessionStorageCache* aCloneFrom,
                                         RefPtr<SessionStorageCache>* aRetVal);
 
-  void ClearStorages(const OriginAttributesPattern& aPattern,
-                     const nsACString& aOriginScope);
+  void ClearStorages(
+      const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+      DomainMatchingMode aMode = DomainMatchingMode::PREFIX_MATCH);
 
   SessionStorageCacheChild* EnsureCache(nsIPrincipal& aPrincipal,
                                         const nsACString& aOriginKey,
@@ -215,8 +224,9 @@ class BackgroundSessionStorageManager final : public SessionStorageManagerBase {
   void UpdateData(const nsACString& aOriginAttrs, const nsACString& aOriginKey,
                   const nsTArray<SSSetItemInfo>& aData);
 
-  void ClearStorages(const OriginAttributesPattern& aPattern,
-                     const nsACString& aOriginScope);
+  void ClearStorages(
+      const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+      DomainMatchingMode aMode = DomainMatchingMode::PREFIX_MATCH);
 
   void ClearStoragesForOrigin(const nsACString& aOriginAttrs,
                               const nsACString& aOriginKey);
@@ -281,5 +291,16 @@ class BackgroundSessionStorageManager final : public SessionStorageManagerBase {
 
 }  // namespace dom
 }  // namespace mozilla
+
+namespace IPC {
+
+template <>
+struct ParamTraits<mozilla::dom::DomainMatchingMode>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::DomainMatchingMode,
+          mozilla::dom::DomainMatchingMode::PREFIX_MATCH,
+          mozilla::dom::DomainMatchingMode::EXACT_MATCH> {};
+
+}  // namespace IPC
 
 #endif  // mozilla_dom_SessionStorageManager_h

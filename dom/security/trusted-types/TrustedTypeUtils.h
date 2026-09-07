@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #ifndef DOM_SECURITY_TRUSTED_TYPES_TRUSTEDTYPEUTILS_H_
 #define DOM_SECURITY_TRUSTED_TYPES_TRUSTEDTYPEUTILS_H_
 
+#include "js/TypeDecls.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/DOMString.h"
@@ -15,7 +14,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsImpl.h"
 #include "nsString.h"
-#include "js/TypeDecls.h"
 
 class nsIContentSecurityPolicy;
 class nsIPrincipal;
@@ -68,6 +66,8 @@ void ReportSinkTypeMismatchViolations(nsIContentSecurityPolicy* aCSP,
                                       const nsAString& aSink,
                                       const nsAString& aSinkGroup,
                                       const nsAString& aSource);
+
+bool CanSkipTrustedTypesEnforcement(const nsINode& aNode);
 
 // https://w3c.github.io/trusted-types/dist/spec/#get-trusted-type-compliant-string-algorithm
 //
@@ -131,12 +131,20 @@ GetTrustedTypesCompliantStringForTrustedHTML(const nsAString& aInput,
                                              const nsAString& aSink,
                                              const nsAString& aSinkGroup,
                                              const nsINode& aNode,
+                                             nsIPrincipal* aPrincipalOrNull,
                                              Maybe<nsAutoString>& aResultHolder,
                                              ErrorResult& aError);
 MOZ_CAN_RUN_SCRIPT const nsAString*
 GetTrustedTypesCompliantStringForTrustedScript(
     const nsAString& aInput, const nsAString& aSink,
     const nsAString& aSinkGroup, nsIGlobalObject& aGlobalObject,
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError);
+
+MOZ_CAN_RUN_SCRIPT const nsAString*
+GetTrustedTypesCompliantStringForTrustedScript(
+    const nsAString& aInput, const nsAString& aSink,
+    const nsAString& aSinkGroup, const nsINode& aNode,
     Maybe<nsAutoString>& aResultHolder, ErrorResult& aError);
 
 // https://w3c.github.io/trusted-types/dist/spec/#abstract-opdef-process-value-with-a-default-policy
@@ -179,7 +187,8 @@ AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
     JS::Handle<JS::StackGCVector<JSString*>> aParameterStrings,
     JS::Handle<JSString*> aBodyString,
     JS::Handle<JS::StackGCVector<JS::Value>> aParameterArgs,
-    JS::Handle<JS::Value> aBodyArg, ErrorResult& aError);
+    JS::Handle<JS::Value> aBodyArg, nsIPrincipal* aPrincipalOrNull,
+    ErrorResult& aError);
 
 // This is step 4 of require-trusted-types-for Pre-Navigation check. The return
 // value is the stringified version of convertedScriptSource, or nullptr if the

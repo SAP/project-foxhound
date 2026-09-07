@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,13 +15,7 @@
 
 namespace sandbox {
 
-bool LineBreakPolicy::GenerateRules(const wchar_t* null,
-                                    TargetPolicy::Semantics semantics,
-                                    LowLevelPolicy* policy) {
-  if (TargetPolicy::LINE_BREAK_ALLOW != semantics) {
-    return false;
-  }
-
+bool LineBreakPolicy::GenerateRules(LowLevelPolicy* policy) {
   PolicyRule line_break_rule(ASK_BROKER);
   if (!policy->AddRule(IpcTag::GETCOMPLEXLINEBREAKS, &line_break_rule)) {
     return false;

@@ -32,9 +32,13 @@ add_setup(async function () {
     return !events || !events.length;
   }, "Waiting for content telemetry events to get cleared");
 
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.useAnyFile();
   MockFilePicker.returnValue = MockFilePicker.returnOK;
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
 
   registerCleanupFunction(() => {
     MockFilePicker.cleanup();

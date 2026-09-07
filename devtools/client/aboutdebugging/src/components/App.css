@@ -33,7 +33,7 @@
   grid-template-columns: var(--sidebar-width) auto;
 
   font-size: var(--base-font-size);
-  font-weight: var(--base-font-weight);
+  font-weight: var(--base-font-weight, normal);
   line-height: var(--base-line-height);
 }
 
@@ -49,8 +49,8 @@
 
   /* padding will give space for card shadow to appear and
      margin will correct the alignment */
-  margin-inline-start: calc(var(--card-shadow-blur-radius) * -1);
-  padding-inline: var(--card-shadow-blur-radius);
+  margin-inline-start: calc(var(--base-unit) * -1);
+  padding-inline: var(--base-unit);
   padding-block-start: var(--app-top-padding);
 }
 
@@ -66,6 +66,6 @@
   max-width: var(--page-main-content-width);
   min-width: min-content;
   font-size: var(--body-20-font-size);
-  font-weight: var(--body-20-font-weight);
+  font-weight: var(--body-20-font-weight, normal);
   padding-inline-end: var(--app-right-padding);
 }

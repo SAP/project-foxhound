@@ -5,12 +5,6 @@ const { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
 );
 
-let max_round_trip_time_ms = 90;
-
-const MAX_ROUND_TRIP_TIME_MS = max_round_trip_time_ms;
-
-const MAX_RETRIES = 5;
-
 let PYTHON;
 let PYTHON_BIN;
 let PYTHON_DIR;
@@ -33,7 +27,7 @@ let readAll = async function (pipe) {
   return result.join("");
 };
 
-add_task(async function setup() {
+add_setup(async function setup() {
   PYTHON = await Subprocess.pathSearch(Services.env.get("PYTHON"));
 
   PYTHON_BIN = PathUtils.filename(PYTHON);
@@ -175,54 +169,6 @@ add_task(async function test_subprocess_huge() {
 
   equal(exitCode, 0, "Got expected exit code");
 });
-
-add_task(
-  { skip_if: () => mozinfo.ccov },
-  async function test_subprocess_round_trip_perf() {
-    let roundTripTime = Infinity;
-    for (
-      let i = 0;
-      i < MAX_RETRIES && roundTripTime > MAX_ROUND_TRIP_TIME_MS;
-      i++
-    ) {
-      let proc = await Subprocess.call({
-        command: PYTHON,
-        arguments: ["-u", TEST_SCRIPT, "echo"],
-      });
-
-      const LINE = "I'm a leaf on the wind.\n";
-
-      let now = Date.now();
-      const COUNT = 1000;
-      for (let j = 0; j < COUNT; j++) {
-        let [output] = await Promise.all([
-          read(proc.stdout),
-          proc.stdin.write(LINE),
-        ]);
-
-        // We don't want to log this for every iteration, but we still need
-        // to fail if it goes wrong.
-        if (output !== LINE) {
-          equal(output, LINE, "Got expected output");
-        }
-      }
-
-      roundTripTime = (Date.now() - now) / COUNT;
-
-      await proc.stdin.close();
-
-      let { exitCode } = await proc.wait();
-
-      equal(exitCode, 0, "Got expected exit code");
-    }
-
-    Assert.lessOrEqual(
-      roundTripTime,
-      MAX_ROUND_TRIP_TIME_MS,
-      `Expected round trip time (${roundTripTime}ms) to be less than ${MAX_ROUND_TRIP_TIME_MS}ms`
-    );
-  }
-);
 
 add_task(async function test_subprocess_stderr_default() {
   const LINE1 = "I'm a leaf on the wind.\n";
@@ -416,6 +362,79 @@ add_task(async function test_subprocess_eof() {
   let { exitCode } = await proc.wait();
 
   equal(exitCode, 0, "Got expected exit code");
+});
+
+// Regression test for bug 1983138.
+add_task(async function test_subprocess_stdin_closed_by_program() {
+  // On Windows, the actual python.exe that runs the script is a child of the
+  // python.exe of the virtualenv, and closing stdin from that child does not
+  // propagate back, which would cause the proc.stdin.write() call below to
+  // succeed unexpectedly.
+  //
+  // To avoid this issue, use the real Python, see getRealPythonExecutable.
+  let proc = await Subprocess.call({
+    command: await getRealPythonExecutable(PYTHON),
+    arguments: ["-u", TEST_SCRIPT, "close_stdin_and_wait_forever"],
+  });
+
+  info("Waiting for program to notify us via stdout after closing stdin");
+
+  equal(
+    await read(proc.stdout),
+    "stdin_closed",
+    "Spawned process closed stdin"
+  );
+
+  // This is the most interesting part - write() should reject with an error.
+  await Assert.rejects(
+    proc.stdin.write("a"),
+    function (e) {
+      equal(
+        e.errorCode,
+        Subprocess.ERROR_END_OF_FILE,
+        "Got the expected error code"
+      );
+      return /File closed/.test(e.message);
+    },
+    "Promise should be rejected after program closed stdin"
+  );
+
+  let { exitCode } = await proc.kill();
+
+  // On UNIX platforms, our subprocess.kill() implementation sends SIGTERM,
+  // which Python handles and exiting with -15. On Windows, we send SIGKILL
+  // which the program cannot even handle and the exit code is -9.
+  const expectedExitCode = AppConstants.platform == "win" ? -9 : -15;
+  equal(exitCode, expectedExitCode, "Got expected exit code");
+});
+
+// Regression test for bug 1983138.
+add_task(async function test_subprocess_stdout_closed_by_program() {
+  // On Windows, the actual python.exe that runs the script is a child of the
+  // python.exe of the virtualenv, and closing stdout from that child does not
+  // propagate back, which would cause the proc.stdout.readString() call (via
+  // read) below to never resolve.
+  //
+  // To avoid this issue, use the real Python, see getRealPythonExecutable.
+  let proc = await Subprocess.call({
+    command: await getRealPythonExecutable(PYTHON),
+    arguments: ["-u", TEST_SCRIPT, "close_pipes_and_wait_for_stdin"],
+  });
+
+  // This is the most interesting part - readString() should resolve.
+  equal(
+    await proc.stdout.readString(),
+    "",
+    "stdout read should resolve to empty string upon close"
+  );
+
+  let { exitCode } = await proc.kill();
+
+  // On UNIX platforms, our subprocess.kill() implementation sends SIGTERM,
+  // which Python handles and exiting with -15. On Windows, we send SIGKILL
+  // which the program cannot even handle and the exit code is -9.
+  const expectedExitCode = AppConstants.platform == "win" ? -9 : -15;
+  equal(exitCode, expectedExitCode, "Got expected exit code");
 });
 
 add_task(async function test_subprocess_invalid_json() {

@@ -9,7 +9,7 @@
 add_task(async function test_delete_cache() {
   const mockAppLocale = "en";
   const { remoteClients, cleanup } = await setupActorTest({
-    autoDownloadFromRemoteSettings: false,
+    autoDownloadFromRemoteSettings: true,
     languagePairs: [
       { fromLang: "es", toLang: "en" },
       { fromLang: "en", toLang: "fr" },
@@ -19,37 +19,60 @@ add_task(async function test_delete_cache() {
   });
 
   // Partially downloaded one-side mock
-  const partialMock = createRecordsForLanguagePair("en", "es");
-  partialMock.forEach(item => (item.attachment.isDownloaded = true));
-  // Only one model record was downloaded (probably a download interruption or similar)
-  const partialMockInterrupted = createRecordsForLanguagePair("yy", "en");
-  partialMockInterrupted[0].attachment.isDownloaded = true;
-  console.log(
-    `partialMockInterrupted ${JSON.stringify(partialMockInterrupted)}`
-  );
-  // Complete mock
-  const completeMockTo = createRecordsForLanguagePair("en", "bg");
-  completeMockTo.forEach(item => (item.attachment.isDownloaded = true));
-  const completeMockFrom = createRecordsForLanguagePair("bg", "en");
-  completeMockFrom.forEach(item => (item.attachment.isDownloaded = true));
-  // Complete single direction mock
-  const completeSingleMock = createRecordsForLanguagePair("nn", "en");
-  completeSingleMock.forEach(item => (item.attachment.isDownloaded = true));
+  const partialMock = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "es",
+  });
 
-  const recordsToCreate = partialMock
-    .concat(partialMockInterrupted)
-    .concat(completeMockTo)
-    .concat(completeMockFrom)
-    .concat(completeSingleMock);
+  // Only one model record should be downloaded (probably a download interruption or similar)
+  const partialMockInterrupted = createRecordsForLanguagePair({
+    sourceLanguage: "yy",
+    targetLanguage: "en",
+  });
+  info(`partialMockInterrupted ${JSON.stringify(partialMockInterrupted)}`);
+
+  // Complete mock
+  const completeMockTo = createRecordsForLanguagePair({
+    sourceLanguage: "en",
+    targetLanguage: "bg",
+  });
+  const completeMockFrom = createRecordsForLanguagePair({
+    sourceLanguage: "bg",
+    targetLanguage: "en",
+  });
+
+  // Complete single-direction mock
+  const completeSingleMock = createRecordsForLanguagePair({
+    sourceLanguage: "nn",
+    targetLanguage: "en",
+  });
+
+  const recordsToCreate = [
+    ...partialMock,
+    ...partialMockInterrupted,
+    ...completeMockTo,
+    ...completeMockFrom,
+    ...completeSingleMock,
+  ];
 
   await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {
     recordsToCreate,
     expectedCreatedRecordsCount: 5 * RECORDS_PER_LANGUAGE_PAIR_SHARED_VOCAB,
   });
 
-  const cleanupLocales = await mockLocales({
-    appLocales: [mockAppLocale],
-  });
+  const recordsToDownload = [
+    ...partialMock,
+    ...partialMockInterrupted.slice(0, 1),
+    ...completeMockTo,
+    ...completeMockFrom,
+    ...completeSingleMock,
+  ];
+
+  for (const record of recordsToDownload) {
+    await remoteClients.translationModels.client.attachments.download(record);
+  }
+
+  const cleanupLocales = await mockLocales({ appLocales: [mockAppLocale] });
 
   // Testing initial file statuses of different scenarios
 

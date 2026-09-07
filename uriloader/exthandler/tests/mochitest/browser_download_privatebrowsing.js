@@ -77,6 +77,61 @@ add_task(async function test_download_privatebrowsing() {
   }
 });
 
+add_task(async function test_download_auto_open_private() {
+  let privateList = await Downloads.getList(Downloads.PRIVATE);
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.download.enableDeletePrivate", true],
+      ["browser.download.deletePrivate", false],
+    ],
+  });
+
+  let win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
+  let downloadedFilePaths = [];
+  try {
+    let tab = await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      `data:text/html,<a download href="data:application/pdf,test">download</a>`
+    );
+
+    let promiseNextPrivateDownload = new Promise(resolve => {
+      privateList.addView({
+        onDownloadAdded(download) {
+          privateList.removeView(this);
+          resolve(download);
+        },
+      });
+    });
+
+    let newTabPromise = BrowserTestUtils.waitForNewTab(win.gBrowser);
+    await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+      content.document.querySelector("a").click();
+    });
+
+    await (await promiseNextPrivateDownload).whenSucceeded();
+    await newTabPromise;
+  } catch (ex) {
+    Assert.ok(false, `Caught unexpected exception: ${ex}`);
+  } finally {
+    for (let download of privateList._downloads) {
+      downloadedFilePaths.push(download.target.path);
+    }
+    await BrowserTestUtils.closeWindow(win);
+  }
+
+  Assert.notEqual(
+    downloadedFilePaths.length,
+    0,
+    "List of private download paths should be populated"
+  );
+  for (let path of downloadedFilePaths) {
+    Assert.ok(await IOUtils.exists(path), "Download exists at " + path);
+  }
+
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function test_delete_download_privatebrowsing() {
   let privateList = await Downloads.getList(Downloads.PRIVATE);
 

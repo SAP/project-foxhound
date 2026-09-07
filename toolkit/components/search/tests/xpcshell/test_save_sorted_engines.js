@@ -26,7 +26,7 @@ add_task(async function test_save_sorted_engines() {
   });
   await promiseAfterSettings();
 
-  let search = Services.search;
+  let search = SearchService;
 
   // Test moving the engines
   await search.moveEngine(engine1, 0);
@@ -56,7 +56,7 @@ add_task(async function test_save_sorted_engines() {
     keyword: "foo",
   });
 
-  let engine = Services.search.getEngineByName("foo");
+  let engine = SearchService.getEngineByName("foo");
   await promiseAfterSettings();
   info("Commit complete after addEngineWithDetails");
 

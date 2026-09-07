@@ -1,0 +1,18 @@
+{
+  "label": "clinic.platomedical.com",
+  "bugs": {
+    "1902388": {
+      "issue": "unsupported-warning",
+      "matches": ["*://clinic.platomedical.com/login*"]
+    }
+  },
+  "css": {
+    "hide_browser_notice": ".alert.chrome { display: none !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "css": ["hide_browser_notice"]
+    }
+  ]
+}

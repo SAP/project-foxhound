@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SMILKeySpline.h"
+
 #include <stdint.h>
-#include <math.h>
+
+#include <cmath>
 
 namespace mozilla {
 
@@ -14,9 +14,6 @@ namespace mozilla {
 #define NEWTON_MIN_SLOPE 0.02
 #define SUBDIVISION_PRECISION 0.0000001
 #define SUBDIVISION_MAX_ITERATIONS 10
-
-const double SMILKeySpline::kSampleStepSize =
-    1.0 / double(kSplineTableSize - 1);
 
 void SMILKeySpline::Init(double aX1, double aY1, double aX2, double aY2) {
   mX1 = aX1;
@@ -118,7 +115,7 @@ double SMILKeySpline::BinarySubdivide(double aX, double aA, double aB) const {
     } else {
       aA = currentT;
     }
-  } while (fabs(currentX) > SUBDIVISION_PRECISION &&
+  } while (std::abs(currentX) > SUBDIVISION_PRECISION &&
            ++i < SUBDIVISION_MAX_ITERATIONS);
 
   return currentT;

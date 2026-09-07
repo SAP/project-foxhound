@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,14 @@
 #ifndef DOM_SVG_SVGANIMATEDSTRING_H_
 #define DOM_SVG_SVGANIMATEDSTRING_H_
 
-#include "nsError.h"
+#include <memory>
+
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/SVGAnimatedClassOrString.h"
 #include "mozilla/dom/SVGElement.h"
-#include "mozilla/UniquePtr.h"
+#include "nsError.h"
+#include "nsString.h"
 
 namespace mozilla {
 
@@ -32,7 +32,7 @@ class SVGAnimatedString : public SVGAnimatedClassOrString {
   using TrustedScriptURLOrString = dom::TrustedScriptURLOrString;
 
   void Init(uint8_t aAttrEnum) {
-    mAnimVal = nullptr;
+    mAnimVal = VoidString();
     mAttrEnum = aAttrEnum;
     mIsBaseSet = false;
   }
@@ -60,18 +60,16 @@ class SVGAnimatedString : public SVGAnimatedClassOrString {
   // explicitly set by markup or a DOM call), false otherwise.
   // If this returns false, the animated value is still valid, that is,
   // usable, and represents the default base value of the attribute.
-  bool IsExplicitlySet() const { return !!mAnimVal || mIsBaseSet; }
+  bool IsExplicitlySet() const { return !mAnimVal.IsVoid() || mIsBaseSet; }
 
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
   SVGAnimatedString() = default;
 
   SVGAnimatedString& operator=(const SVGAnimatedString& aOther) {
+    mAnimVal = aOther.mAnimVal;
     mAttrEnum = aOther.mAttrEnum;
     mIsBaseSet = aOther.mIsBaseSet;
-    if (aOther.mAnimVal) {
-      mAnimVal = MakeUnique<nsString>(*aOther.mAnimVal);
-    }
     return *this;
   }
 
@@ -80,8 +78,7 @@ class SVGAnimatedString : public SVGAnimatedClassOrString {
   }
 
  private:
-  // FIXME: Should probably use void string rather than UniquePtr<nsString>.
-  UniquePtr<nsString> mAnimVal;
+  nsString mAnimVal = VoidString();
   uint8_t mAttrEnum = 0;  // element specified tracking for attribute
   bool mIsBaseSet = false;
 

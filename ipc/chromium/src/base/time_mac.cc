@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -61,7 +59,7 @@ Time Time::FromExploded(bool is_local, const Exploded& exploded) {
   date.year = exploded.year;
 
   scoped_cftyperef<CFTimeZoneRef> time_zone(is_local ? CFTimeZoneCopySystem()
-                                                     : NULL);
+                                                     : nullptr);
   CFAbsoluteTime seconds = CFGregorianDateGetAbsoluteTime(date, time_zone) +
                            kCFAbsoluteTimeIntervalSince1970;
   return Time(static_cast<int64_t>(seconds * kMicrosecondsPerSecond));
@@ -72,7 +70,7 @@ void Time::Explode(bool is_local, Exploded* exploded) const {
                            kCFAbsoluteTimeIntervalSince1970;
 
   scoped_cftyperef<CFTimeZoneRef> time_zone(is_local ? CFTimeZoneCopySystem()
-                                                     : NULL);
+                                                     : nullptr);
   CFGregorianDate date = CFAbsoluteTimeGetGregorianDate(seconds, time_zone);
 
   exploded->year = date.year;

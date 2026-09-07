@@ -1,0 +1,27 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf8" />
+    <meta name="viewport" content="interactive-widget=not-overridden, minimum-scale=1.0, initial-scale=2.0, maximum-scale=2.0" />
+    <script>
+      const need_alerts = new URLSearchParams(location.search).get("alerts") == "1";
+      if (need_alerts) {
+        alert("blocked iframe alert 1");
+        alert("not blocked alert 1");
+      }
+      window.addEventListener("load", () => {
+        if (need_alerts) {
+          alert("blocked iframe alert 2");
+          alert("not blocked alert 2");
+        }
+        document.body.innerHTML += `
+          <div id="message_container2"><div onclick="event.target.parentNode.remove()" id="close_button">[X]</div><div>message in iframe to hide</div></div>
+        `;
+      });
+    </script>
+  </head>
+  <body>
+    <div id="message_container2"><div onclick="event.target.parentNode.remove()" id="close_button">[X]</div><div>message in iframe to hide</div></div>
+    <div id="message_container1">message to hide</div>
+  </body>
+</html>

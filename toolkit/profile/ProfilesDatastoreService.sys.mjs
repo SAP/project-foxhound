@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { DeferredTask } from "resource://gre/modules/DeferredTask.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const NOTIFY_TIMEOUT = 200;
 const STOREID_PREF_NAME = "toolkit.profiles.storeID";
@@ -13,6 +14,120 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
 });
+ChromeUtils.defineLazyGetter(lazy, "MigrationUtils", () => {
+  // MigrationUtils is currently only available in browser builds.
+  if (AppConstants.MOZ_BUILD_APP !== "browser") {
+    return undefined;
+  }
+
+  try {
+    let { MigrationUtils } = ChromeUtils.importESModule(
+      // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+      "resource:///modules/MigrationUtils.sys.mjs"
+    );
+    return MigrationUtils;
+  } catch (e) {
+    console.error(`Unable to load MigrationUtils.sys.mjs: ${e}`);
+  }
+  return undefined;
+});
+
+/**
+ * Gets the path to the shared profiles database for a storeID.
+ *
+ * @param {string} storeID The store ID
+ * @returns {string} The path to the database file
+ */
+function getSharedProfilesStorePath(storeID) {
+  return PathUtils.join(
+    ProfilesDatastoreServiceClass.PROFILE_GROUPS_DIR,
+    `${storeID}.sqlite`
+  );
+}
+
+/**
+ * Opens the datastore.
+ *
+ * @param {string} path The path to the database file
+ * @returns {Promise<Connection>} The database connection
+ */
+async function openDatastoreConnection(path) {
+  let connection = await lazy.Sqlite.openConnection({
+    path,
+    openNotExclusive: true,
+  });
+
+  await connection.execute("PRAGMA journal_mode = WAL");
+  await connection.execute("PRAGMA wal_autocheckpoint = 16");
+
+  return connection;
+}
+
+/**
+ * Tests whether a profile can be deleted safely, i.e. whether it is the only
+ * profile in its profile store.
+ *
+ * @param {nsIToolkitProfile} profile The profile to test
+ * @returns {Promise<boolean>} True if the profile can be deleted safely
+ */
+export async function canDeleteProfile(profile) {
+  if (!profile.storeID) {
+    // If there is no storeID then there can be no linked profiles.
+    return true;
+  }
+
+  let dbPath = getSharedProfilesStorePath(profile.storeID);
+  if (!(await IOUtils.exists(dbPath))) {
+    // If the database doesn't exist then there can be no linked profiles.
+    return true;
+  }
+
+  try {
+    let connection = await openDatastoreConnection(dbPath);
+
+    try {
+      let rows = await connection.executeCached(
+        'SELECT COUNT(*) AS "count" FROM "Profiles";'
+      );
+
+      let profileCount = rows[0]?.getResultByName("count") ?? 0;
+
+      // The database should only contain the profile being deleted.
+      return profileCount <= 1;
+    } finally {
+      await connection.close();
+    }
+  } catch (e) {
+    console.error(e);
+    return true;
+  }
+}
+
+/**
+ * Attempts to delete a file but ignores any errors.
+ *
+ * @param {string} path The path to the file to delete
+ */
+async function deleteFile(path) {
+  try {
+    await IOUtils.remove(path);
+  } catch (e) {
+    // Ignore errors
+  }
+}
+
+/**
+ * Attempts to delete the shared profiles store for the given store ID. No error
+ * will be thrown if deletion fails.
+ *
+ * @param {string} storeID The store ID
+ */
+export async function deleteSharedProfilesStore(storeID) {
+  let dbPath = getSharedProfilesStorePath(storeID);
+  await deleteFile(dbPath);
+  await deleteFile(dbPath + "-shm");
+  await deleteFile(dbPath + "-wal");
+}
 
 /**
  * An API that allows access to the cross-profile SQLite database shared
@@ -72,7 +187,7 @@ class ProfilesDatastoreServiceClass {
   async createTables() {
     // TODO: (Bug 1902320) Handle exceptions on connection opening
     let currentVersion = await this.#connection.getSchemaVersion();
-    if (currentVersion == 6) {
+    if (currentVersion == 7) {
       return;
     }
 
@@ -110,6 +225,7 @@ class ProfilesDatastoreServiceClass {
 
     if (currentVersion < 2) {
       await this.#connection.executeTransaction(async () => {
+        // NB: The profileId field is actually TEXT (a string UUID).
         const createEnrollmentsTable = `
           CREATE TABLE IF NOT EXISTS "NimbusEnrollments" (
             id             INTEGER NOT NULL,
@@ -187,6 +303,25 @@ class ProfilesDatastoreServiceClass {
       });
 
       await this.#connection.setSchemaVersion(6);
+    }
+
+    if (currentVersion < 7) {
+      await this.#connection.executeTransaction(async () => {
+        const createNimbusSyncTable = `
+          CREATE TABLE IF NOT EXISTS "NimbusSyncTimestamps" (
+            id                  INTEGER NOT NULL,
+            profileId           TEXT NOT NULL,
+            collection          TEXT NOT NULL,
+            lastModified        INTEGER NOT NULL,
+            PRIMARY KEY(id),
+            UNIQUE (profileId, collection) ON CONFLICT FAIL
+          );
+        `;
+
+        await this.#connection.execute(createNimbusSyncTable);
+      });
+
+      await this.#connection.setSchemaVersion(7);
     }
   }
 
@@ -353,6 +488,16 @@ class ProfilesDatastoreServiceClass {
     this.#initialized = true;
   }
 
+  async getStartupMigrationConnection() {
+    if (!lazy.MigrationUtils?.isStartupMigration) {
+      return null;
+    }
+
+    this.#storeID = Services.env.get("SELECTABLE_PROFILE_RESET_STORE_ID");
+    await this.#initConnection();
+    return this.#connection;
+  }
+
   async uninit() {
     if (this.#asyncShutdownBarrier) {
       await this.#asyncShutdownBarrier.wait();
@@ -386,13 +531,7 @@ class ProfilesDatastoreServiceClass {
 
     // TODO: (Bug 1902320) Handle exceptions on connection opening
     // This could fail if the store is corrupted.
-    this.#connection = await lazy.Sqlite.openConnection({
-      path,
-      openNotExclusive: true,
-    });
-
-    await this.#connection.execute("PRAGMA journal_mode = WAL");
-    await this.#connection.execute("PRAGMA wal_autocheckpoint = 16");
+    this.#connection = await openDatastoreConnection(path);
 
     await this.createTables();
   }
@@ -410,14 +549,10 @@ class ProfilesDatastoreServiceClass {
     this.#connection = null;
   }
 
-  async maybeCreateProfilesStorePath() {
+  maybeCreateStoreID() {
     if (this.#storeID) {
       return;
     }
-
-    await IOUtils.makeDirectory(
-      ProfilesDatastoreServiceClass.PROFILE_GROUPS_DIR
-    );
 
     const storageID = Services.uuid
       .generateUUID()
@@ -430,22 +565,27 @@ class ProfilesDatastoreServiceClass {
   }
 
   async getProfilesStorePath() {
-    await this.maybeCreateProfilesStorePath();
+    this.maybeCreateStoreID();
 
     // If we are not running in a named nsIToolkitProfile, the datastore path
     // should be in the profile directory. This is true in a local build or a
-    // CI test build, for example.
-    if (!this.#profileService.currentProfile) {
+    // CI test build, for example. If isStartupMigration is true, we should use
+    // the shared profile store path regardless of if we have a profile or not
+    if (
+      !lazy.MigrationUtils?.isStartupMigration &&
+      !this.#profileService.currentProfile
+    ) {
       return PathUtils.join(
         ProfilesDatastoreServiceClass.getDirectory("ProfD").path,
         `${this.#storeID}.sqlite`
       );
     }
 
-    return PathUtils.join(
-      ProfilesDatastoreServiceClass.PROFILE_GROUPS_DIR,
-      `${this.#storeID}.sqlite`
+    await IOUtils.makeDirectory(
+      ProfilesDatastoreServiceClass.PROFILE_GROUPS_DIR
     );
+
+    return getSharedProfilesStorePath(this.#storeID);
   }
 }
 

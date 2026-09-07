@@ -1,0 +1,30 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* This file is intended to be used specifically by aiWindow.html */
+
+@import url("chrome://browser/skin/urlbar/tokens.css");
+@import url("chrome://browser/skin/urlbar/variables.css");
+@import url("chrome://browser/skin/urlbar/view.css");
+
+.ai-window {
+  background: transparent;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+}
+
+/* Override the 500px min-width from browser-shared.css when in narrow
+ * viewports (e.g., the AI sidebar). Without this, content gets clipped.
+ * See Bug 2008938.
+ */
+@media (max-width: 500px) {
+  :root {
+    --window-min-width: 0;
+  }
+}

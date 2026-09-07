@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 et
- * this source code form is subject to the terms of the mozilla public license,
+/* this source code form is subject to the terms of the mozilla public license,
  * v. 2.0. if a copy of the mpl was not distributed with this file, you can
  * obtain one at http://mozilla.org/mpl/2.0/. */
 

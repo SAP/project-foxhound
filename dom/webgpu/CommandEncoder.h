@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +5,17 @@
 #ifndef GPU_CommandEncoder_H_
 #define GPU_CommandEncoder_H_
 
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/WeakPtr.h"
-#include "mozilla/webgpu/ffi/wgpu.h"
-#include "mozilla/webgpu/WebGPUTypes.h"
-#include "nsWrapperCache.h"
 #include "CanvasContext.h"
 #include "ObjectModel.h"
 #include "QuerySet.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/TypedArray.h"
+#include "mozilla/webgpu/WebGPUTypes.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
+#include "nsTArrayForwardDeclare.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -41,19 +42,20 @@ class CanvasContext;
 class CommandBuffer;
 class ComputePassEncoder;
 class Device;
+class ExternalTexture;
 class RenderPassEncoder;
 class WebGPUChild;
 
 enum class CommandEncoderState { Open, Locked, Ended };
 
-class CommandEncoder final : public ObjectBase, public ChildOf<Device> {
+class CommandEncoder final : public nsWrapperCache,
+                             public ObjectBase,
+                             public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(CommandEncoder)
   GPU_DECL_JS_WRAP(CommandEncoder)
 
-  CommandEncoder(Device* const aParent, WebGPUChild* const aBridge, RawId aId);
-
-  const RawId mId;
+  CommandEncoder(Device* const aParent, RawId aId);
 
   static void ConvertTextureDataLayoutToFFI(
       const dom::GPUTexelCopyBufferLayout& aLayout,
@@ -63,26 +65,26 @@ class CommandEncoder final : public ObjectBase, public ChildOf<Device> {
       ffi::WGPUTexelCopyTextureInfo_TextureId* aViewFFI);
 
  private:
-  ~CommandEncoder();
-  void Cleanup();
+  virtual ~CommandEncoder();
 
   CommandEncoderState mState;
 
-  RefPtr<WebGPUChild> mBridge;
   CanvasContextArray mPresentationContexts;
+  nsTArray<RefPtr<ExternalTexture>> mExternalTextures;
 
   void TrackPresentationContext(WeakPtr<CanvasContext> aTargetContext);
 
  public:
   const auto& GetDevice() const { return mParent; };
-  RefPtr<WebGPUChild> GetBridge();
 
   CommandEncoderState GetState() const { return mState; };
 
   void EndComputePass(ffi::WGPURecordedComputePass& aPass,
-                      CanvasContextArray& aCanvasContexts);
+                      CanvasContextArray& aCanvasContexts,
+                      Span<RefPtr<ExternalTexture>> aExternalTextures);
   void EndRenderPass(ffi::WGPURecordedRenderPass& aPass,
-                     CanvasContextArray& aCanvasContexts);
+                     CanvasContextArray& aCanvasContexts,
+                     Span<RefPtr<ExternalTexture>> aExternalTextures);
 
   void CopyBufferToBuffer(const Buffer& aSource, const Buffer& aDestination,
                           const dom::Optional<BufferAddress>& aSize) {
@@ -135,7 +137,17 @@ void AssignPassTimestampWrites(const T& src,
     dest.end_of_pass_write_index = nullptr;
   }
 
-  dest.query_set = src.mQuerySet->mId;
+  dest.query_set = src.mQuerySet->GetId();
+}
+
+// Metal imposes a limit on the number of outstanding command buffers.
+// Attempting to create another command buffer after reaching that limit
+// will block, which can result in a deadlock if GC is required to
+// recover old command buffers. To encourage garbage collection of
+// command buffers before that happens, we associate some additional
+// memory with each command buffer.
+inline size_t BindingJSObjectMallocBytes(CommandEncoder* aEncoder) {
+  return 16384;
 }
 
 }  // namespace webgpu

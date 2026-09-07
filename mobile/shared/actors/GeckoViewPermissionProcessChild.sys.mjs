@@ -11,7 +11,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "MediaManagerService",
   "@mozilla.org/mediaManagerService;1",
-  "nsIMediaManagerService"
+  Ci.nsIMediaManagerService
 );
 
 const STATUS_RECORDING = "recording";
@@ -148,7 +148,6 @@ export class GeckoViewPermissionProcessChild extends JSProcessActorChild {
     }
 
     const response = await this.getActor(window).getMediaPermission({
-      uri: window.document.documentURI,
       video: constraints.video
         ? sources.filter(source => source.type === "videoinput")
         : null,

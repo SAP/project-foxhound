@@ -6,14 +6,13 @@ import { Locale } from "./Locale.mjs"
 import wasm from "./diplomat-wasm.mjs";
 import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
-
-/**
- * See the [Rust documentation for `ListFormatter`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html) for more information.
- */
 const ListFormatter_box_destroy_registry = new FinalizationRegistry((ptr) => {
     wasm.icu4x_ListFormatter_destroy_mv1(ptr);
 });
 
+/**
+ * See the [Rust documentation for `ListFormatter`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html) for more information.
+ */
 export class ListFormatter {
     // Internal ptr reference:
     #ptr = null;
@@ -37,6 +36,7 @@ export class ListFormatter {
 
         return this;
     }
+    /** @internal */
     get ffiValue() {
         return this.#ptr;
     }
@@ -45,7 +45,7 @@ export class ListFormatter {
     /**
      * Construct a new ListFormatter instance for And patterns from compiled data.
      *
-     * See the [Rust documentation for `try_new_and`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html#method.try_new_and) for more information.
+     * See the [Rust documentation for `try_new_and`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html#method.try_new_and) for more information.
      */
     static createAndWithLength(locale, length) {
         const diplomatReceive = new diplomatRuntime.DiplomatReceiveBuf(wasm, 5, 4, true);
@@ -56,7 +56,7 @@ export class ListFormatter {
         try {
             if (!diplomatReceive.resultFlag) {
                 const cause = new DataError(diplomatRuntime.internalConstructor, diplomatRuntime.enumDiscriminant(wasm, diplomatReceive.buffer));
-                throw new globalThis.Error('DataError: ' + cause.value, { cause });
+                throw new globalThis.Error('DataError.' + cause.value, { cause });
             }
             return new ListFormatter(diplomatRuntime.internalConstructor, diplomatRuntime.ptrRead(wasm, diplomatReceive.buffer), []);
         }
@@ -69,7 +69,7 @@ export class ListFormatter {
     /**
      * Construct a new ListFormatter instance for And patterns
      *
-     * See the [Rust documentation for `try_new_and`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html#method.try_new_and) for more information.
+     * See the [Rust documentation for `try_new_and`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html#method.try_new_and) for more information.
      */
     static createAndWithLengthAndProvider(provider, locale, length) {
         const diplomatReceive = new diplomatRuntime.DiplomatReceiveBuf(wasm, 5, 4, true);
@@ -80,7 +80,7 @@ export class ListFormatter {
         try {
             if (!diplomatReceive.resultFlag) {
                 const cause = new DataError(diplomatRuntime.internalConstructor, diplomatRuntime.enumDiscriminant(wasm, diplomatReceive.buffer));
-                throw new globalThis.Error('DataError: ' + cause.value, { cause });
+                throw new globalThis.Error('DataError.' + cause.value, { cause });
             }
             return new ListFormatter(diplomatRuntime.internalConstructor, diplomatRuntime.ptrRead(wasm, diplomatReceive.buffer), []);
         }
@@ -93,7 +93,7 @@ export class ListFormatter {
     /**
      * Construct a new ListFormatter instance for And patterns from compiled data.
      *
-     * See the [Rust documentation for `try_new_or`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html#method.try_new_or) for more information.
+     * See the [Rust documentation for `try_new_or`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html#method.try_new_or) for more information.
      */
     static createOrWithLength(locale, length) {
         const diplomatReceive = new diplomatRuntime.DiplomatReceiveBuf(wasm, 5, 4, true);
@@ -104,7 +104,7 @@ export class ListFormatter {
         try {
             if (!diplomatReceive.resultFlag) {
                 const cause = new DataError(diplomatRuntime.internalConstructor, diplomatRuntime.enumDiscriminant(wasm, diplomatReceive.buffer));
-                throw new globalThis.Error('DataError: ' + cause.value, { cause });
+                throw new globalThis.Error('DataError.' + cause.value, { cause });
             }
             return new ListFormatter(diplomatRuntime.internalConstructor, diplomatRuntime.ptrRead(wasm, diplomatReceive.buffer), []);
         }
@@ -117,7 +117,7 @@ export class ListFormatter {
     /**
      * Construct a new ListFormatter instance for And patterns
      *
-     * See the [Rust documentation for `try_new_or`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html#method.try_new_or) for more information.
+     * See the [Rust documentation for `try_new_or`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html#method.try_new_or) for more information.
      */
     static createOrWithLengthAndProvider(provider, locale, length) {
         const diplomatReceive = new diplomatRuntime.DiplomatReceiveBuf(wasm, 5, 4, true);
@@ -128,7 +128,7 @@ export class ListFormatter {
         try {
             if (!diplomatReceive.resultFlag) {
                 const cause = new DataError(diplomatRuntime.internalConstructor, diplomatRuntime.enumDiscriminant(wasm, diplomatReceive.buffer));
-                throw new globalThis.Error('DataError: ' + cause.value, { cause });
+                throw new globalThis.Error('DataError.' + cause.value, { cause });
             }
             return new ListFormatter(diplomatRuntime.internalConstructor, diplomatRuntime.ptrRead(wasm, diplomatReceive.buffer), []);
         }
@@ -141,7 +141,7 @@ export class ListFormatter {
     /**
      * Construct a new ListFormatter instance for And patterns from compiled data.
      *
-     * See the [Rust documentation for `try_new_unit`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html#method.try_new_unit) for more information.
+     * See the [Rust documentation for `try_new_unit`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html#method.try_new_unit) for more information.
      */
     static createUnitWithLength(locale, length) {
         const diplomatReceive = new diplomatRuntime.DiplomatReceiveBuf(wasm, 5, 4, true);
@@ -152,7 +152,7 @@ export class ListFormatter {
         try {
             if (!diplomatReceive.resultFlag) {
                 const cause = new DataError(diplomatRuntime.internalConstructor, diplomatRuntime.enumDiscriminant(wasm, diplomatReceive.buffer));
-                throw new globalThis.Error('DataError: ' + cause.value, { cause });
+                throw new globalThis.Error('DataError.' + cause.value, { cause });
             }
             return new ListFormatter(diplomatRuntime.internalConstructor, diplomatRuntime.ptrRead(wasm, diplomatReceive.buffer), []);
         }
@@ -165,7 +165,7 @@ export class ListFormatter {
     /**
      * Construct a new ListFormatter instance for And patterns
      *
-     * See the [Rust documentation for `try_new_unit`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html#method.try_new_unit) for more information.
+     * See the [Rust documentation for `try_new_unit`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html#method.try_new_unit) for more information.
      */
     static createUnitWithLengthAndProvider(provider, locale, length) {
         const diplomatReceive = new diplomatRuntime.DiplomatReceiveBuf(wasm, 5, 4, true);
@@ -176,7 +176,7 @@ export class ListFormatter {
         try {
             if (!diplomatReceive.resultFlag) {
                 const cause = new DataError(diplomatRuntime.internalConstructor, diplomatRuntime.enumDiscriminant(wasm, diplomatReceive.buffer));
-                throw new globalThis.Error('DataError: ' + cause.value, { cause });
+                throw new globalThis.Error('DataError.' + cause.value, { cause });
             }
             return new ListFormatter(diplomatRuntime.internalConstructor, diplomatRuntime.ptrRead(wasm, diplomatReceive.buffer), []);
         }
@@ -187,15 +187,15 @@ export class ListFormatter {
     }
 
     /**
-     * See the [Rust documentation for `format`](https://docs.rs/icu/latest/icu/list/struct.ListFormatter.html#method.format) for more information.
+     * See the [Rust documentation for `format`](https://docs.rs/icu/2.1.1/icu/list/struct.ListFormatter.html#method.format) for more information.
      */
     format(list) {
         let functionCleanupArena = new diplomatRuntime.CleanupArena();
 
-        const listSlice = diplomatRuntime.DiplomatBuf.strs(wasm, list, "string16");
+        const listSlice = functionCleanupArena.alloc(diplomatRuntime.DiplomatBuf.sliceWrapper(wasm, diplomatRuntime.DiplomatBuf.strs(wasm, list, "string16")));
         const write = new diplomatRuntime.DiplomatWriteBuf(wasm);
 
-    wasm.icu4x_ListFormatter_format_utf16_mv1(this.ffiValue, ...listSlice.splat(), write.buffer);
+    wasm.icu4x_ListFormatter_format_utf16_mv1(this.ffiValue, listSlice.ptr, write.buffer);
 
         try {
             return write.readString8();

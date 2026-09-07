@@ -52,26 +52,43 @@ data class CookieBannerReducerState(
  * Action to dispatch through the `CookieBannerReducerStore` to modify cookie banner reducer item and item details
  * from Tracking protection panel through the reducer.
  */
-@Suppress("UndocumentedPublicClass")
 sealed class CookieBannerReducerAction : Action {
+    /**
+     * Initializes the cookie banner reducer.
+     */
     object InitCookieBannerReducer : CookieBannerReducerAction()
 
+    /**
+     * Toggles the cookie banner exception for a site.
+     */
     data class ToggleCookieBannerException(
         val isCookieBannerHandlingExceptionEnabled: Boolean,
     ) : CookieBannerReducerAction()
 
+    /**
+     * Updates the visibility of the cookie banner reducer item.
+     */
     data class UpdateCookieBannerReducerVisibility(
         val shouldShowCookieBannerItem: Boolean,
     ) : CookieBannerReducerAction()
 
+    /**
+     * Updates the status of the cookie banner reducer.
+     */
     data class UpdateCookieBannerReducerStatus(
         val cookieBannerReducerStatus: CookieBannerReducerStatus?,
     ) : CookieBannerReducerAction()
 
+    /**
+     * Requests to report a site where the cookie banner reducer doesn't work.
+     */
     data class RequestReportSite(
         val siteToReport: String,
     ) : CookieBannerReducerAction()
 
+    /**
+     * Shows or hides the snackbar for reporting a site.
+     */
     data class ShowSnackBarForSiteToReport(
         val isSnackBarVisible: Boolean,
     ) : CookieBannerReducerAction()

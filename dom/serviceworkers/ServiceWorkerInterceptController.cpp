@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerInterceptController.h"
 
+#include "ServiceWorkerManager.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -18,7 +17,6 @@
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsICookieJarSettings.h"
-#include "ServiceWorkerManager.h"
 #include "nsIPrincipal.h"
 #include "nsQueryObject.h"
 
@@ -90,16 +88,20 @@ ServiceWorkerInterceptController::ShouldPrepareForIntercept(
       registration->MaybeScheduleTimeCheckAndUpdate();
     }
 
-    RefPtr<net::HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
+    RequestMode requestMode =
+        InternalRequest::MapChannelToRequestMode(aChannel);
 
-    if (httpChannel &&
+    // Block ServiceWorker interception for ranged request from media, see bug
+    // 1762078. Other request with Range header would be intercepted, ex.
+    // Author-issued fetch() range request.
+    RefPtr<net::HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
+    if (requestMode == RequestMode::No_cors && loadInfo->GetIsMediaRequest() &&
+        httpChannel &&
         httpChannel->GetRequestHead()->HasHeader(net::nsHttp::Range)) {
-      RequestMode requestMode =
-          InternalRequest::MapChannelToRequestMode(aChannel);
       bool mayLoad = nsContentUtils::CheckMayLoad(
           loadInfo->GetLoadingPrincipal(), aChannel,
           /*allowIfInheritsPrincipal*/ false);
-      if (requestMode == RequestMode::No_cors && !mayLoad) {
+      if (!mayLoad) {
         *aShouldIntercept = false;
       }
     }

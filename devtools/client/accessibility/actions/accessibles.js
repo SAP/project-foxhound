@@ -12,7 +12,8 @@ const {
 
 /**
  * Fetch child accessibles for a given accessible object.
- * @param {Object} accessible front
+ *
+ * @param {object} accessible front
  */
 exports.fetchChildren =
   accessible =>

@@ -41,6 +41,8 @@ export var sleep = function (wait) {
 
 export var TestingCrashManager = function (options) {
   CrashManager.call(this, options);
+  // Disable the Glean ping by default.
+  this._disableGleanPing = true;
 };
 
 TestingCrashManager.prototype = {

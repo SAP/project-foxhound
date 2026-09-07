@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,11 +39,8 @@
 #include "nsRect.h"
 #include "nsIContent.h"
 #include "nsServiceManagerUtils.h"
-#include "nsViewManager.h"
-#include "nsView.h"
 #include "nsXULTooltipListener.h"
 #include "nsIConstraintValidation.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/DragEvent.h"
@@ -495,12 +490,6 @@ nsDocShellTreeOwner::GetHasPrimaryContent(bool* aResult) {
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsDocShellTreeOwner::InitWindow(nsIWidget* aParentWidget, int32_t aX,
-                                int32_t aY, int32_t aCX, int32_t aCY) {
-  return NS_ERROR_NULL_POINTER;
-}
-
-NS_IMETHODIMP
 nsDocShellTreeOwner::Destroy() {
   nsCOMPtr<nsIWebBrowserChrome> webBrowserChrome = GetWebBrowserChrome();
   if (webBrowserChrome) {
@@ -598,9 +587,6 @@ nsDocShellTreeOwner::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
   NS_ENSURE_STATE(webBrowserChrome);
   return webBrowserChrome->GetDimensions(aDimensionKind, aX, aY, aCX, aCY);
 }
-
-NS_IMETHODIMP
-nsDocShellTreeOwner::Repaint(bool aForce) { return NS_ERROR_NULL_POINTER; }
 
 NS_IMETHODIMP
 nsDocShellTreeOwner::GetParentWidget(nsIWidget** aParentWidget) {
@@ -822,7 +808,7 @@ nsDocShellTreeOwner::AddChromeListeners() {
         do_QueryInterface(webBrowserChrome));
     if (tooltipListener) {
       mChromeTooltipListener =
-          new ChromeTooltipListener(mWebBrowser, webBrowserChrome);
+          MakeRefPtr<ChromeTooltipListener>(mWebBrowser, webBrowserChrome);
       rv = mChromeTooltipListener->AddChromeListeners();
     }
   }
@@ -992,7 +978,7 @@ ChromeTooltipListener::ChromeTooltipListener(nsWebBrowser* aInBrowser,
       mShowingTooltip(false),
       mTooltipShownOnce(false) {}
 
-ChromeTooltipListener::~ChromeTooltipListener() {}
+ChromeTooltipListener::~ChromeTooltipListener() = default;
 
 nsITooltipTextProvider* ChromeTooltipListener::GetTooltipTextProvider() {
   if (!mTooltipTextProvider) {
@@ -1154,7 +1140,8 @@ nsresult ChromeTooltipListener::MouseMove(Event* aMouseEvent) {
       nsresult rv = NS_NewTimerWithFuncCallback(
           getter_AddRefs(mTooltipTimer), sTooltipCallback, this,
           StaticPrefs::ui_tooltip_delay_ms(), nsITimer::TYPE_ONE_SHOT,
-          "ChromeTooltipListener::MouseMove", GetMainThreadSerialEventTarget());
+          "ChromeTooltipListener::MouseMove"_ns,
+          GetMainThreadSerialEventTarget());
       if (NS_FAILED(rv)) {
         mPossibleTooltipNode = nullptr;
         NS_WARNING("Could not create a timer for tooltip tracking");

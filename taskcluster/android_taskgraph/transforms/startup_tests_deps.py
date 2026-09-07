@@ -22,7 +22,7 @@ def add_android_startup_test_dependencies(config, jobs):
             if job_build_type in t.attributes.get("build-type", "")
         ]
         if matching_tasks:
-            job.setdefault("dependencies", {}).update(
-                {t.label: t.label for t in matching_tasks}
-            )
+            job.setdefault("dependencies", {}).update({
+                t.label: t.label for t in matching_tasks
+            })
         yield job

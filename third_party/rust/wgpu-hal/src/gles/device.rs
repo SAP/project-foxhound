@@ -1,5 +1,11 @@
 use alloc::{
-    borrow::ToOwned, format, string::String, string::ToString as _, sync::Arc, vec, vec::Vec,
+    borrow::{Cow, ToOwned},
+    format,
+    string::String,
+    string::ToString as _,
+    sync::Arc,
+    vec,
+    vec::Vec,
 };
 use core::{cmp::max, convert::TryInto, num::NonZeroU32, ptr, sync::atomic::Ordering};
 
@@ -21,8 +27,8 @@ struct CompilationContext<'a> {
     layout: &'a super::PipelineLayout,
     sampler_map: &'a mut super::SamplerBindMap,
     name_binding_map: &'a mut NameBindingMap,
-    push_constant_items: &'a mut Vec<naga::back::glsl::PushConstantItem>,
-    multiview: Option<NonZeroU32>,
+    immediates_items: &'a mut Vec<naga::back::glsl::ImmediateItem>,
+    multiview_mask: Option<NonZeroU32>,
     clip_distance_count: &'a mut u32,
 }
 
@@ -99,11 +105,16 @@ impl CompilationContext<'_> {
                     unsafe { gl.bind_frag_data_location(program, location.location, &name) }
                 }
                 naga::ShaderStage::Compute => {}
-                naga::ShaderStage::Task | naga::ShaderStage::Mesh => unreachable!(),
+                naga::ShaderStage::Task
+                | naga::ShaderStage::Mesh
+                | naga::ShaderStage::RayGeneration
+                | naga::ShaderStage::AnyHit
+                | naga::ShaderStage::ClosestHit
+                | naga::ShaderStage::Miss => unreachable!(),
             }
         }
 
-        *self.push_constant_items = reflection_info.push_constant_items;
+        *self.immediates_items = reflection_info.immediates_items;
 
         if naga_stage == naga::ShaderStage::Vertex {
             *self.clip_distance_count = reflection_info.clip_distance_count;
@@ -175,7 +186,12 @@ impl super::Device {
             naga::ShaderStage::Vertex => glow::VERTEX_SHADER,
             naga::ShaderStage::Fragment => glow::FRAGMENT_SHADER,
             naga::ShaderStage::Compute => glow::COMPUTE_SHADER,
-            naga::ShaderStage::Task | naga::ShaderStage::Mesh => unreachable!(),
+            naga::ShaderStage::Task
+            | naga::ShaderStage::Mesh
+            | naga::ShaderStage::RayGeneration
+            | naga::ShaderStage::AnyHit
+            | naga::ShaderStage::ClosestHit
+            | naga::ShaderStage::Miss => unreachable!(),
         };
 
         let raw = unsafe { gl.create_shader(target) }.unwrap();
@@ -188,17 +204,17 @@ impl super::Device {
         unsafe { gl.shader_source(raw, shader) };
         unsafe { gl.compile_shader(raw) };
 
-        log::debug!("\tCompiled shader {:?}", raw);
+        log::debug!("\tCompiled shader {raw:?}");
 
         let compiled_ok = unsafe { gl.get_shader_compile_status(raw) };
         let msg = unsafe { gl.get_shader_info_log(raw) };
         if compiled_ok {
             if !msg.is_empty() {
-                log::warn!("\tCompile: {}", msg);
+                log::debug!("\tCompile message: {msg}");
             }
             Ok(raw)
         } else {
-            log::error!("\tShader compilation failed: {}", msg);
+            log::error!("\tShader compilation failed: {msg}");
             unsafe { gl.delete_shader(raw) };
             Err(crate::PipelineError::Linkage(
                 map_naga_stage(naga_stage),
@@ -214,90 +230,103 @@ impl super::Device {
         context: CompilationContext,
         program: glow::Program,
     ) -> Result<glow::Shader, crate::PipelineError> {
-        use naga::back::glsl;
-        let pipeline_options = glsl::PipelineOptions {
-            shader_stage: naga_stage,
-            entry_point: stage.entry_point.to_owned(),
-            multiview: context.multiview,
+        let source = 'outer: {
+            use naga::back::glsl;
+            let pipeline_options = glsl::PipelineOptions {
+                shader_stage: naga_stage,
+                entry_point: stage.entry_point.to_owned(),
+                multiview: context
+                    .multiview_mask
+                    .map(|a| NonZeroU32::new(a.get().count_ones()).unwrap()),
+            };
+
+            let naga = match stage.module.source {
+                super::ShaderModuleSource::Naga(ref naga) => naga,
+                super::ShaderModuleSource::Passthrough { ref source } => {
+                    break 'outer Cow::Borrowed(source);
+                }
+            };
+
+            let (module, info) = naga::back::pipeline_constants::process_overrides(
+                &naga.module,
+                &naga.info,
+                Some((naga_stage, stage.entry_point)),
+                stage.constants,
+            )
+            .map_err(|e| {
+                let msg = format!("{e}");
+                crate::PipelineError::PipelineConstants(map_naga_stage(naga_stage), msg)
+            })?;
+
+            let entry_point_index = module
+                .entry_points
+                .iter()
+                .position(|ep| ep.name.as_str() == stage.entry_point)
+                .ok_or(crate::PipelineError::EntryPoint(naga_stage))?;
+
+            use naga::proc::BoundsCheckPolicy;
+            // The image bounds checks require the TEXTURE_LEVELS feature available in GL core 4.3+.
+            let version = gl.version();
+            let image_check = if !version.is_embedded && (version.major, version.minor) >= (4, 3) {
+                BoundsCheckPolicy::ReadZeroSkipWrite
+            } else {
+                BoundsCheckPolicy::Unchecked
+            };
+
+            // Other bounds check are either provided by glsl or not implemented yet.
+            let policies = naga::proc::BoundsCheckPolicies {
+                index: BoundsCheckPolicy::Unchecked,
+                buffer: BoundsCheckPolicy::Unchecked,
+                image_load: image_check,
+                binding_array: BoundsCheckPolicy::Unchecked,
+            };
+
+            let mut output = String::new();
+            let needs_temp_options = stage.zero_initialize_workgroup_memory
+                != context.layout.naga_options.zero_initialize_workgroup_memory;
+            let mut temp_options;
+            let naga_options = if needs_temp_options {
+                // We use a conditional here, as cloning the naga_options could be expensive
+                // That is, we want to avoid doing that unless we cannot avoid it
+                temp_options = context.layout.naga_options.clone();
+                temp_options.zero_initialize_workgroup_memory =
+                    stage.zero_initialize_workgroup_memory;
+                &temp_options
+            } else {
+                &context.layout.naga_options
+            };
+            let mut writer = glsl::Writer::new(
+                &mut output,
+                &module,
+                &info,
+                naga_options,
+                &pipeline_options,
+                policies,
+            )
+            .map_err(|e| {
+                let msg = format!("{e}");
+                crate::PipelineError::Linkage(map_naga_stage(naga_stage), msg)
+            })?;
+
+            let reflection_info = writer.write().map_err(|e| {
+                let msg = format!("{e}");
+                crate::PipelineError::Linkage(map_naga_stage(naga_stage), msg)
+            })?;
+
+            log::debug!("Naga generated shader:\n{output}");
+
+            context.consume_reflection(
+                gl,
+                &module,
+                info.get_entry_point(entry_point_index),
+                reflection_info,
+                naga_stage,
+                program,
+            );
+            Cow::Owned(output)
         };
 
-        let (module, info) = naga::back::pipeline_constants::process_overrides(
-            &stage.module.naga.module,
-            &stage.module.naga.info,
-            Some((naga_stage, stage.entry_point)),
-            stage.constants,
-        )
-        .map_err(|e| {
-            let msg = format!("{e}");
-            crate::PipelineError::PipelineConstants(map_naga_stage(naga_stage), msg)
-        })?;
-
-        let entry_point_index = module
-            .entry_points
-            .iter()
-            .position(|ep| ep.name.as_str() == stage.entry_point)
-            .ok_or(crate::PipelineError::EntryPoint(naga_stage))?;
-
-        use naga::proc::BoundsCheckPolicy;
-        // The image bounds checks require the TEXTURE_LEVELS feature available in GL core 4.3+.
-        let version = gl.version();
-        let image_check = if !version.is_embedded && (version.major, version.minor) >= (4, 3) {
-            BoundsCheckPolicy::ReadZeroSkipWrite
-        } else {
-            BoundsCheckPolicy::Unchecked
-        };
-
-        // Other bounds check are either provided by glsl or not implemented yet.
-        let policies = naga::proc::BoundsCheckPolicies {
-            index: BoundsCheckPolicy::Unchecked,
-            buffer: BoundsCheckPolicy::Unchecked,
-            image_load: image_check,
-            binding_array: BoundsCheckPolicy::Unchecked,
-        };
-
-        let mut output = String::new();
-        let needs_temp_options = stage.zero_initialize_workgroup_memory
-            != context.layout.naga_options.zero_initialize_workgroup_memory;
-        let mut temp_options;
-        let naga_options = if needs_temp_options {
-            // We use a conditional here, as cloning the naga_options could be expensive
-            // That is, we want to avoid doing that unless we cannot avoid it
-            temp_options = context.layout.naga_options.clone();
-            temp_options.zero_initialize_workgroup_memory = stage.zero_initialize_workgroup_memory;
-            &temp_options
-        } else {
-            &context.layout.naga_options
-        };
-        let mut writer = glsl::Writer::new(
-            &mut output,
-            &module,
-            &info,
-            naga_options,
-            &pipeline_options,
-            policies,
-        )
-        .map_err(|e| {
-            let msg = format!("{e}");
-            crate::PipelineError::Linkage(map_naga_stage(naga_stage), msg)
-        })?;
-
-        let reflection_info = writer.write().map_err(|e| {
-            let msg = format!("{e}");
-            crate::PipelineError::Linkage(map_naga_stage(naga_stage), msg)
-        })?;
-
-        log::debug!("Naga generated shader:\n{}", output);
-
-        context.consume_reflection(
-            gl,
-            &module,
-            info.get_entry_point(entry_point_index),
-            reflection_info,
-            naga_stage,
-            program,
-        );
-
-        unsafe { Self::compile_shader(gl, &output, naga_stage, stage.module.label.as_deref()) }
+        unsafe { Self::compile_shader(gl, &source, naga_stage, stage.module.label.as_deref()) }
     }
 
     unsafe fn create_pipeline<'a>(
@@ -306,19 +335,21 @@ impl super::Device {
         shaders: ArrayVec<ShaderStage<'a>, { crate::MAX_CONCURRENT_SHADER_STAGES }>,
         layout: &super::PipelineLayout,
         #[cfg_attr(target_arch = "wasm32", allow(unused))] label: Option<&str>,
-        multiview: Option<NonZeroU32>,
+        multiview_mask: Option<NonZeroU32>,
     ) -> Result<Arc<super::PipelineInner>, crate::PipelineError> {
         let mut program_stages = ArrayVec::new();
-        let mut group_to_binding_to_slot = Vec::with_capacity(layout.group_infos.len());
-        for group in &*layout.group_infos {
-            group_to_binding_to_slot.push(group.binding_to_slot.clone());
-        }
+        let group_to_binding_to_slot = layout
+            .group_infos
+            .iter()
+            .map(|group| group.as_ref().map(|group| group.binding_to_slot.clone()))
+            .collect::<Vec<_>>();
         for &(naga_stage, stage) in &shaders {
             program_stages.push(super::ProgramStage {
                 naga_stage: naga_stage.to_owned(),
                 shader_id: stage.module.id,
                 entry_point: stage.entry_point.to_owned(),
                 zero_initialize_workgroup_memory: stage.zero_initialize_workgroup_memory,
+                constant_hash: Self::create_constant_hash(stage),
             });
         }
         let mut guard = self
@@ -339,7 +370,7 @@ impl super::Device {
                     shaders,
                     layout,
                     label,
-                    multiview,
+                    multiview_mask,
                     self.shared.shading_language_version,
                     self.shared.private_caps,
                 )
@@ -350,12 +381,23 @@ impl super::Device {
         Ok(program)
     }
 
+    fn create_constant_hash(stage: &crate::ProgrammableStage<super::ShaderModule>) -> Vec<u8> {
+        let mut buf: Vec<u8> = Vec::new();
+
+        for (key, value) in stage.constants.iter() {
+            buf.extend_from_slice(key.as_bytes());
+            buf.extend_from_slice(&value.to_ne_bytes());
+        }
+
+        buf
+    }
+
     unsafe fn create_program<'a>(
         gl: &glow::Context,
         shaders: ArrayVec<ShaderStage<'a>, { crate::MAX_CONCURRENT_SHADER_STAGES }>,
         layout: &super::PipelineLayout,
         #[cfg_attr(target_arch = "wasm32", allow(unused))] label: Option<&str>,
-        multiview: Option<NonZeroU32>,
+        multiview_mask: Option<NonZeroU32>,
         glsl_version: naga::back::glsl::Version,
         private_caps: PrivateCapabilities,
     ) -> Result<Arc<super::PipelineInner>, crate::PipelineError> {
@@ -373,7 +415,7 @@ impl super::Device {
         }
 
         let mut name_binding_map = NameBindingMap::default();
-        let mut push_constant_items = ArrayVec::<_, { crate::MAX_CONCURRENT_SHADER_STAGES }>::new();
+        let mut immediates_items = ArrayVec::<_, { crate::MAX_CONCURRENT_SHADER_STAGES }>::new();
         let mut sampler_map = [None; super::MAX_TEXTURE_SLOTS];
         let mut has_stages = wgt::ShaderStages::empty();
         let mut shaders_to_delete = ArrayVec::<_, { crate::MAX_CONCURRENT_SHADER_STAGES }>::new();
@@ -382,15 +424,15 @@ impl super::Device {
         for &(naga_stage, stage) in &shaders {
             has_stages |= map_naga_stage(naga_stage);
             let pc_item = {
-                push_constant_items.push(Vec::new());
-                push_constant_items.last_mut().unwrap()
+                immediates_items.push(Vec::new());
+                immediates_items.last_mut().unwrap()
             };
             let context = CompilationContext {
                 layout,
                 sampler_map: &mut sampler_map,
                 name_binding_map: &mut name_binding_map,
-                push_constant_items: pc_item,
-                multiview,
+                immediates_items: pc_item,
+                multiview_mask,
                 clip_distance_count: &mut clip_distance_count,
             };
 
@@ -401,7 +443,7 @@ impl super::Device {
         // Create empty fragment shader if only vertex shader is present
         if has_stages == wgt::ShaderStages::VERTEX {
             let shader_src = format!("#version {glsl_version}\n void main(void) {{}}",);
-            log::info!("Only vertex shader is present. Creating an empty fragment shader",);
+            log::debug!("Only vertex shader is present. Creating an empty fragment shader",);
             let shader = unsafe {
                 Self::compile_shader(
                     gl,
@@ -422,7 +464,7 @@ impl super::Device {
             unsafe { gl.delete_shader(shader) };
         }
 
-        log::debug!("\tLinked program {:?}", program);
+        log::debug!("\tLinked program {program:?}");
 
         let linked_ok = unsafe { gl.get_program_link_status(program) };
         let msg = unsafe { gl.get_program_info_log(program) };
@@ -430,7 +472,7 @@ impl super::Device {
             return Err(crate::PipelineError::Linkage(has_stages, msg));
         }
         if !msg.is_empty() {
-            log::warn!("\tLink: {}", msg);
+            log::debug!("\tLink message: {msg}");
         }
 
         if !private_caps.contains(PrivateCapabilities::SHADER_BINDING_LAYOUT) {
@@ -438,7 +480,7 @@ impl super::Device {
             // in the shader. We can't remap storage buffers this way.
             unsafe { gl.use_program(Some(program)) };
             for (ref name, (register, slot)) in name_binding_map {
-                log::trace!("Get binding {:?} from program {:?}", name, program);
+                log::trace!("Get binding {name:?} from program {program:?}");
                 match register {
                     super::BindingRegister::UniformBuffers => {
                         let index = unsafe { gl.get_uniform_block_index(program, name) }.unwrap();
@@ -448,11 +490,7 @@ impl super::Device {
                     super::BindingRegister::StorageBuffers => {
                         let index =
                             unsafe { gl.get_shader_storage_block_index(program, name) }.unwrap();
-                        log::error!(
-                            "Unable to re-map shader storage block {} to {}",
-                            name,
-                            index
-                        );
+                        log::error!("Unable to re-map shader storage block {name} to {index}");
                         return Err(crate::DeviceError::Lost.into());
                     }
                     super::BindingRegister::Textures | super::BindingRegister::Images => {
@@ -465,27 +503,24 @@ impl super::Device {
 
         let mut uniforms = ArrayVec::new();
 
-        for (stage_idx, stage_items) in push_constant_items.into_iter().enumerate() {
+        for stage_items in immediates_items {
             for item in stage_items {
-                let naga_module = &shaders[stage_idx].1.module.naga.module;
-                let type_inner = &naga_module.types[item.ty].inner;
-
                 let location = unsafe { gl.get_uniform_location(program, &item.access_path) };
 
                 log::trace!(
-                    "push constant item: name={}, ty={:?}, offset={}, location={:?}",
+                    "immediate data item: name={}, ty={:?}, offset={}, location={:?}",
                     item.access_path,
-                    type_inner,
+                    item.ty,
                     item.offset,
                     location,
                 );
 
                 if let Some(location) = location {
-                    uniforms.push(super::PushConstantDesc {
+                    uniforms.push(super::ImmediateDesc {
                         location,
                         offset: item.offset,
-                        size_bytes: type_inner.size(naga_module.to_ctx()),
-                        ty: type_inner.clone(),
+                        size_bytes: item.size_bytes,
+                        ty: item.ty,
                     });
                 }
             }
@@ -502,7 +537,7 @@ impl super::Device {
             program,
             sampler_map,
             first_instance_location,
-            push_constant_descs: uniforms,
+            immediates_descs: uniforms,
             clip_distance_count,
         }))
     }
@@ -536,8 +571,11 @@ impl crate::Device for super::Device {
                 target,
                 size: desc.size,
                 map_flags: 0,
-                data: Some(Arc::new(MaybeMutex::new(vec![0; desc.size as usize]))),
-                offset_of_current_mapping: Arc::new(MaybeMutex::new(0)),
+                map_state: Arc::new(MaybeMutex::new(super::BufferMapState {
+                    mapped: false,
+                    data: Some(vec![0; desc.size as usize]),
+                    offset_of_current_mapping: 0,
+                })),
             });
         }
 
@@ -624,7 +662,7 @@ impl crate::Device for super::Device {
         }
 
         let data = if emulate_map && desc.usage.contains(wgt::BufferUses::MAP_READ) {
-            Some(Arc::new(MaybeMutex::new(vec![0; desc.size as usize])))
+            Some(vec![0; desc.size as usize])
         } else {
             None
         };
@@ -636,8 +674,11 @@ impl crate::Device for super::Device {
             target,
             size: desc.size,
             map_flags,
-            data,
-            offset_of_current_mapping: Arc::new(MaybeMutex::new(0)),
+            map_state: Arc::new(MaybeMutex::new(super::BufferMapState {
+                mapped: false,
+                data,
+                offset_of_current_mapping: 0,
+            })),
         })
     }
 
@@ -662,27 +703,43 @@ impl crate::Device for super::Device {
         let is_coherent = buffer.map_flags & glow::MAP_COHERENT_BIT != 0;
         let ptr = match buffer.raw {
             None => {
-                let mut vec = lock(buffer.data.as_ref().unwrap());
+                let mut map_state = lock(&buffer.map_state);
+                let vec = map_state.data.as_mut().unwrap();
                 let slice = &mut vec.as_mut_slice()[range.start as usize..range.end as usize];
                 slice.as_mut_ptr()
             }
             Some(raw) => {
                 let gl = &self.shared.context.lock();
                 unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
-                let ptr = if let Some(ref map_read_allocation) = buffer.data {
-                    let mut guard = lock(map_read_allocation);
-                    let slice = guard.as_mut_slice();
+                let mut map_state = lock(&buffer.map_state);
+                let ptr = if let Some(map_read_allocation) = map_state.data.as_mut() {
+                    let slice = map_read_allocation.as_mut_slice();
                     unsafe { self.shared.get_buffer_sub_data(gl, buffer.target, 0, slice) };
                     slice.as_mut_ptr()
                 } else {
-                    *lock(&buffer.offset_of_current_mapping) = range.start;
-                    unsafe {
-                        gl.map_buffer_range(
-                            buffer.target,
-                            range.start as i32,
-                            (range.end - range.start) as i32,
-                            buffer.map_flags,
-                        )
+                    map_state.offset_of_current_mapping = range.start;
+                    // glMapBufferRange throws an error if length is 0.
+                    // We want to allow mapping 0-sized buffer slices, so perform a workaround
+                    // if the range length is 0. The resulting pointer must never be dereferenced.
+                    let range_start: i32 = range
+                        .start
+                        .try_into()
+                        .expect("Buffer range invalid for GLES");
+                    let range_length: i32 = (range.end - range.start)
+                        .try_into()
+                        .expect("Buffer range invalid for GLES");
+                    if range_length != 0 {
+                        map_state.mapped = true;
+                        unsafe {
+                            gl.map_buffer_range(
+                                buffer.target,
+                                range_start,
+                                range_length,
+                                buffer.map_flags,
+                            )
+                        }
+                    } else {
+                        ptr::dangling_mut()
                     }
                 };
                 unsafe { gl.bind_buffer(buffer.target, None) };
@@ -695,13 +752,16 @@ impl crate::Device for super::Device {
         })
     }
     unsafe fn unmap_buffer(&self, buffer: &super::Buffer) {
-        if let Some(raw) = buffer.raw {
-            if buffer.data.is_none() {
-                let gl = &self.shared.context.lock();
-                unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
-                unsafe { gl.unmap_buffer(buffer.target) };
-                unsafe { gl.bind_buffer(buffer.target, None) };
-                *lock(&buffer.offset_of_current_mapping) = 0;
+        let gl = &self.shared.context.lock();
+        let mut map_state = lock(&buffer.map_state);
+        if core::mem::replace(&mut map_state.mapped, false) {
+            if let Some(raw) = buffer.raw {
+                if map_state.data.is_none() {
+                    unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
+                    unsafe { gl.unmap_buffer(buffer.target) };
+                    unsafe { gl.bind_buffer(buffer.target, None) };
+                    map_state.offset_of_current_mapping = 0;
+                }
             }
         }
     }
@@ -709,19 +769,22 @@ impl crate::Device for super::Device {
     where
         I: Iterator<Item = crate::MemoryRange>,
     {
-        if let Some(raw) = buffer.raw {
-            if buffer.data.is_none() {
-                let gl = &self.shared.context.lock();
-                unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
-                for range in ranges {
-                    let offset_of_current_mapping = *lock(&buffer.offset_of_current_mapping);
-                    unsafe {
-                        gl.flush_mapped_buffer_range(
-                            buffer.target,
-                            (range.start - offset_of_current_mapping) as i32,
-                            (range.end - range.start) as i32,
-                        )
-                    };
+        let gl = &self.shared.context.lock();
+        let map_state = lock(&buffer.map_state);
+        if map_state.mapped {
+            if let Some(raw) = buffer.raw {
+                if map_state.data.is_none() {
+                    unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
+                    for range in ranges {
+                        let offset_of_current_mapping = map_state.offset_of_current_mapping;
+                        unsafe {
+                            gl.flush_mapped_buffer_range(
+                                buffer.target,
+                                (range.start - offset_of_current_mapping) as i32,
+                                (range.end - range.start) as i32,
+                            )
+                        };
+                    }
                 }
             }
         }
@@ -738,7 +801,8 @@ impl crate::Device for super::Device {
 
         let render_usage = wgt::TextureUses::COLOR_TARGET
             | wgt::TextureUses::DEPTH_STENCIL_WRITE
-            | wgt::TextureUses::DEPTH_STENCIL_READ;
+            | wgt::TextureUses::DEPTH_STENCIL_READ
+            | wgt::TextureUses::TRANSIENT;
         let format_desc = self.shared.describe_texture_format(desc.format);
 
         let inner = if render_usage.contains(desc.usage)
@@ -822,7 +886,7 @@ impl crate::Device for super::Device {
                         )
                     } else if target == glow::TEXTURE_3D {
                         let mut width = desc.size.width;
-                        let mut height = desc.size.width;
+                        let mut height = desc.size.height;
                         let mut depth = desc.size.depth_or_array_layers;
                         for i in 0..desc.mip_level_count {
                             gl.tex_image_3d(
@@ -843,7 +907,7 @@ impl crate::Device for super::Device {
                         }
                     } else {
                         let mut width = desc.size.width;
-                        let mut height = desc.size.width;
+                        let mut height = desc.size.height;
                         for i in 0..desc.mip_level_count {
                             gl.tex_image_3d(
                                 target,
@@ -889,7 +953,7 @@ impl crate::Device for super::Device {
                         )
                     } else if target == glow::TEXTURE_CUBE_MAP {
                         let mut width = desc.size.width;
-                        let mut height = desc.size.width;
+                        let mut height = desc.size.height;
                         for i in 0..desc.mip_level_count {
                             for face in [
                                 glow::TEXTURE_CUBE_MAP_POSITIVE_X,
@@ -916,7 +980,7 @@ impl crate::Device for super::Device {
                         }
                     } else {
                         let mut width = desc.size.width;
-                        let mut height = desc.size.width;
+                        let mut height = desc.size.height;
                         for i in 0..desc.mip_level_count {
                             gl.tex_image_2d(
                                 target,
@@ -1177,6 +1241,11 @@ impl crate::Device for super::Device {
         let mut binding_map = glsl::BindingMap::default();
 
         for (group_index, bg_layout) in desc.bind_group_layouts.iter().enumerate() {
+            let Some(bg_layout) = bg_layout else {
+                group_infos.push(None);
+                continue;
+            };
+
             // create a vector with the size enough to hold all the bindings, filled with `!0`
             let mut binding_to_slot = vec![
                 !0;
@@ -1215,10 +1284,10 @@ impl crate::Device for super::Device {
                 *counter += entry.count.map_or(1, |c| c.get() as u8);
             }
 
-            group_infos.push(super::BindGroupLayoutInfo {
+            group_infos.push(Some(super::BindGroupLayoutInfo {
                 entries: Arc::clone(&bg_layout.entries),
                 binding_to_slot,
-            });
+            }));
         }
 
         self.counters.pipeline_layouts.add(1);
@@ -1338,16 +1407,18 @@ impl crate::Device for super::Device {
         self.counters.shader_modules.add(1);
 
         Ok(super::ShaderModule {
-            naga: match shader {
-                crate::ShaderInput::SpirV(_) => {
-                    panic!("`Features::SPIRV_SHADER_PASSTHROUGH` is not enabled")
-                }
-                crate::ShaderInput::Msl { .. } => {
-                    panic!("`Features::MSL_SHADER_PASSTHROUGH` is not enabled")
-                }
-                crate::ShaderInput::Naga(naga) => naga,
-                crate::ShaderInput::Dxil { .. } | crate::ShaderInput::Hlsl { .. } => {
-                    panic!("`Features::HLSL_DXIL_SHADER_PASSTHROUGH` is not enabled")
+            source: match shader {
+                crate::ShaderInput::Naga(naga) => super::ShaderModuleSource::Naga(naga),
+                // The backend doesn't yet expose this feature so it should be fine
+                crate::ShaderInput::Glsl { shader, .. } => super::ShaderModuleSource::Passthrough {
+                    source: shader.to_owned(),
+                },
+                crate::ShaderInput::SpirV(_)
+                | crate::ShaderInput::MetalLib { .. }
+                | crate::ShaderInput::Msl { .. }
+                | crate::ShaderInput::Dxil { .. }
+                | crate::ShaderInput::Hlsl { .. } => {
+                    unreachable!()
                 }
             },
             label: desc.label.map(|str| str.to_string()),
@@ -1367,32 +1438,45 @@ impl crate::Device for super::Device {
             super::PipelineCache,
         >,
     ) -> Result<super::RenderPipeline, crate::PipelineError> {
+        let (vertex_stage, vertex_buffers) = match &desc.vertex_processor {
+            crate::VertexProcessor::Standard {
+                vertex_buffers,
+                ref vertex_stage,
+            } => (vertex_stage, vertex_buffers),
+            crate::VertexProcessor::Mesh { .. } => unreachable!(),
+        };
         let gl = &self.shared.context.lock();
         let mut shaders = ArrayVec::new();
-        shaders.push((naga::ShaderStage::Vertex, &desc.vertex_stage));
+        shaders.push((naga::ShaderStage::Vertex, vertex_stage));
         if let Some(ref fs) = desc.fragment_stage {
             shaders.push((naga::ShaderStage::Fragment, fs));
         }
-        let inner =
-            unsafe { self.create_pipeline(gl, shaders, desc.layout, desc.label, desc.multiview) }?;
+        let inner = unsafe {
+            self.create_pipeline(gl, shaders, desc.layout, desc.label, desc.multiview_mask)
+        }?;
 
         let (vertex_buffers, vertex_attributes) = {
             let mut buffers = Vec::new();
             let mut attributes = Vec::new();
-            for (index, vb_layout) in desc.vertex_buffers.iter().enumerate() {
-                buffers.push(super::VertexBufferDesc {
-                    step: vb_layout.step_mode,
-                    stride: vb_layout.array_stride as u32,
-                });
-                for vat in vb_layout.attributes.iter() {
-                    let format_desc = conv::describe_vertex_format(vat.format);
-                    attributes.push(super::AttributeDesc {
-                        location: vat.shader_location,
-                        offset: vat.offset as u32,
-                        buffer_index: index as u32,
-                        format_desc,
-                    });
-                }
+            for (index, vb_layout) in vertex_buffers.iter().enumerate() {
+                let vb_desc = if let Some(vb_layout) = vb_layout {
+                    for vat in vb_layout.attributes.iter() {
+                        let format_desc = conv::describe_vertex_format(vat.format);
+                        attributes.push(super::AttributeDesc {
+                            location: vat.shader_location,
+                            offset: vat.offset as u32,
+                            buffer_index: index as u32,
+                            format_desc,
+                        });
+                    }
+                    Some(super::VertexBufferDesc {
+                        step: vb_layout.step_mode,
+                        stride: vb_layout.array_stride as u32,
+                    })
+                } else {
+                    None
+                };
+                buffers.push(vb_desc);
             }
             (buffers.into_boxed_slice(), attributes.into_boxed_slice())
         };
@@ -1419,8 +1503,8 @@ impl crate::Device for super::Device {
             vertex_attributes,
             color_targets,
             depth: desc.depth_stencil.as_ref().map(|ds| super::DepthState {
-                function: conv::map_compare_func(ds.depth_compare),
-                mask: ds.depth_write_enabled,
+                function: conv::map_compare_func(ds.depth_compare.unwrap_or_default()),
+                mask: ds.depth_write_enabled.unwrap_or_default(),
             }),
             depth_bias: desc
                 .depth_stencil
@@ -1433,16 +1517,6 @@ impl crate::Device for super::Device {
                 .map(|ds| conv::map_stencil(&ds.stencil)),
             alpha_to_coverage_enabled: desc.multisample.alpha_to_coverage_enabled,
         })
-    }
-    unsafe fn create_mesh_pipeline(
-        &self,
-        _desc: &crate::MeshPipelineDescriptor<
-            <Self::A as crate::Api>::PipelineLayout,
-            <Self::A as crate::Api>::ShaderModule,
-            <Self::A as crate::Api>::PipelineCache,
-        >,
-    ) -> Result<<Self::A as crate::Api>::RenderPipeline, crate::PipelineError> {
-        unreachable!()
     }
 
     unsafe fn destroy_render_pipeline(&self, pipeline: super::RenderPipeline) {
@@ -1572,7 +1646,7 @@ impl crate::Device for super::Device {
         &self,
         fence: &super::Fence,
         wait_value: crate::FenceValue,
-        timeout_ms: u32,
+        timeout: Option<core::time::Duration>,
     ) -> Result<bool, crate::DeviceError> {
         if fence.satisfied(wait_value) {
             return Ok(true);
@@ -1586,7 +1660,9 @@ impl crate::Device for super::Device {
         let timeout_ns = if cfg!(any(webgl, Emscripten)) {
             0
         } else {
-            (timeout_ms as u64 * 1_000_000).min(!0u32 as u64)
+            timeout
+                .map(|t| t.as_nanos().min(u32::MAX as u128) as u32)
+                .unwrap_or(u32::MAX)
         };
         fence.wait(gl, wait_value, timeout_ns)
     }

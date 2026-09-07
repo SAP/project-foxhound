@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -18,5 +18,9 @@ assert.sameValue(explicit.nanoseconds, 1, "default smallest unit is nanoseconds 
 const implicit = earlier.until(later);
 assert.sameValue(implicit.hours, 6, "default largest unit is hours");
 assert.sameValue(implicit.nanoseconds, 1, "default smallest unit is nanoseconds and no rounding");
+
+const lambda = earlier.until(later, () => {});
+assert.sameValue(lambda.hours, 6, "default largest unit is hours");
+assert.sameValue(lambda.nanoseconds, 1, "default smallest unit is nanoseconds and no rounding");
 
 reportCompare(0, 0);

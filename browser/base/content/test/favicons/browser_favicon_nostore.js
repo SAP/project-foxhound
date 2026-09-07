@@ -46,7 +46,7 @@ async function later_addition(iconUrl) {
   });
 
   let iconPromise = waitForFaviconMessage(true, iconUrl);
-  await ContentTask.spawn(gBrowser.selectedBrowser, iconUrl, href => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [iconUrl], href => {
     let doc = content.document;
     let head = doc.head;
     let link = doc.createElement("link");

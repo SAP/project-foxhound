@@ -22,9 +22,7 @@ export var ContentCollector = {
 
   receiveMessage(aMessage) {
     switch (aMessage.name) {
-      case "browser-test:collect-request":
-        Services.obs.notifyObservers(null, "memory-pressure", "heap-minimize");
-
+      case "browser-test:collect-request": {
         Cu.forceGC();
         Cu.forceCC();
 
@@ -47,6 +45,7 @@ export var ContentCollector = {
         });
 
         break;
+      }
     }
   },
 

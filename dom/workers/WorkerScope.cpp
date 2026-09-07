@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,10 @@
 #include "mozilla/dom/WorkerScope.h"
 
 #include <stdio.h>
+
 #include <new>
 #include <utility>
+
 #include "Crypto.h"
 #include "GeckoProfiler.h"
 #include "MainThreadUtils.h"
@@ -30,16 +30,12 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/AutoEntryScript.h"
-#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -50,23 +46,20 @@
 #include "mozilla/dom/Console.h"
 #include "mozilla/dom/CookieStore.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/DebuggerNotification.h"
 #include "mozilla/dom/DebuggerNotificationBinding.h"
 #include "mozilla/dom/DebuggerNotificationManager.h"
 #include "mozilla/dom/DedicatedWorkerGlobalScopeBinding.h"
-#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/IDBFactory.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/MessagePortBinding.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
-#include "mozilla/dom/WebTaskSchedulerWorker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/ServiceWorker.h"
@@ -78,25 +71,30 @@
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/SharedWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
-#include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TestUtils.h"
+#include "mozilla/dom/TimeoutHandler.h"
+#include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
+#include "mozilla/dom/VsyncWorkerChild.h"
+#include "mozilla/dom/WebTaskSchedulerWorker.h"
 #include "mozilla/dom/WindowOrWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerDebuggerGlobalScopeBinding.h"
+#include "mozilla/dom/WorkerDocumentListener.h"
 #include "mozilla/dom/WorkerGlobalScopeBinding.h"
 #include "mozilla/dom/WorkerLocation.h"
 #include "mozilla/dom/WorkerNavigator.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/WorkerDocumentListener.h"
-#include "mozilla/dom/VsyncWorkerChild.h"
 #include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/dom/cache/Types.h"
 #include "mozilla/extensions/ExtensionBrowser.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/Rect.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -110,8 +108,8 @@
 #include "nsJSUtils.h"
 #include "nsLiteralString.h"
 #include "nsQueryObject.h"
-#include "nsReadableUtils.h"
 #include "nsRFPService.h"
+#include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsTLiteralString.h"
@@ -194,7 +192,7 @@ bool WorkerScriptTimeoutHandler::Call(const char* aExecutionReason) {
 
 namespace workerinternals {
 void NamedWorkerGlobalScopeMixin::GetName(DOMString& aName) const {
-  aName.AsAString() = mName;
+  aName.SetKnownLiveString(mName);
 }
 static const char* GetTimeoutReasonString(Timeout* aTimeout) {
   switch (aTimeout->mReason) {
@@ -209,9 +207,8 @@ static const char* GetTimeoutReasonString(Timeout* aTimeout) {
       return "AbortSignal timeout";
     case Timeout::Reason::eDelayedWebTaskTimeout:
       return "delayedWebTaskCallback handler (timed out)";
-    default:
-      MOZ_CRASH("Unexpected enum value");
-      return "";
+    case Timeout::Reason::eJSTimeout:
+      return "JS timeout";
   }
   MOZ_CRASH("Unexpected enum value");
   return "";
@@ -270,7 +267,8 @@ WorkerGlobalScopeBase::WorkerGlobalScopeBase(
       mClientSource(std::move(aClientSource)),
       mSerialEventTarget(aWorkerPrivate->HybridEventTarget()) {
   mTimeoutManager = MakeUnique<dom::TimeoutManager>(
-      *this, /* not used on workers */ 0, mSerialEventTarget);
+      *this, /* not used on workers */ 0, mSerialEventTarget,
+      mWorkerPrivate->IsChromeWorker());
   LOG(("WorkerGlobalScopeBase::WorkerGlobalScopeBase [%p]", this));
   MOZ_ASSERT(mWorkerPrivate);
 #ifdef DEBUG
@@ -285,7 +283,7 @@ WorkerGlobalScopeBase::WorkerGlobalScopeBase(
 
   // In workers, each DETH must have an owner. Because the global scope doesn't
   // have one, let's set it as owner of itself.
-  BindToOwner(static_cast<nsIGlobalObject*>(this));
+  BindToGlobal(static_cast<nsIGlobalObject*>(this));
 }
 
 WorkerGlobalScopeBase::~WorkerGlobalScopeBase() = default;
@@ -438,7 +436,7 @@ void WorkerGlobalScopeBase::Control(
 }
 
 nsresult WorkerGlobalScopeBase::Dispatch(
-    already_AddRefed<nsIRunnable>&& aRunnable) const {
+    already_AddRefed<nsIRunnable> aRunnable) const {
   return SerialEventTarget()->Dispatch(std::move(aRunnable),
                                        NS_DISPATCH_NORMAL);
 }
@@ -571,7 +569,6 @@ already_AddRefed<CacheStorage> WorkerGlobalScope::GetCaches(ErrorResult& aRv) {
   if (!mCacheStorage) {
     mCacheStorage = CacheStorage::CreateOnWorker(cache::DEFAULT_NAMESPACE, this,
                                                  mWorkerPrivate, aRv);
-    mWorkerPrivate->NotifyStorageKeyUsed();
   }
 
   RefPtr<CacheStorage> ref = mCacheStorage;
@@ -654,7 +651,7 @@ void WorkerGlobalScope::SetOnerror(OnErrorEventHandlerNonNull* aHandler) {
 
 void WorkerGlobalScope::ImportScripts(
     JSContext* aCx, const Sequence<OwningTrustedScriptURLOrString>& aScriptURLs,
-    ErrorResult& aRv) {
+    nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
   AssertIsOnWorkerThread();
 
   UniquePtr<SerializedStackHolder> stack;
@@ -671,7 +668,7 @@ void WorkerGlobalScope::ImportScripts(
       const nsAString* compliantString =
           TrustedTypeUtils::GetTrustedTypesCompliantString(
               scriptURL, sink, kTrustedTypesOnlySinkGroup, *pinnedGlobal,
-              nullptr, compliantStringHolder, aRv);
+              aSubjectPrincipal, compliantStringHolder, aRv);
       if (aRv.Failed()) {
         return;
       }
@@ -886,8 +883,6 @@ already_AddRefed<IDBFactory> WorkerGlobalScope::GetIndexedDB(
     mIndexedDB = indexedDB;
   }
 
-  mWorkerPrivate->NotifyStorageKeyUsed();
-
   return indexedDB.forget();
 }
 
@@ -1020,9 +1015,8 @@ bool WorkerGlobalScope::IsEligibleForMessaging() {
 }
 
 void WorkerGlobalScope::ReportToConsole(
-    uint32_t aErrorFlags, const nsCString& aCategory,
-    nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
-    const nsTArray<nsString>& aParams,
+    uint32_t aErrorFlags, const nsCString& aCategory, PropertiesFile aFile,
+    const nsCString& aMessageName, const nsTArray<nsString>& aParams,
     const mozilla::SourceLocation& aLocation) {
   WorkerPrivate::ReportErrorToConsole(aErrorFlags, aCategory, aFile,
                                       aMessageName, aParams, aLocation);
@@ -1199,9 +1193,6 @@ void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
     return;
   }
 
-  nsTArray<FrameRequest> callbacks;
-  mFrameRequestManager.Take(callbacks);
-
   RefPtr<DedicatedWorkerGlobalScope> scope(this);
   CallbackDebuggerNotificationGuard guard(
       scope, DebuggerNotificationType::RequestAnimationFrameCallback);
@@ -1221,8 +1212,10 @@ void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
         timeStamp, 0, this->GetRTPCallerType());
   }
 
-  for (auto& callback : callbacks) {
-    if (mFrameRequestManager.IsCanceled(callback.mHandle)) {
+  FrameRequestManager::FiringCallbacks callbacks(mFrameRequestManager);
+
+  for (auto& callback : callbacks.mList) {
+    if (callback.mCancelled) {
       continue;
     }
 

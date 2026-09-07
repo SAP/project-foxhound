@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,12 +5,9 @@
 #ifndef nsFaviconService_h_
 #define nsFaviconService_h_
 
-#include <utility>
-
 #include "Database.h"
 #include "FaviconHelpers.h"
 #include "imgITools.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/storage.h"
 #include "nsCOMPtr.h"
@@ -66,19 +62,6 @@ class nsFaviconService final : public nsIFaviconService {
   nsresult OptimizeIconSizes(mozilla::places::IconData& aIcon);
 
   /**
-   * Obtains the favicon data asynchronously.
-   *
-   * @param aFaviconSpec
-   *        The spec of the URI representing the favicon we are looking for.
-   * @param aCallback
-   *        The callback where results or errors will be dispatch to.  In the
-   *        returned result, the favicon binary data will be at index 0, and the
-   *        mime type will be at index 1.
-   */
-  nsresult GetFaviconDataAsync(const nsCString& aFaviconSpec,
-                               mozIStorageStatementCallback* aCallback);
-
-  /**
    * Retrieves the favicon URI and data URL associated to the given page, if
    * any. If the page icon is not available, it will try to return the root
    * domain icon data, when it's known.
@@ -88,11 +71,15 @@ class nsFaviconService final : public nsIFaviconService {
    * @param [optional] aPreferredWidth
    *        The preferred icon width, skip or pass 0 for the default value,
    *        set through setDefaultIconURIPreferredSize.
+   * @param [optional] aOnConcurrentConn
+   *        Whether the icon retrieval should be done on ConcurrentConnection
+   *        rather than the main DB connection. Defaults to false.
    *
    * @return MozPromise<nsIFavicon, nsresult>
    */
   RefPtr<mozilla::places::FaviconPromise> AsyncGetFaviconForPage(
-      nsIURI* aPageURI, uint16_t aPreferredWidth = 0);
+      nsIURI* aPageURI, uint16_t aPreferredWidth = 0,
+      bool aOnConcurrentConn = false);
 
   /**
    * Try to copy the favicons associated to the aFromURI to aToURI.

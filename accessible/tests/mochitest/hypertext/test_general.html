@@ -36,10 +36,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=428248
       // Just test the link's name to make sure we get the right one.
       is(linkAcc.getAnchor(0).name, aName, "Wrong name for " + aID + "!");
     }
-
-    // gA11yEventDumpToConsole = true;
     function doPreTest() {
-      waitForImageMap("imgmap", doTest);
+      waitForImageMapInContent("imgmap").then(doTest);
     }
 
     function doTest() {

@@ -24,10 +24,16 @@ class CrashFactCollector(
     private val crashReporter: CrashReporting,
 ) {
 
+    private var isInitialized = false
+
     /**
      * Starts collecting facts.
      */
     fun start() {
+        // Making sure this only gets initialized once. That could have happened if the user
+        // accepts ToU, then goes back and accepts again.
+        if (isInitialized) return
+        isInitialized = true
         Facts.registerProcessor(
             object : FactProcessor {
                 override fun process(fact: Fact) {

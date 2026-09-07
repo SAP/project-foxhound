@@ -7,7 +7,6 @@ package org.mozilla.fenix.translations.preferences.downloadlanguages
 import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
-import android.os.Build
 import androidx.annotation.VisibleForTesting
 import androidx.core.net.ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_ENABLED
 import androidx.core.net.ConnectivityManagerCompat.RESTRICT_BACKGROUND_STATUS_WHITELISTED
@@ -36,13 +35,11 @@ class DownloadLanguagesFeature(
         { connected: Boolean ->
             var isDataSaverEnabled = false
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val restrictBackgroundStatus = connectivityManager?.restrictBackgroundStatus
-                if (restrictBackgroundStatus == RESTRICT_BACKGROUND_STATUS_ENABLED ||
-                    restrictBackgroundStatus == RESTRICT_BACKGROUND_STATUS_WHITELISTED
-                ) {
-                    isDataSaverEnabled = true
-                }
+            val restrictBackgroundStatus = connectivityManager?.restrictBackgroundStatus
+            if (restrictBackgroundStatus == RESTRICT_BACKGROUND_STATUS_ENABLED ||
+                restrictBackgroundStatus == RESTRICT_BACKGROUND_STATUS_WHITELISTED
+            ) {
+                isDataSaverEnabled = true
             }
 
             if (isDataSaverEnabled && !connected) {

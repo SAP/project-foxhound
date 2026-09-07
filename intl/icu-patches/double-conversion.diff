@@ -152,8 +152,7 @@ diff --git a/intl/icu/source/i18n/number_utils.cpp b/intl/icu/source/i18n/number
 diff --git a/intl/icu/source/i18n/units_converter.cpp b/intl/icu/source/i18n/units_converter.cpp
 --- a/intl/icu/source/i18n/units_converter.cpp
 +++ b/intl/icu/source/i18n/units_converter.cpp
-@@ -2,17 +2,21 @@
- // License & terms of use: http://www.unicode.org/copyright.html
+@@ -3,17 +3,21 @@
  
  #include "unicode/utypes.h"
  
@@ -161,6 +160,7 @@ diff --git a/intl/icu/source/i18n/units_converter.cpp b/intl/icu/source/i18n/uni
  
  #include "charstr.h"
  #include "cmemory.h"
+ #include "cstring.h"
 +#ifdef JS_HAS_INTL_API
 +#include "double-conversion/string-to-double.h"
 +#else
@@ -174,7 +174,7 @@ diff --git a/intl/icu/source/i18n/units_converter.cpp b/intl/icu/source/i18n/uni
  #include "unicode/stringpiece.h"
  #include "units_converter.h"
  #include <algorithm>
-@@ -101,17 +105,21 @@ void U_I18N_API Factor::substituteConsta
+@@ -105,17 +109,21 @@ void Factor::substituteConstants() {
          this->constantExponents[i] = 0;
      }
  }

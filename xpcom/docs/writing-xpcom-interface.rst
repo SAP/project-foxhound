@@ -8,11 +8,7 @@ High Level Overview
 
 In order to write code that works in native code (C++, Rust), and JavaScript contexts, it's necessary to have a mechanism to do so. For chrome privileged contexts, this is the XPCOM Interface Class.
 
-This mechanism starts with an :ref:`XPIDL` file to define the shape of the interface. In the `build system`_, this file is processed, and `Rust`_ and `C++`_ code is automatically generated.
-
-.. _build system: https://searchfox.org/mozilla-central/source/xpcom/idl-parser/xpidl
-.. _Rust: https://searchfox.org/mozilla-central/source/__GENERATED__/dist/xpcrs/rt
-.. _C++: https://searchfox.org/mozilla-central/source/__GENERATED__/dist/include
+This mechanism starts with an :ref:`XPIDL` file to define the shape of the interface. In the :searchfox:`build system <xpcom/idl-parser/xpidl>`, this file is processed, and :searchfox:`Rust <__GENERATED__/dist/xpcrs/rt>` and :searchfox:`C++ <__GENERATED__/dist/include>` code is automatically generated.
 
 Next, the interface's methods and attributes must be implemented. This can be done through either a JSM module, or through a C++ interface class. Once these steps are done, the new files must be added to the appropriate :code:`moz.build` files to ensure the build system knows how to find them and process them.
 
@@ -97,7 +93,7 @@ Once :code:`./mach build` is run, the XPIDL parser will read this file, and give
 
 :code:`{obj-directory}/dist/include/nsIComponentName.h`
 
-It might be useful to check out what was automatically generated here, or see the existing `generated C++ header files on SearchFox <https://searchfox.org/mozilla-central/source/__GENERATED__/dist/>`_.
+It might be useful to check out what was automatically generated here, or see the existing :searchfox:`generated C++ header files on SearchFox <__GENERATED__/dist/>`.
 
 Writing the C++ implementation
 ------------------------------

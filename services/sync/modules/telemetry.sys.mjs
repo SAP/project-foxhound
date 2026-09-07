@@ -2,15 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Support for Sync-and-FxA-related telemetry, which is submitted in a special-purpose
-// telemetry ping called the "sync ping", documented here:
-//
-//  ../../../toolkit/components/telemetry/docs/data/sync-ping.rst
-//
-// The sync ping contains identifiers that are linked to the user's Firefox Account
-// and are separate from the main telemetry client_id, so this file is also responsible
-// for ensuring that we can delete those pings upon user request, by plumbing its
-// identifiers into the "deletion-request" ping.
+// Support for Sync-related telemetry, submitted via the Glean "sync" ping.
+// Also responsible for ensuring that FxA/Sync identifiers are plumbed into
+// the "deletion-request" ping so they can be deleted on user request.
 
 import { Log } from "resource://gre/modules/Log.sys.mjs";
 
@@ -20,13 +14,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Async: "resource://services-common/async.sys.mjs",
   AuthenticationError: "resource://services-sync/sync_auth.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
-  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   Observers: "resource://services-common/observers.sys.mjs",
-  Resource: "resource://services-sync/resource.sys.mjs",
   Status: "resource://services-sync/status.sys.mjs",
   Svc: "resource://services-sync/util.sys.mjs",
   TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
   Weave: "resource://services-sync/main.sys.mjs",
 });
@@ -68,15 +59,8 @@ const TOPICS = [
   "weave:engine:validate:finish",
   "weave:engine:validate:error",
 
-  // For ad-hoc telemetry events.
-  "weave:telemetry:event",
-  "weave:telemetry:histogram",
-  "fxa:telemetry:event",
-
   "weave:telemetry:migration",
 ];
-
-const PING_FORMAT_VERSION = 1;
 
 const EMPTY_UID = "0".repeat(32);
 
@@ -120,29 +104,6 @@ const NS_ERROR_MODULE_NETWORK = 6;
 // This is taken from DownloadCore.sys.mjs.
 function NS_ERROR_GET_MODULE(code) {
   return ((code & 0x7fff0000) >> 16) - NS_ERROR_MODULE_BASE_OFFSET;
-}
-
-// Converts extra integer fields to strings, rounds floats to three
-// decimal places (nanosecond precision for timings), and removes profile
-// directory paths and URLs from potential error messages.
-function normalizeExtraTelemetryFields(extra) {
-  let result = {};
-  for (let key in extra) {
-    let value = extra[key];
-    let type = typeof value;
-    if (type == "string") {
-      result[key] = ErrorSanitizer.cleanErrorMessage(value);
-    } else if (type == "number") {
-      result[key] = Number.isInteger(value)
-        ? value.toString(10)
-        : value.toFixed(3);
-    } else if (type != "undefined") {
-      throw new TypeError(
-        `Invalid type ${type} for extra telemetry field ${key}`
-      );
-    }
-  }
-  return lazy.ObjectUtils.isEmpty(result) ? undefined : result;
 }
 
 // Keps track of the counts of individual records fate during a sync cycle
@@ -293,57 +254,6 @@ export class ErrorSanitizer {
 
     return this.#cleanOSErrorMessage(message, error);
   }
-}
-
-// This function validates the payload of a telemetry "event" - this can be
-// removed once there are APIs available for the telemetry modules to collect
-// these events (bug 1329530) - but for now we simulate that planned API as
-// best we can.
-function validateTelemetryEvent(eventDetails) {
-  let { object, method, value, extra } = eventDetails;
-  // Do do basic validation of the params - everything except "extra" must
-  // be a string. method and object are required.
-  if (
-    typeof method != "string" ||
-    typeof object != "string" ||
-    (value && typeof value != "string") ||
-    (extra && typeof extra != "object")
-  ) {
-    log.warn("Invalid event parameters - wrong types", eventDetails);
-    return false;
-  }
-  // length checks.
-  if (
-    method.length > 20 ||
-    object.length > 20 ||
-    (value && value.length > 80)
-  ) {
-    log.warn("Invalid event parameters - wrong lengths", eventDetails);
-    return false;
-  }
-
-  // extra can be falsey, or an object with string names and values.
-  if (extra) {
-    if (Object.keys(extra).length > 10) {
-      log.warn("Invalid event parameters - too many extra keys", eventDetails);
-      return false;
-    }
-    for (let [ename, evalue] of Object.entries(extra)) {
-      if (
-        typeof ename != "string" ||
-        ename.length > 15 ||
-        typeof evalue != "string" ||
-        evalue.length > 85
-      ) {
-        log.warn(
-          `Invalid event parameters: extra item "${ename} is invalid`,
-          eventDetails
-        );
-        return false;
-      }
-    }
-  }
-  return true;
 }
 
 class EngineRecord {
@@ -698,13 +608,7 @@ class SyncTelemetryImpl {
 
     this.payloads = [];
     this.discarded = 0;
-    this.events = [];
-    this.histograms = {};
     this.migrations = [];
-    this.maxEventsCount = lazy.Svc.PrefBranch.getIntPref(
-      "telemetry.maxEventsCount",
-      1000
-    );
     this.maxPayloadCount = lazy.Svc.PrefBranch.getIntPref(
       "telemetry.maxPayloadCount"
     );
@@ -793,28 +697,21 @@ class SyncTelemetryImpl {
   getPingJSON(reason) {
     let { devices, deviceID } = this.updateFxaDevices(this.getFxaDevices());
     return {
-      os: lazy.TelemetryEnvironment.currentEnvironment.system.os,
       why: reason,
       devices,
       discarded: this.discarded || undefined,
-      version: PING_FORMAT_VERSION,
       syncs: this.payloads.slice(),
       uid: this.lastUID,
       syncNodeType: this.lastSyncNodeType || undefined,
       deviceID,
       sessionStartDate: this.sessionStartDate,
-      events: !this.events.length ? undefined : this.events,
       migrations: !this.migrations.length ? undefined : this.migrations,
-      histograms: !Object.keys(this.histograms).length
-        ? undefined
-        : this.histograms,
     };
   }
 
   _addMigrationRecord(type, info) {
     log.debug("Saw telemetry migration info", type, info);
-    // Updates to this need to be documented in `sync-ping.rst`
-    // and considered in the metric definition of `syncs.migrations`.
+    // Consider this in the metric definition of `syncs.migrations`.
     switch (type) {
       case "webext-storage":
         this.migrations.push({
@@ -837,9 +734,7 @@ class SyncTelemetryImpl {
     let result = this.getPingJSON(reason);
     this.payloads = [];
     this.discarded = 0;
-    this.events = [];
     this.migrations = [];
-    this.histograms = {};
     this.submit(result);
   }
 
@@ -862,18 +757,11 @@ class SyncTelemetryImpl {
     }
     // We still call submit() with possibly illegal payloads so that tests can
     // know that the ping was built. We don't end up submitting them, however.
-    let numEvents = record.events ? record.events.length : 0;
     let numMigrations = record.migrations ? record.migrations.length : 0;
-    if (record.syncs.length || numEvents || numMigrations) {
+    if (record.syncs.length || numMigrations) {
       log.trace(
-        `submitting ${record.syncs.length} sync record(s) and ` +
-          `${numEvents} event(s) to telemetry`
+        `submitting ${record.syncs.length} sync record(s) to telemetry`
       );
-      lazy.TelemetryController.submitExternalPing("sync", record, {
-        usePingSender: true,
-      }).catch(err => {
-        log.error("failed to submit ping", err);
-      });
 
       Glean.syncs.discarded.set(record.discarded);
       Glean.syncs.hashedFxaUid.set(record.uid);
@@ -1079,54 +967,6 @@ class SyncTelemetryImpl {
     this.maybeSubmitForInterval();
   }
 
-  _addHistogram(hist) {
-    let histogram = Services.telemetry.getHistogramById(hist);
-    let s = histogram.snapshot();
-    this.histograms[hist] = s;
-  }
-
-  _recordEvent(eventDetails) {
-    this.maybeSubmitForDataChange();
-
-    if (this.events.length >= this.maxEventsCount) {
-      log.warn("discarding event - already queued our maximum", eventDetails);
-      return;
-    }
-
-    let { object, method, value, extra } = eventDetails;
-    if (extra) {
-      extra = normalizeExtraTelemetryFields(extra);
-      eventDetails = { object, method, value, extra };
-    }
-
-    if (!validateTelemetryEvent(eventDetails)) {
-      // we've already logged what the problem is...
-      return;
-    }
-    log.debug("recording event", eventDetails);
-
-    if (extra && lazy.Resource.serverTime && !extra.serverTime) {
-      extra.serverTime = String(lazy.Resource.serverTime);
-    }
-    let category = "sync";
-    let ts = Math.floor(tryGetMonotonicTimestamp());
-
-    // An event record is a simple array with at least 4 items.
-    let event = [ts, category, method, object];
-    // It may have up to 6 elements if |extra| is defined
-    if (value) {
-      event.push(value);
-      if (extra) {
-        event.push(extra);
-      }
-    } else if (extra) {
-      event.push(null); // a null for the empty value.
-      event.push(extra);
-    }
-    this.events.push(event);
-    this.maybeSubmitForInterval();
-  }
-
   observe(subject, topic, data) {
     log.trace(`observed ${topic} ${data}`);
 
@@ -1205,15 +1045,6 @@ class SyncTelemetryImpl {
         if (this._checkCurrent(topic)) {
           this.current.onEngineValidateError(data, subject || "Unknown");
         }
-        break;
-
-      case "weave:telemetry:event":
-      case "fxa:telemetry:event":
-        this._recordEvent(subject);
-        break;
-
-      case "weave:telemetry:histogram":
-        this._addHistogram(data);
         break;
 
       case "weave:telemetry:migration":

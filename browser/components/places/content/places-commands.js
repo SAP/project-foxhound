@@ -1,9 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/* eslint-env mozilla/browser-window */
 
 document
   .getElementById("placesCommands")
@@ -18,7 +15,11 @@ document.getElementById("placesCommands").addEventListener("command", event => {
       PlacesCommandHook.showPlacesOrganizer("UnfiledBookmarks");
       break;
     case "Browser:ShowAllHistory":
-      PlacesCommandHook.showPlacesOrganizer("History");
+      if (AIWindow.isAIWindowActive(window)) {
+        FirefoxViewHandler.openTab("history");
+      } else {
+        PlacesCommandHook.showPlacesOrganizer("History");
+      }
       break;
 
     case "placesCmd_open":

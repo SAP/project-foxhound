@@ -1,0 +1,13 @@
+[package]
+name = "spin"
+version = "0.10.999"
+edition = "2018"
+license = "MPL-2.0"
+
+[lib]
+path = "lib.rs"
+
+[features]
+mutex = []
+spin_mutex = []
+portable_atomic = []

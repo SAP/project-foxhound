@@ -12,7 +12,6 @@ import mozilla.components.support.test.whenever
 import org.json.JSONException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,6 +22,7 @@ import org.mockito.Mockito.verify
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class AtomicFileTest {

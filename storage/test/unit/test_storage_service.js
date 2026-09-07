@@ -74,17 +74,33 @@ function test_openDatabase_directory() {
   dir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
   Assert.ok(dir.exists());
 
+  let encrypted = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
+
   try {
     getDatabase(dir);
     do_throw("should not be here");
   } catch (e) {
-    Assert.equal(Cr.NS_ERROR_FILE_ACCESS_DENIED, e.result);
+    // The plain VFS rejects a directory-as-database open with
+    // NS_ERROR_FILE_ACCESS_DENIED; with encryption, obfsvfs rejects it earlier
+    // (before the lower VFS reports the access error) with NS_ERROR_FAILURE.
+    Assert.equal(
+      encrypted ? Cr.NS_ERROR_FAILURE : Cr.NS_ERROR_FILE_ACCESS_DENIED,
+      e.result
+    );
   }
 
-  Assert.equal(
-    Glean.sqliteStore.open.get("test_storage_temp", "access").testGetValue(),
-    1
-  );
+  // The plain VFS records an "access" open error here; with encryption the open
+  // is rejected by obfsvfs before mozStorage reaches its open-error telemetry,
+  // so nothing is recorded.
+  if (!encrypted) {
+    Assert.equal(
+      Glean.sqliteStore.open.get("test_storage_temp", "access").testGetValue(),
+      1
+    );
+  }
 
   dir.remove(true);
 }
@@ -117,7 +133,7 @@ function test_read_gooddb() {
 
   Assert.throws(
     () => db.executeSimpleSQL("INSERT INTO Foo (rowid) VALUES ('test');"),
-    /NS_ERROR_FAILURE/,
+    /NS_ERROR_UNEXPECTED/,
     "Executing sql should fail."
   );
   Assert.equal(
@@ -155,13 +171,6 @@ function test_read_baddb() {
 }
 
 function test_busy_telemetry() {
-  // Thunderbird doesn't have one or more of the probes used in this test.
-  // Ensure the data is collected anyway.
-  Services.prefs.setBoolPref(
-    "toolkit.telemetry.testing.overrideProductsCheck",
-    true
-  );
-
   let file = do_get_file("goodDB.sqlite");
   let conn1 = Services.storage.openUnsharedDatabase(file);
   let conn2 = Services.storage.openUnsharedDatabase(file);
@@ -196,13 +205,6 @@ var tests = [
 ];
 
 function run_test() {
-  // Thunderbird doesn't have one or more of the probes used in this test.
-  // Ensure the data is collected anyway.
-  Services.prefs.setBoolPref(
-    "toolkit.telemetry.testing.overrideProductsCheck",
-    true
-  );
-
   for (var i = 0; i < tests.length; i++) {
     tests[i]();
     Services.fog.testResetFOG();

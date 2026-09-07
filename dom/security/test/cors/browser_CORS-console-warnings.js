@@ -32,6 +32,7 @@ async function do_cleanup() {
 
 /**
  * Set e10s related preferences in the test environment.
+ *
  * @return {Promise} promise that resolves when preferences are set.
  */
 function setCookiePref() {
@@ -48,6 +49,7 @@ function setCookiePref() {
 
 /**
  * Unset e10s related preferences in the test environment.
+ *
  * @return {Promise} promise that resolves when preferences are unset.
  */
 function unsetCookiePref() {

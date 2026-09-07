@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WebrtcMediaDataDecoderCodec_h__
-#define WebrtcMediaDataDecoderCodec_h__
+#ifndef WebrtcMediaDataDecoderCodec_h_
+#define WebrtcMediaDataDecoderCodec_h_
 
 #include "MediaConduitInterface.h"
 #include "MediaInfo.h"
@@ -29,7 +29,13 @@ class TaskQueue;
 
 class WebrtcMediaDataDecoder : public WebrtcVideoDecoder {
  public:
+  static media::DecodeSupportSet Supports(webrtc::VideoCodecType aCodecType,
+                                          SupportDecoderParams aParams);
+
+  static bool IsCodecEnabled(webrtc::VideoCodecType aCodecType);
+
   WebrtcMediaDataDecoder(nsACString& aCodecMimeType, TrackingId aTrackingId);
+  ~WebrtcMediaDataDecoder();
 
   bool Configure(const webrtc::VideoDecoder::Settings& settings) override;
 
@@ -42,10 +48,10 @@ class WebrtcMediaDataDecoder : public WebrtcVideoDecoder {
   int32_t Release() override;
 
  private:
-  ~WebrtcMediaDataDecoder();
   void QueueFrame(MediaRawData* aFrame);
   bool OnTaskQueue() const;
   int32_t CreateDecoder();
+  static CreateDecoderParams::OptionSet WebrtcDecoderOptions();
 
   const RefPtr<SharedThreadPool> mThreadPool;
   const RefPtr<TaskQueue> mTaskQueue;
@@ -67,4 +73,4 @@ class WebrtcMediaDataDecoder : public WebrtcVideoDecoder {
 
 }  // namespace mozilla
 
-#endif  // WebrtcMediaDataDecoderCodec_h__
+#endif  // WebrtcMediaDataDecoderCodec_h_

@@ -9,7 +9,7 @@ const { sinon } = ChromeUtils.importESModule(
 const sandbox = sinon.createSandbox();
 
 add_setup(async function () {
-  ASRouter.resetMessageState();
+  await ASRouter.resetMessageState();
   await SpecialPowers.pushPrefEnv({
     set: [["browser.promo.pin.enabled", true]],
   });

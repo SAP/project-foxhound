@@ -1,0 +1,9 @@
+---
+gecko-trace-lint:
+  description: Linter for gecko-trace files
+  type: global
+  payload: gecko-trace:lint
+  extensions: ["yaml", "yml"]
+  exclude:
+    - tools/lint/gecko-trace.yml
+    - toolkit/components/gecko-trace/tests/gtest/gecko-trace.yaml

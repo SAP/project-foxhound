@@ -11,10 +11,7 @@ features: [iterator-sequencing]
 
 let testIterator = {
   next() {
-    return {
-      done: false,
-      value: 1,
-    };
+    throw new Test262Error();
   },
   return() {
     throw new Test262Error();

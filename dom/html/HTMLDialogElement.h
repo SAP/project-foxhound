@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,10 +24,10 @@ class HTMLDialogElement final : public nsGenericHTMLElement {
     CloseRequest,
   };
 
-  explicit HTMLDialogElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+  explicit HTMLDialogElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)),
-        mPreviouslyFocusedElement(nullptr) {}
+        mPreviouslyFocusedElement(nullptr),
+        mRequestCloseSourceElement(nullptr) {}
 
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLDialogElement, dialog)
 
@@ -58,20 +56,49 @@ class HTMLDialogElement final : public nsGenericHTMLElement {
     mReturnValue = aReturnValue;
   }
 
-  nsAString& RequestCloseReturnValue() { return mRequestCloseReturnValue; }
+  void GetRequestCloseReturnValue(Maybe<nsAutoString>& aReturnValue) {
+    if (mRequestCloseReturnValue.isSome()) {
+      aReturnValue.emplace(mRequestCloseReturnValue.ref());
+    }
+  }
+  void ClearRequestCloseReturnValue() { mRequestCloseReturnValue.reset(); }
   void SetRequestCloseReturnValue(const nsAString& aReturnValue) {
-    mRequestCloseReturnValue = aReturnValue;
+    mRequestCloseReturnValue.reset();
+    mRequestCloseReturnValue.emplace(aReturnValue);
   }
 
   nsresult BindToTree(BindContext&, nsINode&) override;
   void UnbindFromTree(UnbindContext&) override;
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void Close(
-      const mozilla::dom::Optional<nsAString>& aReturnValue);
+      const mozilla::dom::Optional<nsAString>& aReturnValue) {
+    Maybe<nsAutoString> retValueCopy;
+    if (aReturnValue.WasPassed()) {
+      retValueCopy.emplace(aReturnValue.Value());
+    }
+    return Close(nullptr, retValueCopy);
+  }
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Close(
+      Element* aSource, const Maybe<nsAutoString>& aReturnValue);
+  MOZ_CAN_RUN_SCRIPT void RequestClose(
+      const mozilla::dom::Optional<nsAString>& aReturnValue) {
+    Maybe<nsAutoString> retValueCopy;
+    if (aReturnValue.WasPassed()) {
+      retValueCopy.emplace(aReturnValue.Value());
+    }
+    RequestClose(nullptr, retValueCopy);
+  }
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void RequestClose(
-      const mozilla::dom::Optional<nsAString>& aReturnValue);
+      Element* aSource, const Maybe<nsAutoString>& aReturnValue);
+
+  RefPtr<Element> GetRequestCloseSourceElement();
+
   MOZ_CAN_RUN_SCRIPT void Show(ErrorResult& aError);
-  MOZ_CAN_RUN_SCRIPT void ShowModal(ErrorResult& aError);
+
+  MOZ_CAN_RUN_SCRIPT void ShowModal(Element* aSource, ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT void ShowModal(ErrorResult& aError) {
+    return ShowModal(nullptr, aError);
+  }
 
   void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                     const nsAttrValue* aValue, const nsAttrValue* aOldValue,
@@ -93,7 +120,7 @@ class HTMLDialogElement final : public nsGenericHTMLElement {
                                                 Command aCommand,
                                                 ErrorResult& aRv) override;
 
-  nsString mRequestCloseReturnValue;
+  Maybe<nsString> mRequestCloseReturnValue;
   nsString mReturnValue;
 
  protected:
@@ -105,7 +132,7 @@ class HTMLDialogElement final : public nsGenericHTMLElement {
   void AddToTopLayerIfNeeded();
   void RemoveFromTopLayerIfNeeded();
   void StorePreviouslyFocusedElement();
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void QueueToggleEventTask();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void QueueToggleEventTask(Element* aSource);
   void SetDialogCloseWatcherIfNeeded();
   void SetCloseWatcherEnabledState();
 
@@ -113,6 +140,8 @@ class HTMLDialogElement final : public nsGenericHTMLElement {
   void CleanupSteps();
 
   nsWeakPtr mPreviouslyFocusedElement;
+
+  nsWeakPtr mRequestCloseSourceElement;
 
   RefPtr<AsyncEventDispatcher> mToggleEventDispatcher;
 

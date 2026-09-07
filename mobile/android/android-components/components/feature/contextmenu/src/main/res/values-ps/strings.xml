@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Text for context menu item to open the link in a new tab. -->
+  <string name="mozac_feature_contextmenu_open_link_in_new_tab">لېنک په نوي ټب کې پرانیزئ</string>
+  <!-- Text for context menu item to open the link in a private tab. -->
+  <string name="mozac_feature_contextmenu_open_link_in_private_tab">لېنک په شخصي ټب کې پرانیزئ</string>
+  <!-- Text for context menu item to open the image in a new tab. -->
+  <string name="mozac_feature_contextmenu_open_image_in_new_tab">انځور په نوي ټب کې پرانیزئ</string>
+  <!-- Text for context menu item to save / download the link. -->
+  <string name="mozac_feature_contextmenu_download_link">د ښکته کولو تړونی (لینک)</string>
+  <!-- Text for context menu item to share the link with an other app. -->
+  <string name="mozac_feature_contextmenu_share_link">تړونی شریک کړئ</string>
+  <!-- Text for context menu item to share the image with an other app. -->
+  <string name="mozac_feature_contextmenu_share_image">انځور شریک کړئ</string>
+  <!-- Text for context menu item to copy the link to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link">تړونی کاپي کړئ</string>
+  <!-- Text for context menu item to copy the link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link_text">د تړوني متن کاپي کړئ</string>
+  <!-- Text for context menu item to copy the URL pointing to the image to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_image_location">د انځور موقعیت کاپي کړئ</string>
+  <!-- Text for context menu item to save / download the image. -->
+  <string name="mozac_feature_contextmenu_save_image">انځور خوندي کړئ</string>
+  <!-- Text for context menu item to copy the image to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_image">انځور کاپي کړئ</string>
+  <!-- Text for context menu item to save / download the file. -->
+  <string name="mozac_feature_contextmenu_save_file_to_device">فايل په آله/وسيله کې خوندي کړئ</string>
+  <!-- Text for confirmation "snackbar" shown after opening a link in a new tab. -->
+  <string name="mozac_feature_contextmenu_snackbar_new_tab_opened">نوی ټب پرانیستل شو</string>
+  <!-- Text for confirmation "snackbar" shown after opening a link in a new private tab. -->
+  <string name="mozac_feature_contextmenu_snackbar_new_private_tab_opened">نوی شخصي ټب پرانیستل شو</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link or image URL to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_copied">تړونی کليپ بورډ ته کاپي شو</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_text_copied">د تړوني متن کليپ بورډ ته کاپي شو</string>
+  <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
+  <string name="mozac_feature_contextmenu_snackbar_action_switch">بدل کړئ</string>
+  <!-- Text for context menu item to open the link in an external app. -->
+  <string name="mozac_feature_contextmenu_open_link_in_external_app">تړونی په بانديني اپلیکېشن کې پرانیزئ</string>
+  <!-- Text for context menu item to share the email with another app. -->
+  <string name="mozac_feature_contextmenu_share_email_address">د برېښنالیک پته شریکه کړئ</string>
+  <!-- Text for context menu item to copy the email address to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_email_address">د برېښنالیک پته کاپي کړئ</string>
+  <!-- Text for confirmation "snackbar" shown after copying a email address to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_email_address_copied">د برېښنالیک پته کليپ بورډ ته کاپي شوه</string>
+  <!-- Text for context menu item to add to a contact. -->
+  <string name="mozac_feature_contextmenu_add_to_contact">په اړیکه کې يې اضافه کړئ</string>
+  <!-- Action shown in a text selection context menu. This will prompt a search using the selected text. -->
+  <string name="mozac_selection_context_menu_search_2">لټون</string>
+  <!-- Action shown in a text selection context menu. This will prompt a search in a private tab using the selected text -->
+  <string name="mozac_selection_context_menu_search_privately_2">شخصي لټون</string>
+  <!-- Action shown in a text selection context menu. This will prompt a share of the selected text. -->
+  <string name="mozac_selection_context_menu_share">شریک کړئ</string>
+  <!-- Action shown in a text selection context menu. This will prompt a new email from the selected text. -->
+  <string name="mozac_selection_context_menu_email">برېښنالیک</string>
+  <!-- Action shown in a text selection context menu. This will prompt a new call from the selected text. -->
+  <string name="mozac_selection_context_menu_call">زنګ ووهئ</string>
+</resources>

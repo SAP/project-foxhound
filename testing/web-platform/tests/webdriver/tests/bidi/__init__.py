@@ -1,8 +1,52 @@
-from typing import Any, Callable, Dict, List, Mapping
+from typing import Any, Callable, Dict, List, Mapping, Literal
 
 from tests.support.sync import AsyncPoll
 from webdriver.bidi.modules.script import ContextTarget
 from webdriver.bidi.undefined import UNDEFINED
+
+
+def get_invalid_cases(
+        type_: Literal["boolean", "list", "string", "dict", "number"],
+        nullable: bool = False) -> List[Any]:
+    """
+    Returns invalid use cases for the specific type with the given restrictions.
+    >>> get_invalid_cases("boolean")
+    [42, None, [], 'foo', {}]
+    >>> get_invalid_cases("list")
+    [42, False, None, 'foo', {}]
+    >>> get_invalid_cases("string")
+    [42, False, None, [], {}]
+    >>> get_invalid_cases("dict")
+    [42, False, None, [], 'foo']
+    >>> get_invalid_cases("number")
+    [False, None, [], 'foo', {}]
+    >>> get_invalid_cases("boolean", nullable=True)
+    [42, [], 'foo', {}]
+    >>> get_invalid_cases("boolean", nullable=False)
+    [42, None, [], 'foo', {}]
+
+    >>> get_invalid_cases("invalid_type")
+    Traceback (most recent call last):
+      ...
+    ValueError: Unexpected type: invalid_type
+
+    """
+    cases = {
+        "boolean": False,
+        "list": [],
+        "string": 'foo',
+        "dict": {},
+        "number": 42,
+    }
+
+    if type_ not in cases:
+        raise ValueError(f"Unexpected type: {type_}")
+
+    result = list(filter(lambda i: i != cases[type_], cases.values()))
+    if not nullable:
+        result.append(None)
+
+    return sorted(result, key=lambda x: str(x))
 
 
 # Compares 2 objects recursively.
@@ -103,13 +147,61 @@ def number_interval(start: float, end: float) -> Callable[[Any], None]:
     return _
 
 
+def assert_bytes_value(bytes_value):
+    assert bytes_value["type"] in ["string", "base64"]
+    any_string(bytes_value["value"])
+
+
+def assert_cookie(actual, expected=None):
+    recursive_compare(
+        {
+            "domain": any_string,
+            "httpOnly": any_bool,
+            "name": any_string,
+            "path": any_string,
+            "sameSite": any_string,
+            "secure": any_bool,
+            "size": any_int,
+            "value": assert_bytes_value,
+        },
+        actual,
+    )
+
+    # expiry is optional.
+    if "expiry" in actual:
+        any_int(actual["expiry"])
+
+    if expected is None:
+        return
+
+    if "domain" in expected:
+        assert actual["domain"] == expected["domain"]
+    if "expiry" in expected:
+        assert actual.get("expiry") == expected["expiry"]
+    if "httpOnly" in expected:
+        assert actual["httpOnly"] == expected["httpOnly"]
+    if "name" in expected:
+        assert actual["name"] == expected["name"]
+    if "path" in expected:
+        assert actual["path"] == expected["path"]
+    if "sameSite" in expected:
+        assert actual["sameSite"] == expected["sameSite"]
+    if "secure" in expected:
+        assert actual["secure"] == expected["secure"]
+    if "size" in expected:
+        assert actual["size"] == expected["size"]
+    if "value" in expected:
+        assert actual["value"] == expected["value"]
+
+
 def assert_cookies(cookies, expected_cookies):
     assert len(cookies) == len(expected_cookies)
 
     expected = sorted(expected_cookies, key=lambda cookie: cookie["name"])
     actual = sorted(cookies, key=lambda cookie: cookie["name"])
 
-    recursive_compare(expected, actual)
+    for actual_cookie, expected_cookie in zip(actual, expected):
+        assert_cookie(actual_cookie, expected_cookie)
 
 
 def assert_handle(obj: Mapping[str, Any], should_contain_handle: bool) -> None:
@@ -233,15 +325,3 @@ def remote_mapping_to_dict(js_object) -> Dict:
             obj[key] = value["value"]
 
     return obj
-
-
-async def wait_for_bidi_events(bidi_session, events, count, timeout=2, equal_check=True):
-    def check_bidi_events(_, events, count):
-        assert len(
-            events) >= count, f"Did not receive at least {count} BiDi event(s)"
-
-    wait = AsyncPoll(bidi_session, timeout=timeout)
-    await wait.until(check_bidi_events, events, count)
-
-    if equal_check:
-        assert len(events) == count, f"Did not receive {count} BiDi event(s)"

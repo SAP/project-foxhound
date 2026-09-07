@@ -18,6 +18,7 @@ import androidx.constraintlayout.widget.ConstraintSet.PARENT_ID
 import androidx.constraintlayout.widget.ConstraintSet.START
 import androidx.constraintlayout.widget.ConstraintSet.TOP
 import androidx.core.view.isVisible
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -151,9 +152,9 @@ internal class AsyncDrawableMenuIconViewHolder(
     inflater: LayoutInflater,
     side: Side,
     private val logger: Logger = Logger("mozac-menu2-AsyncDrawableMenuIconViewHolder"),
-) : MenuIconWithDrawableViewHolder<AsyncDrawableMenuIcon>(parent, inflater) {
+    private val scope: CoroutineScope = MainScope(),
+    ) : MenuIconWithDrawableViewHolder<AsyncDrawableMenuIcon>(parent, inflater) {
 
-    private val scope = MainScope()
     override val imageView: ImageView = inflate(layoutResource).findViewById(R.id.icon)
     private var effectView: ImageView? = null
     private var iconJob: Job? = null

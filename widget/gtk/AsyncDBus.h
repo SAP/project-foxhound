@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,6 +31,14 @@ RefPtr<DBusCallPromise> DBusProxyCall(GDBusProxy*, const char* aMethod,
 RefPtr<DBusCallPromise> DBusProxyCallWithUnixFDList(
     GDBusProxy*, const char* aMethod, GVariant* aArgs, GDBusCallFlags,
     gint aTimeout = -1, GUnixFDList* = nullptr, GCancellable* = nullptr);
+
+// https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Request.html#org-freedesktop-portal-request
+void MakePortalRequestToken(const nsCString& aType, nsACString& aOutToken);
+void GetPortalRequestPath(GDBusProxy*, const nsCString& aRequestToken,
+                          nsACString& aOutPath);
+using PortalResponseListener = std::function<void(GVariant*)>;
+guint OnDBusPortalResponse(GDBusProxy* aProxy, const nsCString& aRequestToken,
+                           PortalResponseListener);
 
 }  // namespace mozilla::widget
 

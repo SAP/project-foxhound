@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -89,10 +87,13 @@ template <typename R, typename E, bool Exc>
 inline Result<R, E> WaitFor(const RefPtr<MozPromise<R, E, Exc>>& aPromise) {
   Maybe<R> success;
   Maybe<E> error;
+  // Use r-value reference for exclusive promises to support move-only types.
+  using RRef = typename std::conditional_t<Exc, R&&, const R&>;
+  using ERef = typename std::conditional_t<Exc, E&&, const E&>;
   aPromise->Then(
       GetCurrentSerialEventTarget(), __func__,
-      [&](R aResult) { success = Some(aResult); },
-      [&](E aError) { error = Some(aError); });
+      [&](RRef aResult) { success.emplace(std::forward<RRef>(aResult)); },
+      [&](ERef aError) { error.emplace(std::forward<ERef>(aError)); });
   SpinEventLoopUntil<ProcessFailureBehavior::IgnoreAndContinue>(
       "WaitFor(const RefPtr<MozPromise<R, E, Exc>>& aPromise)"_ns,
       [&] { return success.isSome() || error.isSome(); });
@@ -189,13 +190,37 @@ inline auto TakeN(MediaEventSourceImpl<Lp, Args...>& aEvent, size_t aN)
   return holder->Ensure(__func__);
 }
 
+using TakeNVoidPromise = MozPromise<size_t, bool, true>;
+
+template <ListenerPolicy Lp>
+inline auto TakeN(MediaEventSourceImpl<Lp, void>& aEvent, size_t aN)
+    -> RefPtr<TakeNVoidPromise> {
+  using Storage = Maybe<size_t>;
+  using Promise = TakeNVoidPromise;
+  using Holder = media::Refcountable<MozPromiseHolder<Promise>>;
+  using Values = media::Refcountable<Storage>;
+  using Listener = media::Refcountable<MediaEventListener>;
+  auto values = MakeRefPtr<Values>();
+  *values = Some(0);
+  auto listener = MakeRefPtr<Listener>();
+  auto holder = MakeRefPtr<Holder>();
+  *listener = aEvent.Connect(
+      AbstractThread::GetCurrent(), [values, listener, aN, holder]() {
+        if (++(values->ref()) == aN) {
+          listener->Disconnect();
+          holder->Resolve(**values, "TakeN (void) listener callback");
+        }
+      });
+  return holder->Ensure(__func__);
+}
+
 /**
  * Helper that, given that canonicals have just been updated on the current
  * thread, will block its execution until mirrors and their watchers have
  * executed on aTarget.
  */
 inline void WaitForMirrors(const RefPtr<nsISerialEventTarget>& aTarget) {
-  Unused << WaitFor(InvokeAsync(aTarget, __func__, [] {
+  (void)WaitFor(InvokeAsync(aTarget, __func__, [] {
     return GenericPromise::CreateAndResolve(true, "WaitForMirrors resolver");
   }));
 }

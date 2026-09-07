@@ -1,0 +1,15 @@
+{
+  "label": "www.yourtexasbenefits.com",
+  "bugs": {
+    "1899055": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.yourtexasbenefits.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "ua_string": ["Chrome"]
+    }
+  ]
+}

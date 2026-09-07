@@ -6,7 +6,7 @@ package org.mozilla.fenix.helpers
 
 import androidx.test.platform.app.InstrumentationRegistry
 import mozilla.components.feature.sitepermissions.SitePermissionsRules
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 
 /**
  * Helper for querying the status and modifying various features and settings in the application.
@@ -21,11 +21,6 @@ interface FeatureSettingsHelper {
      * Whether the onboarding dialog for choosing wallpapers should be shown or not.
      */
     var isWallpaperOnboardingEnabled: Boolean
-
-    /**
-     * Whether the homepage header should be shown or not.
-     */
-    var isHomepageHeaderEnabled: Boolean
 
     /**
      * Whether the "Jump back in" homescreen section is enabled or not.
@@ -51,6 +46,16 @@ interface FeatureSettingsHelper {
     var isDeleteSitePermissionsEnabled: Boolean
 
     /**
+     * Whether the Unified Trust Panel is enabled or not.
+     */
+    var isUnifiedTrustPanelEnabled: Boolean
+
+    /**
+     * Whether the Homepage Sports Widget is visible or not.
+     */
+    var isHomepageSportsWidgetVisible: Boolean
+
+    /**
      * The current "Enhanced Tracking Protection" policy.
      * @see ETPPolicy
      */
@@ -65,11 +70,6 @@ interface FeatureSettingsHelper {
      * Enable or disable all location permission requests.
      */
     var isLocationPermissionEnabled: SitePermissionsRules.Action
-
-    /**
-     * Enable or disable the new main menu.
-     */
-    var isMenuRedesignEnabled: Boolean
 
     /**
      * Enable or disable the new main menu CFR.
@@ -92,9 +92,62 @@ interface FeatureSettingsHelper {
     var onboardingFeatureEnabled: Boolean
 
     /**
-     * Enable or disable new crash reporter.
+     * Enable or disable new crash reporter flow.
      */
-    var isUseNewCrashReporterDialog: Boolean
+    var isUseNewCrashReporterFlow: Boolean
+
+    /**
+     * Enable or disable the tab swipe CFR.
+     */
+    var isTabSwipeCFREnabled: Boolean
+
+    /**
+     * Accept or not the terms of service.
+     */
+    var isTermsOfServiceAccepted: Boolean
+
+    /**
+     * Enable or disable the private mode and stories entry point.
+     */
+    var isPrivateModeAndStoriesEntryPointEnabled: Boolean
+
+    /**
+     * The Open links in External apps settings, between the following options:
+     * - Ask before opening
+     * - Never
+     * - Always open in app
+     */
+    var openLinksInExternalApp: OpenLinksInApp
+
+    /**
+     * Enable or disable the Tab Manager's opening animation.
+     */
+    var tabManagerOpeningAnimationEnabled: Boolean
+
+    /**
+     * Indicates if the shake to summarize toolbar CFR was displayed to the user.
+     */
+    var hasSeenShakeToSummarizeToolbarCfr: Boolean
+
+    /**
+     * Enable or disable the shake to summarize feature flag.
+     */
+    var shakeToSummarizeFeatureFlagEnabled: Boolean
+
+    /**
+     * Enable or disable expanded toolbar layout.
+     */
+    var shouldUseExpandedToolbar: Boolean
+
+    /**
+     * Whether the Native Share Sheet feature is enabled.
+     */
+    var nativeShareSheetEnabled: Boolean
+
+    /**
+     * Whether the voice search entry point is shown in the display-mode browser toolbar.
+     */
+    var showVoiceSearchInDisplayToolbar: Boolean
 
     /**
      * Enable or disable the translations prompt after a page that can be translated is loaded.
@@ -107,12 +160,23 @@ interface FeatureSettingsHelper {
         }
     }
 
+    /**
+     * Enable or disable the IP Protection feature.
+     */
+    fun enableOrDisableIPProtection(enableIPProtection: Boolean) {
+        if (enableIPProtection) {
+            FxNimbusHelper.enableIPProtection()
+        } else {
+            FxNimbusHelper.disableIPProtection()
+        }
+    }
+
     fun applyFlagUpdates()
 
     fun resetAllFeatureFlags()
 
     companion object {
-        val settings = InstrumentationRegistry.getInstrumentation().targetContext.settings()
+        val settings = InstrumentationRegistry.getInstrumentation().targetContext.components.settings
     }
 }
 
@@ -123,4 +187,10 @@ enum class ETPPolicy {
     STANDARD,
     STRICT,
     CUSTOM,
+}
+
+enum class OpenLinksInApp {
+    ALWAYS,
+    NEVER,
+    ASK,
 }

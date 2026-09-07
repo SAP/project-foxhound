@@ -10,18 +10,31 @@
 
 #include "modules/desktop_capture/linux/x11/window_capturer_x11.h"
 
+#include <X11/X.h>
+#include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/composite.h>
-#include <string.h>
 
+#include <cstdint>
+// X11 creates a CurrentTime macro, which causes compilation errors when
+// including webrtc::Clock.
+#undef CurrentTime
+
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "api/scoped_refptr.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "media/base/video_common.h"
+#include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/desktop_capturer.h"
 #include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/desktop_region.h"
 #include "modules/desktop_capture/linux/x11/shared_x_display.h"
 #include "modules/desktop_capture/linux/x11/window_finder_x11.h"
@@ -34,6 +47,7 @@ namespace webrtc {
 
 WindowCapturerX11::WindowCapturerX11(const DesktopCaptureOptions& options)
     : x_display_(options.x_display()),
+      clock_(options.clock()),
       atom_cache_(display()),
       window_finder_(&atom_cache_) {
   int event_base, error_base, major_version, minor_version;
@@ -141,6 +155,7 @@ void WindowCapturerX11::Start(Callback* callback) {
 
 void WindowCapturerX11::CaptureFrame() {
   TRACE_EVENT0("webrtc", "WindowCapturerX11::CaptureFrame");
+  Timestamp capture_start_time = clock_.CurrentTime();
 
   if (!x_server_pixel_buffer_.IsWindowValid()) {
     RTC_LOG(LS_ERROR) << "The window is no longer valid.";
@@ -162,13 +177,13 @@ void WindowCapturerX11::CaptureFrame() {
   if (GetWindowState(&atom_cache_, selected_window_) == IconicState) {
     // Window is in minimized. Return a 1x1 frame as same as OSX/Win does.
     std::unique_ptr<DesktopFrame> frame(
-        new BasicDesktopFrame(DesktopSize(1, 1)));
+        new BasicDesktopFrame(DesktopSize(1, 1), FOURCC_ARGB));
     callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
     return;
   }
 
   std::unique_ptr<DesktopFrame> frame(
-      new BasicDesktopFrame(x_server_pixel_buffer_.window_size()));
+      new BasicDesktopFrame(x_server_pixel_buffer_.window_size(), FOURCC_ARGB));
 
   x_server_pixel_buffer_.Synchronize();
   if (!x_server_pixel_buffer_.CaptureRect(DesktopRect::MakeSize(frame->size()),
@@ -182,6 +197,9 @@ void WindowCapturerX11::CaptureFrame() {
       DesktopRect::MakeSize(frame->size()));
   frame->set_top_left(x_server_pixel_buffer_.window_rect().top_left());
   frame->set_capturer_id(DesktopCapturerId::kX11CapturerLinux);
+
+  int64_t capture_time_ms = (clock_.CurrentTime() - capture_start_time).ms();
+  frame->set_capture_time_ms(capture_time_ms);
 
   callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
 }
@@ -251,6 +269,9 @@ std::unique_ptr<DesktopCapturer> WindowCapturerX11::CreateRawWindowCapturer(
     const DesktopCaptureOptions& options) {
   if (!options.x_display())
     return nullptr;
+
+  RTC_LOG(LS_INFO) << "WindowCapturerX11::CreateRawWindowCapturer creates "
+                      "DesktopCapturer of type WindowCapturerX11";
   return std::unique_ptr<DesktopCapturer>(new WindowCapturerX11(options));
 }
 

@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -39,6 +38,9 @@ const { AppConstants } = ChromeUtils.importESModule(
 );
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
 );
 
 // Note: FxR UI uses a fork of browser-fullScreenAndPointerLock.js which removes
@@ -195,7 +197,7 @@ function setupUrlBar() {
     if (e.key == "Enter") {
       // Use the URL Fixup Service in case the user wants to search instead
       // of directly navigating to a location.
-      await Services.search.init();
+      await SearchService.init();
 
       let valueToFixUp = urlInput.value;
       let flags =

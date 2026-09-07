@@ -22,4 +22,10 @@ enum class InstallationMethod {
      * Indicates the [WebExtension] was installed from an onboarding feature.
      */
     ONBOARDING,
+
+    /**
+     * Indicates the [WebExtension] was installed for the RTAMO feature - install the specific addon
+     * from the Mozilla addons webpage where the integrating application was installed from.
+     */
+    RTAMO,
 }

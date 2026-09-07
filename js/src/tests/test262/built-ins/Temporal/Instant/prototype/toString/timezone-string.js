@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -11,9 +11,9 @@ features: [Temporal]
 const instance = new Temporal.Instant(0n);
 
 const result1 = instance.toString({ timeZone: "UTC" });
-assert.sameValue(result1.substr(-6), "+00:00", "Time zone created from string 'UTC'");
+assert.sameValue(result1.slice(-6), "+00:00", "Time zone created from string 'UTC'");
 
 const result2 = instance.toString({ timeZone: "-01:30" });
-assert.sameValue(result2.substr(-6), "-01:30", "Time zone created from string '-01:30'");
+assert.sameValue(result2.slice(-6), "-01:30", "Time zone created from string '-01:30'");
 
 reportCompare(0, 0);

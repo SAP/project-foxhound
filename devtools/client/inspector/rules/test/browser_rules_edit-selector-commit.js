@@ -24,28 +24,28 @@ const TEST_URI = `
 
 const TEST_DATA = [
   {
-    node: "#testid1",
+    selector: "#testid1",
     value: ".testclass",
     commitKey: "VK_ESCAPE",
     modifiers: {},
     expected: "#testid1",
   },
   {
-    node: "#testid1",
+    selector: "#testid1",
     value: ".testclass1",
     commitKey: "VK_RETURN",
     modifiers: {},
     expected: ".testclass1",
   },
   {
-    node: "#testid2",
+    selector: "#testid2",
     value: ".testclass2",
     commitKey: "VK_TAB",
     modifiers: {},
     expected: ".testclass2",
   },
   {
-    node: "#testid3",
+    selector: "#testid3",
     value: ".testclass3",
     commitKey: "VK_TAB",
     modifiers: { shiftKey: true },
@@ -63,11 +63,11 @@ add_task(async function () {
 });
 
 async function runTestData(inspector, view, data) {
-  const { node, value, commitKey, modifiers, expected } = data;
+  const { selector, value, commitKey, modifiers, expected } = data;
 
   info(
     "Updating " +
-      node +
+      selector +
       " to " +
       value +
       " and committing with " +
@@ -77,9 +77,10 @@ async function runTestData(inspector, view, data) {
   );
 
   info("Selecting the test element");
-  await selectNode(node, inspector);
+  await selectNode(selector, inspector);
 
-  let idRuleEditor = getRuleViewRuleEditor(view, 1);
+  let idRuleEditor = getRuleViewRuleEditorAt(view, 1);
+  is(idRuleEditor.selectorText.textContent, selector);
 
   info("Focusing an existing selector name in the rule-view");
   const editor = await focusEditableField(view, idRuleEditor.selectorText);
@@ -116,7 +117,7 @@ async function runTestData(inspector, view, data) {
   );
 
   if (modifiers.shiftKey) {
-    idRuleEditor = getRuleViewRuleEditor(view, 0);
+    idRuleEditor = getRuleViewRuleEditorAt(view, 0);
   }
 
   if (

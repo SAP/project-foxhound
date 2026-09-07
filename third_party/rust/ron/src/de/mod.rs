@@ -1,15 +1,17 @@
 /// Deserialization module.
-use std::{
-    io::{self, Write},
-    str,
+use alloc::{
+    borrow::ToOwned,
+    string::{String, ToString},
+    vec::Vec,
 };
+use core::str;
 
 use serde::{
     de::{self, DeserializeSeed, Deserializer as _, Visitor},
     Deserialize,
 };
 
-pub use crate::error::{Error, Position, SpannedError};
+pub use crate::error::{Error, Position, Span, SpannedError};
 use crate::{
     error::{Result, SpannedResult},
     extensions::Extensions,
@@ -17,14 +19,14 @@ use crate::{
     parse::{NewtypeMode, ParsedByteStr, ParsedStr, Parser, StructType, TupleMode},
 };
 
+#[cfg(feature = "std")]
+use std::io;
+
 mod id;
 mod tag;
 #[cfg(test)]
 mod tests;
 mod value;
-
-const SERDE_CONTENT_CANARY: &str = "serde::__private::de::content::Content";
-const SERDE_TAG_KEY_CANARY: &str = "serde::__private::de::content::TagOrContent";
 
 /// The RON deserializer.
 ///
@@ -78,7 +80,10 @@ impl<'de> Deserializer<'de> {
 
         Err(SpannedError {
             code: err.into(),
-            position: Position::from_src_end(valid_input),
+            span: Span {
+                start: Position { line: 1, col: 1 },
+                end: Position::from_src_end(valid_input),
+            },
         })
     }
 
@@ -100,6 +105,7 @@ impl<'de> Deserializer<'de> {
 
 /// A convenience function for building a deserializer
 /// and deserializing a value of type `T` from a reader.
+#[cfg(feature = "std")]
 pub fn from_reader<R, T>(rdr: R) -> SpannedResult<T>
 where
     R: io::Read,
@@ -169,9 +175,9 @@ impl<'de> Deserializer<'de> {
         V: Visitor<'de>,
     {
         // HACK: switch to JSON enum semantics for JSON content
-        // Robust impl blocked on https://github.com/serde-rs/serde/pull/2420
-        let is_serde_content = std::any::type_name::<V::Value>() == SERDE_CONTENT_CANARY
-            || std::any::type_name::<V::Value>() == SERDE_TAG_KEY_CANARY;
+        // Robust impl blocked on https://github.com/serde-rs/serde/issues/1183
+        let is_serde_content =
+            is_serde_content::<V::Value>() || is_serde_tag_or_content::<V::Value>();
 
         let old_serde_content_newtype = self.serde_content_newtype;
         self.serde_content_newtype = false;
@@ -323,13 +329,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         } else if self.parser.consume_str("()") {
             return visitor.visit_unit();
         } else if self.parser.consume_ident("inf") || self.parser.consume_ident("inff32") {
-            return visitor.visit_f32(std::f32::INFINITY);
+            return visitor.visit_f32(core::f32::INFINITY);
         } else if self.parser.consume_ident("inff64") {
-            return visitor.visit_f64(std::f64::INFINITY);
+            return visitor.visit_f64(core::f64::INFINITY);
         } else if self.parser.consume_ident("NaN") || self.parser.consume_ident("NaNf32") {
-            return visitor.visit_f32(std::f32::NAN);
+            return visitor.visit_f32(core::f32::NAN);
         } else if self.parser.consume_ident("NaNf64") {
-            return visitor.visit_f64(std::f64::NAN);
+            return visitor.visit_f64(core::f64::NAN);
         }
 
         // `skip_identifier` does not change state if it fails
@@ -560,7 +566,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         if name == crate::value::raw::RAW_VALUE_TOKEN {
             let src_before = self.parser.pre_ws_src();
             self.parser.skip_ws()?;
-            let _ignored = self.deserialize_ignored_any(serde::de::IgnoredAny)?;
+            let _ignored = self.deserialize_ignored_any(de::IgnoredAny)?;
             self.parser.skip_ws()?;
             let src_after = self.parser.src();
 
@@ -670,25 +676,21 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // Detect `#[serde(flatten)]` as a struct deserialised as a map
-        const SERDE_FLATTEN_CANARY: &[u8] = b"struct ";
-
         struct VisitorExpecting<V>(V);
-        impl<'de, V: Visitor<'de>> std::fmt::Display for VisitorExpecting<&'_ V> {
-            fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        impl<'de, V: Visitor<'de>> core::fmt::Display for VisitorExpecting<&'_ V> {
+            fn fmt(&self, fmt: &mut core::fmt::Formatter) -> core::fmt::Result {
                 self.0.expecting(fmt)
             }
         }
 
         self.newtype_variant = false;
 
-        let mut canary_buffer = [0u8; SERDE_FLATTEN_CANARY.len()];
-        std::mem::drop(write!(
-            canary_buffer.as_mut(),
-            "{}",
-            VisitorExpecting(&visitor)
-        ));
-        let terminator = if canary_buffer == SERDE_FLATTEN_CANARY {
+        // TODO: Avoid allocating to perform this check.
+        let serde_flatten_canary = VisitorExpecting(&visitor)
+            .to_string()
+            .starts_with("struct ");
+
+        let terminator = if serde_flatten_canary {
             Terminator::MapAsStruct
         } else {
             Terminator::Map
@@ -852,8 +854,7 @@ impl<'de, 'a> de::MapAccess<'de> for CommaSeparated<'a, 'de> {
         K: DeserializeSeed<'de>,
     {
         if self.has_element()? {
-            self.inside_internally_tagged_enum =
-                std::any::type_name::<K::Value>() == SERDE_TAG_KEY_CANARY;
+            self.inside_internally_tagged_enum = is_serde_tag_or_content::<K::Value>();
 
             match self.terminator {
                 Terminator::Struct => guard_recursion! { self.de =>
@@ -878,9 +879,7 @@ impl<'de, 'a> de::MapAccess<'de> for CommaSeparated<'a, 'de> {
         if self.de.parser.consume_char(':') {
             self.de.parser.skip_ws()?;
 
-            let res = if self.inside_internally_tagged_enum
-                && std::any::type_name::<V::Value>() != SERDE_CONTENT_CANARY
-            {
+            let res = if self.inside_internally_tagged_enum && !is_serde_content::<V::Value>() {
                 guard_recursion! { self.de =>
                     seed.deserialize(&mut tag::Deserializer::new(&mut *self.de))?
                 }
@@ -1029,7 +1028,7 @@ impl<'de, 'a> de::MapAccess<'de> for SerdeEnumContent<'a, 'de> {
     {
         self.ident
             .take()
-            .map(|ident| seed.deserialize(serde::de::value::StrDeserializer::new(ident)))
+            .map(|ident| seed.deserialize(de::value::StrDeserializer::new(ident)))
             .transpose()
     }
 
@@ -1046,4 +1045,142 @@ impl<'de, 'a> de::MapAccess<'de> for SerdeEnumContent<'a, 'de> {
 
         result
     }
+}
+
+fn is_serde_content<T>() -> bool {
+    #[derive(serde_derive::Deserialize)]
+    enum A {}
+    type B = A;
+
+    #[derive(serde_derive::Deserialize)]
+    #[serde(untagged)]
+    enum UntaggedEnum {
+        A(A),
+        B(B),
+    }
+
+    struct TypeIdDeserializer;
+
+    impl<'de> de::Deserializer<'de> for TypeIdDeserializer {
+        type Error = TypeIdError;
+
+        fn deserialize_any<V: Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
+            Err(TypeIdError(typeid::of::<V::Value>()))
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+            bytes byte_buf option unit unit_struct newtype_struct seq tuple
+            tuple_struct map struct enum identifier ignored_any
+        }
+    }
+
+    #[derive(Debug)]
+    struct TypeIdError(core::any::TypeId);
+
+    impl core::fmt::Display for TypeIdError {
+        fn fmt(&self, _fmt: &mut core::fmt::Formatter) -> core::fmt::Result {
+            Ok(())
+        }
+    }
+
+    impl de::Error for TypeIdError {
+        #[allow(clippy::unreachable)]
+        fn custom<T: core::fmt::Display>(_msg: T) -> Self {
+            unreachable!()
+        }
+    }
+
+    impl de::StdError for TypeIdError {}
+
+    fn type_id_of_untagged_enum_default_buffer() -> core::any::TypeId {
+        static TYPE_ID: once_cell::race::OnceBox<core::any::TypeId> =
+            once_cell::race::OnceBox::new();
+
+        *TYPE_ID.get_or_init(|| match Deserialize::deserialize(TypeIdDeserializer) {
+            Ok(UntaggedEnum::A(void) | UntaggedEnum::B(void)) => match void {},
+            Err(TypeIdError(typeid)) => alloc::boxed::Box::new(typeid),
+        })
+    }
+
+    typeid::of::<T>() == type_id_of_untagged_enum_default_buffer()
+}
+
+fn is_serde_tag_or_content<T>() -> bool {
+    #[derive(serde_derive::Deserialize)]
+    enum A {}
+
+    #[derive(serde_derive::Deserialize)]
+    #[serde(tag = "tag")]
+    enum InternallyTaggedEnum {
+        A { a: A },
+    }
+
+    struct TypeIdDeserializer;
+
+    impl<'de> de::Deserializer<'de> for TypeIdDeserializer {
+        type Error = TypeIdError;
+
+        fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: Visitor<'de>,
+        {
+            visitor.visit_map(self)
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+            bytes byte_buf option unit unit_struct newtype_struct seq tuple
+            tuple_struct map struct enum identifier ignored_any
+        }
+    }
+
+    impl<'de> de::MapAccess<'de> for TypeIdDeserializer {
+        type Error = TypeIdError;
+
+        fn next_key_seed<K: DeserializeSeed<'de>>(
+            &mut self,
+            _seed: K,
+        ) -> Result<Option<K::Value>, Self::Error> {
+            Err(TypeIdError(typeid::of::<K::Value>()))
+        }
+
+        #[allow(clippy::unreachable)]
+        fn next_value_seed<V: DeserializeSeed<'de>>(
+            &mut self,
+            _seed: V,
+        ) -> Result<V::Value, Self::Error> {
+            unreachable!()
+        }
+    }
+
+    #[derive(Debug)]
+    struct TypeIdError(core::any::TypeId);
+
+    impl core::fmt::Display for TypeIdError {
+        fn fmt(&self, _fmt: &mut core::fmt::Formatter) -> core::fmt::Result {
+            Ok(())
+        }
+    }
+
+    impl de::Error for TypeIdError {
+        #[allow(clippy::unreachable)]
+        fn custom<T: core::fmt::Display>(_msg: T) -> Self {
+            unreachable!()
+        }
+    }
+
+    impl de::StdError for TypeIdError {}
+
+    fn type_id_of_internally_tagged_enum_default_tag_or_buffer() -> core::any::TypeId {
+        static TYPE_ID: once_cell::race::OnceBox<core::any::TypeId> =
+            once_cell::race::OnceBox::new();
+
+        *TYPE_ID.get_or_init(|| match Deserialize::deserialize(TypeIdDeserializer) {
+            Ok(InternallyTaggedEnum::A { a: void }) => match void {},
+            Err(TypeIdError(typeid)) => alloc::boxed::Box::new(typeid),
+        })
+    }
+
+    typeid::of::<T>() == type_id_of_internally_tagged_enum_default_tag_or_buffer()
 }

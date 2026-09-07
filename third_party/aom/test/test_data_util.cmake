@@ -42,7 +42,11 @@ list(APPEND AOM_TEST_DATA_FILE_NAMES
             "bus_352x288_420_f20_b8.yuv"
             "test_input_w1h1.yuv"
             "crowd_run_360p_10_150f.y4m"
-            "wikipedia_420_360p_60f.y4m")
+            "wikipedia_420_360p_60f.y4m"
+            "SDR_Animal_oqo7.y4m"
+            "SDR_Health_rtd0_720p.y4m"
+            "SDR_Dance_ldsn_1080p.y4m"
+            "SDR_Sports_6mug_608p_30fps_90f.yuv")
 
 if(ENABLE_DECODE_PERF_TESTS AND CONFIG_AV1_ENCODER)
   list(APPEND AOM_TEST_DATA_FILE_NAMES "niklas_1280_720_30.yuv")

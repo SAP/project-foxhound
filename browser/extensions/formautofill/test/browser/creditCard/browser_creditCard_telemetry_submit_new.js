@@ -38,12 +38,6 @@ add_task(async function test_submit_creditCard_new() {
         await clickDoorhangerButton(command, idx);
         if (expectChanged !== undefined) {
           await onChanged;
-          TelemetryTestUtils.assertScalar(
-            TelemetryTestUtils.getProcessScalars("parent"),
-            "formautofill.creditCards.autofill_profiles_count",
-            expectChanged,
-            `There should be ${expectChanged} profile(s) stored and recorded in Legacy Telemetry.`
-          );
           Assert.equal(
             expectChanged,
             Glean.formautofillCreditcards.autofillProfilesCount.testGetValue(),
@@ -70,12 +64,8 @@ add_task(async function test_submit_creditCard_new() {
 
   await test_per_command(MAIN_BUTTON, undefined, 1);
 
-  await assertTelemetry(undefined, [
-    ...expectedFormInteractionEvents,
-    ["creditcard", "show", "capture_doorhanger"],
-    ["creditcard", "save", "capture_doorhanger"],
-  ]);
-
+  Assert.equal(1, Glean.creditcard.showCaptureDoorhanger.testGetValue().length);
+  Assert.equal(1, Glean.creditcard.saveCaptureDoorhanger.testGetValue().length);
   assertFormInteractionEventsInGlean(expectedFormInteractionEvents);
   assertDetectedCcNumberFieldsCountInGlean([
     { label: "cc_number_fields_1", count: 1 },
@@ -85,12 +75,11 @@ add_task(async function test_submit_creditCard_new() {
 
   await test_per_command(SECONDARY_BUTTON);
 
-  await assertTelemetry(undefined, [
-    ...expectedFormInteractionEvents,
-    ["creditcard", "show", "capture_doorhanger"],
-    ["creditcard", "cancel", "capture_doorhanger"],
-  ]);
-
+  Assert.equal(1, Glean.creditcard.showCaptureDoorhanger.testGetValue().length);
+  Assert.equal(
+    1,
+    Glean.creditcard.cancelCaptureDoorhanger.testGetValue().length
+  );
   assertFormInteractionEventsInGlean(expectedFormInteractionEvents);
   assertDetectedCcNumberFieldsCountInGlean([
     { label: "cc_number_fields_1", count: 1 },
@@ -100,12 +89,11 @@ add_task(async function test_submit_creditCard_new() {
 
   await test_per_command(MENU_BUTTON, 0);
 
-  await assertTelemetry(undefined, [
-    ...expectedFormInteractionEvents,
-    ["creditcard", "show", "capture_doorhanger"],
-    ["creditcard", "disable", "capture_doorhanger"],
-  ]);
-
+  Assert.equal(1, Glean.creditcard.showCaptureDoorhanger.testGetValue().length);
+  Assert.equal(
+    1,
+    Glean.creditcard.disableCaptureDoorhanger.testGetValue().length
+  );
   assertFormInteractionEventsInGlean(expectedFormInteractionEvents);
   assertDetectedCcNumberFieldsCountInGlean([
     { label: "cc_number_fields_1", count: 1 },

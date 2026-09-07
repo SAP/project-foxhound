@@ -19,11 +19,11 @@ const { colorUtils } = require("resource://devtools/shared/css/color.js");
  * Create an inplace editor linked to a span element and click on the span to
  * to turn to edit mode.
  *
- * @param {Object} options
+ * @param {object} options
  *        Options passed to the InplaceEditor/editableField constructor.
  * @param {Document} doc
  *        Document where the span element will be created.
- * @param {String} textContent
+ * @param {string} textContent
  *        (optional) String that will be used as the text content of the span.
  */
 const createInplaceEditorAndClick = async function (options, doc, textContent) {

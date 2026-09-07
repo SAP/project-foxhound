@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -183,6 +181,20 @@ this.userScripts = class extends ExtensionAPI {
           return usm.runReadTask(async () => {
             return usm.getWorldConfigurations();
           });
+        },
+
+        execute: async injection => {
+          ensureValidWorldId(injection.worldId);
+          let { promise, resolve } = Promise.withResolvers();
+          await usm.runReadTask(async () => {
+            // The usm.executeScript call may take an arbitrary amount of time,
+            // e.g. if the executed code ends up returning a promise. To prevent
+            // that from blocking the queue (when a "write" operation is queued),
+            // we do not await the resolution of usm.executeScript, instead we
+            // return the promise to the function caller.
+            resolve(usm.executeScript(context, injection));
+          });
+          return promise;
         },
       },
     };

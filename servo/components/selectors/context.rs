@@ -55,8 +55,8 @@ impl VisitedHandlingMode {
     pub fn matches_visited(&self) -> bool {
         matches!(
             *self,
-            VisitedHandlingMode::RelevantLinkVisited |
-                VisitedHandlingMode::AllLinksVisitedAndUnvisited
+            VisitedHandlingMode::RelevantLinkVisited
+                | VisitedHandlingMode::AllLinksVisitedAndUnvisited
         )
     }
 
@@ -64,23 +64,10 @@ impl VisitedHandlingMode {
     pub fn matches_unvisited(&self) -> bool {
         matches!(
             *self,
-            VisitedHandlingMode::AllLinksUnvisited |
-                VisitedHandlingMode::AllLinksVisitedAndUnvisited
+            VisitedHandlingMode::AllLinksUnvisited
+                | VisitedHandlingMode::AllLinksVisitedAndUnvisited
         )
     }
-}
-
-/// The mode to use whether we should matching rules inside @starting-style.
-/// https://drafts.csswg.org/css-transitions-2/#starting-style
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum IncludeStartingStyle {
-    /// All without rules inside @starting-style. This is for the most common case because the
-    /// primary/pseudo styles doesn't use rules inside @starting-style.
-    No,
-    /// Get the starting style. The starting style for an element as the after-change style with
-    /// @starting-style rules applied in addition. In other words, this matches all rules,
-    /// including rules inside @starting-style.
-    Yes,
 }
 
 /// Whether we need to set selector invalidation flags on elements for this
@@ -170,12 +157,6 @@ where
     /// Controls how matching for links is handled.
     visited_handling: VisitedHandlingMode,
 
-    /// Controls if we should match rules in @starting-style.
-    pub include_starting_style: IncludeStartingStyle,
-
-    /// Whether there are any rules inside @starting-style.
-    pub has_starting_style: bool,
-
     /// Whether we're currently matching a featureless element.
     pub featureless: bool,
 
@@ -198,8 +179,11 @@ where
     quirks_mode: QuirksMode,
     needs_selector_flags: NeedsSelectorFlags,
 
-    /// Whether we're matching in the contect of invalidation.
+    /// Whether we're matching in the context of invalidation.
     matching_for_invalidation: MatchingForInvalidation,
+
+    /// Whether we're matching in the context of revalidation.
+    matching_for_revalidation: bool,
 
     /// Caches to speed up expensive selector matches.
     pub selector_caches: &'a mut SelectorCaches,
@@ -221,15 +205,36 @@ where
         needs_selector_flags: NeedsSelectorFlags,
         matching_for_invalidation: MatchingForInvalidation,
     ) -> Self {
-        Self::new_for_visited(
+        Self::new_internal(
             matching_mode,
             bloom_filter,
             selector_caches,
             VisitedHandlingMode::AllLinksUnvisited,
-            IncludeStartingStyle::No,
             quirks_mode,
             needs_selector_flags,
             matching_for_invalidation,
+            false,
+        )
+    }
+
+    /// Constructs a new `MatchingContext` for revalidation.
+    pub fn new_for_revalidation(
+        bloom_filter: Option<&'a BloomFilter>,
+        selector_caches: &'a mut SelectorCaches,
+        quirks_mode: QuirksMode,
+        needs_selector_flags: NeedsSelectorFlags,
+    ) -> Self {
+        Self::new_internal(
+            // NB: `MatchingMode` doesn't really matter, given we don't share style
+            // between pseudos.
+            MatchingMode::Normal,
+            bloom_filter,
+            selector_caches,
+            VisitedHandlingMode::AllLinksUnvisited,
+            quirks_mode,
+            needs_selector_flags,
+            MatchingForInvalidation::No,
+            true,
         )
     }
 
@@ -239,21 +244,41 @@ where
         bloom_filter: Option<&'a BloomFilter>,
         selector_caches: &'a mut SelectorCaches,
         visited_handling: VisitedHandlingMode,
-        include_starting_style: IncludeStartingStyle,
         quirks_mode: QuirksMode,
         needs_selector_flags: NeedsSelectorFlags,
         matching_for_invalidation: MatchingForInvalidation,
+    ) -> Self {
+        Self::new_internal(
+            matching_mode,
+            bloom_filter,
+            selector_caches,
+            visited_handling,
+            quirks_mode,
+            needs_selector_flags,
+            matching_for_invalidation,
+            false,
+        )
+    }
+
+    fn new_internal(
+        matching_mode: MatchingMode,
+        bloom_filter: Option<&'a BloomFilter>,
+        selector_caches: &'a mut SelectorCaches,
+        visited_handling: VisitedHandlingMode,
+        quirks_mode: QuirksMode,
+        needs_selector_flags: NeedsSelectorFlags,
+        matching_for_invalidation: MatchingForInvalidation,
+        matching_for_revalidation: bool,
     ) -> Self {
         Self {
             matching_mode,
             bloom_filter,
             visited_handling,
-            include_starting_style,
-            has_starting_style: false,
             quirks_mode,
             classes_and_ids_case_sensitivity: quirks_mode.classes_and_ids_case_sensitivity(),
             needs_selector_flags,
             matching_for_invalidation,
+            matching_for_revalidation,
             scope_element: None,
             current_host: None,
             featureless: false,
@@ -316,6 +341,12 @@ where
         self.matching_for_invalidation.is_for_invalidation()
     }
 
+    /// Whether or not we're matching to revalidate.
+    #[inline]
+    pub fn matching_for_revalidation(&self) -> bool {
+        self.matching_for_revalidation
+    }
+
     /// Whether or not we're comparing for invalidation, if we are matching for invalidation.
     #[inline]
     pub fn matching_for_invalidation_comparison(&self) -> Option<bool> {
@@ -332,7 +363,10 @@ where
     where
         F: FnOnce(&mut Self) -> R,
     {
-        debug_assert!(self.matching_for_invalidation(), "Not matching for invalidation?");
+        debug_assert!(
+            self.matching_for_invalidation(),
+            "Not matching for invalidation?"
+        );
         let prev = self.matching_for_invalidation;
         self.matching_for_invalidation = MatchingForInvalidation::YesForComparison;
         let result = f(self);
@@ -379,11 +413,7 @@ where
 
     /// Runs F with a different featureless element flag.
     #[inline]
-    pub fn with_featureless<F, R>(
-        &mut self,
-        featureless: bool,
-        f: F,
-    ) -> R
+    pub fn with_featureless<F, R>(&mut self, featureless: bool, f: F) -> R
     where
         F: FnOnce(&mut Self) -> R,
     {

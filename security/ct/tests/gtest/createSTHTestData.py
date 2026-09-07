@@ -57,7 +57,7 @@ class UnknownParameterTypeError(Error):
     """Base class for handling unexpected input in this module."""
 
     def __init__(self, value):
-        super(Error, self).__init__()
+        super().__init__()
         self.value = value
         self.category = "key"
 
@@ -69,7 +69,7 @@ class InputTooLongError(Error):
     """Helper exception type for inputs that are too long."""
 
     def __init__(self, length):
-        super(InputTooLongError, self).__init__()
+        super().__init__()
         self.length = length
 
     def __str__(self):

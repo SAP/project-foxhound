@@ -5,19 +5,11 @@
 package org.mozilla.fenix.utils
 
 import android.app.PendingIntent
-import android.os.Build
 
 object IntentUtils {
 
     /**
-     * Since Android 12 we need to set PendingIntent mutability explicitly, but Android 6 can be the minimum version
-     * This additional requirement improves your app's security.
      * FLAG_IMMUTABLE -> Flag indicating that the created PendingIntent should be immutable.
      */
-    val defaultIntentPendingFlags
-        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE
-        } else {
-            0 // No flags. Default behavior.
-        }
+    const val DEFAULT_PENDING_INTENT_FLAGS = PendingIntent.FLAG_IMMUTABLE
 }

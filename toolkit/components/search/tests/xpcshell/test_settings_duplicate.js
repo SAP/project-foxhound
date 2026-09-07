@@ -34,13 +34,13 @@ const enginesSettings = {
     {
       id: "appDefault",
       _metaData: { alias: null },
-      _isAppProvided: true,
+      _isConfigEngine: true,
       _name: "appDefault",
     },
     {
       id: "other",
       _metaData: { alias: null },
-      _isAppProvided: true,
+      _isConfigEngine: true,
       _name: "other",
     },
     // This is a user-installed engine - the only one that was listed due to the
@@ -123,7 +123,7 @@ add_setup(async function () {
 add_task(async function test_cached_duplicate() {
   info("init search service");
 
-  let initResult = await Services.search.init();
+  let initResult = await SearchService.init();
 
   info("init'd search service");
   Assert.ok(
@@ -131,7 +131,7 @@ add_task(async function test_cached_duplicate() {
     "Should have successfully created the search service"
   );
 
-  let engine = Services.search.getEngineByName("appDefault");
+  let engine = SearchService.getEngineByName("appDefault");
   let submission = engine.getSubmission("foo");
   Assert.equal(
     submission.uri.spec,
@@ -140,11 +140,11 @@ add_task(async function test_cached_duplicate() {
   );
 
   Assert.ok(
-    !(await Services.search.getEngineById(DUPLICATE_ENGINE_ID)),
+    !(await SearchService.getEngineById(DUPLICATE_ENGINE_ID)),
     "Should not have added the duplicate engine"
   );
 
-  let engines = await Services.search.getEngines();
+  let engines = await SearchService.getEngines();
 
   Assert.deepEqual(
     engines.map(e => e.name),

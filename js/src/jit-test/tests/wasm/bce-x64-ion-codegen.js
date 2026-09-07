@@ -31,10 +31,10 @@ for ( let memType of memTypes ) {
      drop
      (i32.load (local.get 1))))`,
     'f', `
-48 3b ..                  cmp %r.., %r..
-0f 83 .. 00 00 00         jnb 0x00000000000000..
-41 8b .. ..               movl \\(%r15,%r..,1\\), %e..
-41 8b .. ..               movl \\(%r15,%r..,1\\), %eax`,
+(movq 0x08\\(%r..\\), %r..\ncmp %r.., %r..|cmpq 0x08\\(%r..\\), %r..)
+jnb 0x00000000000000..
+movl \\(%r..,%r..,1\\), %e..
+movl \\(%r..,%r..,1\\), %eax`,
         {no_prefix:true});
 
     // Make sure constant indices below the heap minimum do not require a bounds
@@ -45,7 +45,7 @@ for ( let memType of memTypes ) {
    (func (export "f") (result i32)
      (i32.load (${memType}.const 16))))`,
     'f',
-    `41 8b 47 10               movl 0x10\\(%r15\\), %eax`);
+    `movl 0x10\\(%r15\\), %eax`);
 
     // Ditto, even at the very limit of the known heap, extending into the guard
     // page.  This is an OOB access, of course, but it needs no explicit bounds
@@ -57,7 +57,6 @@ for ( let memType of memTypes ) {
      (i32.load (${memType}.const 65535))))`,
     'f',
 `
-b8 ff ff 00 00            mov \\$0xFFFF, %eax
-41 8b 04 07               movl \\(%r15,%rax,1\\), %eax`);
+mov \\$0xFFFF, %eax
+movl \\(%r15,%rax,1\\), %eax`);
 }
-

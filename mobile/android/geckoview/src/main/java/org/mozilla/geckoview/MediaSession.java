@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -33,6 +31,11 @@ public class MediaSession {
   private final GeckoSession mSession;
   private boolean mIsActive;
 
+  /**
+   * Create a new MediaSession for the given GeckoSession.
+   *
+   * @param session The GeckoSession this media session is associated with.
+   */
   protected MediaSession(final GeckoSession session) {
     mSession = session;
   }
@@ -478,6 +481,7 @@ public class MediaSession {
     }
   }
 
+  /** Media session feature flag definitions for supported media operations. */
   @Retention(RetentionPolicy.SOURCE)
   @LongDef(
       flag = true,
@@ -498,6 +502,7 @@ public class MediaSession {
 
   /** Flags for supported media session features. */
   public static class Feature {
+    /** No media session features supported. */
     public static final long NONE = 0;
 
     /** Playback supported. */

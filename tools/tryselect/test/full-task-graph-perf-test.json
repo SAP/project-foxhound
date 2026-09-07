@@ -27,10 +27,10 @@
       }
     }
   },
-  "test-platform-android/opt-browsertime-speedometer-mobile-fenix-nofis": {
+  "test-platform-android/opt-browsertime-speedometer2-mobile-fenix-nofis": {
     "task": {
       "payload": {
-        "command": [["options", "--test=speedometer"]]
+        "command": [["options", "--test=speedometer2"]]
       }
     }
   },

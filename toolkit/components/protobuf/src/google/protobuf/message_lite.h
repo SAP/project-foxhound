@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Authors: wink@google.com (Wink Saville),
 //          kenton@google.com (Kenton Varda)
@@ -35,27 +12,40 @@
 //
 // Defines MessageLite, the abstract interface implemented by all (lite
 // and non-lite) protocol message objects.
+//
+// This is only intended to be extended by protoc created gencode or types
+// defined in the Protobuf runtime. It is not intended or supported for
+// application code to extend this class, and any protected methods may be
+// removed without being it being considered a breaking change as long as the
+// corresponding gencode does not use it.
 
 #ifndef GOOGLE_PROTOBUF_MESSAGE_LITE_H__
 #define GOOGLE_PROTOBUF_MESSAGE_LITE_H__
 
-
 #include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <iosfwd>
+#include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 
-#include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/logging.h>
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/arena.h>
-#include <google/protobuf/stubs/once.h>
-#include <google/protobuf/port.h>
-#include <google/protobuf/stubs/strutil.h>
-#include <google/protobuf/explicitly_constructed.h>
-#include <google/protobuf/metadata_lite.h>
-#include <google/protobuf/stubs/hash.h>  // TODO(b/211442718): cleanup
+#include "absl/base/attributes.h"
+#include "absl/base/macros.h"
+#include "absl/log/absl_check.h"
+#include "absl/strings/cord.h"
+#include "absl/strings/string_view.h"
+#include "google/protobuf/arena.h"
+#include "google/protobuf/internal_visibility.h"
+#include "google/protobuf/io/coded_stream.h"
+#include "google/protobuf/metadata_lite.h"
+#include "google/protobuf/port.h"
+
 
 // clang-format off
-#include <google/protobuf/port_def.inc>
+#include "google/protobuf/port_def.inc"
 // clang-format on
 
 #ifdef SWIG
@@ -71,6 +61,9 @@ class RepeatedPtrField;
 class FastReflectionMessageMutator;
 class FastReflectionStringSetter;
 class Reflection;
+class Descriptor;
+class AssignDescriptorsHelper;
+class MessageLite;
 
 namespace io {
 
@@ -80,30 +73,257 @@ class ZeroCopyInputStream;
 class ZeroCopyOutputStream;
 
 }  // namespace io
+
+namespace compiler {
+namespace cpp {
+class MessageTableTester;
+}  // namespace cpp
+}  // namespace compiler
+
 namespace internal {
+
+// TODO: Remove this once we have a better way to do this.
+PROTOBUF_EXPORT void GenericSwap(MessageLite* lhs, MessageLite* rhs);
+PROTOBUF_EXPORT void GenericSwap(Message* lhs, Message* rhs);
+
+struct PrivateAccess;
+
+class MessageCreator {
+ public:
+  using Func = void* (*)(const void*, void*, Arena*);
+
+  // Use -1/0/1 to be able to use <0, ==0, >0
+  enum Tag : int8_t {
+    kFunc = -1,
+    kZeroInit = 0,
+    kMemcpy = 1,
+  };
+
+  constexpr MessageCreator()
+      : allocation_size_(), tag_(), alignment_(), func_(nullptr) {}
+
+  static constexpr MessageCreator ZeroInit(uint32_t allocation_size,
+                                           uint8_t alignment) {
+    MessageCreator out;
+    out.allocation_size_ = allocation_size;
+    out.tag_ = kZeroInit;
+    out.alignment_ = alignment;
+    return out;
+  }
+  static constexpr MessageCreator CopyInit(uint32_t allocation_size,
+                                           uint8_t alignment) {
+    MessageCreator out;
+    out.allocation_size_ = allocation_size;
+    out.tag_ = kMemcpy;
+    out.alignment_ = alignment;
+    return out;
+  }
+  constexpr MessageCreator(Func func, uint32_t allocation_size,
+                           uint8_t alignment)
+      : allocation_size_(allocation_size),
+        tag_(kFunc),
+        alignment_(alignment),
+        func_(func) {}
+
+  // Template for testing.
+  template <typename MessageLite>
+  MessageLite* New(const MessageLite* prototype_for_func,
+                   const MessageLite* prototype_for_copy, Arena* arena) const;
+
+  template <typename MessageLite>
+  MessageLite* PlacementNew(const MessageLite* prototype_for_func,
+                            const MessageLite* prototype_for_copy, void* mem,
+                            Arena* arena) const;
+
+  Tag tag() const { return tag_; }
+
+  uint32_t allocation_size() const { return allocation_size_; }
+
+  uint8_t alignment() const { return alignment_; }
+
+ private:
+  uint32_t allocation_size_;
+  Tag tag_;
+  uint8_t alignment_;
+  Func func_;
+};
+
+// Allow easy change to regular int on platforms where the atomic might have a
+// perf impact.
+//
+// CachedSize is like std::atomic<int> but with some important changes:
+//
+// 1) CachedSize uses Get / Set rather than load / store.
+// 2) CachedSize always uses relaxed ordering.
+// 3) CachedSize is assignable and copy-constructible.
+// 4) CachedSize has a constexpr default constructor, and a constexpr
+//    constructor that takes an int argument.
+// 5) If the compiler supports the __atomic_load_n / __atomic_store_n builtins,
+//    then CachedSize is trivially copyable.
+//
+// Developed at https://godbolt.org/z/vYcx7zYs1 ; supports gcc, clang, MSVC.
+class PROTOBUF_EXPORT CachedSize {
+ private:
+  using Scalar = int;
+
+ public:
+  constexpr CachedSize() noexcept : atom_(Scalar{}) {}
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr CachedSize(Scalar desired) noexcept : atom_(desired) {}
+
+#ifdef PROTOBUF_BUILTIN_ATOMIC
+  constexpr CachedSize(const CachedSize& other) = default;
+
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD Scalar Get() const noexcept {
+    return __atomic_load_n(&atom_, __ATOMIC_RELAXED);
+  }
+
+  void Set(Scalar desired) const noexcept {
+    // Avoid writing the value when it is zero. This prevents writing to global
+    // default instances, which might be in readonly memory.
+    if (ABSL_PREDICT_FALSE(desired == 0)) {
+      if (Get() == 0) return;
+    }
+    __atomic_store_n(&atom_, desired, __ATOMIC_RELAXED);
+  }
+
+  void SetNonZero(Scalar desired) const noexcept {
+    ABSL_DCHECK_NE(desired, 0);
+    __atomic_store_n(&atom_, desired, __ATOMIC_RELAXED);
+  }
+
+  void SetNoDefaultInstance(Scalar desired) const noexcept {
+    __atomic_store_n(&atom_, desired, __ATOMIC_RELAXED);
+  }
+#else
+  CachedSize(const CachedSize& other) noexcept : atom_(other.Get()) {}
+  CachedSize& operator=(const CachedSize& other) noexcept {
+    Set(other.Get());
+    return *this;
+  }
+
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD Scalar Get() const noexcept {  //
+    return atom_.load(std::memory_order_relaxed);
+  }
+
+  void Set(Scalar desired) const noexcept {
+    // Avoid writing the value when it is zero. This prevents writing to global
+    // default instances, which might be in readonly memory.
+    if (ABSL_PREDICT_FALSE(desired == 0)) {
+      if (Get() == 0) return;
+    }
+    atom_.store(desired, std::memory_order_relaxed);
+  }
+
+  void SetNonZero(Scalar desired) const noexcept {
+    ABSL_DCHECK_NE(desired, 0);
+    atom_.store(desired, std::memory_order_relaxed);
+  }
+
+  void SetNoDefaultInstance(Scalar desired) const noexcept {
+    atom_.store(desired, std::memory_order_relaxed);
+  }
+#endif
+
+ private:
+#ifdef PROTOBUF_BUILTIN_ATOMIC
+  mutable Scalar atom_;
+#else
+  mutable std::atomic<Scalar> atom_;
+#endif
+};
+
+struct ClassData;
+
+// Returns the ClassData for the given message.
+//
+// This function is used to get the ClassData for a message without having to
+// know the type of the message. This is useful for when the message is a
+// generated message.
+template <typename Type>
+const ClassData* GetClassData(const Type& msg);
+
+template <typename T>
+struct FallbackMessageTraits {
+  static const void* default_instance() { return &T::default_instance(); }
+  static constexpr const auto* class_data() {
+    // Force the abstract branch of `GetClassData()` to avoid endless recursion.
+    return GetClassData<MessageLite>(T::default_instance());
+  }
+  // We can't make a constexpr pointer to the default, so use a function pointer
+  // instead.
+  static constexpr auto StrongPointer() { return &T::default_instance; }
+};
+
+template <const uint32_t* kValidationData>
+struct EnumTraitsT {
+  static constexpr const uint32_t* validation_data() { return kValidationData; }
+};
+
+// Traits for messages and enums.
+// We use a class scope variable template, which can be specialized with a
+// different type in a non-defining declaration.
+// We need non-defining declarations because we might have duplicates of the
+// same trait specification on each dependent coming from different .proto.h
+// files.
+struct MessageTraitsImpl {
+  template <typename T>
+  static FallbackMessageTraits<T> value;
+};
+template <typename T>
+using MessageTraits = decltype(MessageTraitsImpl::value<T>);
+
+struct EnumTraitsImpl {
+  struct Undefined;
+  // We use an incomplete type to cause a compiler error if something tries to
+  // instantiate `value<T>` with a `T` that had no specialization.
+  // The `enable_if` is there to workaround some compilers/tools that complain
+  // on the declaration even with no instantiations.
+  template <typename T>
+  static std::enable_if_t<sizeof(T) != 0, Undefined> value;
+};
+template <typename T>
+using EnumTraits = decltype(EnumTraitsImpl::value<T>);
+
+template <typename T>
+struct LiteEnumFuncs {
+  static constexpr bool kIsDefined = false;
+  // Lite enums will specialize this struct to allow templates to parse/unparse
+  // enums.
+  // The declarations will be like:
+  // static constexpr bool kIsDefined = true;
+  // static constexpr auto kParseFunc = ...
+  // static constexpr auto kNameFunc = ...
+};
 
 class SwapFieldHelper;
 
 // See parse_context.h for explanation
 class ParseContext;
 
+struct DescriptorTable;
+class DescriptorPoolExtensionFinder;
 class ExtensionSet;
+class HasBitsTestPeer;
+class InternalMetadataOffset;
+template <typename T, size_t kFieldOffset>
+struct InternalMetadataOffsetHelper;
 class LazyField;
 class RepeatedPtrFieldBase;
 class TcParser;
+struct TcParseTableBase;
 class WireFormatLite;
 class WeakFieldMap;
-
-template <typename Type>
-class GenericTypeHandler;  // defined in repeated_field.h
+class RustMapHelper;
 
 // We compute sizes as size_t but cache them as int.  This function converts a
 // computed size to a cached size.  Since we don't proceed with serialization
 // if the total size was > INT_MAX, it is not important what this function
 // returns for inputs > INT_MAX.  However this case should not error or
-// GOOGLE_CHECK-fail, because the full size_t resolution is still returned from
+// ABSL_CHECK-fail, because the full size_t resolution is still returned from
 // ByteSizeLong() and checked against INT_MAX; we can catch the overflow
 // there.
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
 inline int ToCachedSize(size_t size) { return static_cast<int>(size); }
 
 // We mainly calculate sizes in terms of size_t, but some functions that
@@ -111,32 +331,390 @@ inline int ToCachedSize(size_t size) { return static_cast<int>(size); }
 // positive. This function is more efficient than casting an int to size_t
 // directly on 64-bit platforms because it avoids making the compiler emit a
 // sign extending instruction, which we don't want and don't want to pay for.
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
 inline size_t FromIntSize(int size) {
   // Convert to unsigned before widening so sign extension is not necessary.
   return static_cast<unsigned int>(size);
 }
 
-// For cases where a legacy function returns an integer size.  We GOOGLE_DCHECK()
+// For cases where a legacy function returns an integer size.  We ABSL_DCHECK()
 // that the conversion will fit within an integer; if this is false then we
 // are losing information.
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
 inline int ToIntSize(size_t size) {
-  GOOGLE_DCHECK_LE(size, static_cast<size_t>(INT_MAX));
+  ABSL_DCHECK_LE(size, static_cast<size_t>(INT_MAX));
   return static_cast<int>(size);
 }
 
-// Default empty string object. Don't use this directly. Instead, call
-// GetEmptyString() to get the reference. This empty string is aligned with a
-// minimum alignment of 8 bytes to match the requirement of ArenaStringPtr.
-PROTOBUF_EXPORT extern ExplicitlyConstructedArenaString
-    fixed_address_empty_string;
 
-
-PROTOBUF_EXPORT constexpr const std::string& GetEmptyStringAlreadyInited() {
+PROTOBUF_EXPORT inline const std::string& GetEmptyStringAlreadyInited() {
   return fixed_address_empty_string.get();
 }
 
-PROTOBUF_EXPORT size_t StringSpaceUsedExcludingSelfLong(const std::string& str);
+struct ClassDataFull;
 
+// Note: The order of arguments in the functions is chosen so that it has
+// the same ABI as the member function that calls them. Eg the `this`
+// pointer becomes the first argument in the free function.
+//
+// Future work:
+// We could save more data by omitting any optional pointer that would
+// otherwise be null. We can have some metadata in ClassData telling us if we
+// have them and their offset.
+
+struct PROTOBUF_EXPORT ClassData {
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+  const MessageLite* prototype;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+  const internal::TcParseTableBase* tc_table;
+  bool (*is_initialized)(const MessageLite&);
+  void (*merge_to_from)(MessageLite& to, const MessageLite& from_msg);
+  internal::MessageCreator message_creator;
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void (*destroy_message)(MessageLite& msg);
+  void (MessageLite::*clear)();
+  size_t (*byte_size_long)(const MessageLite&);
+  uint8_t* (*serialize)(const MessageLite& msg, uint8_t* ptr,
+                        io::EpsCopyOutputStream* stream);
+#endif  // PROTOBUF_CUSTOM_VTABLE
+
+  // Offset of the CachedSize member.
+  uint32_t cached_size_offset;
+  // LITE objects (ie !descriptor_methods) collocate their name as a
+  // char[] just beyond the ClassData.
+  bool is_lite;
+  bool is_dynamic = false;
+
+  // In normal mode we have the small constructor to avoid the cost in
+  // codegen.
+#if !defined(PROTOBUF_CUSTOM_VTABLE)
+  constexpr ClassData(const MessageLite* prototype,
+                      const internal::TcParseTableBase* tc_table,
+                      bool (*is_initialized)(const MessageLite&),
+                      void (*merge_to_from)(MessageLite& to,
+                                            const MessageLite& from_msg),
+                      internal::MessageCreator message_creator,
+                      uint32_t cached_size_offset, bool is_lite)
+      :
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+        prototype(prototype),
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+        tc_table(tc_table),
+        is_initialized(is_initialized),
+        merge_to_from(merge_to_from),
+        message_creator(message_creator),
+        cached_size_offset(cached_size_offset),
+        is_lite(is_lite) {
+  }
+#endif  // !PROTOBUF_CUSTOM_VTABLE
+
+  // But we always provide the full constructor even in normal mode to make
+  // helper code simpler.
+  constexpr ClassData(
+      const MessageLite* prototype, const internal::TcParseTableBase* tc_table,
+      bool (*is_initialized)(const MessageLite&),
+      void (*merge_to_from)(MessageLite& to, const MessageLite& from_msg),
+      internal::MessageCreator message_creator,
+      [[maybe_unused]] void (*destroy_message)(MessageLite& msg),  //
+      [[maybe_unused]] void (MessageLite::*clear)(),
+      [[maybe_unused]] size_t (*byte_size_long)(const MessageLite&),
+      [[maybe_unused]] uint8_t* (*serialize)(const MessageLite& msg,
+                                             uint8_t* ptr,
+                                             io::EpsCopyOutputStream* stream),
+      uint32_t cached_size_offset, bool is_lite)
+      :
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+        prototype(prototype),
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+        tc_table(tc_table),
+        is_initialized(is_initialized),
+        merge_to_from(merge_to_from),
+        message_creator(message_creator),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+        destroy_message(destroy_message),
+        clear(clear),
+        byte_size_long(byte_size_long),
+        serialize(serialize),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+        cached_size_offset(cached_size_offset),
+        is_lite(is_lite) {
+  }
+
+  const ClassDataFull& full() const;
+
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+  const MessageLite* default_instance() const { return prototype; }
+#else
+  const MessageLite* default_instance() const;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+
+  MessageLite* New(Arena* arena) const {
+    const MessageLite* def = default_instance();
+    return message_creator.New(def, def, arena);
+  }
+
+  MessageLite* PlacementNew(void* mem, Arena* arena) const {
+    const MessageLite* def = default_instance();
+    return message_creator.PlacementNew(def, def, mem, arena);
+  }
+
+  uint32_t allocation_size() const { return message_creator.allocation_size(); }
+
+  uint8_t alignment() const { return message_creator.alignment(); }
+};
+
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+struct ClassDataLite : ClassData {
+  constexpr ClassDataLite(ClassData base, const char* type_name)
+      : ClassData(base), type_name_ptr(type_name) {}
+
+  const char* type_name() const { return type_name_ptr; }
+  const char* type_name_ptr;
+
+  constexpr const ClassData* base() const { return this; }
+};
+#else
+using ClassDataLite = ClassDataFull;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+
+// We use a secondary vtable for descriptor based methods. This way ClassData
+// does not grow with the number of descriptor methods. This avoids extra
+// costs in MessageLite.
+struct PROTOBUF_EXPORT DescriptorMethods {
+  absl::string_view (*get_type_name)(const ClassData* data);
+  std::string (*initialization_error_string)(const MessageLite&);
+  const internal::TcParseTableBase* (*get_tc_table)(const MessageLite&);
+  size_t (*space_used_long)(const MessageLite&);
+  std::string (*debug_string)(const MessageLite&);
+  void (*verify_lazy_field_consistency)(const LazyField&);
+};
+
+// ClassData* can and should be placed on read-only section to maximize sharing.
+// However, ClassDataFull has mutable fields for lazy initialization of
+// reflection related data. To keep the lazy initialization and to move the
+// ClassDataFull to the read-only section we use a secondary table. Extra
+// indirection should be tolerable considering that reflection isn't performance
+// critical.
+struct PROTOBUF_EXPORT ReflectionData {
+  constexpr ReflectionData(const DescriptorMethods* descriptor_methods,
+                           const internal::DescriptorTable* descriptor_table,
+                           void (*get_metadata_tracker)())
+      : reflection(nullptr),
+        descriptor(nullptr),
+        descriptor_table(descriptor_table),
+        descriptor_methods(descriptor_methods),
+        get_metadata_tracker(get_metadata_tracker) {}
+
+  // Accesses are protected by the once_flag in `descriptor_table`. When the
+  // table is null these are populated from the beginning and need to
+  // protection.
+  const Reflection* reflection;
+  const Descriptor* descriptor;
+
+  // Codegen types will provide a DescriptorTable to do lazy
+  // registration/initialization of the reflection objects.
+  // Other types, like DynamicMessage, keep the table as null but eagerly
+  // populate `reflection`/`descriptor` fields.
+  const internal::DescriptorTable* descriptor_table;
+  const DescriptorMethods* descriptor_methods;
+  // When an access tracker is installed, this function notifies the tracker
+  // that GetMetadata was called.
+  void (*get_metadata_tracker)();
+};
+
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+struct PROTOBUF_EXPORT ClassDataFull : ClassData {
+  constexpr ClassDataFull(ClassData base,
+                          const DescriptorMethods* descriptor_methods,
+                          const internal::DescriptorTable* descriptor_table,
+                          void (*get_metadata_tracker)())
+      : ClassData(base),
+        reflection_ptr(nullptr),
+        descriptor_ptr(nullptr),
+        descriptor_table_ptr(descriptor_table),
+        descriptor_methods_ptr(descriptor_methods),
+        get_metadata_tracker_func(get_metadata_tracker) {}
+
+  constexpr const ClassData* base() const { return this; }
+
+  // Accessors for reflection related data.
+  const Reflection* reflection() const { return reflection_ptr; }
+  const Descriptor* descriptor() const { return descriptor_ptr; }
+
+  void set_reflection(const Reflection* reflection) const {
+    reflection_ptr = reflection;
+  }
+  void set_descriptor(const Descriptor* descriptor) const {
+    descriptor_ptr = descriptor;
+  }
+
+  const internal::DescriptorTable* descriptor_table() const {
+    return descriptor_table_ptr;
+  }
+  const DescriptorMethods* descriptor_methods() const {
+    return descriptor_methods_ptr;
+  }
+  bool has_get_metadata_tracker() const {
+    return get_metadata_tracker_func != nullptr;
+  }
+  void get_metadata_tracker() const { get_metadata_tracker_func(); }
+
+  // Accesses are protected by the once_flag in `descriptor_table`. When the
+  // table is null these are populated from the beginning and need to
+  // protection.
+  mutable const Reflection* reflection_ptr;
+  mutable const Descriptor* descriptor_ptr;
+
+  // Codegen types will provide a DescriptorTable to do lazy
+  // registration/initialization of the reflection objects.
+  // Other types, like DynamicMessage, keep the table as null but eagerly
+  // populate `reflection`/`descriptor` fields.
+  const internal::DescriptorTable* descriptor_table_ptr;
+  const DescriptorMethods* descriptor_methods_ptr;
+  // When an access tracker is installed, this function notifies the tracker
+  // that GetMetadata was called.
+  void (*get_metadata_tracker_func)();
+};
+#else
+// TODO b/474609573 - Rename this type to reflect that is's unified to
+// ClassDataLite as well.
+struct PROTOBUF_EXPORT ClassDataFull : ClassData {
+  constexpr ClassDataFull(ClassData base, ReflectionData* reflection_data)
+      : ClassData(base), aux_data{.reflection_data = reflection_data} {
+    ABSL_DCHECK(!is_lite);
+  }
+
+  constexpr ClassDataFull(ClassData base, const char* type_name)
+      : ClassData(base), aux_data{.type_name = type_name} {
+    ABSL_DCHECK(is_lite);
+  }
+
+  constexpr const ClassData* base() const { return this; }
+
+  // Accessors for reflection related data (ClassDataFull only).
+  const Reflection* reflection() const { return reflection_data()->reflection; }
+  const Descriptor* descriptor() const { return reflection_data()->descriptor; }
+
+  void set_reflection(const Reflection* reflection) const {
+    reflection_data()->reflection = reflection;
+  }
+  void set_descriptor(const Descriptor* descriptor) const {
+    reflection_data()->descriptor = descriptor;
+  }
+
+  const internal::DescriptorTable* descriptor_table() const {
+    return reflection_data()->descriptor_table;
+  }
+  const DescriptorMethods* descriptor_methods() const {
+    return reflection_data()->descriptor_methods;
+  }
+  bool has_get_metadata_tracker() const {
+    return reflection_data()->get_metadata_tracker != nullptr;
+  }
+  void get_metadata_tracker() const {
+    reflection_data()->get_metadata_tracker();
+  }
+
+  ReflectionData* reflection_data() const {
+    ABSL_DCHECK(!is_lite);
+    return aux_data.reflection_data;
+  }
+
+  // Accessors for type name (ClassDataLite only).
+  const char* type_name() const {
+    ABSL_DCHECK(is_lite);
+    return aux_data.type_name;
+  }
+
+  union ReflectionDataOrTypeName {
+    ReflectionData* reflection_data;
+    const char* type_name;
+  } aux_data;
+};
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+
+inline const ClassDataFull& ClassData::full() const {
+  ABSL_DCHECK(!is_lite);
+  return *static_cast<const ClassDataFull*>(this);
+}
+
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+struct MessageGlobalsBase {
+  template <typename T = MessageLite>
+  static const T* ToDefaultInstance(const void* globals) {
+    return reinterpret_cast<const T*>(globals);
+  }
+
+  static const MessageGlobalsBase* FromDefaultInstance(
+      const void* default_instance) {
+    return reinterpret_cast<const MessageGlobalsBase*>(default_instance);
+  }
+};
+
+template <const auto* kDefault, const auto* kClassData>
+struct GeneratedMessageTraitsT {
+  static constexpr const void* default_instance() { return kDefault; }
+  static constexpr const auto* class_data() { return kClassData->base(); }
+  static constexpr auto StrongPointer() { return default_instance(); }
+};
+#else
+struct MessageGlobalsBase {
+  template <size_t R>
+  static constexpr size_t RoundUpTo(size_t n) {
+    static_assert(absl::has_single_bit(R), "Must be power of two");
+    return (n + (R - 1)) & ~(R - 1);
+  }
+
+  static constexpr size_t OffsetToDefault() {
+    return RoundUpTo<kMaxMessageAlignment>(sizeof(MessageGlobalsBase));
+  }
+  template <typename T = MessageLite>
+  static const T* ToDefaultInstance(const void* globals) {
+    return reinterpret_cast<const T*>(reinterpret_cast<const char*>(globals) +
+                                      OffsetToDefault());
+  }
+
+  static const MessageGlobalsBase* FromDefaultInstance(
+      const void* default_instance) {
+    return reinterpret_cast<const MessageGlobalsBase*>(
+        reinterpret_cast<const char*>(default_instance) - OffsetToDefault());
+  }
+
+  static constexpr const ClassData* GetClassData(const void* globals) {
+    return static_cast<const MessageGlobalsBase*>(globals)->class_data.base();
+  }
+  constexpr const ClassData* GetClassData() const { return class_data.base(); }
+
+  explicit constexpr MessageGlobalsBase(ClassDataFull class_data)
+      : class_data(class_data) {}
+
+  static const TcParseTableBase* ToParseTableBase(const void* g) {
+    const auto* globals = static_cast<const MessageGlobalsBase*>(g);
+    ABSL_DCHECK_NE(globals, nullptr);
+    return globals->class_data.tc_table;
+  }
+
+  // It also aliases to ClassDataLite.
+  ClassDataFull class_data;
+};
+
+template <const auto* kGlobals>
+struct GeneratedMessageTraitsT {
+  static const void* default_instance() {
+    return MessageGlobalsBase::ToDefaultInstance(kGlobals);
+  }
+  static const auto* class_data() {
+    return MessageGlobalsBase::GetClassData(kGlobals);
+  }
+  static constexpr const auto* globals() { return kGlobals; }
+  static constexpr auto StrongPointer() { return kGlobals; }
+};
+
+inline const MessageLite* ClassData::default_instance() const {
+  static_assert(PROTOBUF_FIELD_OFFSET(MessageGlobalsBase, class_data) == 0);
+  return MessageGlobalsBase::ToDefaultInstance(this);
+}
+#endif  // PROTOBUF_MESSAGE_GLOBALS
 }  // namespace internal
 
 // Interface to light weight protocol messages.
@@ -167,42 +745,51 @@ PROTOBUF_EXPORT size_t StringSpaceUsedExcludingSelfLong(const std::string& str);
 // the internal library are allowed to create subclasses.
 class PROTOBUF_EXPORT MessageLite {
  public:
-  constexpr MessageLite() {}
-  virtual ~MessageLite() = default;
+  MessageLite(const MessageLite&) = delete;
+  MessageLite& operator=(const MessageLite&) = delete;
+  PROTOBUF_VIRTUAL ~MessageLite() = default;
 
   // Basic Operations ------------------------------------------------
 
   // Get the name of this message type, e.g. "foo.bar.BazProto".
-  virtual std::string GetTypeName() const = 0;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD absl::string_view GetTypeName() const;
 
   // Construct a new instance of the same type.  Ownership is passed to the
   // caller.
-  MessageLite* New() const { return New(nullptr); }
+  [[nodiscard]] MessageLite* New() const { return New(nullptr); }
 
   // Construct a new instance on the arena. Ownership is passed to the caller
   // if arena is a nullptr.
-  virtual MessageLite* New(Arena* arena) const = 0;
+  [[nodiscard]] MessageLite* New(Arena* arena) const;
 
-  // Returns user-owned arena; nullptr if it's message owned.
-  Arena* GetArena() const { return _internal_metadata_.user_arena(); }
+  // Returns the arena, if any, that directly owns this message and its internal
+  // memory (Arena::Own is different in that the arena doesn't directly own the
+  // internal memory). This method is used in proto's implementation for
+  // swapping, moving and setting allocated, for deciding whether the ownership
+  // of this message or its internal memory could be changed.
+  [[nodiscard]] Arena* GetArena() const { return _internal_metadata_.arena(); }
 
   // Clear all fields of the message and set them to their default values.
   // Clear() assumes that any memory allocated to hold parts of the message
   // will likely be needed again, so the memory used may not be freed.
   // To ensure that all memory used by a Message is freed, you must delete it.
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void Clear() { (this->*_class_data_->clear)(); }
+#else
   virtual void Clear() = 0;
+#endif  // PROTOBUF_CUSTOM_VTABLE
 
   // Quickly check if all required fields have values set.
-  virtual bool IsInitialized() const = 0;
+  [[nodiscard]] bool IsInitialized() const;
 
   // This is not implemented for Lite messages -- it just returns "(cannot
   // determine missing fields for lite message)".  However, it is implemented
   // for full messages.  See message.h.
-  virtual std::string InitializationErrorString() const;
+  [[nodiscard]] std::string InitializationErrorString() const;
 
   // If |other| is the exact same class as this, calls MergeFrom(). Otherwise,
   // results are undefined (probably crash).
-  virtual void CheckTypeAndMergeFrom(const MessageLite& other) = 0;
+  void CheckTypeAndMergeFrom(const MessageLite& other);
 
   // These methods return a human-readable summary of the message. Note that
   // since the MessageLite interface does not support reflection, there is very
@@ -213,11 +800,18 @@ class PROTOBUF_EXPORT MessageLite {
   //
   // The format of the returned string is subject to change, so please do not
   // assume it will remain stable over time.
-  std::string DebugString() const;
-  std::string ShortDebugString() const { return DebugString(); }
+  [[nodiscard]] std::string DebugString() const;
+  [[nodiscard]] std::string ShortDebugString() const { return DebugString(); }
   // MessageLite::DebugString is already Utf8 Safe. This is to add compatibility
   // with Message.
-  std::string Utf8DebugString() const { return DebugString(); }
+  [[nodiscard]] std::string Utf8DebugString() const { return DebugString(); }
+
+  // Implementation of the `AbslStringify` interface. This adds `DebugString()`
+  // to the sink. Do not rely on exact format.
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const google::protobuf::MessageLite& msg) {
+    sink.Append(msg.DebugString());
+  }
 
   // Parsing ---------------------------------------------------------
   // Methods for parsing in protocol buffer format.  Most of these are
@@ -229,66 +823,76 @@ class PROTOBUF_EXPORT MessageLite {
   // format.  A successful return does not indicate the entire input is
   // consumed, ensure you call ConsumedEntireMessage() to check that if
   // applicable.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParseFromCodedStream(
-      io::CodedInputStream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromCodedStream(io::CodedInputStream* input);
   // Like ParseFromCodedStream(), but accepts messages that are missing
   // required fields.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParsePartialFromCodedStream(
-      io::CodedInputStream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromCodedStream(io::CodedInputStream* input);
   // Read a protocol buffer from the given zero-copy input stream.  If
   // successful, the entire input will be consumed.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParseFromZeroCopyStream(
-      io::ZeroCopyInputStream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromZeroCopyStream(io::ZeroCopyInputStream* input);
   // Like ParseFromZeroCopyStream(), but accepts messages that are missing
   // required fields.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParsePartialFromZeroCopyStream(
-      io::ZeroCopyInputStream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromZeroCopyStream(io::ZeroCopyInputStream* input);
   // Parse a protocol buffer from a file descriptor.  If successful, the entire
   // input will be consumed.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParseFromFileDescriptor(
-      int file_descriptor);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromFileDescriptor(int file_descriptor);
   // Like ParseFromFileDescriptor(), but accepts messages that are missing
   // required fields.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParsePartialFromFileDescriptor(
-      int file_descriptor);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromFileDescriptor(int file_descriptor);
   // Parse a protocol buffer from a C++ istream.  If successful, the entire
   // input will be consumed.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParseFromIstream(std::istream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromIstream(std::istream* input);
   // Like ParseFromIstream(), but accepts messages that are missing
   // required fields.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParsePartialFromIstream(
-      std::istream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromIstream(std::istream* input);
   // Read a protocol buffer from the given zero-copy input stream, expecting
   // the message to be exactly "size" bytes long.  If successful, exactly
   // this many bytes will have been consumed from the input.
-  bool MergePartialFromBoundedZeroCopyStream(io::ZeroCopyInputStream* input,
-                                             int size);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool
+  MergePartialFromBoundedZeroCopyStream(io::ZeroCopyInputStream* input,
+                                        int size);
   // Like ParseFromBoundedZeroCopyStream(), but accepts messages that are
   // missing required fields.
-  bool MergeFromBoundedZeroCopyStream(io::ZeroCopyInputStream* input, int size);
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParseFromBoundedZeroCopyStream(
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromBoundedZeroCopyStream(
       io::ZeroCopyInputStream* input, int size);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromBoundedZeroCopyStream(io::ZeroCopyInputStream* input, int size);
   // Like ParseFromBoundedZeroCopyStream(), but accepts messages that are
   // missing required fields.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParsePartialFromBoundedZeroCopyStream(
-      io::ZeroCopyInputStream* input, int size);
-  // Parses a protocol buffer contained in a string. Returns true on success.
-  // This function takes a string in the (non-human-readable) binary wire
-  // format, matching the encoding output by MessageLite::SerializeToString().
-  // If you'd like to convert a human-readable string into a protocol buffer
-  // object, see google::protobuf::TextFormat::ParseFromString().
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParseFromString(ConstStringParam data);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromBoundedZeroCopyStream(io::ZeroCopyInputStream* input,
+                                        int size);
+  // Parses a protocol buffer contained in a string or Cord. Returns true on
+  // success. This function takes a string in the (non-human-readable) binary
+  // wire format, matching the encoding output by
+  // MessageLite::SerializeToString(). If you'd like to convert a human-readable
+  // string into a protocol buffer object, see
+  // google::protobuf::TextFormat::ParseFromString().
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromString(absl::string_view data);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromString(const absl::Cord& data);
   // Like ParseFromString(), but accepts messages that are missing
   // required fields.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParsePartialFromString(
-      ConstStringParam data);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromString(absl::string_view data);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromString(const absl::Cord& data);
   // Parse a protocol buffer contained in an array of bytes.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParseFromArray(const void* data,
-                                                       int size);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromArray(const void* data, int size);
   // Like ParseFromArray(), but accepts messages that are missing
   // required fields.
-  PROTOBUF_ATTRIBUTE_REINITIALIZES bool ParsePartialFromArray(const void* data,
-                                                              int size);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromArray(const void* data, int size);
 
 
   // Reads a protocol buffer from the stream and merges it into this
@@ -302,18 +906,29 @@ class PROTOBUF_EXPORT MessageLite {
   //
   // ParseFromCodedStream() is implemented as Clear() followed by
   // MergeFromCodedStream().
-  bool MergeFromCodedStream(io::CodedInputStream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromCodedStream(
+      io::CodedInputStream* input);
 
   // Like MergeFromCodedStream(), but succeeds even if required fields are
   // missing in the input.
   //
   // MergeFromCodedStream() is just implemented as MergePartialFromCodedStream()
   // followed by IsInitialized().
-  bool MergePartialFromCodedStream(io::CodedInputStream* input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergePartialFromCodedStream(
+      io::CodedInputStream* input);
 
   // Merge a protocol buffer contained in a string.
-  bool MergeFromString(ConstStringParam data);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromString(
+      absl::string_view data);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromString(
+      const absl::Cord& data);
 
+  // Like MergeFromString(), but accepts messages that are missing required
+  // fields.
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergePartialFromString(
+      absl::string_view data);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergePartialFromString(
+      const absl::Cord& data);
 
   // Serialization ---------------------------------------------------
   // Methods for serializing in protocol buffer format.  Most of these
@@ -321,25 +936,39 @@ class PROTOBUF_EXPORT MessageLite {
 
   // Write a protocol buffer of this message to the given output.  Returns
   // false on a write error.  If the message is missing required fields,
-  // this may GOOGLE_CHECK-fail.
-  bool SerializeToCodedStream(io::CodedOutputStream* output) const;
+  // this may ABSL_CHECK-fail.
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToCodedStream(
+      io::CodedOutputStream* output) const;
   // Like SerializeToCodedStream(), but allows missing required fields.
-  bool SerializePartialToCodedStream(io::CodedOutputStream* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToCodedStream(
+      io::CodedOutputStream* output) const;
   // Write the message to the given zero-copy output stream.  All required
   // fields must be set.
-  bool SerializeToZeroCopyStream(io::ZeroCopyOutputStream* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToZeroCopyStream(
+      io::ZeroCopyOutputStream* output) const;
   // Like SerializeToZeroCopyStream(), but allows missing required fields.
-  bool SerializePartialToZeroCopyStream(io::ZeroCopyOutputStream* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToZeroCopyStream(
+      io::ZeroCopyOutputStream* output) const;
   // Serialize the message and store it in the given string.  All required
   // fields must be set.
-  bool SerializeToString(std::string* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToString(
+      std::string* output) const;
+  // Serialize the message and store it in the given Cord.  All required
+  // fields must be set.
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToString(
+      absl::Cord* output) const;
   // Like SerializeToString(), but allows missing required fields.
-  bool SerializePartialToString(std::string* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToString(
+      std::string* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToString(
+      absl::Cord* output) const;
   // Serialize the message and store it in the given byte array.  All required
   // fields must be set.
-  bool SerializeToArray(void* data, int size) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToArray(void* data,
+                                                            int size) const;
   // Like SerializeToArray(), but allows missing required fields.
-  bool SerializePartialToArray(void* data, int size) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToArray(
+      void* data, int size) const;
 
   // Make a string encoding the message. Is equivalent to calling
   // SerializeToString() on a string and using that.  Returns the empty
@@ -347,38 +976,116 @@ class PROTOBUF_EXPORT MessageLite {
   // Note: If you intend to generate many such strings, you may
   // reduce heap fragmentation by instead re-using the same string
   // object with calls to SerializeToString().
-  std::string SerializeAsString() const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD std::string SerializeAsString() const;
   // Like SerializeAsString(), but allows missing required fields.
-  std::string SerializePartialAsString() const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD std::string SerializePartialAsString()
+      const;
 
   // Serialize the message and write it to the given file descriptor.  All
   // required fields must be set.
-  bool SerializeToFileDescriptor(int file_descriptor) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToFileDescriptor(
+      int file_descriptor) const;
   // Like SerializeToFileDescriptor(), but allows missing required fields.
-  bool SerializePartialToFileDescriptor(int file_descriptor) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToFileDescriptor(
+      int file_descriptor) const;
   // Serialize the message and write it to the given C++ ostream.  All
   // required fields must be set.
-  bool SerializeToOstream(std::ostream* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToOstream(
+      std::ostream* output) const;
   // Like SerializeToOstream(), but allows missing required fields.
-  bool SerializePartialToOstream(std::ostream* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToOstream(
+      std::ostream* output) const;
 
   // Like SerializeToString(), but appends to the data to the string's
   // existing contents.  All required fields must be set.
-  bool AppendToString(std::string* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool AppendToString(
+      std::string* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool AppendToString(
+      absl::Cord* output) const;
   // Like AppendToString(), but allows missing required fields.
-  bool AppendPartialToString(std::string* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool AppendPartialToString(
+      std::string* output) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool AppendPartialToString(
+      absl::Cord* output) const;
 
+  // Reads a protocol buffer from a Cord and merges it into this message.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
+  bool MergeFromCord(const absl::Cord& data) { return MergeFromString(data); }
+  // Like MergeFromCord(), but accepts messages that are missing
+  // required fields.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergePartialFromCord(
+      const absl::Cord& data) {
+    return MergePartialFromString(data);
+  }
+  // Parse a protocol buffer contained in a Cord.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParseFromCord(const absl::Cord& data) {
+    return ParseFromString(data);
+  }
+  // Like ParseFromCord(), but accepts messages that are missing
+  // required fields.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD ABSL_ATTRIBUTE_REINITIALIZES bool
+  ParsePartialFromCord(const absl::Cord& data) {
+    return ParsePartialFromString(data);
+  }
+
+  // Serialize the message and store it in the given Cord.  All required
+  // fields must be set.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializeToCord(
+      absl::Cord* output) const {
+    return SerializeToString(output);
+  }
+  // Like SerializeToCord(), but allows missing required fields.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool SerializePartialToCord(
+      absl::Cord* output) const {
+    return SerializePartialToString(output);
+  }
+
+  // Make a Cord encoding the message. Is equivalent to calling
+  // SerializeToCord() on a Cord and using that.  Returns an empty
+  // Cord if SerializeToCord() would have returned an error.
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD absl::Cord SerializeAsCord() const;
+  // Like SerializeAsCord(), but allows missing required fields.
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD absl::Cord SerializePartialAsCord() const;
+
+  // Like SerializeToCord(), but appends to the data to the Cord's existing
+  // contents.  All required fields must be set.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
+  bool AppendToCord(absl::Cord* output) const { return AppendToString(output); }
+  // Like AppendToCord(), but allows missing required fields.
+  PROTOBUF_DEPRECATE_AND_INLINE()
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool AppendPartialToCord(
+      absl::Cord* output) const {
+    return AppendPartialToString(output);
+  }
 
   // Computes the serialized size of the message.  This recursively calls
   // ByteSizeLong() on all embedded messages.
   //
   // ByteSizeLong() is generally linear in the number of fields defined for the
   // proto.
-  virtual size_t ByteSizeLong() const = 0;
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD size_t ByteSizeLong() const {
+    return _class_data_->byte_size_long(*this);
+  }
+#else
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual size_t ByteSizeLong() const = 0;
+#endif  // PROTOBUF_CUSTOM_VTABLE
 
   // Legacy ByteSize() API.
-  PROTOBUF_DEPRECATED_MSG("Please use ByteSizeLong() instead")
-  int ByteSize() const { return internal::ToIntSize(ByteSizeLong()); }
+  [[deprecated(
+      "Please use ByteSizeLong() "
+      "instead")]] PROTOBUF_FUTURE_ADD_EARLY_NODISCARD int
+  ByteSize() const {
+    return internal::ToIntSize(ByteSizeLong());
+  }
 
   // Serializes the message without recomputing the size.  The message must not
   // have changed since the last call to ByteSize(), and the value returned by
@@ -397,12 +1104,15 @@ class PROTOBUF_EXPORT MessageLite {
   // must point at a byte array of at least ByteSize() bytes.  Whether to use
   // deterministic serialization, e.g., maps in sorted order, is determined by
   // CodedOutputStream::IsDefaultSerializationDeterministic().
-  uint8_t* SerializeWithCachedSizesToArray(uint8_t* target) const;
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD uint8_t* SerializeWithCachedSizesToArray(
+      uint8_t* target) const;
 
   // Returns the result of the last call to ByteSize().  An embedded message's
-  // size is needed both to serialize it (because embedded messages are
-  // length-delimited) and to compute the outer message's size.  Caching
+  // size is needed both to serialize it (only true for length-prefixed
+  // submessages) and to compute the outer message's size.  Caching
   // the size avoids computing it multiple times.
+  // Note that the submessage size is unnecessary when using
+  // group encoding / delimited since we have SGROUP/EGROUP bounds.
   //
   // ByteSize() does not automatically use the cached size when available
   // because this would require invalidating it every time the message was
@@ -410,47 +1120,179 @@ class PROTOBUF_EXPORT MessageLite {
   // sub-message is changed, all of its parents' cached sizes would need to be
   // invalidated, which is too much work for an otherwise inlined setter
   // method.)
-  virtual int GetCachedSize() const = 0;
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  [[nodiscard]] int GetCachedSize() const { return AccessCachedSize().Get(); }
+#else
+  [[nodiscard]] int GetCachedSize() const;
+#endif
 
-  virtual const char* _InternalParse(const char* /*ptr*/,
-                                     internal::ParseContext* /*ctx*/) {
-    return nullptr;
-  }
-
-  virtual void OnDemandRegisterArenaDtor(Arena* /*arena*/) {}
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const char* _InternalParse(
+      const char* ptr, internal::ParseContext* ctx);
 
  protected:
-  template <typename T>
-  static T* CreateMaybeMessage(Arena* arena) {
-    return Arena::CreateMaybeMessage<T>(arena);
+  // Message implementations require access to internally visible API.
+  static constexpr internal::InternalVisibility internal_visibility() {
+    return internal::InternalVisibility{};
   }
 
-  inline explicit MessageLite(Arena* arena, bool is_message_owned = false)
-      : _internal_metadata_(arena, is_message_owned) {}
+  template <typename T>
+  PROTOBUF_ALWAYS_INLINE static T* DefaultConstruct(Arena* arena) {
+    return static_cast<T*>(Arena::DefaultConstruct<T>(arena));
+  }
 
-  // Returns the arena, if any, that directly owns this message and its internal
-  // memory (Arena::Own is different in that the arena doesn't directly own the
-  // internal memory). This method is used in proto's implementation for
-  // swapping, moving and setting allocated, for deciding whether the ownership
-  // of this message or its internal memory could be changed.
-  Arena* GetOwningArena() const { return _internal_metadata_.owning_arena(); }
+  template <typename T>
+  static void* NewImpl(const void*, void* mem, Arena* arena) {
+    return ::new (mem) T(arena);
+  }
+  template <typename T>
+  static constexpr internal::MessageCreator GetNewImpl() {
+    if constexpr (internal::EnableCustomNewFor<T>()) {
+      return T::InternalNewImpl_();
+    } else {
+      return internal::MessageCreator(&T::PlacementNew_, sizeof(T), alignof(T));
+    }
+  }
 
-  // Returns the arena, used for allocating internal objects(e.g., child
-  // messages, etc), or owning incoming objects (e.g., set allocated).
-  Arena* GetArenaForAllocation() const { return _internal_metadata_.arena(); }
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  template <typename T>
+  static constexpr auto GetClearImpl() {
+    return static_cast<void (MessageLite::*)()>(&T::Clear);
+  }
+#else   // PROTOBUF_CUSTOM_VTABLE
+  // When custom vtables are off we avoid instantiating the functions because we
+  // will not use them anyway. Less work for the compiler.
+  template <typename T>
+  using GetClearImpl = std::nullptr_t;
+#endif  // PROTOBUF_CUSTOM_VTABLE
 
-  // Returns true if this message is enabled for message-owned arena (MOA)
-  // trials. No lite messages are eligible for MOA.
-  static bool InMoaTrial() { return false; }
+  template <typename T>
+  PROTOBUF_ALWAYS_INLINE static T* CopyConstruct(Arena* arena, const T& from) {
+    return static_cast<T*>(Arena::CopyConstruct<T>(arena, &from));
+  }
 
+  // As above, but for fields that use base class type. Eg foreign weak fields.
+  static MessageLite* CopyConstruct(Arena* arena, const MessageLite& from);
+
+  PROTOBUF_ALWAYS_INLINE static Message* CopyConstruct(Arena* arena,
+                                                       const Message& from) {
+    return reinterpret_cast<Message*>(
+        CopyConstruct(arena, reinterpret_cast<const MessageLite&>(from)));
+  }
+
+  // `CheckTypeAndMergeFrom()` and should be preferred by friended internal
+  // callers that have the right `ClassData` handy.
+  // REQUIRES: Both `this` and `other` are the exact same class as represented
+  // by `data`. If there is a mismatch, CHECK-fails in debug builds or causes UB
+  // in release builds (probably a crash).
+  PROTOBUF_ALWAYS_INLINE void MergeFromWithClassData(
+      const MessageLite& other, const internal::ClassData* data) {
+    ABSL_DCHECK(data != nullptr);
+    ABSL_DCHECK(GetClassData() == data && other.GetClassData() == data)
+        << "Invalid call to " << __func__ << ": this=" << GetTypeName()
+        << " other=" << other.GetTypeName()
+        << " data=" << data->default_instance()->GetTypeName();
+    data->merge_to_from(*this, other);
+  }
+
+  const internal::TcParseTableBase* GetTcParseTable() const {
+    auto* data = GetClassData();
+    ABSL_DCHECK(data != nullptr);
+
+    auto* tc_table = data->tc_table;
+    if (ABSL_PREDICT_FALSE(tc_table == nullptr)) {
+      ABSL_DCHECK(!data->is_lite);
+      return data->full().descriptor_methods()->get_tc_table(*this);
+    }
+    return tc_table;
+  }
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  explicit constexpr MessageLite(const internal::ClassData* data)
+      : _class_data_(data) {}
+  explicit MessageLite(Arena* arena, const internal::ClassData* data)
+      : _internal_metadata_(arena), _class_data_(data) {}
+#else   // PROTOBUF_CUSTOM_VTABLE
+  constexpr MessageLite() {}
+  explicit MessageLite(Arena* arena) : _internal_metadata_(arena) {}
+  explicit constexpr MessageLite(const internal::ClassData*) {}
+  explicit MessageLite(Arena* arena, const internal::ClassData*)
+      : _internal_metadata_(arena) {}
+#endif  // PROTOBUF_CUSTOM_VTABLE
+
+  // GetClassData() returns a pointer to a ClassData struct which
+  // exists in global memory and is unique to each subclass.  This uniqueness
+  // property is used in order to quickly determine whether two messages are
+  // of the same type.
+  //
+  // This is a work in progress. There are still some types (eg MapEntry) that
+  // return a default table instead of a unique one.
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  const internal::ClassData* GetClassData() const {
+    ::absl::PrefetchToLocalCache(_class_data_);
+    return _class_data_;
+  }
+#else   // PROTOBUF_CUSTOM_VTABLE
+  virtual const internal::ClassData* GetClassData() const = 0;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+
+  // NOLINTNEXTLINE(google3-readability-class-member-naming)
   internal::InternalMetadata _internal_metadata_;
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  const internal::ClassData* _class_data_;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+
+  // Return the cached size object as described by
+  // ClassData::cached_size_offset.
+  const internal::CachedSize& AccessCachedSize() const {
+    return *reinterpret_cast<const internal::CachedSize*>(
+        reinterpret_cast<const char*>(this) +
+        GetClassData()->cached_size_offset);
+  }
+
+  // The following methods should be used to access has bits. They enable
+  // measuring the cost of checking/setting has bits with inline frame data.
+  static PROTOBUF_ALWAYS_INLINE constexpr void SetHasBit(
+      uint32_t& cached_has_bits, uint32_t has_bit_mask) {
+    cached_has_bits |= has_bit_mask;
+  }
+
+  static PROTOBUF_ALWAYS_INLINE constexpr void ClearHasBit(
+      uint32_t& cached_has_bits, uint32_t has_bit_mask) {
+    cached_has_bits &= ~has_bit_mask;
+  }
+
+  static PROTOBUF_ALWAYS_INLINE constexpr bool CheckHasBit(
+      uint32_t cached_has_bits, uint32_t has_bit_mask) {
+    return (cached_has_bits & has_bit_mask) != 0;
+  }
+
+  static PROTOBUF_ALWAYS_INLINE constexpr bool BatchCheckHasBit(
+      uint32_t cached_has_bits, uint32_t batch_has_bits_mask) {
+    return (cached_has_bits & batch_has_bits_mask) != 0;
+  }
+
+  void CheckHasBitConsistency() const;
 
  public:
   enum ParseFlags {
+    // Merge vs. Parse:
+    // Merge: overwrites scalar fields but appends to repeated fields in the
+    //        destination; other fields in the destination remain untouched.
+    // Parse: clears all fields in the destination before calling Merge.
     kMerge = 0,
     kParse = 1,
+    // Default behaviour vs. Partial:
+    // Default: a missing required field is deemed as parsing failure.
+    // Partial: parse or merge will not give an error if input is missing
+    //          required fields.
     kMergePartial = 2,
     kParsePartial = 3,
+    // Default behaviour vs. Aliasing:
+    // Default:  when merging, pointer is followed and expanded (deep-copy).
+    // Aliasing: when merging, the destination message is allowed to retain
+    //           pointers to the original structure (shallow-copy). This mostly
+    //           is intended for use with STRING_PIECE.
+    // NOTE: STRING_PIECE is not recommended for new usage. Prefer Cords.
     kMergeWithAliasing = 4,
     kParseWithAliasing = 5,
     kMergePartialWithAliasing = 6,
@@ -458,65 +1300,211 @@ class PROTOBUF_EXPORT MessageLite {
   };
 
   template <ParseFlags flags, typename T>
-  bool ParseFrom(const T& input);
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool ParseFrom(const T& input);
 
   // Fast path when conditions match (ie. non-deterministic)
   //  uint8_t* _InternalSerialize(uint8_t* ptr) const;
-  virtual uint8_t* _InternalSerialize(
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD uint8_t* _InternalSerialize(
+      uint8_t* ptr, io::EpsCopyOutputStream* stream) const {
+    return _class_data_->serialize(*this, ptr, stream);
+  }
+#else   // PROTOBUF_CUSTOM_VTABLE
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD virtual uint8_t* _InternalSerialize(
       uint8_t* ptr, io::EpsCopyOutputStream* stream) const = 0;
+#endif  // PROTOBUF_CUSTOM_VTABLE
 
   // Identical to IsInitialized() except that it logs an error message.
-  bool IsInitializedWithErrors() const {
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool IsInitializedWithErrors() const {
     if (IsInitialized()) return true;
     LogInitializationErrorMessage();
     return false;
   }
 
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(MessageLite* msg, std::destroying_delete_t) {
+    msg->DeleteInstance();
+  }
+#endif
+
  private:
   friend class FastReflectionMessageMutator;
+  friend class AssignDescriptorsHelper;
   friend class FastReflectionStringSetter;
   friend class Message;
   friend class Reflection;
+  friend class TypeId;
+  friend class compiler::cpp::MessageTableTester;
+  friend class internal::DescriptorPoolExtensionFinder;
   friend class internal::ExtensionSet;
+  friend class internal::HasBitsTestPeer;
+  friend class internal::InternalMetadataOffset;
+  template <typename T, size_t kFieldOffset>
+  friend struct internal::InternalMetadataOffsetHelper;
   friend class internal::LazyField;
   friend class internal::SwapFieldHelper;
   friend class internal::TcParser;
+  friend struct internal::PrivateAccess;
+  friend struct internal::TcParseTableBase;
+  friend class internal::UntypedMapBase;
   friend class internal::WeakFieldMap;
   friend class internal::WireFormatLite;
-
+  friend class internal::RustMapHelper;
+  friend class internal::MessageCreator;
+  friend class internal::RepeatedPtrFieldBase;
+  template <typename Type>
+  friend class internal::GenericTypeHandler;
   template <typename Type>
   friend class Arena::InternalHelper;
   template <typename Type>
-  friend class internal::GenericTypeHandler;
+  friend struct FallbackMessageTraits;
+
+  template <typename Type>
+  friend const internal::ClassData* internal::GetClassData(const Type& msg);
+  friend void internal::GenericSwap(MessageLite* lhs, MessageLite* rhs);
+  friend void internal::GenericSwap(Message* lhs, Message* rhs);
+
+  static bool CheckFieldPresence(const internal::ParseContext& ctx,
+                                 const MessageLite& msg,
+                                 MessageLite::ParseFlags parse_flags);
 
   void LogInitializationErrorMessage() const;
 
+ private:
   bool MergeFromImpl(io::CodedInputStream* input, ParseFlags parse_flags);
 
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(MessageLite);
+  // Runs the destructor for this instance.
+  void DestroyInstance();
+  // Runs the destructor for this instance and deletes the memory via
+  // `operator delete`
+  void DeleteInstance();
+
+  // For tests that need to inspect private _oneof_case_. It is the callers
+  // responsibility to ensure T has the right member.
+  template <typename T>
+  static uint32_t GetOneofCaseOffsetForTesting() {
+    return offsetof(T, _impl_._oneof_case_);
+  }
+};
+
+// A `std::type_info` equivalent for protobuf message types.
+// This class is preferred over using `typeid` for a few reasons:
+//  - It works with RTTI disabled.
+//  - It works for `DynamicMessage` types.
+//  - It works in custom vtable mode.
+//
+// Usage:
+//  - Instead of `typeid(Type)` use `TypeId::Get<Type>()`
+//  - Instead of `typeid(expr)` use `TypeId::Get(expr)`
+//
+// Supports all relationals including <=>, and supports hashing via
+// `absl::Hash`.
+class PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TypeId {
+ public:
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD static TypeId Get(
+      const MessageLite& msg) {
+    return TypeId(msg.GetClassData());
+  }
+
+  template <typename T>
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD static TypeId Get() {
+    return TypeId(internal::MessageTraits<T>::class_data());
+  }
+
+  // Name of the message type.
+  // Equivalent to `.GetTypeName()` on the message.
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD absl::string_view name() const;
+
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend constexpr bool operator==(
+      TypeId a, TypeId b) {
+    return a.data_ == b.data_;
+  }
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend constexpr bool operator!=(
+      TypeId a, TypeId b) {
+    return !(a == b);
+  }
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend constexpr bool operator<(
+      TypeId a, TypeId b) {
+    return a.data_ < b.data_;
+  }
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend constexpr bool operator>(
+      TypeId a, TypeId b) {
+    return a.data_ > b.data_;
+  }
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend constexpr bool operator<=(
+      TypeId a, TypeId b) {
+    return a.data_ <= b.data_;
+  }
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend constexpr bool operator>=(
+      TypeId a, TypeId b) {
+    return a.data_ >= b.data_;
+  }
+
+#if defined(__cpp_impl_three_way_comparison) && \
+    __cpp_impl_three_way_comparison >= 201907L
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend constexpr auto operator<=>(
+      TypeId a, TypeId b) {
+    return a.data_ <=> b.data_;
+  }
+#endif
+
+  template <typename H>
+  PROTOBUF_FUTURE_ADD_EARLY_NODISCARD friend H AbslHashValue(H state,
+                                                             TypeId id) {
+    return H::combine(std::move(state), id.data_);
+  }
+
+ private:
+  constexpr explicit TypeId(const internal::ClassData* data) : data_(data) {}
+
+  const internal::ClassData* data_;
 };
 
 namespace internal {
 
-template <bool alias>
-bool MergeFromImpl(StringPiece input, MessageLite* msg,
-                   MessageLite::ParseFlags parse_flags);
-extern template bool MergeFromImpl<false>(StringPiece input,
-                                          MessageLite* msg,
-                                          MessageLite::ParseFlags parse_flags);
-extern template bool MergeFromImpl<true>(StringPiece input,
-                                         MessageLite* msg,
-                                         MessageLite::ParseFlags parse_flags);
+// The point of this function being a template is that for a concrete message
+// `Type`, the otherwise virtual `GetClassData()` call is resolved and inlined
+// at compile time (via `MessageTraits`).
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD PROTOBUF_NDEBUG_INLINE const ClassData*
+GetClassData(const T& msg) {
+  static_assert(std::is_base_of_v<MessageLite, T>);
+  if constexpr (std::is_same_v<T, MessageLite> || std::is_same_v<Message, T>) {
+    PROTOBUF_DEBUG_COUNTER("GetClassData.Virtual").Inc();
+    return msg.GetClassData();
+  } else {
+    PROTOBUF_DEBUG_COUNTER("GetClassData.Constexpr").Inc();
+    return MessageTraits<T>::class_data();
+  }
+}
 
 template <bool alias>
-bool MergeFromImpl(io::ZeroCopyInputStream* input, MessageLite* msg,
-                   MessageLite::ParseFlags parse_flags);
-extern template bool MergeFromImpl<false>(io::ZeroCopyInputStream* input,
-                                          MessageLite* msg,
-                                          MessageLite::ParseFlags parse_flags);
-extern template bool MergeFromImpl<true>(io::ZeroCopyInputStream* input,
-                                         MessageLite* msg,
-                                         MessageLite::ParseFlags parse_flags);
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromImpl(
+    absl::string_view input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
+extern template PROTOBUF_EXPORT_TEMPLATE_DECLARE bool MergeFromImpl<false>(
+    absl::string_view input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
+extern template PROTOBUF_EXPORT_TEMPLATE_DECLARE bool MergeFromImpl<true>(
+    absl::string_view input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
+
+template <bool alias>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromImpl(
+    io::ZeroCopyInputStream* input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
+extern template PROTOBUF_EXPORT_TEMPLATE_DECLARE bool MergeFromImpl<false>(
+    io::ZeroCopyInputStream* input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
+extern template PROTOBUF_EXPORT_TEMPLATE_DECLARE bool MergeFromImpl<true>(
+    io::ZeroCopyInputStream* input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
 
 struct BoundedZCIS {
   io::ZeroCopyInputStream* zcis;
@@ -524,29 +1512,40 @@ struct BoundedZCIS {
 };
 
 template <bool alias>
-bool MergeFromImpl(BoundedZCIS input, MessageLite* msg,
-                   MessageLite::ParseFlags parse_flags);
-extern template bool MergeFromImpl<false>(BoundedZCIS input, MessageLite* msg,
-                                          MessageLite::ParseFlags parse_flags);
-extern template bool MergeFromImpl<true>(BoundedZCIS input, MessageLite* msg,
-                                         MessageLite::ParseFlags parse_flags);
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromImpl(
+    BoundedZCIS input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
+extern template PROTOBUF_EXPORT_TEMPLATE_DECLARE bool MergeFromImpl<false>(
+    BoundedZCIS input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
+extern template PROTOBUF_EXPORT_TEMPLATE_DECLARE bool MergeFromImpl<true>(
+    BoundedZCIS input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags);
 
 template <typename T>
 struct SourceWrapper;
 
 template <bool alias, typename T>
-bool MergeFromImpl(const SourceWrapper<T>& input, MessageLite* msg,
-                   MessageLite::ParseFlags parse_flags) {
-  return input.template MergeInto<alias>(msg, parse_flags);
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MergeFromImpl(
+    const SourceWrapper<T>& input, MessageLite* msg,
+    const internal::TcParseTableBase* tc_table,
+    MessageLite::ParseFlags parse_flags) {
+  return input.template MergeInto<alias>(msg, tc_table, parse_flags);
 }
 
 }  // namespace internal
 
 template <MessageLite::ParseFlags flags, typename T>
-bool MessageLite::ParseFrom(const T& input) {
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD bool MessageLite::ParseFrom(
+    const T& input) {
   if (flags & kParse) Clear();
   constexpr bool alias = (flags & kMergeWithAliasing) != 0;
-  return internal::MergeFromImpl<alias>(input, this, flags);
+  const internal::TcParseTableBase* tc_table;
+  PROTOBUF_ALWAYS_INLINE_CALL tc_table = GetTcParseTable();
+  return internal::MergeFromImpl<alias>(input, this, tc_table, flags);
 }
 
 // ===================================================================
@@ -582,10 +1581,281 @@ T* OnShutdownDelete(T* p) {
   return p;
 }
 
+template <typename MessageLite>
+PROTOBUF_ALWAYS_INLINE MessageLite* MessageCreator::PlacementNew(
+    const MessageLite* prototype_for_func,
+    const MessageLite* prototype_for_copy, void* mem, Arena* arena) const {
+  ABSL_DCHECK_EQ(reinterpret_cast<uintptr_t>(mem) % alignment_, 0u);
+  const Tag as_tag = tag();
+  static_assert(kFunc < 0 && !(kZeroInit < 0) && !(kMemcpy < 0),
+                "Only kFunc must be the only negative value");
+  if (ABSL_PREDICT_FALSE(static_cast<int8_t>(as_tag) < 0)) {
+    PROTOBUF_DEBUG_COUNTER("MessageCreator.Func").Inc();
+    return static_cast<MessageLite*>(func_(prototype_for_func, mem, arena));
+  }
+
+  char* dst = static_cast<char*>(mem);
+  const size_t size = allocation_size_;
+  const char* src = reinterpret_cast<const char*>(prototype_for_copy);
+
+  // These are a bit more efficient than calling normal memset/memcpy because:
+  //  - We know the minimum size is 16. We have a fallback for when it is not.
+  //  - We can "underflow" the buffer because those are the MessageLite bytes
+  //    we will set later.
+  if (as_tag == kZeroInit) {
+    // Make sure the input is really all zeros.
+    ABSL_DCHECK(std::all_of(src + sizeof(MessageLite), src + size,
+                            [](auto c) { return c == 0; }));
+
+    if (sizeof(MessageLite) != 16) {
+      memset(dst, 0, size);
+    } else if (size <= 32) {
+      memset(dst + size - 16, 0, 16);
+    } else if (size <= 64) {
+      memset(dst + 16, 0, 16);
+      memset(dst + size - 32, 0, 32);
+    } else {
+      for (size_t offset = 16; offset + 64 < size; offset += 64) {
+        absl::PrefetchToLocalCacheForWrite(dst + offset + 64);
+        memset(dst + offset, 0, 64);
+      }
+      memset(dst + size - 64, 0, 64);
+    }
+  } else {
+    ABSL_DCHECK_EQ(+as_tag, +kMemcpy);
+
+    if (sizeof(MessageLite) != 16) {
+      memcpy(dst, src, size);
+    } else if (size <= 32) {
+      memcpy(dst + size - 16, src + size - 16, 16);
+    } else if (size <= 64) {
+      memcpy(dst + 16, src + 16, 16);
+      memcpy(dst + size - 32, src + size - 32, 32);
+    } else {
+      for (size_t offset = 16; offset + 64 < size; offset += 64) {
+        absl::PrefetchToLocalCache(src + offset + 64);
+        absl::PrefetchToLocalCacheForWrite(dst + offset + 64);
+        memcpy(dst + offset, src + offset, 64);
+      }
+      memcpy(dst + size - 64, src + size - 64, 64);
+    }
+  }
+
+  // The second memcpy overwrites part of the first, but the compiler should
+  // avoid the double-write. It's easier than trying to avoid the overlap.
+  memcpy(dst, static_cast<const void*>(prototype_for_copy),
+         sizeof(MessageLite));
+  memcpy(dst + PROTOBUF_FIELD_OFFSET(MessageLite, _internal_metadata_), &arena,
+         sizeof(arena));
+  return Launder(reinterpret_cast<MessageLite*>(mem));
+}
+
+template <typename MessageLite>
+PROTOBUF_ALWAYS_INLINE MessageLite* MessageCreator::New(
+    const MessageLite* prototype_for_func,
+    const MessageLite* prototype_for_copy, Arena* arena) const {
+  void* mem;
+  if (arena != nullptr) {
+    mem = arena->AllocateAligned(allocation_size_);
+  } else {
+    mem = Allocate(allocation_size_);
+  }
+  return PlacementNew(prototype_for_func, prototype_for_copy, mem, arena);
+}
+
 }  // namespace internal
+
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
+std::string ShortFormat(const MessageLite& message_lite);
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD
+std::string Utf8Format(const MessageLite& message_lite);
+
+// Cast functions for message pointer/references.
+// This is the supported API to cast from a Message/MessageLite to derived
+// types. These work even when RTTI is disabled on message types.
+//
+// The template parameter is simplified and the return type is inferred from the
+// input. Eg just `DynamicCastMessage<Foo>(x)` instead of
+// `DynamicCastMessage<const Foo*>(x)`.
+//
+// `DynamicCastMessage` is similar to `dynamic_cast`, returns `nullptr` when the
+// input is not an instance of `T`. The overloads that take a reference will
+// throw std::bad_cast on mismatch, or terminate if compiled without exceptions.
+//
+// `DownCastMessage` is a lightweight function for downcasting base
+// `MessageLite` pointer to derived type, where it only does type checking if
+// !NDEBUG. It should only be used when the caller is certain that the input
+// message is of instance `T`.
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T* DynamicCastMessage(
+    const MessageLite* from) {
+  static_assert(std::is_base_of<MessageLite, T>::value, "");
+
+  // We might avoid the call to T::GetClassData() altogether if T were to
+  // expose the class data pointer.
+  if (from == nullptr || TypeId::Get<T>() != TypeId::Get(*from)) {
+    return nullptr;
+  }
+
+  return static_cast<const T*>(from);
+}
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T* DynamicCastMessage(MessageLite* from) {
+  return const_cast<T*>(
+      DynamicCastMessage<T>(static_cast<const MessageLite*>(from)));
+}
+
+namespace internal {
+[[noreturn]] PROTOBUF_EXPORT void FailDynamicCast(const MessageLite& from,
+                                                  const MessageLite& to);
+}  // namespace internal
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T& DynamicCastMessage(
+    const MessageLite& from) {
+  const T* destination_message = DynamicCastMessage<T>(&from);
+  if (ABSL_PREDICT_FALSE(destination_message == nullptr)) {
+    // If exceptions are enabled, throw.
+    // Otherwise, log a fatal error.
+#if defined(ABSL_HAVE_EXCEPTIONS)
+    throw std::bad_cast();
+#endif
+    // Move the logging into an out-of-line function to reduce bloat in the
+    // caller.
+    internal::FailDynamicCast(from, T::default_instance());
+  }
+  return *destination_message;
+}
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T& DynamicCastMessage(MessageLite& from) {
+  return const_cast<T&>(
+      DynamicCastMessage<T>(static_cast<const MessageLite&>(from)));
+}
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T* DownCastMessage(
+    const MessageLite* from) {
+  internal::StrongReferenceToType<T>();
+  ABSL_DCHECK(DynamicCastMessage<T>(from) == from)
+      << "Cannot downcast " << from->GetTypeName() << " to "
+      << T::default_instance().GetTypeName();
+  return static_cast<const T*>(from);
+}
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T* DownCastMessage(MessageLite* from) {
+  return const_cast<T*>(
+      DownCastMessage<T>(static_cast<const MessageLite*>(from)));
+}
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T& DownCastMessage(
+    const MessageLite& from) {
+  return *DownCastMessage<T>(&from);
+}
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T& DownCastMessage(MessageLite& from) {
+  return *DownCastMessage<T>(&from);
+}
+
+template <>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD inline const MessageLite*
+DynamicCastMessage(const MessageLite* from) {
+  return from;
+}
+template <>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD inline const MessageLite* DownCastMessage(
+    const MessageLite* from) {
+  return from;
+}
+
+// Deprecated names for the cast functions.
+// Prefer the ones above.
+template <typename T>
+PROTOBUF_DEPRECATE_AND_INLINE()
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T* DynamicCastToGenerated(
+    const MessageLite* from) {
+  return DynamicCastMessage<T>(from);
+}
+
+template <typename T>
+PROTOBUF_DEPRECATE_AND_INLINE()
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T* DynamicCastToGenerated(
+    MessageLite* from) {
+  return DynamicCastMessage<T>(from);
+}
+
+template <typename T>
+PROTOBUF_DEPRECATE_AND_INLINE()
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T& DynamicCastToGenerated(
+    const MessageLite& from) {
+  return DynamicCastMessage<T>(from);
+}
+
+template <typename T>
+PROTOBUF_DEPRECATE_AND_INLINE()
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T& DynamicCastToGenerated(
+    MessageLite& from) {
+  return DynamicCastMessage<T>(from);
+}
+
+template <typename T>
+PROTOBUF_DEPRECATE_AND_INLINE()
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T* DownCastToGenerated(
+    const MessageLite* from) {
+  return DownCastMessage<T>(from);
+}
+
+template <typename T>
+PROTOBUF_DEPRECATE_AND_INLINE()
+
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T* DownCastToGenerated(MessageLite* from) {
+  return DownCastMessage<T>(from);
+}
+
+template <typename T>
+
+PROTOBUF_DEPRECATE_AND_INLINE()
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD const T& DownCastToGenerated(
+    const MessageLite& from) {
+  return DownCastMessage<T>(from);
+}
+
+template <typename T>
+PROTOBUF_DEPRECATE_AND_INLINE()
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD T& DownCastToGenerated(MessageLite& from) {
+  return DownCastMessage<T>(from);
+}
+
+// Overloads for `std::shared_ptr` to substitute `std::dynamic_pointer_cast`
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD std::shared_ptr<T> DynamicCastMessage(
+    std::shared_ptr<MessageLite> ptr) {
+  if (auto* res = DynamicCastMessage<T>(ptr.get())) {
+    // Use aliasing constructor to keep the same control block.
+    return std::shared_ptr<T>(std::move(ptr), res);
+  } else {
+    return nullptr;
+  }
+}
+
+template <typename T>
+PROTOBUF_FUTURE_ADD_EARLY_NODISCARD std::shared_ptr<const T> DynamicCastMessage(
+    std::shared_ptr<const MessageLite> ptr) {
+  if (auto* res = DynamicCastMessage<T>(ptr.get())) {
+    // Use aliasing constructor to keep the same control block.
+    return std::shared_ptr<const T>(std::move(ptr), res);
+  } else {
+    return nullptr;
+  }
+}
+
 }  // namespace protobuf
 }  // namespace google
 
-#include <google/protobuf/port_undef.inc>
+#include "google/protobuf/port_undef.inc"
 
 #endif  // GOOGLE_PROTOBUF_MESSAGE_LITE_H__

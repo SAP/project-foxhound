@@ -10,9 +10,15 @@
 
 #include "pc/dtmf_sender.h"
 
-#include <ctype.h>
-#include <string.h>
+#include <cctype>
+#include <cstdint>
+#include <cstring>
+#include <string>
 
+#include "api/dtmf_sender_interface.h"
+#include "api/make_ref_counted.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
@@ -57,13 +63,12 @@ bool GetDtmfCode(char tone, int* code) {
   return true;
 }
 
-rtc::scoped_refptr<DtmfSender> DtmfSender::Create(
-    TaskQueueBase* signaling_thread,
-    DtmfProviderInterface* provider) {
+scoped_refptr<DtmfSender> DtmfSender::Create(TaskQueueBase* signaling_thread,
+                                             DtmfProviderInterface* provider) {
   if (!signaling_thread) {
     return nullptr;
   }
-  return rtc::make_ref_counted<DtmfSender>(signaling_thread, provider);
+  return make_ref_counted<DtmfSender>(signaling_thread, provider);
 }
 
 DtmfSender::DtmfSender(TaskQueueBase* signaling_thread,
@@ -186,7 +191,14 @@ void DtmfSender::DoInsertDtmf() {
     // Fire a “OnToneChange” event with an empty string and stop.
     if (observer_) {
       observer_->OnToneChange(std::string(), tones_);
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
       observer_->OnToneChange(std::string());
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
     }
     return;
   } else {
@@ -224,7 +236,14 @@ void DtmfSender::DoInsertDtmf() {
   if (observer_) {
     observer_->OnToneChange(tones_.substr(first_tone_pos, 1),
                             tones_.substr(first_tone_pos + 1));
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
     observer_->OnToneChange(tones_.substr(first_tone_pos, 1));
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
   }
 
   // Erase the unrecognized characters plus the tone that's just processed.

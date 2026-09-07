@@ -26,7 +26,7 @@ add_task(async function test_removeByFilter() {
   await PlacesUtils.bookmarks.eraseEverything();
 
   // Adding a witness URI
-  let witnessURI = NetUtil.newURI(
+  let witnessURI = Services.io.newURI(
     "http://witnessmozilla.org/test_browserhistory/test_removeByFilter" +
       Math.random()
   );
@@ -441,7 +441,7 @@ add_task(async function test_chunking() {
 
   info("Insert many visited pages");
   let pages = [];
-  for (let i = 1; i <= 1500; i++) {
+  for (let i = 1; i <= 550; i++) {
     let visits = [
       {
         date: new Date(Date.now() - (86400 + i) * 1000),

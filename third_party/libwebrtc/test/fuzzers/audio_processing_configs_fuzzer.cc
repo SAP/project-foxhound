@@ -16,7 +16,7 @@
 #include <utility>
 
 #include "absl/base/nullability.h"
-#include "api/array_view.h"
+#include "absl/strings/string_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/audio/echo_canceller3_factory.h"
@@ -24,20 +24,19 @@
 #include "api/audio/echo_detector_creator.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "modules/audio_processing/aec_dump/aec_dump_factory.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
-#include "system_wrappers/include/field_trial.h"
 #include "test/fuzzers/audio_processing_fuzzer_helper.h"
 #include "test/fuzzers/fuzz_data_helper.h"
 
 namespace webrtc {
 namespace {
 
-const std::string kFieldTrialNames[] = {
+constexpr absl::string_view kFieldTrialNames[] = {
     "WebRTC-Aec3MinErleDuringOnsetsKillSwitch",
     "WebRTC-Aec3ShortHeadroomKillSwitch",
 };
@@ -47,10 +46,9 @@ const Environment& GetEnvironment() {
   return *env;
 }
 
-rtc::scoped_refptr<AudioProcessing> CreateApm(
-    test::FuzzDataHelper* fuzz_data,
-    std::string* field_trial_string,
-    absl::Nonnull<TaskQueueBase*> worker_queue) {
+webrtc::scoped_refptr<AudioProcessing> CreateApm(FuzzDataHelper* fuzz_data,
+                                                 TaskQueueBase* absl_nonnull
+                                                     worker_queue) {
   // Parse boolean values for optionally enabling different
   // configurable public components of APM.
   bool use_ts = fuzz_data->ReadOrDefaultValue(true);
@@ -69,19 +67,22 @@ rtc::scoped_refptr<AudioProcessing> CreateApm(
   const float gain_controller2_gain_db =
       fuzz_data->ReadOrDefaultValue<uint8_t>(0) % 50;
 
-  constexpr size_t kNumFieldTrials = arraysize(kFieldTrialNames);
+  constexpr size_t kNumFieldTrials = std::size(kFieldTrialNames);
   // Verify that the read data type has enough bits to fuzz the field trials.
   using FieldTrialBitmaskType = uint64_t;
   static_assert(kNumFieldTrials <= sizeof(FieldTrialBitmaskType) * 8,
                 "FieldTrialBitmaskType is not large enough.");
   std::bitset<kNumFieldTrials> field_trial_bitmask(
       fuzz_data->ReadOrDefaultValue<FieldTrialBitmaskType>(0));
+  auto field_trials = std::make_unique<FieldTrials>("");
   for (size_t i = 0; i < kNumFieldTrials; ++i) {
     if (field_trial_bitmask[i]) {
-      *field_trial_string += kFieldTrialNames[i] + "/Enabled/";
+      field_trials->Set(kFieldTrialNames[i], "Enabled");
     }
   }
-  field_trial::InitFieldTrialsFromString(field_trial_string->c_str());
+  EnvironmentFactory env_factory(GetEnvironment());
+  env_factory.Set(std::move(field_trials));
+  const Environment env = env_factory.Create();
 
   // Ignore a few bytes. Bytes from this segment will be used for
   // future config flag changes. We assume 40 bytes is enough for
@@ -107,7 +108,6 @@ rtc::scoped_refptr<AudioProcessing> CreateApm(
   apm_config.pipeline.multi_channel_render = true;
   apm_config.pipeline.multi_channel_capture = true;
   apm_config.echo_canceller.enabled = use_aec || use_aecm;
-  apm_config.echo_canceller.mobile_mode = use_aecm;
   apm_config.high_pass_filter.enabled = use_hpf;
   apm_config.gain_controller1.enabled = use_agc;
   apm_config.gain_controller1.enable_limiter = use_agc_limiter;
@@ -123,7 +123,7 @@ rtc::scoped_refptr<AudioProcessing> CreateApm(
           .SetEchoControlFactory(std::move(echo_control_factory))
           .SetEchoDetector(use_red ? CreateEchoDetector() : nullptr)
           .SetConfig(apm_config)
-          .Build(GetEnvironment());
+          .Build(env);
 
 #ifdef WEBRTC_LINUX
   apm->AttachAecDump(AecDumpFactory::Create("/dev/null", -1, worker_queue));
@@ -134,19 +134,15 @@ rtc::scoped_refptr<AudioProcessing> CreateApm(
 
 }  // namespace
 
-void FuzzOneInput(const uint8_t* data, size_t size) {
-  if (size > 400000) {
+void FuzzOneInput(FuzzDataHelper fuzz_data) {
+  if (fuzz_data.size() > 400'000) {
     return;
   }
-  test::FuzzDataHelper fuzz_data(rtc::ArrayView<const uint8_t>(data, size));
-  // This string must be in scope during execution, according to documentation
-  // for field_trial.h. Hence it's created here and not in CreateApm.
-  std::string field_trial_string = "";
 
   std::unique_ptr<TaskQueueBase, TaskQueueDeleter> worker_queue =
       GetEnvironment().task_queue_factory().CreateTaskQueue(
-          "rtc-low-prio", TaskQueueFactory::Priority::LOW);
-  auto apm = CreateApm(&fuzz_data, &field_trial_string, worker_queue.get());
+          "rtc-low-prio", TaskQueueFactory::Priority::kLow);
+  auto apm = CreateApm(&fuzz_data, worker_queue.get());
 
   if (apm) {
     FuzzAudioProcessing(&fuzz_data, std::move(apm));

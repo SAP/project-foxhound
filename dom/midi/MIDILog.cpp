@@ -4,8 +4,8 @@
 
 #include "MIDILog.h"
 
-#include "mozilla/dom/MIDITypes.h"
 #include "mozilla/dom/MIDIPortBinding.h"
+#include "mozilla/dom/MIDITypes.h"
 
 mozilla::LazyLogModule gWebMIDILog("WebMIDI");
 

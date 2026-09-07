@@ -1,13 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OffscreenCanvasRenderingContext2D.h"
+
 #include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/dom/OffscreenCanvasRenderingContext2DBinding.h"
 #include "mozilla/dom/OffscreenCanvas.h"
+#include "mozilla/dom/OffscreenCanvasRenderingContext2DBinding.h"
 
 using namespace mozilla;
 
@@ -58,7 +57,7 @@ JSObject* OffscreenCanvasRenderingContext2D::WrapObject(
 }
 
 nsIGlobalObject* OffscreenCanvasRenderingContext2D::GetParentObject() const {
-  return mOffscreenCanvas->GetOwnerGlobal();
+  return mOffscreenCanvas->GetRelevantGlobal();
 }
 
 NS_IMETHODIMP OffscreenCanvasRenderingContext2D::InitializeWithDrawTarget(

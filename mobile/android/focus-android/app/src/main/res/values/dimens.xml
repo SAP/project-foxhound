@@ -8,6 +8,7 @@
     <dimen name="tab_sheet_end_margin">40dp</dimen>
     <dimen name="activity_horizontal_margin">16dp</dimen>
     <dimen name="activity_vertical_margin">16dp</dimen>
+    <dimen name="material_dialog_corner_radius">28dp</dimen>"
 
     <item name="match_parent" type="dimen">-1</item>
 

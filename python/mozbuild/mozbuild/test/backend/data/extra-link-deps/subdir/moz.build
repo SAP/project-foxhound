@@ -1,0 +1,15 @@
+# Any copyright is dedicated to the Public Domain.
+# http://creativecommons.org/publicdomain/zero/1.0/
+
+
+Program("extra-link-deps-program")
+
+GENERATED_FILES += ["generated.plist"]
+plist = GENERATED_FILES["generated.plist"]
+plist.script = "generate.py:generate"
+plist.inputs = ["plist-data"]
+
+EXTRA_LINK_DEPS += [
+    "!generated.plist",
+    "dep.txt",
+]

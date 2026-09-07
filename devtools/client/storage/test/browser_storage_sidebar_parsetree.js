@@ -100,10 +100,10 @@ const testCases = [
 
 add_task(async function () {
   await openTabAndSetupStorage(
-    MAIN_DOMAIN_SECURED + "storage-sidebar-parsetree.html"
+    MAIN_URL_SECURED + "storage-sidebar-parsetree.html"
   );
 
-  await selectTreeItem(["localStorage", "https://test1.example.org"]);
+  await selectTreeItem(["localStorage", MAIN_ORIGIN_SECURED]);
 
   for (const test of testCases) {
     const { parseTreeVisible, row } = test;

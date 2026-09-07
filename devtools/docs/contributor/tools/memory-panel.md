@@ -23,7 +23,7 @@ The memory tool is built of three main elements:
 Unlike other tools (such as the JavaScript debugger), the memory tool makes very
 little use of the Remote DevTools Server and the actors that reside in it. Use
 of the
-[`MemoryActor`](https://searchfox.org/mozilla-central/source/devtools/server/actors/memory.js)
+[`MemoryActor`](https://searchfox.org/firefox-main/source/devtools/server/actors/memory.js)
 is limited to toggling allocation stack recording on and off, and transferring
 heap snapshots from the debuggee (which is on the server) to the
 `HeapAnalysesWorker` (which is on the client). A nice benefit that naturally
@@ -105,9 +105,9 @@ The `DeserializedNode` and `DeserializedEdge` classes implement the
 than the live heap graph operate on these classes (unknowingly, of course).
 
 For more details, see the
-[`mozilla::devtools::HeapSnapshot`](https://searchfox.org/mozilla-central/source/devtools/shared/heapsnapshot/HeapSnapshot.cpp)
+[`mozilla::devtools::HeapSnapshot`](https://searchfox.org/firefox-main/source/devtools/shared/heapsnapshot/HeapSnapshot.cpp)
 and
-[`mozilla::devtools::Deserialized{Node,Edge}`](https://searchfox.org/mozilla-central/source/devtools/shared/heapsnapshot/DeserializedNode.h)
+[`mozilla::devtools::Deserialized{Node,Edge}`](https://searchfox.org/firefox-main/source/devtools/shared/heapsnapshot/DeserializedNode.h)
 classes.
 
 ### Heap Analyses
@@ -119,12 +119,12 @@ must make sure never to allocate GC things or modify the live heap graph.
 In general, analyses are implemented in their own
 `js/public/Ubi{AnalysisName}.h` header (eg `js/public/UbiCensus.h`), and are
 exposed to chrome JavaScript code via a method on the
-[`HeapSnapshot`](https://searchfox.org/mozilla-central/source/dom/webidl/HeapSnapshot.webidl)
+[`HeapSnapshot`](https://searchfox.org/firefox-main/source/dom/chrome-webidl/HeapSnapshot.webidl)
 webidl interface.
 
 For each analysis we expose to chrome JavaScript on the `HeapSnapshot` webidl
 interface, there is a small amount of glue code in Gecko. The
-[`mozilla::devtools::HeapSnapshot`](https://searchfox.org/mozilla-central/source/devtools/shared/heapsnapshot/HeapSnapshot.h)
+[`mozilla::devtools::HeapSnapshot`](https://searchfox.org/firefox-main/source/devtools/shared/heapsnapshot/HeapSnapshot.h)
 C++ class implements the webidl interface. The analyses methods (eg
 `ComputeDominatorTree`) take the deserialized nodes and edges from the heap
 snapshot, create `JS::ubi::Node`s from them, call the analyses from
@@ -132,7 +132,7 @@ snapshot, create `JS::ubi::Node`s from them, call the analyses from
 JavaScript.
 
 For API documentation on running specific analyses, see the
-[`HeapSnapshot`](https://searchfox.org/mozilla-central/source/dom/webidl/HeapSnapshot.webidl)
+[`HeapSnapshot`](https://searchfox.org/firefox-main/source/dom/chrome-webidl/HeapSnapshot.webidl)
 webidl interface.
 
 ### Testing `JS::ubi::Node`, Snapshots, and Analyses
@@ -147,7 +147,7 @@ commands.
 There are also `JS::ubi::Node` related unit tests in
 `js/src/jit-test/tests/heap-analysis/*`, `js/src/jit-test/tests/debug/Memory-*`,
 and `js/src/jsapi-tests/testUbiNode.cpp`. See
-https://firefox-source-docs.mozilla.org/js/test.html#running-jit-tests-locally
+<https://firefox-source-docs.mozilla.org/js/test.html#running-jit-tests-locally>
 for running the JIT tests.
 
 ## `HeapAnalysesWorker`

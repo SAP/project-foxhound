@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -26,7 +24,18 @@ TESTING_JS_MODULES += [
 DIRS += ["schemas"]
 
 BROWSER_CHROME_MANIFESTS += [
+    "test/browser/browser-action.toml",
+    "test/browser/browser-contentscript.toml",
+    "test/browser/browser-devtools.toml",
+    "test/browser/browser-menus.toml",
     "test/browser/browser-private.toml",
+    "test/browser/browser-search-and-settings.toml",
+    "test/browser/browser-sessions.toml",
+    "test/browser/browser-sidebar.toml",
+    "test/browser/browser-tabs.toml",
+    "test/browser/browser-tabstrip.toml",
+    "test/browser/browser-unified-extensions.toml",
+    "test/browser/browser-windows.toml",
     "test/browser/browser.toml",
     "test/browser/browser_legacy_recent_tabs.toml",
 ]

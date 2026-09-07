@@ -1,11 +1,7 @@
-// |reftest| shell-option(--enable-iterator-helpers) skip-if(!this.hasOwnProperty('Iterator')||!xulRuntime.shell) -- iterator-helpers is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 features:
   - iterator-helpers
 info: |
@@ -22,14 +18,14 @@ class TestIterator extends Iterator {
 }
 
 const iter = new TestIterator();
-assertThrowsInstanceOf(() => iter.reduce(), TypeError);
-assertThrowsInstanceOf(() => iter.reduce(undefined), TypeError);
-assertThrowsInstanceOf(() => iter.reduce(null), TypeError);
-assertThrowsInstanceOf(() => iter.reduce(0), TypeError);
-assertThrowsInstanceOf(() => iter.reduce(false), TypeError);
-assertThrowsInstanceOf(() => iter.reduce(''), TypeError);
-assertThrowsInstanceOf(() => iter.reduce(Symbol('')), TypeError);
-assertThrowsInstanceOf(() => iter.reduce({}), TypeError);
+assert.throws(TypeError, () => iter.reduce());
+assert.throws(TypeError, () => iter.reduce(undefined));
+assert.throws(TypeError, () => iter.reduce(null));
+assert.throws(TypeError, () => iter.reduce(0));
+assert.throws(TypeError, () => iter.reduce(false));
+assert.throws(TypeError, () => iter.reduce(''));
+assert.throws(TypeError, () => iter.reduce(Symbol('')));
+assert.throws(TypeError, () => iter.reduce({}));
 
 
 reportCompare(0, 0);

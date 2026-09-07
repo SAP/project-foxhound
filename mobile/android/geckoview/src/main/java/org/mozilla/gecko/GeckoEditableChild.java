@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -45,6 +44,7 @@ public final class GeckoEditableChild extends JNIObject implements IGeckoEditabl
         final int repeatCount,
         final int flags,
         final boolean isSynthesizedImeKey,
+        final boolean waitingReply,
         final KeyEvent event) {
       GeckoEditableChild.this.onKeyEvent(
           action,
@@ -57,6 +57,7 @@ public final class GeckoEditableChild extends JNIObject implements IGeckoEditabl
           repeatCount,
           flags,
           isSynthesizedImeKey,
+          waitingReply,
           event);
     }
 
@@ -171,6 +172,7 @@ public final class GeckoEditableChild extends JNIObject implements IGeckoEditabl
       int repeatCount,
       int flags,
       boolean isSynthesizedImeKey,
+      boolean waitingReply,
       KeyEvent event);
 
   @WrapForJNI(dispatchTo = "proxy")

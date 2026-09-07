@@ -4,11 +4,10 @@ import wasm from "./diplomat-wasm.mjs";
 import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
 
+
 /**
- * See the [Rust documentation for `MismatchedCalendarError`](https://docs.rs/icu/latest/icu/datetime/struct.MismatchedCalendarError.html) for more information.
+ * See the [Rust documentation for `MismatchedCalendarError`](https://docs.rs/icu/2.1.1/icu/datetime/struct.MismatchedCalendarError.html) for more information.
  */
-
-
 export class DateTimeMismatchedCalendarError {
     #thisKind;
     get thisKind() {
@@ -24,9 +23,7 @@ export class DateTimeMismatchedCalendarError {
     set dateKind(value){
         this.#dateKind = value;
     }
-    /** Create `DateTimeMismatchedCalendarError` from an object that contains all of `DateTimeMismatchedCalendarError`s fields.
-    * Optional fields do not need to be included in the provided object.
-    */
+    /** @internal */
     static fromFields(structObj) {
         return new DateTimeMismatchedCalendarError(structObj);
     }
@@ -57,7 +54,13 @@ export class DateTimeMismatchedCalendarError {
         functionCleanupArena,
         appendArrayMap
     ) {
-        return [this.#thisKind.ffiValue, ...diplomatRuntime.optionToArgsForCalling(this.#dateKind, 4, 4, (arrayBuffer, offset, jsValue) => [diplomatRuntime.writeToArrayBuffer(arrayBuffer, offset + 0, jsValue.ffiValue, Int32Array)])]
+        let buffer = diplomatRuntime.DiplomatBuf.struct(wasm, 12, 4);
+
+        this._writeToArrayBuffer(wasm.memory.buffer, buffer.ptr, functionCleanupArena, appendArrayMap);
+
+        functionCleanupArena.alloc(buffer);
+
+        return buffer.ptr;
     }
 
     static _fromSuppliedValue(internalConstructor, obj) {

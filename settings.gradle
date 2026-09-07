@@ -6,26 +6,24 @@ pluginManagement {
         apply from: file('mobile/android/gradle/mozconfig.gradle')
     } else {
         gradle.ext.mozconfig = gradle.root.mozconfig
+        gradle.ext.configureMavenRepositories = gradle.root.ext.configureMavenRepositories
     }
 
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/conventions")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/config")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/dependencies")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/publicsuffixlist")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/fenix/plugins/apksize")
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/apilint")
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/nimbus-gradle-plugin")
 }
 
 plugins {
+    id 'org.mozilla.conventions.settings'
     id 'mozac.DependenciesPlugin'
 }
 
@@ -34,7 +32,10 @@ plugins {
 ext.topsrcdir = rootProject.projectDir.absolutePath
 
 apply from: "${topsrcdir}/mobile/android/shared-settings.gradle"
-apply from: "${topsrcdir}/mobile/android/autopublish-settings.gradle"
+
+if (gradle.ext.mozconfig.substs.MOZ_APPSERVICES_IN_TREE) {
+    apply from: "${topsrcdir}/third_party/application-services/settings.gradle"
+}
 
 // Set the Android SDK location.  This is the *least specific* mechanism, which
 // is unfortunate: we'd prefer to use the *most specific* mechanism.  That is,
@@ -45,23 +46,26 @@ System.setProperty('android.home', gradle.mozconfig.substs.ANDROID_SDK_ROOT)
 
 include ':annotations', ':messaging_example', ':port_messaging_example'
 include ':geckoview'
-include ':exoplayer2'
 include ':android-components'
 
 project(':annotations').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/annotations")
 project(':geckoview').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/geckoview")
-project(':exoplayer2').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/exoplayer2")
 project(':android-components').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components")
 
 if (!gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT || gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT == "fenix") {
     include ':fenix'
     project(':fenix').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/fenix/app")
+    include ':fenix:longfox'
+    project(':fenix:longfox').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/fenix/app/longfox")
+    include ':fenix:benchmark'
+    project(':fenix:benchmark').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/fenix/benchmark")
 }
 if (!gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT || gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT == "focus") {
     include ':focus-android'
     project(':focus-android').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/focus-android/app")
 }
 if (!gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT || gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT == "geckoview_example") {
+    include ':components:samples-acorn-components'
     include ':components:samples-browser'
     include ':components:samples-compose-browser'
     include ':components:samples-toolbar'
@@ -69,6 +73,7 @@ if (!gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT || gradle.mozconfig.substs.M
     include ':test_runner'
     project(':test_runner').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/test_runner")
     project(':geckoview_example').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/geckoview_example")
+    project(':components:samples-acorn-components').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/acorn-components")
     project(':components:samples-browser').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/browser")
     project(':components:samples-compose-browser').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/compose-browser")
     project(':components:samples-toolbar').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/toolbar")

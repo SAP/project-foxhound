@@ -5,7 +5,6 @@
 #ifndef nsRandomGenerator_h
 #define nsRandomGenerator_h
 
-#include "mozilla/Attributes.h"
 #include "nsIRandomGenerator.h"
 
 #define NS_RANDOMGENERATOR_CID \

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 #define StickyScrollContainer_h
 
 #include "mozilla/DepthOrderedFrameList.h"
-#include "nsIScrollPositionListener.h"
 #include "nsPoint.h"
 #include "nsRectAbsolute.h"
 #include "nsTArray.h"
@@ -25,21 +22,13 @@ namespace mozilla {
 
 class ScrollContainerFrame;
 
-class StickyScrollContainer final : public nsIScrollPositionListener {
+class StickyScrollContainer final {
  public:
   /**
    * Find (and create if necessary) the StickyScrollContainer associated with
    * the scroll container of the given frame, if a scroll container exists.
    */
-  static StickyScrollContainer* GetStickyScrollContainerForFrame(
-      nsIFrame* aFrame);
-
-  /**
-   * Find the StickyScrollContainer associated with the given scroll frame,
-   * if it exists.
-   */
-  static StickyScrollContainer* GetStickyScrollContainerForScrollFrame(
-      nsIFrame* aScrollFrame);
+  static StickyScrollContainer* GetOrCreateForFrame(nsIFrame*);
 
   void AddFrame(nsIFrame* aFrame) { mFrames.Add(aFrame); }
   void RemoveFrame(nsIFrame* aFrame) { mFrames.Remove(aFrame); }
@@ -77,9 +66,7 @@ class StickyScrollContainer final : public nsIScrollPositionListener {
    */
   void UpdatePositions(nsPoint aScrollPosition, nsIFrame* aSubtreeRoot);
 
-  // nsIScrollPositionListener
-  void ScrollPositionWillChange(nscoord aX, nscoord aY) override;
-  void ScrollPositionDidChange(nscoord aX, nscoord aY) override;
+  void ScrollPositionDidChange(const nsPoint&);
 
   ~StickyScrollContainer();
 
@@ -96,9 +83,14 @@ class StickyScrollContainer final : public nsIScrollPositionListener {
    */
   void MarkFramesForReflow();
 
- private:
+  void SetShouldFlatten(bool aShouldFlatten) {
+    mShouldFlatten = aShouldFlatten;
+  }
+  bool ShouldFlattenAway() const { return mShouldFlatten; }
+
   explicit StickyScrollContainer(ScrollContainerFrame* aScrollContainerFrame);
 
+ private:
   /**
    * Compute two rectangles that determine sticky positioning: |aStick|, based
    * on the scroll container, and |aContain|, based on the containing block.
@@ -111,6 +103,7 @@ class StickyScrollContainer final : public nsIScrollPositionListener {
   ScrollContainerFrame* const mScrollContainerFrame;
   DepthOrderedFrameList mFrames;
   nsPoint mScrollPosition;
+  bool mShouldFlatten = false;
 };
 
 }  // namespace mozilla

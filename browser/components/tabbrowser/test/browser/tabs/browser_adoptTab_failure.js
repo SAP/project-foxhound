@@ -37,7 +37,9 @@ add_task(async function test_replaceTabsWithWindow() {
 
   const windowOpenedPromise = BrowserTestUtils.waitForNewWindow();
   const win2 = gBrowser.replaceTabsWithWindow(selectedTab);
-  await BrowserTestUtils.waitForEvent(win2, "DOMContentLoaded");
+  // BrowserTestUtils.waitForEvent will resolve the next tick, by which point
+  // we'll already have adopted nonAdoptableTab
+  await new Promise(res => win2.addEventListener("DOMContentLoaded", res));
   const gBrowser2 = win2.gBrowser;
   makeAdoptTabFailOnceFor(gBrowser2, nonAdoptableTab);
   await windowOpenedPromise;

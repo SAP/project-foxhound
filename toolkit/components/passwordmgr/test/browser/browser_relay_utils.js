@@ -6,9 +6,6 @@ const { HttpServer } = ChromeUtils.importESModule(
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
-const { autocompleteUXTreatments } = ChromeUtils.importESModule(
-  "resource://gre/modules/FirefoxRelay.sys.mjs"
-);
 const { getFxAccountsSingleton } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccounts.sys.mjs"
 );
@@ -107,22 +104,39 @@ async function stubRemoteSettingsAllowList(
   allowList = [{ domain: "example.org" }]
 ) {
   const allowListRS = await lazy.RemoteSettings("fxrelay-allowlist");
+  // If already stubbed, restore
+  if (allowListRS.get && allowListRS.get.restore) {
+    allowListRS.get.restore();
+  }
   const rsSandbox = sinon.createSandbox();
   rsSandbox.stub(allowListRS, "get").returns(allowList);
   allowListRS.emit("sync");
   return rsSandbox;
 }
 
-add_setup(async function () {
-  const allMessageIds = [];
-  for (const key in autocompleteUXTreatments) {
-    const treatment = autocompleteUXTreatments[key];
-    allMessageIds.push(...treatment.messageIds);
+async function stubRemoteSettingsDenyList(
+  denyList = [{ domain: "on-denylist.org" }]
+) {
+  const denyListRS = await lazy.RemoteSettings("fxrelay-denylist");
+  // If already stubbed, restore
+  if (denyListRS.get && denyListRS.get.restore) {
+    denyListRS.get.restore();
   }
+  const rsSandbox = sinon.createSandbox();
+  rsSandbox.stub(denyListRS, "get").returns(denyList);
+  denyListRS.emit("sync");
+  return rsSandbox;
+}
+
+add_setup(async function () {
   gRelayACOptionsTitles = await new Localization([
     "browser/firefoxRelay.ftl",
     "toolkit/branding/brandings.ftl",
-  ]).formatMessages(allMessageIds);
+  ]).formatMessages([
+    "firefox-relay-opt-in-title-b",
+    "firefox-relay-opt-in-subtitle-b",
+    "firefox-relay-use-mask-title-1",
+  ]);
 });
 
 function stubFxAccountsToSimulateSignedIn() {
@@ -178,3 +192,10 @@ async function clickButtonAndWaitForPopupToClose(buttonToClick) {
   buttonToClick.click();
   await notificationHiddenEvent;
 }
+
+const setupRelayScenario = async scenarioName => {
+  await SpecialPowers.pushPrefEnv({
+    set: [["signon.firefoxRelay.feature", scenarioName]],
+  });
+  Services.telemetry.clearEvents();
+};

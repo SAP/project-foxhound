@@ -6,13 +6,13 @@ package org.mozilla.fenix.settings
 
 import android.content.Context
 import android.util.AttributeSet
-import android.widget.CompoundButton.OnCheckedChangeListener
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.widget.AppCompatRadioButton
 import androidx.core.content.edit
 import androidx.core.content.withStyledAttributes
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
+import androidx.appcompat.R as appcompatR
 
 /**
  * [AppCompatRadioButton] backed by a boolean `SharedPreference`.
@@ -28,7 +28,7 @@ import org.mozilla.fenix.ext.settings
 class PreferenceBackedRadioButton @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = R.attr.radioButtonStyle,
+    defStyleAttr: Int = appcompatR.attr.radioButtonStyle,
 ) : AppCompatRadioButton(context, attrs, defStyleAttr) {
     @VisibleForTesting
     internal var externalOnCheckedChangeListener: OnCheckedChangeListener? = null
@@ -41,7 +41,7 @@ class PreferenceBackedRadioButton @JvmOverloads constructor(
 
     private val internalOnCheckedChangeListener = OnCheckedChangeListener { buttonView, isChecked ->
         backingPreferenceName?.let {
-            context.settings().preferences.edit { putBoolean(it, isChecked) }
+            context.components.settings.preferences.edit { putBoolean(it, isChecked) }
         }
 
         externalOnCheckedChangeListener?.onCheckedChanged(buttonView, isChecked)
@@ -56,7 +56,8 @@ class PreferenceBackedRadioButton @JvmOverloads constructor(
             )
         }
 
-        isChecked = context.settings().preferences.getBoolean(backingPreferenceName, backingPreferenceDefaultValue)
+        isChecked =
+            context.components.settings.preferences.getBoolean(backingPreferenceName, backingPreferenceDefaultValue)
 
         super.setOnCheckedChangeListener(internalOnCheckedChangeListener)
     }
@@ -69,9 +70,10 @@ class PreferenceBackedRadioButton @JvmOverloads constructor(
         super.setEnabled(enabled)
 
         if (enabled) {
-            isChecked = context.settings().preferences.getBoolean(backingPreferenceName, backingPreferenceDefaultValue)
+            isChecked =
+                context.components.settings.preferences.getBoolean(backingPreferenceName, backingPreferenceDefaultValue)
         } else {
-            context.settings().preferences.edit { remove(backingPreferenceName) }
+            context.components.settings.preferences.edit { remove(backingPreferenceName) }
         }
     }
 }

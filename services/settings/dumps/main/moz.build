@@ -5,11 +5,13 @@
 if CONFIG["MOZ_BUILD_APP"] == "browser":
     # These collections are only referenced from browser/
     FINAL_TARGET_FILES.defaults.settings.main += [
+        "ai-window-prompts.json",
         "language-dictionaries.json",
+        "newtab-wallpapers-v2.json",
         "search-telemetry-v2.json",
         "sites-classification.json",
         "top-sites.json",
-        "urlbar-persisted-search-terms.json",
+        "urlbar-persisted-search-terms.json"
    ]
 
 # These collections are referenced in toolkit/ or other core code, however
@@ -83,8 +85,6 @@ if CONFIG["MOZ_BUILD_APP"] == "browser":
         "search-config-icons/70fdd651-6c50-b7bb-09ec-7e85da259173.meta.json",
         "search-config-icons/74793ce1-a918-a5eb-d3c0-2aadaff3c88c",
         "search-config-icons/74793ce1-a918-a5eb-d3c0-2aadaff3c88c.meta.json",
-        "search-config-icons/7bbe6c5c-fdb8-2845-a4f4-e1382e708a0e",
-        "search-config-icons/7bbe6c5c-fdb8-2845-a4f4-e1382e708a0e.meta.json",
         "search-config-icons/7bf4ca37-e2b8-4d31-a1c3-979bc0e85131",
         "search-config-icons/7bf4ca37-e2b8-4d31-a1c3-979bc0e85131.meta.json",
         "search-config-icons/7efbed51-813c-581d-d8d3-f8758434e451",
@@ -111,6 +111,8 @@ if CONFIG["MOZ_BUILD_APP"] == "browser":
         "search-config-icons/a06dc3fd-4bdb-41f3-2ebc-4cbed06a9bd3.meta.json",
         "search-config-icons/a2c7d4e9-f770-51e1-0963-3c2c8401631d",
         "search-config-icons/a2c7d4e9-f770-51e1-0963-3c2c8401631d.meta.json",
+        "search-config-icons/acae3d3c-b09e-47f0-a9e5-57980d21fc4a",
+        "search-config-icons/acae3d3c-b09e-47f0-a9e5-57980d21fc4a.meta.json",
         "search-config-icons/b64f09fd-52d1-c48e-af23-4ce918e7bf3b",
         "search-config-icons/b64f09fd-52d1-c48e-af23-4ce918e7bf3b.meta.json",
         "search-config-icons/b8ca5a94-8fff-27ad-6e00-96e244a32e21",

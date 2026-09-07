@@ -1,0 +1,22 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Fri, 19 Sep 2025 10:46:00 -0500
+Subject: Bug 1985396 - (fix-948f6e7a4e) fix windows build failure caused by a
+ macro expansion
+
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/5368b134e503299a9cef8590ec91fbc3cf4dcc8a
+---
+ modules/desktop_capture/desktop_capturer.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/modules/desktop_capture/desktop_capturer.h b/modules/desktop_capture/desktop_capturer.h
+index 8219358e1e..9b1efa0bb5 100644
+--- a/modules/desktop_capture/desktop_capturer.h
++++ b/modules/desktop_capture/desktop_capturer.h
+@@ -23,7 +23,6 @@
+ #include "modules/desktop_capture/delegated_source_list_controller.h"
+ #include "modules/desktop_capture/desktop_capture_metadata.h"
+ #include "modules/desktop_capture/desktop_capture_types.h"
+-#include "modules/desktop_capture/desktop_geometry.h"
+ #include "modules/desktop_capture/shared_memory.h"
+ #include "rtc_base/system/rtc_export.h"
+ 

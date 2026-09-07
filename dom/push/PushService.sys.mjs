@@ -12,7 +12,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gPushNotifier",
   "@mozilla.org/push/Notifier;1",
-  "nsIPushNotifier"
+  Ci.nsIPushNotifier
 );
 ChromeUtils.defineESModuleGetters(lazy, {
   PushCrypto: "resource://gre/modules/PushCrypto.sys.mjs",
@@ -50,7 +50,7 @@ const PUSH_SERVICE_RUNNING = 5;
  *                             PUSH_SERVICE_ACTIVE_OFFLINE or
  *                             PUSH_SERVICE_RUNNING.
  *   uninit - change state to PUSH_SERVICE_UNINIT.
- **/
+ */
 
 // This is for starting and stopping service.
 const STARTING_SERVICE_EVENT = 0;
@@ -358,7 +358,7 @@ export var PushService = {
    * service is not connected, this function is a no-op.
    *
    * @param {PushRecord} record The record to unregister.
-   * @param {Number} reason An `nsIPushErrorReporter` unsubscribe reason,
+   * @param {number} reason An `nsIPushErrorReporter` unsubscribe reason,
    *  indicating why this record was removed.
    */
   _backgroundUnregister(record, reason) {
@@ -673,7 +673,7 @@ export var PushService = {
    * Drops a registration and notifies the associated service worker. If the
    * registration does not exist, this function is a no-op.
    *
-   * @param {String} keyID The registration ID to remove.
+   * @param {string} keyID The registration ID to remove.
    * @returns {Promise} Resolves once the worker has been notified.
    */
   dropRegistrationAndNotifyApp(aKeyID) {
@@ -685,7 +685,7 @@ export var PushService = {
   /**
    * Updates a registration and notifies the associated service worker.
    *
-   * @param {String} keyID The registration ID to update.
+   * @param {string} keyID The registration ID to update.
    * @param {Function} updateFunc Returns the updated record.
    * @returns {Promise} Resolves with the updated record once the worker
    *  has been notified.
@@ -743,11 +743,11 @@ export var PushService = {
    * the registration and message will be dropped, and the worker will not
    * be notified.
    *
-   * @param {String} keyID The push registration ID.
-   * @param {String} messageID The message ID, used to report service worker
+   * @param {string} keyID The push registration ID.
+   * @param {string} messageID The message ID, used to report service worker
    *  delivery failures. For Web Push messages, this is the version. If empty,
    *  failures will not be reported.
-   * @param {Object} headers The encryption headers.
+   * @param {object} headers The encryption headers.
    * @param {ArrayBuffer|Uint8Array} data The encrypted message data.
    * @param {Function} updateFunc A function that receives the existing
    *  registration record as its argument, and returns a new record. If the
@@ -786,8 +786,8 @@ export var PushService = {
   /**
    * Dispatches a broadcast notification to the BroadcastService.
    *
-   * @param {Object} message The reply received by PushServiceWebSocket
-   * @param {Object} context Additional information about the context in which the
+   * @param {object} message The reply received by PushServiceWebSocket
+   * @param {object} context Additional information about the context in which the
    *  notification was received.
    */
   receivedBroadcastMessage(message, context) {
@@ -801,7 +801,7 @@ export var PushService = {
   /**
    * Updates a registration record after receiving a push message.
    *
-   * @param {String} keyID The push registration ID.
+   * @param {string} keyID The push registration ID.
    * @param {Function} updateFunc The function passed to `receivedPushMessage`.
    * @returns {Promise} Resolves with the updated record, or rejects if the
    *  record was not updated.
@@ -855,8 +855,8 @@ export var PushService = {
    * Decrypts an incoming message and notifies the associated service worker.
    *
    * @param {PushRecord} record The receiving registration.
-   * @param {String} messageID The message ID.
-   * @param {Object} headers The encryption headers.
+   * @param {string} messageID The message ID.
+   * @param {object} headers The encryption headers.
    * @param {ArrayBuffer|Uint8Array} data The encrypted message data.
    * @returns {Promise} Resolves with an ack status code.
    */
@@ -1240,6 +1240,7 @@ export var PushService = {
    * Clear subscriptions matching either a principal or a domain and
    * OriginAttributesPattern. If domain="*" is passed all records will be
    * deleted.
+   *
    * @param {*} options
    * @param {nsIPrincipal} [options.principal] - The principal to clear
    * subscriptions for. This does an exact origin match.

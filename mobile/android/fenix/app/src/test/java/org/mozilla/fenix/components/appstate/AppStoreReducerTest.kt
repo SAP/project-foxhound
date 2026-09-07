@@ -9,18 +9,20 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarkNodeType
+import mozilla.components.feature.protection.dashboard.TrackersBlockedCategory
 import mozilla.components.lib.crash.Crash.NativeCodeCrash
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.AddNonFatalCrash
+import org.mozilla.fenix.components.appstate.AppAction.BlockedTrackersAction.UpdateTrackersBlockedCount
+import org.mozilla.fenix.components.appstate.AppAction.BlockedTrackersAction.UpdateTrackersBlockedThisWeek
 import org.mozilla.fenix.components.appstate.AppAction.RemoveAllNonFatalCrashes
 import org.mozilla.fenix.components.appstate.AppAction.RemoveNonFatalCrash
 import org.mozilla.fenix.components.appstate.AppAction.UpdateInactiveExpanded
+import org.mozilla.fenix.components.appstate.blockedtrackers.BlockedTrackersState
 import org.mozilla.fenix.components.appstate.search.SearchState
 import org.mozilla.fenix.components.appstate.search.SelectedSearchEngine
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
@@ -91,7 +93,7 @@ class AppStoreReducerTest {
 
         assertFalse(initialState.searchState.isSearchActive)
 
-        var updatedState = AppStoreReducer.reduce(
+        val updatedState = AppStoreReducer.reduce(
             initialState,
             AppAction.SearchAction.SearchStarted(
                 tabId = "test",
@@ -143,22 +145,23 @@ class AppStoreReducerTest {
 
     @Test
     fun `WHEN translation started action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
         val sessionId = "sessionId"
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.TranslationsAction.TranslationStarted(sessionId = sessionId),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.TranslationInProgress(sessionId = sessionId),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN bookmark added action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
         val guidToEdit = "guidToEdit"
         val parentNode = BookmarkNode(
             type = BookmarkNodeType.FOLDER,
@@ -172,162 +175,149 @@ class AppStoreReducerTest {
             children = listOf(),
         )
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.BookmarkAction.BookmarkAdded(
                 guidToEdit = guidToEdit,
                 parentNode = parentNode,
+                source = MetricsUtils.BookmarkAction.Source.TEST,
             ),
         )
-            .joinBlocking()
 
         assertEquals(
             SnackbarState.BookmarkAdded(
                 guidToEdit = guidToEdit,
                 parentNode = parentNode,
             ),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN bookmark deleted action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
         val bookmarkTitle = "test"
 
-        appStore.dispatch(AppAction.BookmarkAction.BookmarkDeleted(title = bookmarkTitle))
-            .joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, AppAction.BookmarkAction.BookmarkDeleted(title = bookmarkTitle))
 
         assertEquals(
             SnackbarState.BookmarkDeleted(title = bookmarkTitle),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN delete and quit selected action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.DeleteAndQuitStarted,
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.DeletingBrowserDataInProgress,
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN open in firefox started action is dispatched THEN open in firefox requested is true`() {
-        val appStore = AppStore()
-        assertFalse(appStore.state.openInFirefoxRequested)
+        val initialState = AppState()
+        assertFalse(initialState.openInFirefoxRequested)
 
-        appStore.dispatch(AppAction.OpenInFirefoxStarted)
-            .joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, AppAction.OpenInFirefoxStarted)
 
-        assertTrue(appStore.state.openInFirefoxRequested)
+        assertTrue(finalState.openInFirefoxRequested)
     }
 
     @Test
     fun `WHEN open in firefox finished action is dispatched THEN open in firefox requested is false`() {
-        val appStore = AppStore(
-            initialState = AppState(
-                openInFirefoxRequested = true,
-            ),
+        val initialState = AppState(
+            openInFirefoxRequested = true,
         )
-        assertTrue(appStore.state.openInFirefoxRequested)
+        assertTrue(initialState.openInFirefoxRequested)
 
-        appStore.dispatch(AppAction.OpenInFirefoxFinished)
-            .joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, AppAction.OpenInFirefoxFinished)
 
-        assertFalse(appStore.state.openInFirefoxRequested)
+        assertFalse(finalState.openInFirefoxRequested)
     }
 
     @Test
     fun `WHEN UserAccountAuthenticated action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.UserAccountAuthenticated,
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.UserAccountAuthenticated,
-            appStore.state.snackbarState,
-        )
-    }
-
-    @Test
-    fun `WHEN site data cleared action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
-
-        appStore.dispatch(
-            AppAction.SiteDataCleared,
-        ).joinBlocking()
-
-        assertEquals(
-            SnackbarState.SiteDataCleared,
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN the current tab is closed THEN show a snackbar`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.CurrentTabClosed(true),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.CurrentTabClosed(true),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN the current tab's URL has been copied THEN show a snackbar`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(AppAction.URLCopiedToClipboard).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, AppAction.URLCopiedToClipboard)
 
         assertEquals(
             SnackbarState.URLCopiedToClipboard,
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN download in progress action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.DownloadAction.DownloadInProgress("id"),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.DownloadInProgress("id"),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN download failed action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.DownloadAction.DownloadFailed("fileName"),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.DownloadFailed("fileName"),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 
     @Test
     fun `WHEN download completed action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
         val downloadState = DownloadState(
             id = "1",
             url = "url",
@@ -336,28 +326,55 @@ class AppStoreReducerTest {
             contentLength = 5242880,
             status = DownloadState.Status.DOWNLOADING,
             directoryPath = "downloads",
-            destinationDirectory = "Environment.DIRECTORY_MUSIC",
             private = true,
             createdTime = 33,
             etag = "etag",
         )
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.DownloadAction.DownloadCompleted(
                 downloadState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.DownloadCompleted(
                 downloadState,
             ),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
+        assertTrue(finalState.supportedMenuNotifications.contains(SupportedMenuNotifications.Downloads))
+    }
+
+    @Test
+    fun `WHEN an update for the total count of blocked trackers is dispatched THEN update the state value`() {
+        val initialState = AppState()
+        val newValue = 999
+
+        val finalState = AppStoreReducer.reduce(initialState, UpdateTrackersBlockedCount(newValue))
+
+        assertEquals(newValue, finalState.blockedTrackersState.trackersBlockedCount)
+    }
+
+    @Test
+    fun `WHEN an update for the blocked trackers categories is dispatches THEN update the state value`() {
+        val initialState = AppState(
+            blockedTrackersState = BlockedTrackersState(
+                trackersBlockedCount = 3,
+                trackersBlockedThisWeek = listOf(mockk()),
+            ),
+        )
+        val newValue = listOf<TrackersBlockedCategory>(mockk(), mockk())
+
+        val finalState = AppStoreReducer.reduce(initialState, UpdateTrackersBlockedThisWeek(newValue))
+
+        assertEquals(newValue, finalState.blockedTrackersState.trackersBlockedThisWeek)
+        assertEquals(3, finalState.blockedTrackersState.trackersBlockedCount)
     }
 
     @Test
     fun `WHEN can not open file action is dispatched THEN snackbar state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
         val downloadState = DownloadState(
             id = "1",
@@ -367,23 +384,23 @@ class AppStoreReducerTest {
             contentLength = 5242880,
             status = DownloadState.Status.DOWNLOADING,
             directoryPath = "downloads",
-            destinationDirectory = "Environment.DIRECTORY_MUSIC",
             private = true,
             createdTime = 33,
             etag = "etag",
         )
 
-        appStore.dispatch(
+        val finalState = AppStoreReducer.reduce(
+            initialState,
             AppAction.DownloadAction.CannotOpenFile(
                 downloadState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             SnackbarState.CannotOpenFileError(
                 downloadState,
             ),
-            appStore.state.snackbarState,
+            finalState.snackbarState,
         )
     }
 }

@@ -11,11 +11,7 @@ add_task(
   async function test_select_translations_panel_unsupported_click_done_button() {
     const { cleanup, runInPage } = await loadTestPage({
       page: SELECT_TEST_PAGE_URL,
-      languagePairs: [
-        // Do not include Spanish.
-        { fromLang: "fr", toLang: "en" },
-        { fromLang: "en", toLang: "fr" },
-      ],
+      languagePairs: LANGUAGE_PAIRS_WITHOUT_SPANISH,
       prefs: [["browser.translations.select.enable", true]],
     });
 
@@ -42,17 +38,13 @@ add_task(
     const { cleanup, runInPage, resolveDownloads } = await loadTestPage({
       page: SELECT_TEST_PAGE_URL,
       languagePairs: [
-        // Do not include Spanish.
+        ...LANGUAGE_PAIRS_WITHOUT_SPANISH,
         { fromLang: "fa", toLang: "en" },
         { fromLang: "en", toLang: "fa" },
         { fromLang: "fi", toLang: "en" },
         { fromLang: "en", toLang: "fi" },
-        { fromLang: "fr", toLang: "en" },
-        { fromLang: "en", toLang: "fr" },
         { fromLang: "sl", toLang: "en" },
         { fromLang: "en", toLang: "sl" },
-        { fromLang: "uk", toLang: "en" },
-        { fromLang: "en", toLang: "uk" },
       ],
       prefs: [["browser.translations.select.enable", true]],
     });
@@ -106,17 +98,13 @@ add_task(
     const { cleanup, runInPage, resolveDownloads } = await loadTestPage({
       page: SELECT_TEST_PAGE_URL,
       languagePairs: [
-        // Do not include Spanish.
+        ...LANGUAGE_PAIRS_WITHOUT_SPANISH,
         { fromLang: "fa", toLang: "en" },
         { fromLang: "en", toLang: "fa" },
         { fromLang: "fi", toLang: "en" },
         { fromLang: "en", toLang: "fi" },
-        { fromLang: "fr", toLang: "en" },
-        { fromLang: "en", toLang: "fr" },
         { fromLang: "sl", toLang: "en" },
         { fromLang: "en", toLang: "sl" },
-        { fromLang: "uk", toLang: "en" },
-        { fromLang: "en", toLang: "uk" },
       ],
       prefs: [["browser.translations.select.enable", true]],
     });

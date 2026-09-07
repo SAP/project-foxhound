@@ -55,6 +55,20 @@ pref("app.update.background.automaticRestartEnabled", true);
 pref("app.update.background.automaticRestartEnabled", false);
 #endif
 
+// When the background update task has not witnessed a Firefox browsing profile
+// running for at least 14 days, throttle the task to not check for, download,
+// and apply updates. Note that this feature is disabled by default on ESR.
+#ifdef MOZ_ESR
+pref("app.update.background.checkPolicy.throttleEnabled", false);
+#else
+pref("app.update.background.checkPolicy.throttleEnabled", true);
+#endif
+pref("app.update.background.checkPolicy.throttleAfterDays", 14);
+// When throttled, limit the background update task to take any action,
+// including querying Remote Settings and Nimbus, to at most once in any 24 hour
+// period.
+pref("app.update.background.checkPolicy.throttleDebouncePeriodInHours", 24);
+
 #if defined(ENABLE_TESTS)
   // Test prefs to verify background tasks override gecko prefs correctly.
   pref("toolkit.backgroundtasks.tests.geckoPrefsOverriden", 28);

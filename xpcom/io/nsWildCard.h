@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,8 +16,8 @@
  *
  */
 
-#ifndef nsWildCard_h__
-#define nsWildCard_h__
+#ifndef nsWildCard_h_
+#define nsWildCard_h_
 
 #include "nscore.h"
 
@@ -60,4 +58,4 @@ int NS_WildCardMatch(const char* aStr, const char* aExpr,
 int NS_WildCardMatch(const char16_t* aStr, const char16_t* aExpr,
                      bool aCaseInsensitive);
 
-#endif /* nsWildCard_h__ */
+#endif /* nsWildCard_h_ */

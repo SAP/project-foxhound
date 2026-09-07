@@ -23,6 +23,9 @@ const ManifestPage = createFactory(
 const WorkersPage = createFactory(
   require("resource://devtools/client/application/src/components/service-workers/WorkersPage.js")
 );
+const SessionHistoryPage = createFactory(
+  require("resource://devtools/client/application/src/components/session-history/SessionHistoryPage.js")
+);
 
 class PageSwitcher extends PureComponent {
   static get propTypes() {
@@ -40,6 +43,9 @@ class PageSwitcher extends PureComponent {
         break;
       case PAGE_TYPES.SERVICE_WORKERS:
         component = WorkersPage({});
+        break;
+      case PAGE_TYPES.SESSION_HISTORY:
+        component = SessionHistoryPage({});
         break;
       default:
         console.error("Unknown path. Can not direct to a page.");

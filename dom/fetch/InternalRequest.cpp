@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 
 #include "InternalResponse.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/RemoteLazyInputStreamChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchTypes.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -15,7 +14,6 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/RemoteLazyInputStreamChild.h"
 #include "nsIContentPolicy.h"
 #include "nsStreamUtils.h"
 
@@ -32,6 +30,7 @@ SafeRefPtr<InternalRequest> InternalRequest::GetRequestConstructorCopy(
   copy->mHeaders = new InternalHeaders(*mHeaders);
   copy->mTriggeringPrincipalOverride = mTriggeringPrincipalOverride;
   copy->mNeverTaint = mNeverTaint;
+  copy->mCookieJarSettings = mCookieJarSettings;
   copy->SetUnsafeRequest();
   copy->mBodyStream = mBodyStream;
   copy->mBodyLength = mBodyLength;
@@ -58,6 +57,7 @@ SafeRefPtr<InternalRequest> InternalRequest::GetRequestConstructorCopy(
   copy->mPreferredAlternativeDataType = mPreferredAlternativeDataType;
   copy->mSkipWasmCaching = mSkipWasmCaching;
   copy->mEmbedderPolicy = mEmbedderPolicy;
+  copy->mAssociatedBrowsingContextID = mAssociatedBrowsingContextID;
   return copy;
 }
 
@@ -83,7 +83,7 @@ SafeRefPtr<InternalRequest> InternalRequest::Clone() {
   }
   return clone;
 }
-InternalRequest::InternalRequest(const nsACString& aURL,
+InternalRequest::InternalRequest(NotNull<nsIURI*> aURL,
                                  const nsACString& aFragment)
     : mMethod("GET"),
       mHeaders(new InternalHeaders(HeadersGuardEnum::None)),
@@ -97,7 +97,6 @@ InternalRequest::InternalRequest(const nsACString& aURL,
       mCacheMode(RequestCache::Default),
       mRedirectMode(RequestRedirect::Follow),
       mPriorityMode(RequestPriority::Auto) {
-  MOZ_ASSERT(!aURL.IsEmpty());
   AddURL(aURL, aFragment);
 }
 
@@ -113,6 +112,7 @@ InternalRequest::InternalRequest(const InternalRequest& aOther,
       mInternalPriority(aOther.mInternalPriority),
       mReferrer(aOther.mReferrer),
       mReferrerPolicy(aOther.mReferrerPolicy),
+      mAssociatedBrowsingContextID(aOther.mAssociatedBrowsingContextID),
       mEnvironmentReferrerPolicy(aOther.mEnvironmentReferrerPolicy),
       mMode(aOther.mMode),
       mCredentialsMode(aOther.mCredentialsMode),
@@ -194,9 +194,7 @@ InternalRequest::InternalRequest(const IPCInternalRequest& aIPCRequest)
 void InternalRequest::ToIPCInternalRequest(
     IPCInternalRequest* aIPCRequest, mozilla::ipc::PBackgroundChild* aManager) {
   aIPCRequest->method() = mMethod;
-  for (const auto& url : mURLList) {
-    aIPCRequest->urlList().AppendElement(url);
-  }
+  aIPCRequest->urlList() = mURLList.Clone();
   mHeaders->ToIPC(aIPCRequest->headers(), aIPCRequest->headersGuard());
   aIPCRequest->bodySize() = mBodyLength;
   aIPCRequest->preferredAlternativeDataType() = mPreferredAlternativeDataType;
@@ -260,6 +258,7 @@ void InternalRequest::SetInterceptionContentPolicyType(
 }
 
 /* static */
+/* static */
 RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
     nsContentPolicyType aContentPolicyType) {
   switch (aContentPolicyType) {
@@ -284,6 +283,7 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE_NOTIFICATION:
     case nsIContentPolicy::TYPE_IMAGE:
       return RequestDestination::Image;
     case nsIContentPolicy::TYPE_STYLESHEET:
@@ -358,13 +358,74 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
     case nsIContentPolicy::TYPE_JSON:
     case nsIContentPolicy::TYPE_INTERNAL_JSON_PRELOAD:
       return RequestDestination::Json;
+    case nsIContentPolicy::TYPE_TEXT:
+    case nsIContentPolicy::TYPE_INTERNAL_TEXT_PRELOAD:
+      return RequestDestination::Text;
     case nsIContentPolicy::TYPE_INVALID:
-    case nsIContentPolicy::TYPE_END:
       break;
       // Do not add default: so that compilers can catch the missing case.
   }
 
   MOZ_ASSERT(false, "Unhandled nsContentPolicyType value");
+  return RequestDestination::_empty;
+}
+
+/* static */
+RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
+    ExtContentPolicyType aContentPolicyType) {
+  switch (aContentPolicyType) {
+    case ExtContentPolicyType::TYPE_INVALID:
+    case ExtContentPolicyType::TYPE_OTHER:
+      return RequestDestination::_empty;
+    case ExtContentPolicyType::TYPE_SCRIPT:
+      return RequestDestination::Script;
+    case ExtContentPolicyType::TYPE_IMAGE:
+      return RequestDestination::Image;
+    case ExtContentPolicyType::TYPE_STYLESHEET:
+      return RequestDestination::Style;
+    case ExtContentPolicyType::TYPE_OBJECT:
+      return RequestDestination::Object;
+    case ExtContentPolicyType::TYPE_DOCUMENT:
+      return RequestDestination::Document;
+    case ExtContentPolicyType::TYPE_SUBDOCUMENT:
+      return RequestDestination::Iframe;
+    case ExtContentPolicyType::TYPE_PING:
+    case ExtContentPolicyType::TYPE_XMLHTTPREQUEST:
+    case ExtContentPolicyType::TYPE_DTD:
+      return RequestDestination::_empty;
+    case ExtContentPolicyType::TYPE_FONT:
+      return RequestDestination::Font;
+    case ExtContentPolicyType::TYPE_MEDIA:
+    case ExtContentPolicyType::TYPE_WEBSOCKET:
+      return RequestDestination::_empty;
+    case ExtContentPolicyType::TYPE_CSP_REPORT:
+      return RequestDestination::Report;
+    case ExtContentPolicyType::TYPE_XSLT:
+      return RequestDestination::Xslt;
+    case ExtContentPolicyType::TYPE_BEACON:
+    case ExtContentPolicyType::TYPE_FETCH:
+      return RequestDestination::_empty;
+    case ExtContentPolicyType::TYPE_IMAGESET:
+      return RequestDestination::Image;
+    case ExtContentPolicyType::TYPE_WEB_MANIFEST:
+      return RequestDestination::Manifest;
+    case ExtContentPolicyType::TYPE_SAVEAS_DOWNLOAD:
+    case ExtContentPolicyType::TYPE_SPECULATIVE:
+      return RequestDestination::_empty;
+    case ExtContentPolicyType::TYPE_UA_FONT:
+      return RequestDestination::Font;
+    case ExtContentPolicyType::TYPE_PROXIED_WEBRTC_MEDIA:
+    case ExtContentPolicyType::TYPE_WEB_IDENTITY:
+    case ExtContentPolicyType::TYPE_WEB_TRANSPORT:
+      return RequestDestination::_empty;
+    case ExtContentPolicyType::TYPE_JSON:
+      return RequestDestination::Json;
+    case ExtContentPolicyType::TYPE_TEXT:
+      return RequestDestination::Text;
+      // Do not add default: so that compilers can catch the missing case.
+  }
+
+  MOZ_ASSERT(false, "Unhandled ExContentPolicyType value");
   return RequestDestination::_empty;
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -176,7 +174,7 @@ void PlaybackStage::AddFlag(MediaInfoFlag aFlag) { mFlag |= aFlag; }
 ProfilerString8View CaptureStage::Name() const {
   if (!mName) {
     mName = Some(nsPrintfCString(
-        "CaptureVideoFrame %s %dx%d %s %s", mSource.Data(), mWidth, mHeight,
+        "CaptureVideoFrame %s %dx%d %s %s", mSource.get(), mWidth, mHeight,
         EnumValueToString(mImageType), mTrackingId.ToString().get()));
   }
   return *mName;
@@ -185,7 +183,7 @@ ProfilerString8View CaptureStage::Name() const {
 ProfilerString8View CopyVideoStage::Name() const {
   if (!mName) {
     mName =
-        Some(nsPrintfCString("CopyVideoFrame %s %dx%d %s", mSource.Data(),
+        Some(nsPrintfCString("CopyVideoFrame %s %dx%d %s", mSource.get(),
                              mWidth, mHeight, mTrackingId.ToString().get()));
   }
   return *mName;
@@ -206,7 +204,7 @@ ProfilerString8View DecodeStage::Name() const {
     mYUVColorSpace.apply([&](gfx::YUVColorSpace aColorSpace) {
       AppendYUVColorSpaceToName(extras, aColorSpace);
     });
-    mName = Some(nsPrintfCString("DecodeFrame %s %dx%d %s %s", mSource.Data(),
+    mName = Some(nsPrintfCString("DecodeFrame %s %dx%d %s %s", mSource.get(),
                                  mWidth.valueOr(-1), mHeight.valueOr(-1),
                                  extras.get(), mTrackingId.ToString().get()));
   }

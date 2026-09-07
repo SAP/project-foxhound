@@ -13,7 +13,7 @@ add_task(async function () {
   const triggeringPrincipal =
     Services.scriptSecurityManager.getSystemPrincipal();
   tab.loadURI(
-    Services.io.newURI(ALT_DOMAIN_SECURED + "storage-cache-error.html"),
+    Services.io.newURI(ALT_URL_SECURED + "storage-cache-error.html"),
     { triggeringPrincipal }
   );
   await BrowserTestUtils.browserLoaded(tab);

@@ -18,7 +18,7 @@ class MockElement {
     this.localName = tagName;
 
     this.isConnected = false;
-    this.ownerGlobal = {
+    this.documentGlobal = {
       document: {
         isActive() {
           return true;
@@ -120,7 +120,7 @@ add_task(function test_WebReference_from() {
 
   ok(WebReference.from(divEl) instanceof WebElement);
   ok(WebReference.from(xulEl) instanceof WebElement);
-  ok(WebReference.from(divEl.ownerGlobal) instanceof WebWindow);
+  ok(WebReference.from(divEl.documentGlobal) instanceof WebWindow);
   ok(WebReference.from(iframeEl.contentWindow) instanceof WebFrame);
   ok(WebReference.from(domElInPrivilegedDocument) instanceof WebElement);
   ok(WebReference.from(xulElInPrivilegedDocument) instanceof WebElement);

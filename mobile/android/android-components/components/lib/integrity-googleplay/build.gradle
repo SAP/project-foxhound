@@ -1,0 +1,61 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+buildscript {
+    repositories {
+        gradle.configureMavenRepositories(delegate)
+    }
+
+    dependencies {
+        classpath libs.mozilla.glean.gradle.plugin
+    }
+}
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    defaultConfig {
+        buildConfigField("String", "LIBRARY_VERSION", "\"" + config.componentsVersion + "\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    namespace = 'mozilla.components.lib.integrity.googleplay'
+}
+
+dependencies {
+    implementation project(':components:concept-integrity')
+
+    // We only compile against Glean. It's up to the app to add those dependencies
+    // if it wants to collect GeckoView telemetry through the Glean SDK.
+    compileOnly libs.mozilla.glean
+
+    implementation libs.kotlinx.coroutines.play.services
+    implementation libs.play.integrity
+
+    testImplementation project(':components:support-test')
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.androidx.work.testing
+    testImplementation libs.mozilla.glean
+    testImplementation libs.mozilla.glean.forUnitTests
+    testImplementation libs.robolectric
+}
+
+ext {
+    gleanNamespace = "mozilla.telemetry.glean"
+    gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
+}
+apply plugin: "org.mozilla.telemetry.glean-gradle-plugin"
+apply from: '../../../common-config.gradle'
+apply from: '../../../publish.gradle'
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

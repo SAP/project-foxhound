@@ -10,7 +10,6 @@ browser.jar:
    content/browser/migration/migration-wizard-constants.mjs   (content/migration-wizard-constants.mjs)
 #ifdef XP_WIN
    content/browser/migration/brands/360.png                   (content/brands/360.png)
-   content/browser/migration/brands/ie.png                    (content/brands/ie.png)
 #endif
 
 #if defined(XP_MACOSX) || defined(XP_WIN)

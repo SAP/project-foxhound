@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,8 +10,10 @@
 
 // Global includes
 #include <cstdint>
+
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "nsCOMPtr.h"
@@ -50,17 +50,9 @@ class CanonicalQuotaObject final : public QuotaObject {
   void EnableQuotaCheck() override;
 
  private:
-  CanonicalQuotaObject(OriginInfo* aOriginInfo, Client::Type aClientType,
-                       const nsAString& aPath, int64_t aSize)
-      : QuotaObject(/* aIsRemote */ false),
-        mOriginInfo(aOriginInfo),
-        mPath(aPath),
-        mSize(aSize),
-        mClientType(aClientType),
-        mQuotaCheckDisabled(false),
-        mWritingDone(false) {
-    MOZ_COUNT_CTOR(CanonicalQuotaObject);
-  }
+  CanonicalQuotaObject(const RefPtr<OriginInfo>& aOriginInfo,
+                       Client::Type aClientType, const nsAString& aPath,
+                       int64_t aSize);
 
   MOZ_COUNTED_DTOR(CanonicalQuotaObject)
 
@@ -77,7 +69,7 @@ class CanonicalQuotaObject final : public QuotaObject {
 
   mozilla::ThreadSafeAutoRefCnt mRefCnt;
 
-  OriginInfo* mOriginInfo;
+  ThreadSafeWeakPtr<OriginInfo> mOriginInfo;
   nsString mPath;
   int64_t mSize;
   Client::Type mClientType;

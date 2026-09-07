@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,9 +6,10 @@
 #define mozilla_dom_XULBroadcastManager_h
 
 #include "nsAtom.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 
-class PLDHashTable;
 class nsXULElement;
 
 namespace mozilla {
@@ -70,10 +69,15 @@ class XULBroadcastManager final {
   // DropDocumentReference().
   Document* MOZ_NON_OWNING_REF mDocument;
 
+  struct BroadcastListener {
+    nsWeakPtr mListener;
+    RefPtr<nsAtom> mAttribute;
+  };
+
   /**
    * A map from a broadcaster element to a list of listener elements.
    */
-  PLDHashTable* mBroadcasterMap;
+  nsTHashMap<Element*, nsTArray<BroadcastListener>> mBroadcasterMap;
 
   class nsDelayedBroadcastUpdate;
   nsTArray<nsDelayedBroadcastUpdate> mDelayedBroadcasters;

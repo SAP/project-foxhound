@@ -1,0 +1,17 @@
+{
+  "label": "rosasthai.com",
+  "bugs": {
+    "1939248": {
+      "issue": "broken-interactive-elements",
+      "matches": ["*://rosasthai.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "content_scripts": {
+        "js": ["run_late_window_load_listeners.js"]
+      }
+    }
+  ]
+}

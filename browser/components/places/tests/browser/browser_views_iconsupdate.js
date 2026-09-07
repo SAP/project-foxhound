@@ -8,8 +8,8 @@
  */
 
 add_task(async function () {
-  const PAGE_URI = NetUtil.newURI("https://places.test/");
-  const ICON_URI = NetUtil.newURI(
+  const PAGE_URI = Services.io.newURI("https://places.test/");
+  const ICON_URI = Services.io.newURI(
     "http://mochi.test:8888/browser/browser/components/places/tests/browser/favicon-normal16.png"
   );
 

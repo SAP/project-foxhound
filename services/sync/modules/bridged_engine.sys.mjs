@@ -39,7 +39,7 @@ class BridgedStore {
       throw new Error("Store must be associated with an Engine instance.");
     }
     this.engine = engine;
-    this._log = lazy.Log.repository.getLogger(`Sync.Engine.${name}.Store`);
+    this._log = engine.log;
     this._batchChunkSize = 500;
   }
 
@@ -75,8 +75,8 @@ class BridgedRecord extends RawCryptoWrapper {
   /**
    * Creates an outgoing record from a BSO returned by a bridged engine.
    *
-   * @param  {String} collection The collection name.
-   * @param  {Object} bso   The outgoing bso (ie, a sync15::bso::OutgoingBso) returned from
+   * @param  {string} collection The collection name.
+   * @param  {object} bso   The outgoing bso (ie, a sync15::bso::OutgoingBso) returned from
    *                        `mozIBridgedSyncEngine::apply`.
    * @return {BridgedRecord}     A Sync record ready to encrypt and upload.
    */
@@ -108,11 +108,11 @@ class BridgedRecord extends RawCryptoWrapper {
     return cleartext;
   }
 
-  /*
+  /**
    * Converts this incoming record into an envelope to pass to a bridged engine.
    * This object must be kept in sync with `sync15::IncomingBso`.
    *
-   * @return {Object} The incoming envelope, to pass to
+   * @return {object} The incoming envelope, to pass to
    *                  `mozIBridgedSyncEngine::storeIncoming`.
    */
   toIncomingBso() {
@@ -121,49 +121,6 @@ class BridgedRecord extends RawCryptoWrapper {
       modified: this.data.modified,
       payload: this.cleartext,
     };
-  }
-}
-
-/**
- * Adapts a `Log.sys.mjs` logger to a `mozIServicesLogSink`. This class is copied
- * from `SyncedBookmarksMirror.sys.mjs`.
- */
-export class LogAdapter {
-  constructor(log) {
-    this.log = log;
-  }
-
-  get maxLevel() {
-    let level = this.log.level;
-    if (level <= lazy.Log.Level.All) {
-      return Ci.mozIServicesLogSink.LEVEL_TRACE;
-    }
-    if (level <= lazy.Log.Level.Info) {
-      return Ci.mozIServicesLogSink.LEVEL_DEBUG;
-    }
-    if (level <= lazy.Log.Level.Warn) {
-      return Ci.mozIServicesLogSink.LEVEL_WARN;
-    }
-    if (level <= lazy.Log.Level.Error) {
-      return Ci.mozIServicesLogSink.LEVEL_ERROR;
-    }
-    return Ci.mozIServicesLogSink.LEVEL_OFF;
-  }
-
-  trace(message) {
-    this.log.trace(message);
-  }
-
-  debug(message) {
-    this.log.debug(message);
-  }
-
-  warn(message) {
-    this.log.warn(message);
-  }
-
-  error(message) {
-    this.log.error(message);
   }
 }
 
@@ -186,6 +143,10 @@ export class LogAdapter {
  */
 export function BridgedEngine(name, service) {
   SyncEngine.call(this, name, service);
+  // The store is lazily created, which means we'd miss a number of logs if the store
+  // managed the log like happens for other engines. But we still keep Store in the name for consistency
+  // (but really we should kill all these sub-logs - no-one cares about ".Store" etc!)
+  this.log = lazy.Log.repository.getLogger(`Sync.Engine.${name}.Store`);
 }
 
 BridgedEngine.prototype = {
@@ -244,7 +205,7 @@ BridgedEngine.prototype = {
    * Sync code always calls `resetSyncID()` and `ensureCurrentSyncID()`,
    * not this.
    *
-   * @returns {String?} The sync ID, or `null` if one isn't set.
+   * @returns {string?} The sync ID, or `null` if one isn't set.
    */
   async getSyncID() {
     // Note that all methods on an XPCOM class instance are automatically bound,

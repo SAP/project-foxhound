@@ -3,14 +3,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RTCDTMFSender.h"
-#include "libwebrtcglue/MediaConduitInterface.h"
-#include "transport/logging.h"
-#include "RTCRtpTransceiver.h"
-#include "nsITimer.h"
-#include "mozilla/dom/RTCDTMFSenderBinding.h"
-#include "mozilla/dom/RTCDTMFToneChangeEvent.h"
+
 #include <algorithm>
 #include <bitset>
+
+#include "RTCRtpTransceiver.h"
+#include "libwebrtcglue/MediaConduitInterface.h"
+#include "mozilla/dom/RTCDTMFSenderBinding.h"
+#include "mozilla/dom/RTCDTMFToneChangeEvent.h"
+#include "nsITimer.h"
+#include "transport/logging.h"
 
 namespace mozilla::dom {
 
@@ -52,13 +54,13 @@ static int GetDTMFToneCode(uint16_t c) {
 
 static std::bitset<256> GetCharacterBitset(const std::string& aCharsInSet) {
   std::bitset<256> result;
-  for (auto c : aCharsInSet) {
+  for (unsigned char c : aCharsInSet) {
     result[c] = true;
   }
   return result;
 }
 
-static bool IsUnrecognizedChar(const char c) {
+static bool IsUnrecognizedChar(const unsigned char c) {
   static const std::bitset<256> recognized =
       GetCharacterBitset("0123456789ABCD#*,");
   return !recognized[c];
@@ -85,7 +87,7 @@ void RTCDTMFSender::InsertDTMF(const nsAString& aTones, uint32_t aDuration,
   std::string utf8Tones = NS_ConvertUTF16toUTF8(aTones).get();
 
   std::transform(utf8Tones.begin(), utf8Tones.end(), utf8Tones.begin(),
-                 [](const char c) { return std::toupper(c); });
+                 [](const unsigned char c) { return std::toupper(c); });
 
   if (std::any_of(utf8Tones.begin(), utf8Tones.end(), IsUnrecognizedChar)) {
     aRv.Throw(NS_ERROR_DOM_INVALID_CHARACTER_ERR);

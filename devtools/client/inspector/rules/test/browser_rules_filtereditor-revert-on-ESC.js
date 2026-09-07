@@ -68,7 +68,7 @@ async function pressEscapeToCloseTooltip(view) {
   info("Pressing ESCAPE to close the tooltip");
 
   const filterTooltip = view.tooltips.getTooltip("filterEditor");
-  const onRuleViewChanged = view.once("ruleview-changed");
+  const onModifications = view.once("property-value-updated");
   EventUtils.sendKey("ESCAPE", filterTooltip.widget.styleWindow);
-  await onRuleViewChanged;
+  await onModifications;
 }

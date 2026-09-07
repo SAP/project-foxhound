@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,11 +11,12 @@
 #include "GMPServiceChild.h"
 #include "GMPServiceParent.h"
 #include "GMPVideoDecoderParent.h"
-#include "mozilla/ipc/GeckoChildProcessHost.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/PluginCrashedEvent.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "nsThreadUtils.h"
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxInfo.h"
@@ -24,7 +24,6 @@
 #include "VideoUtils.h"
 #include "mozilla/Services.h"
 #include "mozilla/SyncRunnable.h"
-#include "mozilla/Unused.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
@@ -108,6 +107,12 @@ class GMPServiceCreateHelper final : public mozilla::Runnable {
     MOZ_ASSERT(NS_IsMainThread());
 
     if (!sSingletonService) {
+      // Refuse to construct a new singleton once shutdown has been confirmed.
+      // The service registers an xpcom-will-shutdown blocker in its Init(),
+      // which fails (and asserts) once that barrier has begun gathering.
+      if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+        return nullptr;
+      }
       if (XRE_IsParentProcess()) {
         RefPtr<GeckoMediaPluginServiceParent> service =
             new GeckoMediaPluginServiceParent();
@@ -168,7 +173,7 @@ GeckoMediaPluginService::GeckoMediaPluginService()
     if (NS_SUCCEEDED(appInfo->GetVersion(version)) &&
         NS_SUCCEEDED(appInfo->GetAppBuildID(buildID))) {
       GMP_LOG_DEBUG(
-          "GeckoMediaPluginService created; Gecko version=%s buildID=%s",
+          "GeckoMediaPluginService created; Gecko version={} buildID={}",
           version.get(), buildID.get());
     }
   }
@@ -180,7 +185,7 @@ NS_IMETHODIMP
 GeckoMediaPluginService::RunPluginCrashCallbacks(
     uint32_t aPluginId, const nsACString& aPluginName) {
   MOZ_ASSERT(NS_IsMainThread());
-  GMP_LOG_DEBUG("%s::%s(%i)", __CLASS__, __FUNCTION__, aPluginId);
+  GMP_LOG_DEBUG("{}::{}({})", __CLASS__, __FUNCTION__, aPluginId);
 
   mozilla::UniquePtr<nsTArray<RefPtr<GMPCrashHelper>>> helpers;
   {
@@ -188,7 +193,7 @@ GeckoMediaPluginService::RunPluginCrashCallbacks(
     mPluginCrashHelpers.Remove(aPluginId, &helpers);
   }
   if (!helpers) {
-    GMP_LOG_DEBUG("%s::%s(%i) No crash helpers, not handling crash.", __CLASS__,
+    GMP_LOG_DEBUG("{}::{}({}) No crash helpers, not handling crash.", __CLASS__,
                   __FUNCTION__, aPluginId);
     return NS_OK;
   }
@@ -357,7 +362,7 @@ GeckoMediaPluginService::GetContentParentForTest() {
 #endif
 
 void GeckoMediaPluginService::ShutdownGMPThread() {
-  GMP_LOG_DEBUG("%s::%s", __CLASS__, __FUNCTION__);
+  GMP_LOG_DEBUG("{}::{}", __CLASS__, __FUNCTION__);
   nsCOMPtr<nsIThread> gmpThread;
   {
     MutexAutoLock lock(mMutex);
@@ -370,21 +375,22 @@ void GeckoMediaPluginService::ShutdownGMPThread() {
   }
 }
 
-nsresult GeckoMediaPluginService::GMPDispatch(nsIRunnable* event,
-                                              uint32_t flags) {
-  nsCOMPtr<nsIRunnable> r(event);
-  return GMPDispatch(r.forget(), flags);
+nsresult GeckoMediaPluginService::GMPDispatch(
+    nsIRunnable* event, nsIEventTarget::DispatchFlags flags) {
+  return GMPDispatch(do_AddRef(event), flags);
 }
 
 nsresult GeckoMediaPluginService::GMPDispatch(
-    already_AddRefed<nsIRunnable> event, uint32_t flags) {
+    already_AddRefed<nsIRunnable> event, nsIEventTarget::DispatchFlags flags) {
+  // NOTE: This method always releases `event` on failure, rather than leaking
+  // it, even if `NS_DISPATCH_FALLIBLE` is not specified.
   nsCOMPtr<nsIRunnable> r(event);
   nsCOMPtr<nsIThread> thread;
   nsresult rv = GetThread(getter_AddRefs(thread));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  return thread->Dispatch(r, flags);
+  return thread->Dispatch(r.forget(), flags | NS_DISPATCH_FALLIBLE);
 }
 
 // always call with getter_AddRefs, because it does
@@ -459,12 +465,10 @@ GeckoMediaPluginService::GetGMPVideoDecoder(
             RefPtr<GMPContentParent> parent = wrapper->mParent;
             UniquePtr<GetGMPVideoDecoderCallback> callback(rawCallback);
             GMPVideoDecoderParent* actor = nullptr;
-            GMPVideoHostImpl* host = nullptr;
             if (parent && NS_SUCCEEDED(parent->GetGMPVideoDecoder(&actor))) {
-              host = &(actor->Host());
               actor->SetCrashHelper(helper);
             }
-            callback->Done(actor, host);
+            callback->Done(actor, actor);
           },
           [rawCallback] {
             UniquePtr<GetGMPVideoDecoderCallback> callback(rawCallback);
@@ -499,12 +503,10 @@ GeckoMediaPluginService::GetGMPVideoEncoder(
             RefPtr<GMPContentParent> parent = wrapper->mParent;
             UniquePtr<GetGMPVideoEncoderCallback> callback(rawCallback);
             GMPVideoEncoderParent* actor = nullptr;
-            GMPVideoHostImpl* host = nullptr;
             if (parent && NS_SUCCEEDED(parent->GetGMPVideoEncoder(&actor))) {
-              host = &(actor->Host());
               actor->SetCrashHelper(helper);
             }
-            callback->Done(actor, host);
+            callback->Done(actor, actor);
           },
           [rawCallback] {
             UniquePtr<GetGMPVideoEncoderCallback> callback(rawCallback);

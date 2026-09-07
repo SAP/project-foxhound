@@ -19,7 +19,7 @@
 </pre>
   <script>
 
-  /** Test for Bug 887364 **/
+  /** Test for Bug 887364 */
   ok("URL" in window, "window.URL exists");
 
   var tests = [
@@ -338,7 +338,7 @@
   </script>
 
   <script>
-    /** Test for Bug 991471 **/
+    /** Test for Bug 991471 */
     var url = new URL("http://localhost/");
     url.hostname = "";
     url.username = "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt";
@@ -349,14 +349,14 @@
   </script>
 
   <script>
-    /** Test for Bug 996055 **/
+    /** Test for Bug 996055 */
     var url = new URL("http://localhost/");
     url.hostname = "";
     is(url.href, "http://localhost/", "Empty hostname is ignored");
   </script>
 
   <script>
-    /** Test for Bug 960014 **/
+    /** Test for Bug 960014 */
     var url = new URL("http://localhost/");
     url.hostname = "[2001::1]";
     is(url.hostname, "[2001::1]", "IPv6 hostname");
@@ -436,7 +436,7 @@
   </script>
 
   <script>
-    /** Test for Bug 1275746 **/
+    /** Test for Bug 1275746 */
     SimpleTest.doesThrow(() => { new URL("http:"); }, "http: is not a valid URL");
     SimpleTest.doesThrow(() => { new URL("http:///"); }, "http: is not a valid URL");
 

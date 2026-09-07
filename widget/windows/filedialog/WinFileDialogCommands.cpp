@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,7 +11,6 @@
 #include "WinUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "mozilla/ipc/LaunchError.h"
 #include "mozilla/ipc/ProtocolUtils.h"
@@ -22,6 +19,10 @@
 #include "nsThreadUtils.h"
 
 namespace mozilla::widget::filedialog {
+
+// The default Windows thread stack size of 1Mb may not be enough for some
+// DLLs that are added to the file dialog by 3rd party apps.  Try 4Mb.
+const size_t kWindowsFileDialogStackSize = 4 * 1024 * 1024;
 
 const char* Error::KindName(Error::Kind kind) {
   switch (kind) {
@@ -359,8 +360,9 @@ RefPtr<Promise<Res>> SpawnFileDialogThread(const char (&where)[N],
 
   RefPtr<nsIThread> thread;
   {
-    nsresult rv = NS_NewNamedThread("File Dialog", getter_AddRefs(thread),
-                                    nullptr, {.isUiThread = true});
+    nsresult rv = NS_NewNamedThread(
+        "File Dialog", getter_AddRefs(thread), nullptr,
+        {.stackSize = kWindowsFileDialogStackSize, .isUiThread = true});
     if (NS_FAILED(rv)) {
       return Promise<Res>::CreateAndReject(
           MOZ_FD_LOCAL_ERROR("NS_NewNamedThread", (HRESULT)rv), where);
@@ -467,8 +469,7 @@ auto SpawnPickerT(HWND parent, FileDialogType type, ExtractorF&& extractor,
         // with our context set temporarily to system-dpi-aware.
         WinUtils::AutoSystemDpiAware dpiAwareness;
 
-        RefPtr<IFileDialog> dialog;
-        MOZ_TRY_VAR(dialog, MakeFileDialog(type));
+        RefPtr<IFileDialog> dialog = MOZ_TRY(MakeFileDialog(type));
 
         MOZ_TRY(ApplyCommands(dialog, commands));
 
@@ -479,8 +480,7 @@ auto SpawnPickerT(HWND parent, FileDialogType type, ExtractorF&& extractor,
           return mozilla::Err(MOZ_FD_LOCAL_ERROR("IFileDialog::Show", rv));
         }
 
-        RetT res;
-        MOZ_TRY_VAR(res, extractor(dialog.get()));
+        RetT res = MOZ_TRY(extractor(dialog.get()));
 
         return Some(res);
       });

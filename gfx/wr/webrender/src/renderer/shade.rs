@@ -15,10 +15,9 @@ use crate::renderer::{
     BlendMode, DebugFlags, RendererError, WebRenderOptions,
     TextureSampler, VertexArrayKind, ShaderPrecacheFlags,
 };
-use crate::profiler::{self, TransactionProfile, ns_to_ms};
+use crate::profiler::{self, RenderCommandLog, TransactionProfile, ns_to_ms};
 
 use gleam::gl::GlType;
-use time::precise_time_ns;
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -78,12 +77,6 @@ pub(crate) enum ShaderKind {
     ClipCache(VertexArrayKind),
     Brush,
     Text,
-    #[allow(dead_code)]
-    VectorStencil,
-    #[allow(dead_code)]
-    VectorCover,
-    #[allow(dead_code)]
-    Resolve,
     Composite,
     Clear,
     Copy,
@@ -136,11 +129,11 @@ impl LazilyCompiledShader {
         device: &mut Device,
         flags: ShaderPrecacheFlags,
     ) -> Result<(), ShaderError> {
-        let t0 = precise_time_ns();
+        let t0 = zeitstempel::now();
         let timer_id = Telemetry::start_shaderload_time();
         self.get_internal(device, flags, None)?;
         Telemetry::stop_and_accumulate_shaderload_time(timer_id);
-        let t1 = precise_time_ns();
+        let t1 = zeitstempel::now();
         debug!("[C: {:.1} ms ] Precache {} {:?}",
             (t1 - t0) as f64 / 1000000.0,
             self.name,
@@ -156,7 +149,11 @@ impl LazilyCompiledShader {
         texture_size: Option<DeviceSize>,
         renderer_errors: &mut Vec<RendererError>,
         profile: &mut TransactionProfile,
+        history: &mut Option<RenderCommandLog>,
     ) {
+        if let Some(history) = history {
+            history.set_shader(self.name);
+        }
         let update_projection = self.cached_projection != *projection;
         let program = match self.get_internal(device, ShaderPrecacheFlags::FULL_COMPILE, Some(profile)) {
             Ok(program) => program,
@@ -183,9 +180,9 @@ impl LazilyCompiledShader {
         mut profile: Option<&mut TransactionProfile>,
     ) -> Result<&mut Program, ShaderError> {
         if self.program.is_none() {
-            let start_time = precise_time_ns();
+            let start_time = zeitstempel::now();
             let program = match self.kind {
-                ShaderKind::Primitive | ShaderKind::Brush | ShaderKind::Text | ShaderKind::Resolve | ShaderKind::Clear | ShaderKind::Copy => {
+                ShaderKind::Primitive | ShaderKind::Brush | ShaderKind::Text | ShaderKind::Clear | ShaderKind::Copy => {
                     create_prim_shader(
                         self.name,
                         device,
@@ -193,20 +190,6 @@ impl LazilyCompiledShader {
                     )
                 }
                 ShaderKind::Cache(..) => {
-                    create_prim_shader(
-                        self.name,
-                        device,
-                        &self.features,
-                    )
-                }
-                ShaderKind::VectorStencil => {
-                    create_prim_shader(
-                        self.name,
-                        device,
-                        &self.features,
-                    )
-                }
-                ShaderKind::VectorCover => {
                     create_prim_shader(
                         self.name,
                         device,
@@ -231,7 +214,7 @@ impl LazilyCompiledShader {
             self.program = Some(program?);
 
             if let Some(profile) = &mut profile {
-                let end_time = precise_time_ns();
+                let end_time = zeitstempel::now();
                 profile.add(profiler::SHADER_BUILD_TIME, ns_to_ms(end_time - start_time));
             }
         }
@@ -239,17 +222,14 @@ impl LazilyCompiledShader {
         let program = self.program.as_mut().unwrap();
 
         if precache_flags.contains(ShaderPrecacheFlags::FULL_COMPILE) && !program.is_initialized() {
-            let start_time = precise_time_ns();
+            let start_time = zeitstempel::now();
 
             let vertex_format = match self.kind {
                 ShaderKind::Primitive |
                 ShaderKind::Brush |
                 ShaderKind::Text => VertexArrayKind::Primitive,
                 ShaderKind::Cache(format) => format,
-                ShaderKind::VectorStencil => VertexArrayKind::VectorStencil,
-                ShaderKind::VectorCover => VertexArrayKind::VectorCover,
                 ShaderKind::ClipCache(format) => format,
-                ShaderKind::Resolve => VertexArrayKind::Resolve,
                 ShaderKind::Composite => VertexArrayKind::Composite,
                 ShaderKind::Clear => VertexArrayKind::Clear,
                 ShaderKind::Copy => VertexArrayKind::Copy,
@@ -258,19 +238,10 @@ impl LazilyCompiledShader {
             let vertex_descriptor = match vertex_format {
                 VertexArrayKind::Primitive => &desc::PRIM_INSTANCES,
                 VertexArrayKind::LineDecoration => &desc::LINE,
-                VertexArrayKind::FastLinearGradient => &desc::FAST_LINEAR_GRADIENT,
-                VertexArrayKind::LinearGradient => &desc::LINEAR_GRADIENT,
-                VertexArrayKind::RadialGradient => &desc::RADIAL_GRADIENT,
-                VertexArrayKind::ConicGradient => &desc::CONIC_GRADIENT,
                 VertexArrayKind::Blur => &desc::BLUR,
                 VertexArrayKind::ClipRect => &desc::CLIP_RECT,
-                VertexArrayKind::ClipBoxShadow => &desc::CLIP_BOX_SHADOW,
-                VertexArrayKind::VectorStencil => &desc::VECTOR_STENCIL,
-                VertexArrayKind::VectorCover => &desc::VECTOR_COVER,
                 VertexArrayKind::Border => &desc::BORDER,
                 VertexArrayKind::Scale => &desc::SCALE,
-                VertexArrayKind::Resolve => &desc::RESOLVE,
-                VertexArrayKind::SvgFilter => &desc::SVG_FILTER,
                 VertexArrayKind::SvgFilterNode => &desc::SVG_FILTER_NODE,
                 VertexArrayKind::Composite => &desc::COMPOSITE,
                 VertexArrayKind::Clear => &desc::CLEAR,
@@ -288,7 +259,6 @@ impl LazilyCompiledShader {
                             ("sColor0", TextureSampler::Color0),
                             ("sTransformPalette", TextureSampler::TransformPalette),
                             ("sRenderTasks", TextureSampler::RenderTasks),
-                            ("sGpuCache", TextureSampler::GpuCache),
                             ("sPrimitiveHeadersF", TextureSampler::PrimitiveHeadersF),
                             ("sPrimitiveHeadersI", TextureSampler::PrimitiveHeadersI),
                             ("sGpuBufferF", TextureSampler::GpuBufferF),
@@ -306,7 +276,6 @@ impl LazilyCompiledShader {
                             ("sDither", TextureSampler::Dither),
                             ("sTransformPalette", TextureSampler::TransformPalette),
                             ("sRenderTasks", TextureSampler::RenderTasks),
-                            ("sGpuCache", TextureSampler::GpuCache),
                             ("sPrimitiveHeadersF", TextureSampler::PrimitiveHeadersF),
                             ("sPrimitiveHeadersI", TextureSampler::PrimitiveHeadersI),
                             ("sClipMask", TextureSampler::ClipMask),
@@ -318,7 +287,7 @@ impl LazilyCompiledShader {
             }
 
             if let Some(profile) = &mut profile {
-                let end_time = precise_time_ns();
+                let end_time = zeitstempel::now();
                 profile.add(profiler::SHADER_BUILD_TIME, ns_to_ms(end_time - start_time));
             }
         }
@@ -619,11 +588,6 @@ pub struct Shaders {
     cs_border_solid: ShaderHandle,
     cs_scale: Vec<Option<ShaderHandle>>,
     cs_line_decoration: ShaderHandle,
-    cs_fast_linear_gradient: ShaderHandle,
-    cs_linear_gradient: ShaderHandle,
-    cs_radial_gradient: ShaderHandle,
-    cs_conic_gradient: ShaderHandle,
-    cs_svg_filter: ShaderHandle,
     cs_svg_filter_node: ShaderHandle,
 
     // Brush shaders
@@ -633,7 +597,6 @@ pub struct Shaders {
     brush_blend: BrushShader,
     brush_mix_blend: BrushShader,
     brush_yuv_image: Vec<Option<BrushShader>>,
-    brush_linear_gradient: BrushShader,
     brush_opacity: BrushShader,
     brush_opacity_aa: BrushShader,
 
@@ -642,7 +605,6 @@ pub struct Shaders {
     /// of these shaders are also used by the primitive shaders.
     cs_clip_rectangle_slow: ShaderHandle,
     cs_clip_rectangle_fast: ShaderHandle,
-    cs_clip_box_shadow: ShaderHandle,
 
     // The are "primitive shaders". These shaders draw and blend
     // final results on screen. They are aware of tile boundaries.
@@ -655,9 +617,16 @@ pub struct Shaders {
     ps_text_run_dual_source: Option<TextShader>,
 
     ps_split_composite: ShaderHandle,
+    // ps_quad_textured comes in sampler-type-specific variants so that
+    // external image sources (e.g. ANGLE DXGI textures) are sampled with the
+    // matching sColor0 declaration. The variant is selected via PatternKind.
     ps_quad_textured: ShaderHandle,
-    ps_quad_radial_gradient: ShaderHandle,
-    ps_quad_conic_gradient: ShaderHandle,
+    ps_quad_textured_external: Option<ShaderHandle>,
+    ps_quad_textured_external_bt709: Option<ShaderHandle>,
+    ps_quad_textured_rect: Option<ShaderHandle>,
+    ps_quad_repeat: ShaderHandle,
+    ps_quad_gradient: ShaderHandle,
+    ps_quad_box_shadow: ShaderHandle,
     ps_mask: ShaderHandle,
     ps_mask_fast: ShaderHandle,
     ps_clear: ShaderHandle,
@@ -724,19 +693,6 @@ impl Shaders {
             &mut loader,
         )?;
 
-        let brush_linear_gradient = BrushShader::new(
-            "brush_linear_gradient",
-            if options.enable_dithering {
-               &[DITHERING_FEATURE]
-            } else {
-               &[]
-            },
-            &shader_list,
-            false /* advanced blend */,
-            false /* dual source */,
-            &mut loader,
-        )?;
-
         let brush_opacity_aa = BrushShader::new(
             "brush_opacity",
             &["ANTIALIASING"],
@@ -759,13 +715,6 @@ impl Shaders {
             ShaderKind::Cache(VertexArrayKind::Blur),
             "cs_blur",
             &["COLOR_TARGET"],
-            &shader_list,
-        )?;
-
-        let cs_svg_filter = loader.create_shader(
-            ShaderKind::Cache(VertexArrayKind::SvgFilter),
-            "cs_svg_filter",
-            &[],
             &shader_list,
         )?;
 
@@ -801,13 +750,6 @@ impl Shaders {
             ShaderKind::ClipCache(VertexArrayKind::ClipRect),
             "cs_clip_rectangle",
             &[FAST_PATH_FEATURE],
-            &shader_list,
-        )?;
-
-        let cs_clip_box_shadow = loader.create_shader(
-            ShaderKind::ClipCache(VertexArrayKind::ClipBoxShadow),
-            "cs_clip_box_shadow",
-            &["TEXTURE_2D"],
             &shader_list,
         )?;
 
@@ -867,20 +809,74 @@ impl Shaders {
         let ps_quad_textured = loader.create_shader(
             ShaderKind::Primitive,
             "ps_quad_textured",
+            &["TEXTURE_2D"],
+            &shader_list,
+        )?;
+
+        // The TextureExternal variants are only used on devices that expose
+        // GL_OES_EGL_image_external via ESSL3. ESSL1 doesn't support the
+        // GLSL features used by the quad shaders.
+        let ps_quad_textured_external = if has_platform_support(
+                ImageBufferKind::TextureExternal, device,
+            ) && texture_external_version == TextureExternalVersion::ESSL3
+        {
+            Some(loader.create_shader(
+                ShaderKind::Primitive,
+                "ps_quad_textured",
+                &["TEXTURE_EXTERNAL"],
+                &shader_list,
+            )?)
+        } else {
+            None
+        };
+
+        let ps_quad_textured_external_bt709 = if has_platform_support(
+            ImageBufferKind::TextureExternalBT709, device,
+        ) {
+            Some(loader.create_shader(
+                ShaderKind::Primitive,
+                "ps_quad_textured",
+                &["TEXTURE_EXTERNAL_BT709"],
+                &shader_list,
+            )?)
+        } else {
+            None
+        };
+
+        let ps_quad_textured_rect = if has_platform_support(
+            ImageBufferKind::TextureRect, device,
+        ) {
+            Some(loader.create_shader(
+                ShaderKind::Primitive,
+                "ps_quad_textured",
+                &["TEXTURE_RECT"],
+                &shader_list,
+            )?)
+        } else {
+            None
+        };
+
+        let ps_quad_repeat = loader.create_shader(
+            ShaderKind::Primitive,
+            "ps_quad_repeat",
             &[],
             &shader_list,
         )?;
 
-        let ps_quad_radial_gradient = loader.create_shader(
+        let ps_quad_gradient = loader.create_shader(
             ShaderKind::Primitive,
-            "ps_quad_radial_gradient",
-            &[],
+            "ps_quad_gradient",
+            if options.enable_dithering {
+               &[DITHERING_FEATURE]
+            } else {
+               &[]
+            },
             &shader_list,
         )?;
 
-        let ps_quad_conic_gradient = loader.create_shader(
+        let ps_quad_box_shadow = loader.create_shader(
             ShaderKind::Primitive,
-            "ps_quad_conic_gradient",
+            "ps_quad_box_shadow",
             &[],
             &shader_list,
         )?;
@@ -1012,37 +1008,6 @@ impl Shaders {
             &shader_list,
         )?;
 
-        let cs_fast_linear_gradient = loader.create_shader(
-            ShaderKind::Cache(VertexArrayKind::FastLinearGradient),
-            "cs_fast_linear_gradient",
-            &[],
-            &shader_list,
-        )?;
-
-        let cs_linear_gradient = loader.create_shader(
-            ShaderKind::Cache(VertexArrayKind::LinearGradient),
-            "cs_linear_gradient",
-            if options.enable_dithering {
-               &[DITHERING_FEATURE]
-            } else {
-               &[]
-            },
-            &shader_list,
-        )?;
-
-        let cs_radial_gradient = loader.create_shader(
-            ShaderKind::Cache(VertexArrayKind::RadialGradient),
-            "cs_radial_gradient",
-            &[],
-            &shader_list,
-        )?;
-
-        let cs_conic_gradient = loader.create_shader(
-            ShaderKind::Cache(VertexArrayKind::ConicGradient),
-            "cs_conic_gradient",
-            &[],
-            &shader_list,
-        )?;
 
         let cs_border_segment = loader.create_shader(
             ShaderKind::Cache(VertexArrayKind::Border),
@@ -1066,13 +1031,8 @@ impl Shaders {
             cs_blur_rgba8,
             cs_border_segment,
             cs_line_decoration,
-            cs_fast_linear_gradient,
-            cs_linear_gradient,
-            cs_radial_gradient,
-            cs_conic_gradient,
             cs_border_solid,
             cs_scale,
-            cs_svg_filter,
             cs_svg_filter_node,
             brush_solid,
             brush_image,
@@ -1080,17 +1040,19 @@ impl Shaders {
             brush_blend,
             brush_mix_blend,
             brush_yuv_image,
-            brush_linear_gradient,
             brush_opacity,
             brush_opacity_aa,
             cs_clip_rectangle_slow,
             cs_clip_rectangle_fast,
-            cs_clip_box_shadow,
             ps_text_run,
             ps_text_run_dual_source,
             ps_quad_textured,
-            ps_quad_radial_gradient,
-            ps_quad_conic_gradient,
+            ps_quad_textured_external,
+            ps_quad_textured_external_bt709,
+            ps_quad_textured_rect,
+            ps_quad_repeat,
+            ps_quad_gradient,
+            ps_quad_box_shadow,
             ps_mask,
             ps_mask_fast,
             ps_split_composite,
@@ -1151,12 +1113,19 @@ impl Shaders {
 
     pub fn get_quad_shader(
         &mut self,
-        pattern: PatternKind
+        pattern: PatternKind,
     ) -> &mut LazilyCompiledShader {
         let shader_handle = match pattern {
             PatternKind::ColorOrTexture => self.ps_quad_textured,
-            PatternKind::RadialGradient => self.ps_quad_radial_gradient,
-            PatternKind::ConicGradient => self.ps_quad_conic_gradient,
+            PatternKind::TextureExternal => self.ps_quad_textured_external
+                .expect("bug: ps_quad_textured TEXTURE_EXTERNAL variant not loaded"),
+            PatternKind::TextureExternalBT709 => self.ps_quad_textured_external_bt709
+                .expect("bug: ps_quad_textured TEXTURE_EXTERNAL_BT709 variant not loaded"),
+            PatternKind::TextureRect => self.ps_quad_textured_rect
+                .expect("bug: ps_quad_textured TEXTURE_RECT variant not loaded"),
+            PatternKind::Gradient => self.ps_quad_gradient,
+            PatternKind::Repeat => self.ps_quad_repeat,
+            PatternKind::BoxShadow => self.ps_quad_box_shadow,
             PatternKind::Mask => unreachable!(),
         };
         self.loader.get(shader_handle)
@@ -1184,11 +1153,26 @@ impl Shaders {
             BatchKind::Quad(PatternKind::ColorOrTexture) => {
                 self.ps_quad_textured
             }
-            BatchKind::Quad(PatternKind::RadialGradient) => {
-                self.ps_quad_radial_gradient
+            BatchKind::Quad(PatternKind::TextureExternal) => {
+                self.ps_quad_textured_external
+                    .expect("bug: ps_quad_textured TEXTURE_EXTERNAL variant not loaded")
             }
-            BatchKind::Quad(PatternKind::ConicGradient) => {
-                self.ps_quad_conic_gradient
+            BatchKind::Quad(PatternKind::TextureExternalBT709) => {
+                self.ps_quad_textured_external_bt709
+                    .expect("bug: ps_quad_textured TEXTURE_EXTERNAL_BT709 variant not loaded")
+            }
+            BatchKind::Quad(PatternKind::TextureRect) => {
+                self.ps_quad_textured_rect
+                    .expect("bug: ps_quad_textured TEXTURE_RECT variant not loaded")
+            }
+            BatchKind::Quad(PatternKind::Gradient) => {
+                self.ps_quad_gradient
+            }
+            BatchKind::Quad(PatternKind::Repeat) => {
+                self.ps_quad_repeat
+            }
+            BatchKind::Quad(PatternKind::BoxShadow) => {
+                self.ps_quad_box_shadow
             }
             BatchKind::Quad(PatternKind::Mask) => {
                 unreachable!();
@@ -1226,27 +1210,6 @@ impl Shaders {
                     BrushBatchKind::MixBlend { .. } => {
                         &mut self.brush_mix_blend
                     }
-                    BrushBatchKind::LinearGradient => {
-                        // SWGL uses a native clip mask implementation that bypasses the shader.
-                        // Don't consider it in that case when deciding whether or not to use
-                        // an alpha-pass shader.
-                        if device.get_capabilities().uses_native_clip_mask {
-                            features.remove(BatchFeatures::CLIP_MASK);
-                        }
-                        // Gradient brushes can optimistically use the opaque shader even
-                        // with a blend mode if they don't require any features.
-                        if !features.intersects(
-                            BatchFeatures::ANTIALIASING
-                                | BatchFeatures::REPETITION
-                                | BatchFeatures::CLIP_MASK,
-                        ) {
-                            features.remove(BatchFeatures::ALPHA_PASS);
-                        }
-                        match brush_kind {
-                            BrushBatchKind::LinearGradient => &mut self.brush_linear_gradient,
-                            _ => panic!(),
-                        }
-                    }
                     BrushBatchKind::YuvImage(image_buffer_kind, ..) => {
                         let shader_index =
                             Self::get_compositing_shader_index(image_buffer_kind);
@@ -1278,16 +1241,12 @@ impl Shaders {
     pub fn cs_border_segment(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_border_segment) }
     pub fn cs_border_solid(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_border_solid) }
     pub fn cs_line_decoration(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_line_decoration) }
-    pub fn cs_fast_linear_gradient(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_fast_linear_gradient) }
-    pub fn cs_linear_gradient(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_linear_gradient) }
-    pub fn cs_radial_gradient(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_radial_gradient) }
-    pub fn cs_conic_gradient(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_conic_gradient) }
-    pub fn cs_svg_filter(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_svg_filter) }
     pub fn cs_svg_filter_node(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_svg_filter_node) }
     pub fn cs_clip_rectangle_slow(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_clip_rectangle_slow) }
     pub fn cs_clip_rectangle_fast(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_clip_rectangle_fast) }
-    pub fn cs_clip_box_shadow(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.cs_clip_box_shadow) }
-    pub fn ps_quad_textured(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.ps_quad_textured) }
+    pub fn ps_quad_textured(&mut self) -> &mut LazilyCompiledShader {
+        self.loader.get(self.ps_quad_textured)
+    }
     pub fn ps_mask(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.ps_mask) }
     pub fn ps_mask_fast(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.ps_mask_fast) }
     pub fn ps_clear(&mut self) -> &mut LazilyCompiledShader { self.loader.get(self.ps_clear) }
@@ -1360,7 +1319,7 @@ impl CompositorShaders {
             yuv_fast_features.push("YUV");
             yuv_fast_features.push("FAST_PATH");
             fast_path_features.push("FAST_PATH");
-    
+
             let index = Self::get_shader_index(*image_buffer_kind);
 
             let feature_string = get_feature_string(

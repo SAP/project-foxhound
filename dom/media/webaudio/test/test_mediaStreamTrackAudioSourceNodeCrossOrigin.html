@@ -40,7 +40,7 @@ let audio = new Audio();
 audio.src = CROSS_ORIGIN_URL;
 audio.onloadedmetadata = function () {
   context = new AudioContext();
-  let stream = audio.mozCaptureStream();
+  let stream = audio.captureStream?.() || audio.mozCaptureStream();
   let track = stream.getAudioTracks()[0];
   let node = context.createMediaStreamTrackSource(track);
   node.connect(context.destination);

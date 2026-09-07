@@ -1,0 +1,67 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hardware DRM powerEfficient</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="application/javascript" src="manifest.js"></script>
+  <script type="application/javascript" src="mediacapabilities_drm_utils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script type="application/javascript">
+
+// Verify that hardware-DRM (PlayReady robustness=3000 via the WMF media engine
+// mock CDM) sets powerEfficient=true, and that RFP suppresses the entire
+// hardware-DRM result (supported=false, smooth=false, powerEfficient=false).
+
+const kPlayReady = "com.microsoft.playready.recommendation";
+
+add_task(async function setupPrefs() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["media.wmf.media-engine.enabled", 2],
+      ["media.eme.playready.enabled", true],
+      ["media.eme.wmf.clearkey.enabled", true],
+      ["media.eme.wmf.use-mock-cdm-for-external-cdms", true],
+    ],
+  });
+});
+
+const kVideoConfig = {
+  contentType: 'video/mp4; codecs="avc1.640028"',
+  width: 1280,
+  height: 720,
+  bitrate: 3000,
+  framerate: 30,
+};
+
+add_task(async function testPlayReadyHardwareEncryption() {
+  const result = await createEMEDecodingInfo({
+    keySystem: kPlayReady,
+    robustness: "3000",
+    videoConfig: kVideoConfig,
+    resistFingerprinting: false,
+  });
+  is(result.supported, true, "PlayReady 3000 should be supported");
+  is(result.powerEfficient, true,
+     "Hardware DRM must report powerEfficient=true");
+});
+
+add_task(async function testPlayReadyHardwareEncryptionRFP() {
+  const result = await createEMEDecodingInfo({
+    keySystem: kPlayReady,
+    robustness: "3000",
+    videoConfig: kVideoConfig,
+    resistFingerprinting: true,
+  });
+  is(result.supported, false,
+     "Hardware DRM under RFP must report supported=false");
+  is(result.smooth, false,
+     "Hardware DRM under RFP must report smooth=false");
+  is(result.powerEfficient, false,
+     "Hardware DRM under RFP must report powerEfficient=false");
+});
+</script>
+</body>
+</html>

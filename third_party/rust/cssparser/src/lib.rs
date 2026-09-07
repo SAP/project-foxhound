@@ -41,7 +41,7 @@ As a consequence, when calling another parsing function, either:
 
 Examples:
 
-```{rust,ignore}
+```rust,ignore
 // 'none' | <image>
 fn parse_background_image(context: &ParserContext, input: &mut Parser)
                                     -> Result<Option<Image>, ()> {
@@ -53,7 +53,7 @@ fn parse_background_image(context: &ParserContext, input: &mut Parser)
 }
 ```
 
-```{rust,ignore}
+```rust,ignore
 // [ <length> | <percentage> ] [ <length> | <percentage> ]?
 fn parse_border_spacing(_context: &ParserContext, input: &mut Parser)
                           -> Result<(LengthOrPercentage, LengthOrPercentage), ()> {
@@ -84,7 +84,41 @@ pub use crate::serializer::{serialize_identifier, serialize_name, serialize_stri
 pub use crate::serializer::{CssStringWriter, ToCss, TokenSerializationType};
 pub use crate::tokenizer::{SourceLocation, SourcePosition, Token};
 pub use crate::unicode_range::UnicodeRange;
-pub use cssparser_macros::*;
+
+#[cfg(feature = "fast_match_byte")]
+pub use cssparser_macros::match_byte;
+
+#[cfg(not(feature = "fast_match_byte"))]
+#[macro_use]
+mod mac {
+    /// Expand a TokenStream corresponding to the `match_byte` macro.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// match_byte! { tokenizer.next_byte_unchecked(),
+    ///     b'a'..b'z' => { ... }
+    ///     b'0'..b'9' => { ... }
+    ///     b'\n' | b'\\' => { ... }
+    ///     foo => { ... }
+    ///  }
+    ///  ```
+    ///
+    #[macro_export]
+    macro_rules! match_byte {
+      ($value:expr, $($rest:tt)* ) => {
+          match $value {
+              $(
+                  $rest
+              )+
+          }
+      };
+  }
+}
+
+// Re-exporting phf here means that the crate using the ascii_case_insensitive_phf_map macro do
+// do not have to depend on phf directly.
+#[cfg(feature = "fast_match_color")]
 #[doc(hidden)]
 pub use phf as _cssparser_internal_phf;
 
@@ -102,7 +136,7 @@ mod parser;
 mod serializer;
 mod unicode_range;
 
-#[cfg(test)]
+#[cfg(all(test, target_pointer_width = "64"))]
 mod size_of_tests;
 #[cfg(test)]
 mod tests;

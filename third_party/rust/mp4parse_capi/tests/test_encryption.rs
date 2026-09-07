@@ -70,6 +70,7 @@ fn parse_cenc() {
         assert_eq!(protected_data.crypt_byte_block, 0);
         assert_eq!(protected_data.skip_byte_block, 0);
         assert_eq!(protected_data.constant_iv.length, 0);
+        assert!(protected_data.constant_iv.data.is_null());
 
         // Verify audio track and crypto information
         let mut audio = Mp4parseTrackAudioInfo::default();
@@ -98,6 +99,49 @@ fn parse_cenc() {
         assert_eq!(protected_data.crypt_byte_block, 0);
         assert_eq!(protected_data.skip_byte_block, 0);
         assert_eq!(protected_data.constant_iv.length, 0);
+        assert!(protected_data.constant_iv.data.is_null());
+    }
+}
+
+#[test]
+fn repeated_get_pssh_info_returns_stable_pointer() {
+    let mut file = std::fs::File::open("tests/short-cenc.mp4").expect("Unknown file");
+    let io = Mp4parseIo {
+        read: Some(buf_read),
+        userdata: &mut file as *mut _ as *mut std::os::raw::c_void,
+    };
+
+    unsafe {
+        let mut parser = std::ptr::null_mut();
+        let rv = mp4parse_new(&io, &mut parser);
+        assert_eq!(rv, Mp4parseStatus::Ok);
+        assert!(!parser.is_null());
+
+        let mut pssh1 = Mp4parsePsshInfo::default();
+        let rv = mp4parse_get_pssh_info(parser, &mut pssh1);
+        assert_eq!(rv, Mp4parseStatus::Ok);
+        assert!(pssh1.data.length > 0);
+        let ptr1 = pssh1.data.data;
+        let len1 = pssh1.data.length;
+
+        // Query again — must return the same cached data, not rebuild
+        // (which could reallocate and invalidate ptr1).
+        let mut pssh2 = Mp4parsePsshInfo::default();
+        let rv = mp4parse_get_pssh_info(parser, &mut pssh2);
+        assert_eq!(rv, Mp4parseStatus::Ok);
+        let ptr2 = pssh2.data.data;
+        let len2 = pssh2.data.length;
+
+        // Pointer and length must be stable across calls.
+        assert_eq!(ptr1, ptr2);
+        assert_eq!(len1, len2);
+
+        // Data behind the first pointer must still be valid.
+        // Just verify we can read through it without crashing.
+        let slice = std::slice::from_raw_parts(ptr1, len1);
+        assert!(!slice.is_empty());
+
+        mp4parse_free(parser);
     }
 }
 
@@ -204,9 +248,11 @@ fn parse_unencrypted() {
         assert_eq!(protected_data.is_encrypted, 0x00);
         assert_eq!(protected_data.iv_size, 0);
         assert_eq!(protected_data.kid.length, 0);
+        assert!(protected_data.kid.data.is_null());
         assert_eq!(protected_data.crypt_byte_block, 0);
         assert_eq!(protected_data.skip_byte_block, 0);
         assert_eq!(protected_data.constant_iv.length, 0);
+        assert!(protected_data.constant_iv.data.is_null());
     }
 }
 

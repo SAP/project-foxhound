@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -233,6 +232,7 @@ void nsMacDockSupport::BuildDockTile() {
     imageView.imageScaling = NSImageScaleAxesIndependently;
     imageView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [mDockTileWrapperView addSubview:imageView];
+    [imageView release];
 
     mDockBadgeView =
         [[NSImageView alloc] initWithFrame:NSMakeRect(19.5, 19.5, 12, 12)];
@@ -334,7 +334,7 @@ NSString* GetPathForApp(NSDictionary* aPersistantApp) {
     return nil;
   }
   NSURL* url = CFBridgingRelease(
-      _CFURLCreateFromPropertyListRepresentation(NULL, fileData));
+      _CFURLCreateFromPropertyListRepresentation(nullptr, fileData));
   if (!url) {
     return nil;
   }

@@ -1,0 +1,15 @@
+{
+  "label": "hilokal.com",
+  "bugs": {
+    "1902450": {
+      "issue": "firefox-blocked-completely",
+      "matches": ["*://www.hilokal.com/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

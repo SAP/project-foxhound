@@ -39,7 +39,7 @@ pub(crate) struct HasFloat<'ctx> {
     dependencies: HashMap<ItemId, Vec<ItemId>>,
 }
 
-impl<'ctx> HasFloat<'ctx> {
+impl HasFloat<'_> {
     fn consider_edge(kind: EdgeKind) -> bool {
         match kind {
             EdgeKind::BaseMember |
@@ -56,21 +56,20 @@ impl<'ctx> HasFloat<'ctx> {
             EdgeKind::FunctionParameter |
             EdgeKind::InnerType |
             EdgeKind::InnerVar |
-            EdgeKind::Method => false,
+            EdgeKind::Method |
             EdgeKind::Generic => false,
         }
     }
 
     fn insert<Id: Into<ItemId>>(&mut self, id: Id) -> ConstrainResult {
         let id = id.into();
-        trace!("inserting {:?} into the has_float set", id);
+        trace!("inserting {id:?} into the has_float set");
 
         let was_not_already_in_set = self.has_float.insert(id);
         assert!(
             was_not_already_in_set,
-            "We shouldn't try and insert {:?} twice because if it was \
-             already in the set, `constrain` should have exited early.",
-            id
+            "We shouldn't try and insert {id:?} twice because if it was \
+             already in the set, `constrain` should have exited early."
         );
 
         ConstrainResult::Changed
@@ -94,11 +93,11 @@ impl<'ctx> MonotoneFramework for HasFloat<'ctx> {
     }
 
     fn initial_worklist(&self) -> Vec<ItemId> {
-        self.ctx.allowlisted_items().iter().cloned().collect()
+        self.ctx.allowlisted_items().iter().copied().collect()
     }
 
     fn constrain(&mut self, id: ItemId) -> ConstrainResult {
-        trace!("constrain: {:?}", id);
+        trace!("constrain: {id:?}");
 
         if self.has_float.contains(&id) {
             trace!("    already know it do not have float");
@@ -106,12 +105,9 @@ impl<'ctx> MonotoneFramework for HasFloat<'ctx> {
         }
 
         let item = self.ctx.resolve_item(id);
-        let ty = match item.as_type() {
-            Some(ty) => ty,
-            None => {
-                trace!("    not a type; ignoring");
-                return ConstrainResult::Same;
-            }
+        let Some(ty) = item.as_type() else {
+            trace!("    not a type; ignoring");
+            return ConstrainResult::Same;
         };
 
         match *ty.kind() {
@@ -210,7 +206,7 @@ impl<'ctx> MonotoneFramework for HasFloat<'ctx> {
                 if args_have {
                     trace!(
                         "    template args have float, so \
-                         insantiation also has float"
+                         instantiation also has float"
                     );
                     return self.insert(id);
                 }
@@ -221,7 +217,7 @@ impl<'ctx> MonotoneFramework for HasFloat<'ctx> {
                 if def_has {
                     trace!(
                         "    template definition has float, so \
-                         insantiation also has"
+                         instantiation also has"
                     );
                     return self.insert(id);
                 }
@@ -238,7 +234,7 @@ impl<'ctx> MonotoneFramework for HasFloat<'ctx> {
     {
         if let Some(edges) = self.dependencies.get(&id) {
             for item in edges {
-                trace!("enqueue {:?} into worklist", item);
+                trace!("enqueue {item:?} into worklist");
                 f(*item);
             }
         }

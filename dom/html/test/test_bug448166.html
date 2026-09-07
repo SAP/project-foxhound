@@ -21,7 +21,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=448166
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 448166 **/
+/** Test for Bug 448166 */
 isnot($("test").href, "http://www.mozilla.org/",
       "Should notice unpaired surrogate");
 is($("test").href, "http://www.moz�illa.org",

@@ -16,6 +16,7 @@
 #ifndef HIGHWAY_HWY_CACHE_CONTROL_H_
 #define HIGHWAY_HWY_CACHE_CONTROL_H_
 
+#include "third_party/highway/hwy/aligned_allocator.h"  // HWY_ALIGNMENT
 #include "third_party/highway/hwy/base.h"
 
 // Requires SSE2; fails to compile on 32-bit Clang 7 (see
@@ -66,6 +67,21 @@ HWY_INLINE HWY_ATTR_CACHE void LoadFence() {
 // TODO(janwas): remove when this function is removed. (See above.)
 #pragma pop_macro("LoadFence")
 
+// Overwrites "to" while attempting to bypass the cache (read-for-ownership).
+// Both pointers must be aligned.
+static HWY_INLINE void StreamCacheLine(const uint64_t* HWY_RESTRICT from,
+                                       uint64_t* HWY_RESTRICT to) {
+  HWY_DASSERT(IsAligned(from));
+  HWY_DASSERT(IsAligned(to));
+#if HWY_COMPILER_CLANG && !defined(HWY_DISABLE_CACHE_CONTROL)
+  for (size_t i = 0; i < HWY_ALIGNMENT / sizeof(uint64_t); ++i) {
+    __builtin_nontemporal_store(from[i], to + i);
+  }
+#else
+  hwy::CopyBytes(from, to, HWY_ALIGNMENT);
+#endif
+}
+
 // Ensures values written by previous `Stream` calls are visible on the current
 // core. This is NOT sufficient for synchronizing across cores; when `Stream`
 // outputs are to be consumed by other core(s), the producer must publish
@@ -82,9 +98,10 @@ template <typename T>
 HWY_INLINE HWY_ATTR_CACHE void Prefetch(const T* p) {
   (void)p;
 #ifndef HWY_DISABLE_CACHE_CONTROL
-#if HWY_ARCH_X86
+// Use _mm_prefetch on x86/x64, except when clang-cl is compiled with -mno-mmx.
+#if HWY_ARCH_X86 && !(HWY_COMPILER_CLANGCL && !defined(__MMX__))
   _mm_prefetch(reinterpret_cast<const char*>(p), _MM_HINT_T0);
-#elif HWY_COMPILER_GCC  // includes clang
+#elif HWY_COMPILER_GCC || HWY_COMPILER_CLANGCL  // includes clang
   // Hint=0 (NTA) behavior differs, but skipping outer caches is probably not
   // desirable, so use the default 3 (keep in caches).
   __builtin_prefetch(p, /*write=*/0, /*hint=*/3);

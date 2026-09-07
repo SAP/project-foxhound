@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -260,6 +258,72 @@ add_task(
     Assert.strictEqual(creationTime, file.creationTime);
 
     file.remove(true);
+  }
+);
+
+// Setup a symlink for creation time tests. Creates a target file, sleeps so
+// the symlink gets a distinct birth time, then creates a symlink to the target.
+// Returns { dir, target, link, targetCreationTime }.
+async function setupCreationTimeLink() {
+  const dir = do_get_profile();
+  dir.append("test-creation-time-link");
+  if (dir.exists()) {
+    dir.remove(true);
+  }
+  dir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
+
+  const target = dir.clone();
+  target.append("target.txt");
+  target.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o644);
+
+  const targetCreationTime = target.creationTime;
+
+  await sleep(1100);
+
+  const link = dir.clone();
+  link.append("link.txt");
+  const process = Cc["@mozilla.org/process/util;1"].createInstance(
+    Ci.nsIProcess
+  );
+  const ln = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+  ln.initWithPath("/bin/ln");
+  process.init(ln);
+  const args = ["-s", target.path, link.path];
+  process.run(true, args, args.length);
+  Assert.equal(process.exitValue, 0);
+  Assert.ok(link.isSymlink());
+
+  return { dir, target, link, targetCreationTime };
+}
+
+add_task(
+  {
+    // creationTime is only supported on macOS and Windows, and creating
+    // symlinks requires admin on Windows.
+    skip_if: () => AppConstants.platform !== "macosx",
+  },
+  async function test_symlink_creation_time_follows_target() {
+    const { dir, link, targetCreationTime } = await setupCreationTimeLink();
+
+    // creationTime should follow the symlink and return the target's time.
+    Assert.strictEqual(link.creationTime, targetCreationTime);
+
+    dir.remove(true);
+  }
+);
+
+add_task(
+  {
+    skip_if: () => AppConstants.platform !== "macosx",
+  },
+  async function test_symlink_creation_time_of_link_is_own_time() {
+    const { dir, link, targetCreationTime } = await setupCreationTimeLink();
+
+    // creationTimeOfLink should return the symlink's own creation time,
+    // which is later than the target's.
+    Assert.greater(link.creationTimeOfLink, targetCreationTime);
+
+    dir.remove(true);
   }
 );
 

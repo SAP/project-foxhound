@@ -2,10 +2,10 @@ ChromeUtils.defineESModuleGetters(this, {
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
 });
 const { MacAttribution } = ChromeUtils.importESModule(
-  "resource:///modules/MacAttribution.sys.mjs"
+  "moz-src:///browser/components/attribution/MacAttribution.sys.mjs"
 );
 const { AttributionIOUtils } = ChromeUtils.importESModule(
-  "resource:///modules/AttributionCode.sys.mjs"
+  "moz-src:///browser/components/attribution/AttributionCode.sys.mjs"
 );
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"

@@ -40,24 +40,57 @@ support-files = [
 ["test_autoplay.html"]
 
 ["test_autoplay_contentEditable.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+  "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1982948
+]
 
 ["test_autoplay_gv_play_request.html"]
-skip-if = ["os != 'android'"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+  "os != 'android'",
+]
+
+["test_autoplay_gvobserver_late_auth.html"]
+skip-if = [
+  "isolated_process", # Bug 1810736
+  "os != 'android'",
+]
 
 ["test_autoplay_policy.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_autoplay_policy_activation.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_autoplay_policy_eventdown_activation.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_autoplay_policy_key_blacklist.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_autoplay_policy_permission.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_autoplay_policy_play_before_loadedmetadata.html"]
-skip-if = ["os == 'android'"] # bug 1591121
+skip-if = [
+  "os == 'android'", # bug 1591121
+]
 
 ["test_autoplay_policy_unmute_pauses.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 
 ["test_autoplay_policy_web_audio_AudioParamStream.html"]
 
@@ -68,4 +101,7 @@ skip-if = ["os == 'android'"] # bug 1591121
 ["test_autoplay_policy_web_audio_notResumePageInvokedSuspendedAudioContext.html"]
 
 ["test_streams_autoplay.html"]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 tags = "mtg capturestream"

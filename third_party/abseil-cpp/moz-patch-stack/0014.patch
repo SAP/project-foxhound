@@ -1,53 +1,30 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Thu, 16 Jan 2025 11:29:00 -0600
-Subject: Bug 1935474 - don't demangle rust symbols. r?ng!
+Date: Thu, 10 Jul 2025 10:39:00 -0500
+Subject: Bug 1978462 - disable ABSL_HAVE_LEAK_SANITIZER due to missing symbols
+ (like __lsan_ignore_object)
 
-Building demangle.cc causes errors in our hazard-linux64-haz/debug build.
-For now, we'll avoid calling DemangleRustSymbolEncoding, and skip building
-demangle.cc.
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/828151aa9455ccbfe45787bbe00127813c97cc9e
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fdbec58643d95ef27963b070e162931c6354d1e8
 ---
- abseil-cpp/absl/debugging/BUILD.gn             | 4 ++++
- abseil-cpp/absl/debugging/internal/demangle.cc | 4 ++++
- 2 files changed, 8 insertions(+)
+ abseil-cpp/absl/base/config.h | 2 ++
+ 1 file changed, 2 insertions(+)
 
-diff --git a/abseil-cpp/absl/debugging/BUILD.gn b/abseil-cpp/absl/debugging/BUILD.gn
-index d848aafc0bd..b920da6000d 100644
---- a/abseil-cpp/absl/debugging/BUILD.gn
-+++ b/abseil-cpp/absl/debugging/BUILD.gn
-@@ -184,6 +184,9 @@ absl_test("decode_rust_punycode_test") {
- }
- 
- absl_source_set("demangle_rust") {
-+# hazard-linux64-haz/debug builds fail when this section is
-+# included in the build.
-+if (!moz_webrtc_build) {
-   sources = [ "internal/demangle_rust.cc" ]
-   public = [ "internal/demangle_rust.h" ]
-   deps = [
-@@ -192,6 +195,7 @@ absl_source_set("demangle_rust") {
-     "//third_party/abseil-cpp/absl/base:core_headers",
-   ]
- }
-+}
- 
- absl_test("demangle_rust_test") {
-   sources = [ "internal/demangle_rust_test.cc" ]
-diff --git a/abseil-cpp/absl/debugging/internal/demangle.cc b/abseil-cpp/absl/debugging/internal/demangle.cc
-index caac76367f0..ce827912aa2 100644
---- a/abseil-cpp/absl/debugging/internal/demangle.cc
-+++ b/abseil-cpp/absl/debugging/internal/demangle.cc
-@@ -2952,9 +2952,13 @@ static bool Overflowed(const State *state) {
- 
- // The demangler entry point.
- bool Demangle(const char* mangled, char* out, size_t out_size) {
-+// mozilla - hazard-linux64-haz/debug failure when demangle_rust.cc is
-+// included in the build.  For now we'll avoid this code.
-+#if 0
-   if (mangled[0] == '_' && mangled[1] == 'R') {
-     return DemangleRustSymbolEncoding(mangled, out, out_size);
-   }
+diff --git a/abseil-cpp/absl/base/config.h b/abseil-cpp/absl/base/config.h
+index 7ae83241314..753bce47007 100644
+--- a/abseil-cpp/absl/base/config.h
++++ b/abseil-cpp/absl/base/config.h
+@@ -714,6 +714,7 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
+ // LeakSanitizer is available does not mean it is active. Use the
+ // always-available run-time interface in //absl/debugging/leak_check.h for
+ // interacting with LeakSanitizer.
++#if 0 // mozilla - builds fail missing lsan symbols like __lsan_ignore_object
+ #ifdef ABSL_HAVE_LEAK_SANITIZER
+ #error "ABSL_HAVE_LEAK_SANITIZER cannot be directly set."
+ #elif defined(LEAK_SANITIZER)
+@@ -728,6 +729,7 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
+ // GCC or Clang using the LeakSanitizer integrated into AddressSanitizer.
+ #define ABSL_HAVE_LEAK_SANITIZER 1
+ #endif
 +#endif
  
-   State state;
-   InitState(&state, mangled, out, out_size);
+ // ABSL_HAVE_CLASS_TEMPLATE_ARGUMENT_DEDUCTION
+ //

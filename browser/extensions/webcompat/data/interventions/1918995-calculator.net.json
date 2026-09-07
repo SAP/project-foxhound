@@ -1,0 +1,18 @@
+{
+  "label": "calculator.net",
+  "bugs": {
+    "1918995": {
+      "issue": "user-interface-frustration",
+      "matches": ["*://www.calculator.net/*"]
+    }
+  },
+  "css": {
+    "hide-copypaste-ui-for-buttons": "#sciout :has(.scinm) { user-select: none; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": ["hide-copypaste-ui-for-buttons"]
+    }
+  ]
+}

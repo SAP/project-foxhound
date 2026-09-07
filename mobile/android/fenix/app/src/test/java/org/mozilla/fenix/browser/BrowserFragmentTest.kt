@@ -5,8 +5,8 @@
 package org.mozilla.fenix.browser
 
 import android.content.Context
+import android.content.res.Resources
 import android.view.View
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -15,13 +15,10 @@ import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkObject
-import io.mockk.mockkStatic
 import io.mockk.spyk
-import io.mockk.unmockkObject
-import io.mockk.unmockkStatic
 import io.mockk.verify
-import io.mockk.verifyOrder
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.RestoreCompleteAction
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.BrowserState
@@ -29,30 +26,23 @@ import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.browser.toolbar.BrowserToolbar
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.rule.MainCoroutineRule
-import org.junit.After
+import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.FenixApplication
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.toolbar.BrowserToolbarView
-import org.mozilla.fenix.components.toolbar.ToolbarIntegration
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.toolbar.BrowserToolbarComposable
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.isLargeWindow
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.onboarding.FenixOnboarding
-import org.mozilla.fenix.theme.ThemeManager
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.coroutines.ContinuationInterceptor
 
 @RunWith(RobolectricTestRunner::class)
 class BrowserFragmentTest {
@@ -64,181 +54,254 @@ class BrowserFragmentTest {
     private lateinit var homeActivity: HomeActivity
     private lateinit var fenixApplication: FenixApplication
     private lateinit var context: Context
+
+    private lateinit var resources: Resources
     private lateinit var lifecycleOwner: MockedLifecycleOwner
     private lateinit var navController: NavController
     private lateinit var onboarding: FenixOnboarding
     private lateinit var settings: Settings
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private lateinit var appStore: AppStore
 
     @Before
     fun setup() {
-        mockkStatic("org.mozilla.fenix.ext.FragmentKt")
-        context = mockk(relaxed = true)
+        context = spyk(testContext)
+        resources = spyk(testContext.resources)
+        every { context.resources } returns resources
+
         fenixApplication = mockk(relaxed = true)
         every { context.application } returns fenixApplication
 
         homeActivity = mockk(relaxed = true)
+        every { homeActivity.resources } returns testContext.resources
+
         view = mockk(relaxed = true)
         lifecycleOwner = MockedLifecycleOwner(Lifecycle.State.STARTED)
         navController = mockk(relaxed = true)
         onboarding = mockk(relaxed = true)
         settings = mockk(relaxed = true)
+        appStore = AppStore(initialState = AppState())
 
         browserFragment = spyk(BrowserFragment())
         every { browserFragment.view } returns view
         every { browserFragment.isAdded } returns true
-        every { browserFragment.browserToolbarView } returns mockk<BrowserToolbarView>(relaxed = true)
-        every { browserFragment.browserToolbarInteractor } returns mockk(relaxed = true)
+        every { browserFragment.browserToolbar } returns mockk<BrowserToolbarComposable>(relaxed = true)
+        every { browserFragment.childFragmentManager } returns mockk(relaxed = true)
         every { browserFragment.activity } returns homeActivity
         every { browserFragment.lifecycle } returns lifecycleOwner.lifecycle
+        every { browserFragment.viewLifecycleOwner } returns lifecycleOwner
         every { context.components.fenixOnboarding } returns onboarding
         every { context.components.settings } returns settings
 
+        every { context.components.appStore } returns appStore
         every { browserFragment.requireContext() } returns context
         every { browserFragment.initializeUI(any(), any()) } returns mockk()
-        every { browserFragment.fullScreenChanged(any()) } returns Unit
+        every { browserFragment.fullScreenChanged(any()) } just Runs
 
         testTab = createTab(url = "https://mozilla.org")
         store = BrowserStore()
         every { context.components.core.store } returns store
-
-        mockkObject(FeatureFlags)
-    }
-
-    @After
-    fun tearDown() {
-        unmockkObject(FeatureFlags)
-        unmockkStatic("org.mozilla.fenix.ext.FragmentKt")
     }
 
     @Test
-    fun `GIVEN fragment is added WHEN selected tab changes THEN theme is updated`() {
-        browserFragment.observeTabSelection(store, false)
+    fun `GIVEN fragment is added WHEN selected tab changes THEN theme is updated`() = runTest {
+        browserFragment.observeTabSelection(
+            store,
+            false,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
         verify(exactly = 0) { browserFragment.updateThemeForSession(testTab) }
 
         addAndSelectTab(testTab)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 1) { browserFragment.updateThemeForSession(testTab) }
     }
 
     @Test
-    fun `GIVEN fragment is added WHEN selected tab is customTab THEN theme is not updated`() {
-        browserFragment.observeTabSelection(store, true)
+    fun `GIVEN fragment is added WHEN selected tab is customTab THEN theme is not updated`() = runTest {
+        browserFragment.observeTabSelection(
+            store,
+            true,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 0) { browserFragment.updateThemeForSession(testTab) }
 
         addAndSelectTab(testTab)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 0) { browserFragment.updateThemeForSession(testTab) }
     }
 
     @Test
-    fun `GIVEN fragment is removing WHEN selected tab changes THEN theme is not updated`() {
+    fun `GIVEN fragment is removing WHEN selected tab changes THEN theme is not updated`() = runTest {
         every { browserFragment.isRemoving } returns true
-        browserFragment.observeTabSelection(store, false)
+        browserFragment.observeTabSelection(
+            store,
+            false,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
         addAndSelectTab(testTab)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 0) { browserFragment.updateThemeForSession(testTab) }
     }
 
     @Test
-    fun `GIVEN browser UI is not initialized WHEN selected tab changes THEN browser UI is initialized`() {
-        browserFragment.observeTabSelection(store, false)
+    fun `GIVEN browser UI is not initialized WHEN selected tab changes THEN browser UI is initialized`() = runTest {
+        browserFragment.observeTabSelection(
+            store,
+            false,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
+
         verify(exactly = 0) { browserFragment.initializeUI(view, testTab) }
 
         addAndSelectTab(testTab)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 1) { browserFragment.initializeUI(view, testTab) }
     }
 
     @Test
-    fun `GIVEN browser UI is initialized WHEN selected tab changes THEN toolbar is expanded`() {
+    fun `GIVEN browser UI is initialized WHEN selected tab changes THEN toolbar is expanded`() = runTest {
         browserFragment.browserInitialized = true
-        browserFragment.observeTabSelection(store, false)
+        browserFragment.observeTabSelection(
+            store,
+            false,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
-        val toolbar: BrowserToolbarView = mockk(relaxed = true)
-        every { browserFragment.browserToolbarView } returns toolbar
+        val toolbar: BrowserToolbarComposable = mockk(relaxed = true)
+        every { browserFragment.browserToolbar } returns toolbar
 
         val newSelectedTab = createTab("https://firefox.com")
         addAndSelectTab(newSelectedTab)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 1) { toolbar.expand() }
     }
 
     @Test
-    fun `GIVEN browser UI is initialized WHEN selected tab changes THEN full screen mode is exited`() {
+    fun `GIVEN browser UI is initialized WHEN selected tab changes THEN full screen mode is exited`() = runTest {
         browserFragment.browserInitialized = true
-        browserFragment.observeTabSelection(store, false)
+        browserFragment.observeTabSelection(
+            store,
+            false,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
         val newSelectedTab = createTab("https://firefox.com")
         addAndSelectTab(newSelectedTab)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 1) { browserFragment.fullScreenChanged(false) }
     }
 
     @Test
-    fun `GIVEN tabs are restored WHEN there are no tabs THEN navigate to home`() {
-        browserFragment.observeRestoreComplete(store, navController)
-        store.dispatch(RestoreCompleteAction).joinBlocking()
+    fun `GIVEN tabs are restored WHEN there are no tabs THEN navigate to home`() = runTest {
+        store = BrowserStore(initialState = BrowserState(tabs = listOf(testTab)))
+        every { context.components.core.store } returns store
+
+        browserFragment.observeRestoreComplete(
+            store,
+            navController,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
+        store.dispatch(RestoreCompleteAction)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 1) { navController.popBackStack(R.id.homeFragment, false) }
     }
 
     @Test
-    fun `GIVEN tabs are restored WHEN there are tabs THEN do not navigate`() {
+    fun `GIVEN tabs are restored WHEN there are tabs THEN do not navigate`() = runTest {
         addAndSelectTab(testTab)
-        browserFragment.observeRestoreComplete(store, navController)
-        store.dispatch(RestoreCompleteAction).joinBlocking()
+        browserFragment.observeRestoreComplete(
+            store,
+            navController,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
+        store.dispatch(RestoreCompleteAction)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 0) { navController.popBackStack(R.id.homeFragment, false) }
     }
 
     @Test
-    fun `GIVEN tabs are restored WHEN there is no selected tab THEN navigate to home`() {
-        val store = BrowserStore(initialState = BrowserState(tabs = listOf(testTab)))
-        browserFragment.observeRestoreComplete(store, navController)
-        store.dispatch(RestoreCompleteAction).joinBlocking()
+    fun `GIVEN tabs are restored WHEN there is no selected tab THEN navigate to home`() = runTest {
+        store = BrowserStore(initialState = BrowserState(tabs = listOf(testTab)))
+        every { context.components.core.store } returns store
+
+        browserFragment.observeRestoreComplete(
+            store,
+            navController,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
+        store.dispatch(RestoreCompleteAction)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 1) { navController.popBackStack(R.id.homeFragment, false) }
     }
 
     @Test
-    fun `GIVEN the onboarding is finished WHEN visiting any link THEN the onboarding is not dismissed `() {
+    fun `GIVEN the onboarding is finished WHEN visiting any link THEN the onboarding is not dismissed `() = runTest {
         every { onboarding.userHasBeenOnboarded() } returns true
 
-        browserFragment.observeTabSource(store)
+        browserFragment.observeTabSource(
+            store,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
         val newSelectedTab = createTab("any-tab.org")
         addAndSelectTab(newSelectedTab)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 0) { onboarding.finish() }
     }
 
     @Test
-    fun `GIVEN the onboarding is not finished WHEN visiting a link THEN the onboarding is dismissed `() {
+    fun `GIVEN the onboarding is not finished WHEN visiting a link THEN the onboarding is dismissed `() = runTest {
         every { onboarding.userHasBeenOnboarded() } returns false
 
-        browserFragment.observeTabSource(store)
+        browserFragment.observeTabSource(
+            store,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
         val newSelectedTab = createTab("any-tab.org")
         addAndSelectTab(newSelectedTab)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 1) { onboarding.finish() }
     }
 
     @Test
-    fun `GIVEN the onboarding is not finished WHEN visiting an onboarding link THEN the onboarding is not dismissed `() {
+    fun `GIVEN the onboarding is not finished WHEN visiting an onboarding link THEN the onboarding is not dismissed `() = runTest {
         every { onboarding.userHasBeenOnboarded() } returns false
 
-        browserFragment.observeTabSource(store)
+        browserFragment.observeTabSource(
+            store,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
         val newSelectedTab = createTab(BaseBrowserFragment.onboardingLinksList[0])
         addAndSelectTab(newSelectedTab)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 0) { onboarding.finish() }
     }
 
     @Test
-    fun `GIVEN the onboarding is not finished WHEN opening a page from another app THEN the onboarding is not dismissed `() {
+    fun `GIVEN the onboarding is not finished WHEN opening a page from another app THEN the onboarding is not dismissed `() = runTest {
         every { onboarding.userHasBeenOnboarded() } returns false
 
-        browserFragment.observeTabSource(store)
+        browserFragment.observeTabSource(
+            store,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
 
         val newSelectedTab1 = createTab("any-tab-1.org", source = SessionState.Source.External.ActionSearch(mockk()))
         val newSelectedTab2 = createTab("any-tab-2.org", source = SessionState.Source.External.ActionView(mockk()))
@@ -246,227 +309,63 @@ class BrowserFragmentTest {
         val newSelectedTab4 = createTab("any-tab-4.org", source = SessionState.Source.External.CustomTab(mockk()))
 
         addAndSelectTab(newSelectedTab1)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 0) { onboarding.finish() }
 
         addAndSelectTab(newSelectedTab2)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 0) { onboarding.finish() }
 
         addAndSelectTab(newSelectedTab3)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 0) { onboarding.finish() }
 
         addAndSelectTab(newSelectedTab4)
+        testScheduler.advanceUntilIdle()
+
         verify(exactly = 0) { onboarding.finish() }
     }
 
     @Test
-    fun `GIVEN the onboarding is not finished WHEN visiting an link after redirect THEN the onboarding is not dismissed `() {
+    fun `GIVEN the onboarding is not finished WHEN visiting an link after redirect THEN the onboarding is not dismissed `() = runTest {
         every { onboarding.userHasBeenOnboarded() } returns false
 
         val newSelectedTab: TabSessionState = mockk(relaxed = true)
         every { newSelectedTab.content.loadRequest?.triggeredByRedirect } returns true
+        every { newSelectedTab.parentId } returns null
 
-        browserFragment.observeTabSource(store)
+        browserFragment.observeTabSource(
+            store,
+            coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        )
         addAndSelectTab(newSelectedTab)
+        testScheduler.advanceUntilIdle()
 
         verify(exactly = 0) { onboarding.finish() }
     }
 
     @Test
     fun `WHEN isPullToRefreshEnabledInBrowser is disabled THEN pull down refresh is disabled`() {
-        every { context.settings().isPullToRefreshEnabledInBrowser } returns true
+        every { context.components.settings.isPullToRefreshEnabledInBrowser } returns true
         assertTrue(browserFragment.shouldPullToRefreshBeEnabled(false))
 
-        every { context.settings().isPullToRefreshEnabledInBrowser } returns false
+        every { context.components.settings.isPullToRefreshEnabledInBrowser } returns false
         assertTrue(!browserFragment.shouldPullToRefreshBeEnabled(false))
     }
 
     @Test
     fun `WHEN in fullscreen THEN pull down refresh is disabled`() {
-        every { context.settings().isPullToRefreshEnabledInBrowser } returns true
+        every { context.components.settings.isPullToRefreshEnabledInBrowser } returns true
         assertTrue(browserFragment.shouldPullToRefreshBeEnabled(false))
         assertTrue(!browserFragment.shouldPullToRefreshBeEnabled(true))
     }
 
-    @Test
-    fun `WHEN fragment is not attached THEN toolbar invalidation does nothing`() {
-        val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
-        val browserToolbar: BrowserToolbar = mockk(relaxed = true)
-        val toolbarIntegration: ToolbarIntegration = mockk(relaxed = true)
-        every { browserToolbarView.toolbar } returns browserToolbar
-        every { browserToolbarView.toolbarIntegration } returns toolbarIntegration
-        every { browserFragment.context } returns null
-        browserFragment._browserToolbarView = browserToolbarView
-        browserFragment.safeInvalidateBrowserToolbarView()
-
-        verify(exactly = 0) { browserToolbar.invalidateActions() }
-        verify(exactly = 0) { toolbarIntegration.invalidateMenu() }
-    }
-
-    @Test
-    @Suppress("TooGenericExceptionCaught")
-    fun `WHEN fragment is attached and toolbar view is null THEN toolbar invalidation is safe`() {
-        every { browserFragment.context } returns mockk(relaxed = true)
-        try {
-            browserFragment.safeInvalidateBrowserToolbarView()
-        } catch (e: Exception) {
-            fail("Exception thrown when invalidating toolbar")
-        }
-    }
-
-    @Test
-    fun `WHEN fragment and view are attached THEN toolbar invalidation is triggered`() {
-        val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
-        val browserToolbar: BrowserToolbar = mockk(relaxed = true)
-        val toolbarIntegration: ToolbarIntegration = mockk(relaxed = true)
-        every { browserToolbarView.toolbar } returns browserToolbar
-        every { browserToolbarView.toolbarIntegration } returns toolbarIntegration
-        every { browserFragment.context } returns mockk(relaxed = true)
-        browserFragment._browserToolbarView = browserToolbarView
-        browserFragment.safeInvalidateBrowserToolbarView()
-
-        verify(exactly = 1) { browserToolbar.invalidateActions() }
-        verify(exactly = 1) { toolbarIntegration.invalidateMenu() }
-    }
-
-    @Test
-    fun `WHEN toolbar is initialized THEN onConfigurationChanged sets toolbar actions for size in fragment`() {
-        val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
-        every { browserFragment.reinitializeEngineView() } just Runs
-
-        browserFragment._browserToolbarView = null
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 0) { browserFragment.onUpdateToolbarForConfigurationChange(any()) }
-        verify(exactly = 0) { browserFragment.updateTabletToolbarActions(any()) }
-        verify(exactly = 0) { browserFragment.reinitializeEngineView() }
-
-        browserFragment._browserToolbarView = browserToolbarView
-
-        mockkObject(ThemeManager.Companion)
-        every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
-
-        mockkStatic(AppCompatResources::class)
-        every { AppCompatResources.getDrawable(context, any()) } returns mockk()
-
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 1) { browserFragment.onUpdateToolbarForConfigurationChange(any()) }
-        verify(exactly = 1) { browserFragment.updateTabletToolbarActions(any()) }
-        verify(exactly = 1) { browserFragment.reinitializeEngineView() }
-
-        unmockkObject(ThemeManager.Companion)
-        unmockkStatic(AppCompatResources::class)
-    }
-
-    @Test
-    fun `WHEN fragment configuration changed THEN menu is dismissed`() {
-        val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
-        every { browserFragment.context } returns null
-        every { browserFragment.reinitializeEngineView() } just Runs
-        browserFragment._browserToolbarView = browserToolbarView
-
-        mockkObject(ThemeManager.Companion)
-        every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
-
-        mockkStatic(AppCompatResources::class)
-        every { AppCompatResources.getDrawable(context, any()) } returns mockk()
-
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-
-        verify(exactly = 1) { browserToolbarView.dismissMenu() }
-
-        unmockkObject(ThemeManager.Companion)
-        unmockkStatic(AppCompatResources::class)
-    }
-
-    @Test
-    fun `WHEN fragment configuration screen size changes between tablet and mobile size THEN tablet action items added and removed`() {
-        val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
-        val browserToolbar: BrowserToolbar = mockk(relaxed = true)
-        val leadingAction: BrowserToolbar.Button = mockk(relaxed = true)
-        browserFragment.homeAction = leadingAction
-        browserFragment._browserToolbarView = browserToolbarView
-        every { browserToolbarView.toolbar } returns browserToolbar
-        every { browserToolbarView.updateMenuVisibility(any()) } just Runs
-        every { browserFragment.reinitializeEngineView() } just Runs
-
-        mockkObject(ThemeManager.Companion)
-        every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
-
-        mockkStatic(AppCompatResources::class)
-        every { AppCompatResources.getDrawable(context, any()) } returns mockk()
-
-        every { browserFragment.isLargeWindow() } returns true
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 3) { browserToolbar.addNavigationAction(any()) }
-
-        every { browserFragment.isLargeWindow() } returns false
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 3) { browserToolbar.removeNavigationAction(any()) }
-
-        unmockkObject(ThemeManager.Companion)
-        unmockkStatic(AppCompatResources::class)
-    }
-
-    @Test
-    fun `WHEN fragment configuration change enables tablet size twice THEN tablet action items are only added once`() {
-        val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
-        val browserToolbar: BrowserToolbar = mockk(relaxed = true)
-        val leadingAction: BrowserToolbar.Button = mockk(relaxed = true)
-        browserFragment.homeAction = leadingAction
-        browserFragment._browserToolbarView = browserToolbarView
-        every { browserToolbarView.toolbar } returns browserToolbar
-        every { browserToolbarView.updateMenuVisibility(any()) } just Runs
-        every { browserFragment.reinitializeEngineView() } just Runs
-
-        mockkObject(ThemeManager.Companion)
-        every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
-
-        mockkStatic(AppCompatResources::class)
-        every { AppCompatResources.getDrawable(context, any()) } returns mockk()
-
-        every { browserFragment.isLargeWindow() } returns true
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 3) { browserToolbar.addNavigationAction(any()) }
-
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 3) { browserToolbar.addNavigationAction(any()) }
-
-        unmockkObject(ThemeManager.Companion)
-        unmockkStatic(AppCompatResources::class)
-    }
-
-    @Test
-    fun `WHEN fragment configuration change sets mobile size twice THEN tablet action items are not added or removed`() {
-        val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
-        val browserToolbar: BrowserToolbar = mockk(relaxed = true)
-        val leadingAction: BrowserToolbar.Button = mockk(relaxed = true)
-        browserFragment.homeAction = leadingAction
-        browserFragment._browserToolbarView = browserToolbarView
-        every { browserToolbarView.toolbar } returns browserToolbar
-        every { browserToolbarView.updateMenuVisibility(any()) } just Runs
-        every { browserFragment.reinitializeEngineView() } just Runs
-
-        mockkObject(ThemeManager.Companion)
-        every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
-
-        mockkStatic(AppCompatResources::class)
-        every { AppCompatResources.getDrawable(context, any()) } returns mockk()
-
-        every { browserFragment.isLargeWindow() } returns false
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 0) { browserToolbar.addNavigationAction(any()) }
-        verify(exactly = 0) { browserToolbar.removeNavigationAction(any()) }
-
-        browserFragment.onConfigurationChanged(mockk(relaxed = true))
-        verify(exactly = 0) { browserToolbar.addNavigationAction(any()) }
-        verify(exactly = 0) { browserToolbar.removeNavigationAction(any()) }
-
-        unmockkObject(ThemeManager.Companion)
-        unmockkStatic(AppCompatResources::class)
-    }
-
     private fun addAndSelectTab(tab: TabSessionState) {
-        store.dispatch(TabListAction.AddTabAction(tab)).joinBlocking()
-        store.dispatch(TabListAction.SelectTabAction(tab.id)).joinBlocking()
+        store.dispatch(TabListAction.AddTabAction(tab))
+        store.dispatch(TabListAction.SelectTabAction(tab.id))
     }
 
     internal class MockedLifecycleOwner(initialState: Lifecycle.State) : LifecycleOwner {
@@ -480,57 +379,10 @@ class BrowserFragmentTest {
         val settings: Settings = mockk(relaxed = true)
 
         every { browserFragment.context } returns context
-        every { context.settings() } returns settings
+        every { context.components.settings } returns settings
 
         browserFragment.updateLastBrowseActivity()
 
         verify(exactly = 1) { settings.lastBrowseActivity = any() }
-    }
-
-    @Test
-    fun `GIVEN device is not a tablet WHEN updating toolbar actions THEN only leading action is added and no actions are removed`() {
-        mockThemeManagerAndAppCompatResources()
-
-        browserFragment.updateBrowserToolbarLeadingAndNavigationActions(
-            context = context,
-            isTablet = false,
-        )
-
-        verify(exactly = 1) { browserFragment.addHomeAction(any()) }
-        verify(exactly = 0) { browserFragment.addTabletActions(any()) }
-        verify(exactly = 0) { browserFragment.addNavigationActions(any()) }
-        verify(exactly = 0) { browserFragment.removeNavigationActions() }
-
-        unmockThemeManagerAndAppCompatResources()
-    }
-
-    @Test
-    fun `GIVEN device is a tablet WHEN updating toolbar actions THEN leading and navigation actions are added in order`() {
-        mockThemeManagerAndAppCompatResources()
-
-        browserFragment.updateBrowserToolbarLeadingAndNavigationActions(
-            context = context,
-            isTablet = true,
-        )
-
-        verifyOrder {
-            browserFragment.addHomeAction(any())
-            browserFragment.addNavigationActions(any())
-        }
-
-        unmockThemeManagerAndAppCompatResources()
-    }
-
-    private fun mockThemeManagerAndAppCompatResources() {
-        mockkObject(ThemeManager.Companion)
-        every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
-
-        mockkStatic(AppCompatResources::class)
-        every { AppCompatResources.getDrawable(context, any()) } returns mockk()
-    }
-
-    private fun unmockThemeManagerAndAppCompatResources() {
-        unmockkObject(ThemeManager.Companion)
-        unmockkStatic(AppCompatResources::class)
     }
 }

@@ -10,14 +10,25 @@
 
 #include "test/fake_encoded_frame.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <vector>
 
+#include "api/rtp_packet_infos.h"
+#include "api/units/timestamp.h"
+#include "api/video/encoded_frame.h"
+#include "api/video/encoded_image.h"
 #include "api/video/video_frame_type.h"
+#include "api/video/video_rotation.h"
+#include "api/video/video_timing.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace test {
 
-int64_t FakeEncodedFrame::ReceivedTime() const {
+std::optional<Timestamp> FakeEncodedFrame::ReceivedTimestamp() const {
   return received_time_;
 }
 
@@ -25,7 +36,7 @@ int64_t FakeEncodedFrame::RenderTime() const {
   return _renderTimeMs;
 }
 
-void FakeEncodedFrame::SetReceivedTime(int64_t received_time) {
+void FakeEncodedFrame::SetReceivedTime(Timestamp received_time) {
   received_time_ = received_time;
 }
 
@@ -88,8 +99,8 @@ std::unique_ptr<FakeEncodedFrame> FakeFrameBuilder::Build() {
     frame->SetId(*frame_id_);
   if (playout_delay_)
     frame->SetPlayoutDelay(*playout_delay_);
-  frame->SetFrameType(references_.empty() ? VideoFrameType::kVideoFrameKey
-                                          : VideoFrameType::kVideoFrameDelta);
+  frame->set_frame_type(references_.empty() ? VideoFrameType::kVideoFrameKey
+                                            : VideoFrameType::kVideoFrameDelta);
   for (int64_t ref : references_) {
     frame->references[frame->num_references] = ref;
     frame->num_references++;
@@ -97,7 +108,7 @@ std::unique_ptr<FakeEncodedFrame> FakeFrameBuilder::Build() {
   if (spatial_layer_)
     frame->SetSpatialIndex(spatial_layer_);
   if (received_time_)
-    frame->SetReceivedTime(received_time_->ms());
+    frame->SetReceivedTime(*received_time_);
   if (payload_type_)
     frame->SetPayloadType(*payload_type_);
   if (ntp_time_)

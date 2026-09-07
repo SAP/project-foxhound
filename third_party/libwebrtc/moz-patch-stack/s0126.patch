@@ -1,0 +1,37 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Fri, 16 Jan 2026 16:48:00 -0600
+Subject: Bug 2010312 - (fix-dc65955c6d) fix base-toolchains build
+
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6c3f917f52d45566db7b5916b74f792928456dff
+---
+ call/rtp_transport_controller_send.cc | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/call/rtp_transport_controller_send.cc b/call/rtp_transport_controller_send.cc
+index 2731bb827a..dd2d791c1c 100644
+--- a/call/rtp_transport_controller_send.cc
++++ b/call/rtp_transport_controller_send.cc
+@@ -733,19 +733,18 @@ void RtpTransportControllerSend::ComputeStatsFromCongestionControlFeedback(
+ 
+     if (packet_info.IsReceived()) {
+       switch (packet_info.ecn) {
+-        using enum EcnMarking;
+-        case kEct1:
++        case EcnMarking::kEct1:
+           ++stats->num_packets_received_with_ect1;
+           break;
+-        case kCe:
++        case EcnMarking::kCe:
+           ++stats->num_packets_received_with_ce;
+           break;
+-        case kNotEct:
++        case EcnMarking::kNotEct:
+           if (packet_info.sent_with_ect1) {
+             ++stats->num_packets_with_bleached_ect1_marking;
+           }
+           break;
+-        case kEct0:
++        case EcnMarking::kEct0:
+           break;
+       }
+     }

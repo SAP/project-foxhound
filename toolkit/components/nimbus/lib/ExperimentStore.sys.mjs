@@ -11,7 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusEnrollments: "resource://nimbus/lib/Enrollments.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusMigrations: "resource://nimbus/lib/Migrations.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   ProfilesDatastoreService:
     "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs",
 });
@@ -76,7 +76,7 @@ ChromeUtils.defineLazyGetter(lazy, "syncDataStore", () => {
      * { childPref: value }
      * where value is parsed to the appropriate type
      *
-     * @returns {Object[]}
+     * @returns {object[]}
      */
     _getBranchChildValues(prefBranch, featureId) {
       const branch = Services.prefs.getBranch(prefBranch);
@@ -214,28 +214,12 @@ ChromeUtils.defineLazyGetter(lazy, "syncDataStore", () => {
 
 const DEFAULT_STORE_ID = "ExperimentStoreData";
 
-const IS_MAIN_PROCESS =
-  Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT;
-
 export class ExperimentStore extends SharedDataMap {
   static SYNC_DATA_PREF_BRANCH = SYNC_DATA_PREF_BRANCH;
   static SYNC_DEFAULTS_PREF_BRANCH = SYNC_DEFAULTS_PREF_BRANCH;
 
   constructor(sharedDataKey, options) {
     super(sharedDataKey ?? DEFAULT_STORE_ID, options);
-
-    this._db = null;
-
-    if (IS_MAIN_PROCESS) {
-      if (lazy.NimbusEnrollments.databaseEnabled) {
-        // We may be in an xpcshell test that has not initialized the
-        // ProfilesDatastoreService.
-        //
-        // TODO(bug 1967779): require the ProfilesDatastoreService to be initialized
-        // and remove this check.
-        this._db = new lazy.NimbusEnrollments(this);
-      }
-    }
   }
 
   /**
@@ -325,6 +309,7 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Returns all active experiments
+   *
    * @returns {Enrollment[]}
    */
   getAllActiveExperiments() {
@@ -335,6 +320,7 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Returns all active rollouts
+   *
    * @returns {Enrollment[]}
    */
   getAllActiveRollouts() {
@@ -344,7 +330,28 @@ export class ExperimentStore extends SharedDataMap {
   }
 
   /**
+   * Returns a Map from the setPrefs from all active experiments to
+   * the pref values that the experiment overwrote.
+   *
+   * @returns {nsIPrefOverrideMap}
+   */
+  getOriginalPrefValuesForAllActiveEnrollments() {
+    let ret = Cc["@mozilla.org/pref-override-map;1"].createInstance(
+      Ci.nsIPrefOverrideMap
+    );
+    this.getAll()
+      .filter(enrollment => enrollment.active)
+      .forEach(enrollmentsArray =>
+        enrollmentsArray.prefs.forEach(enrollment => {
+          ret.addEntry(enrollment.name, enrollment.originalValue);
+        })
+      );
+    return ret;
+  }
+
+  /**
    * Query the store for the remote configuration of a feature
+   *
    * @param {string} featureId The feature we want to query for
    * @returns {{Rollout}|undefined} Remote defaults if available
    */
@@ -438,6 +445,7 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Persists early startup experiments or rollouts
+   *
    * @param {Enrollment} enrollment Experiment or rollout
    */
   _updateSyncStore(enrollment) {
@@ -470,6 +478,7 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Add an enrollment and notify listeners
+   *
    * @param {object} enrollment The enrollment to add.
    * @param {object} recipe The recipe for the enrollment that was enrolled.
    */

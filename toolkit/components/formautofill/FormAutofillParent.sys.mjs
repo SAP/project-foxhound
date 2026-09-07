@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*
+/**
  * Implements a service used to access storage and communicate with content.
  *
  * A "fields" array is used to communicate with FormAutofillChild. Each item
  * represents a single input field in the content page as well as its
- * @autocomplete properties. The schema is as below. Please refer to
+ * `@autocomplete` properties. The schema is as below. Please refer to
  * FormAutofillChild.js for more details.
  *
  * [
@@ -35,12 +35,11 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddressComponent: "resource://gre/modules/shared/AddressComponent.sys.mjs",
-  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   FormAutofillAddressSection:
     "resource://gre/modules/shared/FormAutofillSection.sys.mjs",
   FormAutofillCreditCardSection:
     "resource://gre/modules/shared/FormAutofillSection.sys.mjs",
+  FormAutofillML: "resource://gre/modules/shared/FormAutofillML.sys.mjs",
   FormAutofillHeuristics:
     "resource://gre/modules/shared/FormAutofillHeuristics.sys.mjs",
   FormAutofillSection:
@@ -50,9 +49,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FormAutofillPrompter: "resource://autofill/FormAutofillPrompter.sys.mjs",
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  MLAutofill: "resource://autofill/MLAutofill.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () =>
@@ -66,6 +63,16 @@ const { ADDRESSES_COLLECTION_NAME, CREDITCARDS_COLLECTION_NAME, FIELD_STATES } =
   FormAutofillUtils;
 
 let gMessageObservers = new Set();
+
+const FORM_AUTOFILL_MESSAGES = new Set([
+  "FormAutofill:InitStorage",
+  "FormAutofill:OnFormSubmit",
+  "FormAutofill:FieldsIdentified",
+  "FormAutofill:OnFieldsDetected",
+  "FormAutofill:OnFieldsUpdated",
+  "FormAutofill:FieldFilledModified",
+  "FormAutofill:FieldsUpdatedDuringAutofill",
+]);
 
 export let FormAutofillStatus = {
   _initialized: false,
@@ -84,6 +91,7 @@ export let FormAutofillStatus = {
     }
     this._initialized = true;
 
+    Services.obs.addObserver(this, "passwordsAutofill-pane-loaded");
     Services.obs.addObserver(this, "privacy-pane-loaded");
 
     // Observing the pref and storage changes
@@ -112,7 +120,9 @@ export let FormAutofillStatus = {
     this._active = null;
 
     Services.obs.removeObserver(this, "privacy-pane-loaded");
+    Services.obs.removeObserver(this, "passwordsAutofill-pane-loaded");
     Services.prefs.removeObserver(ENABLED_AUTOFILL_ADDRESSES_PREF, this);
+    Services.obs.removeObserver(this, "formautofill-storage-changed");
     Services.wm.removeListener(this);
 
     if (FormAutofill.isAutofillCreditCardsAvailable) {
@@ -203,13 +213,22 @@ export let FormAutofillStatus = {
 
     switch (topic) {
       case "privacy-pane-loaded": {
+        if (
+          !Services.prefs.getBoolPref(
+            "browser.settings-redesign.enabled",
+            false
+          )
+        ) {
+          let formAutofillPreferences = new lazy.FormAutofillPreferences();
+          let document = subject.document;
+          formAutofillPreferences.init(document);
+        }
+        break;
+      }
+
+      case "passwordsAutofill-pane-loaded": {
         let formAutofillPreferences = new lazy.FormAutofillPreferences();
-        let document = subject.document;
-        let prefFragment = formAutofillPreferences.init(document);
-        let formAutofillGroupBox = document.getElementById(
-          "formAutofillGroupBox"
-        );
-        formAutofillGroupBox.appendChild(prefFragment);
+        formAutofillPreferences.init(subject.document);
         break;
       }
 
@@ -255,6 +274,8 @@ ChromeUtils.defineLazyGetter(lazy, "gFormAutofillStorage", () => {
 });
 
 export class FormAutofillParent extends JSWindowActorParent {
+  static #mlFeature;
+
   constructor() {
     super();
     FormAutofillStatus.init();
@@ -303,6 +324,10 @@ export class FormAutofillParent extends JSWindowActorParent {
       !FormAutofill.isAutofillCreditCardsAvailable &&
       !FormAutofill.isAutofillAddressesAvailable
     ) {
+      return undefined;
+    }
+
+    if (!FORM_AUTOFILL_MESSAGES.has(name) && !Cu.isInAutomation) {
       return undefined;
     }
 
@@ -364,12 +389,6 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:SaveCreditCard": {
-        // Setting the first parameter of OSKeyStore.ensurLoggedIn as false
-        // since this case only called in tests. Also the reason why we're not calling FormAutofill.verifyUserOSAuth.
-        if (!(await lazy.OSKeyStore.ensureLoggedIn(false)).authenticated) {
-          lazy.log.warn("User canceled encryption login");
-          return undefined;
-        }
         await lazy.gFormAutofillStorage.creditCards.add(data.creditcard);
         break;
       }
@@ -500,6 +519,28 @@ export class FormAutofillParent extends JSWindowActorParent {
   }
 
   /**
+   * When ML inference is enabled, we skip the regular expression-based heuristics
+   * in the child process, so some field names may be missing by the time the
+   * fields reach the parent process. This function runs ML inference to fill in
+   * those missing field names.
+   *
+   * @param {Array<FieldDetail>} fieldDetails
+   *        An array of the identified fields.
+   */
+  async runMLInference(fieldDetails) {
+    if (!FormAutofillUtils.useMLInference) {
+      return;
+    }
+
+    if (!fieldDetails.some(fd => !fd.fieldName && fd.mlData)) {
+      return;
+    }
+
+    FormAutofillParent.#mlFeature ??= new lazy.FormAutofillML();
+    await FormAutofillParent.#mlFeature.detectFields(fieldDetails);
+  }
+
+  /**
    * When a field is detected, identify fields in other frames, if they exist.
    * To ensure that the identified fields across frames still follow the document
    * order, we traverse from the top-level window and recursively identify fields
@@ -533,6 +574,8 @@ export class FormAutofillParent extends JSWindowActorParent {
       fieldsIncludeIframe
     );
 
+    await this.runMLInference(fieldDetails);
+
     // Now we have collected all the fields for the form, run parsing heuristics
     // to update the field name based on surrounding fields.
     const sections = FormAutofillParent.parseAndClassifyFields(fieldDetails);
@@ -543,10 +586,6 @@ export class FormAutofillParent extends JSWindowActorParent {
     // but also called when the elements in a form are changed. When the elements
     // in a form are changed, we treat the "updated" section as a new detected section.
     sections.forEach(section => section.onDetected());
-
-    if (FormAutofill.isMLExperimentEnabled) {
-      sections.forEach(section => lazy.MLAutofill.runInference(section));
-    }
 
     // Inform all the child actors of the updated 'fieldDetails'
     const detailsByBC =
@@ -875,10 +914,6 @@ export class FormAutofillParent extends JSWindowActorParent {
     // from the new address.
     let newRecord = {};
     if (mergeableFields.length) {
-      // TODO: This is only temporarily, should be removed after Bug 1836438 is fixed
-      if (mergeableFields.includes("name")) {
-        mergeableFields.push("given-name", "additional-name", "family-name");
-      }
       mergeableFields.forEach(f => {
         if (f in newAddress.record) {
           newRecord[f] = newAddress.record[f];
@@ -1041,9 +1076,13 @@ export class FormAutofillParent extends JSWindowActorParent {
    */
   async onAutoCompleteEntrySelected(message, data) {
     switch (message) {
-      case "FormAutofill:OpenPreferences": {
-        const win = lazy.BrowserWindowTracker.getTopWindow();
-        win.openPreferences("privacy-form-autofill");
+      case "FormAutofill:OpenPaymentPreferences": {
+        lazy.FormAutofillPreferences.openPaymentPreference();
+        break;
+      }
+
+      case "FormAutofill:OpenAddressPreferences": {
+        lazy.FormAutofillPreferences.openAddressPreference();
         break;
       }
 
@@ -1088,7 +1127,13 @@ export class FormAutofillParent extends JSWindowActorParent {
   #FIELDS_FILLED_WHEN_SAME_ORIGIN = ["cc-number"];
 
   /**
-   * Determines if the field should be autofilled based on its origin.
+   * Determines whether a field is eligible for autofill based on its origin.
+   *
+   * The rules for autofill eligibility are as follows:
+   * 1. Autofill is permitted if the field resides in a frame that shares the same origin
+   *    as the field that triggered the autofill action.
+   * 2. Autofill is also allowed if the field is same-origin with the top-level frame
+   *    and is not designated as a credit card number field.
    *
    * @param {BorwsingContext} bc
    *        The browsing context the field is in.
@@ -1419,6 +1464,8 @@ export class FormAutofillParent extends JSWindowActorParent {
         formFields,
         msg
       );
+
+      await this.runMLInference(fieldDetails);
 
       fieldDetails.forEach(field => {
         const overwriteField = overwriteFieldDetails.find(

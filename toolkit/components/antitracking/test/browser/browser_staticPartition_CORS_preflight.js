@@ -37,8 +37,8 @@ add_task(async function () {
           iframe.onload = () => {
             resolve();
           };
-          content.document.body.appendChild(iframe);
           iframe.src = iframe_url;
+          content.document.body.appendChild(iframe);
         });
 
         await SpecialPowers.spawn(iframe, [url, token], async (url, token) => {
@@ -94,8 +94,8 @@ add_task(async function () {
           iframe.onload = () => {
             resolve();
           };
-          content.document.body.appendChild(iframe);
           iframe.src = iframe_url;
+          content.document.body.appendChild(iframe);
         });
 
         await SpecialPowers.spawn(iframe, [url, token], async (url, token) => {

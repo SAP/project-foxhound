@@ -6,6 +6,7 @@ FREE_DOWNLOAD_BUTTON_CSS = (
     "a[class*=Button][href*='dl=pexels-ekoagalarov-29946756.jpg']"
 )
 POPUP_CSS = ".ReactModal__Content[class*=after-open]"
+COOKIES_CSS = "#onetrust-banner-sdk"
 
 
 async def check_popup(client, should_be_offscreen):
@@ -14,6 +15,7 @@ async def check_popup(client, should_be_offscreen):
     # If the popup is offscreen even once without the intervention, we pass that check.
     for _ in range(10):
         await client.navigate(URL)
+        client.hide_elements(COOKIES_CSS)
         client.soft_click(client.await_css(FREE_DOWNLOAD_BUTTON_CSS, is_displayed=True))
         popup = client.await_css(POPUP_CSS, is_displayed=True)
         is_off = client.execute_script(

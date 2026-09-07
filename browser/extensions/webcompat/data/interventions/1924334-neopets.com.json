@@ -1,0 +1,18 @@
+{
+  "label": "neopets.com",
+  "bugs": {
+    "1924334": {
+      "issue": "broken-layout",
+      "matches": ["*://www.neopets.com/explore.phtml*"]
+    }
+  },
+  "css": {
+    "fix_content_width": "body > span[style*='left: -1000px;'] { left: -10000px !important; }"
+  },
+  "interventions": [
+    {
+      "platforms": ["android"],
+      "css": ["fix_content_width"]
+    }
+  ]
+}

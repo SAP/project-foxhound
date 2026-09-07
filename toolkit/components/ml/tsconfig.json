@@ -1,0 +1,17 @@
+{
+  "include": ["**/*.mjs", "**/*.d.ts"],
+  "extends": "../../../tools/@types/tsconfig.json",
+  "exclude": ["./vendor/**/*"],
+
+  "compilerOptions": {
+    "checkJs": true,
+    "strict": true,
+
+    "plugins": [
+      {
+        "transform": "../../../tools/ts/plugins/checkRootOnly.js",
+        "transformProgram": true
+      }
+    ]
+  }
+}

@@ -23,6 +23,9 @@ class StartupStateProvider(
     private val startReasonProvider: AppStartReasonProvider,
 ) {
 
+    /**
+     * Possible startup states of the application.
+     */
     enum class StartupState {
         COLD, WARM, HOT,
 
@@ -96,8 +99,7 @@ class StartupStateProvider(
         }
         val afterLastStopped = startupLog.log.takeLastWhile { it != LogEntry.AppStopped }
 
-        @Suppress("MagicNumber")
-        return afterLastStopped.takeLast(3) == listOf(
+        return afterLastStopped.takeLast(WARM_START_FIRST_ACTIVITY_LOG_SEQUENCE_LENGTH) == listOf(
             LogEntry.ActivityCreated(activityClass),
             LogEntry.ActivityStarted(activityClass),
             LogEntry.AppStarted,
@@ -133,5 +135,9 @@ class StartupStateProvider(
         )
         return !afterLastStopped.contains(LogEntry.ActivityCreated(activityClass)) &&
             isLastActivityStartedStillStarted
+    }
+
+    companion object {
+        private const val WARM_START_FIRST_ACTIVITY_LOG_SEQUENCE_LENGTH = 3
     }
 }

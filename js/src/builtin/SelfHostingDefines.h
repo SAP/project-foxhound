@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,6 +17,17 @@
 // Unforgeable version of Function.prototype.apply.
 #define FUN_APPLY(FUN, RECEIVER, ARGS) \
   callFunction(std_Function_apply, FUN, RECEIVER, ARGS)
+
+// A "Record" is an internal type used in the ECMAScript spec to define a struct
+// made up of key / values. It is never exposed to user script, but we use a
+// simple Object (with null prototype) as a convenient implementation.
+#define NEW_RECORD() std_Object_create(null)
+
+/* Spec: ECMAScript Language Specification, 5.1 edition, 9.2 and 11.4.9 */
+#define TO_BOOLEAN(v) !!v
+
+/* Spec: ECMAScript Language Specification, 5.1 edition, 9.3 and 11.4.6 */
+#define TO_NUMBER(v) +v
 
 // NB: keep this in sync with the copy in vm/ArgumentsObject.h.
 #define MAX_ARGS_LENGTH (500 * 1000)
@@ -76,12 +85,23 @@
 // Item kind for Map/Set iterators.
 #define MAP_SET_ITERATOR_SLOT_ITEM_KIND 1
 
+/* Spec: https://tc39.es/ecma262/#sec-createarrayiterator */
+#define RETURN_ARRAY_ITERATOR(obj, kind)                                 \
+  var iteratedObject = ToObject(obj);                                    \
+  var iterator = NewArrayIterator();                                     \
+  UnsafeSetReservedSlot(iterator, ITERATOR_SLOT_TARGET, iteratedObject); \
+  UnsafeSetReservedSlot(iterator, ITERATOR_SLOT_NEXT_INDEX, 0);          \
+  UnsafeSetReservedSlot(iterator, ARRAY_ITERATOR_SLOT_ITEM_KIND, kind);  \
+  return iterator
+
 #define ITEM_KIND_KEY 0
 #define ITEM_KIND_VALUE 1
 #define ITEM_KIND_KEY_AND_VALUE 2
 
 #define REGEXP_SOURCE_SLOT 1
 #define REGEXP_FLAGS_SLOT 2
+
+#define REGEXP_MAX_SUBSTITUTION_CAPTURES 99
 
 #define REGEXP_IGNORECASE_FLAG 0x01
 #define REGEXP_GLOBAL_FLAG 0x02
@@ -91,6 +111,9 @@
 #define REGEXP_DOTALL_FLAG 0x20
 #define REGEXP_HASINDICES_FLAG 0x40
 #define REGEXP_UNICODESETS_FLAG 0x80
+#define REGEXP_LEGACY_FEATURES_ENABLED_FLAG 0x100
+
+#define REGEXP_ANY_UNICODE_MASK (REGEXP_UNICODE_FLAG | REGEXP_UNICODESETS_FLAG)
 
 #define REGEXP_STRING_ITERATOR_REGEXP_SLOT 0
 #define REGEXP_STRING_ITERATOR_STRING_SLOT 1
@@ -101,7 +124,6 @@
 #define REGEXP_STRING_ITERATOR_LASTINDEX_DONE -1
 #define REGEXP_STRING_ITERATOR_LASTINDEX_SLOW -2
 
-#define INTL_INTERNALS_OBJECT_SLOT 0
 #define INTL_SEGMENTS_STRING_SLOT 1
 #define INTL_SEGMENT_ITERATOR_STRING_SLOT 1
 #define INTL_SEGMENT_ITERATOR_INDEX_SLOT 3

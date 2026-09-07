@@ -2,10 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from gecko_taskgraph.util.scriptworker import generate_beetmover_upstream_artifacts
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_dependencies
-
-from android_taskgraph.util.scriptworker import generate_beetmover_upstream_artifacts
 
 transforms = TransformSequence()
 
@@ -35,23 +34,19 @@ def build_upstream_artifacts(config, tasks):
             only_archs = task.pop("only-archs", [])
             for dep in get_dependencies(config, task):
                 paths = list(dep.attributes.get("artifacts", {}).values())
-                paths.extend(
-                    [
-                        apk_metadata["name"]
-                        for arch, apk_metadata in dep.attributes.get("apks", {}).items()
-                        if not only_archs or arch in only_archs
-                    ]
-                )
+                paths.extend([
+                    apk_metadata["name"]
+                    for arch, apk_metadata in dep.attributes.get("apks", {}).items()
+                    if not only_archs or arch in only_archs
+                ])
                 if dep.attributes.get("aab"):
                     paths.extend([dep.attributes.get("aab")])
                 if paths:
-                    worker_definition["upstream-artifacts"].append(
-                        {
-                            "taskId": {"task-reference": f"<{dep.kind}>"},
-                            "taskType": _get_task_type(dep.kind),
-                            "paths": sorted(paths),
-                        }
-                    )
+                    worker_definition["upstream-artifacts"].append({
+                        "taskId": {"task-reference": f"<{dep.kind}>"},
+                        "taskType": _get_task_type(dep.kind),
+                        "paths": sorted(paths),
+                    })
 
         task.setdefault("worker", {}).update(worker_definition)
         yield task

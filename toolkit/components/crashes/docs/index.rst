@@ -23,16 +23,10 @@ provided externally.
 Crash Pings
 ===========
 
-The Crash Manager is responsible for sending crash pings when a crash occurs
-or when a crash event is found. Crash pings are sent using
-`Telemetry pings <../../telemetry/data/crash-ping.html>`__.
-
-Glean
------
-Crash pings have been migrated to use `Glean pings <../../glean/index.html>`__, however
-the Telemetry pings will still be sent until we are confident that the Glean
-implementation is robust. The Glean `crash` ping can be found
-`here <https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/pings/crash>`__.
+The Crash Manager is responsible for sending crash pings when a crash occurs or when a crash event
+is found. Crash pings are sent using `Glean pings <../../glean/index.html>`__. The Glean ``crash``
+ping can be found `here
+<https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/pings/crash>`__.
 
 See `bug 1784069 <https://bugzilla.mozilla.org/show_bug.cgi?id=1784069>`_ for details.
 

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -211,7 +209,25 @@ RegRef BaseCompiler::captureReturnedRef() {
 //
 // Miscellaneous.
 
-void BaseCompiler::trap(Trap t) const { masm.wasmTrap(t, trapSiteDesc()); }
+void BaseCompiler::trap(Trap t) {
+  masm.wasmTrap(t, trapSiteDesc());
+
+  if (MOZ_LIKELY(!compilerEnv_.debugEnabled())) {
+    return;
+  }
+
+  masm.propagateOOM(
+      createStackMap("BaseCompiler::trap", HasDebugFrameWithLiveRefs::Maybe));
+}
+
+void BaseCompiler::trap(Trap t, const TrapSiteDesc& trapSite,
+                        StackMap* stackMap) {
+  masm.wasmTrap(t, trapSite);
+
+  if (stackMap && !stackMaps_->add(masm.currentOffset(), stackMap)) {
+    masm.setOOM();
+  }
+}
 
 void BaseCompiler::cmp64Set(Assembler::Condition cond, RegI64 lhs, RegI64 rhs,
                             RegI32 dest) {

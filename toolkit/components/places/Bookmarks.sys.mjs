@@ -63,7 +63,6 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   PlacesSyncUtils: "resource://gre/modules/PlacesSyncUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
@@ -2305,7 +2304,7 @@ async function handleBookmarkItemSpecialData(item) {
   if ("tags" in item) {
     try {
       lazy.PlacesUtils.tagging.tagURI(
-        lazy.NetUtil.newURI(item.url),
+        Services.io.newURI(item.url),
         item.tags,
         item.source
       );

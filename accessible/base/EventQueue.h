@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,9 +42,6 @@ class EventQueue {
   void ProcessEventQueue();
 
  private:
-  EventQueue(const EventQueue&) = delete;
-  EventQueue& operator=(const EventQueue&) = delete;
-
   // Event queue processing
   /**
    * Coalesce redundant events from the queue.
@@ -63,6 +59,10 @@ class EventQueue {
   void CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
                                AccSelChangeEvent* aThisEvent,
                                uint32_t aThisIndex);
+
+ public:
+  EventQueue(const EventQueue&) = delete;
+  EventQueue& operator=(const EventQueue&) = delete;
 
  protected:
   /**

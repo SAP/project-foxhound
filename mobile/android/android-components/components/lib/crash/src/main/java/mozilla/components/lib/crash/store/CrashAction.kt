@@ -53,6 +53,11 @@ sealed class CrashAction {
     data class ShowPrompt(val crashIDs: List<String> = listOf()) : CrashAction()
 
     /**
+     * [CrashAction] to update the state when the prompt is now displayed.
+     */
+    data object PromptShown : CrashAction()
+
+    /**
      * [CrashAction] to send when a user taps the cancel button.
      */
     data object CancelTapped : CrashAction()

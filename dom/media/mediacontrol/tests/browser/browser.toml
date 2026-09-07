@@ -1,13 +1,19 @@
 [DEFAULT]
 subsuite = "media-bc"
 tags = "mediacontrol"
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64'"] # Bug 1673527
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 2034604 - GMP async shutdown crash
+]
 support-files = [
   "file_autoplay.html",
   "file_audio_and_inaudible_media.html",
+  "file_audiocontext_iframe.html",
+  "file_audiosessiontype_audible.html",
+  "file_audiosessiontype_iframe.html",
   "file_empty_title.html",
   "file_error_media.html",
   "file_iframe_media.html",
+  "file_named_media_session.html",
   "file_main_frame_with_multiple_child_session_frames.html",
   "file_multiple_audible_media.html",
   "file_muted_autoplay.html",
@@ -15,6 +21,9 @@ support-files = [
   "file_non_autoplay.html",
   "file_non_eligible_media.html",
   "file_non_looping_media.html",
+  "file_speech_iframe.html",
+  "file_web_audio.html",
+  "file_web_speech.html",
   "head.js",
   "../../../test/gizmo.mp4",
   "../../../test/gizmo-noaudio.webm",
@@ -23,42 +32,67 @@ support-files = [
   "../../../../../toolkit/content/tests/browser/silentAudioTrack.webm",
 ]
 
+["browser_audiblechange_event.js"]
+
 ["browser_audio_focus_management.js"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1866742
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1866742
+]
+
+["browser_audiosession_state_transitions.js"]
+
+["browser_audiosessiontype_compute.js"]
+
+["browser_audiosessiontype_iframe.js"]
+
+["browser_audiosessiontype_navigation.js"]
+
+["browser_audiosessiontype_override.js"]
 
 ["browser_control_page_with_audible_and_inaudible_media.js"]
 
 ["browser_default_action_handler.js"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1866742
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1866742
+]
 
 ["browser_media_control_audio_focus_within_a_page.js"]
 
 ["browser_media_control_before_media_starts.js"]
 tags = "os_integration"
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1866742
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1866742
+]
 
 ["browser_media_control_captured_audio.js"]
 
 ["browser_media_control_keys_event.js"]
 
 ["browser_media_control_main_controller.js"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1866742
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1866742
+]
 
 ["browser_media_control_metadata.js"]
 
 ["browser_media_control_non_eligible_media.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1673527
+]
 
 ["browser_media_control_playback_state.js"]
 
 ["browser_media_control_position_state.js"]
 skip-if = [
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'", # Bug 1673527
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1775892
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1673527
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1775892
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1775892
 ]
 
 ["browser_media_control_seek.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] # Bug 1961556
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1961556
+]
 
 ["browser_media_control_stop_timer.js"]
 
@@ -77,3 +111,7 @@ skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] #
 ["browser_stop_control_after_media_reaches_to_end.js"]
 
 ["browser_suspend_inactive_tab.js"]
+
+["browser_uncontrollable_audio_focus.js"]
+
+["browser_uncontrollable_iframe_preserves_active_session.js"]

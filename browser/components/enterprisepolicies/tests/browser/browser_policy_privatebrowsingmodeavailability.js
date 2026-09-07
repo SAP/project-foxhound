@@ -3,6 +3,12 @@
 
 "use strict";
 
+add_setup(async function setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.settings-redesign.enabled", false]],
+  });
+});
+
 add_task(async function test_privatebrowsing_disabled() {
   await setupPolicyEngineWithJson({
     policies: {
@@ -27,8 +33,9 @@ add_task(async function test_privatebrowsing_disabled() {
     "about:preferences#privacy",
     async browser => {
       ok(
-        browser.contentDocument.querySelector("menuitem[value='dontremember']")
-          .disabled,
+        browser.contentDocument
+          .getElementById("historyMode")
+          .inputEl.querySelector("option[value='dontremember']").disabled,
         "Don't remember history should be disabled"
       );
     }

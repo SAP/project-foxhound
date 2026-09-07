@@ -1,9 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env mozilla/browser-window */
 
 /**
  * Handles the Downloads panel user interface for each browser window.
@@ -36,7 +33,8 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
+  DownloadsViewUI:
+    "moz-src:///browser/components/downloads/DownloadsViewUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -186,11 +184,6 @@ var DownloadsPanel = {
    */
   showPanel(openedManually = false, isKeyPress = false) {
     Glean.downloads.panelShown.add(1);
-    // GLAM EXPERIMENT
-    // This metric is temporary, disabled by default, and will be enabled only
-    // for the purpose of experimenting with client-side sampling of data for
-    // GLAM use. See Bug 1947604 for more information.
-    Glean.glamExperiment.panelShown.add(1);
 
     DownloadsCommon.log("Opening the downloads panel.");
 
@@ -235,7 +228,8 @@ var DownloadsPanel = {
 
   /**
    * Indicates whether the panel is showing.
-   * @note this includes the hiding state.
+   *
+   * Note: this includes the hiding state.
    */
   get isPanelShowing() {
     return this._waitingDataForOpen || this.panel.state != "closed";
@@ -1137,7 +1131,6 @@ var DownloadsView = {
     dataTransfer.effectAllowed = "copyMove";
     let spec = NetUtil.newURI(file).spec;
     dataTransfer.setData("text/uri-list", spec);
-    dataTransfer.setData("text/plain", spec);
     dataTransfer.addElement(element);
 
     aEvent.stopPropagation();
@@ -1752,8 +1745,9 @@ var DownloadsBlockedSubview = {
       download.error?.reputationCheckVerdict === "Malware";
 
     e.unblockButton.hidden =
-      download.error?.becauseBlockedByContentAnalysis &&
-      download.error?.reputationCheckVerdict === "Malware";
+      (download.error?.becauseBlockedByContentAnalysis &&
+        download.error?.reputationCheckVerdict === "Malware") ||
+      !Services.prefs.getBoolPref("browser.safebrowsing.allowOverride", true);
 
     title.l10n
       ? document.l10n.setAttributes(e.title, title.l10n.id, title.l10n.args)

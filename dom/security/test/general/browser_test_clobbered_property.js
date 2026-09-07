@@ -18,10 +18,16 @@ add_task(async function test_clobbered_properties() {
     Glean.security.shadowedHtmlDocumentPropertyAccess.testGetValue()
   );
 
-  is(result.length, 1, "Got one metric");
-  is(
-    result[0].extra.name,
-    "currentScript",
-    "Clobbering of currentScript was collected"
+  is(result.length, 3, "Got three HTMLDocument metrics");
+
+  let names = result.map(entry => entry.extra.name);
+  ok(
+    names.includes("currentScript"),
+    "Clobbering of 'currentScript' was collected"
   );
+  ok(
+    names.includes("onreadystatechange"),
+    "Clobbering of 'onreadystatechange' was collected"
+  );
+  ok(names.includes("hasFocus"), "Clobbering of 'hasFocus' was collected");
 });

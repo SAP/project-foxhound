@@ -14,11 +14,12 @@
 #include <stdint.h>
 
 #include <optional>
+#include <span>
 #include <string>
 #include <type_traits>
 
-#include "api/array_view.h"
 #include "api/frame_transformer_interface.h"
+#include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "test/gmock.h"
 
@@ -28,19 +29,23 @@ class MockTransformableFrame : public TransformableFrameInterface {
  public:
   MockTransformableFrame() : TransformableFrameInterface(Passkey()) {}
 
-  MOCK_METHOD(rtc::ArrayView<const uint8_t>, GetData, (), (const, override));
-  MOCK_METHOD(void, SetData, (rtc::ArrayView<const uint8_t>), (override));
+  MOCK_METHOD(std::span<const uint8_t>, GetData, (), (const, override));
+  MOCK_METHOD(void, SetData, (std::span<const uint8_t>), (override));
   MOCK_METHOD(uint8_t, GetPayloadType, (), (const, override));
+  MOCK_METHOD(bool, CanSetPayloadType, (), (const, override));
+  MOCK_METHOD(void, SetPayloadType, (uint8_t), (override));
   MOCK_METHOD(uint32_t, GetSsrc, (), (const, override));
   MOCK_METHOD(uint32_t, GetTimestamp, (), (const, override));
   MOCK_METHOD(void, SetRTPTimestamp, (uint32_t), (override));
-  MOCK_METHOD(std::optional<webrtc::Timestamp>,
+  MOCK_METHOD(std::optional<Timestamp>,
               GetPresentationTimestamp,
               (),
               (const, override));
   MOCK_METHOD(std::string, GetMimeType, (), (const, override));
   MOCK_METHOD(std::optional<Timestamp>, ReceiveTime, (), (const, override));
   MOCK_METHOD(std::optional<Timestamp>, CaptureTime, (), (const, override));
+  MOCK_METHOD(bool, CanSetCaptureTime, (), (const, override));
+  MOCK_METHOD(void, SetCaptureTime, (std::optional<Timestamp>), (override));
   MOCK_METHOD(std::optional<TimeDelta>,
               SenderCaptureTimeOffset,
               (),

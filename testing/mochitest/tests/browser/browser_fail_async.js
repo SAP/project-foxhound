@@ -1,5 +1,3 @@
-setExpectedFailuresForSelfTest(1);
-
 function test() {
   waitForExplicitFinish();
   executeSoon(() => {

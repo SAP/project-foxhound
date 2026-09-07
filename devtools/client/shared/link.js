@@ -29,9 +29,9 @@ function _getTopWindow() {
  * Opens a |url| that does not require trusted access, such as a documentation page, in a
  * new tab.
  *
- * @param {String} url
+ * @param {string} url
  *        The url to open.
- * @param {Object} options
+ * @param {object} options
  *        Optional parameters, see documentation for openUILinkIn in utilityOverlay.js
  */
 exports.openDocLink = async function (url, options) {
@@ -49,9 +49,9 @@ exports.openDocLink = async function (url, options) {
  * `triggeringPrincipal` of the link using the tab's `contentPrincipal`.  This is only an
  * approximation, so bug 1467945 hopes to improve this.
  *
- * @param {String} url
+ * @param {string} url
  *        The url to open.
- * @param {Object} options
+ * @param {object} options
  *        Optional parameters, see documentation for openUILinkIn in utilityOverlay.js
  */
 exports.openContentLink = async function (url, options = {}) {
@@ -72,9 +72,9 @@ exports.openContentLink = async function (url, options = {}) {
 /**
  * Open a trusted |url| in a new tab using the SystemPrincipal.
  *
- * @param {String} url
+ * @param {string} url
  *        The url to open.
- * @param {Object} options
+ * @param {object} options
  *        Optional parameters, see documentation for openUILinkIn in utilityOverlay.js
  */
 exports.openTrustedLink = async function (url, options) {

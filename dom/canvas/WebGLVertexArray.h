@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,13 +7,11 @@
 
 #include <array>
 #include <bitset>
-#include <vector>
-
-#include "mozilla/IntegerRange.h"
 
 #include "CacheInvalidator.h"
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
+#include "mozilla/IntegerRange.h"
 
 namespace mozilla {
 
@@ -65,7 +62,7 @@ class WebGLVertexArray : public WebGLContextBoundObject {
   bool mHasBeenBound = false;
 
  public:
-  static WebGLVertexArray* Create(WebGLContext* webgl);
+  static RefPtr<WebGLVertexArray> Create(WebGLContext* webgl);
 
  protected:
   explicit WebGLVertexArray(WebGLContext* webgl);
@@ -111,7 +108,9 @@ class WebGLVertexArray : public WebGLContextBoundObject {
 
   Maybe<uint32_t> GetAttribIsArrayWithNullBuffer() const {
     const auto& bitset = mAttribIsArrayWithNullBuffer;
-    if (MOZ_LIKELY(bitset.none())) return {};
+    if (bitset.none()) [[likely]] {
+      return {};
+    }
     for (const auto i : IntegerRange(bitset.size())) {
       if (bitset[i]) return Some(i);
     }

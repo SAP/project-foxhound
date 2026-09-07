@@ -8,10 +8,9 @@
 #import <CoreFoundation/CoreFoundation.h>
 #import <IOKit/hidsystem/ev_keymap.h>
 
-#include "gtest/gtest.h"
 #include "MediaHardwareKeysEventSourceMac.h"
 #include "MediaKeyListenerTest.h"
-#include "mozilla/Maybe.h"
+#include "gtest/gtest.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::widget;

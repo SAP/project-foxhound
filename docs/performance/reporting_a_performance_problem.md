@@ -7,15 +7,15 @@ built-in Gecko Profiler tool.
 
 These steps only work in Firefox 75+.
 
-1.  Visit [https://profiler.firefox.com/](https://profiler.firefox.com/)
-2.  Click on *Enable Profiler Menu Button*
-3.  The profiler toolbar button will show up in the top right of the URL
-    bar as a small stopwatch icon.
+1. Visit [https://profiler.firefox.com/](https://profiler.firefox.com/)
+2. Click on *Enable Profiler Menu Button*
+3. The profiler toolbar button will show up in the top right of the URL
+   bar as a small stopwatch icon.
 
 ![image1](img/reportingperf1.png)
 
-4.  You can right-click on the button and remove it from the toolbar
-    when you're done with it.
+4. You can right-click on the button and remove it from the toolbar
+   when you're done with it.
 
 ## Using the Profiler
 
@@ -45,29 +45,29 @@ mouse to interact with the UI:
 
 ## Capturing and sharing a profile
 
-1.  While the profiler is recording, reproduce the performance problem.
-    If possible let the problem manifest itself for 5-10 seconds.
-2.  Press **Ctrl+Shift+2** or click on the profiler toolbar icon in the
-    top right and select **Capture**. Try to do this within a few
-    seconds from reproducing the performance problem as only the last
-    few seconds are recorded. If the timeline has a large red block
-    it's a good sign. ![Jank markers appearing in the Perf.html profile analysis tool.](img/PerfDotHTMLRedLines.png)
-3.  The data will open in a new tab. Wait until the \"Symbolicating call
-    stacks\" notification disappears before sharing the profile.
-4.  There will be a button in the top right labeled **Upload Local Profile** which
-    will allow you to upload this profile and once completed will write
-    out a link. Before uploading, the Upload button asks you what data
-    you'd like to publish to our servers.
-5.  Note that while it's possible to strip profiles of potentially
-    privacy sensitive information, the less information a profile
-    contains, *the harder it is to analyze and turn into actionable
-    data.*
-6.  Once uploaded, copy permalink URL to your clipboard by right
-    clicking and [add the profile URL to a bug](https://bugzilla.mozilla.org/enter_bug.cgi?product=Core&component=Performance)
-    for your performance problem and/or send it to the appropriate
-    person. Try to give some context about what you were doing when the
-    performance problem arose such as the URL you were viewing and what
-    actions were you doing (ex. scrolling on gmail.com).
+1. While the profiler is recording, reproduce the performance problem.
+   If possible let the problem manifest itself for 5-10 seconds.
+2. Press **Ctrl+Shift+2** or click on the profiler toolbar icon in the
+   top right and select **Capture**. Try to do this within a few
+   seconds from reproducing the performance problem as only the last
+   few seconds are recorded. If the timeline has a large red block
+   it's a good sign. ![Jank markers appearing in the Perf.html profile analysis tool.](img/PerfDotHTMLRedLines.png)
+3. The data will open in a new tab. Wait until the \"Symbolicating call
+   stacks\" notification disappears before sharing the profile.
+4. There will be a button in the top right labeled **Upload Local Profile** which
+   will allow you to upload this profile and once completed will write
+   out a link. Before uploading, the Upload button asks you what data
+   you'd like to publish to our servers.
+5. Note that while it's possible to strip profiles of potentially
+   privacy sensitive information, the less information a profile
+   contains, *the harder it is to analyze and turn into actionable
+   data.*
+6. Once uploaded, copy permalink URL to your clipboard by right
+   clicking and [add the profile URL to a bug](https://bugzilla.mozilla.org/enter_bug.cgi?product=Core&component=Performance)
+   for your performance problem and/or send it to the appropriate
+   person. Try to give some context about what you were doing when the
+   performance problem arose such as the URL you were viewing and what
+   actions were you doing (ex. scrolling on gmail.com).
 
 ![image3](img/reportingperf3.png)
 

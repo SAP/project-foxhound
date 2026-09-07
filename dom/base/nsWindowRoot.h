@@ -1,21 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWindowRoot_h__
-#define nsWindowRoot_h__
+#ifndef nsWindowRoot_h_
+#define nsWindowRoot_h_
 
 class nsIGlobalObject;
 
 #include "mozilla/Attributes.h"
 #include "mozilla/EventListenerManager.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsHashKeys.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsPIWindowRoot.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsTHashSet.h"
-#include "nsHashKeys.h"
 
 class nsWindowRoot final : public nsPIWindowRoot {
  public:
@@ -34,13 +32,20 @@ class nsWindowRoot final : public nsPIWindowRoot {
       mozilla::dom::Event& aEvent, mozilla::dom::CallerType aCallerType,
       mozilla::ErrorResult& aRv) override;
 
-  void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
+  void GetEventTargetParent(mozilla::EventChainPreVisitor&) override;
 
-  nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
+  MOZ_CAN_RUN_SCRIPT nsresult
+  PreHandleEvent(mozilla::EventChainVisitor&) override;
+  // FYI: PostHandleEvent would be a pure virtual method if we didn't define it
+  // here.
+  nsresult PostHandleEvent(mozilla::EventChainPostVisitor&) override {
+    return NS_OK;
+  }
 
   // nsPIWindowRoot
 
   nsPIDOMWindowOuter* GetWindow() override;
+  nsGlobalWindowInner* GetInnerWindow();
 
   nsresult GetControllers(bool aForVisibleWindow,
                           nsIControllers** aResult) override;
@@ -58,8 +63,7 @@ class nsWindowRoot final : public nsPIWindowRoot {
     mParent = aTarget;
   }
   mozilla::dom::EventTarget* GetParentTarget() override { return mParent; }
-  nsPIDOMWindowOuter* GetOwnerGlobalForBindingsInternal() override;
-  nsIGlobalObject* GetOwnerGlobal() const override;
+  nsIGlobalObject* GetRelevantGlobal() const override;
 
   nsIGlobalObject* GetParentObject();
 

@@ -6,8 +6,7 @@ package mozilla.components.feature.pwa.feature
 
 import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -25,6 +24,7 @@ import mozilla.components.feature.pwa.ext.trustedOrigins
 import mozilla.components.lib.state.ext.flow
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.ktx.android.net.isInScope
+import kotlin.properties.Delegates
 
 /**
  * Hides a custom tab toolbar for Progressive Web Apps and Trusted Web Activities.
@@ -41,6 +41,7 @@ import mozilla.components.support.ktx.android.net.isInScope
  * @param tabId ID of the tab session, or null if the selected session should be used.
  * @param manifest Reference to the cached [WebAppManifest] for the current PWA.
  * Null if this feature is not used in a PWA context.
+ * @param scope Coroutine scope for the feature.
  * @param setToolbarVisibility Callback to show or hide the toolbar.
  */
 class WebAppHideToolbarFeature(
@@ -48,44 +49,53 @@ class WebAppHideToolbarFeature(
     private val customTabsStore: CustomTabsServiceStore,
     private val tabId: String? = null,
     manifest: WebAppManifest? = null,
+    private val scope: CoroutineScope,
     private val setToolbarVisibility: (Boolean) -> Unit,
 ) : LifecycleAwareFeature {
 
+    private var _shouldToolbarsBeVisible: Boolean by Delegates.observable(false) { _, _, newValue ->
+        setToolbarVisibility(newValue)
+    }
+
+    /**
+     * Whether the toolbar should be visible for the current tab.
+     */
+    val shouldToolbarsBeVisible = _shouldToolbarsBeVisible
+
     private val manifestScope = listOfNotNull(manifest?.getTrustedScope())
-    private var scope: CoroutineScope? = null
+    private var job: Job? = null
 
     init {
         // Hide the toolbar by default to prevent a flash.
         val tab = store.state.findTabOrCustomTabOrSelectedTab(tabId)
         val customTabState = customTabsStore.state.getCustomTabStateForTab(tab)
-        setToolbarVisibility(shouldToolbarBeVisible(tab, customTabState))
+        _shouldToolbarsBeVisible = shouldToolbarBeVisible(tab, customTabState)
     }
 
     override fun start() {
-        scope = MainScope().apply {
-            launch {
-                // Since we subscribe to both store and customTabsStore,
-                // we don't extend another non-external-apps feature for hiding the toolbar
-                // as very little code would be shared.
-                val sessionFlow = store.flow()
-                    .map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
-                    .distinctUntilChanged()
-                val customTabServiceMapFlow = customTabsStore.flow()
+        job = scope.launch {
+            // Since we subscribe to both store and customTabsStore,
+            // we don't extend another non-external-apps feature for hiding the toolbar
+            // as very little code would be shared.
+            val sessionFlow = store.flow()
+                .map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
+                .distinctUntilChanged()
+            val customTabServiceMapFlow = customTabsStore.flow()
 
-                sessionFlow.combine(customTabServiceMapFlow) { tab, customTabServiceState ->
-                    tab to customTabServiceState.getCustomTabStateForTab(tab)
-                }
-                    .map { (tab, customTabState) -> shouldToolbarBeVisible(tab, customTabState) }
-                    .distinctUntilChanged()
-                    .collect { toolbarVisible ->
-                        setToolbarVisibility(toolbarVisible)
-                    }
+            sessionFlow.combine(customTabServiceMapFlow) { tab, customTabServiceState ->
+                tab to customTabServiceState.getCustomTabStateForTab(tab)
             }
+                .map { (tab, customTabState) -> shouldToolbarBeVisible(tab, customTabState) }
+                .distinctUntilChanged()
+                .collect { toolbarVisible ->
+                    _shouldToolbarsBeVisible = toolbarVisible
+                }
         }
     }
 
     override fun stop() {
-        scope?.cancel()
+        job?.cancel()
+        job = null
     }
 
     /**

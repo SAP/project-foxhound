@@ -36,7 +36,7 @@ unpack_build () {
             else
                 echo "Unpacking $pkg_file with dmg and hfsplus"
                 # These commands are very verbose, so we redirect to /dev/null
-                dmg extract ../"$pkg_file" hfsimg > /dev/null
+                dmg extract "$pkg_file" hfsimg > /dev/null
                 hfsplus hfsimg extractall > /dev/null
                 # Remove unnecessary files
                 # ' '               /Application shortcut inside the dmg
@@ -66,8 +66,8 @@ unpack_build () {
             fi
             update_settings_file="${appdir}/update-settings.ini"
             ;;
-        win32|WINNT_*)
-            7z x ../"$pkg_file" > /dev/null
+        win|win32|WINNT_*)
+            7z x "$pkg_file" > /dev/null
             if [ -d localized ]
             then
               mkdir bin/
@@ -97,13 +97,13 @@ unpack_build () {
         linux|Linux_*)
             if echo "$pkg_file" | grep -q "tar.gz"
             then
-                tar xfz ../"$pkg_file" > /dev/null
+                tar xfz "$pkg_file" > /dev/null
             elif echo "$pkg_file" | grep -q "tar.bz2"
             then
-                tar xfj ../"$pkg_file" > /dev/null
+                tar xfj "$pkg_file" > /dev/null
             elif echo "$pkg_file" | grep -q "tar.xz"
             then
-                tar xfJ ../"$pkg_file" > /dev/null
+                tar xfJ "$pkg_file" > /dev/null
             else
                 echo "Unknown package type for file: $pkg_file"
                 exit 1

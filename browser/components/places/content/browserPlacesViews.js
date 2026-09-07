@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 /**
  * The base view implements everything that's common to all the views.
  * It should not be instanced directly, use a derived class instead.
@@ -172,7 +170,10 @@ class PlacesViewBase {
     // parent node. We don't want to allow removing a node when the
     // selection is not explicit.
     let popupNode = PlacesUIUtils.lastContextMenuTriggerNode;
-    if (popupNode && (popupNode == "menupopup" || !popupNode._placesNode)) {
+    if (
+      popupNode &&
+      (popupNode.localName == "menupopup" || !popupNode._placesNode)
+    ) {
       return [];
     }
 
@@ -237,6 +238,18 @@ class PlacesViewBase {
   }
 
   buildContextMenu(aPopup) {
+    // When right-clicking on the gutter of a non-empty folder popup, don't
+    // show any context menu.
+    let triggerNode = aPopup.triggerNode;
+    // childCount > 0 distinguishes non-empty folders (suppress menu) from
+    // empty ones (show folder options).
+    if (
+      triggerNode?.localName == "menupopup" &&
+      triggerNode._placesNode?.childCount > 0
+    ) {
+      return false;
+    }
+
     this._contextMenuShown = aPopup;
     window.updateCommands("places");
 
@@ -415,6 +428,7 @@ class PlacesViewBase {
 
         if (!this._nativeView) {
           popup.setAttribute("placespopup", "true");
+          popup.toggleAttribute("nonnative", true);
         }
 
         element.appendChild(popup);
@@ -429,7 +443,7 @@ class PlacesViewBase {
 
       let icon = aPlacesNode.icon;
       if (icon) {
-        element.setAttribute("image", icon);
+        element.setAttribute("image", ChromeUtils.encodeURIForSrcset(icon));
       }
     }
 
@@ -496,7 +510,7 @@ class PlacesViewBase {
     }
     // We must remove and reset the attribute to force an update.
     elt.removeAttribute("image");
-    elt.setAttribute("image", aPlacesNode.icon);
+    elt.setAttribute("image", ChromeUtils.encodeURIForSrcset(aPlacesNode.icon));
   }
 
   nodeTitleChanged(aPlacesNode, aNewTitle) {
@@ -539,6 +553,7 @@ class PlacesViewBase {
       // TODO Bug 517701: This doesn't seem to handle the case of an empty
       // root.
       if (parentElt._startMarker.nextElementSibling == parentElt._endMarker) {
+        this._mayAddCommandsItems(parentElt);
         this._setEmptyPopupStatus(parentElt, true);
       }
     }
@@ -570,6 +585,7 @@ class PlacesViewBase {
       parentElt,
       parentElt.children[index] || parentElt._endMarker
     );
+    this._mayAddCommandsItems(parentElt);
     this._setEmptyPopupStatus(parentElt, false);
   }
 
@@ -694,13 +710,13 @@ class PlacesViewBase {
     }
 
     let hasMultipleURIs = false;
+    let numURINodes = 0;
 
     // Check if the popup contains at least 2 menuitems with places nodes.
     // We don't currently support opening multiple uri nodes when they are not
     // populated by the result.
     if (aPopup._placesNode.childCount > 0) {
       let currentChild = aPopup.firstElementChild;
-      let numURINodes = 0;
       while (currentChild) {
         if (currentChild.localName == "menuitem" && currentChild._placesNode) {
           if (++numURINodes == 2) {
@@ -742,6 +758,37 @@ class PlacesViewBase {
         );
       });
       aPopup.appendChild(aPopup._endOptOpenAllInTabs);
+    }
+
+    // Share Folder should be visible if there is at least one uri and the feature is enabled.
+    if (
+      numURINodes > 0 &&
+      ContentSharingUtils.isEnabled &&
+      !aPopup._endOptShareFolder
+    ) {
+      // Add the "Share Folder" menuitem.
+      aPopup._endOptShareFolder = document.createXULElement("menuitem");
+      aPopup._endOptShareFolder.className = "openintabs-menuitem badge-new";
+      aPopup._endOptShareFolder.setAttribute(
+        "data-l10n-id",
+        "places-share-folder2"
+      );
+      aPopup._endOptShareFolder.setAttribute("data-l10n-attrs", "badge");
+
+      aPopup._endOptShareFolder.addEventListener("command", event => {
+        ContentSharingUtils.createShareableLinkFromBookmarkFolders([
+          PlacesUtils.getConcreteItemGuid(
+            event.currentTarget.parentNode._placesNode
+          ),
+        ]);
+      });
+      aPopup.appendChild(aPopup._endOptShareFolder);
+    } else if (
+      aPopup._endOptShareFolder &&
+      (!ContentSharingUtils.isEnabled || !numURINodes)
+    ) {
+      aPopup.removeChild(aPopup._endOptShareFolder);
+      aPopup._endOptShareFolder = null;
     }
   }
 
@@ -797,6 +844,15 @@ class PlacesViewBase {
     }
 
     if (popup._placesNode && PlacesUIUtils.getViewForNode(popup) == this) {
+      if (this.#isPopupForRecursiveFolderShortcut(popup)) {
+        // Show as an empty container for now. We may want to show a better
+        // message in the future, but since we are likely to remove recursive
+        // shortcuts in maintenance at a certain point, this should be enough.
+        this._setEmptyPopupStatus(popup, true);
+        popup._built = true;
+        return;
+      }
+
       if (!popup._placesNode.containerOpen) {
         popup._placesNode.containerOpen = true;
       }
@@ -819,12 +875,44 @@ class PlacesViewBase {
       aObject.removeEventListener(aEventNames[i], this, aCapturing);
     }
   }
+
+  /**
+   * Walks up the parent chain to detect whether a folder shortcut resolves to
+   * a folder already present in the ancestry.
+   *
+   * @param {DOMElement} popup
+   * @returns {boolean} Whether this popup is for a recursive folder shortcut.
+   */
+  #isPopupForRecursiveFolderShortcut(popup) {
+    if (
+      !popup._placesNode ||
+      !PlacesUtils.nodeIsFolderOrShortcut(popup._placesNode)
+    ) {
+      return false;
+    }
+    let guid = PlacesUtils.getConcreteItemGuid(popup._placesNode);
+    for (
+      let parentView = popup.parentNode?.parentNode;
+      parentView?._placesNode;
+      parentView = parentView.parentNode?.parentNode
+    ) {
+      if (PlacesUtils.getConcreteItemGuid(parentView._placesNode) == guid) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 /**
  * Toolbar View implementation.
  */
 class PlacesToolbar extends PlacesViewBase {
+  /** Whether we can retry updating nodes visibility. */
+  #pendingVisibilityRetry = false;
+  /** Whether we are currently updating nodes visibility. */
+  #updatingNodesVisibility = false;
+
   constructor(placesUrl, rootElt, viewElt) {
     let timerId = Glean.bookmarksToolbar.init.start();
     super(placesUrl, rootElt, viewElt);
@@ -835,7 +923,12 @@ class PlacesToolbar extends PlacesViewBase {
       true
     );
     this._addEventListeners(this._rootElt, ["overflow", "underflow"], true);
-    this._addEventListeners(window, ["resize", "unload"], false);
+    this._addEventListeners(window, ["unload"], false);
+
+    this._resizeObserver = new ResizeObserver(() => {
+      this.updateNodesVisibility();
+    });
+    this._resizeObserver.observe(this._rootElt);
 
     // If personal-bookmarks has been dragged to the tabs toolbar,
     // we have to track addition and removals of tabs, to properly
@@ -893,8 +986,6 @@ class PlacesToolbar extends PlacesViewBase {
     this._dragRoot = BookmarkingUI.toolbar.contains(this._viewElt)
       ? BookmarkingUI.toolbar
       : this._viewElt;
-
-    this._updatingNodesVisibility = false;
   }
 
   _cbEvents = [
@@ -925,7 +1016,12 @@ class PlacesToolbar extends PlacesViewBase {
       true
     );
     this._removeEventListeners(this._rootElt, ["overflow", "underflow"], true);
-    this._removeEventListeners(window, ["resize", "unload"], false);
+    this._removeEventListeners(window, ["unload"], false);
+
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
     this._removeEventListeners(
       gBrowser.tabContainer,
       ["TabOpen", "TabClose"],
@@ -1075,6 +1171,7 @@ class PlacesToolbar extends PlacesViewBase {
           is: "places-popup",
         });
         popup.setAttribute("placespopup", "true");
+        popup.toggleAttribute("nonnative", true);
         popup.classList.add("toolbar-menupopup");
         button.appendChild(popup);
         popup._placesNode = PlacesUtils.asContainer(aChild);
@@ -1149,14 +1246,6 @@ class PlacesToolbar extends PlacesViewBase {
     switch (aEvent.type) {
       case "unload":
         this.uninit();
-        break;
-      case "resize":
-        // This handler updates nodes visibility in both the toolbar
-        // and the chevron popup when a window resize does not change
-        // the overflow status of the toolbar.
-        if (aEvent.target == aEvent.currentTarget) {
-          this.updateNodesVisibility();
-        }
         break;
       case "overflow":
         if (!this._isOverflowStateEventRelevant(aEvent)) {
@@ -1248,57 +1337,85 @@ class PlacesToolbar extends PlacesViewBase {
   }
 
   async _updateNodesVisibilityTimerCallback() {
-    if (this._updatingNodesVisibility || window.closed) {
+    if (this.#updatingNodesVisibility || window.closed || !this._isAlive) {
       return;
     }
-    this._updatingNodesVisibility = true;
+    this.#updatingNodesVisibility = true;
 
     let dwu = window.windowUtils;
 
-    let scrollRect = await window.promiseDocumentFlushed(() =>
-      dwu.getBoundsWithoutFlushing(this._rootElt)
-    );
-
-    let childOverflowed = false;
-
-    // We're about to potentially update a bunch of nodes, so we do it
-    // in a requestAnimationFrame so that other JS that's might execute
-    // in the same tick can avoid flushing styles and layout for these
-    // changes.
-    window.requestAnimationFrame(() => {
-      for (let child of this._rootElt.children) {
-        // Once a child overflows, all the next ones will.
-        if (!childOverflowed) {
+    let { visibleCount, scrollWidth } = await window.promiseDocumentFlushed(
+      () => {
+        let scrollRect = dwu.getBoundsWithoutFlushing(this._rootElt);
+        let count = 0;
+        for (let child of this._rootElt.children) {
           let childRect = dwu.getBoundsWithoutFlushing(child);
-          childOverflowed = this.isRTL
+          let overflowed = this.isRTL
             ? childRect.left < scrollRect.left
             : childRect.right > scrollRect.right;
-        }
-
-        if (childOverflowed) {
-          child.removeAttribute("image");
-          child.style.visibility = "hidden";
-        } else {
-          let icon = child._placesNode.icon;
-          if (icon) {
-            child.setAttribute("image", icon);
+          if (overflowed) {
+            // Once a child overflows, all the next ones will.
+            break;
           }
-          child.style.removeProperty("visibility");
+          count++;
         }
+        return { visibleCount: count, scrollWidth: scrollRect.width };
       }
+    );
 
-      // We rebuild the chevron on popupShowing, so if it is open
-      // we must update it.
-      if (!this._chevron.collapsed && this._chevron.open) {
-        this._updateChevronPopupNodesVisibility();
+    this.#updatingNodesVisibility = false;
+    if (!this._isAlive) {
+      return;
+    }
+
+    if (!scrollWidth) {
+      // The element may have no layout frame (display:none ancestor) yet.
+      // Reschedule once to allow layout to complete. If it's still frameless
+      // on the retry, give up to avoid looping indefinitely.
+      if (!this.#pendingVisibilityRetry) {
+        this.#pendingVisibilityRetry = true;
+        window.requestAnimationFrame(() => {
+          if (this._isAlive) {
+            this.updateNodesVisibility();
+          }
+        });
       }
+      return;
+    }
 
-      let event = new CustomEvent("BookmarksToolbarVisibilityUpdated", {
-        bubbles: true,
-      });
-      this._viewElt.dispatchEvent(event);
-      this._updatingNodesVisibility = false;
+    this.#pendingVisibilityRetry = false;
+    window.requestAnimationFrame(() => {
+      if (!this._isAlive) {
+        return;
+      }
+      this._applyChildVisibility(visibleCount);
     });
+  }
+
+  _applyChildVisibility(visibleCount) {
+    let children = this._rootElt.children;
+    for (let i = 0; i < children.length; i++) {
+      let child = children[i];
+      if (i < visibleCount) {
+        let icon = child._placesNode.icon;
+        if (icon) {
+          child.setAttribute("image", icon);
+        }
+        child.style.removeProperty("visibility");
+      } else {
+        child.removeAttribute("image");
+        child.style.visibility = "hidden";
+      }
+    }
+
+    if (!this._chevron.collapsed && this._chevron.open) {
+      this._updateChevronPopupNodesVisibility();
+    }
+
+    let event = new CustomEvent("BookmarksToolbarVisibilityUpdated", {
+      bubbles: true,
+    });
+    this._viewElt.dispatchEvent(event);
   }
 
   nodeInserted(aParentPlacesNode, aPlacesNode, aIndex) {
@@ -1338,7 +1455,7 @@ class PlacesToolbar extends PlacesViewBase {
       } else {
         let icon = aPlacesNode.icon;
         if (icon) {
-          button.setAttribute("image", icon);
+          button.setAttribute("image", ChromeUtils.encodeURIForSrcset(icon));
         }
         this.updateNodesVisibility();
       }
@@ -1427,7 +1544,7 @@ class PlacesToolbar extends PlacesViewBase {
         );
         let icon = aPlacesNode.icon;
         if (icon) {
-          elt.setAttribute("image", icon);
+          elt.setAttribute("image", ChromeUtils.encodeURIForSrcset(icon));
         }
       } else {
         this._rootElt.insertBefore(elt, this._rootElt.children[aNewIndex]);
@@ -1785,6 +1902,34 @@ class PlacesToolbar extends PlacesViewBase {
     aEvent.stopPropagation();
   }
 
+  /**
+   * Finds the last visible toolbar widget before the PlacesToolbar container.
+   *
+   * @returns {Element|null}
+   *   The last visible widget element, or null if none found.
+   */
+  #findPrecedingToolbarWidget() {
+    let toolbar = this._rootElt.closest("toolbar");
+    if (!toolbar) {
+      return null;
+    }
+    let placesContainer = this._rootElt.closest("toolbaritem");
+    let lastWidget = null;
+    for (let child of toolbar.children) {
+      if (child == placesContainer) {
+        break;
+      }
+      if (
+        !child.hidden &&
+        !child.collapsed &&
+        child.getBoundingClientRect().width > 0
+      ) {
+        lastWidget = child;
+      }
+    }
+    return lastWidget;
+  }
+
   _onDragOver(aEvent) {
     // Cache the dataTransfer
     PlacesControllerDragHelper.currentDropTarget = aEvent.target;
@@ -1822,6 +1967,7 @@ class PlacesToolbar extends PlacesViewBase {
       ind.parentNode.collapsed = false;
       let halfInd = ind.clientWidth / 2;
       let translateX;
+
       if (this.isRTL) {
         halfInd = Math.ceil(halfInd);
         translateX = 0 - this._rootElt.getBoundingClientRect().right - halfInd;
@@ -1834,6 +1980,14 @@ class PlacesToolbar extends PlacesViewBase {
               this._rootElt.children[
                 dropPoint.beforeIndex
               ].getBoundingClientRect().right;
+          }
+        } else {
+          // When there are no bookmark items, position the indicator at the
+          // edge of any preceding toolbar widgets (e.g., import-bookmarks button)
+          // which appear on the right in RTL layout.
+          let prevWidget = this.#findPrecedingToolbarWidget();
+          if (prevWidget) {
+            translateX += prevWidget.getBoundingClientRect().left;
           }
         }
       } else {
@@ -1848,6 +2002,13 @@ class PlacesToolbar extends PlacesViewBase {
               this._rootElt.children[
                 dropPoint.beforeIndex
               ].getBoundingClientRect().left;
+          }
+        } else {
+          // When there are no bookmark items, position the indicator at the
+          // edge of any preceding toolbar widgets (e.g., import-bookmarks button).
+          let prevWidget = this.#findPrecedingToolbarWidget();
+          if (prevWidget) {
+            translateX += prevWidget.getBoundingClientRect().right;
           }
         }
       }

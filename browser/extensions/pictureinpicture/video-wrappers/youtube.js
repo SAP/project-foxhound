@@ -81,6 +81,10 @@ class PictureInPictureVideoWrapper {
     return !!video.closest(".ytd-video-preview");
   }
 
+  isUrlbarToggleEligible(video) {
+    return !!video.closest("#movie_player");
+  }
+
   setVolume(video, volume) {
     if (this.player) {
       this.player.setVolume(volume * 100);

@@ -47,8 +47,8 @@ fn process_imports(
     if !included.insert(shader.into()) {
         return;
     }
-    println!("cargo:rerun-if-changed={}/{}.glsl", shader_dir, shader);
-    let source = std::fs::read_to_string(format!("{}/{}.glsl", shader_dir, shader)).unwrap();
+    println!("cargo:rerun-if-changed={shader_dir}/{shader}.glsl");
+    let source = std::fs::read_to_string(format!("{shader_dir}/{shader}.glsl")).unwrap();
     for line in source.lines() {
         if let Some(imports) = line.strip_prefix("#include ") {
             let imports = imports.split(',');
@@ -80,7 +80,7 @@ fn translate_shader(
         shader_key.split_at(shader_key.find(' ').unwrap_or(shader_key.len()));
     if !features.is_empty() {
         for feature in features.trim().split(',') {
-            let _ = writeln!(imported, "#define WR_FEATURE_{}", feature);
+            let _ = writeln!(imported, "#define WR_FEATURE_{feature}");
         }
     }
 
@@ -89,28 +89,21 @@ fn translate_shader(
     let shader = shader_file(shader_key);
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
-    let imp_name = format!("{}/{}.c", out_dir, shader);
+    let imp_name = format!("{out_dir}/{shader}.c");
     std::fs::write(&imp_name, imported).unwrap();
 
     // We need to ensure that the C preprocessor does not pull compiler flags from the host or
     // target environment. Set all `CFLAGS` or `CXXFLAGS` env. vars. to empty to work around this.
     let _ = suppressed_env_vars.get_or_insert_with(|| {
-        let mut env_vars = Vec::new();
-        for (key, value) in std::env::vars_os() {
-            if let Some(key_utf8) = key.to_str() {
-                if ["CFLAGS", "CXXFLAGS"]
-                    .iter()
-                    .any(|opt_name| key_utf8.contains(opt_name))
-                {
-                    std::env::set_var(&key, "");
-                    env_vars.push(EnvVarGuard {
-                        key,
-                        old_value: Some(value),
-                    });
+        cflags_env_vars()
+            .map(|(key, value)| {
+                std::env::set_var(&key, "");
+                EnvVarGuard {
+                    key,
+                    old_value: Some(value),
                 }
-            }
-        }
-        env_vars
+            })
+            .collect::<Vec<_>>()
     });
 
     let mut build = cc::Build::new();
@@ -133,14 +126,14 @@ fn translate_shader(
         .clone()
         .define("WR_FRAGMENT_SHADER", Some("1"))
         .expand();
-    let vs_name = format!("{}/{}.vert", out_dir, shader);
-    let fs_name = format!("{}/{}.frag", out_dir, shader);
+    let vs_name = format!("{out_dir}/{shader}.vert");
+    let fs_name = format!("{out_dir}/{shader}.frag");
     std::fs::write(&vs_name, vs).unwrap();
     std::fs::write(&fs_name, fs).unwrap();
 
     let args = vec!["glsl_to_cxx".to_string(), vs_name, fs_name];
     let result = glsl_to_cxx::translate(&mut args.into_iter());
-    std::fs::write(format!("{}/{}.h", out_dir, shader), result).unwrap();
+    std::fs::write(format!("{out_dir}/{shader}.h"), result).unwrap();
 }
 
 fn main() {
@@ -156,7 +149,7 @@ fn main() {
             if f.is_empty() {
                 name.to_owned()
             } else {
-                format!("{} {}", name, f)
+                format!("{name} {f}")
             }
         }));
     }
@@ -184,20 +177,40 @@ fn main() {
     let mut build = cc::Build::new();
     build.cpp(true);
 
+    let _suppressed_cflags_env_vars = cflags_env_vars()
+        .filter_map(|(key, value)| {
+            // NOTE: Cancels out [the `moz-check` plugin added in
+            // `build/moz.configure/clang_plugin.configure`'s `clang_plugin_flags`
+            // assignment][crossref].
+            //
+            // [crossref]: https://searchfox.org/mozilla-central/rev/f008b9aa2adf2dca6bdd49855b314cb3195f6f27/build/moz.configure/clang_plugin.configure#77-80
+            const MOZ_CHECK_PLUGIN_LOAD_ARGS: &str = "-Xclang -add-plugin -Xclang moz-check";
+
+            let replaced = value
+                .to_str()
+                .filter(|v| v.contains(MOZ_CHECK_PLUGIN_LOAD_ARGS))?
+                .replace(MOZ_CHECK_PLUGIN_LOAD_ARGS, "");
+
+            std::env::set_var(&key, replaced);
+            Some(EnvVarGuard {
+                key,
+                old_value: Some(value),
+            })
+        })
+        .collect::<Vec<_>>();
+
     if let Ok(tool) = build.try_get_compiler() {
         if tool.is_like_msvc() {
             build
-                .flag("/std:c++17")
+                .flag("/std:c++20")
                 .flag("/EHs-")
-                .flag("/GR-")
-                .flag("/UMOZILLA_CONFIG_H");
+                .flag("/GR-");
         } else {
             build
-                .flag("-std=c++17")
+                .flag("-std=c++20")
                 .flag("-fno-exceptions")
                 .flag("-fno-rtti")
-                .flag("-fno-math-errno")
-                .flag("-UMOZILLA_CONFIG_H");
+                .flag("-fno-math-errno");
         }
         // SWGL relies heavily on inlining for performance so override -Oz with -O2
         if tool.args().contains(&"-Oz".into()) {
@@ -251,4 +264,14 @@ impl Drop for EnvVarGuard {
             std::env::remove_var(key);
         }
     }
+}
+
+fn cflags_env_vars() -> impl Iterator<Item = (std::ffi::OsString, std::ffi::OsString)> {
+    std::env::vars_os().filter(|(key, _value)| {
+        key.to_str().is_some_and(|key_utf8| {
+            ["CFLAGS", "CXXFLAGS"]
+                .iter()
+                .any(|opt_name| key_utf8.contains(opt_name))
+        })
+    })
 }

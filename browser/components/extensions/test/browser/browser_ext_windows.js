@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // Since we apply title localization asynchronously,
@@ -11,18 +9,7 @@ async function verifyTitle(win, test, desc) {
 }
 
 add_task(async function testWindowGetAll() {
-  let secondWin = Services.ww.openWindow(
-    null,
-    AppConstants.BROWSER_CHROME_URL,
-    "_blank",
-    "chrome,dialog=no,all",
-    null
-  );
-
-  await TestUtils.topicObserved(
-    "browser-delayed-startup-finished",
-    subject => subject == secondWin
-  );
+  let secondWin = await BrowserTestUtils.openNewBrowserWindow();
 
   let extension = ExtensionTestUtils.loadExtension({
     background: async function () {
@@ -326,6 +313,54 @@ add_task(async function testWindowTitlePermissions() {
   await extension.unload();
 
   BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function testWindowOpenPopupType() {
+  let extension = ExtensionTestUtils.loadExtension({
+    async background() {
+      let windowCreated = new Promise(resolve => {
+        browser.windows.onCreated.addListener(function listener(win) {
+          browser.windows.onCreated.removeListener(listener);
+          resolve(win.id);
+        });
+      });
+
+      browser.test.sendMessage("ready");
+      let popupWindowId = await windowCreated;
+      let popupWindow = await browser.windows.get(popupWindowId);
+
+      browser.test.assertEq(
+        "popup",
+        popupWindow.type,
+        "window.open popup should have type 'popup'"
+      );
+
+      let popupWindows = await browser.windows.getAll({
+        windowTypes: ["popup"],
+      });
+      browser.test.assertTrue(
+        popupWindows.some(w => w.id === popupWindowId),
+        "window.open popup should appear in popup windowTypes filter"
+      );
+
+      await browser.windows.remove(popupWindowId);
+      browser.test.notifyPass("window-open-popup-type");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("ready");
+
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    ["http://example.com"],
+    url => {
+      content.window.open(url, "_blank", "popup");
+    }
+  );
+
+  await extension.awaitFinish("window-open-popup-type");
+  await extension.unload();
 });
 
 add_task(async function testInvalidWindowId() {

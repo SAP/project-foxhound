@@ -1,0 +1,314 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --AT-viewport-padding: 24px;
+  --AT-page-padding-block-start: 80px;
+  --AT-page-padding-block-end: 32px;
+
+  /* Provide defaults for when this page is viewed in "toolkit". */
+  background-color: var(--background-color-canvas, #fff);
+  color: var(--text-color, #15141a);
+
+  /* Variables used in the page layout */
+  --AT-input-padding: 16px;
+  /* This is somewhat arbitrary, but works well for the current design. If the computed
+     header height changes, this will need to be adjusted. */
+  --AT-header-height: 156px;
+
+  --AT-section-height: calc(clamp(300px, 100vh - var(--AT-header-height), 300px) - var(--AT-viewport-padding) * 2);
+
+  --AT-content-width: calc(var(--AT-section-height) * 4.5);
+  --AT-content-max: calc(100vw - var(--AT-viewport-padding) * 2);
+
+  --AT-square-button-large: calc(var(--size-item-large) + var(--space-small));
+  --AT-square-button-small: var(--size-item-large);
+  --AT-source-textarea-button-inline-padding: calc(var(--AT-square-button-small) + var(--space-small));
+  --AT-target-textarea-button-block-padding: calc(var(--AT-square-button-large) + var(--space-small));
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  visibility: hidden;
+  margin: 0;
+  row-gap: var(--space-xxlarge);
+  padding: var(--AT-page-padding-block-start) var(--AT-viewport-padding) var(--AT-page-padding-block-end);
+}
+
+#about-translations-header {
+  display: flex;
+  flex-direction: column;
+  width: min(var(--AT-content-width), var(--AT-content-max));
+  margin: 0 auto;
+  row-gap: var(--space-medium);
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+#about-translations-logo-and-h1 {
+  display: flex;
+  align-items: center;
+  justify-content: start;
+  column-gap: var(--space-small);
+}
+
+#about-translations-logo {
+  width: var(--icon-size-large);
+  height: var(--icon-size-large);
+}
+
+#about-translations-h1 {
+  margin: 0;
+}
+
+#about-translations-main-user-interface {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--space-medium);
+  width: min(var(--AT-content-width), var(--AT-content-max));
+  margin: 0 auto;
+}
+
+#about-translations-main-user-interface[hidden] {
+  display: none;
+}
+
+.about-translations-select {
+  --select-min-height: var(--AT-square-button-large);
+}
+
+#about-translations-swap-languages-button {
+  align-self: center;
+
+  &[type~="icon"]::part(button) {
+    width: var(--AT-square-button-large);
+    height: var(--AT-square-button-large);
+    background-image: url("chrome://global/skin/icons/swap-horizontal-20.svg");
+    background-size: 20px;
+  }
+}
+
+#about-translations-clear-button[type~="icon"]::part(button) {
+  width: var(--AT-square-button-small);
+  height: var(--AT-square-button-small);
+  background-image: url("chrome://global/skin/icons/close.svg");
+  background-size: var(--size-item-small);
+}
+
+#about-translations-source-section,
+#about-translations-target-section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: var(--AT-section-height);
+}
+
+#about-translations-source-section {
+  background-color: var(--background-color-box);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-medium);
+  overflow: hidden;
+
+  &:focus-within {
+    outline: var(--focus-outline);
+    outline-offset: -1px;
+  }
+
+  &:has(moz-button:focus, a:focus) {
+    outline: none;
+  }
+}
+
+#about-translations-target-section {
+  background-color: var(--background-color-box);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-medium);
+  overflow: hidden;
+
+  &:focus-within {
+    outline: var(--focus-outline);
+    outline-offset: -1px;
+  }
+
+  &:has(moz-button:focus) {
+    outline: none;
+  }
+
+  &.has-translation-error > #about-translations-target-textarea {
+    visibility: hidden;
+  }
+}
+
+#about-translations-translation-error-message {
+  --message-bar-border-radius: 0;
+  --message-bar-border-width: 0;
+  padding-inline: var(--space-xsmall);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.about-translations-section-message {
+  --message-bar-border-radius: 0;
+  --message-bar-border-width: 0;
+  padding-inline: var(--space-xsmall);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.about-translations-section-message-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  row-gap: var(--space-large);
+}
+
+.about-translations-section-message-subtext {
+  display: block;
+}
+
+.about-translations-section-message-action {
+  align-self: flex-start;
+}
+
+#about-translations-translation-error-subtext {
+  display: block;
+}
+
+#about-translations-translation-error-button {
+  margin-block-start: var(--space-large);
+}
+
+.about-translations-textarea {
+  flex: 1;
+  width: 100%;
+  margin: 0;
+  padding: var(--AT-input-padding);
+  overflow: hidden;
+  resize: none;
+}
+
+#about-translations-source-textarea {
+  anchor-name: --AT-source-textarea-anchor;
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+  padding-inline-start: var(--AT-input-padding);
+  padding-inline-end: var(--AT-source-textarea-button-inline-padding);
+
+  &:focus-visible {
+    outline: none;
+  }
+
+  :dir(ltr) > &:dir(rtl),
+  :dir(rtl) > &:dir(ltr) {
+    /*
+      Reverse the side that reserves space for the anchored clear button
+      when locale direction differs from textarea direction.
+    */
+    padding-inline-start: var(--AT-source-textarea-button-inline-padding);
+    padding-inline-end: var(--AT-input-padding);
+  }
+}
+
+#about-translations-clear-button {
+  position: absolute;
+  z-index: 1;
+  position-anchor: --AT-source-textarea-anchor;
+  inset-block-start: calc(anchor(top) + var(--space-xsmall));
+  inset-inline-end: calc(anchor(end) + var(--space-xsmall));
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+#about-translations-target-textarea {
+  anchor-name: --AT-target-textarea-anchor;
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+  padding-block-end: var(--AT-target-textarea-button-block-padding);
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+#about-translations-copy-button {
+  position: absolute;
+  z-index: 1;
+  position-anchor: --AT-target-textarea-anchor;
+  inset-block-end: calc(anchor(end) + var(--space-small));
+  inset-inline-start: calc(anchor(start) + var(--space-small));
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+#about-translations-copy-button::part(button) {
+  padding-inline: var(--space-small);
+}
+
+#about-translations-empty-section {
+  width: auto;
+  height: auto;
+}
+
+@media (max-width: 1200px) {
+  :root {
+    --AT-page-padding-block-start: 32px;
+  }
+
+  #about-translations-main-user-interface {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-rows: auto auto auto;
+    margin: 0;
+    width: 100%;
+    gap: var(--space-medium);
+    max-width: calc(100vw - var(--AT-viewport-padding) * 2);
+  }
+
+  #about-translations-header {
+    margin: 0;
+    width: 100%;
+    max-width: calc(100vw - var(--AT-viewport-padding) * 2);
+  }
+
+  #about-translations-source-select {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  #about-translations-swap-languages-button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  #about-translations-target-select {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  #about-translations-empty-section {
+    display: none;
+  }
+
+  #about-translations-source-section {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  #about-translations-target-section {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}

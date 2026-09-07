@@ -81,8 +81,8 @@ export class LoginDataSource extends DataSourceBase {
   #originPrototype;
   #usernamePrototype;
   #passwordPrototype;
-  #enabled;
   #header;
+  #initialized;
   #exportPasswordsStrings;
   #displayMode;
 
@@ -364,6 +364,7 @@ export class LoginDataSource extends DataSourceBase {
       this.#displayMode = DISPLAY_MODES.ALL;
       this.#addObservers();
       this.#reloadDataSource();
+      this.#initialized = true;
     });
   }
 
@@ -374,6 +375,8 @@ export class LoginDataSource extends DataSourceBase {
   #addObservers() {
     Services.obs.addObserver(this, "passwordmgr-storage-changed");
     Services.obs.addObserver(this, "passwordmgr-crypto-login");
+    Services.obs.addObserver(this, "passwordmgr-crypto-loginCanceled");
+
     Services.prefs.addObserver("signon.rememberSignons", this);
     Services.prefs.addObserver(
       "signon.management.page.breach-alerts.enabled",
@@ -388,6 +391,7 @@ export class LoginDataSource extends DataSourceBase {
   #removeObservers() {
     Services.obs.removeObserver(this, "passwordmgr-storage-changed");
     Services.obs.removeObserver(this, "passwordmgr-crypto-login");
+    Services.obs.removeObserver(this, "passwordmgr-crypto-loginCanceled");
 
     Services.prefs.removeObserver("signon.rememberSignons", this);
     Services.prefs.removeObserver(
@@ -410,7 +414,9 @@ export class LoginDataSource extends DataSourceBase {
     const { BrowserWindowTracker } = ChromeUtils.importESModule(
       "resource:///modules/BrowserWindowTracker.sys.mjs"
     );
-    const browsingContext = BrowserWindowTracker.getTopWindow().browsingContext;
+    const browsingContext = BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    }).browsingContext;
     let { result, path } = await this.openFilePickerDialog(
       title,
       buttonLabel,
@@ -486,9 +492,11 @@ export class LoginDataSource extends DataSourceBase {
     const { BrowserWindowTracker } = ChromeUtils.importESModule(
       "resource:///modules/BrowserWindowTracker.sys.mjs"
     );
-    const browser = BrowserWindowTracker.getTopWindow().gBrowser;
+    const browser = BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    }).gBrowser;
     try {
-      lazy.MigrationUtils.showMigrationWizard(browser.ownerGlobal, {
+      lazy.MigrationUtils.showMigrationWizard(browser.documentGlobal, {
         entrypoint: lazy.MigrationUtils.MIGRATION_ENTRYPOINTS.PASSWORDS,
       });
     } catch (ex) {
@@ -525,7 +533,7 @@ export class LoginDataSource extends DataSourceBase {
     }
 
     if (confirmed) {
-      Services.logins.removeAllLogins();
+      await Services.logins.removeAllLoginsAsync();
       this.setNotification({
         id: "delete-login-success",
         l10nArgs: { total },
@@ -535,8 +543,8 @@ export class LoginDataSource extends DataSourceBase {
     }
   }
 
-  confirmRemoveLogin([record]) {
-    Services.logins.removeLogin(record);
+  async confirmRemoveLogin([record]) {
+    await Services.logins.removeLoginAsync(record);
     this.cancelDialog();
   }
 
@@ -549,14 +557,13 @@ export class LoginDataSource extends DataSourceBase {
     const { BrowserWindowTracker } = ChromeUtils.importESModule(
       "resource:///modules/BrowserWindowTracker.sys.mjs"
     );
-    const browsingContext = BrowserWindowTracker.getTopWindow().browsingContext;
-
-    const isOSAuthEnabled = LoginHelper.getOSAuthEnabled();
+    const browsingContext = BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    }).browsingContext;
 
     const reason = "export_cpm";
     let { isAuthorized, telemetryEvent } = await LoginHelper.requestReauth(
       browsingContext,
-      isOSAuthEnabled,
       null, // Prompt regardless of a recent prompt
       this.#exportPasswordsStrings.OSReauthMessage,
       this.#exportPasswordsStrings.OSAuthDialogCaption,
@@ -615,8 +622,10 @@ export class LoginDataSource extends DataSourceBase {
     const { BrowserWindowTracker } = ChromeUtils.importESModule(
       "resource:///modules/BrowserWindowTracker.sys.mjs"
     );
-    const browser = BrowserWindowTracker.getTopWindow().gBrowser;
-    browser.ownerGlobal.switchToTabHavingURI(url, true, {
+    const browser = BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    }).gBrowser;
+    browser.documentGlobal.switchToTabHavingURI(url, true, {
       ignoreFragment: "whenComparingAndReplace",
     });
   }
@@ -630,7 +639,9 @@ export class LoginDataSource extends DataSourceBase {
     const { BrowserWindowTracker } = ChromeUtils.importESModule(
       "resource:///modules/BrowserWindowTracker.sys.mjs"
     );
-    const win = BrowserWindowTracker.getTopWindow();
+    const win = BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
 
     const { title, message, confirmButton } = await this.localizeStrings({
       title: titleL10n,
@@ -728,7 +739,7 @@ export class LoginDataSource extends DataSourceBase {
     }
 
     try {
-      Services.logins.modifyLogin(logins[0], modifiedLogin);
+      await Services.logins.modifyLoginAsync(logins[0], modifiedLogin);
       this.setNotification({
         id: notificationId,
         viewMode: VIEW_MODES.LIST,
@@ -762,7 +773,7 @@ export class LoginDataSource extends DataSourceBase {
     if (logins.length != 1) {
       return;
     }
-    Services.logins.removeLogin(logins[0]);
+    await Services.logins.removeLoginAsync(logins[0]);
     this.setNotification({
       id: "delete-login-success",
       l10nArgs: { total: 1 },
@@ -777,16 +788,13 @@ export class LoginDataSource extends DataSourceBase {
    * @param {string} searchText used to filter data
    */
   *enumerateLines(searchText) {
-    if (this.#enabled === undefined) {
+    if (!this.#initialized) {
       // Async Fluent API makes it possible to have data source waiting
       // for the localized strings, which can be detected by undefined in #enabled.
       return;
     }
 
     yield this.#header;
-    if (this.#header.collapsed || !this.#enabled) {
-      return;
-    }
 
     const stats = { count: 0, total: 0 };
     searchText = searchText.toUpperCase();
@@ -809,19 +817,17 @@ export class LoginDataSource extends DataSourceBase {
    */
   async #reloadDataSource() {
     this.doneReloadDataSource = false;
-    this.#enabled = Services.prefs.getBoolPref("signon.rememberSignons");
-    if (!this.#enabled) {
-      this.#reloadEmptyDataSource();
-      this.doneReloadDataSource = true;
-      return;
-    }
 
     const logins = await LoginHelper.getAllUserFacingLogins();
     const breachesMap = lazy.BREACH_ALERTS_ENABLED
       ? await lazy.LoginBreaches.getPotentialBreachesByLoginGUID(logins)
       : new Map();
+    const vulnerableMap =
+      await lazy.LoginBreaches.getPotentiallyVulnerablePasswordsByLoginGUID(
+        logins
+      );
 
-    this.#syncReloadDataSource(logins, breachesMap);
+    this.#syncReloadDataSource(logins, breachesMap, vulnerableMap);
 
     this.doneReloadDataSource = true;
   }
@@ -831,13 +837,13 @@ export class LoginDataSource extends DataSourceBase {
    * should be synchronous because the two functions operates on member variable
    * #linesToForget and they don't expect it to be changed in the middle of reloading.
    */
-  #syncReloadDataSource(logins, breachesMap) {
+  #syncReloadDataSource(logins, breachesMap, vulnerableMap) {
     this.beforeReloadingDataSource();
 
     const loginsWithAlerts = logins.filter(
       login =>
         breachesMap.has(login.guid) ||
-        lazy.LoginBreaches.isVulnerablePassword(login) ||
+        vulnerableMap.has(login.guid) ||
         !login.username.length
     );
 
@@ -855,7 +861,7 @@ export class LoginDataSource extends DataSourceBase {
         parts.length -= 1;
       }
       const isLoginBreached = breachesMap.has(login.guid);
-      const isLoginVulnerable = lazy.LoginBreaches.isVulnerablePassword(login);
+      const isLoginVulnerable = vulnerableMap.has(login.guid);
       const loginNoUsername = !login.username.length;
 
       let alertValue;
@@ -896,14 +902,6 @@ export class LoginDataSource extends DataSourceBase {
     this.afterReloadingDataSource();
   }
 
-  #reloadEmptyDataSource() {
-    this.lines.length = 0;
-    //todo: user can enable passwords by activating Passwords header line
-    this.#header.value.total = 0;
-    this.#header.value.alerts = 0;
-    this.refreshAllLinesOnScreen();
-  }
-
   getAuthTimeoutMs() {
     return AUTH_TIMEOUT_MS;
   }
@@ -917,6 +915,12 @@ export class LoginDataSource extends DataSourceBase {
       message == "signon.management.page.vulnerable-passwords.enabled"
     ) {
       this.#reloadDataSource();
+
+      if (topic === "passwordmgr-crypto-login") {
+        this.setPrimaryPasswordAuthenticated(true);
+      }
+    } else if (topic == "passwordmgr-crypto-loginCanceled") {
+      this.setPrimaryPasswordAuthenticated(false);
     }
   }
 }

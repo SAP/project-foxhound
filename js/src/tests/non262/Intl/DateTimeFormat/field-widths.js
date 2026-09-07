@@ -1,5 +1,3 @@
-// |reftest| skip-if(!this.hasOwnProperty("Intl"))
-
 const date = new Date(Date.UTC(2021, 1-1, 2, 3, 4, 5, 678));
 
 const tests = [

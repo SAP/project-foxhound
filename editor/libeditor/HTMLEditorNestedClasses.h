@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,12 +14,15 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Result.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Text.h"
-#include "nsTextFragment.h"
 
 namespace mozilla {
 
 struct LimitersAndCaretData;  // Declared in nsFrameSelection.h
+namespace dom {
+class HTMLBRElement;
+};
 
 /*****************************************************************************
  * AutoInlineStyleSetter is a temporary class to set an inline style to
@@ -82,7 +84,8 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInlineStyleSetter final
    * See comments in the definition what this does.
    */
   Result<EditorRawDOMRange, nsresult> ExtendOrShrinkRangeToApplyTheStyle(
-      const HTMLEditor& aHTMLEditor, const EditorDOMRange& aRange) const;
+      const HTMLEditor& aHTMLEditor, const EditorDOMRange& aRange,
+      const Element& aEditingHost) const;
 
   /**
    * Returns next/previous sibling of aContent or an ancestor of it if it's
@@ -570,44 +573,50 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInsertParagraphHandler final {
 
   /**
    * SplitParagraphWithTransaction() splits the parent block, aParentDivOrP, at
-   * aStartOfRightNode.
+   * aPointToSplit.
    *
-   * @param aParentDivOrP       The parent block to be split.  This must be <p>
-   *                            or <div> element.
-   * @param aStartOfRightNode   The point to be start of right node after
-   *                            split.  This must be descendant of
-   *                            aParentDivOrP.
-   * @param aMayBecomeVisibleBRElement
-   *                            Next <br> element of the split point if there
-   *                            is.  Otherwise, nullptr. If this is not nullptr,
-   *                            the <br> element may be removed if it becomes
-   *                            visible.
+   * @param aBlockElementToSplit    The current paragraph which should be split.
+   * @param aPointToSplit           The point to split aBlockElementToSplit.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitNodeResult, nsresult>
-  SplitParagraphWithTransaction(Element& aParentDivOrP,
-                                const EditorDOMPoint& aStartOfRightNode,
-                                dom::HTMLBRElement* aMayBecomeVisibleBRElement);
+  SplitParagraphWithTransaction(Element& aBlockElementToSplit,
+                                const EditorDOMPoint& aPointToSplit);
 
   /**
-   * Do the right thing for Enter key press or 'insertParagraph' command in
-   * aParentDivOrP.  aParentDivOrP will be split **around**
-   * aCandidatePointToSplit.  If this thinks that it should be handled to insert
-   * a <br> instead, this returns "not handled".
+   * Delete preceding invisible line break before aPointToSplit if and only if
+   * there is.
    *
-   * @param aParentDivOrP   The parent block.  This must be <p> or <div>
-   *                        element.
-   * @param aCandidatePointToSplit
-   *                        The point where the caller want to split
-   *                        aParentDivOrP.  However, in some cases, this is not
-   *                        used as-is.  E.g., this method avoids to create new
-   *                        empty <a href> in the right paragraph.  So this may
-   *                        be adjusted to proper position around it.
-   * @return                If the caller should default to inserting <br>
-   *                        element, returns "not handled".
+   * @return New point to split aBlockElementToSplit
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitNodeResult, nsresult>
-  HandleInParagraph(Element& aParentDivOrP,
-                    const EditorDOMPoint& aCandidatePointToSplit);
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
+  EnsureNoInvisibleLineBreakBeforePointToSplit(
+      const Element& aBlockElementToSplit, const EditorDOMPoint& aPointToSplit);
+
+  /**
+   * Maybe insert a <br> element if it's required to keep the inline container
+   * visible after splitting aBlockElementToSplit at aPointToSplit.
+   *
+   * @return New point to split aBlockElementToSplit
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
+  MaybeInsertFollowingBRElementToPreserveRightBlock(
+      const Element& aBlockElementToSplit, const EditorDOMPoint& aPointToSplit);
+
+  /**
+   * Return true if the HTMLEditor is in the mode which `insertParagraph` should
+   * always create a new paragraph or in the cases that we create a new
+   * paragraph in the legacy mode.
+   */
+  [[nodiscard]] bool ShouldCreateNewParagraph(
+      Element& aParentDivOrP, const EditorDOMPoint& aPointToSplit) const;
+
+  /**
+   * Return true if aBRElement is nullptr or an invisible <br> or a padding <br>
+   * for making the last empty line visible.
+   */
+  [[nodiscard]] static bool
+  IsNullOrInvisibleBRElementOrPaddingOneForEmptyLastLine(
+      const dom::HTMLBRElement* aBRElement);
 
   /**
    * Handle insertParagraph command (i.e., handling Enter key press) in a
@@ -624,6 +633,12 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInsertParagraphHandler final {
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertParagraphResult, nsresult>
   HandleInHeadingElement(Element& aHeadingElement,
                          const EditorDOMPoint& aPointToSplit);
+
+  /**
+   * Handle insertParagraph command at end of a heading element.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertParagraphResult, nsresult>
+  HandleAtEndOfHeadingElement(Element& aHeadingElement);
 
   /**
    * Handle insertParagraph command (i.e., handling Enter key press) in a list
@@ -722,11 +737,64 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInsertParagraphHandler final {
 
   /**
    * Return a better point to split the paragraph to avoid to keep a typing in a
-   * link in the new paragraph.
+   * link or a paragraph in list item in the new paragraph.
    */
-  [[nodiscard]] EditorDOMPoint GetBetterSplitPointToAvoidToContinueLink(
+  [[nodiscard]] EditorDOMPoint GetBetterPointToSplitParagraph(
+      const Element& aBlockElementToSplit,
       const EditorDOMPoint& aCandidatePointToSplit,
-      const Element& aElementToSplit);
+      const Element& aEditingHost);
+
+  enum class IgnoreBlockBoundaries : bool { No, Yes };
+
+  /**
+   * Return true if splitting aBlockElementToSplit at aPointToSplit will create
+   * empty left element.
+   *
+   * @param aBlockElementToSplit    The paragraph element which we want to
+   *                                split.
+   * @param aPointToSplit           The split position in aBlockElementToSplit.
+   * @param aIgnoreBlockBoundaries  If No, return true only when aPointToSplit
+   *                                is immediately after a block boundary of
+   *                                aBlockElementToSplit.  In other words,
+   *                                may return true only when aPointToSplit
+   *                                is not in a child block of
+   *                                aBlockElementToSplit.
+   *                                If Yes, return true even when aPointToSplit
+   *                                is immediately after any current block
+   *                                boundary which is followed by the block
+   *                                boundary of aBlockElementToSplit.  In other
+   *                                words, return true when aPointToSplit is in
+   *                                a child block which is start of any ancestor
+   *                                block elements.
+   */
+  [[nodiscard]] static bool SplitPointIsStartOfSplittingBlock(
+      const Element& aBlockElementToSplit, const EditorDOMPoint& aPointToSplit,
+      IgnoreBlockBoundaries aIgnoreBlockBoundaries);
+
+  /**
+   * Return true if splitting aBlockElementToSplit at aPointToSplit will create
+   * empty right element.
+   *
+   * @param aBlockElementToSplit    The paragraph element which we want to
+   *                                split.
+   * @param aPointToSplit           The split position in aBlockElementToSplit.
+   * @param aIgnoreBlockBoundaries  If No, return true only when aPointToSplit
+   *                                is immediately before a block boundary of
+   *                                aBlockElementToSplit.  In other words,
+   *                                may return true only when aPointToSplit
+   *                                is not in a child block of
+   *                                aBlockElementToSplit.
+   *                                If Yes, return true even when aPointToSplit
+   *                                is immediately before any current block
+   *                                boundary which is followed by the block
+   *                                boundary of aBlockElementToSplit.  In other
+   *                                words, return true when aPointToSplit is in
+   *                                a child block which is end of any ancestor
+   *                                block elements.
+   */
+  [[nodiscard]] static bool SplitPointIsEndOfSplittingBlock(
+      const Element& aBlockElementToSplit, const EditorDOMPoint& aPointToSplit,
+      IgnoreBlockBoundaries aIgnoreBlockBoundaries);
 
   MOZ_KNOWN_LIVE HTMLEditor& mHTMLEditor;
   MOZ_KNOWN_LIVE const Element& mEditingHost;
@@ -810,6 +878,8 @@ class MOZ_STACK_CLASS HTMLEditor::AutoDeleteRangesHandler final {
       const Element& aEditingHost);
 
  private:
+  enum class ComputeRangeFor : bool { GetTargetRanges, ToDeleteTheRange };
+
   [[nodiscard]] bool IsHandlingRecursively() const {
     return mParent != nullptr;
   }
@@ -972,7 +1042,9 @@ class MOZ_STACK_CLASS HTMLEditor::AutoDeleteRangesHandler final {
   [[nodiscard]] Result<EditorRawDOMRange, nsresult> ExtendOrShrinkRangeToDelete(
       const HTMLEditor& aHTMLEditor,
       const LimitersAndCaretData& aLimitersAndCaretData,
-      const EditorDOMRangeType& aRangeToDelete) const;
+      const EditorDOMRangeType& aRangeToDelete,
+      SelectionWasCollapsed aSelectionWasCollapsed,
+      ComputeRangeFor aComputeRangeFor, const Element& aEditingHost) const;
 
   /**
    * Extend the start boundary of aRangeToDelete to contain ancestor inline
@@ -1003,7 +1075,8 @@ class MOZ_STACK_CLASS HTMLEditor::AutoDeleteRangesHandler final {
    */
   [[nodiscard]] static EditorRawDOMRange
   GetRangeToAvoidDeletingAllListItemsIfSelectingAllOverListElements(
-      const EditorRawDOMRange& aRangeToDelete);
+      const EditorRawDOMRange& aRangeToDelete,
+      ComputeRangeFor aComputeRangeFor);
 
   /**
    * DeleteUnnecessaryNodes() removes unnecessary nodes around aRange.
@@ -1036,7 +1109,8 @@ class MOZ_STACK_CLASS HTMLEditor::AutoDeleteRangesHandler final {
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   DeleteParentBlocksWithTransactionIfEmpty(HTMLEditor& aHTMLEditor,
-                                           const EditorDOMPoint& aPoint);
+                                           const EditorDOMPoint& aPoint,
+                                           const Element& aEditingHost);
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CaretPoint, nsresult>
   FallbackToDeleteRangeWithTransaction(HTMLEditor& aHTMLEditor,
@@ -1278,7 +1352,6 @@ HTMLEditor::AutoDeleteRangesHandler::AutoBlockElementsJoiner final {
                         nsIEditor::EDirection aDirectionAndAmount,
                         const EditorDOMPoint& aCaretPoint,
                         const Element& aEditingHost);
-  enum class ComputeRangeFor : bool { GetTargetRanges, ToDeleteTheRange };
   nsresult ComputeRangeToDeleteLineBreak(
       const HTMLEditor& aHTMLEditor, nsRange& aRangeToDelete,
       const Element& aEditingHost, ComputeRangeFor aComputeRangeFor) const;
@@ -1335,12 +1408,7 @@ HTMLEditor::AutoDeleteRangesHandler::AutoBlockElementsJoiner final {
       HTMLEditor& aHTMLEditor,
       const nsTArray<OwningNonNull<nsIContent>>& aArrayOfContent,
       PutCaretTo aPutCaretTo);
-  [[nodiscard]] bool
-  NeedsToJoinNodesAfterDeleteNodesEntirelyInRangeButKeepTableStructure(
-      const HTMLEditor& aHTMLEditor,
-      const nsTArray<OwningNonNull<nsIContent>>& aArrayOfContents,
-      AutoDeleteRangesHandler::SelectionWasCollapsed aSelectionWasCollapsed)
-      const;
+  [[nodiscard]] bool NeedsToJoinNodesAfterDeleteNodesEntirelyInRange() const;
   Result<bool, nsresult>
   ComputeRangeToDeleteNodesEntirelyInRangeButKeepTableStructure(
       const HTMLEditor& aHTMLEditor, nsRange& aRange,
@@ -1389,6 +1457,12 @@ HTMLEditor::AutoDeleteRangesHandler::AutoBlockElementsJoiner final {
       const HTMLEditor& aHTMLEditor, nsRange& aRangeToDelete,
       const Element& aEditingHost, ComputeRangeFor aComputeRangeFor) const;
 
+  /**
+   * Compute mLeafContentInOtherBlock from the DOM.
+   */
+  [[nodiscard]] nsIContent* ComputeLeafContentInOtherBlockElement(
+      nsIEditor::EDirection aDirectionAndAmount) const;
+
   class MOZ_STACK_CLASS AutoInclusiveAncestorBlockElementsJoiner;
 
   enum class Mode {
@@ -1414,6 +1488,7 @@ HTMLEditor::AutoDeleteRangesHandler::AutoBlockElementsJoiner final {
   nsCOMPtr<nsIContent> mLeftContent;
   nsCOMPtr<nsIContent> mRightContent;
   nsCOMPtr<nsIContent> mLeafContentInOtherBlock;
+  RefPtr<Element> mOtherBlockElement;
   // mSkippedInvisibleContents stores all content nodes which are skipped at
   // scanning mLeftContent and mRightContent.  The content nodes should be
   // removed at deletion.
@@ -1475,9 +1550,9 @@ class MOZ_STACK_CLASS HTMLEditor::AutoDeleteRangesHandler::
    * boundaries between joining blocks.  If they won't be joined, this
    * collapses the range to aCaretPoint.
    */
-  [[nodiscard]] nsresult ComputeRangeToDelete(const HTMLEditor& aHTMLEditor,
-                                              const EditorDOMPoint& aCaretPoint,
-                                              nsRange& aRangeToDelete) const;
+  [[nodiscard]] nsresult ComputeRangeToDelete(
+      const HTMLEditor& aHTMLEditor, const EditorDOMPoint& aCaretPoint,
+      nsRange& aRangeToDelete, const Element& aEditingHost) const;
 
   /**
    * Join inclusive ancestor block elements which are found by preceding
@@ -1615,8 +1690,8 @@ HTMLEditor::AutoDeleteRangesHandler::AutoEmptyBlockAncestorDeleter final {
    * `mEmptyInclusiveAncestorBlockElement`.
    */
   [[nodiscard]] Result<CaretPoint, nsresult> GetNewCaretPosition(
-      const HTMLEditor& aHTMLEditor,
-      nsIEditor::EDirection aDirectionAndAmount) const;
+      const HTMLEditor& aHTMLEditor, nsIEditor::EDirection aDirectionAndAmount,
+      const Element& aEditingHost) const;
 
   RefPtr<Element> mEmptyInclusiveAncestorBlockElement;
 };
@@ -1668,13 +1743,13 @@ struct MOZ_STACK_CLASS HTMLEditor::NormalizedStringToInsertText final {
     if (mNormalizedString.IsEmpty() || !ReplaceLength()) {
       return *this;
     }
-    const nsTextFragment& textFragment = aText.TextFragment();
+    const dom::CharacterDataBuffer& characterDataBuffer = aText.DataBuffer();
     const uint32_t minimizedReplaceStart = [&]() {
       const auto firstDiffCharOffset =
-          mNewLengthBefore ? textFragment.FindFirstDifferentCharOffset(
+          mNewLengthBefore ? characterDataBuffer.FindFirstDifferentCharOffset(
                                  PrecedingWhiteSpaces(), mReplaceStartOffset)
-                           : nsTextFragment::kNotFound;
-      if (firstDiffCharOffset == nsTextFragment::kNotFound) {
+                           : dom::CharacterDataBuffer::kNotFound;
+      if (firstDiffCharOffset == dom::CharacterDataBuffer::kNotFound) {
         return
             // We don't need to insert new normalized white-spaces before the
             // inserting string,
@@ -1687,10 +1762,10 @@ struct MOZ_STACK_CLASS HTMLEditor::NormalizedStringToInsertText final {
     }();
     const uint32_t minimizedReplaceEnd = [&]() {
       const auto lastDiffCharOffset =
-          mNewLengthAfter ? textFragment.RFindFirstDifferentCharOffset(
+          mNewLengthAfter ? characterDataBuffer.RFindFirstDifferentCharOffset(
                                 FollowingWhiteSpaces(), mReplaceEndOffset)
-                          : nsTextFragment::kNotFound;
-      if (lastDiffCharOffset == nsTextFragment::kNotFound) {
+                          : dom::CharacterDataBuffer::kNotFound;
+      if (lastDiffCharOffset == dom::CharacterDataBuffer::kNotFound) {
         return
             // We don't need to insert new normalized white-spaces after the
             // inserting string,
@@ -1843,15 +1918,15 @@ struct MOZ_STACK_CLASS HTMLEditor::ReplaceWhiteSpacesData final {
     if (!ReplaceLength()) {
       return *this;
     }
-    const nsTextFragment& textFragment = aText.TextFragment();
+    const dom::CharacterDataBuffer& characterDataBuffer = aText.DataBuffer();
     const auto minimizedReplaceStart = [&]() -> uint32_t {
       if (mNormalizedString.IsEmpty()) {
         return mReplaceStartOffset;
       }
       const uint32_t firstDiffCharOffset =
-          textFragment.FindFirstDifferentCharOffset(mNormalizedString,
-                                                    mReplaceStartOffset);
-      if (firstDiffCharOffset == nsTextFragment::kNotFound) {
+          characterDataBuffer.FindFirstDifferentCharOffset(mNormalizedString,
+                                                           mReplaceStartOffset);
+      if (firstDiffCharOffset == dom::CharacterDataBuffer::kNotFound) {
         // We don't need to insert new white-spaces,
         return mReplaceStartOffset + mNormalizedString.Length();
       }
@@ -1876,10 +1951,10 @@ struct MOZ_STACK_CLASS HTMLEditor::ReplaceWhiteSpacesData final {
         return mReplaceEndOffset;
       }
       const auto lastDiffCharOffset =
-          textFragment.RFindFirstDifferentCharOffset(mNormalizedString,
-                                                     mReplaceEndOffset);
-      MOZ_ASSERT(lastDiffCharOffset != nsTextFragment::kNotFound);
-      return lastDiffCharOffset == nsTextFragment::kNotFound
+          characterDataBuffer.RFindFirstDifferentCharOffset(mNormalizedString,
+                                                            mReplaceEndOffset);
+      MOZ_ASSERT(lastDiffCharOffset != dom::CharacterDataBuffer::kNotFound);
+      return lastDiffCharOffset == dom::CharacterDataBuffer::kNotFound
                  ? mReplaceEndOffset
                  : lastDiffCharOffset + 1u;
     }();
@@ -1989,6 +2064,31 @@ struct MOZ_STACK_CLASS HTMLEditor::ReplaceWhiteSpacesData final {
   // Then, they may want to keep the position for putting caret or something.
   // So, this may store a specific offset in the text node after replacing.
   const uint32_t mNewOffsetAfterReplace = UINT32_MAX;
+};
+
+/******************************************************************************
+ * A runnable to run HTMLEditor::OnModifiedDocument when it's safe.
+ ******************************************************************************/
+
+class HTMLEditor::DocumentModifiedEvent final : public Runnable {
+ public:
+  explicit DocumentModifiedEvent(HTMLEditor& aHTMLEditor)
+      : Runnable("DocumentModifiedEvent"), mHTMLEditor(aHTMLEditor) {}
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() {
+    (void)MOZ_KnownLive(mHTMLEditor)->OnModifyDocument(*this);
+    return NS_OK;
+  }
+
+  const nsTArray<EditorDOMPointInText>& NewInvisibleWhiteSpacesRef() const {
+    return mNewInvisibleWhiteSpaces;
+  }
+
+ private:
+  ~DocumentModifiedEvent() = default;
+
+  const OwningNonNull<HTMLEditor> mHTMLEditor;
+  nsTArray<EditorDOMPointInText> mNewInvisibleWhiteSpaces;
 };
 
 }  // namespace mozilla

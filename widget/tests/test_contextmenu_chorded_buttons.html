@@ -68,12 +68,14 @@ SimpleTest.waitForFocus(async () => {
     info("waiting for contextmenu event...");
     contextMenuEvent = await promiseContextMenu;
 
-    const promiseContextMenuClosed = new Promise(resolve => {
-      addEventListener("keyup", resolve, {once: true});
-      synthesizeKey("KEY_Escape");
-    });
     info("waiting for closing contextmenu...");
-    await promiseContextMenuClosed;
+    await promiseNativeMouseEvent({
+      type: "click",
+      target: document.body,
+      offsetX: 10,
+      offsetY: 10,
+      button: 0,
+    });
 
     // It depends on the platform whether the context menu opens before/after
     // mouseup of the secondary mouse button.  Therefore, we should ignore

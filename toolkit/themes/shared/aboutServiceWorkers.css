@@ -4,7 +4,7 @@
 
 .warningBackground {
   display: none;
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   width: 100%;
   height: 100%;
   z-index: 10;
@@ -17,8 +17,8 @@
   min-width: 330px;
   max-width: 50em;
   margin: 4em auto;
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-medium);
   padding: 3em;
   background-color: var(--background-color-box);
   text-align: center;

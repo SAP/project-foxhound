@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -106,7 +104,9 @@ bool YCbCrTextureClientAllocationHelper::IsCompatible(
       bufferData->GetStereoMode().isNothing() ||
       bufferData->GetStereoMode().ref() != mData.mStereoMode ||
       bufferData->GetChromaSubsampling().isNothing() ||
-      bufferData->GetChromaSubsampling().ref() != mData.mChromaSubsampling) {
+      bufferData->GetChromaSubsampling().ref() != mData.mChromaSubsampling ||
+      bufferData->GetTransferFunction().isNothing() ||
+      bufferData->GetTransferFunction().ref() != mData.mTransferFunction) {
     return false;
   }
   return true;
@@ -117,8 +117,8 @@ already_AddRefed<TextureClient> YCbCrTextureClientAllocationHelper::Allocate(
   return TextureClient::CreateForYCbCr(
       aKnowsCompositor, mData.mPictureRect, mYSize, mData.mYStride, mCbCrSize,
       mData.mCbCrStride, mData.mStereoMode, mData.mColorDepth,
-      mData.mYUVColorSpace, mData.mColorRange, mData.mChromaSubsampling,
-      mTextureFlags);
+      mData.mYUVColorSpace, mData.mColorRange, mData.mTransferFunction,
+      mData.mChromaSubsampling, mTextureFlags, mData.mHDRMetadata);
 }
 
 TextureClientRecycleAllocator::TextureClientRecycleAllocator(
@@ -169,8 +169,8 @@ TextureClientRecycleAllocator::CreateOrRecycle(
       if (!textureHolder->GetTextureClient()->GetAllocator()->IPCOpen() ||
           !aHelper.IsCompatible(textureHolder->GetTextureClient())) {
         // Release TextureClient.
-        RefPtr<Runnable> task =
-            new TextureClientReleaseTask(textureHolder->GetTextureClient());
+        RefPtr task = MakeRefPtr<TextureClientReleaseTask>(
+            textureHolder->GetTextureClient());
         textureHolder->ClearTextureClient();
         textureHolder = nullptr;
         mKnowsCompositor->GetTextureForwarder()->GetThread()->Dispatch(

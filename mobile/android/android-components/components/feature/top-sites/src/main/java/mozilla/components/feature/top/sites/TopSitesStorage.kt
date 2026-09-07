@@ -19,14 +19,23 @@ interface TopSitesStorage : Observable<TopSitesStorage.Observer> {
      * @param isDefault Whether or not the pinned site added should be a default pinned site. This
      * is used to identify pinned sites that are added by the application.
      */
-    fun addTopSite(title: String, url: String, isDefault: Boolean = false)
+    suspend fun addTopSite(title: String, url: String, isDefault: Boolean = false)
+
+    /**
+     * Adds a list of top sites.
+     *
+     * @param topSites A list containing a title to url pair of top sites to be added.
+     * @param isDefault Whether or not the pinned site added should be a default pinned site. This
+     * is used to identify pinned sites that are added by the application.
+     */
+    suspend fun addTopSites(topSites: List<Pair<String, String>>, isDefault: Boolean = false)
 
     /**
      * Removes the given [TopSite].
      *
      * @param topSite The top site.
      */
-    fun removeTopSite(topSite: TopSite)
+    suspend fun removeTopSite(topSite: TopSite)
 
     /**
      * Updates the given [TopSite].
@@ -35,7 +44,7 @@ interface TopSitesStorage : Observable<TopSitesStorage.Observer> {
      * @param title The new title for the top site.
      * @param url The new url for the top site.
      */
-    fun updateTopSite(topSite: TopSite, title: String, url: String)
+    suspend fun updateTopSite(topSite: TopSite, title: String, url: String)
 
     /**
      * Return a unified list of top sites based on the given number of sites desired.

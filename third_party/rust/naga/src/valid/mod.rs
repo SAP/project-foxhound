@@ -7,6 +7,7 @@ mod compose;
 mod expression;
 mod function;
 mod handles;
+pub(crate) mod immediates;
 mod interface;
 mod r#type;
 
@@ -30,10 +31,14 @@ pub use compose::ComposeError;
 pub use expression::{check_literal_value, LiteralError};
 pub use expression::{ConstExpressionError, ExpressionError};
 pub use function::{CallError, FunctionError, LocalVariableError, SubgroupError};
+pub use immediates::ImmediateSlots;
 pub use interface::{EntryPointError, GlobalVariableError, VaryingError};
-pub use r#type::{Disalignment, PushConstantError, TypeError, TypeFlags, WidthError};
+pub use r#type::{Disalignment, ImmediateError, TypeError, TypeFlags, WidthError};
 
 use self::handles::InvalidHandleError;
+
+/// Maximum size of a type, in bytes.
+pub const MAX_TYPE_SIZE: u32 = i32::MAX as u32;
 
 bitflags::bitflags! {
     /// Validation flags.
@@ -80,29 +85,29 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct Capabilities: u32 {
-        /// Support for [`AddressSpace::PushConstant`][1].
+    pub struct Capabilities: u64 {
+        /// Support for [`AddressSpace::Immediate`][1].
         ///
-        /// [1]: crate::AddressSpace::PushConstant
-        const PUSH_CONSTANT = 1 << 0;
+        /// [1]: crate::AddressSpace::Immediate
+        const IMMEDIATES = 1 << 0;
         /// Float values with width = 8.
         const FLOAT64 = 1 << 1;
         /// Support for [`BuiltIn::PrimitiveIndex`][1].
         ///
         /// [1]: crate::BuiltIn::PrimitiveIndex
         const PRIMITIVE_INDEX = 1 << 2;
-        /// Support for non-uniform indexing of sampled textures and storage buffer arrays.
-        const SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING = 1 << 3;
-        /// Support for non-uniform indexing of storage texture arrays.
-        const STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING = 1 << 4;
-        /// Support for non-uniform indexing of uniform buffer arrays.
-        const UNIFORM_BUFFER_ARRAY_NON_UNIFORM_INDEXING = 1 << 5;
-        /// Support for non-uniform indexing of samplers.
-        const SAMPLER_NON_UNIFORM_INDEXING = 1 << 6;
-        /// Support for [`BuiltIn::ClipDistance`].
+        /// Support for binding arrays of sampled textures and samplers.
+        const TEXTURE_AND_SAMPLER_BINDING_ARRAY = 1 << 3;
+        /// Support for binding arrays of uniform buffers.
+        const BUFFER_BINDING_ARRAY = 1 << 4;
+        /// Support for binding arrays of storage textures.
+        const STORAGE_TEXTURE_BINDING_ARRAY = 1 << 5;
+        /// Support for binding arrays of storage buffers.
+        const STORAGE_BUFFER_BINDING_ARRAY = 1 << 6;
+        /// Support for [`BuiltIn::ClipDistances`].
         ///
-        /// [`BuiltIn::ClipDistance`]: crate::BuiltIn::ClipDistance
-        const CLIP_DISTANCE = 1 << 7;
+        /// [`BuiltIn::ClipDistances`]: crate::BuiltIn::ClipDistances
+        const CLIP_DISTANCES = 1 << 7;
         /// Support for [`BuiltIn::CullDistance`].
         ///
         /// [`BuiltIn::CullDistance`]: crate::BuiltIn::CullDistance
@@ -128,13 +133,26 @@ bitflags::bitflags! {
         const CUBE_ARRAY_TEXTURES = 1 << 15;
         /// Support for 64-bit signed and unsigned integers.
         const SHADER_INT64 = 1 << 16;
-        /// Support for subgroup operations.
-        /// Implies support for subgroup operations in both fragment and compute stages,
-        /// but not necessarily in the vertex stage, which requires [`Capabilities::SUBGROUP_VERTEX_STAGE`].
+        /// Support for subgroup operations (except barriers) in fragment and compute shaders.
+        ///
+        /// Subgroup operations in the vertex stage require
+        /// [`Capabilities::SUBGROUP_VERTEX_STAGE`] in addition to `Capabilities::SUBGROUP`.
+        /// (But note that `create_validator` automatically sets
+        /// `Capabilities::SUBGROUP` whenever `Features::SUBGROUP_VERTEX` is
+        /// available.)
+        ///
+        /// Subgroup barriers require [`Capabilities::SUBGROUP_BARRIER`] in addition to
+        /// `Capabilities::SUBGROUP`.
         const SUBGROUP = 1 << 17;
-        /// Support for subgroup barriers.
+        /// Support for subgroup barriers in compute shaders.
+        ///
+        /// Requires [`Capabilities::SUBGROUP`]. Without it, enables nothing.
         const SUBGROUP_BARRIER = 1 << 18;
-        /// Support for subgroup operations in the vertex stage.
+        /// Support for subgroup operations (not including barriers) in the vertex stage.
+        ///
+        /// Without [`Capabilities::SUBGROUP`], enables nothing. (But note that
+        /// `create_validator` automatically sets `Capabilities::SUBGROUP`
+        /// whenever `Features::SUBGROUP_VERTEX` is available.)
         const SUBGROUP_VERTEX_STAGE = 1 << 19;
         /// Support for [`AtomicFunction::Min`] and [`AtomicFunction::Max`] on
         /// 64-bit integers in the [`Storage`] address space, when the return
@@ -165,6 +183,76 @@ bitflags::bitflags! {
         const RAY_HIT_VERTEX_POSITION = 1 << 25;
         /// Support for 16-bit floating-point types.
         const SHADER_FLOAT16 = 1 << 26;
+        /// Support for [`ImageClass::External`]
+        const TEXTURE_EXTERNAL = 1 << 27;
+        /// Support for `quantizeToF16`, `pack2x16float`, and `unpack2x16float`, which store
+        /// `f16`-precision values in `f32`s.
+        const SHADER_FLOAT16_IN_FLOAT32 = 1 << 28;
+        /// Support for fragment shader barycentric coordinates.
+        const SHADER_BARYCENTRICS = 1 << 29;
+        /// Support for task shaders, mesh shaders, and per-primitive fragment inputs
+        const MESH_SHADER = 1 << 30;
+        /// Support for mesh shaders which output points.
+        const MESH_SHADER_POINT_TOPOLOGY = 1 << 31;
+        /// Support for non-uniform indexing of binding arrays of sampled textures and samplers.
+        const TEXTURE_AND_SAMPLER_BINDING_ARRAY_NON_UNIFORM_INDEXING = 1 << 32;
+        /// Support for non-uniform indexing of binding arrays of uniform buffers.
+        const BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING = 1 << 33;
+        /// Support for non-uniform indexing of binding arrays of storage textures.
+        const STORAGE_TEXTURE_BINDING_ARRAY_NON_UNIFORM_INDEXING = 1 << 34;
+        /// Support for non-uniform indexing of binding arrays of storage buffers.
+        const STORAGE_BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING = 1 << 35;
+        /// Support for cooperative matrix types and operations
+        const COOPERATIVE_MATRIX = 1 << 36;
+        /// Support for per-vertex fragment input.
+        const PER_VERTEX = 1 << 37;
+        /// Support for ray generation, any hit, closest hit, and miss shaders.
+        const RAY_TRACING_PIPELINE = 1 << 38;
+        /// Support for draw index builtin
+        const DRAW_INDEX = 1 << 39;
+        /// Support for binding arrays of acceleration structures.
+        const ACCELERATION_STRUCTURE_BINDING_ARRAY = 1 << 40;
+        /// Support for the `@coherent` memory decoration on storage buffers.
+        const MEMORY_DECORATION_COHERENT = 1 << 41;
+        /// Support for the `@volatile` memory decoration on storage buffers.
+        const MEMORY_DECORATION_VOLATILE = 1 << 42;
+        /// Support for 16-bit integer types.
+        const SHADER_INT16 = 1 << 43;
+    }
+}
+
+impl Capabilities {
+    /// Returns the extension corresponding to this capability, if there is one.
+    ///
+    /// This is used by integration tests.
+    #[cfg(feature = "wgsl-in")]
+    #[doc(hidden)]
+    pub const fn extension(&self) -> Option<crate::front::wgsl::ImplementedEnableExtension> {
+        use crate::front::wgsl::ImplementedEnableExtension as Ext;
+        match *self {
+            Self::DUAL_SOURCE_BLENDING => Some(Ext::DualSourceBlending),
+            // NOTE: `SHADER_FLOAT16_IN_FLOAT32` _does not_ require the `f16` extension
+            Self::SHADER_FLOAT16 => Some(Ext::F16),
+            Self::SHADER_INT16 => Some(Ext::WgpuInt16),
+            Self::CLIP_DISTANCES => Some(Ext::ClipDistances),
+            Self::MESH_SHADER => Some(Ext::WgpuMeshShader),
+            Self::RAY_QUERY => Some(Ext::WgpuRayQuery),
+            Self::RAY_HIT_VERTEX_POSITION => Some(Ext::WgpuRayQueryVertexReturn),
+            Self::COOPERATIVE_MATRIX => Some(Ext::WgpuCooperativeMatrix),
+            Self::RAY_TRACING_PIPELINE => Some(Ext::WgpuRayTracingPipeline),
+            Self::PER_VERTEX => Some(Ext::WgpuPerVertex),
+            Self::BUFFER_BINDING_ARRAY
+            | Self::BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING
+            | Self::STORAGE_BUFFER_BINDING_ARRAY
+            | Self::STORAGE_BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING
+            | Self::STORAGE_TEXTURE_BINDING_ARRAY
+            | Self::STORAGE_TEXTURE_BINDING_ARRAY_NON_UNIFORM_INDEXING
+            | Self::TEXTURE_AND_SAMPLER_BINDING_ARRAY
+            | Self::TEXTURE_AND_SAMPLER_BINDING_ARRAY_NON_UNIFORM_INDEXING => {
+                Some(Ext::WgpuBindingArray)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -180,7 +268,11 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
     pub struct SubgroupOperationSet: u8 {
-        /// Elect, Barrier
+        /// Barriers
+        // Possibly elections, when that is supported.
+        // https://github.com/gfx-rs/wgpu/issues/6042#issuecomment-3272603431
+        // Contrary to what the name "basic" suggests, HLSL/DX12 support the
+        // other subgroup operations, but do not support subgroup barriers.
         const BASIC = 1 << 0;
         /// Any, All
         const VOTE = 1 << 1;
@@ -231,10 +323,17 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct ShaderStages: u8 {
+    pub struct ShaderStages: u16 {
         const VERTEX = 0x1;
         const FRAGMENT = 0x2;
         const COMPUTE = 0x4;
+        const MESH = 0x8;
+        const TASK = 0x10;
+        const RAY_GENERATION = 0x20;
+        const ANY_HIT = 0x40;
+        const CLOSEST_HIT = 0x80;
+        const MISS = 0x100;
+        const COMPUTE_LIKE = Self::COMPUTE.bits() | Self::TASK.bits() | Self::MESH.bits();
     }
 }
 
@@ -278,9 +377,7 @@ pub struct Validator {
     types: Vec<r#type::TypeInfo>,
     layouter: Layouter,
     location_mask: BitSet,
-    blend_src_mask: BitSet,
     ep_resource_bindings: FastHashSet<crate::ResourceBinding>,
-    #[allow(dead_code)]
     switch_values: FastHashSet<crate::SwitchValue>,
     valid_expression_list: Vec<Handle<crate::Expression>>,
     valid_expression_set: HandleSet<crate::Expression>,
@@ -309,6 +406,33 @@ pub struct Validator {
     /// [`Expression`]: crate::Expression
     /// [`Statement`]: crate::Statement
     needs_visit: HandleSet<crate::Expression>,
+
+    /// Whether any trace rays call is called, and whether all have vertex return.
+    /// If one call doesn't use vertex ruturn, builtins for triangle vertex positions
+    /// (not yet implemented) are not allowed.
+    trace_rays_vertex_return: TraceRayVertexReturnState,
+
+    /// The type of the ray payload, this must always be the same type in a particular
+    /// entrypoint
+    trace_rays_payload_type: Option<Handle<crate::Type>>,
+}
+
+#[derive(Debug)]
+enum TraceRayVertexReturnState {
+    /// No trace ray calls yet have been found.
+    NoTraceRays,
+    /// Trace ray calls have been found, at least
+    /// one uses an acceleration structure that
+    /// does not have the flag enabling vertex return.
+    #[expect(
+        unused,
+        reason = "Don't yet have vertex return builtins to return this error for."
+    )]
+    NoVertexReturn(crate::Span),
+    /// Trace ray calls have been found, all
+    /// acceleration structures have the flag enabling
+    /// vertex return.
+    VertexReturn,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -408,6 +532,7 @@ impl crate::TypeInner {
             Self::Scalar { .. }
             | Self::Vector { .. }
             | Self::Matrix { .. }
+            | Self::CooperativeMatrix { .. }
             | Self::Array {
                 size: crate::ArraySize::Constant(_),
                 ..
@@ -454,7 +579,19 @@ impl crate::TypeInner {
 }
 
 impl Validator {
-    /// Construct a new validator instance.
+    /// Create a validator for Naga [`Module`]s.
+    ///
+    /// The `flags` argument indicates which stages of validation the
+    /// returned `Validator` should perform. Skipping stages can make
+    /// validation somewhat faster, but the validator may not reject some
+    /// invalid modules. Regardless of `flags`, validation always returns
+    /// a usable [`ModuleInfo`] value on success.
+    ///
+    /// If `flags` contains everything in `ValidationFlags::default()`,
+    /// then the returned Naga [`Validator`] will reject any [`Module`]
+    /// that would use capabilities not included in `capabilities`.
+    ///
+    /// [`Module`]: crate::Module
     pub fn new(flags: ValidationFlags, capabilities: Capabilities) -> Self {
         let subgroup_operations = if capabilities.contains(Capabilities::SUBGROUP) {
             use SubgroupOperationSet as S;
@@ -474,7 +611,7 @@ impl Validator {
                 stages |= ShaderStages::VERTEX;
             }
             if capabilities.contains(Capabilities::SUBGROUP) {
-                stages |= ShaderStages::FRAGMENT | ShaderStages::COMPUTE;
+                stages |= ShaderStages::FRAGMENT | ShaderStages::COMPUTE_LIKE;
             }
             stages
         };
@@ -487,7 +624,6 @@ impl Validator {
             types: Vec::new(),
             layouter: Layouter::default(),
             location_mask: BitSet::new(),
-            blend_src_mask: BitSet::new(),
             ep_resource_bindings: FastHashSet::default(),
             switch_values: FastHashSet::default(),
             valid_expression_list: Vec::new(),
@@ -495,15 +631,19 @@ impl Validator {
             override_ids: FastHashSet::default(),
             overrides_resolved: false,
             needs_visit: HandleSet::new(),
+            trace_rays_vertex_return: TraceRayVertexReturnState::NoTraceRays,
+            trace_rays_payload_type: None,
         }
     }
 
-    pub fn subgroup_stages(&mut self, stages: ShaderStages) -> &mut Self {
+    // TODO(https://github.com/gfx-rs/wgpu/issues/8207): Consider removing this
+    pub const fn subgroup_stages(&mut self, stages: ShaderStages) -> &mut Self {
         self.subgroup_stages = stages;
         self
     }
 
-    pub fn subgroup_operations(&mut self, operations: SubgroupOperationSet) -> &mut Self {
+    // TODO(https://github.com/gfx-rs/wgpu/issues/8207): Consider removing this
+    pub const fn subgroup_operations(&mut self, operations: SubgroupOperationSet) -> &mut Self {
         self.subgroup_operations = operations;
         self
     }
@@ -512,8 +652,7 @@ impl Validator {
     pub fn reset(&mut self) {
         self.types.clear();
         self.layouter.clear();
-        self.location_mask.clear();
-        self.blend_src_mask.clear();
+        self.location_mask.make_empty();
         self.ep_resource_bindings.clear();
         self.switch_values.clear();
         self.valid_expression_list.clear();
@@ -568,6 +707,8 @@ impl Validator {
         match gctx.types[o.ty].inner {
             crate::TypeInner::Scalar(
                 crate::Scalar::BOOL
+                | crate::Scalar::I16
+                | crate::Scalar::U16
                 | crate::Scalar::I32
                 | crate::Scalar::U32
                 | crate::Scalar::F16
@@ -651,6 +792,10 @@ impl Validator {
                     }
                     .with_span_handle(handle, &module.types)
                 })?;
+            debug_assert!(
+                ty_info.flags.contains(TypeFlags::CONSTRUCTIBLE)
+                    == module.types[handle].inner.is_constructible(&module.types)
+            );
             mod_info.type_flags.push(ty_info.flags);
             self.types[handle.index()] = ty_info;
         }

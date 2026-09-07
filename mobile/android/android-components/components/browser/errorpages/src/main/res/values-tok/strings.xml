@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">o sin</string>
@@ -9,21 +16,21 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">linja len li pakala</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>linja la lipu li len ike e toki ona. ni li ken ike tawa ilo sina la, mi ken ala pana e ona.</li> <li>o toki e pakala ni tawa jan lawa pi lipu ni.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>linja la lipu li len ike e toki ona. ni li ken ike tawa ilo sina la, mi ken ala pana e ona.</li>\n<li>o toki e pakala ni tawa jan lawa pi lipu ni.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">linja len li pakala</string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">namako…</string>
   <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>ken la jan pi lipu ni li lon ala, li wile ike e sina kepeken nasin len. ni la o tawa ala.</label> <br><br> <label>lipu li pana e sona ona kepeken lipu lawa. <b>lipu %2$s</b> li pona ala tawa ilo %1$s tan ni: lipu lawa ona li tan seme? mi sona ala.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>ken la jan pi lipu ni li lon ala, li wile ike e sina kepeken nasin len. ni la o tawa ala.</label> <br><br>\n<label>lipu li pana e sona ona kepeken lipu lawa. <b>lipu %2$s</b> li pona ala tawa ilo %1$s tan ni: lipu lawa ona li tan seme? mi sona ala.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_back">o tawa pona (sina pona tan ni)</string>
+  <string name="mozac_browser_errorpages_security_bad_cert_back">o weka (pona)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_accept_temporary">o awen tawa lipu</string>
   <!-- The document title and heading of the error page shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">lipu ni li wile e toki len.</string>
   <!-- The error message shown when a website uses HSTS. -->
-  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul> <li>mi ken ala pana e lipu ni tawa sina tan ni: ona li wile e toki len.</li> <li>ni li pakala tan lipu ni. sina ken ala pona e ni lon ken suli.</li> <li>sina ken toki e pakala ni tawa lawa lipu.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>mi ken ala pana e lipu ni tawa sina tan ni: ona li wile e toki len.</li>\n<li>ni li pakala tan lipu ni. sina ken ala pona e ni lon ken suli.</li>\n<li>sina ken toki e pakala ni tawa lawa lipu.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">namako…</string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
@@ -40,10 +47,14 @@
   <string name="mozac_browser_errorpages_redirect_loop_title">lipu li toki e ni: o tawa ni. taso tawa ni li pakala</string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
   <string name="mozac_browser_errorpages_offline_title">nasin pi linja ala</string>
+  <!-- The document title and heading of the error page shown when the Internet connection is disrupted while loading a website. -->
+  <string name="mozac_browser_errorpages_net_reset_title">linja toki li pakala</string>
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">lipu pi nasin ike</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>o toki e pakala tawa jan lawa pi lipu ni.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>o toki e pakala tawa jan lawa pi lipu ni.</li>\n</ul>]]></string>
+  <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
+  <string name="mozac_browser_errorpages_corrupted_content_title">nanpa li pakala</string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">nimi nasin li lon ala</string>
   <!-- The document title and heading of an error page. -->

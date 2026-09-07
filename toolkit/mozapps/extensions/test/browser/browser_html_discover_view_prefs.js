@@ -22,10 +22,9 @@ async function checkIfDiscoverVisible(expectVisible) {
 
   // Open about:addons with default view.
   let managerWindow = await open_manager(null);
-  let categoryUtilities = new CategoryUtilities(managerWindow);
 
   is(
-    categoryUtilities.isTypeVisible("discover"),
+    AboutAddonsTestUtils.isCategoryVisible(managerWindow, "discover"),
     expectVisible,
     "Visibility of discopane"
   );
@@ -33,7 +32,7 @@ async function checkIfDiscoverVisible(expectVisible) {
   await wait_for_view_load(managerWindow);
   if (expectVisible) {
     is(
-      categoryUtilities.selectedCategory,
+      AboutAddonsTestUtils.getSidebarSelectedCategory(managerWindow),
       "discover",
       "Expected discopane as the default view"
     );
@@ -42,7 +41,7 @@ async function checkIfDiscoverVisible(expectVisible) {
   } else {
     // The next view (after discopane) is the extension list.
     is(
-      categoryUtilities.selectedCategory,
+      AboutAddonsTestUtils.getSidebarSelectedCategory(managerWindow),
       "extension",
       "Should fall back to another view when the discopane is disabled"
     );

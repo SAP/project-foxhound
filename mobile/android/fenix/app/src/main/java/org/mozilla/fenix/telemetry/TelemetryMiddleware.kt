@@ -4,7 +4,11 @@
 
 package org.mozilla.fenix.telemetry
 
+import android.annotation.SuppressLint
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Context
+import android.os.Build
 import mozilla.components.browser.state.action.AwesomeBarAction
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
@@ -19,12 +23,12 @@ import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.concept.base.crash.CrashReporting
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
-import mozilla.telemetry.glean.internal.TimerId
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.GleanMetrics.Addons
@@ -35,11 +39,8 @@ import org.mozilla.fenix.GleanMetrics.Urlbar
 import org.mozilla.fenix.components.metrics.Event
 import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.GleanMetrics.EngineTab as EngineMetrics
-
-private const val PROGRESS_COMPLETE = 100
 
 /**
  * [Middleware] to record telemetry in response to [BrowserAction]s.
@@ -48,69 +49,62 @@ private const val PROGRESS_COMPLETE = 100
  * @param settings reference to the application [Settings].
  * @param metrics [MetricController] to pass events that have been mapped from actions.
  * @param crashReporting An instance of [CrashReporting] to report caught exceptions.
- * @param nimbusSearchEngine The Nimbus search engine.
- * @param searchState Map that stores the [TabSessionState.id] & [TimerId].
- * @param timerId The [TimerId] for the [Metrics.searchPageLoadTime].
  */
 class TelemetryMiddleware(
     private val context: Context,
     private val settings: Settings,
     private val metrics: MetricController,
     private val crashReporting: CrashReporting? = null,
-    private val nimbusSearchEngine: String = FxNimbus.features.searchExtraParams.value().searchEngine,
-    private val searchState: MutableMap<String, TimerId> = mutableMapOf(),
-    private val timerId: TimerId = Metrics.searchPageLoadTime.start(),
 ) : Middleware<BrowserState, BrowserAction> {
 
     private val logger = Logger("TelemetryMiddleware")
 
-    @Suppress("TooGenericExceptionCaught", "ComplexMethod", "NestedBlockDepth", "LongMethod")
+    // ApplicationExitInfo, which we need to distinguish user-requested exits from unexpected
+    // process kills, is only available on API 30+. We skip all engine tab telemetry on older
+    // versions to avoid recording false positives.
+    private val androidVersionSupportsEngineTabTelemetry = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+
+    // Tab IDs populated from TabListAction.RestoreAction (full app session restore).
+    // Used to distinguish session-restored creates from content-process-kill creates.
+    private val sessionRestoredTabIds = mutableSetOf<String>()
+
+    private enum class ReloadReason(val value: String) {
+        ContentProcessKill("content_process_kill"),
+        AppSessionRestore("app_session_restore"),
+    }
+
+    @Suppress("TooGenericExceptionCaught", "CognitiveComplexMethod", "NestedBlockDepth", "LongMethod", "CyclomaticComplexMethod")
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         // Pre process actions
 
         when (action) {
-            is ContentAction.UpdateIsSearchAction -> {
-                if (action.isSearch && nimbusSearchEngine.isNotEmpty() &&
-                    (action.searchEngineName == nimbusSearchEngine)
-                ) {
-                    searchState[action.sessionId] = timerId
+            is TabListAction.RestoreAction -> {
+                if (androidVersionSupportsEngineTabTelemetry && !wasLastExitUserRequested()) {
+                    sessionRestoredTabIds.addAll(action.tabs.map { it.state.id })
                 }
             }
             is ContentAction.UpdateLoadingStateAction -> {
-                context.state.findTab(action.sessionId)?.let { tab ->
+                store.state.findTab(action.sessionId)?.let { tab ->
                     val hasFinishedLoading = tab.content.loading && !action.loading
 
                     // Record UriOpened event when a non-private page finishes loading
                     if (hasFinishedLoading) {
                         Events.normalAndPrivateUriCount.add()
-
-                        val progressCompleted = tab.content.progress == PROGRESS_COMPLETE
-                        if (progressCompleted) {
-                            searchState[action.sessionId]?.let {
-                                Metrics.searchPageLoadTime.stopAndAccumulate(it)
-                            }
-                        } else {
-                            searchState[action.sessionId]?.let {
-                                Metrics.searchPageLoadTime.cancel(it)
-                            }
-                        }
-
-                        searchState.remove(action.sessionId)
                     }
                 }
             }
             is DownloadAction.AddDownloadAction -> { /* NOOP */ }
             is EngineAction.KillEngineSessionAction -> {
-                val tab = context.state.findTabOrCustomTab(action.tabId)
-                onEngineSessionKilled(context.state, tab)
+                val tab = store.state.findTabOrCustomTab(action.tabId)
+                onEngineSessionKilled(store.state, tab)
             }
             is EngineAction.CreateEngineSessionAction -> {
-                val tab = context.state.findTabOrCustomTab(action.tabId)
-                onEngineSessionCreated(context.state, tab)
+                val tab = store.state.findTabOrCustomTab(action.tabId)
+                onEngineSessionCreated(store.state, tab)
             }
             is ContentAction.CheckForFormDataExceptionAction -> {
                 Events.formDataFailure.record(NoExtras())
@@ -120,7 +114,7 @@ class TelemetryMiddleware(
                 return
             }
             is EngineAction.LoadUrlAction -> {
-                metrics.track(Event.GrowthData.FirstUriLoadForDay)
+                metrics.track(Event.GrowthData.ConversionEvent3)
             }
             else -> {
                 // no-op
@@ -139,9 +133,9 @@ class TelemetryMiddleware(
             is TabListAction.RestoreAction,
             -> {
                 // Update/Persist tabs count whenever it changes
-                settings.openTabsCount = context.state.normalTabs.count()
-                settings.openPrivateTabsCount = context.state.privateTabs.count()
-                if (context.state.normalTabs.isNotEmpty()) {
+                settings.openTabsCount = store.state.normalTabs.count()
+                settings.openPrivateTabsCount = store.state.privateTabs.count()
+                if (store.state.normalTabs.isNotEmpty()) {
                     Metrics.hasOpenTabs.set(true)
                 } else {
                     Metrics.hasOpenTabs.set(false)
@@ -159,13 +153,6 @@ class TelemetryMiddleware(
                 } else {
                     Urlbar.engagement.record()
                 }
-            }
-            is TranslationsAction.TranslateOfferAction -> {
-                Translations.offerEvent.record(Translations.OfferEventExtra("offer"))
-            }
-            is TranslationsAction.TranslateExpectedAction -> {
-                FxNimbus.features.translations.recordExposure()
-                Translations.offerEvent.record(Translations.OfferEventExtra("expected"))
             }
             is TranslationsAction.TranslateAction -> {
                 Translations.translateRequested.record(
@@ -188,9 +175,9 @@ class TelemetryMiddleware(
                 }
             }
             is TranslationsAction.SetEngineSupportedAction -> {
-                Translations.engineSupported.record(
-                    Translations.EngineSupportedExtra(if (action.isEngineSupported) "supported" else "unsupported"),
-                )
+                if (!action.isEngineSupported) {
+                    Translations.engineUnsupported.record()
+                }
             }
             else -> {
                 // no-op
@@ -203,6 +190,8 @@ class TelemetryMiddleware(
      * https://github.com/mozilla-mobile/android-components/issues/9366
      */
     private fun onEngineSessionKilled(state: BrowserState, tab: SessionState?) {
+        if (!androidVersionSupportsEngineTabTelemetry) return
+
         if (tab == null) {
             logger.debug("Could not find tab for killed engine session")
             return
@@ -220,18 +209,55 @@ class TelemetryMiddleware(
         )
     }
 
+    // When the exit buffer is empty (e.g. fresh install, or cleared after a device reboot),
+    // firstOrNull() returns null and ?.reason == REASON_USER_REQUESTED evaluates to false.
+    // This means we cannot confirm the exit was user-requested, so we assume it was unexpected
+    // and fire the metric — a conservative default that prefers occasional false positives over
+    // silently dropping genuine unexpected-kill restores.
+    // Known false positive: if the user explicitly closes Firefox and the device reboots before
+    // the next launch, the OS clears the exit buffer, and we lose the REASON_USER_REQUESTED signal,
+    // causing us to incorrectly record an app_session_restore. These are hard to detect since the
+    // evidence is gone by the time we check.
+    @SuppressLint("NewApi") // Only called when supportsEngineTabTelemetry is true (API >= 30).
+    private fun wasLastExitUserRequested(): Boolean =
+        (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+            .getHistoricalProcessExitReasons(null, 0, 0)
+            .firstOrNull { ":" !in it.processName }
+            ?.reason == ApplicationExitInfo.REASON_USER_REQUESTED
+
+    private fun computeDurationSinceLastVisible(tab: SessionState): Int {
+        val lastVisibleAt = (tab as? TabSessionState)?.lastVisibleAt?.takeIf { it != 0L } ?: return -1
+        val elapsed = System.currentTimeMillis() - lastVisibleAt
+        return (elapsed / 1000L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+    }
+
     /**
      * Collecting some engine-specific (GeckoView) telemetry.
      */
     private fun onEngineSessionCreated(state: BrowserState, tab: SessionState?) {
+        if (!androidVersionSupportsEngineTabTelemetry) return
+
         if (tab == null) {
             logger.debug("Could not find tab for created engine session")
             return
         }
 
-        // Record telemetry if the created tab was recently killed
-        if (state.recentlyKilledTabs.contains(tab.id)) {
-            EngineMetrics.reloaded.record()
+        val isFromSessionRestore = sessionRestoredTabIds.remove(tab.id)
+        val isFromProcessKill = state.recentlyKilledTabs.contains(tab.id)
+
+        val reason = when {
+            isFromProcessKill -> ReloadReason.ContentProcessKill
+            isFromSessionRestore -> ReloadReason.AppSessionRestore
+            else -> null
+        }
+
+        if (reason != null) {
+            EngineMetrics.reloaded.record(
+                EngineMetrics.ReloadedExtra(
+                    durationSinceLastVisibleSeconds = computeDurationSinceLastVisible(tab),
+                    reason = reason.value,
+                ),
+            )
         }
     }
 }

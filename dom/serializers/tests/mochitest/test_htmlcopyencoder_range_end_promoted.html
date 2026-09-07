@@ -1,0 +1,220 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+-->
+<head>
+<title>Test on the html copy encoder for different range end</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1922000">Mozilla Bug 1922000</a>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<div id="container">
+  <div id="basic">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div><div id="end">Third  </div>  </div>
+  </div>
+  <div id="shadow">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div><div id="host"><template shadowrootmode="open"><div><div id="end">Third</div>  </div></template>  </div>  </div>
+  </div>
+  <div id="slot">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div><div id="host">
+      <template shadowrootmode="open"><div><slot></slot>  </div></template>
+      <div id="end">Third-1</div>Third-2
+    </div>  </div>
+  </div>
+  <div id="slot2">
+    <div id="start">First</div>
+    <div>Second</div>
+    <div><div id="host">
+      <template shadowrootmode="open"><div><slot name="foo"></slot><slot name="bar"></slot>  </div></template>
+      <div slot="bar">Third-2</div><div slot="foo" id="end">Third-1</div>
+    </div>  </div>
+  </div>
+</div>
+<script>
+
+/* global describe, it, beforeEach */
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+
+function testSelectAndSerialize(aDescription, aGetRangeFun, aExpectedTextResult,
+                                aExpectedHTMLResult) {
+  it(aDescription, () => {
+    info("Setup selection");
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    const range = aGetRangeFun();
+    selection.addRange(range);
+
+    info("Initialize encoder for text/plain");
+    // Force LF line breaks; otherwise, on Windows we would get CRLF.
+    encoder.init(document, "text/plain", de.OutputLFLineBreak | de.AllowCrossShadowBoundary);
+    encoder.setSelection(selection);
+    is(encoder.encodeToString(), aExpectedTextResult, "check text/plain result");
+
+    info("Initialize encoder for text/html");
+    // Force LF line breaks; otherwise, on Windows we would get CRLF.
+    encoder.init(document, "text/html", de.OutputLFLineBreak | de.AllowCrossShadowBoundary);
+    encoder.setSelection(selection);
+
+    const htmlContext = { value: '' };
+    const htmlInfo = { value: '' };
+    is(encoder.encodeToStringWithContext(htmlContext, htmlInfo),
+       aExpectedHTMLResult, "check text/html result");
+  });
+}
+
+testSelectAndSerialize(
+  "Test selecting range with end at the end of a text node",
+  () => {
+    const div = document.querySelector("div#basic");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the end of "Third  " text node.
+    const end = div.querySelector("#end").firstChild;
+    range.setEnd(end, end.length);
+    return range;
+  },
+  "First\nSecond\nThird\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div id=\"end\">Third  </div>  </div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end at the end of a non-white text",
+  () => {
+    const div = document.querySelector("div#basic");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the end of "Third" text.
+    const end = div.querySelector("#end").firstChild;
+    range.setEnd(end, 5);
+    return range;
+  },
+  "First\nSecond\nThird\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div id=\"end\">Third  </div>  </div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end after the text node",
+  () => {
+    const div = document.querySelector("div#basic");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End after the text node with "Third  " content.
+    const end = div.querySelector("#end");
+    range.setEnd(end, 1);
+    return range;
+  },
+  "First\nSecond\nThird\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div id=\"end\">Third  </div>  </div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end after the text node in shadow dom",
+  () => {
+    const div = document.querySelector("div#shadow");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    SpecialPowers.wrap(range).setStartAllowCrossShadowBoundary(start, 0);
+    // End after the "Third-1" text node
+    const host = div.querySelector("#host");
+    const end = host.shadowRoot.querySelector("#end");
+    SpecialPowers.wrap(range).setEndAllowCrossShadowBoundary(end, 1);
+    return range;
+  },
+  "First\nSecond\nThird",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div id=\"host\"><div><div id=\"end\">Third</div></div></div></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end after the text node in shadow dom",
+  () => {
+    const div = document.querySelector("div#shadow");
+    const range = document.createRange();
+    // Start at the beginning of the <div> with "First" text node
+    const start = div.querySelector("#start");
+    SpecialPowers.wrap(range).setStartAllowCrossShadowBoundary(start, 0);
+    // End after the "Third-1" text node
+    const host = div.querySelector("#host");
+    const end = host.shadowRoot.querySelector("#end");
+    SpecialPowers.wrap(range).setEndAllowCrossShadowBoundary(end, 1);
+    return range;
+  },
+  "First\nSecond\nThird",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div id=\"host\"><div><div id=\"end\">Third</div></div></div></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end after first slotted element in shadow dom",
+  () => {
+    const div = document.querySelector("div#slot");
+    const range = document.createRange();
+    // Start at the beginning of <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the beginning of <div> with "Third-1" text content
+    const end = div.querySelector("#end");
+    range.setEnd(end, 1);
+    return range;
+  },
+  // XXX The expected text result should not include the "Third-2" text, there
+  // is a known issue, see bug 2020818.
+  "First\nSecond\nThird-1\nThird-2 ",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div id=\"host\"><div><slot>\n" +
+    "      \n" +
+    "      <div id=\"end\">Third-1</div>Third-2\n" +
+    "    </slot>  </div></div></div>"
+);
+
+testSelectAndSerialize(
+  "Test selecting range with end after the slotted element of first slot in shadow dom",
+  () => {
+    const div = document.querySelector("div#slot2");
+    const range = document.createRange();
+    // Start at the beginning of <div> with "First" text node
+    const start = div.querySelector("#start");
+    range.setStart(start, 0);
+    // End at the beginning of <div> with "Third-1" text content
+    const end = div.querySelector("#end");
+    range.setEnd(end, 1);
+    return range;
+  },
+  // XXX The expected text result should not include the "Third-2" text, there
+  // is a known issue, see bug 2020818.
+  "First\nSecond\nThird-1\nThird-2\n",
+  "<div id=\"start\">First</div>\n" +
+    "    <div>Second</div>\n" +
+    "    <div><div id=\"host\"><div><slot name=\"foo\"><div slot=\"foo\" id=\"end\">Third-1</div></slot><slot name=\"bar\"><div slot=\"bar\">Third-2</div></slot>  </div></div></div>"
+);
+
+</script>
+</body>
+</html>

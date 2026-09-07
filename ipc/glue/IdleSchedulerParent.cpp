@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/StaticPrefs_page_load.h"
 #include "mozilla/StaticPrefs_javascript.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/IdleSchedulerParent.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/NeverDestroyed.h"
@@ -33,7 +30,7 @@ static SharedMemoryMappingWithHandle& sActiveChildCounter() {
 
 std::bitset<NS_IDLE_SCHEDULER_COUNTER_ARRAY_LENGHT>
     IdleSchedulerParent::sInUseChildCounters;
-MOZ_RUNINIT LinkedList<IdleSchedulerParent>
+constinit LinkedList<IdleSchedulerParent>
     IdleSchedulerParent::sIdleAndGCRequests;
 int32_t IdleSchedulerParent::sMaxConcurrentIdleTasksInChildProcesses = 1;
 uint32_t IdleSchedulerParent::sMaxConcurrentGCs = 1;
@@ -354,7 +351,7 @@ void IdleSchedulerParent::SendIdleTime() {
   // the task from it's list this will return false.  Instead check
   // mRequestedIdleBudget.
   MOZ_ASSERT(mRequestedIdleBudget);
-  Unused << SendIdleTime(mCurrentRequestId, mRequestedIdleBudget);
+  (void)SendIdleTime(mCurrentRequestId, mRequestedIdleBudget);
 }
 
 void IdleSchedulerParent::SendMayGC() {
@@ -431,7 +428,7 @@ void IdleSchedulerParent::EnsureStarvationTimer() {
     NS_NewTimerWithFuncCallback(
         &sStarvationPreventer, StarvationCallback, nullptr,
         StaticPrefs::page_load_deprioritization_period(),
-        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "StarvationCallback");
+        nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "StarvationCallback"_ns);
   }
 }
 

@@ -1,26 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ClientManagerParent.h"
 
-#include "mozilla/ipc/BackgroundParent.h"
 #include "ClientHandleParent.h"
 #include "ClientManagerOpParent.h"
 #include "ClientManagerService.h"
 #include "ClientSourceParent.h"
 #include "ClientValidation.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/PClientNavigateOpParent.h"
-#include "mozilla/Unused.h"
+#include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla::dom {
 
 using mozilla::ipc::IPCResult;
 
 IPCResult ClientManagerParent::RecvTeardown() {
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -75,14 +73,10 @@ bool ClientManagerParent::DeallocPClientNavigateOpParent(
 already_AddRefed<PClientSourceParent>
 ClientManagerParent::AllocPClientSourceParent(
     const ClientSourceConstructorArgs& aArgs) {
-  Maybe<ContentParentId> contentParentId;
+  RefPtr<ThreadsafeContentParentHandle> contentParentHandle =
+      ::mozilla::ipc::BackgroundParent::GetContentParentHandle(Manager());
 
-  uint64_t childID = ::mozilla::ipc::BackgroundParent::GetChildID(Manager());
-  if (childID) {
-    contentParentId = Some(ContentParentId(childID));
-  }
-
-  return MakeAndAddRef<ClientSourceParent>(aArgs, contentParentId);
+  return MakeAndAddRef<ClientSourceParent>(aArgs, contentParentHandle);
 }
 
 IPCResult ClientManagerParent::RecvPClientSourceConstructor(
@@ -108,7 +102,7 @@ IPCResult ClientManagerParent::RecvExpectFutureClientSource(
     const IPCClientInfo& aClientInfo) {
   RefPtr<ClientManagerService> cms =
       ClientManagerService::GetOrCreateInstance();
-  Unused << NS_WARN_IF(!cms->ExpectFutureSource(aClientInfo));
+  (void)NS_WARN_IF(!cms->ExpectFutureSource(aClientInfo));
   return IPC_OK();
 }
 

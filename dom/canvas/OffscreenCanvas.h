@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,16 @@
 #ifndef MOZILLA_DOM_OFFSCREENCANVAS_H_
 #define MOZILLA_DOM_OFFSCREENCANVAS_H_
 
+#include "FontVisibilityProvider.h"
 #include "gfxTypes.h"
-#include "mozilla/dom/CanvasRenderingContextHelper.h"
-#include "mozilla/dom/ImageEncoder.h"
-#include "mozilla/dom/OffscreenCanvasDisplayHelper.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/CanvasRenderingContextHelper.h"
+#include "mozilla/dom/ImageEncoder.h"
+#include "mozilla/dom/OffscreenCanvasDisplayHelper.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "nsCycleCollectionParticipant.h"
 
 struct JSContext;
@@ -46,13 +45,14 @@ using OwningOffscreenRenderingContext = class
 // store necessary data in it then pass it to worker thread.
 struct OffscreenCanvasCloneData final {
   OffscreenCanvasCloneData(OffscreenCanvasDisplayHelper* aDisplay,
-                           uint32_t aWidth, uint32_t aHeight,
+                           nsAtom* aLang, uint32_t aWidth, uint32_t aHeight,
                            layers::LayersBackend aCompositorBackend,
                            bool aNeutered, bool aIsWriteOnly,
                            nsIPrincipal* aExpandedReader);
   ~OffscreenCanvasCloneData();
 
   RefPtr<OffscreenCanvasDisplayHelper> mDisplay;
+  RefPtr<nsAtom> mLang;
   uint32_t mWidth;
   uint32_t mHeight;
   layers::LayersBackend mCompositorBackendType;
@@ -62,7 +62,8 @@ struct OffscreenCanvasCloneData final {
 };
 
 class OffscreenCanvas final : public DOMEventTargetHelper,
-                              public CanvasRenderingContextHelper {
+                              public CanvasRenderingContextHelper,
+                              public FontVisibilityProvider {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(OffscreenCanvas,
@@ -71,15 +72,18 @@ class OffscreenCanvas final : public DOMEventTargetHelper,
   IMPL_EVENT_HANDLER(contextlost);
   IMPL_EVENT_HANDLER(contextrestored);
 
+  FONT_VISIBILITY_PROVIDER_IMPL
+
   OffscreenCanvas(nsIGlobalObject* aGlobal, uint32_t aWidth, uint32_t aHeight);
 
   OffscreenCanvas(nsIGlobalObject* aGlobal, uint32_t aWidth, uint32_t aHeight,
                   layers::LayersBackend aCompositorBackend,
-                  already_AddRefed<OffscreenCanvasDisplayHelper> aDisplay);
+                  already_AddRefed<OffscreenCanvasDisplayHelper> aDisplay,
+                  nsAtom* aLang);
 
   void Destroy();
 
-  nsIGlobalObject* GetParentObject() const { return GetOwnerGlobal(); }
+  nsIGlobalObject* GetParentObject() const { return GetRelevantGlobal(); }
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -109,7 +113,7 @@ class OffscreenCanvas final : public DOMEventTargetHelper,
                                    JS::Handle<JS::Value> aParams,
                                    ErrorResult& aRv);
 
-  Maybe<uint64_t> GetWindowID();
+  Maybe<uint64_t> GetWindowID() const;
 
   nsICanvasRenderingContextInternal* GetContext() const {
     return mCurrentContext;
@@ -166,12 +170,15 @@ class OffscreenCanvas final : public DOMEventTargetHelper,
     return mCompositorBackendType;
   }
 
-  bool ShouldResistFingerprinting(mozilla::RFPTarget aTarget) const;
-
   bool IsTransferredFromElement() const { return !!mDisplay; }
+
+  nsAtom* GetLang() const { return mLang; }
 
  private:
   ~OffscreenCanvas();
+
+  void RecordCanvasUsage(CanvasExtractionAPI aExtractionAPI,
+                         CanvasUtils::ImageExtraction aExtractionBehaviour);
 
   already_AddRefed<EncodeCompleteCallback> CreateEncodeCompleteCallback(
       Promise* aPromise);
@@ -191,9 +198,11 @@ class OffscreenCanvas final : public DOMEventTargetHelper,
       layers::LayersBackend::LAYERS_NONE;
 
   RefPtr<OffscreenCanvasDisplayHelper> mDisplay;
+  RefPtr<nsAtom> mLang;
   RefPtr<CancelableRunnable> mPendingCommit;
   RefPtr<nsIPrincipal> mExpandedReader;
   Maybe<OffscreenCanvasDisplayData> mPendingUpdate;
+  const FontVisibility mFontVisibility;
 };
 
 }  // namespace dom

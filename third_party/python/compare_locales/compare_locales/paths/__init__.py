@@ -14,7 +14,6 @@ from .matcher import Matcher
 from .project import ProjectConfig
 from .configparser import TOMLParser, ConfigNotFound
 
-
 __all__ = [
     "Matcher",
     "ProjectConfig",

@@ -9,10 +9,9 @@ import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Reducer
 import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.test.assertIs
 
 class ChangeDetectionMiddlewareTest {
     @Test
@@ -35,13 +34,13 @@ class ChangeDetectionMiddlewareTest {
             listOf(middleware),
         )
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
-        assertTrue(capturedAction is TestAction.IncrementAction)
+        store.dispatch(TestAction.IncrementAction)
+        assertIs<TestAction.IncrementAction>(capturedAction)
         assertEquals(0, preCount)
         assertEquals(1, postCount)
 
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
-        assertTrue(capturedAction is TestAction.DecrementAction)
+        store.dispatch(TestAction.DecrementAction)
+        assertIs<TestAction.DecrementAction>(capturedAction)
         assertEquals(1, preCount)
         assertEquals(0, postCount)
     }
@@ -66,13 +65,13 @@ class ChangeDetectionMiddlewareTest {
             listOf(middleware),
         )
 
-        store.dispatch(TestAction.SetEnabled(true)).joinBlocking()
-        assertTrue(capturedAction is TestAction.SetEnabled)
+        store.dispatch(TestAction.SetEnabled(true))
+        assertIs<TestAction.SetEnabled>(capturedAction)
         assertEquals(false, preState[1])
         assertEquals(true, postState[1])
 
-        store.dispatch(TestAction.SetEnabled(false)).joinBlocking()
-        assertTrue(capturedAction is TestAction.SetEnabled)
+        store.dispatch(TestAction.SetEnabled(false))
+        assertIs<TestAction.SetEnabled>(capturedAction)
         assertEquals(true, preState[1])
         assertEquals(false, postState[1])
     }

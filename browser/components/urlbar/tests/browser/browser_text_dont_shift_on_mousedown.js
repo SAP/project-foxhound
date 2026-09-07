@@ -12,7 +12,7 @@ var gDefaultEngine;
 
 add_setup(async function () {
   let cleanup = await installPersistTestEngines();
-  gDefaultEngine = Services.search.getEngineByName("Example");
+  gDefaultEngine = SearchService.getEngineByName("Example");
   registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     cleanup();

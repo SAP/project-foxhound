@@ -36,7 +36,6 @@ data class SearchProviderModel(
     val followOnParamNames: List<String>?,
     val extraAdServersRegexps: List<Regex>,
     val expectedOrganicCodes: List<String>?,
-
 ) {
 
     constructor(
@@ -52,7 +51,6 @@ data class SearchProviderModel(
         followOnParamNames: List<String>? = emptyList(),
         extraAdServersRegexps: List<String> = emptyList(),
         expectedOrganicCodes: List<String>? = emptyList(),
-
     ) : this(
         schema = schema,
         taggedCodes = taggedCodes,
@@ -66,7 +64,6 @@ data class SearchProviderModel(
         followOnParamNames = followOnParamNames,
         extraAdServersRegexps = extraAdServersRegexps.map { it.toRegex() },
         expectedOrganicCodes = expectedOrganicCodes,
-
     )
 
     /**

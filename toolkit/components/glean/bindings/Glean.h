@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,22 +6,15 @@
 #define mozilla_glean_Glean_h
 
 #include "js/TypeDecls.h"
+// The following include provides GleanWebidlEnabled(), used by generated
+// GleanBinding.cpp
+#include "mozilla/glean/bindings/GleanWebIDL.h"
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
 
 class nsIGlobalObject;
-
-namespace mozilla::dom {
-/*
- * WebIDL permission function for whether Glean APIs are permitted for aCx.
- *
- * Here instead of nsIGlobalWindowInner or BindingUtils for organization and
- * header include optimization reasons.
- */
-bool GleanWebidlEnabled(JSContext* aCx, JSObject* aObj);
-}  // namespace mozilla::dom
 
 namespace mozilla::glean {
 

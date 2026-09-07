@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +5,17 @@
 #ifndef mozilla_dom_HTMLFormElement_h
 #define mozilla_dom_HTMLFormElement_h
 
+#include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/RadioGroupContainer.h"
-#include "nsIFormControl.h"
 #include "nsGenericHTMLElement.h"
-#include "nsThreadUtils.h"
+#include "nsIFormControl.h"
 #include "nsInterfaceHashtable.h"
-#include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
+#include "nsThreadUtils.h"
 
 class nsIMutableArray;
 class nsIURI;
@@ -38,8 +36,7 @@ class HTMLFormElement final : public nsGenericHTMLElement {
  public:
   NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLFormElement, form)
 
-  explicit HTMLFormElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLFormElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   enum { FORM_CONTROL_LIST_HASHTABLE_LENGTH = 8 };
 
@@ -68,7 +65,8 @@ class HTMLFormElement final : public nsGenericHTMLElement {
                       nsAttrValue& aResult) override;
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
   void WillHandleEvent(EventChainPostVisitor& aVisitor) override;
-  nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
+  MOZ_CAN_RUN_SCRIPT nsresult
+  PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(UnbindContext&) override;
@@ -230,13 +228,6 @@ class HTMLFormElement final : public nsGenericHTMLElement {
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult ConstructEntryList(FormData*);
 
-  /**
-   * Implements form[name]. Returns form controls in this form with the correct
-   * value of the name attribute.
-   */
-  already_AddRefed<nsISupports> FindNamedItem(const nsAString& aName,
-                                              nsWrapperCache** aCache);
-
   // WebIDL
 
   void GetAcceptCharset(DOMString& aValue) {
@@ -336,18 +327,11 @@ class HTMLFormElement final : public nsGenericHTMLElement {
 
   Element* IndexedGetter(uint32_t aIndex, bool& aFound);
 
+  already_AddRefed<nsISupports> ResolveName(const nsAString&);
   already_AddRefed<nsISupports> NamedGetter(const nsAString& aName,
                                             bool& aFound);
 
   void GetSupportedNames(nsTArray<nsString>& aRetval);
-
-#ifdef DEBUG
-  static void AssertDocumentOrder(
-      const nsTArray<nsGenericHTMLFormElement*>& aControls, nsIContent* aForm);
-  static void AssertDocumentOrder(
-      const nsTArray<RefPtr<nsGenericHTMLFormElement>>& aControls,
-      nsIContent* aForm);
-#endif
 
   JS::ExpandoAndGeneration mExpandoAndGeneration;
 
@@ -372,7 +356,7 @@ class HTMLFormElement final : public nsGenericHTMLElement {
     RefPtr<HTMLFormElement> mForm;
   };
 
-  nsresult DoReset();
+  MOZ_CAN_RUN_SCRIPT nsresult DoReset();
 
   virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAString& aValue) override;
@@ -429,12 +413,6 @@ class HTMLFormElement final : public nsGenericHTMLElement {
    */
   nsresult DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
                                          bool* aCancelSubmit);
-
-  /**
-   * Find form controls in this form with the correct value in the name
-   * attribute.
-   */
-  already_AddRefed<nsISupports> DoResolveName(const nsAString& aName);
 
   /**
    * Check the form validity following this algorithm:

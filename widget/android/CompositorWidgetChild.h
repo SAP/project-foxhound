@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,12 +15,13 @@ namespace widget {
 class CompositorWidgetChild final : public PCompositorWidgetChild,
                                     public PlatformCompositorWidgetDelegate {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorWidgetChild, override)
+
   CompositorWidgetChild(RefPtr<CompositorVsyncDispatcher> aVsyncDispatcher,
                         RefPtr<CompositorWidgetVsyncObserver> aVsyncObserver,
                         const CompositorWidgetInitData&);
-  ~CompositorWidgetChild() override;
 
-  bool Initialize();
+  bool Initialize(const layers::CompositorOptions& aOptions);
 
   mozilla::ipc::IPCResult RecvObserveVsync() override;
   mozilla::ipc::IPCResult RecvUnobserveVsync() override;
@@ -31,6 +31,7 @@ class CompositorWidgetChild final : public PCompositorWidgetChild,
   void NotifyClientSizeChanged(const LayoutDeviceIntSize& aClientSize) override;
 
  private:
+  ~CompositorWidgetChild() override;
   RefPtr<CompositorVsyncDispatcher> mVsyncDispatcher;
   RefPtr<CompositorWidgetVsyncObserver> mVsyncObserver;
 };

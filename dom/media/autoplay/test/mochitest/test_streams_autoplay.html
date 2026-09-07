@@ -28,7 +28,7 @@ if (media == null) {
 
     v1.src = media.name;
     v1.onloadedmetadata = function() {
-      v2.srcObject = v1.mozCaptureStream();
+      v2.srcObject = v1.captureStream?.() || v1.mozCaptureStream();
       v1.play();
     };
 

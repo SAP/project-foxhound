@@ -15,10 +15,11 @@ task-defaults:
             - target.tar.xz
         toolchain:
             - linux64-geckodriver
+    run-on-repo-type: [hg]
     run-on-projects: []
     treeherder:
         kind: test
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: ubuntu2404-test}
         max-run-time: 1800
@@ -30,7 +31,6 @@ interventions:
     treeherder:
         symbol: wc(I)
         tier: 3
-    python-version: [3]
     run:
         using: mach
         # Need to start Xvfb if we remove --headless

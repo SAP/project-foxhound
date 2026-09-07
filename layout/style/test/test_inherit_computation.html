@@ -19,8 +19,10 @@
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for computation of CSS 'inherit' on all properties and 'unset' on
-    inherited properties **/
+/**
+ * Test for computation of CSS 'inherit' on all properties and 'unset' on
+ * inherited properties
+ */
 
 var gDisplayTree = document.getElementById("display");
 // elements without a frame
@@ -46,6 +48,11 @@ function get_computed_value_node(node, property)
 function test_property(property)
 {
   var info = gCSSProperties[property];
+  if (property == "text-box") {
+    // text-box has mismatched inherited and non-inherited sub-properties,
+    // which this test doesn't really deal with.
+    return;
+  }
 
   var keywords = ["inherit"];
   if (info.inherited)

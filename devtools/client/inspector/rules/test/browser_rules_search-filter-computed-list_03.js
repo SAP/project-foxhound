@@ -30,14 +30,14 @@ async function testAddTextInFilter(inspector, view) {
   await setSearchFilter(view, SEARCH);
 
   info("Check that the correct rules are visible");
-  is(view.element.children.length, 2, "Should have 2 rules.");
+  assertDisplayedRulesCount(view, 2);
   is(
-    getRuleViewRuleEditor(view, 0).rule.selectorText,
+    getRuleViewRuleEditorAt(view, 0).rule.selectorText,
     "element",
     "First rule is inline element."
   );
 
-  const rule = getRuleViewRuleEditor(view, 1).rule;
+  const rule = getRuleViewRuleEditorAt(view, 1).rule;
   const ruleEditor = rule.textProps[0].editor;
   const computed = ruleEditor.computed;
 

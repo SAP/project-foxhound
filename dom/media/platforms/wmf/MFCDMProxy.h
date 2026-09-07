@@ -5,11 +5,12 @@
 #ifndef DOM_MEDIA_PLATFORM_WMF_MFCDMPROXY_H
 #define DOM_MEDIA_PLATFORM_WMF_MFCDMPROXY_H
 
-#include <map>
 #include <mfobjects.h>
 #include <unknwn.h>
 #include <windef.h>
 #include <wrl.h>
+
+#include <map>
 
 #include "MFCDMExtra.h"
 #include "nsISupportsImpl.h"
@@ -46,6 +47,13 @@ class MFCDMProxy {
   // in cases like OS Sleep. In this case, the CDM should close all sessions
   // because they are in bad state.
   void OnHardwareContextReset();
+
+  // Discard the cached IMFTrustedInput and per-stream ITAs so they are
+  // re-fetched from the CDM on the next GetInputTrustAuthority call. Call this
+  // whenever the CDM proxy is swapped mid-stream (e.g. ClearLead ad-boundary
+  // key rotation), since the old ITAs belong to the previous CDM instance and
+  // will cause MF_E_NOT_FOUND on the new key ID.
+  void ResetTrustedInput();
 
   void Shutdown();
 

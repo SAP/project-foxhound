@@ -10,7 +10,7 @@ SUPPORTED_CSS = "#game_main"
 
 async def get_to_page(client):
     await client.navigate(URL)
-    client.click(client.await_css(FIRST_GAME_CSS, is_displayed=True))
+    client.soft_click(client.await_css(FIRST_GAME_CSS, is_displayed=True))
     client.soft_click(client.await_css(PLAY_FOR_FUN_CSS, is_displayed=True))
     client.switch_to_frame(client.await_css(IFRAME_CSS))
 

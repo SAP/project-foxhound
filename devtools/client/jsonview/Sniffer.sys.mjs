@@ -31,7 +31,7 @@ function getContentDisposition(channel) {
  * This internal type is consequently rendered by JSON View component
  * that represents the JSON through a viewer interface.
  *
- * This is done in the .js file rather than a .jsm to avoid creating
+ * This is done in the .js file rather than a .sys.mjs to avoid creating
  * a compartment at startup when no JSON is being viewed.
  */
 export class Sniffer {

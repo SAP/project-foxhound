@@ -1,29 +1,28 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/PolicyContainer.h"
+#include "nsCSPService.h"
+
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "nsString.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/net/DocumentChannel.h"
+#include "mozilla/net/DocumentLoadListener.h"
+#include "nsAsyncRedirectVerifyHelper.h"
 #include "nsCOMPtr.h"
-#include "nsIURI.h"
-#include "nsIContent.h"
-#include "nsCSPService.h"
-#include "nsIContentSecurityPolicy.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsAsyncRedirectVerifyHelper.h"
-#include "nsContentUtils.h"
-#include "nsContentPolicyUtils.h"
-#include "nsNetUtil.h"
+#include "nsIContent.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIProtocolHandler.h"
+#include "nsIURI.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
-#include "mozilla/net/DocumentLoadListener.h"
-#include "mozilla/net/DocumentChannel.h"
+#include "nsString.h"
 
 using namespace mozilla;
 

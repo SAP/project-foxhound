@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IDBKeyRange.h"
 
+#include "IDBTransaction.h"
 #include "Key.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/HoldDropJSObjects.h"
@@ -20,8 +19,8 @@ using namespace mozilla::dom::indexedDB;
 namespace {
 
 void GetKeyFromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal, Key& aKey,
-                     ErrorResult& aRv) {
-  auto result = aKey.SetFromJSVal(aCx, aVal);
+                     ErrorResult& aRv, IDBTransaction* aTransaction = nullptr) {
+  auto result = aKey.SetFromJSVal(aCx, aVal, aTransaction);
   if (result.isErr()) {
     aRv = result.unwrapErr().ExtractErrorResult(
         InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
@@ -51,8 +50,27 @@ IDBKeyRange::~IDBKeyRange() { DropJSObjects(); }
 
 // static
 void IDBKeyRange::FromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal,
-                            RefPtr<IDBKeyRange>* aKeyRange, ErrorResult& aRv) {
+                            RefPtr<IDBKeyRange>* aKeyRange, ErrorResult& aRv,
+                            IDBTransaction* aTransaction) {
   MOZ_ASSERT_IF(!aCx, aVal.isUndefined());
+  MOZ_ASSERT(aKeyRange);
+
+  auto result = FromJSVal(aCx, aVal, aKeyRange, aTransaction);
+  if (result.isErr()) {
+    aRv = result.unwrapErr().ExtractErrorResult(
+        InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
+  }
+}
+
+// Implements the following algorithm:
+// https://w3c.github.io/IndexedDB/#convert-a-value-to-a-key-range
+// Note: check for "null disallowed flag" (step 2) is performed by the caller
+// (check if the aKeyRange result is null)
+// static
+IDBResult<Ok, IDBSpecialValue::InvalidType, IDBSpecialValue::InvalidValue>
+IDBKeyRange::FromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal,
+                       RefPtr<IDBKeyRange>* aKeyRange,
+                       IDBTransaction* aTransaction) {
   MOZ_ASSERT(aKeyRange);
 
   RefPtr<IDBKeyRange> keyRange;
@@ -60,7 +78,7 @@ void IDBKeyRange::FromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal,
   if (aVal.isNullOrUndefined()) {
     // undefined and null returns no IDBKeyRange.
     *aKeyRange = std::move(keyRange);
-    return;
+    return Ok();
   }
 
   JS::Rooted<JSObject*> obj(aCx, aVal.isObject() ? &aVal.toObject() : nullptr);
@@ -69,15 +87,15 @@ void IDBKeyRange::FromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal,
   if (obj && NS_SUCCEEDED(UNWRAP_OBJECT(IDBKeyRange, obj, keyRange))) {
     MOZ_ASSERT(keyRange);
     *aKeyRange = std::move(keyRange);
-    return;
+    return Ok();
   }
 
-  // A valid key returns an 'only' IDBKeyRange.
   keyRange = new IDBKeyRange(false, false, true);
-  GetKeyFromJSVal(aCx, aVal, keyRange->Lower(), aRv);
-  if (!aRv.Failed()) {
+  auto result = keyRange->Lower().SetFromJSVal(aCx, aVal, aTransaction);
+  if (result.isOk()) {
     *aKeyRange = std::move(keyRange);
   }
+  return result;
 }
 
 // static

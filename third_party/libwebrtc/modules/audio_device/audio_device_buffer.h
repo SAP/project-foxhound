@@ -11,18 +11,19 @@
 #ifndef MODULES_AUDIO_DEVICE_AUDIO_DEVICE_BUFFER_H_
 #define MODULES_AUDIO_DEVICE_AUDIO_DEVICE_BUFFER_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "api/audio/audio_device_defines.h"
+#include "api/environment/environment.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
-#include "api/task_queue/task_queue_factory.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/timestamp_aligner.h"
 
@@ -82,7 +83,7 @@ class AudioDeviceBuffer {
   // If `create_detached` is true, the created buffer can be used on another
   // thread compared to the one on which it was created. It's useful for
   // testing.
-  explicit AudioDeviceBuffer(TaskQueueFactory* task_queue_factory,
+  explicit AudioDeviceBuffer(const Environment& env,
                              bool create_detached = false);
   virtual ~AudioDeviceBuffer();
 
@@ -143,6 +144,8 @@ class AudioDeviceBuffer {
   void ResetRecStats();
   void ResetPlayStats();
 
+  const Environment env_;
+
   // This object lives on the main (creating) thread and most methods are
   // called on that same thread. When audio has started some methods will be
   // called on either a native audio thread for playout or a native thread for
@@ -151,8 +154,9 @@ class AudioDeviceBuffer {
   // edge cases and it is IMHO not worth the risk to use them in this class.
   // TODO(henrika): see if it is possible to refactor and annotate all members.
 
-  // Main thread on which this object is created.
-  SequenceChecker main_thread_checker_;
+  // Main thread for where this object is used.
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker main_thread_checker_{
+      SequenceChecker::kDetached};
 
   Mutex lock_;
 
@@ -186,11 +190,11 @@ class AudioDeviceBuffer {
   // Buffer used for audio samples to be played out. Size can be changed
   // dynamically. The 16-bit samples are interleaved, hence the size is
   // proportional to the number of channels.
-  rtc::BufferT<int16_t> play_buffer_;
+  BufferT<int16_t> play_buffer_;
 
   // Byte buffer used for recorded audio samples. Size can be changed
   // dynamically.
-  rtc::BufferT<int16_t> rec_buffer_;
+  BufferT<int16_t> rec_buffer_;
 
   // Contains true of a key-press has been detected.
   bool typing_status_;

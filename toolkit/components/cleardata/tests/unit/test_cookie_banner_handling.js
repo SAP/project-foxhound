@@ -3,8 +3,6 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-do_get_profile();
-
 add_setup(_ => {
   // Init cookieBannerService and pretend we opened a profile.
   let cbs = Cc["@mozilla.org/cookie-banner-service;1"].getService(

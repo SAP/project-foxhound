@@ -16,7 +16,7 @@ modules.
 All system modules are imported into the shared system global (except for
 modules loaded into the `DevTools distinct system global`_).
 
-See ``mozJSModuleLoader::CreateLoaderGlobal`` in `mozJSModuleLoader.cpp <https://searchfox.org/mozilla-central/source/js/xpconnect/loader/mozJSModuleLoader.cpp>`_ for details about the global and built-in functions.
+See ``mozJSModuleLoader::CreateLoaderGlobal`` in :searchfox:`mozJSModuleLoader.cpp <js/xpconnect/loader/mozJSModuleLoader.cpp>` for details about the global and built-in functions.
 
 Defining a Module
 -----------------
@@ -145,7 +145,7 @@ property with the symbol name and the module URI for each.
       TestFunc: "resource://gre/modules/Test.sys.mjs",
     });
 
-See `ChromeUtils.webidl <https://searchfox.org/mozilla-central/source/dom/chrome-webidl/ChromeUtils.webidl>`_ for more details.
+See :searchfox:`ChromeUtils.webidl <dom/chrome-webidl/ChromeUtils.webidl>` for more details.
 
 Using the Namespace Object
 --------------------------
@@ -226,7 +226,7 @@ The exported object should follow the specified XPCOM interface.
     nsCOMPtr<nsIUtils> utils = do_ImportESModule(
       "resource://gre/modules/Test.sys.mjs", "Utils");
 
-See `nsImportModule.h <https://searchfox.org/mozilla-central/source/js/xpconnect/loader/nsImportModule.h>`_ for more details.
+See :searchfox:`nsImportModule.h <js/xpconnect/loader/nsImportModule.h>` for more details.
 
 Lifetime
 --------
@@ -301,7 +301,7 @@ This is only for the debugging purpose.
     console.log(
       Cu.getModuleImportStack("resource://gre/modules/Test.sys.mjs"));
 
-See `xpccomponents.idl <https://searchfox.org/mozilla-central/source/js/xpconnect/idl/xpccomponents.idl>`_ for more details.
+See :searchfox:`xpccomponents.idl <js/xpconnect/idl/xpccomponents.idl>` for more details.
 
 Limitations
 -----------
@@ -347,7 +347,7 @@ used.  The module is imported into the DevTools distinct system global if the
 current global is the DevTools distinct system global.  Otherwise the module
 is imported into the shared system global.
 
-See ``ImportESModuleTargetGlobal`` in `ChromeUtils.webidl <https://searchfox.org/mozilla-central/source/dom/chrome-webidl/ChromeUtils.webidl>`_ for more details.
+See ``ImportESModuleTargetGlobal`` in :searchfox:`ChromeUtils.webidl <dom/chrome-webidl/ChromeUtils.webidl>` for more details.
 
 Integration with JSActors
 -------------------------

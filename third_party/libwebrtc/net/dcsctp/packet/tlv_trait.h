@@ -10,17 +10,13 @@
 #ifndef NET_DCSCTP_PACKET_TLV_TRAIT_H_
 #define NET_DCSCTP_PACKET_TLV_TRAIT_H_
 
-#include <stdint.h>
-#include <string.h>
-
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
-#include <string>
+#include <span>
 #include <vector>
 
-#include "api/array_view.h"
 #include "net/dcsctp/packet/bounded_byte_reader.h"
 #include "net/dcsctp/packet/bounded_byte_writer.h"
 
@@ -81,7 +77,7 @@ class TLVTrait {
   // Validates the data with regards to size, alignment and type.
   // If valid, returns a bounded buffer.
   static std::optional<BoundedByteReader<Config::kHeaderSize>> ParseTLV(
-      rtc::ArrayView<const uint8_t> data) {
+      std::span<const uint8_t> data) {
     if (data.size() < Config::kHeaderSize) {
       tlv_trait_impl::ReportInvalidSize(data.size(), Config::kHeaderSize);
       return std::nullopt;
@@ -123,7 +119,7 @@ class TLVTrait {
         return std::nullopt;
       }
     }
-    return BoundedByteReader<Config::kHeaderSize>(data.subview(0, length));
+    return BoundedByteReader<Config::kHeaderSize>(data.subspan(0, length));
   }
 
   // Allocates space for data with a static header size, as defined by
@@ -137,7 +133,7 @@ class TLVTrait {
     out.resize(offset + size);
 
     BoundedByteWriter<kTlvHeaderSize> tlv_header(
-        rtc::ArrayView<uint8_t>(out.data() + offset, kTlvHeaderSize));
+        std::span<uint8_t>(out.data() + offset, kTlvHeaderSize));
     if (Config::kTypeSizeInBytes == 1) {
       tlv_header.template Store8<0>(static_cast<uint8_t>(Config::kType));
     } else {
@@ -146,7 +142,7 @@ class TLVTrait {
     tlv_header.template Store16<2>(size);
 
     return BoundedByteWriter<Config::kHeaderSize>(
-        rtc::ArrayView<uint8_t>(out.data() + offset, size));
+        std::span<uint8_t>(out.data() + offset, size));
   }
 
  private:

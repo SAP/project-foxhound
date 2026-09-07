@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,7 @@ class NativeFontResourceFreeType
 
 #ifdef MOZ_WIDGET_ANDROID
   static already_AddRefed<NativeFontResourceFreeType> Create(
-      uint8_t* aFontData, uint32_t aDataLength,
+      const uint8_t* aFontData, uint32_t aDataLength,
       FT_Library aFTLibrary = nullptr);
 
   already_AddRefed<UnscaledFont> CreateUnscaledFont(
@@ -41,7 +39,7 @@ class NativeFontResourceFreeType
                              FT_Library aFTLibrary = nullptr);
 
   template <class T>
-  static already_AddRefed<T> CreateInternal(uint8_t* aFontData,
+  static already_AddRefed<T> CreateInternal(const uint8_t* aFontData,
                                             uint32_t aDataLength,
                                             FT_Library aFTLibrary);
 
@@ -57,7 +55,7 @@ class NativeFontResourceFontconfig final : public NativeFontResourceFreeType {
                                           override)
 
   static already_AddRefed<NativeFontResourceFontconfig> Create(
-      uint8_t* aFontData, uint32_t aDataLength,
+      const uint8_t* aFontData, uint32_t aDataLength,
       FT_Library aFTLibrary = nullptr);
 
   already_AddRefed<UnscaledFont> CreateUnscaledFont(
