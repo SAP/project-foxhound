@@ -34,7 +34,9 @@ function String_match(regexp) {
     // Fast path for regular expressions with the original
     // RegExp.prototype[@@match] function.
     if (IsOptimizableRegExpObject(regexp)) {
-      return callFunction(RegExpMatch, regexp, this);
+      var ret = callFunction(RegExpMatch, regexp, this);
+      addTaintToArray(ret, "match", regexp);
+      return ret;
     }
 
     // Step 2.a.

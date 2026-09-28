@@ -5526,9 +5526,21 @@ static bool BuildFlatMatchArray(JSContext* cx, HandleString str,
     return false;
   }
 
+  // Foxhound: the matched text has to be a slice of the subject. Reusing the
+  // pattern gives the result the pattern's taint instead of the subject's, in
+  // both directions. Allocate before setDenseInitializedLength, so a GC never
+  // sees an uninitialised element.
+  RootedString matched(cx, pattern);
+  if (str->isTainted() || pattern->isTainted()) {
+    matched = NewDependentString(cx, str, size_t(match), pattern->length());
+    if (!matched) {
+      return false;
+    }
+  }
+
   // Store a Value for each pair.
   arr->setDenseInitializedLength(1);
-  arr->initDenseElement(0, StringValue(pattern));
+  arr->initDenseElement(0, StringValue(matched));
 
   // Set the |index| property.
   arr->initSlot(RegExpRealm::MatchResultObjectIndexSlot, Int32Value(match));
